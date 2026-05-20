@@ -1,0 +1,1 @@
+{"timestamp":"2026-05-19T02:12:11.906Z","type":"agent-turn-complete","thread_id":"019e3e01-2387-7131-8186-0068b1bafbe4","turn_id":"019e3e01-23fd-7471-9b1b-23378422c350","input_preview":"只输出 JSON：ok=true,message=\"codex local ready\"。不要运行命令。","input_message_count":1,"output_preview":"{\"ok\":true,\"message\":\"codex local ready\"}"}
