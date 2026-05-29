@@ -26,11 +26,14 @@ export type SubclaimStatus =
   | "不可核查"
   | "原命题需要改写";
 
+export type RumorType = "健康" | "社会" | "科技" | "财经";
+
 export interface ClaimDiagnosis {
   mixedJudgments: ClaimType[];
   ambiguousTerms: string[];
   risk: string;
   whyNotDirectFactCheck: string;
+  rumorIndicators?: string[];
 }
 
 export interface Subclaim {
@@ -115,6 +118,7 @@ export interface FinalReport {
 
 export interface DemoCase {
   originalClaim: string;
+  rumorType?: RumorType;
   useContext: string;
   diagnosis: ClaimDiagnosis;
   subclaims: Subclaim[];

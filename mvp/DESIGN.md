@@ -1,6 +1,6 @@
 ---
 name: "溯证 Agent Design System"
-version: "0.3"
+version: "0.4"
 scope: "Agent Reasoning Canvas MVP"
 description: "A Flowith-inspired layered reasoning canvas where users decide which node should continue expanding."
 colors:
@@ -15,6 +15,10 @@ colors:
   nodeBlocked: "#ef4444"
   nodeRewrite: "#a855f7"
   nodeClaim: "#f7f4ec"
+  nodeClue: "#79b9ff"
+  nodeFrontier: "#facc15"
+  nodeStopped: "#64748b"
+  nodeController: "#c084fc"
   textPrimary: "#f3f0e9"
   textInverse: "#0a0c0b"
 typography:
@@ -125,6 +129,10 @@ Canvas 必须呈现纵向层级，而不是平铺白板：
 - Blocked node：红色块，用于推理阻断。
 - Rewrite node：紫色块，用于降强度表达。
 - Claim node：白色标签，表示外部输入进入系统。
+- Evidence clue node：亮蓝色块，用于递归搜索发现的证据线索。
+- Frontier node：黄色块，用于可继续扩展、但等待用户选择的下一步线索。
+- Stopped node：灰蓝色低优先级块，用于预算、重复、低可信或越界而停止的线索。
+- Controller run node：浅紫色块，用于中控 LLM 的调度说明。
 
 ### Shape
 
@@ -185,6 +193,48 @@ Provider 顺序：
 3. Codex CLI。
 
 不得在真实 provider 失败时生成模拟分支。
+
+### Recursive Evidence Search
+
+递归证据搜索是节点级能力，不是全局自动任务。
+
+必须遵守：
+
+- 用户点击节点后，Inspector 才显示递归搜索入口。
+- 用户没有点击触发按钮时，不调用模型。
+- 每轮搜索只生成本轮 clues、frontier 和 stopped，不自动继续展开 frontier。
+- frontier 是可点击的下一步选择，视觉上必须比普通 clue 更像“待决策入口”。
+- stopped 节点必须低优先级显示，但 Inspector 必须说明停止原因。
+- 搜索结果必须保留 can say / cannot say，不允许只有摘要。
+- Provider 失败时显示错误状态，不生成 mock 分支。
+
+节点层级建议：
+
+1. Seed node：用户选择的原始兴趣点。
+2. Controller run：中控 LLM 拆任务。
+3. Search agent：执行搜索、提取、审计。
+4. Evidence clue：本轮发现。
+5. Frontier / stopped：下一步选择或停止原因。
+
+### Reasoning Island
+
+Reasoning Island 是 Canvas 的轻量导航入口，借鉴 Dynamic Island 的闭合 / 展开手势，但语义必须服务于推理图谱。
+
+必须遵守：
+
+- 闭合态只显示当前节点、节点类型和图谱进度，不能变成第二个 Inspector。
+- 展开态使用 backdrop blur，把用户注意力临时收束到导航选择。
+- 节点列表必须体现层级缩进，让用户感知 claim、judgment、evidence、frontier 的不同深度。
+- Trace 标签只用于回放 reasoning step，并复用现有 step 高亮逻辑。
+- 点击节点或 trace 后应立即收起，让用户回到 Canvas。
+- 关闭浮层不能改变选中节点、不能触发 Agent、不能新增节点。
+
+视觉规则：
+
+- 闭合 pill 固定在底部中央，尺寸小于输入栏，避免抢占主要操作。
+- 展开面板高度受限，内部滚动，不能推动 Canvas 布局。
+- 进度环表达当前节点在已展开图谱中的相对位置，不表达“任务完成度”。
+- 运行中的 Agent 状态只用小圆点脉冲表达，不出现大面积动效。
 
 ## Accessibility
 

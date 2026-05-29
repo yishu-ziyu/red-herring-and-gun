@@ -1,24 +1,21 @@
 import type { ReasoningStep } from "../../data/reasoningCanvas";
 
-interface AgentTraceProps {
+interface AgentTraceV3Props {
   steps: ReasoningStep[];
-  revealStage: number;
-  activeStepId: string;
+  activeStepId: string | null;
   onStepSelect: (step: ReasoningStep) => void;
 }
 
-export function AgentTrace({ steps, revealStage, activeStepId, onStepSelect }: AgentTraceProps) {
-  const visibleSteps = steps.filter((step) => step.revealStage <= revealStage);
-
+export function AgentTraceV3({ steps, activeStepId, onStepSelect }: AgentTraceV3Props) {
   return (
     <aside className="agent-trace" aria-label="Agent reasoning trace">
       <div className="panel-heading">
         <span>Thread Stack</span>
-        <strong>{visibleSteps.length}</strong>
+        <strong>{steps.length}</strong>
       </div>
       <div className="trace-list">
-        {visibleSteps.length > 0 ? (
-          visibleSteps.map((step, index) => (
+        {steps.length > 0 ? (
+          steps.map((step, index) => (
             <button
               key={step.id}
               className={`trace-step ${step.id === activeStepId ? "selected" : ""}`}
@@ -30,7 +27,7 @@ export function AgentTrace({ steps, revealStage, activeStepId, onStepSelect }: A
             </button>
           ))
         ) : (
-          <div className="trace-empty">点击开始后，Agent 先搭出问题空间；后续由你选择节点继续发散。</div>
+          <div className="trace-empty">Agent reasoning trace will appear here.</div>
         )}
       </div>
     </aside>
