@@ -1,4 +1,5 @@
 import type { HandoffStep } from "../../../../lib/agentExpansion";
+import { getAgentContract } from "../../../../lib/agentConfigs";
 
 interface AgentCardProps {
   claim: string;
@@ -43,6 +44,8 @@ export function AgentCard({
   const agent = normalizeAgent(step?.agent);
   const className = AGENT_CLASS_NAMES[agent] ?? "agent-card--idle";
   const roleLabel = AGENT_ROLE_LABELS[agent] ?? "等待 Agent 接管";
+  const contract = step?.agentContract ?? getAgentContract(agent);
+  const visibleTools = contract?.tools.slice(0, 3) ?? [];
   const isDemoFallback = step?.model.includes("demo-fallback") || step?.output?._source === "demo-fallback";
   const displayedItems =
     outputItems.length > 0
@@ -63,9 +66,25 @@ export function AgentCard({
         </div>
         <div>
           <h2>{step?.agentName ?? "Mission Control"}</h2>
-          <span>{roleLabel}</span>
+          <span>{contract?.roleTitle ?? roleLabel}</span>
         </div>
       </div>
+
+      {contract ? (
+        <div className="mission-agent-contract" aria-label="Agent 架构契约">
+          <p>{contract.mission}</p>
+          <div className="mission-agent-contract-grid">
+            <div>
+              <span>工具</span>
+              <strong>{visibleTools.map((tool) => tool.name).join(" / ")}</strong>
+            </div>
+            <div>
+              <span>记忆写入</span>
+              <strong>{contract.memory.writes.slice(0, 2).join(" / ")}</strong>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mission-agent-task">
         <span>正在分析</span>

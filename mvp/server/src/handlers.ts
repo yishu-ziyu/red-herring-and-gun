@@ -4,11 +4,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv } from "vite";
-import { searchClaimAcrossSources } from "./src/lib/sherlockStyleSearch";
-import { AGENT_CONFIGS, buildAgentInput } from "./src/lib/agentConfigs";
-import { enrichSearch360Source } from "./src/lib/sourceCredibility";
+import { searchClaimAcrossSources } from "./lib/sherlockStyleSearch.js";
+import { AGENT_CONFIGS, buildAgentInput } from "./lib/agentConfigs.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -102,40 +99,14 @@ const recursiveResponseSchema = {
 
 const allowedStatuses = new Set(["risk", "active", "supported", "limited", "blocked", "rewrite", "clue", "frontier", "stopped", "controller"]);
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
+// Express handlers extracted from vite.config.ts
+// All LLM provider calls and agent orchestration logic
 
-  return {
-    plugins: [react(), agentApiPlugin(env)],
-    preview: {
-      allowedHosts: ["gun.yishuziyu.cn", "localhost", "127.0.0.1"],
-    },
-  };
-});
-
-function agentApiPlugin(env: Record<string, string>) {
-  const getTimeoutMs = (key: string, fallbackMs: number) => {
-    const value = Number(env[key] || process.env[key] || fallbackMs);
-    return Number.isFinite(value) && value > 0 ? value : fallbackMs;
-  };
-
-  const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label} 超时 ${timeoutMs}ms`)), timeoutMs);
-    });
-
-    try {
-      return await Promise.race([promise, timeout]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  };
-
+export function createHandlers(env: Record<string, string>) {
   const apiKey = env.OPENAI_API_KEY;
   const baseUrl = (env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   const model = env.OPENAI_MODEL || "gpt-4.1-mini";
-  const codexBin = env.CODEX_BIN || process.env.CODEX_BIN || "/Users/mahaoxuan/.local/bin/codex";
+  const codexBin = env.CODEX_BIN || process.env.CODEX_BIN || "/usr/local/bin/codex";
   const codexModel = env.CODEX_LOCAL_MODEL || process.env.CODEX_LOCAL_MODEL || "gpt-5.5";
 
   async function handler(req: any, res: any, next: any) {
@@ -245,92 +216,13 @@ function agentApiPlugin(env: Record<string, string>) {
     }
   }
 
-  function build360SupportQuery(claim: string) {
-    return `${claim} 证据 来源 官方说明 原始出处`;
-  }
-
-  function build360ContradictQuery(claim: string) {
-    return `${claim} 辟谣 反例 争议 无法证实 误读`;
-  }
-
   async function get360SearchForClaim(claim: string) {
     try {
-      const supportQuery = build360SupportQuery(claim);
-      const contradictQuery = build360ContradictQuery(claim);
-      const [supportResult, contradictResult] = await withTimeout(
-        Promise.all([
-          callParallelSearchProviders({ env, query: supportQuery }),
-          callParallelSearchProviders({ env, query: contradictQuery }),
-        ]),
-        getTimeoutMs("ORCHESTRATE_SEARCH_TIMEOUT_MS", 20000),
-        "并行双向搜索"
-      );
-      const supportingEvidence = (supportResult.sources ?? []).map((source: any, index: number) =>
-        enrichSearch360Source(source, index, { query: supportQuery, direction: "support" })
-      );
-      const contradictingEvidence = (contradictResult.sources ?? []).map((source: any, index: number) =>
-        enrichSearch360Source(source, index, { query: contradictQuery, direction: "contradict" })
-      );
-      const sources = [...supportingEvidence, ...contradictingEvidence].map((source: any, index: number) => ({
-        ...source,
-        id: source.id ?? `S${index + 1}`,
-      }));
-
-      return {
-        answer: [`支持检索：${supportResult.answer}`, `反驳检索：${contradictResult.answer}`].join("\n\n"),
-        sources,
-        supportQuery,
-        contradictQuery,
-        supportingEvidence,
-        contradictingEvidence,
-        unresolvedEvidenceGaps: contradictingEvidence.length > 0
-          ? []
-          : ["未找到明确反证或辟谣材料，需要继续扩大检索。"],
-        relatedQuestions: Array.from(new Set([
-          ...(supportResult.relatedQuestions ?? []),
-          ...(contradictResult.relatedQuestions ?? []),
-          `${claim} 官方回应`,
-          `${claim} 辟谣`,
-        ])).slice(0, 6),
-        model: `${supportResult.model ?? "parallel-search"} + ${contradictResult.model ?? "parallel-search"}`,
-        traceText: `并行双向搜索完成：支持来源 ${supportingEvidence.length} 条，反驳来源 ${contradictingEvidence.length} 条。${supportResult.traceText ?? ""} ${contradictResult.traceText ?? ""}`.trim(),
-        _source: "parallel-search",
-      };
+      return await callParallelSearchProviders({ env, query: claim });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "并行双向搜索未返回真实结果";
+      const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
       return build360SearchFailure(claim, message);
     }
-  }
-
-  function buildAgentEvidenceBundle(agentId: string, output: Record<string, unknown>, search360Result?: any) {
-    const supportSources = Array.isArray(search360Result?.supportingEvidence) ? search360Result.supportingEvidence : [];
-    const contradictSources = Array.isArray(search360Result?.contradictingEvidence) ? search360Result.contradictingEvidence : [];
-    const unresolvedQuestions = [
-      ...(Array.isArray(search360Result?.unresolvedEvidenceGaps) ? search360Result.unresolvedEvidenceGaps : []),
-      ...(Array.isArray(output.unresolvedEvidenceGaps) ? output.unresolvedEvidenceGaps.filter((item: unknown) => typeof item === "string") : []),
-      ...(Array.isArray(output.missingSources) ? output.missingSources.filter((item: unknown) => typeof item === "string") : []),
-    ];
-    const sourceScores = [...supportSources, ...contradictSources]
-      .map((source: any) => typeof source?.credibilityScore === "number" ? source.credibilityScore : null)
-      .filter((score: number | null): score is number => score !== null);
-    const logicRiskCount =
-      (Array.isArray(output.logicRisks) ? output.logicRisks.length : 0) +
-      (Array.isArray(output.biasWarnings) ? output.biasWarnings.length : 0) +
-      (Array.isArray(output.cannotInfer) ? output.cannotInfer.length : 0) +
-      (Array.isArray(output.doNotInfer) ? output.doNotInfer.length : 0);
-
-    return {
-      agentId,
-      claimIds: ["claim-root"],
-      supportEvidenceIds: supportSources.map((source: any, index: number) => String(source?.id || source?.url || source?.title || `support-${index + 1}`)),
-      contradictEvidenceIds: contradictSources.map((source: any, index: number) => String(source?.id || source?.url || source?.title || `contradict-${index + 1}`)),
-      confidenceDelta: Math.max(-30, Math.min(20, supportSources.length * 3 - contradictSources.length * 5 - unresolvedQuestions.length * 2 - logicRiskCount * 4)),
-      unresolvedQuestions: Array.from(new Set(unresolvedQuestions)).slice(0, 6),
-      sourceQualityScore: sourceScores.length > 0
-        ? Math.round(sourceScores.reduce((sum: number, score: number) => sum + score, 0) / sourceScores.length)
-        : undefined,
-      logicRiskCount,
-    };
   }
 
   // ───────────────────────────────────────────────────────────────
@@ -369,19 +261,15 @@ function agentApiPlugin(env: Record<string, string>) {
       let modelUsed: string;
 
       try {
-        const result = await withTimeout(
-          callAgentWithFallback({
-            systemPrompt: agentConfig.systemPrompt,
-            userContent: JSON.stringify(agentInput, null, 2),
-            responseSchema: agentConfig.responseSchema,
-            maxTokens: agentConfig.maxTokens,
-            env,
-            codexBin,
-            reasoningEffort: "high",
-          }),
-          getTimeoutMs("ORCHESTRATE_AGENT_TIMEOUT_MS", 60000),
-          `${agentConfig.name} Agent`
-        );
+        const result = await callAgentWithFallback({
+          systemPrompt: agentConfig.systemPrompt,
+          userContent: JSON.stringify(agentInput, null, 2),
+          responseSchema: agentConfig.responseSchema,
+          maxTokens: agentConfig.maxTokens,
+          env,
+          codexBin,
+          reasoningEffort: "high",
+        });
         output = result.output;
         modelUsed = result.model;
       } catch (error) {
@@ -393,11 +281,9 @@ function agentApiPlugin(env: Record<string, string>) {
         agent: agentConfig.id,
         agentName: agentConfig.name,
         agentIcon: agentConfig.icon,
-        agentContract: agentConfig.contract,
         systemPrompt: agentConfig.systemPrompt,
         input: agentInput,
         output,
-        evidenceBundle: buildAgentEvidenceBundle(agentConfig.id, output, search360Result),
         model: modelUsed,
         latencyMs: Date.now() - stepStart,
         timestamp: Date.now(),
@@ -480,7 +366,6 @@ function agentApiPlugin(env: Record<string, string>) {
         agent: agentId,
         agentName: agentConfig.name,
         agentIcon: agentConfig.icon,
-        agentContract: agentConfig.contract,
         model: agentConfig.model || "",
         timestamp: Date.now(),
       });
@@ -495,19 +380,15 @@ function agentApiPlugin(env: Record<string, string>) {
       let modelUsed: string;
 
       try {
-        const result = await withTimeout(
-          callAgentWithFallback({
-            systemPrompt: agentConfig.systemPrompt,
-            userContent: JSON.stringify(agentInput, null, 2),
-            responseSchema: agentConfig.responseSchema,
-            maxTokens: agentConfig.maxTokens,
-            env,
-            codexBin,
-            reasoningEffort: "high",
-          }),
-          getTimeoutMs("ORCHESTRATE_AGENT_TIMEOUT_MS", 60000),
-          `${agentConfig.name} Agent`
-        );
+        const result = await callAgentWithFallback({
+          systemPrompt: agentConfig.systemPrompt,
+          userContent: JSON.stringify(agentInput, null, 2),
+          responseSchema: agentConfig.responseSchema,
+          maxTokens: agentConfig.maxTokens,
+          env,
+          codexBin,
+          reasoningEffort: "high",
+        });
         output = result.output;
         modelUsed = result.model;
       } catch (error) {
@@ -517,7 +398,6 @@ function agentApiPlugin(env: Record<string, string>) {
           agent: agentId,
           agentName: agentConfig.name,
           agentIcon: agentConfig.icon,
-          agentContract: agentConfig.contract,
           error: `${agentConfig.name} 真实模型调用失败：${msg}`,
           timestamp: Date.now(),
         });
@@ -528,11 +408,9 @@ function agentApiPlugin(env: Record<string, string>) {
         agent: agentConfig.id,
         agentName: agentConfig.name,
         agentIcon: agentConfig.icon,
-        agentContract: agentConfig.contract,
         systemPrompt: agentConfig.systemPrompt,
         input: agentInput,
         output,
-        evidenceBundle: buildAgentEvidenceBundle(agentConfig.id, output, search360Result),
         model: modelUsed,
         latencyMs: Date.now() - stepStart,
         timestamp: Date.now(),
@@ -545,9 +423,7 @@ function agentApiPlugin(env: Record<string, string>) {
         agent: agentId,
         agentName: agentConfig.name,
         agentIcon: agentConfig.icon,
-        agentContract: agentConfig.contract,
         output,
-        evidenceBundle: step.evidenceBundle,
         model: modelUsed,
         latencyMs: step.latencyMs,
         timestamp: Date.now(),
@@ -621,25 +497,13 @@ function agentApiPlugin(env: Record<string, string>) {
   }
 
   return {
-    name: "red-herring-and-gun-api",
-    configureServer(server: any) {
-      server.middlewares.use("/api/agent/expand", handler);
-      server.middlewares.use("/api/agent/recursive-search", recursiveHandler);
-      server.middlewares.use("/api/agent/sherlock-search", sherlockHandler);
-      server.middlewares.use("/api/search/360", search360Handler);
-      server.middlewares.use("/api/search/provider", searchProviderHandler);
-      server.middlewares.use("/api/agent/orchestrate-stream", orchestrateStreamHandler);
-      server.middlewares.use("/api/agent/orchestrate", orchestrateHandler);
-    },
-    configurePreviewServer(server: any) {
-      server.middlewares.use("/api/agent/expand", handler);
-      server.middlewares.use("/api/agent/recursive-search", recursiveHandler);
-      server.middlewares.use("/api/agent/sherlock-search", sherlockHandler);
-      server.middlewares.use("/api/search/360", search360Handler);
-      server.middlewares.use("/api/search/provider", searchProviderHandler);
-      server.middlewares.use("/api/agent/orchestrate-stream", orchestrateStreamHandler);
-      server.middlewares.use("/api/agent/orchestrate", orchestrateHandler);
-    },
+    handler,
+    recursiveHandler,
+    sherlockHandler,
+    search360Handler,
+    searchProviderHandler,
+    orchestrateHandler,
+    orchestrateStreamHandler,
   };
 }
 
@@ -1778,10 +1642,6 @@ async function callParallelSearchProviders({
       .map(({ provider, result }) => `【${getProviderLabel(provider)}】${result.answer || result.traceText || "已返回真实来源"}`)
       .join("\n\n"),
     sources,
-    supportQuery: query,
-    contradictQuery: query,
-    supportingEvidence: sources.filter((source: any) => source.evidenceRole !== "反驳"),
-    contradictingEvidence: sources.filter((source: any) => source.evidenceRole === "反驳"),
     unresolvedEvidenceGaps: failures,
     relatedQuestions: Array.from(new Set(successes.flatMap(({ result }) => result.relatedQuestions ?? []))).slice(0, 8),
     model: successes.map(({ result }) => result.model).filter(Boolean).join(" + "),
@@ -1995,22 +1855,16 @@ async function callFallbackSearchProviders({
 
 function normalizeTavilySearchResponse(data: any, query: string) {
   const rawItems = Array.isArray(data?.results) ? data.results : [];
-  const direction = /(辟谣|反例|争议|无法证实|误读|不实)/.test(query) ? "contradict" : "support";
-  const sources = rawItems.slice(0, 8).map((source: any, index: number) => enrichSearch360Source({
+  const sources = rawItems.slice(0, 8).map((source: any, index: number) => ({
     title: String(source?.title || `Tavily 来源 ${index + 1}`),
     url: String(source?.url || ""),
     snippet: String(source?.content || source?.raw_content || ""),
-    publishedAt: String(source?.published_date || source?.publishedAt || ""),
-  }, index, { query, direction, raw: source }));
+    credibility: index === 0 ? "高" : index <= 3 ? "中" : "低",
+  }));
 
   return {
     answer: String(data?.answer || sources.map((source) => `【${source.title}】${source.snippet}`).join("\n")),
     sources,
-    supportQuery: direction === "support" ? query : undefined,
-    contradictQuery: direction === "contradict" ? query : undefined,
-    supportingEvidence: sources.filter((source) => source.evidenceRole !== "反驳"),
-    contradictingEvidence: sources.filter((source) => source.evidenceRole === "反驳"),
-    unresolvedEvidenceGaps: sources.length > 0 ? [] : ["Tavily Search 未返回可引用来源。"],
     relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
     model: `tavily-search:${data?.auto_parameters?.search_depth || "basic"}`,
     traceText: `Tavily Search 返回 ${sources.length} 条来源，请求 ID：${data?.request_id || "unknown"}。`,
@@ -2030,21 +1884,16 @@ function normalizeMetasoSearchResponse(data: any, query: string, scope: string) 
     data?.webpages ||
     [];
   const items = Array.isArray(rawItems) ? rawItems : [];
-  const direction = /(辟谣|反例|争议|无法证实|误读|不实)/.test(query) ? "contradict" : "support";
-  const sources = items.slice(0, 8).map((source: any, index: number) => enrichSearch360Source({
+  const sources = items.slice(0, 8).map((source: any, index: number) => ({
     title: String(source?.title || source?.name || source?.site_name || `Metaso 来源 ${index + 1}`),
     url: String(source?.url || source?.link || source?.href || source?.web_url || ""),
     snippet: String(source?.snippet || source?.summary || source?.content || source?.text || source?.description || ""),
-    publishedAt: String(source?.publishedAt || source?.published_at || source?.publish_time || source?.date || ""),
-  }, index, { query, direction, raw: source }));
+    credibility: index === 0 ? "高" : index <= 3 ? "中" : "低",
+  }));
 
   return {
     answer: String(data?.answer || data?.summary || data?.data?.answer || data?.data?.summary || sources.map((source) => `【${source.title}】${source.snippet}`).join("\n")),
     sources,
-    supportQuery: direction === "support" ? query : undefined,
-    contradictQuery: direction === "contradict" ? query : undefined,
-    supportingEvidence: sources.filter((source) => source.evidenceRole !== "反驳"),
-    contradictingEvidence: sources.filter((source) => source.evidenceRole === "反驳"),
     unresolvedEvidenceGaps: sources.length > 0 ? [] : ["Metaso Search 未返回可引用来源。"],
     relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
     model: `metaso-search:${scope}`,
@@ -2060,21 +1909,16 @@ function normalizeAnySearchResponse(data: any, query: string) {
     ""
   );
   const rawItems = parseAnySearchMarkdownResults(text);
-  const direction = /(辟谣|反例|争议|无法证实|误读|不实)/.test(query) ? "contradict" : "support";
-  const sources = rawItems.slice(0, 8).map((source: any, index: number) => enrichSearch360Source({
+  const sources = rawItems.slice(0, 8).map((source: any, index: number) => ({
     title: String(source.title || `AnySearch 来源 ${index + 1}`),
     url: String(source.url || ""),
     snippet: String(source.snippet || ""),
-    publishedAt: String(source.publishedAt || ""),
-  }, index, { query, direction, raw: source }));
+    credibility: index === 0 ? "高" : index <= 3 ? "中" : "低",
+  }));
 
   return {
     answer: sources.map((source) => `【${source.title}】${source.snippet}`).join("\n") || text,
     sources,
-    supportQuery: direction === "support" ? query : undefined,
-    contradictQuery: direction === "contradict" ? query : undefined,
-    supportingEvidence: sources.filter((source) => source.evidenceRole !== "反驳"),
-    contradictingEvidence: sources.filter((source) => source.evidenceRole === "反驳"),
     unresolvedEvidenceGaps: sources.length > 0 ? [] : ["AnySearch 未返回可引用来源。"],
     relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
     model: "anysearch:mcp-search",
@@ -2104,21 +1948,16 @@ function parseAnySearchMarkdownResults(text: string) {
 
 function normalizeExaSearchResponse(data: any, query: string, type: string) {
   const rawItems = Array.isArray(data?.results) ? data.results : [];
-  const direction = /(辟谣|反例|争议|无法证实|误读|不实)/.test(query) ? "contradict" : "support";
-  const sources = rawItems.slice(0, 8).map((source: any, index: number) => enrichSearch360Source({
+  const sources = rawItems.slice(0, 8).map((source: any, index: number) => ({
     title: String(source?.title || `Exa 来源 ${index + 1}`),
     url: String(source?.url || source?.id || ""),
     snippet: String(source?.summary || source?.text || source?.highlights?.[0] || ""),
-    publishedAt: String(source?.publishedDate || source?.publishedAt || source?.date || ""),
-  }, index, { query, direction, raw: source }));
+    credibility: index === 0 ? "高" : index <= 3 ? "中" : "低",
+  }));
 
   return {
     answer: String(data?.context || sources.map((source) => `【${source.title}】${source.snippet}`).join("\n")),
     sources,
-    supportQuery: direction === "support" ? query : undefined,
-    contradictQuery: direction === "contradict" ? query : undefined,
-    supportingEvidence: sources.filter((source) => source.evidenceRole !== "反驳"),
-    contradictingEvidence: sources.filter((source) => source.evidenceRole === "反驳"),
     unresolvedEvidenceGaps: sources.length > 0 ? [] : ["Exa Search 未返回可引用来源。"],
     relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
     model: `exa-search:${data?.searchType || type}`,
@@ -2140,14 +1979,13 @@ function normalize360SearchResponse(data: any, query: string, model: string) {
     data?.data?.sources ||
     data?.data?.references ||
     [];
-  const direction = /(辟谣|反例|争议|无法证实|误读|不实)/.test(query) ? "contradict" : "support";
   const sources = Array.isArray(rawSources)
-    ? rawSources.slice(0, 8).map((source: any, index: number) => enrichSearch360Source({
+    ? rawSources.slice(0, 8).map((source: any, index: number) => ({
         title: String(source?.title || source?.name || source?.site_name || `来源 ${index + 1}`),
         url: String(source?.url || source?.link || source?.href || ""),
         snippet: String(source?.snippet || source?.summary || source?.content || ""),
-        publishedAt: String(source?.publishedAt || source?.published_at || source?.publish_time || source?.date || ""),
-      }, index, { query, direction, raw: source }))
+        credibility: index === 0 ? "高" : index <= 3 ? "中" : "低",
+      }))
     : [];
   const relatedQuestions = Array.isArray(data?.relatedQuestions || data?.related_questions || data?.questions)
     ? (data.relatedQuestions || data.related_questions || data.questions).filter((item: unknown): item is string => typeof item === "string")
@@ -2156,11 +1994,6 @@ function normalize360SearchResponse(data: any, query: string, model: string) {
   return {
     answer: String(answer),
     sources,
-    supportQuery: direction === "support" ? query : undefined,
-    contradictQuery: direction === "contradict" ? query : undefined,
-    supportingEvidence: sources.filter((source) => source.evidenceRole !== "反驳"),
-    contradictingEvidence: sources.filter((source) => source.evidenceRole === "反驳"),
-    unresolvedEvidenceGaps: sources.some((source) => source.evidenceRole === "反驳") ? [] : ["未找到明确反证。"],
     relatedQuestions,
     model: `360-ai-search:${model}`,
     traceText: `360 AI Search 返回 ${sources.length} 条来源。`,
@@ -2223,13 +2056,12 @@ function normalize360MWebSearchResponse(data: any, query: string, refProm: strin
     data?.data ||
     [];
   const items = Array.isArray(rawItems) ? rawItems : [];
-  const direction = /(辟谣|反例|争议|无法证实|误读|不实)/.test(query) ? "contradict" : "support";
-  const sources = items.slice(0, 8).map((source: any, index: number) => enrichSearch360Source({
+  const sources = items.slice(0, 8).map((source: any, index: number) => ({
     title: String(source?.title || source?.name || source?.site_name || `360 智搜来源 ${index + 1}`),
     url: String(source?.url || source?.link || source?.href || source?.display_url || ""),
     snippet: String(source?.summary_ai || source?.summary || source?.snippet || source?.content || source?.desc || ""),
-    publishedAt: String(source?.publishedAt || source?.published_at || source?.publish_time || source?.date || ""),
-  }, index, { query, direction, raw: source }));
+    credibility: index === 0 ? "高" : index <= 3 ? "中" : "低",
+  }));
   const answer = sources.length > 0
     ? sources.map((source) => `【${source.title}】${source.snippet}`).filter(Boolean).join("\n")
     : `360 智搜已返回“${query}”的检索响应，但未解析到标准来源列表。`;
@@ -2237,11 +2069,6 @@ function normalize360MWebSearchResponse(data: any, query: string, refProm: strin
   return {
     answer,
     sources,
-    supportQuery: direction === "support" ? query : undefined,
-    contradictQuery: direction === "contradict" ? query : undefined,
-    supportingEvidence: sources.filter((source) => source.evidenceRole !== "反驳"),
-    contradictingEvidence: sources.filter((source) => source.evidenceRole === "反驳"),
-    unresolvedEvidenceGaps: sources.some((source) => source.evidenceRole === "反驳") ? [] : ["未找到明确反证。"],
     relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
     model: `360-mwebsearch:${refProm}`,
     traceText: `360 智搜 ${refProm} 返回 ${sources.length} 条来源。`,

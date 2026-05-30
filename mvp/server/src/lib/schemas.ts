@@ -19,10 +19,6 @@ export type UsageLevel = "主证据" | "辅助证据" | "背景材料" | "仅作
 
 export type EvidenceRole = "支持" | "反驳" | "限定" | "背景" | "线索" | "不可用";
 
-export type SearchSourceType = "官方" | "学术" | "媒体" | "自媒体" | "论坛" | "聚合搜索" | "未知";
-
-export type SearchEvidenceDirection = "support" | "contradict" | "neutral";
-
 export type SubclaimStatus =
   | "支持"
   | "部分支持"
@@ -96,9 +92,6 @@ export interface GradedEvidence {
   limitations: string[];
   evidenceGap: string[];
   graderDecision: string;
-  sourceQuality?: SourceQualityAssessment;
-  logicAudit?: LogicLinkAudit;
-  biasFindings?: BiasAuditFinding[];
 }
 
 export interface SubclaimReportStatus {
@@ -123,9 +116,6 @@ export interface FinalReport {
     researchMemo: string;
   };
   nextEvidenceNeeded: string[];
-  evidenceQualitySummary?: EvidenceQualitySummary;
-  logicRiskItems?: BiasAuditFinding[];
-  contradictionSummary?: string;
 }
 
 export interface DemoCase {
@@ -185,96 +175,28 @@ export interface KnowledgeBaseStats {
   typeDistribution: Record<string, number>;
 }
 
-// ── CurioCat-style evidence / logic audit ────────────────────
-
-export interface SourceQualityAssessment {
-  sourceType: CandidateMaterial["sourceType"] | "未知";
-  credibilityScore: number;
-  freshnessScore: number;
-  diversityKey: string;
-  tier: number;
-  reason: string;
-}
-
-export interface EvidenceQualitySummary {
-  averageCredibility: number;
-  averageFreshness: number;
-  diversityScore: number;
-  supportCount: number;
-  contradictCount: number;
-  weakEvidenceCount: number;
-  highTierSourceCount: number;
-}
-
-export interface LogicLinkAudit {
-  passed: boolean;
-  adjustedScore: number;
-  penalties: string[];
-  blockedInference: string[];
-}
-
-export type BiasSeverity = "low" | "medium" | "high";
-
-export interface BiasAuditFinding {
-  id: string;
-  label: string;
-  severity: BiasSeverity;
-  explanation: string;
-  affectedSubclaimId?: string;
-  mitigation: string;
-}
-
 // ── M2: 360 搜索 ─────────────────────────────────────────────
 
 export interface Search360Request {
   query: string;
-  claim?: string;
-  direction?: SearchEvidenceDirection;
   model?: string;
   refProm?: "aiso-sr" | "aiso-pro" | "aiso-max" | "aiso-news" | string;
 }
 
 export interface Search360Source {
-  id?: string;
   title: string;
   url: string;
   snippet: string;
   credibility?: ScoreLevel;
-  sourceType?: SearchSourceType;
-  credibilityScore?: number;
-  sourceTier?: number;
-  freshnessScore?: number;
-  domain?: string;
-  evidenceRole?: EvidenceRole;
-  publishedAt?: string;
-  publishedTimestamp?: number;
 }
 
 export interface Search360Response {
   answer: string;
   sources: Search360Source[];
-  supportQuery?: string;
-  contradictQuery?: string;
-  supportingEvidence?: Search360Source[];
-  contradictingEvidence?: Search360Source[];
-  unresolvedEvidenceGaps?: string[];
   relatedQuestions: string[];
   model?: string;
   traceText?: string;
-  _source?: "360-ai-search" | "anysearch-search" | "metaso-search" | "tavily-search" | "exa-search" | "parallel-search" | "demo-fallback" | "tool-error";
-}
-
-// ── Agent evidence bundle ─────────────────────────────────────
-
-export interface AgentEvidenceBundle {
-  agentId: string;
-  claimIds: string[];
-  supportEvidenceIds: string[];
-  contradictEvidenceIds: string[];
-  confidenceDelta: number;
-  unresolvedQuestions: string[];
-  sourceQualityScore?: number;
-  logicRiskCount?: number;
+  _source?: "360-ai-search" | "demo-fallback";
 }
 
 // ── M3: 结果闭环动作 ─────────────────────────────────────────
@@ -327,140 +249,4 @@ export interface BenchmarkMetrics {
   avgLatencyMs: number;
   coverageByType: Record<string, { total: number; correct: number }>;
   topSources: string[];
-}
-
-// ── M8: Cross-Search Consensus（多搜索引擎交叉验证）────────────────
-
-export interface AtomicProposition {
-  id: string;
-  text: string;
-  type: "事实陈述" | "因果推断" | "数值断言" | "归因断言";
-  verifiability: "可直接验证" | "需间接推断" | "主观判断";
-}
-
-export interface ClaimDecompositionResult {
-  originalClaim: string;
-  atomicPropositions: AtomicProposition[];
-  decompositionReasoning: string;
-}
-
-export interface SearchTask {
-  provider: "360_search" | "any_search" | "metaso_search" | "tavily_search" | "exa_search";
-  query: string;
-  status: "pending" | "running" | "completed" | "failed";
-  result?: SearchProviderResult;
-}
-
-export interface SearchProviderResult {
-  provider: string;
-  query: string;
-  sources: SearchResultSource[];
-  answer?: string;
-  latencyMs: number;
-}
-
-export interface SearchResultSource {
-  id: string;
-  title: string;
-  url: string;
-  snippet: string;
-  domain: string;
-  publishedAt?: string;
-  sourceType: SearchSourceType;
-}
-
-export interface MultiSearchJob {
-  jobId: string;
-  propositionId: string;
-  propositionText: string;
-  searchTasks: SearchTask[];
-}
-
-export type ConsensusStatus = "可进入推理" | "存疑" | "需人工复核";
-
-export interface EvidenceIndependenceAssessment {
-  totalSources: number;
-  independentSources: number;
-  duplicateSources: number;
-  independenceScore: number;
-  reasoning: string;
-}
-
-export interface SourceTierDistribution {
-  government: number;
-  academic: number;
-  media: number;
-  selfMedia: number;
-  forum: number;
-  unknown: number;
-  highestTierFound: "government" | "academic" | "media" | "selfMedia" | "forum" | "unknown";
-}
-
-export interface CounterEvidenceCoverage {
-  counterSearchPerformed: boolean;
-  counterEvidenceFound: boolean;
-  counterEvidenceCount: number;
-  counterEvidenceSources: string[];
-  verdict: "反证已覆盖" | "暂未发现反证" | "反证检索未执行";
-}
-
-export interface ProviderConsensusResult {
-  provider: string;
-  status?: SearchTask["status"];
-  sourceCount: number;
-  relevantSources: number;
-  supportsProposition: boolean | null;
-  contradictsProposition: boolean | null;
-  topSourceUrl: string;
-}
-
-export interface IndependentSource {
-  id: string;
-  title: string;
-  url: string;
-  domain: string;
-  sourceType: SearchSourceType;
-  isOriginalSource: boolean;
-  originalSourceUrl?: string;
-  supports: boolean;
-  contradicts: boolean;
-  providerOrigins: string[];
-}
-
-export interface MinimumCriteriaCheck {
-  criteria1_minProviders: boolean;
-  criteria2_hasHighTierOrOriginal: boolean;
-  criteria3_counterSearchDone: boolean;
-  criteria4_duplicatesCountedOnce: boolean;
-  allMet: boolean;
-}
-
-export interface PropositionConsensusResult {
-  propositionId: string;
-  propositionText: string;
-  status: ConsensusStatus;
-  statusReason: string;
-  evidenceIndependence: EvidenceIndependenceAssessment;
-  sourceTierDistribution: SourceTierDistribution;
-  counterEvidenceCoverage: CounterEvidenceCoverage;
-  providerResults: ProviderConsensusResult[];
-  independentSources: IndependentSource[];
-  meetsMinimumCriteria: MinimumCriteriaCheck;
-}
-
-export interface ConsensusStats {
-  totalPropositions: number;
-  readyForReasoning: number;
-  doubtful: number;
-  needsManualReview: number;
-  totalIndependentSources: number;
-  totalDuplicateSources: number;
-  counterEvidenceSearchesPerformed: number;
-}
-
-export interface EvidenceConsensusReport {
-  consensusId: string;
-  timestamp: number;
-  propositionResults: PropositionConsensusResult[];
-  overallStats: ConsensusStats;
 }

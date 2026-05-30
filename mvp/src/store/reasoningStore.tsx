@@ -13,7 +13,11 @@ import type {
   ClaimDiagnosis,
   FinalReport,
   DemoCase,
+  ClaimDecompositionResult,
+  MultiSearchJob,
+  EvidenceConsensusReport,
 } from "../lib/schemas";
+import type { StreamingReasoningSession } from "../lib/streamingTypes";
 import type { CanvasNode, CanvasEdge, ReasoningStep } from "../data/reasoningCanvas";
 import type { EvidenceClue, ExpansionMode, SearchFrontierItem, SearchStoppedItem, HandoffStep } from "../lib/agentExpansion";
 import type { VerificationResult } from "../lib/reportExporter";
@@ -141,6 +145,15 @@ export interface ReasoningState {
 
   // 核查结果标记
   verificationResult: VerificationResult | null;
+
+  // 多搜索引擎交叉验证（新增）
+  claimDecomposition: ClaimDecompositionResult | null;
+  searchJobs: MultiSearchJob[];
+  consensusReport: EvidenceConsensusReport | null;
+
+  // 流式推理过程（新增）
+  streamingSession: StreamingReasoningSession | null;
+  isStreaming: boolean;
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -176,6 +189,15 @@ export const initialState: ReasoningState = {
   comments: [],
   followUps: [],
   verificationResult: null,
+
+  // 多搜索引擎交叉验证（新增）
+  claimDecomposition: null,
+  searchJobs: [],
+  consensusReport: null,
+
+  // 流式推理过程（新增）
+  streamingSession: null,
+  isStreaming: false,
 };
 
 // ───────────────────────────────────────────────────────────────
@@ -209,7 +231,19 @@ export type ReasoningAction =
   | { type: "APPEND_HANDOFF_STEP"; payload: HandoffStep }
   | { type: "SET_HANDOFF_FINAL_REPORT"; payload: { finalReport?: Record<string, unknown>; totalLatencyMs: number; model: string } }
   | { type: "COMPLETE_HANDOFF_STREAM"; payload: { error?: string } }
-  | { type: "RESET" };
+  | { type: "RESET" }
+  // 多搜索引擎交叉验证（新增）
+  | { type: "SET_CLAIM_DECOMPOSITION"; payload: ClaimDecompositionResult }
+  | { type: "SET_SEARCH_JOBS"; payload: MultiSearchJob[] }
+  | { type: "UPDATE_SEARCH_TASK"; payload: { jobId: string; provider: string; result: import("../lib/schemas").SearchProviderResult } }
+  | { type: "SET_CONSENSUS_REPORT"; payload: EvidenceConsensusReport }
+  | { type: "LOAD_CONSENSUS_DEMO"; payload: { decomposition: ClaimDecompositionResult; searchJobs: MultiSearchJob[]; consensusReport: EvidenceConsensusReport } }
+  | { type: "RESET_CONSENSUS" }
+  // 流式推理过程（新增）
+  | { type: "START_STREAMING_SESSION"; payload: StreamingReasoningSession }
+  | { type: "UPDATE_STREAMING_STAGE"; payload: { stageId: string; status: import("../lib/streamingTypes").StageStatus } }
+  | { type: "APPEND_STREAMING_CHUNK"; payload: { stageId: string; chunk: import("../lib/streamingTypes").StreamingChunk } }
+  | { type: "END_STREAMING_SESSION" };
 
 // ───────────────────────────────────────────────────────────────
 // Reducer
@@ -460,6 +494,113 @@ function reducer(state: ReasoningState, action: ReasoningAction): ReasoningState
         currentHandoffRun: null,
         isExpanding: false,
         agentError: action.payload.error ?? "",
+      };
+    }
+
+    // 多搜索引擎交叉验证（新增）
+    case "SET_CLAIM_DECOMPOSITION": {
+      return { ...state, claimDecomposition: action.payload };
+    }
+
+    case "SET_SEARCH_JOBS": {
+      return { ...state, searchJobs: action.payload };
+    }
+
+    case "UPDATE_SEARCH_TASK": {
+      const { jobId, provider, result } = action.payload;
+      return {
+        ...state,
+        searchJobs: state.searchJobs.map((job) =>
+          job.jobId === jobId
+            ? {
+                ...job,
+                searchTasks: job.searchTasks.map((task) =>
+                  task.provider === provider ? { ...task, status: "completed" as const, result } : task
+                ),
+              }
+            : job
+        ),
+      };
+    }
+
+    case "SET_CONSENSUS_REPORT": {
+      return { ...state, consensusReport: action.payload };
+    }
+
+    case "LOAD_CONSENSUS_DEMO": {
+      return {
+        ...state,
+        originalClaim: action.payload.decomposition.originalClaim,
+        claimDecomposition: action.payload.decomposition,
+        searchJobs: action.payload.searchJobs,
+        consensusReport: action.payload.consensusReport,
+      };
+    }
+
+    case "RESET_CONSENSUS": {
+      return {
+        ...state,
+        claimDecomposition: null,
+        searchJobs: [],
+        consensusReport: null,
+      };
+    }
+
+    case "START_STREAMING_SESSION": {
+      return {
+        ...state,
+        streamingSession: {
+          ...action.payload,
+          overallStatus: "running",
+        },
+        isStreaming: true,
+      };
+    }
+
+    case "UPDATE_STREAMING_STAGE": {
+      if (!state.streamingSession) return state;
+      return {
+        ...state,
+        streamingSession: {
+          ...state.streamingSession,
+          currentStageId: action.payload.status === "running"
+            ? action.payload.stageId
+            : state.streamingSession.currentStageId === action.payload.stageId
+              ? null
+              : state.streamingSession.currentStageId,
+          stages: state.streamingSession.stages.map((stage) =>
+            stage.id === action.payload.stageId
+              ? { ...stage, status: action.payload.status }
+              : stage
+          ),
+        },
+      };
+    }
+
+    case "APPEND_STREAMING_CHUNK": {
+      if (!state.streamingSession) return state;
+      return {
+        ...state,
+        streamingSession: {
+          ...state.streamingSession,
+          stages: state.streamingSession.stages.map((stage) =>
+            stage.id === action.payload.stageId
+              ? { ...stage, chunks: [...stage.chunks, action.payload.chunk] }
+              : stage
+          ),
+        },
+      };
+    }
+
+    case "END_STREAMING_SESSION": {
+      if (!state.streamingSession) return state;
+      return {
+        ...state,
+        streamingSession: {
+          ...state.streamingSession,
+          overallStatus: "completed" as const,
+        },
+        isStreaming: false,
       };
     }
 

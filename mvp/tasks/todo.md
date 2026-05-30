@@ -1,5 +1,18 @@
 # Agent Reasoning Canvas v3
 
+# Mock Streaming Reasoning Data Generator
+
+- [x] 阅读 `docs/TECH-SPEC-streaming-reasoning.md` 和 `src/lib/streamingTypes.ts`。
+- [x] 建立临时契约测试并确认 RED：`streamingMock.ts` 缺失导致测试失败。
+- [x] 实现 `src/lib/streamingMock.ts` 的会话创建、完整会话生成、流式事件和取消机制。
+- [x] 运行契约测试、TypeScript 检查和 build。
+
+## Review
+
+- Changed files: `src/lib/streamingMock.ts`, `tasks/todo.md`。
+- Verification: 临时运行时契约检查通过；`npx tsc --noEmit` 通过；`npm run build` 通过。
+- Remaining risk: 未接入前端组件，本轮只实现数据层。
+
 - [x] 确认项目目录、入口文件、数据层和文档位置。
 - [x] 新增 reasoning canvas 数据模型与预置节点/边/trace。
 - [x] 新增三栏 Canvas 工作台组件。
@@ -124,6 +137,18 @@
 - [x] 清理旧结果页样式，避免保留无效 UI 入口。
 - [x] 运行 `npx tsc --noEmit`。
 - [x] 运行 `npm run build`。
+
+# Agent Contract System
+
+- [x] 将每个核心 Agent 定义升级为 `AgentContract`：身份、使命、边界、工具、记忆、输出、交接、UI trace、失败策略。
+- [x] `systemPrompt` 自动拼接 Agent Contract，避免 Agent 退化成普通聊天模型。
+- [x] `buildAgentInput()` 写入 runtime contract，确保每步模型调用都能看到自身工具、记忆和边界。
+- [x] `/api/agent/orchestrate` 与 `/api/agent/orchestrate-stream` 返回 `agentContract`。
+- [x] Mission Control 大卡片展示 Agent 使命、工具和记忆写入。
+- [x] Agent 面板改为从 `AGENT_CONTRACTS` 生成，并展示使命、工具和边界。
+- [x] Sherlock 项目研究结论写入 `docs/agent-system-architecture.md`。
+- [x] 可复用组件工作流写入 `/Users/mahaoxuan/Desktop/黑客松/AI组件工作流/agent-contract-workflow.md`。
+- [x] 运行 `npx tsc --noEmit`。
 
 ## Review
 

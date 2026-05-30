@@ -1,4 +1,4 @@
-import type { Search360Request, Search360Response, Search360Source } from "./schemas";
+import type { Search360Request, Search360Response } from "./schemas";
 import { enrichSearch360Source } from "./sourceCredibility";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
@@ -6,42 +6,18 @@ const API_BASE = import.meta.env.VITE_API_BASE || "";
 export function build360SearchDemoFallback(query: string): Search360Response {
   const supportQuery = build360SupportQuery(query);
   const contradictQuery = build360ContradictQuery(query);
-  const sources: Search360Source[] = [
-    {
-      title: "权威机构公开说明（模拟）",
-      url: "https://example.com/official-clarification",
-      snippet: "模拟来源显示，该信息需要以官方公开公告为准，不能仅凭社交平台转发判断。",
-    },
-    {
-      title: "主流媒体核查报道（模拟）",
-      url: "https://example.com/fact-check-report",
-      snippet: "模拟报道指出，原始说法存在断章取义或夸大风险，需要补充上下文。",
-    },
-    {
-      title: "社交平台传播线索（模拟）",
-      url: "https://example.com/social-post",
-      snippet: "模拟线索显示该说法最早来自匿名账号，来源可追溯性较弱。",
-    },
-  ].map((source, index) => enrichSearch360Source(source, index, {
-    query,
-    direction: index === 1 ? "contradict" : index === 2 ? "neutral" : "support",
-  }));
 
   return {
-    answer: `Demo 模式：围绕“${query}”返回 360 智搜风格的模拟结果。真实环境会调用 360 AI Search，并把答案和来源接入画布。`,
-    sources,
+    answer: "",
+    sources: [],
     supportQuery,
     contradictQuery,
-    supportingEvidence: sources.filter((source) => source.evidenceRole === "支持"),
-    contradictingEvidence: sources.filter((source) => source.evidenceRole === "反驳"),
-    unresolvedEvidenceGaps: ["缺少原始出处", "缺少独立权威交叉验证"],
-    relatedQuestions: [
-      `${query} 官方回应`,
-      `${query} 辟谣`,
-      `${query} 证据来源`,
-    ],
+    supportingEvidence: [],
+    contradictingEvidence: [],
+    unresolvedEvidenceGaps: ["360 搜索服务未返回真实结果，系统不生成搜索摘要或证据判断。"],
+    relatedQuestions: [],
     model: "demo-fallback:360",
-    traceText: "360 智搜未配置或调用失败，已使用可见 demo fallback。",
+    traceText: `360 搜索服务未返回真实结果：“${query}”暂不生成补充解释。`,
     _source: "demo-fallback",
   };
 }
@@ -132,23 +108,52 @@ export async function request360BidirectionalSearch(payload: Search360Request): 
 }
 
 export async function request360Search(payload: Search360Request): Promise<Search360Response> {
-  try {
-    const response = await fetch(`${API_BASE}/api/search/360`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+  const response = await fetch(`${API_BASE}/api/search/360`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 
-    const data = (await response.json().catch(() => null)) as Search360Response | { message?: string } | null;
+  const data = (await response.json().catch(() => null)) as Search360Response | { message?: string } | null;
 
-    if (!response.ok || !data) {
-      console.warn(`360 Search API 失败 (HTTP ${response.status})，使用 demo fallback`);
-      return build360SearchDemoFallback(payload.query);
-    }
-
-    return enrich360SearchResponse(data as Search360Response, payload);
-  } catch (error) {
-    console.warn("360 Search API 调用异常，使用 demo fallback:", error);
-    return build360SearchDemoFallback(payload.query);
+  if (!response.ok || !data) {
+    const message = data && "message" in data && data.message
+      ? data.message
+      : `HTTP ${response.status}`;
+    throw new Error(`360 Search API 未返回真实结果：${message}`);
   }
+
+  const enriched = enrich360SearchResponse(data as Search360Response, payload);
+  if (!["360-ai-search", "anysearch-search", "metaso-search", "tavily-search", "exa-search", "parallel-search"].includes(enriched._source ?? "")) {
+    throw new Error("搜索 API 返回非真实搜索结果，本轮不生成搜索摘要或证据判断。");
+  }
+
+  return enriched;
+}
+
+export async function requestProviderSearch(
+  provider: "360_search" | "any_search" | "metaso_search" | "tavily_search" | "exa_search",
+  payload: Search360Request
+): Promise<Search360Response> {
+  const response = await fetch(`${API_BASE}/api/search/provider`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...payload, provider }),
+  });
+
+  const data = (await response.json().catch(() => null)) as Search360Response | { message?: string } | null;
+
+  if (!response.ok || !data) {
+    const message = data && "message" in data && data.message
+      ? data.message
+      : `HTTP ${response.status}`;
+    throw new Error(`${provider} 未返回真实结果：${message}`);
+  }
+
+  const enriched = enrich360SearchResponse(data as Search360Response, payload);
+  if (!["360-ai-search", "anysearch-search", "metaso-search", "tavily-search", "exa-search"].includes(enriched._source ?? "")) {
+    throw new Error(`${provider} 返回非真实搜索结果，本轮不生成搜索摘要或证据判断。`);
+  }
+
+  return enriched;
 }

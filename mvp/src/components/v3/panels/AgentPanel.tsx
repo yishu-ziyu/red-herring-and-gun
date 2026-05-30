@@ -2,58 +2,29 @@ import { useState, useMemo, type CSSProperties } from "react";
 import { useReasoning } from "../../../store/reasoningStore";
 import type { AgentRun, RecursiveSearchRun, HandoffRun } from "../../../store/reasoningStore";
 import type { HandoffStep } from "../../../lib/agentExpansion";
+import { AGENT_CONTRACTS, type AgentContract } from "../../../lib/agentConfigs";
 
-interface AgentProfile {
-  id: string;
-  name: string;
-  icon: string;
-  description: string;
+interface AgentProfile extends AgentContract {
   color: string;
   bgColor: string;
 }
 
+const AGENT_PROFILE_STYLES: Record<string, Pick<AgentProfile, "color" | "bgColor">> = {
+  rumor_detector: { color: "#dc2626", bgColor: "rgba(239, 68, 68, 0.08)" },
+  fact_checker: { color: "#2563eb", bgColor: "rgba(37, 99, 235, 0.08)" },
+  source_validator: { color: "#7c3aed", bgColor: "rgba(124, 58, 237, 0.08)" },
+  report_composer: { color: "#16a34a", bgColor: "rgba(22, 163, 74, 0.08)" },
+};
+
 const AGENT_PROFILES: AgentProfile[] = [
-  {
-    id: "rumor_detector",
-    name: "RumorDetector",
-    icon: "🚨",
-    description: "谣言特征检测",
-    color: "#dc2626",
-    bgColor: "rgba(239, 68, 68, 0.08)",
-  },
-  {
-    id: "fact_checker",
-    name: "FactChecker",
-    icon: "🔍",
-    description: "事实核查",
-    color: "#2563eb",
-    bgColor: "rgba(37, 99, 235, 0.08)",
-  },
-  {
-    id: "source_validator",
-    name: "SourceValidator",
-    icon: "📋",
-    description: "信源验证",
-    color: "#7c3aed",
-    bgColor: "rgba(124, 58, 237, 0.08)",
-  },
-  {
-    id: "evidence_grader",
-    name: "EvidenceGrader",
-    icon: "⚖️",
-    description: "证据分级",
-    color: "#d97706",
-    bgColor: "rgba(217, 119, 6, 0.08)",
-  },
-  {
-    id: "report_composer",
-    name: "ReportComposer",
-    icon: "📝",
-    description: "报告生成",
-    color: "#16a34a",
-    bgColor: "rgba(22, 163, 74, 0.08)",
-  },
-];
+  AGENT_CONTRACTS.rumor_detector,
+  AGENT_CONTRACTS.fact_checker,
+  AGENT_CONTRACTS.source_validator,
+  AGENT_CONTRACTS.report_composer,
+].map((contract) => ({
+  ...contract,
+  ...(AGENT_PROFILE_STYLES[contract.id] ?? { color: "#64748b", bgColor: "rgba(100, 116, 139, 0.08)" }),
+}));
 
 const HANDOFF_OUTPUT_METADATA_KEYS = new Set([
   "timestamp",
@@ -277,7 +248,7 @@ export function AgentPanel() {
                         style={{ background: isActive ? profile.color : hasWork ? "#16a34a" : "#d1d5db" }}
                       />
                     </div>
-                    <span className="agent-card-desc">{profile.description}</span>
+                    <span className="agent-card-desc">{profile.roleTitle}</span>
                   </div>
                   <div className="agent-card-meta">
                     <span className="agent-card-count">{stat.count}</span>
@@ -287,6 +258,18 @@ export function AgentPanel() {
 
                 {isExpanded && (
                   <div className="agent-card-body">
+                    <div className="agent-contract-summary">
+                      <p>{profile.mission}</p>
+                      <div className="agent-contract-pills">
+                        {profile.tools.slice(0, 4).map((tool) => (
+                          <span key={tool.id}>{tool.name}</span>
+                        ))}
+                      </div>
+                      <div className="agent-contract-boundary">
+                        <strong>边界</strong>
+                        <span>{profile.nonGoals.slice(0, 2).join("；")}</span>
+                      </div>
+                    </div>
                     {stat.count === 0 ? (
                       <p className="agent-card-empty">暂无调度记录</p>
                     ) : (

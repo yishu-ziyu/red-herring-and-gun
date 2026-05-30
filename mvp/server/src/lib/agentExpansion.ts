@@ -1,12 +1,15 @@
 import type { CanvasNode } from "../data/reasoningCanvas";
 import type { SherlockSearchRequest, SherlockSearchResponse } from "./sherlockStyleSearch";
-import type { AgentEvidenceBundle } from "./schemas";
-import type { AgentContract } from "./agentConfigs";
 export type { SherlockSearchResponse } from "./sherlockStyleSearch";
 export { request360Search } from "./search360";
 export type { Search360Request, Search360Response, Search360Source } from "./schemas";
-
-const API_BASE = import.meta.env.VITE_API_BASE || "";
+import {
+  buildOrchestrateDemoFallback,
+  buildOrchestrateStreamDemoFallback,
+  buildExpandDemoFallback,
+  buildRecursiveSearchDemoFallback,
+  buildSherlockSearchDemoFallback,
+} from "./demoData";
 
 export type ExpansionMode = "search" | "evidence_audit" | "counter" | "rewrite" | "rumor_check";
 
@@ -88,7 +91,6 @@ export interface HandoffStep {
   agent: string;
   agentName: string;
   agentIcon: string;
-  agentContract?: AgentContract;
   systemPrompt: string;
   input: Record<string, unknown>;
   output: Record<string, unknown>;
@@ -96,7 +98,6 @@ export interface HandoffStep {
   latencyMs: number;
   timestamp: number;
   status: "pending" | "running" | "completed" | "failed";
-  evidenceBundle?: AgentEvidenceBundle;
   error?: string;
 }
 
@@ -108,7 +109,7 @@ export interface HandoffResult {
 
 export async function requestOrchestrate(claim: string): Promise<HandoffResult> {
   try {
-    const response = await fetch(`${API_BASE}/api/agent/orchestrate`, {
+    const response = await fetch("/api/agent/orchestrate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ claim }),
@@ -117,27 +118,23 @@ export async function requestOrchestrate(claim: string): Promise<HandoffResult> 
     const data = (await response.json().catch(() => null)) as HandoffResult | { message?: string } | null;
 
     if (!response.ok) {
-      const message = data && "message" in data && data.message ? data.message : `HTTP ${response.status}`;
-      throw new Error(`Orchestrate API 失败：${message}`);
+      console.warn(`Orchestrate API 失败 (HTTP ${response.status})，使用 demo fallback`);
+      return buildOrchestrateDemoFallback(claim);
     }
 
     return data as HandoffResult;
   } catch (error) {
-    throw error instanceof Error ? error : new Error("Orchestrate API 调用异常");
+    console.warn("Orchestrate API 调用异常，使用 demo fallback:", error);
+    return buildOrchestrateDemoFallback(claim);
   }
 }
 
 export interface OrchestrateStreamEvent {
-  type: "agent_start" | "agent_complete" | "agent_error" | "tool_start" | "tool_result" | "tool_error" | "complete" | "error";
+  type: "agent_start" | "agent_complete" | "agent_error" | "complete" | "error";
   agent?: string;
   agentName?: string;
   agentIcon?: string;
-  agentContract?: AgentContract;
-  toolName?: string;
-  query?: string;
-  result?: Record<string, unknown>;
   output?: Record<string, unknown>;
-  evidenceBundle?: AgentEvidenceBundle;
   model?: string;
   latencyMs?: number;
   steps?: HandoffStep[];
@@ -151,14 +148,17 @@ export interface OrchestrateStreamEvent {
 
 export async function* requestOrchestrateStream(claim: string): AsyncGenerator<OrchestrateStreamEvent> {
   try {
-    const response = await fetch(`${API_BASE}/api/agent/orchestrate-stream`, {
+    const response = await fetch("/api/agent/orchestrate-stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ claim }),
     });
 
     if (!response.ok || !response.body) {
-      yield { type: "error", message: `Orchestrate Stream API 失败：HTTP ${response.status}` };
+      console.warn(`Orchestrate Stream API 失败 (HTTP ${response.status})，使用 demo fallback`);
+      for (const event of buildOrchestrateStreamDemoFallback(claim)) {
+        yield event as OrchestrateStreamEvent;
+      }
       return;
     }
 
@@ -202,14 +202,16 @@ export async function* requestOrchestrateStream(claim: string): AsyncGenerator<O
       reader.releaseLock();
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Orchestrate Stream API 调用异常";
-    yield { type: "error", message };
+    console.warn("Orchestrate Stream API 调用异常，使用 demo fallback:", error);
+    for (const event of buildOrchestrateStreamDemoFallback(claim)) {
+      yield event as OrchestrateStreamEvent;
+    }
   }
 }
 
 export async function requestAgentExpansion(payload: AgentExpansionRequest): Promise<AgentExpansionResponse> {
   try {
-    const response = await fetch(`${API_BASE}/api/agent/expand`, {
+    const response = await fetch("/api/agent/expand", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -218,19 +220,20 @@ export async function requestAgentExpansion(payload: AgentExpansionRequest): Pro
     const data = (await response.json().catch(() => null)) as AgentExpansionResponse | { message?: string } | null;
 
     if (!response.ok) {
-      const message = data && "message" in data && data.message ? data.message : `HTTP ${response.status}`;
-      throw new Error(`Agent Expansion API 失败：${message}`);
+      console.warn(`Agent Expansion API 失败 (HTTP ${response.status})，使用 demo fallback`);
+      return buildExpandDemoFallback(payload.mode, payload.node.title ?? "当前节点");
     }
 
     return data as AgentExpansionResponse;
   } catch (error) {
-    throw error instanceof Error ? error : new Error("Agent Expansion API 调用异常");
+    console.warn("Agent Expansion API 调用异常，使用 demo fallback:", error);
+    return buildExpandDemoFallback(payload.mode, payload.node.title ?? "当前节点");
   }
 }
 
 export async function requestRecursiveSearch(payload: RecursiveSearchRequest): Promise<RecursiveSearchResponse> {
   try {
-    const response = await fetch(`${API_BASE}/api/agent/recursive-search`, {
+    const response = await fetch("/api/agent/recursive-search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -239,19 +242,20 @@ export async function requestRecursiveSearch(payload: RecursiveSearchRequest): P
     const data = (await response.json().catch(() => null)) as RecursiveSearchResponse | { message?: string } | null;
 
     if (!response.ok) {
-      const message = data && "message" in data && data.message ? data.message : `HTTP ${response.status}`;
-      throw new Error(`Recursive Search API 失败：${message}`);
+      console.warn(`Recursive Search API 失败 (HTTP ${response.status})，使用 demo fallback`);
+      return buildRecursiveSearchDemoFallback(payload.claim);
     }
 
     return data as RecursiveSearchResponse;
   } catch (error) {
-    throw error instanceof Error ? error : new Error("Recursive Search API 调用异常");
+    console.warn("Recursive Search API 调用异常，使用 demo fallback:", error);
+    return buildRecursiveSearchDemoFallback(payload.claim);
   }
 }
 
 export async function requestSherlockSearch(payload: SherlockSearchRequest): Promise<SherlockSearchResponse> {
   try {
-    const response = await fetch(`${API_BASE}/api/agent/sherlock-search`, {
+    const response = await fetch("/api/agent/sherlock-search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -260,12 +264,13 @@ export async function requestSherlockSearch(payload: SherlockSearchRequest): Pro
     const data = (await response.json().catch(() => null)) as SherlockSearchResponse | { message?: string } | null;
 
     if (!response.ok) {
-      const message = data && "message" in data && data.message ? data.message : `HTTP ${response.status}`;
-      throw new Error(`Sherlock Search API 失败：${message}`);
+      console.warn(`Sherlock Search API 失败 (HTTP ${response.status})，使用 demo fallback`);
+      return buildSherlockSearchDemoFallback(payload.claim);
     }
 
     return data as SherlockSearchResponse;
   } catch (error) {
-    throw error instanceof Error ? error : new Error("Sherlock Search API 调用异常");
+    console.warn("Sherlock Search API 调用异常，使用 demo fallback:", error);
+    return buildSherlockSearchDemoFallback(payload.claim);
   }
 }
