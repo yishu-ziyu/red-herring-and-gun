@@ -113,6 +113,18 @@
 - [x] 运行 `npx tsc --noEmit`。
 - [x] 运行 `npm run build`。
 
+# Streaming Agent Process UX
+
+- [x] 移除 App 的直接结果态，不再从快速分析自动跳到报告页。
+- [x] Mission Control 改为所有核查路径的主工作台。
+- [x] 增加 Agent Stream 面板，以流式方式展示每个 Agent 的开始、完成、失败和最终收束。
+- [x] 将 Agent Stream 从“结果字段流”改为“思考过程流”，不直接展开模型输出字段。
+- [x] 最终结论只作为流式过程内的收束摘要展示，不再独立切换到 Result Workspace。
+- [x] 删除旧结果工作区、证据图谱、报告面板、可信度徽章和来源列表组件。
+- [x] 清理旧结果页样式，避免保留无效 UI 入口。
+- [x] 运行 `npx tsc --noEmit`。
+- [x] 运行 `npm run build`。
+
 ## Review
 
 - Build: `npm run build` 通过。
@@ -148,3 +160,6 @@
 - CurioCat Evidence Audit TypeScript: `npx tsc --noEmit` 通过。
 - CurioCat Evidence Audit Build: `npm run build` 通过；Vite 仍提示单个 chunk 超过 500 kB，这是既有体积风险，不阻塞本轮证据审计接入。
 - CurioCat Evidence Audit Scope: 本轮只接通 360 搜索证据质量、支持/反驳双向搜索、Agent 证据包、逻辑风险归一和 FIRE consistency 调制；未新增依赖，未读取或写入真实密钥。
+- Streaming Agent Process TypeScript: `npx tsc --noEmit` 通过。
+- Streaming Agent Process Build: `npm run build` 通过。
+- Streaming Agent Process Browser QA: `http://127.0.0.1:5176/` 快速分析进入 Mission Control；Agent Stream 显示“扫描原句高风险词 / 改写成可验证问题 / 支持反驳核查”等思考动作；未出现 `Result Workspace`、`结果工作区`、`谣言特征:`、`factCheckResult:`、`sourceReliability:` 等直接结果字段。
