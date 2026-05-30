@@ -1,37 +1,52 @@
 /**
- * Dashboard.tsx — 红鲱鱼与枪首页仪表盘
+ * Dashboard.tsx — 红鲱鱼与枪首页落地页
  *
- * 设计决策：
- * - 真实产品入口只接受用户输入，不展示预置案例或预置结论
- * - 顶部品牌区 + 中央输入区 + 真实 Agent/工具链提示
- * - 整体居中布局，最大宽度 900px
+ * 设计方向：
+ * - 品牌优先：Logo + 品牌名醒目展示
+ * - 红黑配色源自 Logo：ink-black + crimson-red
+ * - 衬线标题 + 无衬线正文，esther-design-system 风格
+ * - 单页落地页：Hero → Input → Features → Footer
  */
 
 import { useState, useCallback } from "react";
 
 interface DashboardProps {
   onStartAnalysis: (claim: string, caseId?: string, orchestrate?: boolean) => void;
+  onStartConsensusDemo?: () => void;
 }
 
-const MODEL_OPTIONS = [
-  { value: "stepfun", label: "StepFun 3.7" },
-  { value: "mimo", label: "MiMo 2.5" },
-  { value: "deepseek", label: "DeepSeek" },
-  { value: "search", label: "360 / AnySearch / Metaso / Tavily / Exa" },
+const FEATURES = [
+  {
+    icon: "🔍",
+    title: "多引擎交叉验证",
+    desc: "360 Search / AnySearch / Metaso 并行检索，自动去重与来源分级",
+  },
+  {
+    icon: "🧠",
+    title: "实时流式推理",
+    desc: "Claim 拆解 → 搜索策略 → 共识评估 → FIRE 置信度，全过程可视",
+  },
+  {
+    icon: "⚡",
+    title: "国产大模型链路",
+    desc: "StepFun 3.7 / MiMo 2.5 / DeepSeek 多模型协同，无结论预设",
+  },
+  {
+    icon: "🛡️",
+    title: "证据边界审计",
+    desc: "每一条结论都有明确的证据支撑范围，不可说的绝不强说",
+  },
 ];
 
-export function Dashboard({ onStartAnalysis }: DashboardProps) {
+export function Dashboard({ onStartAnalysis, onStartConsensusDemo }: DashboardProps) {
   const [inputValue, setInputValue] = useState("");
 
-  const handleStart = useCallback(
-    () => {
-      const claim = inputValue.trim();
-      if (claim) {
-        onStartAnalysis(claim, undefined, true);
-      }
-    },
-    [inputValue, onStartAnalysis]
-  );
+  const handleStart = useCallback(() => {
+    const claim = inputValue.trim();
+    if (claim) {
+      onStartAnalysis(claim, undefined, true);
+    }
+  }, [inputValue, onStartAnalysis]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -44,66 +59,103 @@ export function Dashboard({ onStartAnalysis }: DashboardProps) {
   );
 
   return (
-    <div className="dashboard">
-      <div className="dashboard-content">
-        {/* Brand Header */}
-        <div className="dashboard-brand">
-          <h1 className="dashboard-brand-title">红鲱鱼与枪</h1>
-          <p className="dashboard-brand-subtitle">
-            信息真相猎人 — AI驱动的谣言核查与事实追踪
+    <div className="landing-page">
+      {/* ── Hero Section ── */}
+      <section className="landing-hero">
+        <div className="landing-hero-content">
+          {/* Logo */}
+          <div className="landing-brand">
+            <img
+              src="/logo.png"
+              alt="红鲱鱼与枪"
+              className="landing-logo"
+            />
+            <h1 className="landing-title">
+              <span className="landing-title-dark">红鲱鱼</span>
+              <span className="landing-title-red">与枪</span>
+            </h1>
+          </div>
+
+          {/* Tagline */}
+          <p className="landing-tagline">
+            信息真相猎人
+          </p>
+          <p className="landing-subtitle">
+            AI 驱动的谣言核查与事实追踪系统
+            <br />
+            每一条结论都有证据边界，不可说的绝不强说
           </p>
         </div>
+      </section>
 
-        {/* Central Input Area */}
-        <div className="dashboard-input-card">
-          <div className="dashboard-input-wrapper">
-            <textarea
-              id="dashboard-claim-input"
-              name="claim"
-              className="dashboard-input"
-              placeholder="输入一条你看到的疑似谣言或信息..."
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={3}
-            />
-            <div className="dashboard-submit-actions">
+      {/* ── Input Section ── */}
+      <section className="landing-input-section">
+        <div className="landing-input-card">
+          <label htmlFor="claim-input" className="landing-input-label">
+            输入一条你看到的疑似谣言或信息
+          </label>
+          <textarea
+            id="claim-input"
+            name="claim"
+            className="landing-input"
+            placeholder="例如：清华大学食堂推出「AI营养师」配餐系统，学生使用后营养不良率下降30%..."
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={4}
+          />
+          <div className="landing-input-actions">
+            <button
+              className="landing-submit-btn"
+              onClick={handleStart}
+              type="button"
+              disabled={!inputValue.trim()}
+            >
+              <span className="landing-submit-icon">🔎</span>
+              启动真实核查
+            </button>
+            {onStartConsensusDemo && (
               <button
-                className="dashboard-submit-btn dashboard-submit-btn--deep"
-                onClick={handleStart}
+                className="landing-demo-btn"
+                onClick={onStartConsensusDemo}
                 type="button"
-                disabled={!inputValue.trim()}
-                title="启动真实 Agent 核查：模型输出和工具结果返回前不生成静态结论"
               >
-                启动真实核查
+                <span className="landing-submit-icon">🔬</span>
+                体验交叉验证 Demo
               </button>
-            </div>
+            )}
           </div>
+          <p className="landing-input-hint">
+            真实 Agent 链路：RumorDetector → FactChecker → SourceValidator → ReportComposer
+            <br />
+            多搜索引擎：360 Search / AnySearch / Metaso / Tavily / Exa
+          </p>
+        </div>
+      </section>
 
-          <div className="dashboard-input-footer">
-            <div className="dashboard-model-selector">
-              <span className="dashboard-model-label">真实 Agent 链路</span>
-              <div className="dashboard-model-pills">
-                {MODEL_OPTIONS.map((model) => (
-                  <span
-                    key={model.value}
-                    className="dashboard-model-pill"
-                  >
-                    {model.label}
-                  </span>
-                ))}
-              </div>
+      {/* ── Features Section ── */}
+      <section className="landing-features">
+        <div className="landing-features-grid">
+          {FEATURES.map((feature) => (
+            <div key={feature.title} className="landing-feature-card">
+              <span className="landing-feature-icon">{feature.icon}</span>
+              <h3 className="landing-feature-title">{feature.title}</h3>
+              <p className="landing-feature-desc">{feature.desc}</p>
             </div>
-          </div>
+          ))}
         </div>
+      </section>
 
-        {/* Footer */}
-        <div className="dashboard-footer">
-          <span className="dashboard-powered-by">
-            Powered by StepFun / MiMo / DeepSeek + 360 / AnySearch / Metaso / Tavily / Exa Search
-          </span>
+      {/* ── Footer ── */}
+      <footer className="landing-footer">
+        <div className="landing-footer-brand">
+          <img src="/logo.png" alt="" className="landing-footer-logo" />
+          <span>红鲱鱼与枪</span>
         </div>
-      </div>
+        <p className="landing-footer-powered">
+          Powered by StepFun / MiMo / DeepSeek + 360 / AnySearch / Metaso
+        </p>
+      </footer>
     </div>
   );
 }

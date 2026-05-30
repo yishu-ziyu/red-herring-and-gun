@@ -5551,3 +5551,306 @@ button:disabled {
     transform: rotate(-15deg) scale(1);
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   Landing Page (Dashboard v2)
+   ═══════════════════════════════════════════════════════════════ */
+
+.landing-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--zt-bg);
+  font-family: var(--font-sans);
+}
+
+/* ── Hero ── */
+.landing-hero {
+  padding: clamp(48px, 10vh, 96px) 24px clamp(32px, 6vh, 64px);
+  display: flex;
+  justify-content: center;
+  text-align: center;
+}
+
+.landing-hero-content {
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.landing-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.landing-logo {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 12px rgba(26, 26, 46, 0.08));
+  transition: transform 0.4s var(--ease-out);
+}
+
+.landing-logo:hover {
+  transform: scale(1.04);
+}
+
+.landing-title {
+  margin: 0;
+  font-family: "Noto Serif SC", "Huiwen Mincho", "STSong", serif;
+  font-size: clamp(36px, 5vw, 52px);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+}
+
+.landing-title-dark {
+  color: var(--zt-ink);
+}
+
+.landing-title-red {
+  color: #b91c3c;
+}
+
+.landing-tagline {
+  margin: 0;
+  font-family: "Georgia", "Noto Serif SC", serif;
+  font-size: clamp(18px, 2.5vw, 24px);
+  font-weight: 500;
+  color: var(--zt-text-secondary);
+  letter-spacing: 0.08em;
+}
+
+.landing-subtitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--zt-text-muted);
+  max-width: 480px;
+}
+
+/* ── Input Section ── */
+.landing-input-section {
+  padding: 0 24px 48px;
+  display: flex;
+  justify-content: center;
+}
+
+.landing-input-card {
+  width: 100%;
+  max-width: 680px;
+  background: var(--zt-bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--zt-radius-xl);
+  padding: var(--zt-card-padding);
+  box-shadow: var(--zt-shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.landing-input-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--zt-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.landing-input {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--zt-radius-md);
+  padding: 16px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--zt-text);
+  background: var(--zt-bg);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  outline: none;
+}
+
+.landing-input::placeholder {
+  color: var(--zt-text-muted);
+  opacity: 0.7;
+}
+
+.landing-input:focus {
+  border-color: #b91c3c;
+  box-shadow: 0 0 0 3px rgba(185, 28, 60, 0.08);
+}
+
+.landing-input-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.landing-submit-btn {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 24px;
+  border: none;
+  border-radius: var(--zt-radius-md);
+  background: var(--zt-ink);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.landing-submit-btn:hover:not(:disabled) {
+  background: #b91c3c;
+  transform: translateY(-1px);
+}
+
+.landing-submit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.landing-demo-btn {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 24px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--zt-radius-md);
+  background: transparent;
+  color: var(--zt-text-secondary);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.landing-demo-btn:hover {
+  border-color: #b91c3c;
+  color: #b91c3c;
+  background: rgba(185, 28, 60, 0.04);
+}
+
+.landing-submit-icon {
+  font-size: 16px;
+}
+
+.landing-input-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--zt-text-muted);
+  text-align: center;
+}
+
+/* ── Features ── */
+.landing-features {
+  padding: 48px 24px;
+  display: flex;
+  justify-content: center;
+  background: linear-gradient(180deg, transparent 0%, rgba(26, 26, 46, 0.015) 100%);
+}
+
+.landing-features-grid {
+  width: 100%;
+  max-width: 960px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+.landing-feature-card {
+  background: var(--zt-bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--zt-radius-lg);
+  padding: 28px 24px;
+  text-align: center;
+  transition: transform 0.3s var(--ease-out), box-shadow 0.3s ease;
+}
+
+.landing-feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--zt-shadow-lg);
+}
+
+.landing-feature-icon {
+  display: block;
+  font-size: 32px;
+  margin-bottom: 16px;
+}
+
+.landing-feature-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--zt-ink);
+}
+
+.landing-feature-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--zt-text-muted);
+}
+
+/* ── Footer ── */
+.landing-footer {
+  margin-top: auto;
+  padding: 32px 24px;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.landing-footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--zt-text-secondary);
+}
+
+.landing-footer-logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  opacity: 0.7;
+}
+
+.landing-footer-powered {
+  margin: 0;
+  font-size: 12px;
+  color: var(--zt-text-muted);
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .landing-features-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .landing-input-actions {
+    flex-direction: column;
+  }
+
+  .landing-submit-btn,
+  .landing-demo-btn {
+    width: 100%;
+  }
+}
