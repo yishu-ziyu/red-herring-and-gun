@@ -1,4 +1,6 @@
 import type { DemoCase, FinalReport, GradedEvidence, Subclaim, SubclaimReportStatus } from "./schemas";
+import { summarizeBiasFindings } from "./biasAudit";
+import { summarizeEvidenceQuality } from "./evidenceQuality";
 
 function candidateTitle(caseData: DemoCase, candidateId: string): string {
   return caseData.candidates.find((candidate) => candidate.id === candidateId)?.title ?? candidateId;
@@ -66,6 +68,16 @@ export function composeReport(caseData: DemoCase, grades: GradedEvidence[]): Fin
   const mainEvidence = grades.filter((grade) => grade.usageLevel === "主证据");
   const auxiliaryEvidence = grades.filter((grade) => grade.usageLevel === "辅助证据");
   const counterEvidence = grades.filter((grade) => grade.usageLevel === "反证");
+  const evidenceQualitySummary = summarizeEvidenceQuality(grades);
+  const logicRiskItems = summarizeBiasFindings(grades);
+  const strictBlocks = Array.from(
+    new Set(
+      grades.flatMap((grade) => [
+        ...grade.inferenceBlocked,
+        ...(grade.logicAudit?.blockedInference ?? []),
+      ])
+    )
+  ).slice(0, 8);
 
   return {
     originalClaim: caseData.originalClaim,
@@ -79,6 +91,10 @@ export function composeReport(caseData: DemoCase, grades: GradedEvidence[]): Fin
       `机制层面：${auxiliaryEvidence.map((grade) => candidateTitle(caseData, grade.candidateId)).join("；") || "尚缺少机制材料"}。`,
       `反证层面：${counterEvidence.map((grade) => candidateTitle(caseData, grade.candidateId)).join("；") || "仍需主动查找反证"}。`,
       "因果层面：当前材料仍缺少替代解释处理和反事实证据，因此不能使用“导致”作为最终结论。",
+      `证据质量：平均可信度 ${evidenceQualitySummary.averageCredibility}/100，来源多样性 ${evidenceQualitySummary.diversityScore}/100，反证 ${evidenceQualitySummary.contradictCount} 条。`,
+      logicRiskItems.length > 0
+        ? `逻辑风险：${logicRiskItems.map((item) => item.label).join("；")}。`
+        : "逻辑风险：未发现高优先级偏差，但仍需保持证据边界。",
     ],
     doNotInfer: [
       "不能从任务暴露度推出岗位已经减少。",
@@ -86,6 +102,7 @@ export function composeReport(caseData: DemoCase, grades: GradedEvidence[]): Fin
       "不能从同期变化推出 AI 导致岗位减少。",
       "不能从初级内容岗位受影响推出文科生整体竞争力下降。",
       "不能把任务被重组直接写成岗位消失。",
+      ...strictBlocks,
     ],
     rewrittenClaim: {
       cautious:
@@ -102,5 +119,11 @@ export function composeReport(caseData: DemoCase, grades: GradedEvidence[]): Fin
       "内容岗位任务结构变化的机制证据。",
       "反向证据：AI 是否创造新岗位或提高相关岗位需求。",
     ],
+    evidenceQualitySummary,
+    logicRiskItems,
+    contradictionSummary:
+      counterEvidence.length > 0
+        ? `已纳入 ${counterEvidence.length} 条反证或限制性材料，最终结论需要保守表达。`
+        : "当前证据链仍缺少反证检索结果，需要继续主动查找相反材料。",
   };
 }

@@ -28,6 +28,7 @@ interface NodeInspectorV3Props {
   onRecursiveBudgetLimitChange: (value: number) => void;
   onRecursiveSearch: (question: string, depthLimit: number, budgetLimit: number) => void;
   onSherlockSearch: (claim: string) => void;
+  on360Search: (query: string) => void;
 }
 
 export function NodeInspectorV3({
@@ -55,6 +56,7 @@ export function NodeInspectorV3({
   onRecursiveBudgetLimitChange,
   onRecursiveSearch,
   onSherlockSearch,
+  on360Search,
 }: NodeInspectorV3Props) {
   const subclaim = node.sourceRef?.subclaimId
     ? caseData.subclaims.find((item) => item.id === node.sourceRef?.subclaimId)
@@ -122,6 +124,14 @@ export function NodeInspectorV3({
         isExpanding={isExpanding}
         error={agentError}
         onSherlockSearch={onSherlockSearch}
+      />
+
+      <Search360Panel
+        node={node}
+        canExpand={canExpand}
+        isExpanding={isExpanding}
+        error={agentError}
+        on360Search={on360Search}
       />
     </aside>
   );
@@ -686,6 +696,41 @@ function SherlockSearchPanel({
           {latestRun.cannotSay.length > 0 ? <em>不能说：{latestRun.cannotSay.join("；")}</em> : null}
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function Search360Panel({
+  node,
+  canExpand,
+  isExpanding,
+  error,
+  on360Search,
+}: {
+  node: CanvasNode;
+  canExpand: boolean;
+  isExpanding: boolean;
+  error: string;
+  on360Search: (query: string) => void;
+}) {
+  return (
+    <section className="node-expansion-panel search360-panel">
+      <div className="node-expansion-heading">
+        <span>360 AI Search</span>
+        <strong>{canExpand ? "实时搜索增强" : "处理中..."}</strong>
+      </div>
+      <p>
+        调用 360 AI Search 获取摘要、可复核来源和相关追问，并把结果回写到画布节点。
+      </p>
+      {error ? <div className="agent-error">{error}</div> : null}
+      <button
+        className={`expand-node-button search360-button ${isExpanding ? "search360-running" : ""}`}
+        onClick={() => on360Search(node.title)}
+        disabled={!canExpand || isExpanding}
+        type="button"
+      >
+        {isExpanding ? "正在搜索..." : "调用 360 AI Search"}
+      </button>
     </section>
   );
 }

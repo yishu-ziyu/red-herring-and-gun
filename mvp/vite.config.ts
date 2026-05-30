@@ -8,6 +8,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 import { searchClaimAcrossSources } from "./src/lib/sherlockStyleSearch";
 import { AGENT_CONFIGS, buildAgentInput } from "./src/lib/agentConfigs";
+import { enrichSearch360Source } from "./src/lib/sourceCredibility";
 
 const execFileAsync = promisify(execFile);
 
@@ -106,6 +107,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), agentApiPlugin(env)],
+    preview: {
+      allowedHosts: ["gun.yishuziyu.cn", "localhost", "127.0.0.1"],
+    },
   };
 });
 
@@ -177,6 +181,110 @@ function agentApiPlugin(env: Record<string, string>) {
     }
   }
 
+  async function search360Handler(req: any, res: any, next: any) {
+    if (req.method !== "POST") return next();
+
+    let payload: any;
+    try {
+      payload = await readJson(req);
+    } catch {
+      return sendJson(res, 400, { message: "无法解析请求 JSON" });
+    }
+
+    const query = typeof payload.query === "string" ? payload.query.trim() : "";
+    if (!query) return sendJson(res, 400, { message: "缺少 query 参数" });
+
+    try {
+      const result = await call360AiSearch({ env, query, model: payload.model, refProm: payload.refProm });
+      return sendJson(res, 200, result);
+    } catch {
+      return sendJson(res, 200, build360SearchFallback(query));
+    }
+  }
+
+  function build360SupportQuery(claim: string) {
+    return `${claim} 证据 来源 官方说明 原始出处`;
+  }
+
+  function build360ContradictQuery(claim: string) {
+    return `${claim} 辟谣 反例 争议 无法证实 误读`;
+  }
+
+  async function get360SearchForClaim(claim: string) {
+    try {
+      const supportQuery = build360SupportQuery(claim);
+      const contradictQuery = build360ContradictQuery(claim);
+      const [supportResult, contradictResult] = await Promise.all([
+        call360AiSearch({ env, query: supportQuery }),
+        call360AiSearch({ env, query: contradictQuery }),
+      ]);
+      const supportingEvidence = (supportResult.sources ?? []).map((source: any, index: number) =>
+        enrichSearch360Source(source, index, { query: supportQuery, direction: "support" })
+      );
+      const contradictingEvidence = (contradictResult.sources ?? []).map((source: any, index: number) =>
+        enrichSearch360Source(source, index, { query: contradictQuery, direction: "contradict" })
+      );
+      const sources = [...supportingEvidence, ...contradictingEvidence].map((source: any, index: number) => ({
+        ...source,
+        id: source.id ?? `S${index + 1}`,
+      }));
+
+      return {
+        answer: [`支持检索：${supportResult.answer}`, `反驳检索：${contradictResult.answer}`].join("\n\n"),
+        sources,
+        supportQuery,
+        contradictQuery,
+        supportingEvidence,
+        contradictingEvidence,
+        unresolvedEvidenceGaps: contradictingEvidence.length > 0
+          ? []
+          : ["未找到明确反证或辟谣材料，需要继续扩大检索。"],
+        relatedQuestions: Array.from(new Set([
+          ...(supportResult.relatedQuestions ?? []),
+          ...(contradictResult.relatedQuestions ?? []),
+          `${claim} 官方回应`,
+          `${claim} 辟谣`,
+        ])).slice(0, 6),
+        model: `${supportResult.model ?? "360"} + ${contradictResult.model ?? "360"}`,
+        traceText: `360 双向搜索完成：支持来源 ${supportingEvidence.length} 条，反驳来源 ${contradictingEvidence.length} 条。`,
+        _source: supportResult._source === "360-ai-search" || contradictResult._source === "360-ai-search" ? "360-ai-search" : "demo-fallback",
+      };
+    } catch {
+      return build360SearchFallback(claim);
+    }
+  }
+
+  function buildAgentEvidenceBundle(agentId: string, output: Record<string, unknown>, search360Result?: any) {
+    const supportSources = Array.isArray(search360Result?.supportingEvidence) ? search360Result.supportingEvidence : [];
+    const contradictSources = Array.isArray(search360Result?.contradictingEvidence) ? search360Result.contradictingEvidence : [];
+    const unresolvedQuestions = [
+      ...(Array.isArray(search360Result?.unresolvedEvidenceGaps) ? search360Result.unresolvedEvidenceGaps : []),
+      ...(Array.isArray(output.unresolvedEvidenceGaps) ? output.unresolvedEvidenceGaps.filter((item: unknown) => typeof item === "string") : []),
+      ...(Array.isArray(output.missingSources) ? output.missingSources.filter((item: unknown) => typeof item === "string") : []),
+    ];
+    const sourceScores = [...supportSources, ...contradictSources]
+      .map((source: any) => typeof source?.credibilityScore === "number" ? source.credibilityScore : null)
+      .filter((score: number | null): score is number => score !== null);
+    const logicRiskCount =
+      (Array.isArray(output.logicRisks) ? output.logicRisks.length : 0) +
+      (Array.isArray(output.biasWarnings) ? output.biasWarnings.length : 0) +
+      (Array.isArray(output.cannotInfer) ? output.cannotInfer.length : 0) +
+      (Array.isArray(output.doNotInfer) ? output.doNotInfer.length : 0);
+
+    return {
+      agentId,
+      claimIds: ["claim-root"],
+      supportEvidenceIds: supportSources.map((source: any, index: number) => String(source?.id || source?.url || source?.title || `support-${index + 1}`)),
+      contradictEvidenceIds: contradictSources.map((source: any, index: number) => String(source?.id || source?.url || source?.title || `contradict-${index + 1}`)),
+      confidenceDelta: Math.max(-30, Math.min(20, supportSources.length * 3 - contradictSources.length * 5 - unresolvedQuestions.length * 2 - logicRiskCount * 4)),
+      unresolvedQuestions: Array.from(new Set(unresolvedQuestions)).slice(0, 6),
+      sourceQualityScore: sourceScores.length > 0
+        ? Math.round(sourceScores.reduce((sum: number, score: number) => sum + score, 0) / sourceScores.length)
+        : undefined,
+      logicRiskCount,
+    };
+  }
+
   // ───────────────────────────────────────────────────────────────
   // 多 Agent Orchestrate Handler（串行 handoff）
   // ───────────────────────────────────────────────────────────────
@@ -197,7 +305,7 @@ function agentApiPlugin(env: Record<string, string>) {
     }
 
     // Helper: run a single agent
-    async function runAgent(agentId: string, steps: any[]): Promise<any> {
+    async function runAgent(agentId: string, steps: any[], search360Result?: any): Promise<any> {
       const agentConfig = AGENT_CONFIGS.find((a) => a.id === agentId);
       if (!agentConfig) {
         throw new Error(`Unknown agent: ${agentId}`);
@@ -205,6 +313,9 @@ function agentApiPlugin(env: Record<string, string>) {
 
       const stepStart = Date.now();
       const agentInput = buildAgentInput(agentId, claim, steps);
+      if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
+        agentInput.search360 = search360Result;
+      }
 
       let output: Record<string, unknown>;
       let modelUsed: string;
@@ -234,6 +345,7 @@ function agentApiPlugin(env: Record<string, string>) {
         systemPrompt: agentConfig.systemPrompt,
         input: agentInput,
         output,
+        evidenceBundle: buildAgentEvidenceBundle(agentConfig.id, output, search360Result),
         model: modelUsed,
         latencyMs: Date.now() - stepStart,
         timestamp: Date.now(),
@@ -247,16 +359,17 @@ function agentApiPlugin(env: Record<string, string>) {
       // Phase 1: RumorDetector (serial)
       const rumorStep = await runAgent("rumor_detector", steps);
       steps.push(rumorStep);
+      const search360Result = await get360SearchForClaim(claim);
 
       // Phase 2: FactChecker + SourceValidator (parallel)
       const [factStep, sourceStep] = await Promise.all([
-        runAgent("fact_checker", steps),
-        runAgent("source_validator", steps),
+        runAgent("fact_checker", steps, search360Result),
+        runAgent("source_validator", steps, search360Result),
       ]);
       steps.push(factStep, sourceStep);
 
       // Phase 3: ReportComposer (serial)
-      const reportStep = await runAgent("report_composer", steps);
+      const reportStep = await runAgent("report_composer", steps, search360Result);
       steps.push(reportStep);
 
       const finalReport = reportStep.output;
@@ -303,7 +416,7 @@ function agentApiPlugin(env: Record<string, string>) {
     };
 
     // Helper: run a single agent and stream events
-    async function runAgentWithStream(agentId: string, steps: any[]): Promise<any> {
+    async function runAgentWithStream(agentId: string, steps: any[], search360Result?: any): Promise<any> {
       const agentConfig = AGENT_CONFIGS.find((a) => a.id === agentId);
       if (!agentConfig) {
         throw new Error(`Unknown agent: ${agentId}`);
@@ -321,6 +434,9 @@ function agentApiPlugin(env: Record<string, string>) {
 
       const stepStart = Date.now();
       const agentInput = buildAgentInput(agentId, claim, steps);
+      if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
+        agentInput.search360 = search360Result;
+      }
 
       let output: Record<string, unknown>;
       let modelUsed: string;
@@ -352,6 +468,7 @@ function agentApiPlugin(env: Record<string, string>) {
         systemPrompt: agentConfig.systemPrompt,
         input: agentInput,
         output,
+        evidenceBundle: buildAgentEvidenceBundle(agentConfig.id, output, search360Result),
         model: modelUsed,
         latencyMs: Date.now() - stepStart,
         timestamp: Date.now(),
@@ -365,6 +482,7 @@ function agentApiPlugin(env: Record<string, string>) {
         agentName: agentConfig.name,
         agentIcon: agentConfig.icon,
         output,
+        evidenceBundle: step.evidenceBundle,
         model: modelUsed,
         latencyMs: step.latencyMs,
         timestamp: Date.now(),
@@ -379,16 +497,17 @@ function agentApiPlugin(env: Record<string, string>) {
       // Phase 1: RumorDetector (serial — downstream agents depend on its output)
       const rumorStep = await runAgentWithStream("rumor_detector", steps);
       steps.push(rumorStep);
+      const search360Result = await get360SearchForClaim(claim);
 
       // Phase 2: FactChecker + SourceValidator (parallel — both only need claim + rumorDetector output)
       const [factStep, sourceStep] = await Promise.all([
-        runAgentWithStream("fact_checker", steps),
-        runAgentWithStream("source_validator", steps),
+        runAgentWithStream("fact_checker", steps, search360Result),
+        runAgentWithStream("source_validator", steps, search360Result),
       ]);
       steps.push(factStep, sourceStep);
 
       // Phase 3: ReportComposer (serial — needs outputs from all previous agents)
-      const reportStep = await runAgentWithStream("report_composer", steps);
+      const reportStep = await runAgentWithStream("report_composer", steps, search360Result);
       steps.push(reportStep);
 
       const finalReport = reportStep.output;
@@ -411,11 +530,12 @@ function agentApiPlugin(env: Record<string, string>) {
   }
 
   return {
-    name: "suzheng-agent-api",
+    name: "red-herring-and-gun-api",
     configureServer(server: any) {
       server.middlewares.use("/api/agent/expand", handler);
       server.middlewares.use("/api/agent/recursive-search", recursiveHandler);
       server.middlewares.use("/api/agent/sherlock-search", sherlockHandler);
+      server.middlewares.use("/api/search/360", search360Handler);
       server.middlewares.use("/api/agent/orchestrate", orchestrateHandler);
       server.middlewares.use("/api/agent/orchestrate-stream", orchestrateStreamHandler);
     },
@@ -423,6 +543,7 @@ function agentApiPlugin(env: Record<string, string>) {
       server.middlewares.use("/api/agent/expand", handler);
       server.middlewares.use("/api/agent/recursive-search", recursiveHandler);
       server.middlewares.use("/api/agent/sherlock-search", sherlockHandler);
+      server.middlewares.use("/api/search/360", search360Handler);
       server.middlewares.use("/api/agent/orchestrate", orchestrateHandler);
       server.middlewares.use("/api/agent/orchestrate-stream", orchestrateStreamHandler);
     },
@@ -600,7 +721,7 @@ async function callOpenAI({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是真探 Agent（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要编造确定结论；把不确定性、证据需求、禁止推断说清楚。",
@@ -837,7 +958,7 @@ async function callMimoApi({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是真探 Agent（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要自动扩展整张图，不要替用户决定下一条主线。",
@@ -882,7 +1003,7 @@ async function callMimoApiRecursive({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是真探 Agent（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
     "用户已经在 Canvas 中选择了一个节点。你只围绕这个节点做一轮递归证据搜索调度。",
     "返回线索、frontier、停止原因、可以说和不能说。",
     "不要自动继续展开 frontier，不要给最终答案。",
@@ -930,7 +1051,7 @@ async function callDeepSeekApi({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是真探 Agent（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要编造确定结论；把不确定性、证据需求、禁止推断说清楚。",
@@ -1209,7 +1330,7 @@ function buildCodexPrompt(payload: any) {
   }[payload.mode as string] ?? "围绕当前节点做局部推理。";
 
   return [
-    "你是真探 Agent（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要自动扩展整张图，不要替用户决定下一条主线。",
@@ -1381,6 +1502,225 @@ function sendJson(res: any, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
+function getSearch360ApiKey(env: Record<string, string>) {
+  return (
+    env.QIHOO_360_API_KEY ||
+    env.ZHINAO_API_KEY ||
+    env.AI360_API_KEY ||
+    process.env.QIHOO_360_API_KEY ||
+    process.env.ZHINAO_API_KEY ||
+    process.env.AI360_API_KEY ||
+    ""
+  );
+}
+
+function build360SearchFallback(query: string) {
+  return {
+    answer: `Demo 模式：围绕“${query}”返回 360 AI Search 风格的模拟答案。真实部署时补充 360 API key 后会返回实时搜索摘要和来源。`,
+    sources: [
+      {
+        title: "官方公开信息检索（模拟）",
+        url: "https://example.com/official-source",
+        snippet: "该条线索提示应优先检索政府、机构、平台公告等公开来源。",
+        credibility: "高",
+      },
+      {
+        title: "事实核查报道（模拟）",
+        url: "https://example.com/fact-check",
+        snippet: "该条线索提示需要对照权威媒体或事实核查平台的上下文说明。",
+        credibility: "中",
+      },
+      {
+        title: "社交传播线索（模拟）",
+        url: "https://example.com/social-trace",
+        snippet: "该条线索提示原文可能来自匿名账号或二次转发，需做来源追溯。",
+        credibility: "低",
+      },
+    ],
+    relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 来源`],
+    model: "demo-fallback:360",
+    traceText: "未配置 360 API key 或调用失败，已使用可见 demo fallback。",
+    _source: "demo-fallback",
+  };
+}
+
+async function call360AiSearch({
+  env,
+  query,
+  model,
+  refProm,
+}: {
+  env: Record<string, string>;
+  query: string;
+  model?: string;
+  refProm?: string;
+}) {
+  const apiKey = getSearch360ApiKey(env);
+  if (!apiKey) throw new Error("未配置 360 API key");
+
+  const selectedModel = model || env.SEARCH360_MODEL || process.env.SEARCH360_MODEL || "360gpt-pro";
+  try {
+    const response = await fetch("https://api.360.cn/v1/search/aisearch", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: selectedModel,
+        messages: [{ role: "user", content: query }],
+        stream: false,
+        enable_corner_markers: true,
+        enable_web_page_safety: true,
+        max_refer_search_items: 12,
+      }),
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const detail = data?.error?.message || data?.message || response.statusText;
+      throw new Error(`360 AI Search 调用失败：${detail}`);
+    }
+
+    return normalize360SearchResponse(data, query, selectedModel);
+  } catch (error) {
+    const aiSearchError = error instanceof Error ? error.message : "360 AI Search 调用失败";
+    return await call360MWebSearch({ env, apiKey, query, refProm, previousError: aiSearchError });
+  }
+}
+
+function normalize360SearchResponse(data: any, query: string, model: string) {
+  const answer =
+    data?.answer ||
+    data?.choices?.[0]?.message?.content ||
+    data?.data?.answer ||
+    `360 AI Search 已返回“${query}”的搜索结果。`;
+  const rawSources =
+    data?.sources ||
+    data?.references ||
+    data?.refer_search_items ||
+    data?.data?.sources ||
+    data?.data?.references ||
+    [];
+  const direction = /(辟谣|反例|争议|无法证实|误读|不实)/.test(query) ? "contradict" : "support";
+  const sources = Array.isArray(rawSources)
+    ? rawSources.slice(0, 8).map((source: any, index: number) => enrichSearch360Source({
+        title: String(source?.title || source?.name || source?.site_name || `来源 ${index + 1}`),
+        url: String(source?.url || source?.link || source?.href || ""),
+        snippet: String(source?.snippet || source?.summary || source?.content || ""),
+        publishedAt: String(source?.publishedAt || source?.published_at || source?.publish_time || source?.date || ""),
+      }, index, { query, direction, raw: source }))
+    : [];
+  const relatedQuestions = Array.isArray(data?.relatedQuestions || data?.related_questions || data?.questions)
+    ? (data.relatedQuestions || data.related_questions || data.questions).filter((item: unknown): item is string => typeof item === "string")
+    : [`${query} 官方回应`, `${query} 辟谣`];
+
+  return {
+    answer: String(answer),
+    sources,
+    supportQuery: direction === "support" ? query : undefined,
+    contradictQuery: direction === "contradict" ? query : undefined,
+    supportingEvidence: sources.filter((source) => source.evidenceRole !== "反驳"),
+    contradictingEvidence: sources.filter((source) => source.evidenceRole === "反驳"),
+    unresolvedEvidenceGaps: sources.some((source) => source.evidenceRole === "反驳") ? [] : ["未找到明确反证。"],
+    relatedQuestions,
+    model: `360-ai-search:${model}`,
+    traceText: `360 AI Search 返回 ${sources.length} 条来源。`,
+    _source: "360-ai-search",
+  };
+}
+
+async function call360MWebSearch({
+  env,
+  apiKey,
+  query,
+  refProm,
+  previousError,
+}: {
+  env: Record<string, string>;
+  apiKey: string;
+  query: string;
+  refProm?: string;
+  previousError: string;
+}) {
+  const selectedRefProm =
+    refProm ||
+    env.SEARCH360_REF_PROM ||
+    process.env.SEARCH360_REF_PROM ||
+    "aiso-max";
+  const url = new URL("https://api.360.cn/v2/mwebsearch");
+  url.searchParams.set("q", query);
+  url.searchParams.set("ref_prom", selectedRefProm);
+  url.searchParams.set("sid", randomUUID());
+  url.searchParams.set("count", "8");
+  url.searchParams.set("summary_len", "500");
+  url.searchParams.set("freshness", "1");
+  url.searchParams.set("trusted_sources", "1");
+  url.searchParams.set("exclude_aigc", "true");
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = data?.error?.message || data?.message || response.statusText;
+    throw new Error(`${previousError}；360 智搜 ${selectedRefProm} 调用失败：${detail}`);
+  }
+
+  return normalize360MWebSearchResponse(data, query, selectedRefProm);
+}
+
+function normalize360MWebSearchResponse(data: any, query: string, refProm: string) {
+  const rawItems =
+    data?.items ||
+    data?.results ||
+    data?.data?.items ||
+    data?.data?.results ||
+    data?.data?.list ||
+    data?.result ||
+    data?.data ||
+    [];
+  const items = Array.isArray(rawItems) ? rawItems : [];
+  const direction = /(辟谣|反例|争议|无法证实|误读|不实)/.test(query) ? "contradict" : "support";
+  const sources = items.slice(0, 8).map((source: any, index: number) => enrichSearch360Source({
+    title: String(source?.title || source?.name || source?.site_name || `360 智搜来源 ${index + 1}`),
+    url: String(source?.url || source?.link || source?.href || source?.display_url || ""),
+    snippet: String(source?.summary_ai || source?.summary || source?.snippet || source?.content || source?.desc || ""),
+    publishedAt: String(source?.publishedAt || source?.published_at || source?.publish_time || source?.date || ""),
+  }, index, { query, direction, raw: source }));
+  const answer = sources.length > 0
+    ? sources.map((source) => `【${source.title}】${source.snippet}`).filter(Boolean).join("\n")
+    : `360 智搜已返回“${query}”的检索响应，但未解析到标准来源列表。`;
+
+  return {
+    answer,
+    sources,
+    supportQuery: direction === "support" ? query : undefined,
+    contradictQuery: direction === "contradict" ? query : undefined,
+    supportingEvidence: sources.filter((source) => source.evidenceRole !== "反驳"),
+    contradictingEvidence: sources.filter((source) => source.evidenceRole === "反驳"),
+    unresolvedEvidenceGaps: sources.some((source) => source.evidenceRole === "反驳") ? [] : ["未找到明确反证。"],
+    relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
+    model: `360-mwebsearch:${refProm}`,
+    traceText: `360 智搜 ${refProm} 返回 ${sources.length} 条来源。`,
+    _source: "360-ai-search",
+  };
+}
+
+function buildDemoConfidenceDimensions() {
+  return [
+    { dimension: "source_reliability", label: "来源可靠性", score: 58, threshold: 70, passed: false, reason: "Demo fallback 使用模拟来源，按保守值处理。" },
+    { dimension: "evidence_completeness", label: "证据完整度", score: 54, threshold: 60, passed: false, reason: "仍需补充原始材料和权威来源。" },
+    { dimension: "consistency", label: "逻辑一致性", score: 72, threshold: 75, passed: false, reason: "前序 Agent 输出大体一致，但尚未完全闭环。" },
+    { dimension: "recency", label: "信息时效性", score: 52, threshold: 50, passed: true, reason: "Demo 结果不含发布时间，采用保守时效性判断。" },
+    { dimension: "authority", label: "权威匹配度", score: 48, threshold: 65, passed: false, reason: "缺少明确权威机构来源。" },
+  ];
+}
+
 // ───────────────────────────────────────────────────────────────
 // Agent Orchestrate 底层 Provider 调用
 // ───────────────────────────────────────────────────────────────
@@ -1436,7 +1776,41 @@ async function callAgentWithFallback({
   }
 
   // ───────────────────────────────────────────────────────────────
-  // 2. MiMo Token Plan（Anthropic 兼容协议，多集群回退）
+  // 2. 360 智脑（OpenAI 兼容协议）
+  //    使用用户提供的 360 key 作为国产大模型备用链路。
+  // ───────────────────────────────────────────────────────────────
+  const ai360ApiKey = getSearch360ApiKey(env);
+  const ai360BaseUrl = (env.AI360_BASE_URL || process.env.AI360_BASE_URL || "https://api.360.cn/v1").replace(/\/$/, "");
+  const ai360Model =
+    env.AI360_CHAT_MODEL ||
+    env.AI360_MODEL ||
+    process.env.AI360_CHAT_MODEL ||
+    process.env.AI360_MODEL ||
+    "360gpt-pro";
+
+  if (ai360ApiKey) {
+    try {
+      const result = await call360ChatAgent({
+        apiKey: ai360ApiKey,
+        baseUrl: ai360BaseUrl,
+        model: ai360Model,
+        systemPrompt,
+        userContent,
+        maxTokens,
+      });
+      return {
+        output: JSON.parse(extractJsonObject(result.text)),
+        model: result.model,
+        latencyMs: Date.now() - startTime,
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "360 智脑 Agent 调用失败";
+      errors.push(`[360:${ai360Model}] ${msg}`);
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────
+  // 3. MiMo Token Plan（Anthropic 兼容协议，多集群回退）
   // ───────────────────────────────────────────────────────────────
   const mimoApiKey = env.MIMO_API_KEY || process.env.MIMO_API_KEY;
   const mimoModel = env.MIMO_MODEL || "mimo-v2.5-pro";
@@ -1470,7 +1844,7 @@ async function callAgentWithFallback({
   }
 
   // ───────────────────────────────────────────────────────────────
-  // 3. DeepSeek API
+  // 4. DeepSeek API
   // ───────────────────────────────────────────────────────────────
   const deepseekApiKey = env.DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY;
   const deepseekBaseUrl = (env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1").replace(/\/$/, "");
@@ -1497,7 +1871,7 @@ async function callAgentWithFallback({
   }
 
   // ───────────────────────────────────────────────────────────────
-  // 4. Anthropic Proxy
+  // 5. Anthropic Proxy
   // ───────────────────────────────────────────────────────────────
   const anthropicConfig = await loadAnthropicConfig(env);
   if (anthropicConfig?.baseUrl && anthropicConfig.model) {
@@ -1521,7 +1895,7 @@ async function callAgentWithFallback({
   }
 
   // ───────────────────────────────────────────────────────────────
-  // 5. Codex CLI（本地模型回退）
+  // 6. Codex CLI（本地模型回退）
   // ───────────────────────────────────────────────────────────────
   try {
     const result = await callCodexAgent({
@@ -1542,6 +1916,49 @@ async function callAgentWithFallback({
   }
 
   throw new Error(errors.join("；") || "没有可用的 Agent provider");
+}
+
+async function call360ChatAgent({
+  apiKey,
+  baseUrl,
+  model,
+  systemPrompt,
+  userContent,
+  maxTokens,
+}: {
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  systemPrompt: string;
+  userContent: string;
+  maxTokens: number;
+}) {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+      stream: false,
+      temperature: 0.3,
+      max_tokens: maxTokens,
+      top_p: 0.8,
+    }),
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = data?.error?.message || data?.message || response.statusText;
+    throw new Error(`360 智脑 API 调用失败：${detail}`);
+  }
+  const text = extractChatCompletionText(data);
+  if (!text) throw new Error("360 智脑 API 没有返回可解析文本。");
+  return { text, model: `360-chat:${model}` };
 }
 
 async function callMimoAgent({
@@ -1805,6 +2222,7 @@ function buildOrchestrateDemoFallback(agentId: string, claim: string) {
       credibilityLabel: "部分可信",
       recommendation: "建议不转发，等待更多权威信息源确认后再做判断。",
       summaryForPublic: "该信息包含部分事实，但也存在夸大和谣言特征，建议谨慎对待。",
+      confidenceDimensions: buildDemoConfidenceDimensions(),
     },
   };
   return fallbacks[agentId] ?? {};

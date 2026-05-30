@@ -6,8 +6,10 @@ import {
   requestRecursiveSearch,
   requestSherlockSearch,
   requestOrchestrateStream,
+  request360Search,
   type ExpansionMode,
   type RecursiveSearchResponse,
+  type Search360Response,
   type HandoffResult,
   type HandoffStep,
 } from "../../lib/agentExpansion";
@@ -521,6 +523,37 @@ export function ReasoningWorkspaceV3({ orchestrateMode = false }: ReasoningWorks
     [dispatch, selectedNode, state.isExpanding, state.sherlockSearchRuns, state.nodes],
   );
 
+  const handle360Search = useCallback(
+    async (query: string) => {
+      if (!selectedNode || state.isExpanding) return;
+
+      const runIndex = state.agentRuns.length + 1;
+      dispatch({ type: "START_EXPANDING" });
+
+      try {
+        const result = await request360Search({ query });
+        const expansion = build360SearchExpansion(selectedNode, query, runIndex, result, state.nodes);
+        const step: ReasoningStep = {
+          id: `search360-step-${runIndex}`,
+          text: result.traceText ?? `360 AI Search 返回 ${result.sources.length} 条来源。`,
+          nodeIds: expansion.nodes.map((node) => node.id),
+          revealStage: 99,
+        };
+
+        dispatch({
+          type: "ADD_NODES",
+          payload: { nodes: expansion.nodes, edges: expansion.edges, run: expansion.run, step },
+        });
+      } catch (error) {
+        dispatch({
+          type: "FINISH_EXPANDING",
+          payload: { error: error instanceof Error ? error.message : "360 AI Search 调用失败" },
+        });
+      }
+    },
+    [dispatch, selectedNode, state.agentRuns.length, state.isExpanding, state.nodes],
+  );
+
   const handleSetExpansionPrompt = useCallback(
     (value: string) => {
       dispatch({ type: "SET_EXPANSION_PROMPT", payload: value });
@@ -582,7 +615,7 @@ export function ReasoningWorkspaceV3({ orchestrateMode = false }: ReasoningWorks
       <nav className="flow-rail" aria-label="Canvas tools">
         <div className="rail-brand">
           <strong>真</strong>
-          <span>真探 Agent</span>
+          <span>红鲱鱼与枪</span>
         </div>
         <div className="rail-nav">
           <button
@@ -626,7 +659,7 @@ export function ReasoningWorkspaceV3({ orchestrateMode = false }: ReasoningWorks
 
       <header className="workspace-top">
         <div className="brand-block">
-          <strong>真探 Agent</strong>
+          <strong>红鲱鱼与枪</strong>
           <span>Truth Hunter</span>
         </div>
         <div className="claim-bar">
@@ -695,9 +728,10 @@ export function ReasoningWorkspaceV3({ orchestrateMode = false }: ReasoningWorks
 	                onExpandNode={handleExpandNode}
 	                onRecursiveSearchPromptChange={handleSetRecursiveSearchPrompt}
 	                onRecursiveDepthLimitChange={handleSetRecursiveDepthLimit}
-	                onRecursiveBudgetLimitChange={handleSetRecursiveBudgetLimit}
+                onRecursiveBudgetLimitChange={handleSetRecursiveBudgetLimit}
 	                onRecursiveSearch={handleRecursiveSearch}
                 onSherlockSearch={handleSherlockSearch}
+                on360Search={handle360Search}
               />
             ) : (
               <aside className="node-inspector" aria-label="Node inspector">
@@ -1115,6 +1149,102 @@ function buildSherlockSearchExpansion(
     canSay: llmResult.canSay,
     cannotSay: llmResult.cannotSay,
     model: llmResult.model,
+  };
+
+  return { nodes, edges, run };
+}
+
+function build360SearchExpansion(
+  node: CanvasNode,
+  query: string,
+  runIndex: number,
+  result: Search360Response,
+  existingNodes: CanvasNode[],
+) {
+  const dir = node.x > 66 ? -1 : 1;
+  const baseId = `search360-${runIndex}-${node.id}`;
+  const MIN_DISTANCE = 8;
+  const nodes: CanvasNode[] = [];
+  const edges: CanvasEdge[] = [];
+
+  function findFreePosition(targetX: number, targetY: number): { x: number; y: number } {
+    let x = targetX;
+    let y = targetY;
+    let attempts = 0;
+    while (attempts < 24) {
+      const tooClose = [...existingNodes, ...nodes].some((existing) => {
+        const dx = existing.x - x;
+        const dy = existing.y - y;
+        return Math.sqrt(dx * dx + dy * dy) < MIN_DISTANCE;
+      });
+      if (!tooClose) break;
+      y = clamp(y + (attempts % 2 === 0 ? 7 : -7));
+      if (attempts > 5) x = clamp(x + (attempts % 2 === 0 ? 5 : -5));
+      attempts++;
+    }
+    return { x, y };
+  }
+
+  const controllerPos = findFreePosition(clamp(node.x + 15 * dir), clamp(node.y + 16));
+  const answerPos = findFreePosition(clamp(node.x + 29 * dir), clamp(node.y + 4));
+  const controller: CanvasNode = {
+    id: `${baseId}-controller`,
+    type: "agent_task",
+    title: "360 AI Search",
+    subtitle: result.traceText ?? "调用 360 智搜进行实时检索。",
+    x: controllerPos.x,
+    y: controllerPos.y,
+    status: "controller",
+    revealStage: 99,
+  };
+  const answerNode: CanvasNode = {
+    id: `${baseId}-answer`,
+    type: "evidence_clue",
+    title: result._source === "demo-fallback" ? "360 搜索结果（模拟）" : "360 搜索摘要",
+    subtitle: result.answer.slice(0, 110),
+    x: answerPos.x,
+    y: answerPos.y,
+    status: result._source === "demo-fallback" ? "limited" : "supported",
+    revealStage: 99,
+  };
+
+  nodes.push(controller, answerNode);
+  edges.push(
+    { id: `${baseId}-edge-controller`, from: node.id, to: controller.id, label: "360", revealStage: 99, animated: true },
+    { id: `${baseId}-edge-answer`, from: controller.id, to: answerNode.id, label: "answer", revealStage: 99, animated: true },
+  );
+
+  result.sources.slice(0, 5).forEach((source, index) => {
+    const pos = findFreePosition(clamp(node.x + (40 + index * 7) * dir), clamp(node.y - 20 + index * 11));
+    const sourceNode: CanvasNode = {
+      id: `${baseId}-source-${index + 1}`,
+      type: "evidence_clue",
+      title: source.title,
+      subtitle: source.snippet || source.url,
+      x: pos.x,
+      y: pos.y,
+      status: source.credibility === "高" ? "supported" : source.credibility === "低" ? "risk" : "clue",
+      sourceRef: { clueId: source.url || source.title },
+      revealStage: 99,
+    };
+    nodes.push(sourceNode);
+    edges.push({ id: `${baseId}-edge-source-${index + 1}`, from: answerNode.id, to: sourceNode.id, label: "source", revealStage: 99 });
+  });
+
+  const run: AgentRun = {
+    id: `${baseId}-run`,
+    nodeId: node.id,
+    nodeTitle: node.title,
+    mode: "search",
+    prompt: query,
+    controllerNote: result.traceText ?? "360 AI Search 检索完成。",
+    agents: ["360_ai_search"],
+    inspectorSummary: result.answer,
+    canSay: result.sources.length > 0 ? ["已获得搜索摘要和来源线索"] : ["当前只获得搜索摘要"],
+    cannotSay: ["不能把搜索摘要直接当作最终结论", "仍需审计来源可信度"],
+    sources: result.sources.map((source) => source.url || source.title),
+    model: result.model ?? "360-ai-search",
+    agentType: "source_validator",
   };
 
   return { nodes, edges, run };

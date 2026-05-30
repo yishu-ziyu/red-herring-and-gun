@@ -1,10 +1,36 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useReasoning } from "../../../store/reasoningStore";
 import { runDemoPipeline } from "../../../lib/pipeline";
+import { createKnowledgeBase } from "../../../lib/knowledgeBase";
+import type { EvidenceLibraryEntry, KnowledgeBaseEntry, KnowledgeBaseStats } from "../../../lib/schemas";
 
 export function KnowledgePanel() {
   const { state } = useReasoning();
   const { caseData, gradedEvidence } = runDemoPipeline();
+  const knowledgeBase = useMemo(() => createKnowledgeBase(), []);
+  const [stats, setStats] = useState<KnowledgeBaseStats | null>(null);
+  const [recentCases, setRecentCases] = useState<KnowledgeBaseEntry[]>([]);
+  const [evidenceEntries, setEvidenceEntries] = useState<EvidenceLibraryEntry[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadKnowledgeBase() {
+      const [nextStats, cases, evidence] = await Promise.all([
+        knowledgeBase.getStats(),
+        knowledgeBase.listCases(),
+        knowledgeBase.findEvidence(state.originalClaim || caseData.originalClaim, { limit: 8 }),
+      ]);
+      if (cancelled) return;
+      setStats(nextStats);
+      setRecentCases(cases.slice(0, 6));
+      setEvidenceEntries(evidence);
+    }
+
+    void loadKnowledgeBase();
+    return () => {
+      cancelled = true;
+    };
+  }, [caseData.originalClaim, knowledgeBase, state.originalClaim]);
 
   // 从画布节点中过滤出证据类节点
   const evidenceNodes = useMemo(
@@ -25,6 +51,43 @@ export function KnowledgePanel() {
       </div>
 
       <div className="panel-content">
+        <div className="info-block knowledge-memory-block">
+          <h3>本地 Agent Memory</h3>
+          <div className="knowledge-stat-grid">
+            <span>案例 <strong>{stats?.totalCases ?? 0}</strong></span>
+            <span>证据 <strong>{stats?.totalEvidence ?? 0}</strong></span>
+            <span>类型 <strong>{Object.keys(stats?.typeDistribution ?? {}).length}</strong></span>
+          </div>
+          {recentCases.length > 0 ? (
+            <div className="knowledge-case-list">
+              {recentCases.map((entry) => (
+                <article key={entry.id} className="knowledge-case-card">
+                  <span>{entry.rumorType} · {new Date(entry.timestamp).toLocaleDateString("zh-CN")}</span>
+                  <strong>{entry.claim}</strong>
+                  <em>{entry.credibilityScore}% · {entry.tags.slice(0, 4).join(" / ")}</em>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p>深度核查完成后会自动沉淀到本地案例库。</p>
+          )}
+        </div>
+
+        {evidenceEntries.length > 0 ? (
+          <div className="info-block knowledge-evidence-block">
+            <h3>历史证据库 ({evidenceEntries.length})</h3>
+            <div className="knowledge-evidence-list">
+              {evidenceEntries.map((entry) => (
+                <article key={entry.id} className="knowledge-evidence-card">
+                  <strong>{entry.title}</strong>
+                  <p>{entry.summary}</p>
+                  <span>{entry.role} · 可信度{entry.credibility}</span>
+                </article>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {/* 证据需求概览 */}
         <div className="info-block">
           <h3>证据需求 ({evidenceNeeds.length})</h3>

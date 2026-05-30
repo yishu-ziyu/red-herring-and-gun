@@ -1,6 +1,9 @@
 import type { CanvasNode } from "../data/reasoningCanvas";
 import type { SherlockSearchRequest, SherlockSearchResponse } from "./sherlockStyleSearch";
+import type { AgentEvidenceBundle } from "./schemas";
 export type { SherlockSearchResponse } from "./sherlockStyleSearch";
+export { request360Search } from "./search360";
+export type { Search360Request, Search360Response, Search360Source } from "./schemas";
 import {
   buildOrchestrateDemoFallback,
   buildOrchestrateStreamDemoFallback,
@@ -8,6 +11,8 @@ import {
   buildRecursiveSearchDemoFallback,
   buildSherlockSearchDemoFallback,
 } from "./demoData";
+
+const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 export type ExpansionMode = "search" | "evidence_audit" | "counter" | "rewrite" | "rumor_check";
 
@@ -96,6 +101,7 @@ export interface HandoffStep {
   latencyMs: number;
   timestamp: number;
   status: "pending" | "running" | "completed" | "failed";
+  evidenceBundle?: AgentEvidenceBundle;
   error?: string;
 }
 
@@ -107,7 +113,7 @@ export interface HandoffResult {
 
 export async function requestOrchestrate(claim: string): Promise<HandoffResult> {
   try {
-    const response = await fetch("/api/agent/orchestrate", {
+    const response = await fetch(`${API_BASE}/api/agent/orchestrate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ claim }),
@@ -133,6 +139,7 @@ export interface OrchestrateStreamEvent {
   agentName?: string;
   agentIcon?: string;
   output?: Record<string, unknown>;
+  evidenceBundle?: AgentEvidenceBundle;
   model?: string;
   latencyMs?: number;
   steps?: HandoffStep[];
@@ -146,7 +153,7 @@ export interface OrchestrateStreamEvent {
 
 export async function* requestOrchestrateStream(claim: string): AsyncGenerator<OrchestrateStreamEvent> {
   try {
-    const response = await fetch("/api/agent/orchestrate-stream", {
+    const response = await fetch(`${API_BASE}/api/agent/orchestrate-stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ claim }),
@@ -209,7 +216,7 @@ export async function* requestOrchestrateStream(claim: string): AsyncGenerator<O
 
 export async function requestAgentExpansion(payload: AgentExpansionRequest): Promise<AgentExpansionResponse> {
   try {
-    const response = await fetch("/api/agent/expand", {
+    const response = await fetch(`${API_BASE}/api/agent/expand`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -231,7 +238,7 @@ export async function requestAgentExpansion(payload: AgentExpansionRequest): Pro
 
 export async function requestRecursiveSearch(payload: RecursiveSearchRequest): Promise<RecursiveSearchResponse> {
   try {
-    const response = await fetch("/api/agent/recursive-search", {
+    const response = await fetch(`${API_BASE}/api/agent/recursive-search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -253,7 +260,7 @@ export async function requestRecursiveSearch(payload: RecursiveSearchRequest): P
 
 export async function requestSherlockSearch(payload: SherlockSearchRequest): Promise<SherlockSearchResponse> {
   try {
-    const response = await fetch("/api/agent/sherlock-search", {
+    const response = await fetch(`${API_BASE}/api/agent/sherlock-search`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

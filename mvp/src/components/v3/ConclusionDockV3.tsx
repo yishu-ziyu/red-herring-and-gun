@@ -1,7 +1,16 @@
 import { useState, useCallback } from "react";
 import type { FinalReport, DemoCase } from "../../lib/schemas";
 import type { VerificationResult } from "../../lib/reportExporter";
-import { calculateCredibilityScore, exportToMarkdown, copyToClipboard, downloadFile } from "../../lib/reportExporter";
+import {
+  archiveDoubtful,
+  buildRebuttalCardMarkdown,
+  calculateCredibilityScore,
+  downloadFile,
+  exportToMarkdown,
+  getDoubtfulArchiveCount,
+  shareVerification,
+  type ClosureReportPayload,
+} from "../../lib/reportExporter";
 import { ReportModal } from "./ReportModal";
 
 interface ConclusionDockV3Props {
@@ -43,21 +52,43 @@ export function ConclusionDockV3({
   const effectiveCredibilityScore = handoffResult?.credibilityScore ?? credibilityScore;
   const label = handoffResult?.credibilityLabel ?? getCredibilityLabel(effectiveCredibilityScore);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [actionMessage, setActionMessage] = useState("");
+  const [archiveCount, setArchiveCount] = useState(() => getDoubtfulArchiveCount());
+
+  const buildPayload = useCallback((): ClosureReportPayload => ({
+    claim: handoffResult?.claim ?? originalClaim ?? report.originalClaim,
+    conclusion: handoffResult?.conclusion ?? report.rewrittenClaim.cautious,
+    credibilityScore: effectiveCredibilityScore,
+    credibilityLabel: label,
+    summaryForPublic: handoffResult?.recommendation ?? report.rewrittenClaim.publicFacing,
+    sources: report.evidenceChain.slice(0, 8),
+  }), [effectiveCredibilityScore, handoffResult, label, originalClaim, report]);
 
   const handleExport = useCallback(() => {
     const md = exportToMarkdown(report, caseData, verificationResult ?? undefined);
-    const filename = `真探核查报告_${caseData.originalClaim.slice(0, 20)}.md`;
+    const filename = `红鲱鱼与枪核查报告_${caseData.originalClaim.slice(0, 20)}.md`;
     downloadFile(md, filename, "text/markdown;charset=utf-8");
+    setActionMessage("报告已导出。");
   }, [report, caseData, verificationResult]);
 
-  const handleShare = useCallback(() => {
-    const md = exportToMarkdown(report, caseData, verificationResult ?? undefined);
-    copyToClipboard(md).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [report, caseData, verificationResult]);
+  const handleRebuttalCard = useCallback(() => {
+    const payload = buildPayload();
+    const md = buildRebuttalCardMarkdown(payload);
+    downloadFile(md, `红鲱鱼与枪辟谣卡片_${payload.claim.slice(0, 18)}.md`, "text/markdown;charset=utf-8");
+    setActionMessage("辟谣卡片已生成。");
+  }, [buildPayload]);
+
+  const handleArchive = useCallback(() => {
+    archiveDoubtful(buildPayload());
+    const nextCount = getDoubtfulArchiveCount();
+    setArchiveCount(nextCount);
+    setActionMessage(`已存疑归档，当前共 ${nextCount} 条。`);
+  }, [buildPayload]);
+
+  const handleShare = useCallback(async () => {
+    const entry = await shareVerification(buildPayload());
+    setActionMessage(entry.channel === "native-share" ? "已调用系统分享。" : "已复制分享文本。");
+  }, [buildPayload]);
 
   return (
     <>
@@ -96,10 +127,24 @@ export function ConclusionDockV3({
             </button>
             <button
               className="conclusion-action-btn"
+              onClick={handleRebuttalCard}
+              type="button"
+            >
+              辟谣卡片
+            </button>
+            <button
+              className="conclusion-action-btn"
+              onClick={handleArchive}
+              type="button"
+            >
+              存疑归档
+            </button>
+            <button
+              className="conclusion-action-btn"
               onClick={handleShare}
               type="button"
             >
-              {copied ? "已复制" : "分享结果"}
+              分享核查
             </button>
             <button
               className="conclusion-action-btn primary"
@@ -108,6 +153,8 @@ export function ConclusionDockV3({
             >
               导出报告
             </button>
+            {actionMessage ? <span className="conclusion-action-message">{actionMessage}</span> : null}
+            {archiveCount > 0 ? <span className="conclusion-action-message">存疑 {archiveCount}</span> : null}
           </div>
         )}
       </footer>

@@ -4,6 +4,8 @@ import {
   socialRumorCase,
   techRumorCase,
   financeRumorCase,
+  politicalRumorCase,
+  entertainmentRumorCase,
 } from "../data/rumorCases";
 import type { DemoCase } from "./schemas";
 import { gradeAll } from "./graderRules";
@@ -15,6 +17,8 @@ const CASE_REGISTRY: Record<string, DemoCase> = {
   "social-metro-shutdown": socialRumorCase,
   "tech-5g-radiation": techRumorCase,
   "finance-rmb-devalue": financeRumorCase,
+  "political-policy-rumor": politicalRumorCase,
+  "entertainment-celebrity-rumor": entertainmentRumorCase,
 };
 
 export function getDemoCase(caseId: string): DemoCase {

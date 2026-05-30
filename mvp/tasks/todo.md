@@ -89,6 +89,30 @@
 - [x] MissionControl Agent 卡片在 fallback 时显示灰色虚线和“模拟模式”。
 - [x] 扫描仓库明文 key，并重跑 `npx tsc --noEmit`、`npm run build`。
 
+# Domestic Model + 360 Demo Integration
+
+- [x] 将用户提供的 360 key 只写入本地 `.env.local`，不写入源码、README 或 example。
+- [x] 增加 360 Chat Completions Agent provider，接入 `360gpt-pro` 作为国产大模型备用链路。
+- [x] 快速分析进入结果态后也会后台调用 `/api/agent/orchestrate`，demo 不再只是静态结果。
+- [x] `/api/search/360` 优先调用 360 AI Search，失败后回退 360 智搜 `aiso-max`。
+- [x] 输入态模型展示切到 StepFun / MiMo / DeepSeek / 360 智搜等国产链路。
+- [x] 结果态底部展示实际命中的模型名，避免 fallback 或自动路由不可见。
+- [x] 在 `ai组件工作流` 归档模型接入目录和可复用组件配置方法。
+- [x] 运行 `npx tsc --noEmit`。
+- [x] 运行 `npm run build`。
+- [x] 本地调用 `/api/search/360` 和 `/api/agent/orchestrate`，确认真实模型链路或可见 fallback。
+- [x] 浏览器验证快速分析和深度核查主路径。
+
+# CurioCat Evidence Audit Integration
+
+- [x] 360 搜索来源补齐 `sourceType`、`credibilityScore`、`sourceTier`、`freshnessScore`、`domain` 和 `evidenceRole`。
+- [x] 360 AI Search / 智搜 fallback 接入支持与反驳双向查询，并输出支持证据、反驳证据和未解证据缺口。
+- [x] 新增 `AgentEvidenceBundle`，让 HandoffStep、Mission Control、Result Workspace 证据图谱都能消费 Agent 证据包。
+- [x] 将 `biasWarnings`、`logicRisks`、`cannotInfer`、`doNotInfer` 归一为逻辑风险审计项。
+- [x] 逻辑风险接入 FIRE consistency 分数，结构化模型输出和 demo fallback 走同一展示逻辑。
+- [x] 运行 `npx tsc --noEmit`。
+- [x] 运行 `npm run build`。
+
 ## Review
 
 - Build: `npm run build` 通过。
@@ -116,3 +140,11 @@
 - Three-state C+D+E Console QA: 刷新并进入结果页后无 error/warn/issue；截图保存在 `/tmp/suzheng-result-workspace-report.png`。
 - StepFun P0 Security: `vite.config.ts` 不再包含 StepFun 明文 key；`DEVELOPMENT_LOG.md` 中历史 MiMo key 已改为占位符；`rg` 扫描未发现 StepFun/MiMo 明文 key（`package-lock.json` integrity hash 为误报）。
 - StepFun P0 TypeScript/Build: `npx tsc --noEmit` 通过；`npm run build` 通过，仍有既有 500 kB chunk warning。
+- Domestic Model + 360 API QA: 充值后 360 Chat Completions 直连返回 HTTP 200，模型 `360gpt-pro`。
+- Domestic Model + 360 Search QA: `POST /api/search/360` 返回 `model: 360-ai-search:360gpt-pro`，含 8 条真实来源。
+- Domestic Model + 360 Orchestrate QA: `POST /api/agent/orchestrate` 的 4 个 Agent 全部返回 `360-chat:360gpt-pro`，并消费 `360-ai-search:360gpt-pro` 搜索结果。
+- Domestic Model + 360 Browser QA: 新标签页验证快速分析会后台刷新为真实模型结果，结果页底部显示 `模型核查 4 步完成 · 360-chat:360gpt-pro`；深度模式进入执行态，显示 MISSION CONTROL 和 RumorDetector 当前任务。截图保存在 `output/playwright/domestic-dashboard.png`、`output/playwright/domestic-result-quick.png`、`output/playwright/domestic-mission.png`。
+- Domestic Model + 360 Security: 扫描 `docs`、`src`、`vite.config.ts`、`.env.local.example` 和 `ai组件工作流` 接入文档，未发现真实 key 或 Bearer token；真实 key 只保留在 `.env.local`。
+- CurioCat Evidence Audit TypeScript: `npx tsc --noEmit` 通过。
+- CurioCat Evidence Audit Build: `npm run build` 通过；Vite 仍提示单个 chunk 超过 500 kB，这是既有体积风险，不阻塞本轮证据审计接入。
+- CurioCat Evidence Audit Scope: 本轮只接通 360 搜索证据质量、支持/反驳双向搜索、Agent 证据包、逻辑风险归一和 FIRE consistency 调制；未新增依赖，未读取或写入真实密钥。

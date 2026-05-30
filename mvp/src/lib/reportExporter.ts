@@ -1,4 +1,4 @@
-import type { DemoCase, FinalReport } from "./schemas";
+import type { DemoCase, FinalReport, RebuttalCard } from "./schemas";
 import type { ReasoningState } from "../store/reasoningStore";
 
 export type VerificationResult = "true" | "false" | "partial" | "unknown";
@@ -98,7 +98,7 @@ export function exportToMarkdown(
   const credibility = calculateCredibilityScore(caseData, report);
 
   const sections = [
-    "# 真探 Agent — 核查报告",
+    "# 红鲱鱼与枪 — 核查报告",
     `\n生成时间：${now}`,
     `\n---\n`,
 
@@ -160,10 +160,139 @@ export function exportToMarkdown(
 
     `\n---\n`,
 
-    "*本报告由 真探 Agent 自动生成，仅供参考。关键结论请以权威信源为准。*",
+    "*本报告由 红鲱鱼与枪 自动生成，仅供参考。关键结论请以权威信源为准。*",
   ];
 
   return sections.join("\n");
+}
+
+export interface ClosureReportPayload {
+  claim: string;
+  conclusion: string;
+  credibilityScore: number;
+  credibilityLabel: string;
+  summaryForPublic: string;
+  sources: string[];
+}
+
+export interface DoubtfulArchiveEntry extends ClosureReportPayload {
+  id: string;
+  archivedAt: number;
+  note: string;
+}
+
+export interface ShareLogEntry {
+  id: string;
+  claim: string;
+  sharedAt: number;
+  channel: "native-share" | "clipboard";
+}
+
+const QUESTIONABLE_ARCHIVE_KEY = "reasoning-v3-questionable-archives";
+const SHARE_LOG_KEY = "reasoning-v3-share-log";
+
+function readLocalList<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalList<T>(key: string, value: T[]) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+export function buildRebuttalCard(payload: ClosureReportPayload): RebuttalCard {
+  const color =
+    payload.credibilityScore >= 60
+      ? "#16a766"
+      : payload.credibilityScore >= 40
+        ? "#d97706"
+        : "#fb4c2f";
+  return {
+    title: `核查：${payload.claim.slice(0, 36)}`,
+    verdict: payload.credibilityLabel,
+    color,
+    keyPoints: [
+      payload.conclusion,
+      payload.summaryForPublic,
+      payload.sources[0] ? `可复核来源：${payload.sources[0]}` : "仍需补充权威来源。",
+    ].filter(Boolean).slice(0, 3),
+    sourceRef: `红鲱鱼与枪核查 · ${new Date().toLocaleString("zh-CN")}`,
+  };
+}
+
+export function buildRebuttalCardMarkdown(payload: ClosureReportPayload): string {
+  const card = buildRebuttalCard(payload);
+  return [
+    "# 红鲱鱼与枪 — 辟谣卡片",
+    "",
+    `## ${card.title}`,
+    "",
+    `**结论**：${card.verdict}（可信度 ${payload.credibilityScore}%）`,
+    "",
+    "### 核心要点",
+    ...card.keyPoints.map((point) => `- ${point}`),
+    "",
+    "### 可复核来源",
+    ...(payload.sources.length > 0 ? payload.sources.map((source) => `- ${source}`) : ["- 暂无可复核来源，建议继续补证。"]),
+    "",
+    `> ${card.sourceRef}`,
+  ].join("\n");
+}
+
+export function archiveDoubtful(payload: ClosureReportPayload): DoubtfulArchiveEntry {
+  const entry: DoubtfulArchiveEntry = {
+    ...payload,
+    id: `questionable-${Date.now()}`,
+    archivedAt: Date.now(),
+    note: "questionable",
+  };
+  const existing = readLocalList<DoubtfulArchiveEntry>(QUESTIONABLE_ARCHIVE_KEY);
+  const deduped = existing.filter((item) => item.claim !== payload.claim);
+  writeLocalList(QUESTIONABLE_ARCHIVE_KEY, [entry, ...deduped].slice(0, 80));
+  return entry;
+}
+
+export function getDoubtfulArchiveCount(): number {
+  return readLocalList<DoubtfulArchiveEntry>(QUESTIONABLE_ARCHIVE_KEY).length;
+}
+
+export async function shareVerification(payload: ClosureReportPayload): Promise<ShareLogEntry> {
+  const shareText = [
+    `红鲱鱼与枪核查：${payload.claim}`,
+    `结论：${payload.credibilityLabel}（${payload.credibilityScore}%）`,
+    payload.summaryForPublic,
+  ].join("\n");
+  let channel: ShareLogEntry["channel"] = "clipboard";
+
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: "红鲱鱼与枪核查结果",
+        text: shareText,
+      });
+      channel = "native-share";
+    } catch {
+      await copyToClipboard(shareText);
+    }
+  } else {
+    await copyToClipboard(shareText);
+  }
+
+  const entry: ShareLogEntry = {
+    id: `share-${Date.now()}`,
+    claim: payload.claim,
+    sharedAt: Date.now(),
+    channel,
+  };
+  const existing = readLocalList<ShareLogEntry>(SHARE_LOG_KEY);
+  writeLocalList(SHARE_LOG_KEY, [entry, ...existing].slice(0, 80));
+  return entry;
 }
 
 export function exportToJSON(state: ReasoningState): string {

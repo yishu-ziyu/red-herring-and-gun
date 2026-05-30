@@ -1,11 +1,24 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { HandoffResult, HandoffStep } from "../../../lib/agentExpansion";
 import type { CanvasEdge, CanvasNode } from "../../../data/reasoningCanvas";
-import type { ClaimDiagnosis } from "../../../lib/schemas";
-import { calculateCredibilityScore } from "../../../lib/reportExporter";
+import type { ClaimDiagnosis, KnowledgeBaseEntry, VerificationResult } from "../../../lib/schemas";
+import { normalizeAgentBiasFindings } from "../../../lib/biasAudit";
+import { buildConfidenceAssessments, extractConfidenceAssessments } from "../../../lib/confidenceEngine";
+import { createKnowledgeBase } from "../../../lib/knowledgeBase";
+import {
+  archiveDoubtful,
+  buildRebuttalCardMarkdown,
+  calculateCredibilityScore,
+  downloadFile,
+  getDoubtfulArchiveCount,
+  shareVerification,
+  type ClosureReportPayload,
+} from "../../../lib/reportExporter";
+import { buildSpindleCanvas } from "../../../lib/spindleCanvasBuilder";
 import { useReasoning } from "../../../store/reasoningStore";
 import { ReasoningWorkspaceV3 } from "../ReasoningWorkspaceV3";
 import { EvidenceMap } from "./EvidenceMap";
+import { BenchmarkPanel } from "../panels/BenchmarkPanel";
 import { ReportPanel } from "./result/ReportPanel";
 
 interface ResultWorkspaceProps {
@@ -26,10 +39,6 @@ function getNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function normalizeAgent(agent?: string) {
-  return (agent ?? "").trim().toLowerCase();
-}
-
 function buildCitationNodeMap(nodes: CanvasNode[]) {
   const map = new Map<string, string>();
   nodes.forEach((node) => {
@@ -46,86 +55,7 @@ function buildCitationNodeMap(nodes: CanvasNode[]) {
 
 function buildHandoffEvidenceGraph(result: HandoffResult | null): { nodes: CanvasNode[]; edges: CanvasEdge[] } {
   if (!result || result.steps.length === 0) return { nodes: [], edges: [] };
-
-  const nodes: CanvasNode[] = [
-    {
-      id: "handoff-controller",
-      type: "agent_task",
-      title: "Handoff 调度器",
-      subtitle: `调度 ${result.steps.length} 个 Agent`,
-      x: 12,
-      y: 50,
-      status: "handoff",
-      handoffState: result.steps.some((step) => step.status === "failed") ? "failed" : "completed",
-      revealStage: 99,
-    },
-  ];
-  const edges: CanvasEdge[] = [];
-  const positions: Record<string, { x: number; y: number }> = {
-    rumor_detector: { x: 32, y: 50 },
-    fact_checker: { x: 52, y: 32 },
-    source_validator: { x: 52, y: 68 },
-    report_composer: { x: 72, y: 50 },
-  };
-  const nodeIdForAgent = new Map<string, string>();
-
-  result.steps.forEach((step, index) => {
-    const agent = normalizeAgent(step.agent);
-    const pos = positions[agent] ?? { x: 30 + index * 16, y: index % 2 === 0 ? 42 : 58 };
-    const nodeId = `handoff-agent-${agent || index}`;
-    nodeIdForAgent.set(agent, nodeId);
-    nodes.push({
-      id: nodeId,
-      type: "agent_task",
-      title: `${step.agentIcon || "◆"} ${step.agentName}`,
-      subtitle: summarizeStepOutput(step),
-      x: pos.x,
-      y: pos.y,
-      status: "handoff",
-      handoffState: step.status,
-      revealStage: 99,
-    });
-  });
-
-  const rumorNode = nodeIdForAgent.get("rumor_detector");
-  const factNode = nodeIdForAgent.get("fact_checker");
-  const sourceNode = nodeIdForAgent.get("source_validator");
-  const reportNode = nodeIdForAgent.get("report_composer");
-
-  if (rumorNode) {
-    edges.push({ id: "handoff-edge-controller-rumor", from: "handoff-controller", to: rumorNode, label: "claim", revealStage: 99, animated: true });
-  }
-  if (rumorNode && factNode) {
-    edges.push({ id: "handoff-edge-rumor-fact", from: rumorNode, to: factNode, label: "fact-check", revealStage: 99, animated: true, style: "parallel_split" });
-  }
-  if (rumorNode && sourceNode) {
-    edges.push({ id: "handoff-edge-rumor-source", from: rumorNode, to: sourceNode, label: "source-check", revealStage: 99, animated: true, style: "parallel_split" });
-  }
-  if (factNode && reportNode) {
-    edges.push({ id: "handoff-edge-fact-report", from: factNode, to: reportNode, label: "findings", revealStage: 99, animated: true, style: "parallel_join" });
-  }
-  if (sourceNode && reportNode) {
-    edges.push({ id: "handoff-edge-source-report", from: sourceNode, to: reportNode, label: "sources", revealStage: 99, animated: true, style: "parallel_join" });
-  }
-
-  if (result.finalReport) {
-    nodes.push({
-      id: "handoff-report",
-      type: "evidence_need",
-      title: "核查报告",
-      subtitle: getString(result.finalReport.conclusion) || "综合核查报告已生成",
-      x: 88,
-      y: 50,
-      status: "handoff",
-      handoffState: "completed",
-      revealStage: 99,
-    });
-    if (reportNode) {
-      edges.push({ id: "handoff-edge-report-final", from: reportNode, to: "handoff-report", label: "report", revealStage: 99, animated: true });
-    }
-  }
-
-  return { nodes, edges };
+  return buildSpindleCanvas(result.claim, result);
 }
 
 function summarizeStepOutput(step: HandoffStep) {
@@ -143,6 +73,27 @@ function summarizeStepOutput(step: HandoffStep) {
 
 function pickReportSteps(handoffResult: HandoffResult | null) {
   return handoffResult?.steps ?? [];
+}
+
+function collectClosureSources(steps: HandoffStep[]) {
+  const sources: string[] = [];
+  steps.forEach((step) => {
+    ["sources", "verifiedSources", "questionableSources"].forEach((key) => {
+      const value = step.output[key];
+      if (Array.isArray(value)) {
+        value.forEach((item) => {
+          if (typeof item === "string" && item.trim()) sources.push(item.trim());
+        });
+      }
+    });
+  });
+  return Array.from(new Set(sources)).slice(0, 8);
+}
+
+function inferVerificationResult(score: number): VerificationResult {
+  if (score >= 70) return "true";
+  if (score >= 40) return "partial";
+  return "unknown";
 }
 
 function buildQuickAnalysisSteps(
@@ -228,6 +179,10 @@ export function ResultWorkspace({ claim, handoffResult, onReset }: ResultWorkspa
   const { state } = useReasoning();
   const [activeTab, setActiveTab] = useState<ResultTab>("report");
   const [highlightedNodeId, setHighlightedNodeId] = useState<string | undefined>();
+  const [actionMessage, setActionMessage] = useState("");
+  const [archiveCount, setArchiveCount] = useState(0);
+  const savedKnowledgeIdRef = useRef<string | null>(null);
+  const knowledgeBase = useMemo(() => createKnowledgeBase(), []);
 
   const fallbackCredibility = useMemo(() => {
     if (!state.report || !state.diagnosis) return { score: 50, label: FALLBACK_LABEL };
@@ -269,6 +224,11 @@ export function ResultWorkspace({ claim, handoffResult, onReset }: ResultWorkspa
         : state.report?.nextEvidenceNeeded ?? []
     );
   }, [handoffResult, state.diagnosis, state.report]);
+  const modelSummary = useMemo(() => {
+    const models = Array.from(new Set(reportSteps.map((step) => step.model).filter(Boolean)));
+    if (models.length === 0) return "";
+    return models.length > 2 ? `${models.slice(0, 2).join(" / ")} +${models.length - 2}` : models.join(" / ");
+  }, [reportSteps]);
   const conclusion =
     getString(report.conclusion) ||
     (handoffResult
@@ -285,6 +245,39 @@ export function ResultWorkspace({ claim, handoffResult, onReset }: ResultWorkspa
       ? state.report?.rewrittenClaim.publicFacing
       : state.diagnosis?.whyNotDirectFactCheck || state.diagnosis?.risk) ||
     conclusion;
+  const logicRiskItems = useMemo(() => {
+    const findings = [
+      ...normalizeAgentBiasFindings(report, { agentId: "final_report" }),
+      ...reportSteps.flatMap((step) => normalizeAgentBiasFindings(step.output, { agentId: step.agent })),
+      ...(state.report ? normalizeAgentBiasFindings(state.report, { agentId: "demo_report" }) : []),
+    ];
+
+    const seen = new Set<string>();
+    return findings.filter((item) => {
+      const key = `${item.label}-${item.explanation}-${item.severity}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [report, reportSteps, state.report]);
+  const confidenceReport = useMemo(
+    () => ({
+      nextEvidenceNeeded: state.report?.nextEvidenceNeeded ?? [],
+      evidenceQualitySummary: state.report?.evidenceQualitySummary,
+      logicRiskItems,
+    }),
+    [logicRiskItems, state.report?.evidenceQualitySummary, state.report?.nextEvidenceNeeded]
+  );
+  const confidenceAssessments = useMemo(
+    () =>
+      extractConfidenceAssessments(
+        report.confidenceDimensions ?? buildConfidenceAssessments(credibilityScore, reportSteps, confidenceReport),
+        credibilityScore,
+        reportSteps,
+        confidenceReport
+      ),
+    [confidenceReport, credibilityScore, report.confidenceDimensions, reportSteps]
+  );
 
   const graphResult = useMemo<HandoffResult | null>(() => {
     if (handoffResult) return handoffResult;
@@ -313,6 +306,60 @@ export function ResultWorkspace({ claim, handoffResult, onReset }: ResultWorkspa
   const graphNodes = derivedGraph.nodes.length > 0 ? derivedGraph.nodes : state.nodes;
   const graphEdges = derivedGraph.nodes.length > 0 ? derivedGraph.edges : state.edges;
   const citationNodeMap = useMemo(() => buildCitationNodeMap(graphNodes), [graphNodes]);
+  const closurePayload = useMemo<ClosureReportPayload>(
+    () => ({
+      claim: claim || state.originalClaim,
+      conclusion,
+      credibilityScore,
+      credibilityLabel,
+      summaryForPublic,
+      sources: collectClosureSources(reportSteps),
+    }),
+    [claim, conclusion, credibilityLabel, credibilityScore, reportSteps, state.originalClaim, summaryForPublic]
+  );
+
+  useEffect(() => {
+    setArchiveCount(getDoubtfulArchiveCount());
+  }, []);
+
+  useEffect(() => {
+    if (!closurePayload.claim || reportSteps.length === 0 || !state.diagnosis) return;
+    const entryId = `case-${closurePayload.claim.replace(/\s+/g, "-").slice(0, 48)}-result`;
+    if (savedKnowledgeIdRef.current === entryId) return;
+    savedKnowledgeIdRef.current = entryId;
+
+    const entry: KnowledgeBaseEntry = {
+      id: entryId,
+      claim: closurePayload.claim,
+      rumorType: state.diagnosis.risk.includes("政治")
+        ? "政治"
+        : state.diagnosis.risk.includes("娱乐")
+          ? "娱乐"
+          : "结果态",
+      diagnosis: state.diagnosis,
+      finalReport: handoffResult?.finalReport ?? state.report ?? {},
+      handoffSteps: reportSteps,
+      credibilityScore,
+      verificationResult: inferVerificationResult(credibilityScore),
+      timestamp: Date.now(),
+      tags: [
+        "result",
+        credibilityLabel,
+        ...(state.diagnosis.rumorIndicators ?? []),
+      ],
+    };
+
+    void knowledgeBase.saveCase(entry);
+  }, [
+    closurePayload.claim,
+    credibilityLabel,
+    credibilityScore,
+    handoffResult?.finalReport,
+    knowledgeBase,
+    reportSteps,
+    state.diagnosis,
+    state.report,
+  ]);
 
   const handleSourceClick = useCallback(
     (sourceId: string) => {
@@ -321,11 +368,50 @@ export function ResultWorkspace({ claim, handoffResult, onReset }: ResultWorkspa
     [citationNodeMap, graphNodes]
   );
 
+  const handleExport = useCallback(() => {
+    const md = [
+      "# 红鲱鱼与枪 — 结果工作台报告",
+      "",
+      `**待核查信息**：${closurePayload.claim}`,
+      `**结论**：${closurePayload.credibilityLabel}（${closurePayload.credibilityScore}%）`,
+      "",
+      closurePayload.conclusion,
+      "",
+      "## 公众摘要",
+      closurePayload.summaryForPublic,
+      "",
+      "## 可复核来源",
+      ...(closurePayload.sources.length > 0
+        ? closurePayload.sources.map((source) => `- ${source}`)
+        : ["- 暂无来源，建议继续补证。"]),
+    ].join("\n");
+    downloadFile(md, `红鲱鱼与枪结果报告_${closurePayload.claim.slice(0, 18)}.md`, "text/markdown;charset=utf-8");
+    setActionMessage("报告已导出为 Markdown。");
+  }, [closurePayload]);
+
+  const handleRebuttalCard = useCallback(() => {
+    const md = buildRebuttalCardMarkdown(closurePayload);
+    downloadFile(md, `红鲱鱼与枪辟谣卡片_${closurePayload.claim.slice(0, 18)}.md`, "text/markdown;charset=utf-8");
+    setActionMessage("辟谣卡片已生成。");
+  }, [closurePayload]);
+
+  const handleArchive = useCallback(() => {
+    archiveDoubtful(closurePayload);
+    const nextCount = getDoubtfulArchiveCount();
+    setArchiveCount(nextCount);
+    setActionMessage(`已存疑归档，当前共 ${nextCount} 条。`);
+  }, [closurePayload]);
+
+  const handleShare = useCallback(async () => {
+    const entry = await shareVerification(closurePayload);
+    setActionMessage(entry.channel === "native-share" ? "已调用系统分享。" : "已复制分享文本。");
+  }, [closurePayload]);
+
   return (
     <main className="result-workspace">
       <header className="result-topbar">
         <div className="result-brand">
-          <strong>真探 Agent</strong>
+          <strong>红鲱鱼与枪</strong>
           <span>Result Workspace</span>
         </div>
         <nav className="result-tabs" aria-label="结果工作区">
@@ -355,6 +441,8 @@ export function ResultWorkspace({ claim, handoffResult, onReset }: ResultWorkspa
             credibilityLabel={credibilityLabel}
             summaryForPublic={summaryForPublic}
             steps={reportSteps}
+            confidenceAssessments={confidenceAssessments}
+            logicRiskItems={logicRiskItems}
             onSourceClick={handleSourceClick}
           />
           <EvidenceMap
@@ -375,16 +463,24 @@ export function ResultWorkspace({ claim, handoffResult, onReset }: ResultWorkspa
 
       {activeTab === "settings" ? (
         <section className="result-settings-tab">
-          <h2>设置</h2>
-          <p>当前版本保留结果态设置入口，后续可接入导出格式、证据阈值和人工判定偏好。</p>
+          <BenchmarkPanel handoffRuns={state.handoffRuns} />
         </section>
       ) : null}
 
       <footer className="result-bottom-bar">
-        <button type="button">导出报告</button>
-        <button type="button">复制摘要</button>
-        <button type="button">继续追问</button>
-        <span>{handoffResult ? `深度核查 ${reportSteps.length} 步完成` : "快速分析结果"}</span>
+        <button type="button" onClick={handleExport}>导出报告</button>
+        <button type="button" onClick={handleRebuttalCard}>辟谣卡片</button>
+        <button type="button" onClick={handleArchive}>存疑归档</button>
+        <button type="button" onClick={handleShare}>分享核查</button>
+        {actionMessage ? <em className="result-action-message">{actionMessage}</em> : null}
+        <span>
+          {handoffResult
+            ? `模型核查 ${reportSteps.length} 步完成${modelSummary ? ` · ${modelSummary}` : ""}`
+            : state.isExpanding
+              ? "正在调用国产大模型刷新报告"
+              : "快速分析结果"}
+          {archiveCount > 0 ? ` · 存疑 ${archiveCount}` : ""}
+        </span>
       </footer>
     </main>
   );

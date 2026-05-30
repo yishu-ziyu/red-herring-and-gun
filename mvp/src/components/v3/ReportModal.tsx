@@ -43,7 +43,7 @@ export function ReportModal({
 
   const handleDownloadMarkdown = useCallback(() => {
     const md = exportToMarkdown(report, caseData, verificationResult);
-    const filename = `真探核查报告_${caseData.originalClaim.slice(0, 20)}.md`;
+    const filename = `红鲱鱼与枪核查报告_${caseData.originalClaim.slice(0, 20)}.md`;
     downloadFile(md, filename, "text/markdown;charset=utf-8");
   }, [report, caseData, verificationResult]);
 

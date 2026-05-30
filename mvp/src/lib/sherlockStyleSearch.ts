@@ -12,6 +12,9 @@
 
 declare const process: { env: Record<string, string | undefined> } | undefined;
 
+import type { EvidenceRole, Search360Source } from "./schemas";
+import { enrichSearch360Source } from "./sourceCredibility";
+
 export interface SourceConfig {
   id: string;
   name: string;
@@ -36,6 +39,8 @@ export interface SourceHit {
   trustLevel: string;
   matchedKeywords: string[];
   factCheckResult?: "true" | "false" | "partial" | "unverified";
+  evidenceRole?: EvidenceRole;
+  sourceQuality?: Pick<Search360Source, "sourceType" | "credibilityScore" | "sourceTier" | "freshnessScore" | "domain">;
   summary: string;
 }
 
@@ -52,6 +57,11 @@ export interface SherlockSearchResponse {
   hits: SourceHit[];
   sourcesSearched: number;
   sourcesMatched: number;
+  supportQueries: string[];
+  contradictQueries: string[];
+  supportingEvidence: SourceHit[];
+  contradictingEvidence: SourceHit[];
+  unresolvedEvidenceGaps: string[];
   canSay: string[];
   cannotSay: string[];
   model: string;
@@ -302,6 +312,22 @@ export function extractKeywords(claim: string): string[] {
   return [...new Set(words)].slice(0, 5);
 }
 
+export function buildSherlockSupportQueries(claim: string, keywords: string[]): string[] {
+  const base = keywords.length > 0 ? keywords.join(" ") : claim;
+  return [
+    `${base} 官方回应 原始来源`,
+    `${base} 证据 依据 核实`,
+  ];
+}
+
+export function buildSherlockContradictQueries(claim: string, keywords: string[]): string[] {
+  const base = keywords.length > 0 ? keywords.join(" ") : claim;
+  return [
+    `${base} 辟谣 不实 谣言`,
+    `${base} 误读 反例 无法证实 争议`,
+  ];
+}
+
 // ───────────────────────────────────────────────────────────────
 // 并行搜索调度（智能版：优先 MiMo LLM，回退到关键词匹配模拟）
 // ───────────────────────────────────────────────────────────────
@@ -334,10 +360,28 @@ export async function searchClaimAcrossSources(
           trustLevel: hit.trustLevel,
           matchedKeywords: hit.matchedKeywords,
           factCheckResult: hit.factCheckResult,
+          evidenceRole: roleForFactCheckResult(hit.factCheckResult),
           summary: hit.summary,
         })),
         sourcesSearched: FACT_CHECK_SOURCES.length,
         sourcesMatched: mimoResult.sourcesMatched,
+        supportQueries: buildSherlockSupportQueries(claim, searchKeywords),
+        contradictQueries: buildSherlockContradictQueries(claim, searchKeywords),
+        supportingEvidence: mimoResult.hits
+          .filter((hit) => hit.factCheckResult === "true" || hit.factCheckResult === "partial" || hit.factCheckResult === "unverified")
+          .map((hit) => ({
+            ...hit,
+            evidenceRole: roleForFactCheckResult(hit.factCheckResult),
+          })),
+        contradictingEvidence: mimoResult.hits
+          .filter((hit) => hit.factCheckResult === "false")
+          .map((hit) => ({
+            ...hit,
+            evidenceRole: "反驳" as const,
+          })),
+        unresolvedEvidenceGaps: mimoResult.hits.some((hit) => hit.factCheckResult === "false")
+          ? []
+          : ["未找到明确反证，需继续检索辟谣平台或原始出处。"],
         canSay: mimoResult.canSay.length > 0
           ? mimoResult.canSay
           : [`在 ${mimoResult.sourcesMatched} 个平台上找到相关核查记录`, "可以引用平台结果作为证据线索"],
@@ -380,6 +424,15 @@ function performSimulatedSearch(
     if (matchedKeywords.length > 0) {
       const matchedUrl = interpolateQuery(source.searchUrlTemplate, searchKeywords);
       const factCheckResult = simulateFactCheckResult(claim, source.category);
+      const enrichedSource = enrichSearch360Source(
+        {
+          title: source.name,
+          url: matchedUrl,
+          snippet: source.description,
+        },
+        hits.length,
+        { query: claim, direction: factCheckResult === "false" ? "contradict" : "neutral" }
+      );
 
       hits.push({
         sourceId: source.id,
@@ -390,6 +443,14 @@ function performSimulatedSearch(
         trustLevel: source.trustLevel,
         matchedKeywords,
         factCheckResult,
+        evidenceRole: roleForFactCheckResult(factCheckResult),
+        sourceQuality: {
+          sourceType: enrichedSource.sourceType,
+          credibilityScore: enrichedSource.credibilityScore,
+          sourceTier: enrichedSource.sourceTier,
+          freshnessScore: enrichedSource.freshnessScore,
+          domain: enrichedSource.domain,
+        },
         summary: buildHitSummary(source, claim, factCheckResult),
       });
     }
@@ -402,6 +463,8 @@ function performSimulatedSearch(
   });
 
   const sourcesMatched = hits.length;
+  const supportingEvidence = hits.filter((hit) => hit.evidenceRole !== "反驳");
+  const contradictingEvidence = hits.filter((hit) => hit.evidenceRole === "反驳");
 
   return {
     controllerNote: fallbackNote
@@ -412,6 +475,13 @@ function performSimulatedSearch(
     hits,
     sourcesSearched: FACT_CHECK_SOURCES.length,
     sourcesMatched,
+    supportQueries: buildSherlockSupportQueries(claim, searchKeywords),
+    contradictQueries: buildSherlockContradictQueries(claim, searchKeywords),
+    supportingEvidence,
+    contradictingEvidence,
+    unresolvedEvidenceGaps: contradictingEvidence.length > 0
+      ? []
+      : ["未在已知辟谣/事实核查平台上命中明确反证。"],
     canSay: sourcesMatched > 0
       ? [`在 ${sourcesMatched} 个平台上找到相关核查记录`, "可以引用平台结果作为证据线索"]
       : ["未在已知平台上找到直接核查记录"],
@@ -422,6 +492,13 @@ function performSimulatedSearch(
     ],
     model: "sherlock-style-parallel-search",
   };
+}
+
+function roleForFactCheckResult(result?: string): EvidenceRole {
+  if (result === "false") return "反驳";
+  if (result === "true") return "支持";
+  if (result === "partial") return "限定";
+  return "线索";
 }
 
 // ───────────────────────────────────────────────────────────────

@@ -1,0 +1,12 @@
+.git
+.DS_Store
+.env
+.env.*
+!.env.example
+!.env.local.example
+node_modules
+dist
+output
+screenshots
+server/node_modules
+red-herring-api.tar.gz

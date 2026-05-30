@@ -4,6 +4,8 @@ import {
   type HandoffStep,
   type OrchestrateStreamEvent,
 } from "../../../lib/agentExpansion";
+import { createKnowledgeBase } from "../../../lib/knowledgeBase";
+import type { ClaimDiagnosis, KnowledgeBaseEntry, VerificationResult } from "../../../lib/schemas";
 import { useReasoning } from "../../../store/reasoningStore";
 import { AgentCard } from "./mission/AgentCard";
 import { CanvasThumbnail } from "./mission/CanvasThumbnail";
@@ -58,6 +60,7 @@ function buildStep(event: OrchestrateStreamEvent, status: HandoffStep["status"])
     systemPrompt: "",
     input: {},
     output: event.output ?? {},
+    evidenceBundle: event.evidenceBundle,
     model: event.model ?? "pending",
     latencyMs: event.latencyMs ?? 0,
     timestamp: event.timestamp ?? Date.now(),
@@ -115,8 +118,34 @@ function selectCurrentStep(steps: HandoffStep[]) {
   );
 }
 
+function inferDiagnosis(steps: HandoffStep[], fallback: ClaimDiagnosis | null): ClaimDiagnosis {
+  if (fallback) return fallback;
+
+  const rumorStep = steps.find((step) => step.agent === "rumor_detector");
+  const indicators = Array.isArray(rumorStep?.output.rumorIndicators)
+    ? rumorStep.output.rumorIndicators.filter((item): item is string => typeof item === "string")
+    : [];
+
+  return {
+    mixedJudgments: ["事件事实"],
+    ambiguousTerms: indicators,
+    risk: typeof rumorStep?.output.analysis === "string"
+      ? rumorStep.output.analysis
+      : "需要结合权威来源继续核查。",
+    whyNotDirectFactCheck: "该结论来自多 Agent 自动核查流程，仍需保留证据边界。",
+    rumorIndicators: indicators,
+  };
+}
+
+function inferVerificationResult(score: number): VerificationResult {
+  if (score >= 70) return "true";
+  if (score >= 40) return "partial";
+  return "unknown";
+}
+
 export function MissionControlView({ claim, onCancel, onComplete }: MissionControlViewProps) {
-  const { dispatch } = useReasoning();
+  const { state, dispatch } = useReasoning();
+  const knowledgeBase = useMemo(() => createKnowledgeBase(), []);
   const [steps, setSteps] = useState<HandoffStep[]>([]);
   const [currentStep, setCurrentStep] = useState<HandoffStep | null>(null);
   const [outputItems, setOutputItems] = useState<string[]>([]);
@@ -219,6 +248,30 @@ export function MissionControlView({ claim, onCancel, onComplete }: MissionContr
                 });
                 dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: {} });
 
+                const credibilityScore =
+                  typeof finalReport?.credibilityScore === "number" ? finalReport.credibilityScore : 50;
+                const entry: KnowledgeBaseEntry = {
+                  id: `case-${claim.replace(/\s+/g, "-").slice(0, 48)}-deep`,
+                  claim,
+                  rumorType: state.diagnosis?.risk?.includes("政治")
+                    ? "政治"
+                    : state.diagnosis?.risk?.includes("娱乐")
+                      ? "娱乐"
+                      : "深度核查",
+                  diagnosis: inferDiagnosis(finalSteps, state.diagnosis),
+                  finalReport: finalReport ?? {},
+                  handoffSteps: finalSteps,
+                  credibilityScore,
+                  verificationResult: inferVerificationResult(credibilityScore),
+                  timestamp: Date.now(),
+                  tags: [
+                    "deep",
+                    ...(state.diagnosis?.rumorIndicators ?? []),
+                    typeof finalReport?.credibilityLabel === "string" ? finalReport.credibilityLabel : "",
+                  ],
+                };
+                void knowledgeBase.saveCase(entry);
+
                 setSteps(finalSteps);
                 setCurrentStep(finalCurrentStep);
                 setOutputItems(["多 Agent 核查已完成，正在整理结果工作区。"]);
@@ -261,16 +314,29 @@ export function MissionControlView({ claim, onCancel, onComplete }: MissionContr
       window.clearTimeout(startTimer);
       if (completionTimer) window.clearTimeout(completionTimer);
     };
-  }, [claim, dispatch, onComplete]);
+  }, [claim, dispatch, knowledgeBase, onComplete, state.diagnosis]);
 
   const currentAgent = normalizeAgent(currentStep?.agent) || null;
   const progress = useMemo(() => calculateProgress(steps, runStatus), [steps, runStatus]);
+  const evidenceBundleCount = useMemo(
+    () => steps.filter((step) => step.evidenceBundle).length,
+    [steps]
+  );
+  const evidenceItemCount = useMemo(
+    () =>
+      steps.reduce((sum, step) => {
+        const bundle = step.evidenceBundle;
+        if (!bundle) return sum;
+        return sum + bundle.supportEvidenceIds.length + bundle.contradictEvidenceIds.length;
+      }, 0),
+    [steps]
+  );
 
   return (
     <main className="mission-control-view">
       <header className="mission-topbar">
         <div className="mission-brand">
-          <strong>真探 Agent</strong>
+          <strong>红鲱鱼与枪</strong>
           <span>Mission Control</span>
         </div>
         <button className="mission-cancel-btn" type="button" onClick={onCancel}>
@@ -288,6 +354,11 @@ export function MissionControlView({ claim, onCancel, onComplete }: MissionContr
           status={runStatus}
         />
         {errorMessage ? <p className="mission-error">{errorMessage}</p> : null}
+        {evidenceBundleCount > 0 ? (
+          <p className="mission-evidence-bundles">
+            已累计 {evidenceBundleCount} 个 Agent 证据包，关联 {evidenceItemCount} 条支持/反驳证据。
+          </p>
+        ) : null}
       </section>
 
       <StepTimeline steps={steps} currentAgent={currentAgent} />

@@ -30,6 +30,7 @@ export interface HandoffStep {
   latencyMs: number;
   timestamp: number;
   status: "pending" | "running" | "completed" | "failed";
+  evidenceBundle?: import("./schemas").AgentEvidenceBundle;
   error?: string;
 }
 
@@ -51,8 +52,12 @@ export interface FactCheckerOutput {
   factCheckResult: "true" | "false" | "partial" | "unverified";
   confidence: "low" | "medium" | "high";
   sources: string[];
+  supportingEvidence: string[];
+  contradictingSources: string[];
   keyFindings: string[];
   counterEvidence: string[];
+  unresolvedEvidenceGaps: string[];
+  logicRisks?: string[];
 }
 
 export interface SourceValidatorOutput {
@@ -69,6 +74,15 @@ export interface ReportComposerOutput {
   credibilityLabel: string;
   recommendation: string;
   summaryForPublic: string;
+  logicRiskItems?: import("./schemas").BiasAuditFinding[];
+  confidenceDimensions: Array<{
+    dimension: "source_reliability" | "evidence_completeness" | "consistency" | "recency" | "authority";
+    label: string;
+    score: number;
+    threshold: number;
+    passed: boolean;
+    reason: string;
+  }>;
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -94,10 +108,14 @@ const factCheckerSchema = {
     factCheckResult: { type: "string", enum: ["true", "false", "partial", "unverified"] },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
     sources: { type: "array", items: { type: "string" } },
+    supportingEvidence: { type: "array", items: { type: "string" } },
+    contradictingSources: { type: "array", items: { type: "string" } },
     keyFindings: { type: "array", items: { type: "string" } },
     counterEvidence: { type: "array", items: { type: "string" } },
+    unresolvedEvidenceGaps: { type: "array", items: { type: "string" } },
+    logicRisks: { type: "array", items: { type: "string" } },
   },
-  required: ["factCheckResult", "confidence", "sources", "keyFindings", "counterEvidence"],
+  required: ["factCheckResult", "confidence", "sources", "supportingEvidence", "contradictingSources", "keyFindings", "counterEvidence", "unresolvedEvidenceGaps"],
 };
 
 const sourceValidatorSchema = {
@@ -122,8 +140,43 @@ const reportComposerSchema = {
     credibilityLabel: { type: "string" },
     recommendation: { type: "string" },
     summaryForPublic: { type: "string" },
+    logicRiskItems: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: { type: "string" },
+          label: { type: "string" },
+          severity: { type: "string", enum: ["low", "medium", "high"] },
+          explanation: { type: "string" },
+          affectedSubclaimId: { type: "string" },
+          mitigation: { type: "string" },
+        },
+        required: ["id", "label", "severity", "explanation", "mitigation"],
+      },
+    },
+    confidenceDimensions: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          dimension: {
+            type: "string",
+            enum: ["source_reliability", "evidence_completeness", "consistency", "recency", "authority"],
+          },
+          label: { type: "string" },
+          score: { type: "number" },
+          threshold: { type: "number" },
+          passed: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["dimension", "label", "score", "threshold", "passed", "reason"],
+      },
+    },
   },
-  required: ["conclusion", "credibilityScore", "credibilityLabel", "recommendation", "summaryForPublic"],
+  required: ["conclusion", "credibilityScore", "credibilityLabel", "recommendation", "summaryForPublic", "confidenceDimensions"],
 };
 
 // ───────────────────────────────────────────────────────────────
@@ -138,7 +191,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     description: "谣言特征检测",
     maxTokens: 800,
     systemPrompt: [
-      "你是真探 Agent 的 RumorDetector（谣言特征检测专家）。",
+      "你是红鲱鱼与枪的 RumorDetector（谣言特征检测专家）。",
       "你的任务是分析用户提供的 claim（声明/信息），识别其中可能存在的谣言特征。",
       "",
       "你需要检测以下类型的谣言特征：",
@@ -170,13 +223,14 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     description: "事实核查",
     maxTokens: 1000,
     systemPrompt: [
-      "你是真探 Agent 的 FactChecker（事实核查专家）。",
+      "你是红鲱鱼与枪的 FactChecker（事实核查专家）。",
       "你的任务是基于 RumorDetector 检测到的谣言特征，对原始 claim 进行事实核查。",
+      "如果输入包含 search360 字段，优先把其中的 answer、sources 和 relatedQuestions 当作搜索线索，但仍需区分搜索摘要与可核查事实。",
       "",
       "核查原则：",
       "1. 评估 claim 的核心事实是否成立",
       "2. 检查是否存在断章取义或扭曲原意",
-      "3. 寻找支持性和反驳性证据",
+      "3. 寻找支持性和反驳性证据；如果没有找到反证，也必须明确写入 unresolvedEvidenceGaps",
       "4. 判断信息是否来自可信来源",
       "",
       "factCheckResult 判定标准：",
@@ -192,6 +246,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
       "{\n  \"factCheckResult\": \"partial\",\n  \"confidence\": \"medium\",\n  \"sources\": [\"来源1\", \"来源2\"],\n  \"keyFindings\": [\"发现1\", \"发现2\"],\n  \"counterEvidence\": [\"反驳证据1\", \"反驳证据2\"]\n}",
+      "必须额外返回 supportingEvidence、contradictingSources、unresolvedEvidenceGaps；contradictingSources 或 counterEvidence 没有命中时，写入空数组，并在 unresolvedEvidenceGaps 说明“未找到明确反证”。",
       "",
       "factCheckResult 必须是 'true'、'false'、'partial'、'unverified' 之一。",
       "confidence 必须是 'low'、'medium'、'high' 之一。",
@@ -205,8 +260,9 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     description: "信源验证",
     maxTokens: 900,
     systemPrompt: [
-      "你是真探 Agent 的 SourceValidator（信源验证专家）。",
+      "你是红鲱鱼与枪的 SourceValidator（信源验证专家）。",
       "你的任务是验证原始 claim 中提到的信源的可靠性和真实性。",
+      "如果输入包含 search360 字段，请把 360 AI Search 返回的 sources 纳入信源验证，区分权威来源、媒体线索和社交传播线索。",
       "",
       "验证维度：",
       "1. 信源是否存在 — 提到的机构、研究、专家是否真实存在",
@@ -234,7 +290,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     description: "报告生成",
     maxTokens: 1000,
     systemPrompt: [
-      "你是真探 Agent 的 ReportComposer（核查报告生成专家）。",
+      "你是红鲱鱼与枪的 ReportComposer（核查报告生成专家）。",
       "你的任务是基于 RumorDetector、FactChecker 和 SourceValidator 的分析结果，生成一份综合核查报告。",
       "",
       "输入包含：",
@@ -242,12 +298,16 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "- RumorDetector 检测到的谣言特征和严重程度",
       "- FactChecker 的事实核查结果和关键发现",
       "- SourceValidator 的信源验证结果",
+      "- 可选 search360 搜索摘要与来源",
+      "- 可选 logicRisks / biasWarnings / doNotInfer，需要归入逻辑风险审计并反映到 consistency 分数",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"conclusion\": \"一句话总结核查结论\",\n  \"credibilityScore\": 45,\n  \"credibilityLabel\": \"部分可信\",\n  \"recommendation\": \"给用户的行动建议\",\n  \"summaryForPublic\": \"面向公众的简化版结论（1-2 句话）\"\n}",
+      "{\n  \"conclusion\": \"一句话总结核查结论\",\n  \"credibilityScore\": 45,\n  \"credibilityLabel\": \"部分可信\",\n  \"recommendation\": \"给用户的行动建议\",\n  \"summaryForPublic\": \"面向公众的简化版结论（1-2 句话）\",\n  \"confidenceDimensions\": [\n    {\"dimension\": \"source_reliability\", \"label\": \"来源可靠性\", \"score\": 62, \"threshold\": 70, \"passed\": false, \"reason\": \"有部分来源但权威性不足\"},\n    {\"dimension\": \"evidence_completeness\", \"label\": \"证据完整度\", \"score\": 58, \"threshold\": 60, \"passed\": false, \"reason\": \"仍缺少原始材料\"},\n    {\"dimension\": \"consistency\", \"label\": \"逻辑一致性\", \"score\": 75, \"threshold\": 75, \"passed\": true, \"reason\": \"结论与前序 Agent 输出一致\"},\n    {\"dimension\": \"recency\", \"label\": \"信息时效性\", \"score\": 55, \"threshold\": 50, \"passed\": true, \"reason\": \"搜索线索可用于近期核查\"},\n    {\"dimension\": \"authority\", \"label\": \"权威匹配度\", \"score\": 60, \"threshold\": 65, \"passed\": false, \"reason\": \"尚需更权威来源确认\"}\n  ]\n}",
       "",
       "credibilityScore 是 0-100 的整数。",
       "credibilityLabel 必须是以下之一：可信、基本可信、部分可信、高度可疑、疑似谣言。",
+      "confidenceDimensions 必须包含 source_reliability、evidence_completeness、consistency、recency、authority 五项。",
+      "如果存在逻辑风险，confidenceDimensions 中 consistency 的分数必须降低，并在 reason 中解释。",
       "",
       "评分参考：",
       "- 80-100：可信 — 无明显谣言特征，事实核查通过，信源可靠",
@@ -312,7 +372,12 @@ export function buildAgentInput(
           result: factStep?.output?.factCheckResult ?? "unverified",
           confidence: factStep?.output?.confidence ?? "low",
           sources: factStep?.output?.sources ?? [],
+          supportingEvidence: factStep?.output?.supportingEvidence ?? [],
+          contradictingSources: factStep?.output?.contradictingSources ?? [],
           keyFindings: factStep?.output?.keyFindings ?? [],
+          counterEvidence: factStep?.output?.counterEvidence ?? [],
+          unresolvedEvidenceGaps: factStep?.output?.unresolvedEvidenceGaps ?? [],
+          logicRisks: factStep?.output?.logicRisks ?? [],
         },
         sourceValidation: {
           reliability: sourceStep?.output?.sourceReliability ?? "unverified",
