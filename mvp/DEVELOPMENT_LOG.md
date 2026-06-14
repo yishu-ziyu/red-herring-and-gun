@@ -569,4 +569,141 @@ callLocalProviderRecursive
 
 ---
 
+---
+
+## 十四、2026-06-14：Agent Loop 调研与迭代式核查方向
+
+### 14.1 背景
+
+黑客松赛题三（信息真相猎人）的评分权重中，「准确性」占 30% 且标注为「核心技术门槛」。当前实现是固定 3-phase pipeline，所有案例走同一条路径，不做质量回退。
+
+比赛期间曾考虑加入「低置信度重查」机制，但未落地。本次调研重新梳理了这个问题。
+
+### 14.2 调研范围
+
+调研了两条线：
+- 业界 Agent 编排的五种模式（固定管线 / 迭代式循环 / 动态路由 / 并发竞争 / 人机协作）
+- Claude Code 和 Codex CLI 的 agent loop 实现机制与设计哲学
+
+### 14.3 当前管线结构
+
+```
+用户输入 → Vision预处理(可选) → RumorDetector(串行) → 360 Search
+                                              ↓
+                   FactChecker ∥ SourceValidator → Debate调解 → ReportComposer → 输出
+```
+
+核心是：固定顺序 + Phase 2 条件性并发。 Debate 调解是唯一的动态逻辑（当两个 Agent 输出冲突时自动生成辩论回合）。
+
+### 14.4 `credibilityScore` 的发现
+
+调研中发现一个事实：`credibilityScore`（0-100）**不是公式算出来的**。
+
+查看 `agentConfigs.ts` 第 329-365 行，`report_composer` 的 system prompt 给出了五档评分参考（80-100 可信 / 60-79 基本可信 / 40-59 部分可信 / 20-39 高度可疑 / 0-19 疑似谣言），但代码层面没有任何加权公式或计算逻辑。分数是 LLM 综合前面三个 Agent 的输出后「估」出来的。
+
+**影响**：同一 claim 两次运行可能打出不同分数，没有 deterministic 保证。黑客松 demo 阶段可接受，产品化时需补。
+
+### 14.5 当时未解决的问题
+
+比赛时有一个想法：当置信度低时，系统自动补充检索再跑一轮。但没有想清楚两件事：
+
+**问题 1：重跑哪些 phase？**
+
+全部重跑成本最高但最稳妥。只重跑 FactChecker 成本低但可能不够（RumorDetector 的检测结果可能已经偏了）。这个取舍需要实测数据来判断。
+
+**问题 2：界面怎么体现？**
+
+这是更大的困惑。如果系统自动进入第二轮，前端应该展示什么？
+
+- 方案 A：静默重跑，用户只看到 loading 时间变长，最终结果置信度提高
+- 方案 B：在 Agent Trace 面板里显示「第一轮置信度不足，正在补充检索…」，让用户看到过程
+- 方案 C：给用户一个选择——「当前可信度较低，是否补充检索？」
+
+方案 C 最诚实，但引入了一个决策点，与产品定位「自动核查」有张力。方案 B 是折中，但 Trace 面板的用户心智是「看过程」，不是「看为什么需要重跑」。
+
+这个界面问题在比赛时没有答案。
+
+### 14.6 调研结论与下一步
+
+调研中的关键发现：
+
+1. **迭代式 loop 的生产级风险**：业界已有 $23,000/4小时的真实事故。缓解手段是五层终止架构（步数上限 / token 预算 / 成本预算 / 收敛检测 / 硬超时）。
+
+2. **Claude Code 的 token budget 机制值得参考**：不是硬中断，而是在达到 90% 预算时向模型发一条 nudge 消息，让模型自己决定是否收尾。
+
+3. **不建议全系统改循环**：80% 的谣言核查案例走固定直线最快也最可靠。全循环是过度工程。
+
+**推荐方向**（条件性重查，非全循环）：
+
+```
+Phase 3 输出 credibilityScore
+  ├── ≥ 60 → complete（约 70% 案例走这条，零额外成本）
+  └── < 60 且未超重跑上限 → 补充搜索 → 第二 provider 重跑 → 再判断
+        └── 第二轮仍 < 60 → 标记"存疑" → complete
+```
+
+改动范围：仅 `orchestrateStreamHandler` 末尾加一个 `if/else` 分支，不碰前面任何 phase。
+
+**界面问题仍未解决**：迭代式 loop 的触发、过程和结果展示需要单独的 UX 设计，不能简单复用现有 Trace 面板。
+
+### 14.7 大佬观点摘录
+
+| 人物 | 核心观点 |
+|------|---------|
+| Boris Cherny（Claude Code 创建者） | "我不再 prompt Claude 了。我有正在运行的循环，它们才是我 prompt 的东西。我的工作是写循环。" |
+| Simon Willison | "LLM agent 是为了达成目标而循环调用工具的东西。用好它的关键在于精心设计工具和循环。" |
+| Addy Osmani | "Loop engineering 是用系统替代你自己去 prompt agent。" |
+| Karpathy | 2025 年 12 月是 "agentic 拐点"——模型突然变得足够可靠，可以长期自主运行。 |
+
+### 14.8 待办
+
+- [ ] 实现条件性重查（Phase 3 后加 `if score < 60` 分支）
+- [ ] 第二 provider 选型（与第一轮不同的 provider，避免模型盲区）
+- [ ] 迭代式 loop 的界面设计（独立于 Trace 面板的新方案）
+- [ ] `credibilityScore` 公式化（产品化前补加权计算，消除不可复现性）
+
+---
+
+### 14.9 调研来源
+
+**Agent 编排模式：**
+- Google Cloud — [Choose a design pattern for your agentic AI system](https://docs.cloud.google.com/architecture/choose-design-pattern-agentic-ai-system) (2026-05)
+- Build5Nines — [6 Multi-Agent Orchestration Design Patterns](https://build5nines.com/6-multi-agent-orchestration-design-patterns-every-developer-should-know/) (2026-05)
+- Microsoft Agent Framework — [Orchestration Patterns](https://microsoft-agent-framework.mintlify.app/workflows/orchestration)
+
+**Agent Loop 实现机制：**
+- OpenAI — [Unrolling the Codex agent loop](https://openai.com/index/unrolling-the-codex-agent-loop/) (2026-01-23)
+- OpenAI — [Run long horizon tasks with Codex](https://developers.openai.com/blog/run-long-horizon-tasks-with-codex) (2026-02)
+- Anthropic — [Claude Code Agent SDK: Agent Loop](https://code.claude.com/docs/en/agent-sdk/agent-loop)（官方文档）
+- huangserva/claude-code-cli — 社区反编译 TypeScript 源码（query.ts 1729 行）
+
+**大佬观点：**
+- Karpathy — [Sequoia Ascent 2026 演讲](https://karpathy.bearblog.dev/sequoia-ascent-2026/)（Software 3.0 / Autonomy Slider）
+- Simon Willison — [Designing agentic loops](https://simonwillison.net/2025/Sep/30/designing-agentic-loops/) (2025-09-30)
+- Addy Osmani — [Loop Engineering](https://addys.me/blog/loop-engineering) (2026-06-08)
+- Boris Cherny — Acquired Unplugged 访谈 (2026-06-02)（"我写循环，它们 prompt Claude"）
+
+**可信度评分方法论：**
+- PolitiFact — Truth-O-Meter 六档评分体系（TRUE → MOSTLY TRUE → HALF TRUE → MOSTLY FALSE → FALSE → PANTS ON FIRE）
+- baiyishr/truthcheck — GitHub 开源项目，TruthScore 0-100，四维等权 25%
+- **MAFC 论文**（最相关）：*"Multi-agent systems and credibility-based advanced scoring mechanism in fact-checking"*，京都大学，**Scientific Reports (Nature 旗下) 2026年3月** [PMC13066471](https://pmc.ncbi.nlm.nih.gov/articles/PMC13066471/)
+  - 多 Agent 加权聚合 + log₂ 收敛因子
+  - 实验：二分类 79% 准确率（SelfCheckGPT 72%），多标签 97%（SelfCheckGPT 57%）
+- Boonsanong et al. — [FACTS&EVIDENCE (NAACL 2025)](https://arxiv.org/html/2602.18693) — 双视角检索验证
+- Dempster-Shafer 证据理论 — [多源信息融合综述](https://www.mdpi.com/1099-4300/21/6/611)（重型方案，不推荐直接采用）
+- SURE-RAG — [arXiv 2605.03534](https://arxiv.org/html/2605.03534) — 证据充分性集合级框架
+- themmoonlight.io — [多模态事实核查三组分置信度公式](https://themmoonlight.io/blog/multimodal-fact-checking-confidence)（α·Intrinsic + β·External + γ·Coherence）
+
+**自我修正 Loop 设计：**
+- Tian Pan — [The Self-Correction Loop That Shared Its Verifier's Blind Spot](https://tianpan.co/blog/2026-06-02-the-self-correction-loop-that-shared-its-verifiers-blind-spot) (2026-06-02)
+  - 同一模型做生成+审查有 64.5% 概率漏掉自己的错误
+- CallSphere — [Self-Correcting Agents: Reflexion, CRITIC, and ReAct Loops Compared](https://callsphere.ai/blog/self-correcting-agents-reflexion-critic-react-loops-compared-2026) (2026-04)
+
+**真实事故：**
+- AI Engineering — [The Agent that spent $23,000 in four hours](https://aisysdesign.substack.com/p/updated-the-agent-that-spent-23000-ab1) (2026-06)
+- Waxell — [The Hidden Cost of AI Agents](https://waxell.ai/blog/control-ai-agent-costs)
+- PolicyLayer — [Runaway Tool Loops](https://policylayer.com/attacks/runaway-tool-loops)
+
+---
+
 *日志最后更新：2026-06-14*

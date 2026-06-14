@@ -17,8 +17,29 @@ export function build360SearchDemoFallback(query: string): Search360Response {
     unresolvedEvidenceGaps: ["360 搜索服务未返回真实结果，系统不生成搜索摘要或证据判断。"],
     relatedQuestions: [],
     model: "demo-fallback:360",
-    traceText: `360 搜索服务未返回真实结果：“${query}”暂不生成补充解释。`,
+    traceText: `360 搜索服务未返回真实结果："${query}"暂不生成补充解释。`,
     _source: "demo-fallback",
+  };
+}
+
+/** 单侧搜索失败时的降级响应，保留 traceText 让 UI 可见失败原因 */
+function buildSearchFailure(
+  direction: "support" | "contradict",
+  reason: unknown
+): Search360Response {
+  const reasonText = reason instanceof Error ? reason.message : String(reason);
+  return {
+    answer: "",
+    sources: [],
+    supportQuery: "",
+    contradictQuery: "",
+    supportingEvidence: [],
+    contradictingEvidence: [],
+    unresolvedEvidenceGaps: [`${direction === "support" ? "支持" : "反驳"}检索失败：${reasonText}。该方向证据缺失，结论可信度受影响。`],
+    relatedQuestions: [],
+    model: "error",
+    traceText: `360 ${direction}检索失败：${reasonText}`,
+    _source: "tool-error",
   };
 }
 
@@ -64,10 +85,18 @@ export function enrich360SearchResponse(response: Search360Response, request: Se
 
 export async function request360BidirectionalSearch(payload: Search360Request): Promise<Search360Response> {
   const claim = payload.claim ?? payload.query;
-  const [support, contradict] = await Promise.all([
+
+  const [supportResult, contradictResult] = await Promise.allSettled([
     request360Search({ ...payload, query: build360SupportQuery(claim), claim, direction: "support" }),
     request360Search({ ...payload, query: build360ContradictQuery(claim), claim, direction: "contradict" }),
   ]);
+
+  const support = supportResult.status === "fulfilled"
+    ? supportResult.value
+    : buildSearchFailure("support", supportResult.reason);
+  const contradict = contradictResult.status === "fulfilled"
+    ? contradictResult.value
+    : buildSearchFailure("contradict", contradictResult.reason);
 
   const supportingEvidence = support.sources.map((source, index) => enrichSearch360Source(source, index, {
     query: support.supportQuery ?? support.traceText ?? claim,

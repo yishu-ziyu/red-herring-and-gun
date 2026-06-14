@@ -137,7 +137,8 @@ export async function condenseSourcesInYishuStyle(
     }
     return map;
   } catch (err) {
-    // 浓缩失败 → 空 Map,UI 端 fallback 到原 snippet（不向用户暴露错误）
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[sourceCondenser] 浓缩失败，回退到原 snippet: ${reason}`);
     return new Map();
   }
 }

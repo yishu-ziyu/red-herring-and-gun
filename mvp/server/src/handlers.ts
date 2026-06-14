@@ -9,6 +9,7 @@ import { AGENT_CONFIGS, buildAgentInput } from "./lib/agentConfigs.js";
 import { callAgentWithFallback, AgentTextProviderId } from "./lib/providerRouter.js";
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
+import { computeCredibilityScore } from "./lib/credibilityScore.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -558,7 +559,7 @@ export function createHandlers(env: Record<string, string>) {
       const rumorStep = await runAgent("rumor_detector", steps);
       steps.push(rumorStep);
       const search360Result = await get360SearchForClaim(claim);
-      // 浓缩来源为 奕枢风格 摘要(挂到 source.condensedSnippet,失败静默)
+      // 浓缩来源为奕枢风格摘要（挂到 source.condensedSnippet，失败时 log warning 并回退到原 snippet）
       await attachCondensedSnippets(env, claim, search360Result);
 
       // Phase 2: FactChecker + SourceValidator (parallel)
@@ -573,6 +574,31 @@ export function createHandlers(env: Record<string, string>) {
       steps.push(reportStep);
 
       const finalReport = reportStep.output;
+
+      // ─── 公式覆盖 credibilityScore ───
+      try {
+        const rumorOut = rumorStep.output;
+        const factOut = factStep.output;
+        const sourceOut = sourceStep.output;
+        const searchSources = (search360Result?.sources ?? []).slice(0, 8).map((src: any) => {
+          const cred = src.credibility === "高" ? "高" : src.credibility === "中" ? "中" : "低";
+          return { direction: "support" as const, credibility: cred };
+        });
+        const formulaResult = computeCredibilityScore(
+          { severity: rumorOut?.severity ?? "medium", rumorIndicators: Array.isArray(rumorOut?.rumorIndicators) ? rumorOut.rumorIndicators : [], detectedPatterns: Array.isArray(rumorOut?.detectedPatterns) ? rumorOut.detectedPatterns : [] },
+          { factCheckResult: factOut?.factCheckResult ?? "unverified", confidence: factOut?.confidence ?? "low", keyFindings: Array.isArray(factOut?.keyFindings) ? factOut.keyFindings : [], counterEvidence: Array.isArray(factOut?.counterEvidence) ? factOut.counterEvidence : [], sources: Array.isArray(factOut?.sources) ? factOut.sources : [] },
+          { sourceReliability: sourceOut?.sourceReliability ?? "unverified", verifiedSources: Array.isArray(sourceOut?.verifiedSources) ? sourceOut.verifiedSources : [], questionableSources: Array.isArray(sourceOut?.questionableSources) ? sourceOut.questionableSources : [], missingSources: Array.isArray(sourceOut?.missingSources) ? sourceOut.missingSources : [], verificationNotes: typeof sourceOut?.verificationNotes === "string" ? sourceOut.verificationNotes : "" },
+          { sources: searchSources, supportingEvidence: [], contradictingEvidence: [], unresolvedEvidenceGaps: Array.isArray(search360Result?.unresolvedEvidenceGaps) ? search360Result.unresolvedEvidenceGaps : [] }
+        );
+        if (finalReport && typeof finalReport === "object") {
+          finalReport.credibilityScore = formulaResult.score;
+          finalReport.credibilityLabel = formulaResult.label;
+          finalReport._scoreSource = "formula";
+          finalReport._scoreBreakdown = formulaResult.breakdown;
+        }
+      } catch {
+        // 静默降级
+      }
 
       return sendJson(res, 200, {
         claim,
@@ -766,7 +792,7 @@ export function createHandlers(env: Record<string, string>) {
         timestamp: Date.now(),
       });
       const search360Result = await get360SearchForClaim(claim);
-      // 浓缩来源为 奕枢风格 摘要(挂到 source.condensedSnippet,失败静默)
+      // 浓缩来源为奕枢风格摘要（挂到 source.condensedSnippet，失败时 log warning 并回退到原 snippet）
       await attachCondensedSnippets(env, claim, search360Result);
       const searchToolName = getSearchToolName(search360Result);
       if (search360Result._source === "tool-error") {
@@ -839,6 +865,31 @@ export function createHandlers(env: Record<string, string>) {
       steps.push(reportStep);
 
       const finalReport = reportStep.output;
+
+      // ─── 公式覆盖 credibilityScore ───
+      try {
+        const rumorOut = rumorStep.output;
+        const factOut = factStep.output;
+        const sourceOut = sourceStep.output;
+        const searchSources = (search360Result?.sources ?? []).slice(0, 8).map((src: any) => {
+          const cred = src.credibility === "高" ? "高" : src.credibility === "中" ? "中" : "低";
+          return { direction: "support" as const, credibility: cred };
+        });
+        const formulaResult = computeCredibilityScore(
+          { severity: rumorOut?.severity ?? "medium", rumorIndicators: Array.isArray(rumorOut?.rumorIndicators) ? rumorOut.rumorIndicators : [], detectedPatterns: Array.isArray(rumorOut?.detectedPatterns) ? rumorOut.detectedPatterns : [] },
+          { factCheckResult: factOut?.factCheckResult ?? "unverified", confidence: factOut?.confidence ?? "low", keyFindings: Array.isArray(factOut?.keyFindings) ? factOut.keyFindings : [], counterEvidence: Array.isArray(factOut?.counterEvidence) ? factOut.counterEvidence : [], sources: Array.isArray(factOut?.sources) ? factOut.sources : [] },
+          { sourceReliability: sourceOut?.sourceReliability ?? "unverified", verifiedSources: Array.isArray(sourceOut?.verifiedSources) ? sourceOut.verifiedSources : [], questionableSources: Array.isArray(sourceOut?.questionableSources) ? sourceOut.questionableSources : [], missingSources: Array.isArray(sourceOut?.missingSources) ? sourceOut.missingSources : [], verificationNotes: typeof sourceOut?.verificationNotes === "string" ? sourceOut.verificationNotes : "" },
+          { sources: searchSources, supportingEvidence: [], contradictingEvidence: [], unresolvedEvidenceGaps: Array.isArray(search360Result?.unresolvedEvidenceGaps) ? search360Result.unresolvedEvidenceGaps : [] }
+        );
+        if (finalReport && typeof finalReport === "object") {
+          finalReport.credibilityScore = formulaResult.score;
+          finalReport.credibilityLabel = formulaResult.label;
+          finalReport._scoreSource = "formula";
+          finalReport._scoreBreakdown = formulaResult.breakdown;
+        }
+      } catch {
+        // 静默降级
+      }
 
       sendEvent({
         type: "complete",
