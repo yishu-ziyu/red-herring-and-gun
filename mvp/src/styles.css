@@ -1434,6 +1434,67 @@ button:disabled {
   list-style-type: "✓ ";
 }
 
+/* ── Score breakdown bars ── */
+.score-breakdown {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.breakdown-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.breakdown-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.breakdown-bar-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 40px;
+  gap: 8px;
+  align-items: center;
+}
+
+.breakdown-bar-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.breakdown-bar-track {
+  height: 6px;
+  background: var(--bg-elevated);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.breakdown-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 400ms ease;
+}
+
+.breakdown-bar-fill.positive {
+  background: #16a34a;
+}
+
+.breakdown-bar-fill.negative {
+  background: #dc2626;
+}
+
+.breakdown-bar-value {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
 /* ───────────────────────────────────────────────────────────────
    MVP v3 Visual Improvements
    ─────────────────────────────────────────────────────────────── */

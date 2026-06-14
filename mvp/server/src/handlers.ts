@@ -596,12 +596,12 @@ export function createHandlers(env: Record<string, string>) {
           finalReport._scoreSource = "formula";
           finalReport._scoreBreakdown = formulaResult.breakdown;
         }
-      } catch {
-        // 静默降级
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.warn(`[credibilityScore] 公式计算失败，回退到 LLM 分数: ${reason}`);
       }
 
       return sendJson(res, 200, {
-        claim,
         steps,
         finalReport,
       });
@@ -887,8 +887,9 @@ export function createHandlers(env: Record<string, string>) {
           finalReport._scoreSource = "formula";
           finalReport._scoreBreakdown = formulaResult.breakdown;
         }
-      } catch {
-        // 静默降级
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.warn(`[credibilityScore] 公式计算失败，回退到 LLM 分数: ${reason}`);
       }
 
       sendEvent({

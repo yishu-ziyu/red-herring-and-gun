@@ -28,6 +28,7 @@ interface ConclusionDockV3Props {
     recommendation?: string;
     canSay?: string[];
     cannotSay?: string[];
+    scoreBreakdown?: Record<string, number>;
   } | null;
   originalClaim?: string;
 }
@@ -147,6 +148,31 @@ export function ConclusionDockV3({
                   <li key={i}>{item}</li>
                 ))}
               </ul>
+            </div>
+          </div>
+        )}
+
+        {handoffResult?.scoreBreakdown && !exploring && (
+          <div className="score-breakdown">
+            <span className="breakdown-label">可信度分解</span>
+            <div className="breakdown-bars">
+              {(["factCheckSignal", "searchSignal", "sourceSignal"] as const).map((key) => {
+                const val = handoffResult.scoreBreakdown![key];
+                if (typeof val !== "number") return null;
+                const pct = Math.round((val + 1) / 2 * 100);
+                return (
+                  <div key={key} className="breakdown-bar-row">
+                    <span className="breakdown-bar-label">{key.replace("Signal", "")}</span>
+                    <div className="breakdown-bar-track">
+                      <div
+                        className={`breakdown-bar-fill ${val >= 0 ? "positive" : "negative"}`}
+                        style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+                      />
+                    </div>
+                    <span className="breakdown-bar-value">{val.toFixed(2)}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

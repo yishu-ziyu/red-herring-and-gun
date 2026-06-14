@@ -802,6 +802,11 @@ export function ReasoningWorkspaceV3({ orchestrateMode = false }: ReasoningWorks
                     cannotSay: Array.isArray(latestHandoffRun.finalReport?.cannotSay)
                         ? latestHandoffRun.finalReport.cannotSay
                         : undefined,
+                    scoreBreakdown:
+                      typeof latestHandoffRun.finalReport?._scoreBreakdown === "object" &&
+                      latestHandoffRun.finalReport._scoreBreakdown !== null
+                        ? (latestHandoffRun.finalReport._scoreBreakdown as Record<string, number>)
+                        : undefined,
                   }
                 : null
             }

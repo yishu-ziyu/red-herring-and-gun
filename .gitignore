@@ -6,3 +6,10 @@ dist/
 .agent-memory/
 .agent-swarm/
 .superpowers/
+
+# Build artifacts
+dist-a/
+dist-b/
+
+# OS files
+.DS_Store
