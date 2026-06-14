@@ -1,4 +1,7 @@
 import type { CandidateMaterial, EvidenceRole, GradedEvidence, ScoreLevel, Subclaim, UsageLevel } from "./schemas";
+import { auditGradeBiases } from "./biasAudit";
+import { applyLogicAuditToGrade, validateEvidenceInference } from "./causalValidation";
+import { assessCandidateEvidenceQuality } from "./evidenceQuality";
 
 function scoreRelevance(candidate: CandidateMaterial, subclaim: Subclaim): ScoreLevel {
   if (!candidate.targetSubclaimIds.includes(subclaim.id)) return "低";
@@ -91,8 +94,9 @@ export function gradeCandidate(candidate: CandidateMaterial, subclaim: Subclaim)
   const methodFit = scoreMethodFit(candidate, subclaim);
   const evidenceRole = roleFor(candidate, subclaim, relevance, methodFit);
   const usageLevel = usageFor(candidate, subclaim, evidenceRole, methodFit);
+  const sourceQuality = assessCandidateEvidenceQuality(candidate);
 
-  return {
+  const baseGrade: GradedEvidence = {
     candidateId: candidate.id,
     subclaimId: subclaim.id,
     matchedEvidenceNeed: candidate.matchedNeed,
@@ -118,6 +122,15 @@ export function gradeCandidate(candidate: CandidateMaterial, subclaim: Subclaim)
         : usageLevel === "不可用"
           ? "excluded"
           : "usable_with_limits",
+    sourceQuality,
+  };
+
+  const logicAudit = validateEvidenceInference(candidate, subclaim);
+  const auditedGrade = applyLogicAuditToGrade(baseGrade, logicAudit);
+
+  return {
+    ...auditedGrade,
+    biasFindings: auditGradeBiases(auditedGrade, subclaim),
   };
 }
 

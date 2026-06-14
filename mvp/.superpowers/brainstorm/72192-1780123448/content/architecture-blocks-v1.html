@@ -1,0 +1,71 @@
+<h2>产品能力板块地图</h2>
+<p class="subtitle">先把“规范”转成产品中真正可见、可解释、可演示的能力板块。点击一个选项不是最终决定，只是帮助我们记录讨论偏好。</p>
+
+<div class="mockup">
+  <div class="mockup-header">推荐产品叙事：用户不是在看评分，而是在看一条调查路径</div>
+  <div class="mockup-body">
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
+      <div style="border:1px solid #d0d7de;border-radius:8px;padding:12px;background:#fff">
+        <div class="label">Block 1</div>
+        <h3 style="margin:6px 0">可核查结论</h3>
+        <p style="font-size:13px;margin:0;color:#57606a">Agent 如何从原始 claim 收束到谨慎结论。</p>
+        <p style="font-size:12px;margin:10px 0 0;color:#0969da">已具备：MissionControl + ReportComposer</p>
+      </div>
+      <div style="border:1px solid #d0d7de;border-radius:8px;padding:12px;background:#fff">
+        <div class="label">Block 2</div>
+        <h3 style="margin:6px 0">溯源与交叉验证</h3>
+        <p style="font-size:13px;margin:0;color:#57606a">多搜索源、原始来源、反证、转载同源识别。</p>
+        <p style="font-size:12px;margin:10px 0 0;color:#9a6700">半完成：360 双向检索，矩阵待接真实数据</p>
+      </div>
+      <div style="border:1px solid #d0d7de;border-radius:8px;padding:12px;background:#fff">
+        <div class="label">Block 3</div>
+        <h3 style="margin:6px 0">场景覆盖</h3>
+        <p style="font-size:13px;margin:0;color:#57606a">健康、社会、科技、财经、政治、娱乐等类型。</p>
+        <p style="font-size:12px;margin:10px 0 0;color:#0969da">已具备：Demo 类型和 RumorDetector 模式识别</p>
+      </div>
+      <div style="border:1px solid #d0d7de;border-radius:8px;padding:12px;background:#fff">
+        <div class="label">Block 4</div>
+        <h3 style="margin:6px 0">结果闭环</h3>
+        <p style="font-size:13px;margin:0;color:#57606a">辟谣卡片、存疑归档、分享、导出。</p>
+        <p style="font-size:12px;margin:10px 0 0;color:#0969da">已具备：ConclusionDock</p>
+      </div>
+      <div style="border:1px solid #d0d7de;border-radius:8px;padding:12px;background:#fff">
+        <div class="label">Block 5</div>
+        <h3 style="margin:6px 0">Agent 记忆/知识库</h3>
+        <p style="font-size:13px;margin:0;color:#57606a">历史案例、历史证据、相似 claim 复用。</p>
+        <p style="font-size:12px;margin:10px 0 0;color:#0969da">已具备：localStorage 版 Memory</p>
+      </div>
+      <div style="border:1px solid #d0d7de;border-radius:8px;padding:12px;background:#fff">
+        <div class="label">Block 6</div>
+        <h3 style="margin:6px 0">国产模型与 360 联动</h3>
+        <p style="font-size:13px;margin:0;color:#57606a">StepFun、360 智脑、360 AI Search 作为底层能力。</p>
+        <p style="font-size:12px;margin:10px 0 0;color:#0969da">已具备：模型链路和 360 搜索链路</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>第一轮要锁定的不是 UI 细节，而是主叙事结构</h3>
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>六板块能力地图</h3>
+      <p>把产品讲成六个可见能力：结论、溯源、覆盖、闭环、记忆、模型生态。后续逐块 grill-me。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>三阶段用户流程</h3>
+      <p>只讲输入态、执行态、结果态。更简洁，但容易把知识库、闭环和生态能力藏掉。</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>证据矩阵为中心</h3>
+      <p>把所有能力都围绕证据矩阵展开。表达锋利，但可能让产品显得过窄。</p>
+    </div>
+  </div>
+</div>

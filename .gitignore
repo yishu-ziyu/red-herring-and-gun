@@ -1,3 +1,8 @@
 node_modules/
 dist/
 .env.local
+
+# Runtime directories
+.agent-memory/
+.agent-swarm/
+.superpowers/

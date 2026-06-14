@@ -1,6 +1,6 @@
 ---
 name: "溯证 Agent Design System"
-version: "0.3"
+version: "0.4"
 scope: "Agent Reasoning Canvas MVP"
 description: "A Flowith-inspired layered reasoning canvas where users decide which node should continue expanding."
 colors:
@@ -15,6 +15,10 @@ colors:
   nodeBlocked: "#ef4444"
   nodeRewrite: "#a855f7"
   nodeClaim: "#f7f4ec"
+  nodeClue: "#79b9ff"
+  nodeFrontier: "#facc15"
+  nodeStopped: "#64748b"
+  nodeController: "#c084fc"
   textPrimary: "#f3f0e9"
   textInverse: "#0a0c0b"
 typography:
@@ -90,7 +94,7 @@ Avoid:
 - 证据 / Agent 层承接用户选择后的继续发散。
 - 每个节点都可以被点击、追问、拖拽和重新组织。
 
-视觉目标：黑色舞台、清晰层级、发光连接、可移动的推理模块。
+视觉目标：Kimi-like 信息真相猎人办案台，清晰呈现核查路径、来源证据、协作进度和结论依据。
 
 ## Layout Rules
 
@@ -101,6 +105,29 @@ Avoid:
 - 中央 Canvas 是主视觉，占据最大面积。
 - 右侧 Inspector 解释当前节点，不和 Canvas 抢主层级。
 - 底部 Conclusion Dock 只做结论收束，不承载探索。
+
+### Analysis Page / Case Workbench
+
+分析页是“左主控，右工作台”的办案台，不是旧式黑色舞台，也不是 Agent 炫技表演。
+
+- 左主控：放案件输入、核查路径、阶段状态、最终判定入口，帮助用户调度核查。
+- 右工作台：放 Agent 协作、来源核查、证据矩阵、评分解释和报告草稿。
+- 只展示真实后台活动；没有真实搜索、抽取、评分或报告生成时，不渲染伪进度和伪 Agent 动作。
+- 来源必须可核查：展示来源名称、出处、时间、独立性、与原始说法的关系，以及不能确认的缺口。
+- 命名优先中文，使用“核查路径”“来源核查”“证据冲突”“评分解释”“人工复核”等业务词，少用 Mission / Stage / Agent show 这类舞台词。
+- 低分结果必须明确判定为“谣言”或“不实”，不要用模糊话术降低结论力度。
+- 评分必须可解释：说明分数来自来源可靠性、独立交叉验证、逻辑一致性、反证覆盖和证据缺口。
+- 只有证据冲突、来源不足、关键缺口无法补齐时，才进入“存疑 / 人工复核”。
+- 后台过程要克制展示：让用户看见关键动作、证据变化和判断理由，不展示与核查无关的动画、拟人台词或 Agent 排场。
+
+### Functional UI Gate
+
+每个 UI / UX 组件都必须承接真实产品功能或核心理念。新增组件前先确认它回答哪个核查问题、绑定哪个后台状态、支持哪个用户动作。
+
+- 不展示没有后台状态、没有可点击查看、没有判断价值的装饰组件。
+- 不用空洞文案填充版面；可见文本必须帮助用户理解核查进展、证据强弱或下一步动作。
+- 左侧如果模仿 Kimi，只能呈现中控 Agent 的真实过程流，包括任务拆解、搜索、抽取、评分、结论生成等状态。
+- 左侧不能退化成静态路径卡片；路径必须能映射到真实执行记录或可点击的核查节点。
 
 ### Canvas Layers
 
@@ -116,7 +143,7 @@ Canvas 必须呈现纵向层级，而不是平铺白板：
 
 ### Color
 
-- Page background：`#050706` 到 `#090d10` 的黑色舞台。
+- Page background：`#050706` 到 `#090d10` 的深色办案台背景，避免旧式舞台感。
 - Layer ring：`#fff219`，只用于层级边界。
 - Primary node：蓝色发光块，用于普通判断和证据节点。
 - Active node：黄色块，用于当前正在展开的节点。
@@ -125,6 +152,10 @@ Canvas 必须呈现纵向层级，而不是平铺白板：
 - Blocked node：红色块，用于推理阻断。
 - Rewrite node：紫色块，用于降强度表达。
 - Claim node：白色标签，表示外部输入进入系统。
+- Evidence clue node：亮蓝色块，用于递归搜索发现的证据线索。
+- Frontier node：黄色块，用于可继续扩展、但等待用户选择的下一步线索。
+- Stopped node：灰蓝色低优先级块，用于预算、重复、低可信或越界而停止的线索。
+- Controller run node：浅紫色块，用于中控 LLM 的调度说明。
 
 ### Shape
 
@@ -185,6 +216,48 @@ Provider 顺序：
 3. Codex CLI。
 
 不得在真实 provider 失败时生成模拟分支。
+
+### Recursive Evidence Search
+
+递归证据搜索是节点级能力，不是全局自动任务。
+
+必须遵守：
+
+- 用户点击节点后，Inspector 才显示递归搜索入口。
+- 用户没有点击触发按钮时，不调用模型。
+- 每轮搜索只生成本轮 clues、frontier 和 stopped，不自动继续展开 frontier。
+- frontier 是可点击的下一步选择，视觉上必须比普通 clue 更像“待决策入口”。
+- stopped 节点必须低优先级显示，但 Inspector 必须说明停止原因。
+- 搜索结果必须保留 can say / cannot say，不允许只有摘要。
+- Provider 失败时显示错误状态，不生成 mock 分支。
+
+节点层级建议：
+
+1. Seed node：用户选择的原始兴趣点。
+2. Controller run：中控 LLM 拆任务。
+3. Search agent：执行搜索、提取、审计。
+4. Evidence clue：本轮发现。
+5. Frontier / stopped：下一步选择或停止原因。
+
+### Reasoning Island
+
+Reasoning Island 是 Canvas 的轻量导航入口，借鉴 Dynamic Island 的闭合 / 展开手势，但语义必须服务于推理图谱。
+
+必须遵守：
+
+- 闭合态只显示当前节点、节点类型和图谱进度，不能变成第二个 Inspector。
+- 展开态使用 backdrop blur，把用户注意力临时收束到导航选择。
+- 节点列表必须体现层级缩进，让用户感知 claim、judgment、evidence、frontier 的不同深度。
+- Trace 标签只用于回放 reasoning step，并复用现有 step 高亮逻辑。
+- 点击节点或 trace 后应立即收起，让用户回到 Canvas。
+- 关闭浮层不能改变选中节点、不能触发 Agent、不能新增节点。
+
+视觉规则：
+
+- 闭合 pill 固定在底部中央，尺寸小于输入栏，避免抢占主要操作。
+- 展开面板高度受限，内部滚动，不能推动 Canvas 布局。
+- 进度环表达当前节点在已展开图谱中的相对位置，不表达“任务完成度”。
+- 运行中的 Agent 状态只用小圆点脉冲表达，不出现大面积动效。
 
 ## Accessibility
 
