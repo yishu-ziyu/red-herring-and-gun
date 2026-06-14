@@ -706,4 +706,73 @@ Phase 3 输出 credibilityScore
 
 ---
 
-*日志最后更新：2026-06-14*
+## 2026-06-14 下午：红鲱鱼与枪全面审查与修复
+
+**背景：** 黑客松项目优化日。发起 5 条并行审查线 + 1 条执行线（Git 整理），后续通过 Workflow 完成 4 Phase 优化。
+
+### Git 版本锁定
+
+- `feat/detective-clue-network` squash merge 到 `main`（200 files, 66,062 lines）
+- `git tag v1.0.0` — 项目第一个稳定可部署版本
+- 开发线保留未删除
+- `.agent-memory/` `.agent-swarm/` `.superpowers/` 加入 `.gitignore`
+- 根 `.gitignore` 补充 `dist-a/` `dist-b/` `/.DS_Store`
+
+### 5 条审查线（并行 Agent）
+
+| # | 审查线 | 结论 |
+|---|--------|------|
+| 1 | Git 分支现状 | 4 个分支，feat/detective-clue-network 是主力，建议 squash merge |
+| 2 | Demo 案例验证 | 6 个内置案例全部完整，「隔夜菜会致癌」主推，「AI 导致初级内容岗位减少」备播 |
+| 3 | 失败路径审查 | 8 处问题：P0 的 Promise.all 无 allSettled、sourceCondenser 静默 catch；P1 的 tool-error 包装、MiMo 模拟数据无标记 |
+| 4 | 路演叙事统一 | 5 处冲突，输出 `docs/narrative-unity.md`（SSOT 文档） |
+| 5 | Can-say 边界审查 | 核心问题：reportComposerSchema 无 canSay/cannotSay 字段，三条报告路径互不打通 |
+
+### 代码修改（4 个 commit 推送至 origin/main）
+
+**Commit 07601fe — Can-say 边界修复**
+- `agentConfigs.ts`：`ReportComposerOutput` interface + `reportComposerSchema` 各加 `canSay`/`cannotSay` 字段，加入 `required`
+- `ReasoningWorkspaceV3.tsx`：`handoffResult` 传递 `canSay`/`cannotSay`/`scoreBreakdown`
+- `ConclusionDockV3.tsx`：结论下方新增「可以说 / 不能说」双栏面板 + 可信度分解条（factCheck/search/source 三信号可视化）
+- `styles.css`：新增 `.boundary-panel` `.score-breakdown` `.breakdown-bar-*`
+
+**Commit 90020cb — 失败路径修复**
+- `search360.ts`：`Promise.all` → `Promise.allSettled`，新增 `buildSearchFailure()` 降级辅助函数（traceText 可见失败原因）
+- `sourceCondenser.ts`：静默 catch → `console.warn` 记录失败原因
+- `handlers.ts`：两处「失败静默」注释修正 + 两处 credibilityScore catch 静默降级 → `console.warn`
+
+**Commit c9667b5 — ScoreBreakdown 可视化 + 叙事统一**
+- `ReasoningWorkspaceV3.tsx`：通过 `_scoreBreakdown` 把公式计算的维度数据传给前端
+- `ConclusionDockV3.tsx`：分数分解条（三信号条形图，正绿负红）
+- `docs/narrative-unity.md`：路演叙事口径统一文档（SSOT），登记 5 处冲突
+- `handlers.ts`：静默降级 catch 全部改为 log warning
+
+**Commit 18b7de0 — 部署脚本**
+- `deploy-to-aliyun.sh`：一键部署脚本（SSH → git pull → docker compose rebuild → 验证）
+
+### credibilityScore 公式化状态
+
+- 确定性公式 `credibilityScore.ts` 已完成（218 行，四维加权 + log₂ 收敛 + 谣言惩罚 + 缺失门控）
+- `handlers.ts` 已用公式覆盖 LLM 估算分数
+- 新增前端可视化：scoreBreakdown 条（factCheckSignal / searchSignal / sourceSignal）
+- 测试套件 7 个场景全通过
+
+### 已知未闭环
+
+| 项目 | 状态 |
+|------|------|
+| 阿里云后端同步 | 待手动跑 `bash deploy-to-aliyun.sh` |
+| Demo 端到端验证 | 待在实际环境验证「隔夜菜」案例 |
+| MiMo 模拟数据 isSimulated 标记 | P2，计划中 |
+| credibilityScore 反转逻辑 UI 标注 | P2，计划中 |
+| unverified verdict UI 降级 | P2，计划中 |
+
+### 部署架构备忘
+
+```
+本地 Mac → git push → GitHub → Vercel（前端自动部署）
+                                    ↓ /api/* proxy
+                              阿里云 121.89.90.68（Docker, 需手动 deploy-to-aliyun.sh）
+```
+
+*日志最后更新：2026-06-14 20:50*
