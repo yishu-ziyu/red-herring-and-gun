@@ -2,7 +2,7 @@
  * A/B 对比：公式评分 vs 模拟 LLM 评分
  */
 
-import { computeCredibilityScore } from "./credibilityScore";
+import { computeCredibilityScore, type SearchInput } from "./credibilityScore";
 
 const cases = [
   {
@@ -40,10 +40,10 @@ const cases = [
 ];
 
 for (const c of cases) {
-  const r = computeCredibilityScore(c.rumor, c.factCheck, c.source, c.search);
+  const r = computeCredibilityScore(c.rumor, c.factCheck, c.source, c.search as SearchInput);
   const diff = Math.abs(r.score - c.llmScore);
   console.log(`\n${"=".repeat(50)}`);
   console.log(`${c.name}`);
-  console.log(`  公式：${r.score}分 (${r.label})  |  LLM：${c.llm}分  |  差：${diff}分`);
+  console.log(`  公式：${r.score}分 (${r.label})  |  LLM：${c.llmScore}分  |  差：${diff}分`);
   console.log(`  fc=${r.breakdown.factCheckSignal} search=${r.breakdown.searchSignal} src=${r.breakdown.sourceSignal} rumor=${r.breakdown.rumorPenalty} miss=${r.breakdown.missingPenalty}`);
 }

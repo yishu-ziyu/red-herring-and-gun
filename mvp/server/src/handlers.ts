@@ -581,7 +581,8 @@ export function createHandlers(env: Record<string, string>) {
         const factOut = factStep.output;
         const sourceOut = sourceStep.output;
         const searchSources = (search360Result?.sources ?? []).slice(0, 8).map((src: any) => {
-          const cred = src.credibility === "高" ? "高" : src.credibility === "中" ? "中" : "低";
+          const rawCred: string = src.credibility === "高" ? "高" : src.credibility === "中" ? "中" : "低";
+          const cred: "高" | "中" | "低" = (rawCred === "高" || rawCred === "中" || rawCred === "低") ? rawCred : "低";
           return { direction: "support" as const, credibility: cred };
         });
         const formulaResult = computeCredibilityScore(
@@ -872,7 +873,8 @@ export function createHandlers(env: Record<string, string>) {
         const factOut = factStep.output;
         const sourceOut = sourceStep.output;
         const searchSources = (search360Result?.sources ?? []).slice(0, 8).map((src: any) => {
-          const cred = src.credibility === "高" ? "高" : src.credibility === "中" ? "中" : "低";
+          const rawCred: string = src.credibility === "高" ? "高" : src.credibility === "中" ? "中" : "低";
+          const cred: "高" | "中" | "低" = (rawCred === "高" || rawCred === "中" || rawCred === "低") ? rawCred : "低";
           return { direction: "support" as const, credibility: cred };
         });
         const formulaResult = computeCredibilityScore(

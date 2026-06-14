@@ -116,6 +116,7 @@ export async function condenseSourcesInYishuStyle(
       env,
       // 不传 codexBin/codexBypass 等 - 让 router 按默认 fallback 链走
       reasoningEffort: "low",
+      codexBin: "",
     });
 
     // result.output 已是 schema 解析后的对象: { snippets: [{id, snippet}] }
