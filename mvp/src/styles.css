@@ -1391,6 +1391,49 @@ button:disabled {
   line-height: 1.45;
 }
 
+/* ── Boundary panel: canSay / cannotSay ── */
+.boundary-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.boundary-col h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.boundary-col:first-child h4 {
+  color: #16a34a;
+}
+
+.boundary-col:last-child h4 {
+  color: #dc2626;
+}
+
+.boundary-col ul {
+  margin: 0;
+  padding: 0 0 0 16px;
+  list-style: disc;
+}
+
+.boundary-col li {
+  margin: 0 0 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.boundary-col:first-child li {
+  list-style-type: "✓ ";
+}
+
 /* ───────────────────────────────────────────────────────────────
    MVP v3 Visual Improvements
    ─────────────────────────────────────────────────────────────── */

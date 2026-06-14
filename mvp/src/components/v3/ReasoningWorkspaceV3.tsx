@@ -796,6 +796,12 @@ export function ReasoningWorkspaceV3({ orchestrateMode = false }: ReasoningWorks
                       typeof latestHandoffRun.finalReport?.recommendation === "string"
                         ? latestHandoffRun.finalReport.recommendation
                         : undefined,
+                    canSay: Array.isArray(latestHandoffRun.finalReport?.canSay)
+                        ? latestHandoffRun.finalReport.canSay
+                        : undefined,
+                    cannotSay: Array.isArray(latestHandoffRun.finalReport?.cannotSay)
+                        ? latestHandoffRun.finalReport.cannotSay
+                        : undefined,
                   }
                 : null
             }

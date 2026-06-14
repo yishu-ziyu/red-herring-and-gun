@@ -26,6 +26,8 @@ interface ConclusionDockV3Props {
     credibilityScore?: number;
     credibilityLabel?: string;
     recommendation?: string;
+    canSay?: string[];
+    cannotSay?: string[];
   } | null;
   originalClaim?: string;
 }
@@ -127,6 +129,27 @@ export function ConclusionDockV3({
             ? "系统正在沿你选择的节点进行深度核查，调用中控 LLM 和子 Agent。"
             : handoffResult?.conclusion ?? report.rewrittenClaim.cautious}
         </p>
+
+        {(handoffResult?.canSay || handoffResult?.cannotSay) && !exploring && (
+          <div className="boundary-panel">
+            <div className="boundary-col">
+              <h4>可以说</h4>
+              <ul>
+                {(handoffResult.canSay ?? []).map((item, i) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="boundary-col">
+              <h4>不能说</h4>
+              <ul>
+                {(handoffResult.cannotSay ?? []).map((item, i) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
 
         {!exploring && (
           <div className="conclusion-actions">

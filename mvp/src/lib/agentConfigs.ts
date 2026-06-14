@@ -128,6 +128,8 @@ export interface ReportComposerOutput {
     sourceRefs: string[];
   }>;
   causalBoundary: string;
+  canSay: string[];
+  cannotSay: string[];
   closureActions: Array<{
     type: "rebuttal_card" | "archive_doubt" | "share_public" | "follow_up";
     label: string;
@@ -377,6 +379,8 @@ const reportComposerSchema = {
       },
     },
     causalBoundary: { type: "string" },
+    canSay: { type: "array", items: { type: "string" } },
+    cannotSay: { type: "array", items: { type: "string" } },
     closureActions: {
       type: "array",
       items: {
@@ -427,7 +431,7 @@ const reportComposerSchema = {
       },
     },
   },
-  required: ["verdictType", "conclusion", "credibilityScore", "credibilityLabel", "recommendation", "summaryForPublic", "whyHardToVerify", "evidenceChain", "causalBoundary", "closureActions", "confidenceDimensions"],
+  required: ["verdictType", "conclusion", "credibilityScore", "credibilityLabel", "recommendation", "summaryForPublic", "whyHardToVerify", "evidenceChain", "causalBoundary", "canSay", "cannotSay", "closureActions", "confidenceDimensions"],
 };
 
 // ───────────────────────────────────────────────────────────────
