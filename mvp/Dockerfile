@@ -1,21 +1,14 @@
-# Build server TypeScript
-FROM node:22-alpine AS builder
+# Red Herring and Gun — Server Deployment
+# Expects pre-compiled server/dist/ (run `npm run build` in mvp/server first)
 
-WORKDIR /app
-COPY server/package*.json ./
-RUN npm ci
-
-COPY server/src ./src
-RUN npx tsc
-
-# Production: just run the Express server
 FROM node:22-alpine
 
 WORKDIR /app
 COPY server/package*.json ./
 RUN npm ci --omit=dev
 
-COPY --from=builder /app/dist ./dist
+COPY server/dist ./dist
+COPY server/tsconfig.json ./
 
 EXPOSE 3000
 
