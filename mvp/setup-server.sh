@@ -77,7 +77,7 @@ echo "=== Waiting for service ==="
 sleep 5
 
 # 6. 健康检查
-if curl -sf http://localhost:$PORT/ > /dev/null; then
+if curl -sf http://localhost:$PORT/health > /dev/null; then
     echo "=== SUCCESS ==="
     echo "API Server running at http://121.89.90.68:$PORT"
     echo "Test: curl -X POST http://121.89.90.68:$PORT/api/search/360 -H 'Content-Type: application/json' -d '{\"query\":\"test\"}'"

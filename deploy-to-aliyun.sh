@@ -87,7 +87,7 @@ else
 fi
 
 # 检查 API 是否响应（容器内）
-RESPONSE=\$(docker exec red-herring-api wget -qO- http://127.0.0.1:3000/ 2>/dev/null | head -1 || echo "NO_RESPONSE")
+RESPONSE=\$(docker exec red-herring-api wget -qO- http://127.0.0.1:3000/health 2>/dev/null | head -1 || echo "NO_RESPONSE")
 
 if [ "\$RESPONSE" != "NO_RESPONSE" ]; then
   echo "   ✅ API 有响应"

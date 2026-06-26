@@ -29,15 +29,6 @@ tar czf "$ARCHIVE" \
   --exclude="$ARCHIVE" \
   .
 
-echo "=== Building server locally ==="
-cd server
-npx tsc || echo "tsc warnings ignored"
-# Patch imports to add .js extensions (ESM requires explicit extensions)
-for f in dist/lib/*.js dist/*.js 2>/dev/null; do
-  [ -f "$f" ] && sed -i '' -E 's/from "(\.\/[a-zA-Z]+)"/from "\1.js"/g' "$f" 2>/dev/null
-done
-cd ..
-
 echo "=== Deploying to $SERVER_IP ==="
 ssh "$SERVER_USER@$SERVER_IP" "mkdir -p $REMOTE_DIR"
 scp "$ARCHIVE" "$SERVER_USER@$SERVER_IP:/tmp/$ARCHIVE"

@@ -1,5 +1,14 @@
 # Red Herring and Gun — Server Deployment
-# Expects pre-compiled server/dist/ (run `npm run build` in mvp/server first)
+
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+COPY server/package*.json ./
+RUN npm ci
+
+COPY server/tsconfig.json ./
+COPY server/src ./src
+RUN npm run build
 
 FROM node:22-alpine
 
@@ -7,8 +16,7 @@ WORKDIR /app
 COPY server/package*.json ./
 RUN npm ci --omit=dev
 
-COPY server/dist ./dist
-COPY server/tsconfig.json ./
+COPY --from=builder /app/dist ./dist
 
 EXPOSE 3000
 
