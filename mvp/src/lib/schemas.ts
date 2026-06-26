@@ -76,6 +76,10 @@ export interface CandidateMaterial {
   contextFit: ScoreLevel;
   independence: ScoreLevel;
   limitations: string[];
+  // 审查 P2-8 修复：新增可选 publishedAt（毫秒时间戳），
+  // evidenceQuality.ts 据此计算 freshnessScore；缺失时回退到 50（scoreFreshnessFromTimestamp 默认）。
+  // demo 数据可选择性填充，未来 Search360Source→CandidateMaterial 转换器应自动写入。
+  publishedAt?: number;
 }
 
 export interface GradedEvidence {

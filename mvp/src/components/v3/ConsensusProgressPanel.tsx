@@ -7,7 +7,7 @@
  * - 支持展开查看每个阶段的详细子任务
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import type {
   ClaimDecompositionResult,
   MultiSearchJob,
@@ -537,6 +537,7 @@ function StageCard({
   isLast: boolean;
 }) {
   const [expanded, setExpanded] = useState(status !== "pending");
+  useEffect(() => setExpanded(status !== "pending"), [status]);
 
   const statusColors: Record<StageStatus, string> = {
     pending: "var(--zt-text-muted)",

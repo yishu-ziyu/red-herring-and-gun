@@ -72,6 +72,8 @@ export interface CandidateMaterial {
   contextFit: ScoreLevel;
   independence: ScoreLevel;
   limitations: string[];
+  // 审查 P2-8 修复：与前端 schema 同步新增 publishedAt?: number（毫秒时间戳）。
+  publishedAt?: number;
 }
 
 export interface GradedEvidence {

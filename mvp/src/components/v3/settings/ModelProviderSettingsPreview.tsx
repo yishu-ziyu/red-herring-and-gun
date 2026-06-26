@@ -90,7 +90,7 @@ export function ModelProviderSettingsPreview() {
           <input type="search" placeholder="搜索服务商…" aria-label="搜索服务商" />
         </div>
         <div className="model-provider-group">
-          <span>推荐接入</span>
+          <span>接入状态</span>
           {PROVIDERS.map((provider) => (
             <button
               key={provider.id}

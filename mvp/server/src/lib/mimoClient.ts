@@ -5,7 +5,10 @@
  * 模拟在多个事实核查平台上的搜索结果。
  */
 
-import { FACT_CHECK_SOURCES, type SourceHit } from "./sherlockStyleSearch";
+import { FACT_CHECK_SOURCES, type SourceHit } from "./sherlockStyleSearch.js";
+// 审查 P3-2 修复：extractAnthropicText / extractJsonObject 从共享模块引入，
+// 不再在本文件维护独立副本（原 line 292-348 本地定义已删除）。
+import { extractAnthropicText, extractJsonObject } from "./anthropicParse.js";
 
 // ───────────────────────────────────────────────────────────────
 // 类型定义
@@ -285,65 +288,3 @@ function normalizeMimoResult(raw: any): MimoSherlockResult {
   };
 }
 
-// ───────────────────────────────────────────────────────────────
-// 工具函数（与 vite.config.ts 中的实现保持一致）
-// ───────────────────────────────────────────────────────────────
-
-function extractAnthropicText(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return "";
-
-  if (trimmed.startsWith("{")) {
-    try {
-      const data = JSON.parse(trimmed);
-      return extractAnthropicContent(data);
-    } catch {
-      return "";
-    }
-  }
-
-  const parts: string[] = [];
-  for (const line of raw.split(/\r?\n/)) {
-    if (!line.startsWith("data:")) continue;
-
-    const dataText = line.slice(5).trim();
-    if (!dataText || dataText === "[DONE]") continue;
-
-    try {
-      const event = JSON.parse(dataText);
-      const deltaText = event?.delta?.text;
-      if (typeof deltaText === "string") parts.push(deltaText);
-      const blockText = event?.content_block?.text;
-      if (
-        event?.type === "content_block_start" &&
-        typeof blockText === "string"
-      )
-        parts.push(blockText);
-    } catch {
-      continue;
-    }
-  }
-
-  return parts.join("");
-}
-
-function extractAnthropicContent(data: any): string {
-  const parts: string[] = [];
-  for (const item of data?.content ?? []) {
-    if (typeof item?.text === "string") parts.push(item.text);
-  }
-  return parts.join("");
-}
-
-function extractJsonObject(text: string): string {
-  const trimmed = text
-    .trim()
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```$/i, "")
-    .trim();
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) return trimmed;
-  return trimmed.slice(start, end + 1);
-}

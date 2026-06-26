@@ -239,7 +239,8 @@ function evaluateProposition(
     criteria3_counterSearchDone: counterEvidenceCoverage.counterSearchPerformed,
     criteria4_duplicatesCountedOnce:
       evidenceIndependence.duplicateSources === 0 ||
-      evidenceIndependence.independentSources >= 1,
+      (evidenceIndependence.independentSources > 0 &&
+        evidenceIndependence.duplicateSources < evidenceIndependence.totalSources),
     allMet: false,
   };
 

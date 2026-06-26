@@ -17,12 +17,19 @@ import {
   callCodexAgent,
   callDeepSeekAgent,
   callMimoAgent,
+  callMiniMaxAgent,
   callStepFunAgent,
 } from "./agentProviders.js";
+// 审查 P3-2 修复：extractJsonObject 从共享模块引入并 re-export，
+// 不再在本文件维护独立副本（原 line 193-204 本地定义已删除）。
+// 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
+import { extractJsonObject } from "./anthropicParse.js";
+export { extractJsonObject };
 
 export type AgentTextProviderId =
   | "deepseek"
   | "mimo"
+  | "minimax"
   | "stepfun"
   | "360"
   | "anthropic"
@@ -31,6 +38,7 @@ export type AgentTextProviderId =
 const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>([
   "deepseek",
   "mimo",
+  "minimax",
   "stepfun",
   "360",
   "anthropic",
@@ -38,10 +46,11 @@ const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>([
 ]);
 
 const DEFAULT_TEXT_PROVIDER_ORDER: AgentTextProviderId[] = [
-  "deepseek",
-  "mimo",
   "stepfun",
   "360",
+  "deepseek",
+  "mimo",
+  "minimax",
   "anthropic",
   "codex",
 ];
@@ -61,7 +70,7 @@ export function agentEnvKey(agentId?: string): string {
 }
 
 /** 解析 ORCHESTRATE_<AGENT>_PROVIDER_ORDER / ORCHESTRATE_TEXT_PROVIDER_ORDER
- *  - 强制 deepseek 第一、codex 最后
+ *  - 尊重 env/per-agent 顺序、codex 最后
  *  - 未识别的 provider 名静默丢弃
  *  - 去重
  *  - agentId 提供时优先 per-agent env
@@ -82,9 +91,9 @@ export function providerOrderForAgent(
     if (TEXT_PROVIDER_IDS.has(provider) && !order.includes(provider)) order.push(provider);
   }
 
-  // deepseek 永远第一（保底）；codex 永远最后
-  const withoutDeepSeek = order.filter((provider) => provider !== "deepseek");
-  order.splice(0, order.length, "deepseek", ...withoutDeepSeek);
+  // 尊重 env/per-agent 顺序；codex 作为本地兜底永远最后。
+  const withoutCodex = order.filter((provider) => provider !== "codex");
+  order.splice(0, order.length, ...withoutCodex);
   if (!order.includes("codex")) order.push("codex");
   return order.length > 0 ? order : DEFAULT_TEXT_PROVIDER_ORDER;
 }
@@ -110,6 +119,40 @@ export function getSearch360ApiKey(env: Record<string, string>): string {
     envValue(env, "ZHINAO_API_KEY") ||
     envValue(env, "AI360_API_KEY")
   );
+}
+
+export function getMiniMaxApiKey(env: Record<string, string>): string {
+  return envValue(env, "MINIMAX_API_KEY") || envValue(env, "MINIMAX_TOKEN_PLAN_KEY");
+}
+
+function getMiniMaxAuthHeader(env: Record<string, string>): "x-api-key" | "bearer" {
+  return envValue(env, "MINIMAX_AUTH_HEADER").toLowerCase() === "bearer" ? "bearer" : "x-api-key";
+}
+
+function stepFunMaxTokensForModel(env: Record<string, string>, model: string, requested: number): number {
+  if (!/^step-3\.7-flash$/i.test(model)) return requested;
+  const minTokens = Number(envValue(env, "STEPFUN_3_7_MIN_MAX_TOKENS") || 4096);
+  return Number.isFinite(minTokens) && minTokens > requested ? minTokens : requested;
+}
+
+function parseReasoningEffort(value: string): "low" | "medium" | "high" | undefined {
+  const normalized = value.toLowerCase();
+  return normalized === "low" || normalized === "medium" || normalized === "high" ? normalized : undefined;
+}
+
+function stepFunReasoningEffortForModel(
+  env: Record<string, string>,
+  model: string,
+  requested: "low" | "medium" | "high"
+): "low" | "medium" | "high" {
+  if (/^step-3\.7-flash$/i.test(model)) {
+    return (
+      parseReasoningEffort(envValue(env, "STEPFUN_3_7_REASONING_EFFORT")) ||
+      parseReasoningEffort(envValue(env, "STEPFUN_REASONING_EFFORT")) ||
+      "low"
+    );
+  }
+  return parseReasoningEffort(envValue(env, "STEPFUN_REASONING_EFFORT")) || requested;
 }
 
 /** Anthropic proxy 配置：先读 env，再回退到 ~/.claude/settings.json */
@@ -151,19 +194,7 @@ export async function loadAnthropicConfig(
 // JSON repair + parse
 // ───────────────────────────────────────────────────────────────
 
-/** 从 LLM 输出中抽取第一个 {...} 块；容忍 ```json ``` 包裹 */
-export function extractJsonObject(text: string): string {
-  const trimmed = text
-    .trim()
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```$/i, "")
-    .trim();
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) return trimmed;
-  return trimmed.slice(start, end + 1);
-}
+// 审查 P3-2 修复：extractJsonObject 已抽到 ./anthropicParse.js，本文件顶部 re-export。
 
 /** 尝试修复 LLM 输出的 loose JSON（尾随逗号、未加引号的值） */
 function repairLooseJsonObject(json: string): string {
@@ -225,8 +256,8 @@ export interface CallAgentParams {
   reasoningEffort?: "low" | "medium" | "high";
   /**
    * 用户在前端 model picker 里指定的 (provider, model)。
-   * 传入时：旁路 fallback chain，只调这一对；缺 key → 抛错；调用失败 → 抛错（不兜底）。
-   * 不传：维持原有 fallback chain 行为。
+   * 传入时：先调这一对；缺 key / 调用失败 / 超时后继续走 fallback chain，避免整条流程中断。
+   * 不传：维持默认 fallback chain 行为。
    */
   modelOverride?: { provider: AgentTextProviderId; model: string };
   options?: ProviderRouterOptions;
@@ -242,6 +273,37 @@ const NOOP_LOGGER: ProviderRouterLogger = {
   info: () => {},
   error: () => {},
 };
+
+function getTimeoutMs(env: Record<string, string>, key: string, fallbackMs: number) {
+  const raw = envValue(env, key);
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
+}
+
+function timeoutForProviderModel(
+  env: Record<string, string>,
+  provider: AgentTextProviderId | string,
+  model: string,
+  fallbackMs: number
+): number {
+  if (provider === "stepfun" && /^step-3\.7-flash$/i.test(model)) {
+    return getTimeoutMs(env, "STEPFUN_3_7_PROVIDER_TIMEOUT_MS", 135000);
+  }
+  return fallbackMs;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label} 超时 ${timeoutMs}ms`)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 
 /**
  * 单个 provider 的一次直调（用于 modelOverride 旁路 + 单元测试）
@@ -285,11 +347,33 @@ export async function dispatchSingleProvider({
     const baseUrl = (envValue(env, "MIMO_BASE_URL") || "https://token-plan-cn.xiaomimimo.com/anthropic").replace(/\/$/, "");
     return await callMimoAgent({ baseUrl, apiKey, model, systemPrompt, userContent, maxTokens });
   }
+  if (provider === "minimax") {
+    const apiKey = getMiniMaxApiKey(env);
+    if (!apiKey) throw new Error(`未配置 MINIMAX_API_KEY / MINIMAX_TOKEN_PLAN_KEY`);
+    const baseUrl = (envValue(env, "MINIMAX_BASE_URL") || "https://api.minimaxi.com/anthropic").replace(/\/$/, "");
+    return await callMiniMaxAgent({
+      baseUrl,
+      apiKey,
+      authHeader: getMiniMaxAuthHeader(env),
+      model,
+      systemPrompt,
+      userContent,
+      maxTokens,
+    });
+  }
   if (provider === "stepfun") {
     const apiKey = envValue(env, "STEPFUN_API_KEY");
     if (!apiKey) throw new Error(`未配置 STEPFUN_API_KEY`);
     const baseUrl = (envValue(env, "STEPFUN_BASE_URL") || "https://api.stepfun.com/v1").replace(/\/$/, "");
-    return await callStepFunAgent({ baseUrl, apiKey, model, systemPrompt, userContent, maxTokens, reasoningEffort });
+    return await callStepFunAgent({
+      baseUrl,
+      apiKey,
+      model,
+      systemPrompt,
+      userContent,
+      maxTokens: stepFunMaxTokensForModel(env, model, maxTokens),
+      reasoningEffort: stepFunReasoningEffortForModel(env, model, reasoningEffort),
+    });
   }
   if (provider === "360") {
     const apiKey = getSearch360ApiKey(env);
@@ -332,16 +416,21 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   const logger = options.logger ?? NOOP_LOGGER;
   const onMissing = options.onMissingApiKey ?? "error";
   const traceLabel = `Agent${agentId ? `:${agentId}` : ""}`;
+  const providerTimeoutMs = getTimeoutMs(env, "ORCHESTRATE_PROVIDER_TIMEOUT_MS", 45000);
 
   const startTime = Date.now();
   const errors: string[] = [];
   const providerOrder = providerOrderForAgent(env, agentId);
 
   // ───────────────────────────────────────────────────────────────
-  // modelOverride 旁路（用户在前端 model picker 选过 model 时走这里）
-  // 语义：只调这一对 (provider, model)，不进入 fallback chain；
-  //      缺 key → 抛错；调用失败 → 抛错（不兜底）。
+  // modelOverride 优先（用户在前端 model picker 选过 model 时先试这里）
+  // 语义：先调这一对 (provider, model)；失败后继续 fallback chain。
   // ───────────────────────────────────────────────────────────────
+  const attemptedOverride =
+    params.modelOverride && TEXT_PROVIDER_IDS.has(params.modelOverride.provider)
+      ? params.modelOverride
+      : undefined;
+
   if (params.modelOverride) {
     const { provider: ovProvider, model: ovModel } = params.modelOverride;
     if (!TEXT_PROVIDER_IDS.has(ovProvider)) {
@@ -354,18 +443,22 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       model: ovModel,
     });
     try {
-      const result = await dispatchSingleProvider({
-        provider: ovProvider,
-        model: ovModel,
-        env,
-        agentId,
-        systemPrompt,
-        userContent,
-        responseSchema,
-        maxTokens,
-        codexBin,
-        reasoningEffort,
-      });
+      const result = await withTimeout(
+        dispatchSingleProvider({
+          provider: ovProvider,
+          model: ovModel,
+          env,
+          agentId,
+          systemPrompt,
+          userContent,
+          responseSchema,
+          maxTokens,
+          codexBin,
+          reasoningEffort,
+        }),
+        timeoutForProviderModel(env, ovProvider, ovModel, providerTimeoutMs),
+        `${traceLabel} ${ovProvider}:${ovModel}`
+      );
       logger.info("[orchestrate-provider] complete (override)", {
         agent: traceLabel,
         provider: ovProvider,
@@ -386,7 +479,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         latencyMs: Date.now() - ovStart,
         message,
       });
-      throw new Error(`[${ovProvider}:${ovModel}] ${message}`);
+      errors.push(`[${ovProvider}:${ovModel}] ${message}`);
     }
   }
 
@@ -397,8 +490,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   const runOne = async <T,>(
     provider: string,
     modelName: string,
-    call: () => Promise<T>
-  ): Promise<{ ok: true; result: T } | { ok: false; msg: string }> => {
+    call: () => Promise<{ text: string; model: string }>
+  ): Promise<{ ok: true; result: CallAgentResult } | { ok: false; msg: string }> => {
     const providerStart = Date.now();
     logger.info("[orchestrate-provider] start", {
       agent: traceLabel,
@@ -406,14 +499,26 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       model: modelName,
     });
     try {
-      const result = await call();
+      const raw = await withTimeout(
+        call(),
+        timeoutForProviderModel(env, provider, modelName, providerTimeoutMs),
+        `${traceLabel} ${provider}:${modelName}`
+      );
+      const output = parseAgentJson(raw.text, raw.model);
       logger.info("[orchestrate-provider] complete", {
         agent: traceLabel,
         provider,
         model: modelName,
         latencyMs: Date.now() - providerStart,
       });
-      return { ok: true, result };
+      return {
+        ok: true,
+        result: {
+          output,
+          model: raw.model,
+          latencyMs: Date.now() - startTime,
+        },
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : `${provider} 调用失败`;
       logger.error("[orchestrate-provider] error", {
@@ -432,6 +537,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       const apiKey = envValue(env, "DEEPSEEK_API_KEY");
       const baseUrl = (envValue(env, "DEEPSEEK_BASE_URL") || "https://api.deepseek.com/v1").replace(/\/$/, "");
       const model = envValue(env, "DEEPSEEK_MODEL") || modelForAgent(env, "DEEPSEEK", agentId, "deepseek-v4-pro");
+      if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
       if (!apiKey) {
         if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "deepseek", model });
         if (onMissing === "error") errors.push(`[deepseek:${model}] 未配置 DEEPSEEK_API_KEY`);
@@ -441,11 +547,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         callDeepSeekAgent({ apiKey, baseUrl, model, systemPrompt, userContent, maxTokens })
       );
       if (out.ok) {
-        return {
-          output: parseAgentJson(out.result.text, out.result.model),
-          model: out.result.model,
-          latencyMs: Date.now() - startTime,
-        };
+        return out.result;
       }
       errors.push(`[deepseek:${model}] ${(out as { ok: false; msg: string }).msg}`);
       continue;
@@ -454,6 +556,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
     if (provider === "mimo") {
       const apiKey = envValue(env, "MIMO_API_KEY");
       const model = modelForAgent(env, "MIMO", agentId, "mimo-v2.5-pro");
+      if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
       if (!apiKey) {
         if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "mimo", model });
         if (onMissing === "error") errors.push(`[mimo:${model}] 未配置 MIMO_API_KEY`);
@@ -469,21 +572,46 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           callMimoAgent({ baseUrl: clusterUrl, apiKey, model, systemPrompt, userContent, maxTokens })
         );
         if (out.ok) {
-          return {
-            output: parseAgentJson(out.result.text, out.result.model),
-            model: out.result.model,
-            latencyMs: Date.now() - startTime,
-          };
+          return out.result;
         }
         errors.push(`[${clusterUrl}] ${(out as { ok: false; msg: string }).msg}`);
       }
       continue;
     }
 
+    if (provider === "minimax") {
+      const apiKey = getMiniMaxApiKey(env);
+      const model = modelForAgent(env, "MINIMAX", agentId, "MiniMax-M3");
+      const baseUrl = (envValue(env, "MINIMAX_BASE_URL") || "https://api.minimaxi.com/anthropic").replace(/\/$/, "");
+      if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
+      if (!apiKey) {
+        if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "minimax", model });
+        if (onMissing === "error") errors.push(`[minimax:${model}] 未配置 MINIMAX_API_KEY / MINIMAX_TOKEN_PLAN_KEY`);
+        continue;
+      }
+      const out = await runOne("minimax", model, () =>
+        callMiniMaxAgent({
+          baseUrl,
+          apiKey,
+          authHeader: getMiniMaxAuthHeader(env),
+          model,
+          systemPrompt,
+          userContent,
+          maxTokens,
+        })
+      );
+      if (out.ok) {
+        return out.result;
+      }
+      errors.push(`[minimax:${model}] ${(out as { ok: false; msg: string }).msg}`);
+      continue;
+    }
+
     if (provider === "stepfun") {
       const apiKey = envValue(env, "STEPFUN_API_KEY");
-      const model = modelForAgent(env, "STEPFUN", agentId, "step-3.7-flash");
+      const model = modelForAgent(env, "STEPFUN", agentId, "step-2-mini");
       const baseUrl = (envValue(env, "STEPFUN_BASE_URL") || "https://api.stepfun.com/v1").replace(/\/$/, "");
+      if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
       if (!apiKey) {
         if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "stepfun", model });
         if (onMissing === "error") errors.push(`[stepfun:${model}] 未配置 STEPFUN_API_KEY`);
@@ -496,16 +624,12 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           model,
           systemPrompt,
           userContent,
-          maxTokens,
-          reasoningEffort,
+          maxTokens: stepFunMaxTokensForModel(env, model, maxTokens),
+          reasoningEffort: stepFunReasoningEffortForModel(env, model, reasoningEffort),
         })
       );
       if (out.ok) {
-        return {
-          output: parseAgentJson(out.result.text, out.result.model),
-          model: out.result.model,
-          latencyMs: Date.now() - startTime,
-        };
+        return out.result;
       }
       errors.push(`[stepfun:${model}] ${(out as { ok: false; msg: string }).msg}`);
       continue;
@@ -519,6 +643,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         envValue(env, "AI360_CHAT_MODEL") ||
         envValue(env, "AI360_MODEL") ||
         "360gpt-pro";
+      if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
       if (!apiKey) {
         if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "360", model });
         if (onMissing === "error") errors.push(`[360:${model}] 未配置 360 API key`);
@@ -528,11 +653,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         call360ChatAgent({ apiKey, baseUrl, model, systemPrompt, userContent, maxTokens })
       );
       if (out.ok) {
-        return {
-          output: parseAgentJson(out.result.text, out.result.model),
-          model: out.result.model,
-          latencyMs: Date.now() - startTime,
-        };
+        return out.result;
       }
       errors.push(`[360:${model}] ${(out as { ok: false; msg: string }).msg}`);
       continue;
@@ -556,11 +677,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         })
       );
       if (out.ok) {
-        return {
-          output: parseAgentJson(out.result.text, out.result.model),
-          model: out.result.model,
-          latencyMs: Date.now() - startTime,
-        };
+        return out.result;
       }
       errors.push(`[anthropic:${anthropicConfig.model}] ${(out as { ok: false; msg: string }).msg}`);
       continue;
@@ -572,11 +689,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         callCodexAgent({ codexBin, model, systemPrompt, userContent, responseSchema, maxTokens })
       );
       if (out.ok) {
-        return {
-          output: parseAgentJson(out.result.text, out.result.model),
-          model: out.result.model,
-          latencyMs: Date.now() - startTime,
-        };
+        return out.result;
       }
       errors.push(`[codex:${model}] ${(out as { ok: false; msg: string }).msg}`);
     }

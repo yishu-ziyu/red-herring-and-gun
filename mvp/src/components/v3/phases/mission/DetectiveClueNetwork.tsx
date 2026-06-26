@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { DetectiveClueNetworkFramer } from "./DetectiveClueNetworkFramer";
 import { DetectiveClueNetworkGSAP } from "./DetectiveClueNetworkGSAP";
@@ -14,6 +14,7 @@ interface DetectiveClueNetworkProps {
 
 function InputBlock({ claim }: { claim: string }) {
   const [value, setValue] = useState(claim);
+  useEffect(() => setValue(claim), [claim]);
 
   return (
     <motion.div

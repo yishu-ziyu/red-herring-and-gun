@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export interface AgentMemoryCase {
@@ -49,22 +49,39 @@ export class JsonlAgentMemoryStore implements AgentMemoryStore {
       .slice(0, limit);
   }
 
+  // 审查 P2-5 修复：原实现 readAll→filter→writeAll 是 read-modify-write 竞态。
+  // 改为 append-only：每次只追加一行 JSON，不做全文件重写。
+  // 多次写同一 id 不会丢数据，readAll 会按 id 取最新（见下方）。
+  // 文件会随时间增长，需要外部 compact() 维护；当前 demo 量级不阻塞。
   async write(record: AgentMemoryCase): Promise<void> {
     await mkdir(dirname(this.filePath), { recursive: true });
-    const existing = await this.readAll();
-    const deduped = existing.filter((item) => item.id !== record.id);
-    const content = [...deduped, record].map((item) => JSON.stringify(item)).join("\n");
-    await writeFile(this.filePath, content ? `${content}\n` : "", "utf8");
+    const line = `${JSON.stringify(record)}\n`;
+    await appendFile(this.filePath, line, "utf8");
   }
 
   private async readAll(): Promise<AgentMemoryCase[]> {
     try {
       const raw = await readFile(this.filePath, "utf8");
-      return raw
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => JSON.parse(line) as AgentMemoryCase);
+      // 审查 P2-6 修复：单行损坏不应导致整个 store 不可读，跳过损坏行并记录
+      const allRecords: AgentMemoryCase[] = [];
+      const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      for (const line of lines) {
+        try {
+          allRecords.push(JSON.parse(line) as AgentMemoryCase);
+        } catch {
+          console.warn(`[memoryStore] 跳过损坏的 JSONL 行: ${line.slice(0, 80)}`);
+        }
+      }
+      // 审查 P2-5 修复：append-only 模式下同一 id 可能有多条记录，
+      // 按 (id, createdAt) 取最新版本覆盖较早版本，避免读到旧数据。
+      const byId = new Map<string, AgentMemoryCase>();
+      for (const record of allRecords) {
+        const existing = byId.get(record.id);
+        if (!existing || record.createdAt >= existing.createdAt) {
+          byId.set(record.id, record);
+        }
+      }
+      return Array.from(byId.values());
     } catch (error: any) {
       if (error?.code === "ENOENT") return [];
       throw error;

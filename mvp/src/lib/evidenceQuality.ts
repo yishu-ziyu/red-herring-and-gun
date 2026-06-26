@@ -48,7 +48,9 @@ export function assessCandidateEvidenceQuality(candidate: CandidateMaterial): So
   return {
     sourceType: candidate.sourceType,
     credibilityScore: Math.max(credibility.score, credibilityScore),
-    freshnessScore: scoreFreshnessFromTimestamp(),
+    // 审查 P2-8 修复：原实现 scoreFreshnessFromTimestamp() 未传参，恒返回 50。
+    // 改为传入 candidate.publishedAt；缺失时 scoreFreshnessFromTimestamp 仍返回 50（保持原行为）。
+    freshnessScore: scoreFreshnessFromTimestamp(candidate.publishedAt),
     diversityKey: candidate.title,
     tier: Math.min(credibility.tier, SOURCE_TYPE_TIER[candidate.sourceType]),
     reason: `${candidate.sourceType}，${candidate.traceability}可追溯，${candidate.independence}独立性。`,

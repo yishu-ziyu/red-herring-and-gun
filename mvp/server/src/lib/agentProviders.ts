@@ -1,6 +1,6 @@
 // ───────────────────────────────────────────────────────────────
 // Server-side LLM provider HTTP adapters
-// 为 4-Agent pipeline 提供 6 个 LLM provider 的 OpenAI / Anthropic 兼容调用
+// 为 4-Agent pipeline 提供 LLM provider 的 OpenAI / Anthropic 兼容调用
 // 任何 router（callAgentWithFallback）通过 import 这些函数调度
 // ───────────────────────────────────────────────────────────────
 
@@ -9,6 +9,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+// 审查 P3-2 修复：extractAnthropicText 从共享模块引入并 re-export，
+// 不再在本文件维护独立副本（原 line 47-87 本地定义已删除）。
+// 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
+import { extractAnthropicText } from "./anthropicParse.js";
+export { extractAnthropicText };
 
 const execFileAsync = promisify(execFile);
 
@@ -42,48 +47,6 @@ export function describeEmptyChatCompletion(data: any): string {
   const finishReason = choice?.finish_reason || choice?.finishReason || "unknown";
   const reasoning = typeof message?.reasoning === "string" ? message.reasoning : "";
   return `finish_reason=${finishReason}, content_type=${typeof message?.content}, reasoning_chars=${reasoning.length}`;
-}
-
-/**
- * 从 Anthropic 兼容响应中提取 text。
- * 支持两种入口：完整 JSON 响应（{content:[{text}]}）和 SSE 流式（data: {delta:{text}}）。
- */
-export function extractAnthropicText(raw: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) return "";
-
-  if (trimmed.startsWith("{")) {
-    const data = JSON.parse(trimmed);
-    return extractAnthropicContent(data);
-  }
-
-  const parts: string[] = [];
-  for (const line of raw.split(/\r?\n/)) {
-    if (!line.startsWith("data:")) continue;
-
-    const dataText = line.slice(5).trim();
-    if (!dataText || dataText === "[DONE]") continue;
-
-    try {
-      const event = JSON.parse(dataText);
-      const deltaText = event?.delta?.text;
-      if (typeof deltaText === "string") parts.push(deltaText);
-      const blockText = event?.content_block?.text;
-      if (event?.type === "content_block_start" && typeof blockText === "string") parts.push(blockText);
-    } catch {
-      continue;
-    }
-  }
-
-  return parts.join("");
-}
-
-function extractAnthropicContent(data: any): string {
-  const parts: string[] = [];
-  for (const item of data?.content ?? []) {
-    if (typeof item?.text === "string") parts.push(item.text);
-  }
-  return parts.join("");
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -176,6 +139,37 @@ export async function callMimoAgent({
 // Provider 3: StepFun 阶跃星辰（OpenAI 兼容 + reasoning_effort）
 // ───────────────────────────────────────────────────────────────
 
+// Reasoning 系列模型（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
+// 三者皆会触发 400 Invalid request。仅 chat 模型才发这些字段。
+export function buildStepFunRequestBody({
+  model,
+  messages,
+  maxTokens,
+  responseFormat,
+  temperature,
+  reasoningEffort,
+}: {
+  model: string;
+  messages: unknown[];
+  maxTokens: number;
+  responseFormat?: { type: "json_object" };
+  temperature?: number;
+  reasoningEffort?: "low" | "medium" | "high";
+}): Record<string, unknown> {
+  const isReasoning = /^step-3\.7-flash$/i.test(model);
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    max_tokens: maxTokens,
+  };
+  if (!isReasoning) {
+    if (responseFormat !== undefined) body.response_format = responseFormat;
+    if (temperature !== undefined) body.temperature = temperature;
+    if (reasoningEffort !== undefined) body.reasoning_effort = reasoningEffort;
+  }
+  return body;
+}
+
 export async function callStepFunAgent({
   baseUrl,
   apiKey,
@@ -193,23 +187,27 @@ export async function callStepFunAgent({
   maxTokens: number;
   reasoningEffort?: "low" | "medium" | "high";
 }) {
+  // Reasoning 系列模型（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
+  // 三者皆会触发 400 Invalid request。仅 chat 模型才发这些字段。
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
-      ],
-      response_format: { type: "json_object" },
-      reasoning_effort: reasoningEffort,
-      max_tokens: maxTokens,
-      temperature: 0.3,
-    }),
+    body: JSON.stringify(
+      buildStepFunRequestBody({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+        maxTokens,
+        responseFormat: { type: "json_object" },
+        temperature: 0.3,
+        reasoningEffort,
+      })
+    ),
   });
 
   const data = await response.json().catch(() => null);
@@ -315,7 +313,65 @@ export async function callAnthropicAgent({
 }
 
 // ───────────────────────────────────────────────────────────────
-// Provider 6: 本地 Codex CLI（subprocess 调用 codex exec）
+// Provider 6: MiniMax（Anthropic-compatible API；使用 Bearer 认证）
+// ───────────────────────────────────────────────────────────────
+
+export async function callMiniMaxAgent({
+  baseUrl,
+  apiKey,
+  authHeader = "x-api-key",
+  model,
+  systemPrompt,
+  userContent,
+  maxTokens,
+}: {
+  baseUrl: string;
+  apiKey: string;
+  authHeader?: "x-api-key" | "bearer";
+  model: string;
+  systemPrompt: string;
+  userContent: string;
+  maxTokens: number;
+}) {
+  const url = miniMaxMessagesUrl(baseUrl);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+  };
+  if (authHeader === "bearer") {
+    headers.Authorization = `Bearer ${apiKey}`;
+  } else {
+    headers["x-api-key"] = apiKey;
+  }
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userContent }],
+      thinking: model === "MiniMax-M3" ? { type: "adaptive" } : undefined,
+    }),
+  });
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(`MiniMax API 调用失败：${raw.slice(0, 500)}`);
+  }
+  const text = extractAnthropicText(raw);
+  if (!text) throw new Error("MiniMax API 没有返回可解析文本。");
+  return { text, model: `minimax:${model}` };
+}
+
+function miniMaxMessagesUrl(baseUrl: string) {
+  const normalized = baseUrl.replace(/\/$/, "");
+  if (normalized.endsWith("/v1/messages")) return normalized;
+  if (normalized.endsWith("/anthropic")) return `${normalized}/v1/messages`;
+  return `${normalized}/anthropic/v1/messages`;
+}
+
+// ───────────────────────────────────────────────────────────────
+// Provider 7: 本地 Codex CLI（subprocess 调用 codex exec）
 // 输出 raw JSON（不解析），router 用 parseAgentJson 二次处理
 // ───────────────────────────────────────────────────────────────
 

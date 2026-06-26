@@ -8,10 +8,11 @@ import {
   providerOrderForAgent,
 } from "./providerRouter.js";
 
-// Mock 6 个 LLM provider；让 B2-B5 测试可以验证"哪个被调用、哪个没被调用"
+// Mock LLM provider；让 B2-B5 测试可以验证"哪个被调用、哪个没被调用"
 vi.mock("./agentProviders.js", () => ({
   callDeepSeekAgent: vi.fn(),
   callMimoAgent: vi.fn(),
+  callMiniMaxAgent: vi.fn(),
   callStepFunAgent: vi.fn(),
   call360ChatAgent: vi.fn(),
   callAnthropicAgent: vi.fn(),
@@ -24,12 +25,14 @@ import {
   callCodexAgent,
   callDeepSeekAgent,
   callMimoAgent,
+  callMiniMaxAgent,
   callStepFunAgent,
 } from "./agentProviders.js";
 
 const allProviders = {
   callDeepSeekAgent: vi.mocked(callDeepSeekAgent),
   callMimoAgent: vi.mocked(callMimoAgent),
+  callMiniMaxAgent: vi.mocked(callMiniMaxAgent),
   callStepFunAgent: vi.mocked(callStepFunAgent),
   call360ChatAgent: vi.mocked(call360ChatAgent),
   callAnthropicAgent: vi.mocked(callAnthropicAgent),
@@ -46,22 +49,22 @@ describe("providerRouter env helpers", () => {
   // 1. providerOrderForAgent: env 为空时返回默认 6 provider
   it("getAgentTextProviderOrder({}) returns default 6-provider order", () => {
     expect(providerOrderForAgent({})).toEqual([
-      "deepseek",
-      "mimo",
       "stepfun",
       "360",
+      "deepseek",
+      "mimo",
+      "minimax",
       "anthropic",
       "codex",
     ]);
   });
 
-  // 2. providerOrderForAgent: 强制 deepseek 第一、codex 最后；不补全缺失 provider
-  it("getAgentTextProviderOrder forces deepseek first and codex last; does not backfill missing providers", () => {
+  // 2. providerOrderForAgent: 尊重配置顺序、codex 最后；不补全缺失 provider
+  it("getAgentTextProviderOrder respects configured order and keeps codex last; does not backfill missing providers", () => {
     const result = providerOrderForAgent({
       ORCHESTRATE_TEXT_PROVIDER_ORDER: "stepfun,deepseek,360",
     });
-    // 原行为：只保留 env 中列出的有效 provider，强制 deepseek 跳到首位，codex 默认追加
-    expect(result).toEqual(["deepseek", "stepfun", "360", "codex"]);
+    expect(result).toEqual(["stepfun", "deepseek", "360", "codex"]);
   });
 
   // 3. providerOrderForAgent: per-agent env 优先
@@ -73,8 +76,7 @@ describe("providerRouter env helpers", () => {
       },
       "rumor_detector"
     );
-    // per-agent 优先 → stepfun, mimo；强制 deepseek 第一、codex 最后
-    expect(result).toEqual(["deepseek", "stepfun", "mimo", "codex"]);
+    expect(result).toEqual(["stepfun", "mimo", "codex"]);
   });
 
   // 4. providerOrderForAgent: 跳过未知 provider
@@ -148,11 +150,11 @@ describe("providerRouter env helpers", () => {
 });
 
 // ───────────────────────────────────────────────────────────────
-// BDD 行为用例 B2-B5：modelOverride 旁路 fallback chain
+// BDD 行为用例 B2-B5：modelOverride 优先，失败后继续 fallback chain
 // ───────────────────────────────────────────────────────────────
 
 describe("providerRouter modelOverride (BDD B2-B5)", () => {
-  it("B2: when modelOverride is set, only the specified provider is tried (NOT the env default first one)", async () => {
+  it("B2: when modelOverride succeeds, it is tried before the env default provider", async () => {
     resetAllMocks();
     // 用 mockImplementation 把"实际收到的 model"回声到响应里,
     // 这样可以区分 router 是用 modelOverride.model 调的,还是用 env 的 default 调的
@@ -187,44 +189,114 @@ describe("providerRouter modelOverride (BDD B2-B5)", () => {
     expect(result.output).toEqual({ called_with: "step-2", by: "stepfun" });
     expect(result.model).toBe("stepfun:step-2");
 
-    // 关键断言 2: deepseek 完全没被调（虽然它在 fallback chain 排第一）
+    // 关键断言 2: deepseek 完全没被调（override 成功后不再 fallback）
     expect(allProviders.callDeepSeekAgent).not.toHaveBeenCalled();
     expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(1);
+    expect(allProviders.callMiniMaxAgent).not.toHaveBeenCalled();
     expect(allProviders.callMimoAgent).not.toHaveBeenCalled();
     expect(allProviders.call360ChatAgent).not.toHaveBeenCalled();
     expect(allProviders.callAnthropicAgent).not.toHaveBeenCalled();
     expect(allProviders.callCodexAgent).not.toHaveBeenCalled();
   });
 
-  it("B3: when modelOverride provider has no API key, throws without trying fallback", async () => {
+  it("B2-minimax: modelOverride can call the real MiniMax provider path", async () => {
     resetAllMocks();
-    // 选 stepfun，但 env 里 STEPFUN_API_KEY 没配
-    // 期望: router 抛错, 其他 provider 也不能被兜底调用
+    allProviders.callMiniMaxAgent.mockImplementation(async (args: any) => ({
+      text: JSON.stringify({ called_with: args.model, by: "minimax" }),
+      model: `minimax:${args.model}`,
+    }));
 
-    await expect(
-      callAgentWithFallback({
+    const result = await callAgentWithFallback({
+      agentId: "fact_checker",
+      systemPrompt: "you are checker",
+      userContent: "claim",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: {
+        MINIMAX_API_KEY: "sk-mm",
+        DEEPSEEK_API_KEY: "sk-ds",
+      },
+      codexBin: "/usr/bin/codex",
+      modelOverride: { provider: "minimax", model: "MiniMax-M3" },
+    });
+
+    expect(result.output).toEqual({ called_with: "MiniMax-M3", by: "minimax" });
+    expect(result.model).toBe("minimax:MiniMax-M3");
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+    expect(allProviders.callDeepSeekAgent).not.toHaveBeenCalled();
+  });
+
+  it("B2-stepfun-3.7: raises max_tokens and uses low reasoning by default for structured Agent JSON", async () => {
+    resetAllMocks();
+    allProviders.callStepFunAgent.mockImplementation(async (args: any) => ({
+      text: JSON.stringify({
+        called_with: args.model,
+        max_tokens: args.maxTokens,
+        reasoning_effort: args.reasoningEffort,
+      }),
+      model: `stepfun:${args.model}`,
+    }));
+
+    const result = await callAgentWithFallback({
+      agentId: "rumor_detector",
+      systemPrompt: "you are detector",
+      userContent: "claim",
+      responseSchema: { type: "object" },
+      maxTokens: 800,
+      env: {
+        STEPFUN_API_KEY: "sk-sf",
+      },
+      codexBin: "/usr/bin/codex",
+      modelOverride: { provider: "stepfun", model: "step-3.7-flash" },
+      reasoningEffort: "high",
+    });
+
+    expect(result.output).toEqual({
+      called_with: "step-3.7-flash",
+      max_tokens: 4096,
+      reasoning_effort: "low",
+    });
+    expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("B3: when modelOverride provider has no API key, continues with fallback provider", async () => {
+    resetAllMocks();
+    // envValue 会 fallback 到 process.env；测试机若配了 STEPFUN_API_KEY 会导致缺 key 不 throw。
+    // 用 stubEnv 清空 process.env.STEPFUN_API_KEY，确保 key check 生效。test 结束 vitest 自动 unstub。
+    vi.stubEnv("STEPFUN_API_KEY", "");
+    allProviders.callDeepSeekAgent.mockResolvedValueOnce({
+      text: '{"ok":true,"provider":"deepseek"}',
+      model: "deepseek:deepseek-v4-pro",
+    });
+
+    const result = await callAgentWithFallback({
         agentId: "rumor_detector",
         systemPrompt: "x",
         userContent: "x",
         responseSchema: { type: "object" },
         maxTokens: 100,
-        env: { DEEPSEEK_API_KEY: "sk-ds" },  // 只有 deepseek, 没有 stepfun
+        env: { DEEPSEEK_API_KEY: "sk-ds" },
         codexBin: "/usr/bin/codex",
         modelOverride: { provider: "stepfun", model: "step-1" },
-      })
-    ).rejects.toThrow(/stepfun/);
+      });
 
-    // 任何 provider 都没被调用（既没走 stepfun 也没兜底到 deepseek）
+    expect(result.output).toEqual({ ok: true, provider: "deepseek" });
+    expect(result.model).toBe("deepseek:deepseek-v4-pro");
     expect(allProviders.callStepFunAgent).not.toHaveBeenCalled();
-    expect(allProviders.callDeepSeekAgent).not.toHaveBeenCalled();
+    expect(allProviders.callDeepSeekAgent).toHaveBeenCalledTimes(1);
   });
 
-  it("B4: when modelOverride call fails, the error is thrown (no fallback to other providers)", async () => {
+  it("B4: when modelOverride call fails, continues with fallback models/providers", async () => {
     resetAllMocks();
-    allProviders.callDeepSeekAgent.mockRejectedValueOnce(new Error("DeepSeek 502"));
+    allProviders.callDeepSeekAgent
+      .mockRejectedValueOnce(new Error("DeepSeek 502"))
+      .mockRejectedValueOnce(new Error("DeepSeek default 502"));
+    allProviders.callMimoAgent.mockResolvedValueOnce({
+      text: '{"ok":true,"provider":"mimo"}',
+      model: "mimo:mimo-v2.5-pro",
+    });
 
-    await expect(
-      callAgentWithFallback({
+    const result = await callAgentWithFallback({
         agentId: "rumor_detector",
         systemPrompt: "x",
         userContent: "x",
@@ -232,15 +304,47 @@ describe("providerRouter modelOverride (BDD B2-B5)", () => {
         maxTokens: 100,
         env: {
           DEEPSEEK_API_KEY: "sk-ds",
-          MIMO_API_KEY: "sk-mimo",  // 故意配 mimo, 期望它**不**被兜底
+          MIMO_API_KEY: "sk-mimo",
         },
         codexBin: "/usr/bin/codex",
         modelOverride: { provider: "deepseek", model: "deepseek-chat" },
-      })
-    ).rejects.toThrow(/DeepSeek 502/);
+      });
 
-    expect(allProviders.callDeepSeekAgent).toHaveBeenCalledTimes(1);
-    expect(allProviders.callMimoAgent).not.toHaveBeenCalled();  // 关键: 不兜底
+    expect(result.output).toEqual({ ok: true, provider: "mimo" });
+    expect(result.model).toBe("mimo:mimo-v2.5-pro");
+    expect(allProviders.callDeepSeekAgent).toHaveBeenCalledTimes(2);
+    expect(allProviders.callMimoAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("B4-stepfun-3.7-timeout: when selected StepFun 3.7 times out, continues with fallback model", async () => {
+    resetAllMocks();
+    allProviders.callStepFunAgent
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValueOnce({
+        text: '{"ok":true,"provider":"stepfun","model":"step-2-mini"}',
+        model: "stepfun:step-2-mini",
+    });
+
+    const result = await callAgentWithFallback({
+      agentId: "rumor_detector",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: {
+        STEPFUN_API_KEY: "sk-sf",
+        STEPFUN_MODEL: "step-2-mini",
+        STEPFUN_3_7_PROVIDER_TIMEOUT_MS: "1",
+        ORCHESTRATE_TEXT_PROVIDER_ORDER: "stepfun,360",
+      },
+      codexBin: "/usr/bin/codex",
+      modelOverride: { provider: "stepfun", model: "step-3.7-flash" },
+    });
+
+    expect(result.output).toEqual({ ok: true, provider: "stepfun", model: "step-2-mini" });
+    expect(result.model).toBe("stepfun:step-2-mini");
+    expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(2);
+    expect(allProviders.call360ChatAgent).not.toHaveBeenCalled();
   });
 
   it("B5: when modelOverride is undefined, fallback chain behavior is preserved (regression)", async () => {

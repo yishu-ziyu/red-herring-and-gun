@@ -22,10 +22,10 @@ const FETCH_TIMEOUT_MS = 15000;
  */
 async function scrapeSingleLink(link: CaseLink): Promise<ScrapedLink> {
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${JINA_AI_BASE}${link.url}`, {
+    const response = await fetch(`${JINA_AI_BASE}${encodeURIComponent(link.url)}`, {
       method: "GET",
       signal: controller.signal,
       headers: {
@@ -33,7 +33,7 @@ async function scrapeSingleLink(link: CaseLink): Promise<ScrapedLink> {
       },
     });
 
-    window.clearTimeout(timeoutId);
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -48,7 +48,7 @@ async function scrapeSingleLink(link: CaseLink): Promise<ScrapedLink> {
       scrapeStatus: "success",
     };
   } catch (error) {
-    window.clearTimeout(timeoutId);
+    clearTimeout(timeoutId);
 
     const errorMessage = error instanceof Error ? error.message : "抓取失败";
     return {

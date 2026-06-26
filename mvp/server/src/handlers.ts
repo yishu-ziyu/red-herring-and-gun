@@ -9,9 +9,110 @@ import { AGENT_CONFIGS, buildAgentInput } from "./lib/agentConfigs.js";
 import { callAgentWithFallback, AgentTextProviderId } from "./lib/providerRouter.js";
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
-import { computeCredibilityScore } from "./lib/credibilityScore.js";
+import { computeCredibilityScore, labelForScore, type CredibilityScoreResult } from "./lib/credibilityScore.js";
+// 审查 P3-2 修复：Anthropic 文本/JSON 提取统一从共享模块引入，不再各处独立定义。
+import { extractAnthropicText, extractJsonObject } from "./lib/anthropicParse.js";
 
 const execFileAsync = promisify(execFile);
+
+// ───────────────────────────────────────────────────────────────
+// 审查 P3-1 + P2-1 修复：抽取 computeFormulaScore 共享 helper
+// 两个 handler（orchestrate / orchestrateStream）原本各自复制一份
+// 公式覆盖块；同时把硬编码 direction:"support" 改为基于 search360Result
+// 的 contradictingEvidence URL 交叉匹配做方向分类。
+// 失败时返回 null，调用方回退到 LLM 分数。
+// ───────────────────────────────────────────────────────────────
+function normalizeSearchCredibility(src: any): "高" | "中" | "低" {
+  const raw = src?.credibility;
+  if (raw === "高" || raw === "中" || raw === "低") return raw;
+  // credibilityScore 数字兜底：>=75 高，>=50 中，否则低
+  const num = typeof src?.credibilityScore === "number" ? src.credibilityScore : undefined;
+  if (typeof num === "number") return num >= 75 ? "高" : num >= 50 ? "中" : "低";
+  return "低";
+}
+
+function classifySearchDirection(
+  src: any,
+  contradictUrls: Set<string>
+): "support" | "contradict" | "neutral" {
+  // 1. URL 命中 contradictingEvidence → contradict
+  const srcUrl = typeof src?.url === "string" ? src.url : "";
+  if (srcUrl && contradictUrls.has(srcUrl)) return "contradict";
+  // 2. evidenceRole / direction 字段优先
+  const role = src?.evidenceRole ?? src?.direction;
+  if (role === "反驳" || role === "contradict") return "contradict";
+  if (role === "支持" || role === "support") return "support";
+  // 3. 标题/摘要文本启发式：含辟谣/不实等关键词 → contradict
+  const text = `${src?.title ?? ""} ${src?.snippet ?? ""}`.toLowerCase();
+  if (/(辟谣|不实|虚假|假的|误读|反驳|谣言|无法证实|未证实|不准确|夸大)/.test(text)) return "contradict";
+  if (/(官方回应|证实|确认|证明|依据|来源|公告|通报)/.test(text)) return "support";
+  return "neutral";
+}
+
+function computeFormulaScore(
+  rumorOut: any,
+  factOut: any,
+  sourceOut: any,
+  search360Result: any
+): CredibilityScoreResult | null {
+  try {
+    // 收集 contradictingEvidence 的 URL 集合用于交叉匹配方向
+    const contradictList: any[] = Array.isArray(search360Result?.contradictingEvidence)
+      ? search360Result.contradictingEvidence
+      : [];
+    const contradictUrls = new Set<string>(
+      contradictList
+        .map((item: any) => (typeof item?.url === "string" ? item.url : ""))
+        .filter(Boolean)
+    );
+
+    const searchSources = (search360Result?.sources ?? []).slice(0, 8).map((src: any) => ({
+      direction: classifySearchDirection(src, contradictUrls),
+      credibility: normalizeSearchCredibility(src),
+    }));
+
+    return computeCredibilityScore(
+      {
+        severity: rumorOut?.severity ?? "medium",
+        rumorIndicators: Array.isArray(rumorOut?.rumorIndicators) ? rumorOut.rumorIndicators : [],
+        detectedPatterns: Array.isArray(rumorOut?.detectedPatterns) ? rumorOut.detectedPatterns : [],
+      },
+      {
+        factCheckResult: factOut?.factCheckResult ?? "unverified",
+        confidence: factOut?.confidence ?? "low",
+        keyFindings: Array.isArray(factOut?.keyFindings) ? factOut.keyFindings : [],
+        counterEvidence: Array.isArray(factOut?.counterEvidence) ? factOut.counterEvidence : [],
+        sources: Array.isArray(factOut?.sources) ? factOut.sources : [],
+      },
+      {
+        sourceReliability: sourceOut?.sourceReliability ?? "unverified",
+        verifiedSources: Array.isArray(sourceOut?.verifiedSources) ? sourceOut.verifiedSources : [],
+        questionableSources: Array.isArray(sourceOut?.questionableSources) ? sourceOut.questionableSources : [],
+        missingSources: Array.isArray(sourceOut?.missingSources) ? sourceOut.missingSources : [],
+        verificationNotes: typeof sourceOut?.verificationNotes === "string" ? sourceOut.verificationNotes : "",
+      },
+      {
+        sources: searchSources,
+        supportingEvidence: [],
+        contradictingEvidence: contradictList.map((item: any) => typeof item?.title === "string" ? item.title : "").filter(Boolean),
+        unresolvedEvidenceGaps: Array.isArray(search360Result?.unresolvedEvidenceGaps) ? search360Result.unresolvedEvidenceGaps : [],
+      }
+    );
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[credibilityScore] 公式计算失败，回退到 LLM 分数: ${reason}`);
+    return null;
+  }
+}
+
+/** 把公式结果写回 finalReport，并打上 _scoreSource=formula 标记。 */
+function applyFormulaScoreToReport(finalReport: any, formulaResult: CredibilityScoreResult | null): void {
+  if (!formulaResult || !finalReport || typeof finalReport !== "object") return;
+  finalReport.credibilityScore = formulaResult.score;
+  finalReport.credibilityLabel = formulaResult.label;
+  finalReport._scoreSource = "formula";
+  finalReport._scoreBreakdown = formulaResult.breakdown;
+}
 
 const responseSchema = {
   type: "object",
@@ -241,6 +342,37 @@ function buildVisionPrompt(claim: string, intake: CaseIntakePayload) {
   ].join("\n");
 }
 
+// Reasoning 系列模型（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
+// 三者皆会触发 400 Invalid request。仅 chat 模型才发这些字段。
+export function buildStepFunRequestBody({
+  model,
+  messages,
+  maxTokens,
+  responseFormat,
+  temperature,
+  reasoningEffort,
+}: {
+  model: string;
+  messages: unknown[];
+  maxTokens: number;
+  responseFormat?: { type: "json_object" };
+  temperature?: number;
+  reasoningEffort?: "low" | "medium" | "high";
+}): Record<string, unknown> {
+  const isReasoning = /^step-3\.7-flash$/i.test(model);
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    max_tokens: maxTokens,
+  };
+  if (!isReasoning) {
+    if (responseFormat !== undefined) body.response_format = responseFormat;
+    if (temperature !== undefined) body.temperature = temperature;
+    if (reasoningEffort !== undefined) body.reasoning_effort = reasoningEffort;
+  }
+  return body;
+}
+
 async function callStepFunVisionForIntake({
   env,
   claim,
@@ -273,16 +405,18 @@ async function callStepFunVisionForIntake({
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: "你是红鲱鱼与枪的视觉材料预处理 Agent。只做 OCR、图像描述和可核查声明提取；只返回 JSON。" },
-        { role: "user", content },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 1200,
-      temperature: 0.1,
-    }),
+    body: JSON.stringify(
+      buildStepFunRequestBody({
+        model,
+        messages: [
+          { role: "system", content: "你是红鲱鱼与枪的视觉材料预处理 Agent。只做 OCR、图像描述和可核查声明提取；只返回 JSON。" },
+          { role: "user", content },
+        ],
+        maxTokens: 1200,
+        responseFormat: { type: "json_object" },
+        temperature: 0.1,
+      })
+    ),
   });
 
   const data = await response.json().catch(() => null);
@@ -314,6 +448,10 @@ function composeClaimWithVision(claim: string, intake: CaseIntakePayload, visual
     JSON.stringify(visualExtraction, null, 2),
     links.length > 0 ? `\n【链接材料】\n${links.join("\n\n")}` : "",
   ].filter(Boolean).join("\n");
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 // Express handlers extracted from vite.config.ts
@@ -401,11 +539,15 @@ export function createHandlers(env: Record<string, string>) {
     if (!query) return sendJson(res, 400, { message: "缺少 query 参数" });
 
     try {
-      const result = await callParallelSearchProviders({ env, query, model: payload.model, refProm: payload.refProm });
+      const result = await withTimeout(
+        callParallelSearchProviders({ env, query, model: payload.model, refProm: payload.refProm }),
+        getTimeoutMs(env, "SEARCH_TOTAL_TIMEOUT_MS", 20000),
+        "并行搜索服务"
+      );
       return sendJson(res, 200, result);
     } catch (error) {
       const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
-      return sendJson(res, 502, { message });
+      return sendJson(res, 504, { message });
     }
   }
 
@@ -425,11 +567,15 @@ export function createHandlers(env: Record<string, string>) {
     if (!provider) return sendJson(res, 400, { message: "缺少 provider 参数" });
 
     try {
-      const result = await callSearchProvider({ env, provider, query, model: payload.model, refProm: payload.refProm });
+      const result = await withTimeout(
+        callSearchProvider({ env, provider, query, model: payload.model, refProm: payload.refProm }),
+        getTimeoutMs(env, "SEARCH_PROVIDER_ENDPOINT_TIMEOUT_MS", 15000),
+        getProviderLabel(provider)
+      );
       return sendJson(res, 200, result);
     } catch (error) {
       const message = error instanceof Error ? error.message : `${provider} 未返回真实结果`;
-      return sendJson(res, 502, { message });
+      return sendJson(res, 504, { message });
     }
   }
 
@@ -500,7 +646,7 @@ export function createHandlers(env: Record<string, string>) {
       if (visualExtraction) agentInput.visualExtraction = visualExtraction;
       if (clientMemoryRecall) agentInput.memoryRecall = clientMemoryRecall;
       if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
-        agentInput.search360 = search360Result;
+        agentInput.search360 = compactSearchResultForAgent(search360Result);
       }
       if (agentId === "report_composer") {
         agentInput.evidenceInputs = buildReportEvidenceInputs(steps, search360Result);
@@ -524,6 +670,7 @@ export function createHandlers(env: Record<string, string>) {
           codexBin,
           reasoningEffort: "high",
           modelOverride: modelOverride as { provider: AgentTextProviderId; model: string } | undefined,
+          options: { logger: console },
         });
         output = result.output;
         modelUsed = result.model;
@@ -549,7 +696,7 @@ export function createHandlers(env: Record<string, string>) {
     try {
       if (intake?.images.length) {
         const visionResult = await callStepFunVisionForIntake({ env, claim, intake });
-        visualExtraction = visionResult.output;
+        visualExtraction = asRecord(visionResult.output);
         claim = composeClaimWithVision(claim, intake, visualExtraction);
       }
 
@@ -570,37 +717,24 @@ export function createHandlers(env: Record<string, string>) {
       steps.push(factStep, sourceStep);
 
       // Phase 3: ReportComposer (serial)
-      const reportStep = await runAgent("report_composer", steps, search360Result);
+      const reportStep = await runReportComposerWithFallback({
+        claim,
+        steps,
+        search360Result,
+        runAgent,
+      });
       steps.push(reportStep);
 
       const finalReport = reportStep.output;
 
       // ─── 公式覆盖 credibilityScore ───
-      try {
-        const rumorOut = rumorStep.output;
-        const factOut = factStep.output;
-        const sourceOut = sourceStep.output;
-        const searchSources = (search360Result?.sources ?? []).slice(0, 8).map((src: any) => {
-          const rawCred: string = src.credibility === "高" ? "高" : src.credibility === "中" ? "中" : "低";
-          const cred: "高" | "中" | "低" = (rawCred === "高" || rawCred === "中" || rawCred === "低") ? rawCred : "低";
-          return { direction: "support" as const, credibility: cred };
-        });
-        const formulaResult = computeCredibilityScore(
-          { severity: rumorOut?.severity ?? "medium", rumorIndicators: Array.isArray(rumorOut?.rumorIndicators) ? rumorOut.rumorIndicators : [], detectedPatterns: Array.isArray(rumorOut?.detectedPatterns) ? rumorOut.detectedPatterns : [] },
-          { factCheckResult: factOut?.factCheckResult ?? "unverified", confidence: factOut?.confidence ?? "low", keyFindings: Array.isArray(factOut?.keyFindings) ? factOut.keyFindings : [], counterEvidence: Array.isArray(factOut?.counterEvidence) ? factOut.counterEvidence : [], sources: Array.isArray(factOut?.sources) ? factOut.sources : [] },
-          { sourceReliability: sourceOut?.sourceReliability ?? "unverified", verifiedSources: Array.isArray(sourceOut?.verifiedSources) ? sourceOut.verifiedSources : [], questionableSources: Array.isArray(sourceOut?.questionableSources) ? sourceOut.questionableSources : [], missingSources: Array.isArray(sourceOut?.missingSources) ? sourceOut.missingSources : [], verificationNotes: typeof sourceOut?.verificationNotes === "string" ? sourceOut.verificationNotes : "" },
-          { sources: searchSources, supportingEvidence: [], contradictingEvidence: [], unresolvedEvidenceGaps: Array.isArray(search360Result?.unresolvedEvidenceGaps) ? search360Result.unresolvedEvidenceGaps : [] }
-        );
-        if (finalReport && typeof finalReport === "object") {
-          finalReport.credibilityScore = formulaResult.score;
-          finalReport.credibilityLabel = formulaResult.label;
-          finalReport._scoreSource = "formula";
-          finalReport._scoreBreakdown = formulaResult.breakdown;
-        }
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        console.warn(`[credibilityScore] 公式计算失败，回退到 LLM 分数: ${reason}`);
-      }
+      // 审查 P3-1 + P2-1 修复：抽取为 computeFormulaScore 共享 helper，
+      // direction 由 helper 内部按 search360Result.contradictingEvidence
+      // URL 交叉匹配 + 文本启发式分类，不再硬编码 "support"。
+      applyFormulaScoreToReport(
+        finalReport,
+        computeFormulaScore(rumorStep.output, factStep.output, sourceStep.output, search360Result)
+      );
 
       return sendJson(res, 200, {
         steps,
@@ -675,7 +809,7 @@ export function createHandlers(env: Record<string, string>) {
       if (visualExtraction) agentInput.visualExtraction = visualExtraction;
       if (clientMemoryRecall) agentInput.memoryRecall = clientMemoryRecall;
       if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
-        agentInput.search360 = search360Result;
+        agentInput.search360 = compactSearchResultForAgent(search360Result);
       }
       if (agentId === "report_composer") {
         agentInput.evidenceInputs = buildReportEvidenceInputs(steps, search360Result);
@@ -699,6 +833,7 @@ export function createHandlers(env: Record<string, string>) {
           codexBin,
           reasoningEffort: "high",
           modelOverride: modelOverride as { provider: AgentTextProviderId; model: string } | undefined,
+          options: { logger: console },
         });
         output = result.output;
         modelUsed = result.model;
@@ -754,7 +889,7 @@ export function createHandlers(env: Record<string, string>) {
 
         try {
           const visionResult = await callStepFunVisionForIntake({ env, claim, intake });
-          visualExtraction = visionResult.output;
+          visualExtraction = asRecord(visionResult.output);
           claim = composeClaimWithVision(claim, intake, visualExtraction);
 
           sendEvent({
@@ -862,37 +997,34 @@ export function createHandlers(env: Record<string, string>) {
       });
 
       // Phase 3: ReportComposer (serial — needs outputs from all previous agents)
-      const reportStep = await runAgentWithStream("report_composer", steps, search360Result);
+      const reportStep = await runReportComposerWithFallback({
+        claim,
+        steps,
+        search360Result,
+        runAgent: runAgentWithStream,
+        onFallback: (step) => {
+          sendEvent({
+            type: "agent_complete",
+            agent: step.agent,
+            agentName: step.agentName,
+            agentIcon: step.agentIcon,
+            output: step.output,
+            model: step.model,
+            latencyMs: step.latencyMs,
+            timestamp: Date.now(),
+          });
+        },
+      });
       steps.push(reportStep);
 
       const finalReport = reportStep.output;
 
       // ─── 公式覆盖 credibilityScore ───
-      try {
-        const rumorOut = rumorStep.output;
-        const factOut = factStep.output;
-        const sourceOut = sourceStep.output;
-        const searchSources = (search360Result?.sources ?? []).slice(0, 8).map((src: any) => {
-          const rawCred: string = src.credibility === "高" ? "高" : src.credibility === "中" ? "中" : "低";
-          const cred: "高" | "中" | "低" = (rawCred === "高" || rawCred === "中" || rawCred === "低") ? rawCred : "低";
-          return { direction: "support" as const, credibility: cred };
-        });
-        const formulaResult = computeCredibilityScore(
-          { severity: rumorOut?.severity ?? "medium", rumorIndicators: Array.isArray(rumorOut?.rumorIndicators) ? rumorOut.rumorIndicators : [], detectedPatterns: Array.isArray(rumorOut?.detectedPatterns) ? rumorOut.detectedPatterns : [] },
-          { factCheckResult: factOut?.factCheckResult ?? "unverified", confidence: factOut?.confidence ?? "low", keyFindings: Array.isArray(factOut?.keyFindings) ? factOut.keyFindings : [], counterEvidence: Array.isArray(factOut?.counterEvidence) ? factOut.counterEvidence : [], sources: Array.isArray(factOut?.sources) ? factOut.sources : [] },
-          { sourceReliability: sourceOut?.sourceReliability ?? "unverified", verifiedSources: Array.isArray(sourceOut?.verifiedSources) ? sourceOut.verifiedSources : [], questionableSources: Array.isArray(sourceOut?.questionableSources) ? sourceOut.questionableSources : [], missingSources: Array.isArray(sourceOut?.missingSources) ? sourceOut.missingSources : [], verificationNotes: typeof sourceOut?.verificationNotes === "string" ? sourceOut.verificationNotes : "" },
-          { sources: searchSources, supportingEvidence: [], contradictingEvidence: [], unresolvedEvidenceGaps: Array.isArray(search360Result?.unresolvedEvidenceGaps) ? search360Result.unresolvedEvidenceGaps : [] }
-        );
-        if (finalReport && typeof finalReport === "object") {
-          finalReport.credibilityScore = formulaResult.score;
-          finalReport.credibilityLabel = formulaResult.label;
-          finalReport._scoreSource = "formula";
-          finalReport._scoreBreakdown = formulaResult.breakdown;
-        }
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        console.warn(`[credibilityScore] 公式计算失败，回退到 LLM 分数: ${reason}`);
-      }
+      // 审查 P3-1 + P2-1 修复：与 orchestrateHandler 共用 computeFormulaScore。
+      applyFormulaScoreToReport(
+        finalReport,
+        computeFormulaScore(rumorStep.output, factStep.output, sourceStep.output, search360Result)
+      );
 
       sendEvent({
         type: "complete",
@@ -1647,52 +1779,6 @@ async function callLocalCodexRecursive({
   }
 }
 
-function extractAnthropicText(raw: string) {
-  const trimmed = raw.trim();
-  if (!trimmed) return "";
-
-  if (trimmed.startsWith("{")) {
-    const data = JSON.parse(trimmed);
-    return extractAnthropicContent(data);
-  }
-
-  const parts: string[] = [];
-  for (const line of raw.split(/\r?\n/)) {
-    if (!line.startsWith("data:")) continue;
-
-    const dataText = line.slice(5).trim();
-    if (!dataText || dataText === "[DONE]") continue;
-
-    try {
-      const event = JSON.parse(dataText);
-      const deltaText = event?.delta?.text;
-      if (typeof deltaText === "string") parts.push(deltaText);
-      const blockText = event?.content_block?.text;
-      if (event?.type === "content_block_start" && typeof blockText === "string") parts.push(blockText);
-    } catch {
-      continue;
-    }
-  }
-
-  return parts.join("");
-}
-
-function extractAnthropicContent(data: any) {
-  const parts: string[] = [];
-  for (const item of data?.content ?? []) {
-    if (typeof item?.text === "string") parts.push(item.text);
-  }
-  return parts.join("");
-}
-
-function extractJsonObject(text: string) {
-  const trimmed = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) return trimmed;
-  return trimmed.slice(start, end + 1);
-}
-
 function buildCodexPrompt(payload: any) {
   const modeInstruction = {
     search: "用户选择联网搜索。你可以使用 Codex 的 web search 能力寻找当前节点需要的候选材料，并总结来源角色。",
@@ -1853,6 +1939,10 @@ function extractOutputText(data: any) {
 }
 
 function readJson(req: any) {
+  if (req.body && typeof req.body === "object") {
+    return Promise.resolve(req.body);
+  }
+
   return new Promise((resolve, reject) => {
     let raw = "";
     req.on("data", (chunk: Buffer) => {
@@ -1920,6 +2010,26 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
   } finally {
     if (timeout) clearTimeout(timeout);
   }
+}
+
+async function fetchWithTimeout(url: string | URL, init: RequestInit, timeoutMs: number, label: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`${label} 超时 ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function getSearchFetchTimeoutMs(env: Record<string, string>) {
+  return getTimeoutMs(env, "SEARCH_FETCH_TIMEOUT_MS", 10000);
 }
 
 function getSearchToolName(result: { _source?: string } | undefined) {
@@ -2002,6 +2112,217 @@ function buildReportEvidenceInputs(steps: any[], searchResult?: any) {
   };
 }
 
+function compactSearchResultForAgent(searchResult: any) {
+  const sources = Array.isArray(searchResult?.sources)
+    ? searchResult.sources.slice(0, 8).map((source: any, index: number) => ({
+        id: String(source?.id || `S${index + 1}`),
+        title: String(source?.title || source?.name || `来源 ${index + 1}`).slice(0, 120),
+        url: String(source?.url || source?.link || ""),
+        domain: String(source?.domain || source?.site || ""),
+        snippet: String(source?.condensedSnippet || source?.snippet || source?.summary || source?.content || "").slice(0, 450),
+        credibility: source?.credibility || source?.credibilityScore || "",
+        role: source?.evidenceRole || source?.role || "线索",
+      }))
+    : [];
+
+  return {
+    answer: typeof searchResult?.answer === "string" ? searchResult.answer.slice(0, 1800) : "",
+    sources,
+    supportingEvidence: stringItems(searchResult?.supportingEvidence).slice(0, 4).map((item) => item.slice(0, 240)),
+    contradictingEvidence: stringItems(searchResult?.contradictingEvidence).slice(0, 4).map((item) => item.slice(0, 240)),
+    unresolvedEvidenceGaps: stringItems(searchResult?.unresolvedEvidenceGaps).slice(0, 4).map((item) => item.slice(0, 240)),
+    relatedQuestions: stringItems(searchResult?.relatedQuestions).slice(0, 4),
+    model: String(searchResult?.model || ""),
+    traceText: String(searchResult?.traceText || "").slice(0, 700),
+    _source: searchResult?._source || "search",
+  };
+}
+
+async function runReportComposerWithFallback({
+  claim,
+  steps,
+  search360Result,
+  runAgent,
+  onFallback,
+}: {
+  claim: string;
+  steps: any[];
+  search360Result: any;
+  runAgent: (agentId: string, steps: any[], search360Result?: any) => Promise<any>;
+  onFallback?: (step: any) => void;
+}) {
+  try {
+    return await runAgent("report_composer", steps, search360Result);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "ReportComposer 调用失败";
+    const startedAt = Date.now();
+    const fallbackStep = {
+      agent: "report_composer",
+      agentName: "ReportComposer",
+      agentIcon: "📝",
+      systemPrompt: "deterministic fallback report",
+      input: {
+        claim,
+        fallbackReason: message,
+      },
+      output: buildDeterministicFinalReport(claim, steps, search360Result, message),
+      model: "fallback:deterministic-report",
+      latencyMs: Date.now() - startedAt,
+      timestamp: Date.now(),
+      status: "completed",
+    };
+    onFallback?.(fallbackStep);
+    return fallbackStep;
+  }
+}
+
+function buildDeterministicFinalReport(claim: string, steps: any[], searchResult: any, reason: string) {
+  const rumorStep = steps.find((step) => step.agent === "rumor_detector");
+  const factStep = steps.find((step) => step.agent === "fact_checker");
+  const sourceStep = steps.find((step) => step.agent === "source_validator");
+  const factResult = String(factStep?.output?.factCheckResult || "unverified");
+  const sourceReliability = String(sourceStep?.output?.sourceReliability || "unverified");
+  const keyFindings = stringItems(factStep?.output?.keyFindings);
+  const counterEvidence = stringItems(factStep?.output?.counterEvidence);
+  const verifiedSources = stringItems(sourceStep?.output?.verifiedSources);
+  const questionableSources = stringItems(sourceStep?.output?.questionableSources);
+  const missingSources = stringItems(sourceStep?.output?.missingSources);
+  const searchSources = Array.isArray(searchResult?.sources) ? searchResult.sources.slice(0, 5) : [];
+  const searchGaps = stringItems(searchResult?.unresolvedEvidenceGaps);
+  const hasCounterEvidence = counterEvidence.length > 0 || stringItems(searchResult?.contradictingEvidence).length > 0;
+  const hasMissingSources = missingSources.length > 0 || searchGaps.length > 0;
+  const verdictType =
+    factResult === "true" && !hasCounterEvidence && sourceReliability !== "low"
+      ? "true"
+      : factResult === "false"
+        ? "false"
+        : factResult === "partial" || hasCounterEvidence
+          ? "mixed_misleading"
+          : "unverified";
+  // 审查 P2-2 修复：fallback 路径也调用 computeFormulaScore，
+  // 让 rumor severity / missingSources / search evidence 等分量真正生效；
+  // label 统一引用 labelForScore（基于 SCORE_LABELS），与公式路径一致。
+  // computeFormulaScore 失败返回 null 时再退回 verdictType→固定分数兜底。
+  const fallbackFormula = computeFormulaScore(
+    rumorStep?.output,
+    factStep?.output,
+    sourceStep?.output,
+    searchResult
+  );
+  const credibilityScore = fallbackFormula
+    ? fallbackFormula.score
+    : verdictType === "true" ? 72 :
+      verdictType === "false" ? 18 :
+      verdictType === "mixed_misleading" ? 45 :
+      36;
+  const credibilityLabel = fallbackFormula
+    ? fallbackFormula.label
+    : labelForScore(credibilityScore);
+  const firstFinding = keyFindings[0] || String(searchResult?.answer || "").slice(0, 160) || "当前证据不足以直接确认原始说法。";
+  const missingText = [...missingSources, ...searchGaps].slice(0, 2).join("；") || "仍需要更权威或原始来源复核。";
+  const conclusion =
+    verdictType === "true"
+      ? `当前证据较支持该说法，但仍需保留来源边界：${firstFinding}`
+      : verdictType === "false"
+        ? `当前证据不支持该说法，建议不要继续按原表述传播。`
+        : verdictType === "mixed_misleading"
+          ? `该说法包含可疑或夸大的成分，只能按有限证据谨慎转述。`
+          : `该说法目前无法被充分核实，不宜当作事实传播。`;
+
+  return {
+    verdictType,
+    conclusion,
+    credibilityScore,
+    credibilityLabel,
+    recommendation: hasMissingSources
+      ? "先不要直接转发原说法；补充官方、原始或专业来源后再判断。"
+      : "可以保留为待核查结论，并在转述时附上证据边界。",
+    summaryForPublic: `${conclusion} 本报告由兜底收束生成，因为最终写作模型未在服务时间内完成。`,
+    whyHardToVerify: [
+      reason.slice(0, 220),
+      missingText,
+      "搜索结果和 Agent 输出只能作为核查线索，不能替代原始材料或权威发布。",
+    ],
+    evidenceChain: [
+      {
+        layer: "原始命题",
+        finding: claim.slice(0, 220),
+        evidence: stringItems(rumorStep?.output?.rumorIndicators).slice(0, 3).join("；") || "未检测到足够明确的结构化谣言特征。",
+        boundary: "这一步只识别表达风险，不直接判定真假。",
+        sourceRefs: ["RumorDetector"],
+      },
+      {
+        layer: "事实核查",
+        finding: firstFinding,
+        evidence: keyFindings.slice(0, 3).join("；") || "FactChecker 未返回足够关键发现。",
+        boundary: "事实核查结果需要结合来源可靠性一起解释。",
+        sourceRefs: ["FactChecker"],
+      },
+      {
+        layer: "信源审计",
+        finding: verifiedSources[0] || questionableSources[0] || missingText,
+        evidence: [...verifiedSources, ...questionableSources].slice(0, 3).join("；") || "缺少可直接采信的信源列表。",
+        boundary: "有来源线索不等于来源已被确认为权威。",
+        sourceRefs: ["SourceValidator"],
+      },
+      {
+        layer: "搜索来源",
+        finding: searchSources[0]?.title || "搜索服务返回的来源有限。",
+        evidence: searchSources.map((source: any, index: number) => `${index + 1}. ${source?.title || source?.url || "未命名来源"}`).join("；"),
+        boundary: "搜索摘要只能提供交叉验证线索，不能单独推出最终事实。",
+        sourceRefs: searchSources.map((source: any, index: number) => String(source?.url || source?.title || `S${index + 1}`)),
+      },
+      {
+        layer: "结论边界",
+        finding: conclusion,
+        evidence: [...counterEvidence, ...searchGaps].slice(0, 3).join("；") || missingText,
+        boundary: "最终写作模型超时，因此本结论采用保守兜底收束。",
+        sourceRefs: ["FallbackReport"],
+      },
+    ],
+    causalBoundary: "本次核查只能判断公开材料对原命题的支持程度，不能推出未被来源覆盖的因果、医学或政策结论。",
+    closureActions: [
+      {
+        type: "archive_doubt",
+        label: "保存证据边界",
+        content: missingText,
+        status: "ready",
+      },
+      {
+        type: "follow_up",
+        label: "补查原始来源",
+        content: "优先寻找官方发布、原始研究、专业机构说明或当事方一手材料。",
+        status: hasMissingSources ? "needs_review" : "ready",
+      },
+      {
+        type: "share_public",
+        label: "谨慎转述",
+        content: "对外表达时保留“目前证据显示/仍待进一步核查”的限定。",
+        status: "needs_review",
+      },
+    ],
+    confidenceDimensions: [
+      buildConfidenceDimension("source_reliability", "来源可靠性", sourceReliability === "high" ? 78 : sourceReliability === "medium" ? 62 : 42, 70, sourceReliability === "high", sourceReliability),
+      buildConfidenceDimension("evidence_completeness", "证据完整度", hasMissingSources ? 45 : 66, 60, !hasMissingSources, missingText),
+      buildConfidenceDimension("consistency", "逻辑一致性", hasCounterEvidence ? 55 : 72, 75, !hasCounterEvidence, hasCounterEvidence ? "存在反证或冲突线索" : "未发现明显冲突"),
+      buildConfidenceDimension("recency", "信息时效性", searchSources.length > 0 ? 58 : 35, 50, searchSources.length > 0, "以当前搜索返回为准"),
+      buildConfidenceDimension("authority", "权威匹配度", verifiedSources.length > 0 ? 62 : 38, 65, verifiedSources.length > 0, verifiedSources[0] || "缺少明确权威来源"),
+    ],
+    _fallbackReason: reason,
+  };
+}
+
+function buildConfidenceDimension(
+  dimension: string,
+  label: string,
+  score: number,
+  threshold: number,
+  passed: boolean,
+  reason: string
+) {
+  return { dimension, label, score, threshold, passed, reason };
+}
+
 function buildConsensusDebate(factStep: any, sourceStep: any, searchResult?: any) {
   const factCounterEvidence = stringItems(factStep?.output?.counterEvidence);
   const contradictingSources = stringItems(factStep?.output?.contradictingSources);
@@ -2075,7 +2396,7 @@ async function call360AiSearch({
 
   const selectedModel = model || env.SEARCH360_MODEL || process.env.SEARCH360_MODEL || "360gpt-pro";
   try {
-    const response = await fetch("https://api.360.cn/v1/search/aisearch", {
+    const response = await fetchWithTimeout("https://api.360.cn/v1/search/aisearch", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -2089,7 +2410,7 @@ async function call360AiSearch({
         enable_web_page_safety: true,
         max_refer_search_items: 12,
       }),
-    });
+    }, getSearchFetchTimeoutMs(env), "360 AI Search");
 
     const data = await response.json().catch(() => null);
     if (!response.ok) {
@@ -2227,7 +2548,7 @@ async function callAnySearchSearch({
   query: string;
 }) {
   const apiKey = getAnySearchApiKey(env);
-  const response = await fetch("https://api.anysearch.com/mcp", {
+  const response = await fetchWithTimeout("https://api.anysearch.com/mcp", {
     method: "POST",
     headers: {
       ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
@@ -2246,7 +2567,7 @@ async function callAnySearchSearch({
         },
       },
     }),
-  });
+  }, getSearchFetchTimeoutMs(env), "AnySearch");
 
   const data = await response.json().catch(() => null);
   if (!response.ok) {
@@ -2271,7 +2592,7 @@ async function callTavilySearch({
   const apiKey = getTavilyApiKey(env);
   if (!apiKey) throw new Error("未配置 Tavily API key");
 
-  const response = await fetch("https://api.tavily.com/search", {
+  const response = await fetchWithTimeout("https://api.tavily.com/search", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -2286,7 +2607,7 @@ async function callTavilySearch({
       include_favicon: true,
       include_usage: true,
     }),
-  });
+  }, getSearchFetchTimeoutMs(env), "Tavily Search");
 
   const data = await response.json().catch(() => null);
   if (!response.ok) {
@@ -2308,7 +2629,7 @@ async function callMetasoSearch({
   if (!apiKey) throw new Error("未配置 Metaso API key");
 
   const scope = env.METASO_SEARCH_SCOPE || process.env.METASO_SEARCH_SCOPE || "webpage";
-  const response = await fetch("https://metaso.cn/api/v1/search", {
+  const response = await fetchWithTimeout("https://metaso.cn/api/v1/search", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -2323,7 +2644,7 @@ async function callMetasoSearch({
       includeRawContent: false,
       conciseSnippet: true,
     }),
-  });
+  }, getSearchFetchTimeoutMs(env), "Metaso Search");
 
   const data = await response.json().catch(() => null);
   if (!response.ok) {
@@ -2349,7 +2670,7 @@ async function callExaSearch({
   if (!apiKey) throw new Error("未配置 Exa API key");
 
   const type = env.EXA_SEARCH_TYPE || process.env.EXA_SEARCH_TYPE || "auto";
-  const response = await fetch("https://api.exa.ai/search", {
+  const response = await fetchWithTimeout("https://api.exa.ai/search", {
     method: "POST",
     headers: {
       "x-api-key": apiKey,
@@ -2365,7 +2686,7 @@ async function callExaSearch({
         summary: { query: "提取与原始 claim 真假、来源和反证相关的要点。" },
       },
     }),
-  });
+  }, getSearchFetchTimeoutMs(env), "Exa Search");
 
   const data = await response.json().catch(() => null);
   if (!response.ok) {
@@ -2421,7 +2742,7 @@ function normalizeTavilySearchResponse(data: any, query: string) {
   }));
 
   return {
-    answer: String(data?.answer || sources.map((source) => `【${source.title}】${source.snippet}`).join("\n")),
+    answer: String(data?.answer || sources.map((source: { title: string; snippet: string }) => `【${source.title}】${source.snippet}`).join("\n")),
     sources,
     relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
     model: `tavily-search:${data?.auto_parameters?.search_depth || "basic"}`,
@@ -2514,7 +2835,7 @@ function normalizeExaSearchResponse(data: any, query: string, type: string) {
   }));
 
   return {
-    answer: String(data?.context || sources.map((source) => `【${source.title}】${source.snippet}`).join("\n")),
+    answer: String(data?.context || sources.map((source: { title: string; snippet: string }) => `【${source.title}】${source.snippet}`).join("\n")),
     sources,
     unresolvedEvidenceGaps: sources.length > 0 ? [] : ["Exa Search 未返回可引用来源。"],
     relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
@@ -2587,13 +2908,13 @@ async function call360MWebSearch({
   url.searchParams.set("trusted_sources", "1");
   url.searchParams.set("exclude_aigc", "true");
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-  });
+  }, getSearchFetchTimeoutMs(env), `360 智搜 ${selectedRefProm}`);
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = data?.error?.message || data?.message || response.statusText;

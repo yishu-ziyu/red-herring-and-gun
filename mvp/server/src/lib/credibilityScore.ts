@@ -93,13 +93,19 @@ const SEARCH_CREDIBILITY_MAP: Record<string, number> = {
   低: -0.3,
 };
 
-const SCORE_LABELS: { min: number; label: string }[] = [
+// 审查 P2-2 修复：导出 SCORE_LABELS 让 fallback 路径也能引用同一份 label 表，
+// 不再让 buildDeterministicFinalReport 自带一份不一致的 label 映射。
+export const SCORE_LABELS: { min: number; label: string }[] = [
   { min: 80, label: "高度可信" },
   { min: 60, label: "基本可信" },
   { min: 40, label: "存疑" },
   { min: 20, label: "低可信" },
   { min: 0, label: "高度可疑" },
 ];
+
+export function labelForScore(score: number): string {
+  return SCORE_LABELS.find((l) => score >= l.min)?.label ?? "高度可疑";
+}
 
 // ─── 主函数 ─────────────────────────────────────────────────
 
@@ -162,7 +168,8 @@ export function computeCredibilityScore(
   normalized = normalized * (1 - 0.5 * totalRumorPenalty);
 
   // 缺失来源惩罚（加法：-5 到 -15 分）
-  normalized = normalized + missingPenalty * 100;
+  // 审查 P1-1 修复：原代码符号为 +，导致 missingSources 越多分数越高（惩罚变奖励）
+  normalized = normalized - missingPenalty * 100;
 
   // 门控：unverified 且无可靠来源 → 封顶 50 分
   if (factCheck.factCheckResult === "unverified" && source.verifiedSources.length === 0) {

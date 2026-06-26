@@ -536,7 +536,7 @@ export function EvidenceMatrix({
                 >
                   <OriginalSourceCell
                     hasOriginal={result.meetsMinimumCriteria.criteria2_hasHighTierOrOriginal}
-                    isExpired={result.propositionId === "prop-c"}
+                    isExpired={false /* TODO: 改用 EvidenceDetailDrawer 的 diffMonths > 12 时间差判断，result 对象暂无 timestamp 字段 */}
                   />
                 </div>
 

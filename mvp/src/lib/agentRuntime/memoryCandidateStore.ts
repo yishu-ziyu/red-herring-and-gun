@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { MemoryCandidate, MemoryCandidateHit, MemoryCandidateKind, MemoryCandidateStatus } from "./memoryCandidateTypes";
 
@@ -12,15 +12,14 @@ export interface MemoryCandidateStore {
 export class JsonlMemoryCandidateStore implements MemoryCandidateStore {
   constructor(private readonly filePath = join(process.cwd(), ".agent-memory", "candidates.jsonl")) {}
 
+  // 审查 P2-4 修复：原实现 readAll→merge→writeAll 是 read-modify-write 竞态。
+  // 改为 append-only：新候选直接 appendFile，不做全文件重写。
+  // 同 id 重复 propose 由 readAll 去重（按 id 取最新版本）。
   async propose(candidates: MemoryCandidate[]): Promise<void> {
     if (candidates.length === 0) return;
-    const existing = await this.readAll();
-    const incomingIds = new Set(candidates.map((candidate) => candidate.id));
-    const merged = [
-      ...candidates,
-      ...existing.filter((candidate) => !incomingIds.has(candidate.id)),
-    ];
-    await this.writeAll(merged);
+    await mkdir(dirname(this.filePath), { recursive: true });
+    const block = candidates.map((c) => JSON.stringify(c)).join("\n") + "\n";
+    await appendFile(this.filePath, block, "utf8");
   }
 
   async list(filter?: { status?: MemoryCandidateStatus; kind?: MemoryCandidateKind }): Promise<MemoryCandidate[]> {
@@ -31,21 +30,22 @@ export class JsonlMemoryCandidateStore implements MemoryCandidateStore {
       .sort((a, b) => b.provenance.createdAt - a.provenance.createdAt);
   }
 
+  // 审查 P2-4 修复：setStatus 也改 append-only。
+  // 流程：readAll 找到原 candidate → 构造 updated 副本 → appendFile 一行。
+  // 读用于构造新记录，append 是原子操作，无 read-modify-write 竞态。
+  // id 不存在时返回 null（与原 API 一致）。
   async setStatus(id: string, status: MemoryCandidateStatus, reason?: string): Promise<MemoryCandidate | null> {
     const records = await this.readAll();
-    let updated: MemoryCandidate | null = null;
-    const next = records.map((candidate) => {
-      if (candidate.id !== id) return candidate;
-      updated = {
-        ...candidate,
-        status,
-        statusReason: reason,
-        statusUpdatedAt: Date.now(),
-      };
-      return updated;
-    });
-    if (!updated) return null;
-    await this.writeAll(next);
+    const original = records.find((candidate) => candidate.id === id);
+    if (!original) return null;
+    const updated: MemoryCandidate = {
+      ...original,
+      status,
+      statusReason: reason,
+      statusUpdatedAt: Date.now(),
+    };
+    await mkdir(dirname(this.filePath), { recursive: true });
+    await appendFile(this.filePath, `${JSON.stringify(updated)}\n`, "utf8");
     return updated;
   }
 
@@ -76,21 +76,32 @@ export class JsonlMemoryCandidateStore implements MemoryCandidateStore {
   private async readAll(): Promise<MemoryCandidate[]> {
     try {
       const raw = await readFile(this.filePath, "utf8");
-      return raw
-        .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => JSON.parse(line) as MemoryCandidate);
+      // 审查 P2-6 修复：单行损坏不应导致整个 store 不可读，跳过损坏行并记录
+      const allRecords: MemoryCandidate[] = [];
+      const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      for (const line of lines) {
+        try {
+          allRecords.push(JSON.parse(line) as MemoryCandidate);
+        } catch {
+          console.warn(`[memoryCandidateStore] 跳过损坏的 JSONL 行: ${line.slice(0, 80)}`);
+        }
+      }
+      // 审查 P2-4 修复：append-only 模式下同一 id 可能有多条记录（propose 重复 / setStatus 更新），
+      // 按 (id, statusUpdatedAt || provenance.createdAt) 取最新版本覆盖较早版本。
+      const byId = new Map<string, MemoryCandidate>();
+      for (const record of allRecords) {
+        const existing = byId.get(record.id);
+        const recordTs = record.statusUpdatedAt ?? record.provenance.createdAt;
+        const existingTs = existing?.statusUpdatedAt ?? existing?.provenance.createdAt ?? 0;
+        if (!existing || recordTs >= existingTs) {
+          byId.set(record.id, record);
+        }
+      }
+      return Array.from(byId.values());
     } catch (error: any) {
       if (error?.code === "ENOENT") return [];
       throw error;
     }
-  }
-
-  private async writeAll(records: MemoryCandidate[]) {
-    await mkdir(dirname(this.filePath), { recursive: true });
-    const content = records.map((candidate) => JSON.stringify(candidate)).join("\n");
-    await writeFile(this.filePath, content ? `${content}\n` : "", "utf8");
   }
 }
 
