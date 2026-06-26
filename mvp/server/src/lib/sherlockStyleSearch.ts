@@ -468,8 +468,8 @@ function buildHitSummary(
 // 转换为 EvidenceClue（兼容现有递归搜索管道）
 // ───────────────────────────────────────────────────────────────
 
-import { callMimoForSherlockSearch } from "./mimoClient";
-import type { EvidenceClue } from "./agentExpansion";
+import { callMimoForSherlockSearch } from "./mimoClient.js";
+import type { EvidenceClue } from "./agentExpansion.js";
 
 export function hitsToEvidenceClues(hits: SourceHit[], runId: string): EvidenceClue[] {
   return hits.map((hit, index) => ({

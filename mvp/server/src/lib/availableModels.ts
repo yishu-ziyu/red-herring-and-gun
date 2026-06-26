@@ -4,7 +4,7 @@
 // 静态 model 目录 + 按 env 过滤掉没配 key 的 provider。
 // ───────────────────────────────────────────────────────────────
 
-import { envValue } from "./providerRouter.js";
+import { envValue, getMiniMaxApiKey } from "./providerRouter.js";
 
 export type ProviderId =
   | "deepseek"
@@ -37,11 +37,11 @@ interface ModelSpec {
 // 静态 model 目录。tier 用来快速分档(强/中/弱);hint 是展示给用户看的短标签。
 // 不在目录里的 model 用户即便知道名字也无法选(防止拼写错)。
 // 顺序约定：tier 升序，同 tier 内 catalog 顺序；preset 用 first-of-tier 取值。
-//   high tier 排第一的是默认（MiniMax M3 套餐已购；商用前主推）。
+//   high tier 只表示能力分档；默认路由由 ORCHESTRATE_*_PROVIDER_ORDER 控制。
 // 2026-Q2 模型目录（agent-1..5 research 校准）。
 const MODEL_CATALOG: ModelSpec[] = [
-  // MiniMax（默认走 M3 套餐；Anthropic 兼容 + OpenAI 兼容双协议）
-  { provider: "minimax", model: "MiniMax-M3",             label: "MiniMax M3",             tier: "high", hint: "默认 (Anthropic) · 1M ctx" },
+  // MiniMax（Anthropic 兼容 + OpenAI 兼容双协议）
+  { provider: "minimax", model: "MiniMax-M3",             label: "MiniMax M3",             tier: "high", hint: "已配置 · 1M ctx" },
   { provider: "minimax", model: "MiniMax-M2.7-highspeed", label: "MiniMax M2.7 Highspeed", tier: "mid",  hint: "速度" },
 
   // DeepSeek（V4 系列；旧 deepseek-chat / deepseek-reasoner 别名已弃用）
@@ -87,10 +87,7 @@ export function isProviderConfigured(
     return Boolean(env.KIMI_API_KEY || env.MOONSHOT_API_KEY);
   }
   if (provider === "minimax") {
-    // MiniMax：既支持专用 key（未来），也兼容当前通过 Anthropic proxy + M3 模型走通的部署
-    if (env.MINIMAX_API_KEY) return true;
-    if (env.ANTHROPIC_MODEL && /^MiniMax-M/i.test(env.ANTHROPIC_MODEL)) return true;
-    return false;
+    return Boolean(getMiniMaxApiKey(env));
   }
   if (provider === "anthropic") {
     // Anthropic 走 proxy：baseUrl+model+token 至少各一；token 可省（router 会从 ~/.claude/settings.json 兜底）
@@ -216,7 +213,7 @@ function _keyNameForProvider(provider: string): string {
   if (provider === "stepfun") return "STEPFUN_API_KEY";
   if (provider === "360") return "QIHOO_360_API_KEY / ZHINAO_API_KEY / AI360_API_KEY";
   if (provider === "kimi") return "KIMI_API_KEY / MOONSHOT_API_KEY";
-  if (provider === "minimax") return "MINIMAX_API_KEY 或 ANTHROPIC_MODEL=MiniMax-M*";
+  if (provider === "minimax") return "MINIMAX_API_KEY / MINIMAX_TOKEN_PLAN_KEY";
   if (provider === "anthropic") return "ANTHROPIC_BASE_URL + ANTHROPIC_MODEL (+ token)";
   if (provider === "codex") return "CODEX_BIN";
   return "对应 API key";

@@ -80,6 +80,25 @@ export interface CondensedSnippet {
 const MAX_SNIPPET_INPUT_CHARS = 1500;
 const MIN_RAW_SNIPPET_CHARS = 20;
 
+function getTimeoutMs(env: Record<string, string>, key: string, fallbackMs: number) {
+  const raw = env[key] || process.env[key];
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label} 超时 ${timeoutMs}ms`)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 /**
  * 把搜索来源批量浓缩成 奕枢风格 摘要。
  * 返回 Map<id, condensedSnippet>;失败/超时/输出解析失败时返回空 Map。
@@ -107,17 +126,21 @@ export async function condenseSourcesInYishuStyle(
   }, null, 2);
 
   try {
-    const result = await callAgentWithFallback({
-      agentId: "source_condenser",
-      systemPrompt: YISHU_SYSTEM_PROMPT,
-      userContent,
-      responseSchema: CONDENSER_RESPONSE_SCHEMA,
-      maxTokens: 2400,
-      env,
-      // 不传 codexBin/codexBypass 等 - 让 router 按默认 fallback 链走
-      reasoningEffort: "low",
-      codexBin: "",
-    });
+    const result = await withTimeout(
+      callAgentWithFallback({
+        agentId: "source_condenser",
+        systemPrompt: YISHU_SYSTEM_PROMPT,
+        userContent,
+        responseSchema: CONDENSER_RESPONSE_SCHEMA,
+        maxTokens: 2400,
+        env,
+        // 不传 codexBin/codexBypass 等 - 让 router 按默认 fallback 链走
+        reasoningEffort: "low",
+        codexBin: "",
+      }),
+      getTimeoutMs(env, "SOURCE_CONDENSER_TIMEOUT_MS", 8000),
+      "来源摘要浓缩"
+    );
 
     // result.output 已是 schema 解析后的对象: { snippets: [{id, snippet}] }
     const output = result.output;

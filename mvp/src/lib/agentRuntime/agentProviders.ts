@@ -183,7 +183,7 @@ export async function callAgentWithFallback({
 
     if (provider === "stepfun") {
       const stepfunApiKey = env.STEPFUN_API_KEY || process.env.STEPFUN_API_KEY;
-      const stepfunModel = env.STEPFUN_MODEL || process.env.STEPFUN_MODEL || "step-3.7-flash";
+      const stepfunModel = env.STEPFUN_MODEL || process.env.STEPFUN_MODEL || "step-2-mini";
       const stepfunBaseUrl = (env.STEPFUN_BASE_URL || "https://api.stepfun.com/v1").replace(/\/$/, "");
       if (!stepfunApiKey) continue;
 
@@ -594,6 +594,37 @@ async function callCodexAgent({
   }
 }
 
+// Reasoning 系列模型（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
+// 三者皆会触发 400 Invalid request。仅 chat 模型才发这些字段。
+export function buildStepFunRequestBody({
+  model,
+  messages,
+  maxTokens,
+  responseFormat,
+  temperature,
+  reasoningEffort,
+}: {
+  model: string;
+  messages: unknown[];
+  maxTokens: number;
+  responseFormat?: { type: "json_object" };
+  temperature?: number;
+  reasoningEffort?: "low" | "medium" | "high";
+}): Record<string, unknown> {
+  const isReasoning = /^step-3\.7-flash$/i.test(model);
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    max_tokens: maxTokens,
+  };
+  if (!isReasoning) {
+    if (responseFormat !== undefined) body.response_format = responseFormat;
+    if (temperature !== undefined) body.temperature = temperature;
+    if (reasoningEffort !== undefined) body.reasoning_effort = reasoningEffort;
+  }
+  return body;
+}
+
 async function callStepFunAgent({
   baseUrl,
   apiKey,
@@ -613,23 +644,27 @@ async function callStepFunAgent({
   reasoningEffort?: AgentReasoningEffort;
   signal: AbortSignal;
 }) {
+  // Reasoning 系列模型（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
+  // 三者皆会触发 400 Invalid request。仅 chat 模型才发这些字段。
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
-      ],
-      response_format: { type: "json_object" },
-      reasoning_effort: reasoningEffort,
-      max_tokens: maxTokens,
-      temperature: 0.3,
-    }),
+    body: JSON.stringify(
+      buildStepFunRequestBody({
+        model,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+        maxTokens,
+        responseFormat: { type: "json_object" },
+        temperature: 0.3,
+        reasoningEffort,
+      })
+    ),
     signal,
   });
 

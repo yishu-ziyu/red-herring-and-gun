@@ -44,6 +44,21 @@ describe("availableModels", () => {
     ).toBe(true);
   });
 
+  it("B1-bonus: MiniMax appears only when MiniMax API key or token-plan key is configured", () => {
+    expect(
+      listAvailableModels({ ANTHROPIC_MODEL: "MiniMax-M3" })
+        .some((m) => m.provider === "minimax")
+    ).toBe(false);
+    expect(
+      listAvailableModels({ MINIMAX_API_KEY: "sk-mm" })
+        .some((m) => m.provider === "minimax" && m.model === "MiniMax-M3")
+    ).toBe(true);
+    expect(
+      listAvailableModels({ MINIMAX_TOKEN_PLAN_KEY: "tp-mm" })
+        .some((m) => m.provider === "minimax" && m.model === "MiniMax-M3")
+    ).toBe(true);
+  });
+
   // B9: env 全空 → 返回 []
   it("B9: returns empty array when no LLM API keys are configured", () => {
     const env = {};
@@ -57,7 +72,7 @@ describe("availableModels", () => {
 // ───────────────────────────────────────────────────────────────
 
 describe("validateModelChoice (BDD B3 + B7)", () => {
-  const env = { DEEPSEEK_API_KEY: "sk-ds", STEPFUN_API_KEY: "sk-sf" };
+  const env = { DEEPSEEK_API_KEY: "sk-ds", STEPFUN_API_KEY: "sk-sf", MINIMAX_API_KEY: "sk-mm" };
 
   it("B7-a: undefined modelChoice 视为合法（全部 agent 走 fallback）", () => {
     expect(validateModelChoice(env, undefined).ok).toBe(true);
@@ -76,6 +91,13 @@ describe("validateModelChoice (BDD B3 + B7)", () => {
     const mc = {
       rumor_detector: { provider: "deepseek", model: "deepseek-v4-flash" },
       report_composer: { provider: "deepseek", model: "deepseek-v4-pro" },
+    };
+    expect(validateModelChoice(env, mc).ok).toBe(true);
+  });
+
+  it("B7-minimax: MiniMax modelChoice is legal when MiniMax key is configured", () => {
+    const mc = {
+      fact_checker: { provider: "minimax", model: "MiniMax-M3" },
     };
     expect(validateModelChoice(env, mc).ok).toBe(true);
   });
