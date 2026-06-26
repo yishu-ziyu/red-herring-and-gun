@@ -1304,13 +1304,49 @@ function searchTaskStats(searchJobs: MultiSearchJob[]) {
 
 function isNonAuthenticStep(step: HandoffStep) {
   const source = typeof step.output._source === "string" ? step.output._source : "";
-  const fallbackReason = typeof step.output.fallbackReason === "string" ? step.output.fallbackReason : "";
-  return step.model.includes("demo-fallback") || source === "demo-fallback" || Boolean(fallbackReason);
+  return step.model.includes("demo-fallback") || source === "demo-fallback";
+}
+
+function isDeterministicReportFallback(step: HandoffStep) {
+  return step.model.includes("fallback:deterministic-report");
+}
+
+function deterministicFallbackReason(step: HandoffStep) {
+  const reason = typeof step.output.fallbackReason === "string" ? step.output.fallbackReason.trim() : "";
+  return reason || "最终写作模型未返回稳定结构，系统已用确定性报告兜底，避免长时间挂起。";
 }
 
 function formatLatency(ms: number) {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function formatElapsed(ms: number) {
+  if (ms < 60000) return `${Math.max(1, Math.round(ms / 1000))} 秒`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.round((ms % 60000) / 1000);
+  return `${minutes} 分 ${seconds} 秒`;
+}
+
+function runStatusText(runStatus: RunStatus, elapsedMs: number, finalReport: Record<string, unknown> | null) {
+  if (runStatus === "completed") return finalReport ? "核查完成" : "流程完成";
+  if (runStatus === "failed") return "核查中断";
+  if (runStatus === "running" && elapsedMs >= 90000) return "仍在等待模型返回";
+  if (runStatus === "running" && elapsedMs >= 45000) return "模型调用耗时较长";
+  if (runStatus === "running") return "实时核查中";
+  return "准备核查";
+}
+
+function currentModelLine(steps: HandoffStep[], currentStep: HandoffStep | null) {
+  const step = currentStep ?? [...steps].reverse().find((item) => item.model);
+  if (!step?.model) return "等待模型链路";
+  return `${step.agentName} · ${step.model}`;
+}
+
+function runFallbackNotice(steps: HandoffStep[]) {
+  const fallbackStep = steps.find(isDeterministicReportFallback);
+  if (!fallbackStep) return "";
+  return `报告收束使用确定性兜底：${deterministicFallbackReason(fallbackStep)}`;
 }
 
 function upsertStep(steps: HandoffStep[], nextStep: HandoffStep) {
@@ -3958,6 +3994,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
     if (previewMode) return;
 
     let cancelled = false;
+    let streamEnded = false;
     let accumulatedSteps: HandoffStep[] = [];
     setMemoryCandidates([]);
 
@@ -4159,12 +4196,16 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                   });
                   dispatch({ type: "APPEND_HANDOFF_STEP", payload: { ...step, status: "failed" } });
                   dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: { error: message } });
+                  streamEnded = true;
                   return;
                 }
 
                 setOutputItems(outputItemsForStep(step, "completed"));
                 appendRuntimeChunk(step.agent, step.model.includes("demo-fallback") ? "thought" : "result", summarizeStepOutput(step));
                 appendRuntimeChunk(step.agent, "result", `模型链路：${step.model}，耗时 ${formatLatency(step.latencyMs)}。`);
+                if (isDeterministicReportFallback(step)) {
+                  appendRuntimeChunk(step.agent, "thought", deterministicFallbackReason(step));
+                }
                 dispatch({
                   type: "UPDATE_STREAMING_STAGE",
                   payload: { stageId: step.agent, status: "completed" },
@@ -4273,6 +4314,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                     status: "failed",
                   });
                   dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: { error: message } });
+                  streamEnded = true;
                   return;
                 }
                 const totalLatency = event.totalLatencyMs ?? finalSteps.reduce(
@@ -4293,6 +4335,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                   },
                 });
                 dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: {} });
+                streamEnded = true;
                 dispatch({ type: "END_STREAMING_SESSION" });
 
                 const rawCredibilityScore =
@@ -4397,6 +4440,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                   type: "COMPLETE_HANDOFF_STREAM",
                   payload: { error: event.error ?? event.message },
                 });
+                streamEnded = true;
                 break;
               }
             }
@@ -4414,6 +4458,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
             status: "failed",
           });
           dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: { error: message } });
+          streamEnded = true;
         }
       }
 
@@ -4423,8 +4468,12 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
     return () => {
       cancelled = true;
       window.clearTimeout(startTimer);
+      // 审查 P1-3 修复：组件卸载时若 stream 未自然结束，需重置 isExpanding，否则无法重启
+      if (!streamEnded) {
+        dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: {} });
+      }
     };
-  }, [claim, dispatch, intake, knowledgeBase, previewMode, runConsensusPipeline, state.diagnosis]);
+  }, [claim, dispatch, intake, knowledgeBase, modelChoice, previewMode, runConsensusPipeline, state.diagnosis]);
 
   useEffect(() => {
     if (!previewMode || !claim.trim()) return;
@@ -4478,6 +4527,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
       }, 0),
     [steps]
   );
+  const fallbackNotice = useMemo(() => runFallbackNotice(steps), [steps]);
 
   const handleMemoryCandidateStatus = useCallback(async (id: string, status: MemoryCandidateStatus) => {
     setMemoryCandidates((prev) =>
@@ -4550,6 +4600,32 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
           取消核查
         </button>
       </header>
+
+      <section className={`mission-run-status mission-run-status--${runStatus}`} aria-live="polite">
+        <div>
+          <span>运行状态</span>
+          <strong>{runStatusText(runStatus, elapsedMs, finalReport)}</strong>
+        </div>
+        <div>
+          <span>已用时间</span>
+          <strong>{formatElapsed(elapsedMs)}</strong>
+        </div>
+        <div>
+          <span>当前链路</span>
+          <strong>{currentModelLine(steps, currentStep)}</strong>
+        </div>
+        <div>
+          <span>进度</span>
+          <strong>{Math.round(progress)}%</strong>
+        </div>
+        {fallbackNotice ? (
+          <p className="mission-run-status-notice">{fallbackNotice}</p>
+        ) : runStatus === "running" && elapsedMs >= 45000 ? (
+          <p className="mission-run-status-notice">
+            模型和搜索链路仍在返回结果；页面没有卡死。超过 90 秒时可保留当前记录并重新发起一次。
+          </p>
+        ) : null}
+      </section>
 
       <section className="case-workbench-shell" aria-label="真实核查办案台">
         <ControllerRail

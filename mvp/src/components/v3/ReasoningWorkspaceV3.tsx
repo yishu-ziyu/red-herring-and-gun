@@ -178,6 +178,7 @@ export function ReasoningWorkspaceV3({ orchestrateMode = false }: ReasoningWorks
     if (!orchestrateMode || !state.originalClaim || state.isExpanding) return;
 
     let cancelled = false;
+    let streamEnded = false;
     let accumulatedSteps: HandoffStep[] = [];
     let accumulatedReport: Record<string, unknown> | undefined;
     let totalLatency = 0;
@@ -286,6 +287,7 @@ export function ReasoningWorkspaceV3({ orchestrateMode = false }: ReasoningWorks
                 type: "ADD_HANDOFF_RUN",
                 payload: { run, nodes: expansion.nodes, edges: expansion.edges, step: traceStep },
               });
+              streamEnded = true;
               setPendingHandoffFitNodeIds(expansion.nodes.map((node) => node.id));
 
               // Keep the fitted handoff chain visible on the canvas after completion.
@@ -294,6 +296,7 @@ export function ReasoningWorkspaceV3({ orchestrateMode = false }: ReasoningWorks
             }
             case "error": {
               dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: { error: event.error ?? event.message } });
+              streamEnded = true;
               break;
             }
           }
@@ -304,6 +307,7 @@ export function ReasoningWorkspaceV3({ orchestrateMode = false }: ReasoningWorks
           type: "COMPLETE_HANDOFF_STREAM",
           payload: { error: error instanceof Error ? error.message : "Orchestrate 调用失败" },
         });
+        streamEnded = true;
       }
     }
 
@@ -311,6 +315,10 @@ export function ReasoningWorkspaceV3({ orchestrateMode = false }: ReasoningWorks
 
     return () => {
       cancelled = true;
+      // 审查 P1-2 修复：组件卸载时若 stream 未自然结束，需重置 isExpanding，否则无法重启
+      if (!streamEnded) {
+        dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: {} });
+      }
     };
   }, [orchestrateMode, state.originalClaim, dispatch]);
 

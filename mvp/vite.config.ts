@@ -127,6 +127,37 @@ const recursiveResponseSchema = {
 
 const allowedStatuses = new Set(["risk", "active", "supported", "limited", "blocked", "rewrite", "clue", "frontier", "stopped", "controller"]);
 
+// Reasoning 系列模型（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
+// 三者皆会触发 400 Invalid request。仅 chat 模型才发这些字段。
+export function buildStepFunRequestBody({
+  model,
+  messages,
+  maxTokens,
+  responseFormat,
+  temperature,
+  reasoningEffort,
+}: {
+  model: string;
+  messages: unknown[];
+  maxTokens: number;
+  responseFormat?: { type: "json_object" };
+  temperature?: number;
+  reasoningEffort?: "low" | "medium" | "high";
+}): Record<string, unknown> {
+  const isReasoning = /^step-3\.7-flash$/i.test(model);
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    max_tokens: maxTokens,
+  };
+  if (!isReasoning) {
+    if (responseFormat !== undefined) body.response_format = responseFormat;
+    if (temperature !== undefined) body.temperature = temperature;
+    if (reasoningEffort !== undefined) body.reasoning_effort = reasoningEffort;
+  }
+  return body;
+}
+
 async function callStepFunVisionForIntake({
   env,
   claim,
@@ -159,16 +190,18 @@ async function callStepFunVisionForIntake({
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: "你是红鲱鱼与枪的视觉材料预处理 Agent。只做 OCR、图像描述和可核查声明提取；只返回 JSON。" },
-        { role: "user", content },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: 1200,
-      temperature: 0.1,
-    }),
+    body: JSON.stringify(
+      buildStepFunRequestBody({
+        model,
+        messages: [
+          { role: "system", content: "你是红鲱鱼与枪的视觉材料预处理 Agent。只做 OCR、图像描述和可核查声明提取；只返回 JSON。" },
+          { role: "user", content },
+        ],
+        maxTokens: 1200,
+        responseFormat: { type: "json_object" },
+        temperature: 0.1,
+      })
+    ),
   });
 
   const data = await response.json().catch(() => null);

@@ -143,7 +143,7 @@ export function AgentPanel() {
     }
 
     return stats;
-  }, [agentRuns, recursiveSearchRuns]);
+  }, [agentRuns, recursiveSearchRuns, sherlockSearchRuns]);
 
   const activeAgentId = isExpanding
     ? agentRuns.length > 0

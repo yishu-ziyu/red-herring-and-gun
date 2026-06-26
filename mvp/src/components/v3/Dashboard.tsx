@@ -29,6 +29,20 @@ interface DashboardProps {
   showUtilityMenu?: boolean;
 }
 
+interface AipingUser {
+  another_name?: string;
+  phone_number?: string;
+  short_phone_number?: string;
+  point_remain?: number;
+  recharge_remain?: number;
+}
+
+type AipingAuthState =
+  | { status: "checking" }
+  | { status: "disabled" }
+  | { status: "anonymous"; loginUrl: string }
+  | { status: "authenticated"; user: AipingUser };
+
 const LIVE_PIPELINE = [
   "立案",
   "原子命题拆解",
@@ -47,9 +61,16 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
   const [isScraping, setIsScraping] = useState(false);
   const [modelChoice, setModelChoice] = useState<ModelChoiceMap>({});
   const [hasAvailableModels, setHasAvailableModels] = useState(true);
+  const [aipingAuth, setAipingAuth] = useState<AipingAuthState>({ status: "checking" });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const detectedLinks = useMemo(() => extractLinks(inputValue), [inputValue]);
   const hasMaterial = Boolean(inputValue.trim() || detectedLinks.length > 0 || images.length > 0);
+  const aipingBalanceText = useMemo(() => {
+    if (aipingAuth.status !== "authenticated") return "";
+    const point = Number(aipingAuth.user.point_remain ?? 0);
+    const recharge = Number(aipingAuth.user.recharge_remain ?? 0);
+    return `点数 ${point + recharge}`;
+  }, [aipingAuth]);
 
   const handleStart = useCallback(async () => {
     const intake = createCaseIntake(inputValue, images);
@@ -108,6 +129,38 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : { authenticated: false, enabled: false }))
+      .then((data: { authenticated?: boolean; enabled?: boolean; loginUrl?: string; user?: AipingUser }) => {
+        if (cancelled) return;
+        if (!data.enabled) {
+          setAipingAuth({ status: "disabled" });
+        } else if (data.authenticated && data.user) {
+          setAipingAuth({ status: "authenticated", user: data.user });
+        } else {
+          setAipingAuth({ status: "anonymous", loginUrl: data.loginUrl || "/api/auth/aiping/login" });
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAipingAuth({ status: "disabled" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleAipingLogin = useCallback(() => {
+    window.location.href = "/api/auth/aiping/login?next=/";
+  }, []);
+
+  const handleAipingLogout = useCallback(async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setAipingAuth({ status: "anonymous", loginUrl: "/api/auth/aiping/login" });
+  }, []);
+
   const handleImageSelect = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
@@ -147,13 +200,35 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
 
   return (
     <div className="landing-page">
+      {aipingAuth.status !== "disabled" ? (
+        <div className="landing-account-bar" aria-label="AI Ping 账号状态">
+          <span className="landing-account-provider">AI Ping</span>
+          {aipingAuth.status === "checking" ? (
+            <span className="landing-account-muted">账号检测中</span>
+          ) : aipingAuth.status === "authenticated" ? (
+            <>
+              <span className="landing-account-user">
+                {aipingAuth.user.short_phone_number || aipingAuth.user.another_name || "已登录"}
+              </span>
+              <span className="landing-account-balance">{aipingBalanceText}</span>
+              <button type="button" className="landing-account-btn" onClick={handleAipingLogout}>
+                退出
+              </button>
+            </>
+          ) : (
+            <button type="button" className="landing-account-btn landing-account-btn-primary" onClick={handleAipingLogin}>
+              登录账号
+            </button>
+          )}
+        </div>
+      ) : null}
       {/* ── Hero Section ── */}
       <section className="landing-hero">
         <div className="landing-hero-content">
           {/* Logo */}
           <div className="landing-brand">
             <img
-              src="/logo.png"
+              src="/logo.png?v=20260615"
               alt="红鲱鱼与枪"
               className="landing-logo"
             />
@@ -251,7 +326,7 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
       {/* ── Footer ── */}
       <footer className="landing-footer">
         <div className="landing-footer-brand">
-          <img src="/logo.png" alt="" className="landing-footer-logo" />
+          <img src="/logo.png?v=20260615" alt="" className="landing-footer-logo" />
           <span>红鲱鱼与枪</span>
         </div>
         <p className="landing-footer-powered">

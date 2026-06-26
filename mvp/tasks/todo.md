@@ -1,5 +1,125 @@
 # Agent Reasoning Canvas v3
 
+# Product Flow Acceptance Checklist 2026-06-15
+
+目标：公网用户访问 `gun.yishuziyu.cn` 后，能完整使用“红鲱鱼与枪”的 Agent 核查服务；每一环都要有可观察证据，不能只靠 UI 文案或 demo 状态。
+
+## AI Ping 账号体系建联 2026-06-15
+
+建联资料：
+
+- 产品名称：红鲱鱼与枪
+- 正式域名：`https://gun.yishuziyu.cn`
+- OAuth2 回调地址：`https://gun.yishuziyu.cn/api/auth/aiping/callback`
+- 授权范围：`profile phone`
+- grant_type：`authorization_code`
+
+验收表：
+
+| 模块 | 成功标准 | 当前状态 | 验收方法 | 结论 |
+| --- | --- | --- | --- | --- |
+| 对外注册资料 | AI Ping 运营/R&D 能据此创建 OAuth 应用并返回 client_id/client_secret | 已从 PDF 梳理固定字段并写入本清单 | 把上方 5 项发给 AI Ping；等待对方回传 client_id/client_secret | [x] 待对方开通 |
+| 后端 OAuth 路由 | 未配置密钥时不影响主站；配置后可跳转授权、回调换 token、读取 userinfo | 已实现并部署 `/api/auth/aiping/login`、`/api/auth/aiping/callback`、`/api/auth/me`、`/api/auth/logout`、`/api/auth/aiping/apikeys`；当前线上未配置凭据，`/api/auth/me` 返回 `enabled:false` | `GET /api/auth/me`；配置密钥后走完整登录回调 | [x] 代码通过 |
+| Cookie 与 state 安全 | OAuth state 和 session cookie 不能被篡改；callback 过期/错 state 会拒绝 | 已用 HMAC 签名 cookie，无新增中间件依赖 | `aipingAuth.test.ts` 覆盖 state/session 篡改、next redirect 清洗 | [x] 通过 |
+| 前端账号入口 | 配置 AI Ping 后首页显示登录/已登录/余额/退出；未配置时不扰乱现有产品 | Dashboard 已接 `/api/auth/me`，未配置时隐藏账号条；当前线上主站 200 | 配置凭据后登录成功显示账号和点数 | [ ] 待线上凭据 |
+| API Key 列表 | 登录后可拉取 AI Ping 用户 API Key 列表，用于后续平台代理/计费扩展 | 已有后端端点，返回前会脱敏 `apikey` 字段，暂不在前端展示原始 API key | 登录后请求 `/api/auth/aiping/apikeys`，确认返回结构 | [ ] 待线上凭据 |
+
+环境变量：
+
+```bash
+PUBLIC_BASE_URL=https://gun.yishuziyu.cn
+AIPING_CLIENT_ID=
+AIPING_CLIENT_SECRET=
+AIPING_SESSION_SECRET=
+AIPING_REDIRECT_URI=https://gun.yishuziyu.cn/api/auth/aiping/callback
+AIPING_AUTH_BASE_URL=https://central.qc-ai.cn
+AIPING_SCOPE=profile phone
+```
+
+## MiXer Agent 入驻 2026-06-15
+
+入驻资料：
+
+- Agent 名称：红鲱鱼与枪
+- Agent URL / Streamable MCP URL：`https://gun.yishuziyu.cn/mcp`
+- MiXer 代码分析包：`exports/red-herring-and-gun-mixer-full-20260615-2050.zip`，758K，226 files；按旧包尺度保留源码/配置/文档，排除 node_modules、dist、运行日志、密钥和大图。
+- 认证配置：无认证
+- 传输模式：Streamable HTTP / Streamble
+- 简介：面向大众用户的信息真实性核查 Agent。输入传闻、营销话术、社媒文本或网页材料后，由多 Agent 链路完成风险识别、事实核验、信源评估和最终报告。
+
+验收表：
+
+| 模块 | 成功标准 | 当前状态 | 验收方法 | 结论 |
+| --- | --- | --- | --- | --- |
+| MCP 服务入口 | MiXer 能访问一个公开 MCP URL | 已新增 `/mcp`，无鉴权；本地测试通过；公网部署被 ECS 应用层无响应阻断 | `GET https://gun.yishuziyu.cn/mcp` 返回服务信息 | [ ] ECS 恢复后部署 |
+| MCP 初始化 | MiXer/客户端能完成 `initialize` 握手 | 已实现 JSON-RPC `initialize`，返回 protocolVersion、serverInfo、tools capability；本地测试通过 | POST `/mcp` 调用 `initialize` | [ ] ECS 恢复后验证 |
+| 工具发现 | MiXer 能发现红鲱鱼与枪的标准工具 | 已实现 `tools/list`，工具名 `red_herring_truth_check`；本地测试通过 | POST `/mcp` 调用 `tools/list` | [ ] ECS 恢复后验证 |
+| 工具调用 | 用户在 MiXer 中输入待核查材料后，能触发真实 Agent 链路 | `tools/call` 会调用本服务 `/api/agent/orchestrate` 并返回 structuredContent；本地协议测试通过，未跑公网真实调用 | POST `/mcp` 调用 `tools/call`，检查 conclusion、score、models | [ ] ECS 恢复后验证 |
+| 平台注册 | Agent 出现在 MiXer 小程序 | 代码侧 URL 已准备；平台侧需手动登录小程序/开发者平台注册 | 在 MiXer 小程序“上传 Agent”粘贴 MCP URL | [ ] 待注册 |
+
+当前阻断：2026-06-15 20:31 起，`121.89.90.68` TCP 22/80/443/3000 可建立连接，但 SSH 不返回 banner，HTTP 不返回响应；`ops.sh deploy --yes` 在 SSH banner exchange 阶段超时，说明新 MCP 代码尚未部署到公网。需要先在阿里云控制台重启或排查 ECS 负载/sshd/nginx/docker。
+
+| 模块 | 用户视角成功标准 | 当前状态 | 验收方法 | 结论 |
+| --- | --- | --- | --- | --- |
+| 公网访问 | 国内普通网络打开 `https://gun.yishuziyu.cn/`，首页可见，静态资源不丢失 | 已验证域名、TLS/SNI、Nginx、前端资源、后端 API 均可用；图片资源已恢复 | 浏览器打开公网域名；检查首页 logo、输入框、模型选择、按钮；接口 `/health`、`/api/models/list` 返回 200 | [x] 通过 |
+| 模型清单 | 用户能看到当前平台托管的可选模型，不需要自己填 key 才能开始 | 线上 `/api/models/list` 返回 9 个 server-managed 模型，包含 StepFun 3.7 Flash、MiniMax M3、MiniMax M2.7 Highspeed、DeepSeek、360、MiMo | 打开模型选择面板；确认 4 个 Agent 都能选择服务端已配置模型 | [x] 通过 |
+| MiniMax 接入 | MiniMax 作为真实产品模型出现在可选列表，并能被 4-Agent 指定调用 | 代码已补齐并部署 `minimax` provider；线上已配置本机复用的 MiniMax key；`/api/models/list` 已出现 `MiniMax M3` 和 `MiniMax M2.7 Highspeed`；真实调用被上游返回 `rate_limit_error`：Token Plan 用量上限 `(2056)` | 充值/升级 MiniMax Token Plan 后，重新指定 `minimax:MiniMax-M3` 跑一次真实 Agent；若短期不充值，应隐藏 MiniMax 以免用户选到不可用模型 | [ ] 额度阻断 |
+| 用户自配 API | 如果产品宣称支持用户自带 API key，则用户应能安全填写、验证、保存/仅会话使用，并不会写入日志 | 生产版未支持；只有 dev-only preview，且不保存密钥 | 不应对外宣称已支持 BYO API；如要做，需要补加密存储/会话密钥/后端校验/日志脱敏 | [ ] 未做 |
+| 文本输入 | 用户输入一段待核查材料后，按钮状态、运行状态和错误态清晰 | 已有主输入、运行状态条和长耗时提示 | 输入普通谣言文本，点击启动真实核查；等待期间页面不能空白 | [x] 初步通过 |
+| 图片输入 | 用户上传截图后，系统能解析图片或给出可见失败态 | 代码有 vision 分支；线上未完整验收 | 上传一张聊天截图/网页截图；观察 StepFun Vision 事件、提取文本、失败态 | [ ] 待验收 |
+| 链接输入 | 用户粘贴链接后，链接能作为案件材料进入后续搜索/证据步骤 | case intake 有链接抽取；线上未完整验收 | 粘贴网页链接并启动；检查后续 Agent 输入、来源列表或 evidence bundle 是否包含该链接 | [ ] 待验收 |
+| 4-Agent 执行 | 4 个 Agent 都有执行记录，前三步至少走真实模型，不是假 demo | 真实接口已验证 `steps=4`；默认链路前三步为 `stepfun:step-2-mini`；强制 `rumor_detector=stepfun:step-3.7-flash` 的公网请求返回 200，第一步命中 `stepfun:step-3.7-flash`，后续可自动接到 360，最终报告成功；最后一步有时超时走确定性报告兜底 | 线上 POST `/api/agent/orchestrate`；检查 steps、model、finalReport、fallback 来源 | [x] 通过 |
+| 搜索与证据传递 | 搜索/证据/信源信息能进入后续 Agent，不只是前端展示 | 代码有 searchResult/evidenceBundle 传递；本轮未逐项验收线上证据进入每步 prompt/output | 用一个需要实时信源的问题跑完整链路；检查 search tool event、sources、后续 Agent evidenceBundle | [ ] 待验收 |
+| 报告输出 | 成功时有最终报告；模型超时时也不能白屏 | 已修复 deterministic report fallback 可见，测试覆盖已加 | 人为制造 report composer 超时或观察线上自然超时；确认页面显示收束报告和兜底说明 | [x] 通过 |
+| 失败态 | 任一步失败时，用户看到明确失败原因和下一步，而不是白屏/卡死 | 前端有 errorMessage 和 run status；未完成全场景故障注入 | 断开模型 key、断开搜索、传超大图片、模拟 500；逐项截图 | [ ] 待验收 |
+| 本地案件写入 | 每次完整核查后，本案进入历史案件库 | 服务端 `JsonlAgentMemoryStore` 会写 `.agent-memory/cases.jsonl`；前端也会写 local knowledge base；线上未验收写入文件与 UI 历史一致 | 跑完线上案件后 SSH 查看 `/opt/red-herring/.../.agent-memory/cases.jsonl`；刷新页面检查历史/知识库状态 | [ ] 待验收 |
+| 相似问题召回 | 第二次输入相似问题时，系统能召回第一次案件 | 服务端 `memory_search` 会读历史 case 并注入 Agent 输入；线上未完整验收二次召回 | 第一次跑“隔夜菜会致癌吗”；第二次跑“剩菜放一夜会不会致癌”；检查 memory_search hitCount > 0 和 Agent 输入包含 memoryRecall | [ ] 待验收 |
+| 候选记忆确认 | 候选记忆默认只是 proposed；用户确认后才参与后续案件 | Store 支持 `proposed/accepted/rejected`，召回只搜索 accepted；但生产 Express 未注册 `/api/agent/memory-candidates` endpoint，前端确认按钮会调用缺失接口 | 点击“写入知识库”；若接口 404/失败则修服务端路由和 handler；再确认 accepted candidate 能被下一案召回 | [ ] 阻断 |
+| 候选记忆不污染结论 | proposed 候选不能直接参与新案件结论；accepted 也只能作为线索/边界，不可当证据 | 代码层面 `searchAccepted` 只取 accepted；handler 有 policy 文案；但未做线上断言测试 | 构造 proposed 候选后跑相似案，确认 acceptedCandidateCount=0；确认后再跑，acceptedCandidateCount>0 且报告仍引用真实证据 | [ ] 待验收 |
+| 移动端 | 手机尺寸下主要流程可用，按钮/文字不重叠 | 已做部分响应式验证；未跑完整线上 Agent 流程 | Playwright mobile 打开公网，输入、模型选择、运行、结果、候选记忆面板截图 | [ ] 待验收 |
+| 性能 | 用户知道长耗时不是卡死；关键接口不会无限挂起 | 强制 `stepfun:step-3.7-flash` 的真实 orchestrate 多次通过，耗时约 110s、123s、128s；已将 3.7 reasoning effort 默认压到 `low`，并用 `STEPFUN_3_7_PROVIDER_TIMEOUT_MS=135000` 避免被全局 25s 误杀；状态条已加；report composer 有兜底；3.7 Flash 可用但不适合作为默认快速链路 | 记录 3 次线上完整运行耗时；设定 SLA：首个状态 <3s，完整报告目标 <120s，超时有兜底 | [ ] 待验收 |
+
+## 当前 P0 阻断
+
+- [ ] MiniMax 已接入并出现在模型列表，但 Token Plan 用量耗尽；充值前不能算真实可用。
+- [ ] 补齐并验收 `/api/agent/memory-candidates` 服务端接口，否则“候选记忆确认后才参与召回”在生产链路上不成立。
+- [ ] 完成一次线上二次召回验收：首次写入 case，第二次相似问题 `memory_search.hitCount > 0`。
+- [ ] 完成一次候选记忆门禁验收：`proposed` 不参与，`accepted` 才进入 `acceptedCandidateCount`。
+
+## Review
+
+- 已确认：公网访问、服务端托管模型清单、文本主流程、4-Agent 真实执行、`stepfun:step-3.7-flash` 强制指定调用、报告兜底可见。
+- 已修复：用户指定模型失败/超时不再直接中断全流程；会先记录该模型失败，再继续切换到 fallback 模型/供应商接上。
+- 未确认：MiniMax 额度恢复后的真实调用、图片/链接输入、证据跨步传递、失败注入、线上 memory write/read/recall 闭环、移动端完整流程、性能 SLA。
+- 关键产品口径：当前生产版是“平台托管多模型 + 用户选择模型”，不是“用户自带 API key”。
+
+# Public Agent UX Hardening 2026-06-15
+
+- [x] 确认公网主路径不再只看 DNS，改为同时检查域名解析、TLS/SNI、Nginx、前端静态资源、后端 `/api` 和真实 Agent 调用。
+- [x] 修复前端把 `fallback:deterministic-report` 误判为非真实 demo fallback 的问题，允许模型超时后展示确定性收束报告。
+- [x] Mission Control 增加运行状态条，明确展示运行状态、已用时间、当前模型链路、进度、长耗时提示和报告兜底提示。
+- [x] 增加自动测试覆盖：确定性报告兜底必须可见，且不能触发“拒绝展示非真实结论”。
+- [x] 跑完本轮 `npm test`、前端 build、后端 build 和浏览器级 UI 验证。
+
+# Deployment Ops Automation
+
+- [x] 新增根目录 `ops.sh`，统一本地检查、公网探测、远端只读检查、日志查看和受控部署入口。
+- [x] 将 Docker / setup / deploy 健康检查统一为 `/health`。
+- [x] 记录 `DEPLOYMENT_CHECKLIST.md`，保留最短执行路径和当前线上诊断状态。
+- [x] 运行 `./ops.sh check`、`./ops.sh public`、`./ops.sh remote` 验证脚本可用。
+- [x] `./ops.sh public` 增加 Google DoH 与 `--resolve` 探测，避免被本机旧 DNS / 代理 fake IP 误导。
+- [x] 阿里云 Nginx 切换为 `/opt/red-herring/dist` 静态前端 + `/api/` 后端代理，并新增 `./ops.sh aliyun-domain` 验证国内直连承接路径。
+
+## Review
+
+- Changed files: `ops.sh`, `DEPLOYMENT_CHECKLIST.md`, `setup-server.sh`，以及后端/部署修复文件。
+- Verification: `npm test` 通过 5 个测试文件、47 个测试；`npm run build` 通过；`npm --prefix server run build` 通过；`./ops.sh deploy --yes` 已部署到阿里云；`http://121.89.90.68/health` 和 `/api/models/list` 返回 200。
+- Agent QA: `POST http://121.89.90.68/api/agent/orchestrate` 返回 200，4 个步骤完成；前三个 Agent 为 `stepfun:step-2-mini`，最终报告在模型超时时走 `fallback:deterministic-report`，避免 502/长时间挂起。
+- DNS QA: Google / Cloudflare DoH 返回 `gun.yishuziyu.cn CNAME ba0744552526ea06.vercel-dns-017.com`，A 记录为 Vercel 边缘 IP；阿里云控制台未显示隐藏的 `gun A 76.76.21.21`。
+- Vercel QA: 使用 DoH 返回的 Vercel 真实边缘 IP 强制解析后，`https://gun.yishuziyu.cn/` 返回 200，`/api/models/list` 返回 200，`/api/agent/orchestrate` 返回 4 个 Agent steps 与 `finalReport`。
+- Aliyun QA: 使用 Python TLS/SNI 强制解析到 `121.89.90.68` 后，`https://gun.yishuziyu.cn/`、`/health`、`/api/models/list` 均返回 200；`/api/agent/orchestrate` 返回 4 个 Agent steps 与 `finalReport`。
+- Remaining risk: 本机系统 DNS / 代理路径仍把 `gun.yishuziyu.cn` 解析到旧 `76.76.21.21` 并导致普通 curl TLS 失败；这是本机解析缓存/代理拦截问题，不是公网 DNS 配置问题。
+
 # Mock Streaming Reasoning Data Generator
 
 - [x] 阅读 `docs/TECH-SPEC-streaming-reasoning.md` 和 `src/lib/streamingTypes.ts`。

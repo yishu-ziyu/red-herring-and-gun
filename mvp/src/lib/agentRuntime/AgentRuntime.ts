@@ -44,7 +44,7 @@ export interface RuntimeStep {
   model: string;
   latencyMs: number;
   timestamp: number;
-  status: "completed";
+  status: "completed" | "failed";
 }
 
 export interface AgentRuntimeRunInput {
@@ -526,7 +526,8 @@ export class AgentRuntime {
       model: modelUsed,
       latencyMs: Date.now() - stepStart,
       timestamp: Date.now(),
-      status: "completed",
+      // 审查 P2-7 修复：catch 路径走 error-boundary，应标记为 failed 而非 completed
+      status: modelUsed === "runtime:error-boundary" ? "failed" : "completed",
     };
 
     onEvent?.(createAgentCompleteEvent({

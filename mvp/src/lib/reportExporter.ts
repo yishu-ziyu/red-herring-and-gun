@@ -202,8 +202,13 @@ function readLocalList<T>(key: string): T[] {
   }
 }
 
-function writeLocalList<T>(key: string, value: T[]) {
-  localStorage.setItem(key, JSON.stringify(value));
+function writeLocalList<T>(key: string, value: T[]): void {
+  // 审查 P2-9 修复：localStorage 配额超限或不可用时静默失败，避免崩溃
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // 静默失败：配额超限或 SSR 环境无 localStorage
+  }
 }
 
 function isLowCredibilityLabel(label: string) {

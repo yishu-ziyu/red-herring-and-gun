@@ -135,6 +135,58 @@ describe("real analysis workspace", () => {
     expect(screen.getByText("原信息可信度 5/100")).toBeInTheDocument();
     expect(screen.getByText(/原信息可信度为 5\/100，越低越不实/)).toBeInTheDocument();
   });
+
+  it("keeps deterministic report fallback visible instead of rejecting the final report", async () => {
+    const fallbackStep = {
+      agent: "report_composer",
+      agentName: "报告收束员",
+      agentIcon: "📝",
+      systemPrompt: "test",
+      input: {},
+      output: {
+        fallbackReason: "最终写作模型超时，已用结构化证据生成确定性报告。",
+      },
+      model: "fallback:deterministic-report",
+      latencyMs: 90000,
+      timestamp: Date.now(),
+      status: "completed" as const,
+    };
+
+    vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
+      yield {
+        type: "agent_complete",
+        agent: "report_composer",
+        agentName: "报告收束员",
+        agentIcon: "📝",
+        output: fallbackStep.output,
+        model: fallbackStep.model,
+        latencyMs: fallbackStep.latencyMs,
+      };
+      yield {
+        type: "complete",
+        totalLatencyMs: fallbackStep.latencyMs,
+        steps: [fallbackStep],
+        finalReport: {
+          verdictType: "uncertain",
+          credibilityLabel: "存疑",
+          credibilityScore: 54,
+          conclusion: "已用确定性报告收束，证据不足以支持直接转发。",
+          recommendation: "先不要转发，等待更可靠来源。",
+          summaryForPublic: "当前证据链不足。",
+          whyHardToVerify: [],
+          evidenceChain: [],
+          closureActions: [],
+          confidenceDimensions: [],
+        },
+      };
+    });
+
+    await startRealAnalysis();
+
+    expect(await screen.findByText(/报告收束使用确定性兜底/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/已用确定性报告收束/)).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/拒绝展示非真实结论/)).not.toBeInTheDocument();
+  });
 });
 
 // ───────────────────────────────────────────────────────────────
