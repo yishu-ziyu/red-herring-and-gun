@@ -1,15 +1,49 @@
 node_modules/
 dist/
 .env.local
+.env.local.*
+.env.*.local
 
 # Runtime directories
 .agent-memory/
 .agent-swarm/
 .superpowers/
+.claude/
+.ship/
 
 # Build artifacts
 dist-a/
 dist-b/
+exports/
+outputs/
 
 # OS files
 .DS_Store
+._*
+
+# Local datasets and research inputs
+Chinese_Rumor_Dataset/
+
+# Local pitch and review scratch files
+CODEX_PPT_PROMPT.md
+DEPLOYMENT_CHECKLIST.md
+PITCH_GUIDE.md
+findings.md
+progress.md
+task_plan.md
+pitch-deck-red-herring.html
+pitch-style-variants.html
+
+# Local visual QA screenshots and references
+*.pptx
+kimi-webbridge-gun-home.png
+mvp/kimi-screenshot-*.png
+mvp/mission-control-view.png
+mvp/plan-*.png
+mvp/product-homepage.png
+mvp/ref-*.png
+mvp/ref-*.jpg
+mvp/ref-*.md
+mvp/research-*.md
+mvp/screenshot-*.png
+mvp/multi-agent-viz-research/
