@@ -72,9 +72,9 @@ export function ConclusionDockV3({
   const [actionMessage, setActionMessage] = useState("");
   const [archiveCount, setArchiveCount] = useState(() => getDoubtfulArchiveCount());
 
-  // v2-iteration 2026-07-04: PR-3 Site C — emit terminal trace when report finalized
+  // v2-iteration 2026-07-04: PR-3 Site C — emit terminal trace when report finalized (review P2-2 + P3-1 + P3-3 fix)
   useEffect(() => {
-    if (!exploring && effectiveCredibilityScore >= 0) {
+    if (!exploring && effectiveCredibilityScore > 0 && label) {
       getTraceCollector().emit({
         agent: "report_composer",
         action: "report_complete",
@@ -86,9 +86,7 @@ export function ConclusionDockV3({
         },
       });
     }
-    // 仅在 exploring 状态变化时 emit 一次
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exploring]);
+  }, [exploring, effectiveCredibilityScore, label]);
 
   const buildPayload = useCallback((): ClosureReportPayload => ({
     claim: handoffResult?.claim ?? originalClaim ?? report.originalClaim,

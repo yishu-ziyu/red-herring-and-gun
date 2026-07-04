@@ -31,6 +31,7 @@ import type { ChunkType, StreamingChunk, StreamingReasoningSession } from "../..
 import { AgentCard } from "./mission/AgentCard";
 import { AgentStatusDot } from "../mission/AgentStatusDot";
 import { ReasoningTracePanel } from "../panels/ReasoningTracePanel";
+import { getTraceCollector } from "../../../lib/reasoningTrace";
 import type { CaseIntake } from "../../../lib/caseIntake";
 import type { MemoryCandidate, MemoryCandidateStatus } from "../../../lib/agentRuntime/memoryCandidateTypes";
 import { getAgentContract } from "../../../lib/agentConfigs";
@@ -4663,8 +4664,8 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
         </section>
       </section>
 
-      {/* v2-iteration 2026-07-04: PR-3 reasoning trace side panel (collapsible) */}
-      <ReasoningTracePanel />
+      {/* v2-iteration 2026-07-04: PR-3 reasoning trace side panel (collapsible). review P2-1 fix: scope to current session. */}
+      <ReasoningTracePanel sessionId={getTraceCollector().getSessionId() ?? undefined} />
 
       {state.consensusReport ? (
         <EvidenceDetailDrawer
