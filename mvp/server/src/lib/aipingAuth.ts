@@ -121,10 +121,20 @@ export function parseCookies(cookieHeader: string | undefined) {
   return cookies;
 }
 
-function cookieOptions(maxAgeSeconds: number) {
+export function cookieOptions(maxAgeSeconds: number) {
   return {
     httpOnly: true,
     secure: true,
+    sameSite: "lax" as const,
+    path: "/",
+    maxAge: maxAgeSeconds * 1000,
+  };
+}
+
+export function emailCookieOptions(maxAgeSeconds: number) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
     sameSite: "lax" as const,
     path: "/",
     maxAge: maxAgeSeconds * 1000,
