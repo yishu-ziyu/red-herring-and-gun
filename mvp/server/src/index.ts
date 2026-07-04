@@ -170,6 +170,7 @@ app.post("/api/search/360", (req, res, next) => handlers.search360Handler(req, r
 app.post("/api/search/provider", (req, res, next) => handlers.searchProviderHandler(req, res, next));
 app.post("/api/agent/orchestrate", (req, res, next) => handlers.orchestrateHandler(req, res, next));
 app.post("/api/agent/orchestrate-stream", (req, res, next) => handlers.orchestrateStreamHandler(req, res, next));
+app.post("/api/agent/test-llm", (req, res, next) => handlers.testLlmHandler(req, res, next));
 app.get("/api/models/list", (req, res, next) => handlers.modelsListHandler(req, res, next));
 
 app.listen(PORT, "0.0.0.0", () => {

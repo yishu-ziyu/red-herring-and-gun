@@ -1043,6 +1043,106 @@ export function createHandlers(env: Record<string, string>) {
     }
   }
 
+  // ───────────────────────────────────────────────────────────────
+  // POST /api/agent/test-llm — BYO key 连接性探针（不落库，不记 key）
+  // 强约束：
+  //   - 仅放行 https:// 站点（dev 允许 http://localhost）
+  //   - prod 拒绝任何 loopback / 内网 IP
+  //   - 5s 超时 + AbortController
+  //   - 永不记录 apiKey
+  // ───────────────────────────────────────────────────────────────
+
+  async function testLlmHandler(req: any, res: any, next: any) {
+    if (req.method !== "POST") return next();
+
+    let payload: any;
+    try {
+      payload = await readJson(req);
+    } catch {
+      return sendJson(res, 400, { ok: false, error: "无法解析请求 JSON" });
+    }
+
+    const baseUrl = typeof payload.baseUrl === "string" ? payload.baseUrl.trim() : "";
+    const apiKey = typeof payload.apiKey === "string" ? payload.apiKey.trim() : "";
+    const modelName = typeof payload.modelName === "string" ? payload.modelName.trim() : "";
+
+    if (!baseUrl || !apiKey) {
+      return sendJson(res, 400, { ok: false, error: "缺少 baseUrl 或 apiKey" });
+    }
+
+    const isProd = process.env.NODE_ENV === "production";
+    const isLocalhost = baseUrl.startsWith("http://localhost") || baseUrl.startsWith("http://127.0.0.1");
+    if (!baseUrl.startsWith("https://") && !(process.env.NODE_ENV !== "production" && isLocalhost)) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: "baseUrl 必须以 https:// 开头（dev 环境允许 http://localhost）",
+      });
+    }
+
+    const loopbackPattern = /(127\.|10\.\d+\.\d+\.\d+|192\.168\.|169\.254\.|::1|localhost)/i;
+    if (isProd && loopbackPattern.test(baseUrl)) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: "生产环境禁止 baseUrl 指向 loopback 或内网地址",
+      });
+    }
+
+    const normalizedBase = baseUrl.replace(/\/$/, "");
+    const target = `${normalizedBase}/chat/completions`;
+    const safeLabel = modelName || "默认模型";
+    console.log(`[test-llm] test attempt for modelName=${safeLabel}`);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+
+    const startedAt = Date.now();
+    try {
+      const upstream = await fetch(target, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: modelName || "gpt-4o-mini",
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: 5,
+        }),
+        signal: controller.signal,
+      });
+
+      const latencyMs = Date.now() - startedAt;
+      const rawText = await upstream.text();
+
+      if (!upstream.ok) {
+        return sendJson(res, 200, {
+          ok: false,
+          latencyMs,
+          status: upstream.status,
+          error: `上游返回 ${upstream.status}`,
+        });
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        latencyMs,
+        status: upstream.status,
+        echo: rawText.slice(0, 120),
+      });
+    } catch (error) {
+      const latencyMs = Date.now() - startedAt;
+      const message = error instanceof Error ? error.message : "未知错误";
+      const aborted = error instanceof Error && error.name === "AbortError";
+      return sendJson(res, 200, {
+        ok: false,
+        latencyMs,
+        error: aborted ? "连接超时（5s）" : message,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   return {
     handler,
     recursiveHandler,
@@ -1052,6 +1152,7 @@ export function createHandlers(env: Record<string, string>) {
     modelsListHandler,
     orchestrateHandler,
     orchestrateStreamHandler,
+    testLlmHandler,
   };
 }
 
