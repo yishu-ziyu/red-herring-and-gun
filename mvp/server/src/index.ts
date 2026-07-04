@@ -17,6 +17,14 @@ import {
   setStateCookie,
 } from "./lib/aipingAuth.js";
 import { mcpHttpHandler } from "./lib/mixerMcp.js";
+import {
+  accountDeleteHandler,
+  accountExportHandler,
+  emailLogoutHandler,
+  emailMeHandler,
+  emailRequestHandler,
+  emailVerifyHandler,
+} from "./handlers.js";
 
 dotenv.config();
 
@@ -172,6 +180,14 @@ app.post("/api/agent/orchestrate", (req, res, next) => handlers.orchestrateHandl
 app.post("/api/agent/orchestrate-stream", (req, res, next) => handlers.orchestrateStreamHandler(req, res, next));
 app.post("/api/agent/test-llm", (req, res, next) => handlers.testLlmHandler(req, res, next));
 app.get("/api/models/list", (req, res, next) => handlers.modelsListHandler(req, res, next));
+
+// v3 邮箱登录 + 账号数据（用 email 前缀避开与 AI Ping /api/auth/{me,logout} 的第一匹配冲突）
+app.post("/api/auth/email/request", (req, res, next) => emailRequestHandler(req, res).catch(next));
+app.post("/api/auth/email/verify", (req, res, next) => emailVerifyHandler(req, res).catch(next));
+app.get("/api/auth/email/me", (req, res, next) => emailMeHandler(req, res).catch(next));
+app.post("/api/auth/email/logout", (req, res, next) => emailLogoutHandler(req, res).catch(next));
+app.get("/api/account/export", (req, res, next) => accountExportHandler(req, res).catch(next));
+app.delete("/api/account", (req, res, next) => accountDeleteHandler(req, res).catch(next));
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Red Herring API Server running on http://0.0.0.0:${PORT}`);
