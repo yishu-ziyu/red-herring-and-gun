@@ -776,3 +776,43 @@ Phase 3 输出 credibilityScore
 ```
 
 *日志最后更新：2026-06-14 20:50*
+
+## 2026-07-04 v3 强推迭代: 证据呈现净化 + BYO key + 邮箱登录 + 隐私合规基线
+
+### 用户反馈 (起点)
+> "现在这些证据呈现和陈列的方式都非常糟糕"
+
+证据边界卡片泄露了 `Exa Search 调用失败: credits limit` 等基础设施错误;某些 demo 跑题到完全不相关的命题。
+
+### Wave 1 — 数据 + UI 净化 (P0)
+- 新增 `mvp/src/lib/sanitizeReport.ts`: INFRA_PATTERNS 11 条正则(quota/credits/调用失败/超时/Exception/emoji/URL 等),纯函数封装 `{allowed, blocked, warnings, drops}`。
+- `mvp/src/lib/pipeline.ts`: 加 bigramJaccard + assertRelevantCase(短文本<10 字不拦,空 subclaims 不拦,阈值 0.2);runDemoPipeline 加 opts.claim 参数,跑题时返回 `{caseData: null, error: 'NO_MATCHING_CASE'}`。用 TypeScript overloads 不破坏现有调用方。
+- `mvp/src/components/v3/NodeInspectorV3.tsx`: evidence_clue 节点用 sanitizeReport 处理 cannotSay,warnings 在 `<details>` 里折叠。
+- 测试: 13 个 sanitize + 10 个 pipeline。
+
+### Wave 2 — BYO Key 设置页 (P1)
+- 新增 `mvp/src/components/v3/settings/ApiKeySettings.tsx`: baseUrl + apiKey + modelName 三字段,测试连接按钮,保存到 localStorage。
+- 新增 endpoint `POST /api/agent/test-llm`: https-only,reject loopback IPs in prod,5s AbortController timeout,**永不 log apiKey**。
+- Dashboard 挂载「设置 → 模型服务商」入口。
+
+### Wave 3 — 邮箱登录 + 隐私 (P1)
+- 新增 `mvp/server/src/lib/accountStore.ts`: in-memory store,emailHash 作为 Map key(SHA-256),6 位验证码,1 分钟 rate-limit,5/30 天 quota。
+- 新增 6 个 endpoints: `/api/auth/email/{request,verify,me,logout}` + `/api/account/{export}` (DELETE/GET)。
+- 新增 `LoginView.tsx` (邮箱 → 验证码 两步表单) + `PrivacyPolicy.tsx` (服务条款 + 隐私政策 + 导出/删除)。
+- 验证码通过 `console.log [v3-auth]` 输出(生产环境接 SMTP)。
+
+### Wave 4 — 部署 + 修复
+- `decodeSignedJson` 在 secret 为空字符串时返回 null (false condition: `!secret`),改为 `if (!token) return null` 信任 HMAC 校验。
+- 部署到 gun.yishuziyu.cn 全链路 HTTPS 验证通过:
+  - `/api/agent/test-llm` 拒绝非 https baseUrl
+  - 邮箱 → 验证码 → cookie → /me (返回 authenticated:true, quota:{remaining:5,total:5}) → /export (返回完整账户 JSON) → DELETE (账户已删除)
+
+### 已知未闭环
+
+| 项目 | 状态 |
+|------|------|
+| 真邮件发送 (SMTP) | 计划中,当前 console.log |
+| 微信登录 | 用户决定暂不接入 |
+| 微信支付/支付宝 | 用户决定下一阶段 |
+| accountStore 数据持久化 | 当前 in-memory,重启会丢 |
+| ApiKeySettings 视觉样式 | 后续 polish |
