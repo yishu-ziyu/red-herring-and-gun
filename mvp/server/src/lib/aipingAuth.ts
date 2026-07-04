@@ -88,7 +88,7 @@ export function encodeSignedJson(value: unknown, secret: string) {
 }
 
 export function decodeSignedJson<T>(token: string | undefined, secret: string): T | null {
-  if (!token || !secret) return null;
+  if (!token) return null;
   const [payload, signature] = token.split(".");
   if (!payload || !signature) return null;
   const expected = signPayload(payload, secret);
