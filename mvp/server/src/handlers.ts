@@ -3338,13 +3338,11 @@ export async function emailMeHandler(req: any, res: any) {
   }
   const sessionId = readEmailSessionId(req.headers?.cookie);
   if (!sessionId) {
-    console.log(`[v3-auth-debug] emailMe: cookie=${(req.headers?.cookie || '').slice(0, 100)} hdrcookie=${typeof req.headers?.cookie}`);
     endJson(res, 401, { error: "Not authenticated" });
     return;
   }
   const account = await accountGetBySession(sessionId, getServerSecret());
   if (!account) {
-    console.log(`[v3-auth-debug] emailMe: sessionId=${sessionId} getBySession null. serverSecret=${getServerSecret().slice(0, 4)}`);
     endJson(res, 401, { error: "Session expired" });
     return;
   }
