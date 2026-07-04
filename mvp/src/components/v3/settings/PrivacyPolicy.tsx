@@ -97,21 +97,19 @@ export function PrivacyPolicy({ email, onDeleted }: PrivacyPolicyProps) {
   }, [onDeleted]);
 
   return (
-    <main className="landing-input-section" aria-label="隐私与数据">
-      <section className="landing-input-card" style={{ maxWidth: 720 }}>
+    <main className="privacy-policy-page editorial cinema-rise" aria-label="隐私与数据">
+      <section style={{ maxWidth: 720, margin: "0 auto" }}>
         <header>
-          <span className="landing-input-label">隐私与数据</span>
-          <h1 style={{ margin: "4px 0 0", fontSize: 22 }}>你的数据,你的控制</h1>
+          <span className="small-caps">隐私与数据</span>
+          <h1>你的数据,你的控制</h1>
           {email ? (
-            <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--zt-text-secondary)" }}>
-              当前账号:{email}
-            </p>
+            <p className="lede">当前账号:{email}</p>
           ) : null}
         </header>
 
         <article>
-          <h2 style={{ fontSize: 15, margin: "12px 0 8px" }}>服务条款概要</h2>
-          <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.7, fontSize: 13, color: "var(--zt-text-secondary)" }}>
+          <h2>服务条款概要</h2>
+          <ul>
             {TOU_BULLETS.map((bullet) => (
               <li key={bullet}>{bullet}</li>
             ))}
@@ -119,19 +117,15 @@ export function PrivacyPolicy({ email, onDeleted }: PrivacyPolicyProps) {
         </article>
 
         <article>
-          <h2 style={{ fontSize: 15, margin: "12px 0 8px" }}>隐私政策</h2>
-          <p style={{ margin: 0, fontSize: 13, color: "var(--zt-text-secondary)" }}>
-            我们收集:
-          </p>
-          <ul style={{ margin: "4px 0 8px", paddingLeft: 20, lineHeight: 1.7, fontSize: 13, color: "var(--zt-text-secondary)" }}>
+          <h2>隐私政策</h2>
+          <p>我们收集:</p>
+          <ul>
             {PRIVACY_COLLECT.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
-          <p style={{ margin: "8px 0 4px", fontSize: 13, color: "var(--zt-text-secondary)" }}>
-            我们不收集:
-          </p>
-          <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.7, fontSize: 13, color: "var(--zt-text-secondary)" }}>
+          <p>我们不收集:</p>
+          <ul>
             {PRIVACY_DONT_COLLECT.map((item) => (
               <li key={item}>{item}</li>
             ))}
@@ -139,41 +133,39 @@ export function PrivacyPolicy({ email, onDeleted }: PrivacyPolicyProps) {
         </article>
 
         <article>
-          <h2 style={{ fontSize: 15, margin: "12px 0 8px" }}>数据主权</h2>
-          <div className="landing-input-actions" style={{ flexWrap: "wrap" }}>
+          <h2>数据主权</h2>
+          <div className="privacy-section-actions">
             <button
               type="button"
-              className="landing-submit-btn"
+              className="privacy-action"
               onClick={handleExport}
               disabled={action === "exporting"}
-              style={{ flex: "0 1 auto" }}
             >
               {action === "exporting" ? "导出中…" : action === "exported" ? "已导出" : "导出我的数据"}
             </button>
             {!confirmingDelete ? (
               <button
                 type="button"
-                className="landing-material-btn"
+                className="privacy-action privacy-action--danger"
                 onClick={() => setConfirmingDelete(true)}
-                style={{ color: "#b91c3c", borderColor: "#b91c3c" }}
               >
                 删除账户
               </button>
             ) : (
-              <div className="landing-input-actions" style={{ flex: 1, minWidth: 280 }}>
+              <div className="privacy-section-actions">
                 <button
                   type="button"
-                  className="landing-submit-btn"
+                  className="privacy-action privacy-action--danger"
                   onClick={handleDelete}
                   disabled={action === "deleting"}
-                  style={{ background: "#b91c3c" }}
                 >
                   {action === "deleting" ? "删除中…" : "确认删除(不可恢复)"}
                 </button>
                 <button
                   type="button"
-                  className="landing-material-btn"
+                  className="privacy-action"
                   onClick={() => setConfirmingDelete(false)}
+                  style={{ background: "transparent", color: "var(--zt-text-secondary)", borderColor: "var(--border-subtle)" }}
                 >
                   取消
                 </button>
