@@ -29,6 +29,8 @@ import { buildSearchJobs, executeSearchJobs } from "../../../lib/evidenceSearchR
 import { evaluateConsensus } from "../../../lib/evidenceConsensus";
 import type { ChunkType, StreamingChunk, StreamingReasoningSession } from "../../../lib/streamingTypes";
 import { AgentCard } from "./mission/AgentCard";
+import { AgentStatusDot } from "../mission/AgentStatusDot";
+import { ReasoningTracePanel } from "../panels/ReasoningTracePanel";
 import type { CaseIntake } from "../../../lib/caseIntake";
 import type { MemoryCandidate, MemoryCandidateStatus } from "../../../lib/agentRuntime/memoryCandidateTypes";
 import { getAgentContract } from "../../../lib/agentConfigs";
@@ -2901,6 +2903,14 @@ function ControllerRail({
                       const agentId = controllerEventAgentId(row);
                       const meta = agentId ? AGENT_BADGE_META[agentId] : null;
                       const isActive = activeControllerEventId === row.id;
+                      const dotState =
+                        row.status === "completed" || row.status === "final"
+                          ? "completed"
+                          : row.status === "running"
+                          ? "running"
+                          : row.status === "failed"
+                          ? "failed"
+                          : "idle";
 
                       return (
                         <button
@@ -2910,6 +2920,7 @@ function ControllerRail({
                           onClick={() => onSelectControllerEvent(row)}
                           aria-pressed={isActive}
                         >
+                          <AgentStatusDot agentId={agentId ?? row.id} state={dotState} />
                           <span className="controller-agent-avatar">
                             {meta?.avatar ? <img src={meta.avatar} alt="" /> : meta?.label ?? "A"}
                           </span>
@@ -4651,6 +4662,9 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
           />
         </section>
       </section>
+
+      {/* v2-iteration 2026-07-04: PR-3 reasoning trace side panel (collapsible) */}
+      <ReasoningTracePanel />
 
       {state.consensusReport ? (
         <EvidenceDetailDrawer

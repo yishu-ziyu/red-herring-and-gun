@@ -130,6 +130,48 @@ export interface FinalReport {
   evidenceQualitySummary?: EvidenceQualitySummary;
   logicRiskItems?: BiasAuditFinding[];
   contradictionSummary?: string;
+  // v2-iteration 2026-07-04: optional license/lineage/trace overlays
+  inferenceLicense?: import("./schemas").InferenceLicense;
+  sourceLineage?: import("./schemas").SourceLineageGroup[];
+  reasoningTrace?: import("./schemas").ReasoningStep[];
+}
+
+// v2-iteration 2026-07-04: PR-1 inference license aggregation output
+export interface InferenceLicenseItem {
+  text: string;
+  supportingSubclaims?: string[];
+  strongestEvidence?: string;
+}
+
+export interface InferenceLicense {
+  allowed: InferenceLicenseItem[];
+  blocked: InferenceLicenseItem[];
+  confidence: "high" | "medium" | "low";
+  coverage: { withAllowed: number; totalSubclaims: number };
+  source?: "graded_evidence" | "stub";
+}
+
+// v2-iteration 2026-07-04: PR-2 source lineage folding output
+export interface SourceLineageGroup {
+  canonicalUrl: string;
+  canonicalOutlet?: string;
+  canonicalAuthor?: string;
+  memberUrls: string[];
+  independenceCorrected: "high" | "medium" | "low";
+  detectionMethod: "llm_keyword" | "url_hostname" | "domain_exact" | "fallback";
+}
+
+// v2-iteration 2026-07-04: PR-3 reasoning trace step output
+export interface ReasoningStep {
+  stepId: string;
+  agent: string;
+  action: string;
+  startedAt: number;
+  finishedAt?: number;
+  status: "running" | "completed" | "failed";
+  error?: { code: string; message: string };
+  children?: ReasoningStep[];
+  meta?: Record<string, unknown>;
 }
 
 export interface DemoCase {

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { FinalReport, DemoCase } from "../../lib/schemas";
 import type { VerificationResult } from "../../lib/reportExporter";
 import {
@@ -12,6 +12,8 @@ import {
   type ClosureReportPayload,
 } from "../../lib/reportExporter";
 import { ReportModal } from "./ReportModal";
+import { InferenceLicensePanel } from "./panels/InferenceLicensePanel";
+import { getTraceCollector } from "../../lib/reasoningTrace";
 
 interface ConclusionDockV3Props {
   report: FinalReport;
@@ -69,6 +71,24 @@ export function ConclusionDockV3({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
   const [archiveCount, setArchiveCount] = useState(() => getDoubtfulArchiveCount());
+
+  // v2-iteration 2026-07-04: PR-3 Site C — emit terminal trace when report finalized
+  useEffect(() => {
+    if (!exploring && effectiveCredibilityScore >= 0) {
+      getTraceCollector().emit({
+        agent: "report_composer",
+        action: "report_complete",
+        status: "completed",
+        timestamp: Date.now(),
+        meta: {
+          credibilityScore: effectiveCredibilityScore,
+          credibilityLabel: label,
+        },
+      });
+    }
+    // 仅在 exploring 状态变化时 emit 一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exploring]);
 
   const buildPayload = useCallback((): ClosureReportPayload => ({
     claim: handoffResult?.claim ?? originalClaim ?? report.originalClaim,
@@ -151,6 +171,11 @@ export function ConclusionDockV3({
             </div>
           </div>
         )}
+
+        {/* v2-iteration 2026-07-04: PR-1 报告级推理许可聚合 */}
+        {!exploring && report.inferenceLicense ? (
+          <InferenceLicensePanel license={report.inferenceLicense} />
+        ) : null}
 
         {handoffResult?.scoreBreakdown && !exploring && (
           <div className="score-breakdown">
