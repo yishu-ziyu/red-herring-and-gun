@@ -2,6 +2,7 @@ import type { CanvasNode } from "../../data/reasoningCanvas";
 import type { ExpansionMode } from "../../lib/agentExpansion";
 import type { CandidateMaterial, DemoCase, FinalReport, GradedEvidence } from "../../lib/schemas";
 import type { AgentRun, RecursiveSearchRun, SherlockSearchRun } from "../../store/reasoningStore";
+import { sanitizeReport } from "../../lib/sanitizeReport";
 
 interface NodeInspectorV3Props {
   node: CanvasNode;
@@ -282,19 +283,31 @@ function renderBody(
   }
 
   if (node.type === "evidence_clue") {
+    const rawBlocked = recursiveRun?.cannotSay ?? ["不能直接作为最终结论。"];
+    const sanitized = sanitizeReport({ allowed: [], blocked: rawBlocked });
     return (
       <div className="inspector-stack">
         <InfoBlock title="递归搜索线索" items={[clue?.summary ?? node.subtitle ?? "这是本轮递归搜索发现的线索。"]} />
         <InfoBlock title="来源" items={[clue?.source ?? "未提供来源"]} tone="limited" />
         <div className="permission-grid">
           <InfoBlock title="可以说" items={recursiveRun?.canSay ?? ["只能作为下一步审计线索。"]} tone="supported" />
-          <InfoBlock title="不能说" items={recursiveRun?.cannotSay ?? ["不能直接作为最终结论。"]} tone="blocked" />
+          <InfoBlock title="不能说" items={sanitized.blocked} tone="blocked" />
         </div>
         <InfoBlock
           title="线索角色"
           items={[`角色：${clueRoleLabel(clue?.role)}`, `可信度：${confidenceLabel(clue?.confidence)}`]}
           tone="limited"
         />
+        {sanitized.warnings.length > 0 ? (
+          <details className="infrastructure-warnings">
+            <summary>运行状态（{sanitized.warnings.length} 条）</summary>
+            <ul>
+              {sanitized.warnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
       </div>
     );
   }
