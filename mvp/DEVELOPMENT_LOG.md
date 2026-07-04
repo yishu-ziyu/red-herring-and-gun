@@ -816,3 +816,56 @@ Phase 3 输出 credibilityScore
 | 微信支付/支付宝 | 用户决定下一阶段 |
 | accountStore 数据持久化 | 当前 in-memory,重启会丢 |
 | ApiKeySettings 视觉样式 | 后续 polish |
+
+## 2026-07-05 v4 UI 改造: 全产品 Cinema Motion + 杂志质感重做
+
+### 用户决策
+- **动效**: 叙事 / 电影感
+- **调性**: 杂志质感 (出版级排版)
+- **范围**: 全产品总升级
+- **架构**: 抽取 design tokens
+
+### Design Tokens 抽取 (commit e87ddde)
+- **8 档动效时长**: instant (80ms) → quick (150) → base (240) → soft (360) → narrative (520) → cinema (720) → epic (1100) → reveal (1600)
+- **6 条缓动曲线**: ease-out / in-out / spring / soft / emphasis / cinema
+- **7 组动效组合**: motion-pop / fade / rise / cinematic / epic / reveal / glide
+- **8 档排版层级**: display / headline / title / subtitle / body / meta / caption / micro
+- **4 级深度**: paper / card / float / cinematic
+- **6 组状态渐变**: narrative / veil / amber / ink / success / alert
+- **3 档色相端点**: narrative-start / mid / end
+
+### Cinema Motion Library (commit e87ddde)
+- 8 个 keyframes: rise / fall / veil / traverse / glide / glow / shimmer / breath
+- 工具类: `.cinema-rise / fall / veil / traverse / shimmer / breath`
+- Stagger: `.cinema-rise-d1` / `d2` / `d3` / `d4` / `d5` (80ms 步进)
+- 自动错峰: `.cinema-stagger > *:nth-child(n)`
+- motion-blur 隐喻: rise 用 `blur(8px) → blur(0)` + `saturate(0.9) → saturate(1)` 联动
+
+### 视觉重做 (commit 227283c)
+- **Dashboard**: 渐变背景 + 双 radial-gradient 光晕 + dot pattern 1px 点阵纹理 + 衬线 display 品牌头 + 渐变下划线输入框 + 演示卡左侧 4px 拉条 hover 展开 + 黑色实心 pill 按钮 + shimmer hover
+- **ConclusionDockV3**: 杂志 grid 三列 (原始 / 脉动箭头 / 核查后) + 箭头带 dashed 环 cinema-breath + lede 斜体衬线段落 + 卡片化 boundary panel (success/alert 渐变背景 + glow 圆点) + 评分条 stagger 80ms + bar 渐变填充
+- **LoginView**: cinema-rise 入场 + 衬线 h1 + 卡片输入 + 等宽字体 OTP 输入 (0.4em letter-spacing 居中)
+- **PrivacyPolicy**: 长文阅读样式 (720px max-width, 衬线 h1, lede 引言, h2 章节分隔线, 1.7 行高列表, 危险按钮 hover 反色)
+- **InferenceLicensePanel**: 卡片化 + boundary dot glow
+- **ReasoningTracePanel**: 时间线 + cinema 入场
+- **AgentStatusDot**: 8x8 圆点 + 白圈徽章感
+
+### 字体策略
+- 标题 / 引言 / 文章: var(--font-serif) (Noto Serif SC / Songti SC)
+- 正文 / 按钮: var(--font-sans)
+- 数字 / OTP: var(--font-mono) + tabular-nums
+
+### 验收
+- `npx tsc --noEmit` → 0 errors
+- `npm test -- --run` → 155/155 pass
+- `npm run build` → success
+- `./ops.sh deploy --yes` → 成功,部署到 gun.yishuziyu.cn
+- 设计令牌 grep 验证: 8 timing, 8 keyframes, 0 framer-motion 引入
+
+### 已知未闭环
+| 项目 | 状态 |
+| --- | --- |
+| MissionControlView 视觉升级 | 4667 行,留待 v5 polish |
+| ApiKeySettings 视觉 | 留待 v5 polish |
+| prefers-reduced-motion 适配 | 留待 v5 polish |
+| 滚动入场 IntersectionObserver | 留待 v5 polish |
