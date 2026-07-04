@@ -1,11 +1,7 @@
 /**
  * LoginView.tsx — v3 邮箱登录两段表单
  *
- * 设计原则：
- * - 复用 Dashboard 的 .landing-* 视觉锚点,不引入新 CSS class
- * - 第一段:邮箱 → 提交后自动跳到第二段
- * - 第二段:6 位验证码 → 提交后自动 redirect 到 / (Dashboard)
- * - 后端故意 console.log 验证码,前端不做倒计时也不显示后端文案的覆盖
+ * 设计：复用 dashboard 视觉锚点 + cinema 动效，杂志质感排版
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -93,7 +89,6 @@ export function LoginView({ onSuccess }: LoginViewProps) {
         }
         setStage("success");
         onSuccess?.();
-        // 给后端 cookie 一个冒泡机会再跳转
         window.setTimeout(() => {
           window.location.href = "/";
         }, 200);
@@ -112,29 +107,61 @@ export function LoginView({ onSuccess }: LoginViewProps) {
   }, [stage]);
 
   return (
-    <main className="landing-input-section" aria-label="邮箱登录">
-      <section className="landing-input-card" style={{ maxWidth: 480 }}>
+    <main className="dashboard editorial" aria-label="邮箱登录">
+      <section
+        className="dashboard-input-card cinema-rise"
+        style={{ maxWidth: 480 }}
+      >
         <header>
-          <span className="landing-input-label">邮箱登录</span>
-          <h1 style={{ margin: "4px 0 0", fontSize: 22 }}>
-            {stage === "code" ? "输入验证码" : stage === "success" ? "登录成功" : "继续真实核查"}
-          </h1>
-          <p style={{ margin: "8px 0 0", fontSize: 13, color: "var(--zt-text-secondary)" }}>
+          <span className="small-caps" style={{ color: "var(--zt-text-secondary)" }}>
+            邮箱登录
+          </span>
+          <h1
+            style={{
+              margin: "4px 0 0",
+              fontFamily: "var(--font-serif)",
+              fontSize: "var(--type-headline)",
+              letterSpacing: "var(--tracking-tight)",
+              lineHeight: "var(--leading-snug)",
+            }}
+          >
             {stage === "code"
-              ? `验证码已发送至 ${email}（开发模式请查看服务端 console）`
+              ? "输入验证码"
+              : stage === "success"
+              ? "登录成功"
+              : "继续真实核查"}
+          </h1>
+          <p
+            style={{
+              margin: "12px 0 0",
+              fontFamily: "var(--font-serif)",
+              fontSize: "var(--type-meta)",
+              color: "var(--zt-text-secondary)",
+              fontStyle: "italic",
+              lineHeight: "var(--leading-snug)",
+            }}
+          >
+            {stage === "code"
+              ? `验证码已发送至 ${email}(开发模式请查看服务端 console)`
               : "首次使用即自动注册免费账号。5 次 / 30 天免费额度,用完可在「设置 → 模型服务商」中接入 BYO Key。"}
           </p>
         </header>
 
         {stage === "email" ? (
-          <form onSubmit={handleSubmitEmail} className="landing-input-actions" style={{ flexDirection: "column", alignItems: "stretch" }}>
-            <label className="landing-input-label" htmlFor="email-input">邮箱</label>
+          <form
+            onSubmit={handleSubmitEmail}
+            className="landing-input-actions cinema-rise cinema-rise-d1"
+            style={{ flexDirection: "column", alignItems: "stretch" }}
+          >
+            <label className="small-caps" htmlFor="email-input">
+              邮箱
+            </label>
             <input
               id="email-input"
               type="email"
               autoComplete="email"
               placeholder="you@example.com"
-              className="landing-input"
+              className="dashboard-input"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               required
@@ -143,7 +170,7 @@ export function LoginView({ onSuccess }: LoginViewProps) {
             {error ? <p className="landing-input-error">{error}</p> : null}
             <button
               type="submit"
-              className="landing-submit-btn"
+              className="dashboard-submit-btn"
               disabled={submitting || email.trim().length === 0}
             >
               {submitting ? "发送中…" : "发送验证码"}
@@ -154,10 +181,12 @@ export function LoginView({ onSuccess }: LoginViewProps) {
         {stage === "code" ? (
           <form
             onSubmit={handleSubmitCode}
-            className="landing-input-actions"
+            className="landing-input-actions cinema-rise cinema-rise-d1"
             style={{ flexDirection: "column", alignItems: "stretch" }}
           >
-            <label className="landing-input-label" htmlFor="code-input">6 位验证码</label>
+            <label className="small-caps" htmlFor="code-input">
+              6 位验证码
+            </label>
             <input
               id="code-input"
               type="text"
@@ -165,17 +194,25 @@ export function LoginView({ onSuccess }: LoginViewProps) {
               autoComplete="one-time-code"
               maxLength={6}
               placeholder="123456"
-              className="landing-input"
+              className="dashboard-input"
               value={code}
-              onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+              onChange={(event) =>
+                setCode(event.target.value.replace(/[^0-9]/g, "").slice(0, 6))
+              }
               required
               disabled={submitting}
               autoFocus
+              style={{
+                letterSpacing: "0.4em",
+                fontFamily: "var(--font-mono)",
+                fontSize: "1.5rem",
+                textAlign: "center",
+              }}
             />
             {error ? <p className="landing-input-error">{error}</p> : null}
             <button
               type="submit"
-              className="landing-submit-btn"
+              className="dashboard-submit-btn"
               disabled={submitting || code.length !== 6}
             >
               {submitting ? "校验中…" : "登录"}
@@ -192,7 +229,16 @@ export function LoginView({ onSuccess }: LoginViewProps) {
         ) : null}
 
         {stage === "success" ? (
-          <p style={{ color: "#15803d", fontSize: 14, margin: 0 }}>
+          <p
+            className="cinema-veil"
+            style={{
+              color: "#15803d",
+              fontSize: 14,
+              margin: 0,
+              fontFamily: "var(--font-serif)",
+              fontStyle: "italic",
+            }}
+          >
             登录成功,正在跳转…
           </p>
         ) : null}

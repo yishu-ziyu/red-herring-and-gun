@@ -125,45 +125,54 @@ export function ConclusionDockV3({
 
   return (
     <>
-      <footer className="conclusion-dock" aria-label="Conclusion dock">
-        <div className="strength-meter">
-          <span>原始信息可信度</span>
+      <footer className="conclusion-dock editorial" aria-label="Conclusion dock">
+        <div className="strength-meter cinema-rise">
+          <span className="small-caps">原始命题</span>
           <strong>{handoffResult?.claim ?? originalClaim ?? report.originalClaim}</strong>
-          <em>待核查</em>
+          <em className="state-tag state-quiet">待核查</em>
         </div>
-        <div className="dock-arrow" aria-hidden="true">
-          →
+        <div className="dock-arrow cinema-breath" aria-hidden="true">
+          <span className="dock-arrow-glyph">→</span>
         </div>
-        <div className={`strength-meter ${exploring ? "" : "allowed"}`}>
-          <span>核查后结论</span>
+        <div className={`strength-meter cinema-rise cinema-rise-d1 ${exploring ? "" : "allowed"}`}>
+          <span className="small-caps">核查后结论</span>
           <strong>
             {exploring
-              ? "正在核查中..."
+              ? "正在核查中…"
               : `${label}（判断置信度 ${confidenceScore}%）`}
           </strong>
-          <em>{exploring ? `${explorationCount} 个节点已核查` : `原信息可信度 ${effectiveCredibilityScore}%`}</em>
+          <em className="state-tag">
+            {exploring ? `${explorationCount} 个节点已核查` : `原信息可信度 ${effectiveCredibilityScore}%`}
+          </em>
         </div>
-        <p>
+
+        <p className="conclusion-lede cinema-rise cinema-rise-d2">
           {exploring
             ? "系统正在沿你选择的节点进行深度核查，调用中控 LLM 和子 Agent。"
             : handoffResult?.conclusion ?? report.rewrittenClaim.cautious}
         </p>
 
         {(handoffResult?.canSay || handoffResult?.cannotSay) && !exploring && (
-          <div className="boundary-panel">
-            <div className="boundary-col">
-              <h4>可以说</h4>
-              <ul>
+          <div className="boundary-panel cinema-rise cinema-rise-d3">
+            <div className="boundary-col boundary-col--allowed">
+              <h4 className="boundary-col-title">
+                <span className="boundary-col-dot boundary-col-dot--allowed" />
+                可以说
+              </h4>
+              <ul className="boundary-list">
                 {(handoffResult.canSay ?? []).map((item, i) => (
-                  <li key={i}>{item}</li>
+                  <li key={i} className="boundary-list-item">{item}</li>
                 ))}
               </ul>
             </div>
-            <div className="boundary-col">
-              <h4>不能说</h4>
-              <ul>
+            <div className="boundary-col boundary-col--blocked">
+              <h4 className="boundary-col-title">
+                <span className="boundary-col-dot boundary-col-dot--blocked" />
+                不能说
+              </h4>
+              <ul className="boundary-list">
                 {(handoffResult.cannotSay ?? []).map((item, i) => (
-                  <li key={i}>{item}</li>
+                  <li key={i} className="boundary-list-item">{item}</li>
                 ))}
               </ul>
             </div>
@@ -176,20 +185,27 @@ export function ConclusionDockV3({
         ) : null}
 
         {handoffResult?.scoreBreakdown && !exploring && (
-          <div className="score-breakdown">
-            <span className="breakdown-label">可信度分解</span>
+          <div className="score-breakdown cinema-rise cinema-rise-d4">
+            <span className="breakdown-label small-caps">可信度分解</span>
             <div className="breakdown-bars">
-              {(["factCheckSignal", "searchSignal", "sourceSignal"] as const).map((key) => {
+              {(["factCheckSignal", "searchSignal", "sourceSignal"] as const).map((key, idx) => {
                 const val = handoffResult.scoreBreakdown![key];
                 if (typeof val !== "number") return null;
                 const pct = Math.round((val + 1) / 2 * 100);
                 return (
-                  <div key={key} className="breakdown-bar-row">
+                  <div
+                    key={key}
+                    className="breakdown-bar-row"
+                    style={{ animationDelay: `${idx * 80}ms` }}
+                  >
                     <span className="breakdown-bar-label">{key.replace("Signal", "")}</span>
                     <div className="breakdown-bar-track">
                       <div
                         className={`breakdown-bar-fill ${val >= 0 ? "positive" : "negative"}`}
-                        style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+                        style={{
+                          width: `${Math.max(0, Math.min(100, pct))}%`,
+                          animationDelay: `${idx * 100 + 200}ms`,
+                        }}
                       />
                     </div>
                     <span className="breakdown-bar-value">{val.toFixed(2)}</span>
@@ -201,9 +217,9 @@ export function ConclusionDockV3({
         )}
 
         {!exploring && (
-          <div className="conclusion-actions">
+          <div className="conclusion-actions cinema-rise cinema-rise-d5">
             <button
-              className="conclusion-action-btn"
+              className="conclusion-action-btn conclusion-action-btn--primary"
               onClick={() => setIsModalOpen(true)}
               type="button"
             >
