@@ -13,6 +13,7 @@ import {
 } from "../../lib/reportExporter";
 import { ReportModal } from "./ReportModal";
 import { InferenceLicensePanel } from "./panels/InferenceLicensePanel";
+import { ScoreRail } from "./panels/ScoreRail";
 import { getTraceCollector } from "../../lib/reasoningTrace";
 
 interface ConclusionDockV3Props {
@@ -184,37 +185,13 @@ export function ConclusionDockV3({
           <InferenceLicensePanel license={report.inferenceLicense} />
         ) : null}
 
-        {handoffResult?.scoreBreakdown && !exploring && (
-          <div className="score-breakdown cinema-rise cinema-rise-d4">
-            <span className="breakdown-label small-caps">可信度分解</span>
-            <div className="breakdown-bars">
-              {(["factCheckSignal", "searchSignal", "sourceSignal"] as const).map((key, idx) => {
-                const val = handoffResult.scoreBreakdown![key];
-                if (typeof val !== "number") return null;
-                const pct = Math.round((val + 1) / 2 * 100);
-                return (
-                  <div
-                    key={key}
-                    className="breakdown-bar-row"
-                    style={{ animationDelay: `${idx * 80}ms` }}
-                  >
-                    <span className="breakdown-bar-label">{key.replace("Signal", "")}</span>
-                    <div className="breakdown-bar-track">
-                      <div
-                        className={`breakdown-bar-fill ${val >= 0 ? "positive" : "negative"}`}
-                        style={{
-                          width: `${Math.max(0, Math.min(100, pct))}%`,
-                          animationDelay: `${idx * 100 + 200}ms`,
-                        }}
-                      />
-                    </div>
-                    <span className="breakdown-bar-value">{val.toFixed(2)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        {handoffResult?.scoreBreakdown && !exploring ? (
+          <ScoreRail
+            scoreBreakdown={handoffResult.scoreBreakdown}
+            credibilityScore={Math.round(effectiveCredibilityScore)}
+            credibilityLabel={label}
+          />
+        ) : null}
 
         {!exploring && (
           <div className="conclusion-actions cinema-rise cinema-rise-d5">
