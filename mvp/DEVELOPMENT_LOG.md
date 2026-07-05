@@ -869,3 +869,43 @@ Phase 3 输出 credibilityScore
 | ApiKeySettings 视觉 | 留待 v5 polish |
 | prefers-reduced-motion 适配 | 留待 v5 polish |
 | 滚动入场 IntersectionObserver | 留待 v5 polish |
+
+## 2026-07-05 v5: ScoreRail 可信度评分可视化栏目
+
+### 用户反馈
+> "这个评分这一块能不能做一个这种可视化的栏目?或者说做一个可视化的条?"
+
+### 设计参照
+用户给的 ultracode 截图核心:
+- 顶部高对比度状态行 (单一焦点 + 加粗断言)
+- 中间步骤行 (带图标,渐进披露)
+- 下方分类卡片 (类别标题 + 必填/可选 + chip 列表)
+- 中间步骤用浅色,具体结论用强样式
+
+### 实现 (commit de1633c)
+- 新建 `mvp/src/components/v3/panels/ScoreRail.tsx`(电影感双极轴可视化)
+  - 大号 display 总分 + 等级 pill (4 档)
+  - 主条 + 0/20/40/60/80/100 刻度 (单极 0-100,渐变填充含阈值色)
+  - 三轴分量 (双极 -1..+1,中间 0 基线居中,supports/opposes/neutral 三态颜色)
+  - 风险标签 chip (基于阈值推断)
+- 新建 `mvp/src/components/v3/panels/ScoreRail.test.tsx`(8 个测试)
+- 修改 `ConclusionDockV3.tsx` 用 `<ScoreRail>` 替换旧的进度条
+- 修改 `styles.css` 加 `.score-rail` 系列样式
+
+### 关键设计选择
+- **双极轴 (bipolar axis)** 替代单极进度条 — 0 在中间,负值向左,正值向右。读者一眼看出哪个分量在拖后腿,哪个在支撑。
+- **风险标签自动推断** — 不要在 schema 上加新字段,从总分和三个分量推导出 5 类风险:整体证据不足 / 主流来源缺失 / 来源稳定性偏低 / 反证覆盖不足 / 核心事实被推翻。
+- **chip 用 ultracode 的轻量 pill 形态**(不是按钮感)— `⚠ △ ·` 前缀区分等级。
+- **保持既有 cinema 节奏** — 整条主条用 cinema-rise 进场,刻度线和小数延迟 stagger。
+
+### 验收
+- `npx tsc --noEmit` → 0 errors
+- `npm test -- --run` → 172/172 pass (164 + 8)
+- `npm run build` → success
+- `./ops.sh deploy --yes` → 部署到 gun.yishuziyu.cn 完成
+
+### 已知未闭环
+| 项目 | 状态 |
+| --- | --- |
+| 三维多端 vs 长跑 | 已合一个平衡 |
+| 其他评分场景 (SourceValidator 独立报告, Mission Control middle 等) | 暂未集成 |
