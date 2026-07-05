@@ -13187,3 +13187,333 @@ button:disabled {
   gap: 12px;
   margin-top: 16px;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   v5 — ScoreRail: 可信度评分可视化栏目
+   设计来源:参考 ultracode 截图的状态/步骤/类别分层
+   ════════════════════════════════════════════════════════════════════ */
+
+.score-rail {
+  grid-column: 1 / -1;
+  margin-top: clamp(20px, 3vw, 32px);
+  padding: clamp(20px, 2.5vw, 32px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--zt-radius-lg);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.6) 0%, var(--zt-bg-panel) 100%);
+  box-shadow: var(--depth-paper);
+  display: grid;
+  gap: clamp(20px, 2.5vw, 28px);
+  position: relative;
+}
+
+/* ── Head: 总分 + 等级 pill ── */
+.score-rail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.score-rail-head-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.score-rail-head .small-caps {
+  letter-spacing: var(--tracking-extra);
+  font-size: var(--type-caption);
+  color: var(--zt-text-secondary);
+  font-family: var(--font-serif);
+  font-weight: 500;
+}
+.score-rail-tier-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-family: var(--font-serif);
+  font-size: var(--type-caption);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  background: rgba(21, 24, 33, 0.06);
+  color: var(--zt-text);
+}
+.score-rail-tier-pill--danger {
+  background: var(--gradient-alert);
+  color: #b91c1c;
+}
+.score-rail-tier-pill--warn {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+.score-rail-tier-pill--ok {
+  background: rgba(43, 127, 216, 0.12);
+  color: var(--zt-primary);
+}
+.score-rail-tier-pill--great {
+  background: var(--gradient-success);
+  color: #15803d;
+}
+
+.score-rail-head-figure {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.score-rail-figure {
+  font-family: var(--font-serif);
+  font-size: clamp(2.4rem, 5vw, 3.4rem);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1;
+  color: var(--zt-text);
+  font-variant-numeric: tabular-nums;
+}
+.score-rail-figure-denominator {
+  font-family: var(--font-serif);
+  font-size: var(--type-title);
+  color: var(--zt-text-muted);
+  letter-spacing: var(--tracking-normal);
+}
+.score-rail-label {
+  font-family: var(--font-serif);
+  font-size: var(--type-subtitle);
+  color: var(--zt-text-secondary);
+  font-style: italic;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-subtle);
+}
+
+/* ── Main bar: 单极 0..100,带刻度 ── */
+.score-rail-main {
+  display: grid;
+  gap: 12px;
+}
+.score-rail-main-track {
+  position: relative;
+  height: 18px;
+  background: rgba(21, 24, 33, 0.04);
+  border-radius: 999px;
+  overflow: visible;
+  border: 1px solid rgba(21, 24, 33, 0.06);
+}
+.score-rail-main-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    rgba(232, 74, 95, 0.85) 0%,
+    rgba(217, 119, 6, 0.85) 25%,
+    rgba(43, 127, 216, 0.85) 55%,
+    rgba(22, 163, 74, 0.9) 100%);
+  transition: width var(--motion-cinematic) var(--ease-cinema);
+  animation: cinema-rise var(--motion-soft) both;
+  animation-delay: 200ms;
+}
+.score-rail-rail {
+  animation: cinema-rise var(--motion-soft) both;
+  animation-delay: 200ms;
+}
+.score-rail-tick {
+  position: absolute;
+  top: -4px;
+  width: 1px;
+  height: 26px;
+  background: var(--border-medium);
+  pointer-events: none;
+}
+.score-rail-tick::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--zt-text-muted);
+}
+
+.score-rail-ticks {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  height: 18px;
+}
+.score-rail-ticks-item {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+}
+.score-rail-ticks-num {
+  font-family: var(--font-mono);
+  font-size: var(--type-caption);
+  color: var(--zt-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Signals: 双极轴 -1..+1 ── */
+.score-rail-signals {
+  display: grid;
+  gap: 12px;
+}
+.score-rail-signals-title {
+  letter-spacing: var(--tracking-extra);
+  font-size: var(--type-caption);
+  color: var(--zt-text-secondary);
+  font-family: var(--font-serif);
+  font-weight: 500;
+}
+.score-rail-signals-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.score-rail-signal {
+  display: grid;
+  grid-template-columns: 1fr 220px 56px;
+  align-items: center;
+  gap: 16px;
+  animation: cinema-traverse var(--motion-soft) both;
+}
+.score-rail-signal-label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.score-rail-signal-name {
+  font-family: var(--font-serif);
+  font-size: var(--type-subtitle);
+  font-weight: 600;
+  color: var(--zt-text);
+  letter-spacing: var(--tracking-normal);
+}
+.score-rail-signal-hint {
+  font-family: var(--font-serif);
+  font-size: var(--type-caption);
+  color: var(--zt-text-muted);
+  font-style: italic;
+}
+
+/* 双极轴 (-1 .. +1) */
+.score-rail-signal-axis {
+  position: relative;
+  height: 8px;
+  background: linear-gradient(90deg,
+    rgba(232, 74, 95, 0.16) 0%,
+    rgba(21, 24, 33, 0.04) 50%,
+    rgba(22, 163, 74, 0.16) 100%);
+  border-radius: 999px;
+}
+.score-rail-signal-zero {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1px;
+  height: 14px;
+  background: var(--zt-text-muted);
+}
+.score-rail-signal-mark {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.score-rail-signal-dot {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--zt-text-muted);
+  border: 2px solid var(--zt-bg-panel);
+  box-shadow: 0 2px 6px rgba(21, 24, 33, 0.18);
+  margin: -8px 0 0 -8px;
+  transition: transform var(--motion-fade);
+}
+.score-rail-signal--supports .score-rail-signal-dot {
+  background: #16a34a;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.18), 0 2px 6px rgba(22, 163, 74, 0.3);
+}
+.score-rail-signal--opposes .score-rail-signal-dot {
+  background: #dc2626;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.18), 0 2px 6px rgba(220, 38, 38, 0.3);
+}
+
+.score-rail-signal-num {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta);
+  color: var(--zt-text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  font-weight: 600;
+}
+
+/* ── Risk chips ── */
+.score-rail-risks {
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--border-subtle);
+}
+.score-rail-risks-label {
+  letter-spacing: var(--tracking-extra);
+  font-size: var(--type-caption);
+  color: var(--zt-text-secondary);
+  font-family: var(--font-serif);
+  font-weight: 500;
+}
+.score-rail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.score-rail-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--zt-bg-panel);
+  font-family: var(--font-serif);
+  font-size: var(--type-caption);
+  font-weight: 500;
+  color: var(--zt-text-secondary);
+  letter-spacing: var(--tracking-normal);
+  transition: transform var(--motion-pop);
+}
+.score-rail-chip:hover {
+  transform: translateY(-1px);
+}
+.score-rail-chip--danger {
+  background: var(--gradient-alert);
+  color: #b91c1c;
+  border-color: rgba(232, 74, 95, 0.24);
+}
+.score-rail-chip--warn {
+  background: rgba(217, 119, 6, 0.1);
+  color: #b45309;
+  border-color: rgba(217, 119, 6, 0.24);
+}
+.score-rail-chip--neutral {
+  background: var(--zt-bg-elevated);
+  color: var(--zt-text-secondary);
+}
+
+/* tier-derived accent on the entire rail */
+.score-rail--danger {
+  border-color: rgba(232, 74, 95, 0.24);
+}
+.score-rail--warn {
+  border-color: rgba(217, 119, 6, 0.24);
+}
+.score-rail--great {
+  border-color: rgba(22, 163, 74, 0.24);
+}
