@@ -13530,9 +13530,6 @@ button:disabled {
   border-color: rgba(22, 163, 74, 0.24);
 }
 
-/* ════════════════════════════════════════════════════════════════════
-   v5 - BYO Key settings polish
-   ════════════════════════════════════════════════════════════════════ */
 
 .api-key-settings {
   min-height: 100vh;
@@ -13764,5 +13761,118 @@ button:disabled {
 
   .api-key-actions button {
     flex: 1 1 160px;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   v5 - consolidated reduced-motion accessibility
+   ════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-pop: 1ms linear;
+    --motion-fade: 1ms linear;
+    --motion-rise: 1ms linear;
+    --motion-cinematic: 1ms linear;
+    --motion-epic: 1ms linear;
+    --motion-reveal: 1ms linear;
+    --motion-glide: 1ms linear;
+    scroll-behavior: auto;
+  }
+
+  .cinema-rise,
+  .cinema-rise-d1,
+  .cinema-rise-d2,
+  .cinema-rise-d3,
+  .cinema-rise-d4,
+  .cinema-rise-d5,
+  .cinema-traverse,
+  .cinema-veil,
+  .cinema-stagger > *,
+  .app-phase-shell,
+  .phase-enter,
+  .phase-exit,
+  .canvas-node.entering,
+  .dashboard-brand,
+  .dashboard-input-card,
+  .dashboard-demo-section,
+  .breakdown-bar-row,
+  .score-rail-main-fill,
+  .score-rail-rail,
+  .score-rail-signal,
+  .truth-stamp.visible {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .cinema-shimmer,
+  .cinema-breath,
+  .status-running,
+  .status-running::after,
+  .canvas-node.status-handoff.running,
+  .canvas-node.status-handoff.running::after,
+  .dock-arrow-glyph::after,
+  .boundary-col-dot--allowed::before,
+  .boundary-col-dot--blocked::before,
+  .island-live-dot.running,
+  .agent-status-dot--running,
+  .sherlock-searching,
+  .dashboard-submit-btn--deep,
+  .mission-agent-progress-bar--flowing::after,
+  .streaming-pulse-dot,
+  .handoff-step-dot--pulse,
+  .mission-agent-card--running,
+  .mission-agent-icon--running,
+  .skeleton,
+  .case-workbench-view.case-workbench-view--clean .typewriter-caret {
+    animation: none !important;
+  }
+
+  .reasoning-island,
+  .reasoning-island-pill,
+  .reasoning-island-panel,
+  .island-progress circle:last-child,
+  .canvas-node,
+  .react-flow__node .canvas-node,
+  .toast,
+  .dashboard-submit-btn,
+  .dashboard-demo-card,
+  .dashboard-demo-card::before,
+  .boundary-col,
+  .landing-logo,
+  .floating-input-bar,
+  .mode-pill,
+  .conclusion-action-btn,
+  .agent-card,
+  .sherlock-hit-card,
+  .credibility-bar-fill,
+  .breakdown-bar-fill,
+  .mission-agent-progress span,
+  .sherlock-hit-trust-fill,
+  .score-rail-main-fill,
+  .score-rail-chip,
+  .api-key-settings-back,
+  .api-key-form-grid input,
+  .api-key-actions button {
+    transition-duration: 1ms !important;
+    transition-delay: 0ms !important;
+  }
+
+  .truth-stamp.visible {
+    opacity: 0.85;
+    transform: rotate(-15deg) scale(1);
+  }
+
+  .canvas-node:hover,
+  .canvas-node.selected,
+  .canvas-node.highlighted {
+    transform: translate(-50%, -50%) !important;
+  }
+
+  .react-flow__node .canvas-node:hover,
+  .react-flow__node .canvas-node.selected,
+  .react-flow__node .canvas-node.highlighted {
+    transform: none !important;
   }
 }
