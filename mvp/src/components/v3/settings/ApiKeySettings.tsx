@@ -159,19 +159,28 @@ export function ApiKeySettings() {
   };
 
   return (
-    <main className="api-key-settings" aria-label="BYO Key 设置">
-      <header className="api-key-settings-header">
+    <main className="api-key-settings editorial" aria-label="BYO Key 设置">
+      <header className="api-key-settings-header cinema-rise">
         <div>
-          <span>BYO Key</span>
+          <span className="small-caps">Local Key Vault</span>
           <h1>自带 API Key</h1>
         </div>
         <a href="/" className="api-key-settings-back">返回首页</a>
       </header>
 
-      <section className="api-key-settings-card" aria-label="配置表单">
+      <section className="api-key-settings-card cinema-rise cinema-rise-d1" aria-label="配置表单">
         <p className="api-key-settings-intro">
-          填入 OpenAI 兼容协议的 base URL、API Key 与模型名。密钥仅保存在你本机的浏览器存储中，不会上传到我们的服务端。
+          填入 OpenAI 兼容协议的 Base URL、API Key 与模型名。密钥保存在本机浏览器存储中；测试连接时，本页会把密钥发送到当前站点的测试接口，由服务端代你向所填 Base URL 发起一次连接测试。
         </p>
+
+        <aside className="api-key-settings-disclosure" aria-label="本机保存说明">
+          <strong>本机保存说明</strong>
+          <ul>
+            <li>base64 不是加密，只是避免明文直接写入 localStorage。</li>
+            <li>共享电脑或公共浏览器使用后，请清除这份配置。</li>
+            <li>测试接口只用于连接验证，不应记录或持久化你的密钥。</li>
+          </ul>
+        </aside>
 
         <div className="api-key-form-grid">
           <label>
