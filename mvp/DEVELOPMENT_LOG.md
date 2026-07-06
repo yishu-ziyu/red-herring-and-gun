@@ -909,3 +909,13 @@ Phase 3 输出 credibilityScore
 | --- | --- |
 | 三维多端 vs 长跑 | 已合一个平衡 |
 | 其他评分场景 (SourceValidator 独立报告, Mission Control middle 等) | 暂未集成 |
+
+## 2026-07-06 — v5 visual polish follow-up
+
+- BYO Key 设置页信任文案修正: 不再承诺“不会上传到服务端”,明确本机浏览器存储和测试连接时会 POST 到 `/api/agent/test-llm`。
+- BYO Key 设置页接入杂志/电影感视觉: 增加本机保存说明、token 化表单/按钮/状态卡样式,不新增依赖。
+- MissionControl 顶部状态条去掉 synthetic 进度百分比,改为真实事件流 ledger: 完成/运行/失败/排队/事件总数。
+- AgentCard 可访问性文案从“执行进度 xx%”改为“执行状态”,百分数保留在标准 `progressbar` 属性里。
+- Reduced motion: 新增完整 `prefers-reduced-motion` 覆盖,静态保留状态语义,禁用无限装饰动画,不重置 React Flow wrapper transform。
+- Verification: `npx tsc --noEmit` OK, `npm test -- --run` 180/180, `npm run build` OK。
+- Deployment: `./ops.sh deploy --yes` 已更新 gun.yishuziyu.cn。远端 nginx Host 验证 `/`, `/api/models/list`, `/health` 通过。
