@@ -21,6 +21,16 @@ describe("ApiKeySettings", () => {
     expect(screen.getByLabelText(/API Key/i)).toHaveAttribute("type", "password");
   });
 
+  it("accurately explains local storage and test-time transmission", () => {
+    render(<ApiKeySettings />);
+
+    expect(screen.getByText(/本机浏览器存储/)).toBeInTheDocument();
+    expect(screen.getByText(/测试连接时/)).toBeInTheDocument();
+    expect(screen.getByText(/当前站点的测试接口/)).toBeInTheDocument();
+    expect(screen.getByText(/base64 不是加密/)).toBeInTheDocument();
+    expect(screen.queryByText(/不会上传到我们的服务端/)).not.toBeInTheDocument();
+  });
+
   it("renders 测试连接 and 保存 buttons", () => {
     render(<ApiKeySettings />);
     expect(screen.getByRole("button", { name: /测试连接/ })).toBeInTheDocument();
@@ -66,6 +76,36 @@ describe("ApiKeySettings", () => {
       apiKey: "sk-abc",
       modelName: "deepseek-v4-flash",
     });
+  });
+
+  it("does not reveal API key literal in save hint or test result", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, latencyMs: 88, status: 200 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }) as Response
+    );
+
+    const secret = "sk-visible-leak-check";
+    render(<ApiKeySettings />);
+
+    fireEvent.change(screen.getByLabelText(/Base URL/i), {
+      target: { value: "https://api.example.com/v1" },
+    });
+    fireEvent.change(screen.getByLabelText(/API Key/i), {
+      target: { value: secret },
+    });
+    fireEvent.change(screen.getByLabelText(/Model Name/i), {
+      target: { value: "gpt-4o-mini" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^保存$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /测试连接/ }));
+
+    await screen.findByText(/连接成功/);
+
+    const visibleText = document.body.textContent ?? "";
+    expect(visibleText).not.toContain(secret);
   });
 
   it("POSTs to /api/agent/test-llm when 测试连接 is clicked and shows success", async () => {
