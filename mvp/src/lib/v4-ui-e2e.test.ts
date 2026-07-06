@@ -85,4 +85,43 @@ describe("v4-ui E2E: v4 改动的零 framer-motion / gsap 依赖", () => {
   });
 });
 
+describe("v4-ui E2E: reduced motion coverage", () => {
+  it("covers representative motion-heavy selector families", () => {
+    const css = readFileSync(STYLES, "utf-8");
+    const reducedMotionBlocks = Array.from(css.matchAll(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*{([\s\S]*?)\n}/g))
+      .map((match) => match[1])
+      .join("\n");
+
+    const selectors = [
+      ".cinema-rise",
+      ".cinema-shimmer",
+      ".app-phase-shell",
+      ".phase-enter",
+      ".canvas-node.entering",
+      ".status-running",
+      ".reasoning-island",
+      ".dashboard-brand",
+      ".dashboard-submit-btn--deep",
+      ".mission-agent-progress-bar--flowing::after",
+      ".streaming-pulse-dot",
+      ".truth-stamp.visible",
+      ".skeleton",
+      ".score-rail-main-fill",
+    ];
+
+    for (const selector of selectors) {
+      expect(reducedMotionBlocks).toContain(selector);
+    }
+  });
+
+  it("does not blanket-reset React Flow wrapper transforms", () => {
+    const css = readFileSync(STYLES, "utf-8");
+    const reducedMotionBlocks = Array.from(css.matchAll(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*{([\s\S]*?)\n}/g))
+      .map((match) => match[1])
+      .join("\n");
+
+    expect(reducedMotionBlocks).not.toMatch(/\.react-flow__node\s*{[\s\S]*?transform:\s*none/);
+  });
+});
+
 // 不在测试里递归 npm test,该回归通过 CI 验证 (102 + 11) = 113 tests pass
