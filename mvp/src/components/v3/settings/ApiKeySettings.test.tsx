@@ -25,7 +25,7 @@ describe("ApiKeySettings", () => {
     render(<ApiKeySettings />);
 
     expect(screen.getByText(/本机浏览器存储/)).toBeInTheDocument();
-    expect(screen.getByText(/测试连接时/)).toBeInTheDocument();
+    expect(screen.getAllByText(/测试连接时/).length).toBeGreaterThan(0);
     expect(screen.getByText(/当前站点的测试接口/)).toBeInTheDocument();
     expect(screen.getByText(/base64 不是加密/)).toBeInTheDocument();
     expect(screen.queryByText(/不会上传到我们的服务端/)).not.toBeInTheDocument();
