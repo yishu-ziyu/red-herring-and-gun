@@ -6315,6 +6315,18 @@ button:disabled {
   background: var(--case-paper);
 }
 
+.case-workbench-view .mission-run-status-cell--events {
+  min-width: 220px;
+}
+
+.case-workbench-view .mission-run-status-cell--events small {
+  display: block;
+  margin-top: 3px;
+  color: var(--case-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .case-workbench-view .mission-final-conclusion {
   border-left-color: var(--case-ink);
   background: linear-gradient(90deg, rgba(21, 21, 21, 0.04), rgba(21, 21, 21, 0.015));

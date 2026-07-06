@@ -35,6 +35,7 @@ import { getTraceCollector } from "../../../lib/reasoningTrace";
 import type { CaseIntake } from "../../../lib/caseIntake";
 import type { MemoryCandidate, MemoryCandidateStatus } from "../../../lib/agentRuntime/memoryCandidateTypes";
 import { getAgentContract } from "../../../lib/agentConfigs";
+import { summarizeMissionStreamStatus } from "../../../lib/missionStreamStatus";
 
 interface MissionControlViewProps {
   claim: string;
@@ -2053,17 +2054,6 @@ function outputItemsForStep(step: HandoffStep, phase: "running" | "completed") {
     return items;
   }
   return items.map((item) => `已完成：${item}`);
-}
-
-function calculateProgress(steps: HandoffStep[], runStatus: RunStatus) {
-  if (runStatus === "completed") return 100;
-
-  const completedCount = steps.filter((step) => step.status === "completed").length;
-  const runningStep = steps.find((step) => step.status === "running");
-  const runningBonus = runningStep ? 0.55 : runStatus === "running" ? 0.15 : 0;
-  const raw = ((completedCount + runningBonus) / AGENT_ORDER.length) * 100;
-
-  return Math.min(runStatus === "failed" ? 100 : 95, raw);
 }
 
 function selectCurrentStep(steps: HandoffStep[]) {
@@ -4525,7 +4515,10 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
       null,
     [activeControllerEventId, controllerEvents, latestControllerEvent]
   );
-  const progress = useMemo(() => calculateProgress(steps, runStatus), [steps, runStatus]);
+  const streamStatusSummary = useMemo(
+    () => summarizeMissionStreamStatus(streamItems, runStatus),
+    [streamItems, runStatus]
+  );
   const evidenceBundleCount = useMemo(
     () => steps.filter((step) => step.evidenceBundle).length,
     [steps]
@@ -4626,9 +4619,10 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
           <span>当前链路</span>
           <strong>{currentModelLine(steps, currentStep)}</strong>
         </div>
-        <div>
-          <span>进度</span>
-          <strong>{Math.round(progress)}%</strong>
+        <div className="mission-run-status-cell mission-run-status-cell--events">
+          <span>事件流</span>
+          <strong>{streamStatusSummary.headline}</strong>
+          <small>{streamStatusSummary.detail}</small>
         </div>
         {fallbackNotice ? (
           <p className="mission-run-status-notice">{fallbackNotice}</p>
