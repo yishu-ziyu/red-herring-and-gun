@@ -13575,7 +13575,7 @@ button:disabled {
   border: 1px solid var(--border-subtle);
   border-radius: var(--zt-radius-xl);
   padding: clamp(24px, 3vw, 36px);
-  background: rgba(255, 253, 248, 0.86);
+  background: color-mix(in srgb, var(--zt-bg) 86%, transparent);
   box-shadow: var(--depth-card);
   backdrop-filter: blur(18px);
 }
@@ -13591,10 +13591,10 @@ button:disabled {
 }
 
 .api-key-settings-disclosure {
-  border: 1px solid rgba(43, 127, 216, 0.16);
+  border: 1px solid color-mix(in srgb, var(--zt-primary) 16%, transparent);
   border-radius: var(--zt-radius-lg);
   padding: 18px 20px;
-  background: linear-gradient(135deg, rgba(43, 127, 216, 0.08) 0%, rgba(255, 253, 248, 0.68) 100%);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--zt-primary) 8%, transparent) 0%, color-mix(in srgb, var(--zt-bg) 68%, transparent) 100%);
 }
 
 .api-key-settings-disclosure strong {
@@ -13647,8 +13647,8 @@ button:disabled {
 
 .api-key-form-grid input:focus {
   outline: none;
-  border-color: rgba(43, 127, 216, 0.42);
-  box-shadow: 0 0 0 3px rgba(43, 127, 216, 0.12), var(--depth-inset);
+  border-color: color-mix(in srgb, var(--zt-primary) 42%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--zt-primary) 12%, transparent), var(--depth-inset);
 }
 
 .api-key-settings-error,
@@ -13661,12 +13661,12 @@ button:disabled {
 }
 
 .api-key-settings-error {
-  color: #b91c1c;
+  color: var(--zt-alert);
   background: var(--gradient-alert);
 }
 
 .api-key-settings-hint {
-  color: #15803d;
+  color: var(--zt-success);
   background: var(--gradient-success);
 }
 
