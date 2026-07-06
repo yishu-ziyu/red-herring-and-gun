@@ -178,7 +178,7 @@ export function ApiKeySettings() {
           <ul>
             <li>base64 不是加密，只是避免明文直接写入 localStorage。</li>
             <li>共享电脑或公共浏览器使用后，请清除这份配置。</li>
-            <li>测试接口只用于连接验证，不应记录或持久化你的密钥。</li>
+            <li>点击测试连接时，会通过 /api/agent/test-llm 发起一次测试请求；页面不会在测试结果里回显密钥。</li>
           </ul>
         </aside>
 
