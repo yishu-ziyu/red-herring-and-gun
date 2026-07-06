@@ -122,6 +122,21 @@ describe("v4-ui E2E: reduced motion coverage", () => {
 
     expect(reducedMotionBlocks).not.toMatch(/\.react-flow__node\s*{[\s\S]*?transform:\s*none/);
   });
+
+  it("does not override ScoreRail data-driven width in reduced motion", () => {
+    const css = readFileSync(STYLES, "utf-8");
+    const reducedMotionBlocks = Array.from(css.matchAll(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*{([\s\S]*?)\n}/g))
+      .map((match) => match[1])
+      .join("\n");
+
+    const scoreRailRules = Array.from(reducedMotionBlocks.matchAll(/\.score-rail-main-fill[^{]*{([^}]*)}/g))
+      .map((match) => match[1])
+      .join("\n");
+
+    expect(scoreRailRules).toContain("transition-duration");
+    expect(scoreRailRules).not.toMatch(/width\s*:/);
+    expect(scoreRailRules).not.toMatch(/transition\s*:\s*none/);
+  });
 });
 
 // 不在测试里递归 npm test,该回归通过 CI 验证 (102 + 11) = 113 tests pass
