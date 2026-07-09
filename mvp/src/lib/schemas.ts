@@ -518,4 +518,5 @@ export interface EvidenceConsensusReport {
   timestamp: number;
   propositionResults: PropositionConsensusResult[];
   overallStats: ConsensusStats;
+  sourceLineage?: SourceLineageGroup[];
 }
