@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+
+// Emil-design-eng easing tokens (mission-critical: all motion uses custom curves)
+const EASE_OUT = [0.16, 1, 0.3, 1] as const; // snappy enter
+const EASE_IN = [0.7, 0, 0.84, 0] as const; // crisp exit
+const EASE_IN_OUT = [0.77, 0, 0.175, 1] as const; // on-screen movement
 import {
   requestOrchestrateStream,
   updateMemoryCandidateStatus,
@@ -2213,7 +2218,7 @@ function StructuredAgentOutput({ items }: { items: StructuredOutputItem[] }) {
           className="controller-structured-block"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2, delay: index * 0.05 }}
+          transition={{ duration: 0.2, delay: index * 0.05, ease: EASE_OUT }}
         >
           <h4>{item.label}</h4>
           {item.kind === "list" ? (
@@ -2740,7 +2745,7 @@ function SearchProgressPanel({ searchJobs }: { searchJobs: MultiSearchJob[] }) {
               stroke="var(--zt-primary)"
               strokeWidth="3"
               strokeDasharray={`${(stats.completed / Math.max(1, totalProviders)) * 100}, 100`}
-              style={{ transition: 'stroke-dasharray 0.5s ease' }}
+              style={{ transition: 'stroke-dasharray 200ms cubic-bezier(0.16, 1, 0.3, 1)' }}
             />
           </svg>
           <div className="search-progress-text">
@@ -2945,7 +2950,7 @@ function ControllerRail({
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.24, delay: Math.min(index, 8) * 0.025 }}
+                  transition={{ duration: 0.24, delay: Math.min(index, 8) * 0.025, ease: EASE_OUT }}
                 >
                   <button
                     type="button"
@@ -3010,7 +3015,7 @@ function ControllerRail({
                   initial={{ opacity: 0, y: 14 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.24, delay: Math.min(index, 8) * 0.025 }}
+                  transition={{ duration: 0.22, delay: Math.min(index, 8) * 0.025, ease: EASE_OUT }}
                 >
                   <span className={`controller-operation-icon controller-operation-icon--${item.status}`} aria-hidden="true">
                     <img src={operationIconForEvent(item.event)} alt="" />
@@ -3038,7 +3043,7 @@ function ControllerRail({
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.22, delay: Math.min(index, 8) * 0.025 }}
+                transition={{ duration: 0.22, delay: Math.min(index, 8) * 0.025, ease: EASE_OUT }}
               >
                 <span className={`controller-process-dot controller-process-dot--${item.status}`} />
                 <span>
@@ -3121,7 +3126,7 @@ function ControllerEventDetailPanel({
       className={`controller-reading-window controller-reading-window--${event.status}`}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.24 }}
+      transition={{ duration: 0.24, ease: EASE_OUT }}
       aria-live="polite"
     >
       <header className="controller-reading-head">
@@ -3158,7 +3163,7 @@ function ControllerEventDetailPanel({
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.18 }}
+                    transition={{ duration: 0.18, ease: EASE_OUT }}
                   >
                     <span>{CONTROLLER_EVENT_KIND_LABEL[item.kind]}</span>
                     <strong>{item.title}</strong>
@@ -3224,7 +3229,7 @@ function ControllerEventDetailPanel({
                       className="controller-debate-round"
                       initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.22, delay: index * 0.04 }}
+                      transition={{ duration: 0.22, delay: index * 0.04, ease: EASE_OUT }}
                     >
                       <span>第 {index + 1} 轮</span>
                       <div>
@@ -3269,7 +3274,7 @@ function ControllerEventDetailPanel({
                   key={`${item}-${index}`}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.18, delay: index * 0.04 }}
+                  transition={{ duration: 0.18, delay: index * 0.04, ease: EASE_OUT }}
                 >
                   <span>{String(index + 1).padStart(2, "0")}</span>
                   <p>
@@ -3661,7 +3666,7 @@ function AgentThinkingTreePanel({ nodes }: { nodes: ThinkingTreeNode[] }) {
               className={`thinking-tree-node thinking-tree-node--${node.status}`}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.22, delay: Math.min(index * 0.035, 0.18) }}
+              transition={{ duration: 0.22, delay: Math.min(index * 0.035, 0.18), ease: EASE_OUT }}
             >
               <button
                 type="button"

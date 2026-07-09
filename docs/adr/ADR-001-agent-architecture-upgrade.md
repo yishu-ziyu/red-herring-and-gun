@@ -57,10 +57,10 @@ RumorDetector → Search → FactChecker//SourceValidator → ReportComposer →
 
 ## 不做什么
 
-- 不引入 LangChain/DeepAgent 框架 — 我们的需求比它们轻，比 PiAgent 重。自建 DAG runtime 更可控
 - 不替换现有 LLM provider — 继续用 `callAgentWithFallback`
 - 不改变前端 — 只改后端编排层
 - 不做部署 — 部署走 `ops.sh`
+- 不重新造轮子 — 优先采用 battle-tested 框架（如 DeepAgents.js），只在框架无法满足需求时才自建
 
 ## 风险
 
