@@ -261,6 +261,56 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     failurePolicy: "如果前序输出为空或来自 fallback，必须输出未出结论，不得生成补充性判断。",
     evaluationChecks: ["是否忠实引用前序证据", "是否暴露证据缺口", "是否生成闭环动作建议"],
   },
+  alternative_explanation_searcher: {
+    id: "alternative_explanation_searcher",
+    name: "AlternativeExplanationSearcher",
+    icon: "🔎",
+    roleTitle: "替代解释搜索专家",
+    mission: "主动寻找能同样解释观察结果的替代因果链，不否定现有证据",
+    nonGoals: ["不捏造证据", "不否定现有证据", "不预设立场"],
+    tools: [
+      { id: "llm_causal_search", name: "LLM 替代解释生成", kind: "llm", description: "基于当前因果断言生成 2-4 条合理的替代解释。" },
+    ],
+    memory: {
+      reads: ["前序事实核查结果", "搜索证据摘要"],
+      writes: ["替代解释列表", "因果链评估"],
+    },
+    inputContract: ["原始 claim", "FactChecker 输出", "搜索证据"],
+    outputContract: ["alternativeExplanations", "conclusion"],
+    handoffRules: ["必须把 alternativeExplanations 交给 CounterEvidenceGrader", "不得直接跳转到 ReportComposer"],
+    uiTrace: {
+      start: ["读取因果断言和前序证据"],
+      running: ["生成替代解释", "评估与现有证据的兼容度"],
+      complete: ["交给反证评分和共识调解"],
+    },
+    failurePolicy: "如果无法生成替代解释，明确说明为什么现有因果链目前没有有力的竞争者。",
+    evaluationChecks: ["替代解释是否逻辑合理", "是否准确评估兼容度"],
+  },
+  counter_evidence_grader: {
+    id: "counter_evidence_grader",
+    name: "CounterEvidenceGrader",
+    icon: "⚖️",
+    roleTitle: "反证评分专家",
+    mission: "评估反证强度和对结论的降权影响",
+    nonGoals: ["不预设立场", "不修改前序结论"],
+    tools: [
+      { id: "llm_evidence_grading", name: "LLM 证据评分", kind: "llm", description: "评估反证和证据缺口对结论的影响。" },
+    ],
+    memory: {
+      reads: ["前序事实核查结果", "替代解释输出"],
+      writes: ["反证评分", "证据缺口评分", "置信度调整"],
+    },
+    inputContract: ["FactChecker 输出", "AlternativeExplanationSearcher 输出", "搜索证据"],
+    outputContract: ["counterEvidenceScore", "evidenceGapScore", "overallConfidenceAdjustment", "breakdown", "recommendation"],
+    handoffRules: ["必须把 overallConfidenceAdjustment 交给 ConsensusDebate", "不得直接跳转到 ReportComposer"],
+    uiTrace: {
+      start: ["读取事实核查和替代解释结果"],
+      running: ["评估反证强度", "量化证据缺口影响", "调整结论置信度"],
+      complete: ["交给共识调解收束"],
+    },
+    failurePolicy: "如果证据不足评分，输出保守的降权值并说明原因。",
+    evaluationChecks: ["评分是否基于证据而非猜测", "结论表达建议是否一致"],
+  },
 };
 
 export function getAgentContract(id: string): AgentContract | undefined {
@@ -434,6 +484,52 @@ const reportComposerSchema = {
   required: ["verdictType", "conclusion", "credibilityScore", "credibilityLabel", "recommendation", "summaryForPublic", "whyHardToVerify", "evidenceChain", "causalBoundary", "canSay", "cannotSay", "closureActions", "confidenceDimensions"],
 };
 
+const alternativeExplanationSearcherSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    alternativeExplanations: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          hypothesis: { type: "string" },
+          mechanism: { type: "string" },
+          requiredAssumptions: { type: "array", items: { type: "string" } },
+          compatibilityWithEvidence: { type: "string" },
+          plausibility: { type: "string", enum: ["high", "medium", "low"] },
+        },
+        required: ["hypothesis", "mechanism", "compatibilityWithEvidence", "plausibility"],
+      },
+    },
+    conclusion: { type: "string" },
+  },
+  required: ["alternativeExplanations", "conclusion"],
+};
+
+const counterEvidenceGraderSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    counterEvidenceScore: { type: "number" },
+    evidenceGapScore: { type: "number" },
+    overallConfidenceAdjustment: { type: "number" },
+    breakdown: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        counterEvidenceStrength: { type: "string" },
+        gapImpact: { type: "string" },
+        causalInferenceStrength: { type: "string" },
+      },
+      required: ["counterEvidenceStrength", "gapImpact", "causalInferenceStrength"],
+    },
+    recommendation: { type: "string", enum: ["strengthen", "maintain", "weaken", "block"] },
+  },
+  required: ["counterEvidenceScore", "evidenceGapScore", "overallConfidenceAdjustment", "breakdown", "recommendation"],
+};
+
 // ───────────────────────────────────────────────────────────────
 // Agent 配置
 // ───────────────────────────────────────────────────────────────
@@ -597,6 +693,52 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     ].join("\n")),
     responseSchema: reportComposerSchema,
   },
+  {
+    id: "alternative_explanation_searcher",
+    name: "AlternativeExplanationSearcher",
+    icon: "🔎",
+    description: "替代解释搜索",
+    contract: AGENT_CONTRACTS.alternative_explanation_searcher,
+    maxTokens: 900,
+    systemPrompt: withAgentContract("alternative_explanation_searcher", [
+      "你是红鲱鱼与枪的 AlternativeExplanationSearcher（替代解释搜索专家）。",
+      "你的工作方式像侦探找替代表：不否定现有证据，但主动寻找其他同样能解释观察结果的因果链。",
+      "你的任务是针对当前 claim 的因果断言，生成 2-4 条合理的替代解释。",
+      "每条替代解释必须：说明它能如何解释观察到的现象、指出它需要的额外前提、评估它与现有证据的兼容度。",
+      "不得捏造不存在的证据来支持替代解释；替代解释的价值在于它的逻辑合理性，不在于它已被证明。",
+      "如果找不到合理的替代解释，明确说明为什么现有因果链目前没有有力的竞争者。",
+      "",
+      "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
+      "{\n  \"alternativeExplanations\": [\n    {\n      \"hypothesis\": \"替代解释概述\",\n      \"mechanism\": \"如何解释观察现象\",\n      \"requiredAssumptions\": [\"前提1\"],\n      \"compatibilityWithEvidence\": \"与现有证据的兼容程度\",\n      \"plausibility\": \"high/medium/low\"\n    }\n  ],\n  \"conclusion\": \"综合评估：当前因果链是否排他\"\n}",
+      "alternativeExplanations 数组每项 2-4 条；plausibility 必须是 'high'、'medium' 或 'low'。",
+    ].join("\n")),
+    responseSchema: alternativeExplanationSearcherSchema,
+  },
+  {
+    id: "counter_evidence_grader",
+    name: "CounterEvidenceGrader",
+    icon: "⚖️",
+    description: "反证评分",
+    contract: AGENT_CONTRACTS.counter_evidence_grader,
+    maxTokens: 800,
+    systemPrompt: withAgentContract("counter_evidence_grader", [
+      "你是红鲱鱼与枪的 CounterEvidenceGrader（反证评分专家）。",
+      "你的工作方式像法官权衡：不预设立场，只评估现有证据对当前结论的支持度和反证力度。",
+      "你的任务是评估 FactChecker 和搜索结果的证据强度，对反证和证据缺口做降权评分。",
+      "",
+      "评估维度：",
+      "1. 反证强度 — 反证的数量、质量和来源权威性",
+      "2. 证据缺口 — 缺少哪些关键证据，这些缺口对结论的影响",
+      "3. 因果推断强度 — 现有证据是支持因果还是仅支持相关",
+      "4. 结论稳健性 — 如果新增证据，结论有多大可能改变",
+      "",
+      "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
+      "{\n  \"counterEvidenceScore\": -25,\n  \"evidenceGapScore\": -15,\n  \"overallConfidenceAdjustment\": -18,\n  \"breakdown\": {\n    \"counterEvidenceStrength\": \"评估说明\",\n    \"gapImpact\": \"缺口影响说明\",\n    \"causalInferenceStrength\": \"因果推断强度说明\"\n  },\n  \"recommendation\": \"建议的结论表达强度\"\n}",
+      "overallConfidenceAdjustment 是 -100 到 +20 的整数，负数表示反证/缺口需要降权。",
+      "recommendation 必须是 'strengthen'、'maintain'、'weaken' 或 'block' 之一。",
+    ].join("\n")),
+    responseSchema: counterEvidenceGraderSchema,
+  },
 ];
 
 // ───────────────────────────────────────────────────────────────
@@ -652,6 +794,32 @@ export function buildAgentInput(
         rumorTypes: prev?.output?.rumorTypes ?? [],
         rumorIndicators: prev?.output?.rumorIndicators ?? [],
         neededEvidence: prev?.output?.neededEvidence ?? [],
+      };
+    }
+
+    case "alternative_explanation_searcher": {
+      const rumorStep = previousSteps.find((s) => s.agent === "rumor_detector");
+      const factStep = previousSteps.find((s) => s.agent === "fact_checker");
+      return {
+        claim,
+        task: "为当前因果断言生成替代解释",
+        claimAtoms: rumorStep?.output?.claimAtoms ?? [],
+        factCheckResult: factStep?.output?.factCheckResult,
+        supportingEvidence: compactStrings(factStep?.output?.supportingEvidence, 4, 200),
+        contradictingSources: compactStrings(factStep?.output?.contradictingSources, 4, 200),
+      };
+    }
+
+    case "counter_evidence_grader": {
+      const factStep = previousSteps.find((s) => s.agent === "fact_checker");
+      return {
+        claim,
+        task: "评估反证和证据缺口对结论的影响",
+        factCheckResult: factStep?.output?.factCheckResult,
+        confidence: factStep?.output?.confidence,
+        counterEvidence: compactStrings(factStep?.output?.counterEvidence, 5, 200),
+        unresolvedEvidenceGaps: compactStrings(factStep?.output?.unresolvedEvidenceGaps, 4, 200),
+        contradictingSources: compactStrings(factStep?.output?.contradictingSources, 4, 200),
       };
     }
 
