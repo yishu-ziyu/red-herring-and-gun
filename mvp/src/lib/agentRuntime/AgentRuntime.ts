@@ -118,7 +118,7 @@ export class AgentRuntime {
       action: "planner_update",
       status: "completed",
       timestamp: Date.now(),
-      meta: { claimType: executionPlan.rationale.slice(0, 80) },
+      meta: { claimType: executionPlan.claimType },
     });
 
     onEvent?.(createToolStartEvent({
@@ -189,122 +189,17 @@ export class AgentRuntime {
       }
     }
 
-    emitSpeculativeRelay(onEvent, {
-      id: "relay-rumor-to-search",
-      title: "先派发可行动线索",
-      upstream: "Planner",
-      downstream: "RumorDetector",
-      trigger: "中控已经判定命题类型，先让分诊 Agent 提取可检索子问题。",
-      status: "running",
-      savedReason: "不用等最终报告，先把可验证问题拆出来。",
-      confidence: "medium",
-    });
+    let factStep: RuntimeStep;
+    let sourceStep: RuntimeStep;
+    let debate: ConsensusDebateUpdate;
 
-    steps.push(await this.runAgent({
-      agentId: "rumor_detector",
-      claim,
-      steps,
-      intakeMetadata,
-      visualExtraction,
-      memoryHits,
-      acceptedCandidateHits,
-      steeringQueue,
-      onEvent,
-    }));
-
-    emitSpeculativeRelay(onEvent, {
-      id: "relay-search-seeds",
-      title: "搜索提前接力",
-      upstream: "RumorDetector",
-      downstream: "360 AI Search",
-      trigger: firstActionableClaimSeed(steps[0]?.output, claim),
-      status: "running",
-      savedReason: "一旦分诊产出可检索线索，搜索与后续 Agent 准备可以重叠执行。",
-      confidence: "high",
-    });
-
-    onEvent?.(createToolStartEvent({
-      toolId: "parallel_search",
-      toolName: "Parallel Search",
-      query: claim,
-    }));
-    searchResult = await this.deps.getSearchForClaim(claim);
-    const searchToolName = getSearchToolName(searchResult);
-    if (searchResult._source === "tool-error") {
-      onEvent?.(createToolErrorEvent({
-        toolId: "parallel_search",
-        toolName: searchToolName,
-        query: claim,
-        error: searchResult.traceText ?? "搜索工具未返回真实结果。",
-        result: summarizeSearchResultForStream(searchResult),
-      }));
+    if (executionPlan.claimType === "concept") {
+      ({ factStep, sourceStep, searchResult, debate } =
+        await this.runConceptPipeline({ claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
     } else {
-      onEvent?.(createToolResultEvent({
-        toolId: "parallel_search",
-        toolName: searchToolName,
-        query: claim,
-        model: searchResult.model,
-        result: summarizeSearchResultForStream(searchResult),
-      }));
+      ({ factStep, sourceStep, searchResult, debate } =
+        await this.runStandardPipeline({ claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
     }
-
-    emitSpeculativeRelay(onEvent, {
-      id: "relay-search-to-agents",
-      title: "证据池进入并行 Agent",
-      upstream: searchToolName,
-      downstream: "FactChecker + SourceValidator",
-      trigger: summarizeSearchResultForStream(searchResult)?.answerPreview || "搜索返回来源、支持侧与反驳侧线索。",
-      status: "completed",
-      savedReason: "事实核查和信源审计可以并行消费同一份证据池。",
-      confidence: searchResult._source === "tool-error" ? "low" : "medium",
-    });
-
-    const [factStep, sourceStep] = await Promise.all([
-      this.runAgent({
-        agentId: "fact_checker",
-        claim,
-        steps,
-        searchResult,
-        intakeMetadata,
-        visualExtraction,
-        memoryHits,
-        acceptedCandidateHits,
-        steeringQueue,
-        onEvent,
-      }),
-      this.runAgent({
-        agentId: "source_validator",
-        claim,
-        steps,
-        searchResult,
-        intakeMetadata,
-        visualExtraction,
-        memoryHits,
-        acceptedCandidateHits,
-        steeringQueue,
-        onEvent,
-      }),
-    ]);
-    steps.push(factStep, sourceStep);
-
-    const debate = buildConsensusDebate(factStep, sourceStep, searchResult);
-    if (debate.status !== "not_needed") {
-      onEvent?.({
-        type: "consensus_debate_round",
-        phase: "handoff",
-        timestamp: Date.now(),
-        debate: {
-          ...debate,
-          status: "running",
-        },
-      });
-    }
-    onEvent?.({
-      type: "consensus_debate_final",
-      phase: "handoff",
-      timestamp: Date.now(),
-      debate,
-    });
 
     const reportStep = await this.runAgent({
       agentId: "report_composer",
@@ -568,6 +463,128 @@ export class AgentRuntime {
     });
 
     return step;
+  }
+
+  private async runStandardPipeline(args: {
+    claim: string;
+    steps: RuntimeStep[];
+    intakeMetadata?: ReturnType<typeof buildCaseIntakeMetadata>;
+    visualExtraction?: Record<string, unknown>;
+    memoryHits: Awaited<ReturnType<AgentMemoryStore["search"]>>;
+    acceptedCandidateHits: MemoryCandidateHit[];
+    steeringQueue: SteeringMessage[];
+    onEvent?: (event: AgentRuntimeEvent) => void;
+  }): Promise<{ factStep: RuntimeStep; sourceStep: RuntimeStep; searchResult: Search360Response; debate: ConsensusDebateUpdate }> {
+    const { claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent } = args;
+
+    emitSpeculativeRelay(onEvent, {
+      id: "relay-rumor-to-search",
+      title: "先派发可行动线索",
+      upstream: "Planner",
+      downstream: "RumorDetector",
+      trigger: "中控已经判定命题类型，先让分诊 Agent 提取可检索子问题。",
+      status: "running",
+      savedReason: "不用等最终报告，先把可验证问题拆出来。",
+      confidence: "medium",
+    });
+
+    steps.push(await this.runAgent({ agentId: "rumor_detector", claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
+
+    emitSpeculativeRelay(onEvent, {
+      id: "relay-search-seeds",
+      title: "搜索提前接力",
+      upstream: "RumorDetector",
+      downstream: "360 AI Search",
+      trigger: firstActionableClaimSeed(steps[0]?.output, claim),
+      status: "running",
+      savedReason: "一旦分诊产出可检索线索，搜索与后续 Agent 准备可以重叠执行。",
+      confidence: "high",
+    });
+
+    onEvent?.(createToolStartEvent({ toolId: "parallel_search", toolName: "Parallel Search", query: claim }));
+    const searchResult = await this.deps.getSearchForClaim(claim);
+    const searchToolName = getSearchToolName(searchResult);
+    if (searchResult._source === "tool-error") {
+      onEvent?.(createToolErrorEvent({ toolId: "parallel_search", toolName: searchToolName, query: claim, error: searchResult.traceText ?? "搜索工具未返回真实结果。", result: summarizeSearchResultForStream(searchResult) }));
+    } else {
+      onEvent?.(createToolResultEvent({ toolId: "parallel_search", toolName: searchToolName, query: claim, model: searchResult.model, result: summarizeSearchResultForStream(searchResult) }));
+    }
+
+    emitSpeculativeRelay(onEvent, {
+      id: "relay-search-to-agents",
+      title: "证据池进入并行 Agent",
+      upstream: searchToolName,
+      downstream: "FactChecker + SourceValidator",
+      trigger: summarizeSearchResultForStream(searchResult)?.answerPreview || "搜索返回来源、支持侧与反驳侧线索。",
+      status: "completed",
+      savedReason: "事实核查和信源审计可以并行消费同一份证据池。",
+      confidence: searchResult._source === "tool-error" ? "low" : "medium",
+    });
+
+    const [factStep, sourceStep] = await Promise.all([
+      this.runAgent({ agentId: "fact_checker", claim, steps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }),
+      this.runAgent({ agentId: "source_validator", claim, steps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }),
+    ]);
+    steps.push(factStep, sourceStep);
+
+    const debate = buildConsensusDebate(factStep, sourceStep, searchResult);
+    if (debate.status !== "not_needed") {
+      onEvent?.({ type: "consensus_debate_round", phase: "handoff", timestamp: Date.now(), debate: { ...debate, status: "running" } });
+    }
+    onEvent?.({ type: "consensus_debate_final", phase: "handoff", timestamp: Date.now(), debate });
+
+    return { factStep, sourceStep, searchResult, debate };
+  }
+
+  private async runConceptPipeline(_args: {
+    claim: string;
+    steps: RuntimeStep[];
+    intakeMetadata?: ReturnType<typeof buildCaseIntakeMetadata>;
+    visualExtraction?: Record<string, unknown>;
+    memoryHits: Awaited<ReturnType<AgentMemoryStore["search"]>>;
+    acceptedCandidateHits: MemoryCandidateHit[];
+    steeringQueue: SteeringMessage[];
+    onEvent?: (event: AgentRuntimeEvent) => void;
+  }): Promise<{ factStep: RuntimeStep; sourceStep: RuntimeStep; searchResult: Search360Response | undefined; debate: ConsensusDebateUpdate }> {
+    const { onEvent } = _args;
+
+    onEvent?.({
+      type: "speculative_update",
+      phase: "handoff",
+      timestamp: Date.now(),
+      relay: {
+        id: "relay-concept-skip-search",
+        title: "概念解释任务跳过事实搜证",
+        upstream: "Planner",
+        downstream: "ReportComposer",
+        trigger: "命题被判定为概念解释，直接进入语义分析和语境映射。",
+        status: "completed",
+        savedReason: "概念类问题不需要事实核查，避免把语义边界混淆当作事实争议。",
+        confidence: "medium",
+      },
+    });
+
+    onEvent?.({
+      type: "consensus_debate_final",
+      phase: "handoff",
+      timestamp: Date.now(),
+      debate: {
+        id: `debate-${Date.now()}`,
+        status: "not_needed",
+        title: "概念解释任务跳过事实核查与信源审计",
+        conflictCount: 0,
+        rounds: [],
+        finalConsensus: "概念解释任务不进入事实核查流水线，ReportComposer 直接按语义边界和语境映射生成结论。",
+        confidenceAdjustment: 0,
+      },
+    });
+
+    return {
+      factStep: { agent: "fact_checker", agentName: "FactChecker (skipped)", agentIcon: "", systemPrompt: "", input: {}, output: {}, evidenceBundle: buildAgentEvidenceBundle("fact_checker", {}), model: "runtime:skipped", latencyMs: 0, timestamp: Date.now(), status: "completed" },
+      sourceStep: { agent: "source_validator", agentName: "SourceValidator (skipped)", agentIcon: "", systemPrompt: "", input: {}, output: {}, evidenceBundle: buildAgentEvidenceBundle("source_validator", {}), model: "runtime:skipped", latencyMs: 0, timestamp: Date.now(), status: "completed" },
+      searchResult: undefined,
+      debate: { id: `debate-${Date.now()}`, status: "not_needed", title: "", conflictCount: 0, rounds: [], finalConsensus: "", confidenceAdjustment: 0 },
+    };
   }
 }
 

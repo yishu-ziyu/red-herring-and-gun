@@ -4191,11 +4191,16 @@ button:disabled {
   color: var(--agent-rumor);
   background: rgba(220, 38, 38, 0.07);
   font-size: 13px;
+  transition: transform 160ms ease-out;
 }
 
 .mission-cancel-btn:hover {
   border-color: rgba(220, 38, 38, 0.35);
   background: rgba(220, 38, 38, 0.11);
+}
+
+.mission-cancel-btn:active {
+  transform: scale(0.97);
 }
 
 .case-workbench-view {
@@ -4683,10 +4688,15 @@ button:disabled {
   color: var(--text-primary);
   background: transparent;
   text-align: left;
+  transition: transform 160ms ease-out, background 240ms ease-out;
 }
 
 .thinking-tree-row:hover {
   background: rgba(29, 29, 31, 0.045);
+}
+
+.thinking-tree-row:active {
+  transform: scale(0.97);
 }
 
 .thinking-tree-status {
@@ -6023,6 +6033,7 @@ button:disabled {
   padding: 8px 9px;
   text-align: left;
   background: #ffffff;
+  transition: transform 160ms ease-out, border-color 240ms ease-out, background 240ms ease-out;
 }
 
 .agent-team-row:hover,
@@ -6030,6 +6041,10 @@ button:disabled {
   border-color: rgba(43, 127, 216, 0.22);
   background: rgba(255, 255, 255, 0.94);
   box-shadow: none;
+}
+
+.agent-team-row:active {
+  transform: scale(0.97);
 }
 
 .agent-team-avatar {
@@ -7409,6 +7424,14 @@ button:disabled {
   .truth-stamp.visible {
     opacity: 0.85;
     transform: rotate(-15deg) scale(1);
+  }
+
+  /* Mission Control: remove transform-based motion, keep opacity/color transitions for comprehension */
+  .case-workbench-view *,
+  .case-workbench-view *::before,
+  .case-workbench-view *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
   }
 }
 
@@ -10311,14 +10334,21 @@ button:disabled {
   text-align: left;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(30, 34, 28, 0.025);
+  transition: transform 160ms ease-out, border-color 240ms ease-out, box-shadow 240ms ease-out;
 }
 
-.case-workbench-view.case-workbench-view--clean .controller-operation-row:hover,
-.case-workbench-view.case-workbench-view--clean .controller-operation-row--active,
-.case-workbench-view.case-workbench-view--clean .controller-agent-row:hover,
-.case-workbench-view.case-workbench-view--clean .controller-agent-row--active {
-  border-color: rgba(25, 163, 107, 0.22);
-  box-shadow: 0 6px 16px rgba(25, 163, 107, 0.055);
+.case-workbench-view.case-workbench-view--clean .controller-operation-row:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .case-workbench-view.case-workbench-view--clean .controller-operation-row:hover,
+  .case-workbench-view.case-workbench-view--clean .controller-operation-row--active,
+  .case-workbench-view.case-workbench-view--clean .controller-agent-row:hover,
+  .case-workbench-view.case-workbench-view--clean .controller-agent-row--active {
+    border-color: rgba(25, 163, 107, 0.22);
+    box-shadow: 0 6px 16px rgba(25, 163, 107, 0.055);
+  }
 }
 
 .case-workbench-view.case-workbench-view--clean .controller-operation-icon {
@@ -10373,6 +10403,11 @@ button:disabled {
   background: transparent;
   text-align: left;
   cursor: pointer;
+  transition: transform 160ms ease-out;
+}
+
+.case-workbench-view.case-workbench-view--clean .controller-agent-cluster-head:active {
+  transform: scale(0.97);
 }
 
 .case-workbench-view.case-workbench-view--clean .controller-agent-cluster-head span {
@@ -10405,6 +10440,11 @@ button:disabled {
   background: #f8f9f6;
   text-align: left;
   cursor: pointer;
+  transition: transform 160ms ease-out, border-color 240ms ease-out, box-shadow 240ms ease-out;
+}
+
+.case-workbench-view.case-workbench-view--clean .controller-agent-row:active {
+  transform: scale(0.97);
 }
 
 .case-workbench-view.case-workbench-view--clean .controller-agent-avatar {
@@ -11842,6 +11882,11 @@ button:disabled {
   background: #ffffff;
   text-align: left;
   cursor: pointer;
+  transition: transform 160ms ease-out, border-color 240ms ease-out, box-shadow 240ms ease-out;
+}
+
+.case-workbench-view.case-workbench-view--clean .controller-reading-tab:active {
+  transform: scale(0.97);
 }
 
 .case-workbench-view.case-workbench-view--clean .controller-reading-tab:disabled {
@@ -12016,11 +12061,18 @@ button:disabled {
   color: var(--case-ink);
   background: transparent;
   text-align: left;
+  transition: transform 160ms ease-out, background 240ms ease-out;
 }
 
-.case-path-node:hover,
-.case-path-node--active {
-  background: rgba(245, 243, 238, 0.95);
+.case-path-node:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .case-path-node:hover,
+  .case-path-node--active {
+    background: rgba(245, 243, 238, 0.95);
+  }
 }
 
 .case-path-node-index {
