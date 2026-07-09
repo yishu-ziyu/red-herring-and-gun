@@ -71,6 +71,7 @@ export interface AgentRuntimeDependencies {
   getSearchForClaim: (claim: string) => Promise<Search360Response>;
   getAgentTimeoutMs: (agentId: string) => number;
   getAgentReasoningEffort: (agentId: string) => AgentReasoningEffort;
+  callAgentWithFallback?: typeof import("./agentProviders").callAgentWithFallback;
   callVisionForIntake?: (args: {
     env: Record<string, string>;
     claim: string;
@@ -196,9 +197,15 @@ export class AgentRuntime {
     if (executionPlan.claimType === "concept") {
       ({ factStep, sourceStep, searchResult, debate } =
         await this.runConceptPipeline({ claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
+    } else if (executionPlan.claimType === "causal") {
+      ({ factStep, sourceStep, searchResult, debate } =
+        await this.runCausalPipeline({ claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
+    } else if (executionPlan.claimType === "event") {
+      ({ factStep, sourceStep, searchResult, debate } =
+        await this.runEventPipeline({ claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
     } else {
       ({ factStep, sourceStep, searchResult, debate } =
-        await this.runStandardPipeline({ claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
+        await this.runMixedPipeline({ claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
     }
 
     const reportStep = await this.runAgent({
@@ -379,8 +386,9 @@ export class AgentRuntime {
         timeoutMs,
         reasoningEffort,
       });
+      const agentCaller = this.deps.callAgentWithFallback ?? callAgentWithFallback;
       const result = await withRuntimeTimeout(
-        callAgentWithFallback({
+        agentCaller({
           systemPrompt: agentConfig.systemPrompt,
           userContent,
           responseSchema: agentConfig.responseSchema,
@@ -534,6 +542,85 @@ export class AgentRuntime {
     onEvent?.({ type: "consensus_debate_final", phase: "handoff", timestamp: Date.now(), debate });
 
     return { factStep, sourceStep, searchResult, debate };
+  }
+
+  private async runEventPipeline(args: {
+    claim: string;
+    steps: RuntimeStep[];
+    intakeMetadata?: ReturnType<typeof buildCaseIntakeMetadata>;
+    visualExtraction?: Record<string, unknown>;
+    memoryHits: Awaited<ReturnType<AgentMemoryStore["search"]>>;
+    acceptedCandidateHits: MemoryCandidateHit[];
+    steeringQueue: SteeringMessage[];
+    onEvent?: (event: AgentRuntimeEvent) => void;
+  }): Promise<{ factStep: RuntimeStep; sourceStep: RuntimeStep; searchResult: Search360Response; debate: ConsensusDebateUpdate }> {
+    // Event pipeline: same agent sequence as standard pipeline, extracted for traceability
+    return this.runStandardPipeline(args);
+  }
+
+  private async runCausalPipeline(args: {
+    claim: string;
+    steps: RuntimeStep[];
+    intakeMetadata?: ReturnType<typeof buildCaseIntakeMetadata>;
+    visualExtraction?: Record<string, unknown>;
+    memoryHits: Awaited<ReturnType<AgentMemoryStore["search"]>>;
+    acceptedCandidateHits: MemoryCandidateHit[];
+    steeringQueue: SteeringMessage[];
+    onEvent?: (event: AgentRuntimeEvent) => void;
+  }): Promise<{ factStep: RuntimeStep; sourceStep: RuntimeStep; searchResult: Search360Response; debate: ConsensusDebateUpdate }> {
+    const { claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent } = args;
+
+    // Step 1: standard fact-checking pipeline
+    const { factStep, sourceStep, searchResult } = await this.runStandardPipeline(args);
+
+    // Step 2: causal-specific enrichment agents (parallel)
+    const enrichedSteps = [...steps, factStep, sourceStep];
+    const [altStep, counterStep] = await Promise.all([
+      this.runAgent({ agentId: "alternative_explanation_searcher", claim, steps: enrichedSteps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }),
+      this.runAgent({ agentId: "counter_evidence_grader", claim, steps: enrichedSteps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }),
+    ]);
+    steps.push(factStep, sourceStep, altStep, counterStep);
+
+    // Step 3: consensus debate with causal-specific inputs
+    const causalDebate = buildCausalConsensusDebate(factStep, sourceStep, altStep, counterStep, searchResult);
+    if (causalDebate.status !== "not_needed") {
+      onEvent?.({ type: "consensus_debate_round", phase: "handoff", timestamp: Date.now(), debate: { ...causalDebate, status: "running" } });
+    }
+    onEvent?.({ type: "consensus_debate_final", phase: "handoff", timestamp: Date.now(), debate: causalDebate });
+
+    return { factStep, sourceStep, searchResult, debate: causalDebate };
+  }
+
+  private async runMixedPipeline(args: {
+    claim: string;
+    steps: RuntimeStep[];
+    intakeMetadata?: ReturnType<typeof buildCaseIntakeMetadata>;
+    visualExtraction?: Record<string, unknown>;
+    memoryHits: Awaited<ReturnType<AgentMemoryStore["search"]>>;
+    acceptedCandidateHits: MemoryCandidateHit[];
+    steeringQueue: SteeringMessage[];
+    onEvent?: (event: AgentRuntimeEvent) => void;
+  }): Promise<{ factStep: RuntimeStep; sourceStep: RuntimeStep; searchResult: Search360Response; debate: ConsensusDebateUpdate }> {
+    const { claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent } = args;
+
+    onEvent?.({
+      type: "speculative_update",
+      phase: "handoff",
+      timestamp: Date.now(),
+      relay: {
+        id: "relay-mixed-routing",
+        title: "混合断言逐项路由",
+        upstream: "Planner",
+        downstream: "RumorDetector",
+        trigger: "命题包含多种断言类型，需要逐条判断是否进入事实核查。",
+        status: "completed",
+        savedReason: "混合命题不能一刀切，每条子断言独立路由。",
+        confidence: "medium",
+      },
+    });
+
+    // Mixed pipeline: same agent sequence as event pipeline, with trace annotation
+    return this.runStandardPipeline(args);
   }
 
   private async runConceptPipeline(_args: {
@@ -814,6 +901,52 @@ function buildConsensusDebate(
     ],
     finalConsensus: "进入收束前，将高风险断言降级为证据允许的谨慎表达，并把缺失来源保留为后续追查问题。",
     confidenceAdjustment: Math.max(-18, -4 * Math.min(conflicts.length, 4)),
+  };
+}
+
+function buildCausalConsensusDebate(
+  factStep: RuntimeStep,
+  sourceStep: RuntimeStep,
+  altStep: RuntimeStep,
+  counterStep: RuntimeStep,
+  searchResult?: Search360Response
+): ConsensusDebateUpdate {
+  const baseDebate = buildConsensusDebate(factStep, sourceStep, searchResult);
+  if (baseDebate.status === "not_needed") {
+    return {
+      ...baseDebate,
+      title: "因果断言经替代解释和反证评估后无需调解",
+      finalConsensus: "FactChecker、SourceValidator、AlternativeExplanationSearcher 和 CounterEvidenceGrader 均未返回需要调解的显著冲突。ReportComposer 可直接按证据边界收束因果断言。",
+    };
+  }
+
+  const altHypotheses = Array.isArray(altStep.output.alternativeExplanations)
+    ? altStep.output.alternativeExplanations.map((e: any) => typeof e === "string" ? e : e?.hypothesis).filter(Boolean)
+    : [];
+  const counterScore = typeof counterStep.output.overallConfidenceAdjustment === "number"
+    ? counterStep.output.overallConfidenceAdjustment : 0;
+
+  return {
+    ...baseDebate,
+    title: "因果断言调解室（含替代解释和反证评估）",
+    conflictCount: baseDebate.conflictCount + altHypotheses.length,
+    rounds: [
+      ...baseDebate.rounds,
+      ...(altHypotheses.length > 0 ? [{
+        challenger: "AlternativeExplanationSearcher",
+        respondent: "FactChecker",
+        challenge: `找到 ${altHypotheses.length} 条替代解释：${altHypotheses.slice(0, 2).join("；")}`,
+        response: baseDebate.rounds[0]?.response ?? "事实层已记录现有证据边界",
+      }] : []),
+      ...(counterScore < -10 ? [{
+        challenger: "CounterEvidenceGrader",
+        respondent: "FactChecker",
+        challenge: `反证评分降权 ${counterScore} 分，证据缺口影响结论强度`,
+        response: "承认反证力度，结论需降级表达",
+      }] : []),
+    ],
+    finalConsensus: `${baseDebate.finalConsensus} 替代解释评估表明${altHypotheses.length > 0 ? "存在其他合理解释，不能将相关性直接等同于因果" : "当前因果链暂无有力竞争者"}。${counterScore < -10 ? "反证评分提示结论强度需进一步降级。" : ""}`,
+    confidenceAdjustment: Math.min(baseDebate.confidenceAdjustment, counterScore),
   };
 }
 
