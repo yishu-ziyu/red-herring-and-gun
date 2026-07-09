@@ -25,6 +25,7 @@ import {
   type CaseIntakePayload,
 } from "./orchestrateShared";
 import type { AgentRuntimeEvent, FollowUpTask, SteeringMessage } from "./types";
+import { getTraceCollector } from "../reasoningTrace";
 import type {
   ConsensusDebateUpdate,
   ExecutionDagClaimType,
@@ -109,6 +110,15 @@ export class AgentRuntime {
       timestamp: Date.now(),
       claim,
       plan: executionPlan,
+    });
+    const trace = getTraceCollector();
+    trace.setSessionId(sessionId);
+    trace.emit({
+      agent: "runtime",
+      action: "planner_update",
+      status: "completed",
+      timestamp: Date.now(),
+      meta: { claimType: executionPlan.rationale.slice(0, 80) },
     });
 
     onEvent?.(createToolStartEvent({
@@ -384,6 +394,7 @@ export class AgentRuntime {
   }): Promise<RuntimeStep> {
     const agentConfig = AGENT_CONFIGS.find((agent) => agent.id === agentId);
     if (!agentConfig) throw new Error(`Unknown agent: ${agentId}`);
+    const trace = getTraceCollector();
 
     onEvent?.(createAgentStartEvent({
       agent: agentId,
@@ -395,6 +406,12 @@ export class AgentRuntime {
 
     const stepStart = Date.now();
     const agentInput = buildAgentInput(agentId, claim, steps);
+    trace.emit({
+      agent: agentConfig.id,
+      action: `${agentConfig.name} started`,
+      status: "running",
+      timestamp: stepStart,
+    });
     if (intakeMetadata) agentInput.intake = intakeMetadata;
     if (visualExtraction) agentInput.visualExtraction = visualExtraction;
     if (memoryHits.length > 0 && agentId !== "report_composer") {
@@ -541,6 +558,14 @@ export class AgentRuntime {
       model: modelUsed,
       latencyMs: step.latencyMs,
     }));
+    trace.emit({
+      agent: agentConfig.id,
+      action: `${agentConfig.name} completed`,
+      status: step.status === "completed" ? "completed" : "failed",
+      timestamp: Date.now(),
+      latencyMs: step.latencyMs,
+      meta: step.status !== "completed" ? { code: "agent_failure", message: modelUsed } : undefined,
+    });
 
     return step;
   }

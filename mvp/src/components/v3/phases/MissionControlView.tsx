@@ -299,6 +299,32 @@ const AGENT_PROCESS_COPY: Record<string, { running: string[]; completed: string[
   },
 };
 
+const PUBLIC_REPORT_FALLBACK_REASON = "最终写作服务暂时不可用，系统已改用保守兜底报告。";
+const INFRASTRUCTURE_ERROR_PATTERNS = [
+  /ReportComposer/i,
+  /providers? failed/i,
+  /API error/i,
+  /quota\s+(?:exceeded|limit|exhausted)|(?:exceeded|insufficient)\s+quota/i,
+  /credits?\s+(?:limit|exhausted|exceeded)|insufficient\s+credits?/i,
+  /timeout|time out/i,
+  /Error:|Exception/i,
+  /\b(?:4\d\d|5\d\d)\b.*https?:\/\/\S+\/(?:v\d+|api)\b/i,
+  /https?:\/\/\S+\/(?:v\d+|api)\b.*\b(?:4\d\d|5\d\d)\b/i,
+  /调用失败|调用异常|超时/i,
+  /invalid api key/i,
+  /insufficient balance/i,
+];
+
+function sanitizePublicReportText(value: string) {
+  const text = value.trim();
+  if (!text) return "";
+  return INFRASTRUCTURE_ERROR_PATTERNS.some((pattern) => pattern.test(text)) ? PUBLIC_REPORT_FALLBACK_REASON : text;
+}
+
+function sanitizePublicReportArray(values: string[]) {
+  return values.map((value) => sanitizePublicReportText(value));
+}
+
 function normalizeAgent(agent?: string | null) {
   return (agent ?? "").trim().toLowerCase();
 }
@@ -1317,7 +1343,7 @@ function isDeterministicReportFallback(step: HandoffStep) {
 
 function deterministicFallbackReason(step: HandoffStep) {
   const reason = typeof step.output.fallbackReason === "string" ? step.output.fallbackReason.trim() : "";
-  return reason || "最终写作模型未返回稳定结构，系统已用确定性报告兜底，避免长时间挂起。";
+  return reason ? sanitizePublicReportText(reason) : "最终写作模型未返回稳定结构，系统已用确定性报告兜底，避免长时间挂起。";
 }
 
 function formatLatency(ms: number) {
@@ -1641,7 +1667,7 @@ function buildRuntimeChunk(stageId: string, type: ChunkType, content: string): S
 }
 
 function summarizeStepOutput(step: HandoffStep) {
-  const fallbackReason = typeof step.output.fallbackReason === "string" ? step.output.fallbackReason : "";
+  const fallbackReason = typeof step.output.fallbackReason === "string" ? sanitizePublicReportText(step.output.fallbackReason) : "";
   if (fallbackReason) {
     return `这一轮没有拿到可展示的核查结果。原因：${fallbackReason}`;
   }
@@ -1698,7 +1724,7 @@ function inferAtomicType(text: string): AtomicProposition["type"] {
 
 function reportText(report: Record<string, unknown> | null, key: string) {
   const value = report?.[key];
-  return typeof value === "string" ? value.trim() : "";
+  return typeof value === "string" ? sanitizePublicReportText(value) : "";
 }
 
 function reportNumber(report: Record<string, unknown> | null, key: string) {
@@ -1708,7 +1734,9 @@ function reportNumber(report: Record<string, unknown> | null, key: string) {
 
 function reportStringArray(report: Record<string, unknown> | null, key: string) {
   const value = report?.[key];
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+  return Array.isArray(value)
+    ? sanitizePublicReportArray(value.filter((item): item is string => typeof item === "string" && item.trim().length > 0))
+    : [];
 }
 
 function evidenceChainItems(report: Record<string, unknown> | null) {
@@ -1733,8 +1761,29 @@ function evidenceChainItems(report: Record<string, unknown> | null) {
     );
   }).map((item) => ({
     ...item,
+    finding: sanitizePublicReportText(item.finding),
+    evidence: sanitizePublicReportText(item.evidence),
+    boundary: sanitizePublicReportText(item.boundary),
     sourceRefs: item.sourceRefs.filter((source): source is string => typeof source === "string" && source.trim().length > 0),
   }));
+}
+
+function scoreBreakdownDimensions(report: Record<string, unknown> | null) {
+  const raw = report?._scoreBreakdown;
+  if (!raw || typeof raw !== "object") return [];
+  const breakdown = raw as Record<string, unknown>;
+  const items = [
+    { key: "factCheckSignal", label: "事实核查信号" },
+    { key: "searchSignal", label: "搜索证据信号" },
+    { key: "sourceSignal", label: "信源可靠信号" },
+  ];
+
+  return items.flatMap((item) => {
+    const value = breakdown[item.key];
+    return typeof value === "number" && Number.isFinite(value)
+      ? [{ label: item.label, score: value }]
+      : [];
+  });
 }
 
 function closureActionItems(report: Record<string, unknown> | null) {
@@ -1755,7 +1804,10 @@ function closureActionItems(report: Record<string, unknown> | null) {
       typeof value.content === "string" &&
       typeof value.status === "string"
     );
-  });
+  }).map((action) => ({
+    ...action,
+    content: sanitizePublicReportText(action.content),
+  }));
 }
 
 function confidenceDimensions(report: Record<string, unknown> | null) {
@@ -1778,7 +1830,10 @@ function confidenceDimensions(report: Record<string, unknown> | null) {
       typeof value.passed === "boolean" &&
       typeof value.reason === "string"
     );
-  });
+  }).map((dimension) => ({
+    ...dimension,
+    reason: sanitizePublicReportText(dimension.reason),
+  }));
 }
 
 function logicRiskItems(report: Record<string, unknown> | null) {
@@ -2202,6 +2257,18 @@ function MissionFinalReportPanel({
   const score = normalizeCredibilityScore(rawScore, verdictType, rawLabel);
   const confidenceScore = judgmentConfidenceScore(rawScore, verdictType, rawLabel);
   const dimensions = confidenceDimensions(finalReport);
+  const scoreBreakdown = scoreBreakdownDimensions(finalReport);
+  const scoreRows = dimensions.length > 0
+    ? dimensions.slice(0, 4).map((dimension) => ({
+        label: dimension.label,
+        value: `${dimension.score}/${dimension.threshold}`,
+        detail: dimension.reason,
+      }))
+    : scoreBreakdown.map((dimension) => ({
+        label: dimension.label,
+        value: dimension.score.toFixed(2),
+        detail: "",
+      }));
   const risks = logicRiskItems(finalReport);
   const verdictLabel = displayVerdictType(verdictType, score);
   const label = displayCredibilityLabel(rawLabel, verdictType, score);
@@ -2242,13 +2309,13 @@ function MissionFinalReportPanel({
         <div className="mission-score-explanation" aria-label="评分">
           <span>评分</span>
           <p>{scoreExplanation(score, verdictLabel, label)}</p>
-          {dimensions.length > 0 ? (
+          {scoreRows.length > 0 ? (
             <ul>
-              {dimensions.slice(0, 4).map((dimension) => (
+              {scoreRows.map((dimension) => (
                 <li key={dimension.label}>
                   <strong>{dimension.label}</strong>
-                  <span>{dimension.score}/{dimension.threshold}</span>
-                  <em>{dimension.reason}</em>
+                  <span>{dimension.value}</span>
+                  {dimension.detail ? <em>{dimension.detail}</em> : null}
                 </li>
               ))}
             </ul>
@@ -3986,7 +4053,8 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
 
       const completedJobs = await executeSearchJobs(jobs, { enableCounterSearch: true });
       dispatch({ type: "SET_SEARCH_JOBS", payload: completedJobs });
-      dispatch({ type: "SET_CONSENSUS_REPORT", payload: evaluateConsensus(completedJobs) });
+      const consensusReport = await evaluateConsensus(completedJobs);
+      dispatch({ type: "SET_CONSENSUS_REPORT", payload: consensusReport });
     },
     [dispatch]
   );
@@ -4180,7 +4248,8 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                 setCurrentStep(step);
 
                 if (isNonAuthenticStep(step)) {
-                  const message = `${step.agentName} 没有拿到可展示的核查结果，已停止展示结论。原因：${step.output.fallbackReason ?? "收到 demo-fallback 输出"}`;
+                  const fallbackReason = typeof step.output.fallbackReason === "string" ? sanitizePublicReportText(step.output.fallbackReason) : "收到 demo-fallback 输出";
+                  const message = `${step.agentName} 没有拿到可展示的核查结果，已停止展示结论。原因：${fallbackReason}`;
                   setOutputItems([message, "办案台不会把降级结果包装成真实核查。"]);
                   setErrorMessage(message);
                   setStartedAt(null);
