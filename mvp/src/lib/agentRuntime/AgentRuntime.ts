@@ -579,7 +579,7 @@ export class AgentRuntime {
       this.runAgent({ agentId: "alternative_explanation_searcher", claim, steps: enrichedSteps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }),
       this.runAgent({ agentId: "counter_evidence_grader", claim, steps: enrichedSteps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }),
     ]);
-    steps.push(factStep, sourceStep, altStep, counterStep);
+    steps.push(altStep, counterStep);
 
     // Step 3: consensus debate with causal-specific inputs
     const causalDebate = buildCausalConsensusDebate(factStep, sourceStep, altStep, counterStep, searchResult);
