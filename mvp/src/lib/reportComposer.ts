@@ -2,6 +2,8 @@ import type { DemoCase, FinalReport, GradedEvidence, Subclaim, SubclaimReportSta
 import { summarizeBiasFindings } from "./biasAudit";
 import { summarizeEvidenceQuality } from "./evidenceQuality";
 import { aggregateInferences } from "./inferenceLicense";
+import { buildAttentionGuidance } from "./attentionGuidance";
+import { writeFactDeskFromCase } from "./factDeskWriter";
 
 function candidateTitle(caseData: DemoCase, candidateId: string): string {
   return caseData.candidates.find((candidate) => candidate.id === candidateId)?.title ?? candidateId;
@@ -80,11 +82,79 @@ export function composeReport(caseData: DemoCase, grades: GradedEvidence[]): Fin
     )
   ).slice(0, 8);
 
+  const routeBlocks = caseData.routes
+    .map((r) => r.minimumOutputRule)
+    .filter(Boolean);
+
+  const planBlocks = caseData.searchPlans.flatMap((s) => s.mustNotInfer ?? []);
+
+  const aiJobBlocks = [
+    "不能从任务暴露度推出岗位已经减少。",
+    "不能从个别企业案例推出行业总体变化。",
+    "不能从同期变化推出 AI 导致岗位减少。",
+    "不能从初级内容岗位受影响推出文科生整体竞争力下降。",
+    "不能把任务被重组直接写成岗位消失。",
+  ];
+
+  const claimLooksAiJobs =
+    /AI|人工智能|内容岗位|初级内容|招聘/.test(caseData.originalClaim);
+
+  const doNotInfer = uniqueStrings(
+    [
+      ...routeBlocks,
+      ...planBlocks,
+      ...(claimLooksAiJobs ? aiJobBlocks : []),
+      ...strictBlocks,
+    ],
+    12,
+  );
+
+  const nextEvidenceNeeded = uniqueStrings(
+    [
+      ...caseData.routes.flatMap((r) => r.neededEvidence).slice(0, 6),
+      ...caseData.searchPlans.flatMap((s) => s.evidenceGaps ?? []).slice(0, 4),
+    ],
+    6,
+  );
+
+  const fallbackNext =
+    nextEvidenceNeeded.length > 0
+      ? nextEvidenceNeeded
+      : claimLooksAiJobs
+        ? [
+            "同一统计定义下的初级内容岗位招聘时间序列。",
+            "企业或行业采用生成式 AI 的时间和范围。",
+            "宏观经济、广告市场收缩、平台变化、企业降本等替代解释。",
+          ]
+        : ["可验证的原始文件或官方原文", "权威机构书面回应", "同口径独立复现证据"];
+
+  const inferenceLicense = aggregateInferences(grades, caseData.subclaims);
+
+  // Prompt A + F: fact-desk voice conclusion (case-native boundaries first)
+  const desk = writeFactDeskFromCase(caseData, grades, inferenceLicense, {
+    doNotInfer,
+    nextEvidenceNeeded: fallbackNext,
+  });
+
+  const cautiousConclusion = desk.lede;
+  const cannotSayMerged = uniqueStrings([...desk.cannotSay, ...doNotInfer], 12);
+  const canSayMerged = uniqueStrings([...desk.canSay], 8);
+
+  const attentionGuidance = buildAttentionGuidance({
+    conclusion: cautiousConclusion,
+    canSay: canSayMerged,
+    cannotSay: cannotSayMerged,
+    doNotInfer,
+    nextEvidenceNeeded: fallbackNext,
+    licenseAllowed: inferenceLicense.allowed.map((item) => item.text),
+    licenseBlocked: inferenceLicense.blocked.map((item) => item.text),
+    candidates: caseData.candidates,
+  });
+
   return {
     originalClaim: caseData.originalClaim,
     overallStatus: "原句过强",
-    allowedConclusion:
-      "生成式 AI 可能正在影响初级内容岗位的任务结构，也可能与部分岗位需求变化有关；但当前证据不足以确认它导致初级内容岗位减少。",
+    allowedConclusion: cautiousConclusion,
     claimDiagnosis: caseData.diagnosis,
     subclaimStatuses,
     evidenceChain: [
@@ -97,36 +167,33 @@ export function composeReport(caseData: DemoCase, grades: GradedEvidence[]): Fin
         ? `逻辑风险：${logicRiskItems.map((item) => item.label).join("；")}。`
         : "逻辑风险：未发现高优先级偏差，但仍需保持证据边界。",
     ],
-    doNotInfer: [
-      "不能从任务暴露度推出岗位已经减少。",
-      "不能从个别企业案例推出行业总体变化。",
-      "不能从同期变化推出 AI 导致岗位减少。",
-      "不能从初级内容岗位受影响推出文科生整体竞争力下降。",
-      "不能把任务被重组直接写成岗位消失。",
-      ...strictBlocks,
-    ],
+    doNotInfer: cannotSayMerged,
     rewrittenClaim: {
-      cautious:
-        "生成式 AI 可能正在改变初级内容岗位的任务结构，但现有材料不足以确认其导致岗位减少。",
-      publicFacing:
-        "AI 可能正在改变内容岗位的工作方式，但“AI 让这些岗位减少”这个说法还需要更多证据。",
-      researchMemo:
-        "在缺少同一统计定义下的岗位数据、AI 采用时间证据和替代解释检验前，应将 AI 视为潜在影响因素，而非已确认原因。",
+      cautious: cautiousConclusion,
+      publicFacing: desk.publicFacing,
+      researchMemo: desk.researchMemo,
     },
-    nextEvidenceNeeded: [
-      "同一统计定义下的初级内容岗位招聘时间序列。",
-      "企业或行业采用生成式 AI 的时间和范围。",
-      "宏观经济、广告市场收缩、平台变化、企业降本等替代解释。",
-      "内容岗位任务结构变化的机制证据。",
-      "反向证据：AI 是否创造新岗位或提高相关岗位需求。",
-    ],
+    nextEvidenceNeeded: desk.openQuestions.length > 0 ? desk.openQuestions : fallbackNext,
     evidenceQualitySummary,
     logicRiskItems,
     contradictionSummary:
       counterEvidence.length > 0
         ? `已纳入 ${counterEvidence.length} 条反证或限制性材料，最终结论需要保守表达。`
         : "当前证据链仍缺少反证检索结果，需要继续主动查找相反材料。",
-    // v2-iteration 2026-07-04: 报告级推理许可聚合 (PR-1)
-    inferenceLicense: aggregateInferences(grades, caseData.subclaims),
+    inferenceLicense,
+    attentionGuidance,
   };
+}
+
+function uniqueStrings(items: string[], max: number): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of items) {
+    const t = (raw ?? "").replace(/\s+/g, " ").trim();
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+    if (out.length >= max) break;
+  }
+  return out;
 }
