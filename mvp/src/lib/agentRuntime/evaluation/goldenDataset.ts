@@ -205,7 +205,7 @@ export const goldenDataset: GoldenCase[] = [
 
   {
     id: "TRAP-001",
-    claim: "研究表明某食物成分能抗癌",
+    claim: "某食物成分会导致癌症，研究已经证实",
     category: "causal",
     difficulty: "trap",
     domain: "health",
@@ -219,7 +219,7 @@ export const goldenDataset: GoldenCase[] = [
   },
   {
     id: "TRAP-002",
-    claim: "喝红酒软化血管，每天一杯有益心脏",
+    claim: "每天喝红酒会让血管软化，对心脏有益",
     category: "causal",
     difficulty: "trap",
     domain: "health",

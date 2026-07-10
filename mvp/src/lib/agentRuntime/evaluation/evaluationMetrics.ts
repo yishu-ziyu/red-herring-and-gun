@@ -42,10 +42,10 @@ export interface AggregateMetrics {
   failed: number;
   routingAccuracy: number;
   sequenceAccuracy: number;
-  verdictAccuracy: number;
+  verdictCorrectCount: number;
   credibilityAccuracy: number;
   hallucinationRate: number;
-  byCategory: Record<string, { total: number; passed: number; verdictAccuracy: number }>;
+  byCategory: Record<string, { total: number; passed: number; verdictCorrectCount: number }>;
   byDifficulty: Record<string, { total: number; passed: number }>;
   failures: Array<{ caseId: string; claim: string; reason: string }>;
 }
@@ -160,14 +160,14 @@ export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
   const credibilityCorrect = scores.filter((s) => s.credibilityInRange).length;
   const hallucinations = scores.filter((s) => s.hallucinationDetected).length;
 
-  const byCategory: Record<string, { total: number; passed: number; verdictAccuracy: number }> = {};
+  const byCategory: Record<string, { total: number; passed: number; verdictCorrectCount: number }> = {};
   const byDifficulty: Record<string, { total: number; passed: number }> = {};
 
   for (const s of scores) {
-    if (!byCategory[s.category]) byCategory[s.category] = { total: 0, passed: 0, verdictAccuracy: 0 };
+    if (!byCategory[s.category]) byCategory[s.category] = { total: 0, passed: 0, verdictCorrectCount: 0 };
     byCategory[s.category].total++;
     if (s.overallPass) byCategory[s.category].passed++;
-    if (s.verdictCorrect) byCategory[s.category].verdictAccuracy++;
+    if (s.verdictCorrect) byCategory[s.category].verdictCorrectCount++;
 
     if (!byDifficulty[s.difficulty]) byDifficulty[s.difficulty] = { total: 0, passed: 0 };
     byDifficulty[s.difficulty].total++;
@@ -195,6 +195,7 @@ export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
     routingAccuracy: total > 0 ? routingCorrect / total : 0,
     sequenceAccuracy: total > 0 ? sequenceCorrect / total : 0,
     verdictAccuracy: total > 0 ? verdictCorrect / total : 0,
+    verdictCorrectCount: verdictCorrect,
     credibilityAccuracy: total > 0 ? credibilityCorrect / total : 0,
     hallucinationRate: total > 0 ? hallucinations / total : 0,
     byCategory,
