@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Change B + C 预览 · 来源芯片 + Attention Rail</title>
+  <style>
+    :root {
+      --cream: #fefcf6;
+      --ink: #1a1614;
+      --muted: #6b625a;
+      --line: #e8e0d4;
+      --panel: #fffdf9;
+      --serif: "Noto Serif SC", "Songti SC", Georgia, serif;
+      --sans: "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      background: var(--cream);
+      color: var(--ink);
+      padding: 36px 20px 72px;
+    }
+    .wrap { max-width: 960px; margin: 0 auto; }
+    .eyebrow { color: #b91c1c; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; }
+    h1 { font-family: var(--serif); font-size: 28px; margin: 8px 0; line-height: 1.25; }
+    .sub { color: var(--muted); font-size: 14px; line-height: 1.65; margin-bottom: 20px; max-width: 58ch; }
+    .dock {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 16px 40px rgba(26,22,20,0.06);
+    }
+    .badge {
+      display: inline-flex; padding: 4px 10px; border-radius: 999px;
+      background: #fffbeb; color: #b45309; border: 1px solid #fde68a;
+      font-size: 12px; font-weight: 700;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1.55fr 0.9fr;
+      gap: 20px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+    .lede {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: 17.5px;
+      line-height: 1.9;
+    }
+    .claim-span { border-radius: 2px; }
+    .claim-span--assert { background: linear-gradient(transparent 62%, rgba(22,163,74,0.14) 62%); }
+    .claim-span--hedge { background: linear-gradient(transparent 62%, rgba(180,140,60,0.14) 62%); }
+    .claim-span--gap { background: linear-gradient(transparent 58%, rgba(217,119,6,0.18) 58%); }
+    .claim-span--blocked { background: linear-gradient(transparent 58%, rgba(185,28,28,0.14) 58%); }
+    .source-chip {
+      display: inline;
+      margin-left: 0.25em;
+      font-family: var(--sans);
+      font-size: 0.72em;
+      font-weight: 600;
+      color: #3f6212;
+      text-decoration: underline;
+      text-decoration-color: rgba(101,163,13,0.45);
+      text-underline-offset: 0.18em;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .source-chip.contra {
+      color: #9a3412;
+      text-decoration-color: rgba(234,88,12,0.4);
+    }
+    .rail {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      background: #fff;
+    }
+    .rail h3 { margin: 0; font-family: var(--serif); font-size: 15px; }
+    .rail .sub { margin: 4px 0 12px; font-size: 11px; color: var(--muted); }
+    .rail-item {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 8px;
+      padding: 8px 0;
+      border-top: 1px solid #f0ebe3;
+    }
+    .rail-item:first-of-type { border-top: 0; }
+    .idx {
+      width: 22px; height: 22px; border-radius: 7px;
+      display: grid; place-items: center;
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      background: rgba(0,0,0,0.04);
+    }
+    .rail-item strong { display: block; font-size: 12.5px; margin-bottom: 2px; }
+    .rail-item span { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+    .note {
+      margin-top: 18px; font-size: 13px; color: var(--muted); line-height: 1.65;
+      border-left: 3px solid #b91c1c; padding-left: 12px;
+    }
+    .legend {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .legend div {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: var(--muted);
+    }
+    .legend strong { color: var(--ink); }
+    @media (max-width: 800px) {
+      .row, .legend { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="eyebrow">Try · Change B + Change C</div>
+    <h1>来源芯片 + 先看这 3 处</h1>
+    <p class="sub">
+      B：句内绿色下划线指向<strong>外部来源名</strong>（不是「可说」标签）。
+      C：右侧只推 3 处，用正文摘要，不写 P0 黑话。
+      不好就整段回滚。
+    </p>
+
+    <section class="dock">
+      <span class="badge">存疑 · 先别转发</span>
+      <div class="row">
+        <p class="lede">
+          <span class="claim-span claim-span--hedge">生成式 AI 可能正在改变初级内容岗位的任务结构</span><a class="source-chip" href="#">写作岗位暴露度研究 ↗</a><a class="source-chip" href="#">招聘数据时间序列 ↗</a><span class="claim-span claim-span--gap">，但现有材料不足以确认其导致岗位减少。</span>
+          <span class="claim-span claim-span--blocked">不能把任务暴露度直接写成岗位已经消失。</span>
+          <a class="source-chip contra" href="#">新增 AI 内容岗位 ↗</a>
+        </p>
+        <aside class="rail">
+          <h3>先看这 3 处</h3>
+          <p class="sub">按风险排序，不是证据全量列表</p>
+          <div class="rail-item">
+            <div class="idx">1</div>
+            <div>
+              <strong>不能把任务暴露度直接写成岗位已经消失</strong>
+              <span>这条推不出去，先别当结论转发</span>
+            </div>
+          </div>
+          <div class="rail-item">
+            <div class="idx">2</div>
+            <div>
+              <strong>不足以确认其导致岗位减少</strong>
+              <span>还缺：同一统计定义下的岗位时间序列</span>
+            </div>
+          </div>
+          <div class="rail-item">
+            <div class="idx">3</div>
+            <div>
+              <strong>新增 AI 内容岗位</strong>
+              <span>这里有反方向材料，建议先点开</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <div class="legend">
+      <div>
+        <strong>B 在做的事</strong><br />
+        像 ChatGPT 引用那样，把句子和来源钉在一起。芯片说的是「谁说的」，不是「系统觉得这句怎样」。
+      </div>
+      <div>
+        <strong>C 在做的事</strong><br />
+        帮你决定先看哪三处。标题尽量用结论里的原话切片，避免伪人元标签。
+      </div>
+    </div>
+
+    <div class="note">
+      产品代码已接线：<code>ClaimSpanText</code> 来源芯片 + <code>AttentionRail</code> + <code>ConclusionDockV3</code>。
+      你说好就留；说不好我回滚 B/C 相关 diff。
+    </div>
+  </div>
+</body>
+</html>
