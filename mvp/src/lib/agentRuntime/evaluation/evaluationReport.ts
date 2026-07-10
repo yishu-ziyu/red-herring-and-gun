@@ -57,14 +57,14 @@ export async function readHistory(): Promise<ReportEntry[]> {
  * Compute delta between the latest and previous report.
  */
 export function computeDelta(current: AggregateMetrics, previous: AggregateMetrics | null): {
-  verdictAccuracyDelta: number;
+  verdictCorrectDelta: number;
   routingAccuracyDelta: number;
   hallucinationRateDelta: number;
   passedDelta: number;
 } {
   if (!previous) {
     return {
-      verdictAccuracyDelta: 0,
+      verdictCorrectDelta: 0,
       routingAccuracyDelta: 0,
       hallucinationRateDelta: 0,
       passedDelta: 0,
@@ -72,7 +72,7 @@ export function computeDelta(current: AggregateMetrics, previous: AggregateMetri
   }
 
   return {
-    verdictAccuracyDelta: current.verdictAccuracy - previous.verdictAccuracy,
+    verdictCorrectDelta: current.verdictCorrectCount / current.totalCases - previous.verdictCorrectCount / previous.totalCases,
     routingAccuracyDelta: current.routingAccuracy - previous.routingAccuracy,
     hallucinationRateDelta: current.hallucinationRate - previous.hallucinationRate,
     passedDelta: current.passed - previous.passed,
@@ -102,7 +102,7 @@ export function generateMarkdownReport(
   lines.push(`|--------|-------|-------|`);
   lines.push(`| Total cases | ${aggregate.totalCases} | — |`);
   lines.push(`| Passed | ${aggregate.passed}/${aggregate.totalCases} | ${delta.passedDelta >= 0 ? "+" : ""}${delta.passedDelta} |`);
-  lines.push(`| Verdict accuracy | ${(aggregate.verdictAccuracy * 100).toFixed(1)}% | ${delta.verdictAccuracyDelta >= 0 ? "+" : ""}${(delta.verdictAccuracyDelta * 100).toFixed(1)}% |`);
+  lines.push(`| Verdict accuracy | ${(aggregate.verdictCorrectCount / aggregate.totalCases * 100).toFixed(1)}% | ${delta.verdictCorrectDelta >= 0 ? "+" : ""}${(delta.verdictCorrectDelta * 100).toFixed(1)}% |`);
   lines.push(`| Routing accuracy | ${(aggregate.routingAccuracy * 100).toFixed(1)}% | ${delta.routingAccuracyDelta >= 0 ? "+" : ""}${(delta.routingAccuracyDelta * 100).toFixed(1)}% |`);
   lines.push(`| Hallucination rate | ${(aggregate.hallucinationRate * 100).toFixed(1)}% | ${delta.hallucinationRateDelta >= 0 ? "+" : ""}${(delta.hallucinationRateDelta * 100).toFixed(1)}% |`);
   lines.push("");
@@ -113,7 +113,7 @@ export function generateMarkdownReport(
   lines.push(`| Category | Total | Passed | Verdict Accuracy |`);
   lines.push(`|----------|-------|--------|-----------------|`);
   for (const [cat, stats] of Object.entries(aggregate.byCategory)) {
-    lines.push(`| ${cat} | ${stats.total} | ${stats.passed} | ${(stats.verdictAccuracy * 100).toFixed(1)}% |`);
+    lines.push(`| ${cat} | ${stats.total} | ${stats.passed} | ${(stats.verdictCorrectCount / stats.total * 100).toFixed(1)}% |`);
   }
   lines.push("");
 
@@ -146,9 +146,9 @@ export function generateMarkdownReport(
   lines.push("");
   lines.push(`| Metric | Threshold | Current | Status |`);
   lines.push(`|--------|-----------|---------|--------|`);
-  const verdictOk = aggregate.verdictAccuracy >= 0.80;
+  const verdictOk = aggregate.verdictCorrectCount / aggregate.totalCases >= 0.80;
   const hallucOk = aggregate.hallucinationRate <= 0.10;
-  lines.push(`| Verdict accuracy | ≥ 80% | ${(aggregate.verdictAccuracy * 100).toFixed(1)}% | ${verdictOk ? "PASS" : "FAIL"} |`);
+  lines.push(`| Verdict accuracy | ≥ 80% | ${(aggregate.verdictCorrectCount / aggregate.totalCases * 100).toFixed(1)}% | ${verdictOk ? "PASS" : "FAIL"} |`);
   lines.push(`| Hallucination rate | ≤ 10% | ${(aggregate.hallucinationRate * 100).toFixed(1)}% | ${hallucOk ? "PASS" : "FAIL"} |`);
   lines.push(`| Routing accuracy | ≥ 95% | ${(aggregate.routingAccuracy * 100).toFixed(1)}% | ${aggregate.routingAccuracy >= 0.95 ? "PASS" : "FAIL"} |`);
   lines.push("");
