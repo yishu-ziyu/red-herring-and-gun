@@ -1784,6 +1784,103 @@ button:disabled {
   font-style: italic;
 }
 
+/* ── Attention Guidance Change A: conclusion ClaimSpan sequence ── */
+.claim-span-text.conclusion-lede,
+.claim-span-text.conclusion-lede--in-row {
+  font-style: normal;
+}
+
+.claim-span {
+  display: inline;
+  border-radius: 3px;
+  transition: background-color var(--motion-fade, 0.2s ease), box-shadow var(--motion-fade, 0.2s ease);
+}
+
+.claim-span--assert {
+  background: linear-gradient(transparent 62%, rgba(22, 163, 74, 0.14) 62%);
+}
+
+.claim-span--hedge {
+  background: linear-gradient(transparent 62%, rgba(180, 140, 60, 0.12) 62%);
+  color: var(--zt-text);
+}
+
+.claim-span--gap {
+  background: linear-gradient(transparent 58%, rgba(217, 119, 6, 0.18) 58%);
+  box-shadow: inset 0 -1px 0 rgba(217, 119, 6, 0.35);
+}
+
+.claim-span--blocked {
+  background: linear-gradient(transparent 58%, rgba(185, 28, 28, 0.14) 58%);
+  box-shadow: inset 0 -1px 0 rgba(185, 28, 28, 0.28);
+}
+
+.claim-span--context {
+  background: transparent;
+}
+
+/* Change B: outward source chips (editorial citation, not meta labels) */
+.source-chip {
+  display: inline;
+  margin: 0 0.15em 0 0.25em;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 0.72em;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: inherit;
+  vertical-align: baseline;
+  color: #3f6212;
+  text-decoration: underline;
+  text-decoration-color: rgba(101, 163, 13, 0.45);
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.source-chip:hover {
+  color: #365314;
+  text-decoration-color: rgba(77, 124, 15, 0.75);
+}
+
+.source-chip--contradict {
+  color: #9a3412;
+  text-decoration-color: rgba(234, 88, 12, 0.4);
+}
+
+.source-chip--background {
+  color: #57534e;
+  text-decoration-color: rgba(120, 113, 108, 0.4);
+}
+
+.source-chip--folded {
+  font-style: italic;
+}
+
+.source-chip-arrow {
+  font-size: 0.9em;
+  margin-left: 0.08em;
+  opacity: 0.7;
+}
+
+/* Boundary list: structure only, no pseudo-human "可说/不可说" chips */
+.boundary-span--gap {
+  color: var(--zt-text);
+}
+
+.boundary-span--blocked {
+  color: var(--zt-text);
+}
+
+.boundary-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--zt-text-muted);
+}
+
 /* ── Boundary panel: canSay / cannotSay (杂志分栏) ── */
 .boundary-panel {
   grid-column: 1 / -1;

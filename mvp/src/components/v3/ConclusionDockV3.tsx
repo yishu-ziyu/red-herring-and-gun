@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import type { FinalReport, DemoCase } from "../../lib/schemas";
 import type { VerificationResult } from "../../lib/reportExporter";
 import {
@@ -11,10 +11,13 @@ import {
   shareVerification,
   type ClosureReportPayload,
 } from "../../lib/reportExporter";
+import { buildAttentionGuidanceFromReport } from "../../lib/attentionGuidance";
+import type { SourceRef } from "../../lib/schemas";
 import { ReportModal } from "./ReportModal";
 import { InferenceLicensePanel } from "./panels/InferenceLicensePanel";
 import { ScoreRail } from "./panels/ScoreRail";
 import { getTraceCollector } from "../../lib/reasoningTrace";
+import { BoundarySpanList, ClaimSpanText } from "./ClaimSpanText";
 
 interface ConclusionDockV3Props {
   report: FinalReport;
@@ -72,6 +75,28 @@ export function ConclusionDockV3({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
   const [archiveCount, setArchiveCount] = useState(() => getDoubtfulArchiveCount());
+  // Change A/B/D: spans + source chips + boundaries (C Attention Rail removed by product decision)
+  const attentionGuidance = useMemo(() => {
+    if (exploring) return null;
+    return buildAttentionGuidanceFromReport(
+      report,
+      {
+        conclusion: handoffResult?.conclusion,
+        canSay: handoffResult?.canSay,
+        cannotSay: handoffResult?.cannotSay,
+      },
+      caseData.candidates,
+    );
+  }, [exploring, report, handoffResult, caseData.candidates]);
+
+  const handleSourceOpen = useCallback((source: SourceRef) => {
+    // v1: surface source identity; full EvidenceDetailDrawer wire is later
+    setActionMessage(
+      source.domain
+        ? `来源：${source.title}（${source.domain}）`
+        : `来源：${source.title}`,
+    );
+  }, []);
 
   // v2-iteration 2026-07-04: PR-3 Site C — emit terminal trace when report finalized (review P2-2 + P3-1 + P3-3 fix)
   useEffect(() => {
@@ -147,13 +172,56 @@ export function ConclusionDockV3({
           </em>
         </div>
 
-        <p className="conclusion-lede cinema-rise cinema-rise-d2">
-          {exploring
-            ? "系统正在沿你选择的节点进行深度核查，调用中控 LLM 和子 Agent。"
-            : handoffResult?.conclusion ?? report.rewrittenClaim.cautious}
-        </p>
+        {exploring ? (
+          <p className="conclusion-lede cinema-rise cinema-rise-d2">
+            系统正在沿你选择的节点进行深度核查，调用中控 LLM 和子 Agent。
+          </p>
+        ) : attentionGuidance && attentionGuidance.spans.length > 0 ? (
+          <ClaimSpanText
+            spans={attentionGuidance.spans}
+            className="conclusion-lede cinema-rise cinema-rise-d2"
+            onSourceOpen={handleSourceOpen}
+          />
+        ) : (
+          <p className="conclusion-lede cinema-rise cinema-rise-d2">
+            {handoffResult?.conclusion ?? report.rewrittenClaim.cautious}
+          </p>
+        )}
 
-        {(handoffResult?.canSay || handoffResult?.cannotSay) && !exploring && (
+        {!exploring &&
+          attentionGuidance &&
+          (attentionGuidance.canSaySpans.length > 0 ||
+            attentionGuidance.cannotSaySpans.length > 0) && (
+          <div className="boundary-panel cinema-rise cinema-rise-d3">
+            <div className="boundary-col boundary-col--allowed">
+              <h4 className="boundary-col-title">
+                <span className="boundary-col-dot boundary-col-dot--allowed" />
+                可以说
+              </h4>
+              <BoundarySpanList
+                spans={attentionGuidance.canSaySpans}
+                emptyLabel="暂无可说边界"
+              />
+            </div>
+            <div className="boundary-col boundary-col--blocked">
+              <h4 className="boundary-col-title">
+                <span className="boundary-col-dot boundary-col-dot--blocked" />
+                不能说
+              </h4>
+              <BoundarySpanList
+                spans={attentionGuidance.cannotSaySpans}
+                emptyLabel="暂无不可说边界"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Fallback: raw handoff lists when guidance produced empty boundaries but handoff has text */}
+        {!exploring &&
+          attentionGuidance &&
+          attentionGuidance.canSaySpans.length === 0 &&
+          attentionGuidance.cannotSaySpans.length === 0 &&
+          (handoffResult?.canSay?.length || handoffResult?.cannotSay?.length) ? (
           <div className="boundary-panel cinema-rise cinema-rise-d3">
             <div className="boundary-col boundary-col--allowed">
               <h4 className="boundary-col-title">
@@ -161,8 +229,10 @@ export function ConclusionDockV3({
                 可以说
               </h4>
               <ul className="boundary-list">
-                {(handoffResult.canSay ?? []).map((item, i) => (
-                  <li key={i} className="boundary-list-item">{item}</li>
+                {(handoffResult?.canSay ?? []).map((item, i) => (
+                  <li key={i} className="boundary-list-item">
+                    {item}
+                  </li>
                 ))}
               </ul>
             </div>
@@ -172,13 +242,18 @@ export function ConclusionDockV3({
                 不能说
               </h4>
               <ul className="boundary-list">
-                {(handoffResult.cannotSay ?? []).map((item, i) => (
-                  <li key={i} className="boundary-list-item">{item}</li>
+                {(handoffResult?.cannotSay ?? []).map((item, i) => (
+                  <li
+                    key={i}
+                    className="boundary-list-item boundary-span boundary-span--blocked"
+                  >
+                    {item}
+                  </li>
                 ))}
               </ul>
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* v2-iteration 2026-07-04: PR-1 报告级推理许可聚合 */}
         {!exploring && report.inferenceLicense ? (
