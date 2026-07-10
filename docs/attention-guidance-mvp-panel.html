@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>注意力引导 · Visual MVP Panel</title>
+  <style>
+    :root {
+      --cream: #fefcf6;
+      --ink: #1a1614;
+      --ink-soft: #3d3530;
+      --muted: #6b625a;
+      --line: #e8e0d4;
+      --red: #b91c1c;
+      --red-soft: #fef2f2;
+      --green: #15803d;
+      --green-soft: #f0fdf4;
+      --amber: #b45309;
+      --amber-soft: #fffbeb;
+      --blue: #1d4ed8;
+      --blue-soft: #eff6ff;
+      --panel: #fffdf9;
+      --shadow: 0 18px 50px rgba(26, 22, 20, 0.08);
+      --serif: "Noto Serif SC", "Songti SC", "Source Han Serif SC", Georgia, serif;
+      --sans: "Noto Sans SC", "PingFang SC", "Helvetica Neue", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 12% 8%, #fff7ed 0%, transparent 35%),
+        radial-gradient(circle at 88% 0%, #fef2f2 0%, transparent 28%),
+        var(--cream);
+      color: var(--ink);
+      font-family: var(--sans);
+      min-height: 100vh;
+    }
+
+    .page {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 40px 28px 80px;
+    }
+
+    header.hero {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 28px;
+      margin-bottom: 28px;
+      align-items: end;
+    }
+
+    .eyebrow {
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--red);
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-family: var(--serif);
+      font-size: 36px;
+      line-height: 1.2;
+      margin: 0 0 12px;
+      font-weight: 700;
+    }
+
+    .lead {
+      margin: 0;
+      color: var(--ink-soft);
+      font-size: 15px;
+      line-height: 1.7;
+      max-width: 52ch;
+    }
+
+    .meta-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px 18px 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .meta-card h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .meta-card ol {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--ink-soft);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .stage-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 8px 0 14px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .stage-label::before {
+      content: "";
+      width: 28px;
+      height: 1px;
+      background: var(--line);
+    }
+
+    /* Main mock stage */
+    .stage {
+      position: relative;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+      overflow: visible;
+    }
+
+    .stage-grid {
+      display: grid;
+      grid-template-columns: 1.55fr 0.9fr;
+      gap: 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .dock {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fff;
+      padding: 22px 22px 18px;
+    }
+
+    .dock-kicker {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .badge.warn {
+      background: var(--amber-soft);
+      color: var(--amber);
+      border: 1px solid #fde68a;
+    }
+
+    .score {
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .claim-original {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .conclusion-title {
+      font-family: var(--serif);
+      font-size: 22px;
+      line-height: 1.45;
+      margin: 0 0 16px;
+      color: var(--ink);
+    }
+
+    .body-text {
+      font-size: 15px;
+      line-height: 1.9;
+      color: var(--ink-soft);
+    }
+
+    /* Inline citation chips */
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin: 0 2px;
+      padding: 1px 8px 2px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.6;
+      vertical-align: baseline;
+      text-decoration: none;
+      border: 1px solid transparent;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .chip:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.06); }
+    .chip.support { background: var(--green-soft); color: var(--green); border-color: #bbf7d0; }
+    .chip.contradict { background: var(--red-soft); color: var(--red); border-color: #fecaca; }
+    .chip.gap { background: var(--amber-soft); color: var(--amber); border-color: #fde68a; }
+    .chip.blocked { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+    .chip .arrow { font-size: 10px; opacity: 0.8; }
+
+    .span-p0 {
+      background: linear-gradient(transparent 60%, rgba(185, 28, 28, 0.12) 60%);
+      border-radius: 2px;
+    }
+
+    .lists {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .list-box {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fffcf7;
+    }
+
+    .list-box h3 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .list-box ul {
+      margin: 0;
+      padding-left: 16px;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--ink-soft);
+    }
+
+    /* Attention Rail */
+    .rail {
+      border: 1px solid #fecaca;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #fff 0%, #fff8f6 100%);
+      padding: 18px;
+      position: relative;
+    }
+
+    .rail h3 {
+      margin: 0 0 4px;
+      font-family: var(--serif);
+      font-size: 18px;
+    }
+
+    .rail .sub {
+      margin: 0 0 14px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .rail-item {
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      gap: 10px;
+      padding: 10px 0;
+      border-top: 1px solid #f1e4dc;
+    }
+    .rail-item:first-of-type { border-top: 0; }
+
+    .prio {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+    .prio.p0 { background: var(--red-soft); color: var(--red); }
+    .prio.p1 { background: var(--amber-soft); color: var(--amber); }
+    .prio.p2 { background: var(--blue-soft); color: var(--blue); }
+
+    .rail-item strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 2px;
+    }
+    .rail-item span {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .rail-cta {
+      margin-top: 12px;
+      width: 100%;
+      border: 1px dashed #fca5a5;
+      background: #fff;
+      color: var(--red);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* Annotation layer */
+    .annotations {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .callout {
+      position: absolute;
+      pointer-events: none;
+      max-width: 220px;
+    }
+
+    .callout .bubble {
+      background: var(--ink);
+      color: #fffdf8;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.55;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.18);
+    }
+
+    .callout .bubble b {
+      display: block;
+      color: #fca5a5;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .callout .stem {
+      position: absolute;
+      background: var(--ink);
+      transform-origin: top left;
+    }
+
+    .callout .dot {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--red);
+      border: 2px solid #fff;
+      box-shadow: 0 0 0 2px var(--ink);
+    }
+
+    /* Specific callout placements */
+    .c1 { top: 58px; left: 52%; }
+    .c1 .stem {
+      width: 2px;
+      height: 52px;
+      left: 24px;
+      top: 100%;
+      background: linear-gradient(var(--ink), transparent);
+    }
+    .c1 .dot { left: 20px; top: calc(100% + 48px); }
+
+    .c2 { top: 168px; right: -8px; }
+    .c2 .stem {
+      width: 64px;
+      height: 2px;
+      right: 100%;
+      top: 28px;
+    }
+    .c2 .dot { right: calc(100% + 60px); top: 24px; }
+
+    .c3 { bottom: 88px; left: 8%; }
+    .c3 .stem {
+      width: 2px;
+      height: 36px;
+      left: 40px;
+      bottom: 100%;
+    }
+    .c3 .dot { left: 36px; bottom: calc(100% + 32px); }
+
+    .c4 { top: 12px; right: 18%; }
+    .c4 .bubble { background: #7f1d1d; }
+    .c4 .stem {
+      width: 2px;
+      height: 28px;
+      left: 18px;
+      top: 100%;
+    }
+    .c4 .dot { left: 14px; top: calc(100% + 24px); }
+
+    .legend {
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .legend-card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+    }
+
+    .legend-card h4 {
+      margin: 0 0 6px;
+      font-size: 13px;
+    }
+
+    .legend-card p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .next-bar {
+      margin-top: 22px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      padding: 16px 18px;
+      border-radius: 14px;
+      background: #1a1614;
+      color: #fff8f0;
+    }
+
+    .next-bar p {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.6;
+      opacity: 0.92;
+    }
+
+    .next-bar code {
+      background: rgba(255,255,255,0.08);
+      padding: 1px 6px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
+    .ask-box {
+      margin-top: 16px;
+      border: 1px dashed #d6d3d1;
+      border-radius: 14px;
+      padding: 14px 16px;
+      background: rgba(255,255,255,0.55);
+      font-size: 13px;
+      color: var(--ink-soft);
+      line-height: 1.65;
+    }
+
+    .ask-box strong { color: var(--red); }
+
+    @media (max-width: 980px) {
+      header.hero, .stage-grid, .lists, .legend { grid-template-columns: 1fr; }
+      .annotations { display: none; }
+      .mobile-notes { display: block !important; }
+    }
+
+    .mobile-notes {
+      display: none;
+      margin-top: 16px;
+      border-top: 1px dashed var(--line);
+      padding-top: 14px;
+    }
+
+    .mobile-notes li {
+      margin: 8px 0;
+      font-size: 13px;
+      color: var(--ink-soft);
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div>
+        <div class="eyebrow">红鲱鱼与枪 · Visual MVP Panel</div>
+        <h1>注意力引导<br />Conclusion Dock 一屏提案</h1>
+        <p class="lead">
+          这不是最终实现截图，而是协作面板：中间是建议的阅读体验；黑色标注是「准备怎么改」。
+          对齐后我们再动代码。
+        </p>
+      </div>
+      <div class="meta-card">
+        <h2>本面板要证明什么</h2>
+        <ol>
+          <li>句级来源芯片嵌在结论正文里</li>
+          <li>右侧 Attention Rail 只推 3 个优先看点</li>
+          <li>缺口 / 反证 / 假多数 有视觉优先级</li>
+          <li>箭头标注 = 下一刀改哪里</li>
+        </ol>
+      </div>
+    </header>
+
+    <div class="stage-label">Annotated mock · ConclusionDock + Attention Rail</div>
+
+    <section class="stage" aria-label="Attention Guidance mock">
+      <div class="annotations" aria-hidden="true">
+        <div class="callout c4">
+          <div class="bubble">
+            <b>Change A</b>
+            结论区从「整段纯文本」改为 <i>ClaimSpan 序列</i>。assert / gap / blocked 各有样式。
+          </div>
+          <div class="stem"></div>
+          <div class="dot"></div>
+        </div>
+
+        <div class="callout c1">
+          <div class="bubble">
+            <b>Change B</b>
+            每句可核查断言后挂行内芯片：来源名 · 角色 · 独立性。点击打开 EvidenceDetailDrawer。
+          </div>
+          <div class="stem"></div>
+          <div class="dot"></div>
+        </div>
+
+        <div class="callout c2">
+          <div class="bubble">
+            <b>Change C</b>
+            新增 Attention Rail：「先看这 3 处」。P0 反证 / 冲突，P1 假多数，P2 缺口。
+          </div>
+          <div class="stem"></div>
+          <div class="dot"></div>
+        </div>
+
+        <div class="callout c3">
+          <div class="bubble">
+            <b>Change D</b>
+            can say / cannot say 也挂 span 标记，blocked 不允许伪装成 assert。
+          </div>
+          <div class="stem"></div>
+          <div class="dot"></div>
+        </div>
+      </div>
+
+      <div class="stage-grid">
+        <div class="dock" id="target-dock">
+          <div class="dock-kicker">
+            <span class="badge warn">存疑 · 先别转发</span>
+            <span class="score">可信度 38 · 确定性公式</span>
+          </div>
+
+          <div class="claim-original">原说法：「内部文件显示将取消退休金」</div>
+          <h2 class="conclusion-title">结论（注意力引导后）</h2>
+
+          <div class="body-text">
+            <span class="span-p0">主管部门已公开否认存在「取消退休金」政策</span><a class="chip support" href="#">新华社 <span class="arrow">↗</span></a><a class="chip support" href="#">人社部回应 <span class="arrow">↗</span></a>。
+            网传「内部文件」目前<span class="span-p0">无法追溯到可验证原始出处</span><a class="chip gap" href="#">缺口 · P0</a>。
+            多条自媒体转载内容经谱系折叠后<span>属于同一上游</span><a class="chip contradict" href="#">转载折叠 · 非独立</a>，
+            不能当作多源共识。
+            因此当前<span>不能推出</span><a class="chip blocked" href="#">不可说</a>「政策已确定取消」。
+          </div>
+
+          <div class="lists">
+            <div class="list-box">
+              <h3>Can say</h3>
+              <ul>
+                <li>官方已否认该政策文件存在 <a class="chip support" href="#">新华社 ↗</a></li>
+                <li>公开渠道未见可验证原件 <a class="chip gap" href="#">缺口</a></li>
+              </ul>
+            </div>
+            <div class="list-box">
+              <h3>Cannot say</h3>
+              <ul>
+                <li>不能说「政策已落地取消」 <a class="chip blocked" href="#">blocked</a></li>
+                <li>不能把转载热度当成多源证实 <a class="chip blocked" href="#">blocked</a></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <aside class="rail" id="target-rail">
+          <h3>先看这 3 处</h3>
+          <p class="sub">Attention Rail · 按风险排序，不是证据全量列表</p>
+
+          <div class="rail-item">
+            <div class="prio p0">P0</div>
+            <div>
+              <strong>反证：官方否认</strong>
+              <span>与原说法直接冲突。先点开主管部门回应，再决定是否转发。</span>
+            </div>
+          </div>
+          <div class="rail-item">
+            <div class="prio p1">P1</div>
+            <div>
+              <strong>假多数：转载已折叠</strong>
+              <span>5 条链接 → 1 个上游。界面应显示「非独立」，避免被数量欺骗。</span>
+            </div>
+          </div>
+          <div class="rail-item">
+            <div class="prio p2">P2</div>
+            <div>
+              <strong>缺口：原件不可追溯</strong>
+              <span>你还需要：可验证的文件扫描件 / 官方发布号 / 原始链接。</span>
+            </div>
+          </div>
+
+          <button class="rail-cta" type="button">从缺口发起递归证据搜索（用户点了才跑）</button>
+        </aside>
+      </div>
+
+      <div class="mobile-notes">
+        <ol>
+          <li><strong>A</strong> 结论正文改为 ClaimSpan 序列</li>
+          <li><strong>B</strong> 行内来源芯片，点击开抽屉</li>
+          <li><strong>C</strong> 右侧 Attention Rail，只推 3 处</li>
+          <li><strong>D</strong> can/cannot say 挂 license 标记</li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="legend">
+      <div class="legend-card">
+        <h4>Layer 1 · 句级溯源</h4>
+        <p>assert 后挂来源芯片；gap / blocked 不允许装成已证实。</p>
+      </div>
+      <div class="legend-card">
+        <h4>Layer 2 · 注意力优先级</h4>
+        <p>P0 反证冲突 → P1 假多数 → P2 缺口。背景信息默认退后。</p>
+      </div>
+      <div class="legend-card">
+        <h4>Layer 3 · 缺口发现</h4>
+        <p>明确「你还需要什么」，并接到递归搜索入口，但不自动连跑。</p>
+      </div>
+      <div class="legend-card">
+        <h4>协作约定</h4>
+        <p>改 UI 先出这种标注面板：箭头指向改动点，再写代码。</p>
+      </div>
+    </section>
+
+    <div class="next-bar">
+      <p>
+        规格正文：<code>docs/ATTENTION_GUIDANCE.md</code><br />
+        本面板：<code>docs/attention-guidance-mvp-panel.html</code>
+      </p>
+      <p style="text-align:right; max-width: 42ch;">
+        对齐后的建议下一刀：Slice A schema + 确定性 ranker 单测，不动大 UI 重构。
+      </p>
+    </div>
+
+    <div class="ask-box">
+      <strong>待你发给我：</strong>
+      你提到「关于 prompt 如何写是高效的，我会给你一个文档」。
+      请把该文档路径或链接发我；收到后我会按它来写后续协作 prompt / 标注面板说明。
+    </div>
+  </div>
+</body>
+</html>
