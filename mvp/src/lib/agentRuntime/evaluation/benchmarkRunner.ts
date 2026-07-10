@@ -108,15 +108,15 @@ function defaultMockOutputs(case_: GoldenCase): Record<string, Record<string, un
  * Create a mock callAgentWithFallback that identifies agents by systemPrompt fingerprint.
  */
 function createMockCaller(outputs: Record<string, Record<string, unknown>>) {
-  // Each agent's systemPrompt contains a unique identifier string.
-  // We use it to route to the correct mock output.
+  // Each agent's systemPrompt contains a unique identifier that doesn't
+  // appear in other agents' prompts. We use these for reliable routing.
   const fingerprintMap: Record<string, string> = {
-    "RumorDetector": "rumor_detector",
-    "FactChecker": "fact_checker",
-    "SourceValidator": "source_validator",
-    "AlternativeExplanationSearcher": "alternative_explanation_searcher",
-    "CounterEvidenceGrader": "counter_evidence_grader",
-    "ReportComposer": "report_composer",
+    "谣言特征检测专家": "rumor_detector",
+    "事实核查专家": "fact_checker",
+    "信源验证专家": "source_validator",
+    "替代解释搜索专家": "alternative_explanation_searcher",
+    "反证评分专家": "counter_evidence_grader",
+    "核查报告生成专家": "report_composer",
   };
 
   return async (args: Record<string, unknown>): Promise<{ output: Record<string, unknown>; model: string }> => {
