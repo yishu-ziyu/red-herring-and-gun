@@ -187,6 +187,81 @@ describe("real analysis workspace", () => {
     expect((await screen.findAllByText(/已用确定性报告收束/)).length).toBeGreaterThan(0);
     expect(screen.queryByText(/拒绝展示非真实结论/)).not.toBeInTheDocument();
   });
+
+  it("sanitizes provider errors from the mission score explanation", async () => {
+    vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
+      yield {
+        type: "complete",
+        totalLatencyMs: 1200,
+        steps: [],
+        finalReport: {
+          verdictType: "unverified",
+          credibilityLabel: "存疑",
+          credibilityScore: 36,
+          conclusion: "当前证据不足以直接确认原始说法。",
+          recommendation: "先不要转发。",
+          summaryForPublic: "当前证据链不足。",
+          whyHardToVerify: [
+            "ReportComposer all providers failed: API error quota exceeded at https://internal.example.com/v1/messages",
+          ],
+          evidenceChain: [],
+          closureActions: [],
+          confidenceDimensions: [
+            {
+              dimension: "source_reliability",
+              label: "来源可靠性",
+              score: 42,
+              threshold: 70,
+              passed: false,
+              reason: "API error quota exceeded at https://internal.example.com/v1/messages",
+            },
+          ],
+        },
+      };
+    });
+
+    await startRealAnalysis();
+
+    const report = await screen.findByLabelText("最终核查判断");
+    expect(report.textContent).toContain("最终写作服务暂时不可用，系统已改用保守兜底报告。");
+    expect(report.textContent).not.toMatch(/ReportComposer|API error|quota|https?:\/\/|\/v1/i);
+  });
+
+  it("keeps blank report fields and legitimate source URLs out of the fallback warning", async () => {
+    vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
+      yield {
+        type: "complete",
+        totalLatencyMs: 1200,
+        steps: [],
+        finalReport: {
+          verdictType: "unverified",
+          credibilityLabel: "",
+          credibilityScore: 36,
+          conclusion: "当前证据见官方说明 https://example.com/news/v1-release。",
+          recommendation: "",
+          summaryForPublic: "",
+          whyHardToVerify: [""],
+          evidenceChain: [
+            {
+              layer: "来源",
+              finding: "官方页面可访问",
+              evidence: "官方说明见 https://example.com/news/v1-release",
+              boundary: "该链接只能证明页面存在，不能证明更强因果结论。",
+              sourceRefs: [],
+            },
+          ],
+          closureActions: [],
+          confidenceDimensions: [],
+        },
+      };
+    });
+
+    await startRealAnalysis();
+
+    const report = await screen.findByLabelText("最终核查判断");
+    expect(report.textContent).toContain("https://example.com/news/v1-release");
+    expect(report.textContent).not.toContain("最终写作服务暂时不可用，系统已改用保守兜底报告。");
+  });
 });
 
 // ───────────────────────────────────────────────────────────────

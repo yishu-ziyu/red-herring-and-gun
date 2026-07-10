@@ -332,6 +332,9 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
         <p className="landing-footer-powered">
           Powered by StepFun / MiMo / DeepSeek + 360 / AnySearch / Metaso
         </p>
+        <nav className="landing-footer-nav" aria-label="次要导航">
+          <a href="/settings/api-key">API Key 设置</a>
+        </nav>
       </footer>
       {showUtilityMenu ? <FloatingActionMenu /> : null}
     </div>

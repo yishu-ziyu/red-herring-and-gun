@@ -269,7 +269,11 @@ export function AgentCard({
       <motion.div
         variants={itemVariants}
         className="mission-agent-progress"
-        aria-label={`执行进度 ${Math.round(progress)}%`}
+        aria-label={`执行状态：${status}`}
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(progress)}
         style={{ position: "relative", overflow: "hidden" }}
       >
         <motion.span
