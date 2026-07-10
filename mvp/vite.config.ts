@@ -27,6 +27,7 @@ import {
 import { callAgentWithFallback } from "./server/src/lib/providerRouter.js";
 import { listAvailableModels } from "./server/src/lib/availableModels.js";
 import { attachCondensedSnippets } from "./server/src/lib/sourceCondenser.js";
+import { applyFactDeskPostProcessToReport } from "./server/src/lib/factDeskPostProcess.js";
 
 // 把 lib 的 logger 适配到 vite 现有的 console.info / console.error 输出格式，
 // 保留旧实现里的 [orchestrate-provider] start / complete / error 日志格式。
@@ -670,6 +671,8 @@ function agentApiPlugin(env: Record<string, string>) {
       steps.push(reportStep);
 
       const finalReport = reportStep.output;
+      // Prompt A+F: fact-desk post-process on live handoff JSON (vite middleware)
+      applyFactDeskPostProcessToReport(finalReport, claim);
 
       return sendJson(res, 200, {
         claim,
@@ -931,6 +934,8 @@ function agentApiPlugin(env: Record<string, string>) {
       steps.push(reportStep);
 
       const finalReport = reportStep.output;
+      // Prompt A+F: fact-desk post-process on live handoff JSON (vite stream)
+      applyFactDeskPostProcessToReport(finalReport, claim);
 
       sendEvent({
         type: "complete",

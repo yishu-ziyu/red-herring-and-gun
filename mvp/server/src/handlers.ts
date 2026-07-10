@@ -12,6 +12,7 @@ import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
 import { computeCredibilityScore, labelForScore, type CredibilityScoreResult } from "./lib/credibilityScore.js";
 // 审查 P3-2 修复：Anthropic 文本/JSON 提取统一从共享模块引入，不再各处独立定义。
 import { extractAnthropicText, extractJsonObject } from "./lib/anthropicParse.js";
+import { applyFactDeskPostProcessToReport } from "./lib/factDeskPostProcess.js";
 import {
   deleteAccount as accountDelete,
   exportAccount,
@@ -746,6 +747,9 @@ export function createHandlers(env: Record<string, string>) {
         computeFormulaScore(rumorStep.output, factStep.output, sourceStep.output, search360Result)
       );
 
+      // Prompt A+F: fact-desk voice post-process on live handoff JSON
+      applyFactDeskPostProcessToReport(finalReport, claim);
+
       return sendJson(res, 200, {
         steps,
         finalReport,
@@ -1035,6 +1039,9 @@ export function createHandlers(env: Record<string, string>) {
         finalReport,
         computeFormulaScore(rumorStep.output, factStep.output, sourceStep.output, search360Result)
       );
+
+      // Prompt A+F: fact-desk voice post-process on live handoff JSON (stream)
+      applyFactDeskPostProcessToReport(finalReport, claim);
 
       sendEvent({
         type: "complete",
@@ -2287,7 +2294,7 @@ async function runReportComposerWithFallback({
   }
 }
 
-function buildDeterministicFinalReport(claim: string, steps: any[], searchResult: any, reason: string) {
+export function buildDeterministicFinalReport(claim: string, steps: any[], searchResult: any, reason: string) {
   const rumorStep = steps.find((step) => step.agent === "rumor_detector");
   const factStep = steps.find((step) => step.agent === "fact_checker");
   const sourceStep = steps.find((step) => step.agent === "source_validator");
@@ -2340,7 +2347,7 @@ function buildDeterministicFinalReport(claim: string, steps: any[], searchResult
           ? `该说法包含可疑或夸大的成分，只能按有限证据谨慎转述。`
           : `该说法目前无法被充分核实，不宜当作事实传播。`;
 
-  return {
+  const report: Record<string, unknown> = {
     verdictType,
     conclusion,
     credibilityScore,
@@ -2420,7 +2427,17 @@ function buildDeterministicFinalReport(claim: string, steps: any[], searchResult
       buildConfidenceDimension("authority", "权威匹配度", verifiedSources.length > 0 ? 62 : 38, 65, verifiedSources.length > 0, verifiedSources[0] || "缺少明确权威来源"),
     ],
     _fallbackReason: reason,
+    ...(fallbackFormula
+      ? {
+          _scoreSource: "formula",
+          _scoreBreakdown: fallbackFormula.breakdown,
+        }
+      : {}),
   };
+
+  // Same A+F path as live LLM reports
+  applyFactDeskPostProcessToReport(report, claim);
+  return report;
 }
 
 function buildConfidenceDimension(
