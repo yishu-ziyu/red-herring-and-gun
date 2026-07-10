@@ -4,6 +4,7 @@ import type { SherlockSearchRequest, SherlockSearchResponse } from "./sherlockSt
 import type { MemoryCandidate, MemoryCandidateStatus } from "./agentRuntime/memoryCandidateTypes";
 import type { AgentEvidenceBundle } from "./schemas";
 import type { AgentContract } from "./agentConfigs";
+import { getTraceCollector, type TraceStatus } from "./reasoningTrace";
 import type {
   ConsensusDebateUpdate,
   ExecutionDagPlan,
@@ -193,6 +194,33 @@ export async function* requestOrchestrateStream(
   if (memoryRecall) payload.memoryRecall = memoryRecall;
   if (modelChoice && Object.keys(modelChoice).length > 0) payload.modelChoice = modelChoice;
 
+  // v2-iteration 2026-07-04: PR-3 Site B (peer spec) — emit trace per SSE event.
+  // 不修改 AgentRuntime.ts,此函数作为 SSE adapter 接入 trace collector。
+  const trace = getTraceCollector();
+  const traceSessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  trace.setSessionId(traceSessionId);
+
+  const emitTraceFromEvent = (event: OrchestrateStreamEvent) => {
+    const status: TraceStatus =
+      event.type === "agent_complete" || event.type === "tool_result" || event.type === "complete"
+        ? "completed"
+        : event.type === "agent_error" || event.type === "tool_error" || event.type === "error"
+        ? "failed"
+        : "running";
+    trace.emit({
+      sessionId: traceSessionId,
+      agent: event.agent ?? event.toolName ?? event.agentName ?? "planner",
+      action: event.type,
+      status,
+      timestamp: Date.now(),
+      latencyMs: event.latencyMs,
+      meta: {
+        query: event.query,
+        model: event.model,
+      },
+    });
+  };
+
   try {
     const response = await fetch(`${API_BASE}/api/agent/orchestrate-stream`, {
       method: "POST",
@@ -224,6 +252,7 @@ export async function* requestOrchestrateStream(
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6)) as OrchestrateStreamEvent;
+              emitTraceFromEvent(data);
               yield data;
             } catch {
               // 忽略无法解析的行
@@ -236,6 +265,7 @@ export async function* requestOrchestrateStream(
       if (buffer.startsWith("data: ")) {
         try {
           const data = JSON.parse(buffer.slice(6)) as OrchestrateStreamEvent;
+          emitTraceFromEvent(data);
           yield data;
         } catch {
           // 忽略
@@ -246,6 +276,14 @@ export async function* requestOrchestrateStream(
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Orchestrate Stream API 调用异常";
+    trace.emit({
+      sessionId: traceSessionId,
+      agent: "transport",
+      action: "stream_error",
+      status: "failed",
+      timestamp: Date.now(),
+      meta: { message },
+    });
     yield { type: "error", message };
   }
 }

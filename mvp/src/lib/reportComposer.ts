@@ -1,6 +1,7 @@
 import type { DemoCase, FinalReport, GradedEvidence, Subclaim, SubclaimReportStatus } from "./schemas";
 import { summarizeBiasFindings } from "./biasAudit";
 import { summarizeEvidenceQuality } from "./evidenceQuality";
+import { aggregateInferences } from "./inferenceLicense";
 
 function candidateTitle(caseData: DemoCase, candidateId: string): string {
   return caseData.candidates.find((candidate) => candidate.id === candidateId)?.title ?? candidateId;
@@ -125,5 +126,7 @@ export function composeReport(caseData: DemoCase, grades: GradedEvidence[]): Fin
       counterEvidence.length > 0
         ? `已纳入 ${counterEvidence.length} 条反证或限制性材料，最终结论需要保守表达。`
         : "当前证据链仍缺少反证检索结果，需要继续主动查找相反材料。",
+    // v2-iteration 2026-07-04: 报告级推理许可聚合 (PR-1)
+    inferenceLicense: aggregateInferences(grades, caseData.subclaims),
   };
 }
