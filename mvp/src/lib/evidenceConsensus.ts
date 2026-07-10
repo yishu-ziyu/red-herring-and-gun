@@ -23,6 +23,8 @@ import {
   calculateIndependenceScore,
   getSourceTier,
 } from "./sourceIndependence";
+import { foldLineage, type LineageResult } from "./sourceLineage";
+import type { SourceLineageGroup } from "./schemas";
 
 export interface ConsensusConfig {
   minProvidersRequired?: number;
@@ -44,12 +46,27 @@ const SUPPORT_TEXT_RE = /属实|证实|确认|确有|真实|成立|显示|发现
 /**
  * 执行共识评估
  */
-export function evaluateConsensus(
+export async function evaluateConsensus(
   jobs: MultiSearchJob[],
   config: ConsensusConfig = {}
-): EvidenceConsensusReport {
+): Promise<EvidenceConsensusReport> {
   const cfg = { ...DEFAULT_CONFIG, ...config };
   const timestamp = Date.now();
+
+  // PR-2: fold lineage across all sources from completed search tasks (best-effort)
+  let lineageGroups: LineageResult["groups"] = [];
+  try {
+    const allSources = jobs
+      .flatMap((t) =>
+        t.searchTasks
+          .filter((st) => st.status === "completed" && st.result)
+          .flatMap((st) => st.result!.sources)
+      );
+    const lineage = await foldLineage(allSources);
+    lineageGroups = lineage.groups;
+  } catch {
+    // lineage is best-effort; consensus proceeds without it
+  }
 
   const propositionResults: PropositionConsensusResult[] = jobs.map((job) =>
     evaluateProposition(job, cfg)
@@ -82,6 +99,7 @@ export function evaluateConsensus(
     timestamp,
     propositionResults,
     overallStats,
+    sourceLineage: lineageGroups as SourceLineageGroup[],
   };
 }
 

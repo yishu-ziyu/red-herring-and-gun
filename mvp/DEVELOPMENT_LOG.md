@@ -776,3 +776,146 @@ Phase 3 输出 credibilityScore
 ```
 
 *日志最后更新：2026-06-14 20:50*
+
+## 2026-07-04 v3 强推迭代: 证据呈现净化 + BYO key + 邮箱登录 + 隐私合规基线
+
+### 用户反馈 (起点)
+> "现在这些证据呈现和陈列的方式都非常糟糕"
+
+证据边界卡片泄露了 `Exa Search 调用失败: credits limit` 等基础设施错误;某些 demo 跑题到完全不相关的命题。
+
+### Wave 1 — 数据 + UI 净化 (P0)
+- 新增 `mvp/src/lib/sanitizeReport.ts`: INFRA_PATTERNS 11 条正则(quota/credits/调用失败/超时/Exception/emoji/URL 等),纯函数封装 `{allowed, blocked, warnings, drops}`。
+- `mvp/src/lib/pipeline.ts`: 加 bigramJaccard + assertRelevantCase(短文本<10 字不拦,空 subclaims 不拦,阈值 0.2);runDemoPipeline 加 opts.claim 参数,跑题时返回 `{caseData: null, error: 'NO_MATCHING_CASE'}`。用 TypeScript overloads 不破坏现有调用方。
+- `mvp/src/components/v3/NodeInspectorV3.tsx`: evidence_clue 节点用 sanitizeReport 处理 cannotSay,warnings 在 `<details>` 里折叠。
+- 测试: 13 个 sanitize + 10 个 pipeline。
+
+### Wave 2 — BYO Key 设置页 (P1)
+- 新增 `mvp/src/components/v3/settings/ApiKeySettings.tsx`: baseUrl + apiKey + modelName 三字段,测试连接按钮,保存到 localStorage。
+- 新增 endpoint `POST /api/agent/test-llm`: https-only,reject loopback IPs in prod,5s AbortController timeout,**永不 log apiKey**。
+- Dashboard 挂载「设置 → 模型服务商」入口。
+
+### Wave 3 — 邮箱登录 + 隐私 (P1)
+- 新增 `mvp/server/src/lib/accountStore.ts`: in-memory store,emailHash 作为 Map key(SHA-256),6 位验证码,1 分钟 rate-limit,5/30 天 quota。
+- 新增 6 个 endpoints: `/api/auth/email/{request,verify,me,logout}` + `/api/account/{export}` (DELETE/GET)。
+- 新增 `LoginView.tsx` (邮箱 → 验证码 两步表单) + `PrivacyPolicy.tsx` (服务条款 + 隐私政策 + 导出/删除)。
+- 验证码通过 `console.log [v3-auth]` 输出(生产环境接 SMTP)。
+
+### Wave 4 — 部署 + 修复
+- `decodeSignedJson` 在 secret 为空字符串时返回 null (false condition: `!secret`),改为 `if (!token) return null` 信任 HMAC 校验。
+- 部署到 gun.yishuziyu.cn 全链路 HTTPS 验证通过:
+  - `/api/agent/test-llm` 拒绝非 https baseUrl
+  - 邮箱 → 验证码 → cookie → /me (返回 authenticated:true, quota:{remaining:5,total:5}) → /export (返回完整账户 JSON) → DELETE (账户已删除)
+
+### 已知未闭环
+
+| 项目 | 状态 |
+|------|------|
+| 真邮件发送 (SMTP) | 计划中,当前 console.log |
+| 微信登录 | 用户决定暂不接入 |
+| 微信支付/支付宝 | 用户决定下一阶段 |
+| accountStore 数据持久化 | 当前 in-memory,重启会丢 |
+| ApiKeySettings 视觉样式 | 后续 polish |
+
+## 2026-07-05 v4 UI 改造: 全产品 Cinema Motion + 杂志质感重做
+
+### 用户决策
+- **动效**: 叙事 / 电影感
+- **调性**: 杂志质感 (出版级排版)
+- **范围**: 全产品总升级
+- **架构**: 抽取 design tokens
+
+### Design Tokens 抽取 (commit e87ddde)
+- **8 档动效时长**: instant (80ms) → quick (150) → base (240) → soft (360) → narrative (520) → cinema (720) → epic (1100) → reveal (1600)
+- **6 条缓动曲线**: ease-out / in-out / spring / soft / emphasis / cinema
+- **7 组动效组合**: motion-pop / fade / rise / cinematic / epic / reveal / glide
+- **8 档排版层级**: display / headline / title / subtitle / body / meta / caption / micro
+- **4 级深度**: paper / card / float / cinematic
+- **6 组状态渐变**: narrative / veil / amber / ink / success / alert
+- **3 档色相端点**: narrative-start / mid / end
+
+### Cinema Motion Library (commit e87ddde)
+- 8 个 keyframes: rise / fall / veil / traverse / glide / glow / shimmer / breath
+- 工具类: `.cinema-rise / fall / veil / traverse / shimmer / breath`
+- Stagger: `.cinema-rise-d1` / `d2` / `d3` / `d4` / `d5` (80ms 步进)
+- 自动错峰: `.cinema-stagger > *:nth-child(n)`
+- motion-blur 隐喻: rise 用 `blur(8px) → blur(0)` + `saturate(0.9) → saturate(1)` 联动
+
+### 视觉重做 (commit 227283c)
+- **Dashboard**: 渐变背景 + 双 radial-gradient 光晕 + dot pattern 1px 点阵纹理 + 衬线 display 品牌头 + 渐变下划线输入框 + 演示卡左侧 4px 拉条 hover 展开 + 黑色实心 pill 按钮 + shimmer hover
+- **ConclusionDockV3**: 杂志 grid 三列 (原始 / 脉动箭头 / 核查后) + 箭头带 dashed 环 cinema-breath + lede 斜体衬线段落 + 卡片化 boundary panel (success/alert 渐变背景 + glow 圆点) + 评分条 stagger 80ms + bar 渐变填充
+- **LoginView**: cinema-rise 入场 + 衬线 h1 + 卡片输入 + 等宽字体 OTP 输入 (0.4em letter-spacing 居中)
+- **PrivacyPolicy**: 长文阅读样式 (720px max-width, 衬线 h1, lede 引言, h2 章节分隔线, 1.7 行高列表, 危险按钮 hover 反色)
+- **InferenceLicensePanel**: 卡片化 + boundary dot glow
+- **ReasoningTracePanel**: 时间线 + cinema 入场
+- **AgentStatusDot**: 8x8 圆点 + 白圈徽章感
+
+### 字体策略
+- 标题 / 引言 / 文章: var(--font-serif) (Noto Serif SC / Songti SC)
+- 正文 / 按钮: var(--font-sans)
+- 数字 / OTP: var(--font-mono) + tabular-nums
+
+### 验收
+- `npx tsc --noEmit` → 0 errors
+- `npm test -- --run` → 155/155 pass
+- `npm run build` → success
+- `./ops.sh deploy --yes` → 成功,部署到 gun.yishuziyu.cn
+- 设计令牌 grep 验证: 8 timing, 8 keyframes, 0 framer-motion 引入
+
+### 已知未闭环
+| 项目 | 状态 |
+| --- | --- |
+| MissionControlView 视觉升级 | 4667 行,留待 v5 polish |
+| ApiKeySettings 视觉 | 留待 v5 polish |
+| prefers-reduced-motion 适配 | 留待 v5 polish |
+| 滚动入场 IntersectionObserver | 留待 v5 polish |
+
+## 2026-07-05 v5: ScoreRail 可信度评分可视化栏目
+
+### 用户反馈
+> "这个评分这一块能不能做一个这种可视化的栏目?或者说做一个可视化的条?"
+
+### 设计参照
+用户给的 ultracode 截图核心:
+- 顶部高对比度状态行 (单一焦点 + 加粗断言)
+- 中间步骤行 (带图标,渐进披露)
+- 下方分类卡片 (类别标题 + 必填/可选 + chip 列表)
+- 中间步骤用浅色,具体结论用强样式
+
+### 实现 (commit de1633c)
+- 新建 `mvp/src/components/v3/panels/ScoreRail.tsx`(电影感双极轴可视化)
+  - 大号 display 总分 + 等级 pill (4 档)
+  - 主条 + 0/20/40/60/80/100 刻度 (单极 0-100,渐变填充含阈值色)
+  - 三轴分量 (双极 -1..+1,中间 0 基线居中,supports/opposes/neutral 三态颜色)
+  - 风险标签 chip (基于阈值推断)
+- 新建 `mvp/src/components/v3/panels/ScoreRail.test.tsx`(8 个测试)
+- 修改 `ConclusionDockV3.tsx` 用 `<ScoreRail>` 替换旧的进度条
+- 修改 `styles.css` 加 `.score-rail` 系列样式
+
+### 关键设计选择
+- **双极轴 (bipolar axis)** 替代单极进度条 — 0 在中间,负值向左,正值向右。读者一眼看出哪个分量在拖后腿,哪个在支撑。
+- **风险标签自动推断** — 不要在 schema 上加新字段,从总分和三个分量推导出 5 类风险:整体证据不足 / 主流来源缺失 / 来源稳定性偏低 / 反证覆盖不足 / 核心事实被推翻。
+- **chip 用 ultracode 的轻量 pill 形态**(不是按钮感)— `⚠ △ ·` 前缀区分等级。
+- **保持既有 cinema 节奏** — 整条主条用 cinema-rise 进场,刻度线和小数延迟 stagger。
+
+### 验收
+- `npx tsc --noEmit` → 0 errors
+- `npm test -- --run` → 172/172 pass (164 + 8)
+- `npm run build` → success
+- `./ops.sh deploy --yes` → 部署到 gun.yishuziyu.cn 完成
+
+### 已知未闭环
+| 项目 | 状态 |
+| --- | --- |
+| 三维多端 vs 长跑 | 已合一个平衡 |
+| 其他评分场景 (SourceValidator 独立报告, Mission Control middle 等) | 暂未集成 |
+
+## 2026-07-06 — v5 visual polish follow-up
+
+- BYO Key 设置页信任文案修正: 不再承诺“不会上传到服务端”,明确本机浏览器存储和测试连接时会 POST 到 `/api/agent/test-llm`。
+- BYO Key 设置页接入杂志/电影感视觉: 增加本机保存说明、token 化表单/按钮/状态卡样式,不新增依赖。
+- MissionControl 顶部状态条去掉 synthetic 进度百分比,改为真实事件流 ledger: 完成/运行/失败/排队/事件总数。
+- AgentCard 可访问性文案从“执行进度 xx%”改为“执行状态”,百分数保留在标准 `progressbar` 属性里。
+- Reduced motion: 新增完整 `prefers-reduced-motion` 覆盖,静态保留状态语义,禁用无限装饰动画,不重置 React Flow wrapper transform。
+- Verification: `npx tsc --noEmit` OK, `npm test -- --run` 180/180, `npm run build` OK。
+- Deployment: `./ops.sh deploy --yes` 已更新 gun.yishuziyu.cn。远端 nginx Host 验证 `/`, `/api/models/list`, `/health` 通过。

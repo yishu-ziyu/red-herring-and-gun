@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+
+// Emil-design-eng easing tokens (mission-critical: all motion uses custom curves)
+const EASE_OUT = [0.16, 1, 0.3, 1] as const; // snappy enter
+const EASE_IN = [0.7, 0, 0.84, 0] as const; // crisp exit
+const EASE_IN_OUT = [0.77, 0, 0.175, 1] as const; // on-screen movement
 import {
   requestOrchestrateStream,
   updateMemoryCandidateStatus,
@@ -29,9 +34,13 @@ import { buildSearchJobs, executeSearchJobs } from "../../../lib/evidenceSearchR
 import { evaluateConsensus } from "../../../lib/evidenceConsensus";
 import type { ChunkType, StreamingChunk, StreamingReasoningSession } from "../../../lib/streamingTypes";
 import { AgentCard } from "./mission/AgentCard";
+import { AgentStatusDot } from "../mission/AgentStatusDot";
+import { ReasoningTracePanel } from "../panels/ReasoningTracePanel";
+import { getTraceCollector } from "../../../lib/reasoningTrace";
 import type { CaseIntake } from "../../../lib/caseIntake";
 import type { MemoryCandidate, MemoryCandidateStatus } from "../../../lib/agentRuntime/memoryCandidateTypes";
 import { getAgentContract } from "../../../lib/agentConfigs";
+import { summarizeMissionStreamStatus } from "../../../lib/missionStreamStatus";
 
 interface MissionControlViewProps {
   claim: string;
@@ -294,6 +303,32 @@ const AGENT_PROCESS_COPY: Record<string, { running: string[]; completed: string[
     ],
   },
 };
+
+const PUBLIC_REPORT_FALLBACK_REASON = "最终写作服务暂时不可用，系统已改用保守兜底报告。";
+const INFRASTRUCTURE_ERROR_PATTERNS = [
+  /ReportComposer/i,
+  /providers? failed/i,
+  /API error/i,
+  /quota\s+(?:exceeded|limit|exhausted)|(?:exceeded|insufficient)\s+quota/i,
+  /credits?\s+(?:limit|exhausted|exceeded)|insufficient\s+credits?/i,
+  /timeout|time out/i,
+  /Error:|Exception/i,
+  /\b(?:4\d\d|5\d\d)\b.*https?:\/\/\S+\/(?:v\d+|api)\b/i,
+  /https?:\/\/\S+\/(?:v\d+|api)\b.*\b(?:4\d\d|5\d\d)\b/i,
+  /调用失败|调用异常|超时/i,
+  /invalid api key/i,
+  /insufficient balance/i,
+];
+
+function sanitizePublicReportText(value: string) {
+  const text = value.trim();
+  if (!text) return "";
+  return INFRASTRUCTURE_ERROR_PATTERNS.some((pattern) => pattern.test(text)) ? PUBLIC_REPORT_FALLBACK_REASON : text;
+}
+
+function sanitizePublicReportArray(values: string[]) {
+  return values.map((value) => sanitizePublicReportText(value));
+}
 
 function normalizeAgent(agent?: string | null) {
   return (agent ?? "").trim().toLowerCase();
@@ -1313,7 +1348,7 @@ function isDeterministicReportFallback(step: HandoffStep) {
 
 function deterministicFallbackReason(step: HandoffStep) {
   const reason = typeof step.output.fallbackReason === "string" ? step.output.fallbackReason.trim() : "";
-  return reason || "最终写作模型未返回稳定结构，系统已用确定性报告兜底，避免长时间挂起。";
+  return reason ? sanitizePublicReportText(reason) : "最终写作模型未返回稳定结构，系统已用确定性报告兜底，避免长时间挂起。";
 }
 
 function formatLatency(ms: number) {
@@ -1637,7 +1672,7 @@ function buildRuntimeChunk(stageId: string, type: ChunkType, content: string): S
 }
 
 function summarizeStepOutput(step: HandoffStep) {
-  const fallbackReason = typeof step.output.fallbackReason === "string" ? step.output.fallbackReason : "";
+  const fallbackReason = typeof step.output.fallbackReason === "string" ? sanitizePublicReportText(step.output.fallbackReason) : "";
   if (fallbackReason) {
     return `这一轮没有拿到可展示的核查结果。原因：${fallbackReason}`;
   }
@@ -1694,7 +1729,7 @@ function inferAtomicType(text: string): AtomicProposition["type"] {
 
 function reportText(report: Record<string, unknown> | null, key: string) {
   const value = report?.[key];
-  return typeof value === "string" ? value.trim() : "";
+  return typeof value === "string" ? sanitizePublicReportText(value) : "";
 }
 
 function reportNumber(report: Record<string, unknown> | null, key: string) {
@@ -1704,7 +1739,9 @@ function reportNumber(report: Record<string, unknown> | null, key: string) {
 
 function reportStringArray(report: Record<string, unknown> | null, key: string) {
   const value = report?.[key];
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+  return Array.isArray(value)
+    ? sanitizePublicReportArray(value.filter((item): item is string => typeof item === "string" && item.trim().length > 0))
+    : [];
 }
 
 function evidenceChainItems(report: Record<string, unknown> | null) {
@@ -1729,8 +1766,29 @@ function evidenceChainItems(report: Record<string, unknown> | null) {
     );
   }).map((item) => ({
     ...item,
+    finding: sanitizePublicReportText(item.finding),
+    evidence: sanitizePublicReportText(item.evidence),
+    boundary: sanitizePublicReportText(item.boundary),
     sourceRefs: item.sourceRefs.filter((source): source is string => typeof source === "string" && source.trim().length > 0),
   }));
+}
+
+function scoreBreakdownDimensions(report: Record<string, unknown> | null) {
+  const raw = report?._scoreBreakdown;
+  if (!raw || typeof raw !== "object") return [];
+  const breakdown = raw as Record<string, unknown>;
+  const items = [
+    { key: "factCheckSignal", label: "事实核查信号" },
+    { key: "searchSignal", label: "搜索证据信号" },
+    { key: "sourceSignal", label: "信源可靠信号" },
+  ];
+
+  return items.flatMap((item) => {
+    const value = breakdown[item.key];
+    return typeof value === "number" && Number.isFinite(value)
+      ? [{ label: item.label, score: value }]
+      : [];
+  });
 }
 
 function closureActionItems(report: Record<string, unknown> | null) {
@@ -1751,7 +1809,10 @@ function closureActionItems(report: Record<string, unknown> | null) {
       typeof value.content === "string" &&
       typeof value.status === "string"
     );
-  });
+  }).map((action) => ({
+    ...action,
+    content: sanitizePublicReportText(action.content),
+  }));
 }
 
 function confidenceDimensions(report: Record<string, unknown> | null) {
@@ -1774,7 +1835,10 @@ function confidenceDimensions(report: Record<string, unknown> | null) {
       typeof value.passed === "boolean" &&
       typeof value.reason === "string"
     );
-  });
+  }).map((dimension) => ({
+    ...dimension,
+    reason: sanitizePublicReportText(dimension.reason),
+  }));
 }
 
 function logicRiskItems(report: Record<string, unknown> | null) {
@@ -2052,17 +2116,6 @@ function outputItemsForStep(step: HandoffStep, phase: "running" | "completed") {
   return items.map((item) => `已完成：${item}`);
 }
 
-function calculateProgress(steps: HandoffStep[], runStatus: RunStatus) {
-  if (runStatus === "completed") return 100;
-
-  const completedCount = steps.filter((step) => step.status === "completed").length;
-  const runningStep = steps.find((step) => step.status === "running");
-  const runningBonus = runningStep ? 0.55 : runStatus === "running" ? 0.15 : 0;
-  const raw = ((completedCount + runningBonus) / AGENT_ORDER.length) * 100;
-
-  return Math.min(runStatus === "failed" ? 100 : 95, raw);
-}
-
 function selectCurrentStep(steps: HandoffStep[]) {
   return (
     steps.find((step) => step.status === "running") ??
@@ -2165,7 +2218,7 @@ function StructuredAgentOutput({ items }: { items: StructuredOutputItem[] }) {
           className="controller-structured-block"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.2, delay: index * 0.05 }}
+          transition={{ duration: 0.2, delay: index * 0.05, ease: EASE_OUT }}
         >
           <h4>{item.label}</h4>
           {item.kind === "list" ? (
@@ -2209,6 +2262,18 @@ function MissionFinalReportPanel({
   const score = normalizeCredibilityScore(rawScore, verdictType, rawLabel);
   const confidenceScore = judgmentConfidenceScore(rawScore, verdictType, rawLabel);
   const dimensions = confidenceDimensions(finalReport);
+  const scoreBreakdown = scoreBreakdownDimensions(finalReport);
+  const scoreRows = dimensions.length > 0
+    ? dimensions.slice(0, 4).map((dimension) => ({
+        label: dimension.label,
+        value: `${dimension.score}/${dimension.threshold}`,
+        detail: dimension.reason,
+      }))
+    : scoreBreakdown.map((dimension) => ({
+        label: dimension.label,
+        value: dimension.score.toFixed(2),
+        detail: "",
+      }));
   const risks = logicRiskItems(finalReport);
   const verdictLabel = displayVerdictType(verdictType, score);
   const label = displayCredibilityLabel(rawLabel, verdictType, score);
@@ -2249,13 +2314,13 @@ function MissionFinalReportPanel({
         <div className="mission-score-explanation" aria-label="评分">
           <span>评分</span>
           <p>{scoreExplanation(score, verdictLabel, label)}</p>
-          {dimensions.length > 0 ? (
+          {scoreRows.length > 0 ? (
             <ul>
-              {dimensions.slice(0, 4).map((dimension) => (
+              {scoreRows.map((dimension) => (
                 <li key={dimension.label}>
                   <strong>{dimension.label}</strong>
-                  <span>{dimension.score}/{dimension.threshold}</span>
-                  <em>{dimension.reason}</em>
+                  <span>{dimension.value}</span>
+                  {dimension.detail ? <em>{dimension.detail}</em> : null}
                 </li>
               ))}
             </ul>
@@ -2680,7 +2745,7 @@ function SearchProgressPanel({ searchJobs }: { searchJobs: MultiSearchJob[] }) {
               stroke="var(--zt-primary)"
               strokeWidth="3"
               strokeDasharray={`${(stats.completed / Math.max(1, totalProviders)) * 100}, 100`}
-              style={{ transition: 'stroke-dasharray 0.5s ease' }}
+              style={{ transition: 'stroke-dasharray 200ms cubic-bezier(0.16, 1, 0.3, 1)' }}
             />
           </svg>
           <div className="search-progress-text">
@@ -2885,7 +2950,7 @@ function ControllerRail({
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.24, delay: Math.min(index, 8) * 0.025 }}
+                  transition={{ duration: 0.24, delay: Math.min(index, 8) * 0.025, ease: EASE_OUT }}
                 >
                   <button
                     type="button"
@@ -2901,6 +2966,14 @@ function ControllerRail({
                       const agentId = controllerEventAgentId(row);
                       const meta = agentId ? AGENT_BADGE_META[agentId] : null;
                       const isActive = activeControllerEventId === row.id;
+                      const dotState =
+                        row.status === "completed" || row.status === "final"
+                          ? "completed"
+                          : row.status === "running"
+                          ? "running"
+                          : row.status === "failed"
+                          ? "failed"
+                          : "idle";
 
                       return (
                         <button
@@ -2910,6 +2983,7 @@ function ControllerRail({
                           onClick={() => onSelectControllerEvent(row)}
                           aria-pressed={isActive}
                         >
+                          <AgentStatusDot agentId={agentId ?? row.id} state={dotState} />
                           <span className="controller-agent-avatar">
                             {meta?.avatar ? <img src={meta.avatar} alt="" /> : meta?.label ?? "A"}
                           </span>
@@ -2941,7 +3015,7 @@ function ControllerRail({
                   initial={{ opacity: 0, y: 14 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.24, delay: Math.min(index, 8) * 0.025 }}
+                  transition={{ duration: 0.22, delay: Math.min(index, 8) * 0.025, ease: EASE_OUT }}
                 >
                   <span className={`controller-operation-icon controller-operation-icon--${item.status}`} aria-hidden="true">
                     <img src={operationIconForEvent(item.event)} alt="" />
@@ -2969,7 +3043,7 @@ function ControllerRail({
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.22, delay: Math.min(index, 8) * 0.025 }}
+                transition={{ duration: 0.22, delay: Math.min(index, 8) * 0.025, ease: EASE_OUT }}
               >
                 <span className={`controller-process-dot controller-process-dot--${item.status}`} />
                 <span>
@@ -3052,7 +3126,7 @@ function ControllerEventDetailPanel({
       className={`controller-reading-window controller-reading-window--${event.status}`}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.24 }}
+      transition={{ duration: 0.24, ease: EASE_OUT }}
       aria-live="polite"
     >
       <header className="controller-reading-head">
@@ -3089,7 +3163,7 @@ function ControllerEventDetailPanel({
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.18 }}
+                    transition={{ duration: 0.18, ease: EASE_OUT }}
                   >
                     <span>{CONTROLLER_EVENT_KIND_LABEL[item.kind]}</span>
                     <strong>{item.title}</strong>
@@ -3155,7 +3229,7 @@ function ControllerEventDetailPanel({
                       className="controller-debate-round"
                       initial={{ opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.22, delay: index * 0.04 }}
+                      transition={{ duration: 0.22, delay: index * 0.04, ease: EASE_OUT }}
                     >
                       <span>第 {index + 1} 轮</span>
                       <div>
@@ -3200,7 +3274,7 @@ function ControllerEventDetailPanel({
                   key={`${item}-${index}`}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.18, delay: index * 0.04 }}
+                  transition={{ duration: 0.18, delay: index * 0.04, ease: EASE_OUT }}
                 >
                   <span>{String(index + 1).padStart(2, "0")}</span>
                   <p>
@@ -3592,7 +3666,7 @@ function AgentThinkingTreePanel({ nodes }: { nodes: ThinkingTreeNode[] }) {
               className={`thinking-tree-node thinking-tree-node--${node.status}`}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.22, delay: Math.min(index * 0.035, 0.18) }}
+              transition={{ duration: 0.22, delay: Math.min(index * 0.035, 0.18), ease: EASE_OUT }}
             >
               <button
                 type="button"
@@ -3984,7 +4058,8 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
 
       const completedJobs = await executeSearchJobs(jobs, { enableCounterSearch: true });
       dispatch({ type: "SET_SEARCH_JOBS", payload: completedJobs });
-      dispatch({ type: "SET_CONSENSUS_REPORT", payload: evaluateConsensus(completedJobs) });
+      const consensusReport = await evaluateConsensus(completedJobs);
+      dispatch({ type: "SET_CONSENSUS_REPORT", payload: consensusReport });
     },
     [dispatch]
   );
@@ -4178,7 +4253,8 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                 setCurrentStep(step);
 
                 if (isNonAuthenticStep(step)) {
-                  const message = `${step.agentName} 没有拿到可展示的核查结果，已停止展示结论。原因：${step.output.fallbackReason ?? "收到 demo-fallback 输出"}`;
+                  const fallbackReason = typeof step.output.fallbackReason === "string" ? sanitizePublicReportText(step.output.fallbackReason) : "收到 demo-fallback 输出";
+                  const message = `${step.agentName} 没有拿到可展示的核查结果，已停止展示结论。原因：${fallbackReason}`;
                   setOutputItems([message, "办案台不会把降级结果包装成真实核查。"]);
                   setErrorMessage(message);
                   setStartedAt(null);
@@ -4513,7 +4589,10 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
       null,
     [activeControllerEventId, controllerEvents, latestControllerEvent]
   );
-  const progress = useMemo(() => calculateProgress(steps, runStatus), [steps, runStatus]);
+  const streamStatusSummary = useMemo(
+    () => summarizeMissionStreamStatus(streamItems, runStatus),
+    [streamItems, runStatus]
+  );
   const evidenceBundleCount = useMemo(
     () => steps.filter((step) => step.evidenceBundle).length,
     [steps]
@@ -4614,9 +4693,10 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
           <span>当前链路</span>
           <strong>{currentModelLine(steps, currentStep)}</strong>
         </div>
-        <div>
-          <span>进度</span>
-          <strong>{Math.round(progress)}%</strong>
+        <div className="mission-run-status-cell mission-run-status-cell--events">
+          <span>事件流</span>
+          <strong>{streamStatusSummary.headline}</strong>
+          <small>{streamStatusSummary.detail}</small>
         </div>
         {fallbackNotice ? (
           <p className="mission-run-status-notice">{fallbackNotice}</p>
@@ -4651,6 +4731,9 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
           />
         </section>
       </section>
+
+      {/* v2-iteration 2026-07-04: PR-3 reasoning trace side panel (collapsible). review P2-1 fix: scope to current session. */}
+      <ReasoningTracePanel sessionId={getTraceCollector().getSessionId() ?? undefined} />
 
       {state.consensusReport ? (
         <EvidenceDetailDrawer

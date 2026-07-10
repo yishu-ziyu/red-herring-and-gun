@@ -4,6 +4,7 @@ import { Dashboard } from "./components/v3/Dashboard";
 import { MissionControlView } from "./components/v3/phases/MissionControlView";
 import { EvidenceMatrixDemoPage } from "./components/v3/EvidenceMatrixDemoPage";
 import { ModelProviderSettingsPreview } from "./components/v3/settings/ModelProviderSettingsPreview";
+import { ApiKeySettings } from "./components/v3/settings/ApiKeySettings";
 import { caseIntakePrimaryText, type CaseIntake } from "./lib/caseIntake";
 import type { ModelChoiceMap } from "./components/v3/ModelPicker";
 
@@ -21,6 +22,7 @@ function AppContent() {
   // Demo route
   const isDemoRoute = window.location.pathname === "/demo";
   const isModelSettingsPreviewRoute = import.meta.env.DEV && window.location.pathname === "/model-settings-preview";
+  const isApiKeySettingsRoute = window.location.pathname === "/settings/api-key";
 
   useEffect(() => {
     if (appPhase === renderedPhase) return;
@@ -60,6 +62,10 @@ function AppContent() {
 
   if (isModelSettingsPreviewRoute) {
     return <ModelProviderSettingsPreview />;
+  }
+
+  if (isApiKeySettingsRoute) {
+    return <ApiKeySettings />;
   }
 
   return (
