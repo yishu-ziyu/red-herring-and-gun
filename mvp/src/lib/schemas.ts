@@ -134,6 +134,88 @@ export interface FinalReport {
   inferenceLicense?: import("./schemas").InferenceLicense;
   sourceLineage?: import("./schemas").SourceLineageGroup[];
   reasoningTrace?: import("./schemas").ReasoningStep[];
+  // Attention Guidance (Change A/D): sentence-level spans for conclusion + boundaries
+  attentionGuidance?: AttentionGuidedText;
+}
+
+// ── Attention Guidance (docs/ATTENTION_GUIDANCE.md) ─────────────
+// Change A: conclusion as ClaimSpan sequence
+// Change D: can say / cannot say as typed boundary spans (blocked never masquerades as assert)
+
+export type AttentionPriority = "p0" | "p1" | "p2" | "p3" | "p4";
+
+export type SpanType =
+  | "assert"
+  | "hedge"
+  | "gap"
+  | "blocked"
+  | "context";
+
+export type SpanEvidenceRole =
+  | "support"
+  | "contradict"
+  | "limit"
+  | "background"
+  | "missing";
+
+export type IndependenceSignal =
+  | "independent"
+  | "folded_repost"
+  | "unknown"
+  | "not_applicable";
+
+export type LicenseSignal = "allowed" | "blocked" | "insufficient" | "not_checked";
+
+export interface SourceRef {
+  sourceId: string;
+  title: string;
+  url?: string;
+  domain?: string;
+  role: SpanEvidenceRole;
+  independence: IndependenceSignal;
+  lineageGroupId?: string;
+}
+
+export interface ClaimSpan {
+  id: string;
+  text: string;
+  spanType: SpanType;
+  sourceIds: string[];
+  sources?: SourceRef[];
+  attention: AttentionPriority;
+  role?: SpanEvidenceRole;
+  license?: LicenseSignal;
+  subclaimId?: string;
+  attentionReason?: string;
+  neededEvidence?: string[];
+}
+
+export interface BoundarySpan {
+  id: string;
+  text: string;
+  /** can-say is never "blocked"; cannot-say is always "blocked" */
+  spanType: "assert" | "gap" | "blocked" | "hedge";
+  license: LicenseSignal;
+  attention: AttentionPriority;
+  attentionReason?: string;
+}
+
+export interface AttentionTarget {
+  id: string;
+  spanId: string;
+  priority: AttentionPriority;
+  title: string;
+  reason: string;
+  actionHint?: string;
+}
+
+export interface AttentionGuidedText {
+  plainText: string;
+  spans: ClaimSpan[];
+  canSaySpans: BoundarySpan[];
+  cannotSaySpans: BoundarySpan[];
+  attentionRail: AttentionTarget[];
+  sources: SourceRef[];
 }
 
 // v2-iteration 2026-07-04: PR-1 inference license aggregation output
