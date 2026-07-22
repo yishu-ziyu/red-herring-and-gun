@@ -201,6 +201,7 @@ local_api_smoke() {
 public_check() {
   section "Public DNS and HTTP probes"
   need_cmd curl
+  need_cmd python3
 
   if command -v dig >/dev/null 2>&1; then
     echo "System DNS ${APP_DOMAIN}: $(dig +short "$APP_DOMAIN" | tr '\n' ' ')"
@@ -217,15 +218,21 @@ public_check() {
     echo "Google DoH lookup failed."
   fi
 
-  if [ -n "$doh_ip" ]; then
-    probe_resolved "domain https via DoH IP" "https://${APP_DOMAIN}/" "$APP_DOMAIN" "$doh_ip" HEAD
-    probe_resolved "domain models via DoH IP" "https://${APP_DOMAIN}/api/models/list" "$APP_DOMAIN" "$doh_ip"
+  # Prefer Python TLS probes for the Aliyun domain: macOS LibreSSL curl often
+  # fails with SSL_ERROR_SYSCALL even when browsers and OpenSSL succeed.
+  python_https_probe_resolved "domain https via Aliyun IP" "/" "$APP_DOMAIN" "$ALIYUN_HOST"
+  python_https_probe_resolved "domain health via Aliyun IP" "/health" "$APP_DOMAIN" "$ALIYUN_HOST"
+  python_https_probe_resolved "domain models via Aliyun IP" "/api/models/list" "$APP_DOMAIN" "$ALIYUN_HOST"
+
+  if [ -n "$doh_ip" ] && [ "$doh_ip" != "$ALIYUN_HOST" ]; then
+    python_https_probe_resolved "domain https via DoH IP" "/" "$APP_DOMAIN" "$doh_ip"
+    python_https_probe_resolved "domain models via DoH IP" "/api/models/list" "$APP_DOMAIN" "$doh_ip"
   fi
 
-  probe "domain https" "https://${APP_DOMAIN}/" HEAD
-  probe "domain http" "http://${APP_DOMAIN}/" HEAD
-  probe "server health" "http://${ALIYUN_HOST}/health"
-  probe "server models" "http://${ALIYUN_HOST}/api/models/list"
+  # HTTP domain may hit Aliyun ICP block; IP /health + /api are the reliable ops paths.
+  probe "domain http (may be ICP-blocked)" "http://${APP_DOMAIN}/" HEAD
+  probe "server health via IP" "http://${ALIYUN_HOST}/health"
+  probe "server models via IP" "http://${ALIYUN_HOST}/api/models/list"
 }
 
 aliyun_domain_check() {
