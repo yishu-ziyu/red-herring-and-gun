@@ -567,14 +567,14 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
                   </li>
                 </ul>
               </div>
-              <div className="landing-report-confidence" title="基于证据一致性、来源质量与反向证据的合成指标，不是对世界真相的最终判决">
+              <div className="landing-report-confidence">
                 <span className="landing-report-verdict-label">Evidence Confidence</span>
                 <div className="landing-report-score">
                   <span className="landing-report-score-value landing-report-score-value--muted">42</span>
                   <span className="landing-report-score-unit">/ 100</span>
                 </div>
                 <p className="landing-report-confidence-note">
-                  基于当前检索到的证据一致性、来源质量与反向证据计算；非「世界真相」打分。
+                  基于当前检索到的证据一致性、来源质量与反向证据计算。
                 </p>
               </div>
             </div>
