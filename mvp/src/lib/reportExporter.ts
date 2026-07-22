@@ -157,10 +157,6 @@ export function exportToMarkdown(
 
     "## 七、下一步需补充的证据",
     ...report.nextEvidenceNeeded.map((n) => `- ${n}`),
-
-    `\n---\n`,
-
-    "*本报告由 红鲱鱼与枪 自动生成，仅供参考。关键结论请以权威信源为准。*",
   ];
 
   return sections.join("\n");
