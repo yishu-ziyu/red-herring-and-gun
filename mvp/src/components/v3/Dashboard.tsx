@@ -600,8 +600,13 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
       <section className="landing-trust" aria-label="能力与数据概览">
         <div className="landing-trust-inner">
           <p className="landing-trust-providers">
-            <span className="landing-trust-label">检索与模型</span>
-            StepFun · MiMo · DeepSeek · 360 · AnySearch · Metaso
+            <span className="landing-trust-label">检索</span>
+            360 · AnySearch · Metaso · Tavily · Exa
+            <span className="landing-trust-sep" aria-hidden="true">
+              ·
+            </span>
+            <span className="landing-trust-label">模型</span>
+            MiniMax · StepFun · DeepSeek
           </p>
           <ul className="landing-trust-stats">
             <li>
@@ -631,7 +636,7 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
           <span>红鲱鱼与枪</span>
         </div>
         <p className="landing-footer-powered">
-          Powered by StepFun / MiMo / DeepSeek + 360 / AnySearch / Metaso
+          检索：360 / AnySearch / Metaso / Tavily / Exa · 模型：MiniMax / StepFun / DeepSeek
         </p>
         <nav className="landing-footer-nav" aria-label="次要导航">
           <a href="/settings/api-key">API Key 设置</a>

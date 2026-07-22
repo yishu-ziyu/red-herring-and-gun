@@ -8424,6 +8424,12 @@ button:disabled {
   color: var(--zt-ink);
 }
 
+.landing-trust-sep {
+  margin: 0 10px;
+  color: var(--zt-text-secondary);
+  opacity: 0.55;
+}
+
 .landing-trust-stats {
   list-style: none;
   margin: 0;
