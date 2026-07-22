@@ -84,7 +84,7 @@ describe("real analysis workspace", () => {
     fireEvent.change(screen.getByPlaceholderText("输入文字、粘贴链接，或添加聊天截图 / 网页截图"), {
       target: { value: "隔夜菜会致癌，吃了等于吃毒药" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /启动真实核查/ }));
+    fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
 
     expect(await screen.findByLabelText("真实核查办案台")).toBeInTheDocument();
     return rendered;
@@ -101,7 +101,7 @@ describe("real analysis workspace", () => {
   it("starts the real workspace from the stream-driven controller surface", async () => {
     const { container } = await startRealAnalysis();
 
-    expect(await screen.findByLabelText("主控调度")).toBeInTheDocument();
+    expect(await screen.findByLabelText("活动过程时间线")).toBeInTheDocument();
     expect(container.querySelector(".controller-proof-card")).toBeNull();
     expect(container.querySelector(".controller-prompt-dock")).toBeNull();
     expect(container.querySelector(".mission-agent-icon")).toBeNull();
@@ -265,11 +265,7 @@ describe("real analysis workspace", () => {
 });
 
 // ───────────────────────────────────────────────────────────────
-// 4-Agent model picker（简化版 BYO-API-key）
-// B6: picker 在 home 露出，preview 路由不露出
-// B8: 点 "推荐组合" preset 自动填齐 4 个 picker
-// B9: /api/models/list 返回 [] → picker 显示 "暂无可用模型"，启动按钮 disabled
-// e2e: 选完 picker 后点启动，requestOrchestrateStream 收到正确的 modelChoice
+// Shared home fixtures (landing + model picker)
 // ───────────────────────────────────────────────────────────────
 
 function mockModelsList(models: Array<{ provider: string; model: string; label: string; tier: string; hint: string }>) {
@@ -290,6 +286,100 @@ const FAKE_MODELS = [
   { provider: "deepseek", model: "deepseek-v4-flash", label: "DeepSeek V4 Flash", tier: "mid",  hint: "推荐" },
   { provider: "stepfun",  model: "step-1-8k",         label: "StepFun Step-1 8K", tier: "low",  hint: "便宜" },
 ];
+
+// ───────────────────────────────────────────────────────────────
+// Landing Version A — 产品叙事首页
+// Hero 5s 故事 + 示例「立即核查」启动路径
+// ───────────────────────────────────────────────────────────────
+
+describe("landing Version A storytelling", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.history.pushState({}, "", "/");
+    window.localStorage.clear();
+  });
+
+  it("renders Version A storytelling blocks on the home dashboard", async () => {
+    mockModelsList(FAKE_MODELS);
+
+    render(<App />);
+
+    expect(await screen.findByText("基于多 Agent 协作的事实核查系统")).toBeInTheDocument();
+    expect(
+      screen.getByText("当任何人都能生成信息，我们需要重新设计验证信息的方法。")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "它如何工作" })).toBeInTheDocument();
+    expect(screen.getByText("Claim Decomposer")).toBeInTheDocument();
+    expect(screen.getByText("调查报告预览")).toBeInTheDocument();
+    expect(screen.getByText("示例卷宗")).toBeInTheDocument();
+    expect(screen.getByText("Evidence Confidence")).toBeInTheDocument();
+    expect(screen.getByText("调查结论")).toBeInTheDocument();
+
+    const verifyButtons = screen.getAllByRole("button", { name: /立即核查/ });
+    expect(verifyButtons).toHaveLength(3);
+    expect(verifyButtons[0]).toHaveAccessibleName("立即核查：隔夜菜会致癌，等于吃毒药");
+    expect(verifyButtons[1]).toHaveAccessibleName(
+      "立即核查：某公司未来三年营收将增长十倍"
+    );
+    expect(verifyButtons[2]).toHaveAccessibleName(
+      "立即核查：某项政策已经正式确定并将立即实施"
+    );
+  });
+
+  it("starts analysis with the demo claim when「立即核查」is clicked", async () => {
+    mockModelsList(FAKE_MODELS);
+
+    vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
+      yield { type: "complete", totalLatencyMs: 1, steps: [], finalReport: undefined as never };
+    });
+
+    const claim = "隔夜菜会致癌，等于吃毒药";
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: `立即核查：${claim}` }));
+
+    expect(await screen.findByLabelText("真实核查办案台")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(requestOrchestrateStream).toHaveBeenCalled();
+    });
+
+    const lastCall = vi.mocked(requestOrchestrateStream).mock.calls.at(-1);
+    const streamInput = lastCall?.[0];
+    if (typeof streamInput === "string") {
+      expect(streamInput).toContain(claim);
+    } else {
+      expect(streamInput?.text).toBe(claim);
+    }
+  });
+
+  it("Enter on empty material shows input error and does not start analysis", async () => {
+    mockModelsList(FAKE_MODELS);
+
+    render(<App />);
+
+    const textarea = await screen.findByPlaceholderText(
+      "输入文字、粘贴链接，或添加聊天截图 / 网页截图"
+    );
+    fireEvent.keyDown(textarea, { key: "Enter", code: "Enter", shiftKey: false });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("请先填写待核查材料");
+    expect(requestOrchestrateStream).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("真实核查办案台")).not.toBeInTheDocument();
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// 4-Agent model picker（简化版 BYO-API-key）
+// B6: picker 在 home 露出，preview 路由不露出
+// B8: 点 "推荐组合" preset 自动填齐 4 个 picker
+// B9: /api/models/list 返回 [] → picker 显示 "暂无可用模型"，启动按钮 disabled
+// e2e: 选完 picker 后点启动，requestOrchestrateStream 收到正确的 modelChoice
+// ───────────────────────────────────────────────────────────────
 
 describe("4-Agent model picker (simplified BYO)", () => {
   afterEach(() => {
@@ -375,7 +465,7 @@ describe("4-Agent model picker (simplified BYO)", () => {
 
     expect(await screen.findByText(/暂无可用模型|未配置任何 LLM/)).toBeInTheDocument();
 
-    const submit = screen.getByRole("button", { name: /启动真实核查/ });
+    const submit = screen.getByRole("button", { name: /开始调查/ });
     expect(submit).toBeDisabled();
   });
 
@@ -400,7 +490,7 @@ describe("4-Agent model picker (simplified BYO)", () => {
     fireEvent.change(screen.getByPlaceholderText("输入文字、粘贴链接，或添加聊天截图 / 网页截图"), {
       target: { value: "测试 modelChoice 是否传递" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /启动真实核查/ }));
+    fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
 
     // 等待 requestOrchestrateStream 被调用
     await waitFor(() => {
