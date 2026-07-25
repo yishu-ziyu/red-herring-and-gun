@@ -182,3 +182,9 @@
 > 搜索引擎帮你找信息，我们帮你看清一个观点的结构。
 
 待完成：选择一个最稳的 Demo 输入例子，并确保它能完整走完材料输入、拆解、溯源、交叉验证、结论边界和闭环动作。
+
+
+## 公网表面（mdtask）
+
+- 文件：`docs/tasks/public-surface.md`
+- 列表：`mdtask list --path docs/tasks`
