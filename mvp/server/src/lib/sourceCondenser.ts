@@ -77,8 +77,10 @@ export interface CondensedSnippet {
   snippet: string;
 }
 
-const MAX_SNIPPET_INPUT_CHARS = 1500;
+const MAX_SNIPPET_INPUT_CHARS = 400;
 const MIN_RAW_SNIPPET_CHARS = 20;
+/** 单次浓缩只塞一批来源，避免把 60 条全文塞进 24k 上下文把 provider 打爆。 */
+const CONDENSE_BATCH_SIZE = 8;
 
 function getTimeoutMs(env: Record<string, string>, key: string, fallbackMs: number) {
   const raw = env[key] || process.env[key];
@@ -120,51 +122,59 @@ export async function condenseSourcesInYishuStyle(
 
   if (usable.length === 0) return new Map();
 
-  const userContent = JSON.stringify({
-    claim,
-    sources: usable,
-  }, null, 2);
+  const map = new Map<string, string>();
+  const timeoutMs = getTimeoutMs(env, "SOURCE_CONDENSER_TIMEOUT_MS", 12000);
 
-  try {
-    const result = await withTimeout(
-      callAgentWithFallback({
-        agentId: "source_condenser",
-        systemPrompt: YISHU_SYSTEM_PROMPT,
-        userContent,
-        responseSchema: CONDENSER_RESPONSE_SCHEMA,
-        maxTokens: 2400,
-        env,
-        // 不传 codexBin/codexBypass 等 - 让 router 按默认 fallback 链走
-        reasoningEffort: "low",
-        codexBin: "",
-      }),
-      getTimeoutMs(env, "SOURCE_CONDENSER_TIMEOUT_MS", 8000),
-      "来源摘要浓缩"
+  for (let offset = 0; offset < usable.length; offset += CONDENSE_BATCH_SIZE) {
+    const batch = usable.slice(offset, offset + CONDENSE_BATCH_SIZE);
+    const userContent = JSON.stringify(
+      {
+        claim: claim.slice(0, 240),
+        sources: batch,
+      },
+      null,
+      2
     );
 
-    // result.output 已是 schema 解析后的对象: { snippets: [{id, snippet}] }
-    const output = result.output;
-    const snippets = Array.isArray(output?.snippets) ? output.snippets : [];
+    try {
+      const result = await withTimeout(
+        callAgentWithFallback({
+          agentId: "source_condenser",
+          systemPrompt: YISHU_SYSTEM_PROMPT,
+          userContent,
+          responseSchema: CONDENSER_RESPONSE_SCHEMA,
+          maxTokens: 1600,
+          env,
+          reasoningEffort: "low",
+          codexBin: "",
+        }),
+        timeoutMs,
+        `来源摘要浓缩#${Math.floor(offset / CONDENSE_BATCH_SIZE) + 1}`
+      );
 
-    const map = new Map<string, string>();
-    for (const entry of snippets) {
-      if (
-        entry &&
-        typeof entry === "object" &&
-        typeof entry.id === "string" &&
-        typeof entry.snippet === "string" &&
-        entry.snippet.trim().length > 0
-      ) {
-        const trimmed = entry.snippet.trim();
-        map.set(entry.id, trimmed.length > 200 ? trimmed.slice(0, 200) + "…" : trimmed);
+      const snippets = Array.isArray(result.output?.snippets) ? result.output.snippets : [];
+      for (const entry of snippets) {
+        if (
+          entry &&
+          typeof entry === "object" &&
+          typeof entry.id === "string" &&
+          typeof entry.snippet === "string" &&
+          entry.snippet.trim().length > 0
+        ) {
+          const trimmed = entry.snippet.trim();
+          map.set(entry.id, trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed);
+        }
       }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[sourceCondenser] 批次 ${Math.floor(offset / CONDENSE_BATCH_SIZE) + 1} 浓缩失败，该批回退原 snippet: ${reason}`
+      );
+      // 单批失败不拖死其余批次
     }
-    return map;
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    console.warn(`[sourceCondenser] 浓缩失败，回退到原 snippet: ${reason}`);
-    return new Map();
   }
+
+  return map;
 }
 
 /**

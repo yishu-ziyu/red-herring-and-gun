@@ -45,13 +45,14 @@ const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>([
   "codex",
 ]);
 
+// MiniMax is the local SSOT default chat; 360 is legacy hackathon sponsor path (low context).
 const DEFAULT_TEXT_PROVIDER_ORDER: AgentTextProviderId[] = [
+  "minimax",
   "stepfun",
-  "360",
+  "anthropic",
   "deepseek",
   "mimo",
-  "minimax",
-  "anthropic",
+  "360",
   "codex",
 ];
 
@@ -196,9 +197,21 @@ export async function loadAnthropicConfig(
 
 // 审查 P3-2 修复：extractJsonObject 已抽到 ./anthropicParse.js，本文件顶部 re-export。
 
-/** 尝试修复 LLM 输出的 loose JSON（尾随逗号、未加引号的值） */
+function stripJsonNoise(text: string): string {
+  return text
+    .replace(/^\uFEFF/, "")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\u00A0/g, " ")
+    .trim();
+}
+
+/** 尝试修复 LLM 输出的 loose JSON（尾随逗号、未加引号的值、截断闭合） */
 function repairLooseJsonObject(json: string): string {
-  return json
+  let repaired = stripJsonNoise(json)
+    // // line comments and /* block comments */ (outside of perfect string handling — best effort)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1")
     .replace(/,\s*([}\]])/g, "$1")
     .replace(/:\s*([^"{\[\]\d\-tfn][^,\n\r}\]]*?)(?=\s*[,}\]])/g, (_match, value: string) => {
       const trimmed = value.trim();
@@ -206,27 +219,129 @@ function repairLooseJsonObject(json: string): string {
       if (/^(true|false|null)$/i.test(trimmed)) return `: ${trimmed.toLowerCase()}`;
       return `: ${JSON.stringify(trimmed.replace(/^['"]|['"]$/g, ""))}`;
     });
+
+  // Single-quoted strings → double-quoted (common model slip)
+  repaired = repaired.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_m, inner: string) =>
+    JSON.stringify(inner.replace(/\\'/g, "'"))
+  );
+
+  return closeTruncatedJson(repaired);
 }
 
-/** 解析 LLM JSON 输出：先 extractJsonObject，再 repairLooseJsonObject，再 JSON.parse。
- *  解析失败抛带 label 的 Error。
+/**
+ * Balance braces/brackets for truncated model output.
+ * If a string is left open, close it first; drop a trailing incomplete key/comma.
+ */
+export function closeTruncatedJson(input: string): string {
+  let s = input.trim();
+  if (!s) return s;
+
+  // Drop dangling trailing comma / incomplete key before we close.
+  s = s.replace(/,\s*$/, "");
+  s = s.replace(/,\s*"[^"]*$/, "");
+  s = s.replace(/:\s*"[^"]*$/, ': ""');
+  s = s.replace(/:\s*[^,{\[\]}\s"]+$/, ': null');
+
+  const stack: Array<"{" | "["> = [];
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") stack.push("{");
+    else if (ch === "[") stack.push("[");
+    else if (ch === "}" || ch === "]") {
+      const open = stack[stack.length - 1];
+      if ((ch === "}" && open === "{") || (ch === "]" && open === "[")) stack.pop();
+    }
+  }
+
+  if (inString) s += '"';
+  s = s.replace(/,\s*$/, "");
+  while (stack.length > 0) {
+    const open = stack.pop();
+    s += open === "{" ? "}" : "]";
+  }
+  return s;
+}
+
+function tryParseJsonCandidate(candidate: string): any | undefined {
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 解析 LLM JSON 输出：extract → 多策略 repair → JSON.parse。
+ * 解析失败抛带 label 的 Error。
  */
 export function parseAgentJson(text: string, label: string): any {
-  const json = extractJsonObject(text);
-  try {
-    return JSON.parse(json);
-  } catch (error) {
-    const repaired = repairLooseJsonObject(json);
-    if (repaired !== json) {
-      try {
-        return JSON.parse(repaired);
-      } catch {
-        // Fall through to the original parse error; it usually points at the real bad token.
-      }
+  const cleaned = stripJsonNoise(text);
+  const extracted = extractJsonObject(cleaned);
+  const candidates = [
+    extracted,
+    repairLooseJsonObject(extracted),
+    closeTruncatedJson(extracted),
+    repairLooseJsonObject(closeTruncatedJson(extracted)),
+    // last resort: whole cleaned text if it already looks like an object
+    cleaned.startsWith("{") ? repairLooseJsonObject(cleaned) : "",
+  ].filter((item, index, arr) => item && arr.indexOf(item) === index);
+
+  let lastError: Error | undefined;
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("JSON 解析失败");
     }
-    const message = error instanceof Error ? error.message : "JSON 解析失败";
-    throw new Error(`${label} 返回 JSON 无法解析：${message}`);
   }
+
+  const message = lastError?.message || "JSON 解析失败";
+  throw new Error(`${label} 返回 JSON 无法解析：${message}`);
+}
+
+export function isAgentJsonParseError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /JSON 无法解析|Unexpected token|Unexpected end of JSON|Expected .* after property|Bad control character|JSON\.parse/i.test(
+    message
+  );
+}
+
+function buildJsonRepairUserContent(brokenText: string, originalUserContent: string): string {
+  const broken = brokenText.length > 14000 ? `${brokenText.slice(0, 14000)}\n…[truncated]` : brokenText;
+  const original =
+    originalUserContent.length > 6000
+      ? `${originalUserContent.slice(0, 6000)}\n…[truncated]`
+      : originalUserContent;
+  return [
+    "你上一次输出不是合法 JSON，解析失败。",
+    "请只输出一个可被 JSON.parse 接受的 JSON 对象，不要 markdown 代码块，不要解释。",
+    "字段结构必须与原任务要求一致；字符串里的引号必须正确转义；不要尾随逗号。",
+    "",
+    "## 上一次坏输出",
+    broken,
+    "",
+    "## 原任务（仅作字段参考）",
+    original,
+  ].join("\n");
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -431,6 +546,56 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       ? params.modelOverride
       : undefined;
 
+  /**
+   * 调一次 provider 拿文本，本地 parse；若是坏 JSON，同 provider 再修一次（仅 1 次），
+   * 避免 360/小模型把整步打成 agent_error。
+   */
+  const invokeAndParse = async (
+    provider: AgentTextProviderId | string,
+    modelName: string,
+    call: (sys: string, user: string) => Promise<{ text: string; model: string }>,
+    timeoutMs: number,
+    logTag: string
+  ): Promise<CallAgentResult> => {
+    const raw = await withTimeout(call(systemPrompt, userContent), timeoutMs, `${traceLabel} ${provider}:${modelName}`);
+    try {
+      const output = parseAgentJson(raw.text, raw.model);
+      return { output, model: raw.model, latencyMs: Date.now() - startTime };
+    } catch (parseError) {
+      if (!isAgentJsonParseError(parseError)) throw parseError;
+      const parseMessage = parseError instanceof Error ? parseError.message : "JSON 解析失败";
+      logger.error("[orchestrate-provider] json_parse_error", {
+        agent: traceLabel,
+        provider,
+        model: modelName,
+        message: parseMessage,
+        textChars: raw.text?.length ?? 0,
+      });
+
+      // Local multi-repair already failed — one model-side rewrite, same provider.
+      logger.info("[orchestrate-provider] json_repair_retry", {
+        agent: traceLabel,
+        provider,
+        model: modelName,
+        tag: logTag,
+      });
+      const repairPrompt = [
+        systemPrompt,
+        "",
+        "# CRITICAL OUTPUT RULE",
+        "Return ONLY one valid JSON object. No markdown fences. No commentary.",
+        "Escape all quotes inside strings. No trailing commas. Complete all braces.",
+      ].join("\n");
+      const repairedRaw = await withTimeout(
+        call(repairPrompt, buildJsonRepairUserContent(raw.text, userContent)),
+        timeoutMs,
+        `${traceLabel} ${provider}:${modelName} json-repair`
+      );
+      const output = parseAgentJson(repairedRaw.text, repairedRaw.model);
+      return { output, model: repairedRaw.model, latencyMs: Date.now() - startTime };
+    }
+  };
+
   if (params.modelOverride) {
     const { provider: ovProvider, model: ovModel } = params.modelOverride;
     if (!TEXT_PROVIDER_IDS.has(ovProvider)) {
@@ -443,21 +608,24 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       model: ovModel,
     });
     try {
-      const result = await withTimeout(
-        dispatchSingleProvider({
-          provider: ovProvider,
-          model: ovModel,
-          env,
-          agentId,
-          systemPrompt,
-          userContent,
-          responseSchema,
-          maxTokens,
-          codexBin,
-          reasoningEffort,
-        }),
+      const result = await invokeAndParse(
+        ovProvider,
+        ovModel,
+        (sys, user) =>
+          dispatchSingleProvider({
+            provider: ovProvider,
+            model: ovModel,
+            env,
+            agentId,
+            systemPrompt: sys,
+            userContent: user,
+            responseSchema,
+            maxTokens,
+            codexBin,
+            reasoningEffort,
+          }),
         timeoutForProviderModel(env, ovProvider, ovModel, providerTimeoutMs),
-        `${traceLabel} ${ovProvider}:${ovModel}`
+        "override"
       );
       logger.info("[orchestrate-provider] complete (override)", {
         agent: traceLabel,
@@ -465,11 +633,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         model: ovModel,
         latencyMs: Date.now() - ovStart,
       });
-      return {
-        output: parseAgentJson(result.text, result.model),
-        model: result.model,
-        latencyMs: Date.now() - startTime,
-      };
+      return result;
     } catch (error) {
       const message = error instanceof Error ? error.message : `${ovProvider} 调用失败`;
       logger.error("[orchestrate-provider] error (override)", {
@@ -484,13 +648,13 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   }
 
   /**
-   * 包装单个 provider 调用：start 日志 → 执行 → complete/error 日志。
+   * 包装单个 provider 调用：start 日志 → 执行(+JSON repair retry) → complete/error 日志。
    * 返回的 Promise<{ ok: true; result } | { ok: false; error }> 便于外层累积 errors 数组。
    */
-  const runOne = async <T,>(
+  const runOne = async (
     provider: string,
     modelName: string,
-    call: () => Promise<{ text: string; model: string }>
+    call: (sys: string, user: string) => Promise<{ text: string; model: string }>
   ): Promise<{ ok: true; result: CallAgentResult } | { ok: false; msg: string }> => {
     const providerStart = Date.now();
     logger.info("[orchestrate-provider] start", {
@@ -499,26 +663,20 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       model: modelName,
     });
     try {
-      const raw = await withTimeout(
-        call(),
+      const result = await invokeAndParse(
+        provider,
+        modelName,
+        call,
         timeoutForProviderModel(env, provider, modelName, providerTimeoutMs),
-        `${traceLabel} ${provider}:${modelName}`
+        "fallback"
       );
-      const output = parseAgentJson(raw.text, raw.model);
       logger.info("[orchestrate-provider] complete", {
         agent: traceLabel,
         provider,
         model: modelName,
         latencyMs: Date.now() - providerStart,
       });
-      return {
-        ok: true,
-        result: {
-          output,
-          model: raw.model,
-          latencyMs: Date.now() - startTime,
-        },
-      };
+      return { ok: true, result };
     } catch (error) {
       const message = error instanceof Error ? error.message : `${provider} 调用失败`;
       logger.error("[orchestrate-provider] error", {
@@ -543,8 +701,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         if (onMissing === "error") errors.push(`[deepseek:${model}] 未配置 DEEPSEEK_API_KEY`);
         continue;
       }
-      const out = await runOne("deepseek", model, () =>
-        callDeepSeekAgent({ apiKey, baseUrl, model, systemPrompt, userContent, maxTokens })
+      const out = await runOne("deepseek", model, (sys, user) =>
+        callDeepSeekAgent({ apiKey, baseUrl, model, systemPrompt: sys, userContent: user, maxTokens })
       );
       if (out.ok) {
         return out.result;
@@ -568,8 +726,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         "https://token-plan-ams.xiaomimimo.com/anthropic",
       ];
       for (const clusterUrl of clusters) {
-        const out = await runOne(`mimo@${clusterUrl}`, model, () =>
-          callMimoAgent({ baseUrl: clusterUrl, apiKey, model, systemPrompt, userContent, maxTokens })
+        const out = await runOne(`mimo@${clusterUrl}`, model, (sys, user) =>
+          callMimoAgent({ baseUrl: clusterUrl, apiKey, model, systemPrompt: sys, userContent: user, maxTokens })
         );
         if (out.ok) {
           return out.result;
@@ -589,14 +747,14 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         if (onMissing === "error") errors.push(`[minimax:${model}] 未配置 MINIMAX_API_KEY / MINIMAX_TOKEN_PLAN_KEY`);
         continue;
       }
-      const out = await runOne("minimax", model, () =>
+      const out = await runOne("minimax", model, (sys, user) =>
         callMiniMaxAgent({
           baseUrl,
           apiKey,
           authHeader: getMiniMaxAuthHeader(env),
           model,
-          systemPrompt,
-          userContent,
+          systemPrompt: sys,
+          userContent: user,
           maxTokens,
         })
       );
@@ -617,13 +775,13 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         if (onMissing === "error") errors.push(`[stepfun:${model}] 未配置 STEPFUN_API_KEY`);
         continue;
       }
-      const out = await runOne("stepfun", model, () =>
+      const out = await runOne("stepfun", model, (sys, user) =>
         callStepFunAgent({
           baseUrl,
           apiKey,
           model,
-          systemPrompt,
-          userContent,
+          systemPrompt: sys,
+          userContent: user,
           maxTokens: stepFunMaxTokensForModel(env, model, maxTokens),
           reasoningEffort: stepFunReasoningEffortForModel(env, model, reasoningEffort),
         })
@@ -649,8 +807,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         if (onMissing === "error") errors.push(`[360:${model}] 未配置 360 API key`);
         continue;
       }
-      const out = await runOne("360", model, () =>
-        call360ChatAgent({ apiKey, baseUrl, model, systemPrompt, userContent, maxTokens })
+      const out = await runOne("360", model, (sys, user) =>
+        call360ChatAgent({ apiKey, baseUrl, model, systemPrompt: sys, userContent: user, maxTokens })
       );
       if (out.ok) {
         return out.result;
@@ -666,13 +824,13 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         if (onMissing === "error") errors.push("[anthropic] 未配置 Anthropic proxy");
         continue;
       }
-      const out = await runOne("anthropic-local", anthropicConfig.model, () =>
+      const out = await runOne("anthropic-local", anthropicConfig.model, (sys, user) =>
         callAnthropicAgent({
           baseUrl: anthropicConfig.baseUrl,
           token: anthropicConfig.token,
           model: anthropicConfig.model,
-          systemPrompt,
-          userContent,
+          systemPrompt: sys,
+          userContent: user,
           maxTokens,
         })
       );
@@ -685,8 +843,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
 
     if (provider === "codex") {
       const model = envValue(env, "CODEX_LOCAL_MODEL") || "gpt-5.5";
-      const out = await runOne("codex-cli", model, () =>
-        callCodexAgent({ codexBin, model, systemPrompt, userContent, responseSchema, maxTokens })
+      const out = await runOne("codex-cli", model, (sys, user) =>
+        callCodexAgent({ codexBin, model, systemPrompt: sys, userContent: user, responseSchema, maxTokens })
       );
       if (out.ok) {
         return out.result;
