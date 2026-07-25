@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 // Emil-design-eng easing tokens (mission-critical: all motion uses custom curves)
@@ -1006,29 +1006,213 @@ interface ReadingSourceItem {
   publishedAt: string;
 }
 
+function mapRawSourceItem(
+  source: Record<string, unknown>,
+  index: number,
+  defaultRole = ""
+): ReadingSourceItem {
+  const url = String(source.url ?? source.link ?? source.href ?? "");
+  const domain = String(source.domain ?? source.hostname ?? source.site ?? safeDomainFromUrl(url) ?? "");
+  const score = Number(source.credibilityScore ?? source.score);
+  return {
+    id: String(source.id ?? `S${index + 1}`),
+    title: String(source.title ?? source.name ?? source.site_name ?? `来源 ${index + 1}`),
+    url,
+    domain,
+    snippet: String(source.snippet ?? source.summary ?? source.content ?? source.desc ?? ""),
+    // 后端 sourceCondenser 浓缩出的 奕枢风格 摘要,失败/缺失时为 undefined
+    condensedSnippet: typeof source.condensedSnippet === "string" ? source.condensedSnippet : undefined,
+    credibility: String(source.credibility ?? ""),
+    credibilityScore: Number.isFinite(score) ? score : undefined,
+    sourceType: String(source.sourceType ?? source.type ?? ""),
+    evidenceRole: String(source.evidenceRole ?? source.role ?? defaultRole),
+    publishedAt: String(source.publishedAt ?? source.published_at ?? source.date ?? ""),
+  };
+}
+
 function sourceItemsFromResult(result: Record<string, unknown> | null | undefined): ReadingSourceItem[] {
-  const rawSources = Array.isArray(result?.sources) ? result.sources : [];
-  return rawSources
-    .filter((source): source is Record<string, unknown> => Boolean(source) && typeof source === "object")
-    .map((source, index) => {
-      const url = String(source.url ?? source.link ?? source.href ?? "");
-      const domain = String(source.domain ?? source.hostname ?? source.site ?? safeDomainFromUrl(url) ?? "");
-      const score = Number(source.credibilityScore ?? source.score);
-      return {
-        id: String(source.id ?? `S${index + 1}`),
-        title: String(source.title ?? source.name ?? source.site_name ?? `来源 ${index + 1}`),
-        url,
-        domain,
-        snippet: String(source.snippet ?? source.summary ?? source.content ?? source.desc ?? ""),
-        // 后端 sourceCondenser 浓缩出的 奕枢风格 摘要,失败/缺失时为 undefined
-        condensedSnippet: typeof source.condensedSnippet === "string" ? source.condensedSnippet : undefined,
-        credibility: String(source.credibility ?? ""),
-        credibilityScore: Number.isFinite(score) ? score : undefined,
-        sourceType: String(source.sourceType ?? source.type ?? ""),
-        evidenceRole: String(source.evidenceRole ?? source.role ?? ""),
-        publishedAt: String(source.publishedAt ?? source.published_at ?? source.date ?? ""),
-      };
-    });
+  if (!result) return [];
+
+  const buckets: Array<{ items: unknown; defaultRole: string }> = [
+    { items: result.sources, defaultRole: "" },
+    { items: result.supportingEvidence, defaultRole: "支持" },
+    { items: result.contradictingEvidence, defaultRole: "反驳" },
+  ];
+
+  const seen = new Set<string>();
+  const out: ReadingSourceItem[] = [];
+
+  for (const bucket of buckets) {
+    const rawSources = Array.isArray(bucket.items) ? bucket.items : [];
+    for (const raw of rawSources) {
+      if (!raw || typeof raw !== "object") continue;
+      const source = raw as Record<string, unknown>;
+      const item = mapRawSourceItem(source, out.length, bucket.defaultRole);
+      const key = item.url || `${item.domain}|${item.title}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+    }
+  }
+
+  return out;
+}
+
+function evidenceRoleLabel(role: string) {
+  const value = role.trim().toLowerCase();
+  if (!value) return "材料";
+  if (value.includes("support") || value.includes("支持")) return "支持";
+  if (value.includes("contradict") || value.includes("反驳") || value.includes("counter")) return "反驳";
+  if (value.includes("limit") || value.includes("限定") || value.includes("限制")) return "限定";
+  if (value.includes("context") || value.includes("背景")) return "背景";
+  if (value.includes("lead") || value.includes("线索")) return "线索";
+  return role.trim().slice(0, 8);
+}
+
+function searchQueriesFromEvent(event: ControllerProcessEvent, step: HandoffStep | null): string[] {
+  const queries: string[] = [];
+  if (event.query?.trim()) queries.push(event.query.trim());
+
+  const search360 = searchResultFromStep(step);
+  if (typeof search360?.supportQuery === "string" && search360.supportQuery.trim()) {
+    queries.push(`支持侧：${search360.supportQuery.trim()}`);
+  }
+  if (typeof search360?.contradictQuery === "string" && search360.contradictQuery.trim()) {
+    queries.push(`反驳侧：${search360.contradictQuery.trim()}`);
+  }
+  if (typeof event.result?.supportQuery === "string" && String(event.result.supportQuery).trim()) {
+    queries.push(`支持侧：${String(event.result.supportQuery).trim()}`);
+  }
+  if (typeof event.result?.contradictQuery === "string" && String(event.result.contradictQuery).trim()) {
+    queries.push(`反驳侧：${String(event.result.contradictQuery).trim()}`);
+  }
+  if (typeof step?.output.query === "string" && step.output.query.trim()) {
+    queries.push(step.output.query.trim());
+  }
+
+  return Array.from(new Set(queries)).slice(0, 4);
+}
+
+function activityThinkingLines(event: ControllerProcessEvent, step: HandoffStep | null): string[] {
+  const lines: string[] = [];
+  const agentId = step ? normalizeAgent(step.agent) : controllerEventAgentId(event);
+  const processCopy = agentId ? AGENT_PROCESS_COPY[agentId] : undefined;
+  const phase = step?.status === "completed" || event.status === "completed" || event.status === "final" ? "completed" : "running";
+
+  if (processCopy) {
+    lines.push(...processCopy[phase]);
+  } else if (event.kind === "tool") {
+    lines.push(toolReadingPurpose(event));
+  } else if (event.kind === "planner" || event.kind === "thought") {
+    lines.push(controllerReadingPurpose(event));
+  } else if (event.kind === "debate") {
+    lines.push(controllerReadingPurpose(event));
+  } else if (event.kind === "error") {
+    lines.push(controllerReadingPurpose(event));
+  }
+
+  if (typeof step?.output.analysis === "string" && step.output.analysis.trim()) {
+    lines.push(step.output.analysis.trim().slice(0, 360));
+  }
+  if (typeof step?.output.verificationNotes === "string" && step.output.verificationNotes.trim()) {
+    lines.push(step.output.verificationNotes.trim().slice(0, 280));
+  }
+  if (typeof event.result?.traceText === "string" && event.result.traceText.trim()) {
+    lines.push(event.result.traceText.trim().slice(0, 280));
+  }
+
+  return Array.from(new Set(lines.map((line) => line.trim()).filter(Boolean))).slice(0, 6);
+}
+
+function activityHandoffLines({
+  event,
+  step,
+  relatedQuestions,
+  boundaryItems,
+  auditItems,
+}: {
+  event: ControllerProcessEvent;
+  step: HandoffStep | null;
+  relatedQuestions: string[];
+  boundaryItems: string[];
+  auditItems: Array<{ label: string; text: string }>;
+}): string[] {
+  const lines: string[] = [];
+
+  if (step) {
+    const handoffTargets = readStringArray(step.output.handoffTargets);
+    if (handoffTargets.length > 0) {
+      lines.push(`交给下游：${handoffTargets.slice(0, 4).join("；")}`);
+    }
+    const neededEvidence = readStringArray(step.output.neededEvidence);
+    if (neededEvidence.length > 0) {
+      lines.push(`还需要的证据：${neededEvidence.slice(0, 4).join("；")}`);
+    }
+    const unresolved = readStringArray(step.output.unresolvedQuestions).concat(
+      readStringArray(step.output.unresolvedEvidenceGaps)
+    );
+    if (unresolved.length > 0) {
+      lines.push(`待确认：${unresolved.slice(0, 4).join("；")}`);
+    }
+  }
+
+  const missing = auditItems.filter((item) => item.label === "还缺").map((item) => item.text);
+  if (missing.length > 0) {
+    lines.push(`缺失来源：${missing.slice(0, 3).join("；")}`);
+  }
+
+  for (const question of relatedQuestions.slice(0, 4)) {
+    lines.push(`继续追查：${question}`);
+  }
+  for (const item of boundaryItems.slice(0, 3)) {
+    lines.push(item);
+  }
+
+  if (lines.length === 0 && event.kind === "agent" && (event.status === "running" || event.status === "queued")) {
+    lines.push("本步尚未留下交接物；完成后会公示交给下游什么、还缺什么。");
+  }
+
+  return Array.from(new Set(lines.map((line) => line.trim()).filter(Boolean))).slice(0, 8);
+}
+
+function relatedActivityEvents(event: ControllerProcessEvent, controllerEvents: ControllerProcessEvent[]) {
+  const index = controllerEvents.findIndex((item) => item.id === event.id);
+  if (index < 0) return [event];
+
+  const agentId = controllerEventAgentId(event);
+  const windowStart = Math.max(0, index - 6);
+  const related: ControllerProcessEvent[] = [];
+
+  for (let i = windowStart; i <= index; i += 1) {
+    const candidate = controllerEvents[i];
+    if (candidate.id === event.id) {
+      related.push(candidate);
+      continue;
+    }
+    if (agentId && controllerEventAgentId(candidate) === agentId) {
+      related.push(candidate);
+      continue;
+    }
+    if (i >= index - 3 && (candidate.kind === "tool" || candidate.kind === "thought" || candidate.kind === "planner")) {
+      related.push(candidate);
+    }
+  }
+
+  return related.slice(-6);
+}
+
+function ActivityText({
+  text,
+  animate,
+  speed = 14,
+}: {
+  text: string;
+  animate: boolean;
+  speed?: number;
+}) {
+  if (!text) return null;
+  if (animate) return <TypewriterText text={text} speed={speed} />;
+  return <span>{text}</span>;
 }
 
 function safeDomainFromUrl(url: string) {
@@ -1176,7 +1360,12 @@ function searchResultFromStep(step: HandoffStep | null) {
 function readingSourcesForEvent(event: ControllerProcessEvent, step: HandoffStep | null) {
   const resultSources = sourceItemsFromResult(event.result);
   if (resultSources.length > 0) return resultSources;
-  return sourceItemsFromResult(searchResultFromStep(step));
+  const fromSearch = sourceItemsFromResult(searchResultFromStep(step));
+  if (fromSearch.length > 0) return fromSearch;
+  if (step?.output && typeof step.output === "object") {
+    return sourceItemsFromResult(step.output as Record<string, unknown>);
+  }
+  return [];
 }
 
 function sourceAuditItems(step: HandoffStep | null) {
@@ -2920,25 +3109,48 @@ function EvidenceBoardPanel({
 function ControllerRail({
   controllerEvents,
   activeControllerEventId,
+  followLive,
   onSelectControllerEvent,
+  onFollowLive,
 }: {
   controllerEvents: ControllerProcessEvent[];
   activeControllerEventId: string;
+  followLive: boolean;
   onSelectControllerEvent: (event: ControllerProcessEvent) => void;
+  onFollowLive: () => void;
 }) {
   const transcriptItems = useMemo(() => buildControllerTranscript(controllerEvents), [controllerEvents]);
+  const flowRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const root = flowRef.current;
+    if (!root || !activeControllerEventId) return;
+    const target = root.querySelector<HTMLElement>(`[data-controller-event-id="${activeControllerEventId}"]`);
+    if (!target || typeof target.scrollIntoView !== "function") return;
+    target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [activeControllerEventId, transcriptItems.length]);
 
   return (
-    <aside className="case-controller-panel case-controller-panel--stream" aria-label="主控调度">
+    <aside className="case-controller-panel case-controller-panel--stream" aria-label="活动过程时间线">
       <div className="controller-transcript-head">
         <div>
-          <span className="controller-live-dot" />
-          <strong>中控系统</strong>
+          <span className={`controller-live-dot ${followLive ? "controller-live-dot--live" : "controller-live-dot--paused"}`} />
+          <div className="controller-transcript-head-copy">
+            <strong>活动过程</strong>
+            <span>点选任一步，右侧回放思考与材料</span>
+          </div>
         </div>
-        <em>{controllerEvents.length} 条事件</em>
+        <div className="controller-transcript-head-meta">
+          <em>{controllerEvents.length} 条</em>
+          {!followLive ? (
+            <button type="button" className="controller-follow-live-btn" onClick={onFollowLive}>
+              回到最新
+            </button>
+          ) : null}
+        </div>
       </div>
 
-      <div className="controller-transcript-flow">
+      <div className="controller-transcript-flow" ref={flowRef}>
         <AnimatePresence initial={false}>
           {transcriptItems.map((item, index) => {
             if (item.type === "agent_cluster") {
@@ -2957,6 +3169,7 @@ function ControllerRail({
                     className="controller-agent-cluster-head"
                     onClick={() => onSelectControllerEvent(item.event)}
                     aria-pressed={activeControllerEventId === item.event.id}
+                    data-controller-event-id={item.event.id}
                   >
                     <span>Agent Team</span>
                     <em>{item.rows?.length ?? 1} 个并行任务</em>
@@ -2982,12 +3195,14 @@ function ControllerRail({
                           className={`controller-agent-row controller-agent-row--${row.status} ${isActive ? "controller-agent-row--active" : ""}`}
                           onClick={() => onSelectControllerEvent(row)}
                           aria-pressed={isActive}
+                          data-controller-event-id={row.id}
                         >
                           <AgentStatusDot agentId={agentId ?? row.id} state={dotState} />
                           <span className="controller-agent-avatar">
                             {meta?.avatar ? <img src={meta.avatar} alt="" /> : meta?.label ?? "A"}
                           </span>
                           <span className="controller-agent-copy">
+                            <span className="controller-kind-chip">{CONTROLLER_EVENT_KIND_LABEL[row.kind]}</span>
                             <strong>{meta?.role ?? row.title}</strong>
                             <small>{row.detail}</small>
                           </span>
@@ -3002,6 +3217,7 @@ function ControllerRail({
 
             if (item.type === "operation") {
               const isActive = activeControllerEventId === item.event.id;
+              const queryHint = item.event.query?.trim();
 
               return (
                 <motion.button
@@ -3009,6 +3225,7 @@ function ControllerRail({
                   type="button"
                   className={`controller-operation-row controller-operation-row--${item.status} ${isActive ? "controller-operation-row--active" : ""}`}
                   data-status={item.status}
+                  data-controller-event-id={item.event.id}
                   onClick={() => onSelectControllerEvent(item.event)}
                   aria-pressed={isActive}
                   layout
@@ -3021,8 +3238,9 @@ function ControllerRail({
                     <img src={operationIconForEvent(item.event)} alt="" />
                   </span>
                   <span className="controller-operation-copy">
+                    <span className="controller-kind-chip">{CONTROLLER_EVENT_KIND_LABEL[item.kind]}</span>
                     <strong>{item.title}</strong>
-                    <small>{item.detail}</small>
+                    <small>{queryHint ? `检索：${queryHint}` : item.detail}</small>
                   </span>
                   <span className="controller-operation-chevron">›</span>
                 </motion.button>
@@ -3037,6 +3255,7 @@ function ControllerRail({
                 type="button"
                 className={`controller-narration controller-narration--${item.status} ${isActive ? "controller-narration--active" : ""}`}
                 data-status={item.status}
+                data-controller-event-id={item.event.id}
                 onClick={() => onSelectControllerEvent(item.event)}
                 aria-pressed={isActive}
                 layout
@@ -3047,6 +3266,7 @@ function ControllerRail({
               >
                 <span className={`controller-process-dot controller-process-dot--${item.status}`} />
                 <span>
+                  <span className="controller-kind-chip">{CONTROLLER_EVENT_KIND_LABEL[item.kind]}</span>
                   <strong>{item.title}</strong>
                   <small>{item.detail}</small>
                 </span>
@@ -3062,28 +3282,26 @@ function ControllerRail({
 function ControllerEventDetailPanel({
   claim,
   event,
-  currentStep,
   steps,
-  streamItems,
   outputItems,
   controllerEvents,
   finalReport,
   executionPlan,
   runStatus,
   errorMessage,
+  followLive,
   onSelectControllerEvent,
 }: {
   claim: string;
   event: ControllerProcessEvent | null;
-  currentStep: HandoffStep | null;
   steps: HandoffStep[];
-  streamItems: MissionStreamItem[];
   outputItems: string[];
   controllerEvents: ControllerProcessEvent[];
   finalReport: Record<string, unknown> | null;
   executionPlan: ExecutionDagPlan | null;
   runStatus: RunStatus;
   errorMessage: string;
+  followLive: boolean;
   onSelectControllerEvent: (event: ControllerProcessEvent) => void;
 }) {
   if (!event) return null;
@@ -3111,7 +3329,16 @@ function ControllerEventDetailPanel({
   const relatedQuestions = relatedQuestionsFromResult(event.result ?? searchResultFromStep(eventStep));
   const debate = event.debate;
   const debateRounds = debate?.rounds ?? [];
-  const liveTrail = controllerEvents.slice(-5);
+  const relatedTrail = relatedActivityEvents(event, controllerEvents);
+  const thinkingLines = activityThinkingLines(event, eventStep);
+  const searchQueries = searchQueriesFromEvent(event, eventStep);
+  const handoffLines = activityHandoffLines({
+    event,
+    step: eventStep,
+    relatedQuestions,
+    boundaryItems,
+    auditItems,
+  });
   const processingSteps = controllerProcessingSteps({
     event,
     step: eventStep,
@@ -3119,11 +3346,20 @@ function ControllerEventDetailPanel({
     auditItems,
     relatedQuestions,
   });
+  const animateTyping =
+    followLive && runStatus === "running" && (event.status === "running" || event.status === "queued");
+  const modelLine = event.model || eventStep?.model || "";
+  const toolChannel =
+    event.kind === "tool"
+      ? event.agentName
+      : typeof event.result?.model === "string"
+      ? String(event.result.model)
+      : "";
 
   return (
     <motion.section
       key={event.id}
-      className={`controller-reading-window controller-reading-window--${event.status}`}
+      className={`controller-reading-window controller-reading-window--${event.status} controller-activity-window`}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.24, ease: EASE_OUT }}
@@ -3139,78 +3375,180 @@ function ControllerEventDetailPanel({
             <small>
               <i className={`controller-reading-status controller-reading-status--${event.status}`} />
               {runStatus === "running" && event.status === "queued" ? "准备中" : caseStatusLabel(event.status)}
+              <span className="controller-activity-mode">{followLive ? "实时跟随" : "历史回放"}</span>
             </small>
           </span>
         </div>
-        <em>{event.agentName}</em>
+        <div className="controller-reading-head-side">
+          <span className="controller-kind-chip controller-kind-chip--head">{CONTROLLER_EVENT_KIND_LABEL[event.kind]}</span>
+          <em>{event.agentName}</em>
+        </div>
       </header>
 
-      <div className="controller-reading-body">
+      <div className="controller-reading-body controller-activity-body">
         <p className="controller-reading-lead">
           <strong>{event.title}</strong>
-          <TypewriterText text={event.detail} />
+          <ActivityText text={event.detail} animate={animateTyping} />
         </p>
 
-        {runStatus === "running" && liveTrail.length > 1 ? (
-          <section className="controller-reading-section controller-live-trail" aria-live="polite">
-            <h3>实时流入</h3>
-            <div className="controller-live-trail-list">
-              <AnimatePresence initial={false}>
-                {liveTrail.map((item) => (
-                  <motion.article
-                    key={item.id}
-                    className={`controller-live-trail-item controller-live-trail-item--${item.status}`}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.18, ease: EASE_OUT }}
-                  >
-                    <span>{CONTROLLER_EVENT_KIND_LABEL[item.kind]}</span>
-                    <strong>{item.title}</strong>
-                    <p>
-                      <TypewriterText text={item.detail} speed={18} />
-                    </p>
-                  </motion.article>
+        <div className="controller-activity-stack" aria-label="本步活动明细">
+          <section className="controller-activity-section" aria-label="思考">
+            <header className="controller-activity-section-head">
+              <span>Thinking</span>
+              <strong>思考</strong>
+            </header>
+            {thinkingLines.length > 0 ? (
+              <ul className="controller-activity-list">
+                {thinkingLines.map((line, index) => (
+                  <li key={`think-${index}`}>
+                    <ActivityText text={line} animate={animateTyping && index === 0} speed={16} />
+                  </li>
                 ))}
-              </AnimatePresence>
-            </div>
-          </section>
-        ) : null}
-
-        {event.kind === "tool" || readingSources.length > 0 ? (
-          <section className="controller-reading-section controller-reading-section--plain">
-            <h3>{readingSources.length > 0 ? "查到的来源" : "调用对象"}</h3>
-            {event.query ? (
-              <p>
-                <TypewriterText text={`查询：${event.query}`} speed={18} />
-              </p>
-            ) : null}
-            {event.model ? (
-              <p>
-                <TypewriterText text={`模型/通道：${event.model}`} speed={14} />
-              </p>
-            ) : null}
-            {readingSources.length > 0 ? (
-              <ReadingSourceList sources={readingSources} />
+              </ul>
             ) : (
-              <p>
-                <TypewriterText text={toolReadingPurpose(event)} speed={14} />
-              </p>
+              <p className="controller-activity-empty">本步尚未留下可读的思考轨迹。</p>
             )}
           </section>
-        ) : event.kind === "agent" ? (
-          <section className="controller-reading-section controller-reading-section--plain">
-            <h3>{eventStep ? agentOutputHeading(eventStep) : "它在核查什么"}</h3>
-            <p>
-              <TypewriterText text={AGENT_QUEUE_COPY[activeAgent || "rumor_detector"]?.delivery ?? event.detail} speed={14} />
-            </p>
+
+          <section className="controller-activity-section" aria-label="搜索与工具">
+            <header className="controller-activity-section-head">
+              <span>Search / Tool</span>
+              <strong>搜索与工具</strong>
+            </header>
+            {searchQueries.length > 0 || modelLine || toolChannel || event.kind === "tool" ? (
+              <div className="controller-activity-tool-grid">
+                {searchQueries.map((query) => (
+                  <article key={query} className="controller-activity-tool-card">
+                    <span>Query</span>
+                    <p>
+                      <ActivityText text={query} animate={animateTyping} speed={18} />
+                    </p>
+                  </article>
+                ))}
+                {toolChannel ? (
+                  <article className="controller-activity-tool-card">
+                    <span>工具 / 通道</span>
+                    <p>{toolChannel}</p>
+                  </article>
+                ) : null}
+                {modelLine ? (
+                  <article className="controller-activity-tool-card">
+                    <span>模型</span>
+                    <p>{modelLine}</p>
+                  </article>
+                ) : null}
+                {event.kind === "tool" ? (
+                  <article className="controller-activity-tool-card controller-activity-tool-card--wide">
+                    <span>用途</span>
+                    <p>
+                      <ActivityText text={toolReadingPurpose(event)} animate={animateTyping} speed={14} />
+                    </p>
+                  </article>
+                ) : null}
+              </div>
+            ) : (
+              <p className="controller-activity-empty">本步未发起检索或工具调用。</p>
+            )}
           </section>
-        ) : event.kind === "planner" || event.kind === "error" ? (
-          <section className="controller-reading-section controller-reading-section--plain">
-            <h3>{event.kind === "planner" ? "核查路径" : "哪里失败了"}</h3>
-            <p>
-              <TypewriterText text={controllerReadingPurpose(event)} speed={14} />
-            </p>
+
+          <section className="controller-activity-section" aria-label="材料来源">
+            <header className="controller-activity-section-head">
+              <span>Sources</span>
+              <strong>材料来源{readingSources.length > 0 ? ` · ${readingSources.length}` : ""}</strong>
+            </header>
+            {readingSources.length > 0 ? (
+              <div className="controller-activity-source-list">
+                {readingSources.slice(0, 12).map((source) => {
+                  const role = evidenceRoleLabel(source.evidenceRole);
+                  const body = source.condensedSnippet || source.snippet;
+                  return (
+                    <article key={source.id} className="controller-activity-source-card">
+                      <div className="controller-activity-source-topline">
+                        <em className={`controller-activity-role controller-activity-role--${role}`}>{role}</em>
+                        <span>{source.domain || "未知域名"}</span>
+                        {source.credibilityScore != null ? <small>可信 {source.credibilityScore}</small> : null}
+                      </div>
+                      <strong>
+                        {source.url ? (
+                          <a href={source.url} target="_blank" rel="noreferrer">
+                            {source.title}
+                          </a>
+                        ) : (
+                          source.title
+                        )}
+                      </strong>
+                      {body ? <p>{body.slice(0, 180)}</p> : null}
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="controller-activity-empty">本步尚未挂接可点开的来源材料。</p>
+            )}
+          </section>
+
+          <section className="controller-activity-section" aria-label="结果与交接">
+            <header className="controller-activity-section-head">
+              <span>Findings / Handoff</span>
+              <strong>结果与交接</strong>
+            </header>
+            {processingSteps.length > 0 ? (
+              <ol className="controller-activity-findings">
+                {processingSteps.map((item, index) => (
+                  <li key={`finding-${index}`}>
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <p>
+                      <ActivityText text={item} animate={animateTyping && index === 0} speed={14} />
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+            {eventStep && visibleOutputItems.length > 0 ? (
+              <div className="controller-activity-structured">
+                <h4>{agentOutputHeading(eventStep)}</h4>
+                <StructuredAgentOutput items={visibleOutputItems} />
+              </div>
+            ) : !eventStep && visibleOutputItems.length > 0 ? (
+              <div className="controller-activity-structured">
+                <h4>同步输出</h4>
+                <StructuredAgentOutput items={visibleOutputItems} />
+              </div>
+            ) : null}
+            {auditItems.length > 0 ? <SourceAuditList items={auditItems} /> : null}
+            {handoffLines.length > 0 ? (
+              <ul className="controller-activity-list controller-activity-list--handoff">
+                {handoffLines.map((line, index) => (
+                  <li key={`handoff-${index}`}>
+                    <ActivityText text={line} animate={false} />
+                  </li>
+                ))}
+              </ul>
+            ) : processingSteps.length === 0 && visibleOutputItems.length === 0 ? (
+              <p className="controller-activity-empty">还没有可交接的结果或缺口说明。</p>
+            ) : null}
+          </section>
+        </div>
+
+        {relatedTrail.length > 1 ? (
+          <section className="controller-reading-section controller-live-trail" aria-label="本步关联动作">
+            <h3>本步关联动作</h3>
+            <div className="controller-live-trail-list">
+              {relatedTrail.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`controller-live-trail-item controller-live-trail-item--${item.status} ${
+                    item.id === event.id ? "controller-live-trail-item--current" : ""
+                  }`}
+                  onClick={() => onSelectControllerEvent(item)}
+                >
+                  <span>{CONTROLLER_EVENT_KIND_LABEL[item.kind]}</span>
+                  <strong>{item.title}</strong>
+                  <p>{item.detail}</p>
+                </button>
+              ))}
+            </div>
           </section>
         ) : null}
 
@@ -3218,7 +3556,7 @@ function ControllerEventDetailPanel({
           <section className="controller-reading-section controller-reading-debate" aria-live="polite">
             <h3>{debateReadableTitle(debate)}</h3>
             <p>
-              <TypewriterText text={debateProgressLabel(debate)} speed={14} />
+              <ActivityText text={debateProgressLabel(debate)} animate={animateTyping} speed={14} />
             </p>
             {debateRounds.length > 0 ? (
               <div className="controller-debate-rounds">
@@ -3235,13 +3573,13 @@ function ControllerEventDetailPanel({
                       <div>
                         <strong>{round.challenger} 质疑</strong>
                         <p>
-                          <TypewriterText text={round.challenge} speed={13} />
+                          <ActivityText text={round.challenge} animate={animateTyping} speed={13} />
                         </p>
                       </div>
                       <div>
                         <strong>{round.respondent} 回应</strong>
                         <p>
-                          <TypewriterText text={round.response} speed={13} />
+                          <ActivityText text={round.response} animate={animateTyping} speed={13} />
                         </p>
                       </div>
                     </motion.article>
@@ -3250,14 +3588,18 @@ function ControllerEventDetailPanel({
               </div>
             ) : (
               <p>
-                <TypewriterText text="事实核查员与信源审计员已完成并行输出，中控正在提取冲突点。" speed={14} />
+                <ActivityText
+                  text="事实核查员与信源审计员已完成并行输出，中控正在提取冲突点。"
+                  animate={animateTyping}
+                  speed={14}
+                />
               </p>
             )}
             {debate?.status === "resolved" ? (
               <div className="controller-debate-consensus">
                 <span>最终裁决</span>
                 <p>
-                  <TypewriterText text={debate.finalConsensus} speed={13} />
+                  <ActivityText text={debate.finalConsensus} animate={animateTyping} speed={13} />
                 </p>
                 <em>置信度调整 {debate.confidenceAdjustment}</em>
               </div>
@@ -3265,32 +3607,11 @@ function ControllerEventDetailPanel({
           </section>
         ) : null}
 
-        {processingSteps.length > 0 ? (
-          <section className="controller-reading-section controller-processing-flow" aria-label="处理过程">
-            <h3>{event.kind === "tool" ? "返回内容" : "结果"}</h3>
-            <ol>
-              {processingSteps.map((item, index) => (
-                <motion.li
-                  key={`${item}-${index}`}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.18, delay: index * 0.04, ease: EASE_OUT }}
-                >
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  <p>
-                    <TypewriterText text={item} speed={14} />
-                  </p>
-                </motion.li>
-              ))}
-            </ol>
-          </section>
-        ) : null}
-
         {event.kind === "planner" || event.kind === "thought" ? (
           <section className="controller-reading-section controller-reading-section--plain">
             <h3>核查对象</h3>
             <p>
-              <TypewriterText text={claim} speed={14} />
+              <ActivityText text={claim} animate={animateTyping} speed={14} />
             </p>
           </section>
         ) : null}
@@ -3299,7 +3620,7 @@ function ControllerEventDetailPanel({
           <section className="controller-reading-section">
             <h3>执行路径</h3>
             <p>
-              <TypewriterText text={executionPlan.rationale} speed={14} />
+              <ActivityText text={executionPlan.rationale} animate={animateTyping} speed={14} />
             </p>
             <div className="controller-reading-path">
               {executionPlan.criticalPath.slice(0, 6).map((nodeId) => {
@@ -3307,62 +3628,6 @@ function ControllerEventDetailPanel({
                 return node ? <span key={node.id}>{executionNodeLabel(node.id, node.label)}</span> : null;
               })}
             </div>
-          </section>
-        ) : null}
-
-        {event.kind === "tool" ? (
-          <section className="controller-reading-section">
-            <h3>{event.status === "running" ? "正在调用" : "返回摘要"}</h3>
-            <ul className="controller-reading-list">
-              <li>
-                <TypewriterText text={event.detail} speed={14} />
-              </li>
-            </ul>
-          </section>
-        ) : eventStep ? (
-          <section className="controller-reading-section">
-            <h3>{agentOutputHeading(eventStep)}</h3>
-            {visibleOutputItems.length > 0 ? (
-              <StructuredAgentOutput items={visibleOutputItems} />
-            ) : null}
-          </section>
-        ) : event.kind !== "planner" && event.kind !== "debate" && visibleOutputItems.length > 0 ? (
-          <section className="controller-reading-section">
-            <h3>同步输出</h3>
-            <StructuredAgentOutput items={visibleOutputItems} />
-          </section>
-        ) : null}
-
-        {auditItems.length > 0 ? (
-          <section className="controller-reading-section">
-            <h3>信源审计</h3>
-            <SourceAuditList items={auditItems} />
-          </section>
-        ) : null}
-
-        {relatedQuestions.length > 0 ? (
-          <section className="controller-reading-section">
-            <h3>继续追查的问题</h3>
-            <ul className="controller-reading-list">
-              {relatedQuestions.map((question) => (
-                <li key={question}>
-                  <TypewriterText text={question} speed={14} />
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
-
-        {boundaryItems.length > 0 ? (
-          <section className="controller-reading-section">
-            <h3>证据边界</h3>
-            <ul className="controller-reading-list">
-              {boundaryItems.map((item) => (
-                <li key={item}>
-                  <TypewriterText text={item} speed={14} />
-                </li>
-              ))}
-            </ul>
           </section>
         ) : null}
 
@@ -3374,7 +3639,7 @@ function ControllerEventDetailPanel({
           <section className="controller-reading-section controller-reading-section--error">
             <h3>阻塞原因</h3>
             <p>
-              <TypewriterText text={errorMessage} speed={14} />
+              <ActivityText text={errorMessage} animate={animateTyping} speed={14} />
             </p>
           </section>
         ) : null}
@@ -4015,6 +4280,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [workbenchFocus, setWorkbenchFocus] = useState<WorkbenchFocus>("dispatch");
   const [activeControllerEventId, setActiveControllerEventId] = useState("");
+  const [followLive, setFollowLive] = useState(true);
   const [consensusStarted, setConsensusStarted] = useState(false);
   const [memoryCandidates, setMemoryCandidates] = useState<MemoryCandidate[]>([]);
   const [executionPlan, setExecutionPlan] = useState<ExecutionDagPlan | null>(null);
@@ -4039,6 +4305,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
     setSelectedPropositionId("");
     setSelectedAgentId("");
     setActiveControllerEventId("");
+    setFollowLive(true);
     setConsensusStarted(false);
     setMemoryCandidates([]);
     setExecutionPlan(null);
@@ -4644,20 +4911,33 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
   }, [runStatus]);
 
   useEffect(() => {
-    if (!latestControllerEvent) return;
+    if (!latestControllerEvent || !followLive) return;
     setActiveControllerEventId(latestControllerEvent.id);
-  }, [latestControllerEvent]);
+  }, [latestControllerEvent, followLive]);
 
   const handleWorkbenchFocusChange = useCallback((focus: WorkbenchFocus) => {
     setSelectedAgentId("");
     setWorkbenchFocus(focus);
   }, []);
 
-  const handleSelectControllerEvent = useCallback((event: ControllerProcessEvent) => {
-    setSelectedAgentId("");
-    setActiveControllerEventId(event.id);
-    setWorkbenchFocus(event.focus);
-  }, []);
+  const handleSelectControllerEvent = useCallback(
+    (event: ControllerProcessEvent) => {
+      setSelectedAgentId("");
+      setActiveControllerEventId(event.id);
+      setWorkbenchFocus(event.focus);
+      const isLatest = event.id === latestControllerEvent?.id;
+      setFollowLive(isLatest && runStatus === "running");
+    },
+    [latestControllerEvent?.id, runStatus]
+  );
+
+  const handleFollowLive = useCallback(() => {
+    setFollowLive(true);
+    if (latestControllerEvent) {
+      setActiveControllerEventId(latestControllerEvent.id);
+      setWorkbenchFocus(latestControllerEvent.focus);
+    }
+  }, [latestControllerEvent]);
 
   return (
     <main className="mission-control-view case-workbench-view case-workbench-view--clean">
@@ -4711,22 +4991,23 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
         <ControllerRail
           controllerEvents={controllerEvents}
           activeControllerEventId={activeControllerEvent?.id ?? ""}
+          followLive={followLive}
           onSelectControllerEvent={handleSelectControllerEvent}
+          onFollowLive={handleFollowLive}
         />
 
         <section className="case-center-column" aria-label="核心工作区">
           <ControllerEventDetailPanel
             claim={claim}
             event={activeControllerEvent}
-            currentStep={currentStep}
             steps={steps}
-            streamItems={streamItems}
             outputItems={outputItems}
             controllerEvents={controllerEvents}
             finalReport={finalReport}
             executionPlan={executionPlan}
             runStatus={runStatus}
             errorMessage={errorMessage}
+            followLive={followLive}
             onSelectControllerEvent={handleSelectControllerEvent}
           />
         </section>
