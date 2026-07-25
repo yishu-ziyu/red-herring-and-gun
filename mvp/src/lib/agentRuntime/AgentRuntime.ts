@@ -1017,7 +1017,13 @@ function compactSourceSnippets(searchResult: Search360Response, maxLength: numbe
 }
 
 function canContinueAfterAgentFailure(agentId: string) {
-  return agentId === "fact_checker" || agentId === "source_validator";
+  // Optional / parallel enrichment agents must not abort report composition.
+  return (
+    agentId === "fact_checker" ||
+    agentId === "source_validator" ||
+    agentId === "alternative_explanation_searcher" ||
+    agentId === "counter_evidence_grader"
+  );
 }
 
 function buildAgentFailureOutput(agentId: string, message: string, searchResult?: Search360Response): Record<string, unknown> {
@@ -1051,6 +1057,27 @@ function buildAgentFailureOutput(agentId: string, message: string, searchResult?
       questionableSources: [],
       missingSources: ["SourceValidator 未能完成信源结构化审计。"],
       verificationNotes: boundary,
+    };
+  }
+
+  if (agentId === "alternative_explanation_searcher") {
+    return {
+      alternativeExplanations: [],
+      conclusion: "替代解释搜索未完成，不能据此排除其他因果路径；后续结论需更保守。",
+      unresolvedEvidenceGaps: [boundary],
+      _source: "error-boundary",
+    };
+  }
+
+  if (agentId === "counter_evidence_grader") {
+    return {
+      counterEvidenceScore: 0,
+      evidenceGapScore: 0,
+      overallConfidenceAdjustment: 0,
+      breakdown: [],
+      recommendation: "反证评分未完成，不对前序置信度做额外升降。",
+      unresolvedEvidenceGaps: [boundary],
+      _source: "error-boundary",
     };
   }
 
