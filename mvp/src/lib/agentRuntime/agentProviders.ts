@@ -6,7 +6,14 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-export type AgentTextProviderId = "deepseek" | "mimo" | "stepfun" | "360" | "anthropic" | "codex";
+export type AgentTextProviderId =
+  | "minimax"
+  | "deepseek"
+  | "mimo"
+  | "stepfun"
+  | "360"
+  | "anthropic"
+  | "codex";
 export type AgentReasoningEffort = "low" | "medium" | "high";
 
 export interface AgentProviderRequest {
@@ -34,7 +41,8 @@ function getProviderTimeoutMs(env: Record<string, string>, key: string, fallback
 
 export function getAgentTextProviderOrder(env: Record<string, string>): AgentTextProviderId[] {
   const configured = env.ORCHESTRATE_TEXT_PROVIDER_ORDER || process.env.ORCHESTRATE_TEXT_PROVIDER_ORDER;
-  const fallback: AgentTextProviderId[] = ["deepseek", "mimo", "stepfun", "360", "anthropic"];
+  // MiniMax first (local SSOT); 360 last among cloud chat (low context, legacy hackathon path).
+  const fallback: AgentTextProviderId[] = ["minimax", "stepfun", "anthropic", "deepseek", "mimo", "360"];
   const allProviders: AgentTextProviderId[] = [...fallback, "codex"];
   if (!configured) return fallback;
 
@@ -45,8 +53,9 @@ export function getAgentTextProviderOrder(env: Record<string, string>): AgentTex
     const provider = item as AgentTextProviderId;
     if (!ordered.includes(provider)) ordered.push(provider);
   }
-  const missing = fallback.filter((provider) => !ordered.includes(provider));
-  return [...ordered, ...missing];
+  // Respect explicit order only — do not backfill every provider (keeps dead keys out of the hot path).
+  if (!ordered.includes("codex")) ordered.push("codex");
+  return ordered.length > 0 ? ordered : fallback;
 }
 
 async function withProviderTimeout<T>(call: (signal: AbortSignal) => Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -122,6 +131,102 @@ export async function callAgentWithFallback({
   console.info("[orchestrate-provider] order", { agent: traceLabel, order: textProviderOrder });
 
   for (const provider of textProviderOrder) {
+    if (provider === "minimax") {
+      const minimaxModel = env.MINIMAX_MODEL || process.env.MINIMAX_MODEL || "MiniMax-M3";
+      // Prefer local Anthropic-compatible proxy (SSOT) when present — direct MiniMax keys may be stale.
+      const proxyBase = (env.ANTHROPIC_BASE_URL || process.env.ANTHROPIC_BASE_URL || "").replace(/\/$/, "");
+      const proxyToken =
+        env.ANTHROPIC_AUTH_TOKEN ||
+        process.env.ANTHROPIC_AUTH_TOKEN ||
+        env.ANTHROPIC_API_KEY ||
+        process.env.ANTHROPIC_API_KEY ||
+        "local";
+      const directKey =
+        env.MINIMAX_API_KEY ||
+        process.env.MINIMAX_API_KEY ||
+        env.MINIMAX_TOKEN_PLAN_KEY ||
+        process.env.MINIMAX_TOKEN_PLAN_KEY ||
+        "";
+      const directBase = (
+        env.MINIMAX_BASE_URL ||
+        process.env.MINIMAX_BASE_URL ||
+        "https://api.minimaxi.com/anthropic"
+      ).replace(/\/$/, "");
+      const authHeader =
+        (env.MINIMAX_AUTH_HEADER || process.env.MINIMAX_AUTH_HEADER || "x-api-key").toLowerCase() === "bearer"
+          ? "bearer"
+          : "x-api-key";
+
+      const attempts: Array<{
+        label: string;
+        baseUrl: string;
+        apiKey: string;
+        authHeader: "x-api-key" | "bearer";
+      }> = [];
+      if (proxyBase) {
+        attempts.push({
+          label: "minimax-proxy",
+          baseUrl: proxyBase,
+          apiKey: proxyToken,
+          authHeader: "x-api-key",
+        });
+      }
+      if (directKey) {
+        attempts.push({
+          label: "minimax-direct",
+          baseUrl: directBase,
+          apiKey: directKey,
+          authHeader,
+        });
+      }
+      if (attempts.length === 0) continue;
+
+      let lastMsg = "";
+      let succeeded = false;
+      for (const attempt of attempts) {
+        try {
+          const result = await runProvider(attempt.label, minimaxModel, (signal) =>
+            callMiniMaxAgent({
+              baseUrl: attempt.baseUrl,
+              apiKey: attempt.apiKey,
+              authHeader: attempt.authHeader,
+              model: minimaxModel,
+              systemPrompt,
+              userContent,
+              maxTokens: providerMaxTokens,
+              signal,
+            })
+          );
+          const parsed = await parseProviderTextWithRepair(result, startTime, {
+            provider: attempt.label,
+            modelName: minimaxModel,
+            systemPrompt,
+            userContent,
+            repairCall: (sys, user, signal) =>
+              callMiniMaxAgent({
+                baseUrl: attempt.baseUrl,
+                apiKey: attempt.apiKey,
+                authHeader: attempt.authHeader,
+                model: minimaxModel,
+                systemPrompt: sys,
+                userContent: user,
+                maxTokens: providerMaxTokens,
+                signal,
+              }),
+            runProvider,
+          });
+          succeeded = true;
+          return parsed;
+        } catch (error) {
+          lastMsg = error instanceof Error ? error.message : "MiniMax Agent 调用失败";
+          errors.push(`[${attempt.label}:${minimaxModel}] ${lastMsg}`);
+        }
+      }
+      if (!succeeded && lastMsg) {
+        // already pushed
+      }
+    }
+
     if (provider === "deepseek") {
       const deepseekApiKey = env.DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY;
       const deepseekBaseUrl = (env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1").replace(/\/$/, "");
@@ -296,8 +401,18 @@ function getAttemptTimeoutMs(
   const isReportComposerDeepSeek = isDeepSeek && traceLabel === "ReportComposer";
   const factReasoningDeepSeekTimeout = getProviderTimeoutMs(env, "ORCHESTRATE_FACT_REASONING_DEEPSEEK_TIMEOUT_MS", 65000);
   const reportComposerDeepSeekTimeout = getProviderTimeoutMs(env, "ORCHESTRATE_REPORT_COMPOSER_DEEPSEEK_TIMEOUT_MS", 85000);
+  const isReportComposer = traceLabel === "ReportComposer";
+  const isMiniMaxFamily =
+    provider === "minimax" ||
+    provider.startsWith("minimax") ||
+    provider === "anthropic-local" ||
+    provider.startsWith("anthropic");
   const providerCap = provider === "mimo"
     ? 12000
+    : isMiniMaxFamily
+      ? isReportComposer
+        ? 120000
+        : 90000
     : provider === "deepseek"
       ? isReportComposerDeepSeek
         ? reportComposerDeepSeekTimeout
@@ -307,13 +422,16 @@ function getAttemptTimeoutMs(
       : provider === "stepfun"
         ? 35000
         : provider === "360"
-          ? 25000
+          ? isReportComposer
+            ? 60000
+            : 25000
           : configuredTimeoutMs;
-  const timeoutMs = isReportComposerDeepSeek
-    ? providerCap
+  // MiniMax / Report need headroom — never let ORCHESTRATE_PROVIDER_TIMEOUT_MS=25s kill them.
+  const timeoutMs = isReportComposer || isMiniMaxFamily
+    ? Math.max(providerCap, isReportComposer ? 90000 : 60000)
     : isFactReasoningDeepSeek
       ? Math.min(providerConfigured, providerCap)
-    : Math.min(configuredTimeoutMs, providerConfigured, providerCap);
+      : Math.min(configuredTimeoutMs, providerConfigured, providerCap);
   if (!deadlineAt) return timeoutMs;
   const remainingMs = deadlineAt - Date.now() - 1500;
   return Math.max(0, Math.min(timeoutMs, remainingMs));
@@ -337,32 +455,208 @@ function shouldTryAllMimoClusters(env: Record<string, string>) {
 
 function parseProviderText(result: { text: string; model: string }, startTime: number): AgentProviderResult {
   return {
-    output: parseProviderJson(result.text),
+    output: parseProviderJson(result.text, result.model),
     model: result.model,
     latencyMs: Date.now() - startTime,
   };
 }
 
-function parseProviderJson(text: string) {
-  const jsonText = extractJsonObject(text);
+async function parseProviderTextWithRepair(
+  result: { text: string; model: string },
+  startTime: number,
+  opts: {
+    provider: string;
+    modelName: string;
+    systemPrompt: string;
+    userContent: string;
+    repairCall: (sys: string, user: string, signal: AbortSignal) => Promise<{ text: string; model: string }>;
+    runProvider: <T,>(provider: string, modelName: string, call: (signal: AbortSignal) => Promise<T>) => Promise<T>;
+  }
+): Promise<AgentProviderResult> {
   try {
-    return JSON.parse(jsonText);
+    return parseProviderText(result, startTime);
   } catch (error) {
-    const repaired = repairLikelyJsonSyntax(jsonText);
+    const message = error instanceof Error ? error.message : "JSON 解析失败";
+    if (!/JSON|Unexpected|Expected|parse/i.test(message)) throw error;
+    console.error("[orchestrate-provider] json_parse_error", {
+      provider: opts.provider,
+      model: opts.modelName,
+      message,
+      textChars: result.text?.length ?? 0,
+    });
+    console.info("[orchestrate-provider] json_repair_retry", {
+      provider: opts.provider,
+      model: opts.modelName,
+    });
+    const repairSystem = [
+      opts.systemPrompt,
+      "",
+      "# CRITICAL OUTPUT RULE",
+      "Return ONLY one valid JSON object. No markdown fences. No commentary.",
+      "Escape quotes inside strings. No trailing commas. Complete all braces.",
+    ].join("\n");
+    const broken =
+      result.text.length > 14000 ? `${result.text.slice(0, 14000)}\n…[truncated]` : result.text;
+    const original =
+      opts.userContent.length > 6000 ? `${opts.userContent.slice(0, 6000)}\n…[truncated]` : opts.userContent;
+    const repairUser = [
+      "你上一次输出不是合法 JSON。请只输出可被 JSON.parse 接受的 JSON 对象。",
+      "",
+      "## 上一次坏输出",
+      broken,
+      "",
+      "## 原任务（字段参考）",
+      original,
+    ].join("\n");
+    const repaired = await opts.runProvider(`${opts.provider}-json-repair`, opts.modelName, (signal) =>
+      opts.repairCall(repairSystem, repairUser, signal)
+    );
+    return parseProviderText(repaired, startTime);
+  }
+}
+
+function parseProviderJson(text: string, label = "provider") {
+  const cleaned = text
+    .replace(/^\uFEFF/, "")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .trim();
+  const jsonText = extractJsonObject(cleaned);
+  const candidates = [
+    jsonText,
+    repairLikelyJsonSyntax(jsonText),
+    closeTruncatedJson(jsonText),
+    repairLikelyJsonSyntax(closeTruncatedJson(jsonText)),
+  ].filter((item, index, arr) => item && arr.indexOf(item) === index);
+
+  let lastError: Error | undefined;
+  for (const candidate of candidates) {
     try {
-      return JSON.parse(repaired);
-    } catch {
-      throw error;
+      return JSON.parse(candidate);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("JSON 解析失败");
     }
   }
+  throw new Error(`${label} 返回 JSON 无法解析：${lastError?.message || "JSON 解析失败"}`);
 }
 
 function repairLikelyJsonSyntax(jsonText: string) {
   return jsonText
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1")
     .replace(/,\s*([}\]])/g, "$1")
     .replace(/"(\s*\r?\n\s*)"/g, '",$1"')
     .replace(/"(\s*\r?\n\s*)("[^"\r\n]+":)/g, '",$1$2')
-    .replace(/([}\]])(\s*\r?\n\s*)([{[])/g, "$1,$2$3");
+    .replace(/([}\]])(\s*\r?\n\s*)([{[])/g, "$1,$2$3")
+    .replace(/:\s*([^"{\[\]\d\-tfn][^,\n\r}\]]*?)(?=\s*[,}\]])/g, (_match, value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed) return ': ""';
+      if (/^(true|false|null)$/i.test(trimmed)) return `: ${trimmed.toLowerCase()}`;
+      return `: ${JSON.stringify(trimmed.replace(/^['"]|['"]$/g, ""))}`;
+    });
+}
+
+function closeTruncatedJson(input: string): string {
+  let s = input.trim();
+  if (!s) return s;
+  s = s.replace(/,\s*$/, "");
+  s = s.replace(/,\s*"[^"]*$/, "");
+  s = s.replace(/:\s*"[^"]*$/, ': ""');
+  s = s.replace(/:\s*[^,{\[\]}\s"]+$/, ": null");
+
+  const stack: Array<"{" | "["> = [];
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < s.length; i += 1) {
+    const ch = s[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") stack.push("{");
+    else if (ch === "[") stack.push("[");
+    else if ((ch === "}" || ch === "]") && stack.length > 0) {
+      const open = stack[stack.length - 1];
+      if ((ch === "}" && open === "{") || (ch === "]" && open === "[")) stack.pop();
+    }
+  }
+  if (inString) s += '"';
+  s = s.replace(/,\s*$/, "");
+  while (stack.length > 0) {
+    s += stack.pop() === "{" ? "}" : "]";
+  }
+  return s;
+}
+
+async function callMiniMaxAgent({
+  baseUrl,
+  apiKey,
+  authHeader = "x-api-key",
+  model,
+  systemPrompt,
+  userContent,
+  maxTokens,
+  signal,
+}: {
+  baseUrl: string;
+  apiKey: string;
+  authHeader?: "x-api-key" | "bearer";
+  model: string;
+  systemPrompt: string;
+  userContent: string;
+  maxTokens: number;
+  signal: AbortSignal;
+}) {
+  const normalized = baseUrl.replace(/\/$/, "");
+  // Local Anthropic proxy (127.0.0.1:15721) serves /v1/messages directly.
+  // Official MiniMax Anthropic base ends with /anthropic.
+  const url = normalized.endsWith("/v1/messages")
+    ? normalized
+    : normalized.endsWith("/anthropic")
+      ? `${normalized}/v1/messages`
+      : /localhost|127\.0\.0\.1/.test(normalized)
+        ? `${normalized}/v1/messages`
+        : `${normalized}/anthropic/v1/messages`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "anthropic-version": "2023-06-01",
+  };
+  if (authHeader === "bearer") {
+    headers.Authorization = `Bearer ${apiKey}`;
+  } else {
+    headers["x-api-key"] = apiKey;
+  }
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userContent }],
+      thinking: model === "MiniMax-M3" ? { type: "adaptive" } : undefined,
+    }),
+    signal,
+  });
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(`MiniMax API 调用失败：${raw.slice(0, 500)}`);
+  }
+  const text = extractAnthropicText(raw);
+  if (!text) throw new Error("MiniMax API 没有返回可解析文本。");
+  return { text, model: `minimax:${model}` };
 }
 
 async function call360ChatAgent({
@@ -682,10 +976,21 @@ async function callStepFunAgent({
 }
 
 async function loadAnthropicConfig(env: Record<string, string>) {
-  const token = env.ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_AUTH_TOKEN || "";
+  const token =
+    env.ANTHROPIC_AUTH_TOKEN ||
+    process.env.ANTHROPIC_AUTH_TOKEN ||
+    env.ANTHROPIC_API_KEY ||
+    process.env.ANTHROPIC_API_KEY ||
+    "local";
   const baseUrl = (env.ANTHROPIC_BASE_URL || process.env.ANTHROPIC_BASE_URL || "").replace(/\/$/, "");
-  const model = env.ANTHROPIC_MODEL || process.env.ANTHROPIC_MODEL || "";
-  if (!token || !baseUrl || !model) return null;
+  // Local MiniMax proxy often only sets BASE_URL; model defaults to MiniMax-M3.
+  const model =
+    env.ANTHROPIC_MODEL ||
+    process.env.ANTHROPIC_MODEL ||
+    env.MINIMAX_MODEL ||
+    process.env.MINIMAX_MODEL ||
+    "MiniMax-M3";
+  if (!baseUrl || !model) return null;
   return { token, baseUrl, model };
 }
 

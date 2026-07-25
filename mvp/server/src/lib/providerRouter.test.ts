@@ -46,15 +46,15 @@ function resetAllMocks() {
 }
 
 describe("providerRouter env helpers", () => {
-  // 1. providerOrderForAgent: env 为空时返回默认 6 provider
-  it("getAgentTextProviderOrder({}) returns default 6-provider order", () => {
+  // 1. providerOrderForAgent: env 为空时返回默认 order（MiniMax 优先，360 靠后）
+  it("getAgentTextProviderOrder({}) returns default provider order with minimax first", () => {
     expect(providerOrderForAgent({})).toEqual([
+      "minimax",
       "stepfun",
-      "360",
+      "anthropic",
       "deepseek",
       "mimo",
-      "minimax",
-      "anthropic",
+      "360",
       "codex",
     ]);
   });
@@ -124,9 +124,50 @@ describe("providerRouter env helpers", () => {
     expect(parseAgentJson('{"a":1,}', "test")).toEqual({ a: 1 });
   });
 
+  it("parseAgentJson repairs truncated object by closing braces", () => {
+    expect(parseAgentJson('{"title":"hello","items":[1,2', "test")).toEqual({
+      title: "hello",
+      items: [1, 2],
+    });
+  });
+
+  it("parseAgentJson repairs unquoted bare values and smart quotes", () => {
+    expect(parseAgentJson('{“ok”: yes, "note": done,}', "test")).toEqual({ ok: "yes", note: "done" });
+  });
+
   // 9. parseAgentJson: 无法解析时抛带 label 的错误
   it("parseAgentJson throws with label prefix when input is not parseable", () => {
     expect(() => parseAgentJson("not json at all", "my-label")).toThrow(/my-label/);
+  });
+
+  it("B-json-retry: bad JSON then repair call on same provider avoids whole-step failure", async () => {
+    resetAllMocks();
+    allProviders.callMiniMaxAgent
+      .mockResolvedValueOnce({
+        // 本地 repair 救不回来，必须触发同 provider json_repair_retry
+        text: 'Sure — here you go:\n{title: broken, items: [1 2, "x": }',
+        model: "minimax:MiniMax-M3",
+      })
+      .mockResolvedValueOnce({
+        text: '{"title":"fixed","ok":true}',
+        model: "minimax:MiniMax-M3",
+      });
+
+    const result = await callAgentWithFallback({
+      agentId: "counter_evidence_grader",
+      systemPrompt: "return json",
+      userContent: "grade this",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: {
+        MINIMAX_API_KEY: "sk-mm",
+        ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax",
+      },
+      codexBin: "/usr/bin/codex",
+    });
+
+    expect(result.output).toEqual({ title: "fixed", ok: true });
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(2);
   });
 
   // 10. modelForAgent: per-agent > global > fallback
