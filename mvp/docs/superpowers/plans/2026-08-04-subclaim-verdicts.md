@@ -16,7 +16,7 @@
 - Modify: `mvp/src/lib/agentConfigs.ts:375-390`（factCheckerSchema）
 - Test: `mvp/src/lib/agentConfigs.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `mvp/src/lib/agentConfigs.test.ts` 增加一个断言，验证 fact_checker 的 responseSchema 含 `subclaimVerdicts` 且字段结构正确。
 
@@ -34,12 +34,12 @@ it("fact_checker responseSchema 包含 subclaimVerdicts 逐命题定罪字段", 
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `npx vitest run src/lib/agentConfigs.test.ts`
 Expected: FAIL，`props.subclaimVerdicts` 为 undefined。
 
-- [ ] **Step 3: 实现**
+- [x] **Step 3: 实现**
 
 在 `factCheckerSchema`（`mvp/src/lib/agentConfigs.ts:375-390`）的 `properties` 中新增 `subclaimVerdicts`，并在 `required` 中追加（保持 `additionalProperties: false` 不变）。
 
@@ -76,12 +76,12 @@ const factCheckerSchema = {
 };
 ```
 
-- [ ] **Step 4: 运行确认通过**
+- [x] **Step 4: 运行确认通过**
 
 Run: `npx vitest run src/lib/agentConfigs.test.ts`
 Expected: PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add mvp/src/lib/agentConfigs.ts mvp/src/lib/agentConfigs.test.ts
@@ -95,7 +95,7 @@ git commit -m "feat(fact-checker): 输出 schema 增加 subclaimVerdicts 逐命�
 **Files:**
 - Modify: `mvp/src/lib/agentConfigs.ts:592-609`（fact_checker systemPrompt）
 
-- [ ] **Step 1: 在 FactChecker systemPrompt 追加约定**
+- [x] **Step 1: 在 FactChecker systemPrompt 追加约定**
 
 在 `fact_checker` 的 systemPrompt 数组内（`mvp/src/lib/agentConfigs.ts:609` 的 `].join("\n")` 之前）追加两行：
 
@@ -104,12 +104,12 @@ git commit -m "feat(fact-checker): 输出 schema 增加 subclaimVerdicts 逐命�
       "verdict 取值：true=该原子命题成立；false=该原子命题不成立；partial=有真实片段但夸大/偷换；exaggerated=被夸大；unverified=证据不足。",
 ```
 
-- [ ] **Step 2: 运行确认无回归**
+- [x] **Step 2: 运行确认无回归**
 
 Run: `npx vitest run src/lib/agentConfigs.test.ts`
 Expected: PASS。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add mvp/src/lib/agentConfigs.ts
@@ -125,7 +125,7 @@ git commit -m "feat(fact-checker): prompt 契约约定逐命题定罪覆盖与�
 - Modify: `mvp/src/lib/agentConfigs.ts:405-...`（reportComposerSchema）
 - Test: `mvp/src/lib/agentConfigs.test.ts`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `agentConfigs.test.ts` 增加断言：调用 `buildAgentInput("report_composer", claim, steps)` 时，若 fact_step.output 含 `subclaimVerdicts`，则返回的 input.factCheck.subclaimVerdicts 被完整透传；若 claimAtoms 有 2 个但 subclaimVerdicts 只覆盖 1 个，则补齐缺失项为 `verdict:"unverified"` + `boundary:"模型未覆盖，待补证"`。
 
@@ -145,12 +145,12 @@ it("report_composer 透传 subclaimVerdicts 并补齐覆盖不全项", () => {
 });
 ```
 
-- [ ] **Step 2: 运行确认失败**
+- [x] **Step 2: 运行确认失败**
 
 Run: `npx vitest run src/lib/agentConfigs.test.ts`
 Expected: FAIL，`input.factCheck.subclaimVerdicts` 为 undefined。
 
-- [ ] **Step 3: 实现 — 新增 helper `mergeSubclaimVerdicts` 并接入 report_composer 分支**
+- [x] **Step 3: 实现 — 新增 helper `mergeSubclaimVerdicts` 并接入 report_composer 分支**
 
 在 `agentConfigs.ts` 的 `compactText` 附近（约 815 行后）新增一个 helper，并在 `report_composer` 分支的 `factCheck` 对象中新增 `subclaimVerdicts` 字段。
 
@@ -197,7 +197,7 @@ function mergeSubclaimVerdicts(
         },
 ```
 
-- [ ] **Step 4: 实现 — reportComposerSchema 增加 subclaimVerdicts**
+- [x] **Step 4: 实现 — reportComposerSchema 增加 subclaimVerdicts**
 
 在 `reportComposerSchema`（`mvp/src/lib/agentConfigs.ts:405` 起）的 `properties` 中新增 `subclaimVerdicts`（与 Task 1 的 item 结构一致），追加到 `required`。
 
@@ -218,12 +218,12 @@ function mergeSubclaimVerdicts(
     },
 ```
 
-- [ ] **Step 5: 运行确认通过**
+- [x] **Step 5: 运行确认通过**
 
 Run: `npx vitest run src/lib/agentConfigs.test.ts`
 Expected: PASS。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add mvp/src/lib/agentConfigs.ts mvp/src/lib/agentConfigs.test.ts
@@ -237,17 +237,17 @@ git commit -m "feat(report): 透传 subclaimVerdicts 并补齐覆盖不全项"
 **Files:**
 - Test: `mvp/src/lib/agentRuntime/AgentRuntime.test.ts`
 
-- [ ] **Step 1: 跑全量测试确认无回归**
+- [x] **Step 1: 跑全量测试确认无回归**
 
 Run: `npx vitest run`
 Expected: 502 项全绿（原基线 + 新增）。
 
-- [ ] **Step 2: 类型检查**
+- [x] **Step 2: 类型检查**
 
 Run: `cd mvp && npx tsc --noEmit`
 Expected: 无新增类型错误（unmodified 文件既有错误除外）。
 
-- [ ] **Step 3: Commit（若无改动则跳过）**
+- [x] **Step 3: Commit（若无改动则跳过）**
 
 若上面测试未产生新改动，本步无需 commit。
 
