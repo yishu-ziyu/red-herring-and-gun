@@ -47,6 +47,10 @@ export interface Subclaim {
   text: string;
   type: ClaimType;
   roleInArgument: string;
+  // Plan P1-2 · Kialo 风格子命题树（可选，向后兼容）
+  parentId?: string;
+  stance?: "support" | "oppose" | "context";
+  order?: number;
 }
 
 export interface EvidenceRoute {
@@ -128,6 +132,9 @@ export interface FinalReport {
   };
   nextEvidenceNeeded: string[];
   evidenceQualitySummary?: EvidenceQualitySummary;
+  // P0-1 Grounding：衍生信号；不进 credibilityScore，仅作展示
+  insufficientEvidence?: boolean;
+  groundingRationale?: string;
   logicRiskItems?: BiasAuditFinding[];
   contradictionSummary?: string;
   // v2-iteration 2026-07-04: optional license/lineage/trace overlays

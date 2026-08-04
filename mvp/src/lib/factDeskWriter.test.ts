@@ -46,7 +46,7 @@ describe("factDeskWriter Prompt A + F", () => {
     expect(fixed.critiqueNotes.length).toBeGreaterThan(0);
   });
 
-  it("writes a non-empty lede with claim framing", () => {
+  it("writes a non-empty lede with claim framing (P0-2 求证：前缀)", () => {
     const draft = writeFactDeskConclusion({
       originalClaim: "隔夜菜会致癌",
       findings: [
@@ -60,7 +60,8 @@ describe("factDeskWriter Prompt A + F", () => {
       cannotSaySeed: ["不能说等于毒药"],
       nextEvidenceNeeded: ["更多菜种实测"],
     });
-    expect(draft.lede).toContain("流传说法");
+    expect(draft.lede).toMatch(/求证：网传/);
+    expect(draft.lede).toContain("隔夜菜");
     expect(draft.cannotSay.some((x) => x.includes("毒药") || x.includes("不能"))).toBe(true);
     expect(scoreFactDeskDraft(draft, "隔夜菜会致癌").pass).toBe(true);
   });
@@ -77,7 +78,7 @@ describe("demo rumor cases: fact-desk voice gate", () => {
     const { desk, report, score } = runCase(data);
 
     expect(desk.lede.length).toBeGreaterThan(20);
-    expect(desk.lede).toMatch(/流传说法|原表述|网传|说法/);
+    expect(desk.lede).toMatch(/求证：网传|流传说法|原表述|网传|说法/);
     expect(desk.lede).not.toMatch(/纯属捏造|震惊|啼笑|作为AI|作为人工智能|广大网友务必/);
     expect(desk.cannotSay.length).toBeGreaterThan(0);
     expect(score.pass).toBe(true);

@@ -155,6 +155,14 @@ export function composeReport(caseData: DemoCase, grades: GradedEvidence[]): Fin
     originalClaim: caseData.originalClaim,
     overallStatus: "原句过强",
     allowedConclusion: cautiousConclusion,
+    // P0-1 Grounding 衍生：缺主证据且无反证时显式声明证据不足
+    insufficientEvidence: mainEvidence.length === 0 && counterEvidence.length === 0,
+    groundingRationale:
+      mainEvidence.length === 0 && counterEvidence.length === 0
+        ? "暂无可靠证据支持这一说法；候选材料均未达到主证据或反证级别。"
+        : mainEvidence.length === 0
+          ? "主证据缺失；现有材料仅能提供线索或反证。"
+          : undefined,
     claimDiagnosis: caseData.diagnosis,
     subclaimStatuses,
     evidenceChain: [

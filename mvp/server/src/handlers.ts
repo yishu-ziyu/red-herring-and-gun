@@ -13,6 +13,7 @@ import { computeCredibilityScore, labelForScore, type CredibilityScoreResult } f
 // 审查 P3-2 修复：Anthropic 文本/JSON 提取统一从共享模块引入，不再各处独立定义。
 import { extractAnthropicText, extractJsonObject } from "./lib/anthropicParse.js";
 import { applyFactDeskPostProcessToReport } from "./lib/factDeskPostProcess.js";
+import { buildClaimReviewJsonLd } from "./lib/claimReview.js";
 import {
   deleteAccount as accountDelete,
   exportAccount,
@@ -1048,9 +1049,30 @@ export function createHandlers(env: Record<string, string>) {
         claim,
         steps,
         finalReport,
+        // Plan P0-3 接入层：注入 schema.org/ClaimReview JSON-LD
+        claimReview: buildClaimReviewJsonLd(finalReport as never),
         totalLatencyMs: steps.reduce((sum, s) => sum + s.latencyMs, 0),
         timestamp: Date.now(),
       });
+
+      // Plan Item 2 · 报告 URL 永久路由：complete 事件触发自动存档
+      // 客户端拿到 caseId 后构造 /r/:caseId
+      try {
+        const caseId = `case-${Date.now().toString(36).slice(-6)}${Math.random().toString(36).slice(2, 6)}`;
+        const claimReview = buildClaimReviewJsonLd(finalReport as never, { url: undefined });
+        const { putCase } = await import("./lib/caseStore.js");
+        putCase({
+          caseId,
+          claim,
+          report: finalReport as never,
+          claimReview,
+          credibilityScore: finalReport?.evidenceQualitySummary?.averageCredibility ?? 50,
+        });
+        sendEvent({ type: "case_saved", caseId, caseUrl: `/r/${caseId}` });
+      } catch (err) {
+        // case 保存失败不应影响主流程
+        console.error("[caseStore] auto-save failed", err);
+      }
 
       res.end();
     } catch (error) {

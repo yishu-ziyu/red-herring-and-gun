@@ -46,6 +46,7 @@ export interface FactDeskWriterInput {
 export const FACT_DESK_WRITING_RULES = [
   "Voice: plain, precise, adult. Like AFP Fact Check + Full Fact. No sarcasm, no meme tone, no moral lecture.",
   "Lede structure (2–5 short Chinese sentences): (1) what the claim said (2) what evidence supports/denies (3) what remains unproven or blocked.",
+  "【Plan P0-2 / 求证模板】结论首句必须以「求证：」开头，沿用新华社/央视求证栏目的措辞习惯：求证：网传「……」，经核查……。",
   "Every hard factual clause must be supportable by a named source in inputs. If no source, use gap language (无法/未见/不足以), never as proven fact.",
   "Never invent sources, dates, officials, or quotes.",
   "Prefer 不能支持 / 不足以确认 / 未见公开记录 over 纯属捏造 / 可笑 / 震惊.",
@@ -201,8 +202,8 @@ export function writeFactDeskConclusion(input: FactDeskWriterInput): FactDeskDra
   );
 
   const claimSentence = claim
-    ? `流传说法是：「${clip(claim, 42)}」。`
-    : "流传说法边界不清，先按可核查单元处理。";
+    ? `求证：网传「${clip(claim, 42)}」，经核查。`
+    : "求证：流传说法边界不清，先按可核查单元处理。";
 
   const highSources = unique(input.highTraceSources ?? [], 4);
   let support = pickSupportLine(input.findings);
@@ -343,7 +344,7 @@ export function scoreFactDeskDraft(
   };
 
   const lede = draft.lede;
-  if (originalClaim && (lede.includes(originalClaim.slice(0, 6)) || /流传说法|原表述|网传/.test(lede))) {
+  if (originalClaim && (lede.includes(originalClaim.slice(0, 6)) || /流传说法|原表述|网传|求证：/.test(lede))) {
     details.claimRestated = 2;
   } else if (lede.length > 10) {
     details.claimRestated = 1;
@@ -455,4 +456,38 @@ export function writeFactDeskFromCase(
       : native.nextNeeded,
     highTraceSources: highTrace,
   });
+}
+
+// ─── Plan P0-2 求证语言模板 ─────────────────────────────
+//
+// 借鉴新华社 / 央视「求证」栏目的结构化措辞。
+// canSay / cannotSay 三段式输出：
+//   「目前可以确认：」
+//   「目前不能确认：」
+//
+// 适用：前端 UI 三层标题渲染；机器阅读 schema 仍走 P0-3 ClaimReview。
+
+export function canSaySentence(items: string[], max = 4): string {
+  const picked = unique(items, max);
+  if (picked.length === 0) return "目前可以确认：暂无足够证据支持原说法。";
+  return `目前可以确认：${picked.join("；")}。`;
+}
+
+export function cannotSaySentence(items: string[], max = 4): string {
+  const picked = unique(items, max);
+  if (picked.length === 0) return "目前不能确认：在现有公开材料下，原说法不能按其原强度成立。";
+  // 防御性扫描：cannotSay 内容绝不能以肯定句出现
+  const safe = picked.map((s) => {
+    if (s.startsWith("可以") || s.startsWith("能") || /^(是|已经|确实|必然|一定)/.test(s)) {
+      return `不能支持「${clip(s, 28)}」`;
+    }
+    return s;
+  });
+  return `目前不能确认：${safe.join("；")}。`;
+}
+
+export function qiuzhengSentence(originalClaim: string, supportLine: string | null): string {
+  const claim = normalize(originalClaim);
+  if (!claim) return "求证：流传说法边界不清，先按可核查单元处理。";
+  return `求证：网传「${clip(claim, 42)}」，经核查${supportLine ? `，${supportLine}` : "，现有公开材料不足以按原强度成立"}。`;
 }

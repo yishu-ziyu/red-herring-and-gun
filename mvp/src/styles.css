@@ -254,6 +254,277 @@
 .cinema-rise-d4 { animation: cinema-rise var(--motion-rise) both; animation-delay: 360ms; }
 .cinema-rise-d5 { animation: cinema-rise var(--motion-rise) both; animation-delay: 480ms; }
 
+/* Plan P0-3 接入层 · ClaimReview JSON-LD 徽章 */
+.claim-review-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(20, 24, 32, 0.55);
+  font-size: 0.85rem;
+}
+.claim-review-badge-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.claim-review-status {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 600;
+  font-size: 0.82rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.claim-review-status--injected {
+  color: #2ecc71;
+  background: rgba(46, 204, 113, 0.12);
+  border: 1px solid rgba(46, 204, 113, 0.35);
+}
+.claim-review-status--skipped {
+  color: #f1c40f;
+  background: rgba(241, 196, 15, 0.12);
+  border: 1px solid rgba(241, 196, 15, 0.35);
+}
+.claim-review-status--error {
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.12);
+  border: 1px solid rgba(231, 76, 60, 0.35);
+}
+.claim-review-type {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+.claim-review-badge-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.claim-review-btn {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.claim-review-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.claim-review-btn--secondary {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+}
+.claim-review-share {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  background: rgba(46, 204, 113, 0.06);
+  border: 1px solid rgba(46, 204, 113, 0.25);
+  border-radius: 4px;
+  font-size: 0.78rem;
+  flex-wrap: wrap;
+}
+.claim-review-share-label {
+  color: #2ecc71;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.claim-review-share-url {
+  flex: 1 1 200px;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  color: inherit;
+  opacity: 0.8;
+  text-decoration: none;
+  word-break: break-all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.claim-review-share-url:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+/* Plan Item 1 · EnhancementPanel（6 个 P1 模块的 UI 容器） */
+.enhancement-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin: 1rem 0;
+  padding: 0.85rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(20, 24, 32, 0.4);
+}
+.enhancement-panel-title {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #2ecc71;
+}
+.enhancement-panel-loading {
+  text-align: center;
+  padding: 1rem;
+  opacity: 0.6;
+}
+.enhancement-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 0.65rem;
+}
+.enhancement-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.enhancement-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  background: rgba(46, 204, 113, 0.18);
+  color: #2ecc71;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  border-radius: 3px;
+  font-weight: 500;
+}
+.enhancement-tree-count {
+  font-size: 0.72rem;
+  opacity: 0.6;
+  font-weight: 400;
+  margin-left: auto;
+}
+.enhancement-kpa-list, .enhancement-tree, .enhancement-citations,
+.enhancement-reputations, .enhancement-fallacies, .enhancement-blindspot-caveats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.enhancement-kpa-item, .enhancement-citation-item,
+.enhancement-reputation-item, .enhancement-fallacy-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  font-size: 0.78rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-wrap: wrap;
+}
+.enhancement-kpa-item:last-child, .enhancement-citation-item:last-child,
+.enhancement-reputation-item:last-child, .enhancement-fallacy-item:last-child {
+  border-bottom: none;
+}
+.enhancement-stance {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.enhancement-stance-support { background: rgba(46, 204, 113, 0.18); color: #2ecc71; }
+.enhancement-stance-oppose { background: rgba(231, 76, 60, 0.18); color: #e74c3c; }
+.enhancement-stance-context { background: rgba(255, 255, 255, 0.12); opacity: 0.8; }
+.enhancement-kpa-text, .enhancement-tree-text, .enhancement-fallacy-rationale {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.enhancement-kpa-conf, .enhancement-fallacy-conf {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  opacity: 0.6;
+  flex: 0 0 auto;
+}
+.enhancement-tree-node {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.2rem 0;
+  font-size: 0.78rem;
+}
+.enhancement-tree-bullet { color: #2ecc71; flex: 0 0 auto; }
+.enhancement-tree-type {
+  font-size: 0.68rem;
+  opacity: 0.55;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.enhancement-citation-url, .enhancement-reputation-host {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.72rem;
+  word-break: break-all;
+  flex: 1 1 200px;
+}
+.enhancement-citation-url { color: inherit; text-decoration: none; }
+.enhancement-citation-url:hover { text-decoration: underline; }
+.enhancement-citation-verified {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  font-size: 0.68rem;
+  border-radius: 3px;
+}
+.enhancement-citation-verified.is-verified { color: #2ecc71; background: rgba(46, 204, 113, 0.12); }
+.enhancement-citation-verified.is-unverified { color: #f1c40f; background: rgba(241, 196, 15, 0.12); }
+.enhancement-citation-snippet, .enhancement-fallacy-quote {
+  font-style: italic;
+  opacity: 0.7;
+  font-size: 0.72rem;
+  flex: 1 1 100%;
+  margin-top: 0.15rem;
+}
+.enhancement-fallacy-type {
+  font-weight: 600;
+  color: #e74c3c;
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+}
+.enhancement-reputation-label {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.enhancement-reputation-positive { color: #2ecc71; background: rgba(46, 204, 113, 0.12); }
+.enhancement-reputation-mixed { color: #f1c40f; background: rgba(241, 196, 15, 0.12); }
+.enhancement-reputation-negative { color: #e74c3c; background: rgba(231, 76, 60, 0.12); }
+.enhancement-reputation-unrated { color: rgba(255, 255, 255, 0.5); background: rgba(255, 255, 255, 0.08); }
+.enhancement-blindspot-summary {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
+.enhancement-blindspot-caveats {
+  margin: 0.4rem 0 0;
+  padding-left: 1.2rem;
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+.enhancement-blindspot-caveats li {
+  margin-bottom: 0.15rem;
+}
+.enhancement-blindspot-tag {
+  margin-left: auto;
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.enhancement-blindspot-tag.is-enough { color: #2ecc71; background: rgba(46, 204, 113, 0.12); }
+.enhancement-blindspot-tag.is-short { color: #f1c40f; background: rgba(241, 196, 15, 0.12); }
+
 .cinema-traverse {
   animation: cinema-traverse var(--motion-rise) both;
   will-change: transform, opacity, filter;
