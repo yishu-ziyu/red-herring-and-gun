@@ -1,7 +1,7 @@
 # A1 设计 · 逐命题定罪（subclaim verdicts）
 
 > 日期：2026-08-04
-> 状态：待实现
+> 状态：已实现（2026-08-04，commit af0a788…6cbb97b）
 > 所属：周打磨 · 阶段1 核查正确性
 
 ## Why
@@ -59,8 +59,10 @@
 
 ## 验收标准
 
-- [ ] FactChecker 的 responseSchema 含 `subclaimVerdicts`，且输出可覆盖全部 claimAtoms。
-- [ ] ReportComposer 报告含逐命题清单 `subclaimVerdicts`。
-- [ ] 构造含 2 个 claimAtoms 的 case，逐命题定罪覆盖全部、整体 verdict 与逐命题汇总一致。
-- [ ] 模型少输出时，缺失项标记 `unverified` + `未覆盖` 线索，不静默丢弃。
-- [ ] 全量回归通过（基线 502 测试绿）。
+- [x] FactChecker 的 responseSchema 含 `subclaimVerdicts`，且输出可覆盖全部 claimAtoms。
+- [x] ReportComposer 报告含逐命题清单 `subclaimVerdicts`。
+- [x] 构造含 2 个 claimAtoms 的 case，逐命题定罪覆盖全部、整体 verdict 与逐命题汇总一致。
+- [x] 模型少输出时，缺失项标记 `unverified` + `未覆盖` 线索，不静默丢弃。
+- [x] 全量回归通过（基线 502 测试绿，实际 505 全绿）。
+
+> 实现说明：`mergeSubclaimVerdicts` 在 buildAgentInput 层做确定性兜底（覆盖不全补 `unverified` + "模型未覆盖，待补证"），并对不在输入 claimAtoms 中的幻觉原子做拦截（可审计承诺的代码级守持）。report_composer 的 prompt 已补引导，要求逐条渲染判定/证据/边界且不得编造。
