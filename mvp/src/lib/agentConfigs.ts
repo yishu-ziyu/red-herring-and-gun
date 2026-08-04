@@ -707,6 +707,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "- SourceValidator 的信源验证结果",
       "- 可选 search360 搜索摘要与来源",
       "- 可选 logicRisks / biasWarnings / doNotInfer，需要归入逻辑风险审计并反映到 consistency 分数",
+      "- 逐命题定罪 subclaimVerdicts（每个 claimAtom 对应的判定结果，作为报告的可审计要点）",
       "",
       "verdictType 判定：",
       "- true：核心断言被可靠证据支持",
@@ -720,6 +721,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "3. causalBoundary：明确说明是否存在因果证据，不能把相关性、机制 plausibility、观察性研究直接写成健康收益。",
       "4. closureActions：给出可执行闭环，至少包含公众辟谣卡片文案、存疑归档/继续追证动作、分享表达。证据不足的动作 status 必须是 needs_review 或 blocked。",
       "5. conclusion 必须是可审计结论，不得只写“缺乏科学依据”这类空泛话；要点明哪部分真、哪部分误导、最终用户该怎么做。",
+      "6. 逐命题定罪清单：把 subclaimVerdicts 作为报告的一部分渲染，逐条列出每个 claimAtom 的判定（verdict）、证据与边界，不得遗漏、不得编造输入中不存在的原子。",
       "",
       "输出要求：严格 JSON，不要 Markdown，不要代码块。字段必须符合 schema。",
       "字段长度控制：whyHardToVerify 2-3 条；evidenceChain 恰好 3 层；closureActions 3 条；每个中文字符串尽量控制在 90 字以内，conclusion 可到 180 字。",
@@ -863,7 +865,10 @@ function mergeSubclaimVerdicts(
     const rec = item as Record<string, unknown>;
     const atom = typeof rec.claimAtom === "string" ? rec.claimAtom : "";
     if (!atom) continue;
-    covered.add(truncateClaimAtomKey(atom));
+    const atomKey = truncateClaimAtomKey(atom);
+    // 幻觉拦截：仅接受真实存在于输入 claimAtoms 中的原子，模型编造的原子不得进入报告
+    if (!atoms.includes(atomKey)) continue;
+    covered.add(atomKey);
     result.push({
       claimAtom: atom,
       verdict: ["true", "false", "partial", "unverified", "exaggerated"].includes(String(rec.verdict)) ? String(rec.verdict) : "unverified",

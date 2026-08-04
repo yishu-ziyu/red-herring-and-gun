@@ -86,4 +86,53 @@ describe("agentConfigs — DAG migration new agents", () => {
     expect(unverified).toHaveLength(1);
     expect(unverified[0].claimAtom).toBe(shortAtom);
   });
+
+  it("幻觉原子拦截：模型编造、不在输入 claimAtoms 中的原子被丢弃", () => {
+    const steps = [
+      { agent: "rumor_detector", output: { claimAtoms: ["原子A"] } },
+      {
+        agent: "fact_checker",
+        output: {
+          subclaimVerdicts: [
+            { claimAtom: "原子A", verdict: "false", evidence: "证据", boundary: "边界" },
+            { claimAtom: "幻觉原子X", verdict: "true", evidence: "编造", boundary: "编造" },
+          ],
+        },
+      },
+    ];
+    const input = buildAgentInput("report_composer", "测试claim", steps as any);
+    const verdicts = (input.factCheck as any).subclaimVerdicts;
+    expect(verdicts).toHaveLength(1);
+    expect(verdicts[0].claimAtom).toBe("原子A");
+    expect(verdicts.some((v: any) => v.claimAtom === "幻觉原子X")).toBe(false);
+  });
+
+  it("非法 verdict 字段回退为 unverified", () => {
+    const steps = [
+      { agent: "rumor_detector", output: { claimAtoms: ["原子A"] } },
+      {
+        agent: "fact_checker",
+        output: { subclaimVerdicts: [{ claimAtom: "原子A", verdict: "yes", evidence: "证据", boundary: "边界" }] },
+      },
+    ];
+    const input = buildAgentInput("report_composer", "测试claim", steps as any);
+    const verdicts = (input.factCheck as any).subclaimVerdicts;
+    expect(verdicts).toHaveLength(1);
+    expect(verdicts[0].claimAtom).toBe("原子A");
+    expect(verdicts[0].verdict).toBe("unverified");
+  });
+
+  it("空/非数组 subclaimVerdicts 时全部 claimAtoms 走 unverified 兜底", () => {
+    const steps = [
+      { agent: "rumor_detector", output: { claimAtoms: ["原子A", "原子B"] } },
+      { agent: "fact_checker", output: { subclaimVerdicts: "not-an-array" } },
+    ];
+    const input = buildAgentInput("report_composer", "测试claim", steps as any);
+    const verdicts = (input.factCheck as any).subclaimVerdicts;
+    expect(verdicts).toHaveLength(2);
+    for (const v of verdicts) {
+      expect(v.verdict).toBe("unverified");
+      expect(v.boundary).toContain("未覆盖");
+    }
+  });
 });
