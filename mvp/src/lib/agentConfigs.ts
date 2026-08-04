@@ -852,14 +852,28 @@ function truncateClaimAtomKey(value: string, maxLength = 180) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
 }
 
+// 判定可追溯：前端侧对 per-verdict 来源做结构清洗（透传，无搜索结果做交叉校验）。
+function sanitizeVerdictSources(value: unknown): import("./schemas").VerdictSource[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((candidate): candidate is Record<string, unknown> => !!candidate && typeof candidate === "object")
+    .map((rec) => ({
+      url: typeof rec.url === "string" ? rec.url : "",
+      title: typeof rec.title === "string" ? rec.title : "",
+      snippet: typeof rec.snippet === "string" ? rec.snippet : "",
+    }))
+    .filter((source) => source.url.length > 0)
+    .slice(0, 5);
+}
+
 function mergeSubclaimVerdicts(
   claimAtoms: unknown,
   verdicts: unknown
-): Array<{ claimAtom: string; verdict: string; evidence: string; boundary: string }> {
+): import("./schemas").SubclaimVerdict[] {
   const atoms = compactStrings(claimAtoms, 6, 180);
   const raw = Array.isArray(verdicts) ? verdicts : [];
   const covered = new Set<string>();
-  const result: Array<{ claimAtom: string; verdict: string; evidence: string; boundary: string }> = [];
+  const result: import("./schemas").SubclaimVerdict[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const rec = item as Record<string, unknown>;
@@ -871,14 +885,25 @@ function mergeSubclaimVerdicts(
     covered.add(atomKey);
     result.push({
       claimAtom: atom,
-      verdict: ["true", "false", "partial", "unverified", "exaggerated"].includes(String(rec.verdict)) ? String(rec.verdict) : "unverified",
+      verdict: (["true", "false", "partial", "unverified", "exaggerated"].includes(String(rec.verdict)) ? String(rec.verdict) : "unverified") as import("./schemas").SubclaimVerdictValue,
       evidence: compactText(rec.evidence, 200),
       boundary: compactText(rec.boundary, 200),
+      supportingSources: sanitizeVerdictSources(rec.supportingSources),
+      contradictingSources: sanitizeVerdictSources(rec.contradictingSources),
+      evidenceGaps: compactStrings(rec.evidenceGaps, 3, 120),
     });
   }
   for (const atom of atoms) {
     if (!covered.has(atom)) {
-      result.push({ claimAtom: atom, verdict: "unverified", evidence: "", boundary: "模型未覆盖，待补证" });
+      result.push({
+        claimAtom: atom,
+        verdict: "unverified",
+        evidence: "",
+        boundary: "模型未覆盖，待补证",
+        supportingSources: [],
+        contradictingSources: [],
+        evidenceGaps: [],
+      });
     }
   }
   return result;
