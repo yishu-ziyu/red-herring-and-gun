@@ -4,9 +4,9 @@ import { scoreCase, aggregateMetrics } from "./evaluationMetrics";
 import { runCase } from "./benchmarkRunner";
 
 describe("goldenDataset", () => {
-  it("has at least 10 cases across all 4 categories", () => {
+  it("has at least 10 cases across the real-rumor categories", () => {
     const categories = new Set(goldenDataset.map((c) => c.category));
-    expect(categories.size).toBe(4);
+    expect(categories.size).toBeGreaterThanOrEqual(2);
     expect(goldenDataset.length).toBeGreaterThanOrEqual(10);
   });
 
@@ -16,9 +16,9 @@ describe("goldenDataset", () => {
   });
 
   it("getCase returns the correct case", () => {
-    const c = getCase("CAUSAL-001");
+    const c = getCase("RUMOR-010");
     expect(c).toBeDefined();
-    expect(c!.claim).toBe("喝咖啡会导致癌症");
+    expect(c!.claim).toBe("常穿黑色内衣易患癌");
     expect(c!.category).toBe("causal");
   });
 
@@ -34,10 +34,10 @@ describe("goldenDataset", () => {
     }
   });
 
-  it("each concept case only expects report_composer", () => {
-    const conceptCases = getCasesByCategory("concept");
-    for (const c of conceptCases) {
-      expect(c.expectedAgentSequence).toEqual(["report_composer"]);
+  it("every non-concept case expects more than just report_composer", () => {
+    const nonConcept = goldenDataset.filter((c) => c.category !== "concept");
+    for (const c of nonConcept) {
+      expect(c.expectedAgentSequence).not.toEqual(["report_composer"]);
     }
   });
 
@@ -58,13 +58,27 @@ describe("goldenDataset", () => {
 
 describe("evaluationMetrics", () => {
   it("scores a passing case correctly", () => {
+    const golden = goldenDataset[0];
+    const makeStep = (agent: string) => ({
+      agent,
+      agentName: agent.toUpperCase(),
+      agentIcon: "",
+      systemPrompt: "",
+      input: {},
+      output: {},
+      evidenceBundle: { agentId: "", claimIds: [], supportEvidenceIds: [], contradictEvidenceIds: [], confidenceDelta: 0, unresolvedQuestions: [] },
+      model: "mock",
+      latencyMs: 100,
+      timestamp: Date.now(),
+      status: "completed",
+    });
     const result = scoreCase({
-      case: goldenDataset[0],
+      case: golden,
       result: {
-        claim: goldenDataset[0].claim,
+        claim: golden.claim,
         sessionId: "test",
-        steps: [{ agent: "report_composer", agentName: "RC", agentIcon: "", systemPrompt: "", input: {}, output: { verdictType: "unverified", credibilityScore: 55 }, evidenceBundle: { agentId: "", claimIds: [], supportEvidenceIds: [], contradictEvidenceIds: [], confidenceDelta: 0, unresolvedQuestions: [] }, model: "mock", latencyMs: 100, timestamp: Date.now(), status: "completed" }],
-        finalReport: { verdictType: "unverified", credibilityScore: 55 },
+        steps: golden.expectedAgentSequence.map(makeStep),
+        finalReport: { verdictType: golden.expectedVerdictType, credibilityScore: golden.expectedCredibilityRange[0] },
         followUpQueue: [],
         memoryCandidates: [],
         totalLatencyMs: 100,
@@ -117,9 +131,9 @@ describe("evaluationMetrics", () => {
 });
 
 describe("benchmarkRunner", () => {
-  it("runs a concept case without crashing", async () => {
+  it("runs an event case without crashing", async () => {
     const result = await runCase(goldenDataset[0]);
-    expect(result.case.id).toBe("CONCEPT-001");
+    expect(result.case.id).toBe("RUMOR-001");
     expect(result.error).toBeUndefined();
   });
 
