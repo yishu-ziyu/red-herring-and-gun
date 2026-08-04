@@ -33,6 +33,15 @@ export function ReportModal({
 
   const credibility = calculateCredibilityScore(caseData, report);
 
+  const verdicts = report.subclaimVerdicts ?? [];
+  const VERDICT_LABELS: Record<string, string> = {
+    true: "属实",
+    false: "不实",
+    partial: "部分属实",
+    exaggerated: "夸大",
+    unverified: "未判定·待补证",
+  };
+
   const handleCopyMarkdown = useCallback(() => {
     const md = exportToMarkdown(report, caseData, verificationResult);
     copyToClipboard(md).then(() => {
@@ -122,6 +131,38 @@ export function ReportModal({
                   </div>
                 </div>
               )}
+
+              <div className="report-section">
+                <h3>逐命题定罪</h3>
+                {verdicts.length > 0 ? (
+                  <div className="report-verdicts">
+                    {verdicts.map((v, i) => (
+                      <div key={i} className="report-verdict-item">
+                        <div className="verdict-header">
+                          <span className="verdict-claim">{v.claimAtom}</span>
+                          <span className={`verdict-badge verdict-${v.verdict}`}>
+                            {VERDICT_LABELS[v.verdict] ?? v.verdict}
+                          </span>
+                        </div>
+                        {v.evidence && (
+                          <p className="verdict-evidence">
+                            <span className="verdict-field-label">证据</span>
+                            {v.evidence}
+                          </p>
+                        )}
+                        {v.boundary && (
+                          <p className="verdict-boundary">
+                            <span className="verdict-field-label">边界</span>
+                            {v.boundary}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="report-verdicts-empty">本次未生成逐命题判定</p>
+                )}
+              </div>
 
               <div className="report-section">
                 <h3>子命题核查状态</h3>
