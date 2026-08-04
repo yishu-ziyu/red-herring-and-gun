@@ -66,3 +66,13 @@
 - [x] 全量回归通过（基线 502 测试绿，实际 505 全绿）。
 
 > 实现说明：`mergeSubclaimVerdicts` 在 buildAgentInput 层做确定性兜底（覆盖不全补 `unverified` + "模型未覆盖，待补证"），并对不在输入 claimAtoms 中的幻觉原子做拦截（可审计承诺的代码级守持）。report_composer 的 prompt 已补引导，要求逐条渲染判定/证据/边界且不得编造。
+
+## 落地边界（2026-08-04 补充）
+
+本功能当前落在**前端 DAG 运行时数据层**：`src/lib/agentConfigs.ts` 的 fact_checker 产出 `subclaimVerdicts`，report_composer input 透传并在报告 schema 中保留该字段。全量回归 508 通过，含 5 条专项断言（覆盖不全兜底、幻觉原子拦截、超长原子截断键一致）。
+
+**尚未接入生产路径**（属下一阶段，非本设计缺陷）：
+- server 端 `agentConfigs.ts` 为精简演示版，fact_checker 无 `subclaimVerdicts`、rumor_detector 无 `claimAtoms`，`/api/agent/orchestrate(-stream)` 走的是串行 handoff，不产出逐命题定罪。
+- 前端 `ReportModal.tsx` 渲染的是旧字段 `subclaimStatuses`，未渲染 `subclaimVerdicts`。
+
+即：逐命题定罪的数据契约已实现并验证，但用户当前在浏览器里看不到该清单。接入生产路径（server 同步 + UI 渲染）应排入下一功能迭代。
