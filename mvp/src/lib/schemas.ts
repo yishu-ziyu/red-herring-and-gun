@@ -119,12 +119,23 @@ export interface SubclaimReportStatus {
 
 export type SubclaimVerdictValue = "true" | "false" | "partial" | "exaggerated" | "unverified";
 
+/** 逐条定罪绑定的来源（url/title/snippet 三项，均为判定可追溯的可点击依据） */
+export interface VerdictSource {
+  url: string;
+  title: string;
+  snippet: string;
+}
+
 /** 逐命题定罪条目：来自 fact_checker / report_composer 的 subclaimVerdicts，经 merge 闸门规范化后存档 */
 export interface SubclaimVerdict {
   claimAtom: string;
   verdict: SubclaimVerdictValue;
   evidence: string;
   boundary: string;
+  // 判定可追溯：三个新字段可选（兜底为空数组），前端展开依据卡展示
+  supportingSources?: VerdictSource[];
+  contradictingSources?: VerdictSource[];
+  evidenceGaps?: string[];
 }
 
 export interface FinalReport {
