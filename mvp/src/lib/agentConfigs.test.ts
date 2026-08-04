@@ -31,4 +31,14 @@ describe("agentConfigs — DAG migration new agents", () => {
     expect(input.claim).toBe("test claim");
     expect(input.task).toBeDefined();
   });
+
+  it("rumor_detector prompt 包含原子命题判定标准与原句自证约束", () => {
+    const agent = getAgentConfig("rumor_detector");
+    expect(agent).toBeDefined();
+    const prompt = agent!.systemPrompt;
+    expect(prompt).toContain("原子命题的判定标准");
+    expect(prompt).toContain("必须能被原句自证");
+    expect(prompt).toContain("不要求原子命题彼此独立");
+    expect(prompt).toContain("不得引入原句未声称的信息");
+  });
 });
