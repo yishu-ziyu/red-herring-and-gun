@@ -41,7 +41,15 @@ export interface HandoffResult {
 }
 
 // Agent 专用输出类型
+export interface SubclaimVerdict {
+  claimAtom: string;
+  verdict: "true" | "false" | "partial" | "unverified" | "exaggerated";
+  evidence: string;
+  boundary: string;
+}
+
 export interface RumorDetectorOutput {
+  claimAtoms: string[];
   rumorIndicators: string[];
   severity: "low" | "medium" | "high";
   analysis: string;
@@ -54,6 +62,7 @@ export interface FactCheckerOutput {
   sources: string[];
   keyFindings: string[];
   counterEvidence: string[];
+  subclaimVerdicts: SubclaimVerdict[];
 }
 
 export interface SourceValidatorOutput {
@@ -72,6 +81,7 @@ export interface ReportComposerOutput {
   recommendation: string;
   summaryForPublic: string;
   whyHardToVerify: string[];
+  subclaimVerdicts: SubclaimVerdict[];
   evidenceChain: Array<{
     layer: string;
     finding: string;
@@ -104,12 +114,28 @@ const rumorDetectorSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
+    claimAtoms: { type: "array", items: { type: "string" } },
     rumorIndicators: { type: "array", items: { type: "string" } },
     severity: { type: "string", enum: ["low", "medium", "high"] },
     analysis: { type: "string" },
     detectedPatterns: { type: "array", items: { type: "string" } },
   },
-  required: ["rumorIndicators", "severity", "analysis", "detectedPatterns"],
+  required: ["claimAtoms", "rumorIndicators", "severity", "analysis", "detectedPatterns"],
+};
+
+const subclaimVerdictsSchema = {
+  type: "array",
+  items: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      claimAtom: { type: "string" },
+      verdict: { type: "string", enum: ["true", "false", "partial", "unverified", "exaggerated"] },
+      evidence: { type: "string" },
+      boundary: { type: "string" },
+    },
+    required: ["claimAtom", "verdict", "evidence", "boundary"],
+  },
 };
 
 const factCheckerSchema = {
@@ -121,8 +147,9 @@ const factCheckerSchema = {
     sources: { type: "array", items: { type: "string" } },
     keyFindings: { type: "array", items: { type: "string" } },
     counterEvidence: { type: "array", items: { type: "string" } },
+    subclaimVerdicts: subclaimVerdictsSchema,
   },
-  required: ["factCheckResult", "confidence", "sources", "keyFindings", "counterEvidence"],
+  required: ["factCheckResult", "confidence", "sources", "keyFindings", "counterEvidence", "subclaimVerdicts"],
 };
 
 const sourceValidatorSchema = {
@@ -149,6 +176,7 @@ const reportComposerSchema = {
     recommendation: { type: "string" },
     summaryForPublic: { type: "string" },
     whyHardToVerify: { type: "array", items: { type: "string" } },
+    subclaimVerdicts: subclaimVerdictsSchema,
     evidenceChain: {
       type: "array",
       items: {
@@ -207,6 +235,7 @@ const reportComposerSchema = {
     "recommendation",
     "summaryForPublic",
     "whyHardToVerify",
+    "subclaimVerdicts",
     "evidenceChain",
     "causalBoundary",
     "closureActions",
@@ -228,7 +257,13 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     systemPrompt: [
       "你是红鲱鱼与枪的 RumorDetector（谣言特征检测专家）。",
       "你的工作方式像侦探立案：先观察语言痕迹，拆出可验证命题，只记录证据需求，不凭常识补事实。",
-      "你的任务是分析用户提供的 claim（声明/信息），识别其中可能存在的谣言特征。",
+      "你的任务是分析用户提供的 claim（声明/信息），先拆出可核查的原子命题（claimAtoms），再识别其中可能存在的谣言特征。",
+      "",
+      "原子命题的判定标准（拆分时严格遵循）：",
+      "1. 每个原子命题必须是一个独立、可单独核查的判断——要么是某个个体/对象的性质，要么是两个个体/对象之间的关系。",
+      "2. 每个 claimAtom 必须能回溯到原句，只能由用户提供的 claim 直接支持，不得引入原句未声称的信息、补全上下文或加入你自己的常识。",
+      "3. 若原句含独立判断（如「药能治失眠」「药已获批准」），必须拆成多个原子命题，不得合并成一条。",
+      "4. 拆分完成后，把 claimAtoms 拼接回读一遍，确认每条都能回溯到原句——不能回溯的删掉。",
       "",
       "你需要检测以下类型的谣言特征：",
       "1. 绝对化表述 — 使用「一定」「绝对」「100%」「所有」等极端词汇",
@@ -246,7 +281,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "- low：检测到 1 个谣言特征，或主要是语气问题",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"rumorIndicators\": [\"谣言特征1\", \"谣言特征2\"],\n  \"severity\": \"medium\",\n  \"analysis\": \"详细分析说明\",\n  \"detectedPatterns\": [\"匹配的模式1\", \"匹配的模式2\"]\n}",
+      "{\n  \"claimAtoms\": [\"可核查原子命题1\", \"可核查原子命题2\"],\n  \"rumorIndicators\": [\"谣言特征1\", \"谣言特征2\"],\n  \"severity\": \"medium\",\n  \"analysis\": \"详细分析说明\",\n  \"detectedPatterns\": [\"匹配的模式1\", \"匹配的模式2\"]\n}",
       "",
       "severity 必须是 'low'、'medium'、'high' 之一。",
     ].join("\n"),
@@ -287,11 +322,18 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "- medium：有部分证据，但不够充分或存在争议",
       "- low：证据稀少或来源单一",
       "",
+      "【逐命题定罪 / subclaimVerdicts — 强制】",
+      "1. subclaimVerdicts 必须覆盖输入 claimAtoms 中的每个原子命题，逐条给出 verdict。",
+      "2. 每条 claimAtom 必须能回溯到原句，只能取输入 claimAtoms 中真实存在的原子，不得引入原句未声称的信息或编造不存在的原子。",
+      "3. verdict 五值：true（证据支持）、false（证据否定）、partial（部分成立）、exaggerated（夸大/断章取义）、unverified（无法判定，待补证）。",
+      "4. 每条必须写 evidence（证据）与 boundary（边界/不能推出的部分）。",
+      "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"factCheckResult\": \"partial\",\n  \"confidence\": \"medium\",\n  \"sources\": [\"来源1\", \"来源2\"],\n  \"keyFindings\": [\"发现1\", \"发现2\"],\n  \"counterEvidence\": [\"反驳证据1\", \"反驳证据2\"]\n}",
+      "{\n  \"factCheckResult\": \"partial\",\n  \"confidence\": \"medium\",\n  \"sources\": [\"来源1\", \"来源2\"],\n  \"keyFindings\": [\"发现1\", \"发现2\"],\n  \"counterEvidence\": [\"反驳证据1\", \"反驳证据2\"],\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子命题1\", \"verdict\": \"true\", \"evidence\": \"证据\", \"boundary\": \"边界\"},\n    {\"claimAtom\": \"原子命题2\", \"verdict\": \"unverified\", \"evidence\": \"\", \"boundary\": \"暂无可靠证据\"}\n  ]\n}",
       "",
       "factCheckResult 必须是 'true'、'false'、'partial'、'unverified' 之一。",
       "confidence 必须是 'low'、'medium'、'high' 之一。",
+      "subclaimVerdicts 的 verdict 必须是 'true'、'false'、'partial'、'unverified'、'exaggerated' 之一。",
     ].join("\n"),
     responseSchema: factCheckerSchema,
   },
@@ -361,6 +403,10 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "- SourceValidator 的信源验证结果",
       "- 可选 search360 搜索摘要与来源",
       "- evidenceInputs：可放入证据链的搜索来源、反证、缺口和已审计来源",
+      "- factCheck.subclaimVerdicts：逐命题定罪清单（claimAtom/verdict/evidence/boundary）",
+      "",
+      "【逐命题定罪清单渲染 / subclaimVerdicts — 强制】",
+      "把 subclaimVerdicts 作为报告的一部分渲染，逐条列出每个 claimAtom 的判定（verdict）、证据与边界，不得遗漏、不得编造输入中不存在的原子。",
       "",
       "证据链要求：",
       "1. evidenceChain 必须至少 3 层，按「原始命题/搜索来源/信源审计/反证或缺口/结论边界」组织。",
@@ -396,6 +442,60 @@ export function getAgentConfig(id: string): AgentConfig | undefined {
   return AGENT_CONFIGS.find((a) => a.id === id);
 }
 
+function compactStrings(value: unknown, limit = 5, maxLength = 260): string[] {
+  return Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .slice(0, limit)
+        .map((item) => (item.length > maxLength ? `${item.slice(0, maxLength)}…` : item))
+    : [];
+}
+
+function compactText(value: unknown, maxLength = 420): string {
+  if (typeof value !== "string") return "";
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+}
+
+// 与 compactStrings(claimAtoms, 6, 180) 对 claimAtom 的截断规则保持一致，
+// 作为 covered 判定键，避免超长原子在 verdict 原始串与 atoms 截断串之间失配。
+function truncateClaimAtomKey(value: string, maxLength = 180): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+}
+
+const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated"];
+
+export function mergeSubclaimVerdicts(
+  claimAtoms: unknown,
+  verdicts: unknown
+): Array<{ claimAtom: string; verdict: string; evidence: string; boundary: string }> {
+  const atoms = compactStrings(claimAtoms, 6, 180);
+  const raw = Array.isArray(verdicts) ? verdicts : [];
+  const covered = new Set<string>();
+  const result: Array<{ claimAtom: string; verdict: string; evidence: string; boundary: string }> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const atom = typeof rec.claimAtom === "string" ? rec.claimAtom : "";
+    if (!atom) continue;
+    const atomKey = truncateClaimAtomKey(atom);
+    // 幻觉拦截：仅接受真实存在于输入 claimAtoms 中的原子，模型编造的原子不得进入报告
+    if (!atoms.includes(atomKey)) continue;
+    covered.add(atomKey);
+    result.push({
+      claimAtom: atom,
+      verdict: SUBCLAIM_VERDICTS.includes(String(rec.verdict)) ? String(rec.verdict) : "unverified",
+      evidence: compactText(rec.evidence, 200),
+      boundary: compactText(rec.boundary, 200),
+    });
+  }
+  for (const atom of atoms) {
+    if (!covered.has(atom)) {
+      result.push({ claimAtom: atom, verdict: "unverified", evidence: "", boundary: "模型未覆盖，待补证" });
+    }
+  }
+  return result;
+}
+
 export function buildAgentInput(
   agentId: string,
   claim: string,
@@ -410,6 +510,7 @@ export function buildAgentInput(
       return {
         claim,
         task: "对该 claim 进行事实核查",
+        claimAtoms: prev?.output?.claimAtoms ?? [],
         rumorIndicators: prev?.output?.rumorIndicators ?? [],
         severity: prev?.output?.severity ?? "low",
       };
@@ -439,6 +540,7 @@ export function buildAgentInput(
         factCheck: {
           result: factStep?.output?.factCheckResult ?? "unverified",
           confidence: factStep?.output?.confidence ?? "low",
+          subclaimVerdicts: mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts),
           sources: factStep?.output?.sources ?? [],
           keyFindings: factStep?.output?.keyFindings ?? [],
         },

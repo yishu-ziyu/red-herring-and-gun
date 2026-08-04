@@ -52,4 +52,58 @@ describe("deterministic final report fallback", () => {
     expectNoInfraLeak(report.whyHardToVerify);
     expectNoInfraLeak(report._fallbackReason);
   });
+
+  it("buildDeterministicFinalReport 产出 subclaimVerdicts（claimAtoms 为空时返回 []）", () => {
+    const steps = [
+      {
+        agent: "rumor_detector",
+        output: {
+          severity: "high",
+          claimAtoms: ["原子A", "原子B"],
+          rumorIndicators: ["绝对化表达"],
+          detectedPatterns: [],
+        },
+      },
+      {
+        agent: "fact_checker",
+        output: {
+          factCheckResult: "partial",
+          confidence: "medium",
+          keyFindings: [],
+          counterEvidence: [],
+          sources: [],
+          subclaimVerdicts: [
+            { claimAtom: "原子A", verdict: "true", evidence: "证据A", boundary: "边界A" },
+            { claimAtom: "编造原子", verdict: "false", evidence: "幻觉", boundary: "幻觉" },
+          ],
+        },
+      },
+      {
+        agent: "source_validator",
+        output: {
+          sourceReliability: "medium",
+          verifiedSources: [],
+          questionableSources: [],
+          missingSources: [],
+          verificationNotes: "",
+        },
+      },
+    ];
+    const report = buildDeterministicFinalReport("测试命题", steps, {}, "fallback reason");
+    expect(Array.isArray(report.subclaimVerdicts)).toBe(true);
+    expect(report.subclaimVerdicts).toHaveLength(2);
+    expect(report.subclaimVerdicts.map((r: any) => r.claimAtom)).toEqual(["原子A", "原子B"]);
+    expect(report.subclaimVerdicts.find((r: any) => r.claimAtom === "原子A")?.verdict).toBe("true");
+    expect(report.subclaimVerdicts.find((r: any) => r.claimAtom === "原子B")).toEqual({
+      claimAtom: "原子B",
+      verdict: "unverified",
+      evidence: "",
+      boundary: "模型未覆盖，待补证",
+    });
+    expect(report.subclaimVerdicts.some((r: any) => r.claimAtom === "编造原子")).toBe(false);
+
+    // claimAtoms 为空 → 空数组，不伪造空条目
+    const emptyReport = buildDeterministicFinalReport("无原子", [], {}, "fallback reason");
+    expect(emptyReport.subclaimVerdicts).toEqual([]);
+  });
 });
