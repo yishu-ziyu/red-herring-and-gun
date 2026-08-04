@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { searchClaimAcrossSources } from "./lib/sherlockStyleSearch.js";
-import { AGENT_CONFIGS, buildAgentInput } from "./lib/agentConfigs.js";
+import { AGENT_CONFIGS, buildAgentInput, mergeSubclaimVerdicts } from "./lib/agentConfigs.js";
 import { callAgentWithFallback, AgentTextProviderId } from "./lib/providerRouter.js";
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
@@ -739,6 +739,15 @@ export function createHandlers(env: Record<string, string>) {
 
       const finalReport = reportStep.output;
 
+      // ─── 逐命题定罪落库闸门（R2）───
+      // 以 claimAtoms 为锚过 mergeSubclaimVerdicts：拦截 report_composer 编造原子、
+      // 回退非法 verdict、补齐未覆盖原子；report_composer 缺失该字段时回退到
+      // fact_checker 同源清单，保证最终清单非空、可审计。
+      const reportVerdicts = reportStep?.output?.subclaimVerdicts;
+      finalReport.subclaimVerdicts = Array.isArray(reportVerdicts) && reportVerdicts.length > 0
+        ? mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, reportVerdicts)
+        : mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts);
+
       // ─── 公式覆盖 credibilityScore ───
       // 审查 P3-1 + P2-1 修复：抽取为 computeFormulaScore 共享 helper，
       // direction 由 helper 内部按 search360Result.contradictingEvidence
@@ -1033,6 +1042,14 @@ export function createHandlers(env: Record<string, string>) {
       steps.push(reportStep);
 
       const finalReport = reportStep.output;
+
+      // ─── 逐命题定罪落库闸门（R2，stream）───
+      // 与 orchestrateHandler 同闸门：以 claimAtoms 为锚过 mergeSubclaimVerdicts，
+      // report_composer 缺失时回退 fact_checker 同源清单。
+      const reportVerdicts = reportStep?.output?.subclaimVerdicts;
+      finalReport.subclaimVerdicts = Array.isArray(reportVerdicts) && reportVerdicts.length > 0
+        ? mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, reportVerdicts)
+        : mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts);
 
       // ─── 公式覆盖 credibilityScore ───
       // 审查 P3-1 + P2-1 修复：与 orchestrateHandler 共用 computeFormulaScore。
@@ -2374,6 +2391,7 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
     conclusion,
     credibilityScore,
     credibilityLabel,
+    subclaimVerdicts: mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts),
     recommendation: hasMissingSources
       ? "先不要直接转发原说法；补充官方、原始或专业来源后再判断。"
       : "可以保留为待核查结论，并在转述时附上证据边界。",
