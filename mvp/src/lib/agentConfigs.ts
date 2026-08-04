@@ -620,6 +620,8 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "",
       "factCheckResult 必须是 'true'、'false'、'partial'、'unverified' 之一。",
       "confidence 必须是 'low'、'medium'、'high' 之一。",
+      "subclaimVerdicts 必须覆盖输入 claimAtoms 中的每个原子命题，且每条 claimAtom 必须能回溯到原句；不得引入原句未声称的信息。",
+      "verdict 取值：true=该原子命题成立；false=该原子命题不成立；partial=有真实片段但夸大/偷换；exaggerated=被夸大；unverified=证据不足。",
     ].join("\n")),
     responseSchema: factCheckerSchema,
   },
