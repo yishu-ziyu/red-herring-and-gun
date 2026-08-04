@@ -41,4 +41,16 @@ describe("agentConfigs — DAG migration new agents", () => {
     expect(prompt).toContain("不要求原子命题彼此独立");
     expect(prompt).toContain("不得引入原句未声称的信息");
   });
+
+  it("fact_checker responseSchema 包含 subclaimVerdicts 逐命题定罪字段", () => {
+    const agent = getAgentConfig("fact_checker");
+    const props = (agent!.responseSchema as any).properties;
+    expect(props.subclaimVerdicts).toBeDefined();
+    expect(props.subclaimVerdicts.type).toBe("array");
+    const item = props.subclaimVerdicts.items.properties;
+    expect(item.claimAtom).toBeDefined();
+    expect(item.verdict).toBeDefined();
+    expect(item.evidence).toBeDefined();
+    expect(item.boundary).toBeDefined();
+  });
 });

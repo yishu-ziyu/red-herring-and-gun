@@ -385,8 +385,22 @@ const factCheckerSchema = {
     counterEvidence: { type: "array", items: { type: "string" } },
     unresolvedEvidenceGaps: { type: "array", items: { type: "string" } },
     logicRisks: { type: "array", items: { type: "string" } },
+    subclaimVerdicts: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          claimAtom: { type: "string" },
+          verdict: { type: "string", enum: ["true", "false", "partial", "unverified", "exaggerated"] },
+          evidence: { type: "string" },
+          boundary: { type: "string" },
+        },
+        required: ["claimAtom", "verdict", "evidence", "boundary"],
+      },
+    },
   },
-  required: ["factCheckResult", "confidence", "sources", "supportingEvidence", "contradictingSources", "keyFindings", "counterEvidence", "unresolvedEvidenceGaps"],
+  required: ["factCheckResult", "confidence", "sources", "supportingEvidence", "contradictingSources", "keyFindings", "counterEvidence", "unresolvedEvidenceGaps", "subclaimVerdicts"],
 };
 
 const sourceValidatorSchema = {
