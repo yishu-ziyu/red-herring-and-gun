@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { ReportModal } from "./ReportModal";
 import type { DemoCase, FinalReport, SubclaimVerdict } from "../../lib/schemas";
 
@@ -101,5 +101,94 @@ describe("ReportModal 逐命题定罪区块", () => {
     renderModal(makeReport({ subclaimVerdicts: verdicts }));
     expect(screen.getByText("未判定·待补证")).toBeInTheDocument();
     expect(screen.getByText("模型未覆盖，待补证")).toBeInTheDocument();
+  });
+
+  it("默认收起：分区不渲染，aria-expanded 为 false", () => {
+    const verdicts: SubclaimVerdict[] = [
+      {
+        claimAtom: "隔夜菜会致癌",
+        verdict: "false",
+        evidence: "",
+        boundary: "",
+        supportingSources: [{ url: "https://a.com", title: "来源A", snippet: "摘要" }],
+        contradictingSources: [{ url: "https://b.com", title: "来源B", snippet: "摘要" }],
+        evidenceGaps: ["缺口一"],
+      },
+    ];
+    renderModal(makeReport({ subclaimVerdicts: verdicts }));
+
+    expect(screen.queryByText("支撑证据")).not.toBeInTheDocument();
+    expect(screen.queryByText("反证 / 质疑")).not.toBeInTheDocument();
+    expect(screen.queryByText("证据缺口")).not.toBeInTheDocument();
+    const header = screen.getByRole("button", { name: /隔夜菜会致癌/ });
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("点击展开渲染三区，再次点击折叠收起", () => {
+    const verdicts: SubclaimVerdict[] = [
+      {
+        claimAtom: "隔夜菜会致癌",
+        verdict: "false",
+        evidence: "",
+        boundary: "",
+        supportingSources: [{ url: "https://a.com", title: "来源A", snippet: "摘要A" }],
+        contradictingSources: [{ url: "https://b.com", title: "来源B", snippet: "摘要B" }],
+        evidenceGaps: ["缺口一", "缺口二"],
+      },
+    ];
+    renderModal(makeReport({ subclaimVerdicts: verdicts }));
+
+    const header = screen.getByRole("button", { name: /隔夜菜会致癌/ });
+    fireEvent.click(header);
+    expect(screen.getByText("支撑证据")).toBeInTheDocument();
+    expect(screen.getByText("反证 / 质疑")).toBeInTheDocument();
+    expect(screen.getByText("证据缺口")).toBeInTheDocument();
+    expect(header.getAttribute("aria-expanded")).toBe("true");
+
+    fireEvent.click(header);
+    expect(screen.queryByText("支撑证据")).not.toBeInTheDocument();
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("支撑来源与反证来源链接正确（target=_blank 且 href 指向源 url）", () => {
+    const verdicts: SubclaimVerdict[] = [
+      {
+        claimAtom: "隔夜菜会致癌",
+        verdict: "false",
+        evidence: "",
+        boundary: "",
+        supportingSources: [{ url: "https://support.example.com/a", title: "支撑来源", snippet: "摘要" }],
+        contradictingSources: [{ url: "https://contradict.example.com/b", title: "反证来源", snippet: "摘要" }],
+      },
+    ];
+    renderModal(makeReport({ subclaimVerdicts: verdicts }));
+
+    fireEvent.click(screen.getByRole("button", { name: /隔夜菜会致癌/ }));
+
+    const supportLink = screen.getByRole("link", { name: "支撑来源" });
+    expect(supportLink.getAttribute("href")).toBe("https://support.example.com/a");
+    expect(supportLink.getAttribute("target")).toBe("_blank");
+
+    const contradictLink = screen.getByRole("link", { name: "反证来源" });
+    expect(contradictLink.getAttribute("href")).toBe("https://contradict.example.com/b");
+    expect(contradictLink.getAttribute("target")).toBe("_blank");
+  });
+
+  it("空分区隐藏：仅有支撑来源时不渲染反证/缺口标题", () => {
+    const verdicts: SubclaimVerdict[] = [
+      {
+        claimAtom: "隔夜菜会致癌",
+        verdict: "false",
+        evidence: "",
+        boundary: "",
+        supportingSources: [{ url: "https://a.com", title: "来源A", snippet: "摘要" }],
+      },
+    ];
+    renderModal(makeReport({ subclaimVerdicts: verdicts }));
+
+    fireEvent.click(screen.getByRole("button", { name: /隔夜菜会致癌/ }));
+    expect(screen.getByText("支撑证据")).toBeInTheDocument();
+    expect(screen.queryByText("反证 / 质疑")).not.toBeInTheDocument();
+    expect(screen.queryByText("证据缺口")).not.toBeInTheDocument();
   });
 });
