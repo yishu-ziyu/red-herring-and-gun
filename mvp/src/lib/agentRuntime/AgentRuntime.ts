@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { AGENT_CONFIGS, buildAgentInput } from "../agentConfigs";
+import { buildAgentInput, getAgentRegistry, type AgentRegistry } from "../agentConfigs";
 import type { AgentContract } from "../agentConfigs";
 import type { Search360Response } from "../schemas";
 import {
@@ -29,6 +29,8 @@ import { getTraceCollector } from "../reasoningTrace";
 import type {
   ConsensusDebateUpdate,
   ExecutionDagClaimType,
+  ExecutionDagEdge,
+  ExecutionDagNode,
   ExecutionDagPlan,
   SpeculativeRelayUpdate,
 } from "../agentOrchestrationTypes";
@@ -86,6 +88,7 @@ export interface AgentRuntimeDependencies {
 export class AgentRuntime {
   private readonly memoryStore: AgentMemoryStore;
   private readonly memoryCandidateStore: MemoryCandidateStore;
+  private readonly agentRegistry: AgentRegistry = getAgentRegistry();
 
   constructor(private readonly deps: AgentRuntimeDependencies) {
     this.memoryStore = deps.memoryStore ?? new JsonlAgentMemoryStore();
@@ -190,29 +193,9 @@ export class AgentRuntime {
       }
     }
 
-    let factStep: RuntimeStep;
-    let sourceStep: RuntimeStep;
-    let debate: ConsensusDebateUpdate;
-
-    if (executionPlan.claimType === "concept") {
-      ({ factStep, sourceStep, searchResult, debate } =
-        await this.runConceptPipeline({ claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
-    } else if (executionPlan.claimType === "causal") {
-      ({ factStep, sourceStep, searchResult, debate } =
-        await this.runCausalPipeline({ claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
-    } else if (executionPlan.claimType === "event") {
-      ({ factStep, sourceStep, searchResult, debate } =
-        await this.runEventPipeline({ claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
-    } else {
-      ({ factStep, sourceStep, searchResult, debate } =
-        await this.runMixedPipeline({ claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
-    }
-
-    const reportStep = await this.runAgent({
-      agentId: "report_composer",
+    const { searchResult: dagSearchResult, reportStep } = await this.executeDag({
       claim,
       steps,
-      searchResult,
       intakeMetadata,
       visualExtraction,
       memoryHits,
@@ -220,9 +203,9 @@ export class AgentRuntime {
       steeringQueue,
       onEvent,
     });
+    searchResult = dagSearchResult;
     const finalReport = applyRuleBasedConfidence(reportStep.output, steps);
     reportStep.output = finalReport;
-    steps.push(reportStep);
     followUpQueue.push(...buildFollowUpsFromRun(steps, searchResult));
 
     onEvent?.(createToolStartEvent({
@@ -294,7 +277,8 @@ export class AgentRuntime {
     steeringQueue: SteeringMessage[];
     onEvent?: (event: AgentRuntimeEvent) => void;
   }): Promise<RuntimeStep> {
-    const agentConfig = AGENT_CONFIGS.find((agent) => agent.id === agentId);
+    const agentConfig = this.agentRegistry.getAgent(agentId);
+    this.deps.log?.("agent_registry", { phase: "get_agent", agentId, found: !!agentConfig });
     if (!agentConfig) throw new Error(`Unknown agent: ${agentId}`);
     const trace = getTraceCollector();
 
@@ -427,11 +411,14 @@ export class AgentRuntime {
         agentContract: agentConfig.contract,
         error: `${agentConfig.name} 真实模型调用失败：${msg}`,
       }));
-      if (!canContinueAfterAgentFailure(agentId)) {
+      const continueAfterFailure = this.agentRegistry.canContinueAfterFailure(agentId);
+      this.deps.log?.("agent_registry", { phase: "can_continue_after_failure", agentId, canContinue: continueAfterFailure });
+      if (!continueAfterFailure) {
         throw new Error(`${agentConfig.name} 真实模型调用失败：${msg}`);
       }
       output = buildAgentFailureOutput(agentId, msg, searchResult);
       modelUsed = "runtime:error-boundary";
+      this.deps.log?.("agent_error_fallback", { phase: "error_boundary", agentId, modelUsed });
     }
 
     const step: RuntimeStep = {
@@ -473,7 +460,21 @@ export class AgentRuntime {
     return step;
   }
 
-  private async runStandardPipeline(args: {
+  /**
+   * DAG 驱动执行引擎：按拓扑顺序执行节点，无依赖的 agent 节点并行。
+   * planner 已由 runCase 前置执行；debate 汇总前序 agent 输出；report 收束。
+   * 搜索作为共享材料，在首个消费它的 agent 节点前准备一次并注入下游。
+   */
+  private async executeDag({
+    claim,
+    steps,
+    intakeMetadata,
+    visualExtraction,
+    memoryHits,
+    acceptedCandidateHits,
+    steeringQueue,
+    onEvent,
+  }: {
     claim: string;
     steps: RuntimeStep[];
     intakeMetadata?: ReturnType<typeof buildCaseIntakeMetadata>;
@@ -482,22 +483,183 @@ export class AgentRuntime {
     acceptedCandidateHits: MemoryCandidateHit[];
     steeringQueue: SteeringMessage[];
     onEvent?: (event: AgentRuntimeEvent) => void;
-  }): Promise<{ factStep: RuntimeStep; sourceStep: RuntimeStep; searchResult: Search360Response; debate: ConsensusDebateUpdate }> {
-    const { claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent } = args;
+  }): Promise<{ searchResult: Search360Response | undefined; reportStep: RuntimeStep }> {
+    const plan = buildAdaptiveExecutionPlan(claim, intakeMetadata);
+    const claimType = plan.claimType;
+    const shouldSearch = claimType !== "concept";
 
-    emitSpeculativeRelay(onEvent, {
-      id: "relay-rumor-to-search",
-      title: "先派发可行动线索",
-      upstream: "Planner",
-      downstream: "RumorDetector",
-      trigger: "中控已经判定命题类型，先让分诊 Agent 提取可检索子问题。",
-      status: "running",
-      savedReason: "不用等最终报告，先把可验证问题拆出来。",
-      confidence: "medium",
+    this.deps.log?.("dag_exec", {
+      phase: "plan",
+      claimType,
+      nodes: plan.nodes.map((n) => `${n.id}:${n.type ?? "?"}`),
+      edges: plan.edges.map((e) => `${e.from}->${e.to}`),
+      shouldSearch,
     });
 
-    steps.push(await this.runAgent({ agentId: "rumor_detector", claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }));
+    // 按 claimType 触发前置路由事件（保留原有可观察行为）
+    if (claimType === "mixed") {
+      onEvent?.({
+        type: "speculative_update",
+        phase: "handoff",
+        timestamp: Date.now(),
+        relay: {
+          id: "relay-mixed-routing",
+          title: "混合断言逐项路由",
+          upstream: "Planner",
+          downstream: "RumorDetector",
+          trigger: "命题包含多种断言类型，需要逐条判断是否进入事实核查。",
+          status: "completed",
+          savedReason: "混合命题不能一刀切，每条子断言独立路由。",
+          confidence: "medium",
+        },
+      });
+    }
+    if (claimType === "concept") {
+      onEvent?.({
+        type: "speculative_update",
+        phase: "handoff",
+        timestamp: Date.now(),
+        relay: {
+          id: "relay-concept-skip-search",
+          title: "概念解释任务跳过事实搜证",
+          upstream: "Planner",
+          downstream: "ReportComposer",
+          trigger: "命题被判定为概念解释，直接进入语义分析和语境映射。",
+          status: "completed",
+          savedReason: "概念类问题不需要事实核查，避免把语义边界混淆当作事实争议。",
+          confidence: "medium",
+        },
+      });
+      onEvent?.({
+        type: "consensus_debate_final",
+        phase: "handoff",
+        timestamp: Date.now(),
+        debate: {
+          id: `debate-${Date.now()}`,
+          status: "not_needed",
+          title: "概念解释任务跳过事实核查与信源审计",
+          conflictCount: 0,
+          rounds: [],
+          finalConsensus: "概念解释任务不进入事实核查流水线，ReportComposer 直接按语义边界和语境映射生成结论。",
+          confidenceAdjustment: 0,
+        },
+      });
+    }
 
+    const levels = topologicalLevels(plan.nodes, plan.edges);
+    this.deps.log?.("dag_exec", {
+      phase: "topo",
+      levels: levels.map((lv) => lv.map((n) => n.id).join("+")),
+    });
+
+    let searchResult: Search360Response | undefined;
+    let searchPromise: Promise<Search360Response> | undefined;
+    const ensureSearch = () => {
+      if (!searchPromise) {
+        searchPromise = this.runSearch({ claim, steps, onEvent });
+      }
+      return searchPromise;
+    };
+
+    let factStep: RuntimeStep | undefined;
+    let sourceStep: RuntimeStep | undefined;
+    let altStep: RuntimeStep | undefined;
+    let counterStep: RuntimeStep | undefined;
+    let reportStep: RuntimeStep | undefined;
+
+    for (const level of levels) {
+      this.deps.log?.("dag_exec", {
+        phase: "level",
+        level: level.map((n) => n.id),
+      });
+      await Promise.all(
+        level.map(async (node) => {
+          if (node.type === "planner") {
+            this.deps.log?.("dag_exec", { phase: "node", node: node.id, type: "planner", action: "skip", reason: "planner 已由 runCase 前置执行" });
+            return; // planner 已由 runCase 前置执行
+          }
+          if (node.type === "agent") {
+            const agentId = node.agent;
+            if (!agentId) {
+              this.deps.log?.("dag_exec", { phase: "node", node: node.id, type: "agent", action: "skip", reason: "agent 节点缺少 agentId" });
+              return;
+            }
+            const config = this.agentRegistry.getAgent(agentId);
+            if (!config) {
+              // 未注册 agent（concept 三节点）标记 skipped，emit 可见事件，不中断执行
+              this.deps.log?.("dag_exec", { phase: "node", node: node.id, type: "agent", agentId, action: "skip", reason: "未注册 agent，标记 skipped" });
+              emitAgentSkipped(onEvent, node, agentId);
+              return;
+            }
+            this.deps.log?.("dag_exec", { phase: "node", node: node.id, type: "agent", agentId, action: "dispatch", registered: true });
+            if (shouldSearch && isSearchConsumer(agentId) && !searchResult) {
+              this.deps.log?.("dag_exec", { phase: "search", node: node.id, agentId, action: "prepare", reason: "首个消费 searchResult 的 agent 节点" });
+              searchResult = await ensureSearch();
+            }
+            if (agentId === "rumor_detector" && shouldSearch) {
+              emitSpeculativeRelay(onEvent, {
+                id: "relay-rumor-to-search",
+                title: "先派发可行动线索",
+                upstream: "Planner",
+                downstream: "RumorDetector",
+                trigger: "中控已经判定命题类型，先让分诊 Agent 提取可检索子问题。",
+                status: "running",
+                savedReason: "不用等最终报告，先把可验证问题拆出来。",
+                confidence: "medium",
+              });
+            }
+            const step = await this.runAgent({ agentId, claim, steps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent });
+            steps.push(step);
+            this.deps.log?.("dag_exec", { phase: "node", node: node.id, type: "agent", agentId, action: "complete", status: step.status });
+            if (agentId === "fact_checker") factStep = step;
+            if (agentId === "source_validator") sourceStep = step;
+            if (agentId === "alternative_explanation_searcher") altStep = step;
+            if (agentId === "counter_evidence_grader") counterStep = step;
+            return;
+          }
+          if (node.type === "debate") {
+            const debate = buildDebate(claimType, factStep, sourceStep, altStep, counterStep, searchResult);
+            this.deps.log?.("dag_exec", { phase: "node", node: node.id, type: "debate", action: "dispatch", status: debate.status, conflictCount: debate.conflictCount });
+            if (debate.status !== "not_needed") {
+              onEvent?.({ type: "consensus_debate_round", phase: "handoff", timestamp: Date.now(), debate: { ...debate, status: "running" } });
+            }
+            onEvent?.({ type: "consensus_debate_final", phase: "handoff", timestamp: Date.now(), debate });
+            return;
+          }
+          if (node.type === "report") {
+            // report 节点收束：确保搜索已就绪（若该 claim 需要）
+            if (shouldSearch && !searchResult) {
+              this.deps.log?.("dag_exec", { phase: "search", node: node.id, action: "prepare", reason: "report 收束前补齐搜索" });
+              searchResult = await ensureSearch();
+            }
+            this.deps.log?.("dag_exec", { phase: "node", node: node.id, type: "report", agentId: "report_composer", action: "dispatch" });
+            const step = await this.runAgent({ agentId: "report_composer", claim, steps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent });
+            steps.push(step);
+            reportStep = step;
+            this.deps.log?.("dag_exec", { phase: "node", node: node.id, type: "report", action: "complete", status: step.status });
+            return;
+          }
+          this.deps.log?.("dag_exec", { phase: "node", node: node.id, type: node.type ?? "unknown", action: "skip", reason: "未知节点类型，跳过" });
+        })
+      );
+    }
+
+    if (!reportStep) throw new Error("DAG 缺少 report_composer 收束节点");
+    return { searchResult, reportStep };
+  }
+
+  /**
+   * 搜索作为共享材料：准备一次 searchResult，emit 与原有行为一致的工具事件。
+   */
+  private async runSearch({
+    claim,
+    steps,
+    onEvent,
+  }: {
+    claim: string;
+    steps: RuntimeStep[];
+    onEvent?: (event: AgentRuntimeEvent) => void;
+  }): Promise<Search360Response> {
     emitSpeculativeRelay(onEvent, {
       id: "relay-search-seeds",
       title: "搜索提前接力",
@@ -512,6 +674,7 @@ export class AgentRuntime {
     onEvent?.(createToolStartEvent({ toolId: "parallel_search", toolName: "Parallel Search", query: claim }));
     const searchResult = await this.deps.getSearchForClaim(claim);
     const searchToolName = getSearchToolName(searchResult);
+    this.deps.log?.("dag_exec", { phase: "search", action: "result", source: searchResult._source, tool: searchToolName, answerPreview: searchResult.answer?.slice(0, 120) });
     if (searchResult._source === "tool-error") {
       onEvent?.(createToolErrorEvent({ toolId: "parallel_search", toolName: searchToolName, query: claim, error: searchResult.traceText ?? "搜索工具未返回真实结果。", result: summarizeSearchResultForStream(searchResult) }));
     } else {
@@ -529,149 +692,7 @@ export class AgentRuntime {
       confidence: searchResult._source === "tool-error" ? "low" : "medium",
     });
 
-    const [factStep, sourceStep] = await Promise.all([
-      this.runAgent({ agentId: "fact_checker", claim, steps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }),
-      this.runAgent({ agentId: "source_validator", claim, steps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }),
-    ]);
-    steps.push(factStep, sourceStep);
-
-    const debate = buildConsensusDebate(factStep, sourceStep, searchResult);
-    if (debate.status !== "not_needed") {
-      onEvent?.({ type: "consensus_debate_round", phase: "handoff", timestamp: Date.now(), debate: { ...debate, status: "running" } });
-    }
-    onEvent?.({ type: "consensus_debate_final", phase: "handoff", timestamp: Date.now(), debate });
-
-    return { factStep, sourceStep, searchResult, debate };
-  }
-
-  private async runEventPipeline(args: {
-    claim: string;
-    steps: RuntimeStep[];
-    intakeMetadata?: ReturnType<typeof buildCaseIntakeMetadata>;
-    visualExtraction?: Record<string, unknown>;
-    memoryHits: Awaited<ReturnType<AgentMemoryStore["search"]>>;
-    acceptedCandidateHits: MemoryCandidateHit[];
-    steeringQueue: SteeringMessage[];
-    onEvent?: (event: AgentRuntimeEvent) => void;
-  }): Promise<{ factStep: RuntimeStep; sourceStep: RuntimeStep; searchResult: Search360Response; debate: ConsensusDebateUpdate }> {
-    // Event pipeline: same agent sequence as standard pipeline, extracted for traceability
-    return this.runStandardPipeline(args);
-  }
-
-  private async runCausalPipeline(args: {
-    claim: string;
-    steps: RuntimeStep[];
-    intakeMetadata?: ReturnType<typeof buildCaseIntakeMetadata>;
-    visualExtraction?: Record<string, unknown>;
-    memoryHits: Awaited<ReturnType<AgentMemoryStore["search"]>>;
-    acceptedCandidateHits: MemoryCandidateHit[];
-    steeringQueue: SteeringMessage[];
-    onEvent?: (event: AgentRuntimeEvent) => void;
-  }): Promise<{ factStep: RuntimeStep; sourceStep: RuntimeStep; searchResult: Search360Response; debate: ConsensusDebateUpdate }> {
-    const { claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent } = args;
-
-    // Step 1: standard fact-checking pipeline
-    const { factStep, sourceStep, searchResult } = await this.runStandardPipeline(args);
-
-    // Step 2: causal-specific enrichment agents (parallel)
-    const enrichedSteps = [...steps, factStep, sourceStep];
-    const [altStep, counterStep] = await Promise.all([
-      this.runAgent({ agentId: "alternative_explanation_searcher", claim, steps: enrichedSteps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }),
-      this.runAgent({ agentId: "counter_evidence_grader", claim, steps: enrichedSteps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent }),
-    ]);
-    steps.push(altStep, counterStep);
-
-    // Step 3: consensus debate with causal-specific inputs
-    const causalDebate = buildCausalConsensusDebate(factStep, sourceStep, altStep, counterStep, searchResult);
-    if (causalDebate.status !== "not_needed") {
-      onEvent?.({ type: "consensus_debate_round", phase: "handoff", timestamp: Date.now(), debate: { ...causalDebate, status: "running" } });
-    }
-    onEvent?.({ type: "consensus_debate_final", phase: "handoff", timestamp: Date.now(), debate: causalDebate });
-
-    return { factStep, sourceStep, searchResult, debate: causalDebate };
-  }
-
-  private async runMixedPipeline(args: {
-    claim: string;
-    steps: RuntimeStep[];
-    intakeMetadata?: ReturnType<typeof buildCaseIntakeMetadata>;
-    visualExtraction?: Record<string, unknown>;
-    memoryHits: Awaited<ReturnType<AgentMemoryStore["search"]>>;
-    acceptedCandidateHits: MemoryCandidateHit[];
-    steeringQueue: SteeringMessage[];
-    onEvent?: (event: AgentRuntimeEvent) => void;
-  }): Promise<{ factStep: RuntimeStep; sourceStep: RuntimeStep; searchResult: Search360Response; debate: ConsensusDebateUpdate }> {
-    const { claim, steps, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent } = args;
-
-    onEvent?.({
-      type: "speculative_update",
-      phase: "handoff",
-      timestamp: Date.now(),
-      relay: {
-        id: "relay-mixed-routing",
-        title: "混合断言逐项路由",
-        upstream: "Planner",
-        downstream: "RumorDetector",
-        trigger: "命题包含多种断言类型，需要逐条判断是否进入事实核查。",
-        status: "completed",
-        savedReason: "混合命题不能一刀切，每条子断言独立路由。",
-        confidence: "medium",
-      },
-    });
-
-    // Mixed pipeline: same agent sequence as event pipeline, with trace annotation
-    return this.runStandardPipeline(args);
-  }
-
-  private async runConceptPipeline(_args: {
-    claim: string;
-    steps: RuntimeStep[];
-    intakeMetadata?: ReturnType<typeof buildCaseIntakeMetadata>;
-    visualExtraction?: Record<string, unknown>;
-    memoryHits: Awaited<ReturnType<AgentMemoryStore["search"]>>;
-    acceptedCandidateHits: MemoryCandidateHit[];
-    steeringQueue: SteeringMessage[];
-    onEvent?: (event: AgentRuntimeEvent) => void;
-  }): Promise<{ factStep: RuntimeStep; sourceStep: RuntimeStep; searchResult: Search360Response | undefined; debate: ConsensusDebateUpdate }> {
-    const { onEvent } = _args;
-
-    onEvent?.({
-      type: "speculative_update",
-      phase: "handoff",
-      timestamp: Date.now(),
-      relay: {
-        id: "relay-concept-skip-search",
-        title: "概念解释任务跳过事实搜证",
-        upstream: "Planner",
-        downstream: "ReportComposer",
-        trigger: "命题被判定为概念解释，直接进入语义分析和语境映射。",
-        status: "completed",
-        savedReason: "概念类问题不需要事实核查，避免把语义边界混淆当作事实争议。",
-        confidence: "medium",
-      },
-    });
-
-    onEvent?.({
-      type: "consensus_debate_final",
-      phase: "handoff",
-      timestamp: Date.now(),
-      debate: {
-        id: `debate-${Date.now()}`,
-        status: "not_needed",
-        title: "概念解释任务跳过事实核查与信源审计",
-        conflictCount: 0,
-        rounds: [],
-        finalConsensus: "概念解释任务不进入事实核查流水线，ReportComposer 直接按语义边界和语境映射生成结论。",
-        confidenceAdjustment: 0,
-      },
-    });
-
-    return {
-      factStep: { agent: "fact_checker", agentName: "FactChecker (skipped)", agentIcon: "", systemPrompt: "", input: {}, output: {}, evidenceBundle: buildAgentEvidenceBundle("fact_checker", {}), model: "runtime:skipped", latencyMs: 0, timestamp: Date.now(), status: "completed" },
-      sourceStep: { agent: "source_validator", agentName: "SourceValidator (skipped)", agentIcon: "", systemPrompt: "", input: {}, output: {}, evidenceBundle: buildAgentEvidenceBundle("source_validator", {}), model: "runtime:skipped", latencyMs: 0, timestamp: Date.now(), status: "completed" },
-      searchResult: undefined,
-      debate: { id: `debate-${Date.now()}`, status: "not_needed", title: "", conflictCount: 0, rounds: [], finalConsensus: "", confidenceAdjustment: 0 },
-    };
+    return searchResult;
   }
 }
 
@@ -681,6 +702,7 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
   const baseNodes = [
     {
       id: "planner",
+      type: "planner" as const,
       label: "Planner",
       layer: "planner" as const,
       status: "completed" as const,
@@ -693,6 +715,8 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
       ...baseNodes,
       {
         id: "concept_extractor",
+        type: "agent" as const,
+        agent: "concept_extractor",
         label: "ConceptExtractor",
         layer: "analysis" as const,
         status: "planned" as const,
@@ -700,6 +724,8 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
       },
       {
         id: "semantic_validator",
+        type: "agent" as const,
+        agent: "semantic_validator",
         label: "SemanticValidator",
         layer: "audit" as const,
         status: "planned" as const,
@@ -707,6 +733,8 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
       },
       {
         id: "context_mapper",
+        type: "agent" as const,
+        agent: "context_mapper",
         label: "ContextMapper",
         layer: "analysis" as const,
         status: "planned" as const,
@@ -733,6 +761,8 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
     ? [
         {
           id: "alternative_explanation_searcher",
+          type: "agent" as const,
+          agent: "alternative_explanation_searcher",
           label: "AlternativeExplanationSearcher",
           layer: "search" as const,
           status: "planned" as const,
@@ -740,6 +770,8 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
         },
         {
           id: "counter_evidence_grader",
+          type: "agent" as const,
+          agent: "counter_evidence_grader",
           label: "CounterEvidenceGrader",
           layer: "audit" as const,
           status: "planned" as const,
@@ -752,6 +784,7 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
     ...baseNodes,
     {
       id: "rumor_detector",
+      type: "agent" as const,
       label: "RumorDetector",
       agent: "rumor_detector",
       layer: "analysis" as const,
@@ -760,6 +793,7 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
     },
     {
       id: "fact_checker",
+      type: "agent" as const,
       label: "FactChecker",
       agent: "fact_checker",
       layer: "search" as const,
@@ -768,6 +802,7 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
     },
     {
       id: "source_validator",
+      type: "agent" as const,
       label: "SourceValidator",
       agent: "source_validator",
       layer: "audit" as const,
@@ -777,6 +812,7 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
     ...causalNodes,
     {
       id: "consensus_debate",
+      type: "debate" as const,
       label: "ConsensusDebate",
       layer: "debate" as const,
       status: "planned" as const,
@@ -815,6 +851,7 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
 function reportNode() {
   return {
     id: "report_composer",
+    type: "report" as const,
     label: "ReportComposer",
     agent: "report_composer",
     layer: "report" as const,
@@ -837,6 +874,71 @@ function emitSpeculativeRelay(onEvent: ((event: AgentRuntimeEvent) => void) | un
     timestamp: Date.now(),
     relay,
   });
+}
+
+/**
+ * 对 DAG 做分层拓扑排序：每层内节点无相互依赖，可并行执行；层间按依赖顺序。
+ */
+function topologicalLevels(nodes: ExecutionDagNode[], edges: ExecutionDagEdge[]): ExecutionDagNode[][] {
+  const indegree = new Map<string, number>();
+  const children = new Map<string, string[]>();
+  for (const node of nodes) {
+    indegree.set(node.id, 0);
+    children.set(node.id, []);
+  }
+  for (const edge of edges) {
+    if (indegree.has(edge.to)) indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1);
+    children.get(edge.from)?.push(edge.to);
+  }
+
+  const levels: ExecutionDagNode[][] = [];
+  const indeg = new Map(indegree);
+  let remaining = [...nodes];
+  while (remaining.length > 0) {
+    const ready = remaining.filter((node) => indeg.get(node.id) === 0);
+    if (ready.length === 0) break; // 环保护：异常 DAG 不陷入死循环
+    levels.push(ready);
+    const readyIds = new Set(ready.map((node) => node.id));
+    for (const id of readyIds) {
+      for (const child of children.get(id) ?? []) {
+        indeg.set(child, (indeg.get(child) ?? 0) - 1);
+      }
+    }
+    remaining = remaining.filter((node) => !readyIds.has(node.id));
+  }
+  return levels;
+}
+
+/** 是否消费共享 searchResult 材料的 agent（其 runAgent 输入会被注入 search360） */
+function isSearchConsumer(agentId: string) {
+  return ["fact_checker", "source_validator", "report_composer"].includes(agentId);
+}
+
+/** 未注册 agent 节点标记 skipped，emit 可见事件但不中断执行 */
+function emitAgentSkipped(onEvent: ((event: AgentRuntimeEvent) => void) | undefined, node: ExecutionDagNode, agentId: string) {
+  onEvent?.({
+    type: "agent_error",
+    phase: "error",
+    timestamp: Date.now(),
+    agent: agentId,
+    agentName: node.label,
+    error: `${node.label} 未注册，已标记为 skipped，跳过执行。`,
+  });
+}
+
+/** 按 claim 类型复用 consensus debate 语义：causal 追加替代解释与反证评估 */
+function buildDebate(
+  claimType: ExecutionDagClaimType,
+  factStep: RuntimeStep | undefined,
+  sourceStep: RuntimeStep | undefined,
+  altStep: RuntimeStep | undefined,
+  counterStep: RuntimeStep | undefined,
+  searchResult?: Search360Response
+): ConsensusDebateUpdate {
+  if (claimType === "causal") {
+    return buildCausalConsensusDebate(factStep!, sourceStep!, altStep!, counterStep!, searchResult);
+  }
+  return buildConsensusDebate(factStep!, sourceStep!, searchResult);
 }
 
 function firstActionableClaimSeed(output: Record<string, unknown> | undefined, fallback: string) {
@@ -1014,16 +1116,6 @@ function compactSourceSnippets(searchResult: Search360Response, maxLength: numbe
   searchResult.sources?.forEach(shorten);
   searchResult.supportingEvidence?.forEach(shorten);
   searchResult.contradictingEvidence?.forEach(shorten);
-}
-
-function canContinueAfterAgentFailure(agentId: string) {
-  // Optional / parallel enrichment agents must not abort report composition.
-  return (
-    agentId === "fact_checker" ||
-    agentId === "source_validator" ||
-    agentId === "alternative_explanation_searcher" ||
-    agentId === "counter_evidence_grader"
-  );
 }
 
 function buildAgentFailureOutput(agentId: string, message: string, searchResult?: Search360Response): Record<string, unknown> {

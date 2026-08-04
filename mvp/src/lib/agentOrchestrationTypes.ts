@@ -4,6 +4,8 @@ export type ExecutionDagNodeStatus = "planned" | "running" | "completed" | "bloc
 
 export interface ExecutionDagNode {
   id: string;
+  /** 执行类型：planner / agent / debate / report。运行时由 buildAdaptiveExecutionPlan 显式标注；前端展示用 mock 可省略。 */
+  type?: "planner" | "agent" | "debate" | "report";
   label: string;
   agent?: string;
   layer: "planner" | "analysis" | "search" | "audit" | "debate" | "report";
