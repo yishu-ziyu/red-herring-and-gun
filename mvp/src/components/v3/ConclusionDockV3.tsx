@@ -16,6 +16,7 @@ import type { SourceRef } from "../../lib/schemas";
 import { ReportModal } from "./ReportModal";
 import { InferenceLicensePanel } from "./panels/InferenceLicensePanel";
 import { ScoreRail } from "./panels/ScoreRail";
+import { ClaimReviewBadge } from "./ClaimReviewBadge";
 import { getTraceCollector } from "../../lib/reasoningTrace";
 import { BoundarySpanList, ClaimSpanText } from "./ClaimSpanText";
 
@@ -267,6 +268,9 @@ export function ConclusionDockV3({
             credibilityLabel={label}
           />
         ) : null}
+
+        {/* Plan P0-3 接入层 · schema.org/ClaimReview JSON-LD 徽章 */}
+        {!exploring ? <ClaimReviewBadge report={report} /> : null}
 
         {!exploring && (
           <div className="conclusion-actions cinema-rise cinema-rise-d5">

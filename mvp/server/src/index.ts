@@ -189,6 +189,19 @@ app.post("/api/auth/email/logout", (req, res, next) => emailLogoutHandler(req, r
 app.get("/api/account/export", (req, res, next) => accountExportHandler(req, res).catch(next));
 app.delete("/api/account", (req, res, next) => accountDeleteHandler(req, res).catch(next));
 
+// Plan Item 2 · 报告 URL 永久路由 /r/:caseId
+import {
+  postCaseHandler,
+  getCaseHandler,
+  renderCaseHtmlHandler,
+  listCasesHandler,
+} from "./lib/caseHandlers.js";
+
+app.post("/api/case", (req, res, next) => postCaseHandler(req, res).catch(next));
+app.get("/api/case/:caseId", (req, res, next) => getCaseHandler(req, res));
+app.get("/api/cases", (req, res, next) => listCasesHandler(req, res));
+app.get("/r/:caseId", (req, res, next) => renderCaseHtmlHandler(req, res));
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Red Herring API Server running on http://0.0.0.0:${PORT}`);
 });

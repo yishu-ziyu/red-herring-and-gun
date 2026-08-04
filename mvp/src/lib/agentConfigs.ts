@@ -760,6 +760,39 @@ export function getAgentConfig(id: string): AgentConfig | undefined {
   return AGENT_CONFIGS.find((a) => a.id === id);
 }
 
+// ───────────────────────────────────────────────────────────────
+// 声明式 Agent 注册表
+// ───────────────────────────────────────────────────────────────
+
+export interface AgentRegistry {
+  /** 按 id 获取 AgentConfig；未注册返回 undefined */
+  getAgent(id: string): AgentConfig | undefined;
+  /** 判断某 Agent 真实模型调用失败后是否可继续（不阻断收束） */
+  canContinueAfterFailure(id: string): boolean;
+}
+
+// 可选 / 并行 enrichment Agent 失败后可继续，其余失败不可继续。
+const CONTINUE_AFTER_FAILURE_AGENTS = new Set([
+  "fact_checker",
+  "source_validator",
+  "alternative_explanation_searcher",
+  "counter_evidence_grader",
+]);
+
+function createAgentRegistry(configs: AgentConfig[]): AgentRegistry {
+  const byId = new Map<string, AgentConfig>(configs.map((config) => [config.id, config]));
+  return {
+    getAgent: (id) => byId.get(id),
+    canContinueAfterFailure: (id) => CONTINUE_AFTER_FAILURE_AGENTS.has(id),
+  };
+}
+
+const agentRegistry = createAgentRegistry(AGENT_CONFIGS);
+
+export function getAgentRegistry(): AgentRegistry {
+  return agentRegistry;
+}
+
 function compactStrings(value: unknown, limit = 5, maxLength = 260) {
   return Array.isArray(value)
     ? value
