@@ -53,4 +53,18 @@ describe("agentConfigs — DAG migration new agents", () => {
     expect(item.evidence).toBeDefined();
     expect(item.boundary).toBeDefined();
   });
+
+  it("report_composer 透传 subclaimVerdicts 并补齐覆盖不全项", () => {
+    const steps = [
+      { agent: "rumor_detector", output: { claimAtoms: ["原子A", "原子B"] } },
+      { agent: "fact_checker", output: { subclaimVerdicts: [{ claimAtom: "原子A", verdict: "false", evidence: "证据", boundary: "边界" }] } },
+    ];
+    const input = buildAgentInput("report_composer", "测试claim", steps as any);
+    const verdicts = (input.factCheck as any).subclaimVerdicts;
+    expect(verdicts).toHaveLength(2);
+    expect(verdicts.find((v: any) => v.claimAtom === "原子A")!.verdict).toBe("false");
+    const missing = verdicts.find((v: any) => v.claimAtom === "原子B")!;
+    expect(missing.verdict).toBe("unverified");
+    expect(missing.boundary).toContain("未覆盖");
+  });
 });
