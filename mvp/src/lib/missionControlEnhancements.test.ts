@@ -21,11 +21,10 @@ function makeReport(): FinalReport {
     overallStatus: "原句过强",
     allowedConclusion: "现有公开材料不足以按原强度成立。",
     claimDiagnosis: {
-      originalClaim: "test",
-      subclaims: [],
-      routes: [],
-      searchPlans: [],
-      diagnosis: "ok",
+      mixedJudgments: [],
+      ambiguousTerms: [],
+      risk: "低",
+      whyNotDirectFactCheck: "无",
     },
     subclaimStatuses: [],
     evidenceChain: [
@@ -46,15 +45,32 @@ function makeReport(): FinalReport {
 function makeCaseData(): DemoCase {
   return {
     originalClaim: "test",
-    diagnosis: "ok",
+    useContext: "test",
+    diagnosis: {
+      mixedJudgments: [],
+      ambiguousTerms: [],
+      risk: "低",
+      whyNotDirectFactCheck: "无",
+    },
     subclaims: [
-      { id: "c1", text: "子命题 1", type: "事实陈述", roleInArgument: "前提" },
+      { id: "c1", text: "子命题 1", type: "因果", roleInArgument: "前提" },
       { id: "c2", text: "子命题 2", type: "因果", roleInArgument: "机制" },
     ],
     routes: [],
     searchPlans: [],
     candidates: [
-      { id: "a", title: "研究 A", url: "https://example.com/a", summary: "summary a" },
+      {
+        id: "a",
+        title: "研究 A",
+        sourceType: "学术论文",
+        targetSubclaimIds: ["c1"],
+        matchedNeed: "机制证据",
+        summary: "summary a",
+        traceability: "高",
+        contextFit: "中",
+        independence: "高",
+        limitations: [],
+      },
     ],
   };
 }
