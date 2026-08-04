@@ -19,11 +19,10 @@ function baseReport(overrides?: Partial<FinalReport>): FinalReport {
     overallStatus: "原句过强",
     allowedConclusion: "现有公开材料不足以按原强度成立",
     claimDiagnosis: {
-      originalClaim: "某明星昨天因某事件被捕",
-      subclaims: [],
-      routes: [],
-      searchPlans: [],
-      diagnosis: "证据不足",
+      mixedJudgments: [],
+      ambiguousTerms: [],
+      risk: "低",
+      whyNotDirectFactCheck: "无",
     },
     subclaimStatuses: [
       {
@@ -44,9 +43,12 @@ function baseReport(overrides?: Partial<FinalReport>): FinalReport {
     nextEvidenceNeeded: [],
     evidenceQualitySummary: {
       averageCredibility: 30,
+      averageFreshness: 50,
       diversityScore: 20,
+      supportCount: 0,
       contradictCount: 0,
-      gaps: ["原始来源"],
+      weakEvidenceCount: 0,
+      highTierSourceCount: 0,
     },
     insufficientEvidence: true,
     groundingRationale: "暂无可靠证据支持这一说法",
@@ -75,9 +77,12 @@ describe("Plan P0-3 · ClaimReview JSON-LD", () => {
       baseReport({
         evidenceQualitySummary: {
           averageCredibility: 150, // 越界
+          averageFreshness: 50,
           diversityScore: 50,
+          supportCount: 0,
           contradictCount: 0,
-          gaps: [],
+          weakEvidenceCount: 0,
+          highTierSourceCount: 0,
         },
       }),
     );
@@ -85,9 +90,12 @@ describe("Plan P0-3 · ClaimReview JSON-LD", () => {
       baseReport({
         evidenceQualitySummary: {
           averageCredibility: -20, // 越界
+          averageFreshness: 50,
           diversityScore: 50,
+          supportCount: 0,
           contradictCount: 0,
-          gaps: [],
+          weakEvidenceCount: 0,
+          highTierSourceCount: 0,
         },
       }),
     );

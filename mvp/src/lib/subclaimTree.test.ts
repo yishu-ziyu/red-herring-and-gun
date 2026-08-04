@@ -16,7 +16,7 @@ function sc(id: string, parentId?: string, stance?: Subclaim["stance"]): Subclai
   return {
     id,
     text: `命题 ${id}`,
-    type: "事实陈述",
+    type: "事件事实",
     roleInArgument: "前提",
     parentId,
     stance,
@@ -123,8 +123,8 @@ describe("Plan P1-2 · buildSubclaimTree", () => {
 
   it("向后兼容：旧 Subclaim[]（无 parentId/stance/order）应仍能构建", () => {
     const legacy: Subclaim[] = [
-      { id: "1", text: "A", type: "事实陈述", roleInArgument: "前提" },
-      { id: "2", text: "B", type: "事实陈述", roleInArgument: "前提" },
+      { id: "1", text: "A", type: "事件事实", roleInArgument: "前提" },
+      { id: "2", text: "B", type: "事件事实", roleInArgument: "前提" },
     ];
     const tree = buildSubclaimTree(legacy);
     expect(tree.roots.length).toBe(2);

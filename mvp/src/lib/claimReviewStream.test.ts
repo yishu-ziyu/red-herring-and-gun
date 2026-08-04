@@ -2,7 +2,7 @@
  * claimReviewStream.test.ts — Plan P0-3 接入层 + Plan Item 2 · 客户端 SSE 集成测试
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildCopyButtonText,
   buildCopySuccessText,
@@ -73,9 +73,19 @@ describe("Plan Item 2 · handleCaseSaved", () => {
     expect(r.reason).toBe("not-case-saved-event");
   });
 
-  it("baseUrl 缺省时使用 https://gun.yishuziyu.cn 兜底", () => {
-    const r = handleCaseSaved({ type: "case_saved", caseId: "fallback" });
-    expect(r.caseUrl).toBe("https://gun.yishuziyu.cn/r/fallback");
+  it("无 window 的 SSR 环境，baseUrl 缺省时使用 https://gun.yishuziyu.cn 兜底", () => {
+    vi.stubGlobal("window", undefined);
+    try {
+      const r = handleCaseSaved({ type: "case_saved", caseId: "fallback" });
+      expect(r.caseUrl).toBe("https://gun.yishuziyu.cn/r/fallback");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("浏览器环境，baseUrl 缺省时使用 window.location.origin", () => {
+    const r = handleCaseSaved({ type: "case_saved", caseId: "browser" });
+    expect(r.caseUrl).toBe(`${window.location.origin}/r/browser`);
   });
 });
 
