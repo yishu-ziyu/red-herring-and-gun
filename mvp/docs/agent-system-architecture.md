@@ -1,6 +1,7 @@
 # Agent 化系统架构记录
 
 日期：2026-05-30
+最近更新：2026-08-04（DAG 运行时落地）
 
 ## 目标
 
@@ -63,12 +64,69 @@ Pi 架构给我们的直接启发是：Agent 产品不应该把模型调用、�
 - `followUpQueue` 还没有在证据不足、图片解析失败、来源缺失时自动生成下一步任务。
 - Memory 仍是本地知识库模块，还不是独立 Memory Agent。
 
+## DAG 运行时落地（2026-08-04）
+
+把 Agent 从"文档里的契约"兑现为"运行时按 DAG 执行"。核心变化是：执行路径不再写死在 `runCase()` 的 if-else 分支里，而是由一个声明式 DAG 驱动。
+
+### 从硬编码 pipeline 到 DAG 驱动
+
+此前 `runCase()` 用硬编码 if-else 串起 4 个 Agent。现在改为：
+
+```text
+buildAdaptiveExecutionPlan(claim, intake)
+  -> 按 claimType 生成 DAG（节点 + 边）
+  -> topologicalLevels() 分层拓扑排序
+  -> 逐层 Promise.all 执行
+  -> 无依赖的 agent 节点并行
+  -> report 节点收束
+```
+
+四种 claimType 对应不同的 DAG：
+
+- `concept`：概念解释任务，跳过搜证，只走 concept_extractor → semantic_validator → context_mapper → report_composer。
+- `causal`：在标准流水线之上追加 alternative_explanation_searcher 与 counter_evidence_grader，并在共识调解中纳入替代解释与反证评分。
+- `event`：标准事实核查流水线。
+- `mixed`：标准流水线，前置 speculative 路由事件。
+
+### 关键实现点
+
+- `src/lib/agentRuntime/AgentRuntime.ts`
+  - `executeDag()` 是 DAG 执行引擎：按拓扑分层执行，每层内无依赖节点用 `Promise.all` 并行。
+  - `buildAdaptiveExecutionPlan()` 按 claimType 构造带 `type` 字段的节点（`planner` / `agent` / `debate` / `report`）。
+  - `topologicalLevels()` 做分层拓扑排序，带环保护（异常 DAG 不陷入死循环）。
+  - 搜索作为共享材料：`ensureSearch()` 在首个消费它的 agent 节点前准备一次，注入下游，不重复发起。
+  - 未注册的 agent 节点（concept 三节点）标记 skipped 并 emit 可见事件，不中断执行。
+  - report 节点收束前确保搜索就绪。
+
+- `src/lib/agentConfigs.ts`
+  - 新增声明式 `AgentRegistry`：`getAgent(id)` 按 id 查配置，`canContinueAfterFailure(id)` 判断失败策略。
+  - `CONTINUE_AFTER_FAILURE_AGENTS` 声明可选 / 并行 enrichment Agent（fact_checker、source_validator、alternative_explanation_searcher、counter_evidence_grader）失败后可继续。
+  - 新增 Agent 只需向 `AGENT_CONFIGS` 注册，无需改编排核心。
+
+- `src/lib/agentOrchestrationTypes.ts`
+  - `ExecutionDagNode` 增加 `type` 字段（可选），前端 mock 节点不受影响。
+
+### 事件契约保持
+
+前端可见的 `planner_update`、`agent_start`、`agent_complete`、`tool_*`、`consensus_debate_*`、`speculative_update` 全部保留，DAG 迁移不改变对外行为。
+
+### 可观测性
+
+新增 `dag_exec` 与 `agent_registry` 两级日志，走既有 `deps.log` / `deps.logError` 通道：
+
+- `dag_exec`：plan（claimType + 节点/边）、topo（每层 id）、level、node（每个节点的 dispatch / skip / complete）、search（准备与结果）。
+- `agent_registry`：get_agent（是否命中）、can_continue_after_failure（失败策略判定）、agent_error_fallback。
+
+测试覆盖：DAG 迁移 4 用例（concept / causal / event / mixed）全绿；`npx tsc --noEmit` 本改动文件无错误。
+
 下一刀建议：
 
-1. 抽 `server/src/lib/orchestrate-shared.ts`，先统一 intake、vision prompt、search failure、search result normalize 这些纯函数。
-2. 抽 `agentProviders.ts`，统一 StepFun / 360 / MiMo / DeepSeek / Codex provider 调用。
-3. 在 Mission Control 增加 steering 输入框，把用户中途指令放入 `steeringQueue`，并在下一步 Agent 输入中显式展示。
-4. 在 ReportComposer 完成后触发 `memory_write`，把最终 case、证据和搜索策略写入 Agent Memory。
+1. 扩展 `recursive_evidence_search` 返回状态为 Sherlock 风格 `status/context/query_time`。
+2. 为 360、metaso、anysearch、普通 web search 建 `SearchSourceManifest`。
+3. 把 FactChecker 的支持/反驳 query 变成并行 fan-out。
+4. 把 Agent Memory 写入从结果态补到每个 Agent 完成事件。
+5. concept 三节点（concept_extractor、semantic_validator、context_mapper）目前未注册，下一步实现为真实 Agent。
+6. 工具自主选择：由 Agent 根据 DAG 节点目标自主决定调用哪个工具，而非节点预绑定。
 
 ## 当前 Agent 角色
 
@@ -198,10 +256,7 @@ selected canvas node
 
 ## 下一步建议
 
-1. 把 `recursive_evidence_search` 的返回状态扩展为 Sherlock 风格的 `status/context/query_time`。
-2. 为 360、metaso、anysearch、普通 web search 建一个 `SearchSourceManifest`。
-3. 把 FactChecker 的支持/反驳 query 变成并行 fan-out。
-4. 把 Agent Memory 写入从结果态补到每个 Agent 完成事件。
+Sherlock 视角的后续工作（状态建模、SearchSourceManifest、并行 fan-out、Memory 写入）已并入上文"下一刀建议"的 1-4 条，此处不再重复。
 
 ## 参考
 
