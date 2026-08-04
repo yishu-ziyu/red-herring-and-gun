@@ -844,6 +844,12 @@ function compactText(value: unknown, maxLength = 420) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
 }
 
+// 与 compactStrings(claimAtoms, 6, 180) 对 claimAtom 的截断规则保持一致，
+// 作为 covered 判定键，避免超长原子在 verdict 原始串与 atoms 截断串之间失配。
+function truncateClaimAtomKey(value: string, maxLength = 180) {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+}
+
 function mergeSubclaimVerdicts(
   claimAtoms: unknown,
   verdicts: unknown
@@ -857,7 +863,7 @@ function mergeSubclaimVerdicts(
     const rec = item as Record<string, unknown>;
     const atom = typeof rec.claimAtom === "string" ? rec.claimAtom : "";
     if (!atom) continue;
-    covered.add(atom);
+    covered.add(truncateClaimAtomKey(atom));
     result.push({
       claimAtom: atom,
       verdict: ["true", "false", "partial", "unverified", "exaggerated"].includes(String(rec.verdict)) ? String(rec.verdict) : "unverified",
