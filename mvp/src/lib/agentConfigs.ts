@@ -427,6 +427,20 @@ const reportComposerSchema = {
     recommendation: { type: "string" },
     summaryForPublic: { type: "string" },
     whyHardToVerify: { type: "array", items: { type: "string" } },
+    subclaimVerdicts: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          claimAtom: { type: "string" },
+          verdict: { type: "string", enum: ["true", "false", "partial", "unverified", "exaggerated"] },
+          evidence: { type: "string" },
+          boundary: { type: "string" },
+        },
+        required: ["claimAtom", "verdict", "evidence", "boundary"],
+      },
+    },
     evidenceChain: {
       type: "array",
       items: {
@@ -495,7 +509,7 @@ const reportComposerSchema = {
       },
     },
   },
-  required: ["verdictType", "conclusion", "credibilityScore", "credibilityLabel", "recommendation", "summaryForPublic", "whyHardToVerify", "evidenceChain", "causalBoundary", "canSay", "cannotSay", "closureActions", "confidenceDimensions"],
+  required: ["verdictType", "conclusion", "credibilityScore", "credibilityLabel", "recommendation", "summaryForPublic", "whyHardToVerify", "subclaimVerdicts", "evidenceChain", "causalBoundary", "canSay", "cannotSay", "closureActions", "confidenceDimensions"],
 };
 
 const alternativeExplanationSearcherSchema = {
@@ -830,6 +844,35 @@ function compactText(value: unknown, maxLength = 420) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
 }
 
+function mergeSubclaimVerdicts(
+  claimAtoms: unknown,
+  verdicts: unknown
+): Array<{ claimAtom: string; verdict: string; evidence: string; boundary: string }> {
+  const atoms = compactStrings(claimAtoms, 6, 180);
+  const raw = Array.isArray(verdicts) ? verdicts : [];
+  const covered = new Set<string>();
+  const result: Array<{ claimAtom: string; verdict: string; evidence: string; boundary: string }> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const atom = typeof rec.claimAtom === "string" ? rec.claimAtom : "";
+    if (!atom) continue;
+    covered.add(atom);
+    result.push({
+      claimAtom: atom,
+      verdict: ["true", "false", "partial", "unverified", "exaggerated"].includes(String(rec.verdict)) ? String(rec.verdict) : "unverified",
+      evidence: compactText(rec.evidence, 200),
+      boundary: compactText(rec.boundary, 200),
+    });
+  }
+  for (const atom of atoms) {
+    if (!covered.has(atom)) {
+      result.push({ claimAtom: atom, verdict: "unverified", evidence: "", boundary: "模型未覆盖，待补证" });
+    }
+  }
+  return result;
+}
+
 export function buildAgentInput(
   agentId: string,
   claim: string,
@@ -908,6 +951,7 @@ export function buildAgentInput(
         factCheck: {
           result: factStep?.output?.factCheckResult ?? "unverified",
           confidence: factStep?.output?.confidence ?? "low",
+          subclaimVerdicts: mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts),
           sources: compactStrings(factStep?.output?.sources, 6, 160),
           supportingEvidence: compactStrings(factStep?.output?.supportingEvidence, 4, 240),
           contradictingSources: compactStrings(factStep?.output?.contradictingSources, 5, 160),
