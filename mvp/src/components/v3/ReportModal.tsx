@@ -30,8 +30,21 @@ export function ReportModal({
 }: ReportModalProps) {
   const [activeTab, setActiveTab] = useState<"summary" | "evidence" | "raw">("summary");
   const [copied, setCopied] = useState(false);
+  const [expandedVerdicts, setExpandedVerdicts] = useState<Set<number>>(new Set());
 
   const credibility = calculateCredibilityScore(caseData, report);
+
+  const toggleVerdict = useCallback((index: number) => {
+    setExpandedVerdicts((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  }, []);
 
   const verdicts = report.subclaimVerdicts ?? [];
   const VERDICT_LABELS: Record<string, string> = {
@@ -136,28 +149,109 @@ export function ReportModal({
                 <h3>逐命题定罪</h3>
                 {verdicts.length > 0 ? (
                   <div className="report-verdicts">
-                    {verdicts.map((v, i) => (
-                      <div key={i} className="report-verdict-item">
-                        <div className="verdict-header">
-                          <span className="verdict-claim">{v.claimAtom}</span>
-                          <span className={`verdict-badge verdict-${v.verdict}`}>
-                            {VERDICT_LABELS[v.verdict] ?? v.verdict}
-                          </span>
+                    {verdicts.map((v, i) => {
+                      const isOpen = expandedVerdicts.has(i);
+                      const hasDetail =
+                        (v.supportingSources?.length ?? 0) > 0 ||
+                        (v.contradictingSources?.length ?? 0) > 0 ||
+                        (v.evidenceGaps?.length ?? 0) > 0;
+                      return (
+                        <div key={i} className="report-verdict-item">
+                          <button
+                            type="button"
+                            className="verdict-header"
+                            onClick={() => toggleVerdict(i)}
+                            aria-expanded={isOpen}
+                            aria-controls={`verdict-detail-${i}`}
+                          >
+                            <span className="verdict-claim">{v.claimAtom}</span>
+                            <span className="verdict-header-right">
+                              {hasDetail && (
+                                <span
+                                  className={`verdict-chevron${isOpen ? " open" : ""}`}
+                                  aria-hidden="true"
+                                >
+                                  ▸
+                                </span>
+                              )}
+                              <span className={`verdict-badge verdict-${v.verdict}`}>
+                                {VERDICT_LABELS[v.verdict] ?? v.verdict}
+                              </span>
+                            </span>
+                          </button>
+                          {v.evidence && (
+                            <p className="verdict-evidence">
+                              <span className="verdict-field-label">证据</span>
+                              {v.evidence}
+                            </p>
+                          )}
+                          {v.boundary && (
+                            <p className="verdict-boundary">
+                              <span className="verdict-field-label">边界</span>
+                              {v.boundary}
+                            </p>
+                          )}
+                          {isOpen && (
+                            <div id={`verdict-detail-${i}`} className="verdict-detail">
+                              {(v.supportingSources?.length ?? 0) > 0 && (
+                                <div className="verdict-subsection">
+                                  <h4 className="verdict-subsection-title">支撑证据</h4>
+                                  <ul className="verdict-source-list">
+                                    {v.supportingSources!.map((s, si) => (
+                                      <li key={si} className="verdict-source-item">
+                                        <a
+                                          href={s.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="verdict-source-link"
+                                        >
+                                          {s.title || s.url}
+                                        </a>
+                                        {s.snippet && (
+                                          <p className="verdict-source-snippet">{s.snippet}</p>
+                                        )}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {(v.contradictingSources?.length ?? 0) > 0 && (
+                                <div className="verdict-subsection">
+                                  <h4 className="verdict-subsection-title">反证 / 质疑</h4>
+                                  <ul className="verdict-source-list">
+                                    {v.contradictingSources!.map((s, si) => (
+                                      <li key={si} className="verdict-source-item">
+                                        <a
+                                          href={s.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="verdict-source-link"
+                                        >
+                                          {s.title || s.url}
+                                        </a>
+                                        {s.snippet && (
+                                          <p className="verdict-source-snippet">{s.snippet}</p>
+                                        )}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                              {(v.evidenceGaps?.length ?? 0) > 0 && (
+                                <div className="verdict-subsection">
+                                  <h4 className="verdict-subsection-title">证据缺口</h4>
+                                  <ul className="verdict-gap-list">
+                                    {v.evidenceGaps!.map((g, gi) => (
+                                      <li key={gi}>{g}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        {v.evidence && (
-                          <p className="verdict-evidence">
-                            <span className="verdict-field-label">证据</span>
-                            {v.evidence}
-                          </p>
-                        )}
-                        {v.boundary && (
-                          <p className="verdict-boundary">
-                            <span className="verdict-field-label">边界</span>
-                            {v.boundary}
-                          </p>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="report-verdicts-empty">本次未生成逐命题判定</p>
