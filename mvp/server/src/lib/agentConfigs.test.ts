@@ -110,6 +110,9 @@ describe("subclaimVerdicts / claimAtoms 数据契约", () => {
       verdict: "unverified",
       evidence: "",
       boundary: "模型未覆盖，待补证",
+      supportingSources: [],
+      contradictingSources: [],
+      evidenceGaps: [],
     });
     expect(result.some((r) => r.claimAtom === "编造原子")).toBe(false);
   });
@@ -140,5 +143,121 @@ describe("subclaimVerdicts / claimAtoms 数据契约", () => {
     expect(factCheck.subclaimVerdicts).toHaveLength(2);
     expect(factCheck.subclaimVerdicts.find((r: any) => r.claimAtom === "原子A").verdict).toBe("false");
     expect(factCheck.subclaimVerdicts.find((r: any) => r.claimAtom === "原子B").verdict).toBe("unverified");
+  });
+});
+
+describe("判定可追溯 · per-verdict 结构化来源", () => {
+  it("fact_checker schema 的 subclaimVerdicts item 应含三个新字段的 properties，且不在 required 中", () => {
+    const schema = getAgentConfig("fact_checker")!.responseSchema as any;
+    const item = schema.properties.subclaimVerdicts.items;
+    expect(item.properties.supportingSources).toBeDefined();
+    expect(item.properties.contradictingSources).toBeDefined();
+    expect(item.properties.evidenceGaps).toBeDefined();
+    expect(item.properties.supportingSources.items).toEqual({
+      type: "object",
+      additionalProperties: false,
+      properties: { url: { type: "string" }, title: { type: "string" }, snippet: { type: "string" } },
+      required: ["url", "title", "snippet"],
+    });
+    expect(item.required).not.toContain("supportingSources");
+    expect(item.required).not.toContain("contradictingSources");
+    expect(item.required).not.toContain("evidenceGaps");
+  });
+
+  it("report_composer schema 的 subclaimVerdicts item 同样含三个新字段 structures", () => {
+    const schema = getAgentConfig("report_composer")!.responseSchema as any;
+    const item = schema.properties.subclaimVerdicts.items;
+    expect(item.properties.supportingSources).toBeDefined();
+    expect(item.properties.contradictingSources).toBeDefined();
+    expect(item.properties.evidenceGaps).toBeDefined();
+  });
+
+  it("mergeSubclaimVerdicts：URL 幻觉拦截——编造 URL 丢弃、真实 URL 保留", () => {
+    const claimAtoms = ["原子A"];
+    const realUrl = "https://real.example.com/a";
+    const searchSources = [
+      { url: realUrl, title: "真实来源", snippet: "真实摘要" },
+      { url: "https://real.example.com/b", title: "另一个真实来源", snippet: "摘要" },
+    ];
+    const verdicts = [
+      {
+        claimAtom: "原子A",
+        verdict: "true",
+        evidence: "证据",
+        boundary: "边界",
+        supportingSources: [
+          { url: realUrl, title: "真实来源", snippet: "真实摘要" },
+          { url: "https://fabricated.example.com/x", title: "编造来源", snippet: "编造" }, // 编造，应丢弃
+        ],
+        contradictingSources: [
+          { url: "https://real.example.com/b", title: "另一个真实来源", snippet: "摘要" },
+          { url: "https://ghost.example.com/y", title: "幽灵来源", snippet: "幽灵" }, // 编造，应丢弃
+        ],
+        evidenceGaps: ["缺官方公告"],
+      },
+    ];
+    const result = mergeSubclaimVerdicts(claimAtoms, verdicts, searchSources);
+    const item = result.find((r) => r.claimAtom === "原子A")!;
+    expect(item.supportingSources).toEqual([
+      { url: realUrl, title: "真实来源", snippet: "真实摘要" },
+    ]);
+    expect(item.contradictingSources).toEqual([
+      { url: "https://real.example.com/b", title: "另一个真实来源", snippet: "摘要" },
+    ]);
+    expect(item.evidenceGaps).toEqual(["缺官方公告"]);
+  });
+
+  it("mergeSubclaimVerdicts：未提供 searchSources 时透传结构化来源（供 report_composer 渲染）", () => {
+    const claimAtoms = ["原子A"];
+    const verdicts = [
+      {
+        claimAtom: "原子A",
+        verdict: "partial",
+        evidence: "证据",
+        boundary: "边界",
+        supportingSources: [{ url: "https://x.example.com", title: "X", snippet: "S" }],
+        contradictingSources: [],
+        evidenceGaps: [],
+      },
+    ];
+    const result = mergeSubclaimVerdicts(claimAtoms, verdicts);
+    expect(result[0].supportingSources).toEqual([{ url: "https://x.example.com", title: "X", snippet: "S" }]);
+  });
+
+  it("mergeSubclaimVerdicts：searchSources 为空数组时所有来源被丢弃（无可交叉校验的真实来源）", () => {
+    const claimAtoms = ["原子A"];
+    const verdicts = [
+      {
+        claimAtom: "原子A",
+        verdict: "true",
+        evidence: "证据",
+        boundary: "边界",
+        supportingSources: [{ url: "https://x.example.com", title: "X", snippet: "S" }],
+        contradictingSources: [{ url: "https://y.example.com", title: "Y", snippet: "T" }],
+        evidenceGaps: [],
+      },
+    ];
+    const result = mergeSubclaimVerdicts(claimAtoms, verdicts, []);
+    expect(result[0].supportingSources).toEqual([]);
+    expect(result[0].contradictingSources).toEqual([]);
+  });
+
+  it("mergeSubclaimVerdicts：evidenceGaps 截断长度与条数", () => {
+    const claimAtoms = ["原子A"];
+    const longGap = "缺".repeat(300);
+    const verdicts = [
+      {
+        claimAtom: "原子A",
+        verdict: "unverified",
+        evidence: "",
+        boundary: "",
+        evidenceGaps: [longGap, "缺口2", "缺口3", "缺口4", "缺口5"],
+      },
+    ];
+    const result = mergeSubclaimVerdicts(claimAtoms, verdicts);
+    const gaps = result[0].evidenceGaps;
+    expect(gaps).toHaveLength(3); // 截断到 3 条
+    expect(gaps[0].length).toBe(121); // 120 内容字符 + 省略号
+    expect(gaps[0].endsWith("…")).toBe(true);
   });
 });

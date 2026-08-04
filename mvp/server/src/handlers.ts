@@ -745,8 +745,8 @@ export function createHandlers(env: Record<string, string>) {
       // fact_checker 同源清单，保证最终清单非空、可审计。
       const reportVerdicts = reportStep?.output?.subclaimVerdicts;
       finalReport.subclaimVerdicts = Array.isArray(reportVerdicts) && reportVerdicts.length > 0
-        ? mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, reportVerdicts)
-        : mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts);
+        ? mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, reportVerdicts, search360Result?.sources)
+        : mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts, search360Result?.sources);
 
       // ─── 公式覆盖 credibilityScore ───
       // 审查 P3-1 + P2-1 修复：抽取为 computeFormulaScore 共享 helper，
@@ -1048,8 +1048,8 @@ export function createHandlers(env: Record<string, string>) {
       // report_composer 缺失时回退 fact_checker 同源清单。
       const reportVerdicts = reportStep?.output?.subclaimVerdicts;
       finalReport.subclaimVerdicts = Array.isArray(reportVerdicts) && reportVerdicts.length > 0
-        ? mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, reportVerdicts)
-        : mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts);
+        ? mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, reportVerdicts, search360Result?.sources)
+        : mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts, search360Result?.sources);
 
       // ─── 公式覆盖 credibilityScore ───
       // 审查 P3-1 + P2-1 修复：与 orchestrateHandler 共用 computeFormulaScore。
@@ -2391,7 +2391,7 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
     conclusion,
     credibilityScore,
     credibilityLabel,
-    subclaimVerdicts: mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts),
+    subclaimVerdicts: mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts, searchResult?.sources),
     recommendation: hasMissingSources
       ? "先不要直接转发原说法；补充官方、原始或专业来源后再判断。"
       : "可以保留为待核查结论，并在转述时附上证据边界。",

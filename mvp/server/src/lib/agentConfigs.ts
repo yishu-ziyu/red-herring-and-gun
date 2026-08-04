@@ -41,11 +41,21 @@ export interface HandoffResult {
 }
 
 // Agent 专用输出类型
+export interface VerdictSource {
+  url: string;
+  title: string;
+  snippet: string;
+}
+
 export interface SubclaimVerdict {
   claimAtom: string;
   verdict: "true" | "false" | "partial" | "unverified" | "exaggerated";
   evidence: string;
   boundary: string;
+  // 判定可追溯：逐条定罪绑定结构化来源（可展开依据卡）；三个新字段可选，兜底为空数组
+  supportingSources?: VerdictSource[];
+  contradictingSources?: VerdictSource[];
+  evidenceGaps?: string[];
 }
 
 export interface RumorDetectorOutput {
@@ -123,6 +133,17 @@ const rumorDetectorSchema = {
   required: ["claimAtoms", "rumorIndicators", "severity", "analysis", "detectedPatterns"],
 };
 
+const verdictSourceSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    url: { type: "string" },
+    title: { type: "string" },
+    snippet: { type: "string" },
+  },
+  required: ["url", "title", "snippet"],
+};
+
 const subclaimVerdictsSchema = {
   type: "array",
   items: {
@@ -133,6 +154,10 @@ const subclaimVerdictsSchema = {
       verdict: { type: "string", enum: ["true", "false", "partial", "unverified", "exaggerated"] },
       evidence: { type: "string" },
       boundary: { type: "string" },
+      // 判定可追溯：三个新字段不强制（兜底可为空数组），但结构明确
+      supportingSources: { type: "array", items: verdictSourceSchema },
+      contradictingSources: { type: "array", items: verdictSourceSchema },
+      evidenceGaps: { type: "array", items: { type: "string" } },
     },
     required: ["claimAtom", "verdict", "evidence", "boundary"],
   },
@@ -328,8 +353,14 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "3. verdict 五值：true（证据支持）、false（证据否定）、partial（部分成立）、exaggerated（夸大/断章取义）、unverified（无法判定，待补证）。",
       "4. 每条必须写 evidence（证据）与 boundary（边界/不能推出的部分）。",
       "",
+      "【逐条定罪来源绑定 / 判定可追溯 — 强制】",
+      "1. 对每个 claimAtom，对应 item 的 supportingSources / contradictingSources 必须引用输入 search360.sources 中真实存在的来源，逐条给出 url / title / snippet 三项，不得编造不存在的 URL 或来源。",
+      "2. 某来源若不在 search360.sources 中，不得写入；宁可留空数组，也不编造。",
+      "3. item 的 url 必须能精确匹配到 search360.sources 中某个 url，title 与 snippet 取自该来源原文。",
+      "4. evidenceGaps 列出该条定罪尚未找到的证据（如缺少官方 / 原始 / 权威来源），没有则给空数组。",
+      "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"factCheckResult\": \"partial\",\n  \"confidence\": \"medium\",\n  \"sources\": [\"来源1\", \"来源2\"],\n  \"keyFindings\": [\"发现1\", \"发现2\"],\n  \"counterEvidence\": [\"反驳证据1\", \"反驳证据2\"],\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子命题1\", \"verdict\": \"true\", \"evidence\": \"证据\", \"boundary\": \"边界\"},\n    {\"claimAtom\": \"原子命题2\", \"verdict\": \"unverified\", \"evidence\": \"\", \"boundary\": \"暂无可靠证据\"}\n  ]\n}",
+      "{\n  \"factCheckResult\": \"partial\",\n  \"confidence\": \"medium\",\n  \"sources\": [\"来源1\", \"来源2\"],\n  \"keyFindings\": [\"发现1\", \"发现2\"],\n  \"counterEvidence\": [\"反驳证据1\", \"反驳证据2\"],\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子命题1\", \"verdict\": \"true\", \"evidence\": \"证据\", \"boundary\": \"边界\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"来源标题\", \"snippet\": \"摘要\"}], \"contradictingSources\": [], \"evidenceGaps\": []},\n    {\"claimAtom\": \"原子命题2\", \"verdict\": \"unverified\", \"evidence\": \"\", \"boundary\": \"暂无可靠证据\", \"supportingSources\": [], \"contradictingSources\": [], \"evidenceGaps\": [\"缺少官方公告\"]}\n  ]\n}",
       "",
       "factCheckResult 必须是 'true'、'false'、'partial'、'unverified' 之一。",
       "confidence 必须是 'low'、'medium'、'high' 之一。",
@@ -464,14 +495,46 @@ function truncateClaimAtomKey(value: string, maxLength = 180): string {
 
 const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated"];
 
+// 判定可追溯：per-verdict 来源结构清洗 + URL 幻觉拦截。
+// searchSources 提供时（落库闸门/兜底），仅保留真实存在于搜索结果中的 URL，
+// 编造的 URL 丢弃；未提供时只做结构清洗（透传，供 report_composer 渲染）。
+function sanitizeVerdictSources(
+  value: unknown,
+  searchSources?: Array<{ url?: unknown }>
+): VerdictSource[] {
+  if (!Array.isArray(value)) return [];
+  const knownUrls = searchSources
+    ? new Set(searchSources.map((s) => String(s?.url ?? "").trim()).filter(Boolean))
+    : null;
+  const out: VerdictSource[] = [];
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const rec = candidate as Record<string, unknown>;
+    const url = typeof rec.url === "string" ? rec.url.trim() : "";
+    if (!url) continue;
+    if (knownUrls && !knownUrls.has(url)) continue; // URL 幻觉拦截
+    out.push({
+      url,
+      title: typeof rec.title === "string" ? rec.title.slice(0, 200) : "",
+      snippet: typeof rec.snippet === "string" ? rec.snippet.slice(0, 320) : "",
+    });
+  }
+  return out.slice(0, 5);
+}
+
+function sanitizeEvidenceGaps(value: unknown): string[] {
+  return compactStrings(value, 3, 120);
+}
+
 export function mergeSubclaimVerdicts(
   claimAtoms: unknown,
-  verdicts: unknown
-): Array<{ claimAtom: string; verdict: string; evidence: string; boundary: string }> {
+  verdicts: unknown,
+  searchSources?: Array<{ url?: unknown }>
+): SubclaimVerdict[] {
   const atoms = compactStrings(claimAtoms, 6, 180);
   const raw = Array.isArray(verdicts) ? verdicts : [];
   const covered = new Set<string>();
-  const result: Array<{ claimAtom: string; verdict: string; evidence: string; boundary: string }> = [];
+  const result: SubclaimVerdict[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const rec = item as Record<string, unknown>;
@@ -483,14 +546,25 @@ export function mergeSubclaimVerdicts(
     covered.add(atomKey);
     result.push({
       claimAtom: atom,
-      verdict: SUBCLAIM_VERDICTS.includes(String(rec.verdict)) ? String(rec.verdict) : "unverified",
+      verdict: (SUBCLAIM_VERDICTS.includes(String(rec.verdict)) ? String(rec.verdict) : "unverified") as SubclaimVerdict["verdict"],
       evidence: compactText(rec.evidence, 200),
       boundary: compactText(rec.boundary, 200),
+      supportingSources: sanitizeVerdictSources(rec.supportingSources, searchSources),
+      contradictingSources: sanitizeVerdictSources(rec.contradictingSources, searchSources),
+      evidenceGaps: sanitizeEvidenceGaps(rec.evidenceGaps),
     });
   }
   for (const atom of atoms) {
     if (!covered.has(atom)) {
-      result.push({ claimAtom: atom, verdict: "unverified", evidence: "", boundary: "模型未覆盖，待补证" });
+      result.push({
+        claimAtom: atom,
+        verdict: "unverified",
+        evidence: "",
+        boundary: "模型未覆盖，待补证",
+        supportingSources: [],
+        contradictingSources: [],
+        evidenceGaps: [],
+      });
     }
   }
   return result;
