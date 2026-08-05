@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { searchClaimAcrossSources } from "./lib/sherlockStyleSearch.js";
 import { AGENT_CONFIGS, buildAgentInput, mergeSubclaimVerdicts } from "./lib/agentConfigs.js";
-import { callAgentWithFallback, AgentTextProviderId } from "./lib/providerRouter.js";
+import { callAgentWithFallback, AgentTextProviderId, ProviderFallbackError } from "./lib/providerRouter.js";
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
 import { computeCredibilityScore, labelForScore, type CredibilityScoreResult } from "./lib/credibilityScore.js";
@@ -26,6 +26,35 @@ import {
 import { emailCookieOptions, encodeSignedJson, decodeSignedJson, parseCookies } from "./lib/aipingAuth.js";
 
 const execFileAsync = promisify(execFile);
+
+// ───────────────────────────────────────────────────────────────
+// 错误信息泄漏修复：把任意异常收敛成"用户可读友好文案 + 结构化诊断"。
+// message 只承载用户可读文案；原始诊断放 detail / providerErrors，绝不上屏。
+// 供顶层 error 出口与 agent_error 出口共用，也让后端回归测试能直接钉死。
+// ───────────────────────────────────────────────────────────────
+export interface FriendlyErrorInfo {
+  /** 用户可读友好文案（不包含原始诊断） */
+  message: string;
+  /** 原始诊断串（可选；仅当原始串与友好文案不同才携带） */
+  detail?: string;
+  /** provider 级错误明细（可选） */
+  providerErrors?: string[];
+}
+
+export function toFriendlyError(error: unknown, fallback: string): FriendlyErrorInfo {
+  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const providerErrors =
+    error instanceof ProviderFallbackError && error.providerErrors?.length
+      ? error.providerErrors
+      : undefined;
+  // ProviderFallbackError.message 已是友好文案，直接复用；其余一律用 fallback 兜底。
+  const userFacing = error instanceof ProviderFallbackError && raw ? raw : fallback;
+  return {
+    message: userFacing,
+    ...(raw && raw !== userFacing ? { detail: raw } : {}),
+    ...(providerErrors ? { providerErrors } : {}),
+  };
+}
 
 // ───────────────────────────────────────────────────────────────
 // 审查 P3-1 + P2-1 修复：抽取 computeFormulaScore 共享 helper
@@ -862,16 +891,21 @@ export function createHandlers(env: Record<string, string>) {
         output = result.output;
         modelUsed = result.model;
       } catch (error) {
-        const msg = error instanceof Error ? error.message : "Agent 调用失败";
+        const { message, detail, providerErrors } = toFriendlyError(
+          error,
+          `${agentConfig.name} 真实模型调用失败`
+        );
         sendEvent({
           type: "agent_error",
           agent: agentId,
           agentName: agentConfig.name,
           agentIcon: agentConfig.icon,
-          error: `${agentConfig.name} 真实模型调用失败：${msg}`,
+          error: message,
+          ...(detail ? { detail } : {}),
+          ...(providerErrors ? { providerErrors } : {}),
           timestamp: Date.now(),
         });
-        throw new Error(`${agentConfig.name} 真实模型调用失败：${msg}`);
+        throw new ProviderFallbackError(message, providerErrors ?? []);
       }
 
       const step = {
@@ -1093,8 +1127,17 @@ export function createHandlers(env: Record<string, string>) {
 
       res.end();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Orchestrate Stream 错误";
-      sendEvent({ type: "error", message });
+      // 无论错误类型，message 都只放用户可读友好文案；原始诊断进 detail / providerErrors。
+      const { message, detail, providerErrors } = toFriendlyError(
+        error,
+        "核查流程未能完成，请稍后重试"
+      );
+      sendEvent({
+        type: "error",
+        message,
+        ...(detail ? { detail } : {}),
+        ...(providerErrors ? { providerErrors } : {}),
+      });
       res.end();
     }
   }

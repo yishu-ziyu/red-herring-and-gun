@@ -181,6 +181,7 @@ export interface OrchestrateStreamEvent {
   claim?: string;
   error?: string;
   message?: string;
+  providerErrors?: string[];
   timestamp?: number;
 }
 

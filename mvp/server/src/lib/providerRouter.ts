@@ -384,6 +384,20 @@ export interface CallAgentResult {
   latencyMs: number;
 }
 
+/**
+ * 所有备用 provider 均失败时抛出。message 只承载用户可读的友好文案，
+ * 完整诊断（每家的 provider/model + 原始错误串）放在 providerErrors 上，
+ * 供结构化日志/事件透传，绝不上屏。
+ */
+export class ProviderFallbackError extends Error {
+  providerErrors: string[];
+  constructor(message: string, providerErrors: string[]) {
+    super(message);
+    this.name = "ProviderFallbackError";
+    this.providerErrors = providerErrors;
+  }
+}
+
 const NOOP_LOGGER: ProviderRouterLogger = {
   info: () => {},
   error: () => {},
@@ -853,5 +867,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
     }
   }
 
-  throw new Error(errors.join("；") || "没有可用的 Agent provider");
+  const friendlyMessage =
+    errors.length > 0 ? "所有备用模型均已调用失败，请检查模型配置或稍后重试" : "没有可用的 Agent provider";
+  throw new ProviderFallbackError(friendlyMessage, errors);
 }
