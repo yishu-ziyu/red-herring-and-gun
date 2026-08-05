@@ -1,7 +1,7 @@
 # 迭代 Spec · 判定可追溯（逐条定罪可展开看依据）
 
 > 日期：2026-08-05
-> 状态：待实现
+> 状态：已实现
 > 所属：周打磨 · 阶段1 核查正确性 · 可审查可审计落地
 > 依赖：`2026-08-05-server-subclaim-verdicts.md`（逐命题定罪全链路已落地，用户可见清单）
 
@@ -66,18 +66,30 @@ type SubclaimVerdict = {
 
 ## 验收标准
 
-- [ ] `SubclaimVerdict` item 在 server + 前端 schema 均含 `supportingSources`/`contradictingSources`/`evidenceGaps`，结构为 `{url,title,snippet}[]` / `string[]`。
-- [ ] `fact_checker` prompt 引导逐条定罪引用真实来源，不编造。
-- [ ] merge/闸门对 per-verdict 来源做 URL 幻觉拦截（与搜索结果交叉校验），编造 URL 被丢弃；`buildDeterministicFinalReport` 兜底产出空数组。
-- [ ] `ReportModal` 逐条定罪可展开，展示支撑/反证/缺口三区，来源可点击，空分区隐藏。
-- [ ] 新增测试：schema 字段存在性、来源幻觉拦截、UI 展开与空态。
-- [ ] 全量回归通过（前端 + server 全绿）+ `tsc --noEmit` 无新增类型错误。
+- [x] `SubclaimVerdict` item 在 server + 前端 schema 均含 `supportingSources`/`contradictingSources`/`evidenceGaps`，结构为 `{url,title,snippet}[]` / `string[]`。
+- [x] `fact_checker` prompt 引导逐条定罪引用真实来源，不编造。
+- [x] merge/闸门对 per-verdict 来源做 URL 幻觉拦截（与搜索结果交叉校验），编造 URL 被丢弃；`buildDeterministicFinalReport` 兜底产出空数组。
+- [x] `ReportModal` 逐条定罪可展开，展示支撑/反证/缺口三区，来源可点击，空分区隐藏。
+- [x] 新增测试：schema 字段存在性、来源幻觉拦截、UI 展开与空态。
+- [x] 全量回归通过（前端 + server 全绿）+ `tsc --noEmit` 无新增类型错误。
 
 ## 非目标（本迭代不做）
 
 - 后台全量审计日志 / ReAct 轨迹展示（那是"出错时展开轨迹"层，另行排期）。
 - 改动搜索策略（仍整句检索）。
 - 把双端 `mergeSubclaimVerdicts` 抽成共享模块（纯技术债，暂缓）。
+
+## 落地边界
+
+本迭代在代码层已随 `686b14a`（数据层）、`846eb90`（ReportModal UI）等提交完整落地（`5b45756` 为 spec/产品手册更新，非代码），本次仅做验收核对与文档状态翻转。
+
+- **数据层 + merge 闸门**：server [agentConfigs.ts](file:///Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/mvp/server/src/lib/agentConfigs.ts) 的 `SubclaimVerdict` 扩展三字段、`sanitizeVerdictSources` 做 URL 幻觉拦截、`mergeSubclaimVerdicts` 携带 `searchSources` 交叉校验；前端 [schemas.ts](file:///Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/mvp/src/lib/schemas.ts) 类型同步。落库闸门与 `buildDeterministicFinalReport` 兜底在 [handlers.ts](file:///Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/mvp/server/src/handlers.ts) 均透传/产出三字段。
+- **fact_checker prompt**：server 版已加入"逐条定罪来源绑定 / 判定可追溯 — 强制"约定，要求引用 `search360.sources` 真实来源、编造 URL 宁可留空。
+- **前端 UI**：[ReportModal.tsx](file:///Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/mvp/src/components/v3/ReportModal.tsx) 逐条定罪点击展开，显示支撑证据 / 反证质疑 / 证据缺口三区，来源新窗口可点击，空分区隐藏；默认收起，复用现有样式 token。
+- **新增测试**：server `agentConfigs.test.ts`（schema 字段存在性、URL 幻觉拦截、evidenceGaps 截断）、`handlers.reportFallback.test.ts`（兜底透传与交叉校验）、前端 `ReportModal.test.tsx`（展开/折叠/空态/链接）。
+- **验证结果**：vitest 全量 531 通过（含 40 个本次功能相关用例），功能涉及文件（agentConfigs / schemas / ReportModal / handlers）在两端 `tsc --noEmit` 均无类型错误。完整基线可在 `mvp/` 目录用 `npx vitest run` 复现（531 用例全绿），类型检查用 `npx tsc --noEmit`。
+- **未覆盖**：前端 `src/lib/agentConfigs.ts` 的 `mergeSubclaimVerdicts` 未做 URL 交叉校验（前端无搜索结果上下文，由 server 闸门保证落库数据可信）；`src/lib/agentConfigs.test.ts` 未新增三字段用例（前端边界由 server 测试 + ReportModal 测试覆盖）。
+- **遗留类型债（非本迭代引入）**：前端 `evaluation/`、`deepagents-poc/`、`App.test.tsx` 14 处；server `caseHandlers.ts`、`claimReview.ts` 5 处。均与判定可追溯无关，另行排期。
 
 ## 受影响文件
 

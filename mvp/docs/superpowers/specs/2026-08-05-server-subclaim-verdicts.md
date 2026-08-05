@@ -1,7 +1,7 @@
 # 迭代 Spec · 逐命题定罪全链路落地（server 数据层 + UI 可见）
 
 > 日期：2026-08-05
-> 状态：待实现
+> 状态：已实现
 > 所属：周打磨 · 阶段1 核查正确性 · 生产路径落地
 > 依赖：`2026-08-04-subclaim-verdicts.md`（前端 DAG 数据层已实现并验证）
 > 范围：本迭代 = 08-05 原第一步（server 数据层）+ 并入第二步（UI 渲染），一次让用户看到清单
@@ -114,22 +114,31 @@ report_composer 的输出 `subclaimVerdicts` 不能直接写入 `finalReport` �
 
 ## 验收标准
 
-- [ ] server 端 `rumor_detector` schema 含 `claimAtoms`（string[]），且 prompt 引导拆分。
-- [ ] server 端 `fact_checker` schema 含 `subclaimVerdicts`，item 结构 = `{claimAtom, verdict, evidence, boundary}`，verdict enum 五值。
-- [ ] server 端 `report_composer` schema 含 `subclaimVerdicts`。
-- [ ] `buildAgentInput("fact_checker", ...)` 透传 `claimAtoms`；`buildAgentInput("report_composer", ...)` 的 `factCheck.subclaimVerdicts` 由 `mergeSubclaimVerdicts` 产出，覆盖不全补 `unverified` + "模型未覆盖，待补证"，幻觉原子被拦截。
-- [ ] **（R2）** `finalReport.subclaimVerdicts` 落库前过 `mergeSubclaimVerdicts` 闸门：report_composer 编造原子被拦截，缺失时回退到 fact_checker 同源清单，最终清单非空。
-- [ ] **（R3）** `buildDeterministicFinalReport` 产出 `subclaimVerdicts`（来自 `mergeSubclaimVerdicts(claimAtoms, fact_checker.subclaimVerdicts)`），claimAtoms 为空时返回 `[]`；该函数是生产兜底，`buildOrchestrateDemoFallback` 为死代码不改。
-- [ ] 新增测试覆盖：schema 字段存在性、`mergeSubclaimVerdicts` 覆盖不全与幻觉拦截、`buildAgentInput` 透传、`buildDeterministicFinalReport` 的 `subclaimVerdicts`、落库闸门。
-- [ ] **（UI）** `ReportModal` 渲染 `finalReport.subclaimVerdicts` 逐命题清单（claimAtom/verdict/evidence/boundary），五值着色，空态不显示旧占位。
-- [ ] 全量回归通过（基线 508 测试绿，新增用例后仍全绿）。
-- [ ] `tsc --noEmit` 无新增类型错误（既有未改动文件错误除外）。
+- [x] server 端 `rumor_detector` schema 含 `claimAtoms`（string[]），且 prompt 引导拆分。
+- [x] server 端 `fact_checker` schema 含 `subclaimVerdicts`，item 结构 = `{claimAtom, verdict, evidence, boundary}`，verdict enum 五值。
+- [x] server 端 `report_composer` schema 含 `subclaimVerdicts`。
+- [x] `buildAgentInput("fact_checker", ...)` 透传 `claimAtoms`；`buildAgentInput("report_composer", ...)` 的 `factCheck.subclaimVerdicts` 由 `mergeSubclaimVerdicts` 产出，覆盖不全补 `unverified` + "模型未覆盖，待补证"，幻觉原子被拦截。
+- [x] **（R2）** `finalReport.subclaimVerdicts` 落库前过 `mergeSubclaimVerdicts` 闸门：report_composer 编造原子被拦截，缺失时回退到 fact_checker 同源清单，最终清单非空。
+- [x] **（R3）** `buildDeterministicFinalReport` 产出 `subclaimVerdicts`（来自 `mergeSubclaimVerdicts(claimAtoms, fact_checker.subclaimVerdicts)`），claimAtoms 为空时返回 `[]`；该函数是生产兜底，`buildOrchestrateDemoFallback` 为死代码不改。
+- [x] 新增测试覆盖：schema 字段存在性、`mergeSubclaimVerdicts` 覆盖不全与幻觉拦截、`buildAgentInput` 透传、`buildDeterministicFinalReport` 的 `subclaimVerdicts`、落库闸门。
+- [x] **（UI）** `ReportModal` 渲染 `finalReport.subclaimVerdicts` 逐命题清单（claimAtom/verdict/evidence/boundary），五值着色，空态不显示旧占位。
+- [x] 全量回归通过（基线 531 测试绿，新增用例后仍全绿；迭代落地时为 508，后续 verdict-traceability 用例将总数推至 531）。
+- [x] `tsc --noEmit` 无新增类型错误（既有未改动文件错误除外）。
 
 ## 非目标（本迭代不做）
 
 - 前端 DAG 运行时同步（已实现，无需改动）。
 - 改动搜索策略（仍整句检索，拆分只负责定罪）。
 - 把 `mergeSubclaimVerdicts` 抽成前后端共享模块（可选优化，本迭代按最小实现双端各一份）。
+
+## 落地边界
+
+本 spec 在代码层已随 `d9b798c`（server 数据层：schema + merge 兜底 + buildAgentInput + prompt + 落库闸门 + buildDeterministicFinalReport）、`a8b1d10`（ReportModal 渲染逐命题定罪清单）等提交完整落地（`5b45756` 为 spec/产品手册更新，非代码），本次仅做验收核对与文档状态翻转。
+
+- **数据层 + merge 闸门**：server `agentConfigs.ts` 的 rumor_detector/fact_checker/report_composer 三 schema 补齐 `claimAtoms`/`subclaimVerdicts`，`mergeSubclaimVerdicts` 做覆盖不全补 `unverified` + 幻觉原子拦截 + 非法 verdict 回退；`handlers.ts` 的两个 handler 落库前与 `buildDeterministicFinalReport` 均过同一 merge 闸门。
+- **UI**：`ReportModal` 渲染 `finalReport.subclaimVerdicts` 逐命题清单（claimAtom/verdict/evidence/boundary），verdict 五值着色，`unverified` 标注"未判定·待补证"，空态不显示旧 `subclaimStatuses` 占位。
+- **新增测试**：server `agentConfigs.test.ts`（schema 字段存在性、merge 覆盖不全与幻觉拦截、buildAgentInput 透传、落库闸门）、`handlers.reportFallback.test.ts`（buildDeterministicFinalReport 的 `subclaimVerdicts`）、前端 `ReportModal.test.tsx`（逐命题渲染与空态）。
+- **验证结果**：在 `mvp/` 目录 `npx vitest run` 全量通过；`npx tsc --noEmit` 无新增类型错误。
 
 ## 受影响文件
 
