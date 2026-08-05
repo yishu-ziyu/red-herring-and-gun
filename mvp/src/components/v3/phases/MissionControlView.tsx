@@ -65,6 +65,7 @@ interface MissionStreamItem {
   model?: string;
   result?: Record<string, unknown>;
   debate?: ConsensusDebateUpdate;
+  techDetail?: string;
 }
 
 interface LocalMemoryRecall extends Record<string, unknown> {
@@ -132,6 +133,7 @@ interface ControllerProcessEvent {
   model?: string;
   result?: Record<string, unknown>;
   debate?: ConsensusDebateUpdate;
+  techDetail?: string;
 }
 
 type ControllerTranscriptItemType = "narration" | "operation" | "agent_cluster";
@@ -178,6 +180,37 @@ const CONTROLLER_EVENT_KIND_LABEL: Record<ControllerEventKind, string> = {
   report: "报告收束",
   error: "阻塞",
 };
+
+// 错误信息泄漏修复：主线只展示这条友好文案，原始诊断收进"技术细节"折叠区。
+export const ERROR_FRIENDLY_MESSAGE = "底层模型服务未能完成调用，请稍后重试或检查模型配置";
+
+export interface ErrorEventLike {
+  error?: string;
+  message?: string;
+  detail?: string;
+  providerErrors?: string[];
+}
+
+// 把事件里的原始诊断整理成"技术细节"正文：优先后端结构化 detail，其次 providerErrors，否则回退原始字符串。
+export function errorTechDetail(event: ErrorEventLike): string {
+  if (typeof event.detail === "string" && event.detail) {
+    return event.detail;
+  }
+  if (Array.isArray(event.providerErrors) && event.providerErrors.length > 0) {
+    return ["各候选模型调用明细：", ...event.providerErrors].join("\n");
+  }
+  return event.error ?? event.message ?? "Orchestrate 流式调用失败";
+}
+
+// 收敛任意 error 事件为 { 用户可读 message, 折叠区 techDetail }。
+// message 恒为友好文案，绝不包含 request_id / quota / provider 名 / 原始 JSON；
+// 原始诊断只进入 techDetail 或 providerErrors。四个 error 入口共用，便于单测钉死。
+export function resolveErrorPresentation(event: ErrorEventLike): {
+  message: string;
+  techDetail: string;
+} {
+  return { message: ERROR_FRIENDLY_MESSAGE, techDetail: errorTechDetail(event) };
+}
 
 const AGENT_ORDER = [
   "rumor_detector",
@@ -633,6 +666,7 @@ function buildControllerProcessEvents({
       model: item.model,
       result: item.result,
       debate: item.debate,
+      techDetail: item.techDetail,
     }));
   }
 
@@ -3391,6 +3425,13 @@ function ControllerEventDetailPanel({
           <ActivityText text={event.detail} animate={animateTyping} />
         </p>
 
+        {event.techDetail ? (
+          <details className="controller-reading-tech-detail">
+            <summary>技术细节</summary>
+            <pre>{event.techDetail}</pre>
+          </details>
+        ) : null}
+
         <div className="controller-activity-stack" aria-label="本步活动明细">
           <section className="controller-activity-section" aria-label="思考">
             <header className="controller-activity-section-head">
@@ -4605,34 +4646,38 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                 break;
               }
               case "tool_error": {
+                const { message, techDetail } = resolveErrorPresentation(event);
                 appendRuntimeChunk(
                   "fact_checker",
                   "tool_call",
-                  `${toolDisplayName(event.toolName)} 调用失败：${event.error ?? event.message ?? "未知错误"}。不生成模拟证据。`
+                  `${toolDisplayName(event.toolName)} 调用失败：${message}。不生成模拟证据。`
                 );
                 pushStreamItem({
                   agentName: event.toolName ?? "Tool",
                   title: `失败 | ${toolDisplayName(event.toolName)}`,
-                  detail: event.error ?? event.message ?? "未产生可引用证据",
+                  detail: message,
                   status: "failed",
                   query: event.query ?? claim,
                   model: event.model,
                   result: event.result,
+                  techDetail,
                 });
                 break;
               }
               case "agent_error": {
                 const step = buildStep(event, "failed");
+                const { message, techDetail } = resolveErrorPresentation(event);
                 accumulatedSteps = upsertStep(accumulatedSteps, step);
                 setSteps((prev) => upsertStep(prev, step));
                 setCurrentStep(step);
-                setErrorMessage(event.error ?? event.message ?? `${step.agentName} 调用失败`);
-                appendRuntimeChunk(step.agent, "thought", `这一步核查异常：${event.error ?? event.message ?? "未知错误"}。`);
+                setErrorMessage(message);
+                appendRuntimeChunk(step.agent, "thought", `这一步核查异常：${message}。`);
                 pushStreamItem({
                   agentName: step.agentName,
                   title: "调用失败，停止生成结论",
-                  detail: event.error ?? event.message ?? `${step.agentName} 执行失败`,
+                  detail: message,
                   status: "failed",
+                  techDetail,
                 });
                 dispatch({ type: "APPEND_HANDOFF_STEP", payload: step });
                 break;
@@ -4770,18 +4815,20 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                 break;
               }
               case "error": {
+                const { message, techDetail } = resolveErrorPresentation(event);
                 setStartedAt(null);
                 setRunStatus("failed");
-                setErrorMessage(event.error ?? event.message ?? "Orchestrate 流式调用失败");
+                setErrorMessage(message);
                 pushStreamItem({
                   agentName: "办案台",
                   title: "流式调用失败",
-                  detail: event.error ?? event.message ?? "Orchestrate 流式调用失败",
+                  detail: message,
                   status: "failed",
+                  techDetail,
                 });
                 dispatch({
                   type: "COMPLETE_HANDOFF_STREAM",
-                  payload: { error: event.error ?? event.message },
+                  payload: { error: message },
                 });
                 streamEnded = true;
                 break;
@@ -4790,17 +4837,18 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
           }
         } catch (error) {
           if (cancelled) return;
-          const message = error instanceof Error ? error.message : "Orchestrate 流式调用失败";
+          const techDetail = error instanceof Error ? error.message : "Orchestrate 流式调用失败";
           setStartedAt(null);
           setRunStatus("failed");
-          setErrorMessage(message);
+          setErrorMessage(ERROR_FRIENDLY_MESSAGE);
           pushStreamItem({
             agentName: "中控台",
             title: "执行中断",
-            detail: message,
+            detail: ERROR_FRIENDLY_MESSAGE,
             status: "failed",
+            techDetail,
           });
-          dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: { error: message } });
+          dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: { error: ERROR_FRIENDLY_MESSAGE } });
           streamEnded = true;
         }
       }
