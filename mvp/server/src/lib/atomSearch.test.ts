@@ -56,6 +56,38 @@ describe("buildAtomSearchBundle", () => {
     expect(bundle.aggregate._source).toBe("per-atom-search");
     expect(bundle.forAgent).toHaveLength(2);
     expect(bundle.forAgent[0].sources[0].url).toBe("https://a.example/1");
+    expect(bundle.filterMeta?.totals.before).toBe(4);
+    expect(bundle.filterMeta?.totals.afterTopK).toBe(4);
+    expect(bundle.aggregate.traceText).toMatch(/筛选/);
+  });
+
+  it("硬过滤 + 去重 + topK：噪声与重复不进 byAtomKey", () => {
+    const bundle = buildAtomSearchBundle(
+      [
+        {
+          atom: "测试原子",
+          result: {
+            sources: [
+              { url: "", title: "无链", snippet: "x" }, // asSourceList 已丢
+              { url: "javascript:void(0)", title: "js", snippet: "x" }, // S1 丢
+              { url: "https://dup.example/a?utm_source=1", title: "Dup", snippet: "short" },
+              { url: "https://dup.example/a", title: "Dup", snippet: "longer snippet here", credibility: "高" },
+              { url: "https://bit.ly/spam", title: "shortlink", snippet: "ads" }, // denylist
+              { url: "https://ok.example/b", title: "OK", snippet: "body enough text" },
+            ],
+          },
+        },
+      ],
+      key
+    );
+    const src = bundle.byAtomKey[key("测试原子")] ?? [];
+    expect(src.every((s) => /^https?:\/\//.test(s.url))).toBe(true);
+    expect(src.some((s) => s.url.includes("bit.ly"))).toBe(false);
+    expect(src.filter((s) => s.url.includes("dup.example"))).toHaveLength(1);
+    // asSourceList 丢空 URL → before=5；S1 丢 js + bit.ly、S2 并 dup → afterTopK=2
+    expect(bundle.filterMeta?.totals.before).toBe(5);
+    expect(bundle.filterMeta?.totals.afterTopK).toBe(2);
+    expect(src).toHaveLength(2);
   });
 });
 

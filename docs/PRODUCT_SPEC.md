@@ -89,6 +89,48 @@
 
 **本阶段明确不做**：整句兜底二次搜、相似 query 合并、结果缓存、动态上限（见工单后续）。
 
+### 并行检索提供方（2026-08-06 实测）
+
+生产路径一次原子检索会并行调用（有 key 才真请求）：
+
+| 提供方 | 接口现状 | 备注 |
+|--------|----------|------|
+| 360 | **仅** `/v2/mwebsearch` | 已下线超时的 `/v1/search/aisearch`；mweb 带 `trusted_sources` / `exclude_aigc` |
+| Tavily | `POST api.tavily.com/search` | 文档仍为此端点，实测可用 |
+| Exa | `POST api.exa.ai/search` | 2026 文档推荐 `contents.highlights`，已按此取摘要 |
+| Metaso | `POST metaso.cn/api/v1/search` | 返回 `webpages`，实测可用（注意余额） |
+| AnySearch | MCP `tools/call` search | 可用但结果偏少 |
+
+任一源失败不阻断整次并行（`Promise.allSettled`）；全部失败才报搜索失败。
+
+### 「少捞垃圾」聊清楚（产品边界）
+
+检索**不能保证**结果权威。当前分层是：
+
+```text
+1. 多源宽召回（每可核查原子一轮）
+   · Tavily / Exa / Metaso / AnySearch / 360 mweb 并行；失败不阻断
+   · 360 mweb：trusted_sources + exclude_aigc（仅该源）
+
+2. 筛选漏斗 v1（确定性，进 FactChecker 前）
+   · S1 硬过滤：无 http(s) / 无法 parse / 标题与摘要皆空 / denylist 短链域
+   · S2 跨源去重：规范化 URL（去 utm/hash）；否则 域名+标题
+   · S3 可用度打分 + 每原子 top-5（域名启发式可信度 + 摘要质量 + 源内次序）
+   · 可观测：bundle.filterMeta（before → afterFilter → afterDedupe → afterTopK）
+   · 「低」可信只降权，不因「低」直接删除（避免误杀线索）
+
+3. 读材料时（FactChecker / SourceValidator）
+   · 偏好权威、可疑进 questionable、禁止编造 URL
+
+4. 分数与边界
+   · 信源差 → 公式降分；无据 → 未能证实 / cannot say
+```
+
+实现：`mvp/server/src/lib/retrievalFilter.ts`；决策稿 `mvp/docs/superpowers/specs/2026-08-06-retrieval-quality-decision.md`。
+
+**不要对外说「我们只搜好东西」。**  
+正确说法：**我们尽量少把不可追溯噪声送进证据链，并对差来源降权、暴露给用户。**
+
 ### 验收句（用户将看到）
 
 1. **When** 一条说法被拆成多条可核查声称且系统跑完，**Then** 报告「逐命题定罪」里每条可展开，并尽量展示**与该条相关的来源链接/摘要**（而非所有条共用说不清归属的一堆链接）。  
@@ -204,3 +246,5 @@ ReportComposer 的 prompt 里写死一条规则：**只能基于前序 Agent 已
 - （2026-08-04）**优先级结论：命题拆分"重要但不紧急"。** 依据不是"下游能兜住"，而是"最重污染源（搜索）已被锚定在原始 claim 上回避"。真正未兜住的是拆解忠实性与完整性——它是唯一一个"漏了没人发现"的环节。待办：为拆解增加忠实性校验闸门，或确认 planner 接管拆分。
 - （2026-08-05）**确认拆分方法论出处并做了差距分析。** 出处写入第三章（A Closer Look / DAD / LoCal 三篇论文，都来自 arXiv/ACL 一手）。结论：我们缺四项——①原子命题判定标准，②去语境化步骤，③拆解质量校验闸门，④与下游对齐。前三项成本低收益高，第四项远期。**近期最可落地**：借鉴 DecompScore 用"原句自证"过滤不被原句支持的 claimAtoms，并给 RumorDetector prompt 补"原子命题必须被原句自证"的约束。工单：产品说明书修订（本次完成），代码改动未开始。
 - （2026-08-06）**检索策略改为按学界标准。** 废弃「仅整句搜一次、原子不进检索」。新策略：可核查原子各自检索（上限 6）→ 按条判定 → 报告按条绑证据；无证据≠假。写入第三章「检索策略」与验收句；实现见 `2026-08-06-per-atom-retrieval.md`。后续再做整句兜底 / query 合并 / 缓存。
+- （2026-08-06）**下线 360 aisearch 超时路径**，360 仅走 mwebsearch；澄清「少捞垃圾」边界；各源统一丢无 URL、域名启发式可信度（废除排名假高）。Tavily/Exa/Metaso 接口与 2026 公开文档对齐核对。
+- （2026-08-06）**检索筛选漏斗 v1 已落地**：硬过滤 + 跨源去重 + 打分截断 top-5；`filterMeta` 可观测。见 `mvp/docs/superpowers/specs/2026-08-06-retrieval-quality-decision.md`。

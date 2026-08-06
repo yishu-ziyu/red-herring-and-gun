@@ -1,3 +1,7 @@
+import {
+  mergeSubclaimVerdicts as mergeSubclaimVerdictsDomain,
+  splitVerifiableAtoms,
+} from "../../server/src/lib/claimAtom/index";
 /**
  * agentConfigs.ts — 多 Agent Handoff 配置
  *
@@ -846,67 +850,13 @@ function compactText(value: unknown, maxLength = 420) {
   return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
 }
 
-// 与 compactStrings(claimAtoms, 6, 180) 对 claimAtom 的截断规则保持一致，
-// 作为 covered 判定键，避免超长原子在 verdict 原始串与 atoms 截断串之间失配。
-function truncateClaimAtomKey(value: string, maxLength = 180) {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
-}
 
-// 判定可追溯：前端侧对 per-verdict 来源做结构清洗（透传，无搜索结果做交叉校验）。
-function sanitizeVerdictSources(value: unknown): import("./schemas").VerdictSource[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((candidate): candidate is Record<string, unknown> => !!candidate && typeof candidate === "object")
-    .map((rec) => ({
-      url: typeof rec.url === "string" ? rec.url : "",
-      title: typeof rec.title === "string" ? rec.title : "",
-      snippet: typeof rec.snippet === "string" ? rec.snippet : "",
-    }))
-    .filter((source) => source.url.length > 0)
-    .slice(0, 5);
-}
-
+// Claim-atom domain SSOT (server) — no private twin merge/key.
 function mergeSubclaimVerdicts(
   claimAtoms: unknown,
   verdicts: unknown
 ): import("./schemas").SubclaimVerdict[] {
-  const atoms = compactStrings(claimAtoms, 6, 180);
-  const raw = Array.isArray(verdicts) ? verdicts : [];
-  const covered = new Set<string>();
-  const result: import("./schemas").SubclaimVerdict[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
-    const rec = item as Record<string, unknown>;
-    const atom = typeof rec.claimAtom === "string" ? rec.claimAtom : "";
-    if (!atom) continue;
-    const atomKey = truncateClaimAtomKey(atom);
-    // 幻觉拦截：仅接受真实存在于输入 claimAtoms 中的原子，模型编造的原子不得进入报告
-    if (!atoms.includes(atomKey)) continue;
-    covered.add(atomKey);
-    result.push({
-      claimAtom: atom,
-      verdict: (["true", "false", "partial", "unverified", "exaggerated"].includes(String(rec.verdict)) ? String(rec.verdict) : "unverified") as import("./schemas").SubclaimVerdictValue,
-      evidence: compactText(rec.evidence, 200),
-      boundary: compactText(rec.boundary, 200),
-      supportingSources: sanitizeVerdictSources(rec.supportingSources),
-      contradictingSources: sanitizeVerdictSources(rec.contradictingSources),
-      evidenceGaps: compactStrings(rec.evidenceGaps, 3, 120),
-    });
-  }
-  for (const atom of atoms) {
-    if (!covered.has(atom)) {
-      result.push({
-        claimAtom: atom,
-        verdict: "unverified",
-        evidence: "",
-        boundary: "模型未覆盖，待补证",
-        supportingSources: [],
-        contradictingSources: [],
-        evidenceGaps: [],
-      });
-    }
-  }
-  return result;
+  return mergeSubclaimVerdictsDomain(claimAtoms, verdicts) as import("./schemas").SubclaimVerdict[];
 }
 
 export function buildAgentInput(
@@ -987,7 +937,13 @@ export function buildAgentInput(
         factCheck: {
           result: factStep?.output?.factCheckResult ?? "unverified",
           confidence: factStep?.output?.confidence ?? "low",
-          subclaimVerdicts: mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts),
+          subclaimVerdicts: (() => {
+            const split = splitVerifiableAtoms(
+              rumorStep?.output?.claimAtoms,
+              rumorStep?.output?.claimAtomTypes
+            );
+            return mergeSubclaimVerdicts(split.verifiable, factStep?.output?.subclaimVerdicts);
+          })(),
           sources: compactStrings(factStep?.output?.sources, 6, 160),
           supportingEvidence: compactStrings(factStep?.output?.supportingEvidence, 4, 240),
           contradictingSources: compactStrings(factStep?.output?.contradictingSources, 5, 160),
