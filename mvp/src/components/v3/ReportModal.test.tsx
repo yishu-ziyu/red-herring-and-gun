@@ -192,3 +192,76 @@ describe("ReportModal 逐命题定罪区块", () => {
     expect(screen.queryByText("证据缺口")).not.toBeInTheDocument();
   });
 });
+
+describe("ReportModal 排除层 · 不可核查原子与整句立场标注", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("nonVerifiableAtoms 原位灰标'立场型'，不渲染 verdict，不订真/假", () => {
+    const report = makeReport({
+      subclaimVerdicts: [
+        { claimAtom: "事实A", verdict: "true", evidence: "证据", boundary: "边界" },
+      ],
+      nonVerifiableAtoms: [{ text: "价值B", type: "value" }],
+    });
+    const { container } = renderModal(report);
+
+    // 不可核查原子原位展示，带"立场型"灰标
+    expect(screen.getByText("价值B")).toBeInTheDocument();
+    const stanceBadges = container.querySelectorAll<HTMLElement>(".verdict-stance");
+    expect(stanceBadges).toHaveLength(1);
+    expect(stanceBadges[0].textContent).toBe("立场型");
+    expect(screen.getByText("不适用真/假判断")).toBeInTheDocument();
+
+    // 不订真/假：该原子不渲染任何 verdict 五值标签
+    expect(screen.queryByText("属实")).not.toBeNull();
+    expect(stanceBadges[0].className).toContain("verdict-stance");
+    // 可核查原子照常定罪
+    expect(screen.getByText("事实A")).toBeInTheDocument();
+    expect(screen.getByText("属实")).toBeInTheDocument();
+  });
+
+  it("立场原子按 claimAtomOrder 原位插回：B 在中间，不沉底", () => {
+    const report = makeReport({
+      subclaimVerdicts: [
+        { claimAtom: "事实A", verdict: "true", evidence: "证据A", boundary: "边界A" },
+        { claimAtom: "事实C", verdict: "false", evidence: "证据C", boundary: "边界C" },
+      ],
+      nonVerifiableAtoms: [{ text: "价值B", type: "value" }],
+      claimAtomOrder: ["事实A", "价值B", "事实C"],
+    });
+    renderModal(report);
+
+    const items = Array.from(document.querySelectorAll(".report-verdict-item"));
+    // 三个条目按原句序 A、B、C 交错，立场型 B 位于中间而非沉底
+    expect(items).toHaveLength(3);
+    expect(items[0].textContent).toContain("事实A");
+    expect(items[1].textContent).toContain("价值B");
+    expect(items[1].querySelector(".verdict-stance")?.textContent).toBe("立场型");
+    expect(items[2].textContent).toContain("事实C");
+  });
+
+  it("claimType.verifiable=false 时报告顶部渲染'立场型'横幅", () => {
+    const report = makeReport({
+      subclaimVerdicts: [],
+      nonVerifiableAtoms: [],
+      claimType: { verifiable: false, type: "value", reason: "整句为价值判断" },
+    });
+    const { container } = renderModal(report);
+    expect(container.querySelector(".report-stance-banner")).not.toBeNull();
+    expect(screen.getByText("立场型")).toBeInTheDocument();
+    expect(screen.getByText(/不适用于事实核查/)).toBeInTheDocument();
+  });
+
+  it("claimType.verifiable=true 或缺失时不渲染立场横幅", () => {
+    const { container } = renderModal(makeReport());
+    expect(container.querySelector(".report-stance-banner")).toBeNull();
+
+    cleanup();
+    const { container: c2 } = renderModal(
+      makeReport({ claimType: { verifiable: true, type: "fact", reason: "可核查" } })
+    );
+    expect(c2.querySelector(".report-stance-banner")).toBeNull();
+  });
+});
