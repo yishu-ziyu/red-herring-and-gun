@@ -12,6 +12,7 @@ export function humanizeVerdictType(verdictType?: string | null): string {
     case "true":
       return "倾向成立";
     case "false":
+    case "rumor":
       return "倾向不成立";
     case "mixed_misleading":
     case "mixed":
@@ -20,6 +21,7 @@ export function humanizeVerdictType(verdictType?: string | null): string {
     case "unverified":
     case "uncertain":
     case "maybe":
+    case "unknown":
       return "尚难核实";
     default: {
       const raw = typeof verdictType === "string" ? verdictType.trim() : "";
@@ -29,6 +31,31 @@ export function humanizeVerdictType(verdictType?: string | null): string {
       return raw;
     }
   }
+}
+
+/**
+ * Forwarding advice: prefer report.recommendation, else derive from verdictType.
+ */
+export function shareAdviceFromVerdict(
+  recommendation?: string | null,
+  verdictType?: string | null
+): string {
+  const rec = typeof recommendation === "string" ? recommendation.trim() : "";
+  if (rec) return rec;
+  const key = normalizeKey(verdictType);
+  if (key === "false" || key === "rumor") {
+    return "不建议转发。现有公开材料不支持该说法。";
+  }
+  if (key === "true") {
+    return "可谨慎引用，请附带来源链接，勿二次改写。";
+  }
+  if (key === "partial" || key === "mixed" || key === "mixed_misleading") {
+    return "不宜整段转发。可说明「部分成立、有限定条件」。";
+  }
+  if (key === "unverified" || key === "uncertain" || key === "maybe" || key === "unknown") {
+    return "证据不足，先不要转发；等待更可靠来源。";
+  }
+  return "请先阅读结论与来源，再决定是否转发。";
 }
 
 /** Map fact_checker factCheckResult → Chinese. */

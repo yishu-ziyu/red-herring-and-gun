@@ -39,3 +39,8 @@ export type {
   VisibleProcessNarrative,
   VisibleProcessRow,
 } from "./visibleProcessRows";
+export { resolveShellMode } from "./resolveShellMode";
+export type { MissionShellVariant, ResolvedShellMode } from "./resolveShellMode";
+export { shareAdviceFromVerdict } from "./labels";
+export type { ShellVerdictSource } from "./types";
+

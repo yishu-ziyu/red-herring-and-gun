@@ -146,6 +146,16 @@ export const FIXTURE_COMPLETE: OrchestrateStreamEvent[] = [
       verdictType: "mixed_misleading",
       conclusion: "说法存在夸大，加热不当有风险但不宜直接等同致癌。",
       credibilityScore: 42,
+      recommendation: "不宜整段转发。可说明加热不当有风险，但不宜直接等同致癌。",
+      keyFindings: ["加热不当可能产生有害物，但不等于必然致癌"],
+      evidenceChain: [
+        {
+          finding: "加热不当可能产生有害物，但不等于必然致癌",
+          sourceRefs: [
+            { title: "示例来源：食品安全科普", url: "https://example.com/food-safety" },
+          ],
+        },
+      ],
     },
     reportReview: {
       passed: true,

@@ -15,6 +15,7 @@ import {
   type SpeculativeRelayUpdate,
 } from "../../../lib/agentExpansion";
 import { adaptOrchestrateStreamToShell } from "../../../lib/missionShell";
+import { resolveShellMode } from "../../../lib/missionShell/resolveShellMode";
 import { MissionProcessShell } from "./mission/MissionProcessShell";
 import type { ModelChoiceMap } from "../ModelPicker";
 import { calculateClaimSimilarity, createKnowledgeBase, type KnowledgeBase } from "../../../lib/knowledgeBase";
@@ -3986,9 +3987,6 @@ function ControllerRail({
       Boolean(missionShellModel?.errorMessage) ||
       Boolean(missionShellModel?.verdict.present));
   const showAny = useMissionShell ? shellBusy || runStatus === "running" : hasItems;
-  const shellStepCount = missionShellModel?.thoughtItems.filter(
-    (t) => t.kind !== "tool" && t.kind !== "review" && t.key !== "error" && t.key !== "report:final"
-  ).length ?? 0;
   const shellRunning =
     missionShellModel?.thoughtItems.some((t) => t.status === "loading") ||
     missionShellModel?.agents.some((a) => a.status === "loading");
@@ -4020,10 +4018,7 @@ function ControllerRail({
           {useMissionShell ? (
             missionShellModel ? (
               <>
-                <em>{shellStepCount} 步</em>
-                {shellRunning ? <span>1 项在进行</span> : null}
-                {missionShellModel.errorMessage ? <span>已中断</span> : null}
-                {reviewFailed ? <span>审稿需补证</span> : null}
+                {shellRunning ? <em>进行中</em> : missionShellModel.errorMessage ? <em>已中断</em> : reviewFailed ? <em>需补证</em> : runStatus === "completed" ? <em>已完成</em> : <em>准备中</em>}
               </>
             ) : (
               <em>准备中</em>
@@ -5192,13 +5187,10 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
   const [sseEvents, setSseEvents] = useState<OrchestrateStreamEvent[]>([]);
   const shellQuery =
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("shell") : null;
-  const useMissionShell =
-    import.meta.env.VITE_MISSION_SHELL === "antdx" ||
-    import.meta.env.VITE_MISSION_SHELL === "token" ||
-    (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("shell"));
-  /** shell=antdx | VITE_MISSION_SHELL=antdx → real ThoughtChain; otherwise token shell */
-  const missionShellVariant: "token" | "antdx" =
-    import.meta.env.VITE_MISSION_SHELL === "antdx" || shellQuery === "antdx" ? "antdx" : "token";
+  /** Live default = narrative token shell. Opt out: ?shell=legacy | VITE_MISSION_SHELL=legacy */
+  const shellMode = resolveShellMode(shellQuery, import.meta.env.VITE_MISSION_SHELL as string | undefined);
+  const useMissionShell = shellMode.enabled;
+  const missionShellVariant = shellMode.variant;
   const missionShellModel = useMemo(
     () => adaptOrchestrateStreamToShell(sseEvents, { claim }),
     [sseEvents, claim]
@@ -5948,7 +5940,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
     <main
       className={`mission-control-view case-workbench-view case-workbench-view--clean case-dossier-view ${
         hasStreamEvents ? "case-dossier-view--streaming" : "case-dossier-view--boot"
-      }`}
+      }${useMissionShell ? " case-dossier-view--shell" : ""}`}
     >
       <header className="mission-topbar">
         <div className="mission-brand">

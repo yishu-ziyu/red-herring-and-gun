@@ -10,6 +10,7 @@ import {
   humanizeClaimType,
   humanizeConfidenceLevel,
   humanizeFactCheckResult,
+  shareAdviceFromVerdict,
 } from "./labels";
 import type {
   MissionShellModel,
@@ -18,6 +19,7 @@ import type {
   ShellThoughtItem,
   ShellToolItem,
   ShellVerdictCard,
+  ShellVerdictSource,
 } from "./types";
 import { humanizeProcessSummary, humanizeProcessTitle } from "./visibleProcessRows";
 
@@ -175,8 +177,93 @@ function toolDetailFromEvent(event: OrchestrateStreamEvent): string | undefined 
 /**
  * Reduce a full or partial SSE event list into shell model.
  * Later events overwrite earlier keys (agent/tool identity collapse).
- * Trial entry: `?shell=1` (token shell) / `?shell=antdx` (Ant Design X ThoughtChain).
+ * Live default: narrative token shell. Opt out `?shell=legacy`. antdx: `?shell=antdx`.
  */
+
+function extractKeyFindings(report?: Record<string, unknown> | null): string[] {
+  if (!report) return [];
+  const out: string[] = [];
+  const push = (s?: string) => {
+    const t = (s ?? "").trim();
+    if (t && !out.includes(t) && out.length < 5) out.push(t);
+  };
+  if (Array.isArray(report.keyFindings)) {
+    for (const item of report.keyFindings) {
+      if (typeof item === "string") push(item);
+      else if (item && typeof item === "object" && typeof (item as { text?: string }).text === "string") {
+        push((item as { text: string }).text);
+      }
+    }
+  }
+  if (Array.isArray(report.evidenceChain)) {
+    for (const row of report.evidenceChain.slice(0, 4)) {
+      if (row && typeof row === "object") {
+        const finding = (row as { finding?: unknown }).finding;
+        if (typeof finding === "string") push(finding);
+      }
+    }
+  }
+  return out;
+}
+
+function extractTopSources(report?: Record<string, unknown> | null): ShellVerdictSource[] {
+  if (!report) return [];
+  const out: ShellVerdictSource[] = [];
+  const seen = new Set<string>();
+  const push = (title?: string, url?: string) => {
+    const t = (title ?? url ?? "").trim();
+    if (!t) return;
+    const key = (url || t).toLowerCase();
+    if (seen.has(key) || out.length >= 3) return;
+    seen.add(key);
+    out.push({ title: t.slice(0, 120), url: url?.trim() || undefined });
+  };
+  if (Array.isArray(report.evidenceChain)) {
+    for (const row of report.evidenceChain) {
+      if (!row || typeof row !== "object") continue;
+      const refs = (row as { sourceRefs?: unknown }).sourceRefs;
+      if (!Array.isArray(refs)) continue;
+      for (const ref of refs) {
+        if (typeof ref === "string") push(ref, ref.startsWith("http") ? ref : undefined);
+        else if (ref && typeof ref === "object") {
+          const o = ref as { title?: string; url?: string; name?: string; href?: string };
+          push(o.title || o.name || o.url || o.href, o.url || o.href);
+        }
+      }
+    }
+  }
+  if (Array.isArray(report.sources)) {
+    for (const src of report.sources) {
+      if (typeof src === "string") push(src, src.startsWith("http") ? src : undefined);
+      else if (src && typeof src === "object") {
+        const o = src as { title?: string; url?: string; name?: string };
+        push(o.title || o.name || o.url, o.url);
+      }
+    }
+  }
+  return out;
+}
+
+function buildVerdictFromComplete(event: OrchestrateStreamEvent): ShellVerdictCard {
+  const report = (event.finalReport ?? {}) as Record<string, unknown>;
+  const verdictType = asString(report.verdictType);
+  const conclusion = asString(report.conclusion);
+  const recommendation = asString(report.recommendation);
+  return {
+    present: true,
+    verdictType,
+    conclusion,
+    credibilityScore:
+      typeof report.credibilityScore === "number" ? report.credibilityScore : undefined,
+    shareAdvice: shareAdviceFromVerdict(recommendation, verdictType),
+    keyFindings: extractKeyFindings(report),
+    topSources: extractTopSources(report),
+    reviewPassed: event.reportReview?.passed,
+    reviewScore: event.reportReview?.score,
+    reviewIssues: event.reportReview?.issues,
+  };
+}
+
 export function adaptOrchestrateStreamToShell(
   events: OrchestrateStreamEvent[],
   opts?: { claim?: string }
@@ -397,18 +484,7 @@ export function adaptOrchestrateStreamToShell(
       }
       case "complete": {
         live = false;
-        verdict = {
-          present: true,
-          verdictType: asString(event.finalReport?.verdictType),
-          conclusion: asString(event.finalReport?.conclusion),
-          credibilityScore:
-            typeof event.finalReport?.credibilityScore === "number"
-              ? event.finalReport.credibilityScore
-              : undefined,
-          reviewPassed: event.reportReview?.passed,
-          reviewScore: event.reportReview?.score,
-          reviewIssues: event.reportReview?.issues,
-        };
+        verdict = buildVerdictFromComplete(event);
         touchThought("report:final", {
           key: "report:final",
           title: "结论与证据边界",
