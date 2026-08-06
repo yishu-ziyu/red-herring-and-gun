@@ -17209,3 +17209,137 @@ button:disabled {
   font-size: 12px;
   cursor: pointer;
 }
+
+
+/* —— Phase A–C shell polish (2026-08-06): verdict hero + breathing orb —— */
+.mps-verdict--hero {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  border-radius: 14px;
+  padding: 16px 16px 14px;
+  margin-bottom: 14px;
+}
+.mps-verdict-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  margin-top: 4px;
+}
+.mps-verdict--hero .mps-verdict-type {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #fbfbfb;
+  line-height: 1.25;
+}
+.mps-verdict--hero .mps-verdict-score {
+  font-size: 13px;
+  color: rgba(251, 251, 251, 0.55);
+}
+.mps-verdict--hero .mps-verdict-text {
+  margin-top: 10px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: rgba(251, 251, 251, 0.88);
+}
+.mps-share-advice {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.mps-share-advice-label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(251, 251, 251, 0.45);
+  margin-bottom: 4px;
+}
+.mps-share-advice-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #f0f0f0;
+}
+.mps-findings {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.mps-finding-chip {
+  font-size: 12px;
+  line-height: 1.3;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(251, 251, 251, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  max-width: 100%;
+}
+.mps-top-sources {
+  margin-top: 12px;
+}
+.mps-top-sources-label {
+  display: block;
+  font-size: 11px;
+  color: rgba(251, 251, 251, 0.45);
+  margin-bottom: 6px;
+}
+.mps-top-sources-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mps-top-sources-list a,
+.mps-top-sources-list span {
+  font-size: 13px;
+  color: #c8d4ff;
+  text-decoration: none;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.mps-top-sources-list a:hover {
+  text-decoration: underline;
+  color: #e4eaff;
+}
+.mps-top-sources-empty {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(251, 251, 251, 0.4);
+}
+
+/* thinking-orbs inspired CSS breathing for loading steps */
+.mps-orb.mps-dot--loading {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #ffffff 0%, #c8c8c8 35%, #6a6a6a 70%, #2a2a2a 100%);
+  box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.25);
+  animation: mps-orb-breathe 1.8s ease-in-out infinite;
+}
+@keyframes mps-orb-breathe {
+  0%, 100% { transform: scale(0.85); opacity: 0.7; box-shadow: 0 0 0 0 rgba(255,255,255,0.0); }
+  50% { transform: scale(1.15); opacity: 1; box-shadow: 0 0 10px 2px rgba(255,255,255,0.18); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mps-orb.mps-dot--loading { animation: none !important; opacity: 0.9; }
+}
+
+.case-dossier-view--shell .stream-rail-head strong {
+  font-weight: 550;
+}
+.case-dossier-view--shell .controller-transcript-head-meta em {
+  font-style: normal;
+  font-size: 12px;
+  color: rgba(251, 251, 251, 0.5);
+}
