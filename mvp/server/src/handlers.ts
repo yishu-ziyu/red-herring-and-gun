@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { searchClaimAcrossSources } from "./lib/sherlockStyleSearch.js";
-import { AGENT_CONFIGS, buildAgentInput, mergeSubclaimVerdicts, splitVerifiableAtoms, runClaimAtomSelfProof } from "./lib/agentConfigs.js";
+import { AGENT_CONFIGS, buildAgentInput, mergeSubclaimVerdicts, splitVerifiableAtoms, runClaimAtomSelfProof, claimAtomKey } from "./lib/agentConfigs.js";
 import { callAgentWithFallback, AgentTextProviderId, ProviderFallbackError } from "./lib/providerRouter.js";
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
@@ -159,7 +159,8 @@ function applyFormulaScoreToReport(finalReport: any, formulaResult: CredibilityS
 // 以 rumorStep 的 claimAtoms + claimAtomTypes 做确定性拆分：
 // - subclaimVerdicts 只对可核查原子 merge（复用 mergeSubclaimVerdicts 的幻觉拦截/补全）；
 // - verifiable=false 的原子进 nonVerifiableAtoms，绝不进 subclaimVerdicts（不变量）；
-// - 整句 claimType 存在且 verifiable===false 时，记录到 finalReport.claimType 供 UI 顶部显示立场横幅。
+// - 整句 stanceClaimType 存在且 verifiable===false 时，记录到 finalReport.stanceClaimType 供 UI 顶部显示立场横幅；
+// - 服务端直接下发预交错的 claimItems（已按原句序排好），前端零匹配渲染，不暴露展示顺序契约。
 function applyExclusionLayerToReport(
   finalReport: Record<string, unknown>,
   rumorStep: any,
@@ -171,43 +172,49 @@ function applyExclusionLayerToReport(
   const split = splitVerifiableAtoms(rumorOutput.claimAtoms, rumorOutput.claimAtomTypes);
   finalReport.subclaimVerdicts = mergeSubclaimVerdicts(split.verifiable, verdicts, searchSources);
   finalReport.nonVerifiableAtoms = split.nonVerifiable;
-  const claimType = rumorOutput.claimType;
-  if (claimType && typeof claimType === "object") {
-    finalReport.claimType = claimType;
+  const stanceClaimType = rumorOutput.stanceClaimType;
+  if (stanceClaimType && typeof stanceClaimType === "object") {
+    finalReport.stanceClaimType = stanceClaimType;
   }
-  // 全局原子顺序：立场原子原位插回。以 claimAtoms 原始序为基准，只保留最终展示的原子。
-  finalReport.claimAtomOrder = buildClaimAtomOrder(
+  finalReport.claimItems = buildClaimItems(
     rumorOutput.claimAtoms,
     (finalReport.subclaimVerdicts as Array<{ claimAtom: string }> | undefined) ?? [],
-    (finalReport.nonVerifiableAtoms as Array<{ text: string }> | undefined) ?? []
+    (finalReport.nonVerifiableAtoms as Array<{ text: string; type: string }> | undefined) ?? []
   );
 }
 
-// 与 agentsConfig 对 claimAtoms 的截断规则保持一致，作为 order 匹配键，避免超长原子失配。
-function truncateClaimAtomKeyForOrder(value: string, maxLength = 180): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
-}
-
-function buildClaimAtomOrder(
+// 服务端预交错展示 items：按 claimAtoms 原句全局序，用统一 claimAtomKey 匹配——
+// 命中最终 subclaimVerdicts 的原子 → 带 verdict 的 item；命中 nonVerifiableAtoms 的原子 → 不带 verdict 的立场 item；
+// 仅保留真正展示的原子（被 mergeSubclaimVerdicts 截断/过滤掉的原子不进 claimItems）。保持原句相对顺序。
+function buildClaimItems(
   claimAtoms: unknown,
   verdicts: Array<{ claimAtom: string }>,
-  nonVerifiable: Array<{ text: string }>
-): string[] {
-  const displayed = new Set<string>();
+  nonVerifiable: Array<{ text: string; type: string }>
+): Array<{ text: string; verifiable: boolean; type: string; verdict?: Record<string, unknown> }> {
+  const verdictByKey = new Map<string, Array<{ claimAtom: string }>[number]>();
   for (const v of verdicts) {
-    if (v && typeof v.claimAtom === "string") displayed.add(v.claimAtom);
+    if (v && typeof v.claimAtom === "string") verdictByKey.set(claimAtomKey(v.claimAtom), v);
   }
+  const stanceByKey = new Map<string, Array<{ text: string; type: string }>[number]>();
   for (const n of nonVerifiable) {
-    if (n && typeof n.text === "string") displayed.add(n.text);
+    if (n && typeof n.text === "string") stanceByKey.set(claimAtomKey(n.text), n);
   }
-  if (!Array.isArray(claimAtoms) || displayed.size === 0) return [];
-  const order: string[] = [];
+  const items: Array<{ text: string; verifiable: boolean; type: string; verdict?: Record<string, unknown> }> = [];
+  if (!Array.isArray(claimAtoms)) return items;
   for (const item of claimAtoms) {
     if (typeof item !== "string") continue;
-    const key = truncateClaimAtomKeyForOrder(item);
-    if (displayed.has(key)) order.push(key);
+    const key = claimAtomKey(item);
+    const v = verdictByKey.get(key);
+    if (v) {
+      items.push({ text: key, verifiable: true, type: "", verdict: v });
+      continue;
+    }
+    const n = stanceByKey.get(key);
+    if (n) {
+      items.push({ text: n.text, verifiable: false, type: n.type });
+    }
   }
-  return order;
+  return items;
 }
 
 const responseSchema = {

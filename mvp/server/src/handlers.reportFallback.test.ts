@@ -170,7 +170,7 @@ describe("deterministic final report fallback", () => {
             { text: "价值B", verifiable: false, type: "value" },
             { text: "事实C", verifiable: true, type: "fact" },
           ],
-          claimType: { verifiable: false, type: "value", reason: "整句为价值判断" },
+          stanceClaimType: { verifiable: false, type: "value", reason: "整句为价值判断" },
           rumorIndicators: [],
           detectedPatterns: [],
         },
@@ -208,12 +208,17 @@ describe("deterministic final report fallback", () => {
     // 非核查原子单独承载
     expect(report.nonVerifiableAtoms).toEqual([{ text: "价值B", type: "value" }]);
     // 整句立场信息透传
-    expect(report.claimType).toEqual({ verifiable: false, type: "value", reason: "整句为价值判断" });
-    // 全局原子顺序：立场原子按原句序原位插回（A、B、C 交错），而非可核查在前、立场沉底
-    expect(report.claimAtomOrder).toEqual(["事实A", "价值B", "事实C"]);
+    expect(report.stanceClaimType).toEqual({ verifiable: false, type: "value", reason: "整句为价值判断" });
+    // 服务端预交错 claimItems：立场原子按原句序居中（A、B、C 交错），而非可核查在前、立场沉底；
+    // 立场 item 无 verdict；可核查 item 带 verdict。
+    expect(report.claimItems.map((i: any) => i.text)).toEqual(["事实A", "价值B", "事实C"]);
+    expect(report.claimItems[0].verdict?.claimAtom).toBe("事实A");
+    expect(report.claimItems[1].verdict).toBeUndefined();
+    expect(report.claimItems[1]).toEqual({ text: "价值B", verifiable: false, type: "value" });
+    expect(report.claimItems[2].verdict?.claimAtom).toBe("事实C");
   });
 
-  it("buildDeterministicFinalReport 排除层：claimAtomOrder 只含真正展示的原子（超限原子不进）", () => {
+  it("buildDeterministicFinalReport 排除层：claimItems 只含真正展示的原子（超限原子不进）", () => {
     const steps = [
       {
         agent: "rumor_detector",
@@ -245,9 +250,9 @@ describe("deterministic final report fallback", () => {
       },
     ];
     const report = buildDeterministicFinalReport("测试命题", steps, {}, "fallback reason");
-    // compactStrings 截断到 6 条：原子7 超限不展示，也就不能进 order
-    expect(report.claimAtomOrder).toEqual(["原子1", "原子2", "原子3", "原子4", "原子5", "原子6"]);
-    expect(report.claimAtomOrder).not.toContain("原子7");
+    // compactStrings 截断到 6 条：原子7 超限不展示，也就不能进 claimItems
+    expect(report.claimItems.map((i: any) => i.text)).toEqual(["原子1", "原子2", "原子3", "原子4", "原子5", "原子6"]);
+    expect(report.claimItems.map((i: any) => i.text)).not.toContain("原子7");
   });
 
   it("buildDeterministicFinalReport 排除层：claimAtomTypes 缺失时全部可核查、不产生非核查桶", () => {
@@ -275,6 +280,6 @@ describe("deterministic final report fallback", () => {
     const report = buildDeterministicFinalReport("测试命题", steps, {}, "fallback reason");
     expect(report.subclaimVerdicts.map((r: any) => r.claimAtom)).toEqual(["原子A"]);
     expect(report.nonVerifiableAtoms).toEqual([]);
-    expect(report.claimType).toBeUndefined();
+    expect(report.stanceClaimType).toBeUndefined();
   });
 });

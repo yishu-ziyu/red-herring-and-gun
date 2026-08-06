@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import type { DemoCase, FinalReport, NonVerifiableAtom, SubclaimVerdict } from "../../lib/schemas";
+import type { DemoCase, FinalReport, SubclaimVerdict } from "../../lib/schemas";
 import {
   exportToMarkdown,
   exportToJSON,
@@ -48,38 +48,22 @@ export function ReportModal({
 
   const verdicts = report.subclaimVerdicts ?? [];
   const nonVerifiableAtoms = report.nonVerifiableAtoms ?? [];
-  const claimType = report.claimType;
+  const stanceClaimType = report.stanceClaimType;
   // 排除层：整句判定为立场/价值/预测/规范型（verifiable=false）时，报告顶部显示"立场型"横幅
-  const showStanceBanner = !!claimType && claimType.verifiable === false;
-  // 逐命题清单：可核查原子（subclaimVerdicts）与不可核查原子（nonVerifiableAtoms）并列展示，
-  // 不可核查原子保留原位、打灰标"立场型"、不订真/假。
-  const claimAtomOrder = report.claimAtomOrder;
+  const showStanceBanner = !!stanceClaimType && stanceClaimType.verifiable === false;
+  // 逐命题清单：服务端预交错的 claimItems 已按原句序排好，前端零匹配直接渲染。
   let claimItems: Array<
     | { kind: "verdict"; key: string; claimAtom: string; verdict: SubclaimVerdict }
     | { kind: "stance"; key: string; text: string; type: string }
   >;
-  if (Array.isArray(claimAtomOrder) && claimAtomOrder.length > 0) {
-    // 立场原子原位插回：按 claimAtomOrder 全局序（原句序）渲染，立场原子回到原句位置而不再沉底。
-    const verdictByText = new Map<string, SubclaimVerdict>();
-    for (const v of verdicts) {
-      if (v && typeof v.claimAtom === "string") verdictByText.set(v.claimAtom, v);
-    }
-    const stanceByText = new Map<string, NonVerifiableAtom>();
-    for (const n of nonVerifiableAtoms) {
-      if (n && typeof n.text === "string") stanceByText.set(n.text, n);
-    }
-    claimItems = [];
-    for (const text of claimAtomOrder) {
-      const verdict = verdictByText.get(text);
-      if (verdict) {
-        claimItems.push({ kind: "verdict", key: `v-${claimItems.length}`, claimAtom: verdict.claimAtom, verdict });
-      } else {
-        const stance = stanceByText.get(text);
-        if (stance) claimItems.push({ kind: "stance", key: `n-${claimItems.length}`, text: stance.text, type: stance.type });
-      }
-    }
+  if (Array.isArray(report.claimItems) && report.claimItems.length > 0) {
+    claimItems = report.claimItems.map((it, i) =>
+      it && it.verdict
+        ? { kind: "verdict", key: `v-${i}`, claimAtom: it.text, verdict: it.verdict }
+        : { kind: "stance", key: `n-${i}`, text: it.text, type: it.type }
+    );
   } else {
-    // 兜底：claimAtomOrder 缺失时回退到拼接行为，保证不崩。
+    // 兜底：claimItems 缺失（旧数据/中间态）时回退到拼接行为，保证不崩。
     claimItems = [
       ...verdicts.map((v, i) => ({ kind: "verdict" as const, key: `v-${i}`, claimAtom: v.claimAtom, verdict: v })),
       ...nonVerifiableAtoms.map((n, i) => ({ kind: "stance" as const, key: `n-${i}`, text: n.text, type: n.type })),
