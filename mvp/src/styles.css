@@ -3780,6 +3780,52 @@ button:disabled {
   border: 1px dashed var(--border-medium);
 }
 
+/* 排除层：不可核查原子（value/prediction/normative）灰标"立场型"，不订真/假 */
+.report-verdicts .verdict-stance {
+  color: var(--text-tertiary);
+  background: var(--bg-subtle, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--border-subtle);
+}
+
+.report-verdict-stance-item {
+  background: var(--bg-subtle, rgba(0, 0, 0, 0.02));
+}
+
+.verdict-stance-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* 排除层：整句立场型横幅（claimType.verifiable=false） */
+.report-stance-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-medium);
+}
+
+.stance-banner-pill {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  background: var(--bg-subtle, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--border-subtle);
+}
+
+.stance-banner-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
 .report-subclaims {
   display: grid;
   gap: 10px;
