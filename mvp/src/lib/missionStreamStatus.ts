@@ -60,15 +60,15 @@ export function summarizeMissionStreamStatus(
   }
 
   const parts = [
-    `${done} 完成`,
-    counts.running > 0 ? `${counts.running} 运行` : null,
-    counts.failed > 0 ? `${counts.failed} 失败` : null,
+    `${done} 步已完成`,
+    counts.running > 0 ? `${counts.running} 步进行中` : null,
+    counts.failed > 0 ? `${counts.failed} 步失败` : null,
   ].filter((part): part is string => Boolean(part));
 
   return {
     ...counts,
     done,
-    headline: parts.join(" · "),
-    detail: `${counts.total} 条真实事件${counts.queued > 0 ? ` · ${counts.queued} 排队` : ""}`,
+    headline: parts.join(" · ") || "过程记录",
+    detail: `共 ${counts.total} 条过程记录${counts.queued > 0 ? ` · ${counts.queued} 待处理` : ""}`,
   };
 }

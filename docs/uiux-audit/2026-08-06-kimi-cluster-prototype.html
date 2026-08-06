@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>红鲱鱼 · 过程原型 v4 · shadcn-admin + Kimi</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* Tokens adapted from satnaing/shadcn-admin theme.css (oklch) + structure from Kimi cluster */
+    :root, html.light {
+      --radius: 0.625rem;
+      --background: oklch(1 0 0);
+      --foreground: oklch(0.129 0.042 264.695);
+      --card: oklch(1 0 0);
+      --card-foreground: oklch(0.129 0.042 264.695);
+      --primary: oklch(0.208 0.042 265.755);
+      --primary-foreground: oklch(0.984 0.003 247.858);
+      --secondary: oklch(0.968 0.007 247.896);
+      --secondary-foreground: oklch(0.208 0.042 265.755);
+      --muted: oklch(0.968 0.007 247.896);
+      --muted-foreground: oklch(0.554 0.046 257.417);
+      --accent: oklch(0.968 0.007 247.896);
+      --accent-foreground: oklch(0.208 0.042 265.755);
+      --destructive: oklch(0.577 0.245 27.325);
+      --border: oklch(0.929 0.013 255.508);
+      --ring: oklch(0.704 0.04 256.788);
+      --sidebar: oklch(0.985 0.002 247);
+      --ok: oklch(0.55 0.12 155);
+      --warn: oklch(0.6 0.12 75);
+      --live: oklch(0.55 0.14 260);
+      --shadow-sm: 0 1px 2px oklch(0.2 0.02 260 / 0.04);
+      --font: "Inter", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+    }
+    html.dark {
+      --background: oklch(0.129 0.042 264.695);
+      --foreground: oklch(0.984 0.003 247.858);
+      --card: oklch(0.14 0.04 259.21);
+      --card-foreground: oklch(0.984 0.003 247.858);
+      --primary: oklch(0.929 0.013 255.508);
+      --primary-foreground: oklch(0.208 0.042 265.755);
+      --secondary: oklch(0.279 0.041 260.031);
+      --secondary-foreground: oklch(0.984 0.003 247.858);
+      --muted: oklch(0.279 0.041 260.031);
+      --muted-foreground: oklch(0.704 0.04 256.788);
+      --accent: oklch(0.279 0.041 260.031);
+      --accent-foreground: oklch(0.984 0.003 247.858);
+      --destructive: oklch(0.704 0.191 22.216);
+      --border: oklch(1 0 0 / 10%);
+      --ring: oklch(0.551 0.027 264.364);
+      --sidebar: oklch(0.15 0.035 260);
+      --ok: oklch(0.75 0.12 155);
+      --warn: oklch(0.8 0.12 85);
+      --live: oklch(0.75 0.12 260);
+      --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.25);
+    }
+
+    * { box-sizing: border-box; border-color: var(--border); }
+    html { -webkit-font-smoothing: antialiased; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      background: var(--background);
+      color: var(--foreground);
+      font-family: var(--font);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* top proto bar */
+    .proto {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--muted);
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+    .proto strong { color: var(--foreground); font-weight: 600; }
+    .proto a { color: var(--foreground); text-underline-offset: 3px; }
+    .seg {
+      display: inline-flex;
+      gap: 2px;
+      padding: 2px;
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) - 2px);
+      background: var(--background);
+    }
+    .seg button {
+      border: 0;
+      background: transparent;
+      color: var(--muted-foreground);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: calc(var(--radius) - 4px);
+      cursor: pointer;
+    }
+    .seg button.on {
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+    }
+
+    /* app shell like shadcn-admin authenticated layout */
+    .app {
+      display: grid;
+      grid-template-columns: 1fr min(340px, 34vw);
+      grid-template-rows: auto 1fr auto;
+      min-height: calc(100dvh - 40px);
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      .panel { display: none; }
+      .panel.open { display: flex; border-top: 1px solid var(--border); }
+    }
+
+    header.bar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      height: 56px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--background);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .bar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .bar-left h1 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .bar-left .sep { color: var(--border); }
+    .bar-left .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted-foreground);
+      white-space: nowrap;
+    }
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 999px;
+      background: var(--live);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--live) 18%, transparent);
+    }
+    .dot.done {
+      background: var(--ok);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--ok) 15%, transparent);
+    }
+    .btn {
+      height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) - 2px);
+      background: var(--background);
+      color: var(--foreground);
+      font: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+    }
+    .btn:hover { background: var(--accent); }
+    .btn-ghost {
+      border-color: transparent;
+      box-shadow: none;
+      color: var(--muted-foreground);
+    }
+    .btn-ghost:hover { color: var(--foreground); background: var(--accent); }
+
+    main.content {
+      padding: 20px 24px 32px;
+      overflow: auto;
+      min-width: 0;
+      background: var(--background);
+    }
+    aside.panel {
+      border-left: 1px solid var(--border);
+      background: var(--sidebar);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    /* claim card */
+    .card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+      color: var(--card-foreground);
+      box-shadow: var(--shadow-sm);
+    }
+    .claim {
+      padding: 16px 18px;
+      margin-bottom: 20px;
+    }
+    .claim .label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted-foreground);
+      margin-bottom: 6px;
+    }
+    .claim p {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 1.55;
+      letter-spacing: -0.01em;
+    }
+    .breadcrumb {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 4px;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      list-style: none;
+      margin-left: 0;
+      padding-left: 0;
+    }
+    .breadcrumb li {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .breadcrumb li:not(:last-child)::after {
+      content: "/";
+      margin-left: 6px;
+      opacity: 0.5;
+    }
+    .breadcrumb li.done { color: var(--foreground); }
+    .breadcrumb li.now {
+      color: var(--foreground);
+      font-weight: 600;
+    }
+
+    /* phase — shadcn section, not chat bubble */
+    .phase {
+      margin: 0 0 16px;
+      padding: 0 2px;
+    }
+    .phase-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      height: 20px;
+      padding: 0 7px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+    }
+    .badge.live {
+      border-color: color-mix(in oklch, var(--live) 30%, var(--border));
+      background: color-mix(in oklch, var(--live) 10%, var(--background));
+      color: var(--live);
+    }
+    .badge.ok {
+      border-color: color-mix(in oklch, var(--ok) 30%, var(--border));
+      background: color-mix(in oklch, var(--ok) 10%, var(--background));
+      color: var(--ok);
+    }
+    .badge.muted {
+      color: var(--muted-foreground);
+      background: transparent;
+    }
+    .phase-t {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+    .phase-b {
+      margin: 0 0 8px;
+      font-size: 13px;
+      color: var(--muted-foreground);
+      line-height: 1.6;
+      max-width: 42em;
+    }
+    .phase-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 4px;
+    }
+    .phase-list li {
+      font-size: 13px;
+      line-height: 1.5;
+      padding-left: 14px;
+      position: relative;
+    }
+    .phase-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.55em;
+      width: 5px;
+      height: 5px;
+      border-radius: 999px;
+      background: var(--border);
+    }
+    .phase-note {
+      margin: 8px 0 0;
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+    .phase[data-status="pending"] .phase-t { color: var(--muted-foreground); font-weight: 500; }
+
+    /* list rows — table-ish density of admin UI */
+    .row {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-align: left;
+      margin: 0 0 6px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease;
+    }
+    .row:hover { background: var(--accent); }
+    .row.on {
+      border-color: color-mix(in oklch, var(--ring) 45%, var(--border));
+      background: var(--accent);
+      box-shadow: 0 0 0 1px color-mix(in oklch, var(--ring) 25%, transparent);
+    }
+    .row .body { flex: 1; min-width: 0; }
+    .row .t {
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .row .t span {
+      color: var(--muted-foreground);
+      font-weight: 400;
+    }
+    .row .m {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin-top: 2px;
+    }
+    .row .c {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      white-space: nowrap;
+    }
+    .row .chev {
+      color: var(--muted-foreground);
+      font-size: 16px;
+      line-height: 1;
+    }
+
+    /* cluster card */
+    .cluster {
+      margin: 10px 0 18px;
+      padding: 4px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+      box-shadow: var(--shadow-sm);
+    }
+    .cluster-h {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 10px 6px;
+    }
+    .cluster-h strong {
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .cluster-h span {
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+    .agent {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 32px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 10px;
+      border: 0;
+      border-radius: calc(var(--radius) - 2px);
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+      text-align: left;
+    }
+    .agent:hover { background: var(--accent); }
+    .agent.on { background: var(--accent); }
+    .av {
+      width: 32px; height: 32px;
+      border-radius: calc(var(--radius) - 2px);
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      font-weight: 600;
+      position: relative;
+    }
+    .av i {
+      position: absolute;
+      right: -2px; bottom: -2px;
+      width: 8px; height: 8px;
+      border-radius: 999px;
+      border: 2px solid var(--card);
+      background: var(--muted-foreground);
+    }
+    .agent[data-st="done"] .av i { background: var(--ok); }
+    .agent[data-st="run"] .av i { background: var(--live); }
+    .agent .n { font-size: 13px; font-weight: 500; }
+    .agent .d {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .agent .num {
+      font-size: 11px;
+      color: var(--muted-foreground);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* verdict */
+    .verdict {
+      padding: 18px;
+      margin-bottom: 18px;
+    }
+    .verdict .label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted-foreground);
+    }
+    .verdict .tag {
+      display: inline-flex;
+      margin: 8px 0 12px;
+      height: 22px;
+      align-items: center;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      border: 1px solid color-mix(in oklch, var(--warn) 30%, var(--border));
+      color: var(--warn);
+      background: color-mix(in oklch, var(--warn) 8%, var(--background));
+    }
+    .verdict h3 {
+      margin: 0 0 4px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted-foreground);
+    }
+    .verdict .con {
+      margin: 0 0 14px;
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 1.55;
+      letter-spacing: -0.01em;
+    }
+    .verdict .share {
+      padding: 12px;
+      border-radius: calc(var(--radius) - 2px);
+      background: var(--muted);
+      margin-bottom: 14px;
+    }
+    .verdict .share p {
+      margin: 4px 0 0;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .verdict .src a {
+      display: block;
+      font-size: 13px;
+      color: var(--foreground);
+      text-decoration: none;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .verdict .src a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+    /* inspector panel */
+    .panel-h {
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-h .label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted-foreground);
+    }
+    .panel-h h2 {
+      margin: 6px 0 0;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .panel-h p {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+    .panel-b {
+      padding: 14px 16px 20px;
+      overflow: auto;
+      flex: 1;
+    }
+    .blk { margin-bottom: 14px; }
+    .blk h4 {
+      margin: 0 0 6px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted-foreground);
+    }
+    .blk p, .blk li {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--foreground);
+    }
+    .blk ul {
+      margin: 0;
+      padding-left: 1.15em;
+      display: grid;
+      gap: 4px;
+      color: var(--muted-foreground);
+    }
+    .blk ul li { color: var(--foreground); }
+    .blk a {
+      display: block;
+      font-size: 12px;
+      color: var(--foreground);
+      text-decoration: none;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) - 2px);
+      margin-bottom: 6px;
+      background: var(--card);
+    }
+    .blk a:hover { background: var(--accent); }
+    .blk a small {
+      display: block;
+      color: var(--muted-foreground);
+      margin-top: 2px;
+    }
+
+    /* bottom agent strip — shadcn tabs-ish */
+    .dock {
+      grid-column: 1 / -1;
+      border-top: 1px solid var(--border);
+      background: var(--background);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow-x: auto;
+    }
+    .dock > label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted-foreground);
+      margin-right: 4px;
+      white-space: nowrap;
+    }
+    .dock-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 34px;
+      padding: 0 10px 0 6px;
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) - 2px);
+      background: var(--card);
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      box-shadow: var(--shadow-sm);
+    }
+    .dock-item:hover { background: var(--accent); }
+    .dock-item.on {
+      border-color: color-mix(in oklch, var(--ring) 40%, var(--border));
+      background: var(--accent);
+    }
+    .dock-item .av {
+      width: 22px; height: 22px;
+      font-size: 10px;
+      border-radius: 6px;
+    }
+    .dock-item .nm { font-size: 12px; font-weight: 500; }
+    .dock-item .st {
+      font-size: 11px;
+      color: var(--muted-foreground);
+    }
+    .dock-item .st.ok { color: var(--ok); }
+    .dock-item .st.run { color: var(--live); }
+
+    .hidden { display: none !important; }
+    .section-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted-foreground);
+      margin: 18px 0 8px;
+    }
+    .foot {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 12px 20px 32px;
+      font-size: 11px;
+      color: var(--muted-foreground);
+      line-height: 1.55;
+    }
+    .foot code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="proto">
+    <div>
+      <strong>Prototype v4</strong>
+      · IA: Kimi 集群 · 视觉:
+      <a href="https://github.com/satnaing/shadcn-admin" target="_blank" rel="noreferrer">shadcn-admin</a>
+      +
+      <a href="https://www.arlan.me/vault" target="_blank" rel="noreferrer">vault</a>
+      /
+      <a href="https://orbs.jakubantalik.com/" target="_blank" rel="noreferrer">orbs</a>
+      · 非产品代码
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div class="seg" id="themeSeg">
+        <button type="button" class="on" data-theme="light">Light</button>
+        <button type="button" data-theme="dark">Dark</button>
+      </div>
+      <div class="seg" id="modeSeg">
+        <button type="button" class="on" data-mode="running">进行中</button>
+        <button type="button" data-mode="done">已完成</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="app">
+    <header class="bar">
+      <div class="bar-left">
+        <h1>红鲱鱼与枪</h1>
+        <span class="sep">|</span>
+        <span class="status"><i class="dot" id="dot"></i><span id="topMeta">公开材料对照 · 01:24</span></span>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" type="button" id="togglePanel">明细</button>
+        <button class="btn" type="button">返回</button>
+      </div>
+    </header>
+
+    <main class="content">
+      <section class="card claim">
+        <div class="label">核查对象</div>
+        <p>养老服务员职业资格考试将在 2026 年 10 月 17 日开考，考试报名于 8 月 7 日截止，全国限报 5000 人。</p>
+        <ol class="breadcrumb" id="steps">
+          <li class="done">命题拆解</li>
+          <li class="now">公开材料对照</li>
+          <li>结论与建议</li>
+        </ol>
+      </section>
+
+      <div id="stream-running">
+        <section class="phase" data-status="done">
+          <div class="phase-head">
+            <h3 class="phase-t">命题拆解</h3>
+            <span class="badge ok">已完成</span>
+          </div>
+          <p class="phase-b">原陈述含多项事实主张，已拆为可独立核验的命题，避免对复合表述作笼统判定。</p>
+          <ul class="phase-list">
+            <li>开考日期是否为 2026 年 10 月 17 日</li>
+            <li>报名截止是否为 8 月 7 日</li>
+            <li>是否存在「全国限报 5000 人」的权威表述</li>
+          </ul>
+        </section>
+
+        <button type="button" class="row" data-detail="triage">
+          <span class="body">
+            <div class="t">命题拆解记录 <span>· 3 项</span></div>
+            <div class="m">分诊输出 · 可回看</div>
+          </span>
+          <span class="c">完成</span>
+          <span class="chev">›</span>
+        </button>
+        <button type="button" class="row" data-detail="memory">
+          <span class="body">
+            <div class="t">历史案件参考 <span>· 不作本案证据</span></div>
+            <div class="m">命中 1 条</div>
+          </span>
+          <span class="c">参考</span>
+          <span class="chev">›</span>
+        </button>
+
+        <section class="phase" data-status="running" style="margin-top:22px">
+          <div class="phase-head">
+            <h3 class="phase-t">公开材料对照</h3>
+            <span class="badge live">进行中</span>
+          </div>
+          <p class="phase-b">按命题分轨核验公开来源：考试日程与官方通告、报名规则与名额表述分别取证与交叉比对。</p>
+          <ul class="phase-list">
+            <li>检索并摘录公开网页、通告及可靠转载</li>
+            <li>对来源作可靠性分层（一手 / 转载 / 不足采信）</li>
+          </ul>
+          <p class="phase-note">阶段性发现随核验进度披露，不依赖最终报告生成后再一次性呈现。</p>
+        </section>
+
+        <button type="button" class="row" data-detail="search">
+          <span class="body">
+            <div class="t">公开材料检索 <span>· 职业资格 · 报名 · 名额</span></div>
+            <div class="m">多源合并展示</div>
+          </span>
+          <span class="c">进行中</span>
+          <span class="chev">›</span>
+        </button>
+
+        <div class="cluster">
+          <div class="cluster-h">
+            <strong>协作核查</strong>
+            <span>3 个角色</span>
+          </div>
+          <button type="button" class="agent" data-st="done" data-detail="agent-fen">
+            <span class="av">01<i></i></span>
+            <span>
+              <div class="n">立案分诊员</div>
+              <div class="d">命题拆解 · 风险标注</div>
+            </span>
+            <span class="num">完成</span>
+          </button>
+          <button type="button" class="agent on" data-st="run" data-detail="agent-fact">
+            <span class="av">02<i></i></span>
+            <span>
+              <div class="n">事实核对员</div>
+              <div class="d">日程与名额 · 对照公开文本</div>
+            </span>
+            <span class="num">进行中</span>
+          </button>
+          <button type="button" class="agent" data-st="run" data-detail="agent-src">
+            <span class="av">03<i></i></span>
+            <span>
+              <div class="n">来源审阅员</div>
+              <div class="d">来源分层与采信边界</div>
+            </span>
+            <span class="num">进行中</span>
+          </button>
+        </div>
+
+        <section class="phase" data-status="pending">
+          <div class="phase-head">
+            <h3 class="phase-t">结论与转发建议</h3>
+            <span class="badge muted">未开始</span>
+          </div>
+          <p class="phase-b">待公开材料对照结束后生成判定、依据摘要与转发建议。无稳定来源时明确标注，不以空列表充当已核验。</p>
+        </section>
+      </div>
+
+      <div id="stream-done" class="hidden">
+        <section class="phase" data-status="done">
+          <div class="phase-head">
+            <h3 class="phase-t">公开材料对照已完成</h3>
+            <span class="badge ok">已完成</span>
+          </div>
+          <p class="phase-b">现有公开文本不足以完整支撑「开考日 + 报名截止 + 全国限报 5000」三项主张同时成立。</p>
+        </section>
+
+        <section class="card verdict">
+          <div class="label">核查结果</div>
+          <div class="tag">存疑 · 不宜当作已核实消息</div>
+          <h3>一句话结论</h3>
+          <p class="con">尚未找到与该开考日、报名截止及限报名额完全对齐的权威单源确认，不能作为确定政策信息转发。</p>
+          <div class="share">
+            <h3>转发建议</h3>
+            <p>暂缓整段转发。若需讨论，应附官方出处，并标明「待核实」。</p>
+          </div>
+          <div class="src">
+            <h3>关键来源</h3>
+            <a href="#">公开报名相关页面（示意）— 可见通道，未写明该限报数字</a>
+            <a href="#">转载资讯（示意）— 二手表述，证据强度弱</a>
+          </div>
+        </section>
+
+        <div class="section-label">过程回放</div>
+        <button type="button" class="row" data-detail="triage">
+          <span class="body">
+            <div class="t">命题拆解记录 <span>· 3 项</span></div>
+          </span>
+          <span class="c">完成</span>
+          <span class="chev">›</span>
+        </button>
+        <button type="button" class="row" data-detail="search">
+          <span class="body">
+            <div class="t">公开材料检索 <span>· 12 条命中</span></div>
+          </span>
+          <span class="c">完成</span>
+          <span class="chev">›</span>
+        </button>
+        <div class="cluster">
+          <div class="cluster-h"><strong>协作核查</strong><span>4 个角色 · 全部完成</span></div>
+          <button type="button" class="agent" data-st="done" data-detail="agent-fen">
+            <span class="av">01<i></i></span>
+            <span><div class="n">立案分诊员</div><div class="d">3 项命题 · 已交接</div></span>
+            <span class="num">完成</span>
+          </button>
+          <button type="button" class="agent on" data-st="done" data-detail="agent-fact-done">
+            <span class="av">02<i></i></span>
+            <span><div class="n">事实核对员</div><div class="d">证据不足完整确认</div></span>
+            <span class="num">完成</span>
+          </button>
+          <button type="button" class="agent" data-st="done" data-detail="agent-src-done">
+            <span class="av">03<i></i></span>
+            <span><div class="n">来源审阅员</div><div class="d">一手弱 / 转载多</div></span>
+            <span class="num">完成</span>
+          </button>
+          <button type="button" class="agent" data-st="done" data-detail="agent-rep">
+            <span class="av">04<i></i></span>
+            <span><div class="n">报告收束员</div><div class="d">判定与建议已生成</div></span>
+            <span class="num">完成</span>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <aside class="panel" id="panel">
+      <div class="panel-h">
+        <div class="label">明细</div>
+        <h2 id="sideTitle">选择一项</h2>
+        <p id="sideSub">点主栏动作或角色后在此展开</p>
+      </div>
+      <div class="panel-b" id="sideBody">
+        <div class="blk">
+          <p style="color:var(--muted-foreground)">默认不展示完整事件总线。下钻后可见摘录、分层与来源。</p>
+        </div>
+      </div>
+    </aside>
+
+    <nav class="dock" id="dock" aria-label="本案角色"></nav>
+  </div>
+
+  <div class="foot">
+    参考：<a href="https://github.com/satnaing/shadcn-admin">satnaing/shadcn-admin</a>
+    （oklch token、card/border/muted、header 56、list density）
+    · 结构仍是 Kimi 可点集群
+    · <code>docs/uiux-audit/2026-08-06-kimi-cluster-prototype.html</code>
+  </div>
+
+  <script>
+    const details = {
+      triage: {
+        title: "命题拆解记录",
+        sub: "立案分诊 · 已完成",
+        html: `<div class="blk"><h4>范围</h4><p>将复合陈述拆为可独立核验命题，不作笼统真伪判定。</p></div>
+          <div class="blk"><h4>命题</h4><ul>
+            <li>开考日期是否为 2026-10-17</li>
+            <li>报名截止是否为 8 月 7 日</li>
+            <li>是否存在全国限报 5000 的权威表述</li>
+          </ul></div>`
+      },
+      memory: {
+        title: "历史案件参考",
+        sub: "仅策略参考 · 非证据",
+        html: `<div class="blk"><h4>说明</h4><p>仅作检索策略参考，不计入本案证据链。</p></div>
+          <div class="blk"><h4>命中</h4><p>职业资格考试名额类线索 1 条。</p></div>`
+      },
+      search: {
+        title: "公开材料检索",
+        sub: "多源合并",
+        html: `<div class="blk"><h4>展示原则</h4><p>用户层合并为一次检索动作；引擎名称不进入主标题。</p></div>
+          <div class="blk"><h4>摘录</h4><ul>
+            <li>报名入口讨论可见，日期表述不一致</li>
+            <li>自媒体转载多，一手通告少</li>
+          </ul></div>
+          <div class="blk"><h4>来源</h4>
+            <a href="#">example.gov.cn<small>示意 · 官方站点</small></a>
+            <a href="#">news.example.com<small>示意 · 转载</small></a>
+          </div>`
+      },
+      "agent-fen": {
+        title: "立案分诊员",
+        sub: "01 · 完成",
+        html: `<div class="blk"><h4>职责</h4><p>命题拆解与风险标注，不直接判定真伪。</p></div>
+          <div class="blk"><h4>产出</h4><ul><li>3 项可核验命题</li><li>风险：日期与数字组合易被二次改写传播</li></ul></div>`
+      },
+      "agent-fact": {
+        title: "事实核对员",
+        sub: "02 · 进行中",
+        html: `<div class="blk"><h4>任务</h4><p>对照公开文本核验开考日、截止日、限报人数。</p></div>
+          <div class="blk"><h4>状态</h4><p>已有部分命中，尚不足以形成「已确认」。</p></div>`
+      },
+      "agent-fact-done": {
+        title: "事实核对员",
+        sub: "02 · 完成",
+        html: `<div class="blk"><h4>倾向</h4><p>公开材料无法完整支撑三项主张同时成立，倾向存疑。</p></div>`
+      },
+      "agent-src": {
+        title: "来源审阅员",
+        sub: "03 · 进行中",
+        html: `<div class="blk"><h4>任务</h4><p>对命中材料分层：一手 / 转载 / 不足采信。</p></div>
+          <div class="blk"><h4>空态</h4><p>无稳定链接时明确标注「未挂接」，不放置空模块充数。</p></div>`
+      },
+      "agent-src-done": {
+        title: "来源审阅员",
+        sub: "03 · 完成",
+        html: `<div class="blk"><h4>分层</h4><ul><li>一手：弱</li><li>转载：多</li><li>不足采信：若干</li></ul></div>`
+      },
+      "agent-rep": {
+        title: "报告收束员",
+        sub: "04 · 完成",
+        html: `<div class="blk"><h4>交付</h4><p>判定标签、一句话结论、转发建议、关键来源。</p></div>`
+      }
+    };
+
+    const dockRunning = [
+      { label: "分诊", st: "完成", stClass: "ok", detail: "agent-fen" },
+      { label: "核对", st: "进行中", stClass: "run", detail: "agent-fact" },
+      { label: "来源", st: "进行中", stClass: "run", detail: "agent-src" },
+      { label: "收束", st: "排队", stClass: "", detail: "agent-rep" }
+    ];
+    const dockDone = [
+      { label: "分诊", st: "完成", stClass: "ok", detail: "agent-fen" },
+      { label: "核对", st: "完成", stClass: "ok", detail: "agent-fact-done" },
+      { label: "来源", st: "完成", stClass: "ok", detail: "agent-src-done" },
+      { label: "收束", st: "完成", stClass: "ok", detail: "agent-rep" }
+    ];
+
+    const sideTitle = document.getElementById("sideTitle");
+    const sideSub = document.getElementById("sideSub");
+    const sideBody = document.getElementById("sideBody");
+    const dock = document.getElementById("dock");
+
+    function showDetail(key) {
+      const d = details[key];
+      if (!d) return;
+      sideTitle.textContent = d.title;
+      sideSub.textContent = d.sub;
+      sideBody.innerHTML = d.html;
+      document.querySelectorAll("[data-detail]").forEach((el) => {
+        el.classList.toggle("on", el.getAttribute("data-detail") === key);
+      });
+    }
+
+    function renderDock(list) {
+      dock.innerHTML = "<label>角色</label>";
+      list.forEach((a) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "dock-item";
+        b.setAttribute("data-detail", a.detail);
+        b.innerHTML = `<span class="av">${a.label.slice(0, 1)}</span><span class="nm">${a.label}</span><span class="st ${a.stClass}">${a.st}</span>`;
+        b.addEventListener("click", () => showDetail(a.detail));
+        dock.appendChild(b);
+      });
+    }
+
+    document.querySelectorAll("[data-detail]").forEach((el) => {
+      el.addEventListener("click", () => showDetail(el.getAttribute("data-detail")));
+    });
+
+    document.querySelectorAll("#modeSeg button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#modeSeg button").forEach((b) => b.classList.remove("on"));
+        btn.classList.add("on");
+        const running = btn.getAttribute("data-mode") === "running";
+        document.getElementById("stream-running").classList.toggle("hidden", !running);
+        document.getElementById("stream-done").classList.toggle("hidden", running);
+        document.getElementById("dot").classList.toggle("done", !running);
+        document.getElementById("topMeta").textContent = running
+          ? "公开材料对照 · 01:24"
+          : "核查完成 · 04:12";
+        document.getElementById("steps").innerHTML = running
+          ? '<li class="done">命题拆解</li><li class="now">公开材料对照</li><li>结论与建议</li>'
+          : '<li class="done">命题拆解</li><li class="done">公开材料对照</li><li class="done">结论与建议</li>';
+        renderDock(running ? dockRunning : dockDone);
+        showDetail(running ? "agent-fact" : "agent-fact-done");
+      });
+    });
+
+    document.querySelectorAll("#themeSeg button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#themeSeg button").forEach((b) => b.classList.remove("on"));
+        btn.classList.add("on");
+        const t = btn.getAttribute("data-theme");
+        document.documentElement.classList.toggle("dark", t === "dark");
+        document.documentElement.classList.toggle("light", t === "light");
+      });
+    });
+
+    document.getElementById("togglePanel").addEventListener("click", () => {
+      document.getElementById("panel").classList.toggle("open");
+    });
+
+    renderDock(dockRunning);
+    showDetail("agent-fact");
+  </script>
+</body>
+</html>

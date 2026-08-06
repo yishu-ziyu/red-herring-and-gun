@@ -51,3 +51,8 @@ mvp/multi-agent-viz-research/
 # Misc screenshots and scratch summary drafts
 1.png
 mvp/tmp/
+
+# Local clones / nested worktrees (never commit)
+vendor/
+.worktrees/
+.playwright-mcp/

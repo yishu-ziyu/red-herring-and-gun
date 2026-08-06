@@ -173,9 +173,9 @@ const WORKBENCH_FOCUS_LABEL: Record<WorkbenchFocus, string> = {
 
 const CONTROLLER_EVENT_KIND_LABEL: Record<ControllerEventKind, string> = {
   thought: "主控思考",
-  tool: "工具调用",
-  agent: "子 Agent",
-  planner: "中控规划",
+  tool: "检索动作",
+  agent: "核查步骤",
+  planner: "核查规划",
   debate: "冲突调解",
   report: "报告收束",
   error: "阻塞",
@@ -391,6 +391,12 @@ function displayAgentName(agent?: string | null) {
       return "冲突调解室";
     case "missioncontrol":
       return "中控台";
+    case "agentmemorysearch":
+    case "memorysearch":
+      return "历史案件参考";
+    case "agentmemorywrite":
+    case "memorywrite":
+      return "案件记忆归档";
     case "tool":
       return "工具";
     case "unknown":
@@ -416,6 +422,17 @@ function displayAgentText(text?: string | null) {
     .replace(/ReportComposer/g, "报告收束员")
     .replace(/Planner/g, "中控规划器")
     .replace(/Consensus/g, "冲突调解室")
+    .replace(/Agent Memory Search/gi, "历史案件参考")
+    .replace(/Agent Memory Write/gi, "案件记忆归档")
+    .replace(/Memory Search/gi, "历史案件参考")
+    .replace(/Memory Write/gi, "案件记忆归档")
+    .replace(/360\s*\/\s*AnySearch\s*\/\s*Metaso\s*\/\s*Tavily\s*\/\s*Exa/gi, "公开材料检索")
+    .replace(/Parallel Search/gi, "公开材料检索")
+    .replace(/360 AI Search/gi, "公开材料检索")
+    .replace(/AnySearch/gi, "公开材料检索")
+    .replace(/Metaso/gi, "公开材料检索")
+    .replace(/Tavily/gi, "公开材料检索")
+    .replace(/\bExa\b/gi, "公开材料检索")
     .replace(/Agent/g, "智能体");
 }
 
@@ -740,28 +757,326 @@ function operationIconForEvent(event: ControllerProcessEvent) {
   return "/tool-icons/wrench.svg";
 }
 
-function buildControllerTranscript(controllerEvents: ControllerProcessEvent[]): ControllerTranscriptItem[] {
-  const transcript: ControllerTranscriptItem[] = [];
+/** 流式披露三阶段（与 Kimi 集群原型对齐；随事件推进出现，不在 t=0 一次铺满） */
+const STREAM_PHASES = [
+  {
+    id: 0,
+    code: "01",
+    title: "命题拆解",
+    blurb: "将原陈述拆为可独立核验的命题，避免对复合表述作笼统判定。",
+  },
+  {
+    id: 1,
+    code: "02",
+    title: "公开材料对照",
+    blurb: "按命题分轨核验公开来源，并对来源作可靠性分层。",
+  },
+  {
+    id: 2,
+    code: "03",
+    title: "结论与转发建议",
+    blurb: "待公开材料对照结束后生成判定、依据摘要与转发建议。",
+  },
+] as const;
 
-  for (let index = 0; index < controllerEvents.length; index += 1) {
-    const event = controllerEvents[index];
+function streamPhaseIndexForEvent(event: ControllerProcessEvent): number {
+  if (event.kind === "report" || event.focus === "report" || event.status === "final") return 2;
+  if (event.kind === "debate") return 1;
+  if (event.kind === "error") return Math.max(0, streamPhaseIndexForFocus(event.focus));
 
-    if (event.kind === "agent") {
-      const rows = [event];
-      let cursor = index + 1;
+  const agentId = controllerEventAgentId(event);
+  if (agentId === "report_composer") return 2;
+  if (agentId === "rumor_detector") return 0;
+  if (agentId === "fact_checker" || agentId === "source_validator") return 1;
 
-      while (cursor < controllerEvents.length && controllerEvents[cursor].kind === "agent") {
-        rows.push(controllerEvents[cursor]);
-        cursor += 1;
+  if (event.kind === "tool") {
+    const blob = normalizeAgent(`${event.agentName} ${event.title} ${event.detail}`);
+    if (blob.includes("memory")) return 0;
+    return 1;
+  }
+
+  return streamPhaseIndexForFocus(event.focus);
+}
+
+function streamPhaseIndexForFocus(focus: WorkbenchFocus): number {
+  switch (focus) {
+    case "report":
+      return 2;
+    case "search":
+    case "evidence":
+    case "reasoning":
+      return 1;
+    case "decomposition":
+    case "memory":
+    case "dispatch":
+    default:
+      return 0;
+  }
+}
+
+function looksLikeFullClaimEcho(text: string, claim: string): boolean {
+  const body = text.replace(/\s+/g, " ").trim();
+  const seed = claim.replace(/\s+/g, " ").trim();
+  if (!body || !seed) return false;
+  if (body === seed) return true;
+  if (seed.length >= 16 && body.includes(seed.slice(0, Math.min(48, seed.length)))) return true;
+  if (/接收查询[：:]/.test(body) && seed.length >= 12 && body.includes(seed.slice(0, 20))) return true;
+  if (/先把输入转成可核查任务[：:]/.test(body)) return true;
+  if (/先读取本地案件库/.test(body) && seed.length >= 12 && body.includes(seed.slice(0, 20))) return true;
+  return false;
+}
+
+function humanStreamTitle(event: ControllerProcessEvent): string {
+  const raw = displayAgentText(event.title).replace(/^\s*(检索|返回|失败|搜索|运行|写入|读取)\s*[|｜]\s*/i, "").trim();
+  const blob = normalizeAgent(`${event.agentName} ${event.title} ${event.detail}`);
+
+  if (blob.includes("memorysearch") || /历史案件参考/.test(`${event.agentName}${raw}`)) {
+    if (event.status === "failed" || /失败/.test(event.title)) return "历史案件参考 · 未命中可用记录";
+    if (event.status === "completed" || /返回|命中|完成/.test(event.title)) return "历史案件参考 · 已返回";
+    return "历史案件参考";
+  }
+
+  if (event.kind === "tool") {
+    if (blob.includes("memorywrite")) {
+      return event.status === "completed" ? "案件记忆归档 · 已写入" : "案件记忆归档";
+    }
+    if (event.status === "failed" || /失败/.test(event.title)) return "公开材料检索 · 未成功";
+    if (event.status === "completed" || /返回|完成|命中/.test(event.title)) return "公开材料检索 · 已返回";
+    return "公开材料检索";
+  }
+
+  if (event.kind === "report") return raw || "结论与转发建议";
+  if (event.kind === "debate") return raw || "冲突点交叉质询";
+  if (event.kind === "planner") return raw || "制定核查路径";
+  if (event.kind === "error") return raw || "核查受阻";
+  return raw || event.title;
+}
+
+function humanStreamDetail(event: ControllerProcessEvent, claim: string): string {
+  const detail = displayAgentText(event.detail).replace(/\s+/g, " ").trim();
+  if (!detail) {
+    if (event.kind === "tool") return "动作已记录，可在右侧查看明细。";
+    return "";
+  }
+
+  if (looksLikeFullClaimEcho(detail, claim)) {
+    if (event.kind === "tool") {
+      const blob = normalizeAgent(`${event.agentName} ${event.title}`);
+      if (blob.includes("memory")) return "对照历史类似案件，不作本案直接证据。";
+      return "按命题检索公开网页与通告。";
+    }
+    if (event.kind === "thought" || event.kind === "planner") {
+      return "已建立可追踪核查任务，随后按命题推进。";
+    }
+  }
+
+  // 工具行：query 过长时不当作正文
+  if (event.kind === "tool" && event.query?.trim()) {
+    const q = event.query.trim();
+    if (q.length > 40 || looksLikeFullClaimEcho(q, claim)) {
+      if (/命中|返回|来源|支持|反驳|候选/.test(detail) && !looksLikeFullClaimEcho(detail, claim)) {
+        return detail.length > 96 ? `${detail.slice(0, 93)}…` : detail;
       }
+      const blob = normalizeAgent(`${event.agentName} ${event.title}`);
+      if (blob.includes("memory")) return "对照历史类似案件，不作本案直接证据。";
+      return "按命题检索公开网页与通告。";
+    }
+  }
 
-      index = cursor - 1;
+  return detail.length > 96 ? `${detail.slice(0, 93)}…` : detail;
+}
+
+function streamPhaseStatusLabel(
+  phaseId: number,
+  stageIdx: number,
+  items: ControllerTranscriptItem[],
+  runStatus: RunStatus,
+  finalReport: Record<string, unknown> | null
+): { status: "pending" | "running" | "completed"; label: string } {
+  if (finalReport && phaseId <= 2 && stageIdx >= 2 && phaseId < 2) {
+    return { status: "completed", label: "已完成" };
+  }
+  if (finalReport && phaseId === 2) {
+    return { status: "completed", label: "已完成" };
+  }
+
+  const hasRunning = items.some((item) => item.status === "running" || item.status === "queued");
+  const hasFailed = items.some((item) => item.status === "failed");
+  const allDone =
+    items.length > 0 &&
+    items.every((item) => item.status === "completed" || item.status === "final");
+
+  if (hasRunning) return { status: "running", label: "进行中" };
+  if (hasFailed && !allDone) return { status: "running", label: "需关注" };
+  if (allDone || stageIdx > phaseId) return { status: "completed", label: "已完成" };
+  if (stageIdx === phaseId && runStatus === "running") return { status: "running", label: "进行中" };
+  if (items.length === 0) return { status: "pending", label: "未开始" };
+  return { status: "pending", label: "未开始" };
+}
+
+function streamStatusRank(status: StreamItemStatus): number {
+  if (status === "running") return 4;
+  if (status === "queued") return 3;
+  if (status === "failed") return 2;
+  if (status === "completed" || status === "final") return 1;
+  return 0;
+}
+
+/** 同族事件合并键：历史案件 start/return、同角色 agent 多次状态 */
+function streamCollapseKey(event: ControllerProcessEvent): string {
+  const blob = normalizeAgent(`${event.agentName} ${event.title} ${event.detail}`);
+  if (event.kind === "agent") {
+    const agentId = controllerEventAgentId(event);
+    return agentId ? `agent:${agentId}` : `agent:${event.id}`;
+  }
+  if (blob.includes("memorysearch") || /历史案件参考/.test(`${event.title}${event.agentName}`)) {
+    return "fam:memory-search";
+  }
+  if (blob.includes("memorywrite") || /本地卷宗|案件记忆|保存本案|Agent Memory Write/i.test(`${event.title}${event.agentName}`)) {
+    return "fam:memory-write";
+  }
+  if (
+    event.kind === "tool" &&
+    (/公开材料检索|搜索提前接力|parallel search|anysearch|metaso|tavily|\bexa\b|360/i.test(blob) ||
+      blob.includes("search"))
+  ) {
+    return "fam:web-search";
+  }
+  return `id:${event.id}`;
+}
+
+function preferStreamEvent(prev: ControllerProcessEvent, next: ControllerProcessEvent): ControllerProcessEvent {
+  const rankNext = streamStatusRank(next.status);
+  const rankPrev = streamStatusRank(prev.status);
+  if (rankNext > rankPrev) return next;
+  if (rankNext < rankPrev) {
+    // 完成态覆盖排队，但 running 优先于 completed（进行中更新）
+    if (rankPrev === 4) return prev;
+  }
+  // 同 rank：保留信息更长的 detail / 更新的 title
+  if ((next.detail || "").length >= (prev.detail || "").length) {
+    return {
+      ...next,
+      // 若 next 是完成、prev 是 running，用 next
+      status: streamStatusRank(next.status) >= streamStatusRank(prev.status) ? next.status : prev.status,
+    };
+  }
+  return {
+    ...prev,
+    status: streamStatusRank(next.status) > streamStatusRank(prev.status) ? next.status : prev.status,
+    detail: prev.detail || next.detail,
+    result: next.result ?? prev.result,
+  };
+}
+
+/**
+ * 流式时间线：跨间隔合并同角色 / 同工具族，避免「两个立案分诊员」与历史案件刷屏。
+ * 非 agent 行按首次出现顺序；协作集群在首次出现任一 agent 的位置插入一张。
+ */
+function buildControllerTranscript(controllerEvents: ControllerProcessEvent[]): ControllerTranscriptItem[] {
+  const collapsed = new Map<string, ControllerProcessEvent>();
+  const order: string[] = [];
+
+  for (const event of controllerEvents) {
+    const key = streamCollapseKey(event);
+    const prev = collapsed.get(key);
+    if (!prev) {
+      collapsed.set(key, event);
+      order.push(key);
+      continue;
+    }
+    collapsed.set(key, preferStreamEvent(prev, event));
+  }
+
+  const transcript: ControllerTranscriptItem[] = [];
+  const agentRows: ControllerProcessEvent[] = [];
+  let agentClusterPlaced = false;
+
+  const flushAgentCluster = () => {
+    if (agentRows.length === 0 || agentClusterPlaced) return;
+    agentClusterPlaced = true;
+    const rows = [...agentRows];
+    transcript.push({
+      id: `agent-cluster-${rows.map((row) => controllerEventAgentId(row) || row.id).join("-")}`,
+      type: "agent_cluster",
+      title: rows.length > 1 ? "协作核查" : humanStreamTitle(rows[0]),
+      detail: rows.length > 1 ? `${rows.length} 个角色` : humanStreamDetail(rows[0], ""),
+      status: rows.some((row) => row.status === "running" || row.status === "queued")
+        ? "running"
+        : rows.some((row) => row.status === "failed")
+          ? "failed"
+          : rows.every((row) => row.status === "completed" || row.status === "final")
+            ? "completed"
+            : rows[0].status,
+      focus: rows[rows.length - 1].focus,
+      kind: "agent",
+      event: rows[rows.length - 1],
+      rows,
+    });
+  };
+
+  for (const key of order) {
+    const event = collapsed.get(key);
+    if (!event) continue;
+
+    if (key.startsWith("agent:")) {
+      agentRows.push(event);
+      // 占位：第一次碰到 agent 时先不 flush，等扫完所有 key 再写一张集群
+      continue;
+    }
+
+    // 在第一个非 agent 之前若已有 agent，先落集群（保持时间线位置靠前）
+    if (agentRows.length > 0 && !agentClusterPlaced) {
+      flushAgentCluster();
+    }
+
+    if (event.kind === "tool" || key.startsWith("fam:")) {
+      const asTool = event.kind === "tool" || key.startsWith("fam:web-search") || key.startsWith("fam:memory");
       transcript.push({
-        id: `agent-cluster-${rows.map((row) => row.id).join("-")}`,
-        type: "agent_cluster",
-        title: rows.length > 1 ? "Agent Team" : rows[0].title,
-        detail: rows.length > 1 ? `${rows.length} 个并行任务` : rows[0].detail,
-        status: rows.some((row) => row.status === "running")
+        id: `operation-${event.id}`,
+        type: asTool || event.kind === "tool" ? "operation" : "narration",
+        title: humanStreamTitle(event),
+        detail: event.detail,
+        status: event.status,
+        focus: event.focus,
+        kind: event.kind === "tool" ? "tool" : event.kind,
+        event,
+      });
+      // force operation type for collapsed families that might be thought-kind
+      const last = transcript[transcript.length - 1];
+      if (key.startsWith("fam:memory") || key.startsWith("fam:web-search")) {
+        last.type = "operation";
+        last.kind = "tool";
+      }
+      continue;
+    }
+
+    transcript.push({
+      id: `narration-${event.id}`,
+      type: "narration",
+      title: humanStreamTitle(event),
+      detail: event.detail,
+      status: event.status,
+      focus: event.focus,
+      kind: event.kind,
+      event,
+    });
+  }
+
+  // 若流以 agent 结尾或只有 agent
+  if (agentRows.length > 0 && !agentClusterPlaced) {
+    flushAgentCluster();
+  } else if (agentRows.length > 0 && agentClusterPlaced) {
+    // 更新已放置集群的 rows 为最终 agentRows（order 扫完后 agentRows 已齐）
+    const idx = transcript.findIndex((item) => item.type === "agent_cluster");
+    if (idx >= 0) {
+      const rows = [...agentRows];
+      transcript[idx] = {
+        ...transcript[idx],
+        id: `agent-cluster-${rows.map((row) => controllerEventAgentId(row) || row.id).join("-")}`,
+        title: rows.length > 1 ? "协作核查" : humanStreamTitle(rows[0]),
+        detail: rows.length > 1 ? `${rows.length} 个角色` : humanStreamDetail(rows[0], ""),
+        status: rows.some((row) => row.status === "running" || row.status === "queued")
           ? "running"
           : rows.some((row) => row.status === "failed")
             ? "failed"
@@ -769,37 +1084,10 @@ function buildControllerTranscript(controllerEvents: ControllerProcessEvent[]): 
               ? "completed"
               : rows[0].status,
         focus: rows[rows.length - 1].focus,
-        kind: "agent",
         event: rows[rows.length - 1],
         rows,
-      });
-      continue;
+      };
     }
-
-    if (event.kind === "tool") {
-      transcript.push({
-        id: `operation-${event.id}`,
-        type: "operation",
-        title: event.title.includes("|") ? event.title : `${operationVerbForEvent(event)} | ${event.title}`,
-        detail: event.detail,
-        status: event.status,
-        focus: event.focus,
-        kind: event.kind,
-        event,
-      });
-      continue;
-    }
-
-    transcript.push({
-      id: `narration-${event.id}`,
-      type: "narration",
-      title: event.title,
-      detail: event.detail,
-      status: event.status,
-      focus: event.focus,
-      kind: event.kind,
-      event,
-    });
   }
 
   return transcript;
@@ -1589,16 +1877,112 @@ function formatElapsed(ms: number) {
 function runStatusText(runStatus: RunStatus, elapsedMs: number, finalReport: Record<string, unknown> | null) {
   if (runStatus === "completed") return finalReport ? "核查完成" : "流程完成";
   if (runStatus === "failed") return "核查中断";
-  if (runStatus === "running" && elapsedMs >= 90000) return "仍在等待模型返回";
-  if (runStatus === "running" && elapsedMs >= 45000) return "模型调用耗时较长";
-  if (runStatus === "running") return "实时核查中";
+  if (runStatus === "running" && elapsedMs >= 90000) return "还在整理证据，请稍候";
+  if (runStatus === "running" && elapsedMs >= 45000) return "对照公开材料中";
+  if (runStatus === "running") return "正在核查";
   return "准备核查";
+}
+
+/** 人话三态：理解 → 对照公开报道 → 整理结论（一级锚点） */
+function humanStageLabel(params: {
+  runStatus: RunStatus;
+  finalReport: Record<string, unknown> | null;
+  steps: HandoffStep[];
+  displayPhase: "agents" | "search" | "evidence" | "verdict";
+}): string {
+  if (params.runStatus === "failed") return "核查中断";
+  if (params.finalReport || params.displayPhase === "verdict") return "整理结论";
+  const hasSearch = params.steps.some((s) =>
+    /fact_checker|source_validator|search/i.test(s.agent)
+  );
+  const hasRumor = params.steps.some((s) => /rumor/i.test(s.agent));
+  if (params.displayPhase === "evidence" || hasSearch) return "对照公开报道";
+  if (params.displayPhase === "search" || hasRumor) return "理解你在说什么";
+  if (params.runStatus === "running") return "理解你在说什么";
+  return "准备开始";
+}
+
+function humanStageIndex(stage: string): number {
+  if (stage.includes("理解")) return 0;
+  if (stage.includes("对照")) return 1;
+  if (stage.includes("整理") || stage.includes("完成") || stage.includes("中断")) return 2;
+  return 0;
+}
+
+/** 从步骤与事件中抽出可扫读的关键发现（等待预告 + 结果） */
+function extractLiveKeyFindings(params: {
+  steps: HandoffStep[];
+  controllerEvents: ControllerProcessEvent[];
+  finalReport: Record<string, unknown> | null;
+  max?: number;
+}): string[] {
+  const max = params.max ?? 5;
+  const out: string[] = [];
+  const push = (raw: string) => {
+    const text = raw.replace(/\s+/g, " ").trim();
+    if (text.length < 12) return;
+    // 过滤工具/模型噪音
+    if (/minimax|360gpt|Parallel Search|Memory Search|工具调用/i.test(text)) return;
+    if (out.some((x) => x === text || x.includes(text.slice(0, 40)) || text.includes(x.slice(0, 40)))) return;
+    out.push(text.length > 160 ? `${text.slice(0, 157)}…` : text);
+  };
+
+  if (params.finalReport) {
+    // 完整结论留给结果首屏；这里只抬升依据与线索，避免同屏双份结论
+    for (const item of evidenceChainItems(params.finalReport).slice(0, 3)) {
+      if (item.finding) push(item.finding);
+      if (item.evidence) push(item.evidence);
+    }
+    const recommendation = reportText(params.finalReport, "recommendation");
+    if (recommendation) push(recommendation);
+  }
+
+  for (const step of params.steps) {
+    const output = step.output || {};
+    const findings = Array.isArray(output.keyFindings) ? output.keyFindings : [];
+    for (const f of findings) {
+      if (typeof f === "string") push(f);
+    }
+    const kf = typeof output.analysis === "string" ? output.analysis : "";
+    if (step.agent.includes("fact") && kf) push(kf.slice(0, 160));
+  }
+
+  // 冲突调解 / 报告收束标题往往带人话结论
+  for (const event of params.controllerEvents) {
+    if (event.kind === "debate" || event.kind === "report") {
+      if (event.title && !/开始|派发|合成|计算 FIRE/i.test(event.title)) {
+        const combined = `${event.title}${event.detail ? `：${event.detail}` : ""}`;
+        if (/不实|属实|假|真|拼接|辟谣|无法核实|夸大|未能|未发现|确认/i.test(combined)) {
+          push(combined);
+        }
+      }
+      if (event.detail && /不实|拼接|辟谣|否认|无法核实|属实/i.test(event.detail)) {
+        push(event.detail);
+      }
+    }
+  }
+
+  return out.slice(0, max);
+}
+
+/** 转发建议：优先 recommendation，否则按 verdict 推导 */
+function shareAdviceFromReport(finalReport: Record<string, unknown> | null): string {
+  if (!finalReport) return "";
+  const recommendation = reportText(finalReport, "recommendation");
+  if (recommendation) return recommendation;
+  const verdict = (reportText(finalReport, "verdictType") || "").toLowerCase();
+  if (verdict === "false" || verdict === "rumor") return "不建议转发。现有公开材料不支持该说法。";
+  if (verdict === "true") return "可谨慎引用，请附带来源链接，勿二次改写。";
+  if (verdict === "partial" || verdict === "mixed") return "不宜整段转发。可说明「部分成立、有限定条件」。";
+  if (verdict === "unverified" || verdict === "unknown") return "证据不足，先不要转发；等待更可靠来源。";
+  return "请先阅读结论与来源，再决定是否转发。";
 }
 
 function currentModelLine(steps: HandoffStep[], currentStep: HandoffStep | null) {
   const step = currentStep ?? [...steps].reverse().find((item) => item.model);
-  if (!step?.model) return "等待模型链路";
-  return `${step.agentName} · ${step.model}`;
+  if (!step?.model) return "链路准备中";
+  // 默认不暴露 provider:model 字符串给主路径
+  return step.agentName || "核查进行中";
 }
 
 function runFallbackNotice(steps: HandoffStep[]) {
@@ -2220,7 +2604,7 @@ function agentStartTitle(step: HandoffStep) {
     case "report_composer":
       return "开始报告收束";
     default:
-      return "派发子 Agent";
+      return "派发核查步骤";
   }
 }
 
@@ -2235,29 +2619,26 @@ function agentCompleteTitle(step: HandoffStep) {
     case "report_composer":
       return "证据边界已收束";
     default:
-      return "子 Agent 已交付";
+      return "核查步骤已交付";
   }
 }
 
 function toolStartTitle(toolName?: string | null) {
-  const toolLabel = toolDisplayName(toolName);
   const normalized = normalizeAgent(toolName);
-  if (normalized.includes("memorysearch")) return `检索 | ${toolLabel}`;
-  if (normalized.includes("memorywrite")) return `写入 | ${toolLabel}`;
-  if (normalized.includes("stepfun") || normalized.includes("vision")) return `读取 | ${toolLabel}`;
-  if (normalized.includes("parallel")) return `搜索 | ${toolLabel}`;
-  if (isSearchToolName(toolName)) return `搜索 | ${toolLabel}`;
-  return `运行 | ${toolLabel}`;
+  if (normalized.includes("memorysearch")) return "查阅历史案件参考";
+  if (normalized.includes("memorywrite")) return "归档可复用线索";
+  if (normalized.includes("stepfun") || normalized.includes("vision")) return "解析图片材料";
+  if (normalized.includes("parallel") || isSearchToolName(toolName)) return "检索公开材料";
+  return `运行 · ${toolDisplayName(toolName)}`;
 }
 
 function toolResultTitle(toolName?: string | null) {
-  const toolLabel = toolDisplayName(toolName);
   const normalized = normalizeAgent(toolName);
-  if (normalized.includes("memorysearch")) return `返回 | ${toolLabel}`;
-  if (normalized.includes("memorywrite")) return `写入 | ${toolLabel}`;
-  if (normalized.includes("stepfun") || normalized.includes("vision")) return `读取 | ${toolLabel}`;
-  if (normalized.includes("parallel") || isSearchToolName(toolName)) return `返回 | ${toolLabel}`;
-  return `返回 | ${toolLabel}`;
+  if (normalized.includes("memorysearch")) return "历史案件参考已返回";
+  if (normalized.includes("memorywrite")) return "可复用线索已归档";
+  if (normalized.includes("stepfun") || normalized.includes("vision")) return "图片材料已解析";
+  if (normalized.includes("parallel") || isSearchToolName(toolName)) return "公开材料已返回";
+  return `${toolDisplayName(toolName)} · 已返回`;
 }
 
 function isSearchToolName(toolName?: string | null) {
@@ -2267,16 +2648,23 @@ function isSearchToolName(toolName?: string | null) {
 
 function toolDisplayName(toolName?: string | null, source?: string | null) {
   const normalized = normalizeAgent(`${toolName ?? ""} ${source ?? ""}`).replace(/[\s_-]+/g, "");
-  if (normalized.includes("parallel")) return "360 / AnySearch / Metaso / Tavily / Exa";
-  if (normalized.includes("memorysearch")) return "Memory Search";
-  if (normalized.includes("memorywrite")) return "Memory Write";
-  if (normalized.includes("anysearch")) return "AnySearch";
-  if (normalized.includes("metaso")) return "Metaso";
-  if (normalized.includes("tavily")) return "Tavily";
-  if (normalized.includes("exa")) return "Exa";
-  if (normalized.includes("360")) return "360 AI Search";
-  if (normalized.includes("vision") || normalized.includes("stepfun")) return "图片解析工具";
-  return toolName?.trim() || "核查工具";
+  if (normalized.includes("memorysearch")) return "历史案件参考";
+  if (normalized.includes("memorywrite")) return "案件记忆归档";
+  if (
+    normalized.includes("parallel") ||
+    normalized.includes("anysearch") ||
+    normalized.includes("metaso") ||
+    normalized.includes("tavily") ||
+    normalized.includes("exa") ||
+    normalized.includes("360")
+  ) {
+    return "公开材料检索";
+  }
+  if (normalized.includes("vision") || normalized.includes("stepfun")) return "图片材料解析";
+  const raw = toolName?.trim() || "";
+  if (!raw) return "核查工具";
+  // 兜底：仍过滤供应商墙英文名
+  return displayAgentText(raw) || "核查工具";
 }
 
 function resultNumber(result: Record<string, unknown> | undefined, key: string) {
@@ -2294,40 +2682,54 @@ function resultArrayCount(result: Record<string, unknown> | undefined, key: stri
   return Array.isArray(value) ? value.length : null;
 }
 
-function toolStartDetail(event: OrchestrateStreamEvent, fallbackClaim: string) {
-  const query = event.query?.trim() || fallbackClaim;
-  const toolName = toolDisplayName(event.toolName);
-  if (query) return `${toolName} 接收查询：${query}`;
-  return `${toolName} 已接入中控调度。`;
+function toolStartDetail(event: OrchestrateStreamEvent, _fallbackClaim: string) {
+  const normalized = normalizeAgent(event.toolName);
+  if (normalized.includes("memorysearch")) {
+    return "对照历史类似案件，不作本案直接证据。";
+  }
+  if (normalized.includes("memorywrite")) {
+    return "把可复用线索写入案件记忆，供后续参考。";
+  }
+  if (normalized.includes("stepfun") || normalized.includes("vision")) {
+    return "提取截图与图片中的可核验信息。";
+  }
+  if (normalized.includes("parallel") || isSearchToolName(event.toolName)) {
+    const query = event.query?.trim() ?? "";
+    // 短查询可作摘要；完整 claim 不当作每一行正文
+    if (query && query.length <= 36) return `围绕「${query}」检索公开网页与通告。`;
+    return "按命题检索公开网页、通告与可靠转载。";
+  }
+  return `${toolDisplayName(event.toolName)} 已接入调度。`;
 }
 
 function toolResultDetail(event: OrchestrateStreamEvent) {
   const result = event.result;
-  const toolName = toolDisplayName(event.toolName, resultString(result, "_source") || event.model);
   const hitCount = resultNumber(result, "hitCount");
   const acceptedCandidateCount = resultNumber(result, "acceptedCandidateCount");
   if (hitCount !== null || acceptedCandidateCount !== null) {
-    return `${toolName} 命中历史案件 ${hitCount ?? 0} 条，复用候选 ${acceptedCandidateCount ?? 0} 条。`;
+    return `命中历史案件 ${hitCount ?? 0} 条，可参考候选 ${acceptedCandidateCount ?? 0} 条。`;
   }
 
   const proposedCandidateCount = resultNumber(result, "proposedCandidateCount");
   if (proposedCandidateCount !== null) {
     const sourceUrlCount = resultNumber(result, "sourceUrlCount");
     const unresolvedQuestionCount = resultNumber(result, "unresolvedQuestionCount");
-    return `${toolName} 提出可复用记忆 ${proposedCandidateCount} 条，归档来源 ${sourceUrlCount ?? 0} 条，未解问题 ${unresolvedQuestionCount ?? 0} 个。`;
+    return `提出可复用记忆 ${proposedCandidateCount} 条，归档来源 ${sourceUrlCount ?? 0} 条，未解问题 ${unresolvedQuestionCount ?? 0} 个。`;
   }
 
   const supportCount = resultNumber(result, "supportCount") ?? resultArrayCount(result, "supportingEvidence");
   const contradictCount = resultNumber(result, "contradictCount") ?? resultArrayCount(result, "contradictingEvidence");
   const sourceCount = resultNumber(result, "sourceCount") ?? resultArrayCount(result, "sources");
   if (sourceCount !== null || supportCount !== null || contradictCount !== null) {
-    return `${toolName} 返回来源 ${sourceCount ?? 0} 条，支持 ${supportCount ?? 0} 条，反驳 ${contradictCount ?? 0} 条。`;
+    return `返回来源 ${sourceCount ?? 0} 条，支持 ${supportCount ?? 0} 条，反驳 ${contradictCount ?? 0} 条。`;
   }
 
   const answerPreview = typeof result?.answerPreview === "string" ? result.answerPreview.trim() : "";
-  if (answerPreview) return answerPreview;
+  if (answerPreview) {
+    return answerPreview.length > 96 ? `${answerPreview.slice(0, 93)}…` : answerPreview;
+  }
 
-  return `${toolName} 已返回结果。`;
+  return "结果已返回，可在右侧明细查看。";
 }
 
 function outputItemsForStep(step: HandoffStep, phase: "running" | "completed") {
@@ -2501,18 +2903,23 @@ function MissionFinalReportPanel({
   const verdictLabel = displayVerdictType(verdictType, score);
   const label = displayCredibilityLabel(rawLabel, verdictType, score);
 
+  const shareAdvice = shareAdviceFromReport(finalReport);
+  const topSources = evidenceChain
+    .flatMap((item) => item.sourceRefs)
+    .filter((s, i, arr) => arr.indexOf(s) === i)
+    .slice(0, 3);
+
   return (
     <section className="mission-final-report" aria-label="最终核查判断">
       <div className="mission-final-report-head">
         <div>
-          <span>最终判断</span>
-          <strong>目前判断</strong>
+          <span>核查结果</span>
+          <strong>现在可以怎么看</strong>
         </div>
         <div className="mission-final-verdict-badges">
-          {verdictLabel ? <em>{verdictLabel}</em> : null}
+          {verdictLabel ? <em className="mission-final-verdict-primary">{verdictLabel}</em> : null}
           {label ? <em>{label}</em> : null}
           {confidenceScore !== null ? <strong>判断置信度 {confidenceScore}/100</strong> : null}
-          {score !== null ? <strong className="mission-final-verdict-score--credibility">原信息可信度 {score}/100</strong> : null}
         </div>
       </div>
 
@@ -2523,59 +2930,58 @@ function MissionFinalReportPanel({
 
       {conclusion ? (
         <div className="mission-final-conclusion">
-          <span>结论</span>
+          <span>一句话结论</span>
           <p>{conclusion}</p>
         </div>
       ) : (
         <div className="mission-final-conclusion mission-final-conclusion--empty">
-          <span>结论</span>
+          <span>一句话结论</span>
           <p>报告已收束，但还没有生成适合展示给用户的结论文本。</p>
         </div>
       )}
 
-      {score !== null ? (
-        <div className="mission-score-explanation" aria-label="评分">
-          <span>评分</span>
-          <p>{scoreExplanation(score, verdictLabel, label)}</p>
-          {scoreRows.length > 0 ? (
-            <ul>
-              {scoreRows.map((dimension) => (
-                <li key={dimension.label}>
-                  <strong>{dimension.label}</strong>
-                  <span>{dimension.value}</span>
-                  {dimension.detail ? <em>{dimension.detail}</em> : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+      {shareAdvice ? (
+        <div className="mission-share-advice" aria-label="转发建议">
+          <span>转发建议</span>
+          <p>{shareAdvice}</p>
         </div>
       ) : null}
 
-      {whyHardToVerify.length > 0 ? (
-        <div className="mission-investigation-section" aria-label="为什么难甄别">
-          <span>证据边界</span>
-          <ul>
-            {whyHardToVerify.map((item, index) => (
-              <li key={`${item}-${index}`}>{item}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      <div className="mission-top-sources" aria-label="关键来源">
+        <span>关键来源（最多 3 条）</span>
+        {topSources.length > 0 ? (
+          <SourceReferenceList sources={topSources} />
+        ) : (
+          <p className="mission-top-sources-empty">
+            本案未挂接可点开的稳定来源链接。结论依据见下方「依据」与过程记录，请勿把空来源区当成「已核完」。
+          </p>
+        )}
+      </div>
 
       {evidenceChain.length > 0 ? (
         <div className="mission-evidence-chain" aria-label="证据链">
-          <span>查到了什么</span>
-          {evidenceChain.map((item, index) => (
+          <span>依据</span>
+          {evidenceChain.slice(0, 3).map((item, index) => (
             <article key={`${item.layer}-${index}`}>
-              <strong>{index + 1}. {item.layer}</strong>
-              <p>{item.finding}</p>
-              <p>{item.evidence}</p>
-              <small>这条证据不能推出：{item.boundary}</small>
+              <strong>{index + 1}. {item.finding || item.layer}</strong>
+              {item.evidence ? <p>{item.evidence}</p> : null}
+              {item.boundary ? <small>不能推出：{item.boundary}</small> : null}
               {item.sourceRefs.length > 0 ? (
                 <SourceReferenceList sources={item.sourceRefs} />
               ) : null}
             </article>
           ))}
+        </div>
+      ) : null}
+
+      {whyHardToVerify.length > 0 ? (
+        <div className="mission-investigation-section" aria-label="为什么难甄别">
+          <span>还不确定什么</span>
+          <ul>
+            {whyHardToVerify.map((item, index) => (
+              <li key={`${item}-${index}`}>{item}</li>
+            ))}
+          </ul>
         </div>
       ) : null}
 
@@ -2586,64 +2992,77 @@ function MissionFinalReportPanel({
         </div>
       ) : null}
 
-      {(summaryForPublic || recommendation) ? (
-        <div className="mission-closure-grid" aria-label="结果闭环动作">
-          {summaryForPublic ? (
+      <details className="mission-final-more">
+        <summary>更多细节（评分与审计）</summary>
+        {score !== null ? (
+          <div className="mission-score-explanation" aria-label="评分">
+            <span>评分</span>
+            <p>{scoreExplanation(score, verdictLabel, label)}</p>
+            {scoreRows.length > 0 ? (
+              <ul>
+                {scoreRows.map((dimension) => (
+                  <li key={dimension.label}>
+                    <strong>{dimension.label}</strong>
+                    <span>{dimension.value}</span>
+                    {dimension.detail ? <em>{dimension.detail}</em> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+        {summaryForPublic ? (
+          <div className="mission-closure-grid" aria-label="公众摘要">
             <article>
-              <span>给用户看的摘要</span>
+              <span>公众摘要</span>
               <p>{summaryForPublic}</p>
             </article>
-          ) : null}
-          {recommendation ? (
-            <article>
-              <span>处理建议</span>
-              <p>{recommendation}</p>
-            </article>
-          ) : null}
-        </div>
-      ) : null}
-
-      {closureActions.length > 0 ? (
-        <div className="mission-action-list" aria-label="闭环动作">
-          <span>闭环动作</span>
-          {closureActions.map((action) => (
-            <article key={`${action.type}-${action.label}`} className={`mission-action-list-item mission-action-list-item--${action.status}`}>
-              <div>
-                <strong>{action.label}</strong>
-                <em>{action.status}</em>
-              </div>
-              <p>{action.content}</p>
-            </article>
-          ))}
-        </div>
-      ) : null}
-
-
-      {dimensions.length > 0 ? (
-        <div className="mission-confidence-list" aria-label="FIRE 置信度维度">
-          {dimensions.map((dimension) => (
-            <article key={dimension.label} className={dimension.passed ? "passed" : "failed"}>
-              <div>
-                <strong>{dimension.label}</strong>
-                <span>{dimension.score}/{dimension.threshold}</span>
-              </div>
-              <p>{dimension.reason}</p>
-            </article>
-          ))}
-        </div>
-      ) : null}
-
-      {risks.length > 0 ? (
-        <div className="mission-risk-list" aria-label="逻辑风险审计">
-          {risks.map((risk) => (
-            <article key={`${risk.label}-${risk.severity}`}>
-              <strong>{risk.label}</strong>
-              <p>{risk.explanation}</p>
-              <small>{risk.mitigation}</small>
-            </article>
-          ))}
-        </div>
-      ) : null}
+          </div>
+        ) : null}
+        {dimensions.length > 0 ? (
+          <div className="mission-confidence-list" aria-label="置信度维度">
+            {dimensions.map((dimension) => (
+              <article key={dimension.label} className={dimension.passed ? "passed" : "failed"}>
+                <div>
+                  <strong>{dimension.label}</strong>
+                  <span>
+                    {dimension.score}/{dimension.threshold}
+                  </span>
+                </div>
+                <p>{dimension.reason}</p>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {risks.length > 0 ? (
+          <div className="mission-risk-list" aria-label="逻辑风险审计">
+            {risks.map((risk) => (
+              <article key={`${risk.label}-${risk.severity}`}>
+                <strong>{risk.label}</strong>
+                <p>{risk.explanation}</p>
+                <small>{risk.mitigation}</small>
+              </article>
+            ))}
+          </div>
+        ) : null}
+        {closureActions.length > 0 ? (
+          <div className="mission-action-list" aria-label="闭环动作">
+            <span>闭环动作</span>
+            {closureActions.map((action) => (
+              <article
+                key={`${action.type}-${action.label}`}
+                className={`mission-action-list-item mission-action-list-item--${action.status}`}
+              >
+                <div>
+                  <strong>{action.label}</strong>
+                  <em>{action.status}</em>
+                </div>
+                <p>{action.content}</p>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </details>
     </section>
   );
 }
@@ -3146,15 +3565,52 @@ function ControllerRail({
   followLive,
   onSelectControllerEvent,
   onFollowLive,
+  claim,
+  stageIdx,
+  finalReport,
+  runStatus,
 }: {
   controllerEvents: ControllerProcessEvent[];
   activeControllerEventId: string;
   followLive: boolean;
   onSelectControllerEvent: (event: ControllerProcessEvent) => void;
   onFollowLive: () => void;
+  claim: string;
+  stageIdx: number;
+  finalReport: Record<string, unknown> | null;
+  runStatus: RunStatus;
 }) {
   const transcriptItems = useMemo(() => buildControllerTranscript(controllerEvents), [controllerEvents]);
   const flowRef = useRef<HTMLDivElement | null>(null);
+
+  const phasedStream = useMemo(() => {
+    const buckets: ControllerTranscriptItem[][] = [[], [], []];
+    for (const item of transcriptItems) {
+      const phase = Math.min(2, Math.max(0, streamPhaseIndexForEvent(item.event)));
+      buckets[phase].push(item);
+    }
+
+    // 真流式：只露出「已有事件」的阶段；有 finalReport 时补全到 03
+    // 绝不提前铺空的下一阶段说明书
+    let maxVisible = -1;
+    for (let i = 0; i < buckets.length; i += 1) {
+      if (buckets[i].length > 0) maxVisible = Math.max(maxVisible, i);
+    }
+    if (finalReport) maxVisible = 2;
+    if (maxVisible < 0) return [];
+
+    return STREAM_PHASES.filter((phase) => phase.id <= maxVisible && (buckets[phase.id].length > 0 || finalReport)).map(
+      (phase) => {
+        const items = buckets[phase.id];
+        // 无事件的尾阶段（仅 finalReport 时可能）：仍显示结论阶段壳
+        if (items.length === 0 && !(finalReport && phase.id === 2)) {
+          return null;
+        }
+        const meta = streamPhaseStatusLabel(phase.id, stageIdx, items, runStatus, finalReport);
+        return { ...phase, items, ...meta };
+      },
+    ).filter((phase): phase is NonNullable<typeof phase> => Boolean(phase));
+  }, [transcriptItems, stageIdx, runStatus, finalReport]);
 
   useEffect(() => {
     const root = flowRef.current;
@@ -3164,19 +3620,163 @@ function ControllerRail({
     target.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [activeControllerEventId, transcriptItems.length]);
 
+  // 实时跟随时滚到流底部（新事件 entrance，不按 index stagger 旧项）
+  useEffect(() => {
+    if (!followLive || runStatus !== "running") return;
+    const root = flowRef.current;
+    if (!root) return;
+    root.scrollTop = root.scrollHeight;
+  }, [transcriptItems.length, followLive, runStatus, phasedStream.length]);
+
+  const renderStreamItem = (item: ControllerTranscriptItem) => {
+    if (item.type === "agent_cluster") {
+      return (
+        <motion.section
+          key={item.id}
+          className={`controller-agent-cluster controller-agent-cluster--${item.status}`}
+          layout
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.24, ease: EASE_OUT }}
+        >
+          <button
+            type="button"
+            className="controller-agent-cluster-head"
+            onClick={() => onSelectControllerEvent(item.event)}
+            aria-pressed={activeControllerEventId === item.event.id}
+            data-controller-event-id={item.event.id}
+          >
+            <span>协作核查</span>
+            <em>{item.rows?.length ?? 1} 个角色</em>
+          </button>
+          <div className="controller-agent-cluster-list">
+            {(item.rows ?? [item.event]).map((row) => {
+              const agentId = controllerEventAgentId(row);
+              const meta = agentId ? AGENT_BADGE_META[agentId] : null;
+              const isActive = activeControllerEventId === row.id;
+              const dotState =
+                row.status === "completed" || row.status === "final"
+                  ? "completed"
+                  : row.status === "running"
+                    ? "running"
+                    : row.status === "failed"
+                      ? "failed"
+                      : "idle";
+              const roleLabel = meta?.role ?? displayAgentName(row.agentName);
+              const rowDetail = humanStreamDetail(row, claim) || meta?.role || "";
+
+              return (
+                <button
+                  key={row.id}
+                  type="button"
+                  className={`controller-agent-row controller-agent-row--${row.status} ${isActive ? "controller-agent-row--active" : ""}`}
+                  onClick={() => onSelectControllerEvent(row)}
+                  aria-pressed={isActive}
+                  data-controller-event-id={row.id}
+                >
+                  <AgentStatusDot agentId={agentId ?? row.id} state={dotState} />
+                  <span className="controller-agent-avatar">
+                    {meta?.avatar ? <img src={meta.avatar} alt="" /> : meta?.code ?? meta?.label ?? "A"}
+                  </span>
+                  <span className="controller-agent-copy">
+                    <strong>{roleLabel}</strong>
+                    <small>{rowDetail}</small>
+                  </span>
+                  <em>{caseStatusLabel(row.status)}</em>
+                </button>
+              );
+            })}
+          </div>
+        </motion.section>
+      );
+    }
+
+    if (item.type === "operation") {
+      const isActive = activeControllerEventId === item.event.id;
+      const title = humanStreamTitle(item.event);
+      const detail = humanStreamDetail(item.event, claim);
+
+      return (
+        <motion.button
+          key={item.id}
+          type="button"
+          className={`controller-operation-row controller-operation-row--${item.status} controller-stream-row controller-stream-row--tool ${isActive ? "controller-operation-row--active" : ""}`}
+          data-status={item.status}
+          data-kind="tool"
+          data-controller-event-id={item.event.id}
+          onClick={() => onSelectControllerEvent(item.event)}
+          aria-pressed={isActive}
+          layout
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.22, ease: EASE_OUT }}
+        >
+          <span className={`controller-operation-icon controller-operation-icon--${item.status}`} aria-hidden="true">
+            <img src={operationIconForEvent(item.event)} alt="" />
+          </span>
+          <span className="controller-operation-copy">
+            <span className="controller-kind-chip">检索动作</span>
+            <strong>{title}</strong>
+            {detail ? <small>{detail}</small> : null}
+          </span>
+          <span className="controller-operation-chevron">›</span>
+        </motion.button>
+      );
+    }
+
+    const isActive = activeControllerEventId === item.event.id;
+    const title = humanStreamTitle(item.event);
+    const detail = humanStreamDetail(item.event, claim);
+    const kindHook =
+      item.kind === "report"
+        ? "report"
+        : item.kind === "thought" || item.kind === "planner"
+          ? "thought"
+          : item.kind;
+
+    return (
+      <motion.button
+        key={item.id}
+        type="button"
+        className={`controller-narration controller-narration--${item.status} controller-stream-row controller-stream-row--${kindHook} ${isActive ? "controller-narration--active" : ""}`}
+        data-status={item.status}
+        data-kind={kindHook}
+        data-controller-event-id={item.event.id}
+        onClick={() => onSelectControllerEvent(item.event)}
+        aria-pressed={isActive}
+        layout
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -8 }}
+        transition={{ duration: 0.22, ease: EASE_OUT }}
+      >
+        <span className={`controller-process-dot controller-process-dot--${item.status}`} />
+        <span>
+          <span className="controller-kind-chip">{CONTROLLER_EVENT_KIND_LABEL[item.kind]}</span>
+          <strong>{title}</strong>
+          {detail ? <small>{detail}</small> : null}
+        </span>
+      </motion.button>
+    );
+  };
+
+  const hasItems = transcriptItems.length > 0 || phasedStream.length > 0;
+
   return (
-    <aside className="case-controller-panel case-controller-panel--stream" aria-label="活动过程时间线">
-      <div className="controller-transcript-head">
+    <aside className="case-controller-panel case-controller-panel--stream stream-rail" aria-label="活动过程时间线">
+      <div className="controller-transcript-head stream-rail-head">
         <div>
-          <span className={`controller-live-dot ${followLive ? "controller-live-dot--live" : "controller-live-dot--paused"}`} />
+          <span className={`controller-live-dot ${followLive && runStatus === "running" ? "controller-live-dot--live" : "controller-live-dot--paused"}`} />
           <div className="controller-transcript-head-copy">
-            <strong>活动过程</strong>
-            <span>点选任一步，右侧回放思考与材料</span>
+            <strong>核查过程</strong>
+            <span>{hasItems ? "流式展开 · 点选查看明细" : "等待第一条过程事件"}</span>
           </div>
         </div>
         <div className="controller-transcript-head-meta">
-          <em>{controllerEvents.length} 条</em>
-          {!followLive ? (
+          <em>{hasItems ? `${transcriptItems.length} 步` : "LIVE"}</em>
+          {!followLive && hasItems ? (
             <button type="button" className="controller-follow-live-btn" onClick={onFollowLive}>
               回到最新
             </button>
@@ -3184,130 +3784,50 @@ function ControllerRail({
         </div>
       </div>
 
-      <div className="controller-transcript-flow" ref={flowRef}>
-        <AnimatePresence initial={false}>
-          {transcriptItems.map((item, index) => {
-            if (item.type === "agent_cluster") {
-              return (
-                <motion.section
-                  key={item.id}
-                  className={`controller-agent-cluster controller-agent-cluster--${item.status}`}
-                  layout
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.24, delay: Math.min(index, 8) * 0.025, ease: EASE_OUT }}
-                >
-                  <button
-                    type="button"
-                    className="controller-agent-cluster-head"
-                    onClick={() => onSelectControllerEvent(item.event)}
-                    aria-pressed={activeControllerEventId === item.event.id}
-                    data-controller-event-id={item.event.id}
-                  >
-                    <span>Agent Team</span>
-                    <em>{item.rows?.length ?? 1} 个并行任务</em>
-                  </button>
-                  <div className="controller-agent-cluster-list">
-                    {(item.rows ?? [item.event]).map((row) => {
-                      const agentId = controllerEventAgentId(row);
-                      const meta = agentId ? AGENT_BADGE_META[agentId] : null;
-                      const isActive = activeControllerEventId === row.id;
-                      const dotState =
-                        row.status === "completed" || row.status === "final"
-                          ? "completed"
-                          : row.status === "running"
-                          ? "running"
-                          : row.status === "failed"
-                          ? "failed"
-                          : "idle";
-
-                      return (
-                        <button
-                          key={row.id}
-                          type="button"
-                          className={`controller-agent-row controller-agent-row--${row.status} ${isActive ? "controller-agent-row--active" : ""}`}
-                          onClick={() => onSelectControllerEvent(row)}
-                          aria-pressed={isActive}
-                          data-controller-event-id={row.id}
-                        >
-                          <AgentStatusDot agentId={agentId ?? row.id} state={dotState} />
-                          <span className="controller-agent-avatar">
-                            {meta?.avatar ? <img src={meta.avatar} alt="" /> : meta?.label ?? "A"}
-                          </span>
-                          <span className="controller-agent-copy">
-                            <span className="controller-kind-chip">{CONTROLLER_EVENT_KIND_LABEL[row.kind]}</span>
-                            <strong>{meta?.role ?? row.title}</strong>
-                            <small>{row.detail}</small>
-                          </span>
-                          <em>{meta?.label ?? "查"}</em>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </motion.section>
-              );
-            }
-
-            if (item.type === "operation") {
-              const isActive = activeControllerEventId === item.event.id;
-              const queryHint = item.event.query?.trim();
-
-              return (
-                <motion.button
-                  key={item.id}
-                  type="button"
-                  className={`controller-operation-row controller-operation-row--${item.status} ${isActive ? "controller-operation-row--active" : ""}`}
-                  data-status={item.status}
-                  data-controller-event-id={item.event.id}
-                  onClick={() => onSelectControllerEvent(item.event)}
-                  aria-pressed={isActive}
-                  layout
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  transition={{ duration: 0.22, delay: Math.min(index, 8) * 0.025, ease: EASE_OUT }}
-                >
-                  <span className={`controller-operation-icon controller-operation-icon--${item.status}`} aria-hidden="true">
-                    <img src={operationIconForEvent(item.event)} alt="" />
-                  </span>
-                  <span className="controller-operation-copy">
-                    <span className="controller-kind-chip">{CONTROLLER_EVENT_KIND_LABEL[item.kind]}</span>
-                    <strong>{item.title}</strong>
-                    <small>{queryHint ? `检索：${queryHint}` : item.detail}</small>
-                  </span>
-                  <span className="controller-operation-chevron">›</span>
-                </motion.button>
-              );
-            }
-
-            const isActive = activeControllerEventId === item.event.id;
-
-            return (
-              <motion.button
-                key={item.id}
-                type="button"
-                className={`controller-narration controller-narration--${item.status} ${isActive ? "controller-narration--active" : ""}`}
-                data-status={item.status}
-                data-controller-event-id={item.event.id}
-                onClick={() => onSelectControllerEvent(item.event)}
-                aria-pressed={isActive}
+      <div className="controller-transcript-flow stream-rail-flow" ref={flowRef}>
+        {!hasItems ? (
+          <motion.p
+            className="stream-boot-hint"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3, ease: EASE_OUT }}
+          >
+            已提交材料。思考、检索与协作角色会按时间顺序出现在这里——不会预先铺满空模块。
+          </motion.p>
+        ) : (
+          <AnimatePresence initial={false}>
+            {phasedStream.map((phase) => (
+              <motion.section
+                key={`stream-phase-${phase.id}`}
+                className={`controller-stream-phase stream-phase stream-phase--${phase.status} controller-stream-phase--${phase.status}`}
+                data-phase={phase.code}
+                data-status={phase.status}
                 layout
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.22, delay: Math.min(index, 8) * 0.025, ease: EASE_OUT }}
+                transition={{ duration: 0.24, ease: EASE_OUT }}
               >
-                <span className={`controller-process-dot controller-process-dot--${item.status}`} />
-                <span>
-                  <span className="controller-kind-chip">{CONTROLLER_EVENT_KIND_LABEL[item.kind]}</span>
-                  <strong>{item.title}</strong>
-                  <small>{item.detail}</small>
-                </span>
-              </motion.button>
-            );
-          })}
-        </AnimatePresence>
+                <header className="controller-stream-phase-head stream-phase-head">
+                  <span className="stream-phase-index">{phase.code}</span>
+                  <strong className="controller-section-label stream-phase-title">{phase.title}</strong>
+                  <em className={`controller-stream-phase-badge stream-phase-badge stream-phase-badge--${phase.status} controller-stream-phase-badge--${phase.status}`}>
+                    {phase.label}
+                  </em>
+                </header>
+                <p className="controller-stream-phase-blurb stream-phase-body">{phase.blurb}</p>
+
+                {phase.items.length > 0 ? (
+                  <div className="controller-stream-phase-items">
+                    <AnimatePresence initial={false}>
+                      {phase.items.map((item) => renderStreamItem(item))}
+                    </AnimatePresence>
+                  </div>
+                ) : null}
+              </motion.section>
+            ))}
+          </AnimatePresence>
+        )}
       </div>
     </aside>
   );
@@ -3390,6 +3910,47 @@ function ControllerEventDetailPanel({
       ? String(event.result.model)
       : "";
 
+  const leadTitle = humanStreamTitle(event);
+  const leadDetail = humanStreamDetail(event, claim) || event.detail;
+  const hasBodyContent =
+    thinkingLines.length > 0 ||
+    searchQueries.length > 0 ||
+    readingSources.length > 0 ||
+    processingSteps.length > 0 ||
+    visibleOutputItems.length > 0 ||
+    auditItems.length > 0 ||
+    handoffLines.length > 0 ||
+    Boolean(event.techDetail) ||
+    (event.kind === "tool" && Boolean(toolChannel)) ||
+    debateRounds.length > 0 ||
+    Boolean(leadDetail?.trim());
+
+  // 无实质内容时不渲染整块明细壳（避免右栏四大空分区）
+  if (!hasBodyContent && (event.status === "running" || event.status === "queued") && followLive) {
+    return (
+      <motion.section
+        key={event.id}
+        className="controller-reading-window controller-reading-window--slim controller-activity-window"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.2, ease: EASE_OUT }}
+        aria-live="polite"
+      >
+        <header className="controller-reading-head">
+          <div className="controller-reading-title">
+            <span>
+              <strong>{leadTitle}</strong>
+              <small>
+                <i className={`controller-reading-status controller-reading-status--${event.status}`} />
+                {caseStatusLabel(event.status)} · 明细将随输出出现
+              </small>
+            </span>
+          </div>
+        </header>
+      </motion.section>
+    );
+  }
+
   return (
     <motion.section
       key={event.id}
@@ -3415,14 +3976,14 @@ function ControllerEventDetailPanel({
         </div>
         <div className="controller-reading-head-side">
           <span className="controller-kind-chip controller-kind-chip--head">{CONTROLLER_EVENT_KIND_LABEL[event.kind]}</span>
-          <em>{event.agentName}</em>
+          <em>{activeAgentMeta?.role ?? event.agentName}</em>
         </div>
       </header>
 
       <div className="controller-reading-body controller-activity-body">
         <p className="controller-reading-lead">
-          <strong>{event.title}</strong>
-          <ActivityText text={event.detail} animate={animateTyping} />
+          <strong>{leadTitle}</strong>
+          {leadDetail ? <ActivityText text={leadDetail} animate={animateTyping} /> : null}
         </p>
 
         {event.techDetail ? (
@@ -3433,12 +3994,12 @@ function ControllerEventDetailPanel({
         ) : null}
 
         <div className="controller-activity-stack" aria-label="本步活动明细">
-          <section className="controller-activity-section" aria-label="思考">
-            <header className="controller-activity-section-head">
-              <span>Thinking</span>
-              <strong>思考</strong>
-            </header>
-            {thinkingLines.length > 0 ? (
+          {/* 真流式：只渲染有内容的分区，禁止四大空壳占满右栏 */}
+          {thinkingLines.length > 0 ? (
+            <section className="controller-activity-section" aria-label="思考">
+              <header className="controller-activity-section-head">
+                <strong>思考摘录</strong>
+              </header>
               <ul className="controller-activity-list">
                 {thinkingLines.map((line, index) => (
                   <li key={`think-${index}`}>
@@ -3446,38 +4007,23 @@ function ControllerEventDetailPanel({
                   </li>
                 ))}
               </ul>
-            ) : (
-              <p className="controller-activity-empty">本步尚未留下可读的思考轨迹。</p>
-            )}
-          </section>
+            </section>
+          ) : null}
 
-          <section className="controller-activity-section" aria-label="搜索与工具">
-            <header className="controller-activity-section-head">
-              <span>Search / Tool</span>
-              <strong>搜索与工具</strong>
-            </header>
-            {searchQueries.length > 0 || modelLine || toolChannel || event.kind === "tool" ? (
+          {searchQueries.length > 0 || (event.kind === "tool" && toolChannel) ? (
+            <section className="controller-activity-section" aria-label="搜索与工具">
+              <header className="controller-activity-section-head">
+                <strong>检索与动作</strong>
+              </header>
               <div className="controller-activity-tool-grid">
                 {searchQueries.map((query) => (
                   <article key={query} className="controller-activity-tool-card">
-                    <span>Query</span>
+                    <span>检索意图</span>
                     <p>
                       <ActivityText text={query} animate={animateTyping} speed={18} />
                     </p>
                   </article>
                 ))}
-                {toolChannel ? (
-                  <article className="controller-activity-tool-card">
-                    <span>工具 / 通道</span>
-                    <p>{toolChannel}</p>
-                  </article>
-                ) : null}
-                {modelLine ? (
-                  <article className="controller-activity-tool-card">
-                    <span>模型</span>
-                    <p>{modelLine}</p>
-                  </article>
-                ) : null}
                 {event.kind === "tool" ? (
                   <article className="controller-activity-tool-card controller-activity-tool-card--wide">
                     <span>用途</span>
@@ -3487,17 +4033,20 @@ function ControllerEventDetailPanel({
                   </article>
                 ) : null}
               </div>
-            ) : (
-              <p className="controller-activity-empty">本步未发起检索或工具调用。</p>
-            )}
-          </section>
+              {modelLine ? (
+                <details className="controller-reading-tech-detail">
+                  <summary>技术细节（模型）</summary>
+                  <pre>{modelLine}</pre>
+                </details>
+              ) : null}
+            </section>
+          ) : null}
 
-          <section className="controller-activity-section" aria-label="材料来源">
-            <header className="controller-activity-section-head">
-              <span>Sources</span>
-              <strong>材料来源{readingSources.length > 0 ? ` · ${readingSources.length}` : ""}</strong>
-            </header>
-            {readingSources.length > 0 ? (
+          {readingSources.length > 0 ? (
+            <section className="controller-activity-section" aria-label="材料来源">
+              <header className="controller-activity-section-head">
+                <strong>材料来源 · {readingSources.length}</strong>
+              </header>
               <div className="controller-activity-source-list">
                 {readingSources.slice(0, 12).map((source) => {
                   const role = evidenceRoleLabel(source.evidenceRole);
@@ -3523,15 +4072,13 @@ function ControllerEventDetailPanel({
                   );
                 })}
               </div>
-            ) : (
-              <p className="controller-activity-empty">本步尚未挂接可点开的来源材料。</p>
-            )}
-          </section>
+            </section>
+          ) : null}
 
+          {processingSteps.length > 0 || visibleOutputItems.length > 0 || auditItems.length > 0 || handoffLines.length > 0 ? (
           <section className="controller-activity-section" aria-label="结果与交接">
             <header className="controller-activity-section-head">
-              <span>Findings / Handoff</span>
-              <strong>结果与交接</strong>
+              <strong>本步结果</strong>
             </header>
             {processingSteps.length > 0 ? (
               <ol className="controller-activity-findings">
@@ -3565,10 +4112,9 @@ function ControllerEventDetailPanel({
                   </li>
                 ))}
               </ul>
-            ) : processingSteps.length === 0 && visibleOutputItems.length === 0 ? (
-              <p className="controller-activity-empty">还没有可交接的结果或缺口说明。</p>
             ) : null}
           </section>
+          ) : null}
         </div>
 
         {relatedTrail.length > 1 ? (
@@ -4159,16 +4705,16 @@ function AgentTeamStatusPanel({
   const completedCount = AGENT_ORDER.filter((agent) => agentDockStatus(agent, steps, currentAgent) === "completed").length;
 
   return (
-    <section className="agent-team-panel" aria-label="Agent Team 状态">
+    <section className="agent-team-panel" aria-label="核查步骤状态">
       <header className="agent-team-panel-head">
         <div>
-          <span>Agent Team</span>
-          <strong>当前队列</strong>
+          <span>核查步骤</span>
+          <strong>当前进度</strong>
         </div>
-        <em>{runningCount > 0 ? `${runningCount} 运行中` : `${completedCount}/${AGENT_ORDER.length} 完成`}</em>
+        <em>{runningCount > 0 ? `${runningCount} 进行中` : `${completedCount}/${AGENT_ORDER.length} 完成`}</em>
       </header>
 
-      <nav className="agent-team-list" aria-label="智能体队列">
+      <nav className="agent-team-list" aria-label="核查步骤">
         {AGENT_ORDER.map((agent) => {
           const step = findAgentStep(steps, agent);
           const meta = AGENT_BADGE_META[agent];
@@ -4424,7 +4970,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
         pushStreamItem({
           agentName: "中控台",
           title: "收到核查对象",
-          detail: `我先把输入转成可核查任务：${claim.slice(0, 90)}${claim.length > 90 ? "..." : ""}`,
+          detail: "已建立可追踪核查任务，随后按命题推进。",
           status: "queued",
         });
         setStartedAt(Date.now());
@@ -4435,9 +4981,9 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
         try {
           let localMemoryRecall: LocalMemoryRecall | null = null;
           pushStreamItem({
-            agentName: "Agent Memory Search",
-            title: "检索 | Agent Memory Search",
-            detail: `先读取本地案件库、证据库和已确认记忆：${claim.slice(0, 80)}${claim.length > 80 ? "..." : ""}`,
+            agentName: "历史案件参考",
+            title: "查阅历史案件参考",
+            detail: "对照历史类似案件，不作本案直接证据。",
             status: "running",
             query: claim,
             model: "local knowledge base",
@@ -4447,8 +4993,8 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
             localMemoryRecall = memoryRecall;
             if (cancelled) return;
             pushStreamItem({
-              agentName: "Agent Memory Search",
-              title: "返回 | Agent Memory Search",
+              agentName: "历史案件参考",
+              title: "历史案件参考已返回",
               detail: `命中历史案件 ${memoryRecall.hitCount} 条，证据库线索 ${memoryRecall.evidenceCount} 条，已确认记忆 ${memoryRecall.acceptedCandidateCount} 条。`,
               status: "completed",
               query: claim,
@@ -4458,8 +5004,8 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
           } catch (error) {
             if (cancelled) return;
             pushStreamItem({
-              agentName: "Agent Memory Search",
-              title: "失败 | Agent Memory Search",
+              agentName: "历史案件参考",
+              title: "历史案件参考 · 未命中可用记录",
               detail: error instanceof Error ? error.message : "本地记忆读取失败，本次继续走实时核查。",
               status: "failed",
               query: claim,
@@ -4711,76 +5257,12 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                 );
                 const finalCurrentStep = selectCurrentStep(finalSteps);
 
-                finalSteps.forEach((step) => {
-                  dispatch({ type: "APPEND_HANDOFF_STEP", payload: step });
-                });
-                dispatch({
-                  type: "SET_HANDOFF_FINAL_REPORT",
-                  payload: {
-                    finalReport,
-                    totalLatencyMs: totalLatency,
-                    model: finalSteps.map((step) => step.model).filter(Boolean).join(", ") || "multi-agent",
-                  },
-                });
-                dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: {} });
-                streamEnded = true;
-                dispatch({ type: "END_STREAMING_SESSION" });
-
-                const rawCredibilityScore =
-                  typeof finalReport?.credibilityScore === "number" ? finalReport.credibilityScore : null;
-                const credibilityLabel =
-                  typeof finalReport?.credibilityLabel === "string" ? finalReport.credibilityLabel : "";
-                const verdictType =
-                  typeof finalReport?.verdictType === "string" ? finalReport.verdictType : "";
-                const credibilityScore = normalizeCredibilityScore(
-                  rawCredibilityScore,
-                  verdictType,
-                  credibilityLabel
-                ) ?? 50;
-                const entry: KnowledgeBaseEntry = {
-                  id: `case-${claim.replace(/\s+/g, "-").slice(0, 48)}-deep`,
-                  claim,
-                  rumorType: state.diagnosis?.risk?.includes("政治")
-                    ? "政治"
-                    : state.diagnosis?.risk?.includes("娱乐")
-                      ? "娱乐"
-                      : "深度核查",
-                  diagnosis: inferDiagnosis(finalSteps, state.diagnosis),
-                  finalReport: finalReport ?? {},
-                  handoffSteps: finalSteps,
-                  credibilityScore,
-                  verificationResult: inferVerificationResult(credibilityScore),
-                  timestamp: Date.now(),
-                  tags: [
-                    "deep",
-                    ...(state.diagnosis?.rumorIndicators ?? []),
-                    typeof finalReport?.credibilityLabel === "string" ? finalReport.credibilityLabel : "",
-                  ],
-                };
-                void knowledgeBase.saveCase(entry);
-                proposedMemoryCandidates.forEach((candidate) => {
-                  void knowledgeBase.saveMemoryCandidate(candidate);
-                });
-                setMemoryCandidates(proposedMemoryCandidates);
-                pushStreamItem({
-                  agentName: "Agent Memory Write",
-                  title: "写入 | Agent Memory Write",
-                  detail: `本案已保存到本地案件库；沉淀候选记忆 ${proposedMemoryCandidates.length} 条，后续确认后才参与新案件召回。`,
-                  status: "completed",
-                  query: claim,
-                  model: "local knowledge base",
-                  result: {
-                    proposedCandidateCount: proposedMemoryCandidates.length,
-                    sourceUrlCount: extractSourceUrlsFromCase(entry).length,
-                    unresolvedQuestionCount: countFinalUnresolvedQuestions(finalReport),
-                    traceText: "保存最终报告、Agent 输出、来源链接和未解问题；旧案以后只作为线索和策略，不直接替代新案证据。",
-                  },
-                });
-
+                // 先上屏结果，再做本地持久化，避免保存失败/抛错时用户看不到结论
                 setSteps(finalSteps);
                 setCurrentStep(finalCurrentStep);
                 setFinalReport(finalReport ?? null);
                 setErrorMessage("");
+                setMemoryCandidates(proposedMemoryCandidates);
                 {
                   const conclusion = reportText(finalReport ?? null, "conclusion");
                   const label = reportText(finalReport ?? null, "credibilityLabel");
@@ -4812,6 +5294,75 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                 setStartedAt(null);
                 setElapsedMs((current) => totalLatency || current);
                 setRunStatus("completed");
+
+                finalSteps.forEach((step) => {
+                  dispatch({ type: "APPEND_HANDOFF_STEP", payload: step });
+                });
+                dispatch({
+                  type: "SET_HANDOFF_FINAL_REPORT",
+                  payload: {
+                    finalReport,
+                    totalLatencyMs: totalLatency,
+                    model: finalSteps.map((step) => step.model).filter(Boolean).join(", ") || "multi-agent",
+                  },
+                });
+                dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: {} });
+                streamEnded = true;
+                dispatch({ type: "END_STREAMING_SESSION" });
+
+                try {
+                  const rawCredibilityScore =
+                    typeof finalReport?.credibilityScore === "number" ? finalReport.credibilityScore : null;
+                  const credibilityLabel =
+                    typeof finalReport?.credibilityLabel === "string" ? finalReport.credibilityLabel : "";
+                  const verdictType =
+                    typeof finalReport?.verdictType === "string" ? finalReport.verdictType : "";
+                  const credibilityScore = normalizeCredibilityScore(
+                    rawCredibilityScore,
+                    verdictType,
+                    credibilityLabel
+                  ) ?? 50;
+                  const entry: KnowledgeBaseEntry = {
+                    id: `case-${claim.replace(/\s+/g, "-").slice(0, 48)}-deep`,
+                    claim,
+                    rumorType: state.diagnosis?.risk?.includes("政治")
+                      ? "政治"
+                      : state.diagnosis?.risk?.includes("娱乐")
+                        ? "娱乐"
+                        : "深度核查",
+                    diagnosis: inferDiagnosis(finalSteps, state.diagnosis),
+                    finalReport: finalReport ?? {},
+                    handoffSteps: finalSteps,
+                    credibilityScore,
+                    verificationResult: inferVerificationResult(credibilityScore),
+                    timestamp: Date.now(),
+                    tags: [
+                      "deep",
+                      ...(state.diagnosis?.rumorIndicators ?? []),
+                      typeof finalReport?.credibilityLabel === "string" ? finalReport.credibilityLabel : "",
+                    ],
+                  };
+                  void knowledgeBase.saveCase(entry);
+                  proposedMemoryCandidates.forEach((candidate) => {
+                    void knowledgeBase.saveMemoryCandidate(candidate);
+                  });
+                  pushStreamItem({
+                    agentName: "本地卷宗",
+                    title: "本案已保存",
+                    detail: `已写入本地案件库；候选记忆 ${proposedMemoryCandidates.length} 条，确认后才参与新案召回。`,
+                    status: "completed",
+                    query: claim,
+                    model: "local knowledge base",
+                    result: {
+                      proposedCandidateCount: proposedMemoryCandidates.length,
+                      sourceUrlCount: extractSourceUrlsFromCase(entry).length,
+                      unresolvedQuestionCount: countFinalUnresolvedQuestions(finalReport),
+                      traceText: "保存最终报告、过程输出、来源链接和未解问题；旧案只作线索，不直接替代新案证据。",
+                    },
+                  });
+                } catch {
+                  // 本地持久化失败不影响结果首屏
+                }
                 break;
               }
               case "error": {
@@ -4922,6 +5473,36 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
     [steps]
   );
   const fallbackNotice = useMemo(() => runFallbackNotice(steps), [steps]);
+  const humanStage = useMemo(
+    () =>
+      humanStageLabel({
+        runStatus,
+        finalReport,
+        steps,
+        displayPhase: finalReport
+          ? "verdict"
+          : state.consensusReport
+            ? "evidence"
+            : state.claimDecomposition
+              ? "search"
+              : "agents",
+      }),
+    [runStatus, finalReport, steps, state.consensusReport, state.claimDecomposition]
+  );
+  const liveKeyFindings = useMemo(
+    () =>
+      extractLiveKeyFindings({
+        steps,
+        controllerEvents,
+        finalReport,
+        max: 4,
+      }),
+    [steps, controllerEvents, finalReport]
+  );
+  const claimPreview = useMemo(() => {
+    const t = claim.replace(/\s+/g, " ").trim();
+    return t.length > 96 ? `${t.slice(0, 93)}…` : t;
+  }, [claim]);
 
   const handleMemoryCandidateStatus = useCallback(async (id: string, status: MemoryCandidateStatus) => {
     setMemoryCandidates((prev) =>
@@ -4987,78 +5568,130 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
     }
   }, [latestControllerEvent]);
 
+  const stageIdx = humanStageIndex(humanStage);
+  const hasStreamEvents = controllerEvents.length > 0;
+  // 运行中 + 跟随最新：只铺左栏流，不先占满右栏空壳；点选历史步（followLive=false）或完成后才出明细列
+  const showDetailColumn =
+    Boolean(finalReport) || Boolean(errorMessage) || !followLive || runStatus !== "running";
+
   return (
-    <main className="mission-control-view case-workbench-view case-workbench-view--clean">
+    <main
+      className={`mission-control-view case-workbench-view case-workbench-view--clean case-dossier-view ${
+        hasStreamEvents ? "case-dossier-view--streaming" : "case-dossier-view--boot"
+      }`}
+    >
       <header className="mission-topbar">
         <div className="mission-brand">
           <strong>红鲱鱼与枪</strong>
-          <span>Case Workbench</span>
+          <span>核查卷宗</span>
         </div>
         <div className="mission-phase-indicator">
           <span className={`mission-phase-dot mission-phase-dot--${displayPhase}`} />
-          <span className="mission-phase-label">
-            {displayPhase === "agents" && "智能体执行中"}
-            {displayPhase === "search" && "多引擎搜索中"}
-            {displayPhase === "evidence" && "证据交叉验证"}
-            {displayPhase === "verdict" && "核查已收束"}
-          </span>
+          <span className="mission-phase-label">{humanStage}</span>
         </div>
         <button className="mission-cancel-btn" type="button" onClick={onCancel}>
-          取消核查
+          {runStatus === "completed" ? "返回" : "取消核查"}
         </button>
       </header>
 
-      <section className={`mission-run-status mission-run-status--${runStatus}`} aria-live="polite">
-        <div>
-          <span>运行状态</span>
-          <strong>{runStatusText(runStatus, elapsedMs, finalReport)}</strong>
+      {/* 一级锚点：始终保留原句；过程 KPI / 空提示尽量克制 */}
+      <section className={`mission-dossier-strip mission-dossier-strip--${runStatus}`} aria-live="polite">
+        <div className="mission-dossier-claim">
+          <span>正在核查</span>
+          <p title={claim}>{claimPreview || claim}</p>
         </div>
-        <div>
-          <span>已用时间</span>
+        {hasStreamEvents || finalReport ? (
+          <ol className="mission-dossier-stages" aria-label="核查阶段">
+            {["理解你在说什么", "对照公开报道", "整理结论"].map((label, index) => (
+              <li
+                key={label}
+                className={
+                  index < stageIdx ? "is-done" : index === stageIdx ? "is-current" : "is-todo"
+                }
+              >
+                {label}
+              </li>
+            ))}
+          </ol>
+        ) : null}
+        <div className="mission-dossier-meta">
+          <span>{runStatusText(runStatus, elapsedMs, finalReport)}</span>
           <strong>{formatElapsed(elapsedMs)}</strong>
         </div>
-        <div>
-          <span>当前链路</span>
-          <strong>{currentModelLine(steps, currentStep)}</strong>
-        </div>
-        <div className="mission-run-status-cell mission-run-status-cell--events">
-          <span>事件流</span>
-          <strong>{streamStatusSummary.headline}</strong>
-          <small>{streamStatusSummary.detail}</small>
-        </div>
+        {liveKeyFindings.length > 0 ? (
+          <div className="mission-dossier-findings" aria-label="关键发现">
+            <span>{finalReport ? "关键发现" : "已出现的线索"}</span>
+            <ul>
+              {liveKeyFindings.map((item) => (
+                <li key={item.slice(0, 48)}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {fallbackNotice ? (
           <p className="mission-run-status-notice">{fallbackNotice}</p>
-        ) : runStatus === "running" && elapsedMs >= 45000 ? (
+        ) : runStatus === "running" && elapsedMs >= 90000 ? (
           <p className="mission-run-status-notice">
-            模型和搜索链路仍在返回结果；页面没有卡死。超过 90 秒时可保留当前记录并重新发起一次。
+            还在整理中，页面没有卡死。若超过数分钟无新线索，可取消后重试。
           </p>
         ) : null}
       </section>
 
-      <section className="case-workbench-shell" aria-label="真实核查办案台">
+      <section
+        className={`case-workbench-shell ${showDetailColumn ? "" : "case-workbench-shell--stream-only"}`}
+        aria-label="核查卷宗工作区"
+      >
         <ControllerRail
           controllerEvents={controllerEvents}
           activeControllerEventId={activeControllerEvent?.id ?? ""}
           followLive={followLive}
           onSelectControllerEvent={handleSelectControllerEvent}
           onFollowLive={handleFollowLive}
+          claim={claim}
+          stageIdx={stageIdx}
+          finalReport={finalReport}
+          runStatus={runStatus}
         />
 
-        <section className="case-center-column" aria-label="核心工作区">
-          <ControllerEventDetailPanel
-            claim={claim}
-            event={activeControllerEvent}
-            steps={steps}
-            outputItems={outputItems}
-            controllerEvents={controllerEvents}
-            finalReport={finalReport}
-            executionPlan={executionPlan}
-            runStatus={runStatus}
-            errorMessage={errorMessage}
-            followLive={followLive}
-            onSelectControllerEvent={handleSelectControllerEvent}
-          />
-        </section>
+        {showDetailColumn ? (
+          <section className="case-center-column" aria-label="核心工作区">
+            <AnimatePresence initial={false}>
+              {finalReport ? (
+                <motion.div
+                  key="mission-final-report-stream"
+                  initial={{ opacity: 0, y: 18 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.28, ease: EASE_OUT }}
+                >
+                  <MissionFinalReportPanel claim={claim} finalReport={finalReport} />
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+            {errorMessage ? (
+              <p className="mission-run-status-notice" role="alert">
+                {errorMessage}
+              </p>
+            ) : null}
+            {activeControllerEvent ? (
+              <ControllerEventDetailPanel
+                claim={claim}
+                event={activeControllerEvent}
+                steps={steps}
+                outputItems={outputItems}
+                controllerEvents={controllerEvents}
+                finalReport={finalReport}
+                executionPlan={executionPlan}
+                runStatus={runStatus}
+                errorMessage={errorMessage}
+                followLive={followLive}
+                onSelectControllerEvent={handleSelectControllerEvent}
+              />
+            ) : !finalReport ? (
+              <p className="stream-detail-placeholder">点选左侧任一步，明细在此展开。</p>
+            ) : null}
+          </section>
+        ) : null}
       </section>
 
       {/* v2-iteration 2026-07-04: PR-3 reasoning trace side panel (collapsible). review P2-1 fix: scope to current session. */}

@@ -22,8 +22,8 @@ describe("summarizeMissionStreamStatus", () => {
       failed: 1,
       final: 1,
       done: 2,
-      headline: "2 完成 · 1 运行 · 1 失败",
-      detail: "5 条真实事件 · 1 排队",
+      headline: "2 步已完成 · 1 步进行中 · 1 步失败",
+      detail: "共 5 条过程记录 · 1 待处理",
     });
   });
 
