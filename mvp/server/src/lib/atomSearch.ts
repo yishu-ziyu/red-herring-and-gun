@@ -1,14 +1,31 @@
 /**
  * 可核查原子检索（decompose-then-verify 的检索侧）。
- * 最小可演示：每个可核查原子一轮检索；整句兜底 / query 合并 / 缓存不在本模块。
+ * Pure transforms: select / build / bind.
+ * I/O seam: SearchOneAtom adapter via retrieveForAtoms.
+ * 整句兜底 / query 合并 / 缓存不在本模块。
  */
 
+import { claimAtomKey } from "./claimAtom/index.js";
+import { splitVerifiableAtoms } from "./claimAtom/index.js";
+import { filterAtomSources, type FilterMeta, type FilterableSource } from "./retrievalFilter.js";
+
 export const MAX_ATOM_SEARCHES = 6;
+
+/** Adapter at the search seam: one atom → raw search result. */
+export type SearchOneAtom = (atom: string) => Promise<unknown>;
+
+export type RetrieveForAtomsHooks = {
+  onAtomStart?: (atom: string) => void;
+  onAtomResult?: (atom: string, result: unknown) => void;
+  /** parallel (default) or sequential (SSE-friendly) */
+  mode?: "parallel" | "sequential";
+};
 
 export type AtomSearchSource = {
   url: string;
   title: string;
   snippet: string;
+  credibility?: string;
 };
 
 export type AtomSearchItem = {
@@ -19,7 +36,7 @@ export type AtomSearchItem = {
 export type AtomSearchBundle = {
   /** 实际发起检索的原子（截断后） */
   atomsSearched: string[];
-  /** claimAtomKey → 该原子检索到的来源 */
+  /** claimAtomKey → 该原子检索到的来源（已筛选） */
   byAtomKey: Record<string, AtomSearchSource[]>;
   /** 供 fact_checker / source_validator 兼容的聚合 search360 形 */
   aggregate: {
@@ -35,13 +52,19 @@ export type AtomSearchBundle = {
   };
   /** 注入 Agent 的按条材料 */
   forAgent: Array<{ claimAtom: string; sources: AtomSearchSource[] }>;
+  /** 筛选可观测性：过滤前→后条数 */
+  filterMeta?: {
+    perAtom: Record<string, FilterMeta>;
+    totals: FilterMeta;
+  };
 };
 
-function asSourceList(result: unknown): AtomSearchSource[] {
+function asSourceList(result: unknown): FilterableSource[] {
   const sources = (result as { sources?: unknown })?.sources;
   if (!Array.isArray(sources)) return [];
-  const out: AtomSearchSource[] = [];
-  for (const raw of sources.slice(0, 8)) {
+  const out: FilterableSource[] = [];
+  for (let i = 0; i < sources.length && i < 24; i += 1) {
+    const raw = sources[i];
     if (!raw || typeof raw !== "object") continue;
     const rec = raw as Record<string, unknown>;
     const url = String(rec.url || rec.link || "").trim();
@@ -50,6 +73,8 @@ function asSourceList(result: unknown): AtomSearchSource[] {
       url,
       title: String(rec.title || rec.name || "").slice(0, 200),
       snippet: String(rec.condensedSnippet || rec.snippet || rec.summary || rec.content || "").slice(0, 320),
+      credibility: typeof rec.credibility === "string" ? rec.credibility : undefined,
+      providerRank: i,
     });
   }
   return out;
@@ -85,13 +110,28 @@ export function buildAtomSearchBundle(
   const answers: string[] = [];
   const models: string[] = [];
   const atomsSearched: string[] = [];
+  const perAtomMeta: Record<string, FilterMeta> = {};
+  const totals: FilterMeta = { before: 0, afterFilter: 0, afterDedupe: 0, afterTopK: 0 };
 
   for (const item of items) {
     if (!item || typeof item.atom !== "string") continue;
     const atom = item.atom;
     atomsSearched.push(atom);
     const key = claimAtomKeyFn(atom);
-    const sources = asSourceList(item.result);
+    const rawSources = asSourceList(item.result);
+    const { sources: filtered, meta } = filterAtomSources(rawSources);
+    perAtomMeta[key] = meta;
+    totals.before += meta.before;
+    totals.afterFilter += meta.afterFilter;
+    totals.afterDedupe += meta.afterDedupe;
+    totals.afterTopK += meta.afterTopK;
+
+    const sources: AtomSearchSource[] = filtered.map((s) => ({
+      url: s.url,
+      title: s.title,
+      snippet: s.snippet,
+      credibility: s.credibility,
+    }));
     byAtomKey[key] = sources;
     forAgent.push({ claimAtom: atom, sources });
 
@@ -108,7 +148,7 @@ export function buildAtomSearchBundle(
         title: s.title,
         url: s.url,
         snippet: s.snippet,
-        credibility: "",
+        credibility: s.credibility || "",
         forClaimAtom: atom,
       });
     }
@@ -118,12 +158,13 @@ export function buildAtomSearchBundle(
     atomsSearched,
     byAtomKey,
     forAgent,
+    filterMeta: { perAtom: perAtomMeta, totals },
     aggregate: {
       answer: answers.join("\n\n").slice(0, 1800),
       sources: aggregateSources.slice(0, 24),
       relatedQuestions: [],
       model: models.slice(0, 3).join(" | ") || "atom-search",
-      traceText: `按可核查原子检索 ${atomsSearched.length} 轮，合计去重来源 ${aggregateSources.length} 条。`,
+      traceText: `按可核查原子检索 ${atomsSearched.length} 轮；筛选 ${totals.before}→${totals.afterTopK} 条（滤/去重/topK），聚合去重来源 ${aggregateSources.length} 条。`,
       _source: "per-atom-search",
       supportingEvidence: [],
       contradictingEvidence: [],
@@ -194,4 +235,48 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
       evidenceGaps: gaps,
     };
   });
+}
+
+/**
+ * Per-atom retrieval behind one interface.
+ * Selects verifiable atoms, calls searchOne per atom, builds bundle with claimAtomKey.
+ */
+export async function retrieveForAtoms(options: {
+  claimAtoms: unknown;
+  claimAtomTypes: unknown;
+  searchOne: SearchOneAtom;
+  hooks?: RetrieveForAtomsHooks;
+  claimAtomKeyFn?: (s: string) => string;
+}): Promise<{ atomsToSearch: string[]; atomSearchBundle: AtomSearchBundle; search360Result: AtomSearchBundle["aggregate"] }> {
+  const keyFn = options.claimAtomKeyFn ?? claimAtomKey;
+  const split = splitVerifiableAtoms(options.claimAtoms, options.claimAtomTypes);
+  const atomsToSearch = selectAtomsToSearch(split.verifiable);
+  const mode = options.hooks?.mode ?? "parallel";
+  const items: AtomSearchItem[] = [];
+
+  if (mode === "sequential") {
+    for (const atom of atomsToSearch) {
+      options.hooks?.onAtomStart?.(atom);
+      const result = await options.searchOne(atom);
+      options.hooks?.onAtomResult?.(atom, result);
+      items.push({ atom, result });
+    }
+  } else {
+    const settled = await Promise.all(
+      atomsToSearch.map(async (atom) => {
+        options.hooks?.onAtomStart?.(atom);
+        const result = await options.searchOne(atom);
+        options.hooks?.onAtomResult?.(atom, result);
+        return { atom, result };
+      })
+    );
+    items.push(...settled);
+  }
+
+  const atomSearchBundle = buildAtomSearchBundle(items, keyFn);
+  return {
+    atomsToSearch,
+    atomSearchBundle,
+    search360Result: atomSearchBundle.aggregate,
+  };
 }
