@@ -19,6 +19,7 @@ import type {
   ShellToolItem,
   ShellVerdictCard,
 } from "./types";
+import { humanizeProcessSummary, humanizeProcessTitle } from "./visibleProcessRows";
 
 const AGENT_LABEL: Record<string, string> = {
   rumor_detector: "立案分诊",
@@ -216,11 +217,13 @@ export function adaptOrchestrateStreamToShell(
       case "planner_update": {
         touchThought("planner", {
           key: "planner",
-          title: "理解命题与路径",
+          title: humanizeProcessTitle("理解命题与路径"),
           description:
-            event.plan?.rationale ||
-            humanizeClaimType(event.plan?.claimType) ||
-            "规划核查路径",
+            humanizeProcessSummary(
+              event.plan?.rationale ||
+                humanizeClaimType(event.plan?.claimType) ||
+                "规划核查路径"
+            ) || "规划核查路径",
           status: mapStatus("done"),
           kind: "planner",
           timestamp: ts,
@@ -232,8 +235,8 @@ export function adaptOrchestrateStreamToShell(
         const id = event.relay?.id || `relay-${orderThought.length}`;
         touchThought(id, {
           key: id,
-          title: humanRelayTitle(event.relay),
-          description: event.relay?.trigger || event.relay?.savedReason,
+          title: humanizeProcessTitle(humanRelayTitle(event.relay)),
+          description: humanizeProcessSummary(event.relay?.trigger || event.relay?.savedReason),
           status: mapStatus(event.relay?.status === "running" ? "running" : "done"),
           kind: "relay",
           timestamp: ts,

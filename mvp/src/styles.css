@@ -16709,7 +16709,7 @@ button:disabled {
   color: #f0d0d0;
 }
 
-/* Embedded live shell: denser Kimi-like process rail */
+/* Embedded live shell: full-width narrative stream (not a nested product card) */
 .mps-live-wrap {
   margin: 0 0 8px;
   max-width: none;
@@ -16717,12 +16717,173 @@ button:disabled {
   min-width: 0;
 }
 .mps-live-wrap .mps-root {
-  max-width: none;
+  max-width: min(920px, 100%);
   width: 100%;
-  border-color: #2a2e38;
+  border: none;
   background: transparent;
   border-radius: 0;
-  padding: 2px 0 6px;
+  padding: 2px 0 12px;
+  box-shadow: none;
+}
+.mps-live-wrap--narrative .mps-root--narrative {
+  max-width: min(920px, 100%);
+}
+.stream-rail--shell-narrative {
+  width: 100%;
+  max-width: none;
+}
+.stream-rail--shell-narrative .mps-live-wrap {
+  width: 100%;
+}
+.case-workbench-view .case-workbench-shell--stream-only .stream-rail--shell-narrative {
+  width: 100%;
+  max-width: none;
+}
+
+/* Narrative process steps */
+.mps-root--narrative .mps-chain--narrative {
+  margin: 0;
+  padding: 0;
+}
+.mps-step--current {
+  background: color-mix(in srgb, #2563eb 6%, transparent);
+  border-radius: 10px;
+  margin: 0 -8px;
+  padding: 8px 8px 4px;
+}
+.mps-step-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.mps-step-check {
+  color: #16a34a;
+  font-size: 13px;
+  font-weight: 600;
+}
+.mps-step-actor {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #71717a;
+}
+.mps-activities {
+  list-style: none;
+  margin: 8px 0 4px 2px;
+  padding: 0 0 0 10px;
+  border-left: 2px solid #e4e4e7;
+}
+.mps-activity-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 4px 0;
+  cursor: pointer;
+  color: inherit;
+}
+.mps-activity-title {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: #3f3f46;
+}
+.mps-activity-detail {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: #71717a;
+  line-height: 1.4;
+}
+.mps-step-next {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #52525b;
+}
+.mps-expand-collapsed,
+.mps-process-fold-btn {
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 0;
+  margin-bottom: 8px;
+}
+.mps-deferred {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, #d97706 35%, #e4e4e7);
+  background: color-mix(in srgb, #d97706 8%, transparent);
+}
+.mps-deferred-label {
+  font-size: 14px;
+  font-weight: 650;
+  color: #b45309;
+}
+.mps-deferred-text {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #3f3f46;
+}
+.mps-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+.mps-activity-static {
+  padding: 4px 0;
+}
+.mps-tool-inspector {
+  margin: 12px 0;
+  padding: 14px 16px;
+  border: 1px solid #e4e4e7;
+  border-radius: 12px;
+  background: #fff;
+}
+.mps-tool-inspector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mps-tool-inspector-head strong {
+  font-size: 15px;
+  color: #18181b;
+}
+.mps-tool-inspector-close {
+  border: 1px solid #e4e4e7;
+  background: #fafafa;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #52525b;
+}
+.mps-tool-inspector-detail,
+.mps-tool-inspector-query {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #3f3f46;
+}
+.mps-tool-inspector-json {
+  margin: 10px 0 0;
+  padding: 10px;
+  max-height: 240px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.4;
+  background: #f4f4f5;
+  border-radius: 8px;
+  color: #52525b;
 }
 
 /* Stream-rail (mission control light panel): re-tint for contrast + denser rhythm */
