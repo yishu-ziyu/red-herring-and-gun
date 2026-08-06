@@ -45,12 +45,24 @@ export interface ShellAgentChip {
   summary?: string;
 }
 
-/** Final verdict card when complete */
+/** Source line for verdict card (≤3 on hero) */
+export interface ShellVerdictSource {
+  title: string;
+  url?: string;
+}
+
+/** Final verdict card when complete — first-screen decision payload */
 export interface ShellVerdictCard {
   present: boolean;
   verdictType?: string;
   conclusion?: string;
   credibilityScore?: number;
+  /** Explicit recommendation or derived share advice */
+  shareAdvice?: string;
+  /** Key findings chips (e.g. 外地素材拼接) */
+  keyFindings?: string[];
+  /** Up to 3 sources for the hero card */
+  topSources?: ShellVerdictSource[];
   reviewPassed?: boolean;
   reviewScore?: number;
   reviewIssues?: Array<{ code: string; severity: string; message: string }>;

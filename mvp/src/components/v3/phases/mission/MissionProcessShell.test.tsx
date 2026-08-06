@@ -60,11 +60,14 @@ describe("MissionProcessShell narrative UI", () => {
     const { container } = render(<MissionProcessShell model={model} />);
 
     expect(container.querySelector('.mps-root[data-live="0"]')).toBeTruthy();
-    expect(screen.getByText("结论")).toBeInTheDocument();
+    expect(screen.getByText("现在可以怎么看")).toBeInTheDocument();
     expect(screen.getByText("部分误导/夸大")).toBeInTheDocument();
+    expect(screen.getByText(/不宜整段转发/)).toBeInTheDocument();
+    expect(screen.getByText(/加热不当可能产生有害物/)).toBeInTheDocument();
     expect(screen.queryByText("mixed_misleading")).not.toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "协作角色" })).not.toBeInTheDocument();
     expect(container.querySelector(".mps-live")).toBeNull();
+    expect(container.querySelector(".mps-verdict--hero")).toBeTruthy();
     // Process folded by default
     expect(screen.getByRole("button", { name: /回看核查过程/ })).toBeInTheDocument();
   });
@@ -74,7 +77,7 @@ describe("MissionProcessShell narrative UI", () => {
     const { container } = render(<MissionProcessShell model={model} />);
 
     expect(screen.getByText(/结论暂缓/)).toBeInTheDocument();
-    expect(screen.queryByText("结论")).not.toBeInTheDocument();
+    expect(screen.queryByText("现在可以怎么看")).not.toBeInTheDocument();
     expect(container.querySelector(".mps-verdict")).toBeNull();
     expect(container.querySelector(".mps-deferred")).toBeTruthy();
     const issueTexts = Array.from(container.querySelectorAll(".mps-review-issue")).map(
@@ -92,7 +95,7 @@ describe("MissionProcessShell narrative UI", () => {
     expect(alert).toHaveTextContent("过程中断");
     expect(alert).toHaveTextContent("核查失败：上游中断");
     expect(screen.queryByRole("list", { name: "过程动作" })).not.toBeInTheDocument();
-    expect(screen.queryByText("结论")).not.toBeInTheDocument();
+    expect(screen.queryByText("现在可以怎么看")).not.toBeInTheDocument();
   });
 
   it("FIXTURE_AGENT_ERROR: local failure without full-page stream error", () => {
@@ -127,6 +130,6 @@ describe("MissionProcessShell narrative UI", () => {
     const model = adaptOrchestrateStreamToShell(FIXTURE_DEBATE);
     render(<MissionProcessShell model={model} />);
     expect(screen.getByText("冲突调解")).toBeInTheDocument();
-    expect(screen.queryByText("结论")).not.toBeInTheDocument();
+    expect(screen.queryByText("现在可以怎么看")).not.toBeInTheDocument();
   });
 });

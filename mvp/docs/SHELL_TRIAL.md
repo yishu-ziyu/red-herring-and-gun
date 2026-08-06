@@ -1,5 +1,16 @@
 # 过程壳试用（叙事流 · Ant Design X 形）
 
+## 默认行为（2026-08-06 起）
+
+**Live 默认开启 token 叙事壳**，无需 `?shell=1`。
+
+| 开关 | 效果 |
+|------|------|
+| （默认） | token 叙事流 |
+| `?shell=antdx` 或 `VITE_MISSION_SHELL=antdx` | Ant Design X ThoughtChain |
+| `?shell=legacy` 或 `VITE_MISSION_SHELL=legacy` | 旧过程流回退 |
+| `VITE_MISSION_SHELL=off` | 同 legacy |
+
 ## 立刻可看（不跑真模型）
 
 ```text
@@ -14,27 +25,23 @@ Query：`fixture=early|mid|complete|review_fail|debate|error|agent_error`，`var
 ## 真案 + 过程壳
 
 ```text
-http://127.0.0.1:5180/?shell=1          # token 叙事流（默认）
-http://127.0.0.1:5180/?shell=antdx      # Ant Design X ThoughtChain 渲染同一叙事
+http://127.0.0.1:5180/                 # 默认 token 叙事流
+http://127.0.0.1:5180/?shell=antdx     # Ant Design X
+http://127.0.0.1:5180/?shell=legacy    # 旧流回退
 ```
 
 开案后过程区占主列（运行中不预留空右栏）。顶栏 claim/阶段只出现一次。  
-不加 `?shell` 仍是原 legacy 流。
-
-环境变量（可选）：
-
-```bash
-VITE_MISSION_SHELL=token npm run dev   # 或 antdx
-```
+完成态：过程壳内 **判决首屏**（判定 · 人话 · 转发建议 · 关键发现 · ≤3 来源），完整报告仍可在右栏展开。
 
 ## 代码落点
 
 | 层 | 路径 |
 |----|------|
+| 默认开关 | `src/lib/missionShell/resolveShellMode.ts` |
 | 适配器 | `src/lib/missionShell/streamAdapter.ts` |
 | 模型 | `src/lib/missionShell/types.ts` |
 | Fixture | `src/lib/missionShell/fixtures.ts` |
-| 单测 | `src/lib/missionShell/*` + shell UI（约 23+ pass，见 vitest） |
+| 单测 | `src/lib/missionShell/*` + shell UI |
 | 壳 UI | `src/components/v3/phases/mission/MissionProcessShell.tsx` |
 | 预览 | `.../MissionShellPreview.tsx` + App `/shell-preview` |
 | 直播接线 | `MissionControlView` 累积 `sseEvents` |

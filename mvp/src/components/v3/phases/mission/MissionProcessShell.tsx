@@ -31,7 +31,7 @@ export interface MissionProcessShellProps {
 }
 
 function statusDotClass(status: VisibleProcessRow["status"]): string {
-  if (status === "loading") return "mps-dot mps-dot--loading";
+  if (status === "loading") return "mps-dot mps-dot--loading mps-orb";
   if (status === "error") return "mps-dot mps-dot--error";
   if (status === "success") return "mps-dot mps-dot--success";
   return "mps-dot mps-dot--pending";
@@ -145,14 +145,54 @@ function VerdictBlock({ narrative, model }: { narrative: VisibleProcessNarrative
 
   if (!narrative.showVerdict || !model.verdict.present) return null;
 
+  const findings = model.verdict.keyFindings?.filter(Boolean).slice(0, 4) ?? [];
+  const sources = model.verdict.topSources?.slice(0, 3) ?? [];
+
   return (
-    <div className="mps-verdict">
-      <div className="mps-verdict-label">结论</div>
-      <div className="mps-verdict-type">{humanizeVerdictType(model.verdict.verdictType)}</div>
-      {typeof model.verdict.credibilityScore === "number" ? (
-        <div className="mps-verdict-score">可信度 {model.verdict.credibilityScore}</div>
-      ) : null}
+    <div className="mps-verdict mps-verdict--hero" role="region" aria-label="核查结论">
+      <div className="mps-verdict-label">现在可以怎么看</div>
+      <div className="mps-verdict-badges">
+        <div className="mps-verdict-type">{humanizeVerdictType(model.verdict.verdictType)}</div>
+        {typeof model.verdict.credibilityScore === "number" ? (
+          <div className="mps-verdict-score">可信度 {model.verdict.credibilityScore}</div>
+        ) : null}
+      </div>
       {model.verdict.conclusion ? <p className="mps-verdict-text">{model.verdict.conclusion}</p> : null}
+      {model.verdict.shareAdvice ? (
+        <div className="mps-share-advice" aria-label="转发建议">
+          <span className="mps-share-advice-label">转发建议</span>
+          <p className="mps-share-advice-text">{model.verdict.shareAdvice}</p>
+        </div>
+      ) : null}
+      {findings.length > 0 ? (
+        <ul className="mps-findings" aria-label="关键发现">
+          {findings.map((item) => (
+            <li key={item.slice(0, 48)} className="mps-finding-chip">
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {sources.length > 0 ? (
+        <div className="mps-top-sources" aria-label="关键来源">
+          <span className="mps-top-sources-label">关键来源</span>
+          <ul className="mps-top-sources-list">
+            {sources.map((src) => (
+              <li key={(src.url || src.title).slice(0, 80)}>
+                {src.url ? (
+                  <a href={src.url} target="_blank" rel="noopener noreferrer">
+                    {src.title}
+                  </a>
+                ) : (
+                  <span>{src.title}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="mps-top-sources-empty">本案未挂接可点开的稳定来源链接；详见完整报告与过程记录。</p>
+      )}
       {typeof model.verdict.reviewPassed === "boolean" ? (
         <div className={`mps-review ${model.verdict.reviewPassed ? "mps-review--ok" : "mps-review--warn"}`}>
           报告审稿 · {model.verdict.reviewPassed ? "通过" : "需补证"}
