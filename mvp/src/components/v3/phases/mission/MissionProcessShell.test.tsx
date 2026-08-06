@@ -17,7 +17,7 @@ describe("MissionProcessShell narrative UI", () => {
     cleanup();
   });
 
-  it("FIXTURE_MID: no tool strip, no agent cluster, no claim, one current step, nested activities", () => {
+  it("FIXTURE_MID: no tool strip, no agent cluster, no claim, one current step, activity chips", () => {
     const model = adaptOrchestrateStreamToShell(FIXTURE_MID);
     const { container } = render(<MissionProcessShell model={model} claimInParent />);
 
@@ -35,10 +35,13 @@ describe("MissionProcessShell narrative UI", () => {
 
     const currents = container.querySelectorAll('[aria-current="step"]');
     expect(currents.length).toBe(1);
+    expect(container.querySelectorAll(".mps-step--current").length).toBe(1);
 
-    // Nested activity for memory/search
+    // Nested activities as horizontal chips
     const activities = screen.getAllByRole("list", { name: "步骤活动" });
     expect(activities.length).toBeGreaterThan(0);
+    expect(activities[0].classList.contains("mps-activities--chips")).toBe(true);
+    expect(container.querySelectorAll(".mps-activity-chip").length).toBeGreaterThan(0);
     const activityText = activities.map((el) => el.textContent || "").join("\n");
     expect(activityText).toMatch(/历史|检索|公开材料/);
 
@@ -72,7 +75,7 @@ describe("MissionProcessShell narrative UI", () => {
     expect(screen.getByRole("button", { name: /回看核查过程/ })).toBeInTheDocument();
   });
 
-  it("FIXTURE_REVIEW_FAIL: 结论暂缓, not formal 结论 card", () => {
+  it("FIXTURE_REVIEW_FAIL: 结论暂缓, not formal 结论 card; process folded", () => {
     const model = adaptOrchestrateStreamToShell(FIXTURE_REVIEW_FAIL);
     const { container } = render(<MissionProcessShell model={model} />);
 
@@ -80,6 +83,8 @@ describe("MissionProcessShell narrative UI", () => {
     expect(screen.queryByText("现在可以怎么看")).not.toBeInTheDocument();
     expect(container.querySelector(".mps-verdict")).toBeNull();
     expect(container.querySelector(".mps-deferred")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /回看核查过程/ })).toBeInTheDocument();
+    expect(container.querySelector(".mps-chain")).toBeNull();
     const issueTexts = Array.from(container.querySelectorAll(".mps-review-issue")).map(
       (el) => el.textContent || ""
     );
@@ -131,5 +136,13 @@ describe("MissionProcessShell narrative UI", () => {
     render(<MissionProcessShell model={model} />);
     expect(screen.getByText("冲突调解")).toBeInTheDocument();
     expect(screen.queryByText("现在可以怎么看")).not.toBeInTheDocument();
+  });
+
+  it("variant=antdx still renders token narrative (antdx frozen)", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_MID);
+    const { container } = render(<MissionProcessShell model={model} variant="antdx" />);
+    expect(container.querySelector('.mps-root[data-variant="token"]')).toBeTruthy();
+    expect(container.querySelector(".mps-root--antdx")).toBeNull();
+    expect(container.querySelectorAll('[aria-current="step"]').length).toBe(1);
   });
 });

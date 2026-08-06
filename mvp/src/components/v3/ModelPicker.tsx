@@ -1,5 +1,5 @@
 /**
- * ModelPicker.tsx — 4-Agent 模型选择器（简化版 BYO-API-key）
+ * ModelPicker.tsx — 首页模型选择（简化版 BYO-API-key）
  *
  * 业务流程：
  * 1. 挂载时拉 GET /api/models/list（server 端按 env 过滤过的候选）
@@ -54,10 +54,10 @@ const AGENT_IDS: AgentId[] = [
 ];
 
 const AGENT_LABELS: Record<AgentId, string> = {
-  rumor_detector: "Rumor Detector（先识别信息结构）",
-  fact_checker: "Fact Checker（核查事实）",
-  source_validator: "Source Validator（评估来源）",
-  report_composer: "Report Composer（汇总报告）",
+  rumor_detector: "识别信息结构",
+  fact_checker: "核查事实",
+  source_validator: "评估来源",
+  report_composer: "汇总报告",
 };
 
 // ───────────────────────────────────────────────────────────────
@@ -205,7 +205,7 @@ export function ModelPicker({ value, onChange }: ModelPickerProps) {
   if (models === null && !loadError) {
     return (
       <section
-        aria-label="4-Agent 模型选择"
+        aria-label="模型选择"
         className="model-picker"
         data-state="loading"
       >
@@ -222,7 +222,7 @@ export function ModelPicker({ value, onChange }: ModelPickerProps) {
   if (loadedModels.length === 0) {
     return (
       <section
-        aria-label="4-Agent 模型选择"
+        aria-label="模型选择"
         className="model-picker"
         data-state="empty"
       >
@@ -235,7 +235,7 @@ export function ModelPicker({ value, onChange }: ModelPickerProps) {
     );
   }
 
-  // 折叠态摘要：告诉用户当前 4 个 Agent 的配置状态，避免展开才能知道有没有选
+  // 折叠态摘要：告诉用户当前各步骤模型配置，避免展开才能知道有没有选
   const filledCount = AGENT_IDS.filter((id) => value[id]).length;
   const summaryLine: string = (() => {
     if (filledCount === 0) return "默认（不指定模型，走默认配置）";
@@ -247,15 +247,15 @@ export function ModelPicker({ value, onChange }: ModelPickerProps) {
         return m?.label ?? `${c.provider}/${c.model}`;
       });
       const allSame = seenLabel.every((l) => l && l === seenLabel[0]);
-      if (allSame && seenLabel[0]) return `全部 Agent 使用 ${seenLabel[0]}`;
-      return `4 个 Agent 均已指定模型`;
+      if (allSame && seenLabel[0]) return `全部步骤使用 ${seenLabel[0]}`;
+      return `4 个步骤均已指定模型`;
     }
-    return `已为 ${filledCount}/${AGENT_IDS.length} 个 Agent 指定模型`;
+    return `已为 ${filledCount}/${AGENT_IDS.length} 个步骤指定模型`;
   })();
 
   return (
     <section
-      aria-label="4-Agent 模型选择"
+      aria-label="模型选择"
       className="model-picker"
       data-state="ready"
       data-expanded={expanded ? "true" : "false"}
@@ -268,7 +268,7 @@ export function ModelPicker({ value, onChange }: ModelPickerProps) {
         aria-controls="model-picker-body"
       >
         <span className="model-picker-header-text">
-          <span className="model-picker-title">4-Agent 模型选择</span>
+          <span className="model-picker-title">模型选择</span>
           <span className="model-picker-hint">{summaryLine}</span>
         </span>
         <span className="model-picker-chevron" aria-hidden="true">

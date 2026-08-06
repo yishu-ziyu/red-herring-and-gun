@@ -5,7 +5,7 @@
  * - 卖可追溯调查，不卖玄学「真假打分」
  * - 红黑配色源自 Logo：ink-black + crimson-red
  * - 暖纸 / 档案质感，侦探办公室痕迹
- * - 结构：使命 → Hero → Intake → Agent 工作流 → 角色案例 → 调查报告样例 → 信任条 → Footer
+ * - 结构：使命 → Hero → Intake → 如何工作 → 角色案例 → 调查报告样例 → 信任条 → Footer
  */
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
@@ -26,6 +26,8 @@ import { ModelPicker, type ModelChoiceMap } from "./ModelPicker";
 interface DashboardProps {
   onStartAnalysis: (intake: CaseIntake, modelChoice: ModelChoiceMap) => void;
   showUtilityMenu?: boolean;
+  /** 重新核查时预填原 claim；普通进入首页为空 */
+  initialClaim?: string;
 }
 
 interface AipingUser {
@@ -95,8 +97,8 @@ const DEMO_CASES = [
 const MAX_IMAGE_COUNT = 4;
 const MAX_TOTAL_IMAGE_BYTES = 6 * 1024 * 1024;
 
-export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: DashboardProps) {
-  const [inputValue, setInputValue] = useState("");
+export function Dashboard({ onStartAnalysis, showUtilityMenu = false, initialClaim = "" }: DashboardProps) {
+  const [inputValue, setInputValue] = useState(initialClaim);
   const [images, setImages] = useState<CaseImage[]>([]);
   const [inputError, setInputError] = useState("");
   const [isScraping, setIsScraping] = useState(false);
@@ -604,7 +606,7 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
           <span>红鲱鱼与枪</span>
         </div>
         <p className="landing-footer-powered">
-          多源检索与多模型协作 · 过程可追溯
+          对照公开材料 · 来源可点开
         </p>
         <nav className="landing-footer-nav" aria-label="次要导航">
           <a href="/settings/api-key">API Key 设置</a>
