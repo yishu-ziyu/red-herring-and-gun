@@ -45,33 +45,28 @@ type AipingAuthState =
 const HOW_IT_WORKS = [
   {
     code: "01",
-    en: "Claim Decomposer",
-    title: "论点拆解",
-    desc: "把一句模糊陈述拆成多个可验证命题，而不是整段含糊带过。",
+    title: "拆开说法",
+    desc: "把一句模糊陈述拆成多个可核对的要点，而不是整段含糊带过。",
   },
   {
     code: "02",
-    en: "Evidence Hunter",
-    title: "证据搜索",
-    desc: "多引擎检索论文、官方文件、原始报道与公开数据。",
+    title: "找公开材料",
+    desc: "检索报道、官方文件、论文与公开数据，对照原句。",
   },
   {
     code: "03",
-    en: "Source Assessor",
-    title: "来源评估",
-    desc: "判断出处是否一手、是否权威、是否存在利益冲突。",
+    title: "看来源靠不靠谱",
+    desc: "区分一手出处、转载与利益冲突，避免把噪声当证据。",
   },
   {
     code: "04",
-    en: "Cross Examiner",
-    title: "交叉验证",
+    title: "交叉核对",
     desc: "对照支持与反驳材料，标出矛盾、限定条件与不确定处。",
   },
   {
     code: "05",
-    en: "Case File",
-    title: "调查收束",
-    desc: "生成带来源链路的分析报告：能说什么、不能说什么、还缺什么。",
+    title: "告诉你转不转",
+    desc: "给出结论、转发建议与可点来源：能说什么、不能说什么。",
   },
 ] as const;
 
@@ -327,16 +322,13 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
           </div>
 
           <p className="landing-mission">
-            当任何人都能生成信息，我们需要重新设计验证信息的方法。
+            群里又在传一条消息？先查清楚再决定转不转。
           </p>
-          <p className="landing-tagline">基于多 Agent 协作的事实核查系统</p>
+          <p className="landing-tagline">粘贴传言，对照公开材料，给出可追溯的判断</p>
           <p className="landing-hero-body">
-            面对一个未经验证的判断，让多个 Agent 像调查员一样拆解观点、寻找证据，并追踪结论来源。
-          </p>
-          <p className="landing-hero-body">
-            输入一个观点、新闻或网络内容，完成从论点拆解、证据检索到交叉验证的调查流程，并生成
-            <strong>带来源链路的分析报告</strong>
-            ——核心不是替你下定论，而是让判断过程可追溯。
+            输入一段文字、链接或截图。系统会拆开可核对的说法、检索公开来源，并告诉你：
+            <strong>更可能属实、不实，还是证据不足</strong>
+            ——以及该不该转发。
           </p>
         </div>
       </section>
@@ -429,7 +421,7 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
             它如何工作
           </h2>
           <p className="landing-section-lead">
-            不是一次问答，而是一条可追踪的多 Agent 调查流水线——每一步都留下工作痕迹。
+            不是一次问答，而是把说法拆开、对照材料、给出能不能转的判断。
           </p>
           <ol className="landing-how-grid">
             {HOW_IT_WORKS.map((step) => (
@@ -437,14 +429,13 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
                 <span className="landing-how-index" aria-hidden="true">
                   {step.code}
                 </span>
-                <p className="landing-how-en">{step.en}</p>
                 <h3 className="landing-how-title">{step.title}</h3>
                 <p className="landing-how-desc">{step.desc}</p>
               </li>
             ))}
           </ol>
-          <div className="landing-decomposer-example" aria-label="论点拆解示例">
-            <p className="landing-decomposer-label">Claim Decomposer · 现场拆解</p>
+          <div className="landing-decomposer-example" aria-label="说法拆解示例">
+            <p className="landing-decomposer-label">拆开说法 · 示例</p>
             <p className="landing-decomposer-claim">「这个产品致癌」</p>
             <ol className="landing-decomposer-chain">
               <li>是否存在相关物质？</li>
@@ -568,58 +559,35 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
                 </ul>
               </div>
               <div className="landing-report-confidence">
-                <span className="landing-report-verdict-label">Evidence Confidence</span>
-                <div className="landing-report-score">
-                  <span className="landing-report-score-value landing-report-score-value--muted">42</span>
-                  <span className="landing-report-score-unit">/ 100</span>
-                </div>
+                <span className="landing-report-verdict-label">转发建议</span>
                 <p className="landing-report-confidence-note">
-                  基于当前检索到的证据一致性、来源质量与反向证据计算。
+                  不宜整段转发。可说明「有条件风险，不等于必然致害」。
                 </p>
               </div>
             </div>
 
-            <div className="landing-report-sources">
-              <span className="landing-report-verdict-label">证据分布（示意）</span>
-              <ul className="landing-report-source-dist">
-                <li>官方 / 机构 2</li>
-                <li>论文 3</li>
-                <li>新闻 4</li>
-                <li>待核来源 5</li>
-              </ul>
-            </div>
-
             <p className="landing-report-note">
-              以上为静态示意卷宗。真实调查会按你提交的材料重新取证，并保留完整来源链路。
+              以上为静态示意卷宗。真实核查会按你提交的材料重新取证，并保留来源链路。
             </p>
           </aside>
         </div>
       </section>
 
-      {/* ── Trust strip ── */}
-      <section className="landing-trust" aria-label="能力与数据概览">
+      {/* ── Trust strip（不堆供应商墙） ── */}
+      <section className="landing-trust" aria-label="产品承诺">
         <div className="landing-trust-inner">
-          <p className="landing-trust-providers">
-            <span className="landing-trust-label">检索</span>
-            360 · AnySearch · Metaso · Tavily · Exa
-            <span className="landing-trust-sep" aria-hidden="true">
-              ·
-            </span>
-            <span className="landing-trust-label">模型</span>
-            MiniMax · StepFun · DeepSeek
-          </p>
           <ul className="landing-trust-stats">
             <li>
-              <strong>5</strong>
-              <span>调查步骤</span>
+              <strong>可拆</strong>
+              <span>说法拆成可核对点</span>
             </li>
             <li>
-              <strong>4+</strong>
-              <span>协作 Agent</span>
+              <strong>可溯</strong>
+              <span>结论带来源链路</span>
             </li>
             <li>
-              <strong>多源</strong>
-              <span>证据交叉</span>
+              <strong>可决</strong>
+              <span>明确转不转建议</span>
             </li>
             <li className="landing-trust-stat--demo">
               <strong>演示</strong>
@@ -636,7 +604,7 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false }: Dashboar
           <span>红鲱鱼与枪</span>
         </div>
         <p className="landing-footer-powered">
-          检索：360 / AnySearch / Metaso / Tavily / Exa · 模型：MiniMax / StepFun / DeepSeek
+          多源检索与多模型协作 · 过程可追溯
         </p>
         <nav className="landing-footer-nav" aria-label="次要导航">
           <a href="/settings/api-key">API Key 设置</a>

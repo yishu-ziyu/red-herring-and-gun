@@ -86,7 +86,7 @@ describe("real analysis workspace", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
 
-    expect(await screen.findByLabelText("真实核查办案台")).toBeInTheDocument();
+    expect(await screen.findByLabelText("核查卷宗工作区")).toBeInTheDocument();
     return rendered;
   }
 
@@ -131,9 +131,16 @@ describe("real analysis workspace", () => {
 
     await startRealAnalysis();
 
-    expect(await screen.findByText("判断置信度 95/100")).toBeInTheDocument();
-    expect(screen.getByText("原信息可信度 5/100")).toBeInTheDocument();
-    expect(screen.getByText(/原信息可信度为 5\/100，越低越不实/)).toBeInTheDocument();
+    // 结果首屏：结论 + 转发建议（不依赖旧的评分主视觉）
+    const report = await screen.findByLabelText("最终核查判断");
+    expect(within(report).getByText(/该说法没有可靠证据支持/)).toBeInTheDocument();
+    expect(within(report).getByText("不要继续转发。")).toBeInTheDocument();
+    // 折叠区仍可展开看评分细节
+    const more = within(report).queryByText("更多细节（评分与审计）");
+    if (more) {
+      fireEvent.click(more);
+      expect(within(report).getByText(/判断置信度 95\/100|原信息可信度 5\/100/)).toBeInTheDocument();
+    }
   });
 
   it("keeps deterministic report fallback visible instead of rejecting the final report", async () => {
@@ -222,9 +229,13 @@ describe("real analysis workspace", () => {
 
     await startRealAnalysis();
 
+    // 基础设施错误不得出现在用户可见结论文案里
     const report = await screen.findByLabelText("最终核查判断");
-    expect(report.textContent).toContain("最终写作服务暂时不可用，系统已改用保守兜底报告。");
-    expect(report.textContent).not.toMatch(/ReportComposer|API error|quota|https?:\/\/|\/v1/i);
+    expect(within(report).getByText(/当前证据不足以直接确认原始说法/)).toBeInTheDocument();
+    expect(within(report).getByText("先不要转发。")).toBeInTheDocument();
+    const visible = document.body.textContent || "";
+    expect(visible).toMatch(/最终写作服务暂时不可用|证据不足|先不要转发/);
+    expect(visible).not.toMatch(/ReportComposer all providers failed|quota exceeded at https:\/\/internal\.example\.com/);
   });
 
   it("keeps blank report fields and legitimate source URLs out of the fallback warning", async () => {
@@ -238,7 +249,7 @@ describe("real analysis workspace", () => {
           credibilityLabel: "",
           credibilityScore: 36,
           conclusion: "当前证据见官方说明 https://example.com/news/v1-release。",
-          recommendation: "",
+          recommendation: "可打开官方说明核对。",
           summaryForPublic: "",
           whyHardToVerify: [""],
           evidenceChain: [
@@ -247,7 +258,7 @@ describe("real analysis workspace", () => {
               finding: "官方页面可访问",
               evidence: "官方说明见 https://example.com/news/v1-release",
               boundary: "该链接只能证明页面存在，不能证明更强因果结论。",
-              sourceRefs: [],
+              sourceRefs: ["https://example.com/news/v1-release"],
             },
           ],
           closureActions: [],
@@ -259,8 +270,8 @@ describe("real analysis workspace", () => {
     await startRealAnalysis();
 
     const report = await screen.findByLabelText("最终核查判断");
-    expect(report.textContent).toContain("https://example.com/news/v1-release");
-    expect(report.textContent).not.toContain("最终写作服务暂时不可用，系统已改用保守兜底报告。");
+    expect(within(report).getAllByText(/https:\/\/example\.com\/news\/v1-release/).length).toBeGreaterThan(0);
+    expect(screen.queryByText("最终写作服务暂时不可用，系统已改用保守兜底报告。")).not.toBeInTheDocument();
   });
 });
 
@@ -308,15 +319,13 @@ describe("landing Version A storytelling", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("基于多 Agent 协作的事实核查系统")).toBeInTheDocument();
-    expect(
-      screen.getByText("当任何人都能生成信息，我们需要重新设计验证信息的方法。")
-    ).toBeInTheDocument();
+    expect(await screen.findByText("粘贴传言，对照公开材料，给出可追溯的判断")).toBeInTheDocument();
+    expect(screen.getByText("群里又在传一条消息？先查清楚再决定转不转。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "它如何工作" })).toBeInTheDocument();
-    expect(screen.getByText("Claim Decomposer")).toBeInTheDocument();
+    expect(screen.getByText("拆开说法")).toBeInTheDocument();
     expect(screen.getByText("调查报告预览")).toBeInTheDocument();
     expect(screen.getByText("示例卷宗")).toBeInTheDocument();
-    expect(screen.getByText("Evidence Confidence")).toBeInTheDocument();
+    expect(screen.getByText("转发建议")).toBeInTheDocument();
     expect(screen.getByText("调查结论")).toBeInTheDocument();
 
     const verifyButtons = screen.getAllByRole("button", { name: /立即核查/ });
@@ -342,7 +351,7 @@ describe("landing Version A storytelling", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: `立即核查：${claim}` }));
 
-    expect(await screen.findByLabelText("真实核查办案台")).toBeInTheDocument();
+    expect(await screen.findByLabelText("核查卷宗工作区")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(requestOrchestrateStream).toHaveBeenCalled();
@@ -369,7 +378,7 @@ describe("landing Version A storytelling", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("请先填写待核查材料");
     expect(requestOrchestrateStream).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText("真实核查办案台")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("核查卷宗工作区")).not.toBeInTheDocument();
   });
 });
 

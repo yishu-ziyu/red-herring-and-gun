@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>左栏活动过程 · 改版原型（未改产品代码）</title>
+  <style>
+    :root {
+      --ink: #1d1d1f;
+      --muted: #6b6560;
+      --paper: #fefcf6;
+      --paper-2: #f7f3ea;
+      --line: rgba(29, 29, 31, 0.1);
+      --blue: #1d4ed8;
+      --blue-soft: rgba(37, 99, 235, 0.1);
+      --green: #15803d;
+      --green-soft: rgba(22, 163, 74, 0.1);
+      --red: #b42318;
+      --red-soft: rgba(180, 35, 24, 0.08);
+      --card: #fffdf8;
+      --shadow: 0 8px 28px rgba(40, 30, 20, 0.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(180deg, #f3efe6 0%, var(--paper) 240px);
+      line-height: 1.5;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 80px; }
+    h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.02em; }
+    .sub { color: var(--muted); font-size: 14px; margin: 0 0 22px; }
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--red-soft);
+      color: var(--red);
+      margin-bottom: 10px;
+    }
+    .plan {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px 20px;
+      box-shadow: var(--shadow);
+      margin-bottom: 28px;
+    }
+    .plan h2 { font-size: 15px; margin: 0 0 12px; }
+    .plan ol { margin: 0; padding-left: 1.2em; }
+    .plan li { margin: 0 0 8px; font-size: 14px; }
+    .plan code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      background: var(--paper-2);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .note {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: var(--paper-2);
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      margin-bottom: 36px;
+    }
+    @media (max-width: 900px) {
+      .compare { grid-template-columns: 1fr; }
+    }
+    .panel {
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: var(--card);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .panel-head .tag-bad { color: var(--red); }
+    .panel-head .tag-good { color: var(--green); }
+    .panel-body { padding: 12px; background: #f4f1ea; min-height: 520px; }
+    .fake-chrome {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    /* —— BEFORE: current left rail smell —— */
+    .before-list { display: grid; gap: 8px; }
+    .b-card {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      font-size: 12px;
+    }
+    .b-card .k { font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+    .b-card strong { display: block; font-size: 13px; margin-bottom: 4px; }
+    .b-card p { margin: 0; color: #444; font-size: 11.5px; line-height: 1.4; }
+    .b-card.err { outline: 2px solid rgba(180, 35, 24, 0.25); }
+    .b-card .cut { color: var(--red); font-weight: 700; margin-top: 6px; }
+    .b-cluster {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      padding: 8px;
+    }
+    .b-cluster > header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 6px 8px;
+    }
+    .b-inner {
+      background: #f7f7f5;
+      border-radius: 10px;
+      padding: 10px;
+      position: relative;
+    }
+    .b-inner .orphan { position: absolute; left: 10px; bottom: 4px; color: #999; font-size: 14px; }
+
+    /* —— AFTER: proposed —— */
+    .after-shell {
+      background: var(--paper);
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      overflow: hidden;
+    }
+    .dossier {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(254, 252, 246, 0.98);
+      display: grid;
+      gap: 8px;
+    }
+    .dossier .label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      text-transform: none;
+    }
+    .dossier .claim {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+    .stages { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+    .stages li {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      background: #fff;
+    }
+    .stages li.done { color: var(--green); background: var(--green-soft); border-color: transparent; }
+    .stages li.now { color: var(--blue); background: var(--blue-soft); border-color: transparent; }
+    .clue {
+      font-size: 12px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #fff;
+      border: 1px solid var(--line);
+    }
+    .clue strong { display: block; font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+    .body-grid {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      min-height: 360px;
+    }
+    .rail {
+      border-right: 1px solid var(--line);
+      padding: 12px 10px;
+      background: #faf8f2;
+    }
+    .rail h3 {
+      margin: 0 0 4px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .rail .hint { font-size: 11px; color: var(--muted); margin: 0 0 12px; }
+    .rail-now {
+      background: #fff;
+      border: 1px solid rgba(37, 99, 235, 0.2);
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+    .rail-now .pulse {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--blue);
+      margin-bottom: 4px;
+    }
+    .rail-now .pulse i {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+    }
+    .rail-now p { margin: 0; font-size: 12px; line-height: 1.45; }
+    .rail-steps {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 0;
+    }
+    .rail-steps li {
+      display: grid;
+      grid-template-columns: 14px 1fr;
+      gap: 8px;
+      padding: 8px 4px;
+      border-top: 1px solid var(--line);
+      font-size: 12px;
+    }
+    .rail-steps li:first-child { border-top: 0; }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      margin-top: 4px;
+      background: #c4beb4;
+    }
+    .dot.ok { background: var(--green); }
+    .dot.run { background: var(--blue); }
+    .rail-steps small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .rail details {
+      margin-top: 12px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .rail details summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--ink);
+      padding: 6px 0;
+    }
+    .eng-log {
+      margin-top: 6px;
+      padding: 8px;
+      background: #fff;
+      border-radius: 8px;
+      border: 1px dashed var(--line);
+      font-size: 10.5px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .main {
+      padding: 14px;
+      background: var(--paper);
+    }
+    .main-wait {
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      padding: 16px;
+      background: #fff;
+      text-align: left;
+    }
+    .main-wait h4 { margin: 0 0 6px; font-size: 14px; }
+    .main-wait p { margin: 0; font-size: 13px; color: var(--muted); }
+    .verdict {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .verdict .eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+    .verdict .pill {
+      display: inline-block;
+      margin: 8px 0 10px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--red-soft);
+      color: var(--red);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .verdict h4 { margin: 0 0 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+    .verdict .conclusion { margin: 0 0 14px; font-size: 16px; font-weight: 700; line-height: 1.45; }
+    .verdict .share {
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: var(--paper-2);
+      margin-bottom: 12px;
+    }
+    .verdict .share span { font-size: 11px; font-weight: 700; color: var(--muted); }
+    .verdict .share p { margin: 4px 0 0; font-size: 14px; font-weight: 600; }
+    .sources { font-size: 12px; }
+    .sources a { color: var(--blue); }
+
+    .full {
+      margin-top: 8px;
+    }
+    .full h2 {
+      font-size: 16px;
+      margin: 0 0 8px;
+    }
+    .full .lead {
+      font-size: 13px;
+      color: var(--muted);
+      margin: 0 0 14px;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .tabs button {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tabs button.active {
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--ink);
+    }
+    .state { display: none; }
+    .state.show { display: block; }
+    footer.leg {
+      margin-top: 28px;
+      font-size: 12px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      padding-top: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="badge">PROTOTYPE ONLY · 未改产品代码</div>
+    <h1>左栏「活动过程」改版原型</h1>
+    <p class="sub">对照你截图里的问题：假双卡、供应商墙、claim 复读、裁切「立」、过程区抢主舞台。</p>
+
+    <section class="plan">
+      <h2>准备改什么（仅提案，等你拍板）</h2>
+      <ol>
+        <li><strong>左栏默认不是工程师事件瀑布</strong>：只保留「现在在干什么」+ 最多 4～6 条人话步骤；完整 12 条日志收进「技术过程」。</li>
+        <li><strong>同角色只一张卡</strong>：禁止两个「协作核查 / 立案分诊员」并排；状态点覆盖（完成/进行中）。</li>
+        <li><strong>标题人话化</strong>：<code>返回 | Memory Search</code> → <code>查过往类似案件</code>；<code>搜索 | 360 / AnySearch / …</code> → <code>检索公开材料</code>（引擎名只在展开里）。</li>
+        <li><strong>禁止全文复读 claim</strong>：query 一行截断或写「同正在核查原句」。</li>
+        <li><strong>修布局裁切</strong>：去掉孤儿「立」字一类坏排版。</li>
+        <li><strong>主舞台给结果/线索</strong>：等待时右侧是「已出现的线索 + 等什么」；完成后右侧是判决书（判定 / 一句话 / 转发建议 / ≤3 来源）。左栏永远是副栏。</li>
+      </ol>
+      <div class="note">
+        保护：真实事件流、编排、导出机制不删，只改<strong>默认暴露层级与文案</strong>。首页与结果面板若你满意可不动。
+      </div>
+    </section>
+
+    <!-- 并排对比：截图态 vs 提案 -->
+    <div class="compare">
+      <div class="panel">
+        <div class="panel-head">
+          <span>现在（你截图的味道）</span>
+          <span class="tag-bad">问题对照</span>
+        </div>
+        <div class="panel-body">
+          <div class="fake-chrome">活动过程 · 12 条 · 主视觉全是工具卡</div>
+          <div class="before-list">
+            <div class="b-card err">
+              <div class="k">检索动作</div>
+              <strong>返回 | Memory Search</strong>
+              <p>检索：养老服务员职业资格考试将在2026年10月17日开考…全国限报 5000人。</p>
+            </div>
+            <div class="b-cluster err">
+              <header><span>协作核查</span><span>1 个步骤</span></header>
+              <div class="b-inner">
+                <div class="k">核查步骤 · 绿点完成</div>
+                <strong>立案分诊员</strong>
+                <p>命题包含多种断言类型…</p>
+                <div class="orphan">立</div>
+              </div>
+            </div>
+            <div class="b-card">
+              <div class="k">报告收束？错位标签</div>
+              <strong>先派发可行动线索</strong>
+              <p>中控已经判定命题类型…</p>
+            </div>
+            <div class="b-cluster err">
+              <header><span>协作核查</span><span>1 个步骤</span></header>
+              <div class="b-inner">
+                <div class="k">又一张 · 蓝点进行中</div>
+                <strong>立案分诊员</strong>
+                <p>拆分可核查原子命题…</p>
+                <div class="orphan">立</div>
+              </div>
+            </div>
+            <div class="b-card err">
+              <div class="k">检索动作</div>
+              <strong>搜索 | 360 / AnySearch / Metaso / Tavily / Exa</strong>
+              <p>检索：养老服务员…5000人。（原句再刷一遍）</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <span>提案（左栏极简）</span>
+          <span class="tag-good">目标态</span>
+        </div>
+        <div class="panel-body">
+          <div class="fake-chrome">同一案件 · 等待中 · 左栏只占次要宽度</div>
+          <div class="after-shell">
+            <div class="dossier">
+              <div>
+                <div class="label">正在核查</div>
+                <p class="claim">养老服务员职业资格考试将在 2026-10-17 开考，8/7 截止，全国限报 5000 人</p>
+              </div>
+              <ul class="stages">
+                <li class="done">理解你在说什么</li>
+                <li class="now">对照公开报道</li>
+                <li>整理结论</li>
+              </ul>
+              <div class="clue">
+                <strong>已出现的线索</strong>
+                官方报名通道与截止日尚在交叉核对；暂未发现「已开考」的权威确认。
+              </div>
+            </div>
+            <div class="body-grid">
+              <aside class="rail">
+                <h3>进度</h3>
+                <p class="hint">点选可回看；细节在下方折叠</p>
+                <div class="rail-now">
+                  <div class="pulse"><i></i>对照公开材料中</div>
+                  <p>正在检索考试日程与报名规则，不重复粘贴原句。</p>
+                </div>
+                <ol class="rail-steps">
+                  <li>
+                    <span class="dot ok"></span>
+                    <div>理解说法<div><small>已拆成可核对点</small></div></div>
+                  </li>
+                  <li>
+                    <span class="dot ok"></span>
+                    <div>查过往类似案件<div><small>1 条历史线索 · 不当真证据</small></div></div>
+                  </li>
+                  <li>
+                    <span class="dot run"></span>
+                    <div>检索公开材料<div><small>进行中 · 引擎细节折叠</small></div></div>
+                  </li>
+                  <li>
+                    <span class="dot"></span>
+                    <div>整理转发建议<div><small>未开始</small></div></div>
+                  </li>
+                </ol>
+                <details>
+                  <summary>技术过程（12 条事件）</summary>
+                  <div class="eng-log">
+                    Memory Search · Parallel Search 360/AnySearch… · agent handoff 原始日志仅在这里出现，默认不对普通用户展示。
+                  </div>
+                </details>
+              </aside>
+              <section class="main">
+                <div class="main-wait">
+                  <h4>你先不用盯工具名</h4>
+                  <p>有可核对的线索会顶到上方「已出现的线索」。完整结论出来后，这里变成判定 + 转不转 + 来源。</p>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 完整两态：等待 / 完成 -->
+    <section class="full plan">
+      <h2>整页两态（提案）</h2>
+      <p class="lead">点切换。注意：左栏宽度与信息密度始终低于右侧「转不转」。</p>
+      <div class="tabs">
+        <button type="button" class="active" data-tab="wait">等待中</button>
+        <button type="button" data-tab="done">核查完成</button>
+      </div>
+
+      <div id="state-wait" class="state show">
+        <div class="after-shell">
+          <div class="dossier">
+            <div>
+              <div class="label">正在核查 · 1:24</div>
+              <p class="claim">养老服务员职业资格考试将在 2026-10-17 开考…</p>
+            </div>
+            <ul class="stages">
+              <li class="done">理解你在说什么</li>
+              <li class="now">对照公开报道</li>
+              <li>整理结论</li>
+            </ul>
+            <div class="clue">
+              <strong>已出现的线索</strong>
+              暂未挂接可点来源；正在对照人社/考试院公开页，不会把空来源当成已核完。
+            </div>
+          </div>
+          <div class="body-grid">
+            <aside class="rail">
+              <h3>进度</h3>
+              <div class="rail-now">
+                <div class="pulse"><i></i>检索公开材料</div>
+                <p>一次检索动作合并展示，不拆成 5 个供应商标题。</p>
+              </div>
+              <ol class="rail-steps">
+                <li><span class="dot ok"></span><div>理解说法<small>完成</small></div></li>
+                <li><span class="dot run"></span><div>对照报道<small>进行中</small></div></li>
+                <li><span class="dot"></span><div>整理结论<small>等待</small></div></li>
+              </ol>
+              <details>
+                <summary>技术过程</summary>
+                <div class="eng-log">工程师视图：12 条 SSE 事件、模型 ID、工具通道……</div>
+              </details>
+            </aside>
+            <section class="main">
+              <div class="main-wait">
+                <h4>右侧主区 · 等待</h4>
+                <p>不是 Thinking / Sources 空壳。可以放：当前子问题列表、已排除什么、预计还在等什么。</p>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <div id="state-done" class="state">
+        <div class="after-shell">
+          <div class="dossier">
+            <div>
+              <div class="label">核查完成 · 4:12</div>
+              <p class="claim">养老服务员职业资格考试将在 2026-10-17 开考…</p>
+            </div>
+            <ul class="stages">
+              <li class="done">理解你在说什么</li>
+              <li class="done">对照公开报道</li>
+              <li class="done">整理结论</li>
+            </ul>
+          </div>
+          <div class="body-grid">
+            <aside class="rail">
+              <h3>进度</h3>
+              <p class="hint">全部完成 · 可回放</p>
+              <ol class="rail-steps">
+                <li><span class="dot ok"></span><div>理解说法<small>完成</small></div></li>
+                <li><span class="dot ok"></span><div>检索公开材料<small>完成</small></div></li>
+                <li><span class="dot ok"></span><div>交叉核对<small>完成</small></div></li>
+                <li><span class="dot ok"></span><div>整理结论<small>完成</small></div></li>
+              </ol>
+              <details>
+                <summary>技术过程</summary>
+                <div class="eng-log">完整事件流仅作审计回放，不挡判决书。</div>
+              </details>
+            </aside>
+            <section class="main">
+              <div class="verdict">
+                <div class="eyebrow">核查结果</div>
+                <div class="pill">存疑 · 证据不足直接确认</div>
+                <h4>一句话结论</h4>
+                <p class="conclusion">公开材料里尚未看到与该「开考日 + 限报 5000」完全对齐的权威单源确认，不宜当确定消息转发。</p>
+                <div class="share">
+                  <span>转发建议</span>
+                  <p>先不要整段转发；若讨论，请附官方报名页并写明「待核实」。</p>
+                </div>
+                <div class="sources">
+                  <strong>关键来源（最多 3 条）</strong>
+                  <div style="margin-top:6px"><a href="#">example.gov.cn / 考试通知（示意）</a></div>
+                  <div><a href="#">example.edu.cn / 报名说明（示意）</a></div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="leg">
+      文件：<code>docs/uiux-audit/2026-08-06-left-rail-prototype.html</code> ·
+      这是原型，不是线上。你看完后告诉我：整包做 / 只做左栏 / 不做 / 要改哪几条。
+    </footer>
+  </div>
+  <script>
+    document.querySelectorAll('.tabs button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tabs button').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        const tab = btn.getAttribute('data-tab');
+        document.getElementById('state-wait').classList.toggle('show', tab === 'wait');
+        document.getElementById('state-done').classList.toggle('show', tab === 'done');
+      });
+    });
+  </script>
+</body>
+</html>
