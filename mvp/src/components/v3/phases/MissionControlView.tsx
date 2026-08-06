@@ -32,11 +32,9 @@ import { useReasoning } from "../../../store/reasoningStore";
 import { ConsensusProgressPanel } from "../ConsensusProgressPanel";
 import { EvidenceDetailDrawer } from "../EvidenceDetailDrawer";
 import { EvidenceChain } from "../EvidenceChain";
-import { MemoryCandidatePanel } from "../MemoryCandidatePanel";
 import { buildSearchJobs, executeSearchJobs } from "../../../lib/evidenceSearchRouter";
 import { evaluateConsensus } from "../../../lib/evidenceConsensus";
 import type { ChunkType, StreamingChunk, StreamingReasoningSession } from "../../../lib/streamingTypes";
-import { AgentCard } from "./mission/AgentCard";
 import { AgentStatusDot } from "../mission/AgentStatusDot";
 import { ReasoningTracePanel } from "../panels/ReasoningTracePanel";
 import { getTraceCollector } from "../../../lib/reasoningTrace";
@@ -53,6 +51,8 @@ interface MissionControlViewProps {
   previewMode?: boolean;
   /** 4-Agent 模型选择（home 透传）。undefined 表示走默认 fallback chain。 */
   modelChoice?: ModelChoiceMap;
+  /** 最终报告就绪时回调；父层可切 ResultView。有回调时本视图保持极简，不自渲染完整报告页。 */
+  onComplete?: (finalReport: Record<string, unknown>) => void;
 }
 
 type RunStatus = "idle" | "running" | "completed" | "failed";
@@ -3987,52 +3987,32 @@ function ControllerRail({
       Boolean(missionShellModel?.errorMessage) ||
       Boolean(missionShellModel?.verdict.present));
   const showAny = useMissionShell ? shellBusy || runStatus === "running" : hasItems;
-  const shellRunning =
-    missionShellModel?.thoughtItems.some((t) => t.status === "loading") ||
-    missionShellModel?.agents.some((a) => a.status === "loading");
-  const reviewFailed =
-    missionShellModel?.verdict.reviewPassed === false && !missionShellModel?.errorMessage;
 
   return (
     <aside
       className={`case-controller-panel case-controller-panel--stream stream-rail${useMissionShell ? " stream-rail--shell-narrative" : ""}`}
       aria-label="活动过程时间线"
     >
-      <div className="controller-transcript-head stream-rail-head">
-        <div>
-          <span className={`controller-live-dot ${followLive && runStatus === "running" ? "controller-live-dot--live" : "controller-live-dot--paused"}`} />
-          <div className="controller-transcript-head-copy">
-            <strong>核查过程</strong>
-            <span>
-              {useMissionShell
-                ? missionShellModel?.errorMessage
-                  ? missionShellModel.phaseLabel || "过程中断"
-                  : missionShellModel?.phaseLabel || "等待开始"
-                : hasItems
-                  ? "流式展开 · 点选查看明细"
-                  : "等待第一条过程事件"}
-            </span>
+      {/* Product shell: no secondary "核查过程" chrome — claim/stages live in parent top bar */}
+      {!useMissionShell ? (
+        <div className="controller-transcript-head stream-rail-head">
+          <div>
+            <span className={`controller-live-dot ${followLive && runStatus === "running" ? "controller-live-dot--live" : "controller-live-dot--paused"}`} />
+            <div className="controller-transcript-head-copy">
+              <strong>核查过程</strong>
+              <span>{hasItems ? "流式展开 · 点选查看明细" : "等待第一条过程事件"}</span>
+            </div>
+          </div>
+          <div className="controller-transcript-head-meta">
+            <em>{hasItems ? `${transcriptItems.length} 步` : "LIVE"}</em>
+            {!followLive && showAny ? (
+              <button type="button" className="controller-follow-live-btn" onClick={onFollowLive}>
+                回到最新
+              </button>
+            ) : null}
           </div>
         </div>
-        <div className="controller-transcript-head-meta">
-          {useMissionShell ? (
-            missionShellModel ? (
-              <>
-                {shellRunning ? <em>进行中</em> : missionShellModel.errorMessage ? <em>已中断</em> : reviewFailed ? <em>需补证</em> : runStatus === "completed" ? <em>已完成</em> : <em>准备中</em>}
-              </>
-            ) : (
-              <em>准备中</em>
-            )
-          ) : (
-            <em>{hasItems ? `${transcriptItems.length} 步` : "LIVE"}</em>
-          )}
-          {!followLive && showAny ? (
-            <button type="button" className="controller-follow-live-btn" onClick={onFollowLive}>
-              回到最新
-            </button>
-          ) : null}
-        </div>
-      </div>
+      ) : null}
 
       <div className="controller-transcript-flow stream-rail-flow" ref={flowRef}>
         {useMissionShell && missionShellModel ? (
@@ -5160,7 +5140,14 @@ function AgentDetailPane({
   );
 }
 
-export function MissionControlView({ claim, intake, onCancel, previewMode = false, modelChoice }: MissionControlViewProps) {
+export function MissionControlView({
+  claim,
+  intake,
+  onCancel,
+  previewMode = false,
+  modelChoice,
+  onComplete,
+}: MissionControlViewProps) {
   const { state, dispatch } = useReasoning();
   const knowledgeBase = useMemo(() => createKnowledgeBase(), []);
   const [steps, setSteps] = useState<HandoffStep[]>([]);
@@ -5183,18 +5170,25 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
   const [executionPlan, setExecutionPlan] = useState<ExecutionDagPlan | null>(null);
   const [speculativeRelays, setSpeculativeRelays] = useState<SpeculativeRelayUpdate[]>([]);
   const [debateUpdates, setDebateUpdates] = useState<ConsensusDebateUpdate[]>([]);
-  /** SSE raw events for Ant Design X–shaped process shell (Phase 0/1) */
+  /** SSE raw events for process shell narrative */
   const [sseEvents, setSseEvents] = useState<OrchestrateStreamEvent[]>([]);
-  const shellQuery =
-    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("shell") : null;
-  /** Live default = narrative token shell. Opt out: ?shell=legacy | VITE_MISSION_SHELL=legacy */
-  const shellMode = resolveShellMode(shellQuery, import.meta.env.VITE_MISSION_SHELL as string | undefined);
+  const searchParams =
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const shellQuery = searchParams?.get("shell") ?? null;
+  /** Live default = narrative token shell. Opt out: ?shell=legacy | ?legacyStream=1 | VITE_MISSION_SHELL=legacy */
+  const shellMode = resolveShellMode(
+    shellQuery === null && searchParams?.get("legacyStream") === "1" ? "legacy" : shellQuery,
+    import.meta.env.VITE_MISSION_SHELL as string | undefined
+  );
   const useMissionShell = shellMode.enabled;
-  const missionShellVariant = shellMode.variant;
+  /** Product path freezes antdx → always token even if resolve says antdx */
+  const missionShellVariant: "token" | "antdx" = "token";
   const missionShellModel = useMemo(
     () => adaptOrchestrateStreamToShell(sseEvents, { claim }),
     [sseEvents, claim]
   );
+  /** Avoid double-firing onComplete if parent re-renders with same report */
+  const onCompleteFiredRef = useRef(false);
 
   useEffect(() => {
     if (runStatus !== "running" || startedAt === null) return;
@@ -5222,7 +5216,15 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
     setSpeculativeRelays([]);
     setDebateUpdates([]);
     setSseEvents([]);
+    onCompleteFiredRef.current = false;
   }, [claim, dispatch]);
+
+  /** finalReport ready → hand off to parent ResultView (if provided) */
+  useEffect(() => {
+    if (!finalReport || !onComplete || onCompleteFiredRef.current) return;
+    onCompleteFiredRef.current = true;
+    onComplete(finalReport);
+  }, [finalReport, onComplete]);
 
   const runConsensusPipeline = useCallback(
     async (decomposition: ClaimDecompositionResult) => {
@@ -5845,16 +5847,6 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
       }),
     [runStatus, finalReport, steps, state.consensusReport, state.claimDecomposition]
   );
-  const liveKeyFindings = useMemo(
-    () =>
-      extractLiveKeyFindings({
-        steps,
-        controllerEvents,
-        finalReport,
-        max: 4,
-      }),
-    [steps, controllerEvents, finalReport]
-  );
   const claimPreview = useMemo(() => {
     const t = claim.replace(/\s+/g, " ").trim();
     return t.length > 96 ? `${t.slice(0, 93)}…` : t;
@@ -5926,21 +5918,33 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
 
   const stageIdx = humanStageIndex(humanStage);
   const hasStreamEvents = controllerEvents.length > 0 || (useMissionShell && sseEvents.length > 0);
-  // Shell narrative: right inspector only when user selects a tool activity, or run ends.
-  // Legacy: 运行中 + 跟随最新时只铺过程流；点选历史步或完成后才出明细列。
-  const showDetailColumn = useMissionShell
-    ? Boolean(finalReport) || Boolean(errorMessage) || Boolean(selectedShellToolKey)
-    : Boolean(finalReport) || Boolean(errorMessage) || !followLive || runStatus !== "running";
+  /** Live execution: only top bar + process shell — no dual column / empty right grid. */
+  const isLiveExecuting = runStatus === "running" || (runStatus === "idle" && !finalReport && !errorMessage);
+  /**
+   * Stream-only layout: always in shell product path, and always while running.
+   * Detail column only after run ends (legacy) or for post-run tool inspect when no onComplete handoff.
+   */
+  const streamOnlyLayout = useMissionShell || runStatus === "running" || isLiveExecuting;
+  // Never open right column during live run. Shell mode: no dual workbench at all (errors inline under shell).
+  // Legacy: after stop, allow detail when user inspects history or report is present without parent handoff.
+  const showDetailColumn =
+    !streamOnlyLayout &&
+    !useMissionShell &&
+    (Boolean(finalReport && !onComplete) || Boolean(errorMessage) || !followLive);
   const selectedShellTool =
     selectedShellToolKey && missionShellModel
       ? missionShellModel.tools.find((t) => t.key === selectedShellToolKey) ?? null
       : null;
+  /** Inline tool peek under shell (not a second column) */
+  const showInlineToolPeek = useMissionShell && Boolean(selectedShellTool) && runStatus !== "running";
 
   return (
     <main
       className={`mission-control-view case-workbench-view case-workbench-view--clean case-dossier-view ${
         hasStreamEvents ? "case-dossier-view--streaming" : "case-dossier-view--boot"
-      }${useMissionShell ? " case-dossier-view--shell" : ""}`}
+      }${useMissionShell ? " case-dossier-view--shell" : ""}${
+        streamOnlyLayout ? " case-workbench-view--stream-executing" : ""
+      }`}
     >
       <header className="mission-topbar">
         <div className="mission-brand">
@@ -5956,40 +5960,28 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
         </button>
       </header>
 
-      {/* 一级锚点：始终保留原句；过程 KPI / 空提示尽量克制 */}
+      {/* Top bar body: claim + stage chips only (no findings grid / agent strips while running) */}
       <section className={`mission-dossier-strip mission-dossier-strip--${runStatus}`} aria-live="polite">
         <div className="mission-dossier-claim">
           <span>正在核查</span>
           <p title={claim}>{claimPreview || claim}</p>
         </div>
-        {hasStreamEvents || finalReport ? (
-          <ol className="mission-dossier-stages" aria-label="核查阶段">
-            {["理解你在说什么", "对照公开报道", "整理结论"].map((label, index) => (
-              <li
-                key={label}
-                className={
-                  index < stageIdx ? "is-done" : index === stageIdx ? "is-current" : "is-todo"
-                }
-              >
-                {label}
-              </li>
-            ))}
-          </ol>
-        ) : null}
+        <ol className="mission-dossier-stages" aria-label="核查阶段">
+          {["理解你在说什么", "对照公开报道", "整理结论"].map((label, index) => (
+            <li
+              key={label}
+              className={
+                index < stageIdx ? "is-done" : index === stageIdx ? "is-current" : "is-todo"
+              }
+            >
+              {label}
+            </li>
+          ))}
+        </ol>
         <div className="mission-dossier-meta">
           <span>{runStatusText(runStatus, elapsedMs, finalReport)}</span>
           <strong>{formatElapsed(elapsedMs)}</strong>
         </div>
-        {liveKeyFindings.length > 0 ? (
-          <div className="mission-dossier-findings" aria-label="关键发现">
-            <span>{finalReport ? "关键发现" : "已出现的线索"}</span>
-            <ul>
-              {liveKeyFindings.map((item) => (
-                <li key={item.slice(0, 48)}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
         {fallbackNotice ? (
           <p className="mission-run-status-notice">{fallbackNotice}</p>
         ) : runStatus === "running" && elapsedMs >= 90000 ? (
@@ -6000,7 +5992,9 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
       </section>
 
       <section
-        className={`case-workbench-shell ${showDetailColumn ? "" : "case-workbench-shell--stream-only"}`}
+        className={`case-workbench-shell case-workbench-shell--stream-only${
+          useMissionShell ? " case-workbench-shell--process-shell" : ""
+        }`}
         aria-label="核查卷宗工作区"
       >
         <ControllerRail
@@ -6024,10 +6018,50 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
           }}
         />
 
+        {/* Errors + brief handoff stay under the shell (no empty right column) */}
+        {errorMessage ? (
+          <p className="mission-run-status-notice mission-run-status-notice--under-shell" role="alert">
+            {errorMessage}
+          </p>
+        ) : null}
+        {finalReport && onComplete ? (
+          <p className="mission-run-status-notice mission-run-status-notice--under-shell" aria-live="polite">
+            结论已就绪，正在整理…
+          </p>
+        ) : null}
+        {showInlineToolPeek && selectedShellTool ? (
+          <div className="mps-tool-inspector mps-tool-inspector--inline" aria-label="过程材料检查器">
+            <div className="mps-tool-inspector-head">
+              <strong>{selectedShellTool.title}</strong>
+              <button
+                type="button"
+                className="mps-tool-inspector-close"
+                onClick={() => {
+                  setSelectedShellToolKey(null);
+                  setFollowLive(true);
+                }}
+              >
+                关闭
+              </button>
+            </div>
+            {selectedShellTool.detail ? (
+              <p className="mps-tool-inspector-detail">{selectedShellTool.detail}</p>
+            ) : null}
+            {selectedShellTool.query ? (
+              <p className="mps-tool-inspector-query">检索：{selectedShellTool.query}</p>
+            ) : null}
+            {selectedShellTool.result ? (
+              <pre className="mps-tool-inspector-json">
+                {JSON.stringify(selectedShellTool.result, null, 2).slice(0, 1200)}
+              </pre>
+            ) : null}
+          </div>
+        ) : null}
+
         {showDetailColumn ? (
           <section className="case-center-column" aria-label="核心工作区">
             <AnimatePresence initial={false}>
-              {finalReport ? (
+              {finalReport && !onComplete ? (
                 <motion.div
                   key="mission-final-report-stream"
                   initial={{ opacity: 0, y: 18 }}
@@ -6039,40 +6073,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                 </motion.div>
               ) : null}
             </AnimatePresence>
-            {errorMessage ? (
-              <p className="mission-run-status-notice" role="alert">
-                {errorMessage}
-              </p>
-            ) : null}
-            {useMissionShell && selectedShellTool ? (
-              <div className="mps-tool-inspector" aria-label="过程材料检查器">
-                <div className="mps-tool-inspector-head">
-                  <strong>{selectedShellTool.title}</strong>
-                  <button
-                    type="button"
-                    className="mps-tool-inspector-close"
-                    onClick={() => {
-                      setSelectedShellToolKey(null);
-                      setFollowLive(true);
-                    }}
-                  >
-                    关闭
-                  </button>
-                </div>
-                {selectedShellTool.detail ? (
-                  <p className="mps-tool-inspector-detail">{selectedShellTool.detail}</p>
-                ) : null}
-                {selectedShellTool.query ? (
-                  <p className="mps-tool-inspector-query">检索：{selectedShellTool.query}</p>
-                ) : null}
-                {selectedShellTool.result ? (
-                  <pre className="mps-tool-inspector-json">
-                    {JSON.stringify(selectedShellTool.result, null, 2).slice(0, 1200)}
-                  </pre>
-                ) : null}
-              </div>
-            ) : null}
-            {!useMissionShell && activeControllerEvent ? (
+            {activeControllerEvent ? (
               <ControllerEventDetailPanel
                 claim={claim}
                 event={activeControllerEvent}
@@ -6086,18 +6087,20 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                 followLive={followLive}
                 onSelectControllerEvent={handleSelectControllerEvent}
               />
-            ) : null}
-            {!useMissionShell && !activeControllerEvent && !finalReport ? (
+            ) : !finalReport ? (
               <p className="stream-detail-placeholder">点选左侧任一步，明细在此展开。</p>
             ) : null}
           </section>
         ) : null}
       </section>
 
-      {/* v2-iteration 2026-07-04: PR-3 reasoning trace side panel (collapsible). review P2-1 fix: scope to current session. */}
-      <ReasoningTracePanel sessionId={getTraceCollector().getSessionId() ?? undefined} />
+      {/* Product shell path: no parallel trace rail. Legacy only, and never while running. */}
+      {!useMissionShell && runStatus !== "running" ? (
+        <ReasoningTracePanel sessionId={getTraceCollector().getSessionId() ?? undefined} />
+      ) : null}
 
-      {state.consensusReport ? (
+      {/* Consensus drawer only when user explicitly opened a proposition (not during live stream panels) */}
+      {state.consensusReport && runStatus !== "running" ? (
         <EvidenceDetailDrawer
           isOpen={Boolean(selectedPropositionId)}
           onClose={() => setSelectedPropositionId("")}

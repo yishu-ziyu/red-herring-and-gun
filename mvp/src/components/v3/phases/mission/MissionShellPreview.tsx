@@ -1,6 +1,8 @@
 /**
  * Dev preview: fixture → MissionProcessShell (no live SSE).
  * Routes: /shell-preview or ?shellPreview=1
+ *
+ * antdx tab is frozen — token narrative only.
  */
 import { useMemo, useState } from "react";
 import {
@@ -13,7 +15,7 @@ import {
   FIXTURE_MID,
   FIXTURE_REVIEW_FAIL,
 } from "../../../../lib/missionShell";
-import { MissionProcessShell, type MissionProcessShellVariant } from "./MissionProcessShell";
+import { MissionProcessShell } from "./MissionProcessShell";
 
 type FixtureKey =
   | "early"
@@ -46,45 +48,32 @@ const FIXTURE_LABEL: Record<FixtureKey, string> = {
 
 const FIXTURE_KEYS = new Set<string>(Object.keys(MAP));
 
-function parsePreviewQuery(): { fixture: FixtureKey; variant: MissionProcessShellVariant } {
-  if (typeof window === "undefined") {
-    return { fixture: "mid", variant: "token" };
-  }
+function parsePreviewQuery(): FixtureKey {
+  if (typeof window === "undefined") return "mid";
   const params = new URLSearchParams(window.location.search);
   const rawFixture = params.get("fixture");
-  const rawVariant = params.get("variant");
-  const fixture: FixtureKey =
-    rawFixture && FIXTURE_KEYS.has(rawFixture) ? (rawFixture as FixtureKey) : "mid";
-  const variant: MissionProcessShellVariant =
-    rawVariant === "antdx" || rawVariant === "token" ? rawVariant : "token";
-  return { fixture, variant };
+  return rawFixture && FIXTURE_KEYS.has(rawFixture) ? (rawFixture as FixtureKey) : "mid";
 }
 
 /** Keep shareable deep-link in address bar without full navigation. */
-function writePreviewQuery(fixture: FixtureKey, variant: MissionProcessShellVariant) {
+function writePreviewQuery(fixture: FixtureKey) {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams(window.location.search);
   params.set("fixture", fixture);
-  params.set("variant", variant);
+  params.delete("variant"); // antdx frozen
   const next = `${window.location.pathname}?${params.toString()}`;
   window.history.replaceState(null, "", next);
 }
 
 export function MissionShellPreview() {
-  const initial = parsePreviewQuery();
-  const [key, setKey] = useState<FixtureKey>(initial.fixture);
-  const [variant, setVariant] = useState<MissionProcessShellVariant>(initial.variant);
+  const [key, setKey] = useState<FixtureKey>(parsePreviewQuery);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const model = useMemo(() => adaptOrchestrateStreamToShell(MAP[key]), [key]);
 
   const selectFixture = (k: FixtureKey) => {
     setKey(k);
     setSelectedAgentId(null);
-    writePreviewQuery(k, variant);
-  };
-  const selectVariant = (v: MissionProcessShellVariant) => {
-    setVariant(v);
-    writePreviewQuery(key, v);
+    writePreviewQuery(k);
   };
 
   return (
@@ -103,28 +92,25 @@ export function MissionShellPreview() {
             {FIXTURE_LABEL[k]}
           </button>
         ))}
-        <button
-          type="button"
-          className={variant === "token" ? "mps-preview-tab mps-preview-tab--on" : "mps-preview-tab"}
-          onClick={() => selectVariant("token")}
-        >
+        <button type="button" className="mps-preview-tab mps-preview-tab--on" disabled>
           token 自绘
         </button>
         <button
           type="button"
-          className={variant === "antdx" ? "mps-preview-tab mps-preview-tab--on" : "mps-preview-tab"}
-          onClick={() => selectVariant("antdx")}
+          className="mps-preview-tab mps-preview-tab--frozen"
+          disabled
+          title="Ant Design X 路径已冻结，产品仅使用 token 叙事壳"
         >
-          Ant Design X
+          Ant Design X · 已冻结
         </button>
       </div>
       <p className="mps-preview-caption">
-        本地 fixture，非 live SSE。
+        本地 fixture，非 live SSE。antdx 已冻结，仅 token 叙事。
         <a href="/?shell=1">真跑请用 /?shell=1 开案</a>
       </p>
       <MissionProcessShell
         model={model}
-        variant={variant}
+        variant="token"
         selectedAgentId={selectedAgentId}
         onSelectAgent={setSelectedAgentId}
       />

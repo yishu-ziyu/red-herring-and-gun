@@ -383,14 +383,14 @@ describe("landing Version A storytelling", () => {
 });
 
 // ───────────────────────────────────────────────────────────────
-// 4-Agent model picker（简化版 BYO-API-key）
+// 模型选择（简化版 BYO-API-key）
 // B6: picker 在 home 露出，preview 路由不露出
-// B8: 点 "推荐组合" preset 自动填齐 4 个 picker
+// B8: 点 "推荐组合" preset 自动填齐 4 个步骤
 // B9: /api/models/list 返回 [] → picker 显示 "暂无可用模型"，启动按钮 disabled
 // e2e: 选完 picker 后点启动，requestOrchestrateStream 收到正确的 modelChoice
 // ───────────────────────────────────────────────────────────────
 
-describe("4-Agent model picker (simplified BYO)", () => {
+describe("model picker (simplified BYO)", () => {
   afterEach(() => {
     cleanup();
   });
@@ -402,19 +402,19 @@ describe("4-Agent model picker (simplified BYO)", () => {
   });
 
   // B6: home 露出 picker；preview 路由不露出
-  it("B6-a: home (Dashboard) shows the 4-Agent model picker, starting collapsed", async () => {
+  it("B6-a: home (Dashboard) shows the model picker, starting collapsed", async () => {
     mockModelsList(FAKE_MODELS);
 
     render(<App />);
 
     // picker 标题可见，但默认折叠，preset 按钮不展开看不到
-    const picker = await screen.findByLabelText("4-Agent 模型选择");
+    const picker = await screen.findByLabelText("模型选择");
     expect(picker).toHaveAttribute("data-expanded", "false");
     expect(picker.querySelector(".model-picker-presets")).toBeNull();
     expect(within(picker).queryByRole("button", { name: /推荐组合/ })).not.toBeInTheDocument();
 
     // 点标题展开 → preset 出现
-    fireEvent.click(within(picker).getByRole("button", { name: /4-Agent 模型选择/ }));
+    fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
     expect(picker).toHaveAttribute("data-expanded", "true");
     expect(within(picker).getByRole("button", { name: /推荐组合/ })).toBeInTheDocument();
   });
@@ -425,45 +425,45 @@ describe("4-Agent model picker (simplified BYO)", () => {
 
     render(<App />);
 
-    const picker = await screen.findByLabelText("4-Agent 模型选择");
-    // 默认状态：4 个 agent 都没指定 → 摘要应该提到"默认"
+    const picker = await screen.findByLabelText("模型选择");
+    // 默认状态：4 个步骤都没指定 → 摘要应该提到"默认"
     expect(within(picker).getByText(/默认/)).toBeInTheDocument();
 
-    // 展开 → 选第一个 agent 的 model
-    fireEvent.click(within(picker).getByRole("button", { name: /4-Agent 模型选择/ }));
-    const rumorSelect = within(picker).getByLabelText(/Rumor Detector/);
+    // 展开 → 选第一个步骤的 model
+    fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
+    const rumorSelect = within(picker).getByLabelText(/识别信息结构/);
     fireEvent.change(rumorSelect, { target: { value: "deepseek:deepseek-v4-flash" } });
 
     // 折叠回去（再次点标题）
-    fireEvent.click(within(picker).getByRole("button", { name: /4-Agent 模型选择/ }));
-    // 摘要应该反映"已为 1/4 个 Agent 指定"
+    fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
+    // 摘要应该反映"已为 1/4 个步骤指定"
     expect(within(picker).getByText(/1\/4/)).toBeInTheDocument();
   });
 
-  it("B6-b: /model-settings-preview does not show the 4-Agent picker", async () => {
+  it("B6-b: /model-settings-preview does not show the model picker", async () => {
     mockModelsList(FAKE_MODELS);
     window.history.pushState({}, "", "/model-settings-preview");
 
     render(<App />);
 
     expect(await screen.findByText("模型服务商")).toBeInTheDocument();
-    expect(screen.queryByLabelText("4-Agent 模型选择")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("模型选择")).not.toBeInTheDocument();
   });
 
   // B8: 推荐组合 → 4 个 picker 都填上
-  it("B8: clicking '推荐组合' preset auto-fills all 4 agent pickers", async () => {
+  it("B8: clicking '推荐组合' preset auto-fills all 4 step pickers", async () => {
     mockModelsList(FAKE_MODELS);
 
     render(<App />);
 
-    const picker = await screen.findByLabelText("4-Agent 模型选择");
+    const picker = await screen.findByLabelText("模型选择");
     // 默认折叠 → 先展开
-    fireEvent.click(within(picker).getByRole("button", { name: /4-Agent 模型选择/ }));
+    fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
     fireEvent.click(within(picker).getByRole("button", { name: /推荐组合/ }));
 
     // 4 个 picker 都应显示已选 model
     expect(within(picker).getAllByText(/DeepSeek V4 Pro|DeepSeek V4 Flash/).length).toBeGreaterThanOrEqual(1);
-    expect(within(picker).getByText(/Rumor/i)).toBeTruthy();
+    expect(within(picker).getByText(/识别信息结构/)).toBeTruthy();
   });
 
   // B9: /api/models/list 空 → 提示信息 + 启动按钮 disabled
@@ -490,9 +490,9 @@ describe("4-Agent model picker (simplified BYO)", () => {
     render(<App />);
 
     // 触发 "推荐组合" preset
-    const picker = await screen.findByLabelText("4-Agent 模型选择");
+    const picker = await screen.findByLabelText("模型选择");
     // 默认折叠 → 先展开
-    fireEvent.click(within(picker).getByRole("button", { name: /4-Agent 模型选择/ }));
+    fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
     fireEvent.click(within(picker).getByRole("button", { name: /推荐组合/ }));
 
     // 填入 claim 并启动
