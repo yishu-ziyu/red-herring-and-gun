@@ -3,7 +3,10 @@
  *
  * No inner claim/phase/live chrome. No top-level ToolStrip or AgentCluster.
  * Tools nest under steps; agents are actor attribution. Shared narrative model
- * via buildVisibleProcessRows (antdx uses the same).
+ * via buildVisibleProcessRows.
+ *
+ * antdx variant is frozen: product always renders the token narrative path.
+ * MissionProcessShellAntd.tsx is kept on disk but not loaded here.
  */
 import { useMemo, useState } from "react";
 import type { MissionShellModel } from "../../../../lib/missionShell";
@@ -14,7 +17,6 @@ import {
   type VisibleProcessNarrative,
   type VisibleProcessRow,
 } from "../../../../lib/missionShell";
-import { MissionProcessShellAntd } from "./MissionProcessShellAntd";
 
 export type MissionProcessShellVariant = "token" | "antdx";
 
@@ -25,6 +27,7 @@ export interface MissionProcessShellProps {
   onSelectAgent?: (agentId: string) => void;
   onSelectTool?: (toolKey: string) => void;
   className?: string;
+  /** antdx is frozen — always token narrative */
   variant?: MissionProcessShellVariant;
   /** When true, claim is already shown by parent — shell never re-prints it */
   claimInParent?: boolean;
@@ -69,23 +72,28 @@ function ProcessRowView({
           <div className="mps-step-actor">{row.actor.name}</div>
         ) : null}
         {row.activities.length > 0 ? (
-          <ul className="mps-activities" aria-label="步骤活动">
+          <ul className="mps-activities mps-activities--chips" aria-label="步骤活动">
             {row.activities.map((act) => (
-              <li key={act.key} className={`mps-activity mps-activity--${act.status}`}>
+              <li
+                key={act.key}
+                className={`mps-activity mps-activity-chip mps-activity--${act.status}`}
+              >
                 {onSelectTool && act.toolKey ? (
                   <button
                     type="button"
-                    className="mps-activity-btn"
+                    className="mps-activity-btn mps-activity-chip-btn"
                     onClick={() => onSelectTool(act.toolKey!)}
+                    title={act.detail || act.title}
                   >
                     <span className="mps-activity-title">{act.title}</span>
-                    {act.detail ? <span className="mps-activity-detail">{act.detail}</span> : null}
                   </button>
                 ) : (
-                  <div className="mps-activity-static">
+                  <span
+                    className="mps-activity-static mps-activity-chip-static"
+                    title={act.detail || act.title}
+                  >
                     <span className="mps-activity-title">{act.title}</span>
-                    {act.detail ? <span className="mps-activity-detail">{act.detail}</span> : null}
-                  </div>
+                  </span>
                 )}
               </li>
             ))}
@@ -219,26 +227,15 @@ export function MissionProcessShell({
   variant = "token",
   claimInParent = true,
 }: MissionProcessShellProps) {
+  // antdx frozen: always token narrative (MissionProcessShellAntd not loaded in product)
+  void variant;
   const narrative = useMemo(() => buildVisibleProcessRows(model), [model]);
   const [expandAll, setExpandAll] = useState(false);
 
-  if (variant === "antdx") {
-    const antd = (
-      <MissionProcessShellAntd
-        model={model}
-        narrative={narrative}
-        onSelectTool={onSelectTool}
-        claimInParent={claimInParent}
-        expandAll={expandAll}
-        onToggleExpand={() => setExpandAll((v) => !v)}
-        onExpandAll={() => setExpandAll(true)}
-      />
-    );
-    if (!className) return antd;
-    return <div className={className}>{antd}</div>;
-  }
-
-  const showCollapseToggle = narrative.collapsedCount > 0 && !expandAll;
+  const foldProcess =
+    narrative.mode === "complete" || narrative.mode === "deferred";
+  const showCollapseToggle =
+    narrative.collapsedCount > 0 && !expandAll && !foldProcess;
 
   return (
     <section
@@ -255,7 +252,7 @@ export function MissionProcessShell({
         <VerdictBlock narrative={narrative} model={model} />
       ) : null}
 
-      {narrative.mode === "complete" ? (
+      {foldProcess ? (
         <div className="mps-process-fold">
           <button
             type="button"
@@ -268,7 +265,7 @@ export function MissionProcessShell({
         </div>
       ) : null}
 
-      {(narrative.mode !== "complete" || expandAll) && (
+      {(!foldProcess || expandAll) && (
         <>
           {showCollapseToggle ? (
             <button type="button" className="mps-expand-collapsed" onClick={() => setExpandAll(true)}>
