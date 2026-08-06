@@ -1,0 +1,313 @@
+/**
+ * SSE fixtures for MissionStreamAdapter (no network).
+ */
+import type { OrchestrateStreamEvent } from "../agentExpansion";
+
+/** Fixture A: early stream — planner + memory + first agent running */
+export const FIXTURE_EARLY: OrchestrateStreamEvent[] = [
+  {
+    type: "planner_update",
+    claim: "隔夜菜加热会致癌吗",
+    plan: {
+      id: "dag-1",
+      claimType: "causal",
+      rationale: "因果类命题，进入事实核查与替代解释路径。",
+      nodes: [],
+      edges: [],
+      criticalPath: [],
+    } as OrchestrateStreamEvent["plan"],
+    timestamp: 1,
+  },
+  {
+    type: "tool_start",
+    toolId: "memory_search",
+    toolName: "Agent Memory Search",
+    query: "隔夜菜加热会致癌吗",
+    timestamp: 2,
+  },
+  {
+    type: "tool_result",
+    toolId: "memory_search",
+    toolName: "Agent Memory Search",
+    query: "隔夜菜加热会致癌吗",
+    result: { hitCount: 1, acceptedCandidateCount: 0 },
+    timestamp: 3,
+  },
+  {
+    type: "agent_start",
+    agent: "rumor_detector",
+    agentName: "RumorDetector",
+    agentIcon: "🚨",
+    timestamp: 4,
+  },
+];
+
+/** Fixture B: mid stream — agents done + search tools */
+export const FIXTURE_MID: OrchestrateStreamEvent[] = [
+  ...FIXTURE_EARLY,
+  {
+    type: "agent_complete",
+    agent: "rumor_detector",
+    agentName: "RumorDetector",
+    output: {
+      claimAtoms: ["隔夜菜加热产生致癌物"],
+      severity: "medium",
+      analysis: "属于因果健康类断言，需查权威来源与反证。",
+    },
+    timestamp: 5,
+  },
+  {
+    type: "tool_start",
+    toolId: "search360",
+    toolName: "360 Search",
+    query: "隔夜菜 致癌 证据",
+    timestamp: 6,
+  },
+  {
+    type: "tool_result",
+    toolId: "search360",
+    toolName: "360 Search",
+    result: { sourceCount: 5, sources: [1, 2, 3, 4, 5] },
+    timestamp: 7,
+  },
+  {
+    type: "agent_start",
+    agent: "fact_checker",
+    agentName: "FactChecker",
+    timestamp: 8,
+  },
+  {
+    type: "agent_complete",
+    agent: "fact_checker",
+    agentName: "FactChecker",
+    output: {
+      factCheckResult: "partial",
+      keyFindings: ["加热不当可能产生有害物，但不等于必然致癌"],
+      unresolvedEvidenceGaps: ["缺少 RCT", "缺少官方通告原文"],
+    },
+    timestamp: 9,
+  },
+  {
+    type: "agent_start",
+    agent: "source_validator",
+    agentName: "SourceValidator",
+    timestamp: 10,
+  },
+  {
+    type: "agent_complete",
+    agent: "source_validator",
+    agentName: "SourceValidator",
+    output: { sourceReliability: "medium", missingSources: ["权威疾控原文"] },
+    timestamp: 11,
+  },
+];
+
+/** Fixture C: complete with report reviewer */
+export const FIXTURE_COMPLETE: OrchestrateStreamEvent[] = [
+  ...FIXTURE_MID,
+  {
+    type: "agent_start",
+    agent: "report_composer",
+    agentName: "ReportComposer",
+    timestamp: 12,
+  },
+  {
+    type: "agent_complete",
+    agent: "report_composer",
+    agentName: "ReportComposer",
+    output: {
+      verdictType: "mixed_misleading",
+      conclusion: "说法存在夸大，加热不当有风险但不宜直接等同致癌。",
+    },
+    timestamp: 13,
+  },
+  {
+    type: "tool_start",
+    toolId: "report_reviewer",
+    toolName: "Report Reviewer (proposer-reviewer)",
+    query: "隔夜菜加热会致癌吗",
+    timestamp: 14,
+  },
+  {
+    type: "tool_result",
+    toolId: "report_reviewer",
+    toolName: "Report Reviewer (proposer-reviewer)",
+    result: {
+      passed: true,
+      score: 92,
+      issues: [],
+    },
+    timestamp: 15,
+  },
+  {
+    type: "complete",
+    claim: "隔夜菜加热会致癌吗",
+    finalReport: {
+      verdictType: "mixed_misleading",
+      conclusion: "说法存在夸大，加热不当有风险但不宜直接等同致癌。",
+      credibilityScore: 42,
+    },
+    reportReview: {
+      passed: true,
+      score: 92,
+      issues: [],
+    },
+    timestamp: 16,
+  },
+];
+
+/** Fixture D: mid path then tool_error + top-level error (stream aborted) */
+export const FIXTURE_ERROR: OrchestrateStreamEvent[] = [
+  ...FIXTURE_MID,
+  {
+    type: "tool_start",
+    toolId: "search360",
+    toolName: "360 Search",
+    query: "隔夜菜 致癌 官方通告",
+    timestamp: 12,
+  },
+  {
+    type: "tool_error",
+    toolId: "search360",
+    toolName: "360 Search",
+    message: "搜索超时",
+    timestamp: 13,
+  },
+  {
+    type: "error",
+    message: "核查失败：上游中断",
+    timestamp: 14,
+  },
+];
+
+/**
+ * Fixture E: early stream + agent_error on rumor_detector (no top-level `error`).
+ *
+ * Adapter behavior (document actual, not desired):
+ * - phaseLabel → 「角色异常」
+ * - agent chip + agent thought → status error
+ * - live stays true (only `complete` / top-level `error` flip live off)
+ * - errorMessage stays undefined (shell alert is for stream abort, not role fail)
+ */
+export const FIXTURE_AGENT_ERROR: OrchestrateStreamEvent[] = [
+  ...FIXTURE_EARLY,
+  {
+    type: "agent_error",
+    agent: "rumor_detector",
+    agentName: "RumorDetector",
+    message: "立案分诊超时",
+    timestamp: 5,
+  },
+];
+
+/** Fixture F: complete path but report reviewer fails (需补证) */
+export const FIXTURE_REVIEW_FAIL: OrchestrateStreamEvent[] = [
+  ...FIXTURE_MID,
+  {
+    type: "agent_start",
+    agent: "report_composer",
+    agentName: "ReportComposer",
+    timestamp: 12,
+  },
+  {
+    type: "agent_complete",
+    agent: "report_composer",
+    agentName: "ReportComposer",
+    output: {
+      verdictType: "true",
+      conclusion: "绝对致癌，无需再查。",
+    },
+    timestamp: 13,
+  },
+  {
+    type: "tool_start",
+    toolId: "report_reviewer",
+    toolName: "Report Reviewer (proposer-reviewer)",
+    query: "隔夜菜加热会致癌吗",
+    timestamp: 14,
+  },
+  {
+    type: "tool_result",
+    toolId: "report_reviewer",
+    toolName: "Report Reviewer (proposer-reviewer)",
+    result: {
+      passed: false,
+      score: 48,
+      issues: [
+        { code: "overclaim", severity: "error", message: "结论过强，与证据不匹配" },
+        { code: "missing_evidence", severity: "warn", message: "证据链为空" },
+      ],
+    },
+    timestamp: 15,
+  },
+  {
+    type: "complete",
+    claim: "隔夜菜加热会致癌吗",
+    finalReport: {
+      verdictType: "unverified",
+      conclusion: "证据不足，不宜给出确定性致癌结论。",
+      credibilityScore: 40,
+    },
+    reportReview: {
+      passed: false,
+      score: 48,
+      issues: [
+        { code: "overclaim", severity: "error", message: "结论过强，与证据不匹配" },
+        { code: "missing_evidence", severity: "warn", message: "证据链为空" },
+      ],
+    },
+    timestamp: 16,
+  },
+];
+
+/**
+ * Fixture G: mid agents done + consensus debate (round → final).
+ *
+ * Adapter behavior:
+ * - phaseLabel → 「冲突调解」
+ * - thought kind → debate (same key, final status success)
+ * - live stays true (no complete / top-level error)
+ */
+export const FIXTURE_DEBATE: OrchestrateStreamEvent[] = [
+  ...FIXTURE_MID,
+  {
+    type: "consensus_debate_round",
+    timestamp: 12,
+    debate: {
+      id: "debate-fixture-1",
+      status: "running",
+      title: "Agent 冲突调解室",
+      conflictCount: 2,
+      rounds: [
+        {
+          challenger: "SourceValidator",
+          respondent: "FactChecker",
+          challenge: "部分科普只谈储存风险，不能推出「等于致癌」。",
+          response: "事实层已把该类材料降为限定证据，并保留剂量阈值缺口。",
+        },
+      ],
+      finalConsensus: "",
+      confidenceAdjustment: 0,
+    },
+  },
+  {
+    type: "consensus_debate_final",
+    timestamp: 13,
+    debate: {
+      id: "debate-fixture-1",
+      status: "resolved",
+      title: "Agent 冲突调解室",
+      conflictCount: 2,
+      rounds: [
+        {
+          challenger: "SourceValidator",
+          respondent: "FactChecker",
+          challenge: "部分科普只谈储存风险，不能推出「等于致癌」。",
+          response: "事实层已把该类材料降为限定证据，并保留剂量阈值缺口。",
+        },
+      ],
+      finalConsensus: "结论从「加热等于致癌」降级为「储存/加热不当可能增加风险」。",
+      confidenceAdjustment: -8,
+    },
+  },
+];

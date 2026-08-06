@@ -3,18 +3,32 @@
  *
  * Pure functions that compute evaluation metrics from benchmark results.
  * No side effects, no I/O — testable in isolation.
+ *
+ * Includes Book Ch.6 report review / contract fidelity scoring via
+ * deterministic `reviewAndRepairReport` (proposer-reviewer).
  */
 
 import type { GoldenCase } from "./goldenDataset";
 import type { RuntimeStep } from "../AgentRuntime";
+import { reviewAndRepairReport } from "../reportReviewer";
 
 export interface CaseResult {
   case: GoldenCase;
   result: {
-    claimType: string;
+    claimType?: string;
+    claim?: string;
+    sessionId?: string;
     steps: RuntimeStep[];
     finalReport: Record<string, unknown>;
+    followUpQueue?: unknown[];
+    memoryCandidates?: unknown[];
     totalLatencyMs: number;
+    /** Present when run through AgentRuntime; scoreCase re-runs reviewer for fidelity. */
+    reportReview?: {
+      passed: boolean;
+      score: number;
+      issues: Array<{ code: string; severity: string; message: string }>;
+    };
   };
   error?: string;
 }
@@ -32,6 +46,11 @@ export interface MetricScores {
   credibilityInRange: boolean;
   hallucinationDetected: boolean;
 
+  /** Deterministic report contract: no error-severity issues after review. */
+  reportContractPass: boolean;
+  /** 0-100 from reviewAndRepairReport (100 - 25*errors - 8*warns). */
+  reportReviewScore: number;
+
   // Aggregate
   overallPass: boolean;
 }
@@ -42,9 +61,14 @@ export interface AggregateMetrics {
   failed: number;
   routingAccuracy: number;
   sequenceAccuracy: number;
+  verdictAccuracy: number;
   verdictCorrectCount: number;
   credibilityAccuracy: number;
   hallucinationRate: number;
+  /** Fraction of cases with reportContractPass === true */
+  reportContractPassRate: number;
+  /** Mean reportReviewScore across cases (0-100) */
+  avgReportReviewScore: number;
   byCategory: Record<string, { total: number; passed: number; verdictCorrectCount: number }>;
   byDifficulty: Record<string, { total: number; passed: number }>;
   failures: Array<{ caseId: string; claim: string; reason: string }>;
@@ -71,6 +95,24 @@ function isHallucination(case_: GoldenCase, verdict: string): boolean {
   return false;
 }
 
+/**
+ * Score report contract fidelity using the same deterministic reviewer
+ * as AgentRuntime (Book Ch.6 proposer-reviewer).
+ */
+export function scoreReportContract(
+  finalReport: Record<string, unknown>,
+  opts?: {
+    previousOutputs?: Record<string, unknown>[];
+    claim?: string;
+  }
+): { reportContractPass: boolean; reportReviewScore: number } {
+  const review = reviewAndRepairReport(finalReport, opts);
+  return {
+    reportContractPass: review.passed,
+    reportReviewScore: review.score,
+  };
+}
+
 export function scoreCase(result: CaseResult): MetricScores {
   const { case: golden, result: runResult, error } = result;
 
@@ -85,6 +127,8 @@ export function scoreCase(result: CaseResult): MetricScores {
       verdictCorrect: false,
       credibilityInRange: false,
       hallucinationDetected: false,
+      reportContractPass: false,
+      reportReviewScore: 0,
       overallPass: false,
     };
   }
@@ -133,7 +177,21 @@ export function scoreCase(result: CaseResult): MetricScores {
     && actualCredibility <= golden.expectedCredibilityRange[1];
   const hallucinationDetected = isHallucination(golden, actualVerdict);
 
-  const overallPass = routingCorrect && sequenceCorrect && verdictCorrect && credibilityInRange && !hallucinationDetected;
+  const previousOutputs = runResult.steps
+    .map((s) => s.output)
+    .filter((o): o is Record<string, unknown> => o != null && typeof o === "object");
+  const { reportContractPass, reportReviewScore } = scoreReportContract(
+    runResult.finalReport,
+    { previousOutputs, claim: golden.claim }
+  );
+
+  const overallPass =
+    routingCorrect
+    && sequenceCorrect
+    && verdictCorrect
+    && credibilityInRange
+    && !hallucinationDetected
+    && reportContractPass;
 
   return {
     caseId: golden.id,
@@ -145,6 +203,8 @@ export function scoreCase(result: CaseResult): MetricScores {
     verdictCorrect,
     credibilityInRange,
     hallucinationDetected,
+    reportContractPass,
+    reportReviewScore,
     overallPass,
   };
 }
@@ -159,6 +219,8 @@ export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
   const verdictCorrect = scores.filter((s) => s.verdictCorrect).length;
   const credibilityCorrect = scores.filter((s) => s.credibilityInRange).length;
   const hallucinations = scores.filter((s) => s.hallucinationDetected).length;
+  const contractPass = scores.filter((s) => s.reportContractPass).length;
+  const reviewScoreSum = scores.reduce((acc, s) => acc + s.reportReviewScore, 0);
 
   const byCategory: Record<string, { total: number; passed: number; verdictCorrectCount: number }> = {};
   const byDifficulty: Record<string, { total: number; passed: number }> = {};
@@ -185,6 +247,7 @@ export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
         !s.verdictCorrect && "verdict mismatch",
         !s.credibilityInRange && "credibility out of range",
         s.hallucinationDetected && "hallucination detected",
+        !s.reportContractPass && `report contract fail (score ${s.reportReviewScore})`,
       ].filter(Boolean).join("; "),
     }));
 
@@ -198,6 +261,8 @@ export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
     verdictCorrectCount: verdictCorrect,
     credibilityAccuracy: total > 0 ? credibilityCorrect / total : 0,
     hallucinationRate: total > 0 ? hallucinations / total : 0,
+    reportContractPassRate: total > 0 ? contractPass / total : 0,
+    avgReportReviewScore: total > 0 ? reviewScoreSum / total : 0,
     byCategory,
     byDifficulty,
     failures,

@@ -49,6 +49,8 @@ async function main() {
     console.log(`Verdict: ${(aggregate.verdictAccuracy * 100).toFixed(1)}%`);
     console.log(`Routing: ${(aggregate.routingAccuracy * 100).toFixed(1)}%`);
     console.log(`Halluc:  ${(aggregate.hallucinationRate * 100).toFixed(1)}%`);
+    console.log(`Contract:${(aggregate.reportContractPassRate * 100).toFixed(1)}%`);
+    console.log(`Review:  ${aggregate.avgReportReviewScore.toFixed(1)}`);
     console.log();
 
     for (const s of scores) {
@@ -61,6 +63,7 @@ async function main() {
         if (!s.verdictCorrect) reasons.push("verdict");
         if (!s.credibilityInRange) reasons.push("credibility");
         if (s.hallucinationDetected) reasons.push("hallucination");
+        if (!s.reportContractPass) reasons.push(`report-contract(${s.reportReviewScore})`);
         console.log(`         fails: ${reasons.join(", ")}`);
       }
     }
@@ -76,6 +79,8 @@ async function main() {
       console.log(`  Verdict:   ${delta.verdictCorrectDelta >= 0 ? "+" : ""}${(delta.verdictCorrectDelta * 100).toFixed(1)}%`);
       console.log(`  Routing:   ${delta.routingAccuracyDelta >= 0 ? "+" : ""}${(delta.routingAccuracyDelta * 100).toFixed(1)}%`);
       console.log(`  Halluc:    ${delta.hallucinationRateDelta >= 0 ? "+" : ""}${(delta.hallucinationRateDelta * 100).toFixed(1)}%`);
+      console.log(`  Contract:  ${delta.reportContractPassRateDelta >= 0 ? "+" : ""}${(delta.reportContractPassRateDelta * 100).toFixed(1)}%`);
+      console.log(`  Review:    ${delta.avgReportReviewScoreDelta >= 0 ? "+" : ""}${delta.avgReportReviewScoreDelta.toFixed(1)}`);
       console.log();
     }
 
