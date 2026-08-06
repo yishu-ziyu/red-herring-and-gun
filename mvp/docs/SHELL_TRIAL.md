@@ -1,25 +1,24 @@
-# 过程壳试用（认 A · Ant Design X 形）
-
-时间线：半小时已延长至 **1 小时**（约至 20:12）。
+# 过程壳试用（叙事流 · Ant Design X 形）
 
 ## 立刻可看（不跑真模型）
 
 ```text
 http://127.0.0.1:5180/shell-preview
-http://127.0.0.1:5180/shell-preview?fixture=error&variant=antdx
+http://127.0.0.1:5180/shell-preview?fixture=mid&variant=token
 ```
 
-切换 **开跑 / 中段 / 完成 / 失败 / 角色失败** 假 SSE，看 ThoughtChain 形过程、工具条、角色芯片、结论卡、中断态与单角色异常。  
-Query：`fixture=early|mid|complete|review_fail|debate|error|agent_error`，`variant=token|antdx`（mount 时读；点 tab 会 `replaceState` 写回地址栏；非法值回退 mid/token）。
+切换 **开跑 / 中段 / 完成 / 审稿未过 / 调解 / 失败 / 角色失败** 假 SSE。  
+过程区是**单一叙事流**：无内层 claim/phase/进行中胶囊，无顶层工具条与角色芯片；工具嵌在步骤下。  
+Query：`fixture=early|mid|complete|review_fail|debate|error|agent_error`，`variant=token|antdx`。
 
 ## 真案 + 过程壳
 
 ```text
-http://127.0.0.1:5180/?shell=1          # token 自绘壳（默认稳）
-http://127.0.0.1:5180/?shell=antdx      # 真 Ant Design X ThoughtChain
+http://127.0.0.1:5180/?shell=1          # token 叙事流（默认）
+http://127.0.0.1:5180/?shell=antdx      # Ant Design X ThoughtChain 渲染同一叙事
 ```
 
-开案后左侧过程区切换为 **过程壳 · X 形**（适配 SSE 实时折叠）。  
+开案后过程区占主列（运行中不预留空右栏）。顶栏 claim/阶段只出现一次。  
 不加 `?shell` 仍是原 legacy 流。
 
 环境变量（可选）：

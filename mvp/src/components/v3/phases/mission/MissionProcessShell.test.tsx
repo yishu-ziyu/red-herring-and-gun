@@ -1,46 +1,61 @@
-import { useState } from "react";
-import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
 import {
   adaptOrchestrateStreamToShell,
   FIXTURE_AGENT_ERROR,
   FIXTURE_COMPLETE,
   FIXTURE_DEBATE,
+  FIXTURE_EARLY,
   FIXTURE_ERROR,
   FIXTURE_MID,
   FIXTURE_REVIEW_FAIL,
-  type MissionShellModel,
 } from "../../../../lib/missionShell";
 import { MissionProcessShell } from "./MissionProcessShell";
 
-function ControlledShell({ model }: { model: MissionShellModel }) {
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  return (
-    <MissionProcessShell
-      model={model}
-      selectedAgentId={selectedAgentId}
-      onSelectAgent={(id) => setSelectedAgentId(id || null)}
-    />
-  );
-}
-
-describe("MissionProcessShell", () => {
+describe("MissionProcessShell narrative UI", () => {
   afterEach(() => {
     cleanup();
   });
 
-  it("renders FIXTURE_MID without crash", () => {
+  it("FIXTURE_MID: no tool strip, no agent cluster, no claim, one current step, nested activities", () => {
     const model = adaptOrchestrateStreamToShell(FIXTURE_MID);
-    const { container } = render(<MissionProcessShell model={model} />);
+    const { container } = render(<MissionProcessShell model={model} claimInParent />);
 
     expect(container.querySelector(".mps-root")).toBeTruthy();
-    expect(container.querySelector('.mps-root[data-live="1"]')).toBeTruthy();
-    expect(screen.getByText("进行中")).toBeInTheDocument();
-    expect(screen.getByRole("list", { name: "协作角色" })).toBeInTheDocument();
-    expect(screen.getByRole("list", { name: "过程动作" })).toBeInTheDocument();
+    expect(container.querySelector(".mps-header")).toBeNull();
+    expect(container.querySelector(".mps-claim")).toBeNull();
+    expect(container.querySelector(".mps-live")).toBeNull();
+    expect(screen.queryByRole("list", { name: "协作角色" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "过程动作" })).not.toBeInTheDocument();
+
+    // Claim text must not reappear as shell body chrome (parent has it)
+    const root = container.querySelector(".mps-root") as HTMLElement;
+    // model.claim is long; shell root text should not equal full claim as a dedicated block
+    expect(root.querySelector(".mps-claim")).toBeNull();
+
+    const currents = container.querySelectorAll('[aria-current="step"]');
+    expect(currents.length).toBe(1);
+
+    // Nested activity for memory/search
+    const activities = screen.getAllByRole("list", { name: "步骤活动" });
+    expect(activities.length).toBeGreaterThan(0);
+    const activityText = activities.map((el) => el.textContent || "").join("\n");
+    expect(activityText).toMatch(/历史|检索|公开材料/);
+
+    // Primary titles should not be pure tool strip duplicates as both strip+primary
+    // (no 过程动作 list at all)
+    const body = root.textContent || "";
+    expect(body).not.toMatch(/中控|派发|可行动线索|handoff|relay|tool result/i);
   });
 
-  it("renders FIXTURE_COMPLETE with verdict and data-live=0", () => {
+  it("FIXTURE_EARLY: no pending wall of empty modules", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_EARLY);
+    const { container } = render(<MissionProcessShell model={model} />);
+    expect(container.querySelectorAll(".mps-step--pending").length).toBe(0);
+    expect(screen.queryByText("等待")).not.toBeInTheDocument();
+  });
+
+  it("FIXTURE_COMPLETE: verdict primary; no live pill or agent parade", () => {
     const model = adaptOrchestrateStreamToShell(FIXTURE_COMPLETE);
     const { container } = render(<MissionProcessShell model={model} />);
 
@@ -48,120 +63,70 @@ describe("MissionProcessShell", () => {
     expect(screen.getByText("结论")).toBeInTheDocument();
     expect(screen.getByText("部分误导/夸大")).toBeInTheDocument();
     expect(screen.queryByText("mixed_misleading")).not.toBeInTheDocument();
-    expect(screen.getAllByText(/报告审稿/).length).toBeGreaterThan(0);
-    // Agent strip summaries are Chinese, not raw enums
-    expect(screen.getByText("事实判定：部分成立")).toBeInTheDocument();
-    expect(screen.queryByText(/事实判定：partial/i)).not.toBeInTheDocument();
-    expect(screen.getByText("信源：中")).toBeInTheDocument();
-    expect(screen.queryByText(/信源：medium/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("list", { name: "协作角色" })).not.toBeInTheDocument();
+    expect(container.querySelector(".mps-live")).toBeNull();
+    // Process folded by default
+    expect(screen.getByRole("button", { name: /回看核查过程/ })).toBeInTheDocument();
   });
 
-  it("renders FIXTURE_ERROR with interrupted badge and alert", () => {
-    const model = adaptOrchestrateStreamToShell(FIXTURE_ERROR);
-    const { container } = render(<MissionProcessShell model={model} />);
-
-    expect(container.querySelector('.mps-root[data-live="0"]')).toBeTruthy();
-    expect(container.querySelector('.mps-root[data-error="1"]')).toBeTruthy();
-    expect(screen.getByText("已中断")).toBeInTheDocument();
-    // phase header + error card label both say 过程中断
-    expect(screen.getAllByText("过程中断").length).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
-    const alert = screen.getByRole("alert");
-    expect(alert).toHaveTextContent("过程中断");
-    expect(alert).toHaveTextContent("核查失败：上游中断");
-    expect(screen.queryByText("结论")).not.toBeInTheDocument();
-  });
-
-  it("renders FIXTURE_REVIEW_FAIL with 需补证 review banner", () => {
+  it("FIXTURE_REVIEW_FAIL: 结论暂缓, not formal 结论 card", () => {
     const model = adaptOrchestrateStreamToShell(FIXTURE_REVIEW_FAIL);
     const { container } = render(<MissionProcessShell model={model} />);
 
-    expect(screen.getByText("结论")).toBeInTheDocument();
-    expect(screen.getByText("尚难核实")).toBeInTheDocument();
-    expect(screen.getByText(/报告审稿 · 需补证 · 48/)).toBeInTheDocument();
-    // Tool strip detail from adapter: passed=false → 需补证
-    const tools = screen.getByRole("list", { name: "过程动作" });
-    expect(within(tools).getByText(/需补证/)).toBeInTheDocument();
-    const reviewIssues = container.querySelectorAll(".mps-review-issue");
-    expect(reviewIssues.length).toBeGreaterThan(0);
-    expect(reviewIssues.length).toBeLessThanOrEqual(3);
-    // error severity → 「严重 · 」prefix; message body still visible
-    const issueTexts = Array.from(reviewIssues).map((el) => el.textContent ?? "");
+    expect(screen.getByText(/结论暂缓/)).toBeInTheDocument();
+    expect(screen.queryByText("结论")).not.toBeInTheDocument();
+    expect(container.querySelector(".mps-verdict")).toBeNull();
+    expect(container.querySelector(".mps-deferred")).toBeTruthy();
+    const issueTexts = Array.from(container.querySelectorAll(".mps-review-issue")).map(
+      (el) => el.textContent || ""
+    );
     expect(issueTexts.some((t) => t.includes("结论过强"))).toBe(true);
-    expect(issueTexts.some((t) => t.includes("严重 ·") && t.includes("结论过强"))).toBe(true);
-    // warn severity → 「注意 · 」prefix
-    expect(issueTexts.some((t) => t.includes("注意 ·") && t.includes("证据链为空"))).toBe(true);
   });
 
-  it("renders FIXTURE_AGENT_ERROR as live with failed agent chip", () => {
+  it("FIXTURE_ERROR: interruption alert, no tool strip", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_ERROR);
+    const { container } = render(<MissionProcessShell model={model} />);
+
+    expect(container.querySelector('.mps-root[data-error="1"]')).toBeTruthy();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("过程中断");
+    expect(alert).toHaveTextContent("核查失败：上游中断");
+    expect(screen.queryByRole("list", { name: "过程动作" })).not.toBeInTheDocument();
+    expect(screen.queryByText("结论")).not.toBeInTheDocument();
+  });
+
+  it("FIXTURE_AGENT_ERROR: local failure without full-page stream error", () => {
     const model = adaptOrchestrateStreamToShell(FIXTURE_AGENT_ERROR);
     const { container } = render(<MissionProcessShell model={model} />);
 
     expect(container.querySelector('.mps-root[data-live="1"]')).toBeTruthy();
-    expect(container.querySelector('.mps-root[data-error="0"]')).toBeTruthy();
-    expect(screen.getByText("进行中")).toBeInTheDocument();
-    expect(screen.getByText("角色异常")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    const agents = screen.getByRole("list", { name: "协作角色" });
-    expect(within(agents).getByText("失败")).toBeInTheDocument();
-    expect(within(agents).getByText("立案分诊")).toBeInTheDocument();
+    // Failed step still visible in stream — semantic action, not role as primary title
+    expect(container.querySelector(".mps-step--error")).toBeTruthy();
+    const stepTitles = Array.from(container.querySelectorAll(".mps-step-title")).map(
+      (el) => el.textContent?.trim()
+    );
+    expect(stepTitles).not.toContain("立案分诊");
+    expect(stepTitles.some((t) => t === "确认核查切入点" || t === "确认核查问题")).toBe(true);
   });
 
-  it("renders FIXTURE_DEBATE with phase 冲突调解 and debate thought", () => {
-    const model = adaptOrchestrateStreamToShell(FIXTURE_DEBATE);
-    const { container } = render(<MissionProcessShell model={model} />);
-
-    expect(container.querySelector('.mps-root[data-live="1"]')).toBeTruthy();
-    expect(screen.getByText("进行中")).toBeInTheDocument();
-    expect(screen.getByText("冲突调解")).toBeInTheDocument();
-    expect(screen.getByText("Agent 冲突调解室")).toBeInTheDocument();
-    expect(screen.queryByText("结论")).not.toBeInTheDocument();
-  });
-
-  it("click 事实核查 chip filters thoughts; click 显示全部 restores", () => {
+  it("activity is static without onSelectTool; button when handler provided", () => {
     const model = adaptOrchestrateStreamToShell(FIXTURE_MID);
-    const { container } = render(<ControlledShell model={model} />);
+    const { rerender } = render(<MissionProcessShell model={model} />);
+    // Without handler: no clickable activity buttons
+    expect(document.querySelectorAll(".mps-activity-btn").length).toBe(0);
+    expect(document.querySelectorAll(".mps-activity-static").length).toBeGreaterThan(0);
 
-    const chain = () => container.querySelector(".mps-chain") as HTMLElement;
-    const stepTitles = () =>
-      Array.from(chain().querySelectorAll(".mps-step-title")).map((el) => el.textContent?.trim());
+    const onSelectTool = vi.fn();
+    rerender(<MissionProcessShell model={model} onSelectTool={onSelectTool} />);
+    const btns = document.querySelectorAll(".mps-activity-btn");
+    expect(btns.length).toBeGreaterThan(0);
+  });
 
-    // Unfiltered FIXTURE_MID: planner + tools + 3 agents
-    expect(stepTitles()).toEqual([
-      "理解命题与路径",
-      "查阅历史案件",
-      "立案分诊",
-      "检索公开材料",
-      "事实核查",
-      "信源审计",
-    ]);
-    expect(screen.queryByText("已筛选角色过程")).not.toBeInTheDocument();
-
-    const agents = screen.getByRole("list", { name: "协作角色" });
-    // role=listitem on button yields empty accessible name in jsdom; click by chip label.
-    const factChip = within(agents).getByText("事实核查").closest("button");
-    expect(factChip).toBeTruthy();
-    fireEvent.click(factChip!);
-
-    expect(screen.getByText("已筛选角色过程")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "显示全部" })).toBeInTheDocument();
-    // Filter keeps planner + matching agent; drops other agents/tools
-    expect(stepTitles()).toEqual(["理解命题与路径", "事实核查"]);
-    expect(within(chain()).queryByText("立案分诊")).not.toBeInTheDocument();
-    expect(within(chain()).queryByText("信源审计")).not.toBeInTheDocument();
-    expect(within(chain()).queryByText("查阅历史案件")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "显示全部" }));
-
-    expect(screen.queryByText("已筛选角色过程")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "显示全部" })).not.toBeInTheDocument();
-    expect(stepTitles()).toEqual([
-      "理解命题与路径",
-      "查阅历史案件",
-      "立案分诊",
-      "检索公开材料",
-      "事实核查",
-      "信源审计",
-    ]);
+  it("FIXTURE_DEBATE: shows mediation step without verdict", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_DEBATE);
+    render(<MissionProcessShell model={model} />);
+    expect(screen.getByText("冲突调解")).toBeInTheDocument();
+    expect(screen.queryByText("结论")).not.toBeInTheDocument();
   });
 });

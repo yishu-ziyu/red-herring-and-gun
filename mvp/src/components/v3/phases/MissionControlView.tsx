@@ -3757,6 +3757,7 @@ function ControllerRail({
   missionShellVariant,
   selectedShellAgentId,
   onSelectShellAgent,
+  onSelectShellTool,
 }: {
   controllerEvents: ControllerProcessEvent[];
   activeControllerEventId: string;
@@ -3772,6 +3773,7 @@ function ControllerRail({
   missionShellVariant?: "token" | "antdx";
   selectedShellAgentId?: string;
   onSelectShellAgent?: (agentId: string) => void;
+  onSelectShellTool?: (toolKey: string) => void;
 }) {
   const transcriptItems = useMemo(() => buildControllerTranscript(controllerEvents), [controllerEvents]);
   const flowRef = useRef<HTMLDivElement | null>(null);
@@ -3984,14 +3986,20 @@ function ControllerRail({
       Boolean(missionShellModel?.errorMessage) ||
       Boolean(missionShellModel?.verdict.present));
   const showAny = useMissionShell ? shellBusy || runStatus === "running" : hasItems;
-  const shellThoughtCount = missionShellModel?.thoughtItems.length ?? 0;
-  const shellToolCount = missionShellModel?.tools.length ?? 0;
-  const shellAgentRunning = missionShellModel?.agents.filter((a) => a.status === "loading").length ?? 0;
+  const shellStepCount = missionShellModel?.thoughtItems.filter(
+    (t) => t.kind !== "tool" && t.kind !== "review" && t.key !== "error" && t.key !== "report:final"
+  ).length ?? 0;
+  const shellRunning =
+    missionShellModel?.thoughtItems.some((t) => t.status === "loading") ||
+    missionShellModel?.agents.some((a) => a.status === "loading");
   const reviewFailed =
     missionShellModel?.verdict.reviewPassed === false && !missionShellModel?.errorMessage;
 
   return (
-    <aside className="case-controller-panel case-controller-panel--stream stream-rail" aria-label="活动过程时间线">
+    <aside
+      className={`case-controller-panel case-controller-panel--stream stream-rail${useMissionShell ? " stream-rail--shell-narrative" : ""}`}
+      aria-label="活动过程时间线"
+    >
       <div className="controller-transcript-head stream-rail-head">
         <div>
           <span className={`controller-live-dot ${followLive && runStatus === "running" ? "controller-live-dot--live" : "controller-live-dot--paused"}`} />
@@ -4012,9 +4020,8 @@ function ControllerRail({
           {useMissionShell ? (
             missionShellModel ? (
               <>
-                <em>{shellThoughtCount} 步</em>
-                <span>{shellToolCount} 工具</span>
-                {shellAgentRunning > 0 ? <span>{shellAgentRunning} 人在跑</span> : null}
+                <em>{shellStepCount} 步</em>
+                {shellRunning ? <span>1 项在进行</span> : null}
                 {missionShellModel.errorMessage ? <span>已中断</span> : null}
                 {reviewFailed ? <span>审稿需补证</span> : null}
               </>
@@ -4034,12 +4041,12 @@ function ControllerRail({
 
       <div className="controller-transcript-flow stream-rail-flow" ref={flowRef}>
         {useMissionShell && missionShellModel ? (
-          <div className="mps-live-wrap">
+          <div className="mps-live-wrap mps-live-wrap--narrative">
             <MissionProcessShell
               model={missionShellModel}
               variant={missionShellVariant ?? "token"}
-              selectedAgentId={selectedShellAgentId || null}
-              onSelectAgent={onSelectShellAgent}
+              claimInParent
+              onSelectTool={onSelectShellTool}
             />
           </div>
         ) : null}
@@ -5172,6 +5179,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
   const [errorMessage, setErrorMessage] = useState("");
   const [selectedPropositionId, setSelectedPropositionId] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [selectedShellToolKey, setSelectedShellToolKey] = useState<string | null>(null);
   const [workbenchFocus, setWorkbenchFocus] = useState<WorkbenchFocus>("dispatch");
   const [activeControllerEventId, setActiveControllerEventId] = useState("");
   const [followLive, setFollowLive] = useState(true);
@@ -5213,6 +5221,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
     dispatch({ type: "RESET_CONSENSUS" });
     setSelectedPropositionId("");
     setSelectedAgentId("");
+    setSelectedShellToolKey(null);
     setActiveControllerEventId("");
     setFollowLive(true);
     setConsensusStarted(false);
@@ -5282,8 +5291,9 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
         setCurrentStep(null);
         setStreamItems([]);
         setSseEvents([]);
-        // Shell agent chip filter is run-scoped; clear on new stream so prior case selection does not stick.
+        // Shell selection is run-scoped; clear so prior case filter/tool inspector does not stick.
         setSelectedAgentId("");
+        setSelectedShellToolKey(null);
         setExecutionPlan(null);
         setSpeculativeRelays([]);
         setDebateUpdates([]);
@@ -5923,10 +5933,16 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
   }, [latestControllerEvent]);
 
   const stageIdx = humanStageIndex(humanStage);
-  const hasStreamEvents = controllerEvents.length > 0;
-  // 运行中 + 跟随最新：只铺左栏流，不先占满右栏空壳；点选历史步（followLive=false）或完成后才出明细列
-  const showDetailColumn =
-    Boolean(finalReport) || Boolean(errorMessage) || !followLive || runStatus !== "running";
+  const hasStreamEvents = controllerEvents.length > 0 || (useMissionShell && sseEvents.length > 0);
+  // Shell narrative: right inspector only when user selects a tool activity, or run ends.
+  // Legacy: 运行中 + 跟随最新时只铺过程流；点选历史步或完成后才出明细列。
+  const showDetailColumn = useMissionShell
+    ? Boolean(finalReport) || Boolean(errorMessage) || Boolean(selectedShellToolKey)
+    : Boolean(finalReport) || Boolean(errorMessage) || !followLive || runStatus !== "running";
+  const selectedShellTool =
+    selectedShellToolKey && missionShellModel
+      ? missionShellModel.tools.find((t) => t.key === selectedShellToolKey) ?? null
+      : null;
 
   return (
     <main
@@ -6010,6 +6026,10 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
           missionShellVariant={missionShellVariant}
           selectedShellAgentId={selectedAgentId}
           onSelectShellAgent={setSelectedAgentId}
+          onSelectShellTool={(toolKey) => {
+            setSelectedShellToolKey(toolKey);
+            setFollowLive(false);
+          }}
         />
 
         {showDetailColumn ? (
@@ -6032,7 +6052,35 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                 {errorMessage}
               </p>
             ) : null}
-            {activeControllerEvent ? (
+            {useMissionShell && selectedShellTool ? (
+              <div className="mps-tool-inspector" aria-label="过程材料检查器">
+                <div className="mps-tool-inspector-head">
+                  <strong>{selectedShellTool.title}</strong>
+                  <button
+                    type="button"
+                    className="mps-tool-inspector-close"
+                    onClick={() => {
+                      setSelectedShellToolKey(null);
+                      setFollowLive(true);
+                    }}
+                  >
+                    关闭
+                  </button>
+                </div>
+                {selectedShellTool.detail ? (
+                  <p className="mps-tool-inspector-detail">{selectedShellTool.detail}</p>
+                ) : null}
+                {selectedShellTool.query ? (
+                  <p className="mps-tool-inspector-query">检索：{selectedShellTool.query}</p>
+                ) : null}
+                {selectedShellTool.result ? (
+                  <pre className="mps-tool-inspector-json">
+                    {JSON.stringify(selectedShellTool.result, null, 2).slice(0, 1200)}
+                  </pre>
+                ) : null}
+              </div>
+            ) : null}
+            {!useMissionShell && activeControllerEvent ? (
               <ControllerEventDetailPanel
                 claim={claim}
                 event={activeControllerEvent}
@@ -6046,7 +6094,8 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                 followLive={followLive}
                 onSelectControllerEvent={handleSelectControllerEvent}
               />
-            ) : !finalReport ? (
+            ) : null}
+            {!useMissionShell && !activeControllerEvent && !finalReport ? (
               <p className="stream-detail-placeholder">点选左侧任一步，明细在此展开。</p>
             ) : null}
           </section>

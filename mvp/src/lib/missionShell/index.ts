@@ -23,3 +23,19 @@ export {
   humanizeFactCheckResult,
   humanizeVerdictType,
 } from "./labels";
+export {
+  buildVisibleProcessRows,
+  humanizeProcessTitle,
+  humanizeProcessSummary,
+  narrativeHasBannedPrimaryCopy,
+  primaryNarrativeCopy,
+  roleNameForAgent,
+  semanticActionTitleForAgent,
+} from "./visibleProcessRows";
+export type {
+  NarrativeMode,
+  ProcessActivity,
+  ProcessRowKind,
+  VisibleProcessNarrative,
+  VisibleProcessRow,
+} from "./visibleProcessRows";
