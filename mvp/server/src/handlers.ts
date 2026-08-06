@@ -5,7 +5,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { searchClaimAcrossSources } from "./lib/sherlockStyleSearch.js";
-import { AGENT_CONFIGS, buildAgentInput, mergeSubclaimVerdicts } from "./lib/agentConfigs.js";
+import { AGENT_CONFIGS, buildAgentInput, mergeSubclaimVerdicts, splitVerifiableAtoms, runClaimAtomSelfProof } from "./lib/agentConfigs.js";
 import { callAgentWithFallback, AgentTextProviderId, ProviderFallbackError } from "./lib/providerRouter.js";
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
@@ -153,6 +153,61 @@ function applyFormulaScoreToReport(finalReport: any, formulaResult: CredibilityS
   finalReport.credibilityLabel = formulaResult.label;
   finalReport._scoreSource = "formula";
   finalReport._scoreBreakdown = formulaResult.breakdown;
+}
+
+// ─── 排除层落库闸门（不可核查命题单独处置）───
+// 以 rumorStep 的 claimAtoms + claimAtomTypes 做确定性拆分：
+// - subclaimVerdicts 只对可核查原子 merge（复用 mergeSubclaimVerdicts 的幻觉拦截/补全）；
+// - verifiable=false 的原子进 nonVerifiableAtoms，绝不进 subclaimVerdicts（不变量）；
+// - 整句 claimType 存在且 verifiable===false 时，记录到 finalReport.claimType 供 UI 顶部显示立场横幅。
+function applyExclusionLayerToReport(
+  finalReport: Record<string, unknown>,
+  rumorStep: any,
+  verdicts: unknown,
+  searchSources?: Array<{ url?: unknown }>
+): void {
+  if (!finalReport || typeof finalReport !== "object") return;
+  const rumorOutput = rumorStep?.output ?? {};
+  const split = splitVerifiableAtoms(rumorOutput.claimAtoms, rumorOutput.claimAtomTypes);
+  finalReport.subclaimVerdicts = mergeSubclaimVerdicts(split.verifiable, verdicts, searchSources);
+  finalReport.nonVerifiableAtoms = split.nonVerifiable;
+  const claimType = rumorOutput.claimType;
+  if (claimType && typeof claimType === "object") {
+    finalReport.claimType = claimType;
+  }
+  // 全局原子顺序：立场原子原位插回。以 claimAtoms 原始序为基准，只保留最终展示的原子。
+  finalReport.claimAtomOrder = buildClaimAtomOrder(
+    rumorOutput.claimAtoms,
+    (finalReport.subclaimVerdicts as Array<{ claimAtom: string }> | undefined) ?? [],
+    (finalReport.nonVerifiableAtoms as Array<{ text: string }> | undefined) ?? []
+  );
+}
+
+// 与 agentsConfig 对 claimAtoms 的截断规则保持一致，作为 order 匹配键，避免超长原子失配。
+function truncateClaimAtomKeyForOrder(value: string, maxLength = 180): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+}
+
+function buildClaimAtomOrder(
+  claimAtoms: unknown,
+  verdicts: Array<{ claimAtom: string }>,
+  nonVerifiable: Array<{ text: string }>
+): string[] {
+  const displayed = new Set<string>();
+  for (const v of verdicts) {
+    if (v && typeof v.claimAtom === "string") displayed.add(v.claimAtom);
+  }
+  for (const n of nonVerifiable) {
+    if (n && typeof n.text === "string") displayed.add(n.text);
+  }
+  if (!Array.isArray(claimAtoms) || displayed.size === 0) return [];
+  const order: string[] = [];
+  for (const item of claimAtoms) {
+    if (typeof item !== "string") continue;
+    const key = truncateClaimAtomKeyForOrder(item);
+    if (displayed.has(key)) order.push(key);
+  }
+  return order;
 }
 
 const responseSchema = {
@@ -746,7 +801,35 @@ export function createHandlers(env: Record<string, string>) {
       // Phase 1: RumorDetector (serial)
       const rumorStep = await runAgent("rumor_detector", steps);
       steps.push(rumorStep);
-      const search360Result = await get360SearchForClaim(claim);
+      // 原句自证闸门与搜索并行跑，压额外延迟；事件契约不变
+      const [search360Result, selfProof] = await Promise.all([
+        get360SearchForClaim(claim),
+        runClaimAtomSelfProof(claim, rumorStep?.output?.claimAtoms ?? [], (input) =>
+          callAgentWithFallback({
+            agentId: "rumor_detector_selfproof",
+            systemPrompt: input.systemPrompt,
+            userContent: input.userContent,
+            responseSchema: input.responseSchema,
+            maxTokens: input.maxTokens,
+            env,
+            codexBin,
+            reasoningEffort: "low",
+            modelOverride: modelChoice && modelChoice["rumor_detector"] ? modelChoice["rumor_detector"] : undefined,
+            options: { logger: console },
+          }).then((r) => ({ output: r.output, model: r.model }))
+        ),
+      ]);
+      // 忠实过滤：只有 supported 的原子进入下游
+      rumorStep.output.claimAtoms = selfProof.kept;
+      // 诊断元数据（加字段，不删字段，不破坏事件契约）
+      rumorStep.output.claimAtomSelfProof = {
+        kept: selfProof.kept,
+        dropped: selfProof.dropped,
+        model: selfProof.model,
+      };
+      console.log(
+        `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${selfProof.kept.length} dropped=${selfProof.dropped.length}`
+      );
       // 浓缩来源为奕枢风格摘要（挂到 source.condensedSnippet，失败时 log warning 并回退到原 snippet）
       await attachCondensedSnippets(env, claim, search360Result);
 
@@ -768,14 +851,18 @@ export function createHandlers(env: Record<string, string>) {
 
       const finalReport = reportStep.output;
 
-      // ─── 逐命题定罪落库闸门（R2）───
-      // 以 claimAtoms 为锚过 mergeSubclaimVerdicts：拦截 report_composer 编造原子、
-      // 回退非法 verdict、补齐未覆盖原子；report_composer 缺失该字段时回退到
-      // fact_checker 同源清单，保证最终清单非空、可审计。
+      // ─── 逐命题定罪落库闸门（R2 + 排除层）───
+      // 先以 claimAtomTypes 做确定性拆分，subclaimVerdicts 只覆盖可核查原子；
+      // verifiable=false 的原子进 nonVerifiableAtoms，绝不进 subclaimVerdicts（不变量）。
       const reportVerdicts = reportStep?.output?.subclaimVerdicts;
-      finalReport.subclaimVerdicts = Array.isArray(reportVerdicts) && reportVerdicts.length > 0
-        ? mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, reportVerdicts, search360Result?.sources)
-        : mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts, search360Result?.sources);
+      applyExclusionLayerToReport(
+        finalReport,
+        rumorStep,
+        Array.isArray(reportVerdicts) && reportVerdicts.length > 0
+          ? reportVerdicts
+          : factStep?.output?.subclaimVerdicts,
+        search360Result?.sources
+      );
 
       // ─── 公式覆盖 credibilityScore ───
       // 审查 P3-1 + P2-1 修复：抽取为 computeFormulaScore 共享 helper，
@@ -985,7 +1072,35 @@ export function createHandlers(env: Record<string, string>) {
         query: claim,
         timestamp: Date.now(),
       });
-      const search360Result = await get360SearchForClaim(claim);
+      // 原句自证闸门与搜索并行跑，压额外延迟；事件顺序不变，不新增 agent_* / tool_* 事件
+      const [search360Result, selfProof] = await Promise.all([
+        get360SearchForClaim(claim),
+        runClaimAtomSelfProof(claim, rumorStep?.output?.claimAtoms ?? [], (input) =>
+          callAgentWithFallback({
+            agentId: "rumor_detector_selfproof",
+            systemPrompt: input.systemPrompt,
+            userContent: input.userContent,
+            responseSchema: input.responseSchema,
+            maxTokens: input.maxTokens,
+            env,
+            codexBin,
+            reasoningEffort: "low",
+            modelOverride: modelChoice && modelChoice["rumor_detector"] ? modelChoice["rumor_detector"] : undefined,
+            options: { logger: console },
+          }).then((r) => ({ output: r.output, model: r.model }))
+        ),
+      ]);
+      // 忠实过滤：只有 supported 的原子进入下游
+      rumorStep.output.claimAtoms = selfProof.kept;
+      // 诊断元数据（加字段，不删字段，不破坏事件契约）
+      rumorStep.output.claimAtomSelfProof = {
+        kept: selfProof.kept,
+        dropped: selfProof.dropped,
+        model: selfProof.model,
+      };
+      console.log(
+        `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${selfProof.kept.length} dropped=${selfProof.dropped.length}`
+      );
       // 浓缩来源为奕枢风格摘要（挂到 source.condensedSnippet，失败时 log warning 并回退到原 snippet）
       await attachCondensedSnippets(env, claim, search360Result);
       const searchToolName = getSearchToolName(search360Result);
@@ -1077,13 +1192,17 @@ export function createHandlers(env: Record<string, string>) {
 
       const finalReport = reportStep.output;
 
-      // ─── 逐命题定罪落库闸门（R2，stream）───
-      // 与 orchestrateHandler 同闸门：以 claimAtoms 为锚过 mergeSubclaimVerdicts，
-      // report_composer 缺失时回退 fact_checker 同源清单。
+      // ─── 逐命题定罪落库闸门（R2 + 排除层，stream）───
+      // 与 orchestrateHandler 同闸门，先做确定性拆分再 merge 可核查原子。
       const reportVerdicts = reportStep?.output?.subclaimVerdicts;
-      finalReport.subclaimVerdicts = Array.isArray(reportVerdicts) && reportVerdicts.length > 0
-        ? mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, reportVerdicts, search360Result?.sources)
-        : mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts, search360Result?.sources);
+      applyExclusionLayerToReport(
+        finalReport,
+        rumorStep,
+        Array.isArray(reportVerdicts) && reportVerdicts.length > 0
+          ? reportVerdicts
+          : factStep?.output?.subclaimVerdicts,
+        search360Result?.sources
+      );
 
       // ─── 公式覆盖 credibilityScore ───
       // 审查 P3-1 + P2-1 修复：与 orchestrateHandler 共用 computeFormulaScore。
@@ -2434,7 +2553,6 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
     conclusion,
     credibilityScore,
     credibilityLabel,
-    subclaimVerdicts: mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts, searchResult?.sources),
     recommendation: hasMissingSources
       ? "先不要直接转发原说法；补充官方、原始或专业来源后再判断。"
       : "可以保留为待核查结论，并在转述时附上证据边界。",
@@ -2517,6 +2635,9 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
         }
       : {}),
   };
+
+  // 排除层落库闸门：subclaimVerdicts 只覆盖可核查原子，不可核查原子单独进 nonVerifiableAtoms
+  applyExclusionLayerToReport(report, rumorStep, factStep?.output?.subclaimVerdicts, searchResult?.sources);
 
   // Same A+F path as live LLM reports
   applyFactDeskPostProcessToReport(report, claim);

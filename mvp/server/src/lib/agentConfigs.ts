@@ -58,8 +58,28 @@ export interface SubclaimVerdict {
   evidenceGaps?: string[];
 }
 
+export type ClaimAtomType =
+  | "fact"
+  | "causal"
+  | "comparison"
+  | "concept"
+  | "value"
+  | "prediction"
+  | "normative"
+  | "personal";
+
 export interface RumorDetectorOutput {
   claimAtoms: string[];
+  claimAtomTypes: Array<{
+    text: string;
+    verifiable: boolean;
+    type: ClaimAtomType;
+  }>;
+  claimType: {
+    verifiable: boolean;
+    type: ClaimAtomType | "mixed";
+    reason: string;
+  };
   rumorIndicators: string[];
   severity: "low" | "medium" | "high";
   analysis: string;
@@ -125,12 +145,41 @@ const rumorDetectorSchema = {
   additionalProperties: false,
   properties: {
     claimAtoms: { type: "array", items: { type: "string" } },
+    claimAtomTypes: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          text: { type: "string" },
+          verifiable: { type: "boolean" },
+          type: {
+            type: "string",
+            enum: ["fact", "causal", "comparison", "concept", "value", "prediction", "normative", "personal"],
+          },
+        },
+        required: ["text", "verifiable", "type"],
+      },
+    },
+    claimType: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        verifiable: { type: "boolean" },
+        type: {
+          type: "string",
+          enum: ["fact", "causal", "comparison", "concept", "value", "prediction", "normative", "personal", "mixed"],
+        },
+        reason: { type: "string" },
+      },
+      required: ["verifiable", "type", "reason"],
+    },
     rumorIndicators: { type: "array", items: { type: "string" } },
     severity: { type: "string", enum: ["low", "medium", "high"] },
     analysis: { type: "string" },
     detectedPatterns: { type: "array", items: { type: "string" } },
   },
-  required: ["claimAtoms", "rumorIndicators", "severity", "analysis", "detectedPatterns"],
+  required: ["claimAtoms", "claimAtomTypes", "claimType", "rumorIndicators", "severity", "analysis", "detectedPatterns"],
 };
 
 const verdictSourceSchema = {
@@ -290,6 +339,12 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "3. 若原句含独立判断（如「药能治失眠」「药已获批准」），必须拆成多个原子命题，不得合并成一条。",
       "4. 拆分完成后，把 claimAtoms 拼接回读一遍，确认每条都能回溯到原句——不能回溯的删掉。",
       "",
+      "【拆解忠实性硬约束 / 原句自证 — 强制】",
+      "- 每个 claimAtom 必须能被原句直接支持；原句未声称的信息、补全的上下文、模型常识一律不得写入。",
+      "- 拆解不得删除原句的限定条件（「某种情况下 X」不得拆成「X」）。",
+      "- 不得产出无独立含义的碎片；能合并进同一判断的不要拆成多条。",
+      "- 拆分完成后把 claimAtoms 拼接回读，逐条对照原句自证，不能自证的删掉。",
+      "",
       "你需要检测以下类型的谣言特征：",
       "1. 绝对化表述 — 使用「一定」「绝对」「100%」「所有」等极端词汇",
       "2. 匿名信源 — 使用「内部消息」「知情人士」「独家爆料」等无法核实的来源",
@@ -305,10 +360,26 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "- medium：检测到 2-3 个谣言特征",
       "- low：检测到 1 个谣言特征，或主要是语气问题",
       "",
+      "【可核查性判定 / claimAtomTypes 与 claimType — 强制】",
+      "对每个 claimAtoms 原子，必须用 claimAtomTypes 逐条给出 verifiable（是否可核查）与 type（类型）。",
+      "硬不可核查（verifiable=false，不进入事实核查范畴，只会被原位灰标标注为立场型，不订真/假）：",
+      "- value 价值判断：对事物价值的评价（\"有意义/无意义\"\"好/坏\"\"应该/不应该\"）。示例如\"文科教育正在失去意义\"若指价值立场。",
+      "- prediction 预测/未来命题：断言指向未来、无法用当前证据判定（\"未来三年就业会恶化\"）。",
+      "- normative 规范命题：主张某人/某机构应当如何（\"政府应该禁止 X\"）。",
+      "可核查（verifiable=true，正常进入逐命题定罪）：",
+      "- fact 事实陈述、causal 因果推断、comparison 比较命题、concept 概念定义。",
+      "",
+      "灰度区判定规则（按断言形态，不硬性归集）：",
+      "- 个人经验 personal：凡断言形态是\"某人/某群体 报告/声称 某种经验或反应\"，可核查（去查是否有这些报告），verifiable=true；凡属说话者第一人称主观体验或未经证实的普遍化主观判断，不可核查，verifiable=false。示例：\"大量患者报告服用 X 后出现失眠\"→可核查（查是否有这些报告）；\"这药对我失眠很有效\"→不可核查。注意：即使机制未知（可能是安慰剂效应），只要形态是\"患者报告了反应\"就可核查\"是否有报告\"，但绝不能核查为\"该反应是药理作用\"（那是 causal，另判）。",
+      "- 概念定义 concept：凡断言是\"某个概念定义是什么、出自哪里、不同语境如何被使用\"，可核查（查定义出处、语境、不同解释），verifiable=true；凡断言是\"这个概念（根本）没有意义/不应该存在\"这类立场宣泄或规范判断，不可核查，verifiable=false。",
+      "",
+      "整句判定 claimType：对整条 claim 判 type、verifiable 与 reason。若整句为纯价值/预测/规范型说法，verifiable=false（报告顶部会标注\"立场型\"横幅），但仍会走完整核查流程，可核查部分照常定罪。",
+      "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"claimAtoms\": [\"可核查原子命题1\", \"可核查原子命题2\"],\n  \"rumorIndicators\": [\"谣言特征1\", \"谣言特征2\"],\n  \"severity\": \"medium\",\n  \"analysis\": \"详细分析说明\",\n  \"detectedPatterns\": [\"匹配的模式1\", \"匹配的模式2\"]\n}",
+      "{\n  \"claimAtoms\": [\"可核查原子命题1\", \"可核查原子命题2\"],\n  \"claimAtomTypes\": [\n    {\"text\": \"可核查原子命题1\", \"verifiable\": true, \"type\": \"fact\"},\n    {\"text\": \"可核查原子命题2\", \"verifiable\": false, \"type\": \"value\"}\n  ],\n  \"claimType\": {\"verifiable\": false, \"type\": \"value\", \"reason\": \"整句为价值判断，不适用于事实核查\"},\n  \"rumorIndicators\": [\"谣言特征1\", \"谣言特征2\"],\n  \"severity\": \"medium\",\n  \"analysis\": \"详细分析说明\",\n  \"detectedPatterns\": [\"匹配的模式1\", \"匹配的模式2\"]\n}",
       "",
       "severity 必须是 'low'、'medium'、'high' 之一。",
+      "claimAtomTypes 的 text 必须与 claimAtoms 逐一对应；value/prediction/normative 的 verifiable 必须为 false，fact/causal/comparison/concept 的 verifiable 必须为 true。",
     ].join("\n"),
     responseSchema: rumorDetectorSchema,
   },
@@ -568,6 +639,220 @@ export function mergeSubclaimVerdicts(
     }
   }
   return result;
+}
+
+/**
+ * 排除层：把 claimAtoms 按 claimAtomTypes 拆分为可核查 / 不可核查。
+ * - 以 claimAtomTypes[i].text 与 claimAtoms 对齐（用与 mergeSubclaimVerdicts 相同的截断键保证不失配）；
+ * - verifiable === false 的原子进 nonVerifiable，其余进 verifiable；
+ * - 兜底：claimAtomTypes 缺失或某原子无对应条目时默认判为可核查（宁漏判，不误杀）。
+ * - 纯确定性，不依赖模型二次判断；不变量：任何 verifiable=false 的原子绝不进入 verifiable。
+ */
+export function splitVerifiableAtoms(
+  claimAtoms: unknown,
+  claimAtomTypes: unknown
+): { verifiable: string[]; nonVerifiable: Array<{ text: string; type: string }> } {
+  const atoms = compactStrings(claimAtoms, 6, 180);
+  const typed = new Map<string, { verifiable: boolean; type: string }>();
+  if (Array.isArray(claimAtomTypes)) {
+    for (const item of claimAtomTypes) {
+      if (!item || typeof item !== "object") continue;
+      const rec = item as Record<string, unknown>;
+      const text = typeof rec.text === "string" ? rec.text : "";
+      if (!text) continue;
+      typed.set(truncateClaimAtomKey(text), {
+        // 兜底：verifiable 缺失或非 false 一律视为可核查
+        verifiable: rec.verifiable !== false,
+        type: typeof rec.type === "string" ? rec.type.slice(0, 40) : "",
+      });
+    }
+  }
+  const verifiable: string[] = [];
+  const nonVerifiable: Array<{ text: string; type: string }> = [];
+  for (const atom of atoms) {
+    const info = typed.get(atom);
+    if (info && info.verifiable === false) {
+      nonVerifiable.push({ text: atom, type: info.type });
+    } else {
+      verifiable.push(atom);
+    }
+  }
+  return { verifiable, nonVerifiable };
+}
+
+// ───────────────────────────────────────────────────────────────
+// 原句自证闸门（claim-atom self-proof gate）
+// 校验 rumor_detector 拆出的 claimAtoms 是否忠实于原句，filter 掉
+// 原句未声称 / 丢限定 / 无独立含义的碎片，再进入下游核查。
+// ───────────────────────────────────────────────────────────────
+
+export interface ClaimAtomDropped {
+  text: string;
+  reason: string;
+}
+
+// 确定性预过滤：去空、截断（与 mergeSubclaimVerdicts 同键）、规范化去重。
+// 不做整句判别 / 语义去重（那是 LLM 自证的事）。
+// 规范化：trim 首尾空白，把全角空格 U+3000 替换为普通空格；用规范化后的文本做去重键，保留原始文本。
+export function prefilterClaimAtoms(
+  claim: string,
+  rawAtoms: unknown
+): { atoms: string[]; dropped: ClaimAtomDropped[] } {
+  void claim;
+  const atoms: string[] = [];
+  const dropped: ClaimAtomDropped[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(rawAtoms)) {
+    for (const item of rawAtoms) {
+      if (typeof item !== "string") continue;
+      const trimmed = item.trim();
+      if (!trimmed) continue;
+      const truncated = truncateClaimAtomKey(trimmed);
+      const normKey = truncated.replace(/\u3000/g, " ").trim();
+      if (seen.has(normKey)) {
+        dropped.push({ text: item, reason: "duplicate" });
+        continue;
+      }
+      seen.add(normKey);
+      // 写回规范化文本作 canonical 键，保证下游 merge/split 的键匹配一致（避免全角空格失配）
+      atoms.push(normKey);
+    }
+  }
+  return { atoms: atoms.slice(0, 6), dropped };
+}
+
+export const SELF_PROOF_SYSTEM_PROMPT = [
+  "你是红鲱鱼与枪的原子命题自证校验器（原句自证闸门）。",
+  "你的任务是对每条候选原子命题（claimAtom）逐条判断：它是否被原句（claim）直接支持，且作为独立可核查断言仍保有明确含义。",
+  "判定标准（只有同时满足才 supported=true）：",
+  "1. 原句直接支持：原子只能由原句直接支持，不得加入原句未声称的信息、不得补全上下文、不得注入模型常识。",
+  "2. 独立含义：原子作为独立可核查断言仍保有明确含义——没有丢失原句的限定条件（如「某种情况下 X」不得拆成「X」）、不是截断到失去语义的碎片、也不与另一条被保留的原子冗余。",
+  "3. 本闸门只判「忠实」（原句是否直接声称），不判「可核查性」。立场/价值/预测型原子若原句直接声称了该立场或断言，即使它本身不可核查，也应判 supported=true——是否可核查由后续排除层另行处置，不在本判断范围。",
+  "输出严格 JSON（不要 Markdown，不要代码块）：{\n  \"results\": [\n    {\"atom\": \"原子文本\", \"supported\": true, \"reason\": \"判断依据\"}\n  ]\n}",
+  "results 必须覆盖输入列出的每个原子；reason 用中文说明判断依据。",
+].join("\n");
+
+export const selfProofSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    results: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          atom: { type: "string" },
+          supported: { type: "boolean" },
+          reason: { type: "string" },
+        },
+        required: ["atom", "supported", "reason"],
+      },
+    },
+  },
+  required: ["results"],
+};
+
+export function buildSelfProofUserContent(claim: string, atoms: string[]): string {
+  const lines = atoms.map((atom, i) => `${i + 1}. ${atom}`).join("\n");
+  return [
+    "原句（claim）：",
+    claim,
+    "",
+    "待校验的候选原子命题（claimAtoms）：",
+    lines,
+    "",
+    "请逐条判断每个原子是否被原句直接支持且保有独立含义，返回 results 数组。",
+  ].join("\n");
+}
+
+// 解析 LLM 输出为 atom→supported 映射。fail-open：某原子在结果中缺失 → supported=true；
+// 结果不可解析 / 非数组 → 返回所有原子都 supported=true 的映射。
+export function parseSelfProofResults(atoms: string[], llmResults: unknown): Map<string, boolean> {
+  const map = new Map<string, boolean>();
+  for (const atom of atoms) map.set(atom, true);
+  if (llmResults && typeof llmResults === "object") {
+    const results = (llmResults as Record<string, unknown>).results;
+    if (Array.isArray(results)) {
+      for (const item of results) {
+        if (!item || typeof item !== "object") continue;
+        const rec = item as Record<string, unknown>;
+        const atom = typeof rec.atom === "string" ? rec.atom : "";
+        if (!atom) continue;
+        const key = truncateClaimAtomKey(atom);
+        if (map.has(key)) {
+          map.set(key, rec.supported === true);
+        }
+      }
+    }
+  }
+  return map;
+}
+
+function lookupSelfProofReason(atom: string, llmResults: unknown): string | undefined {
+  if (llmResults && typeof llmResults === "object") {
+    const results = (llmResults as Record<string, unknown>).results;
+    if (Array.isArray(results)) {
+      for (const item of results) {
+        if (!item || typeof item !== "object") continue;
+        const rec = item as Record<string, unknown>;
+        if (typeof rec.atom === "string" && truncateClaimAtomKey(rec.atom) === atom) {
+          return typeof rec.reason === "string" ? rec.reason : undefined;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+// 组合：先预过滤，再按 LLM 自证结果过滤 supported=false 的原子（进 dropped），
+// supported=true 进 kept；kept 按输入顺序。fail-open 由 parseSelfProofResults 承担。
+export function applySelfProof(
+  claim: string,
+  rawAtoms: unknown,
+  llmResults: unknown
+): { kept: string[]; dropped: ClaimAtomDropped[] } {
+  const { atoms, dropped } = prefilterClaimAtoms(claim, rawAtoms);
+  const supportedMap = parseSelfProofResults(atoms, llmResults);
+  const kept: string[] = [];
+  for (const atom of atoms) {
+    if (supportedMap.get(atom) === true) {
+      kept.push(atom);
+    } else {
+      dropped.push({ text: atom, reason: lookupSelfProofReason(atom, llmResults) ?? "unsupported" });
+    }
+  }
+  return { kept, dropped };
+}
+
+// 完整网关：预过滤 → 批量单次 LLM 自证 → 按 supported 过滤。fail-open，绝不抛错、绝不误杀。
+export async function runClaimAtomSelfProof(
+  claim: string,
+  rawAtoms: unknown,
+  callModel: (input: {
+    systemPrompt: string;
+    userContent: string;
+    responseSchema: object;
+    maxTokens: number;
+  }) => Promise<{ output: unknown; model: string }>
+): Promise<{ kept: string[]; dropped: ClaimAtomDropped[]; model: string }> {
+  const { atoms, dropped } = prefilterClaimAtoms(claim, rawAtoms);
+  if (atoms.length === 0) {
+    return { kept: [], dropped: [], model: "" };
+  }
+  try {
+    const result = await callModel({
+      systemPrompt: SELF_PROOF_SYSTEM_PROMPT,
+      userContent: buildSelfProofUserContent(claim, atoms),
+      responseSchema: selfProofSchema,
+      maxTokens: 600,
+    });
+    const { kept, dropped: selfDropped } = applySelfProof(claim, atoms, result?.output);
+    return { kept, dropped: [...dropped, ...selfDropped], model: result?.model ?? "" };
+  } catch (error) {
+    // fail-open：基础设施故障时保留全部原子，只保留确定性的 duplicate 丢弃信息
+    return { kept: atoms, dropped, model: "" };
+  }
 }
 
 export function buildAgentInput(
