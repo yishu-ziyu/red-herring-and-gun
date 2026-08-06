@@ -180,6 +180,8 @@ app.post("/api/agent/orchestrate", (req, res, next) => handlers.orchestrateHandl
 app.post("/api/agent/orchestrate-stream", (req, res, next) => handlers.orchestrateStreamHandler(req, res, next));
 app.post("/api/agent/test-llm", (req, res, next) => handlers.testLlmHandler(req, res, next));
 app.get("/api/models/list", (req, res, next) => handlers.modelsListHandler(req, res, next));
+app.get("/api/agent/memory-candidates", (req, res, next) => listMemoryCandidatesHandler(req, res).catch(next));
+app.post("/api/agent/memory-candidates", (req, res, next) => updateMemoryCandidateHandler(req, res).catch(next));
 
 // v3 邮箱登录 + 账号数据（用 email 前缀避开与 AI Ping /api/auth/{me,logout} 的第一匹配冲突）
 app.post("/api/auth/email/request", (req, res, next) => emailRequestHandler(req, res).catch(next));
@@ -196,6 +198,10 @@ import {
   renderCaseHtmlHandler,
   listCasesHandler,
 } from "./lib/caseHandlers.js";
+import {
+  listMemoryCandidatesHandler,
+  updateMemoryCandidateHandler,
+} from "./lib/memoryCandidateHandlers.js";
 
 app.post("/api/case", (req, res, next) => postCaseHandler(req, res).catch(next));
 app.get("/api/case/:caseId", (req, res, next) => getCaseHandler(req, res));

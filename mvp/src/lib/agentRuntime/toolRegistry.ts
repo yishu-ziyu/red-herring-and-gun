@@ -104,6 +104,14 @@ export const AGENT_TOOL_REGISTRY: Record<string, AgentTool> = {
     riskLevel: "publish",
     requiresAuth: false,
   },
+  report_reviewer: {
+    id: "report_reviewer",
+    name: "Report Reviewer",
+    description: "确定性提议者～审核者：校验报告契约、证据链与 canSay/cannotSay，必要时最小修复。",
+    kind: "report",
+    riskLevel: "read",
+    requiresAuth: false,
+  },
 };
 
 export function getAgentTool(toolId: string): AgentTool | undefined {

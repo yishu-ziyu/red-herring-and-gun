@@ -540,6 +540,21 @@ export function getAgentConfig(id: string): AgentConfig | undefined {
   return AGENT_CONFIGS.find((a) => a.id === id);
 }
 
+/** Compact string arrays for handoff I/O (limit count + max length). */
+function compactStrings(value: unknown, limit = 5, maxLength = 260): string[] {
+  return Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .slice(0, limit)
+        .map((item) => (item.length > maxLength ? `${item.slice(0, maxLength)}…` : item))
+    : [];
+}
+
+function compactText(value: unknown, maxLength = 420): string {
+  if (typeof value !== "string") return "";
+  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+}
+
 export function buildAgentInput(
   agentId: string,
   claim: string,
@@ -547,7 +562,7 @@ export function buildAgentInput(
 ): Record<string, unknown> {
   switch (agentId) {
     case "rumor_detector":
-      return { claim, task: "分析该 claim 中的谣言特征" };
+      return { claim, task: "分诊 claim、拆分原子命题、识别谣言类型与后续证据需求" };
 
     case "fact_checker": {
       const prev = previousSteps.find((s) => s.agent === "rumor_detector");
@@ -555,8 +570,10 @@ export function buildAgentInput(
         claim,
         task: "对该 claim 进行事实核查",
         claimAtoms: prev?.output?.claimAtoms ?? [],
+        rumorTypes: prev?.output?.rumorTypes ?? [],
         rumorIndicators: prev?.output?.rumorIndicators ?? [],
         severity: prev?.output?.severity ?? "low",
+        neededEvidence: prev?.output?.neededEvidence ?? [],
       };
     }
 
@@ -565,7 +582,37 @@ export function buildAgentInput(
       return {
         claim,
         task: "验证该 claim 中提到的信源",
+        claimAtoms: prev?.output?.claimAtoms ?? [],
+        rumorTypes: prev?.output?.rumorTypes ?? [],
         rumorIndicators: prev?.output?.rumorIndicators ?? [],
+        neededEvidence: prev?.output?.neededEvidence ?? [],
+      };
+    }
+
+    // Causal enrichment agents (input builders ready; configs may land later on server)
+    case "alternative_explanation_searcher": {
+      const rumorStep = previousSteps.find((s) => s.agent === "rumor_detector");
+      const factStep = previousSteps.find((s) => s.agent === "fact_checker");
+      return {
+        claim,
+        task: "为当前因果断言生成替代解释",
+        claimAtoms: rumorStep?.output?.claimAtoms ?? [],
+        factCheckResult: factStep?.output?.factCheckResult,
+        supportingEvidence: compactStrings(factStep?.output?.supportingEvidence, 4, 200),
+        contradictingSources: compactStrings(factStep?.output?.contradictingSources, 4, 200),
+      };
+    }
+
+    case "counter_evidence_grader": {
+      const factStep = previousSteps.find((s) => s.agent === "fact_checker");
+      return {
+        claim,
+        task: "评估反证和证据缺口对结论的影响",
+        factCheckResult: factStep?.output?.factCheckResult,
+        confidence: factStep?.output?.confidence,
+        counterEvidence: compactStrings(factStep?.output?.counterEvidence, 5, 200),
+        unresolvedEvidenceGaps: compactStrings(factStep?.output?.unresolvedEvidenceGaps, 4, 200),
+        contradictingSources: compactStrings(factStep?.output?.contradictingSources, 4, 200),
       };
     }
 
@@ -577,9 +624,12 @@ export function buildAgentInput(
         claim,
         task: "生成综合核查报告",
         rumorAnalysis: {
-          indicators: rumorStep?.output?.rumorIndicators ?? [],
+          claimAtoms: compactStrings(rumorStep?.output?.claimAtoms, 6, 180),
+          rumorTypes: compactStrings(rumorStep?.output?.rumorTypes, 4, 80),
+          indicators: compactStrings(rumorStep?.output?.rumorIndicators, 5, 120),
           severity: rumorStep?.output?.severity ?? "low",
-          analysis: rumorStep?.output?.analysis ?? "",
+          analysis: compactText(rumorStep?.output?.analysis, 360),
+          neededEvidence: compactStrings(rumorStep?.output?.neededEvidence, 5, 180),
         },
         factCheck: {
           result: factStep?.output?.factCheckResult ?? "unverified",
@@ -591,14 +641,20 @@ export function buildAgentInput(
             );
             return mergeSubclaimVerdicts(split.verifiable, factStep?.output?.subclaimVerdicts);
           })(),
-          sources: factStep?.output?.sources ?? [],
-          keyFindings: factStep?.output?.keyFindings ?? [],
+          sources: compactStrings(factStep?.output?.sources, 6, 160),
+          supportingEvidence: compactStrings(factStep?.output?.supportingEvidence, 4, 240),
+          contradictingSources: compactStrings(factStep?.output?.contradictingSources, 5, 160),
+          keyFindings: compactStrings(factStep?.output?.keyFindings, 5, 260),
+          counterEvidence: compactStrings(factStep?.output?.counterEvidence, 5, 240),
+          unresolvedEvidenceGaps: compactStrings(factStep?.output?.unresolvedEvidenceGaps, 4, 240),
+          logicRisks: compactStrings(factStep?.output?.logicRisks, 4, 180),
         },
         sourceValidation: {
           reliability: sourceStep?.output?.sourceReliability ?? "unverified",
-          verifiedSources: sourceStep?.output?.verifiedSources ?? [],
-          questionableSources: sourceStep?.output?.questionableSources ?? [],
-          verificationNotes: sourceStep?.output?.verificationNotes ?? "",
+          verifiedSources: compactStrings(sourceStep?.output?.verifiedSources, 4, 220),
+          questionableSources: compactStrings(sourceStep?.output?.questionableSources, 4, 220),
+          missingSources: compactStrings(sourceStep?.output?.missingSources, 4, 220),
+          verificationNotes: compactText(sourceStep?.output?.verificationNotes, 420),
         },
       };
     }

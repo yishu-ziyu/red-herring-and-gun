@@ -61,6 +61,8 @@ export function computeDelta(current: AggregateMetrics, previous: AggregateMetri
   routingAccuracyDelta: number;
   hallucinationRateDelta: number;
   passedDelta: number;
+  reportContractPassRateDelta: number;
+  avgReportReviewScoreDelta: number;
 } {
   if (!previous) {
     return {
@@ -68,6 +70,8 @@ export function computeDelta(current: AggregateMetrics, previous: AggregateMetri
       routingAccuracyDelta: 0,
       hallucinationRateDelta: 0,
       passedDelta: 0,
+      reportContractPassRateDelta: 0,
+      avgReportReviewScoreDelta: 0,
     };
   }
 
@@ -76,6 +80,8 @@ export function computeDelta(current: AggregateMetrics, previous: AggregateMetri
     routingAccuracyDelta: current.routingAccuracy - previous.routingAccuracy,
     hallucinationRateDelta: current.hallucinationRate - previous.hallucinationRate,
     passedDelta: current.passed - previous.passed,
+    reportContractPassRateDelta: current.reportContractPassRate - previous.reportContractPassRate,
+    avgReportReviewScoreDelta: current.avgReportReviewScore - previous.avgReportReviewScore,
   };
 }
 
@@ -105,6 +111,8 @@ export function generateMarkdownReport(
   lines.push(`| Verdict accuracy | ${(aggregate.verdictCorrectCount / aggregate.totalCases * 100).toFixed(1)}% | ${delta.verdictCorrectDelta >= 0 ? "+" : ""}${(delta.verdictCorrectDelta * 100).toFixed(1)}% |`);
   lines.push(`| Routing accuracy | ${(aggregate.routingAccuracy * 100).toFixed(1)}% | ${delta.routingAccuracyDelta >= 0 ? "+" : ""}${(delta.routingAccuracyDelta * 100).toFixed(1)}% |`);
   lines.push(`| Hallucination rate | ${(aggregate.hallucinationRate * 100).toFixed(1)}% | ${delta.hallucinationRateDelta >= 0 ? "+" : ""}${(delta.hallucinationRateDelta * 100).toFixed(1)}% |`);
+  lines.push(`| Report contract pass | ${(aggregate.reportContractPassRate * 100).toFixed(1)}% | ${delta.reportContractPassRateDelta >= 0 ? "+" : ""}${(delta.reportContractPassRateDelta * 100).toFixed(1)}% |`);
+  lines.push(`| Avg report review score | ${aggregate.avgReportReviewScore.toFixed(1)} | ${delta.avgReportReviewScoreDelta >= 0 ? "+" : ""}${delta.avgReportReviewScoreDelta.toFixed(1)} |`);
   lines.push("");
 
   // Per-category
@@ -151,6 +159,9 @@ export function generateMarkdownReport(
   lines.push(`| Verdict accuracy | ≥ 80% | ${(aggregate.verdictCorrectCount / aggregate.totalCases * 100).toFixed(1)}% | ${verdictOk ? "PASS" : "FAIL"} |`);
   lines.push(`| Hallucination rate | ≤ 10% | ${(aggregate.hallucinationRate * 100).toFixed(1)}% | ${hallucOk ? "PASS" : "FAIL"} |`);
   lines.push(`| Routing accuracy | ≥ 95% | ${(aggregate.routingAccuracy * 100).toFixed(1)}% | ${aggregate.routingAccuracy >= 0.95 ? "PASS" : "FAIL"} |`);
+  const contractOk = aggregate.reportContractPassRate >= 0.90;
+  lines.push(`| Report contract pass | ≥ 90% | ${(aggregate.reportContractPassRate * 100).toFixed(1)}% | ${contractOk ? "PASS" : "FAIL"} |`);
+  lines.push(`| Avg report review score | ≥ 80 | ${aggregate.avgReportReviewScore.toFixed(1)} | ${aggregate.avgReportReviewScore >= 80 ? "PASS" : "FAIL"} |`);
   lines.push("");
 
   return lines.join("\n");

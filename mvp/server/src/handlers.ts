@@ -9,7 +9,10 @@ import { AGENT_CONFIGS, buildAgentInput } from "./lib/agentConfigs.js";
 import { type AtomSearchBundle } from "./lib/atomSearch.js";
 import { applyExclusionLayerToReport } from "./lib/reportAssembly/index.js";
 import { runCasePipeline, type PipelineStep, type RunAgentFn } from "./lib/casePipeline/index.js";
+import { getMemoryCandidateStore } from "./lib/memoryCandidateHandlers.js";
 import { callAgentWithFallback, AgentTextProviderId, ProviderFallbackError } from "./lib/providerRouter.js";
+import { buildAgentStatusBar } from "./lib/contextStatusBar.js";
+import { formatSkillsForPrompt, selectAgentSkills } from "./lib/agentSkills.js";
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
 import { computeCredibilityScore, labelForScore, type CredibilityScoreResult } from "./lib/credibilityScore.js";
@@ -652,6 +655,16 @@ export function createHandlers(env: Record<string, string>) {
   // 多 Agent Orchestrate — thin HTTP adapters over Case Pipeline
   // ───────────────────────────────────────────────────────────────
 
+  /** Prefer rumor_detector stanceClaimType; default mixed for skill routing. */
+  function inferClaimTypeForSkills(steps: Array<{ agent?: string; output?: Record<string, unknown> }>): string | undefined {
+    const rumor = steps.find((s) => s.agent === "rumor_detector");
+    const stance = rumor?.output?.stanceClaimType as { type?: string } | undefined;
+    if (stance && typeof stance.type === "string" && stance.type.length > 0) {
+      return stance.type;
+    }
+    return undefined;
+  }
+
   function makeRunAgent(opts: {
     claim: string;
     modelChoice: any;
@@ -682,6 +695,31 @@ export function createHandlers(env: Record<string, string>) {
       if (agentId === "report_composer") {
         agentInput.evidenceInputs = buildReportEvidenceInputs(steps as any, search360Result);
       }
+
+      // Book Ch.2：状态栏 + 按需 Skills（与 client AgentRuntime 对齐）
+      const claimType = inferClaimTypeForSkills(steps as any) ?? "mixed";
+      const memoryRecall = opts.clientMemoryRecall as
+        | { hitCount?: number; acceptedCandidateCount?: number }
+        | undefined;
+      const statusBar = buildAgentStatusBar({
+        agentId,
+        agentName: agentConfig.name,
+        claim: opts.claim,
+        claimType,
+        stepIndex: steps.length + 1,
+        totalStepsHint: 4,
+        tools: [],
+        memoryHitCount: memoryRecall?.hitCount ?? 0,
+        acceptedCandidateCount: memoryRecall?.acceptedCandidateCount ?? 0,
+        searchReady: Boolean(search360Result),
+      });
+      agentInput.agentStatusBar = statusBar.text;
+      agentInput.agentStatusFields = statusBar.fields;
+      const skills = selectAgentSkills({ agentId, claimType, maxSkills: 3 });
+      const systemPrompt = `${agentConfig.systemPrompt}${formatSkillsForPrompt(skills)}`;
+      agentInput.loadedSkills = skills.map((s) => s.id);
+      const userContent = `${statusBar.text}\n\n${JSON.stringify(agentInput, null, 2)}`;
+
       let output: Record<string, unknown>;
       let modelUsed: string;
       try {
@@ -691,8 +729,8 @@ export function createHandlers(env: Record<string, string>) {
             : undefined;
         const result = await callAgentWithFallback({
           agentId: agentConfig.id,
-          systemPrompt: agentConfig.systemPrompt,
-          userContent: JSON.stringify(agentInput, null, 2),
+          systemPrompt,
+          userContent,
           responseSchema: agentConfig.responseSchema,
           maxTokens: agentConfig.maxTokens,
           env,
@@ -712,7 +750,7 @@ export function createHandlers(env: Record<string, string>) {
         agent: agentConfig.id,
         agentName: agentConfig.name,
         agentIcon: agentConfig.icon,
-        systemPrompt: agentConfig.systemPrompt,
+        systemPrompt,
         input: agentInput,
         output,
         model: modelUsed,
@@ -859,15 +897,17 @@ export function createHandlers(env: Record<string, string>) {
           },
         },
         finalizeReport: pipelineFinalize,
+        memoryCandidateStore: getMemoryCandidateStore(),
       });
 
       console.log(
-        `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length}`
+        `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length} memoryCandidates=${result.memoryCandidates.length}`
       );
 
       return sendJson(res, 200, {
         steps: result.steps,
         finalReport: result.finalReport,
+        memoryCandidates: result.memoryCandidates,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Orchestrate 调用错误";
@@ -1086,12 +1126,54 @@ export function createHandlers(env: Record<string, string>) {
               timestamp: Date.now(),
             });
           },
+          onReportReviewStart: (info) => {
+            sendEvent({
+              type: "tool_start",
+              toolName: info.toolName,
+              query: info.query,
+              timestamp: Date.now(),
+            });
+          },
+          onReportReviewResult: (info) => {
+            sendEvent({
+              type: "tool_result",
+              toolName: info.toolName,
+              query: info.query,
+              result: {
+                passed: info.passed,
+                score: info.score,
+                issues: info.issues,
+                checks: info.checks,
+              },
+              timestamp: Date.now(),
+            });
+          },
+          onMemoryWriteStart: (info) => {
+            sendEvent({
+              type: "tool_start",
+              toolName: info.toolName,
+              query: info.query,
+              timestamp: Date.now(),
+            });
+          },
+          onMemoryWriteResult: (info) => {
+            sendEvent({
+              type: "tool_result",
+              toolName: info.toolName,
+              query: info.query,
+              result: {
+                proposedCandidateCount: info.proposedCandidateCount,
+              },
+              timestamp: Date.now(),
+            });
+          },
         },
         finalizeReport: pipelineFinalize,
+        memoryCandidateStore: getMemoryCandidateStore(),
       });
 
       console.log(
-        `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length}`
+        `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length} memoryCandidates=${result.memoryCandidates.length}`
       );
 
       sendEvent({
@@ -1099,6 +1181,7 @@ export function createHandlers(env: Record<string, string>) {
         claim,
         steps: result.steps,
         finalReport: result.finalReport,
+        memoryCandidates: result.memoryCandidates,
         timestamp: Date.now(),
       });
       res.end();

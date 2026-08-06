@@ -851,6 +851,7 @@ function agentApiPlugin(env: Record<string, string>) {
         finalReport: result.finalReport,
         followUpQueue: result.followUpQueue,
         memoryCandidates: result.memoryCandidates,
+        reportReview: result.reportReview,
         totalLatencyMs: result.totalLatencyMs,
         timestamp: Date.now(),
       });

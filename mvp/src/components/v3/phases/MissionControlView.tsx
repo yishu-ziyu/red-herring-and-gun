@@ -14,6 +14,8 @@ import {
   type OrchestrateStreamEvent,
   type SpeculativeRelayUpdate,
 } from "../../../lib/agentExpansion";
+import { adaptOrchestrateStreamToShell } from "../../../lib/missionShell";
+import { MissionProcessShell } from "./mission/MissionProcessShell";
 import type { ModelChoiceMap } from "../ModelPicker";
 import { calculateClaimSimilarity, createKnowledgeBase, type KnowledgeBase } from "../../../lib/knowledgeBase";
 import type {
@@ -41,6 +43,7 @@ import type { CaseIntake } from "../../../lib/caseIntake";
 import type { MemoryCandidate, MemoryCandidateStatus } from "../../../lib/agentRuntime/memoryCandidateTypes";
 import { getAgentContract } from "../../../lib/agentConfigs";
 import { summarizeMissionStreamStatus } from "../../../lib/missionStreamStatus";
+import { AGENT_SKILLS } from "../../../lib/agentRuntime/agentSkills";
 
 interface MissionControlViewProps {
   claim: string;
@@ -63,6 +66,7 @@ interface MissionStreamItem {
   timestamp: number;
   query?: string;
   model?: string;
+  toolId?: string;
   result?: Record<string, unknown>;
   debate?: ConsensusDebateUpdate;
   techDetail?: string;
@@ -131,6 +135,7 @@ interface ControllerProcessEvent {
   kind: ControllerEventKind;
   query?: string;
   model?: string;
+  toolId?: string;
   result?: Record<string, unknown>;
   debate?: ConsensusDebateUpdate;
   techDetail?: string;
@@ -397,6 +402,9 @@ function displayAgentName(agent?: string | null) {
     case "agentmemorywrite":
     case "memorywrite":
       return "案件记忆归档";
+    case "reportreviewer":
+    case "reportreviewer(proposerreviewer)":
+      return "报告审稿";
     case "tool":
       return "工具";
     case "unknown":
@@ -426,6 +434,9 @@ function displayAgentText(text?: string | null) {
     .replace(/Agent Memory Write/gi, "案件记忆归档")
     .replace(/Memory Search/gi, "历史案件参考")
     .replace(/Memory Write/gi, "案件记忆归档")
+    .replace(/Report Reviewer\s*\(proposer-reviewer\)/gi, "报告审稿")
+    .replace(/Report Reviewer/gi, "报告审稿")
+    .replace(/proposer-reviewer/gi, "报告审稿")
     .replace(/360\s*\/\s*AnySearch\s*\/\s*Metaso\s*\/\s*Tavily\s*\/\s*Exa/gi, "公开材料检索")
     .replace(/Parallel Search/gi, "公开材料检索")
     .replace(/360 AI Search/gi, "公开材料检索")
@@ -625,12 +636,15 @@ function casePathSignalsFromStream(streamItems: MissionStreamItem[], runStatus: 
   return signals;
 }
 
-function focusForControllerEvent(item: Pick<MissionStreamItem, "agentName" | "title" | "detail" | "status">): WorkbenchFocus {
+function focusForControllerEvent(item: Pick<MissionStreamItem, "agentName" | "title" | "detail" | "status" | "toolId" | "result">): WorkbenchFocus {
   if (item.status === "final") return "report";
 
   const content = `${item.agentName} ${item.title} ${item.detail}`;
   const normalized = normalizeAgent(content);
 
+  if (isReportReviewerTool(item.agentName, item.toolId, item.result) || /报告审稿|report.?reviewer|proposer-reviewer/i.test(content)) {
+    return "report";
+  }
   if (/报告|收束|结论|final|composer/.test(content) || normalized.includes("report")) return "report";
   if (/记忆|历史案件|知识库|memory/.test(content) || normalized.includes("memory")) return "memory";
   if (/信源|来源|溯源|证据链|矩阵|共识|source|consensus|evidence/.test(content)) return "evidence";
@@ -642,7 +656,7 @@ function focusForControllerEvent(item: Pick<MissionStreamItem, "agentName" | "ti
   return "dispatch";
 }
 
-function controllerEventKind(item: Pick<MissionStreamItem, "agentName" | "title" | "detail" | "status">): ControllerEventKind {
+function controllerEventKind(item: Pick<MissionStreamItem, "agentName" | "title" | "detail" | "status" | "toolId" | "result">): ControllerEventKind {
   const agentName = displayAgentName(item.agentName);
   const content = `${agentName} ${item.title} ${item.detail}`;
   const normalized = normalizeAgent(content);
@@ -657,7 +671,12 @@ function controllerEventKind(item: Pick<MissionStreamItem, "agentName" | "title"
   if (AGENT_ORDER.some((agent) => normalized.includes(agent.replace("_", ""))) || /分诊员|核查员|审计员|收束员/.test(agentName)) {
     return "agent";
   }
-  if (/工具|调用|search|360|anysearch|metaso|tavily|exa|parallel/.test(normalized) || /工具|搜索|检索/.test(content)) {
+  if (
+    isReportReviewerTool(item.agentName, item.toolId, item.result) ||
+    /报告审稿|report.?reviewer|proposer-reviewer/i.test(content) ||
+    /工具|调用|search|360|anysearch|metaso|tavily|exa|parallel/.test(normalized) ||
+    /工具|搜索|检索|审稿/.test(content)
+  ) {
     return "tool";
   }
   return "thought";
@@ -681,6 +700,7 @@ function buildControllerProcessEvents({
       kind: controllerEventKind(item),
       query: item.query,
       model: item.model,
+      toolId: item.toolId,
       result: item.result,
       debate: item.debate,
       techDetail: item.techDetail,
@@ -738,10 +758,13 @@ function controllerEventAgentId(event: ControllerProcessEvent): AgentId | "" {
 }
 
 function operationVerbForEvent(event: ControllerProcessEvent) {
-  const content = normalizeAgent(`${event.title} ${event.detail}`);
+  const content = normalizeAgent(`${event.title} ${event.detail} ${event.toolId ?? ""}`);
   if (event.kind === "debate") return "校准";
   if (event.kind === "report") return "生成";
   if (event.kind === "error") return "阻塞";
+  if (isReportReviewerTool(event.agentName, event.toolId, event.result) || /报告审稿|审稿/.test(event.title)) {
+    return "审稿";
+  }
   if (content.includes("memorywrite") || /写入|归档|记忆/.test(event.title)) return "写入";
   if (content.includes("memorysearch") || /历史|记忆/.test(event.title)) return "读取";
   if (content.includes("vision") || /图片|截图/.test(event.title)) return "读取";
@@ -751,8 +774,11 @@ function operationVerbForEvent(event: ControllerProcessEvent) {
 }
 
 function operationIconForEvent(event: ControllerProcessEvent) {
-  const content = normalizeAgent(`${event.title} ${event.detail}`);
-  if (/返回|完成|命中|结果/.test(event.title) || content.includes("result")) return "/tool-icons/check.svg";
+  const content = normalizeAgent(`${event.title} ${event.detail} ${event.toolId ?? ""}`);
+  if (isReportReviewerTool(event.agentName, event.toolId, event.result) || /报告审稿|审稿/.test(event.title)) {
+    return event.result?.passed === false ? "/tool-icons/wrench.svg" : "/tool-icons/check.svg";
+  }
+  if (/返回|完成|命中|结果|通过/.test(event.title) || content.includes("result")) return "/tool-icons/check.svg";
   if (content.includes("search") || /搜索|检索|查询/.test(`${event.title} ${event.detail}`)) return "/tool-icons/search.svg";
   return "/tool-icons/wrench.svg";
 }
@@ -790,7 +816,10 @@ function streamPhaseIndexForEvent(event: ControllerProcessEvent): number {
   if (agentId === "fact_checker" || agentId === "source_validator") return 1;
 
   if (event.kind === "tool") {
-    const blob = normalizeAgent(`${event.agentName} ${event.title} ${event.detail}`);
+    const blob = normalizeAgent(`${event.agentName} ${event.title} ${event.detail} ${event.toolId ?? ""}`);
+    if (isReportReviewerTool(event.agentName, event.toolId, event.result) || blob.includes("reportreviewer") || /报告审稿/.test(blob)) {
+      return 2;
+    }
     if (blob.includes("memory")) return 0;
     return 1;
   }
@@ -828,7 +857,11 @@ function looksLikeFullClaimEcho(text: string, claim: string): boolean {
 
 function humanStreamTitle(event: ControllerProcessEvent): string {
   const raw = displayAgentText(event.title).replace(/^\s*(检索|返回|失败|搜索|运行|写入|读取)\s*[|｜]\s*/i, "").trim();
-  const blob = normalizeAgent(`${event.agentName} ${event.title} ${event.detail}`);
+  const blob = normalizeAgent(`${event.agentName} ${event.title} ${event.detail} ${event.toolId ?? ""}`);
+
+  if (isReportReviewerTool(event.agentName, event.toolId, event.result) || /报告审稿|report.?reviewer|proposer-reviewer/i.test(blob)) {
+    return formatReportReviewerStreamTitle(event.result, event.status);
+  }
 
   if (blob.includes("memorysearch") || /历史案件参考/.test(`${event.agentName}${raw}`)) {
     if (event.status === "failed" || /失败/.test(event.title)) return "历史案件参考 · 未命中可用记录";
@@ -853,6 +886,10 @@ function humanStreamTitle(event: ControllerProcessEvent): string {
 }
 
 function humanStreamDetail(event: ControllerProcessEvent, claim: string): string {
+  if (isReportReviewerTool(event.agentName, event.toolId, event.result) || /报告审稿/.test(`${event.agentName}${event.title}`)) {
+    return formatReportReviewerStreamDetail(event.result, event.status);
+  }
+
   const detail = displayAgentText(event.detail).replace(/\s+/g, " ").trim();
   if (!detail) {
     if (event.kind === "tool") return "动作已记录，可在右侧查看明细。";
@@ -924,10 +961,13 @@ function streamStatusRank(status: StreamItemStatus): number {
 
 /** 同族事件合并键：历史案件 start/return、同角色 agent 多次状态 */
 function streamCollapseKey(event: ControllerProcessEvent): string {
-  const blob = normalizeAgent(`${event.agentName} ${event.title} ${event.detail}`);
+  const blob = normalizeAgent(`${event.agentName} ${event.title} ${event.detail} ${event.toolId ?? ""}`);
   if (event.kind === "agent") {
     const agentId = controllerEventAgentId(event);
     return agentId ? `agent:${agentId}` : `agent:${event.id}`;
+  }
+  if (isReportReviewerTool(event.agentName, event.toolId, event.result) || /报告审稿|report.?reviewer|proposer-reviewer/i.test(blob)) {
+    return "fam:report-reviewer";
   }
   if (blob.includes("memorysearch") || /历史案件参考/.test(`${event.title}${event.agentName}`)) {
     return "fam:memory-search";
@@ -937,6 +977,7 @@ function streamCollapseKey(event: ControllerProcessEvent): string {
   }
   if (
     event.kind === "tool" &&
+    !isReportReviewerTool(event.agentName, event.toolId, event.result) &&
     (/公开材料检索|搜索提前接力|parallel search|anysearch|metaso|tavily|\bexa\b|360/i.test(blob) ||
       blob.includes("search"))
   ) {
@@ -1809,6 +1850,12 @@ function controllerProcessingSteps({
 }
 
 function toolReadingPurpose(event: ControllerProcessEvent) {
+  if (
+    isReportReviewerTool(event.agentName, event.toolId, event.result) ||
+    /报告审稿/.test(`${event.title}${event.agentName}`)
+  ) {
+    return "对报告做确定性审稿：挡住空壳结论、过短证据链与过早宣布完成。";
+  }
   const content = normalizeAgent(`${event.title} ${event.detail}`);
   if (content.includes("memory")) return "先读历史案件和可复用线索，避免从零开始，也避免把旧结论直接当成本案证据。";
   if (content.includes("vision") || /图片|截图/.test(event.title)) return "把图片材料转成可检索文本，再交给后续拆题和信源审计。";
@@ -1999,13 +2046,22 @@ function upsertStep(steps: HandoffStep[], nextStep: HandoffStep) {
 }
 
 function buildStep(event: OrchestrateStreamEvent, status: HandoffStep["status"]): HandoffStep {
+  const input: Record<string, unknown> = {};
+  // Book honesty: agent_complete may carry loadedSkills / agentStatusBar on result
+  const skills = loadedSkillsFromEventResult(event.result);
+  if (skills.length > 0) input.loadedSkills = skills;
+  const statusBar =
+    event.result && typeof event.result.agentStatusBar === "string"
+      ? event.result.agentStatusBar.trim()
+      : "";
+  if (statusBar) input.agentStatusBar = statusBar;
   return {
     agent: normalizeAgent(event.agent) || "unknown",
     agentName: displayAgentName(event.agentName ?? event.agent ?? "Unknown"),
     agentIcon: event.agentIcon ?? "◆",
     agentContract: event.agentContract,
     systemPrompt: "",
-    input: {},
+    input,
     output: event.output ?? {},
     evidenceBundle: event.evidenceBundle,
     model: event.model ?? "pending",
@@ -2623,31 +2679,152 @@ function agentCompleteTitle(step: HandoffStep) {
   }
 }
 
-function toolStartTitle(toolName?: string | null) {
-  const normalized = normalizeAgent(toolName);
-  if (normalized.includes("memorysearch")) return "查阅历史案件参考";
-  if (normalized.includes("memorywrite")) return "归档可复用线索";
-  if (normalized.includes("stepfun") || normalized.includes("vision")) return "解析图片材料";
-  if (normalized.includes("parallel") || isSearchToolName(toolName)) return "检索公开材料";
-  return `运行 · ${toolDisplayName(toolName)}`;
+/** Compact tool key: lower + strip spaces/underscores/hyphens for matching. */
+function compactToolKey(value?: string | null) {
+  return normalizeAgent(value).replace(/[\s_-]+/g, "");
 }
 
-function toolResultTitle(toolName?: string | null) {
-  const normalized = normalizeAgent(toolName);
-  if (normalized.includes("memorysearch")) return "历史案件参考已返回";
-  if (normalized.includes("memorywrite")) return "可复用线索已归档";
-  if (normalized.includes("stepfun") || normalized.includes("vision")) return "图片材料已解析";
-  if (normalized.includes("parallel") || isSearchToolName(toolName)) return "公开材料已返回";
-  return `${toolDisplayName(toolName)} · 已返回`;
+/**
+ * Detect report_reviewer SSE tool by name/id or result shape
+ * (passed + score + issues from reviewAndRepairReport).
+ */
+export function isReportReviewerTool(
+  toolName?: string | null,
+  toolId?: string | null,
+  result?: Record<string, unknown> | null
+): boolean {
+  const key = compactToolKey(`${toolName ?? ""} ${toolId ?? ""}`);
+  if (
+    key.includes("reportreviewer") ||
+    key.includes("proposerreviewer") ||
+    /报告审稿/.test(`${toolName ?? ""}${toolId ?? ""}`)
+  ) {
+    return true;
+  }
+  if (
+    result &&
+    typeof result.passed === "boolean" &&
+    typeof result.score === "number" &&
+    Array.isArray(result.issues)
+  ) {
+    return true;
+  }
+  return false;
 }
 
-function isSearchToolName(toolName?: string | null) {
-  const normalized = normalizeAgent(toolName);
-  return /360|anysearch|any_search|metaso|tavily|exa|search/.test(normalized);
+export function formatReportReviewerStreamTitle(
+  result?: Record<string, unknown> | null,
+  status?: StreamItemStatus | string | null
+): string {
+  if (status === "running" || status === "queued") {
+    return "报告审稿";
+  }
+  if (status === "failed") return "报告审稿 · 未完成";
+  if (result == null) return "报告审稿";
+  const passed = typeof result.passed === "boolean" ? result.passed : null;
+  const score =
+    typeof result.score === "number" && Number.isFinite(result.score) ? Math.round(result.score) : null;
+  const verdict = passed === true ? "通过" : passed === false ? "需补证" : "已返回";
+  if (score !== null) return `报告审稿 · ${verdict} · ${score}`;
+  return `报告审稿 · ${verdict}`;
+}
+
+/** Max 3 human-readable issues for stream chip / detail collapse. */
+export function reportReviewerIssueList(
+  result?: Record<string, unknown> | null
+): Array<{ severity: string; message: string }> {
+  const raw = result?.issues;
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{ severity: string; message: string }> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const message = typeof rec.message === "string" ? rec.message.trim() : "";
+    if (!message) continue;
+    out.push({
+      severity: typeof rec.severity === "string" ? rec.severity : "warn",
+      message,
+    });
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+function skillDisplayTitle(skillId: string): string {
+  const hit = AGENT_SKILLS.find((skill) => skill.id === skillId);
+  if (hit?.title) return hit.title;
+  return skillId.replace(/^skill\./, "").replace(/-/g, " ");
+}
+
+function loadedSkillsFromStep(step: HandoffStep | null): string[] {
+  if (!step) return [];
+  const fromInput = step.input?.loadedSkills;
+  if (Array.isArray(fromInput)) {
+    return fromInput.filter((id): id is string => typeof id === "string" && id.trim().length > 0);
+  }
+  return [];
+}
+
+function loadedSkillsFromEventResult(result?: Record<string, unknown> | null): string[] {
+  if (!result) return [];
+  const skills = result.loadedSkills;
+  if (!Array.isArray(skills)) return [];
+  return skills.filter((id): id is string => typeof id === "string" && id.trim().length > 0);
+}
+
+export function formatReportReviewerStreamDetail(
+  result?: Record<string, unknown> | null,
+  status?: StreamItemStatus | string | null
+): string {
+  if (status === "running" || status === "queued" || result == null) {
+    return "对结论做契约校验：证据链、边界表述与可发布强度。";
+  }
+  const issues = reportReviewerIssueList(result);
+  if (issues.length > 0) {
+    return issues.map((issue) => issue.message).join("；");
+  }
+  if (result.passed === true) return "契约校验通过，结论可进入展示。";
+  if (result.passed === false) return "需补齐证据链或收紧边界表述。";
+  return "审稿结果已返回。";
+}
+
+function toolStartTitle(toolName?: string | null, toolId?: string | null) {
+  if (isReportReviewerTool(toolName, toolId)) return "报告审稿";
+  const key = compactToolKey(`${toolName ?? ""} ${toolId ?? ""}`);
+  if (key.includes("memorysearch")) return "查阅历史案件参考";
+  if (key.includes("memorywrite")) return "归档可复用线索";
+  if (key.includes("stepfun") || key.includes("vision")) return "解析图片材料";
+  if (key.includes("parallel") || isSearchToolName(toolName, toolId)) return "检索公开材料";
+  return `运行 · ${toolDisplayName(toolName, toolId)}`;
+}
+
+function toolResultTitle(
+  toolName?: string | null,
+  result?: Record<string, unknown> | null,
+  toolId?: string | null
+) {
+  if (isReportReviewerTool(toolName, toolId, result)) {
+    return formatReportReviewerStreamTitle(result, "completed");
+  }
+  const key = compactToolKey(`${toolName ?? ""} ${toolId ?? ""}`);
+  if (key.includes("memorysearch")) return "历史案件参考已返回";
+  if (key.includes("memorywrite")) return "可复用线索已归档";
+  if (key.includes("stepfun") || key.includes("vision")) return "图片材料已解析";
+  if (key.includes("parallel") || isSearchToolName(toolName, toolId)) return "公开材料已返回";
+  return `${toolDisplayName(toolName, toolId)} · 已返回`;
+}
+
+function isSearchToolName(toolName?: string | null, toolId?: string | null) {
+  const key = compactToolKey(`${toolName ?? ""} ${toolId ?? ""}`);
+  if (key.includes("memory") || key.includes("reportreviewer") || key.includes("proposerreviewer")) {
+    return false;
+  }
+  return /360|anysearch|metaso|tavily|exa|parallel|search/.test(key);
 }
 
 function toolDisplayName(toolName?: string | null, source?: string | null) {
-  const normalized = normalizeAgent(`${toolName ?? ""} ${source ?? ""}`).replace(/[\s_-]+/g, "");
+  const normalized = compactToolKey(`${toolName ?? ""} ${source ?? ""}`);
+  if (normalized.includes("reportreviewer") || normalized.includes("proposerreviewer")) return "报告审稿";
   if (normalized.includes("memorysearch")) return "历史案件参考";
   if (normalized.includes("memorywrite")) return "案件记忆归档";
   if (
@@ -2683,27 +2860,33 @@ function resultArrayCount(result: Record<string, unknown> | undefined, key: stri
 }
 
 function toolStartDetail(event: OrchestrateStreamEvent, _fallbackClaim: string) {
-  const normalized = normalizeAgent(event.toolName);
-  if (normalized.includes("memorysearch")) {
+  if (isReportReviewerTool(event.toolName, event.toolId, event.result)) {
+    return formatReportReviewerStreamDetail(null, "running");
+  }
+  const key = compactToolKey(`${event.toolName ?? ""} ${event.toolId ?? ""}`);
+  if (key.includes("memorysearch")) {
     return "对照历史类似案件，不作本案直接证据。";
   }
-  if (normalized.includes("memorywrite")) {
+  if (key.includes("memorywrite")) {
     return "把可复用线索写入案件记忆，供后续参考。";
   }
-  if (normalized.includes("stepfun") || normalized.includes("vision")) {
+  if (key.includes("stepfun") || key.includes("vision")) {
     return "提取截图与图片中的可核验信息。";
   }
-  if (normalized.includes("parallel") || isSearchToolName(event.toolName)) {
+  if (key.includes("parallel") || isSearchToolName(event.toolName, event.toolId)) {
     const query = event.query?.trim() ?? "";
     // 短查询可作摘要；完整 claim 不当作每一行正文
     if (query && query.length <= 36) return `围绕「${query}」检索公开网页与通告。`;
     return "按命题检索公开网页、通告与可靠转载。";
   }
-  return `${toolDisplayName(event.toolName)} 已接入调度。`;
+  return `${toolDisplayName(event.toolName, event.toolId)} 已接入调度。`;
 }
 
 function toolResultDetail(event: OrchestrateStreamEvent) {
   const result = event.result;
+  if (isReportReviewerTool(event.toolName, event.toolId, result)) {
+    return formatReportReviewerStreamDetail(result, "completed");
+  }
   const hitCount = resultNumber(result, "hitCount");
   const acceptedCandidateCount = resultNumber(result, "acceptedCandidateCount");
   if (hitCount !== null || acceptedCandidateCount !== null) {
@@ -3569,6 +3752,11 @@ function ControllerRail({
   stageIdx,
   finalReport,
   runStatus,
+  missionShellModel,
+  useMissionShell,
+  missionShellVariant,
+  selectedShellAgentId,
+  onSelectShellAgent,
 }: {
   controllerEvents: ControllerProcessEvent[];
   activeControllerEventId: string;
@@ -3579,6 +3767,11 @@ function ControllerRail({
   stageIdx: number;
   finalReport: Record<string, unknown> | null;
   runStatus: RunStatus;
+  missionShellModel?: import("../../../lib/missionShell").MissionShellModel | null;
+  useMissionShell?: boolean;
+  missionShellVariant?: "token" | "antdx";
+  selectedShellAgentId?: string;
+  onSelectShellAgent?: (agentId: string) => void;
 }) {
   const transcriptItems = useMemo(() => buildControllerTranscript(controllerEvents), [controllerEvents]);
   const flowRef = useRef<HTMLDivElement | null>(null);
@@ -3696,14 +3889,25 @@ function ControllerRail({
       const isActive = activeControllerEventId === item.event.id;
       const title = humanStreamTitle(item.event);
       const detail = humanStreamDetail(item.event, claim);
+      const isReviewer = isReportReviewerTool(
+        item.event.agentName,
+        item.event.toolId,
+        item.event.result
+      );
+      const reviewIssues = isReviewer ? reportReviewerIssueList(item.event.result) : [];
+      const kindChip = isReviewer ? "报告审稿" : "检索动作";
+      const rowClass = isReviewer
+        ? `controller-operation-row controller-operation-row--${item.status} controller-operation-row--review controller-stream-row controller-stream-row--tool ${isActive ? "controller-operation-row--active" : ""}`
+        : `controller-operation-row controller-operation-row--${item.status} controller-stream-row controller-stream-row--tool ${isActive ? "controller-operation-row--active" : ""}`;
 
       return (
         <motion.button
           key={item.id}
           type="button"
-          className={`controller-operation-row controller-operation-row--${item.status} controller-stream-row controller-stream-row--tool ${isActive ? "controller-operation-row--active" : ""}`}
+          className={rowClass}
           data-status={item.status}
           data-kind="tool"
+          data-tool={isReviewer ? "report_reviewer" : undefined}
           data-controller-event-id={item.event.id}
           onClick={() => onSelectControllerEvent(item.event)}
           aria-pressed={isActive}
@@ -3717,9 +3921,18 @@ function ControllerRail({
             <img src={operationIconForEvent(item.event)} alt="" />
           </span>
           <span className="controller-operation-copy">
-            <span className="controller-kind-chip">检索动作</span>
+            <span className="controller-kind-chip">{kindChip}</span>
             <strong>{title}</strong>
             {detail ? <small>{detail}</small> : null}
+            {reviewIssues.length > 0 ? (
+              <ul className="controller-review-issue-list" aria-label="审稿意见">
+                {reviewIssues.map((issue, index) => (
+                  <li key={`issue-${index}`} data-severity={issue.severity}>
+                    {issue.message}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
           </span>
           <span className="controller-operation-chevron">›</span>
         </motion.button>
@@ -3763,6 +3976,19 @@ function ControllerRail({
   };
 
   const hasItems = transcriptItems.length > 0 || phasedStream.length > 0;
+  const shellBusy =
+    Boolean(useMissionShell && missionShellModel) &&
+    ((missionShellModel?.thoughtItems.length ?? 0) > 0 ||
+      (missionShellModel?.tools.length ?? 0) > 0 ||
+      (missionShellModel?.agents.length ?? 0) > 0 ||
+      Boolean(missionShellModel?.errorMessage) ||
+      Boolean(missionShellModel?.verdict.present));
+  const showAny = useMissionShell ? shellBusy || runStatus === "running" : hasItems;
+  const shellThoughtCount = missionShellModel?.thoughtItems.length ?? 0;
+  const shellToolCount = missionShellModel?.tools.length ?? 0;
+  const shellAgentRunning = missionShellModel?.agents.filter((a) => a.status === "loading").length ?? 0;
+  const reviewFailed =
+    missionShellModel?.verdict.reviewPassed === false && !missionShellModel?.errorMessage;
 
   return (
     <aside className="case-controller-panel case-controller-panel--stream stream-rail" aria-label="活动过程时间线">
@@ -3771,12 +3997,34 @@ function ControllerRail({
           <span className={`controller-live-dot ${followLive && runStatus === "running" ? "controller-live-dot--live" : "controller-live-dot--paused"}`} />
           <div className="controller-transcript-head-copy">
             <strong>核查过程</strong>
-            <span>{hasItems ? "流式展开 · 点选查看明细" : "等待第一条过程事件"}</span>
+            <span>
+              {useMissionShell
+                ? missionShellModel?.errorMessage
+                  ? missionShellModel.phaseLabel || "过程中断"
+                  : missionShellModel?.phaseLabel || "等待开始"
+                : hasItems
+                  ? "流式展开 · 点选查看明细"
+                  : "等待第一条过程事件"}
+            </span>
           </div>
         </div>
         <div className="controller-transcript-head-meta">
-          <em>{hasItems ? `${transcriptItems.length} 步` : "LIVE"}</em>
-          {!followLive && hasItems ? (
+          {useMissionShell ? (
+            missionShellModel ? (
+              <>
+                <em>{shellThoughtCount} 步</em>
+                <span>{shellToolCount} 工具</span>
+                {shellAgentRunning > 0 ? <span>{shellAgentRunning} 人在跑</span> : null}
+                {missionShellModel.errorMessage ? <span>已中断</span> : null}
+                {reviewFailed ? <span>审稿需补证</span> : null}
+              </>
+            ) : (
+              <em>准备中</em>
+            )
+          ) : (
+            <em>{hasItems ? `${transcriptItems.length} 步` : "LIVE"}</em>
+          )}
+          {!followLive && showAny ? (
             <button type="button" className="controller-follow-live-btn" onClick={onFollowLive}>
               回到最新
             </button>
@@ -3785,7 +4033,17 @@ function ControllerRail({
       </div>
 
       <div className="controller-transcript-flow stream-rail-flow" ref={flowRef}>
-        {!hasItems ? (
+        {useMissionShell && missionShellModel ? (
+          <div className="mps-live-wrap">
+            <MissionProcessShell
+              model={missionShellModel}
+              variant={missionShellVariant ?? "token"}
+              selectedAgentId={selectedShellAgentId || null}
+              onSelectAgent={onSelectShellAgent}
+            />
+          </div>
+        ) : null}
+        {!useMissionShell && !hasItems ? (
           <motion.p
             className="stream-boot-hint"
             initial={{ opacity: 0 }}
@@ -3794,7 +4052,8 @@ function ControllerRail({
           >
             已提交材料。思考、检索与协作角色会按时间顺序出现在这里——不会预先铺满空模块。
           </motion.p>
-        ) : (
+        ) : null}
+        {!useMissionShell && hasItems ? (
           <AnimatePresence initial={false}>
             {phasedStream.map((phase) => (
               <motion.section
@@ -3827,7 +4086,18 @@ function ControllerRail({
               </motion.section>
             ))}
           </AnimatePresence>
-        )}
+        ) : null}
+        {/* Shell 已挂载时由 mps-empty 承担空态；仅模型尚未就绪时显示启动提示，避免双空态 */}
+        {useMissionShell && !missionShellModel ? (
+          <motion.p
+            className="stream-boot-hint"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3, ease: EASE_OUT }}
+          >
+            已提交材料。思考、检索与协作角色会按时间顺序出现在这里。
+          </motion.p>
+        ) : null}
       </div>
     </aside>
   );
@@ -3912,6 +4182,12 @@ function ControllerEventDetailPanel({
 
   const leadTitle = humanStreamTitle(event);
   const leadDetail = humanStreamDetail(event, claim) || event.detail;
+  const isReviewerEvent = isReportReviewerTool(event.agentName, event.toolId, event.result);
+  const reviewIssues = isReviewerEvent ? reportReviewerIssueList(event.result) : [];
+  // Only surface skills when present on step input or agent_complete result — no empty panel
+  const stepSkills = loadedSkillsFromStep(eventStep);
+  const resultSkills = loadedSkillsFromEventResult(event.result);
+  const loadedSkills = stepSkills.length > 0 ? stepSkills : resultSkills;
   const hasBodyContent =
     thinkingLines.length > 0 ||
     searchQueries.length > 0 ||
@@ -3923,6 +4199,8 @@ function ControllerEventDetailPanel({
     Boolean(event.techDetail) ||
     (event.kind === "tool" && Boolean(toolChannel)) ||
     debateRounds.length > 0 ||
+    reviewIssues.length > 0 ||
+    loadedSkills.length > 0 ||
     Boolean(leadDetail?.trim());
 
   // 无实质内容时不渲染整块明细壳（避免右栏四大空分区）
@@ -3985,6 +4263,35 @@ function ControllerEventDetailPanel({
           <strong>{leadTitle}</strong>
           {leadDetail ? <ActivityText text={leadDetail} animate={animateTyping} /> : null}
         </p>
+
+        {reviewIssues.length > 0 ? (
+          <details
+            className="controller-review-issues"
+            open={reviewIssues.some((issue) => issue.severity === "error")}
+          >
+            <summary>审稿意见 · {reviewIssues.length}</summary>
+            <ul className="controller-review-issue-list controller-review-issue-list--detail">
+              {reviewIssues.map((issue, index) => (
+                <li key={`review-issue-${index}`} data-severity={issue.severity}>
+                  {issue.message}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+
+        {loadedSkills.length > 0 ? (
+          <section className="controller-skill-row" aria-label="本步 Skills">
+            <span className="controller-skill-label">本步 Skills</span>
+            <div className="controller-skill-chips">
+              {loadedSkills.map((skillId) => (
+                <span key={skillId} className="controller-skill-chip">
+                  {skillDisplayTitle(skillId)}
+                </span>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {event.techDetail ? (
           <details className="controller-reading-tech-detail">
@@ -4873,6 +5180,21 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
   const [executionPlan, setExecutionPlan] = useState<ExecutionDagPlan | null>(null);
   const [speculativeRelays, setSpeculativeRelays] = useState<SpeculativeRelayUpdate[]>([]);
   const [debateUpdates, setDebateUpdates] = useState<ConsensusDebateUpdate[]>([]);
+  /** SSE raw events for Ant Design X–shaped process shell (Phase 0/1) */
+  const [sseEvents, setSseEvents] = useState<OrchestrateStreamEvent[]>([]);
+  const shellQuery =
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("shell") : null;
+  const useMissionShell =
+    import.meta.env.VITE_MISSION_SHELL === "antdx" ||
+    import.meta.env.VITE_MISSION_SHELL === "token" ||
+    (typeof window !== "undefined" && new URLSearchParams(window.location.search).has("shell"));
+  /** shell=antdx | VITE_MISSION_SHELL=antdx → real ThoughtChain; otherwise token shell */
+  const missionShellVariant: "token" | "antdx" =
+    import.meta.env.VITE_MISSION_SHELL === "antdx" || shellQuery === "antdx" ? "antdx" : "token";
+  const missionShellModel = useMemo(
+    () => adaptOrchestrateStreamToShell(sseEvents, { claim }),
+    [sseEvents, claim]
+  );
 
   useEffect(() => {
     if (runStatus !== "running" || startedAt === null) return;
@@ -4898,6 +5220,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
     setExecutionPlan(null);
     setSpeculativeRelays([]);
     setDebateUpdates([]);
+    setSseEvents([]);
   }, [claim, dispatch]);
 
   const runConsensusPipeline = useCallback(
@@ -4958,6 +5281,9 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
         setSteps([]);
         setCurrentStep(null);
         setStreamItems([]);
+        setSseEvents([]);
+        // Shell agent chip filter is run-scoped; clear on new stream so prior case selection does not stick.
+        setSelectedAgentId("");
         setExecutionPlan(null);
         setSpeculativeRelays([]);
         setDebateUpdates([]);
@@ -5015,6 +5341,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
 
           for await (const event of requestOrchestrateStream(intake ?? claim, localMemoryRecall ?? undefined, modelChoice)) {
             if (cancelled) return;
+            setSseEvents((prev) => [...prev, event]);
 
             switch (event.type) {
               case "planner_update": {
@@ -5159,34 +5486,60 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                 break;
               }
               case "tool_start": {
-                appendRuntimeChunk("fact_checker", "tool_call", `${toolDisplayName(event.toolName)} 开始查询：${event.query ?? claim}`);
+                const isReviewerStart = isReportReviewerTool(
+                  event.toolName,
+                  event.toolId,
+                  undefined
+                );
+                appendRuntimeChunk(
+                  isReviewerStart ? "report_composer" : "fact_checker",
+                  "tool_call",
+                  isReviewerStart
+                    ? "开始报告审稿（确定性契约检查）。"
+                    : `${toolDisplayName(event.toolName)} 开始查询：${event.query ?? claim}`
+                );
                 pushStreamItem({
                   agentName: event.toolName ?? "Tool",
-                  title: toolStartTitle(event.toolName),
+                  title: toolStartTitle(event.toolName, event.toolId),
                   detail: toolStartDetail(event, claim),
                   status: "running",
                   query: event.query ?? claim,
                   model: event.model,
+                  toolId: event.toolId,
                 });
                 break;
               }
               case "tool_result": {
+                const isReviewer = isReportReviewerTool(
+                  event.toolName,
+                  event.toolId,
+                  event.result
+                );
                 const sourceCount =
                   resultNumber(event.result, "sourceCount") ??
                   resultArrayCount(event.result, "sources") ??
                   0;
-                appendRuntimeChunk(
-                  "fact_checker",
-                  "result",
-                  `${toolDisplayName(event.toolName, event.model)} 返回来源 ${sourceCount} 条。`
-                );
+                if (isReviewer) {
+                  appendRuntimeChunk(
+                    "report_composer",
+                    "result",
+                    toolResultDetail(event)
+                  );
+                } else {
+                  appendRuntimeChunk(
+                    "fact_checker",
+                    "result",
+                    `${toolDisplayName(event.toolName, event.model)} 返回来源 ${sourceCount} 条。`
+                  );
+                }
                 pushStreamItem({
                   agentName: event.toolName ?? "Tool",
-                  title: toolResultTitle(event.toolName),
+                  title: toolResultTitle(event.toolName, event.result, event.toolId),
                   detail: toolResultDetail(event),
                   status: "completed",
                   query: event.query ?? claim,
                   model: event.model,
+                  toolId: event.toolId,
                   result: event.result,
                 });
                 break;
@@ -5205,6 +5558,7 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
                   status: "failed",
                   query: event.query ?? claim,
                   model: event.model,
+                  toolId: event.toolId,
                   result: event.result,
                   techDetail,
                 });
@@ -5651,6 +6005,11 @@ export function MissionControlView({ claim, intake, onCancel, previewMode = fals
           stageIdx={stageIdx}
           finalReport={finalReport}
           runStatus={runStatus}
+          missionShellModel={missionShellModel}
+          useMissionShell={useMissionShell}
+          missionShellVariant={missionShellVariant}
+          selectedShellAgentId={selectedAgentId}
+          onSelectShellAgent={setSelectedAgentId}
         />
 
         {showDetailColumn ? (
