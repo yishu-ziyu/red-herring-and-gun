@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import type { DemoCase, FinalReport } from "../../lib/schemas";
+import type { DemoCase, FinalReport, NonVerifiableAtom, SubclaimVerdict } from "../../lib/schemas";
 import {
   exportToMarkdown,
   exportToJSON,
@@ -47,6 +47,44 @@ export function ReportModal({
   }, []);
 
   const verdicts = report.subclaimVerdicts ?? [];
+  const nonVerifiableAtoms = report.nonVerifiableAtoms ?? [];
+  const claimType = report.claimType;
+  // 排除层：整句判定为立场/价值/预测/规范型（verifiable=false）时，报告顶部显示"立场型"横幅
+  const showStanceBanner = !!claimType && claimType.verifiable === false;
+  // 逐命题清单：可核查原子（subclaimVerdicts）与不可核查原子（nonVerifiableAtoms）并列展示，
+  // 不可核查原子保留原位、打灰标"立场型"、不订真/假。
+  const claimAtomOrder = report.claimAtomOrder;
+  let claimItems: Array<
+    | { kind: "verdict"; key: string; claimAtom: string; verdict: SubclaimVerdict }
+    | { kind: "stance"; key: string; text: string; type: string }
+  >;
+  if (Array.isArray(claimAtomOrder) && claimAtomOrder.length > 0) {
+    // 立场原子原位插回：按 claimAtomOrder 全局序（原句序）渲染，立场原子回到原句位置而不再沉底。
+    const verdictByText = new Map<string, SubclaimVerdict>();
+    for (const v of verdicts) {
+      if (v && typeof v.claimAtom === "string") verdictByText.set(v.claimAtom, v);
+    }
+    const stanceByText = new Map<string, NonVerifiableAtom>();
+    for (const n of nonVerifiableAtoms) {
+      if (n && typeof n.text === "string") stanceByText.set(n.text, n);
+    }
+    claimItems = [];
+    for (const text of claimAtomOrder) {
+      const verdict = verdictByText.get(text);
+      if (verdict) {
+        claimItems.push({ kind: "verdict", key: `v-${claimItems.length}`, claimAtom: verdict.claimAtom, verdict });
+      } else {
+        const stance = stanceByText.get(text);
+        if (stance) claimItems.push({ kind: "stance", key: `n-${claimItems.length}`, text: stance.text, type: stance.type });
+      }
+    }
+  } else {
+    // 兜底：claimAtomOrder 缺失时回退到拼接行为，保证不崩。
+    claimItems = [
+      ...verdicts.map((v, i) => ({ kind: "verdict" as const, key: `v-${i}`, claimAtom: v.claimAtom, verdict: v })),
+      ...nonVerifiableAtoms.map((n, i) => ({ kind: "stance" as const, key: `n-${i}`, text: n.text, type: n.type })),
+    ];
+  }
   const VERDICT_LABELS: Record<string, string> = {
     true: "属实",
     false: "不实",
@@ -106,6 +144,14 @@ export function ReportModal({
         <div className="report-modal-body">
           {activeTab === "summary" && (
             <div className="report-summary">
+              {showStanceBanner && (
+                <div className="report-stance-banner" role="note">
+                  <span className="stance-banner-pill">立场型</span>
+                  <span className="stance-banner-text">
+                    本说法属立场/价值/预测型，不适用于事实核查；可核查部分照常判定，价值/预测原子原位标注、不订真/假。
+                  </span>
+                </div>
+              )}
               <div className="report-credibility-card">
                 <div className="report-credibility-score">
                   <span className="score-value">{credibility.score}%</span>
@@ -147,9 +193,24 @@ export function ReportModal({
 
               <div className="report-section">
                 <h3>逐命题定罪</h3>
-                {verdicts.length > 0 ? (
+                {claimItems.length > 0 ? (
                   <div className="report-verdicts">
-                    {verdicts.map((v, i) => {
+                    {claimItems.map((item, idx) => {
+                      if (item.kind === "stance") {
+                        return (
+                          <div key={idx} className="report-verdict-item report-verdict-stance-item">
+                            <div className="verdict-header">
+                              <span className="verdict-claim">{item.text}</span>
+                              <span className="verdict-header-right">
+                                <span className="verdict-badge verdict-stance">立场型</span>
+                              </span>
+                            </div>
+                            <p className="verdict-stance-note">不适用真/假判断</p>
+                          </div>
+                        );
+                      }
+                      const v = item.verdict;
+                      const i = idx;
                       const isOpen = expandedVerdicts.has(i);
                       const hasDetail =
                         (v.supportingSources?.length ?? 0) > 0 ||
