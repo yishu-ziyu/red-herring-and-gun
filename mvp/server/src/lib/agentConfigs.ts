@@ -1,9 +1,32 @@
 /**
- * agentConfigs.ts — 多 Agent Handoff 配置
+ * agentConfigs.ts — Agent registry (prompts + schemas + handoff I/O).
  *
- * 定义每个 Agent 的 system prompt、输入/输出接口和 JSON schema。
- * 用于 /api/agent/orchestrate 端点的串行调度。
+ * Claim-atom domain (key / merge / split / self-proof) lives in ./claimAtom.
+ * This module re-exports domain symbols for backward-compatible imports.
  */
+
+import {
+  mergeSubclaimVerdicts,
+  splitVerifiableAtoms,
+  type ClaimAtomType,
+  type SubclaimVerdict,
+  type VerdictSource,
+} from "./claimAtom/index.js";
+
+export type { ClaimAtomType, SubclaimVerdict, VerdictSource };
+export {
+  claimAtomKey,
+  mergeSubclaimVerdicts,
+  splitVerifiableAtoms,
+  prefilterClaimAtoms,
+  parseSelfProofResults,
+  applySelfProof,
+  runClaimAtomSelfProof,
+  SELF_PROOF_SYSTEM_PROMPT,
+  selfProofSchema,
+  buildSelfProofUserContent,
+  type ClaimAtomDropped,
+} from "./claimAtom/index.js";
 
 // ───────────────────────────────────────────────────────────────
 // 类型定义
@@ -39,34 +62,6 @@ export interface HandoffResult {
   steps: HandoffStep[];
   finalReport?: ReportComposerOutput;
 }
-
-// Agent 专用输出类型
-export interface VerdictSource {
-  url: string;
-  title: string;
-  snippet: string;
-}
-
-export interface SubclaimVerdict {
-  claimAtom: string;
-  verdict: "true" | "false" | "partial" | "unverified" | "exaggerated";
-  evidence: string;
-  boundary: string;
-  // 判定可追溯：逐条定罪绑定结构化来源（可展开依据卡）；三个新字段可选，兜底为空数组
-  supportingSources?: VerdictSource[];
-  contradictingSources?: VerdictSource[];
-  evidenceGaps?: string[];
-}
-
-export type ClaimAtomType =
-  | "fact"
-  | "causal"
-  | "comparison"
-  | "concept"
-  | "value"
-  | "prediction"
-  | "normative"
-  | "personal";
 
 export interface RumorDetectorOutput {
   claimAtoms: string[];
@@ -538,324 +533,11 @@ export const AGENT_CONFIGS: AgentConfig[] = [
 ];
 
 // ───────────────────────────────────────────────────────────────
-// 工具函数
+// 工具函数（registry only；claim-atom domain → ./claimAtom）
 // ───────────────────────────────────────────────────────────────
 
 export function getAgentConfig(id: string): AgentConfig | undefined {
   return AGENT_CONFIGS.find((a) => a.id === id);
-}
-
-function compactStrings(value: unknown, limit = 5, maxLength = 260): string[] {
-  return Array.isArray(value)
-    ? value
-        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-        .slice(0, limit)
-        .map((item) => (item.length > maxLength ? `${item.slice(0, maxLength)}…` : item))
-    : [];
-}
-
-function compactText(value: unknown, maxLength = 420): string {
-  if (typeof value !== "string") return "";
-  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
-}
-
-// 统一原子键：全角空格规范化 + 截断到 maxLength（超长加省略号）。
-// 自证闸门改写（去重/规范化）后，split/merge/claimItems 都复用同一键，保证键匹配一致，
-// 消除"自证改写后 split 失配 → 立场原子漏网"的漂移风险。
-// 与 compactStrings(claimAtoms, 6, 180) 对 claimAtom 的截断规则保持一致，避免超长原子失配。
-export function claimAtomKey(value: string, maxLength = 180): string {
-  const norm = value.replace(/\u3000/g, " ");
-  return norm.length > maxLength ? `${norm.slice(0, maxLength)}…` : norm;
-}
-
-const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated"];
-
-// 判定可追溯：per-verdict 来源结构清洗 + URL 幻觉拦截。
-// searchSources 提供时（落库闸门/兜底），仅保留真实存在于搜索结果中的 URL，
-// 编造的 URL 丢弃；未提供时只做结构清洗（透传，供 report_composer 渲染）。
-function sanitizeVerdictSources(
-  value: unknown,
-  searchSources?: Array<{ url?: unknown }>
-): VerdictSource[] {
-  if (!Array.isArray(value)) return [];
-  const knownUrls = searchSources
-    ? new Set(searchSources.map((s) => String(s?.url ?? "").trim()).filter(Boolean))
-    : null;
-  const out: VerdictSource[] = [];
-  for (const candidate of value) {
-    if (!candidate || typeof candidate !== "object") continue;
-    const rec = candidate as Record<string, unknown>;
-    const url = typeof rec.url === "string" ? rec.url.trim() : "";
-    if (!url) continue;
-    if (knownUrls && !knownUrls.has(url)) continue; // URL 幻觉拦截
-    out.push({
-      url,
-      title: typeof rec.title === "string" ? rec.title.slice(0, 200) : "",
-      snippet: typeof rec.snippet === "string" ? rec.snippet.slice(0, 320) : "",
-    });
-  }
-  return out.slice(0, 5);
-}
-
-function sanitizeEvidenceGaps(value: unknown): string[] {
-  return compactStrings(value, 3, 120);
-}
-
-export function mergeSubclaimVerdicts(
-  claimAtoms: unknown,
-  verdicts: unknown,
-  searchSources?: Array<{ url?: unknown }>
-): SubclaimVerdict[] {
-  const atoms = compactStrings(claimAtoms, 6, 180).map((s) => claimAtomKey(s));
-  const raw = Array.isArray(verdicts) ? verdicts : [];
-  const covered = new Set<string>();
-  const result: SubclaimVerdict[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") continue;
-    const rec = item as Record<string, unknown>;
-    const atom = typeof rec.claimAtom === "string" ? rec.claimAtom : "";
-    if (!atom) continue;
-    const atomKey = claimAtomKey(atom);
-    // 幻觉拦截：仅接受真实存在于输入 claimAtoms 中的原子，模型编造的原子不得进入报告
-    if (!atoms.includes(atomKey)) continue;
-    covered.add(atomKey);
-    result.push({
-      claimAtom: atom,
-      verdict: (SUBCLAIM_VERDICTS.includes(String(rec.verdict)) ? String(rec.verdict) : "unverified") as SubclaimVerdict["verdict"],
-      evidence: compactText(rec.evidence, 200),
-      boundary: compactText(rec.boundary, 200),
-      supportingSources: sanitizeVerdictSources(rec.supportingSources, searchSources),
-      contradictingSources: sanitizeVerdictSources(rec.contradictingSources, searchSources),
-      evidenceGaps: sanitizeEvidenceGaps(rec.evidenceGaps),
-    });
-  }
-  for (const atom of atoms) {
-    if (!covered.has(atom)) {
-      result.push({
-        claimAtom: atom,
-        verdict: "unverified",
-        evidence: "",
-        boundary: "模型未覆盖，待补证",
-        supportingSources: [],
-        contradictingSources: [],
-        evidenceGaps: [],
-      });
-    }
-  }
-  return result;
-}
-
-/**
- * 排除层：把 claimAtoms 按 claimAtomTypes 拆分为可核查 / 不可核查。
- * - 以 claimAtomTypes[i].text 与 claimAtoms 对齐（用与 mergeSubclaimVerdicts 相同的截断键保证不失配）；
- * - verifiable === false 的原子进 nonVerifiable，其余进 verifiable；
- * - 兜底：claimAtomTypes 缺失或某原子无对应条目时默认判为可核查（宁漏判，不误杀）。
- * - 纯确定性，不依赖模型二次判断；不变量：任何 verifiable=false 的原子绝不进入 verifiable。
- */
-export function splitVerifiableAtoms(
-  claimAtoms: unknown,
-  claimAtomTypes: unknown
-): { verifiable: string[]; nonVerifiable: Array<{ text: string; type: string }> } {
-  const atoms = compactStrings(claimAtoms, 6, 180).map((s) => claimAtomKey(s));
-  const typed = new Map<string, { verifiable: boolean; type: string }>();
-  if (Array.isArray(claimAtomTypes)) {
-    for (const item of claimAtomTypes) {
-      if (!item || typeof item !== "object") continue;
-      const rec = item as Record<string, unknown>;
-      const text = typeof rec.text === "string" ? rec.text : "";
-      if (!text) continue;
-      typed.set(claimAtomKey(text), {
-        // 兜底：verifiable 缺失或非 false 一律视为可核查
-        verifiable: rec.verifiable !== false,
-        type: typeof rec.type === "string" ? rec.type.slice(0, 40) : "",
-      });
-    }
-  }
-  const verifiable: string[] = [];
-  const nonVerifiable: Array<{ text: string; type: string }> = [];
-  for (const atom of atoms) {
-    const info = typed.get(atom);
-    if (info && info.verifiable === false) {
-      nonVerifiable.push({ text: atom, type: info.type });
-    } else {
-      verifiable.push(atom);
-    }
-  }
-  return { verifiable, nonVerifiable };
-}
-
-// ───────────────────────────────────────────────────────────────
-// 原句自证闸门（claim-atom self-proof gate）
-// 校验 rumor_detector 拆出的 claimAtoms 是否忠实于原句，filter 掉
-// 原句未声称 / 丢限定 / 无独立含义的碎片，再进入下游核查。
-// ───────────────────────────────────────────────────────────────
-
-export interface ClaimAtomDropped {
-  text: string;
-  reason: string;
-}
-
-// 确定性预过滤：去空、截断（与 mergeSubclaimVerdicts 同键）、规范化去重。
-// 不做整句判别 / 语义去重（那是 LLM 自证的事）。
-// 规范化：trim 首尾空白，把全角空格 U+3000 替换为普通空格；用规范化后的文本做去重键，保留原始文本。
-export function prefilterClaimAtoms(
-  claim: string,
-  rawAtoms: unknown
-): { atoms: string[]; dropped: ClaimAtomDropped[] } {
-  void claim;
-  const atoms: string[] = [];
-  const dropped: ClaimAtomDropped[] = [];
-  const seen = new Set<string>();
-  if (Array.isArray(rawAtoms)) {
-    for (const item of rawAtoms) {
-      if (typeof item !== "string") continue;
-      const trimmed = item.trim();
-      if (!trimmed) continue;
-      const normKey = claimAtomKey(trimmed);
-      if (seen.has(normKey)) {
-        dropped.push({ text: item, reason: "duplicate" });
-        continue;
-      }
-      seen.add(normKey);
-      // 写回规范化文本作 canonical 键，保证下游 merge/split 的键匹配一致（避免全角空格失配）
-      atoms.push(normKey);
-    }
-  }
-  return { atoms: atoms.slice(0, 6), dropped };
-}
-
-export const SELF_PROOF_SYSTEM_PROMPT = [
-  "你是红鲱鱼与枪的原子命题自证校验器（原句自证闸门）。",
-  "你的任务是对每条候选原子命题（claimAtom）逐条判断：它是否被原句（claim）直接支持，且作为独立可核查断言仍保有明确含义。",
-  "判定标准（只有同时满足才 supported=true）：",
-  "1. 原句直接支持：原子只能由原句直接支持，不得加入原句未声称的信息、不得补全上下文、不得注入模型常识。",
-  "2. 独立含义：原子作为独立可核查断言仍保有明确含义——没有丢失原句的限定条件（如「某种情况下 X」不得拆成「X」）、不是截断到失去语义的碎片、也不与另一条被保留的原子冗余。",
-  "3. 本闸门只判「忠实」（原句是否直接声称），不判「可核查性」。立场/价值/预测型原子若原句直接声称了该立场或断言，即使它本身不可核查，也应判 supported=true——是否可核查由后续排除层另行处置，不在本判断范围。",
-  "输出严格 JSON（不要 Markdown，不要代码块）：{\n  \"results\": [\n    {\"atom\": \"原子文本\", \"supported\": true, \"reason\": \"判断依据\"}\n  ]\n}",
-  "results 必须覆盖输入列出的每个原子；reason 用中文说明判断依据。",
-].join("\n");
-
-export const selfProofSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    results: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          atom: { type: "string" },
-          supported: { type: "boolean" },
-          reason: { type: "string" },
-        },
-        required: ["atom", "supported", "reason"],
-      },
-    },
-  },
-  required: ["results"],
-};
-
-export function buildSelfProofUserContent(claim: string, atoms: string[]): string {
-  const lines = atoms.map((atom, i) => `${i + 1}. ${atom}`).join("\n");
-  return [
-    "原句（claim）：",
-    claim,
-    "",
-    "待校验的候选原子命题（claimAtoms）：",
-    lines,
-    "",
-    "请逐条判断每个原子是否被原句直接支持且保有独立含义，返回 results 数组。",
-  ].join("\n");
-}
-
-// 解析 LLM 输出为 atom→supported 映射。fail-open：某原子在结果中缺失 → supported=true；
-// 结果不可解析 / 非数组 → 返回所有原子都 supported=true 的映射。
-export function parseSelfProofResults(atoms: string[], llmResults: unknown): Map<string, boolean> {
-  const map = new Map<string, boolean>();
-  for (const atom of atoms) map.set(atom, true);
-  if (llmResults && typeof llmResults === "object") {
-    const results = (llmResults as Record<string, unknown>).results;
-    if (Array.isArray(results)) {
-      for (const item of results) {
-        if (!item || typeof item !== "object") continue;
-        const rec = item as Record<string, unknown>;
-        const atom = typeof rec.atom === "string" ? rec.atom : "";
-        if (!atom) continue;
-        const key = claimAtomKey(atom);
-        if (map.has(key)) {
-          map.set(key, rec.supported === true);
-        }
-      }
-    }
-  }
-  return map;
-}
-
-function lookupSelfProofReason(atom: string, llmResults: unknown): string | undefined {
-  if (llmResults && typeof llmResults === "object") {
-    const results = (llmResults as Record<string, unknown>).results;
-    if (Array.isArray(results)) {
-      for (const item of results) {
-        if (!item || typeof item !== "object") continue;
-        const rec = item as Record<string, unknown>;
-        if (typeof rec.atom === "string" && claimAtomKey(rec.atom) === atom) {
-          return typeof rec.reason === "string" ? rec.reason : undefined;
-        }
-      }
-    }
-  }
-  return undefined;
-}
-
-// 组合：先预过滤，再按 LLM 自证结果过滤 supported=false 的原子（进 dropped），
-// supported=true 进 kept；kept 按输入顺序。fail-open 由 parseSelfProofResults 承担。
-export function applySelfProof(
-  claim: string,
-  rawAtoms: unknown,
-  llmResults: unknown
-): { kept: string[]; dropped: ClaimAtomDropped[] } {
-  const { atoms, dropped } = prefilterClaimAtoms(claim, rawAtoms);
-  const supportedMap = parseSelfProofResults(atoms, llmResults);
-  const kept: string[] = [];
-  for (const atom of atoms) {
-    if (supportedMap.get(atom) === true) {
-      kept.push(atom);
-    } else {
-      dropped.push({ text: atom, reason: lookupSelfProofReason(atom, llmResults) ?? "unsupported" });
-    }
-  }
-  return { kept, dropped };
-}
-
-// 完整网关：预过滤 → 批量单次 LLM 自证 → 按 supported 过滤。fail-open，绝不抛错、绝不误杀。
-export async function runClaimAtomSelfProof(
-  claim: string,
-  rawAtoms: unknown,
-  callModel: (input: {
-    systemPrompt: string;
-    userContent: string;
-    responseSchema: object;
-    maxTokens: number;
-  }) => Promise<{ output: unknown; model: string }>
-): Promise<{ kept: string[]; dropped: ClaimAtomDropped[]; model: string }> {
-  const { atoms, dropped } = prefilterClaimAtoms(claim, rawAtoms);
-  if (atoms.length === 0) {
-    return { kept: [], dropped: [], model: "" };
-  }
-  try {
-    const result = await callModel({
-      systemPrompt: SELF_PROOF_SYSTEM_PROMPT,
-      userContent: buildSelfProofUserContent(claim, atoms),
-      responseSchema: selfProofSchema,
-      maxTokens: 600,
-    });
-    const { kept, dropped: selfDropped } = applySelfProof(claim, atoms, result?.output);
-    return { kept, dropped: [...dropped, ...selfDropped], model: result?.model ?? "" };
-  } catch (error) {
-    // fail-open：基础设施故障时保留全部原子，只保留确定性的 duplicate 丢弃信息
-    return { kept: atoms, dropped, model: "" };
-  }
 }
 
 export function buildAgentInput(
@@ -902,7 +584,13 @@ export function buildAgentInput(
         factCheck: {
           result: factStep?.output?.factCheckResult ?? "unverified",
           confidence: factStep?.output?.confidence ?? "low",
-          subclaimVerdicts: mergeSubclaimVerdicts(rumorStep?.output?.claimAtoms, factStep?.output?.subclaimVerdicts),
+          subclaimVerdicts: (() => {
+            const split = splitVerifiableAtoms(
+              rumorStep?.output?.claimAtoms,
+              rumorStep?.output?.claimAtomTypes
+            );
+            return mergeSubclaimVerdicts(split.verifiable, factStep?.output?.subclaimVerdicts);
+          })(),
           sources: factStep?.output?.sources ?? [],
           keyFindings: factStep?.output?.keyFindings ?? [],
         },

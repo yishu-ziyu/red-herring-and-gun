@@ -5,13 +5,10 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { searchClaimAcrossSources } from "./lib/sherlockStyleSearch.js";
-import { AGENT_CONFIGS, buildAgentInput, mergeSubclaimVerdicts, splitVerifiableAtoms, runClaimAtomSelfProof, claimAtomKey } from "./lib/agentConfigs.js";
-import {
-  selectAtomsToSearch,
-  buildAtomSearchBundle,
-  bindAtomEvidenceToVerdicts,
-  type AtomSearchBundle,
-} from "./lib/atomSearch.js";
+import { AGENT_CONFIGS, buildAgentInput } from "./lib/agentConfigs.js";
+import { type AtomSearchBundle } from "./lib/atomSearch.js";
+import { applyExclusionLayerToReport } from "./lib/reportAssembly/index.js";
+import { runCasePipeline, type PipelineStep, type RunAgentFn } from "./lib/casePipeline/index.js";
 import { callAgentWithFallback, AgentTextProviderId, ProviderFallbackError } from "./lib/providerRouter.js";
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
@@ -159,80 +156,6 @@ function applyFormulaScoreToReport(finalReport: any, formulaResult: CredibilityS
   finalReport.credibilityLabel = formulaResult.label;
   finalReport._scoreSource = "formula";
   finalReport._scoreBreakdown = formulaResult.breakdown;
-}
-
-// ─── 排除层落库闸门（不可核查命题单独处置）───
-// 以 rumorStep 的 claimAtoms + claimAtomTypes 做确定性拆分：
-// - subclaimVerdicts 只对可核查原子 merge（复用 mergeSubclaimVerdicts 的幻觉拦截/补全）；
-// - verifiable=false 的原子进 nonVerifiableAtoms，绝不进 subclaimVerdicts（不变量）；
-// - 整句 stanceClaimType 存在且 verifiable===false 时，记录到 finalReport.stanceClaimType 供 UI 顶部显示立场横幅；
-// - 服务端直接下发预交错的 claimItems（已按原句序排好），前端零匹配渲染，不暴露展示顺序契约。
-function applyExclusionLayerToReport(
-  finalReport: Record<string, unknown>,
-  rumorStep: any,
-  verdicts: unknown,
-  searchSources?: Array<{ url?: unknown }>,
-  atomSearchBundle?: AtomSearchBundle | null
-): void {
-  if (!finalReport || typeof finalReport !== "object") return;
-  const rumorOutput = rumorStep?.output ?? {};
-  const split = splitVerifiableAtoms(rumorOutput.claimAtoms, rumorOutput.claimAtomTypes);
-  let merged = mergeSubclaimVerdicts(split.verifiable, verdicts, searchSources);
-  // 按条绑该原子定向检索证据（模型未绑定时回填；URL 须落在该原子检索池）
-  if (atomSearchBundle?.byAtomKey) {
-    merged = bindAtomEvidenceToVerdicts(merged, atomSearchBundle.byAtomKey, claimAtomKey);
-  }
-  finalReport.subclaimVerdicts = merged;
-  finalReport.nonVerifiableAtoms = split.nonVerifiable;
-  if (atomSearchBundle) {
-    finalReport.atomSearchMeta = {
-      atomsSearched: atomSearchBundle.atomsSearched,
-      source: "per-atom-search",
-    };
-  }
-  const stanceClaimType = rumorOutput.stanceClaimType;
-  if (stanceClaimType && typeof stanceClaimType === "object") {
-    finalReport.stanceClaimType = stanceClaimType;
-  }
-  finalReport.claimItems = buildClaimItems(
-    rumorOutput.claimAtoms,
-    (finalReport.subclaimVerdicts as Array<{ claimAtom: string }> | undefined) ?? [],
-    (finalReport.nonVerifiableAtoms as Array<{ text: string; type: string }> | undefined) ?? []
-  );
-}
-
-// 服务端预交错展示 items：按 claimAtoms 原句全局序，用统一 claimAtomKey 匹配——
-// 命中最终 subclaimVerdicts 的原子 → 带 verdict 的 item；命中 nonVerifiableAtoms 的原子 → 不带 verdict 的立场 item；
-// 仅保留真正展示的原子（被 mergeSubclaimVerdicts 截断/过滤掉的原子不进 claimItems）。保持原句相对顺序。
-function buildClaimItems(
-  claimAtoms: unknown,
-  verdicts: Array<{ claimAtom: string }>,
-  nonVerifiable: Array<{ text: string; type: string }>
-): Array<{ text: string; verifiable: boolean; type: string; verdict?: Record<string, unknown> }> {
-  const verdictByKey = new Map<string, Array<{ claimAtom: string }>[number]>();
-  for (const v of verdicts) {
-    if (v && typeof v.claimAtom === "string") verdictByKey.set(claimAtomKey(v.claimAtom), v);
-  }
-  const stanceByKey = new Map<string, Array<{ text: string; type: string }>[number]>();
-  for (const n of nonVerifiable) {
-    if (n && typeof n.text === "string") stanceByKey.set(claimAtomKey(n.text), n);
-  }
-  const items: Array<{ text: string; verifiable: boolean; type: string; verdict?: Record<string, unknown> }> = [];
-  if (!Array.isArray(claimAtoms)) return items;
-  for (const item of claimAtoms) {
-    if (typeof item !== "string") continue;
-    const key = claimAtomKey(item);
-    const v = verdictByKey.get(key);
-    if (v) {
-      items.push({ text: key, verifiable: true, type: "", verdict: v });
-      continue;
-    }
-    const n = stanceByKey.get(key);
-    if (n) {
-      items.push({ text: n.text, verifiable: false, type: n.type });
-    }
-  }
-  return items;
 }
 
 const responseSchema = {
@@ -726,8 +649,158 @@ export function createHandlers(env: Record<string, string>) {
   }
 
   // ───────────────────────────────────────────────────────────────
-  // 多 Agent Orchestrate Handler（串行 handoff）
+  // 多 Agent Orchestrate — thin HTTP adapters over Case Pipeline
   // ───────────────────────────────────────────────────────────────
+
+  function makeRunAgent(opts: {
+    claim: string;
+    modelChoice: any;
+    intakeMetadata: any;
+    visualExtraction: Record<string, unknown> | undefined;
+    clientMemoryRecall: any;
+    onStart?: (agentId: string, agentConfig: (typeof AGENT_CONFIGS)[number]) => void;
+    onComplete?: (step: any) => void;
+    onError?: (agentId: string, agentConfig: (typeof AGENT_CONFIGS)[number], error: unknown) => void;
+  }): RunAgentFn {
+    return async function runAgent(agentId, steps, search360Result?, atomSearchBundle?) {
+      const agentConfig = AGENT_CONFIGS.find((a) => a.id === agentId);
+      if (!agentConfig) {
+        throw new Error(`Unknown agent: ${agentId}`);
+      }
+      opts.onStart?.(agentId, agentConfig);
+      const stepStart = Date.now();
+      const agentInput = buildAgentInput(agentId, opts.claim, steps as any);
+      if (opts.intakeMetadata) agentInput.intake = opts.intakeMetadata;
+      if (opts.visualExtraction) agentInput.visualExtraction = opts.visualExtraction;
+      if (opts.clientMemoryRecall) agentInput.memoryRecall = opts.clientMemoryRecall;
+      if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
+        agentInput.search360 = compactSearchResultForAgent(search360Result);
+        if (atomSearchBundle && (agentId === "fact_checker" || agentId === "report_composer")) {
+          agentInput.atomSearches = atomSearchBundle.forAgent;
+        }
+      }
+      if (agentId === "report_composer") {
+        agentInput.evidenceInputs = buildReportEvidenceInputs(steps as any, search360Result);
+      }
+      let output: Record<string, unknown>;
+      let modelUsed: string;
+      try {
+        const modelOverride =
+          opts.modelChoice && typeof opts.modelChoice === "object"
+            ? (opts.modelChoice as Record<string, { provider: string; model: string }>)[agentConfig.id]
+            : undefined;
+        const result = await callAgentWithFallback({
+          agentId: agentConfig.id,
+          systemPrompt: agentConfig.systemPrompt,
+          userContent: JSON.stringify(agentInput, null, 2),
+          responseSchema: agentConfig.responseSchema,
+          maxTokens: agentConfig.maxTokens,
+          env,
+          codexBin,
+          reasoningEffort: "high",
+          modelOverride: modelOverride as { provider: AgentTextProviderId; model: string } | undefined,
+          options: { logger: console },
+        });
+        output = result.output;
+        modelUsed = result.model;
+      } catch (error) {
+        opts.onError?.(agentId, agentConfig, error);
+        const message = error instanceof Error ? error.message : "Agent 调用失败";
+        throw new Error(`${agentConfig.name} 真实模型调用失败：${message}`);
+      }
+      const step = {
+        agent: agentConfig.id,
+        agentName: agentConfig.name,
+        agentIcon: agentConfig.icon,
+        systemPrompt: agentConfig.systemPrompt,
+        input: agentInput,
+        output,
+        model: modelUsed,
+        latencyMs: Date.now() - stepStart,
+        timestamp: Date.now(),
+        status: "completed" as const,
+      };
+      opts.onComplete?.(step);
+      return step;
+    };
+  }
+
+  function makeSearchOneAtom() {
+    return async (atom: string) => {
+      const result = await get360SearchForClaim(atom);
+      try {
+        await attachCondensedSnippets(env, atom, result);
+      } catch {
+        /* 浓缩失败不阻断 */
+      }
+      return result;
+    };
+  }
+
+  function makeSelfProofCaller(claim: string, modelChoice: any) {
+    return (input: {
+      systemPrompt: string;
+      userContent: string;
+      responseSchema: object;
+      maxTokens: number;
+    }) =>
+      callAgentWithFallback({
+        agentId: "rumor_detector_selfproof",
+        systemPrompt: input.systemPrompt,
+        userContent: input.userContent,
+        responseSchema: input.responseSchema,
+        maxTokens: input.maxTokens,
+        env,
+        codexBin,
+        reasoningEffort: "low",
+        modelOverride:
+          modelChoice && modelChoice["rumor_detector"] ? modelChoice["rumor_detector"] : undefined,
+        options: { logger: console },
+      }).then((r) => ({ output: r.output, model: r.model }));
+  }
+
+  function makeReportRunner(runAgent: RunAgentFn) {
+    return async ({
+      claim,
+      steps,
+      search360Result,
+      atomSearchBundle,
+      onFallback,
+    }: {
+      claim: string;
+      steps: PipelineStep[];
+      search360Result: unknown;
+      atomSearchBundle: AtomSearchBundle;
+      onFallback?: (step: any) => void;
+    }) =>
+      runReportComposerWithFallback({
+        claim,
+        steps,
+        search360Result,
+        runAgent: (agentId, s, search) => runAgent(agentId, s as any, search, atomSearchBundle),
+        onFallback,
+      });
+  }
+
+  function pipelineFinalize(ctx: {
+    finalReport: Record<string, unknown>;
+    claim: string;
+    rumorStep: PipelineStep;
+    factStep: PipelineStep;
+    sourceStep: PipelineStep;
+    search360Result: unknown;
+  }) {
+    applyFormulaScoreToReport(
+      ctx.finalReport,
+      computeFormulaScore(
+        ctx.rumorStep.output,
+        ctx.factStep.output,
+        ctx.sourceStep.output,
+        ctx.search360Result
+      )
+    );
+    applyFactDeskPostProcessToReport(ctx.finalReport, ctx.claim);
+  }
 
   async function orchestrateHandler(req: any, res: any, next: any) {
     if (req.method !== "POST") return next();
@@ -743,7 +816,6 @@ export function createHandlers(env: Record<string, string>) {
     if (!claim || typeof claim !== "string") {
       return sendJson(res, 400, { message: "缺少 claim 参数" });
     }
-    // B3: modelChoice 校验（不合法 → 400, 不开始 LLM 调用）
     const modelChoice = payload.modelChoice;
     const mcValidation = validateModelChoice(env, modelChoice);
     if (!mcValidation.ok) {
@@ -754,102 +826,6 @@ export function createHandlers(env: Record<string, string>) {
     const clientMemoryRecall = normalizeClientMemoryRecall(payload.memoryRecall);
     let visualExtraction: Record<string, unknown> | undefined;
 
-    // Helper: run a single agent
-    async function runAgent(
-      agentId: string,
-      steps: any[],
-      search360Result?: any,
-      atomSearchBundle?: AtomSearchBundle | null
-    ): Promise<any> {
-      const agentConfig = AGENT_CONFIGS.find((a) => a.id === agentId);
-      if (!agentConfig) {
-        throw new Error(`Unknown agent: ${agentId}`);
-      }
-
-      const stepStart = Date.now();
-      const agentInput = buildAgentInput(agentId, claim, steps);
-      if (intakeMetadata) agentInput.intake = intakeMetadata;
-      if (visualExtraction) agentInput.visualExtraction = visualExtraction;
-      if (clientMemoryRecall) agentInput.memoryRecall = clientMemoryRecall;
-      if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
-        agentInput.search360 = compactSearchResultForAgent(search360Result);
-        if (atomSearchBundle && (agentId === "fact_checker" || agentId === "report_composer")) {
-          agentInput.atomSearches = atomSearchBundle.forAgent;
-        }
-      }
-      if (agentId === "report_composer") {
-        agentInput.evidenceInputs = buildReportEvidenceInputs(steps, search360Result);
-      }
-
-      let output: Record<string, unknown>;
-      let modelUsed: string;
-
-      try {
-        // B2-B5: 用户在前端 picker 里指定的 model（per-agent）
-        const modelOverride = modelChoice && typeof modelChoice === "object"
-          ? (modelChoice as Record<string, { provider: string; model: string }>)[agentConfig.id]
-          : undefined;
-        const result = await callAgentWithFallback({
-          agentId: agentConfig.id,
-          systemPrompt: agentConfig.systemPrompt,
-          userContent: JSON.stringify(agentInput, null, 2),
-          responseSchema: agentConfig.responseSchema,
-          maxTokens: agentConfig.maxTokens,
-          env,
-          codexBin,
-          reasoningEffort: "high",
-          modelOverride: modelOverride as { provider: AgentTextProviderId; model: string } | undefined,
-          options: { logger: console },
-        });
-        output = result.output;
-        modelUsed = result.model;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Agent 调用失败";
-        throw new Error(`${agentConfig.name} 真实模型调用失败：${message}`);
-      }
-
-      return {
-        agent: agentConfig.id,
-        agentName: agentConfig.name,
-        agentIcon: agentConfig.icon,
-        systemPrompt: agentConfig.systemPrompt,
-        input: agentInput,
-        output,
-        model: modelUsed,
-        latencyMs: Date.now() - stepStart,
-        timestamp: Date.now(),
-        status: "completed",
-      };
-    }
-
-    /** 自证后：可核查原子各搜一轮 → bundle（decompose-then-verify 检索侧） */
-    async function runPerAtomSearch(rumorStep: any): Promise<{
-      search360Result: any;
-      atomSearchBundle: AtomSearchBundle;
-    }> {
-      const split = splitVerifiableAtoms(
-        rumorStep?.output?.claimAtoms,
-        rumorStep?.output?.claimAtomTypes
-      );
-      const atomsToSearch = selectAtomsToSearch(split.verifiable);
-      const items = await Promise.all(
-        atomsToSearch.map(async (atom) => {
-          const result = await get360SearchForClaim(atom);
-          try {
-            await attachCondensedSnippets(env, atom, result);
-          } catch {
-            /* 浓缩失败不阻断 */
-          }
-          return { atom, result };
-        })
-      );
-      const atomSearchBundle = buildAtomSearchBundle(items, claimAtomKey);
-      console.log(
-        `[atom_search] atoms=${atomsToSearch.length} sources=${atomSearchBundle.aggregate.sources.length}`
-      );
-      return { search360Result: atomSearchBundle.aggregate, atomSearchBundle };
-    }
-
     try {
       if (intake?.images.length) {
         const visionResult = await callStepFunVisionForIntake({ env, claim, intake });
@@ -857,94 +833,47 @@ export function createHandlers(env: Record<string, string>) {
         claim = composeClaimWithVision(claim, intake, visualExtraction);
       }
 
-      const steps: any[] = [];
-
-      // Phase 1: RumorDetector (serial)
-      const rumorStep = await runAgent("rumor_detector", steps);
-      steps.push(rumorStep);
-      // 原句自证（须在按原子检索之前：只有 kept 原子可进搜索）
-      const selfProof = await runClaimAtomSelfProof(claim, rumorStep?.output?.claimAtoms ?? [], (input) =>
-        callAgentWithFallback({
-          agentId: "rumor_detector_selfproof",
-          systemPrompt: input.systemPrompt,
-          userContent: input.userContent,
-          responseSchema: input.responseSchema,
-          maxTokens: input.maxTokens,
-          env,
-          codexBin,
-          reasoningEffort: "low",
-          modelOverride: modelChoice && modelChoice["rumor_detector"] ? modelChoice["rumor_detector"] : undefined,
-          options: { logger: console },
-        }).then((r) => ({ output: r.output, model: r.model }))
-      );
-      rumorStep.output.claimAtoms = selfProof.kept;
-      rumorStep.output.claimAtomSelfProof = {
-        kept: selfProof.kept,
-        dropped: selfProof.dropped,
-        model: selfProof.model,
-      };
-      console.log(
-        `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${selfProof.kept.length} dropped=${selfProof.dropped.length}`
-      );
-
-      // Phase 1b: 可核查原子各一轮检索（不再仅整句搜一次）
-      const { search360Result, atomSearchBundle } = await runPerAtomSearch(rumorStep);
-
-      // Phase 2: FactChecker + SourceValidator (parallel)
-      const [factStep, sourceStep] = await Promise.all([
-        runAgent("fact_checker", steps, search360Result, atomSearchBundle),
-        runAgent("source_validator", steps, search360Result, atomSearchBundle),
-      ]);
-      steps.push(factStep, sourceStep);
-
-      // Phase 3: ReportComposer (serial)
-      const reportStep = await runReportComposerWithFallback({
+      const runAgent = makeRunAgent({
         claim,
-        steps,
-        search360Result,
-        runAgent: (agentId, s, search) => runAgent(agentId, s, search, atomSearchBundle),
+        modelChoice,
+        intakeMetadata,
+        visualExtraction,
+        clientMemoryRecall,
       });
-      steps.push(reportStep);
 
-      const finalReport = reportStep.output;
+      const result = await runCasePipeline({
+        claim,
+        runAgent,
+        searchOne: makeSearchOneAtom(),
+        callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
+        runReport: (args) => makeReportRunner(runAgent)(args),
+        hooks: {
+          searchMode: "parallel",
+          onSelfProof: (info) => {
+            console.log(
+              `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${info.kept.length} dropped=${info.dropped.length}`
+            );
+          },
+          onAtomSearchResult: (_atom, _result) => {
+            /* aggregate log after pipeline via result */
+          },
+        },
+        finalizeReport: pipelineFinalize,
+      });
 
-      // ─── 逐命题定罪落库闸门（R2 + 排除层 + 按条绑原子检索证据）───
-      const reportVerdicts = reportStep?.output?.subclaimVerdicts;
-      applyExclusionLayerToReport(
-        finalReport,
-        rumorStep,
-        Array.isArray(reportVerdicts) && reportVerdicts.length > 0
-          ? reportVerdicts
-          : factStep?.output?.subclaimVerdicts,
-        search360Result?.sources,
-        atomSearchBundle
+      console.log(
+        `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length}`
       );
-
-      // ─── 公式覆盖 credibilityScore ───
-      // 审查 P3-1 + P2-1 修复：抽取为 computeFormulaScore 共享 helper，
-      // direction 由 helper 内部按 search360Result.contradictingEvidence
-      // URL 交叉匹配 + 文本启发式分类，不再硬编码 "support"。
-      applyFormulaScoreToReport(
-        finalReport,
-        computeFormulaScore(rumorStep.output, factStep.output, sourceStep.output, search360Result)
-      );
-
-      // Prompt A+F: fact-desk voice post-process on live handoff JSON
-      applyFactDeskPostProcessToReport(finalReport, claim);
 
       return sendJson(res, 200, {
-        steps,
-        finalReport,
+        steps: result.steps,
+        finalReport: result.finalReport,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Orchestrate 调用错误";
       return sendJson(res, 502, { message, steps: [] });
     }
   }
-
-  // ───────────────────────────────────────────────────────────────
-  // 多 Agent Orchestrate Stream Handler（SSE 实时流）
-  // ───────────────────────────────────────────────────────────────
 
   async function orchestrateStreamHandler(req: any, res: any, next: any) {
     if (req.method !== "POST") return next();
@@ -960,7 +889,6 @@ export function createHandlers(env: Record<string, string>) {
     if (!claim || typeof claim !== "string") {
       return sendJson(res, 400, { message: "缺少 claim 参数" });
     }
-    // B3: modelChoice 校验（不合法 → 400, 不开始 LLM 调用）
     const modelChoice = payload.modelChoice;
     const mcValidation = validateModelChoice(env, modelChoice);
     if (!mcValidation.ok) {
@@ -971,7 +899,6 @@ export function createHandlers(env: Record<string, string>) {
     const clientMemoryRecall = normalizeClientMemoryRecall(payload.memoryRecall);
     let visualExtraction: Record<string, unknown> | undefined;
 
-    // SSE headers
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -982,111 +909,6 @@ export function createHandlers(env: Record<string, string>) {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     };
 
-    // Helper: run a single agent and stream events
-    async function runAgentWithStream(
-      agentId: string,
-      steps: any[],
-      search360Result?: any,
-      atomSearchBundle?: AtomSearchBundle | null
-    ): Promise<any> {
-      const agentConfig = AGENT_CONFIGS.find((a) => a.id === agentId);
-      if (!agentConfig) {
-        throw new Error(`Unknown agent: ${agentId}`);
-      }
-
-      // Notify frontend: agent started
-      sendEvent({
-        type: "agent_start",
-        agent: agentId,
-        agentName: agentConfig.name,
-        agentIcon: agentConfig.icon,
-        model: agentConfig.model || "",
-        timestamp: Date.now(),
-      });
-
-      const stepStart = Date.now();
-      const agentInput = buildAgentInput(agentId, claim, steps);
-      if (intakeMetadata) agentInput.intake = intakeMetadata;
-      if (visualExtraction) agentInput.visualExtraction = visualExtraction;
-      if (clientMemoryRecall) agentInput.memoryRecall = clientMemoryRecall;
-      if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
-        agentInput.search360 = compactSearchResultForAgent(search360Result);
-        if (atomSearchBundle && (agentId === "fact_checker" || agentId === "report_composer")) {
-          agentInput.atomSearches = atomSearchBundle.forAgent;
-        }
-      }
-      if (agentId === "report_composer") {
-        agentInput.evidenceInputs = buildReportEvidenceInputs(steps, search360Result);
-      }
-
-      let output: Record<string, unknown>;
-      let modelUsed: string;
-
-      try {
-        // B2-B5: 用户在前端 picker 里指定的 model（per-agent）
-        const modelOverride = modelChoice && typeof modelChoice === "object"
-          ? (modelChoice as Record<string, { provider: string; model: string }>)[agentConfig.id]
-          : undefined;
-        const result = await callAgentWithFallback({
-          agentId: agentConfig.id,
-          systemPrompt: agentConfig.systemPrompt,
-          userContent: JSON.stringify(agentInput, null, 2),
-          responseSchema: agentConfig.responseSchema,
-          maxTokens: agentConfig.maxTokens,
-          env,
-          codexBin,
-          reasoningEffort: "high",
-          modelOverride: modelOverride as { provider: AgentTextProviderId; model: string } | undefined,
-          options: { logger: console },
-        });
-        output = result.output;
-        modelUsed = result.model;
-      } catch (error) {
-        const { message, detail, providerErrors } = toFriendlyError(
-          error,
-          `${agentConfig.name} 真实模型调用失败`
-        );
-        sendEvent({
-          type: "agent_error",
-          agent: agentId,
-          agentName: agentConfig.name,
-          agentIcon: agentConfig.icon,
-          error: message,
-          ...(detail ? { detail } : {}),
-          ...(providerErrors ? { providerErrors } : {}),
-          timestamp: Date.now(),
-        });
-        throw new ProviderFallbackError(message, providerErrors ?? []);
-      }
-
-      const step = {
-        agent: agentConfig.id,
-        agentName: agentConfig.name,
-        agentIcon: agentConfig.icon,
-        systemPrompt: agentConfig.systemPrompt,
-        input: agentInput,
-        output,
-        model: modelUsed,
-        latencyMs: Date.now() - stepStart,
-        timestamp: Date.now(),
-        status: "completed" as const,
-      };
-
-      // Notify frontend: agent completed
-      sendEvent({
-        type: "agent_complete",
-        agent: agentId,
-        agentName: agentConfig.name,
-        agentIcon: agentConfig.icon,
-        output,
-        model: modelUsed,
-        latencyMs: step.latencyMs,
-        timestamp: Date.now(),
-      });
-
-      return step;
-    }
-
     try {
       if (intake?.images.length) {
         sendEvent({
@@ -1095,12 +917,10 @@ export function createHandlers(env: Record<string, string>) {
           query: "图片材料解析",
           timestamp: Date.now(),
         });
-
         try {
           const visionResult = await callStepFunVisionForIntake({ env, claim, intake });
           visualExtraction = asRecord(visionResult.output);
           claim = composeClaimWithVision(claim, intake, visualExtraction);
-
           sendEvent({
             type: "tool_result",
             toolName: "StepFun Vision",
@@ -1125,136 +945,23 @@ export function createHandlers(env: Record<string, string>) {
         }
       }
 
-      const steps: any[] = [];
-
-      // Phase 1: RumorDetector (serial — downstream agents depend on its output)
-      const rumorStep = await runAgentWithStream("rumor_detector", steps);
-      steps.push(rumorStep);
-      // 原句自证须先于按原子检索
-      const selfProof = await runClaimAtomSelfProof(claim, rumorStep?.output?.claimAtoms ?? [], (input) =>
-        callAgentWithFallback({
-          agentId: "rumor_detector_selfproof",
-          systemPrompt: input.systemPrompt,
-          userContent: input.userContent,
-          responseSchema: input.responseSchema,
-          maxTokens: input.maxTokens,
-          env,
-          codexBin,
-          reasoningEffort: "low",
-          modelOverride: modelChoice && modelChoice["rumor_detector"] ? modelChoice["rumor_detector"] : undefined,
-          options: { logger: console },
-        }).then((r) => ({ output: r.output, model: r.model }))
-      );
-      rumorStep.output.claimAtoms = selfProof.kept;
-      rumorStep.output.claimAtomSelfProof = {
-        kept: selfProof.kept,
-        dropped: selfProof.dropped,
-        model: selfProof.model,
-      };
-      console.log(
-        `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${selfProof.kept.length} dropped=${selfProof.dropped.length}`
-      );
-
-      // Phase 1b: 可核查原子各一轮检索（SSE：每原子 tool_start / tool_result）
-      const splitForSearch = splitVerifiableAtoms(
-        rumorStep?.output?.claimAtoms,
-        rumorStep?.output?.claimAtomTypes
-      );
-      const atomsToSearch = selectAtomsToSearch(splitForSearch.verifiable);
-      const atomSearchItems: Array<{ atom: string; result: any }> = [];
-      for (const atom of atomsToSearch) {
-        sendEvent({
-          type: "tool_start",
-          toolName: "Atom Search",
-          query: atom,
-          timestamp: Date.now(),
-        });
-        const result = await get360SearchForClaim(atom);
-        try {
-          await attachCondensedSnippets(env, atom, result);
-        } catch {
-          /* ignore */
-        }
-        atomSearchItems.push({ atom, result });
-        const searchToolName = getSearchToolName(result);
-        if (result?._source === "tool-error") {
-          sendEvent({
-            type: "tool_error",
-            toolName: searchToolName,
-            query: atom,
-            error: result.traceText,
-            result,
-            timestamp: Date.now(),
-          });
-        } else {
-          sendEvent({
-            type: "tool_result",
-            toolName: searchToolName,
-            query: atom,
-            model: result?.model,
-            result,
-            timestamp: Date.now(),
-          });
-        }
-      }
-      const atomSearchBundle = buildAtomSearchBundle(atomSearchItems, claimAtomKey);
-      const search360Result = atomSearchBundle.aggregate;
-      console.log(
-        `[atom_search] atoms=${atomsToSearch.length} sources=${atomSearchBundle.aggregate.sources.length}`
-      );
-
-      // Phase 2: FactChecker + SourceValidator (parallel)
-      const [factStep, sourceStep] = await Promise.all([
-        runAgentWithStream("fact_checker", steps, search360Result, atomSearchBundle),
-        runAgentWithStream("source_validator", steps, search360Result, atomSearchBundle),
-      ]);
-      steps.push(factStep, sourceStep);
-
-      const debate = buildConsensusDebate(factStep, sourceStep, search360Result);
-      if (debate.status !== "not_needed") {
-        sendEvent({
-          type: "consensus_debate_round",
-          phase: "handoff",
-          debate: {
-            ...debate,
-            status: "running",
-            rounds: [],
-            finalConsensus: "FactChecker 与 SourceValidator 已进入交叉质询，中控暂不允许报告收束。",
-          },
-          timestamp: Date.now(),
-        });
-        await wait(220);
-
-        for (let index = 0; index < debate.rounds.length; index += 1) {
-          sendEvent({
-            type: "consensus_debate_round",
-            phase: "handoff",
-            debate: {
-              ...debate,
-              status: "running",
-              rounds: debate.rounds.slice(0, index + 1),
-              finalConsensus: "正在根据质询结果收紧可说与不可说的边界。",
-            },
-            timestamp: Date.now(),
-          });
-          await wait(220);
-        }
-      }
-
-      sendEvent({
-        type: "consensus_debate_final",
-        phase: "handoff",
-        debate,
-        timestamp: Date.now(),
-      });
-
-      // Phase 3: ReportComposer (serial — needs outputs from all previous agents)
-      const reportStep = await runReportComposerWithFallback({
+      const runAgent = makeRunAgent({
         claim,
-        steps,
-        search360Result,
-        runAgent: (agentId, s, search) => runAgentWithStream(agentId, s, search, atomSearchBundle),
-        onFallback: (step) => {
+        modelChoice,
+        intakeMetadata,
+        visualExtraction,
+        clientMemoryRecall,
+        onStart: (agentId, agentConfig) => {
+          sendEvent({
+            type: "agent_start",
+            agent: agentId,
+            agentName: agentConfig.name,
+            agentIcon: agentConfig.icon,
+            model: agentConfig.model || "",
+            timestamp: Date.now(),
+          });
+        },
+        onComplete: (step) => {
           sendEvent({
             type: "agent_complete",
             agent: step.agent,
@@ -1266,75 +973,143 @@ export function createHandlers(env: Record<string, string>) {
             timestamp: Date.now(),
           });
         },
+        onError: (agentId, agentConfig, error) => {
+          const { message, detail, providerErrors } = toFriendlyError(
+            error,
+            `${agentConfig.name} 真实模型调用失败`
+          );
+          sendEvent({
+            type: "agent_error",
+            agent: agentId,
+            agentName: agentConfig.name,
+            agentIcon: agentConfig.icon,
+            error: message,
+            ...(detail ? { detail } : {}),
+            ...(providerErrors ? { providerErrors } : {}),
+            timestamp: Date.now(),
+          });
+        },
       });
-      steps.push(reportStep);
 
-      const finalReport = reportStep.output;
+      const result = await runCasePipeline({
+        claim,
+        runAgent,
+        searchOne: makeSearchOneAtom(),
+        callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
+        runReport: (args) =>
+          makeReportRunner(runAgent)({
+            ...args,
+            onFallback: (step) => {
+              sendEvent({
+                type: "agent_complete",
+                agent: step.agent,
+                agentName: step.agentName,
+                agentIcon: step.agentIcon,
+                output: step.output,
+                model: step.model,
+                latencyMs: step.latencyMs,
+                timestamp: Date.now(),
+              });
+            },
+          }),
+        hooks: {
+          searchMode: "sequential",
+          onSelfProof: (info) => {
+            console.log(
+              `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${info.kept.length} dropped=${info.dropped.length}`
+            );
+          },
+          onAtomSearchStart: (atom) => {
+            sendEvent({
+              type: "tool_start",
+              toolName: "Atom Search",
+              query: atom,
+              timestamp: Date.now(),
+            });
+          },
+          onAtomSearchResult: (atom, result) => {
+            const searchToolName = getSearchToolName(result as any);
+            if ((result as any)?._source === "tool-error") {
+              sendEvent({
+                type: "tool_error",
+                toolName: searchToolName,
+                query: atom,
+                error: (result as any).traceText,
+                result,
+                timestamp: Date.now(),
+              });
+            } else {
+              sendEvent({
+                type: "tool_result",
+                toolName: searchToolName,
+                query: atom,
+                model: (result as any)?.model,
+                result,
+                timestamp: Date.now(),
+              });
+            }
+          },
+          afterFactSource: async ({ factStep, sourceStep, search360Result }) => {
+            const debate = buildConsensusDebate(factStep, sourceStep, search360Result);
+            if (debate.status !== "not_needed") {
+              sendEvent({
+                type: "consensus_debate_round",
+                phase: "handoff",
+                debate: {
+                  ...debate,
+                  status: "running",
+                  rounds: [],
+                  finalConsensus: "FactChecker 与 SourceValidator 已进入交叉质询，中控暂不允许报告收束。",
+                },
+                timestamp: Date.now(),
+              });
+              await wait(220);
+              for (let index = 0; index < debate.rounds.length; index += 1) {
+                sendEvent({
+                  type: "consensus_debate_round",
+                  phase: "handoff",
+                  debate: {
+                    ...debate,
+                    status: "running",
+                    rounds: debate.rounds.slice(0, index + 1),
+                    finalConsensus: "正在根据质询结果收紧可说与不可说的边界。",
+                  },
+                  timestamp: Date.now(),
+                });
+                await wait(220);
+              }
+            }
+            sendEvent({
+              type: "consensus_debate_final",
+              phase: "handoff",
+              debate,
+              timestamp: Date.now(),
+            });
+          },
+        },
+        finalizeReport: pipelineFinalize,
+      });
 
-      // ─── 逐命题定罪落库闸门（R2 + 排除层 + 按条绑证据，stream）───
-      const reportVerdicts = reportStep?.output?.subclaimVerdicts;
-      applyExclusionLayerToReport(
-        finalReport,
-        rumorStep,
-        Array.isArray(reportVerdicts) && reportVerdicts.length > 0
-          ? reportVerdicts
-          : factStep?.output?.subclaimVerdicts,
-        search360Result?.sources,
-        atomSearchBundle
+      console.log(
+        `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length}`
       );
-
-      // ─── 公式覆盖 credibilityScore ───
-      // 审查 P3-1 + P2-1 修复：与 orchestrateHandler 共用 computeFormulaScore。
-      applyFormulaScoreToReport(
-        finalReport,
-        computeFormulaScore(rumorStep.output, factStep.output, sourceStep.output, search360Result)
-      );
-
-      // Prompt A+F: fact-desk voice post-process on live handoff JSON (stream)
-      applyFactDeskPostProcessToReport(finalReport, claim);
 
       sendEvent({
         type: "complete",
         claim,
-        steps,
-        finalReport,
-        // Plan P0-3 接入层：注入 schema.org/ClaimReview JSON-LD
-        claimReview: buildClaimReviewJsonLd(finalReport as never),
-        totalLatencyMs: steps.reduce((sum, s) => sum + s.latencyMs, 0),
+        steps: result.steps,
+        finalReport: result.finalReport,
         timestamp: Date.now(),
       });
-
-      // Plan Item 2 · 报告 URL 永久路由：complete 事件触发自动存档
-      // 客户端拿到 caseId 后构造 /r/:caseId
-      try {
-        const caseId = `case-${Date.now().toString(36).slice(-6)}${Math.random().toString(36).slice(2, 6)}`;
-        const claimReview = buildClaimReviewJsonLd(finalReport as never, { url: undefined });
-        const { putCase } = await import("./lib/caseStore.js");
-        putCase({
-          caseId,
-          claim,
-          report: finalReport as never,
-          claimReview,
-          credibilityScore: finalReport?.evidenceQualitySummary?.averageCredibility ?? 50,
-        });
-        sendEvent({ type: "case_saved", caseId, caseUrl: `/r/${caseId}` });
-      } catch (err) {
-        // case 保存失败不应影响主流程
-        console.error("[caseStore] auto-save failed", err);
-      }
-
       res.end();
     } catch (error) {
-      // 无论错误类型，message 都只放用户可读友好文案；原始诊断进 detail / providerErrors。
-      const { message, detail, providerErrors } = toFriendlyError(
-        error,
-        "核查流程未能完成，请稍后重试"
-      );
+      const { message, detail, providerErrors } = toFriendlyError(error, "Orchestrate Stream 调用错误");
       sendEvent({
         type: "error",
         message,
         ...(detail ? { detail } : {}),
         ...(providerErrors ? { providerErrors } : {}),
+        timestamp: Date.now(),
       });
       res.end();
     }
@@ -2431,13 +2206,14 @@ function getSearchFetchTimeoutMs(env: Record<string, string>) {
 }
 
 function getSearchToolName(result: { _source?: string } | undefined) {
-  if (result?._source === "parallel-search") return "360 Search + Parallel Search";
+  if (result?._source === "parallel-search") return "Parallel Search";
   if (result?._source === "anysearch-search") return "AnySearch";
   if (result?._source === "metaso-search") return "Metaso Search";
   if (result?._source === "tavily-search") return "Tavily Search";
   if (result?._source === "exa-search") return "Exa Search";
+  if (result?._source === "360-mwebsearch") return "360 智搜";
   if (result?._source === "tool-error") return "Search Tool";
-  return "360 Search";
+  return "Search";
 }
 
 function build360SearchFallback(query: string) {
@@ -2791,10 +2567,15 @@ function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * 360 检索（生产唯一路径）。
+ * 2026-08-06 实测：`/v1/search/aisearch` 持续 18–25s 超时，已下线该路径，
+ * 仅保留可用的 `/v2/mwebsearch`（含 trusted_sources / exclude_aigc）。
+ */
 async function call360AiSearch({
   env,
   query,
-  model,
+  model: _model,
   refProm,
 }: {
   env: Record<string, string>;
@@ -2804,36 +2585,7 @@ async function call360AiSearch({
 }) {
   const apiKey = getSearch360ApiKey(env);
   if (!apiKey) throw new Error("未配置 360 API key");
-
-  const selectedModel = model || env.SEARCH360_MODEL || process.env.SEARCH360_MODEL || "360gpt-pro";
-  try {
-    const response = await fetchWithTimeout("https://api.360.cn/v1/search/aisearch", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: selectedModel,
-        messages: [{ role: "user", content: query }],
-        stream: false,
-        enable_corner_markers: true,
-        enable_web_page_safety: true,
-        max_refer_search_items: 12,
-      }),
-    }, getSearchFetchTimeoutMs(env), "360 AI Search");
-
-    const data = await response.json().catch(() => null);
-    if (!response.ok) {
-      const detail = data?.error?.message || data?.message || response.statusText;
-      throw new Error(`360 AI Search 调用失败：${detail}`);
-    }
-
-    return normalize360SearchResponse(data, query, selectedModel);
-  } catch (error) {
-    const aiSearchError = error instanceof Error ? error.message : "360 AI Search 调用失败";
-    return await call360MWebSearch({ env, apiKey, query, refProm, previousError: aiSearchError });
-  }
+  return await call360MWebSearch({ env, apiKey, query, refProm });
 }
 
 type SearchProviderId = "360_search" | "any_search" | "metaso_search" | "tavily_search" | "exa_search";
@@ -2935,7 +2687,7 @@ async function callParallelSearchProviders({
     unresolvedEvidenceGaps: failures,
     relatedQuestions: Array.from(new Set(successes.flatMap(({ result }) => result.relatedQuestions ?? []))).slice(0, 8),
     model: successes.map(({ result }) => result.model).filter(Boolean).join(" + "),
-    traceText: `${has360Success ? "搜索 Agent 已调用 360 Search，并行补充其它检索源" : "360 Search 未返回可用结果，搜索 Agent 已继续调用其它检索源做交叉验证"}：${providerSummary}。${failures.length ? `失败：${failures.join("；")}` : ""}`,
+    traceText: `${has360Success ? "并行检索含 360 智搜(mweb)" : "360 智搜未返回可用结果，已用其它源交叉"}：${providerSummary}。${failures.length ? `失败：${failures.join("；")}` : ""}`,
     _source: "parallel-search",
   };
 }
@@ -3091,10 +2843,10 @@ async function callExaSearch({
       query,
       type,
       numResults: Number(env.EXA_MAX_RESULTS || process.env.EXA_MAX_RESULTS || 6),
+      // 2026 Exa docs：highlights 作主摘要（省 token）；text 短截断作兜底
       contents: {
-        text: { maxCharacters: 1000 },
         highlights: true,
-        summary: { query: "提取与原始 claim 真假、来源和反证相关的要点。" },
+        text: { maxCharacters: 800 },
       },
     }),
   }, getSearchFetchTimeoutMs(env), "Exa Search");
@@ -3145,19 +2897,19 @@ async function callFallbackSearchProviders({
 
 function normalizeTavilySearchResponse(data: any, query: string) {
   const rawItems = Array.isArray(data?.results) ? data.results : [];
-  const sources = rawItems.slice(0, 8).map((source: any, index: number) => ({
-    title: String(source?.title || `Tavily 来源 ${index + 1}`),
-    url: String(source?.url || ""),
-    snippet: String(source?.content || source?.raw_content || ""),
-    credibility: index === 0 ? "高" : index <= 3 ? "中" : "低",
+  // Tavily: content 字段即摘要
+  const items = rawItems.map((s: any) => ({
+    ...s,
+    snippet: s?.content || s?.raw_content || s?.snippet,
   }));
+  const sources = mapProviderSources(items, (i) => `Tavily 来源 ${i}`);
 
   return {
-    answer: String(data?.answer || sources.map((source: { title: string; snippet: string }) => `【${source.title}】${source.snippet}`).join("\n")),
+    answer: String(data?.answer || sources.map((source) => `【${source.title}】${source.snippet}`).join("\n")),
     sources,
     relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
     model: `tavily-search:${data?.auto_parameters?.search_depth || "basic"}`,
-    traceText: `Tavily Search 返回 ${sources.length} 条来源，请求 ID：${data?.request_id || "unknown"}。`,
+    traceText: `Tavily Search 返回 ${sources.length} 条可追溯来源，请求 ID：${data?.request_id || "unknown"}。`,
     _source: "tavily-search",
   };
 }
@@ -3174,12 +2926,7 @@ function normalizeMetasoSearchResponse(data: any, query: string, scope: string) 
     data?.webpages ||
     [];
   const items = Array.isArray(rawItems) ? rawItems : [];
-  const sources = items.slice(0, 8).map((source: any, index: number) => ({
-    title: String(source?.title || source?.name || source?.site_name || `Metaso 来源 ${index + 1}`),
-    url: String(source?.url || source?.link || source?.href || source?.web_url || ""),
-    snippet: String(source?.snippet || source?.summary || source?.content || source?.text || source?.description || ""),
-    credibility: index === 0 ? "高" : index <= 3 ? "中" : "低",
-  }));
+  const sources = mapProviderSources(items, (i) => `Metaso 来源 ${i}`);
 
   return {
     answer: String(data?.answer || data?.summary || data?.data?.answer || data?.data?.summary || sources.map((source) => `【${source.title}】${source.snippet}`).join("\n")),
@@ -3187,7 +2934,7 @@ function normalizeMetasoSearchResponse(data: any, query: string, scope: string) 
     unresolvedEvidenceGaps: sources.length > 0 ? [] : ["Metaso Search 未返回可引用来源。"],
     relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
     model: `metaso-search:${scope}`,
-    traceText: `Metaso Search 返回 ${sources.length} 条来源。`,
+    traceText: `Metaso Search 返回 ${sources.length} 条可追溯来源。`,
     _source: "metaso-search",
   };
 }
@@ -3199,12 +2946,7 @@ function normalizeAnySearchResponse(data: any, query: string) {
     ""
   );
   const rawItems = parseAnySearchMarkdownResults(text);
-  const sources = rawItems.slice(0, 8).map((source: any, index: number) => ({
-    title: String(source.title || `AnySearch 来源 ${index + 1}`),
-    url: String(source.url || ""),
-    snippet: String(source.snippet || ""),
-    credibility: index === 0 ? "高" : index <= 3 ? "中" : "低",
-  }));
+  const sources = mapProviderSources(rawItems, (i) => `AnySearch 来源 ${i}`);
 
   return {
     answer: sources.map((source) => `【${source.title}】${source.snippet}`).join("\n") || text,
@@ -3212,7 +2954,7 @@ function normalizeAnySearchResponse(data: any, query: string) {
     unresolvedEvidenceGaps: sources.length > 0 ? [] : ["AnySearch 未返回可引用来源。"],
     relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
     model: "anysearch:mcp-search",
-    traceText: `AnySearch 返回 ${sources.length} 条来源。`,
+    traceText: `AnySearch 返回 ${sources.length} 条可追溯来源。`,
     _source: "anysearch-search",
   };
 }
@@ -3238,56 +2980,25 @@ function parseAnySearchMarkdownResults(text: string) {
 
 function normalizeExaSearchResponse(data: any, query: string, type: string) {
   const rawItems = Array.isArray(data?.results) ? data.results : [];
-  const sources = rawItems.slice(0, 8).map((source: any, index: number) => ({
-    title: String(source?.title || `Exa 来源 ${index + 1}`),
-    url: String(source?.url || source?.id || ""),
-    snippet: String(source?.summary || source?.text || source?.highlights?.[0] || ""),
-    credibility: index === 0 ? "高" : index <= 3 ? "中" : "低",
+  // Exa 2026 docs 推荐 highlights 作摘要；text 作全文补充
+  const items = rawItems.map((s: any) => ({
+    ...s,
+    snippet:
+      (Array.isArray(s?.highlights) ? s.highlights.filter(Boolean).join(" ") : "") ||
+      s?.summary ||
+      s?.text ||
+      "",
   }));
+  const sources = mapProviderSources(items, (i) => `Exa 来源 ${i}`);
 
   return {
-    answer: String(data?.context || sources.map((source: { title: string; snippet: string }) => `【${source.title}】${source.snippet}`).join("\n")),
+    answer: String(data?.context || sources.map((source) => `【${source.title}】${source.snippet}`).join("\n")),
     sources,
     unresolvedEvidenceGaps: sources.length > 0 ? [] : ["Exa Search 未返回可引用来源。"],
     relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
     model: `exa-search:${data?.searchType || type}`,
-    traceText: `Exa Search 返回 ${sources.length} 条来源，请求 ID：${data?.requestId || "unknown"}。`,
+    traceText: `Exa Search 返回 ${sources.length} 条可追溯来源，请求 ID：${data?.requestId || "unknown"}。`,
     _source: "exa-search",
-  };
-}
-
-function normalize360SearchResponse(data: any, query: string, model: string) {
-  const answer =
-    data?.answer ||
-    data?.choices?.[0]?.message?.content ||
-    data?.data?.answer ||
-    `360 AI Search 已返回“${query}”的搜索结果。`;
-  const rawSources =
-    data?.sources ||
-    data?.references ||
-    data?.refer_search_items ||
-    data?.data?.sources ||
-    data?.data?.references ||
-    [];
-  const sources = Array.isArray(rawSources)
-    ? rawSources.slice(0, 8).map((source: any, index: number) => ({
-        title: String(source?.title || source?.name || source?.site_name || `来源 ${index + 1}`),
-        url: String(source?.url || source?.link || source?.href || ""),
-        snippet: String(source?.snippet || source?.summary || source?.content || ""),
-        credibility: index === 0 ? "高" : index <= 3 ? "中" : "低",
-      }))
-    : [];
-  const relatedQuestions = Array.isArray(data?.relatedQuestions || data?.related_questions || data?.questions)
-    ? (data.relatedQuestions || data.related_questions || data.questions).filter((item: unknown): item is string => typeof item === "string")
-    : [`${query} 官方回应`, `${query} 辟谣`];
-
-  return {
-    answer: String(answer),
-    sources,
-    relatedQuestions,
-    model: `360-ai-search:${model}`,
-    traceText: `360 AI Search 返回 ${sources.length} 条来源。`,
-    _source: "360-ai-search",
   };
 }
 
@@ -3296,13 +3007,11 @@ async function call360MWebSearch({
   apiKey,
   query,
   refProm,
-  previousError,
 }: {
   env: Record<string, string>;
   apiKey: string;
   query: string;
   refProm?: string;
-  previousError: string;
 }) {
   const selectedRefProm =
     refProm ||
@@ -3316,6 +3025,7 @@ async function call360MWebSearch({
   url.searchParams.set("count", "8");
   url.searchParams.set("summary_len", "500");
   url.searchParams.set("freshness", "1");
+  // 提供方侧轻度控噪：偏可信源、尽量排除 AIGC 页（非全量质量保证）
   url.searchParams.set("trusted_sources", "1");
   url.searchParams.set("exclude_aigc", "true");
 
@@ -3329,10 +3039,70 @@ async function call360MWebSearch({
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = data?.error?.message || data?.message || response.statusText;
-    throw new Error(`${previousError}；360 智搜 ${selectedRefProm} 调用失败：${detail}`);
+    throw new Error(`360 智搜 ${selectedRefProm} 调用失败：${detail}`);
+  }
+  if (data?.errno != null && Number(data.errno) !== 0) {
+    throw new Error(`360 智搜 ${selectedRefProm} 调用失败：${data?.message || `errno ${data.errno}`}`);
   }
 
   return normalize360MWebSearchResponse(data, query, selectedRefProm);
+}
+
+/** 域名启发式：粗标可信度。不是权威鉴定，只减少「按排名瞎标高」的误导。 */
+function estimateSourceCredibility(url: string): string {
+  if (!url) return "未知";
+  try {
+    const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+    if (
+      host.endsWith(".gov.cn") ||
+      host.endsWith(".edu.cn") ||
+      /\.(gov|edu)$/.test(host) ||
+      host.endsWith(".gov") ||
+      host.endsWith(".edu") ||
+      /(who\.int|nih\.gov|cdc\.gov|fda\.gov|nature\.com|science\.org|thelancet\.com|bmj\.com|cas\.cn|chinacdc\.cn|xinhuanet\.com|people\.com\.cn|cctv\.com)$/.test(host) ||
+      host.includes("wikipedia.org")
+    ) {
+      return "高";
+    }
+    if (
+      /(weixin\.qq\.com|zhihu\.com|baidu\.com|toutiao\.com|xiaohongshu\.com|douyin\.com|weibo\.com|bilibili\.com|sohu\.com|netease\.com|qq\.com)$/.test(host) ||
+      host.includes("mp.weixin")
+    ) {
+      return "低";
+    }
+  } catch {
+    return "未知";
+  }
+  return "中";
+}
+
+function mapProviderSources(
+  items: any[],
+  titleFallback: (index: number) => string
+): Array<{ title: string; url: string; snippet: string; credibility: string }> {
+  const out: Array<{ title: string; url: string; snippet: string; credibility: string }> = [];
+  for (let index = 0; index < items.length && out.length < 8; index += 1) {
+    const source = items[index];
+    if (!source || typeof source !== "object") continue;
+    const url = String(source?.url || source?.link || source?.href || source?.web_url || source?.display_url || "").trim();
+    if (!url || !/^https?:\/\//i.test(url)) continue; // 无有效 URL = 不可追溯，直接丢
+    out.push({
+      title: String(source?.title || source?.name || source?.site_name || titleFallback(out.length + 1)).slice(0, 200),
+      url,
+      snippet: String(
+        source?.summary_ai ||
+          source?.summary ||
+          source?.snippet ||
+          source?.content ||
+          source?.text ||
+          source?.description ||
+          source?.desc ||
+          ""
+      ).slice(0, 500),
+      credibility: estimateSourceCredibility(url),
+    });
+  }
+  return out;
 }
 
 function normalize360MWebSearchResponse(data: any, query: string, refProm: string) {
@@ -3346,23 +3116,18 @@ function normalize360MWebSearchResponse(data: any, query: string, refProm: strin
     data?.data ||
     [];
   const items = Array.isArray(rawItems) ? rawItems : [];
-  const sources = items.slice(0, 8).map((source: any, index: number) => ({
-    title: String(source?.title || source?.name || source?.site_name || `360 智搜来源 ${index + 1}`),
-    url: String(source?.url || source?.link || source?.href || source?.display_url || ""),
-    snippet: String(source?.summary_ai || source?.summary || source?.snippet || source?.content || source?.desc || ""),
-    credibility: index === 0 ? "高" : index <= 3 ? "中" : "低",
-  }));
+  const sources = mapProviderSources(items, (i) => `360 智搜来源 ${i}`);
   const answer = sources.length > 0
     ? sources.map((source) => `【${source.title}】${source.snippet}`).filter(Boolean).join("\n")
-    : `360 智搜已返回“${query}”的检索响应，但未解析到标准来源列表。`;
+    : `360 智搜已返回“${query}”的检索响应，但未解析到可追溯来源。`;
 
   return {
     answer,
     sources,
     relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`, `${query} 原始来源`],
     model: `360-mwebsearch:${refProm}`,
-    traceText: `360 智搜 ${refProm} 返回 ${sources.length} 条来源。`,
-    _source: "360-ai-search",
+    traceText: `360 智搜 ${refProm} 返回 ${sources.length} 条可追溯来源（已跳过失效 aisearch）。`,
+    _source: "360-mwebsearch",
   };
 }
 

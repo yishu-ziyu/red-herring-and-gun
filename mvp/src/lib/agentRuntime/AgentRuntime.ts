@@ -1,3 +1,8 @@
+/**
+ * AgentRuntime — eval / local Vite experimental DAG path.
+ * Production claim-atom orchestration: server casePipeline (ADR-004).
+ * Do not reimplement self-proof / exclusion / per-atom search here; import claimAtom domain.
+ */
 import { randomUUID } from "node:crypto";
 import { buildAgentInput, getAgentRegistry, type AgentRegistry } from "../agentConfigs";
 import type { AgentContract } from "../agentConfigs";
