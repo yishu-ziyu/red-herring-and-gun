@@ -121,6 +121,12 @@ export interface HandoffResult {
   claim: string;
   steps: HandoffStep[];
   finalReport?: Record<string, unknown>;
+  /** Book Ch.1/6 proposer-reviewer 结果（确定性审稿） */
+  reportReview?: {
+    passed: boolean;
+    score: number;
+    issues: Array<{ code: string; severity: string; message: string }>;
+  };
 }
 
 export async function requestOrchestrate(claim: string): Promise<HandoffResult> {
@@ -162,6 +168,7 @@ export interface OrchestrateStreamEvent {
   agentName?: string;
   agentIcon?: string;
   agentContract?: AgentContract;
+  toolId?: string;
   toolName?: string;
   query?: string;
   result?: Record<string, unknown>;
@@ -171,6 +178,12 @@ export interface OrchestrateStreamEvent {
   latencyMs?: number;
   steps?: HandoffStep[];
   finalReport?: Record<string, unknown>;
+  /** Book Ch.1/6 proposer-reviewer 结果（确定性审稿），complete 事件可带 */
+  reportReview?: {
+    passed: boolean;
+    score: number;
+    issues: Array<{ code: string; severity: string; message: string }>;
+  };
   plan?: ExecutionDagPlan;
   relay?: SpeculativeRelayUpdate;
   debate?: ConsensusDebateUpdate;

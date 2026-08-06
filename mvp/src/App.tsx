@@ -5,6 +5,7 @@ import { MissionControlView } from "./components/v3/phases/MissionControlView";
 import { EvidenceMatrixDemoPage } from "./components/v3/EvidenceMatrixDemoPage";
 import { ModelProviderSettingsPreview } from "./components/v3/settings/ModelProviderSettingsPreview";
 import { ApiKeySettings } from "./components/v3/settings/ApiKeySettings";
+import { MissionShellPreview } from "./components/v3/phases/mission/MissionShellPreview";
 import { caseIntakePrimaryText, type CaseIntake } from "./lib/caseIntake";
 import type { ModelChoiceMap } from "./components/v3/ModelPicker";
 
@@ -23,6 +24,10 @@ function AppContent() {
   const isDemoRoute = window.location.pathname === "/demo";
   const isModelSettingsPreviewRoute = import.meta.env.DEV && window.location.pathname === "/model-settings-preview";
   const isApiKeySettingsRoute = window.location.pathname === "/settings/api-key";
+  // Phase 0/1 shell preview (fixture-driven ThoughtChain-like process UI)
+  const isShellPreviewRoute =
+    window.location.pathname === "/shell-preview" ||
+    new URLSearchParams(window.location.search).get("shellPreview") === "1";
 
   useEffect(() => {
     if (appPhase === renderedPhase) return;
@@ -58,6 +63,10 @@ function AppContent() {
 
   if (isDemoRoute) {
     return <EvidenceMatrixDemoPage />;
+  }
+
+  if (isShellPreviewRoute) {
+    return <MissionShellPreview />;
   }
 
   if (isModelSettingsPreviewRoute) {

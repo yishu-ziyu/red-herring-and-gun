@@ -39,6 +39,19 @@ import type {
   ExecutionDagPlan,
   SpeculativeRelayUpdate,
 } from "../agentOrchestrationTypes";
+import { buildAgentStatusBar } from "./contextStatusBar";
+import { formatSkillsForPrompt, selectAgentSkills } from "./agentSkills";
+import { reviewAndRepairReport } from "./reportReviewer";
+import { buildHandoffPacketsFromSteps } from "./handoffPacket";
+import {
+  buildReactTrace,
+  buildSecondaryCounterSearchNote,
+  buildSecondPassCounterSearchHint,
+  computeShouldSecondPassCounterSearch,
+  SECOND_PASS_COUNTER_SEARCH_HINT,
+  shouldInjectReactTrace,
+  type ReactTrace,
+} from "./reactObserve";
 
 export interface RuntimeStep {
   agent: string;
@@ -70,6 +83,12 @@ export interface AgentRuntimeRunResult {
   followUpQueue: FollowUpTask[];
   memoryCandidates: MemoryCandidate[];
   totalLatencyMs: number;
+  /** Book Ch.1/6 proposer-reviewer 结果（确定性审稿） */
+  reportReview?: {
+    passed: boolean;
+    score: number;
+    issues: Array<{ code: string; severity: string; message: string }>;
+  };
 }
 
 export interface AgentRuntimeDependencies {
@@ -209,9 +228,52 @@ export class AgentRuntime {
       onEvent,
     });
     searchResult = dagSearchResult;
-    const finalReport = applyRuleBasedConfidence(reportStep.output, steps);
+    let finalReport = applyRuleBasedConfidence(reportStep.output, steps);
+
+    // Book: proposer-reviewer — 确定性审稿，挡住空壳报告与过早完成
+    onEvent?.(createToolStartEvent({
+      toolId: "report_reviewer",
+      toolName: "Report Reviewer (proposer-reviewer)",
+      query: claim,
+      phase: "report",
+    }));
+    const review = reviewAndRepairReport(finalReport, {
+      claim,
+      previousOutputs: steps.map((s) => s.output),
+    });
+    finalReport = review.repaired;
     reportStep.output = finalReport;
+    onEvent?.(createToolResultEvent({
+      toolId: "report_reviewer",
+      toolName: "Report Reviewer (proposer-reviewer)",
+      query: claim,
+      phase: "report",
+      result: {
+        passed: review.passed,
+        score: review.score,
+        issues: review.issues,
+        checks: review.checks,
+      },
+    }));
+    this.deps.log?.("report_review", {
+      passed: review.passed,
+      score: review.score,
+      issueCount: review.issues.length,
+    });
+
     followUpQueue.push(...buildFollowUpsFromRun(steps, searchResult));
+    if (!review.passed) {
+      followUpQueue.unshift({
+        id: `follow-up-review-${Date.now()}`,
+        title: "审稿未通过：补齐证据链或边界表述",
+        reason: review.issues
+          .filter((i) => i.severity === "error")
+          .map((i) => i.message)
+          .join("；") || "报告契约校验未通过",
+        status: "pending",
+        createdAt: Date.now(),
+      });
+    }
 
     onEvent?.(createToolStartEvent({
       toolId: "memory_write",
@@ -256,6 +318,11 @@ export class AgentRuntime {
       followUpQueue,
       memoryCandidates,
       totalLatencyMs: Date.now() - startTime,
+      reportReview: {
+        passed: review.passed,
+        score: review.score,
+        issues: review.issues,
+      },
     };
   }
 
@@ -269,6 +336,7 @@ export class AgentRuntime {
     memoryHits,
     acceptedCandidateHits,
     steeringQueue,
+    claimType,
     onEvent,
   }: {
     agentId: string;
@@ -280,6 +348,7 @@ export class AgentRuntime {
     memoryHits: Awaited<ReturnType<AgentMemoryStore["search"]>>;
     acceptedCandidateHits: MemoryCandidateHit[];
     steeringQueue: SteeringMessage[];
+    claimType?: ExecutionDagClaimType;
     onEvent?: (event: AgentRuntimeEvent) => void;
   }): Promise<RuntimeStep> {
     const agentConfig = this.agentRegistry.getAgent(agentId);
@@ -305,13 +374,23 @@ export class AgentRuntime {
     });
     if (intakeMetadata) agentInput.intake = intakeMetadata;
     if (visualExtraction) agentInput.visualExtraction = visualExtraction;
-    if (memoryHits.length > 0 && agentId !== "report_composer") {
-      const memoryLimit = agentId === "fact_checker" || agentId === "source_validator" ? 1 : 3;
+
+    // Book Ch.3：report_composer 也应收紧版 memoryRecall（此前误排除）
+    if (memoryHits.length > 0) {
+      const memoryLimit =
+        agentId === "fact_checker" || agentId === "source_validator"
+          ? 1
+          : agentId === "report_composer"
+            ? 2
+            : 3;
       agentInput.memoryRecall = memoryHits.slice(0, memoryLimit).map((hit) => {
         const base = {
           claim: hit.case.claim,
           score: Number(hit.score.toFixed(3)),
-          matchedTerms: hit.matchedTerms.slice(0, agentId === "fact_checker" || agentId === "source_validator" ? 6 : 12),
+          matchedTerms: hit.matchedTerms.slice(
+            0,
+            agentId === "fact_checker" || agentId === "source_validator" ? 6 : 12
+          ),
         };
         if (agentId === "fact_checker") return base;
         if (agentId === "source_validator") {
@@ -361,11 +440,86 @@ export class AgentRuntime {
       agentInput.search360 = compacted;
     }
 
+    // Book Ch.10：显式 handoff packet（只传接收方需要的字段）
+    {
+      const handoffPackets = buildHandoffPacketsFromSteps(agentId, steps);
+      if (handoffPackets.length > 0) {
+        agentInput.handoffPackets = handoffPackets;
+      }
+    }
+
+    // Book Ch.1：轻量 ReAct 观察层（非多轮 tool loop；显式 Think/Observe/Act 提示）
+    if (shouldInjectReactTrace(agentId)) {
+      const reactTrace = buildReactTrace({
+        agentId,
+        claim,
+        searchResult,
+        memoryHitCount: memoryHits.length,
+        previousSteps: steps.map((s) => ({
+          agent: s.agent,
+          output: s.output,
+          status: s.status,
+        })),
+      });
+      if (reactTrace) {
+        agentInput.reactTrace = reactTrace;
+      }
+    }
+    if (agentId === "report_composer") {
+      const prevForReact = steps.map((s) => ({
+        agent: s.agent,
+        output: s.output,
+        status: s.status,
+      }));
+      const secondaryNote = buildSecondaryCounterSearchNote({
+        previousSteps: prevForReact,
+        searchResult,
+      });
+      if (secondaryNote) {
+        agentInput.reactObserveNote = secondaryNote;
+      }
+      const secondPassHint = buildSecondPassCounterSearchHint({
+        previousSteps: prevForReact,
+        searchResult,
+      });
+      if (secondPassHint) {
+        agentInput.secondPassCounterSearchHint = secondPassHint;
+      }
+    }
+
+    // Book Ch.2：状态栏进入观察空间
+    const statusBar = buildAgentStatusBar({
+      agentId,
+      agentName: agentConfig.name,
+      claim,
+      claimType,
+      stepIndex: steps.length + 1,
+      totalStepsHint: 6,
+      tools: (agentConfig.contract?.tools ?? []).map((t) => ({
+        id: t.id,
+        name: t.name,
+        kind: t.kind,
+      })),
+      memoryHitCount: memoryHits.length,
+      acceptedCandidateCount: acceptedCandidateHits.length,
+      searchReady: Boolean(searchResult),
+      steeringCount: steeringQueue.filter((s) => !s.consumedAt).length,
+      failurePolicy: agentConfig.contract?.failurePolicy,
+    });
+    agentInput.agentStatusBar = statusBar.text;
+    agentInput.agentStatusFields = statusBar.fields;
+
+    // Book Ch.2：Skills 按需加载，拼进 system prompt（不膨胀基础合同）
+    const skills = selectAgentSkills({ agentId, claimType, maxSkills: 3 });
+    const systemPrompt = `${agentConfig.systemPrompt}${formatSkillsForPrompt(skills)}`;
+    agentInput.loadedSkills = skills.map((s) => s.id);
+
     let output: Record<string, unknown>;
     let modelUsed: string;
     const timeoutMs = this.deps.getAgentTimeoutMs(agentId);
     const reasoningEffort = this.deps.getAgentReasoningEffort(agentId);
-    const userContent = JSON.stringify(agentInput, null, 2);
+    // 状态栏放在 JSON 外的稳定前缀，提升「环境感知」与可读性
+    const userContent = `${statusBar.text}\n\n${JSON.stringify(agentInput, null, 2)}`;
 
     try {
       this.deps.log?.("agent_start", {
@@ -374,11 +528,13 @@ export class AgentRuntime {
         inputBytes: new TextEncoder().encode(userContent).length,
         timeoutMs,
         reasoningEffort,
+        skills: skills.map((s) => s.id),
+        claimType,
       });
       const agentCaller = this.deps.callAgentWithFallback ?? callAgentWithFallback;
       const result = await withRuntimeTimeout(
         agentCaller({
-          systemPrompt: agentConfig.systemPrompt,
+          systemPrompt,
           userContent,
           responseSchema: agentConfig.responseSchema,
           maxTokens: agentConfig.maxTokens,
@@ -431,7 +587,7 @@ export class AgentRuntime {
       agentName: agentConfig.name,
       agentIcon: agentConfig.icon,
       agentContract: agentConfig.contract,
-      systemPrompt: agentConfig.systemPrompt,
+      systemPrompt,
       input: agentInput,
       output,
       evidenceBundle: buildAgentEvidenceBundle(agentConfig.id, output, searchResult),
@@ -448,7 +604,13 @@ export class AgentRuntime {
       agentIcon: agentConfig.icon,
       agentContract: agentConfig.contract,
       output,
-      result: { evidenceBundle: step.evidenceBundle },
+      result: {
+        evidenceBundle: step.evidenceBundle,
+        // Book honesty: surface skills/status bar used for this step (UI only when non-empty)
+        loadedSkills: Array.isArray(agentInput.loadedSkills) ? agentInput.loadedSkills : undefined,
+        agentStatusBar:
+          typeof agentInput.agentStatusBar === "string" ? agentInput.agentStatusBar : undefined,
+      },
       evidenceBundle: step.evidenceBundle,
       model: modelUsed,
       latencyMs: step.latencyMs,
@@ -613,10 +775,25 @@ export class AgentRuntime {
                 confidence: "medium",
               });
             }
-            const step = await this.runAgent({ agentId, claim, steps, searchResult, intakeMetadata, visualExtraction, memoryHits, acceptedCandidateHits, steeringQueue, onEvent });
+            const step = await this.runAgent({
+              agentId,
+              claim,
+              steps,
+              searchResult,
+              intakeMetadata,
+              visualExtraction,
+              memoryHits,
+              acceptedCandidateHits,
+              steeringQueue,
+              claimType,
+              onEvent,
+            });
             steps.push(step);
             this.deps.log?.("dag_exec", { phase: "node", node: node.id, type: "agent", agentId, action: "complete", status: step.status });
-            if (agentId === "fact_checker") factStep = step;
+            if (agentId === "fact_checker") {
+              factStep = step;
+              emitSecondPassCounterSearchIfNeeded(onEvent, step, searchResult);
+            }
             if (agentId === "source_validator") sourceStep = step;
             if (agentId === "alternative_explanation_searcher") altStep = step;
             if (agentId === "counter_evidence_grader") counterStep = step;
@@ -879,6 +1056,54 @@ function emitSpeculativeRelay(onEvent: ((event: AgentRuntimeEvent) => void) | un
     timestamp: Date.now(),
     relay,
   });
+}
+
+/**
+ * fact_checker 完成后：reactTrace 预判或 output 缺口≥2，且反证仍为空 →
+ * 发 speculative_update / tool_result 风格提示，UI 展示「建议二次反证检索」。
+ */
+function emitSecondPassCounterSearchIfNeeded(
+  onEvent: ((event: AgentRuntimeEvent) => void) | undefined,
+  step: RuntimeStep,
+  searchResult: Search360Response | null | undefined
+) {
+  const emptyContradict =
+    !Array.isArray(searchResult?.contradictingEvidence) ||
+    searchResult!.contradictingEvidence!.length === 0;
+  if (!emptyContradict) return;
+
+  const reactTrace = step.input?.reactTrace as ReactTrace | undefined;
+  const fromTrace = reactTrace?.shouldSecondPassCounterSearch === true;
+  const fromOutput = computeShouldSecondPassCounterSearch({
+    searchResult,
+    unresolvedEvidenceGaps: step.output?.unresolvedEvidenceGaps,
+  });
+  if (!fromTrace && !fromOutput) return;
+
+  emitSpeculativeRelay(onEvent, {
+    id: "relay-second-pass-counter-search",
+    title: SECOND_PASS_COUNTER_SEARCH_HINT,
+    upstream: "FactChecker",
+    downstream: "ReportComposer",
+    trigger: "反证材料为空且未决缺口≥2，建议发起二次反证检索。",
+    status: "queued",
+    savedReason: SECOND_PASS_COUNTER_SEARCH_HINT,
+    confidence: "medium",
+  });
+  // tool_result 风格旁路：部分 UI 只订阅 tool 事件
+  onEvent?.(
+    createToolResultEvent({
+      toolId: "second_pass_counter_search",
+      toolName: SECOND_PASS_COUNTER_SEARCH_HINT,
+      query: "second_pass_counter_search",
+      result: {
+        hint: SECOND_PASS_COUNTER_SEARCH_HINT,
+        shouldSecondPassCounterSearch: true,
+        emptyContradictingEvidence: true,
+      },
+      phase: "handoff",
+    })
+  );
 }
 
 /**

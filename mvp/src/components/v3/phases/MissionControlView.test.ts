@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   ERROR_FRIENDLY_MESSAGE,
   errorTechDetail,
+  formatReportReviewerStreamDetail,
+  formatReportReviewerStreamTitle,
+  isReportReviewerTool,
+  reportReviewerIssueList,
   resolveErrorPresentation,
 } from "./MissionControlView";
 
@@ -49,5 +53,41 @@ describe("MissionControlView error 友好化（原始诊断不下主线）", () 
 
   it("errorTechDetail 无任何诊断时回退到默认文案", () => {
     expect(errorTechDetail({})).toBe("Orchestrate 流式调用失败");
+  });
+});
+
+describe("report_reviewer stream humanize", () => {
+  it("detects tool by toolId / toolName / result shape", () => {
+    expect(isReportReviewerTool("Report Reviewer (proposer-reviewer)", "report_reviewer")).toBe(true);
+    expect(isReportReviewerTool(null, null, { passed: true, score: 80, issues: [] })).toBe(true);
+    expect(isReportReviewerTool("Parallel Search", "parallel_search")).toBe(false);
+  });
+
+  it("title is 报告审稿 · 通过/需补证 · 分数", () => {
+    expect(formatReportReviewerStreamTitle({ passed: true, score: 86, issues: [] }, "completed")).toBe(
+      "报告审稿 · 通过 · 86"
+    );
+    expect(formatReportReviewerStreamTitle({ passed: false, score: 40, issues: [] }, "completed")).toBe(
+      "报告审稿 · 需补证 · 40"
+    );
+    expect(formatReportReviewerStreamTitle(null, "running")).toBe("报告审稿");
+  });
+
+  it("issues list caps at 3 messages", () => {
+    const issues = reportReviewerIssueList({
+      passed: false,
+      score: 30,
+      issues: [
+        { severity: "error", message: "结论过短" },
+        { severity: "warn", message: "缺 canSay" },
+        { severity: "error", message: "证据链不足" },
+        { severity: "warn", message: "不应出现" },
+      ],
+    });
+    expect(issues).toHaveLength(3);
+    expect(issues.map((i) => i.message)).toEqual(["结论过短", "缺 canSay", "证据链不足"]);
+    expect(formatReportReviewerStreamDetail({ passed: false, score: 30, issues: issues }, "completed")).toContain(
+      "结论过短"
+    );
   });
 });

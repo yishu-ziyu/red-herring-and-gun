@@ -1,9 +1,10 @@
 /**
  * Case Pipeline — production orchestration for one claim case.
- * Depth: rumor → self-proof → per-atom search → fact//source → report → assemble.
+ * Depth: rumor → self-proof → per-atom search → fact//source → report → assemble → review.
  * HTTP / SSE are thin adapters; inject runAgent + searchOne + selfProof model.
  */
 
+import { randomUUID } from "node:crypto";
 import {
   claimAtomKey,
   runClaimAtomSelfProof,
@@ -15,6 +16,13 @@ import {
   type SearchOneAtom,
 } from "../atomSearch.js";
 import { assembleFinalReport } from "../reportAssembly/index.js";
+import {
+  reviewAndRepairReport,
+  type ReportReviewIssue,
+} from "../reportReviewer.js";
+import { buildMemoryCandidatesFromRun } from "../memoryCandidateGenerator.js";
+import type { MemoryCandidate } from "../memoryCandidateTypes.js";
+import type { MemoryCandidateStore } from "../memoryCandidateStore.js";
 
 export type PipelineStep = {
   agent: string;
@@ -52,6 +60,25 @@ export type CasePipelineHooks = {
     atomSearchBundle: AtomSearchBundle;
   }) => Promise<void>;
   searchMode?: "parallel" | "sequential";
+  /** deterministic report reviewer — tool_start style (SSE) */
+  onReportReviewStart?: (info: { toolName: string; query: string }) => void;
+  /** deterministic report reviewer — tool_result style (SSE) */
+  onReportReviewResult?: (info: {
+    toolName: string;
+    query: string;
+    passed: boolean;
+    score: number;
+    issues: ReportReviewIssue[];
+    checks: Record<string, boolean>;
+  }) => void;
+  /** memory candidate propose — tool_start style (SSE) */
+  onMemoryWriteStart?: (info: { toolName: string; query: string }) => void;
+  /** memory candidate propose — tool_result style (SSE) */
+  onMemoryWriteResult?: (info: {
+    toolName: string;
+    query: string;
+    proposedCandidateCount: number;
+  }) => void;
 };
 
 export type CasePipelineInput = {
@@ -76,6 +103,14 @@ export type CasePipelineInput = {
     sourceStep: PipelineStep;
     search360Result: unknown;
   }) => void;
+  /** stable id for memory provenance; default randomUUID */
+  runId?: string;
+  /**
+   * When set, proposed candidates are persisted after the run.
+   * Handlers should pass the shared JsonlMemoryCandidateStore.
+   * When omitted, candidates are still built and returned (no I/O).
+   */
+  memoryCandidateStore?: MemoryCandidateStore;
 };
 
 export type CasePipelineResult = {
@@ -87,7 +122,13 @@ export type CasePipelineResult = {
   factStep: PipelineStep;
   sourceStep: PipelineStep;
   reportStep: PipelineStep;
+  /** proposed memory candidates (same shape as AgentRuntime) */
+  memoryCandidates: MemoryCandidate[];
+  runId: string;
 };
+
+const REPORT_REVIEWER_TOOL = "Report Reviewer (proposer-reviewer)";
+const MEMORY_WRITE_TOOL = "Agent Memory Write";
 
 export async function runCasePipeline(input: CasePipelineInput): Promise<CasePipelineResult> {
   const { claim, runAgent, searchOne, callSelfProofModel, runReport, hooks, finalizeReport } = input;
@@ -181,6 +222,48 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     search360Result,
   });
 
+  // Phase 3b: deterministic report reviewer (same as AgentRuntime; non-LLM)
+  hooks?.onReportReviewStart?.({
+    toolName: REPORT_REVIEWER_TOOL,
+    query: claim,
+  });
+  const review = reviewAndRepairReport(finalReport, {
+    claim,
+    previousOutputs: steps.map((s) => s.output),
+  });
+  Object.assign(finalReport, review.repaired);
+  reportStep.output = finalReport;
+  hooks?.onReportReviewResult?.({
+    toolName: REPORT_REVIEWER_TOOL,
+    query: claim,
+    passed: review.passed,
+    score: review.score,
+    issues: review.issues,
+    checks: review.checks,
+  });
+
+  // Phase 3c: propose memory candidates (same as AgentRuntime memory write)
+  const runId = input.runId ?? randomUUID();
+  hooks?.onMemoryWriteStart?.({
+    toolName: MEMORY_WRITE_TOOL,
+    query: claim,
+  });
+  const memoryCandidates = buildMemoryCandidatesFromRun({
+    runId,
+    claim,
+    steps,
+    finalReport,
+    searchResult: search360Result as Parameters<typeof buildMemoryCandidatesFromRun>[0]["searchResult"],
+  });
+  if (input.memoryCandidateStore && memoryCandidates.length > 0) {
+    await input.memoryCandidateStore.propose(memoryCandidates);
+  }
+  hooks?.onMemoryWriteResult?.({
+    toolName: MEMORY_WRITE_TOOL,
+    query: claim,
+    proposedCandidateCount: memoryCandidates.length,
+  });
+
   return {
     steps,
     finalReport,
@@ -190,5 +273,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     factStep,
     sourceStep,
     reportStep,
+    memoryCandidates,
+    runId,
   };
 }

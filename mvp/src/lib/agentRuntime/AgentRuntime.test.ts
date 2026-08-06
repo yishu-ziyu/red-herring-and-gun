@@ -81,4 +81,70 @@ describe("AgentRuntime — DAG migration pipelines", () => {
     expect(agentIds).toContain("rumor_detector");
     expect(agentIds).toContain("report_composer");
   });
+
+  it("injects reactTrace for fact_checker/source_validator and secondary note for report_composer", async () => {
+    // Always return gaps for all agents so report_composer can see fact_checker gaps via steps
+    mockCallAgent.mockResolvedValue({
+      output: {
+        factCheckResult: "partial",
+        confidence: "low",
+        unresolvedEvidenceGaps: ["缺官方确认", "缺检测报告"],
+        claimAtoms: ["x"],
+        sourceReliability: "mixed",
+      },
+      model: "mock",
+    });
+
+    // search 层也给 ≥2 gaps + 空反证，驱动 reactTrace.shouldSecondPassCounterSearch
+    const runtime = new AgentRuntime(
+      makeDeps({
+        getSearchForClaim: vi.fn().mockResolvedValue({
+          _source: "tool-ok",
+          model: "mock",
+          answer: "test answer",
+          sources: [{ title: "S", url: "https://s.example", snippet: "s" }],
+          supportingEvidence: [{ title: "S", url: "https://s.example", snippet: "s" }],
+          contradictingEvidence: [],
+          unresolvedEvidenceGaps: ["缺官方通报", "缺原始数据"],
+          traceText: "",
+        }),
+      })
+    );
+    const events: Array<{ type: string; relay?: { title?: string }; toolId?: string; toolName?: string }> = [];
+    const result = await runtime.runCase(
+      { claim: "网传某地发生食品安全事件" },
+      (event) => events.push(event as { type: string; relay?: { title?: string }; toolId?: string; toolName?: string })
+    );
+
+    const fact = result.steps.find((s) => s.agent === "fact_checker");
+    const source = result.steps.find((s) => s.agent === "source_validator");
+    const report = result.steps.find((s) => s.agent === "report_composer");
+    const rumor = result.steps.find((s) => s.agent === "rumor_detector");
+
+    expect(fact?.input.reactTrace).toBeTruthy();
+    expect((fact?.input.reactTrace as { thoughtHint?: string })?.thoughtHint).toMatch(/Think/);
+    expect(
+      (fact?.input.reactTrace as { shouldSecondPassCounterSearch?: boolean })?.shouldSecondPassCounterSearch
+    ).toBe(true);
+    expect(source?.input.reactTrace).toBeTruthy();
+    expect(rumor?.input.reactTrace).toBeUndefined();
+    // fact_checker output has >=2 gaps + empty contradictingEvidence → report gets note + hint
+    expect(report?.input.reactObserveNote).toBe("应触发二次反证检索");
+    expect(report?.input.secondPassCounterSearchHint).toBe("建议二次反证检索");
+
+    // fact 完成后应 emit speculative_update / tool_result 提示
+    expect(
+      events.some(
+        (e) =>
+          e.type === "speculative_update" &&
+          e.relay?.title === "建议二次反证检索"
+      )
+    ).toBe(true);
+    expect(
+      events.some(
+        (e) => e.type === "tool_result" && e.toolId === "second_pass_counter_search"
+      )
+    ).toBe(true);
+  });
+
 });
