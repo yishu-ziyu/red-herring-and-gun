@@ -138,6 +138,19 @@ export interface SubclaimVerdict {
   evidenceGaps?: string[];
 }
 
+/** 排除层：不可核查原子（value/prediction/normative 等），原位灰标"立场型"，不订真/假 */
+export interface NonVerifiableAtom {
+  text: string;
+  type: string;
+}
+
+/** 排除层：整条 claim 的类型判定。verifiable=false 时报告顶部显示"立场型"横幅 */
+export interface ClaimTypeInfo {
+  verifiable: boolean;
+  type: string;
+  reason: string;
+}
+
 export interface FinalReport {
   originalClaim: string;
   overallStatus: string;
@@ -146,6 +159,12 @@ export interface FinalReport {
   subclaimStatuses: SubclaimReportStatus[];
   // 逐命题定罪清单（权威清单，服务端 merge 闸门产出）；缺失/空时前端渲染空态
   subclaimVerdicts?: SubclaimVerdict[];
+  // 排除层：不可核查原子（立场型·不适用真/假判断），与 subclaimVerdicts 并列，保留原位
+  nonVerifiableAtoms?: NonVerifiableAtom[];
+  // 排除层：全局原子展示顺序（原句序），立场原子依此原位插回；缺失时前端回退拼接
+  claimAtomOrder?: string[];
+  // 排除层：整句类型判定；verifiable=false 时报告顶部显示"立场型"横幅
+  claimType?: ClaimTypeInfo;
   evidenceChain: string[];
   doNotInfer: string[];
   rewrittenClaim: {
