@@ -6,6 +6,12 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { searchClaimAcrossSources } from "./lib/sherlockStyleSearch.js";
 import { AGENT_CONFIGS, buildAgentInput, mergeSubclaimVerdicts, splitVerifiableAtoms, runClaimAtomSelfProof, claimAtomKey } from "./lib/agentConfigs.js";
+import {
+  selectAtomsToSearch,
+  buildAtomSearchBundle,
+  bindAtomEvidenceToVerdicts,
+  type AtomSearchBundle,
+} from "./lib/atomSearch.js";
 import { callAgentWithFallback, AgentTextProviderId, ProviderFallbackError } from "./lib/providerRouter.js";
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
@@ -165,13 +171,25 @@ function applyExclusionLayerToReport(
   finalReport: Record<string, unknown>,
   rumorStep: any,
   verdicts: unknown,
-  searchSources?: Array<{ url?: unknown }>
+  searchSources?: Array<{ url?: unknown }>,
+  atomSearchBundle?: AtomSearchBundle | null
 ): void {
   if (!finalReport || typeof finalReport !== "object") return;
   const rumorOutput = rumorStep?.output ?? {};
   const split = splitVerifiableAtoms(rumorOutput.claimAtoms, rumorOutput.claimAtomTypes);
-  finalReport.subclaimVerdicts = mergeSubclaimVerdicts(split.verifiable, verdicts, searchSources);
+  let merged = mergeSubclaimVerdicts(split.verifiable, verdicts, searchSources);
+  // 按条绑该原子定向检索证据（模型未绑定时回填；URL 须落在该原子检索池）
+  if (atomSearchBundle?.byAtomKey) {
+    merged = bindAtomEvidenceToVerdicts(merged, atomSearchBundle.byAtomKey, claimAtomKey);
+  }
+  finalReport.subclaimVerdicts = merged;
   finalReport.nonVerifiableAtoms = split.nonVerifiable;
+  if (atomSearchBundle) {
+    finalReport.atomSearchMeta = {
+      atomsSearched: atomSearchBundle.atomsSearched,
+      source: "per-atom-search",
+    };
+  }
   const stanceClaimType = rumorOutput.stanceClaimType;
   if (stanceClaimType && typeof stanceClaimType === "object") {
     finalReport.stanceClaimType = stanceClaimType;
@@ -737,7 +755,12 @@ export function createHandlers(env: Record<string, string>) {
     let visualExtraction: Record<string, unknown> | undefined;
 
     // Helper: run a single agent
-    async function runAgent(agentId: string, steps: any[], search360Result?: any): Promise<any> {
+    async function runAgent(
+      agentId: string,
+      steps: any[],
+      search360Result?: any,
+      atomSearchBundle?: AtomSearchBundle | null
+    ): Promise<any> {
       const agentConfig = AGENT_CONFIGS.find((a) => a.id === agentId);
       if (!agentConfig) {
         throw new Error(`Unknown agent: ${agentId}`);
@@ -750,6 +773,9 @@ export function createHandlers(env: Record<string, string>) {
       if (clientMemoryRecall) agentInput.memoryRecall = clientMemoryRecall;
       if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
         agentInput.search360 = compactSearchResultForAgent(search360Result);
+        if (atomSearchBundle && (agentId === "fact_checker" || agentId === "report_composer")) {
+          agentInput.atomSearches = atomSearchBundle.forAgent;
+        }
       }
       if (agentId === "report_composer") {
         agentInput.evidenceInputs = buildReportEvidenceInputs(steps, search360Result);
@@ -796,6 +822,34 @@ export function createHandlers(env: Record<string, string>) {
       };
     }
 
+    /** 自证后：可核查原子各搜一轮 → bundle（decompose-then-verify 检索侧） */
+    async function runPerAtomSearch(rumorStep: any): Promise<{
+      search360Result: any;
+      atomSearchBundle: AtomSearchBundle;
+    }> {
+      const split = splitVerifiableAtoms(
+        rumorStep?.output?.claimAtoms,
+        rumorStep?.output?.claimAtomTypes
+      );
+      const atomsToSearch = selectAtomsToSearch(split.verifiable);
+      const items = await Promise.all(
+        atomsToSearch.map(async (atom) => {
+          const result = await get360SearchForClaim(atom);
+          try {
+            await attachCondensedSnippets(env, atom, result);
+          } catch {
+            /* 浓缩失败不阻断 */
+          }
+          return { atom, result };
+        })
+      );
+      const atomSearchBundle = buildAtomSearchBundle(items, claimAtomKey);
+      console.log(
+        `[atom_search] atoms=${atomsToSearch.length} sources=${atomSearchBundle.aggregate.sources.length}`
+      );
+      return { search360Result: atomSearchBundle.aggregate, atomSearchBundle };
+    }
+
     try {
       if (intake?.images.length) {
         const visionResult = await callStepFunVisionForIntake({ env, claim, intake });
@@ -808,27 +862,22 @@ export function createHandlers(env: Record<string, string>) {
       // Phase 1: RumorDetector (serial)
       const rumorStep = await runAgent("rumor_detector", steps);
       steps.push(rumorStep);
-      // 原句自证闸门与搜索并行跑，压额外延迟；事件契约不变
-      const [search360Result, selfProof] = await Promise.all([
-        get360SearchForClaim(claim),
-        runClaimAtomSelfProof(claim, rumorStep?.output?.claimAtoms ?? [], (input) =>
-          callAgentWithFallback({
-            agentId: "rumor_detector_selfproof",
-            systemPrompt: input.systemPrompt,
-            userContent: input.userContent,
-            responseSchema: input.responseSchema,
-            maxTokens: input.maxTokens,
-            env,
-            codexBin,
-            reasoningEffort: "low",
-            modelOverride: modelChoice && modelChoice["rumor_detector"] ? modelChoice["rumor_detector"] : undefined,
-            options: { logger: console },
-          }).then((r) => ({ output: r.output, model: r.model }))
-        ),
-      ]);
-      // 忠实过滤：只有 supported 的原子进入下游
+      // 原句自证（须在按原子检索之前：只有 kept 原子可进搜索）
+      const selfProof = await runClaimAtomSelfProof(claim, rumorStep?.output?.claimAtoms ?? [], (input) =>
+        callAgentWithFallback({
+          agentId: "rumor_detector_selfproof",
+          systemPrompt: input.systemPrompt,
+          userContent: input.userContent,
+          responseSchema: input.responseSchema,
+          maxTokens: input.maxTokens,
+          env,
+          codexBin,
+          reasoningEffort: "low",
+          modelOverride: modelChoice && modelChoice["rumor_detector"] ? modelChoice["rumor_detector"] : undefined,
+          options: { logger: console },
+        }).then((r) => ({ output: r.output, model: r.model }))
+      );
       rumorStep.output.claimAtoms = selfProof.kept;
-      // 诊断元数据（加字段，不删字段，不破坏事件契约）
       rumorStep.output.claimAtomSelfProof = {
         kept: selfProof.kept,
         dropped: selfProof.dropped,
@@ -837,13 +886,14 @@ export function createHandlers(env: Record<string, string>) {
       console.log(
         `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${selfProof.kept.length} dropped=${selfProof.dropped.length}`
       );
-      // 浓缩来源为奕枢风格摘要（挂到 source.condensedSnippet，失败时 log warning 并回退到原 snippet）
-      await attachCondensedSnippets(env, claim, search360Result);
+
+      // Phase 1b: 可核查原子各一轮检索（不再仅整句搜一次）
+      const { search360Result, atomSearchBundle } = await runPerAtomSearch(rumorStep);
 
       // Phase 2: FactChecker + SourceValidator (parallel)
       const [factStep, sourceStep] = await Promise.all([
-        runAgent("fact_checker", steps, search360Result),
-        runAgent("source_validator", steps, search360Result),
+        runAgent("fact_checker", steps, search360Result, atomSearchBundle),
+        runAgent("source_validator", steps, search360Result, atomSearchBundle),
       ]);
       steps.push(factStep, sourceStep);
 
@@ -852,15 +902,13 @@ export function createHandlers(env: Record<string, string>) {
         claim,
         steps,
         search360Result,
-        runAgent,
+        runAgent: (agentId, s, search) => runAgent(agentId, s, search, atomSearchBundle),
       });
       steps.push(reportStep);
 
       const finalReport = reportStep.output;
 
-      // ─── 逐命题定罪落库闸门（R2 + 排除层）───
-      // 先以 claimAtomTypes 做确定性拆分，subclaimVerdicts 只覆盖可核查原子；
-      // verifiable=false 的原子进 nonVerifiableAtoms，绝不进 subclaimVerdicts（不变量）。
+      // ─── 逐命题定罪落库闸门（R2 + 排除层 + 按条绑原子检索证据）───
       const reportVerdicts = reportStep?.output?.subclaimVerdicts;
       applyExclusionLayerToReport(
         finalReport,
@@ -868,7 +916,8 @@ export function createHandlers(env: Record<string, string>) {
         Array.isArray(reportVerdicts) && reportVerdicts.length > 0
           ? reportVerdicts
           : factStep?.output?.subclaimVerdicts,
-        search360Result?.sources
+        search360Result?.sources,
+        atomSearchBundle
       );
 
       // ─── 公式覆盖 credibilityScore ───
@@ -934,7 +983,12 @@ export function createHandlers(env: Record<string, string>) {
     };
 
     // Helper: run a single agent and stream events
-    async function runAgentWithStream(agentId: string, steps: any[], search360Result?: any): Promise<any> {
+    async function runAgentWithStream(
+      agentId: string,
+      steps: any[],
+      search360Result?: any,
+      atomSearchBundle?: AtomSearchBundle | null
+    ): Promise<any> {
       const agentConfig = AGENT_CONFIGS.find((a) => a.id === agentId);
       if (!agentConfig) {
         throw new Error(`Unknown agent: ${agentId}`);
@@ -957,6 +1011,9 @@ export function createHandlers(env: Record<string, string>) {
       if (clientMemoryRecall) agentInput.memoryRecall = clientMemoryRecall;
       if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
         agentInput.search360 = compactSearchResultForAgent(search360Result);
+        if (atomSearchBundle && (agentId === "fact_checker" || agentId === "report_composer")) {
+          agentInput.atomSearches = atomSearchBundle.forAgent;
+        }
       }
       if (agentId === "report_composer") {
         agentInput.evidenceInputs = buildReportEvidenceInputs(steps, search360Result);
@@ -1073,33 +1130,22 @@ export function createHandlers(env: Record<string, string>) {
       // Phase 1: RumorDetector (serial — downstream agents depend on its output)
       const rumorStep = await runAgentWithStream("rumor_detector", steps);
       steps.push(rumorStep);
-      sendEvent({
-        type: "tool_start",
-        toolName: "360 Search",
-        query: claim,
-        timestamp: Date.now(),
-      });
-      // 原句自证闸门与搜索并行跑，压额外延迟；事件顺序不变，不新增 agent_* / tool_* 事件
-      const [search360Result, selfProof] = await Promise.all([
-        get360SearchForClaim(claim),
-        runClaimAtomSelfProof(claim, rumorStep?.output?.claimAtoms ?? [], (input) =>
-          callAgentWithFallback({
-            agentId: "rumor_detector_selfproof",
-            systemPrompt: input.systemPrompt,
-            userContent: input.userContent,
-            responseSchema: input.responseSchema,
-            maxTokens: input.maxTokens,
-            env,
-            codexBin,
-            reasoningEffort: "low",
-            modelOverride: modelChoice && modelChoice["rumor_detector"] ? modelChoice["rumor_detector"] : undefined,
-            options: { logger: console },
-          }).then((r) => ({ output: r.output, model: r.model }))
-        ),
-      ]);
-      // 忠实过滤：只有 supported 的原子进入下游
+      // 原句自证须先于按原子检索
+      const selfProof = await runClaimAtomSelfProof(claim, rumorStep?.output?.claimAtoms ?? [], (input) =>
+        callAgentWithFallback({
+          agentId: "rumor_detector_selfproof",
+          systemPrompt: input.systemPrompt,
+          userContent: input.userContent,
+          responseSchema: input.responseSchema,
+          maxTokens: input.maxTokens,
+          env,
+          codexBin,
+          reasoningEffort: "low",
+          modelOverride: modelChoice && modelChoice["rumor_detector"] ? modelChoice["rumor_detector"] : undefined,
+          options: { logger: console },
+        }).then((r) => ({ output: r.output, model: r.model }))
+      );
       rumorStep.output.claimAtoms = selfProof.kept;
-      // 诊断元数据（加字段，不删字段，不破坏事件契约）
       rumorStep.output.claimAtomSelfProof = {
         kept: selfProof.kept,
         dropped: selfProof.dropped,
@@ -1108,33 +1154,59 @@ export function createHandlers(env: Record<string, string>) {
       console.log(
         `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${selfProof.kept.length} dropped=${selfProof.dropped.length}`
       );
-      // 浓缩来源为奕枢风格摘要（挂到 source.condensedSnippet，失败时 log warning 并回退到原 snippet）
-      await attachCondensedSnippets(env, claim, search360Result);
-      const searchToolName = getSearchToolName(search360Result);
-      if (search360Result._source === "tool-error") {
-        sendEvent({
-          type: "tool_error",
-          toolName: searchToolName,
-          query: claim,
-          error: search360Result.traceText,
-          result: search360Result,
-          timestamp: Date.now(),
-        });
-      } else {
-        sendEvent({
-          type: "tool_result",
-          toolName: searchToolName,
-          query: claim,
-          model: search360Result.model,
-          result: search360Result,
-          timestamp: Date.now(),
-        });
-      }
 
-      // Phase 2: FactChecker + SourceValidator (parallel — both only need claim + rumorDetector output)
+      // Phase 1b: 可核查原子各一轮检索（SSE：每原子 tool_start / tool_result）
+      const splitForSearch = splitVerifiableAtoms(
+        rumorStep?.output?.claimAtoms,
+        rumorStep?.output?.claimAtomTypes
+      );
+      const atomsToSearch = selectAtomsToSearch(splitForSearch.verifiable);
+      const atomSearchItems: Array<{ atom: string; result: any }> = [];
+      for (const atom of atomsToSearch) {
+        sendEvent({
+          type: "tool_start",
+          toolName: "Atom Search",
+          query: atom,
+          timestamp: Date.now(),
+        });
+        const result = await get360SearchForClaim(atom);
+        try {
+          await attachCondensedSnippets(env, atom, result);
+        } catch {
+          /* ignore */
+        }
+        atomSearchItems.push({ atom, result });
+        const searchToolName = getSearchToolName(result);
+        if (result?._source === "tool-error") {
+          sendEvent({
+            type: "tool_error",
+            toolName: searchToolName,
+            query: atom,
+            error: result.traceText,
+            result,
+            timestamp: Date.now(),
+          });
+        } else {
+          sendEvent({
+            type: "tool_result",
+            toolName: searchToolName,
+            query: atom,
+            model: result?.model,
+            result,
+            timestamp: Date.now(),
+          });
+        }
+      }
+      const atomSearchBundle = buildAtomSearchBundle(atomSearchItems, claimAtomKey);
+      const search360Result = atomSearchBundle.aggregate;
+      console.log(
+        `[atom_search] atoms=${atomsToSearch.length} sources=${atomSearchBundle.aggregate.sources.length}`
+      );
+
+      // Phase 2: FactChecker + SourceValidator (parallel)
       const [factStep, sourceStep] = await Promise.all([
-        runAgentWithStream("fact_checker", steps, search360Result),
-        runAgentWithStream("source_validator", steps, search360Result),
+        runAgentWithStream("fact_checker", steps, search360Result, atomSearchBundle),
+        runAgentWithStream("source_validator", steps, search360Result, atomSearchBundle),
       ]);
       steps.push(factStep, sourceStep);
 
@@ -1181,7 +1253,7 @@ export function createHandlers(env: Record<string, string>) {
         claim,
         steps,
         search360Result,
-        runAgent: runAgentWithStream,
+        runAgent: (agentId, s, search) => runAgentWithStream(agentId, s, search, atomSearchBundle),
         onFallback: (step) => {
           sendEvent({
             type: "agent_complete",
@@ -1199,8 +1271,7 @@ export function createHandlers(env: Record<string, string>) {
 
       const finalReport = reportStep.output;
 
-      // ─── 逐命题定罪落库闸门（R2 + 排除层，stream）───
-      // 与 orchestrateHandler 同闸门，先做确定性拆分再 merge 可核查原子。
+      // ─── 逐命题定罪落库闸门（R2 + 排除层 + 按条绑证据，stream）───
       const reportVerdicts = reportStep?.output?.subclaimVerdicts;
       applyExclusionLayerToReport(
         finalReport,
@@ -1208,7 +1279,8 @@ export function createHandlers(env: Record<string, string>) {
         Array.isArray(reportVerdicts) && reportVerdicts.length > 0
           ? reportVerdicts
           : factStep?.output?.subclaimVerdicts,
-        search360Result?.sources
+        search360Result?.sources,
+        atomSearchBundle
       );
 
       // ─── 公式覆盖 credibilityScore ───
