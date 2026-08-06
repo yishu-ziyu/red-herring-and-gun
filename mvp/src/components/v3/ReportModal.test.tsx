@@ -222,14 +222,18 @@ describe("ReportModal 排除层 · 不可核查原子与整句立场标注", () 
     expect(screen.getByText("属实")).toBeInTheDocument();
   });
 
-  it("立场原子按 claimAtomOrder 原位插回：B 在中间，不沉底", () => {
+  it("基于服务端预交错 claimItems 直接渲染：B 在中间，不沉底", () => {
     const report = makeReport({
       subclaimVerdicts: [
         { claimAtom: "事实A", verdict: "true", evidence: "证据A", boundary: "边界A" },
         { claimAtom: "事实C", verdict: "false", evidence: "证据C", boundary: "边界C" },
       ],
       nonVerifiableAtoms: [{ text: "价值B", type: "value" }],
-      claimAtomOrder: ["事实A", "价值B", "事实C"],
+      claimItems: [
+        { text: "事实A", verifiable: true, type: "fact", verdict: { claimAtom: "事实A", verdict: "true", evidence: "证据A", boundary: "边界A" } },
+        { text: "价值B", verifiable: false, type: "value" },
+        { text: "事实C", verifiable: true, type: "fact", verdict: { claimAtom: "事实C", verdict: "false", evidence: "证据C", boundary: "边界C" } },
+      ],
     });
     renderModal(report);
 
@@ -242,11 +246,11 @@ describe("ReportModal 排除层 · 不可核查原子与整句立场标注", () 
     expect(items[2].textContent).toContain("事实C");
   });
 
-  it("claimType.verifiable=false 时报告顶部渲染'立场型'横幅", () => {
+  it("stanceClaimType.verifiable=false 时报告顶部渲染'立场型'横幅", () => {
     const report = makeReport({
       subclaimVerdicts: [],
       nonVerifiableAtoms: [],
-      claimType: { verifiable: false, type: "value", reason: "整句为价值判断" },
+      stanceClaimType: { verifiable: false, type: "value", reason: "整句为价值判断" },
     });
     const { container } = renderModal(report);
     expect(container.querySelector(".report-stance-banner")).not.toBeNull();
@@ -254,13 +258,13 @@ describe("ReportModal 排除层 · 不可核查原子与整句立场标注", () 
     expect(screen.getByText(/不适用于事实核查/)).toBeInTheDocument();
   });
 
-  it("claimType.verifiable=true 或缺失时不渲染立场横幅", () => {
+  it("stanceClaimType.verifiable=true 或缺失时不渲染立场横幅", () => {
     const { container } = renderModal(makeReport());
     expect(container.querySelector(".report-stance-banner")).toBeNull();
 
     cleanup();
     const { container: c2 } = renderModal(
-      makeReport({ claimType: { verifiable: true, type: "fact", reason: "可核查" } })
+      makeReport({ stanceClaimType: { verifiable: true, type: "fact", reason: "可核查" } })
     );
     expect(c2.querySelector(".report-stance-banner")).toBeNull();
   });

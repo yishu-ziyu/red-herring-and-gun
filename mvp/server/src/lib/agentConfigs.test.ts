@@ -333,10 +333,10 @@ describe("排除层 · splitVerifiableAtoms 确定性拆分", () => {
     expect(split.nonVerifiable).toEqual([{ text: "价值B", type: "value" }]);
   });
 
-  it("rumor_detector schema 应含 claimAtomTypes（item={text,verifiable,type}）与 claimType（{verifiable,type,reason}）并在 required 中", () => {
+  it("rumor_detector schema 应含 claimAtomTypes（item={text,verifiable,type}）与 stanceClaimType（{verifiable,type,reason}）并在 required 中", () => {
     const schema = getAgentConfig("rumor_detector")!.responseSchema as any;
     expect(schema.required).toContain("claimAtomTypes");
-    expect(schema.required).toContain("claimType");
+    expect(schema.required).toContain("stanceClaimType");
     const item = schema.properties.claimAtomTypes.items;
     expect(item.additionalProperties).toBe(false);
     expect(item.required).toEqual(["text", "verifiable", "type"]);
@@ -344,16 +344,16 @@ describe("排除层 · splitVerifiableAtoms 确定性拆分", () => {
     expect(item.properties.type.enum).toEqual([
       "fact", "causal", "comparison", "concept", "value", "prediction", "normative", "personal",
     ]);
-    const claimType = schema.properties.claimType;
-    expect(claimType.additionalProperties).toBe(false);
-    expect(claimType.required).toEqual(["verifiable", "type", "reason"]);
-    expect(claimType.properties.verifiable.type).toBe("boolean");
+    const stanceClaimType = schema.properties.stanceClaimType;
+    expect(stanceClaimType.additionalProperties).toBe(false);
+    expect(stanceClaimType.required).toEqual(["verifiable", "type", "reason"]);
+    expect(stanceClaimType.properties.verifiable.type).toBe("boolean");
   });
 
   it("rumor_detector prompt 应含灰度区判定规则与整句判定引导", () => {
     const prompt = getAgentConfig("rumor_detector")!.systemPrompt;
     expect(prompt).toMatch(/claimAtomTypes/);
-    expect(prompt).toMatch(/claimType/);
+    expect(prompt).toMatch(/stanceClaimType/);
     expect(prompt).toMatch(/个人经验/);
     expect(prompt).toMatch(/大量患者报告服用 X 后出现失眠/); // 个人经验按断言形态判
     expect(prompt).toMatch(/这药对我失眠很有效/); // 第一人称主观 → 不可核查
@@ -363,7 +363,7 @@ describe("排除层 · splitVerifiableAtoms 确定性拆分", () => {
   });
 });
 
-describe("排除层 · nonVerifiableAtoms / claimType 契约", () => {
+describe("排除层 · nonVerifiableAtoms / stanceClaimType 契约", () => {
   it("claimAtomTypes 缺失时 splitVerifiableAtoms 不抛错且全部可核查（防御）", () => {
     const split = splitVerifiableAtoms(["A"], null as unknown as unknown[]);
     expect(split.verifiable).toEqual(["A"]);
