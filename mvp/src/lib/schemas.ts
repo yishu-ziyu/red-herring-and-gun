@@ -151,6 +151,15 @@ export interface ClaimTypeInfo {
   reason: string;
 }
 
+/** 排除层：服务端已按原句序预交错的展示 item，前端零匹配直接渲染 */
+export interface ClaimReportItem {
+  text: string;
+  verifiable: boolean;
+  type: string;
+  /** 可核查原子带定罪；不可核查（立场型 value/prediction 等）verdict 缺省 */
+  verdict?: SubclaimVerdict;
+}
+
 export interface FinalReport {
   originalClaim: string;
   overallStatus: string;
@@ -161,10 +170,11 @@ export interface FinalReport {
   subclaimVerdicts?: SubclaimVerdict[];
   // 排除层：不可核查原子（立场型·不适用真/假判断），与 subclaimVerdicts 并列，保留原位
   nonVerifiableAtoms?: NonVerifiableAtom[];
-  // 排除层：全局原子展示顺序（原句序），立场原子依此原位插回；缺失时前端回退拼接
-  claimAtomOrder?: string[];
+  // 排除层：服务端预交错的展示 items（已按原句序排好，可核查带 verdict、立场不带）；
+  // 缺失时前端回退拼接
+  claimItems?: ClaimReportItem[];
   // 排除层：整句类型判定；verifiable=false 时报告顶部显示"立场型"横幅
-  claimType?: ClaimTypeInfo;
+  stanceClaimType?: ClaimTypeInfo;
   evidenceChain: string[];
   doNotInfer: string[];
   rewrittenClaim: {

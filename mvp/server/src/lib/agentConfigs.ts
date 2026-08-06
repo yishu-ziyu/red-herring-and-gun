@@ -75,7 +75,8 @@ export interface RumorDetectorOutput {
     verifiable: boolean;
     type: ClaimAtomType;
   }>;
-  claimType: {
+  // 整句判定字段（与系统既有 claimType/ExecutionDagClaimType 区分），命名 stanceClaimType
+  stanceClaimType: {
     verifiable: boolean;
     type: ClaimAtomType | "mixed";
     reason: string;
@@ -161,7 +162,7 @@ const rumorDetectorSchema = {
         required: ["text", "verifiable", "type"],
       },
     },
-    claimType: {
+    stanceClaimType: {
       type: "object",
       additionalProperties: false,
       properties: {
@@ -179,7 +180,7 @@ const rumorDetectorSchema = {
     analysis: { type: "string" },
     detectedPatterns: { type: "array", items: { type: "string" } },
   },
-  required: ["claimAtoms", "claimAtomTypes", "claimType", "rumorIndicators", "severity", "analysis", "detectedPatterns"],
+  required: ["claimAtoms", "claimAtomTypes", "stanceClaimType", "rumorIndicators", "severity", "analysis", "detectedPatterns"],
 };
 
 const verdictSourceSchema = {
@@ -360,7 +361,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "- medium：检测到 2-3 个谣言特征",
       "- low：检测到 1 个谣言特征，或主要是语气问题",
       "",
-      "【可核查性判定 / claimAtomTypes 与 claimType — 强制】",
+      "【可核查性判定 / claimAtomTypes 与 stanceClaimType — 强制】",
       "对每个 claimAtoms 原子，必须用 claimAtomTypes 逐条给出 verifiable（是否可核查）与 type（类型）。",
       "硬不可核查（verifiable=false，不进入事实核查范畴，只会被原位灰标标注为立场型，不订真/假）：",
       "- value 价值判断：对事物价值的评价（\"有意义/无意义\"\"好/坏\"\"应该/不应该\"）。示例如\"文科教育正在失去意义\"若指价值立场。",
@@ -373,10 +374,10 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "- 个人经验 personal：凡断言形态是\"某人/某群体 报告/声称 某种经验或反应\"，可核查（去查是否有这些报告），verifiable=true；凡属说话者第一人称主观体验或未经证实的普遍化主观判断，不可核查，verifiable=false。示例：\"大量患者报告服用 X 后出现失眠\"→可核查（查是否有这些报告）；\"这药对我失眠很有效\"→不可核查。注意：即使机制未知（可能是安慰剂效应），只要形态是\"患者报告了反应\"就可核查\"是否有报告\"，但绝不能核查为\"该反应是药理作用\"（那是 causal，另判）。",
       "- 概念定义 concept：凡断言是\"某个概念定义是什么、出自哪里、不同语境如何被使用\"，可核查（查定义出处、语境、不同解释），verifiable=true；凡断言是\"这个概念（根本）没有意义/不应该存在\"这类立场宣泄或规范判断，不可核查，verifiable=false。",
       "",
-      "整句判定 claimType：对整条 claim 判 type、verifiable 与 reason。若整句为纯价值/预测/规范型说法，verifiable=false（报告顶部会标注\"立场型\"横幅），但仍会走完整核查流程，可核查部分照常定罪。",
+      "整句判定 stanceClaimType：对整条 claim 判 type、verifiable 与 reason。若整句为纯价值/预测/规范型说法，verifiable=false（报告顶部会标注\"立场型\"横幅），但仍会走完整核查流程，可核查部分照常定罪。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"claimAtoms\": [\"可核查原子命题1\", \"可核查原子命题2\"],\n  \"claimAtomTypes\": [\n    {\"text\": \"可核查原子命题1\", \"verifiable\": true, \"type\": \"fact\"},\n    {\"text\": \"可核查原子命题2\", \"verifiable\": false, \"type\": \"value\"}\n  ],\n  \"claimType\": {\"verifiable\": false, \"type\": \"value\", \"reason\": \"整句为价值判断，不适用于事实核查\"},\n  \"rumorIndicators\": [\"谣言特征1\", \"谣言特征2\"],\n  \"severity\": \"medium\",\n  \"analysis\": \"详细分析说明\",\n  \"detectedPatterns\": [\"匹配的模式1\", \"匹配的模式2\"]\n}",
+      "{\n  \"claimAtoms\": [\"可核查原子命题1\", \"可核查原子命题2\"],\n  \"claimAtomTypes\": [\n    {\"text\": \"可核查原子命题1\", \"verifiable\": true, \"type\": \"fact\"},\n    {\"text\": \"可核查原子命题2\", \"verifiable\": false, \"type\": \"value\"}\n  ],\n  \"stanceClaimType\": {\"verifiable\": false, \"type\": \"value\", \"reason\": \"整句为价值判断，不适用于事实核查\"},\n  \"rumorIndicators\": [\"谣言特征1\", \"谣言特征2\"],\n  \"severity\": \"medium\",\n  \"analysis\": \"详细分析说明\",\n  \"detectedPatterns\": [\"匹配的模式1\", \"匹配的模式2\"]\n}",
       "",
       "severity 必须是 'low'、'medium'、'high' 之一。",
       "claimAtomTypes 的 text 必须与 claimAtoms 逐一对应；value/prediction/normative 的 verifiable 必须为 false，fact/causal/comparison/concept 的 verifiable 必须为 true。",
@@ -558,10 +559,13 @@ function compactText(value: unknown, maxLength = 420): string {
   return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
 }
 
-// 与 compactStrings(claimAtoms, 6, 180) 对 claimAtom 的截断规则保持一致，
-// 作为 covered 判定键，避免超长原子在 verdict 原始串与 atoms 截断串之间失配。
-function truncateClaimAtomKey(value: string, maxLength = 180): string {
-  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+// 统一原子键：全角空格规范化 + 截断到 maxLength（超长加省略号）。
+// 自证闸门改写（去重/规范化）后，split/merge/claimItems 都复用同一键，保证键匹配一致，
+// 消除"自证改写后 split 失配 → 立场原子漏网"的漂移风险。
+// 与 compactStrings(claimAtoms, 6, 180) 对 claimAtom 的截断规则保持一致，避免超长原子失配。
+export function claimAtomKey(value: string, maxLength = 180): string {
+  const norm = value.replace(/\u3000/g, " ");
+  return norm.length > maxLength ? `${norm.slice(0, maxLength)}…` : norm;
 }
 
 const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated"];
@@ -602,7 +606,7 @@ export function mergeSubclaimVerdicts(
   verdicts: unknown,
   searchSources?: Array<{ url?: unknown }>
 ): SubclaimVerdict[] {
-  const atoms = compactStrings(claimAtoms, 6, 180);
+  const atoms = compactStrings(claimAtoms, 6, 180).map((s) => claimAtomKey(s));
   const raw = Array.isArray(verdicts) ? verdicts : [];
   const covered = new Set<string>();
   const result: SubclaimVerdict[] = [];
@@ -611,7 +615,7 @@ export function mergeSubclaimVerdicts(
     const rec = item as Record<string, unknown>;
     const atom = typeof rec.claimAtom === "string" ? rec.claimAtom : "";
     if (!atom) continue;
-    const atomKey = truncateClaimAtomKey(atom);
+    const atomKey = claimAtomKey(atom);
     // 幻觉拦截：仅接受真实存在于输入 claimAtoms 中的原子，模型编造的原子不得进入报告
     if (!atoms.includes(atomKey)) continue;
     covered.add(atomKey);
@@ -652,7 +656,7 @@ export function splitVerifiableAtoms(
   claimAtoms: unknown,
   claimAtomTypes: unknown
 ): { verifiable: string[]; nonVerifiable: Array<{ text: string; type: string }> } {
-  const atoms = compactStrings(claimAtoms, 6, 180);
+  const atoms = compactStrings(claimAtoms, 6, 180).map((s) => claimAtomKey(s));
   const typed = new Map<string, { verifiable: boolean; type: string }>();
   if (Array.isArray(claimAtomTypes)) {
     for (const item of claimAtomTypes) {
@@ -660,7 +664,7 @@ export function splitVerifiableAtoms(
       const rec = item as Record<string, unknown>;
       const text = typeof rec.text === "string" ? rec.text : "";
       if (!text) continue;
-      typed.set(truncateClaimAtomKey(text), {
+      typed.set(claimAtomKey(text), {
         // 兜底：verifiable 缺失或非 false 一律视为可核查
         verifiable: rec.verifiable !== false,
         type: typeof rec.type === "string" ? rec.type.slice(0, 40) : "",
@@ -707,8 +711,7 @@ export function prefilterClaimAtoms(
       if (typeof item !== "string") continue;
       const trimmed = item.trim();
       if (!trimmed) continue;
-      const truncated = truncateClaimAtomKey(trimmed);
-      const normKey = truncated.replace(/\u3000/g, " ").trim();
+      const normKey = claimAtomKey(trimmed);
       if (seen.has(normKey)) {
         dropped.push({ text: item, reason: "duplicate" });
         continue;
@@ -779,7 +782,7 @@ export function parseSelfProofResults(atoms: string[], llmResults: unknown): Map
         const rec = item as Record<string, unknown>;
         const atom = typeof rec.atom === "string" ? rec.atom : "";
         if (!atom) continue;
-        const key = truncateClaimAtomKey(atom);
+        const key = claimAtomKey(atom);
         if (map.has(key)) {
           map.set(key, rec.supported === true);
         }
@@ -796,7 +799,7 @@ function lookupSelfProofReason(atom: string, llmResults: unknown): string | unde
       for (const item of results) {
         if (!item || typeof item !== "object") continue;
         const rec = item as Record<string, unknown>;
-        if (typeof rec.atom === "string" && truncateClaimAtomKey(rec.atom) === atom) {
+        if (typeof rec.atom === "string" && claimAtomKey(rec.atom) === atom) {
           return typeof rec.reason === "string" ? rec.reason : undefined;
         }
       }
