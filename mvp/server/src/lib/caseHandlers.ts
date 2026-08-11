@@ -50,7 +50,7 @@ export async function postCaseHandler(req: Request, res: Response): Promise<void
  * GET /api/case/:caseId — 取出 case JSON
  */
 export function getCaseHandler(req: Request, res: Response): void {
-  const caseId = (req.params.caseId ?? "").trim();
+  const caseId = String(req.params.caseId ?? "").trim();
   if (!caseId) {
     res.status(400).json({ error: "caseId is required" });
     return;
@@ -68,7 +68,7 @@ export function getCaseHandler(req: Request, res: Response): void {
  * 让浏览器/爬虫/分享预览都能消费。
  */
 export function renderCaseHtmlHandler(req: Request, res: Response): void {
-  const caseId = (req.params.caseId ?? "").trim();
+  const caseId = String(req.params.caseId ?? "").trim();
   const entry = caseId ? getCase(caseId) : null;
   const html = buildSharePageHtml(caseId, entry);
   res.set("Content-Type", "text/html; charset=utf-8");

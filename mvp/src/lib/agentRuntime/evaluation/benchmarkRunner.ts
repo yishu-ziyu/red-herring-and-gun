@@ -10,7 +10,7 @@ import type { AgentRuntimeDependencies } from "../AgentRuntime";
 import type { GoldenCase } from "./goldenDataset";
 import { scoreCase, type CaseResult } from "./evaluationMetrics";
 
-function mockSearchResult(): ReturnType<AgentRuntimeDependencies["getSearchForClaim"]> {
+function mockSearchResult(): Awaited<ReturnType<AgentRuntimeDependencies["getSearchForClaim"]>> {
   return {
     answer: "mock search result",
     sources: [],
@@ -33,7 +33,7 @@ function defaultMockOutputs(case_: GoldenCase): Record<string, Record<string, un
   return {
     rumor_detector: {
       claimAtoms: [case_.claim],
-      rumorTypes: case_.category === "health" ? ["健康"] : case_.category === "social" ? ["社会"] : ["科技"],
+      rumorTypes: ["科技"],
       rumorIndicators: case_.difficulty === "trap" ? ["虚假紧迫性", "恐惧诉求"] : ["情绪煽动"],
       severity,
       analysis: `该 claim 属于${case_.category}类型，需要进一步核查。`,
@@ -148,7 +148,7 @@ export async function runCase(golden: GoldenCase): Promise<CaseResult> {
     getSearchForClaim: async () => mockSearchResult(),
     getAgentTimeoutMs: () => 5000,
     getAgentReasoningEffort: () => "medium",
-    callAgentWithFallback: mockCaller as AgentRuntimeDependencies["callAgentWithFallback"],
+    callAgentWithFallback: mockCaller as unknown as AgentRuntimeDependencies["callAgentWithFallback"],
   };
 
   try {
