@@ -228,7 +228,7 @@ export class AgentRuntime {
       onEvent,
     });
     searchResult = dagSearchResult;
-    let finalReport = applyRuleBasedConfidence(reportStep.output, steps);
+    let finalReport: Record<string, unknown> = applyRuleBasedConfidence(reportStep.output, steps);
 
     // Book: proposer-reviewer — 确定性审稿，挡住空壳报告与过早完成
     onEvent?.(createToolStartEvent({

@@ -78,7 +78,7 @@ function readClaimList(report: Record<string, unknown>): ClaimListItem[] {
             snippet: asString(row.snippet) || undefined,
           };
         })
-        .filter((row): row is { title: string; url: string; snippet?: string } => Boolean(row));
+        .filter((row): row is { title: string; url: string; snippet: string | undefined } => Boolean(row));
 
       const canSay = asStringArray(item.canSay);
       const cannotSay = asStringArray(item.cannotSay);
