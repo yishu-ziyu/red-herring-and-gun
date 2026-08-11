@@ -4,6 +4,9 @@ dist/
 .env.local.*
 .env.*.local
 
+# TRAE share artifacts (HTML preview cache)
+.trae-html-share-packages/
+
 # Runtime directories
 .agent-memory/
 .agent-swarm/
