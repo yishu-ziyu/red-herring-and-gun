@@ -20,6 +20,8 @@ function makeStep(agent: string, output: Record<string, unknown> = {}) {
       contradictEvidenceIds: [],
       confidenceDelta: 0,
       unresolvedQuestions: [],
+      sourceQualityScore: undefined,
+      logicRiskCount: 0,
     },
     model: "mock",
     latencyMs: 100,
