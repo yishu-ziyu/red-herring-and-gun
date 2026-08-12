@@ -159,6 +159,7 @@ export interface OrchestrateStreamEvent {
     | "agent_start"
     | "agent_complete"
     | "agent_error"
+    | "agent_thought"
     | "tool_start"
     | "tool_result"
     | "tool_error"
@@ -168,6 +169,12 @@ export interface OrchestrateStreamEvent {
   agentName?: string;
   agentIcon?: string;
   agentContract?: AgentContract;
+  /** agent_thought: 模型 thinking 文本增量（逐条） */
+  content?: string;
+  /** agent_thought: 句子序号（从 0 起） */
+  seq?: number;
+  /** agent_thought: 是否为该 agent 最后一条 */
+  done?: boolean;
   toolId?: string;
   toolName?: string;
   query?: string;
