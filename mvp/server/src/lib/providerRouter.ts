@@ -136,6 +136,17 @@ function stepFunMaxTokensForModel(env: Record<string, string>, model: string, re
   return Number.isFinite(minTokens) && minTokens > requested ? minTokens : requested;
 }
 
+/**
+ * MiniMax-M3 的 max_tokens 含 thinking：adaptive 思考不可控，会吃掉绝大部分预算。
+ * 若 agent 配置的 maxTokens 过小（如 rumor_detector 800），text 会被截断为空。
+ * 这里给 MiniMax-M3 提一个下限，保证思考 + 结构化发言都装得下。
+ */
+function miniMaxMaxTokensForModel(env: Record<string, string>, model: string, requested: number): number {
+  if (!/^MiniMax-M3$/i.test(model)) return requested;
+  const minTokens = Number(envValue(env, "MINIMAX_M3_MIN_MAX_TOKENS") || 5500);
+  return Number.isFinite(minTokens) && minTokens > requested ? minTokens : requested;
+}
+
 function parseReasoningEffort(value: string): "low" | "medium" | "high" | undefined {
   const normalized = value.toLowerCase();
   return normalized === "low" || normalized === "medium" || normalized === "high" ? normalized : undefined;
@@ -382,6 +393,8 @@ export interface CallAgentResult {
   output: any;
   model: string;
   latencyMs: number;
+  /** 推理模型的 thinking 文本（如 step-3.7-flash 的 message.reasoning）；无则缺省 */
+  reasoning?: string;
 }
 
 /**
@@ -417,6 +430,11 @@ function timeoutForProviderModel(
 ): number {
   if (provider === "stepfun" && /^step-3\.7-flash$/i.test(model)) {
     return getTimeoutMs(env, "STEPFUN_3_7_PROVIDER_TIMEOUT_MS", 135000);
+  }
+  // MiniMax-M3 的 adaptive thinking 不可控、思考文本可能很长，单次推理常超 90s。
+  // 给它一条独立、更长的 timeout 通道，避免被默认 90s 掐断后误判为调用失败。
+  if (provider === "minimax" && /^MiniMax-M3$/i.test(model)) {
+    return getTimeoutMs(env, "MINIMAX_M3_PROVIDER_TIMEOUT_MS", 180000);
   }
   return fallbackMs;
 }
@@ -463,7 +481,7 @@ export async function dispatchSingleProvider({
   maxTokens: number;
   codexBin: string;
   reasoningEffort: "low" | "medium" | "high";
-}): Promise<{ text: string; model: string }> {
+}): Promise<{ text: string; model: string; reasoning?: string }> {
   if (provider === "deepseek") {
     const apiKey = envValue(env, "DEEPSEEK_API_KEY");
     if (!apiKey) throw new Error(`未配置 DEEPSEEK_API_KEY`);
@@ -487,7 +505,7 @@ export async function dispatchSingleProvider({
       model,
       systemPrompt,
       userContent,
-      maxTokens,
+      maxTokens: miniMaxMaxTokensForModel(env, model, maxTokens),
     });
   }
   if (provider === "stepfun") {
@@ -567,14 +585,14 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   const invokeAndParse = async (
     provider: AgentTextProviderId | string,
     modelName: string,
-    call: (sys: string, user: string) => Promise<{ text: string; model: string }>,
+    call: (sys: string, user: string) => Promise<{ text: string; model: string; reasoning?: string }>,
     timeoutMs: number,
     logTag: string
   ): Promise<CallAgentResult> => {
     const raw = await withTimeout(call(systemPrompt, userContent), timeoutMs, `${traceLabel} ${provider}:${modelName}`);
     try {
       const output = parseAgentJson(raw.text, raw.model);
-      return { output, model: raw.model, latencyMs: Date.now() - startTime };
+      return { output, model: raw.model, latencyMs: Date.now() - startTime, reasoning: raw.reasoning };
     } catch (parseError) {
       if (!isAgentJsonParseError(parseError)) throw parseError;
       const parseMessage = parseError instanceof Error ? parseError.message : "JSON 解析失败";
@@ -606,7 +624,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         `${traceLabel} ${provider}:${modelName} json-repair`
       );
       const output = parseAgentJson(repairedRaw.text, repairedRaw.model);
-      return { output, model: repairedRaw.model, latencyMs: Date.now() - startTime };
+      return { output, model: repairedRaw.model, latencyMs: Date.now() - startTime, reasoning: repairedRaw.reasoning };
     }
   };
 
@@ -769,7 +787,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           model,
           systemPrompt: sys,
           userContent: user,
-          maxTokens,
+          maxTokens: miniMaxMaxTokensForModel(env, model, maxTokens),
         })
       );
       if (out.ok) {

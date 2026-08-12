@@ -246,7 +246,7 @@ export function buildRebuttalCard(payload: ClosureReportPayload): RebuttalCard {
 export function buildRebuttalCardMarkdown(payload: ClosureReportPayload): string {
   const card = buildRebuttalCard(payload);
   return [
-    "# 红鲱鱼与枪 — 辟谣卡片",
+    "# 红鲱鱼与枪 — 核查摘要",
     "",
     `## ${card.title}`,
     "",

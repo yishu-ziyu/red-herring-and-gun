@@ -16,6 +16,8 @@ export interface SubclaimVerdict {
   supportingSources?: VerdictSource[];
   contradictingSources?: VerdictSource[];
   evidenceGaps?: string[];
+  /** supportingSources auto-filled from retrieval; not model-cited → no [n] binding */
+  sourcesRelatedOnly?: boolean;
 }
 
 export type ClaimAtomType =

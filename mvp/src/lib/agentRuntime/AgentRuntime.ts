@@ -11,11 +11,16 @@ import {
   createAgentCompleteEvent,
   createAgentErrorEvent,
   createAgentStartEvent,
+  createAgentThoughtEvent,
   createToolErrorEvent,
   createToolResultEvent,
   createToolStartEvent,
 } from "./events";
 import { callAgentWithFallback, type AgentReasoningEffort } from "./agentProviders";
+import {
+  splitReasoningSentences,
+  thoughtInterSentenceDelayMs,
+} from "../reasoningThoughts";
 import { buildConfidenceAssessments } from "../confidenceEngine";
 import { buildMemoryCandidatesFromRun } from "./memoryCandidateGenerator";
 import { JsonlMemoryCandidateStore, type MemoryCandidateStore } from "./memoryCandidateStore";
@@ -516,6 +521,8 @@ export class AgentRuntime {
 
     let output: Record<string, unknown>;
     let modelUsed: string;
+    let modelLatencyMs = 0;
+    let reasoningText: string | undefined;
     const timeoutMs = this.deps.getAgentTimeoutMs(agentId);
     const reasoningEffort = this.deps.getAgentReasoningEffort(agentId);
     // 状态栏放在 JSON 外的稳定前缀，提升「环境感知」与可读性
@@ -549,11 +556,14 @@ export class AgentRuntime {
       );
       output = result.output;
       modelUsed = result.model;
+      reasoningText = typeof result.reasoning === "string" ? result.reasoning : undefined;
+      // Model wall-clock only — exclude thought SSE pacing from "Thought for Ns".
+      modelLatencyMs = Date.now() - stepStart;
       this.deps.log?.("agent_complete", {
         agent: agentId,
         agentName: agentConfig.name,
         model: modelUsed,
-        latencyMs: Date.now() - stepStart,
+        latencyMs: modelLatencyMs,
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Agent 调用失败";
@@ -579,7 +589,29 @@ export class AgentRuntime {
       }
       output = buildAgentFailureOutput(agentId, msg, searchResult);
       modelUsed = "runtime:error-boundary";
+      modelLatencyMs = Date.now() - stepStart;
       this.deps.log?.("agent_error_fallback", { phase: "error_boundary", agentId, modelUsed });
+    }
+
+    // Pace real reasoning sentences over SSE (no invented text).
+    if (onEvent && reasoningText && reasoningText.trim()) {
+      const sentences = splitReasoningSentences(reasoningText);
+      const gap = thoughtInterSentenceDelayMs(sentences.length);
+      for (let index = 0; index < sentences.length; index++) {
+        onEvent(
+          createAgentThoughtEvent({
+            agent: agentId,
+            agentName: agentConfig.name,
+            agentIcon: agentConfig.icon,
+            content: sentences[index],
+            seq: index,
+            done: index === sentences.length - 1,
+          })
+        );
+        if (index < sentences.length - 1 && gap > 0) {
+          await new Promise((r) => setTimeout(r, gap));
+        }
+      }
     }
 
     const step: RuntimeStep = {
@@ -592,7 +624,7 @@ export class AgentRuntime {
       output,
       evidenceBundle: buildAgentEvidenceBundle(agentConfig.id, output, searchResult),
       model: modelUsed,
-      latencyMs: Date.now() - stepStart,
+      latencyMs: modelLatencyMs || Date.now() - stepStart,
       timestamp: Date.now(),
       // 审查 P2-7 修复：catch 路径走 error-boundary，应标记为 failed 而非 completed
       status: modelUsed === "runtime:error-boundary" ? "failed" : "completed",
@@ -769,7 +801,7 @@ export class AgentRuntime {
                 title: "先派发可行动线索",
                 upstream: "Planner",
                 downstream: "RumorDetector",
-                trigger: "中控已经判定命题类型，先让分诊 Agent 提取可检索子问题。",
+                trigger: "已识别命题类型，先拆出可检索的判断。",
                 status: "running",
                 savedReason: "不用等最终报告，先把可验证问题拆出来。",
                 confidence: "medium",
@@ -849,7 +881,7 @@ export class AgentRuntime {
       downstream: "360 AI Search",
       trigger: firstActionableClaimSeed(steps[0]?.output, claim),
       status: "running",
-      savedReason: "一旦分诊产出可检索线索，搜索与后续 Agent 准备可以重叠执行。",
+      savedReason: "一旦拆题产出可检索线索，搜索与后续 Agent 准备可以重叠执行。",
       confidence: "high",
     });
 
@@ -1011,7 +1043,7 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
       : "该输入需要事实核查、来源审计和证据边界收束。",
     nodes,
     edges: [
-      { from: "planner", to: "rumor_detector", label: "立案" },
+      { from: "planner", to: "rumor_detector", label: "拆题" },
       { from: "rumor_detector", to: "fact_checker", label: "支持/反驳线索" },
       { from: "rumor_detector", to: "source_validator", label: "来源需求" },
       ...(claimType === "causal"

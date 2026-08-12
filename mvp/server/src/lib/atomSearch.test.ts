@@ -114,11 +114,12 @@ describe("bindAtomEvidenceToVerdicts", () => {
     expect(out[0].supportingSources).toEqual(byAtom[key("原子A")]);
   });
 
-  it("丢掉不在该原子检索池内的模型 URL", () => {
+  it("丢掉不在该原子检索池内的模型 URL，并重写 evidence [n]", () => {
     const out = bindAtomEvidenceToVerdicts(
       [
         {
           claimAtom: "原子A",
+          evidence: "真来源[1]，幻觉[2]。",
           supportingSources: [
             { url: "https://a.example", title: "ok", snippet: "" },
             { url: "https://hallucinated.example", title: "no", snippet: "" },
@@ -129,6 +130,27 @@ describe("bindAtomEvidenceToVerdicts", () => {
       byAtom,
       key
     );
+    expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://a.example"]);
+    expect(out[0].evidence).toBe("真来源[1]，幻觉。");
+    expect(out[0].sourcesRelatedOnly).toBe(false);
+  });
+
+  it("检索填充时剥离 [n]，标记 sourcesRelatedOnly", () => {
+    const out = bindAtomEvidenceToVerdicts(
+      [
+        {
+          claimAtom: "原子A",
+          evidence: "模型空来源却写了[1]。",
+          supportingSources: [],
+          contradictingSources: [],
+          evidenceGaps: [],
+        },
+      ],
+      byAtom,
+      key
+    );
+    expect(out[0].sourcesRelatedOnly).toBe(true);
+    expect(out[0].evidence).not.toMatch(/\[\d+\]/);
     expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://a.example"]);
   });
 
