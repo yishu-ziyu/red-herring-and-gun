@@ -18,10 +18,10 @@ export interface AgentSkill {
 export const AGENT_SKILLS: AgentSkill[] = [
   {
     id: "skill.claim-atom-triage",
-    title: "原子命题分诊",
+    title: "拆开原子命题",
     agents: ["rumor_detector"],
     body: [
-      "Skill · 原子命题分诊",
+      "Skill · 拆开原子命题",
       "1. 把复合句拆成可独立核查的 claimAtoms；每条尽量一句一事实。",
       "2. 区分：可核查事实 / 价值判断 / 无法证伪的修辞。",
       "3. neededEvidence 必须可被搜索工具执行，不要写「查一下真相」这种空需求。",

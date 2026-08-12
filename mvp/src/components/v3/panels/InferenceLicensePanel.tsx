@@ -7,11 +7,11 @@ interface InferenceLicensePanelProps {
 function confidenceLabel(c: InferenceLicense["confidence"]): string {
   switch (c) {
     case "high":
-      return "许可强度：高";
+      return "把握：高";
     case "medium":
-      return "许可强度：中";
+      return "把握：中";
     case "low":
-      return "许可强度：低";
+      return "把握：低";
   }
 }
 
@@ -21,10 +21,10 @@ export function InferenceLicensePanel({ license }: InferenceLicensePanelProps) {
   return (
     <section
       className="inference-license-panel editorial cinema-rise"
-      aria-label="推理许可"
+      aria-label="能信的范围"
     >
       <header className="inference-license-header">
-        <h4 className="inference-license-title">报告级推理许可</h4>
+        <h4 className="inference-license-title">能信的范围</h4>
         <span className="inference-license-confidence small-caps">
           {confidenceLabel(license.confidence)} · 覆盖 {license.coverage.withAllowed}/{license.coverage.totalSubclaims}
         </span>
@@ -34,7 +34,7 @@ export function InferenceLicensePanel({ license }: InferenceLicensePanelProps) {
         <div className="inference-license-col inference-license-allowed">
           <h5 className="inference-license-col-title">
             <span className="boundary-col-dot boundary-col-dot--allowed" />
-            可以说 ({license.allowed.length})
+            能信 ({license.allowed.length})
           </h5>
           {license.allowed.length === 0 ? (
             <p className="inference-license-empty">当前材料无明显支持点。</p>
@@ -50,7 +50,7 @@ export function InferenceLicensePanel({ license }: InferenceLicensePanelProps) {
         <div className="inference-license-col inference-license-blocked">
           <h5 className="inference-license-col-title">
             <span className="boundary-col-dot boundary-col-dot--blocked" />
-            不能说 ({license.blocked.length})
+            不能信 ({license.blocked.length})
           </h5>
           {license.blocked.length === 0 ? (
             <p className="inference-license-empty">当前材料无明显禁止项。</p>

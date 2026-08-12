@@ -42,7 +42,7 @@ describe("agentConfigs — DAG migration new agents", () => {
     expect(prompt).toContain("不得引入原句未声称的信息");
   });
 
-  it("fact_checker responseSchema 包含 subclaimVerdicts 逐命题定罪字段", () => {
+  it("fact_checker responseSchema 包含 subclaimVerdicts 逐条判定字段", () => {
     const agent = getAgentConfig("fact_checker");
     const props = (agent!.responseSchema as any).properties;
     expect(props.subclaimVerdicts).toBeDefined();
@@ -52,6 +52,18 @@ describe("agentConfigs — DAG migration new agents", () => {
     expect(item.verdict).toBeDefined();
     expect(item.evidence).toBeDefined();
     expect(item.boundary).toBeDefined();
+    expect(item.supportingSources).toBeDefined();
+    expect(item.evidence.description).toMatch(/\[n\]/);
+  });
+
+  it("fact_checker / report_composer prompt 要求句内 [n] 引用编号", () => {
+    const fc = getAgentConfig("fact_checker")!;
+    const rc = getAgentConfig("report_composer")!;
+    expect(fc.systemPrompt).toContain("句内引用编号");
+    expect(fc.systemPrompt).toMatch(/\[n\]/);
+    expect(rc.systemPrompt).toContain("句内引用编号");
+    expect(rc.systemPrompt).toMatch(/\[n\]/);
+    expect((rc.responseSchema as any).properties.conclusion.description).toMatch(/\[n\]/);
   });
 
   it("report_composer 透传 subclaimVerdicts 并补齐覆盖不全项", () => {

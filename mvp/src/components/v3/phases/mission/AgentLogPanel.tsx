@@ -48,9 +48,9 @@ function extractLogText(step: HandoffStep): string | null {
 
   // 根据 agent 类型给默认描述
   const defaults: Record<string, string> = {
-    RumorDetector: `${name} 完成声明分诊`,
+    RumorDetector: `${name} 完成拆题`,
     FactChecker: `${name} 完成事实核查`,
-    SourceValidator: `${name} 完成信源审计`,
+    SourceValidator: `${name} 完成溯源`,
     ReportComposer: `${name} 生成报告`,
   };
 

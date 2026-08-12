@@ -40,12 +40,14 @@ const REQUIRED_PATTERNS_SOURCE_VALIDATOR = [
 ];
 
 describe("AGENT_CONFIGS · P0-1 Grounding 硬约束", () => {
-  it("应暴露 4 个 Agent 配置（rumor_detector/fact_checker/source_validator/report_composer）", () => {
+  it("应暴露 6 个 Agent 配置（含因果分支 alternative_explanation_searcher / counter_evidence_grader）", () => {
     expect(AGENT_CONFIGS.map((a) => a.id)).toEqual([
       "rumor_detector",
       "fact_checker",
       "source_validator",
       "report_composer",
+      "alternative_explanation_searcher",
+      "counter_evidence_grader",
     ]);
   });
 
@@ -310,10 +312,10 @@ describe("buildAgentInput · 富化 handoff 字段", () => {
     expect(grader.contradictingSources).toEqual(["反方来源1"]);
   });
 
-  it("rumor_detector task 文案对齐分诊语义", () => {
+  it("rumor_detector task 文案对齐拆题语义", () => {
     const input = buildAgentInput("rumor_detector", "claim", []);
-    expect(input.task).toContain("分诊");
-    expect(input.task).toContain("原子命题");
+    expect(input.task).toContain("拆开");
+    expect(input.task).toContain("可核查");
   });
 });
 
@@ -341,6 +343,26 @@ describe("判定可追溯 · per-verdict 结构化来源", () => {
     expect(item.properties.supportingSources).toBeDefined();
     expect(item.properties.contradictingSources).toBeDefined();
     expect(item.properties.evidenceGaps).toBeDefined();
+  });
+
+  it("fact_checker / report_composer prompt 与 schema 要求句内 [n] 与 supportingSources 顺序对应", () => {
+    const fc = getAgentConfig("fact_checker")!;
+    const rc = getAgentConfig("report_composer")!;
+    expect(fc.systemPrompt).toContain("句内引用编号");
+    expect(fc.systemPrompt).toContain("supportingSources");
+    expect(fc.systemPrompt).toMatch(/\[n\]/);
+    expect(rc.systemPrompt).toContain("句内引用编号");
+    expect(rc.systemPrompt).toContain("全局编号");
+    expect(rc.systemPrompt).toMatch(/\[n\]/);
+
+    const fcEvidence = (fc.responseSchema as any).properties.subclaimVerdicts.items.properties.evidence;
+    expect(fcEvidence.description).toMatch(/\[n\]/);
+    expect(fcEvidence.description).toMatch(/supportingSources/);
+
+    const rcConclusion = (rc.responseSchema as any).properties.conclusion;
+    expect(rcConclusion.description).toMatch(/\[n\]/);
+    const chainEvidence = (rc.responseSchema as any).properties.evidenceChain.items.properties.evidence;
+    expect(chainEvidence.description).toMatch(/sourceRefs/);
   });
 
   it("mergeSubclaimVerdicts：URL 幻觉拦截——编造 URL 丢弃、真实 URL 保留", () => {

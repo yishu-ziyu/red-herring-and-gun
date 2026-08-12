@@ -1198,7 +1198,7 @@ async function callOpenAI({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的调度模型。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要编造确定结论；把不确定性、证据需求、禁止推断说清楚。",
@@ -1207,7 +1207,7 @@ async function callOpenAI({
 
   const modeInstruction = {
     search: "用户选择联网搜索。你可以使用 web search 工具寻找当前节点需要的候选材料，并总结来源角色。",
-    evidence_audit: "用户选择证据审计。重点判断当前节点可以说什么、不能说什么，以及还缺哪类证据。",
+    evidence_audit: "用户选择证据审计。判断当前节点哪些能信、哪些不能信，还缺哪类证据。",
     counter: "用户选择反证生成。重点生成替代解释、反例或会削弱原推断的检查路径。",
     rewrite: "用户选择局部改写。只围绕当前节点给出更谨慎的局部表达，不生成全局最终答案。",
     rumor_check: "用户选择谣言专项核查。重点识别信息中的谣言特征（绝对化表述、匿名信源、情绪煽动等），并给出针对性核查建议。",
@@ -1281,11 +1281,11 @@ async function callOpenAIRecursive({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是溯证 Agent 的中控 LLM。",
+    "你是溯证 Agent 的调度模型。",
     "用户已经在 Canvas 中选择了一个节点。你只围绕这个节点做一轮递归证据搜索调度。",
     "你的目标是把搜索结果整理成线索、可继续探索的 frontier、以及应停止的线索。",
     "不要替用户自动继续展开 frontier。不要直接给最终答案。",
-    "每条线索都要说明证据许可：可以说什么、不能说什么。",
+    "每条线索都要说明哪些能信、哪些不能信。",
     "输出必须是符合 JSON schema 的中文 JSON。",
   ].join("\n");
 
@@ -1341,7 +1341,7 @@ async function callAnthropicProxy({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是溯证 Agent 的中控 LLM。",
+    "你是溯证 Agent 的调度模型。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要自动扩展整张图，不要替用户决定下一条主线。",
@@ -1386,9 +1386,9 @@ async function callAnthropicProxyRecursive({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是溯证 Agent 的中控 LLM。",
+    "你是溯证 Agent 的调度模型。",
     "用户已经在 Canvas 中选择了一个节点。你只围绕这个节点做一轮递归证据搜索调度。",
-    "返回线索、frontier、停止原因、可以说和不能说。",
+    "返回线索、frontier、停止原因、能信和不能信。",
     "不要自动继续展开 frontier，不要给最终答案。",
     "最终回答必须是一个中文 JSON 对象，不要 Markdown，不要代码块。",
   ].join("\n");
@@ -1435,7 +1435,7 @@ async function callMimoApi({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的调度模型。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要自动扩展整张图，不要替用户决定下一条主线。",
@@ -1480,9 +1480,9 @@ async function callMimoApiRecursive({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的调度模型。",
     "用户已经在 Canvas 中选择了一个节点。你只围绕这个节点做一轮递归证据搜索调度。",
-    "返回线索、frontier、停止原因、可以说和不能说。",
+    "返回线索、frontier、停止原因、能信和不能信。",
     "不要自动继续展开 frontier，不要给最终答案。",
     "最终回答必须是一个中文 JSON 对象，不要 Markdown，不要代码块。",
   ].join("\n");
@@ -1528,7 +1528,7 @@ async function callDeepSeekApi({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的调度模型。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要编造确定结论；把不确定性、证据需求、禁止推断说清楚。",
@@ -1537,7 +1537,7 @@ async function callDeepSeekApi({
 
   const modeInstruction = {
     search: "用户选择联网搜索。你可以使用 web search 工具寻找当前节点需要的候选材料，并总结来源角色。",
-    evidence_audit: "用户选择证据审计。重点判断当前节点可以说什么、不能说什么，以及还缺哪类证据。",
+    evidence_audit: "用户选择证据审计。判断当前节点哪些能信、哪些不能信，还缺哪类证据。",
     counter: "用户选择反证生成。重点生成替代解释、反例或会削弱原推断的检查路径。",
     rewrite: "用户选择局部改写。只围绕当前节点给出更谨慎的局部表达，不生成全局最终答案。",
     rumor_check: "用户选择谣言专项核查。重点识别信息中的谣言特征（绝对化表述、匿名信源、情绪煽动等），并给出针对性核查建议。",
@@ -1598,11 +1598,11 @@ async function callDeepSeekApiRecursive({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是溯证 Agent 的中控 LLM。",
+    "你是溯证 Agent 的调度模型。",
     "用户已经在 Canvas 中选择了一个节点。你只围绕这个节点做一轮递归证据搜索调度。",
     "你的目标是把搜索结果整理成线索、可继续探索的 frontier、以及应停止的线索。",
     "不要替用户自动继续展开 frontier。不要直接给最终答案。",
-    "每条线索都要说明证据许可：可以说什么、不能说什么。",
+    "每条线索都要说明哪些能信、哪些不能信。",
     "输出必须是符合 JSON schema 的中文 JSON。",
   ].join("\n");
 
@@ -1814,14 +1814,14 @@ function extractJsonObject(text: string) {
 function buildCodexPrompt(payload: any) {
   const modeInstruction = {
     search: "用户选择联网搜索。你可以使用 Codex 的 web search 能力寻找当前节点需要的候选材料，并总结来源角色。",
-    evidence_audit: "用户选择证据审计。重点判断当前节点可以说什么、不能说什么，以及还缺哪类证据。",
+    evidence_audit: "用户选择证据审计。判断当前节点哪些能信、哪些不能信，还缺哪类证据。",
     counter: "用户选择反证生成。重点生成替代解释、反例或会削弱原推断的检查路径。",
     rewrite: "用户选择局部改写。只围绕当前节点给出更谨慎的局部表达，不生成全局最终答案。",
     rumor_check: "用户选择谣言专项核查。重点识别信息中的谣言特征（绝对化表述、匿名信源、情绪煽动等），并给出针对性核查建议。",
   }[payload.mode as string] ?? "围绕当前节点做局部推理。";
 
   return [
-    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的调度模型。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要自动扩展整张图，不要替用户决定下一条主线。",
@@ -1829,7 +1829,7 @@ function buildCodexPrompt(payload: any) {
     "最终回答必须是一个中文 JSON 对象，不要 Markdown，不要代码块。",
     "",
     "字段含义：",
-    "- controllerNote: 中控为什么选择这个调度方向。",
+    "- controllerNote: 为什么选择这个调度方向。",
     "- agentTitle / agentSubtitle: 被派出的子 Agent 名称和职责。",
     "- resultTitle / resultSubtitle / resultStatus: 接回 Canvas 的局部结果节点。",
     "- resultStatus 只能是 risk、active、supported、limited、blocked、rewrite 之一。",
@@ -1874,14 +1874,14 @@ function buildRecursivePayload(payload: any) {
 
 function buildRecursivePrompt(payload: any) {
   return [
-    "你是溯证 Agent 的中控 LLM。",
+    "你是溯证 Agent 的调度模型。",
     "用户在 Canvas 中选中一个节点，并要求从这里做递归证据搜索。",
     "你只做一轮：search -> extract -> normalize -> dedupe -> score -> frontier。",
     "不要自动继续展开 frontier。frontier 只是交给用户选择的下一步。",
     "最终回答必须是一个中文 JSON 对象，不要 Markdown，不要代码块。",
     "",
     "字段含义：",
-    "- controllerNote: 中控为什么从这个节点启动递归搜索。",
+    "- controllerNote: 为什么从这个节点启动递归搜索。",
     "- runTitle: 本轮递归搜索标题。",
     "- traceText: 左侧 Agent Trace 中的一句话。",
     "- clues: 本轮发现的证据线索，包含 title、summary、source、role、confidence。",
@@ -1899,7 +1899,7 @@ function normalizeExpansionResult(raw: any, model: string) {
   const status = typeof raw?.resultStatus === "string" && allowedStatuses.has(raw.resultStatus) ? raw.resultStatus : "limited";
 
   return {
-    controllerNote: pickString("controllerNote", "中控 LLM 已根据当前节点选择局部调度方向。"),
+    controllerNote: pickString("controllerNote", "已根据当前节点选择局部调度方向。"),
     agentTitle: pickString("agentTitle", "局部推理子 Agent"),
     agentSubtitle: pickString("agentSubtitle", "只处理当前节点上的局部追问。"),
     resultTitle: pickString("resultTitle", "局部推理结果"),
@@ -1924,7 +1924,7 @@ function normalizeRecursiveResult(raw: any, model: string) {
   const stoppedReasons = new Set(["duplicate", "budget", "low_confidence", "out_of_scope"]);
 
   return {
-    controllerNote: pickString("controllerNote", "中控 LLM 已从当前节点启动一轮递归证据搜索。"),
+    controllerNote: pickString("controllerNote", "已从当前节点启动一轮递归证据搜索。"),
     runTitle: pickString("runTitle", "递归证据搜索"),
     traceText: pickString("traceText", "我从用户选择的节点出发，只生成本轮线索和下一批 frontier，等待用户继续选择。"),
     clues: pickArray("clues").slice(0, 4).map((item: any, index: number) => ({
@@ -2686,7 +2686,7 @@ function buildOrchestrateDemoFallback(agentId: string, claim: string, agentInput
       severity: "low",
       analysis: "谣言特征检测模型未返回真实结果，系统不生成判断。",
       detectedPatterns: [],
-      neededEvidence: ["需要真实模型分诊后才能生成证据需求。"],
+      neededEvidence: ["需要真实模型拆题后才能生成证据需求。"],
       handoffTargets: ["fact_checker", "source_validator"],
     },
     fact_checker: {

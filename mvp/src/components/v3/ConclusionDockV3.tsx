@@ -134,8 +134,8 @@ export function ConclusionDockV3({
   const handleRebuttalCard = useCallback(() => {
     const payload = buildPayload();
     const md = buildRebuttalCardMarkdown(payload);
-    downloadFile(md, `红鲱鱼与枪辟谣卡片_${payload.claim.slice(0, 18)}.md`, "text/markdown;charset=utf-8");
-    setActionMessage("辟谣卡片已生成。");
+    downloadFile(md, `红鲱鱼与枪核查摘要_${payload.claim.slice(0, 18)}.md`, "text/markdown;charset=utf-8");
+    setActionMessage("核查摘要已生成。");
   }, [buildPayload]);
 
   const handleArchive = useCallback(() => {
@@ -175,7 +175,7 @@ export function ConclusionDockV3({
 
         {exploring ? (
           <p className="conclusion-lede cinema-rise cinema-rise-d2">
-            系统正在沿你选择的节点进行深度核查，调用中控 LLM 和子 Agent。
+            系统正在沿你选择的节点进行深度核查，调用模型和核查步骤。
           </p>
         ) : attentionGuidance && attentionGuidance.spans.length > 0 ? (
           <ClaimSpanText
@@ -197,21 +197,21 @@ export function ConclusionDockV3({
             <div className="boundary-col boundary-col--allowed">
               <h4 className="boundary-col-title">
                 <span className="boundary-col-dot boundary-col-dot--allowed" />
-                可以说
+                能信
               </h4>
               <BoundarySpanList
                 spans={attentionGuidance.canSaySpans}
-                emptyLabel="暂无可说边界"
+                emptyLabel="暂无"
               />
             </div>
             <div className="boundary-col boundary-col--blocked">
               <h4 className="boundary-col-title">
                 <span className="boundary-col-dot boundary-col-dot--blocked" />
-                不能说
+                不能信
               </h4>
               <BoundarySpanList
                 spans={attentionGuidance.cannotSaySpans}
-                emptyLabel="暂无不可说边界"
+                emptyLabel="暂无"
               />
             </div>
           </div>
@@ -227,7 +227,7 @@ export function ConclusionDockV3({
             <div className="boundary-col boundary-col--allowed">
               <h4 className="boundary-col-title">
                 <span className="boundary-col-dot boundary-col-dot--allowed" />
-                可以说
+                能信
               </h4>
               <ul className="boundary-list">
                 {(handoffResult?.canSay ?? []).map((item, i) => (
@@ -240,7 +240,7 @@ export function ConclusionDockV3({
             <div className="boundary-col boundary-col--blocked">
               <h4 className="boundary-col-title">
                 <span className="boundary-col-dot boundary-col-dot--blocked" />
-                不能说
+                不能信
               </h4>
               <ul className="boundary-list">
                 {(handoffResult?.cannotSay ?? []).map((item, i) => (
@@ -256,7 +256,7 @@ export function ConclusionDockV3({
           </div>
         ) : null}
 
-        {/* v2-iteration 2026-07-04: PR-1 报告级推理许可聚合 */}
+        {/* v2-iteration 2026-07-04: PR-1 能信的范围聚合 */}
         {!exploring && report.inferenceLicense ? (
           <InferenceLicensePanel license={report.inferenceLicense} />
         ) : null}
@@ -286,7 +286,7 @@ export function ConclusionDockV3({
               onClick={handleRebuttalCard}
               type="button"
             >
-              辟谣卡片
+              核查摘要
             </button>
             <button
               className="conclusion-action-btn"

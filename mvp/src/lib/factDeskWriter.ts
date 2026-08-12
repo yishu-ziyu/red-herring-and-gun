@@ -5,7 +5,7 @@
  * LLM report_composer system prompt should mirror FACT_DESK_WRITING_RULES.
  *
  * Voice: AFP plain + Full Fact uncertainty + 较真 brevity.
- * Source: docs/FACTCHECK_WRITING_VOICE.md
+ * Public copy: plain, sourced, no slogans.
  */
 
 import type {
@@ -44,7 +44,7 @@ export interface FactDeskWriterInput {
 
 /** Shared rules for LLM + deterministic writer (Prompt A condensed). */
 export const FACT_DESK_WRITING_RULES = [
-  "Voice: plain, precise, adult. Like AFP Fact Check + Full Fact. No sarcasm, no meme tone, no moral lecture.",
+  "用平实、准确的中文。不要阴阳怪气、口号、道德训诫。",
   "Lede structure (2–5 short Chinese sentences): (1) what the claim said (2) what evidence supports/denies (3) what remains unproven or blocked.",
   "【Plan P0-2 / 求证模板】结论首句必须以「求证：」开头，沿用新华社/央视求证栏目的措辞习惯：求证：网传「……」，经核查……。",
   "Every hard factual clause must be supportable by a named source in inputs. If no source, use gap language (无法/未见/不足以), never as proven fact.",
@@ -53,7 +53,7 @@ export const FACT_DESK_WRITING_RULES = [
   "Do not smuggle cannot_say ideas into assertive wording.",
   "Chinese fullwidth punctuation. No English filler. No AI self-talk (作为AI / 作为人工智能).",
   "Do not append meta labels like 「可说」「不可说」 inside the prose. Boundaries are separate lists.",
-  "Action without lecture: 转发前建议先看原始来源 — not 广大网友务必理性.",
+  "Action without lecture: 先看来源再判断能不能信 — not 广大网友务必理性.",
 ].join("\n");
 
 const BANNED_DRAMA =
@@ -219,8 +219,8 @@ export function writeFactDeskConclusion(input: FactDeskWriterInput): FactDeskDra
   const lede = sentences.slice(0, 5).join("");
 
   const publicFacing = support
-    ? `${clip(claim, 24)}这一说法，目前公开材料不足以按原强度成立。${highSources[0] ? `可先看：${clip(highSources[0], 16)}。` : "转发前建议先看原始来源。"}`
-    : `${clip(claim, 24)}这一说法，现有证据仍不足以确认。转发前建议先看原始来源。`;
+    ? `${clip(claim, 24)}这一说法，目前公开材料不足以按原强度成立。${highSources[0] ? `可先看：${clip(highSources[0], 16)}。` : "先看来源再判断能不能信。"}`
+    : `${clip(claim, 24)}这一说法，现有证据仍不足以确认。先看来源再判断能不能信。`;
 
   const researchMemo = [
     "在缺少同口径数据、可验证原文或官方确认前，只将相关因素记为待检验假设，不写成已确认因果。",

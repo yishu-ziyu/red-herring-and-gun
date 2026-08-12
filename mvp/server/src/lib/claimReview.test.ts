@@ -34,7 +34,7 @@ function baseReport(overrides?: Partial<FinalReport>): FinalReport {
     doNotInfer: [],
     rewrittenClaim: {
       cautious: "现有公开材料不足以按原强度成立",
-      publicFacing: "转发前建议先看原始来源",
+      publicFacing: "先看来源再判断能不能信",
       researchMemo: "",
     },
     nextEvidenceNeeded: [],

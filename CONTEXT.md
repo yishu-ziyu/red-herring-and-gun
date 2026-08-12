@@ -1,6 +1,7 @@
 # Domain context (claim verification)
 
-Lazy glossary for agents. Product truth remains `docs/PRODUCT_SPEC.md`.
+Lazy glossary for agents. Product truth remains `docs/PRODUCT_SPEC.md`.  
+用户语言是能信 / 不能信；下表是管线术语，不是产品口号。
 
 ## Terms
 

@@ -81,7 +81,7 @@ describe("reviewAndRepairReport", () => {
       summaryForPublic: "该说法有夸大成分。",
       recommendation: "勿二次传播未经核实细节。",
       canSay: ["可说存在夸大"],
-      cannotSay: ["不能说完全虚假"],
+      cannotSay: ["不能当成完全虚假"],
       evidenceChain: [
         { layer: "a", finding: "f1", evidence: "e1", boundary: "b1", sourceRefs: [] },
         { layer: "b", finding: "f2", evidence: "e2", boundary: "b2", sourceRefs: [] },

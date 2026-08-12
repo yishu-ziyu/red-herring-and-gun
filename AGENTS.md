@@ -1,40 +1,21 @@
 # 红鲱鱼与枪 · Agent notes
 
-Project-level instructions for coding agents. Product truth lives in `docs/PRODUCT_SPEC.md`.
+产品真相：`docs/PRODUCT_SPEC.md`。
 
-## Agent skills
+这是「信息真相猎人」：用户丢进一句话 / 截图 / 链接，查完告诉他能信还是不能信。有问题就指出问题。不要把产品写成转发顾问、论证课、或 Agent 指挥台。不要发明用户人格。
 
-### Issue tracker
+## Issue tracker
 
-GitHub Issues on `yishu-ziyu/red-herring-and-gun` via `gh` CLI. See `docs/agents/issue-tracker.md`.
+GitHub Issues on `yishu-ziyu/red-herring-and-gun` via `gh` CLI。见 `docs/agents/issue-tracker.md`。
 
-### Triage labels
+## Triage labels
 
-Default five roles: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。见 `docs/agents/triage-labels.md`。
 
-### Domain docs
+## Domain
 
-Single-context: root `CONTEXT.md` (created lazily) + `docs/adr/`. See `docs/agents/domain.md`.
+`CONTEXT.md` + `docs/adr/`。见 `docs/agents/domain.md`。
 
-### UI/UX expert subagents (agency-agents)
+## UI
 
-Already cloned for this project. **When UI/UX critique, IA, finish-gate, or persona walkthrough is needed, load and use them** — do not re-clone or invent a second set.
-
-| What | Path |
-|------|------|
-| Full clone (local only, gitignored) | `vendor/agency-agents/` |
-| Project wrappers (prefer these) | `docs/agents/uiux/*.md` |
-| How to run a critique wave | `docs/agents/uiux/README.md` |
-| How to customize wrappers | `docs/agents/uiux/CUSTOMIZE.md` |
-| Location note | `docs/agents/uiux/SOURCE_LOCATION.md` |
-
-**How to customize:** edit wrappers under `docs/agents/uiux/` (product lens + non-negotiables + spawn contract). **Do not** edit `vendor/agency-agents/` for product rules; never commit `vendor/`.
-
-**When stream / UI work:** load the matching wrappers and **spawn in parallel** (typical wave: `ux-architect` + `ui-finish-gate` + `persona-walkthrough`; add `ui-designer` when tokens/components are the question). Parent: Playwright evidence first, then `spawn_subagent` with **full wrapper body pasted** + evidence paths. Product is **stream-first** process UI (not ops console); checklist lives in `docs/agents/uiux/README.md`.
-
-Spawn via Grok `spawn_subagent` with the matching wrapper body + real browser evidence. Prefer wrappers over raw `source-*.md`.
-
-## Lessons
-
-- (2026-08-06) UI/UX work: register/use agency-agents subagents from `docs/agents/uiux/` when needed; clone lives at `vendor/agency-agents/` and must not be committed.
-- (2026-08-06) Customize only via `docs/agents/uiux` wrappers; stream-first non-negotiables apply to all UI critique waves.
+用户第一眼是判断（能信 / 不能信）和问题点，不是模型 ID、Agent 网格或过程墙。过程可回看。视觉以 `mvp/src/styles.css` 与 `mvp/DESIGN.md` 为准。

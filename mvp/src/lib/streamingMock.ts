@@ -21,7 +21,7 @@ const STAGE_TEMPLATES: readonly StageTemplate[] = [
     name: "claim-decomposition",
     nameZh: "命题拆解",
     description: "将复杂断言拆分为可独立验证的原子命题",
-    agentName: "立案分诊员",
+    agentName: "拆题",
     agentIcon: "✂️",
     chunks: [
       { type: "thought", content: "收到 claim：{claim}" },
@@ -107,7 +107,7 @@ const STAGE_TEMPLATES: readonly StageTemplate[] = [
       { type: "divider", content: "---" },
       { type: "result", content: "共识结果会显示在证据矩阵：可判断 / 存疑 / 人工复核。" },
       { type: "result", content: "该状态是证据许可，不是最终真假裁决。" },
-      { type: "result", content: "最终表达必须继续交给报告收束员。" },
+      { type: "result", content: "最终表达必须继续交给写结论。" },
     ],
   },
   {
@@ -137,7 +137,7 @@ const STAGE_TEMPLATES: readonly StageTemplate[] = [
       { type: "divider", content: "---" },
       { type: "result", content: "FIRE 综合置信度会在真实证据返回后计算。" },
       { type: "result", content: "无真实证据时，系统不补写百分比结论。" },
-      { type: "result", content: "下一步交给报告收束员，只输出证据允许的表述。" },
+      { type: "result", content: "下一步交给写结论，只输出证据允许的表述。" },
     ],
   },
 ];
