@@ -14,7 +14,7 @@ import {
   type OrchestrateStreamEvent,
   type SpeculativeRelayUpdate,
 } from "../../../lib/agentExpansion";
-import { adaptOrchestrateStreamToShell } from "../../../lib/missionShell";
+import { adaptOrchestrateStreamToShell, shareAdviceFromVerdict } from "../../../lib/missionShell";
 import { resolveShellMode } from "../../../lib/missionShell/resolveShellMode";
 import { MissionProcessShell } from "./mission/MissionProcessShell";
 import type { ModelChoiceMap } from "../ModelPicker";
@@ -183,7 +183,7 @@ const CONTROLLER_EVENT_KIND_LABEL: Record<ControllerEventKind, string> = {
   agent: "核查步骤",
   planner: "核查规划",
   debate: "冲突调解",
-  report: "报告收束",
+  report: "写结论",
   error: "阻塞",
 };
 
@@ -228,17 +228,17 @@ const AGENT_ORDER = [
 type AgentId = (typeof AGENT_ORDER)[number];
 
 const AGENT_BADGE_META: Record<AgentId, { code: string; label: string; role: string; avatar: string }> = {
-  rumor_detector: { code: "01", label: "立", role: "立案分诊员", avatar: "/agents/rumor-detector.png" },
-  fact_checker: { code: "02", label: "核", role: "事实核查员", avatar: "/agents/fact-checker.png" },
-  source_validator: { code: "03", label: "源", role: "信源审计员", avatar: "/agents/source-validator.png" },
-  report_composer: { code: "04", label: "收", role: "报告收束员", avatar: "/agents/report-composer.png" },
+  rumor_detector: { code: "01", label: "拆", role: "拆题", avatar: "/agents/rumor-detector.png" },
+  fact_checker: { code: "02", label: "核", role: "事实核查", avatar: "/agents/fact-checker.png" },
+  source_validator: { code: "03", label: "源", role: "溯源", avatar: "/agents/source-validator.png" },
+  report_composer: { code: "04", label: "结", role: "写结论", avatar: "/agents/report-composer.png" },
 };
 
 const AGENT_QUEUE_COPY: Record<AgentId, { focus: WorkbenchFocus; delivery: string; waiting: string }> = {
   rumor_detector: {
     focus: "decomposition",
-    delivery: "原句分诊与可核查子问题",
-    waiting: "等待立案拆题",
+    delivery: "拆开原句，标出可核查的判断",
+    waiting: "等待拆题",
   },
   fact_checker: {
     focus: "search",
@@ -253,7 +253,7 @@ const AGENT_QUEUE_COPY: Record<AgentId, { focus: WorkbenchFocus; delivery: strin
   report_composer: {
     focus: "report",
     delivery: "结论边界与最终报告",
-    waiting: "等待报告收束",
+    waiting: "等待写结论",
   },
 };
 
@@ -261,9 +261,9 @@ const RUNTIME_STREAM_STAGES = [
   {
     id: "rumor_detector",
     name: "rumor_detector",
-    nameZh: "声明分诊",
+    nameZh: "拆题",
     description: "拆解原始说法，识别谣言类型和后续证据需求。",
-    agentName: "立案分诊员",
+    agentName: "拆题",
     agentIcon: "🚨",
   },
   {
@@ -271,7 +271,7 @@ const RUNTIME_STREAM_STAGES = [
     name: "fact_checker",
     nameZh: "事实交叉核查",
     description: "结合多搜索引擎线索，比较支持与反驳证据。",
-    agentName: "事实核查员",
+    agentName: "事实核查",
     agentIcon: "🔎",
   },
   {
@@ -279,15 +279,15 @@ const RUNTIME_STREAM_STAGES = [
     name: "source_validator",
     nameZh: "信源与溯源",
     description: "审计来源层级、转载链和未解决证据缺口。",
-    agentName: "信源审计员",
+    agentName: "溯源",
     agentIcon: "📚",
   },
   {
     id: "report_composer",
     name: "report_composer",
-    nameZh: "报告收束",
-    description: "根据证据边界生成最终可说/不可说的报告。",
-    agentName: "报告收束员",
+    nameZh: "写结论",
+    description: "根据证据边界写出能信还是不能信。",
+    agentName: "写结论",
     agentIcon: "📝",
   },
 ];
@@ -332,7 +332,7 @@ const AGENT_PROCESS_COPY: Record<string, { running: string[]; completed: string[
   report_composer: {
     running: [
       "读取前面智能体留下的证据边界。",
-      "检查哪些话可以说、哪些推断必须禁止。",
+      "核对哪些能信、哪些不能信。",
       "把最终表达压到证据真正允许的强度。",
     ],
     completed: [
@@ -380,23 +380,23 @@ function displayAgentName(agent?: string | null) {
   switch (compact) {
     case "rumordetector":
     case "rumordetectoragent":
-      return "立案分诊员";
+      return "拆题";
     case "factchecker":
     case "factcheckeragent":
-      return "事实核查员";
+      return "事实核查";
     case "sourcevalidator":
     case "sourcevalidatoragent":
-      return "信源审计员";
+      return "溯源";
     case "reportcomposer":
     case "reportcomposeragent":
-      return "报告收束员";
+      return "写结论";
     case "planner":
-      return "中控规划器";
+      return "规划";
     case "consensus":
     case "consensusdebate":
       return "冲突调解室";
     case "missioncontrol":
-      return "中控台";
+      return "系统";
     case "agentmemorysearch":
     case "memorysearch":
       return "历史案件参考";
@@ -411,25 +411,25 @@ function displayAgentName(agent?: string | null) {
     case "unknown":
       return "未知智能体";
     default:
-      return raw || "中控台";
+      return raw || "系统";
   }
 }
 
 function displayAgentText(text?: string | null) {
   if (!text) return "";
   return text
-    .replace(/FactChecker \+ SourceValidator/g, "事实核查员 + 信源审计员")
-    .replace(/FactChecker \+ ReportComposer/g, "事实核查员 + 报告收束员")
-    .replace(/RumorDetector\.claimAtoms/g, "立案分诊员 · 原子命题")
+    .replace(/FactChecker \+ SourceValidator/g, "事实核查 + 溯源")
+    .replace(/FactChecker \+ ReportComposer/g, "事实核查 + 写结论")
+    .replace(/RumorDetector\.claimAtoms/g, "拆题 · 原子命题")
     .replace(/Search Tool Registry/g, "搜索工具注册表")
     .replace(/Evidence Bundle/g, "证据包")
     .replace(/ConsensusDebate/g, "冲突调解室")
-    .replace(/Mission Control/g, "中控台")
-    .replace(/RumorDetector/g, "立案分诊员")
-    .replace(/FactChecker/g, "事实核查员")
-    .replace(/SourceValidator/g, "信源审计员")
-    .replace(/ReportComposer/g, "报告收束员")
-    .replace(/Planner/g, "中控规划器")
+    .replace(/Mission Control/g, "系统")
+    .replace(/RumorDetector/g, "拆题")
+    .replace(/FactChecker/g, "事实核查")
+    .replace(/SourceValidator/g, "溯源")
+    .replace(/ReportComposer/g, "写结论")
+    .replace(/Planner/g, "规划")
     .replace(/Consensus/g, "冲突调解室")
     .replace(/Agent Memory Search/gi, "历史案件参考")
     .replace(/Agent Memory Write/gi, "案件记忆归档")
@@ -569,7 +569,7 @@ function casePathIdsForStreamItem(item: MissionStreamItem): CasePathId[] {
 
   if (
     item.status === "final" ||
-    /报告收束员|ReportComposer|报告收束|最终报告|最终判断|最终核查|核查收束|闭环|归档|辟谣卡|recommendation|composer/.test(content)
+    /写结论|ReportComposer|报告收束|最终报告|最终判断|最终核查|核查收束|闭环|归档|辟谣卡|recommendation|composer/.test(content)
   ) {
     return ["closure"];
   }
@@ -578,7 +578,7 @@ function casePathIdsForStreamItem(item: MissionStreamItem): CasePathId[] {
     return ["docket"];
   }
 
-  if (normalizedAgent.includes("rumor") || /立案分诊员/.test(item.agentName)) {
+  if (normalizedAgent.includes("rumor") || /拆题/.test(item.agentName)) {
     return item.status === "running" || /开始|调用/.test(content) ? ["docket"] : ["atoms"];
   }
 
@@ -666,7 +666,7 @@ function controllerEventKind(item: Pick<MissionStreamItem, "agentName" | "title"
   if (item.status === "failed") return "error";
   if (/planner|动态规划|执行图|规划器/.test(normalized) || /规划|执行图/.test(content)) return "planner";
   if (/consensus|debate|冲突|调解/.test(normalized) || /冲突|调解|共识/.test(content)) return "debate";
-  if (item.status === "final" || normalizedAgent.includes("报告收束员") || /最终判断|最终报告|报告收束|证据边界已收束/.test(content)) {
+  if (item.status === "final" || normalizedAgent.includes("写结论") || /最终判断|最终报告|报告收束|证据边界已收束/.test(content)) {
     return "report";
   }
   if (AGENT_ORDER.some((agent) => normalized.includes(agent.replace("_", ""))) || /分诊员|核查员|审计员|收束员/.test(agentName)) {
@@ -714,7 +714,7 @@ function buildControllerProcessEvents({
         id: "controller-failed",
         title: "执行中断",
         detail: "等待真实错误信息返回。",
-        agentName: "中控台",
+        agentName: "系统",
         status: "failed",
         focus: "dispatch",
         kind: "error",
@@ -727,8 +727,8 @@ function buildControllerProcessEvents({
       {
         id: "controller-completed",
         title: "核查收束",
-        detail: "报告收束员已把结论压到证据允许的强度。",
-        agentName: "报告收束员",
+        detail: "写结论已把结论压到证据允许的强度。",
+        agentName: "写结论",
         status: "final",
         focus: "report",
         kind: "report",
@@ -739,9 +739,9 @@ function buildControllerProcessEvents({
   return [
     {
       id: "controller-waiting",
-      title: runStatus === "running" ? "中控启动中" : "等待核查",
+      title: runStatus === "running" ? "开始核查" : "等待核查",
       detail: runStatus === "running" ? "等待第一条真实运行事件。" : "启动后按真实事件逐步展开路径。",
-      agentName: "中控台",
+      agentName: "系统",
       status: runStatus === "running" ? "running" : "queued",
       focus: "dispatch",
       kind: "thought",
@@ -751,10 +751,10 @@ function buildControllerProcessEvents({
 
 function controllerEventAgentId(event: ControllerProcessEvent): AgentId | "" {
   const content = normalizeAgent(`${event.agentName} ${event.title} ${event.detail}`).replace(/[\s_-]+/g, "");
-  if (content.includes("rumordetector") || /立案分诊员/.test(event.agentName)) return "rumor_detector";
-  if (content.includes("factchecker") || /事实核查员/.test(event.agentName)) return "fact_checker";
-  if (content.includes("sourcevalidator") || /信源审计员/.test(event.agentName)) return "source_validator";
-  if (content.includes("reportcomposer") || /报告收束员/.test(event.agentName)) return "report_composer";
+  if (content.includes("rumordetector") || /拆题/.test(event.agentName)) return "rumor_detector";
+  if (content.includes("factchecker") || /事实核查/.test(event.agentName)) return "fact_checker";
+  if (content.includes("sourcevalidator") || /溯源/.test(event.agentName)) return "source_validator";
+  if (content.includes("reportcomposer") || /写结论/.test(event.agentName)) return "report_composer";
   return "";
 }
 
@@ -801,8 +801,8 @@ const STREAM_PHASES = [
   {
     id: 2,
     code: "03",
-    title: "结论与转发建议",
-    blurb: "待公开材料对照结束后生成判定、依据摘要与转发建议。",
+    title: "结论",
+    blurb: "对照公开材料后给出能不能信，以及依据。",
   },
 ] as const;
 
@@ -879,8 +879,8 @@ function humanStreamTitle(event: ControllerProcessEvent): string {
     return "公开材料检索";
   }
 
-  if (event.kind === "report") return raw || "结论与转发建议";
-  if (event.kind === "debate") return raw || "冲突点交叉质询";
+  if (event.kind === "report") return raw || "结论";
+  if (event.kind === "debate") return raw || "两边证据对不上";
   if (event.kind === "planner") return raw || "制定核查路径";
   if (event.kind === "error") return raw || "核查受阻";
   return raw || event.title;
@@ -1012,7 +1012,7 @@ function preferStreamEvent(prev: ControllerProcessEvent, next: ControllerProcess
 }
 
 /**
- * 流式时间线：跨间隔合并同角色 / 同工具族，避免「两个立案分诊员」与历史案件刷屏。
+ * 流式时间线：跨间隔合并同角色 / 同工具族，避免「两个拆题」与历史案件刷屏。
  * 非 agent 行按首次出现顺序；协作集群在首次出现任一 agent 的位置插入一张。
  */
 function buildControllerTranscript(controllerEvents: ControllerProcessEvent[]): ControllerTranscriptItem[] {
@@ -1153,23 +1153,23 @@ function readingWindowTitle(event: ControllerProcessEvent, step: HandoffStep | n
     return meta ? meta.role : displayAgentName(step.agentName);
   }
   if (event.kind === "tool") return event.title;
-  if (event.kind === "report") return "报告收束";
+  if (event.kind === "report") return "写结论";
   if (event.kind === "debate") return "冲突调解";
   if (event.kind === "error") return "阻塞";
-  return "中控系统";
+  return "系统";
 }
 
 function debateProgressLabel(debate: ConsensusDebateUpdate | undefined) {
   if (!debate) return "等待冲突调解结果";
   if (debate.status === "resolved") return `已裁决 ${debate.conflictCount} 个冲突`;
   const roundCount = debate.rounds.length;
-  return roundCount > 0 ? `正在进行第 ${roundCount} 轮质询` : "正在建立质询议程";
+  return roundCount > 0 ? `正在对第 ${roundCount} 轮证据` : "正在列出两边的冲突";
 }
 
 function debateReadableTitle(debate: ConsensusDebateUpdate | undefined) {
   if (!debate) return "冲突调解";
-  if (debate.status === "resolved") return "中控裁决";
-  return debate.rounds.length > 0 ? "正在交叉质询" : "启动冲突调解";
+  if (debate.status === "resolved") return "裁决";
+  return debate.rounds.length > 0 ? "正在对证据" : "两边证据对不上";
 }
 
 // Structured output item — one labeled block per output key, preserving array shape.
@@ -1291,7 +1291,7 @@ function outputEntryLabel(key: string) {
     case "keyRisk":
       return "关键风险";
     case "diagnosis":
-      return "分诊结果";
+      return "拆题结果";
     case "rumorIndicators":
       return "原话里的风险信号";
     case "detectedPatterns":
@@ -1760,7 +1760,7 @@ function visibleAgentOutputItems(step: HandoffStep) {
 function agentOutputHeading(step: HandoffStep) {
   switch (normalizeAgent(step.agent)) {
     case "rumor_detector":
-      return "分诊员拆出了什么";
+      return "拆出了什么";
     case "fact_checker":
       return "事实核查查到了什么";
     case "source_validator":
@@ -1862,15 +1862,15 @@ function toolReadingPurpose(event: ControllerProcessEvent) {
   if (content.includes("vision") || /图片|截图/.test(event.title)) return "把图片材料转成可检索文本，再交给后续拆题和信源审计。";
   if (content.includes("search") || /搜索|检索|支持\/反驳/.test(event.title)) return "把同一命题拆成支持侧和反驳侧同时查，后面只让有来源边界的材料进入判断。";
   if (/写入|记忆|归档/.test(event.title)) return "把本案中可复用的结论边界、来源和未解问题写回记忆库。";
-  return "这是中控发起的工具动作，右侧只展示这次动作的查询、返回和用途。";
+  return "这是一次工具动作，右侧只展示这次动作的查询、返回和用途。";
 }
 
 function controllerReadingPurpose(event: ControllerProcessEvent) {
-  if (event.kind === "planner") return "中控先决定核查路径：哪些命题需要事实核查，哪些要做来源审计，哪些必须等证据边界收束。";
-  if (event.kind === "debate") return "这里处理支持与反驳材料之间的冲突，目标不是制造结论，而是收紧可说和不可说的范围。";
+  if (event.kind === "planner") return "先决定核查路径：哪些命题需要事实核查，哪些要做来源审计，哪些必须等证据边界收束。";
+  if (event.kind === "debate") return "这里处理支持与反驳材料之间的冲突，目标不是制造结论，而是收紧哪些能信、哪些不能信。";
   if (event.kind === "report") return "报告只列出已采用证据、仍缺来源和不能外推的判断。";
   if (event.kind === "error") return "流程在这里中断，后续结论不能继续展示成已完成。";
-  return "中控把输入转成下一步动作。左侧继续流动，右侧跟随显示当前这一步为什么存在。";
+  return "把输入转成下一步动作。左侧继续流动，右侧跟随显示当前这一步为什么存在。";
 }
 
 function readStringArray(value: unknown) {
@@ -1925,9 +1925,11 @@ function formatElapsed(ms: number) {
 function runStatusText(runStatus: RunStatus, elapsedMs: number, finalReport: Record<string, unknown> | null) {
   if (runStatus === "completed") return finalReport ? "核查完成" : "流程完成";
   if (runStatus === "failed") return "核查中断";
-  if (runStatus === "running" && elapsedMs >= 90000) return "还在整理证据，请稍候";
-  if (runStatus === "running" && elapsedMs >= 45000) return "对照公开材料中";
-  if (runStatus === "running") return "正在核查";
+  // Plain process labels (not anthropomorphic); escalate specificity with time / phase.
+  if (runStatus === "running" && elapsedMs >= 90000) return "整理结论与边界";
+  if (runStatus === "running" && elapsedMs >= 45000) return "对照公开材料";
+  if (runStatus === "running" && elapsedMs >= 15000) return "检索公开来源";
+  if (runStatus === "running") return "确认核查问题";
   return "准备核查";
 }
 
@@ -2013,17 +2015,13 @@ function extractLiveKeyFindings(params: {
   return out.slice(0, max);
 }
 
-/** 转发建议：优先 recommendation，否则按 verdict 推导 */
+/** 能不能信：优先 recommendation，否则按 verdict 推导 */
 function shareAdviceFromReport(finalReport: Record<string, unknown> | null): string {
   if (!finalReport) return "";
-  const recommendation = reportText(finalReport, "recommendation");
-  if (recommendation) return recommendation;
-  const verdict = (reportText(finalReport, "verdictType") || "").toLowerCase();
-  if (verdict === "false" || verdict === "rumor") return "不建议转发。现有公开材料不支持该说法。";
-  if (verdict === "true") return "可谨慎引用，请附带来源链接，勿二次改写。";
-  if (verdict === "partial" || verdict === "mixed") return "不宜整段转发。可说明「部分成立、有限定条件」。";
-  if (verdict === "unverified" || verdict === "unknown") return "证据不足，先不要转发；等待更可靠来源。";
-  return "请先阅读结论与来源，再决定是否转发。";
+  return shareAdviceFromVerdict(
+    reportText(finalReport, "recommendation"),
+    reportText(finalReport, "verdictType")
+  );
 }
 
 function currentModelLine(steps: HandoffStep[], currentStep: HandoffStep | null) {
@@ -2036,7 +2034,7 @@ function currentModelLine(steps: HandoffStep[], currentStep: HandoffStep | null)
 function runFallbackNotice(steps: HandoffStep[]) {
   const fallbackStep = steps.find(isDeterministicReportFallback);
   if (!fallbackStep) return "";
-  return `报告收束使用确定性兜底：${deterministicFallbackReason(fallbackStep)}`;
+  return `写结论使用确定性兜底：${deterministicFallbackReason(fallbackStep)}`;
 }
 
 function upsertStep(steps: HandoffStep[], nextStep: HandoffStep) {
@@ -2079,7 +2077,7 @@ function buildPreviewHandoffSteps(claim: string): HandoffStep[] {
   return [
     {
       agent: "rumor_detector",
-      agentName: "立案分诊员",
+      agentName: "拆题",
       agentIcon: "🚨",
       systemPrompt: "识别高风险谣言表达并拆成可核查任务。",
       input: { claim },
@@ -2103,7 +2101,7 @@ function buildPreviewHandoffSteps(claim: string): HandoffStep[] {
     },
     {
       agent: "fact_checker",
-      agentName: "事实核查员",
+      agentName: "事实核查",
       agentIcon: "🔎",
       systemPrompt: "执行支持/反驳双向核查，并记录证据缺口。",
       input: { claim, focus: "隔夜菜是否等于毒药" },
@@ -2128,7 +2126,7 @@ function buildPreviewHandoffSteps(claim: string): HandoffStep[] {
     },
     {
       agent: "source_validator",
-      agentName: "信源审计员",
+      agentName: "溯源",
       agentIcon: "📚",
       systemPrompt: "审计来源等级、转载链与证据可用边界。",
       input: { upstreamAgent: "fact_checker" },
@@ -2140,7 +2138,7 @@ function buildPreviewHandoffSteps(claim: string): HandoffStep[] {
     },
     {
       agent: "report_composer",
-      agentName: "报告收束员",
+      agentName: "写结论",
       agentIcon: "📝",
       systemPrompt: "只在证据边界清楚后收束表达。",
       input: { upstreamAgent: "source_validator" },
@@ -2158,21 +2156,21 @@ function buildPreviewStreamItems(): MissionStreamItem[] {
   const items: Array<Omit<MissionStreamItem, "timestamp">> = [
     {
       id: "preview-1",
-      agentName: "中控台",
+      agentName: "系统",
       title: "收到核查对象",
       detail: "先把“隔夜菜会致癌”转成可核查任务，不直接给真假结论。",
       status: "completed",
     },
     {
       id: "preview-2",
-      agentName: "中控规划器",
+      agentName: "规划",
       title: "制定核查路径",
-      detail: "语义分诊后走支持/反驳双向搜索，再做信源分层和证据边界收束。",
+      detail: "拆题后走支持/反驳双向搜索，再做信源分层和证据边界收束。",
       status: "completed",
     },
     {
       id: "preview-3",
-      agentName: "立案分诊员",
+      agentName: "拆题",
       title: "原子命题已拆出",
       detail: "“会致癌”“等于毒药”属于高强度断言，需要先拆成剂量、储存、因果三条线。",
       status: "completed",
@@ -2186,9 +2184,9 @@ function buildPreviewStreamItems(): MissionStreamItem[] {
     },
     {
       id: "preview-5",
-      agentName: "事实核查员",
+      agentName: "事实核查",
       title: "派发事实核查",
-      detail: "事实核查员会消费搜索证据池，区分支持证据、反证和待补缺口。",
+      detail: "事实核查会消费搜索证据池，区分支持证据、反证和待补缺口。",
       status: "queued",
     },
   ];
@@ -2203,18 +2201,18 @@ function buildPreviewExecutionPlan(claim: string): ExecutionDagPlan {
   return {
     id: "preview-dag",
     claimType: /(导致|致癌|造成|因为|影响)/.test(claim) ? "causal" : "mixed",
-    rationale: "中控先判定这是高风险断言，再按证据需求动态插入反证、信源审计和冲突调解节点。",
+    rationale: "先判定这是高风险断言，再按证据需求动态插入反证、信源审计和冲突调解节点。",
     nodes: [
       {
         id: "planner",
-        label: "中控规划器",
+        label: "规划",
         layer: "planner",
         status: "completed",
         description: "判断案件形态并生成执行图。",
       },
       {
         id: "rumor_detector",
-        label: "立案分诊员",
+        label: "拆题",
         agent: "rumor_detector",
         layer: "analysis",
         status: "completed",
@@ -2222,7 +2220,7 @@ function buildPreviewExecutionPlan(claim: string): ExecutionDagPlan {
       },
       {
         id: "fact_checker",
-        label: "事实核查员",
+        label: "事实核查",
         agent: "fact_checker",
         layer: "search",
         status: "running",
@@ -2230,7 +2228,7 @@ function buildPreviewExecutionPlan(claim: string): ExecutionDagPlan {
       },
       {
         id: "source_validator",
-        label: "信源审计员",
+        label: "溯源",
         agent: "source_validator",
         layer: "audit",
         status: "planned",
@@ -2245,7 +2243,7 @@ function buildPreviewExecutionPlan(claim: string): ExecutionDagPlan {
       },
       {
         id: "report_composer",
-        label: "报告收束员",
+        label: "写结论",
         agent: "report_composer",
         layer: "report",
         status: "planned",
@@ -2268,8 +2266,8 @@ function buildPreviewSpeculativeRelays(): SpeculativeRelayUpdate[] {
   return [
     {
       id: "preview-relay-1",
-      title: "分诊未结束，搜索先接力",
-      upstream: "立案分诊员",
+      title: "拆题未结束，搜索先接力",
+      upstream: "拆题",
       downstream: "360 AI Search",
       trigger: "识别到“会致癌”“等于毒药”后，提前生成剂量阈值与冷藏条件查询。",
       status: "running",
@@ -2280,7 +2278,7 @@ function buildPreviewSpeculativeRelays(): SpeculativeRelayUpdate[] {
       id: "preview-relay-2",
       title: "证据池并行分发",
       upstream: "360 AI Search",
-      downstream: "事实核查员 + 信源审计员",
+      downstream: "事实核查 + 溯源",
       trigger: "同一批来源同时进入事实核查和信源审计。",
       status: "queued",
       savedReason: "事实强度和来源可信度分开判断，最后再对齐。",
@@ -2298,10 +2296,10 @@ function buildPreviewDebates(): ConsensusDebateUpdate[] {
       conflictCount: 2,
       rounds: [
         {
-          challenger: "信源审计员",
-          respondent: "事实核查员",
+          challenger: "溯源",
+          respondent: "事实核查",
           challenge: "部分科普材料只说明储存风险，不能证明“等于毒药”。",
-          response: "事实核查员已把这类材料降为限定证据，并保留剂量阈值缺口。",
+          response: "事实核查已把这类材料降为限定证据，并保留剂量阈值缺口。",
         },
       ],
       finalConsensus: "结论必须从“等于毒药”降级为“储存不当可能增加风险”。",
@@ -2631,7 +2629,7 @@ function processItemsForAgent(agent?: string | null, phase: "running" | "complet
   const key = normalizeAgent(agent);
   return AGENT_PROCESS_COPY[key]?.[phase] ?? [
     phase === "running" ? "正在读取上一步留下的上下文。" : "已完成当前思考步骤。",
-    phase === "running" ? "正在决定下一步要交给哪个智能体。" : "已把过程记录交还给中控。",
+    phase === "running" ? "正在决定下一步要交给哪个智能体。" : "已记下过程。",
   ];
 }
 
@@ -2653,13 +2651,13 @@ function processSummaryForStep(step: HandoffStep, phase: "running" | "completed"
 function agentStartTitle(step: HandoffStep) {
   switch (normalizeAgent(step.agent)) {
     case "rumor_detector":
-      return "开始语义分诊";
+      return "开始拆题";
     case "fact_checker":
       return "派发事实核查";
     case "source_validator":
       return "派发信源审计";
     case "report_composer":
-      return "开始报告收束";
+      return "开始写结论";
     default:
       return "派发核查步骤";
   }
@@ -3098,7 +3096,7 @@ function MissionFinalReportPanel({
       <div className="mission-final-report-head">
         <div>
           <span>核查结果</span>
-          <strong>现在可以怎么看</strong>
+          <strong>结论</strong>
         </div>
         <div className="mission-final-verdict-badges">
           {verdictLabel ? <em className="mission-final-verdict-primary">{verdictLabel}</em> : null}
@@ -3120,13 +3118,13 @@ function MissionFinalReportPanel({
       ) : (
         <div className="mission-final-conclusion mission-final-conclusion--empty">
           <span>一句话结论</span>
-          <p>报告已收束，但还没有生成适合展示给用户的结论文本。</p>
+          <p>有结论了，但还没有适合展示的结论文本。</p>
         </div>
       )}
 
       {shareAdvice ? (
-        <div className="mission-share-advice" aria-label="转发建议">
-          <span>转发建议</span>
+        <div className="mission-share-advice" aria-label="能不能信">
+          <span>能不能信</span>
           <p>{shareAdvice}</p>
         </div>
       ) : null}
@@ -3230,8 +3228,8 @@ function MissionFinalReportPanel({
           </div>
         ) : null}
         {closureActions.length > 0 ? (
-          <div className="mission-action-list" aria-label="闭环动作">
-            <span>闭环动作</span>
+            <div className="mission-action-list" aria-label="接下来">
+            <span>接下来</span>
             {closureActions.map((action) => (
               <article
                 key={`${action.type}-${action.label}`}
@@ -3271,9 +3269,9 @@ function buildCasePathSteps({
   return [
     {
       id: "docket",
-      label: "立案",
-      description: "立案分诊员识别类型、风险信号和证据需求。",
-      producer: "立案分诊员",
+      label: "拆题",
+      description: "拆题识别类型、风险信号和证据需求。",
+      producer: "拆题",
       status: statusFromSignals(
         isStepCompleted(steps, "rumor_detector"),
         isStepRunning(steps, "rumor_detector"),
@@ -3283,15 +3281,15 @@ function buildCasePathSteps({
     {
       id: "atoms",
       label: "拆题",
-      description: "只使用立案分诊员返回的真实原子命题，不走模板拆题。",
-      producer: "立案分诊员 · 原子命题",
+      description: "只使用拆题返回的真实原子命题，不走模板拆题。",
+      producer: "拆题 · 原子命题",
       status: statusFromSignals(Boolean(claimDecomposition), isStepRunning(steps, "rumor_detector")),
     },
     {
       id: "trace",
       label: "溯源",
-      description: "信源审计员审计原始来源、转载链和缺失来源。",
-      producer: "信源审计员",
+      description: "溯源审计原始来源、转载链和缺失来源。",
+      producer: "溯源",
       status: statusFromSignals(
         isStepCompleted(steps, "source_validator"),
         isStepRunning(steps, "source_validator"),
@@ -3308,8 +3306,8 @@ function buildCasePathSteps({
     {
       id: "reasoning",
       label: "逻辑推演",
-      description: "事实核查员和报告收束员标明可推断、不可推断和证据缺口。",
-      producer: "事实核查员 + 报告收束员",
+      description: "事实核查和写结论标明可推断、不可推断和证据缺口。",
+      producer: "事实核查 + 写结论",
       status: statusFromSignals(
         isStepCompleted(steps, "fact_checker") || Boolean(finalReport),
         isStepRunning(steps, "fact_checker") || isStepRunning(steps, "report_composer"),
@@ -3325,9 +3323,9 @@ function buildCasePathSteps({
     },
     {
       id: "closure",
-      label: "闭环行动",
-      description: "只有报告收束员形成可展示结论后才展示摘要、建议和归档状态。",
-      producer: "报告收束员",
+      label: "接下来",
+      description: "只有写结论形成可展示结论后才展示摘要、建议和归档状态。",
+      producer: "写结论",
       status: statusFromSignals(Boolean(finalReport), isStepRunning(steps, "report_composer")),
     },
   ];
@@ -3392,7 +3390,7 @@ function scoreProofItems({
     {
       label: "准确性",
       value: score !== null ? `原信息可信度 ${score}/100` : `${supportingEvidence.length} 支持 · ${counterEvidence.length} 反证`,
-      detail: gaps.length > 0 ? `${gaps.length} 个证据缺口仍保留` : "等待事实核查员返回证据边界",
+      detail: gaps.length > 0 ? `${gaps.length} 个证据缺口仍保留` : "等待事实核查返回证据边界",
     },
     {
       label: "场景覆盖",
@@ -3400,9 +3398,9 @@ function scoreProofItems({
       detail: "健康、社会、财经、科技等案例可复用同一路径",
     },
     {
-      label: "结果闭环",
-      value: finalReport ? "可收束" : "待收束",
-      detail: "辟谣卡片、存疑归档、分享导出在结论后出现",
+      label: "结果",
+      value: finalReport ? "有结论" : "待结论",
+      detail: "核查摘要、存疑归档、分享导出在结论后出现",
     },
     {
       label: "技术架构",
@@ -3506,14 +3504,14 @@ function CasePathWorkspace({
             );
           })
         ) : (
-          <p className="case-empty-state">等待中控返回第一条路径节点。</p>
+          <p className="case-empty-state">等待第一条路径节点。</p>
         )}
       </nav>
 
       <details className="case-score-fold">
         <summary>
           <span>评分项证据</span>
-          <strong>准确性 / 闭环 / 知识库 / 360 联动</strong>
+          <strong>准确性 / 结果 / 知识库 / 360 联动</strong>
         </summary>
         <section className="case-score-grid" aria-label="评分证据">
           {scoreItems.map((item) => (
@@ -3612,7 +3610,7 @@ function AtomicQuestionsPanel({
           ))}
         </div>
       ) : (
-        <p className="case-empty-state">等待立案分诊员返回真实原子命题。这里不会用模板拆题替代。</p>
+        <p className="case-empty-state">等待拆题返回真实原子命题。这里不会用模板拆题替代。</p>
       )}
     </section>
   );
@@ -3651,7 +3649,7 @@ function SourceTracePanel({ steps }: { steps: HandoffStep[] }) {
           {notes ? <p className="case-source-note">{notes}</p> : null}
         </div>
       ) : (
-        <p className="case-empty-state">信源审计员尚未返回；不展示推测来源。</p>
+        <p className="case-empty-state">溯源尚未返回；不展示推测来源。</p>
       )}
     </section>
   );
@@ -4465,7 +4463,7 @@ function ControllerEventDetailPanel({
             ) : (
               <p>
                 <ActivityText
-                  text="事实核查员与信源审计员已完成并行输出，中控正在提取冲突点。"
+                  text="事实核查与溯源已完成并行输出，正在提取冲突点。"
                   animate={animateTyping}
                   speed={14}
                 />
@@ -4652,7 +4650,7 @@ function executionNodeLabel(nodeId: string, fallback: string) {
     case "planner":
       return "路径规划";
     case "rumor_detector":
-      return "立案拆题";
+      return "拆题";
     case "fact_checker":
       return "交叉验证";
     case "source_validator":
@@ -4664,7 +4662,7 @@ function executionNodeLabel(nodeId: string, fallback: string) {
     case "consensus_debate":
       return "冲突调解";
     case "report_composer":
-      return "闭环收束";
+      return "写结论";
     default:
       return fallback;
   }
@@ -4892,7 +4890,7 @@ function inferThinkingTools(agentName: string) {
   if (normalized.includes("source") || agentName.includes("溯源")) return ["来源分层", "转载链审计"];
   if (normalized.includes("report") || agentName.includes("收束")) return ["结论许可", "知识库候选"];
   if (normalized.includes("tool") || agentName.includes("search")) return ["搜索工具", "证据抽取"];
-  return ["中控调度", "任务分派"];
+  return ["调度", "任务分派"];
 }
 
 function thinkingStatusMark(status: CasePathStatus) {
@@ -5298,7 +5296,7 @@ export function MissionControlView({
           "左侧只追加真实运行事件；右侧显示当前事件拿到的来源、链接和审计结论。",
         ]);
         pushStreamItem({
-          agentName: "中控台",
+          agentName: "系统",
           title: "收到核查对象",
           detail: "已建立可追踪核查任务，随后按命题推进。",
           status: "queued",
@@ -5397,7 +5395,7 @@ export function MissionControlView({
                       });
                     } else {
                       pushStreamItem({
-                        agentName: "中控调解室",
+                        agentName: "调解",
                         title: debate.status === "resolved" ? "完成冲突裁决" : debate.title,
                         detail: debate.finalConsensus,
                         status: debate.status === "resolved" ? "completed" : "running",
@@ -5440,7 +5438,7 @@ export function MissionControlView({
                 if (isNonAuthenticStep(step)) {
                   const fallbackReason = typeof step.output.fallbackReason === "string" ? sanitizePublicReportText(step.output.fallbackReason) : "收到 demo-fallback 输出";
                   const message = `${step.agentName} 没有拿到可展示的核查结果，已停止展示结论。原因：${fallbackReason}`;
-                  setOutputItems([message, "办案台不会把降级结果包装成真实核查。"]);
+                  setOutputItems([message, "不会把降级结果包装成真实核查。"]);
                   setErrorMessage(message);
                   setStartedAt(null);
                   setRunStatus("failed");
@@ -5593,14 +5591,14 @@ export function MissionControlView({
                 const proposedMemoryCandidates = event.memoryCandidates ?? [];
                 const nonAuthenticStep = finalSteps.find(isNonAuthenticStep);
                 if (nonAuthenticStep) {
-                  const message = `${nonAuthenticStep.agentName} 含有非真实降级输出，办案台已拒绝生成最终判断。`;
+                  const message = `${nonAuthenticStep.agentName} 含有非真实降级输出，已拒绝生成最终判断。`;
                   setStartedAt(null);
                   setRunStatus("failed");
                   setErrorMessage(message);
                   setFinalReport(null);
                   setOutputItems([message, "请检查模型服务或 API Key 后重新发起真实核查。"]);
                   pushStreamItem({
-                    agentName: "办案台",
+                    agentName: "系统",
                     title: "拒绝展示非真实结论",
                     detail: message,
                     status: "failed",
@@ -5636,7 +5634,7 @@ export function MissionControlView({
                     label
                   );
                   setOutputItems([
-                    conclusion ? `最终判断：${conclusion}` : "报告已收束，但还没有生成适合展示给用户的结论文本。",
+                    conclusion ? `最终判断：${conclusion}` : "有结论了，但还没有适合展示的结论文本。",
                     label || score !== null
                       ? `可信度：${label || "未标注"}${score !== null ? ` · 原信息 ${score}/100` : ""}${confidenceScore !== null ? ` · 判断置信度 ${confidenceScore}/100` : ""}`
                       : "",
@@ -5644,9 +5642,9 @@ export function MissionControlView({
                   ].filter(Boolean));
                 }
                 pushStreamItem({
-                  agentName: "报告收束员",
+                  agentName: "写结论",
                   title: "最终判断已生成",
-                  detail: reportText(finalReport ?? null, "conclusion") || "报告已收束，但还没有生成适合展示给用户的结论文本。",
+                  detail: reportText(finalReport ?? null, "conclusion") || "有结论了，但还没有适合展示的结论文本。",
                   status: "final",
                 });
                 setStartedAt(null);
@@ -5729,7 +5727,7 @@ export function MissionControlView({
                 setRunStatus("failed");
                 setErrorMessage(message);
                 pushStreamItem({
-                  agentName: "办案台",
+                  agentName: "系统",
                   title: "流式调用失败",
                   detail: message,
                   status: "failed",
@@ -5751,7 +5749,7 @@ export function MissionControlView({
           setRunStatus("failed");
           setErrorMessage(ERROR_FRIENDLY_MESSAGE);
           pushStreamItem({
-            agentName: "中控台",
+            agentName: "系统",
             title: "执行中断",
             detail: ERROR_FRIENDLY_MESSAGE,
             status: "failed",
@@ -5797,7 +5795,7 @@ export function MissionControlView({
     setWorkbenchFocus("dispatch");
     setOutputItems([
       "识别原句里的绝对化表达：会致癌、等于吃毒药。",
-      "任务已分派给事实核查员与信源审计员。",
+      "任务已分派给事实核查与溯源。",
     ]);
   }, [claim, dispatch, previewMode]);
 
@@ -5978,15 +5976,29 @@ export function MissionControlView({
             </li>
           ))}
         </ol>
-        <div className="mission-dossier-meta">
+        <div className="mission-dossier-meta" role="status" aria-live="polite">
           <span>{runStatusText(runStatus, elapsedMs, finalReport)}</span>
+          {runStatus === "running" && streamStatusSummary.total > 0 ? (
+            <strong className="mission-dossier-progress" title={streamStatusSummary.detail}>
+              {streamStatusSummary.done}/{streamStatusSummary.total}
+            </strong>
+          ) : null}
           <strong>{formatElapsed(elapsedMs)}</strong>
+          {runStatus === "running" ? (
+            <button
+              type="button"
+              className="mission-cancel-btn mission-cancel-btn--inline"
+              onClick={onCancel}
+            >
+              取消核查
+            </button>
+          ) : null}
         </div>
         {fallbackNotice ? (
           <p className="mission-run-status-notice">{fallbackNotice}</p>
         ) : runStatus === "running" && elapsedMs >= 90000 ? (
           <p className="mission-run-status-notice">
-            还在整理中，页面没有卡死。若超过数分钟无新线索，可取消后重试。
+            仍在推进，页面没有卡死。若超过数分钟无新步骤，可点「取消核查」后重试。
           </p>
         ) : null}
       </section>

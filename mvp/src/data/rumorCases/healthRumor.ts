@@ -20,10 +20,10 @@ export const healthRumorCase: DemoCase = {
   ],
   routes: [
     { subclaimId: "C1", neededEvidence: ["隔夜菜中亚硝酸盐含量的实测数据", "不同储存条件下的含量变化", "不同菜品种类的差异"], notAcceptable: ["单一案例", "没有检测数据的说法", "自媒体文章"], minimumOutputRule: "没有找到实测数据时，只能说含量未知，不能推断危险。" },
-    { subclaimId: "C2", neededEvidence: ["WHO或国家食品安全标准中的亚硝酸盐限量", "致癌剂量的毒理学研究"], notAcceptable: ["没有标准依据的说法", "脱离剂量谈毒性"], minimumOutputRule: "没有找到安全标准时，不能说超标。" },
-    { subclaimId: "C3", neededEvidence: ["流行病学研究", "摄入量与癌症发病率的相关性", "替代解释（如吸烟、饮酒等其他因素）"], notAcceptable: ["动物实验直接外推到人类", "体外实验结果"], minimumOutputRule: "没有人群研究时，不能说导致癌症。" },
-    { subclaimId: "C4", neededEvidence: ["毒物定义标准", "隔夜菜的实际毒性评估"], notAcceptable: ["比喻代替证据"], minimumOutputRule: "没有毒性评估时，不能说等于毒药。" },
-    { subclaimId: "C5", neededEvidence: ["权威机构（如国家食品安全风险评估中心）的评估", "主流科学界的共识"], notAcceptable: ["单一反对意见", "未经同行评审的说法"], minimumOutputRule: "没有找到权威评估时，不能说已被科学界否定。" },
+    { subclaimId: "C2", neededEvidence: ["WHO或国家食品安全标准中的亚硝酸盐限量", "致癌剂量的毒理学研究"], notAcceptable: ["没有标准依据的说法", "脱离剂量谈毒性"], minimumOutputRule: "没有找到安全标准时，不能当成已经超标。" },
+    { subclaimId: "C3", neededEvidence: ["流行病学研究", "摄入量与癌症发病率的相关性", "替代解释（如吸烟、饮酒等其他因素）"], notAcceptable: ["动物实验直接外推到人类", "体外实验结果"], minimumOutputRule: "没有人群研究时，不能当成导致癌症。" },
+    { subclaimId: "C4", neededEvidence: ["毒物定义标准", "隔夜菜的实际毒性评估"], notAcceptable: ["比喻代替证据"], minimumOutputRule: "没有毒性评估时，不能当成等于毒药。" },
+    { subclaimId: "C5", neededEvidence: ["权威机构（如国家食品安全风险评估中心）的评估", "主流科学界的共识"], notAcceptable: ["单一反对意见", "未经同行评审的说法"], minimumOutputRule: "没有找到权威评估时，不能当成已被科学界否定。" },
   ],
   searchPlans: [
     { subclaimId: "C1", searchPlan: ["检测数据", "储存条件影响", "菜品种类差异"], querySets: { academic: ["nitrite content overnight vegetables", "leftover food nitrite levels storage"], data: ["隔夜菜 亚硝酸盐 检测数据", "剩菜 亚硝酸盐含量 标准"], counter: ["隔夜菜安全 辟谣", "亚硝酸盐 安全剂量"] }, counterQueries: ["隔夜菜亚硝酸盐超标 案例", "亚硝酸盐中毒 剂量"], mustNotInfer: ["不能用单一检测结果推断所有隔夜菜", "不能用动物实验推断人类风险"], evidenceGaps: ["需要更多常温储存条件下的检测数据"] },

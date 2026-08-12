@@ -8,7 +8,7 @@
  * 3. Ensure conclusion has claim framing + uncertainty when evidence is thin
  * 4. Never invent sources or facts not already in the report
  *
- * Aligns with docs/FACTCHECK_WRITING_VOICE.md (Prompt A + F).
+ * Keep public copy plain and sourced.
  */
 
 import {
@@ -188,10 +188,10 @@ export function postProcessHandoffFinalReport(
   }
 
   if (!recommendation) {
-    recommendation = "转发前建议先看原始来源，并保留证据边界。";
+    recommendation = "先看来源再判断能不能信，并保留证据边界。";
     notes.push("recommendation: default action without lecture");
   } else if (/广大网友|当帮凶|速来/.test(recommendation)) {
-    recommendation = "转发前建议先看原始来源，并保留证据边界。";
+    recommendation = "先看来源再判断能不能信，并保留证据边界。";
     notes.push("recommendation: replaced lecture tone");
   }
 

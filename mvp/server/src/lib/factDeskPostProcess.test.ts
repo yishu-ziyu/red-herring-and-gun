@@ -48,9 +48,9 @@ describe("postProcessHandoffFinalReport (Prompt A+F)", () => {
       conclusion:
         "流传说法是：「隔夜菜会致癌」。公开材料显示正常储存下亚硝酸盐远低于限量，现有证据不足以支持「等于毒药」。",
       summaryForPublic: "隔夜菜致癌这一说法证据不足，不宜按原强度传播。",
-      recommendation: "转发前建议先看原始来源。",
-      canSay: ["可以说正常储存下含量通常低于安全限量"],
-      cannotSay: ["不能说等于毒药", "没有人群研究时，不能说导致癌症"],
+      recommendation: "先看来源再判断能不能信。",
+      canSay: ["能信正常储存下含量通常低于安全限量"],
+      cannotSay: ["不能说等于毒药", "没有人群研究时，不能当成导致癌症"],
       whyHardToVerify: ["把剂量问题压成绝对因果"],
     };
     const result = postProcessHandoffFinalReport(clean, "隔夜菜会致癌，吃了等于吃毒药");

@@ -43,10 +43,10 @@ interface AgentCardProps {
 }
 
 const AGENT_ROLE_LABELS: Record<string, string> = {
-  rumor_detector: "立案分诊员",
-  fact_checker: "事实核查员",
-  source_validator: "信源审计员",
-  report_composer: "报告收束员",
+  rumor_detector: "拆题",
+  fact_checker: "事实核查",
+  source_validator: "溯源",
+  report_composer: "写结论",
 };
 
 const AGENT_CLASS_NAMES: Record<string, string> = {
@@ -67,33 +67,33 @@ function displayAgentName(agent?: string | null) {
   switch (compact) {
     case "rumordetector":
     case "rumordetectoragent":
-      return "立案分诊员";
+      return "拆题";
     case "factchecker":
     case "factcheckeragent":
-      return "事实核查员";
+      return "事实核查";
     case "sourcevalidator":
     case "sourcevalidatoragent":
-      return "信源审计员";
+      return "溯源";
     case "reportcomposer":
     case "reportcomposeragent":
-      return "报告收束员";
+      return "写结论";
     case "missioncontrol":
-      return "中控台";
+      return "系统";
     default:
-      return raw || "中控台";
+      return raw || "系统";
   }
 }
 
 function displayAgentText(text?: string | null) {
   if (!text) return "";
   return text
-    .replace(/FactChecker \+ SourceValidator/g, "事实核查员 + 信源审计员")
-    .replace(/FactChecker \+ ReportComposer/g, "事实核查员 + 报告收束员")
-    .replace(/RumorDetector/g, "立案分诊员")
-    .replace(/FactChecker/g, "事实核查员")
-    .replace(/SourceValidator/g, "信源审计员")
-    .replace(/ReportComposer/g, "报告收束员")
-    .replace(/Mission Control/g, "中控台")
+    .replace(/FactChecker \+ SourceValidator/g, "事实核查 + 溯源")
+    .replace(/FactChecker \+ ReportComposer/g, "事实核查 + 写结论")
+    .replace(/RumorDetector/g, "拆题")
+    .replace(/FactChecker/g, "事实核查")
+    .replace(/SourceValidator/g, "溯源")
+    .replace(/ReportComposer/g, "写结论")
+    .replace(/Mission Control/g, "系统")
     .replace(/Agent/g, "智能体");
 }
 

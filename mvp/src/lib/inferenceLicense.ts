@@ -1,5 +1,5 @@
 /**
- * inferenceLicense.ts — 报告级推理许可聚合 (PR-1)
+ * inferenceLicense.ts — 能信的范围聚合 (PR-1)
  *
  * 把 GradedEvidence.inferenceAllowed / inferenceBlocked (per-grade) 聚合
  * 为报告级 canSay / cannotSay 清单。覆盖 PRD v2 PR-1。

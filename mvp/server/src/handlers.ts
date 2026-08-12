@@ -30,8 +30,17 @@ import {
   type EmailAccount,
 } from "./lib/accountStore.js";
 import { emailCookieOptions, encodeSignedJson, decodeSignedJson, parseCookies } from "./lib/aipingAuth.js";
+import {
+  splitReasoningSentences,
+  thoughtInterSentenceDelayMs,
+} from "../../src/lib/reasoningThoughts.js";
 
 const execFileAsync = promisify(execFile);
+
+function sleepMs(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // ───────────────────────────────────────────────────────────────
 // 错误信息泄漏修复：把任意异常收敛成"用户可读友好文案 + 结构化诊断"。
@@ -96,7 +105,7 @@ function classifySearchDirection(
   return "neutral";
 }
 
-function computeFormulaScore(
+export function computeFormulaScore(
   rumorOut: any,
   factOut: any,
   sourceOut: any,
@@ -152,11 +161,25 @@ function computeFormulaScore(
   }
 }
 
-/** 把公式结果写回 finalReport，并打上 _scoreSource=formula 标记。 */
-function applyFormulaScoreToReport(finalReport: any, formulaResult: CredibilityScoreResult | null): void {
+/**
+ * 把公式结果写回 finalReport，并打上 _scoreSource=formula 标记。
+ *
+ * 产品一致性：最终展示的 verdictType 与 credibilityScore 不得互相矛盾。
+ * 公式输入来自 fact_checker 等上游步骤；report_composer 可能给出更强的最终裁决。
+ * 若最终裁决为 false，分数必须落在低可信带（≤15），避免「判假但 23 分」的展示分裂。
+ */
+export function applyFormulaScoreToReport(finalReport: any, formulaResult: CredibilityScoreResult | null): void {
   if (!formulaResult || !finalReport || typeof finalReport !== "object") return;
-  finalReport.credibilityScore = formulaResult.score;
-  finalReport.credibilityLabel = formulaResult.label;
+  let score = formulaResult.score;
+  const displayedVerdict =
+    typeof finalReport.verdictType === "string" ? finalReport.verdictType : formulaResult.verdict;
+  if (displayedVerdict === "false" && score > 15) {
+    finalReport._scoreUncapped = score;
+    finalReport._scoreVerdictCap = 15;
+    score = 15;
+  }
+  finalReport.credibilityScore = score;
+  finalReport.credibilityLabel = labelForScore(score);
   finalReport._scoreSource = "formula";
   finalReport._scoreBreakdown = formulaResult.breakdown;
 }
@@ -665,16 +688,23 @@ export function createHandlers(env: Record<string, string>) {
     return undefined;
   }
 
-  function makeRunAgent(opts: {
-    claim: string;
-    modelChoice: any;
-    intakeMetadata: any;
-    visualExtraction: Record<string, unknown> | undefined;
-    clientMemoryRecall: any;
-    onStart?: (agentId: string, agentConfig: (typeof AGENT_CONFIGS)[number]) => void;
-    onComplete?: (step: any) => void;
-    onError?: (agentId: string, agentConfig: (typeof AGENT_CONFIGS)[number], error: unknown) => void;
-  }): RunAgentFn {
+function makeRunAgent(opts: {
+  claim: string;
+  modelChoice: any;
+  intakeMetadata: any;
+  visualExtraction: Record<string, unknown> | undefined;
+  clientMemoryRecall: any;
+  onStart?: (agentId: string, agentConfig: (typeof AGENT_CONFIGS)[number]) => void;
+  onThought?: (
+    agentId: string,
+    agentConfig: (typeof AGENT_CONFIGS)[number],
+    content: string,
+    seq: number,
+    done: boolean
+  ) => void;
+  onComplete?: (step: any) => void;
+  onError?: (agentId: string, agentConfig: (typeof AGENT_CONFIGS)[number], error: unknown) => void;
+}): RunAgentFn {
     return async function runAgent(agentId, steps, search360Result?, atomSearchBundle?) {
       const agentConfig = AGENT_CONFIGS.find((a) => a.id === agentId);
       if (!agentConfig) {
@@ -741,25 +771,42 @@ export function createHandlers(env: Record<string, string>) {
         });
         output = result.output;
         modelUsed = result.model;
+        // Capture model wall-clock before SSE thought pacing (UI must show real think time).
+        const modelLatencyMs = Date.now() - stepStart;
+        // Real reasoning only: split + pace SSE so ThinkingReasoning can reveal sentence-by-sentence.
+        if (opts.onThought && typeof result.reasoning === "string" && result.reasoning.trim()) {
+          const sentences = splitReasoningSentences(result.reasoning);
+          const gap = thoughtInterSentenceDelayMs(sentences.length);
+          for (let index = 0; index < sentences.length; index++) {
+            opts.onThought!(
+              agentConfig.id,
+              agentConfig,
+              sentences[index],
+              index,
+              index === sentences.length - 1
+            );
+            if (index < sentences.length - 1) await sleepMs(gap);
+          }
+        }
+        const step = {
+          agent: agentConfig.id,
+          agentName: agentConfig.name,
+          agentIcon: agentConfig.icon,
+          systemPrompt,
+          input: agentInput,
+          output,
+          model: modelUsed,
+          latencyMs: modelLatencyMs,
+          timestamp: Date.now(),
+          status: "completed" as const,
+        };
+        opts.onComplete?.(step);
+        return step;
       } catch (error) {
         opts.onError?.(agentId, agentConfig, error);
         const message = error instanceof Error ? error.message : "Agent 调用失败";
         throw new Error(`${agentConfig.name} 真实模型调用失败：${message}`);
       }
-      const step = {
-        agent: agentConfig.id,
-        agentName: agentConfig.name,
-        agentIcon: agentConfig.icon,
-        systemPrompt,
-        input: agentInput,
-        output,
-        model: modelUsed,
-        latencyMs: Date.now() - stepStart,
-        timestamp: Date.now(),
-        status: "completed" as const,
-      };
-      opts.onComplete?.(step);
-      return step;
     };
   }
 
@@ -1001,6 +1048,18 @@ export function createHandlers(env: Record<string, string>) {
             timestamp: Date.now(),
           });
         },
+        onThought: (agentId, agentConfig, content, seq, done) => {
+          sendEvent({
+            type: "agent_thought",
+            agent: agentId,
+            agentName: agentConfig.name,
+            agentIcon: agentConfig.icon,
+            content,
+            seq,
+            done,
+            timestamp: Date.now(),
+          });
+        },
         onComplete: (step) => {
           sendEvent({
             type: "agent_complete",
@@ -1099,7 +1158,7 @@ export function createHandlers(env: Record<string, string>) {
                   ...debate,
                   status: "running",
                   rounds: [],
-                  finalConsensus: "FactChecker 与 SourceValidator 已进入交叉质询，中控暂不允许报告收束。",
+                  finalConsensus: "事实核查与溯源还在对证据，先不写结论。",
                 },
                 timestamp: Date.now(),
               });
@@ -1112,7 +1171,7 @@ export function createHandlers(env: Record<string, string>) {
                     ...debate,
                     status: "running",
                     rounds: debate.rounds.slice(0, index + 1),
-                    finalConsensus: "正在根据质询结果收紧可说与不可说的边界。",
+                    finalConsensus: "正在根据两边的证据收紧：哪些能信，哪些不能信。",
                   },
                   timestamp: Date.now(),
                 });
@@ -1482,7 +1541,7 @@ async function callOpenAI({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的调度模型。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要编造确定结论；把不确定性、证据需求、禁止推断说清楚。",
@@ -1491,7 +1550,7 @@ async function callOpenAI({
 
   const modeInstruction = {
     search: "用户选择联网搜索。你可以使用 web search 工具寻找当前节点需要的候选材料，并总结来源角色。",
-    evidence_audit: "用户选择证据审计。重点判断当前节点可以说什么、不能说什么，以及还缺哪类证据。",
+    evidence_audit: "用户选择证据审计。判断当前节点哪些能信、哪些不能信，还缺哪类证据。",
     counter: "用户选择反证生成。重点生成替代解释、反例或会削弱原推断的检查路径。",
     rewrite: "用户选择局部改写。只围绕当前节点给出更谨慎的局部表达，不生成全局最终答案。",
     rumor_check: "用户选择谣言专项核查。重点识别信息中的谣言特征（绝对化表述、匿名信源、情绪煽动等），并给出针对性核查建议。",
@@ -1565,11 +1624,11 @@ async function callOpenAIRecursive({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是溯证 Agent 的中控 LLM。",
+    "你是溯证 Agent 的调度模型。",
     "用户已经在 Canvas 中选择了一个节点。你只围绕这个节点做一轮递归证据搜索调度。",
     "你的目标是把搜索结果整理成线索、可继续探索的 frontier、以及应停止的线索。",
     "不要替用户自动继续展开 frontier。不要直接给最终答案。",
-    "每条线索都要说明证据许可：可以说什么、不能说什么。",
+    "每条线索都要说明哪些能信、哪些不能信。",
     "输出必须是符合 JSON schema 的中文 JSON。",
   ].join("\n");
 
@@ -1625,7 +1684,7 @@ async function callAnthropicProxy({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是溯证 Agent 的中控 LLM。",
+    "你是溯证 Agent 的调度模型。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要自动扩展整张图，不要替用户决定下一条主线。",
@@ -1670,9 +1729,9 @@ async function callAnthropicProxyRecursive({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是溯证 Agent 的中控 LLM。",
+    "你是溯证 Agent 的调度模型。",
     "用户已经在 Canvas 中选择了一个节点。你只围绕这个节点做一轮递归证据搜索调度。",
-    "返回线索、frontier、停止原因、可以说和不能说。",
+    "返回线索、frontier、停止原因、能信和不能信。",
     "不要自动继续展开 frontier，不要给最终答案。",
     "最终回答必须是一个中文 JSON 对象，不要 Markdown，不要代码块。",
   ].join("\n");
@@ -1719,7 +1778,7 @@ async function callMimoApi({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的调度模型。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要自动扩展整张图，不要替用户决定下一条主线。",
@@ -1764,9 +1823,9 @@ async function callMimoApiRecursive({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的调度模型。",
     "用户已经在 Canvas 中选择了一个节点。你只围绕这个节点做一轮递归证据搜索调度。",
-    "返回线索、frontier、停止原因、可以说和不能说。",
+    "返回线索、frontier、停止原因、能信和不能信。",
     "不要自动继续展开 frontier，不要给最终答案。",
     "最终回答必须是一个中文 JSON 对象，不要 Markdown，不要代码块。",
   ].join("\n");
@@ -1812,7 +1871,7 @@ async function callDeepSeekApi({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的调度模型。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要编造确定结论；把不确定性、证据需求、禁止推断说清楚。",
@@ -1821,7 +1880,7 @@ async function callDeepSeekApi({
 
   const modeInstruction = {
     search: "用户选择联网搜索。你可以使用 web search 工具寻找当前节点需要的候选材料，并总结来源角色。",
-    evidence_audit: "用户选择证据审计。重点判断当前节点可以说什么、不能说什么，以及还缺哪类证据。",
+    evidence_audit: "用户选择证据审计。判断当前节点哪些能信、哪些不能信，还缺哪类证据。",
     counter: "用户选择反证生成。重点生成替代解释、反例或会削弱原推断的检查路径。",
     rewrite: "用户选择局部改写。只围绕当前节点给出更谨慎的局部表达，不生成全局最终答案。",
     rumor_check: "用户选择谣言专项核查。重点识别信息中的谣言特征（绝对化表述、匿名信源、情绪煽动等），并给出针对性核查建议。",
@@ -1882,11 +1941,11 @@ async function callDeepSeekApiRecursive({
   payload: any;
 }) {
   const systemPrompt = [
-    "你是溯证 Agent 的中控 LLM。",
+    "你是溯证 Agent 的调度模型。",
     "用户已经在 Canvas 中选择了一个节点。你只围绕这个节点做一轮递归证据搜索调度。",
     "你的目标是把搜索结果整理成线索、可继续探索的 frontier、以及应停止的线索。",
     "不要替用户自动继续展开 frontier。不要直接给最终答案。",
-    "每条线索都要说明证据许可：可以说什么、不能说什么。",
+    "每条线索都要说明哪些能信、哪些不能信。",
     "输出必须是符合 JSON schema 的中文 JSON。",
   ].join("\n");
 
@@ -2038,14 +2097,14 @@ async function callLocalCodexRecursive({
 function buildCodexPrompt(payload: any) {
   const modeInstruction = {
     search: "用户选择联网搜索。你可以使用 Codex 的 web search 能力寻找当前节点需要的候选材料，并总结来源角色。",
-    evidence_audit: "用户选择证据审计。重点判断当前节点可以说什么、不能说什么，以及还缺哪类证据。",
+    evidence_audit: "用户选择证据审计。判断当前节点哪些能信、哪些不能信，还缺哪类证据。",
     counter: "用户选择反证生成。重点生成替代解释、反例或会削弱原推断的检查路径。",
     rewrite: "用户选择局部改写。只围绕当前节点给出更谨慎的局部表达，不生成全局最终答案。",
     rumor_check: "用户选择谣言专项核查。重点识别信息中的谣言特征（绝对化表述、匿名信源、情绪煽动等），并给出针对性核查建议。",
   }[payload.mode as string] ?? "围绕当前节点做局部推理。";
 
   return [
-    "你是红鲱鱼与枪（信息真相猎人）的中控 LLM。",
+    "你是红鲱鱼与枪（信息真相猎人）的调度模型。",
     "你的职责不是替用户直接完成整张论证图，而是在用户选中的当前节点上做一次局部调度。",
     "你必须选择合适的子 Agent，并返回可接回 Canvas 的局部结果。",
     "不要自动扩展整张图，不要替用户决定下一条主线。",
@@ -2053,7 +2112,7 @@ function buildCodexPrompt(payload: any) {
     "最终回答必须是一个中文 JSON 对象，不要 Markdown，不要代码块。",
     "",
     "字段含义：",
-    "- controllerNote: 中控为什么选择这个调度方向。",
+    "- controllerNote: 为什么选择这个调度方向。",
     "- agentTitle / agentSubtitle: 被派出的子 Agent 名称和职责。",
     "- resultTitle / resultSubtitle / resultStatus: 接回 Canvas 的局部结果节点。",
     "- resultStatus 只能是 risk、active、supported、limited、blocked、rewrite 之一。",
@@ -2098,14 +2157,14 @@ function buildRecursivePayload(payload: any) {
 
 function buildRecursivePrompt(payload: any) {
   return [
-    "你是溯证 Agent 的中控 LLM。",
+    "你是溯证 Agent 的调度模型。",
     "用户在 Canvas 中选中一个节点，并要求从这里做递归证据搜索。",
     "你只做一轮：search -> extract -> normalize -> dedupe -> score -> frontier。",
     "不要自动继续展开 frontier。frontier 只是交给用户选择的下一步。",
     "最终回答必须是一个中文 JSON 对象，不要 Markdown，不要代码块。",
     "",
     "字段含义：",
-    "- controllerNote: 中控为什么从这个节点启动递归搜索。",
+    "- controllerNote: 为什么从这个节点启动递归搜索。",
     "- runTitle: 本轮递归搜索标题。",
     "- traceText: 左侧 Agent Trace 中的一句话。",
     "- clues: 本轮发现的证据线索，包含 title、summary、source、role、confidence。",
@@ -2123,7 +2182,7 @@ function normalizeExpansionResult(raw: any, model: string) {
   const status = typeof raw?.resultStatus === "string" && allowedStatuses.has(raw.resultStatus) ? raw.resultStatus : "limited";
 
   return {
-    controllerNote: pickString("controllerNote", "中控 LLM 已根据当前节点选择局部调度方向。"),
+    controllerNote: pickString("controllerNote", "已根据当前节点选择局部调度方向。"),
     agentTitle: pickString("agentTitle", "局部推理子 Agent"),
     agentSubtitle: pickString("agentSubtitle", "只处理当前节点上的局部追问。"),
     resultTitle: pickString("resultTitle", "局部推理结果"),
@@ -2148,7 +2207,7 @@ function normalizeRecursiveResult(raw: any, model: string) {
   const stoppedReasons = new Set(["duplicate", "budget", "low_confidence", "out_of_scope"]);
 
   return {
-    controllerNote: pickString("controllerNote", "中控 LLM 已从当前节点启动一轮递归证据搜索。"),
+    controllerNote: pickString("controllerNote", "已从当前节点启动一轮递归证据搜索。"),
     runTitle: pickString("runTitle", "递归证据搜索"),
     traceText: pickString("traceText", "我从用户选择的节点出发，只生成本轮线索和下一批 frontier，等待用户继续选择。"),
     clues: pickArray("clues").slice(0, 4).map((item: any, index: number) => ({
@@ -2481,10 +2540,10 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
     verdictType === "true"
       ? `当前证据较支持该说法，但仍需保留来源边界：${firstFinding}`
       : verdictType === "false"
-        ? `当前证据不支持该说法，建议不要继续按原表述传播。`
+        ? `当前证据不支持该说法。`
         : verdictType === "mixed_misleading"
-          ? `该说法包含可疑或夸大的成分，只能按有限证据谨慎转述。`
-          : `该说法目前无法被充分核实，不宜当作事实传播。`;
+          ? `该说法只能信一部分：有真实片段，也有夸大或偷换。`
+          : `该说法目前还查不清。`;
 
   const report: Record<string, unknown> = {
     verdictType,
@@ -2492,9 +2551,9 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
     credibilityScore,
     credibilityLabel,
     recommendation: hasMissingSources
-      ? "先不要直接转发原说法；补充官方、原始或专业来源后再判断。"
-      : "可以保留为待核查结论，并在转述时附上证据边界。",
-    summaryForPublic: `${conclusion} 本报告由兜底收束生成，因为最终写作模型未在服务时间内完成。`,
+      ? "还查不清。先把出处补上，再判断能不能信。"
+      : "按现有证据判断能不能信，并标出查不清的部分。",
+    summaryForPublic: `${conclusion} 本报告由兜底生成，因为最终写作模型未在服务时间内完成。`,
     whyHardToVerify: [
       reason.slice(0, 220),
       missingText,
@@ -2533,7 +2592,7 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
         layer: "结论边界",
         finding: conclusion,
         evidence: [...counterEvidence, ...searchGaps].slice(0, 3).join("；") || missingText,
-        boundary: "最终写作模型超时，因此本结论采用保守兜底收束。",
+        boundary: "最终写作模型超时，因此本结论采用保守兜底。",
         sourceRefs: ["FallbackReport"],
       },
     ],
@@ -2553,8 +2612,8 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
       },
       {
         type: "share_public",
-        label: "谨慎转述",
-        content: "对外表达时保留“目前证据显示/仍待进一步核查”的限定。",
+        label: "能信的部分",
+        content: "只说证据已经撑住的部分，查不清的不要说成已经核实。",
         status: "needs_review",
       },
     ],
@@ -3236,7 +3295,7 @@ function buildOrchestrateDemoFallback(agentId: string, claim: string, agentInput
       severity: "low",
       analysis: "谣言特征检测模型未返回真实结果，系统不生成判断。",
       detectedPatterns: [],
-      neededEvidence: ["需要真实模型分诊后才能生成证据需求。"],
+      neededEvidence: ["需要真实模型拆题后才能生成证据需求。"],
       handoffTargets: ["fact_checker", "source_validator"],
     },
     fact_checker: {

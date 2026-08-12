@@ -59,7 +59,7 @@ function buildRumorDetectorFallback() {
     severity: "low",
     analysis: "谣言特征检测模型未返回真实结果，系统不生成判断。",
     detectedPatterns: [],
-    neededEvidence: ["需要真实模型分诊后才能生成证据需求。"],
+    neededEvidence: ["需要真实模型拆题后才能生成证据需求。"],
     handoffTargets: ["fact_checker", "source_validator"],
   };
 }

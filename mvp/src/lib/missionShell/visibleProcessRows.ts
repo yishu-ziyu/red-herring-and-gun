@@ -39,6 +39,10 @@ export interface VisibleProcessRow {
   /** false → hidden behind "已完成 N 步 · 展开" */
   expanded: boolean;
   nextHint?: string;
+  /** 模型真实 thinking 句子（来自 agent_thought）；无则不渲染思考揭示 */
+  reasoning?: string[];
+  /** 推理持续时间（ms），折叠时展示「Thought for Ns」 */
+  reasoningElapsedMs?: number;
 }
 
 export type NarrativeMode = "running" | "complete" | "error" | "deferred";
@@ -73,10 +77,10 @@ const AGENT_ACTION_TITLE: Record<string, string> = {
 
 /** Role display name (actor attribution only). */
 const AGENT_ROLE_NAME: Record<string, string> = {
-  rumor_detector: "立案分诊",
+  rumor_detector: "拆题",
   fact_checker: "事实核查",
-  source_validator: "信源审计",
-  report_composer: "报告收束",
+  source_validator: "溯源",
+  report_composer: "写结论",
   alternative_explanation_searcher: "替代解释",
   counter_evidence_grader: "反证评分",
 };
@@ -108,7 +112,7 @@ export function humanizeProcessSummary(raw?: string | null): string | undefined 
   s = s
     .replace(/中控已经判定命题类型[，,]?\s*/g, "")
     .replace(/中控/g, "")
-    .replace(/先让分诊\s*Agent\s*/g, "先做立案分诊，")
+    .replace(/先让分诊\s*Agent\s*/g, "先做拆题，")
     .replace(/可行动线索/g, "核查方向")
     .replace(/派发/g, "")
     .trim();
@@ -128,7 +132,7 @@ export function semanticActionTitleForAgent(agentId?: string, fallbackTitle?: st
   for (const [id, role] of Object.entries(AGENT_ROLE_NAME)) {
     if (raw === role || raw === id) return AGENT_ACTION_TITLE[id] || "推进核查";
   }
-  if (/立案分诊|RumorDetector/i.test(raw)) return AGENT_ACTION_TITLE.rumor_detector;
+  if (/拆题|RumorDetector/i.test(raw)) return AGENT_ACTION_TITLE.rumor_detector;
   if (/事实核查|FactChecker/i.test(raw)) return AGENT_ACTION_TITLE.fact_checker;
   if (/信源|SourceValidator/i.test(raw)) return AGENT_ACTION_TITLE.source_validator;
   if (/报告|ReportComposer/i.test(raw)) return AGENT_ACTION_TITLE.report_composer;
@@ -226,6 +230,8 @@ function upsertAgentAction(
     last.actor = actor;
     last.status = item.status;
     if (summary) last.summary = summary;
+    if (item.reasoning) last.reasoning = item.reasoning;
+    if (item.reasoningElapsedMs !== undefined) last.reasoningElapsedMs = item.reasoningElapsedMs;
     // Keep semantic planner title; actor carries role.
     return;
   }
@@ -235,6 +241,8 @@ function upsertAgentAction(
     existing.status = item.status;
     existing.actor = actor;
     if (summary) existing.summary = summary;
+    if (item.reasoning) existing.reasoning = item.reasoning;
+    if (item.reasoningElapsedMs !== undefined) existing.reasoningElapsedMs = item.reasoningElapsedMs;
     existing.title = actionTitle;
     // Never let title collapse to role name
     if (existing.title === existing.actor.name) {
@@ -253,6 +261,8 @@ function upsertAgentAction(
     activities: [],
     isCurrent: false,
     expanded: true,
+    reasoning: item.reasoning,
+    reasoningElapsedMs: item.reasoningElapsedMs,
   });
 }
 
