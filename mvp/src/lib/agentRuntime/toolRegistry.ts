@@ -99,7 +99,7 @@ export const AGENT_TOOL_REGISTRY: Record<string, AgentTool> = {
   closure_actions: {
     id: "closure_actions",
     name: "Closure Actions",
-    description: "生成辟谣卡片、存疑归档、分享表达等闭环动作。",
+    description: "生成核查摘要、存疑归档、分享文案。",
     kind: "report",
     riskLevel: "publish",
     requiresAuth: false,

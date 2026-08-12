@@ -25,7 +25,7 @@ describe("buildVisibleProcessRows", () => {
   it("semanticActionTitleForAgent is action not role label", () => {
     expect(semanticActionTitleForAgent("rumor_detector")).toBe("确认核查切入点");
     expect(semanticActionTitleForAgent("fact_checker")).toBe("对照公开事实");
-    expect(semanticActionTitleForAgent("rumor_detector")).not.toBe("立案分诊");
+    expect(semanticActionTitleForAgent("rumor_detector")).not.toBe("拆题");
   });
 
   it("FIXTURE_EARLY: no pending wall; tools nested not primary", () => {
@@ -57,7 +57,7 @@ describe("buildVisibleProcessRows", () => {
     expect(n.rows.every((r) => r.kind !== ("agent" as never))).toBe(true);
     // Role labels are not primary titles
     const titles = n.rows.map((r) => r.title);
-    expect(titles).not.toContain("立案分诊");
+    expect(titles).not.toContain("拆题");
     expect(titles).not.toContain("事实核查");
     expect(titles).not.toContain("信源审计");
     // Role names appear only as actor attribution on semantic steps
@@ -122,7 +122,7 @@ describe("buildVisibleProcessRows", () => {
     const failed = n.rows.find((r) => r.status === "error");
     expect(failed).toBeTruthy();
     expect(failed!.kind).not.toBe("agent" as never);
-    expect(failed!.title).not.toBe("立案分诊");
+    expect(failed!.title).not.toBe("拆题");
     if (failed!.actor) {
       expect(failed!.title).not.toBe(failed!.actor.name);
     }

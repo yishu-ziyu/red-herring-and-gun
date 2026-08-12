@@ -5,42 +5,22 @@ description: Use before designing or changing a product screen in Red Herring an
 
 # Product Interface Brief
 
-Use this before touching UI code for a new page, major component, Agent workbench state, report surface, evidence drawer, or interaction flow.
+改任何产品屏幕之前先写这六项。
 
-## Output Before Coding
+1. **Page Identity**  
+   开案输入、核查中、结果。不是 Agent 运维台。
 
-Write a short brief with these six fields:
+2. **Viewer**  
+   丢进来一条信息、想知道能不能信的人。评委要看路径时，路径是第二层，不是第一屏。
 
-1. **Page Identity**
-   - Landing page, input desk, Agent execution workbench, evidence detail, final report, memory review, or sandbox demo.
+3. **First-Screen Goal**  
+   三秒内：这是在查一条说法；查完则是能信还是不能信。
 
-2. **Viewer**
-   - Hackathon judge, ordinary user, investigation-minded user, developer, or live demo audience.
+4. **Core Action**  
+   贴说法 / 截图 / 链接 → 开始查 → 读判断和问题点 → 点开来源。
 
-3. **First-Screen Goal**
-   - What the user must understand in 3 seconds.
-   - Example: "This is investigating one claim through an Agent team, not showing a static answer."
+5. **Visual Taboos**  
+   不要通用 SaaS 功能卡、彩虹状态、假 Demo 腔、日志墙当主界面、转发建议当英雄文案。
 
-4. **Core Action**
-   - Input claim, upload image/link, launch deep verification, inspect Agent, inspect evidence, confirm memory candidate, export closure card.
-
-5. **Visual Taboos**
-   - No generic SaaS feature cards.
-   - No colorful status soup.
-   - No purple/blue AI gradients.
-   - No fake demo language in real product paths.
-   - No wall of logs as the primary surface.
-
-6. **Acceptance Criteria**
-   - Agent state is visible.
-   - Evidence path is traceable.
-   - Details are available on demand.
-   - Real data boundaries are explicit.
-   - Mobile layout does not collapse into overlapping panels.
-
-## Product-Specific Defaults
-
-- Tone: clean investigation desk, restrained, credible, not theatrical.
-- Layout: left controller rail, center workbench, bottom Agent dock, optional detail drawer.
-- Color: neutral base, one active accent, red only for blocking/failure.
-- Copy: concise operational labels. Avoid explanatory slogans inside the product UI.
+6. **Acceptance Criteria**  
+   判断可读；问题点具体；来源能点开；查不清就说查不清；细节按需展开。

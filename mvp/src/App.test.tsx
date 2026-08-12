@@ -76,15 +76,28 @@ describe("real analysis workspace", () => {
     vi.clearAllMocks();
     window.history.pushState({}, "", "/");
     window.localStorage.clear();
+    // Keep launch enabled: PromptInput send is gated on available models.
+    mockModelsList([
+      { provider: "deepseek", model: "deepseek-v4-pro", label: "DeepSeek V4 Pro", tier: "high", hint: "强推理" },
+      { provider: "deepseek", model: "deepseek-v4-flash", label: "DeepSeek V4 Flash", tier: "mid", hint: "推荐" },
+    ]);
   });
+
+  async function fillClaimInput(text: string) {
+    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    editor.textContent = text;
+    fireEvent.input(editor);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /开始核查/ })).toBeEnabled();
+    });
+    return editor;
+  }
 
   async function startRealAnalysis() {
     const rendered = render(<App />);
 
-    fireEvent.change(screen.getByPlaceholderText("输入文字、粘贴链接，或添加聊天截图 / 网页截图"), {
-      target: { value: "隔夜菜会致癌，吃了等于吃毒药" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
+    await fillClaimInput("隔夜菜会致癌，吃了等于吃毒药");
+    fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
 
     expect(await screen.findByLabelText("核查卷宗工作区")).toBeInTheDocument();
     return rendered;
@@ -119,7 +132,7 @@ describe("real analysis workspace", () => {
           credibilityLabel: "谣言",
           credibilityScore: 95,
           conclusion: "该说法没有可靠证据支持，属于不实信息。",
-          recommendation: "不要继续转发。",
+          recommendation: "不能信。",
           summaryForPublic: "这条信息不可靠。",
           whyHardToVerify: [],
           evidenceChain: [],
@@ -131,10 +144,10 @@ describe("real analysis workspace", () => {
 
     await startRealAnalysis();
 
-    // 结果首屏：结论 + 转发建议（不依赖旧的评分主视觉）
+    // 结果首屏：结论 + 能不能信
     const report = await screen.findByLabelText("最终核查判断");
     expect(within(report).getByText(/该说法没有可靠证据支持/)).toBeInTheDocument();
-    expect(within(report).getByText("不要继续转发。")).toBeInTheDocument();
+    expect(within(report).getByText("不能信。")).toBeInTheDocument();
     // 折叠区仍可展开看评分细节
     const more = within(report).queryByText("更多细节（评分与审计）");
     if (more) {
@@ -146,7 +159,7 @@ describe("real analysis workspace", () => {
   it("keeps deterministic report fallback visible instead of rejecting the final report", async () => {
     const fallbackStep = {
       agent: "report_composer",
-      agentName: "报告收束员",
+      agentName: "写结论",
       agentIcon: "📝",
       systemPrompt: "test",
       input: {},
@@ -163,7 +176,7 @@ describe("real analysis workspace", () => {
       yield {
         type: "agent_complete",
         agent: "report_composer",
-        agentName: "报告收束员",
+        agentName: "写结论",
         agentIcon: "📝",
         output: fallbackStep.output,
         model: fallbackStep.model,
@@ -177,8 +190,8 @@ describe("real analysis workspace", () => {
           verdictType: "uncertain",
           credibilityLabel: "存疑",
           credibilityScore: 54,
-          conclusion: "已用确定性报告收束，证据不足以支持直接转发。",
-          recommendation: "先不要转发，等待更可靠来源。",
+          conclusion: "已用确定性结论，证据还撑不住这句话。",
+          recommendation: "还查不清。",
           summaryForPublic: "当前证据链不足。",
           whyHardToVerify: [],
           evidenceChain: [],
@@ -190,8 +203,8 @@ describe("real analysis workspace", () => {
 
     await startRealAnalysis();
 
-    expect(await screen.findByText(/报告收束使用确定性兜底/)).toBeInTheDocument();
-    expect((await screen.findAllByText(/已用确定性报告收束/)).length).toBeGreaterThan(0);
+    expect(await screen.findByText(/写结论使用确定性兜底/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/已用确定性结论/)).length).toBeGreaterThan(0);
     expect(screen.queryByText(/拒绝展示非真实结论/)).not.toBeInTheDocument();
   });
 
@@ -206,7 +219,7 @@ describe("real analysis workspace", () => {
           credibilityLabel: "存疑",
           credibilityScore: 36,
           conclusion: "当前证据不足以直接确认原始说法。",
-          recommendation: "先不要转发。",
+          recommendation: "还查不清。",
           summaryForPublic: "当前证据链不足。",
           whyHardToVerify: [
             "ReportComposer all providers failed: API error quota exceeded at https://internal.example.com/v1/messages",
@@ -232,9 +245,9 @@ describe("real analysis workspace", () => {
     // 基础设施错误不得出现在用户可见结论文案里
     const report = await screen.findByLabelText("最终核查判断");
     expect(within(report).getByText(/当前证据不足以直接确认原始说法/)).toBeInTheDocument();
-    expect(within(report).getByText("先不要转发。")).toBeInTheDocument();
+    expect(within(report).getByText("还查不清。")).toBeInTheDocument();
     const visible = document.body.textContent || "";
-    expect(visible).toMatch(/最终写作服务暂时不可用|证据不足|先不要转发/);
+    expect(visible).toMatch(/最终写作服务暂时不可用|证据不足|还查不清/);
     expect(visible).not.toMatch(/ReportComposer all providers failed|quota exceeded at https:\/\/internal\.example\.com/);
   });
 
@@ -319,27 +332,27 @@ describe("landing Version A storytelling", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("粘贴传言，对照公开材料，给出可追溯的判断")).toBeInTheDocument();
-    expect(screen.getByText("群里又在传一条消息？先查清楚再决定转不转。")).toBeInTheDocument();
+    expect(await screen.findByText("溯源公开材料，核对是不是一手")).toBeInTheDocument();
+    expect(screen.getByText("贴进来。追出处。告诉你能不能信。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "它如何工作" })).toBeInTheDocument();
-    expect(screen.getByText("拆开说法")).toBeInTheDocument();
-    expect(screen.getByText("调查报告预览")).toBeInTheDocument();
-    expect(screen.getByText("示例卷宗")).toBeInTheDocument();
-    expect(screen.getByText("转发建议")).toBeInTheDocument();
-    expect(screen.getByText("调查结论")).toBeInTheDocument();
+    expect(screen.getByText("交叉看")).toBeInTheDocument();
+    expect(screen.getByText("查完大概长这样")).toBeInTheDocument();
+    expect(screen.getByText("示例")).toBeInTheDocument();
+    expect(screen.getByText("能不能信")).toBeInTheDocument();
+    expect(screen.getByText("结论")).toBeInTheDocument();
 
-    const verifyButtons = screen.getAllByRole("button", { name: /立即核查/ });
+    const verifyButtons = screen.getAllByRole("button", { name: /查这条/ });
     expect(verifyButtons).toHaveLength(3);
-    expect(verifyButtons[0]).toHaveAccessibleName("立即核查：隔夜菜会致癌，等于吃毒药");
+    expect(verifyButtons[0]).toHaveAccessibleName("查这条：隔夜菜会致癌，等于吃毒药");
     expect(verifyButtons[1]).toHaveAccessibleName(
-      "立即核查：某公司未来三年营收将增长十倍"
+      "查这条：某公司未来三年营收将增长十倍"
     );
     expect(verifyButtons[2]).toHaveAccessibleName(
-      "立即核查：某项政策已经正式确定并将立即实施"
+      "查这条：某项政策已经正式确定并将立即实施"
     );
   });
 
-  it("starts analysis with the demo claim when「立即核查」is clicked", async () => {
+  it("starts analysis with the demo claim when「查这条」is clicked", async () => {
     mockModelsList(FAKE_MODELS);
 
     vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
@@ -349,7 +362,7 @@ describe("landing Version A storytelling", () => {
     const claim = "隔夜菜会致癌，等于吃毒药";
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: `立即核查：${claim}` }));
+    fireEvent.click(await screen.findByRole("button", { name: `查这条：${claim}` }));
 
     expect(await screen.findByLabelText("核查卷宗工作区")).toBeInTheDocument();
 
@@ -371,10 +384,8 @@ describe("landing Version A storytelling", () => {
 
     render(<App />);
 
-    const textarea = await screen.findByPlaceholderText(
-      "输入文字、粘贴链接，或添加聊天截图 / 网页截图"
-    );
-    fireEvent.keyDown(textarea, { key: "Enter", code: "Enter", shiftKey: false });
+    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    fireEvent.keyDown(editor, { key: "Enter", code: "Enter", shiftKey: false });
 
     expect(await screen.findByRole("alert")).toHaveTextContent("请先填写待核查材料");
     expect(requestOrchestrateStream).not.toHaveBeenCalled();
@@ -474,7 +485,7 @@ describe("model picker (simplified BYO)", () => {
 
     expect(await screen.findByText(/暂无可用模型|未配置任何 LLM/)).toBeInTheDocument();
 
-    const submit = screen.getByRole("button", { name: /开始调查/ });
+    const submit = screen.getByRole("button", { name: /开始核查/ });
     expect(submit).toBeDisabled();
   });
 
@@ -496,10 +507,10 @@ describe("model picker (simplified BYO)", () => {
     fireEvent.click(within(picker).getByRole("button", { name: /推荐组合/ }));
 
     // 填入 claim 并启动
-    fireEvent.change(screen.getByPlaceholderText("输入文字、粘贴链接，或添加聊天截图 / 网页截图"), {
-      target: { value: "测试 modelChoice 是否传递" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
+    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    editor.textContent = "测试 modelChoice 是否传递";
+    fireEvent.input(editor);
+    fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
 
     // 等待 requestOrchestrateStream 被调用
     await waitFor(() => {

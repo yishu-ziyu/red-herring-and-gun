@@ -49,7 +49,7 @@ export const financeRumorCase: DemoCase = {
       subclaimId: "C1",
       neededEvidence: ["汇率预测模型", "经济学家共识预测", "历史汇率波动数据"],
       notAcceptable: ["单一来源预测", "没有模型的断言", "自媒体分析"],
-      minimumOutputRule: "没有高质量预测模型时，不能说「即将贬值」。",
+      minimumOutputRule: "没有高质量预测模型时，不能当成即将贬值。",
     },
     {
       subclaimId: "C2",

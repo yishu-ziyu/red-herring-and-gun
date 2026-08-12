@@ -10,7 +10,7 @@
 |------|------|-------------|---------|
 | 准确性评估 | 30% | ~5/30 | 接入真实 LLM，确保 4 个 Agent 独立调用 |
 | 场景覆盖 | 20% | ~15/20 | 维持 4 类 + 增加政治/娱乐类 |
-| 结果闭环 | 20% | ~8/20 | 导出报告 + 复制摘要 + 继续追问 |
+| 结果 | 20% | ~8/20 | 导出报告 + 复制摘要 + 继续追问 |
 | 技术架构 | 10% | ~3/10 | localStorage 记忆 + 知识库复用 |
 | Agent 能力（国产模型） | 10% | ~0/10 → **已完成** ✅ | StepFun step-3.7-flash 已接入 |
 | 360 生态联动 | 10% | ~0/10 | 360 搜索 API 或 360 AI 浏览器插件 |
@@ -24,7 +24,7 @@ P0 ──┬── [T1] StepFun 端到端测试验证
      └── [T2] 准确性兜底（Demo Fallback 兜底逻辑优化）
 
 P1 ──┬── [T3] 记忆/知识库机制（localStorage）
-     ├── [T4] 结果闭环动作（导出/复制/追问）
+     ├── [T4] 结果动作（导出/复制/追问）
      └── [T5] 增加场景覆盖（政治/娱乐/历史类谣言）
 
 P2 ──┬── [T6] 360 搜索 API 联动
@@ -141,7 +141,7 @@ curl -s https://api.stepfun.com/v1/chat/completions \
 
 ---
 
-### [T4] 结果闭环动作（导出/复制/追问）
+### [T4] 结果动作（导出/复制/追问）
 
 **评分要求**: "是否有闭环动作以及闭环是否完整"
 
@@ -293,7 +293,7 @@ curl -s https://api.stepfun.com/v1/chat/completions \
 - 输入：当前 `App.tsx`、`reasoningStore.tsx`、需要的接口定义
 - 输出：`knowledgeBase.ts`、`HistoryPanel.tsx`、修改后的 `App.tsx`
 
-**Codex Prompt B**: 实现 [T4] 结果闭环动作
+**Codex Prompt B**: 实现 [T4] 结果动作
 - 输入：当前 `ResultWorkspace.tsx`、`ReportPanel.tsx`
 - 输出：导出报告功能、复制摘要功能、继续追问功能
 

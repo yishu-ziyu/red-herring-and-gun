@@ -59,9 +59,9 @@ describe("dump fact-desk demo report", () => {
       lines.push(`> ${report.rewrittenClaim.cautious}`, "");
       lines.push("**对外短句：**", "");
       lines.push(`> ${report.rewrittenClaim.publicFacing}`, "");
-      lines.push("**可以说：**");
+      lines.push("**能信：**");
       for (const x of desk.canSay.slice(0, 4)) lines.push(`- ${x}`);
-      lines.push("", "**不能说：**");
+      lines.push("", "**不能信：**");
       for (const x of desk.cannotSay.slice(0, 4)) lines.push(`- ${x}`);
       lines.push("", "**来源芯片（B）样本：**");
       if (chips.length === 0) lines.push("- （本轮未挂上芯片）");
