@@ -9,7 +9,7 @@
  * MissionProcessShellAntd.tsx is kept on disk but not loaded here.
  */
 import { useMemo, useState } from "react";
-import type { MissionShellModel } from "../../../../lib/missionShell";
+import type { MissionShellModel, ShellToolItem } from "../../../../lib/missionShell";
 import {
   buildVisibleProcessRows,
   formatReviewIssue,
@@ -17,6 +17,10 @@ import {
   type VisibleProcessNarrative,
   type VisibleProcessRow,
 } from "../../../../lib/missionShell";
+import { humanizeClaimType } from "../../../../lib/missionShell/labels";
+import { ThinkingReasoning } from "./ThinkingReasoning";
+import { buildInvestigationTodos, TodoList } from "./TodoList";
+import { isSearchShellTool, sitesFromSearchResult, WebSearch } from "./WebSearch";
 
 export type MissionProcessShellVariant = "token" | "antdx";
 
@@ -40,13 +44,104 @@ function statusDotClass(status: VisibleProcessRow["status"]): string {
   return "mps-dot mps-dot--pending";
 }
 
+/**
+ * 一级可见的理解卡：让用户先看到「系统把你的话读成了哪几条可核查命题」。
+ * 这是透明性的真正落点——先确认系统有没有理解错，再看它怎么查、怎么判。
+ * 无 understanding 时不渲染（不编造）。
+ */
+function UnderstandingBlock({ model }: { model: MissionShellModel }) {
+  const u = model.understanding;
+  if (!u || !u.atoms || u.atoms.length === 0) return null;
+  return (
+    <div className="mps-understand" role="region" aria-label="系统如何理解这句话">
+      <div className="mps-understand-head">
+        <span className="mps-understand-label">系统把你的话读成了这几条</span>
+      </div>
+      <p className="mps-understand-claim">{u.claim}</p>
+      <ul className="mps-understand-list">
+        {u.atoms.map((atom, index) => {
+          const typeZh = humanizeClaimType(atom.type);
+          return (
+            <li key={`${index}-${atom.text.slice(0, 16)}`} className="mps-understand-atom">
+              <span className="mps-understand-num">{index + 1}</span>
+              <span className="mps-understand-text">{atom.text}</span>
+              <span className="mps-understand-meta">
+                {atom.verifiable ? (
+                  <span className="mps-understand-tag mps-understand-tag--ok">可核查</span>
+                ) : (
+                  <span className="mps-understand-tag mps-understand-tag--stance">立场型</span>
+                )}
+                {typeZh ? <span className="mps-understand-type">{typeZh}</span> : null}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * 真实推理揭示：ThinkingReasoning。
+ * - 句子只来自 agent_thought，绝不编造。
+ * - loading 且有 actor → 即使尚无句子也显示「整理推理…」
+ * - done 且无句子 → 不渲染。
+ * - 耗时用后端 latency / stream 时间戳，与模型真实推理时长一致。
+ */
+function ReasoningReveal({
+  reasoning,
+  elapsedMs,
+  status,
+  hasActor,
+}: {
+  reasoning?: string[];
+  elapsedMs?: number;
+  status: VisibleProcessRow["status"];
+  hasActor?: boolean;
+}) {
+  const thinking = status === "loading";
+  const sentences = reasoning ?? [];
+  if (!thinking && sentences.length === 0) return null;
+  if (thinking && !hasActor && sentences.length === 0) return null;
+  return (
+    <ThinkingReasoning
+      sentences={sentences}
+      thinking={thinking}
+      elapsedMs={elapsedMs}
+    />
+  );
+}
+
+function resolveTool(
+  tools: ShellToolItem[],
+  toolKey?: string
+): ShellToolItem | undefined {
+  if (!toolKey) return undefined;
+  return tools.find((t) => t.key === toolKey);
+}
+
 function ProcessRowView({
   row,
+  tools,
+  live,
   onSelectTool,
 }: {
   row: VisibleProcessRow;
+  tools: ShellToolItem[];
+  live: boolean;
   onSelectTool?: (toolKey: string) => void;
 }) {
+  const searchBlocks: Array<{ key: string; tool: ShellToolItem }> = [];
+  const chipActs: VisibleProcessRow["activities"] = [];
+  for (const act of row.activities) {
+    const tool = resolveTool(tools, act.toolKey || act.key);
+    if (tool && isSearchShellTool(tool)) {
+      searchBlocks.push({ key: act.key, tool });
+    } else {
+      chipActs.push(act);
+    }
+  }
+
   return (
     <li
       key={row.key}
@@ -71,9 +166,22 @@ function ProcessRowView({
         {row.actor ? (
           <div className="mps-step-actor">{row.actor.name}</div>
         ) : null}
-        {row.activities.length > 0 ? (
+        {searchBlocks.length > 0 ? (
+          <div className="mps-search-blocks" aria-label="联网检索">
+            {searchBlocks.map(({ key, tool }) => (
+              <WebSearch
+                key={key}
+                query={tool.query || tool.detail || tool.title}
+                sites={sitesFromSearchResult(tool.result)}
+                status={tool.status}
+                instantDone={!live && tool.status === "success"}
+              />
+            ))}
+          </div>
+        ) : null}
+        {chipActs.length > 0 ? (
           <ul className="mps-activities mps-activities--chips" aria-label="步骤活动">
-            {row.activities.map((act) => (
+            {chipActs.map((act) => (
               <li
                 key={act.key}
                 className={`mps-activity mps-activity-chip mps-activity--${act.status}`}
@@ -100,6 +208,12 @@ function ProcessRowView({
           </ul>
         ) : null}
         {row.nextHint ? <div className="mps-step-next">下一步：{row.nextHint}</div> : null}
+        <ReasoningReveal
+          reasoning={row.reasoning}
+          elapsedMs={row.reasoningElapsedMs}
+          status={row.status}
+          hasActor={Boolean(row.actor)}
+        />
       </div>
     </li>
   );
@@ -107,10 +221,14 @@ function ProcessRowView({
 
 function NarrativeStream({
   narrative,
+  tools,
+  live,
   onSelectTool,
   forceExpandAll,
 }: {
   narrative: VisibleProcessNarrative;
+  tools: ShellToolItem[];
+  live: boolean;
   onSelectTool?: (toolKey: string) => void;
   forceExpandAll: boolean;
 }) {
@@ -123,7 +241,13 @@ function NarrativeStream({
   return (
     <ol className="mps-chain mps-chain--narrative">
       {visible.map((row) => (
-        <ProcessRowView key={row.key} row={row} onSelectTool={onSelectTool} />
+        <ProcessRowView
+          key={row.key}
+          row={row}
+          tools={tools}
+          live={live}
+          onSelectTool={onSelectTool}
+        />
       ))}
     </ol>
   );
@@ -158,7 +282,7 @@ function VerdictBlock({ narrative, model }: { narrative: VisibleProcessNarrative
 
   return (
     <div className="mps-verdict mps-verdict--hero" role="region" aria-label="核查结论">
-      <div className="mps-verdict-label">现在可以怎么看</div>
+      <div className="mps-verdict-label">结论</div>
       <div className="mps-verdict-badges">
         <div className="mps-verdict-type">{humanizeVerdictType(model.verdict.verdictType)}</div>
         {typeof model.verdict.credibilityScore === "number" ? (
@@ -167,8 +291,8 @@ function VerdictBlock({ narrative, model }: { narrative: VisibleProcessNarrative
       </div>
       {model.verdict.conclusion ? <p className="mps-verdict-text">{model.verdict.conclusion}</p> : null}
       {model.verdict.shareAdvice ? (
-        <div className="mps-share-advice" aria-label="转发建议">
-          <span className="mps-share-advice-label">转发建议</span>
+        <div className="mps-share-advice" aria-label="能不能信">
+          <span className="mps-share-advice-label">能不能信</span>
           <p className="mps-share-advice-text">{model.verdict.shareAdvice}</p>
         </div>
       ) : null}
@@ -230,12 +354,20 @@ export function MissionProcessShell({
   // antdx frozen: always token narrative (MissionProcessShellAntd not loaded in product)
   void variant;
   const narrative = useMemo(() => buildVisibleProcessRows(model), [model]);
+  const todos = useMemo(() => buildInvestigationTodos(model), [model]);
   const [expandAll, setExpandAll] = useState(false);
 
   const foldProcess =
     narrative.mode === "complete" || narrative.mode === "deferred";
   const showCollapseToggle =
     narrative.collapsedCount > 0 && !expandAll && !foldProcess;
+  const showTodos =
+    todos.length > 0 &&
+    (model.thoughtItems.length > 0 ||
+      model.tools.length > 0 ||
+      model.agents.length > 0 ||
+      model.verdict.present ||
+      Boolean(model.errorMessage));
 
   return (
     <section
@@ -251,6 +383,18 @@ export function MissionProcessShell({
       {narrative.showVerdict || narrative.deferredReview ? (
         <VerdictBlock narrative={narrative} model={model} />
       ) : null}
+
+      {/* Stream-derived checklist — same agent/tool truth as the narrative below */}
+      {showTodos ? (
+        <TodoList
+          items={todos}
+          title="核查计划"
+          defaultCollapsed={foldProcess}
+        />
+      ) : null}
+
+      {/* 一级理解卡：先看系统把你的话读成了哪几条，再回看过程 */}
+      <UnderstandingBlock model={model} />
 
       {foldProcess ? (
         <div className="mps-process-fold">
@@ -274,6 +418,8 @@ export function MissionProcessShell({
           ) : null}
           <NarrativeStream
             narrative={narrative}
+            tools={model.tools}
+            live={model.live}
             onSelectTool={onSelectTool}
             forceExpandAll={expandAll || narrative.mode === "error"}
           />

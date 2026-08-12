@@ -48,7 +48,7 @@ export function extractAnthropicText(raw: string): string {
   return parts.join("");
 }
 
-/** 从 Anthropic 完整响应对象中拼接 content[*].text。 */
+/** 从 Anthropic 完整响应对象中拼接 content[*].text。保持纯净，避免 thinking 污染 JSON 解析。 */
 export function extractAnthropicContent(data: unknown): string {
   if (!data || typeof data !== "object") return "";
   const content = (data as { content?: unknown }).content;
@@ -60,6 +60,30 @@ export function extractAnthropicContent(data: unknown): string {
     }
   }
   return parts.join("");
+}
+
+/** 从 Anthropic 兼容响应中提取思考文本（MiniMax-M3 的 content[*].thinking）。无则返回空串。 */
+export function extractAnthropicThinking(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("{")) {
+    try {
+      const data = JSON.parse(trimmed);
+      const content = (data as { content?: unknown }).content;
+      const items = Array.isArray(content) ? content : [];
+      const thoughts: string[] = [];
+      for (const item of items) {
+        if (item && typeof item === "object") {
+          const th = (item as { thinking?: unknown }).thinking;
+          if (typeof th === "string" && th.trim()) thoughts.push(th);
+        }
+      }
+      return thoughts.join("\n\n");
+    } catch {
+      return "";
+    }
+  }
+  return "";
 }
 
 /**

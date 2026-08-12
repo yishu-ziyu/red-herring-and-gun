@@ -16,6 +16,7 @@ import {
   type SearchOneAtom,
 } from "../atomSearch.js";
 import { assembleFinalReport } from "../reportAssembly/index.js";
+import { normalizeReportCitations } from "../citationBinding.js";
 import {
   reviewAndRepairReport,
   type ReportReviewIssue,
@@ -185,6 +186,20 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     });
   }
 
+  // Phase 2a: Causal enrichment — 仅当 RumorDetector 拆出的原子含因果断言时，
+  // 并行运行替代解释搜索 + 反证评分，失败可继续（不阻断收束）。
+  const hasCausalAtom = Array.isArray(rumorStep?.output?.claimAtomTypes)
+    && rumorStep.output.claimAtomTypes.some((t) => (t as { type?: string })?.type === "causal");
+  if (hasCausalAtom) {
+    const causalSteps = await Promise.allSettled([
+      runAgent("alternative_explanation_searcher", steps, search360Result, atomSearchBundle),
+      runAgent("counter_evidence_grader", steps, search360Result, atomSearchBundle),
+    ]);
+    for (const settled of causalSteps) {
+      if (settled.status === "fulfilled") steps.push(settled.value);
+    }
+  }
+
   // Phase 3: ReportComposer (+ fallback owned by adapter)
   const reportStep = await runReport({
     claim,
@@ -232,6 +247,8 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     previousOutputs: steps.map((s) => s.output),
   });
   Object.assign(finalReport, review.repaired);
+  // Reviewer may pad evidenceChain / rewrite conclusion — re-bind [n] to sources.
+  normalizeReportCitations(finalReport);
   reportStep.output = finalReport;
   hooks?.onReportReviewResult?.({
     toolName: REPORT_REVIEWER_TOOL,

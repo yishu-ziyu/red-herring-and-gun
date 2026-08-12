@@ -1,0 +1,218 @@
+/**
+ * eval/golden.ts — 评估基准数据（来源：前端 goldenDataset，作为"正确长什么样"的真相源）。
+ *
+ * 为避免 server 独立构建跨目录依赖前端，这里声明了与前端同构的 golden case 结构。
+ * 数据本源是 mvp/src/lib/agentRuntime/evaluation/goldenDataset.ts（真实谣言 + 官方结论）。
+ * 若前端 golden 数据演进，需同步本文件（两者同源，门禁以本文件为准）。
+ */
+
+export interface ScoreCaseGolden {
+  id: string;
+  claim: string;
+  category: "concept" | "causal" | "event" | "mixed";
+  difficulty: "easy" | "medium" | "hard" | "trap";
+  domain: string;
+  expectedVerdictType: "true" | "false" | "mixed_misleading" | "unverified";
+  expectedCredibilityRange: [number, number];
+  expectedAgentSequence: string[];
+  traps: string[];
+}
+
+export const goldenDataset: ScoreCaseGolden[] = [
+  {
+    id: "RUMOR-001",
+    claim: "数字人民币平台正在发放数字资产红利",
+    category: "event",
+    difficulty: "medium",
+    domain: "finance",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 15],
+    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
+    traps: ["冒用央行名义", "伪造官方来源"],
+  },
+  {
+    id: "RUMOR-002",
+    claim: "扫码可领2024年个人劳动补贴，逾期视为弃权",
+    category: "event",
+    difficulty: "medium",
+    domain: "social",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 15],
+    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
+    traps: ["伪造官方小程序", "诈骗邮件"],
+  },
+  {
+    id: "RUMOR-003",
+    claim: "车票退票不再收手续费了",
+    category: "event",
+    difficulty: "easy",
+    domain: "policy",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 20],
+    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
+    traps: ["单次特例当普遍政策"],
+  },
+  {
+    id: "RUMOR-004",
+    claim: "京沪高速公路停止收费了",
+    category: "event",
+    difficulty: "medium",
+    domain: "policy",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 15],
+    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
+    traps: ["拼接图片误导"],
+  },
+  {
+    id: "RUMOR-005",
+    claim: "点早安晚安图片手机会中毒，个人信息会被盗",
+    category: "event",
+    difficulty: "easy",
+    domain: "tech",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 10],
+    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
+    traps: ["陈年老谣", "恐惧话术"],
+  },
+  {
+    id: "RUMOR-006",
+    claim: "浙大研究发现：冷冻馒头不能吃，冷冻超过两天会长黄曲霉素",
+    category: "causal",
+    difficulty: "medium",
+    domain: "health",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 15],
+    expectedAgentSequence: [
+      "rumor_detector",
+      "fact_checker",
+      "source_validator",
+      "alternative_explanation_searcher",
+      "counter_evidence_grader",
+      "report_composer",
+    ],
+    traps: ["误引权威名义", "混淆黄曲霉毒素产生条件"],
+  },
+  {
+    id: "RUMOR-007",
+    claim: "张华银，你的录取通知书丢了，爱心接力请转发",
+    category: "event",
+    difficulty: "easy",
+    domain: "social",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 10],
+    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
+    traps: ["旧谣新传", "爱心话术"],
+  },
+  {
+    id: "RUMOR-008",
+    claim: "中国体育代表团出征奥运会自带300多个空调和床垫",
+    category: "event",
+    difficulty: "hard",
+    domain: "social",
+    expectedVerdictType: "mixed_misleading",
+    expectedCredibilityRange: [10, 30],
+    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
+    traps: ["全队/个别层级混淆"],
+  },
+  {
+    id: "RUMOR-009",
+    claim: "春运抢票可提前90天预约",
+    category: "event",
+    difficulty: "easy",
+    domain: "policy",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 15],
+    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
+    traps: ["第三方营销话术当官方规则"],
+  },
+  {
+    id: "RUMOR-010",
+    claim: "常穿黑色内衣易患癌",
+    category: "causal",
+    difficulty: "medium",
+    domain: "health",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 15],
+    expectedAgentSequence: [
+      "rumor_detector",
+      "fact_checker",
+      "source_validator",
+      "alternative_explanation_searcher",
+      "counter_evidence_grader",
+      "report_composer",
+    ],
+    traps: ["颜色与致癌挂钩"],
+  },
+  {
+    id: "RUMOR-011",
+    claim: "每天喝红酒可以预防心脏病，因为法国人喝红酒且心脏病少",
+    category: "causal",
+    difficulty: "trap",
+    domain: "health",
+    expectedVerdictType: "mixed_misleading",
+    expectedCredibilityRange: [10, 35],
+    expectedAgentSequence: [
+      "rumor_detector",
+      "fact_checker",
+      "source_validator",
+      "alternative_explanation_searcher",
+      "counter_evidence_grader",
+      "report_composer",
+    ],
+    traps: ["相关≠因果", "混杂因素"],
+  },
+  {
+    id: "RUMOR-012",
+    claim: "孩子打疫苗后发烧，说明疫苗导致了自闭症",
+    category: "causal",
+    difficulty: "trap",
+    domain: "health",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 15],
+    expectedAgentSequence: [
+      "rumor_detector",
+      "fact_checker",
+      "source_validator",
+      "alternative_explanation_searcher",
+      "counter_evidence_grader",
+      "report_composer",
+    ],
+    traps: ["时序当因果", "轶事当证据"],
+  },
+  {
+    id: "RUMOR-013",
+    claim: "某地推广某保健品后癌症死亡率下降，证明该保健品能防癌",
+    category: "causal",
+    difficulty: "trap",
+    domain: "health",
+    expectedVerdictType: "mixed_misleading",
+    expectedCredibilityRange: [10, 35],
+    expectedAgentSequence: [
+      "rumor_detector",
+      "fact_checker",
+      "source_validator",
+      "alternative_explanation_searcher",
+      "counter_evidence_grader",
+      "report_composer",
+    ],
+    traps: ["生态谬误", "时序当疗效"],
+  },
+  {
+    id: "RUMOR-014",
+    claim: "医院里死亡率比家里高，所以去医院看病反而更危险",
+    category: "causal",
+    difficulty: "trap",
+    domain: "health",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 15],
+    expectedAgentSequence: [
+      "rumor_detector",
+      "fact_checker",
+      "source_validator",
+      "alternative_explanation_searcher",
+      "counter_evidence_grader",
+      "report_composer",
+    ],
+    traps: ["选择偏倚", "基率谬误"],
+  },
+];

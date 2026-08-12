@@ -63,7 +63,9 @@ export interface CredibilityScoreResult {
 
 const FACT_CHECK_MAP: Record<string, number> = {
   true: 0.9,
-  partial: 0.2,
+  // 校准（2026-08-12）：partial 是"部分属实、部分误导"，主信号应收敛到中性偏负，
+  // 让 mixed_misleading 类结论落在低分带（golden 期望 10-30），而非被抬成"存疑"。
+  partial: 0.05,
   false: -0.9,
   unverified: 0,
 };
@@ -131,7 +133,19 @@ export function computeCredibilityScore(
   const searchSignal = Math.tanh(searchMean);
 
   // 分量 C：信源可靠性
-  const sourceSignal = SOURCE_RELIABILITY_MAP[source.sourceReliability] ?? 0;
+  // 校准（2026-08-12）：
+  // - partial：信源可靠 ≠ 结论可信，source 不抬分（×0）
+  // - false / true：source 不得反转主裁决（已判假不被 medium/high 信源托高；
+  //   已证实不被 low 信源单方面否决）。同向仍保留为微调。
+  const sourceRaw = SOURCE_RELIABILITY_MAP[source.sourceReliability] ?? 0;
+  let sourceSignal = sourceRaw;
+  if (factCheck.factCheckResult === "partial") {
+    sourceSignal = 0;
+  } else if (factCheck.factCheckResult === "false" && sourceRaw > 0) {
+    sourceSignal = 0;
+  } else if (factCheck.factCheckResult === "true" && sourceRaw < 0) {
+    sourceSignal = 0;
+  }
 
   // 分量 D：谣言严重度惩罚
   const rumorPenalty = SEVERITY_PENALTY[rumor.severity] ?? 0.2;

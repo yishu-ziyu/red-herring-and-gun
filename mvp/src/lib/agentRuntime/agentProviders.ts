@@ -32,6 +32,8 @@ export interface AgentProviderResult {
   output: Record<string, unknown>;
   model: string;
   latencyMs: number;
+  /** Model thinking text when provider returns it (e.g. StepFun message.reasoning). */
+  reasoning?: string;
 }
 
 function getProviderTimeoutMs(env: Record<string, string>, key: string, fallbackMs: number) {
@@ -453,11 +455,19 @@ function shouldTryAllMimoClusters(env: Record<string, string>) {
   return (env.MIMO_TRY_ALL_CLUSTERS || process.env.MIMO_TRY_ALL_CLUSTERS || "").trim() === "1";
 }
 
-function parseProviderText(result: { text: string; model: string }, startTime: number): AgentProviderResult {
+function parseProviderText(
+  result: { text: string; model: string; reasoning?: string },
+  startTime: number
+): AgentProviderResult {
+  const reasoning =
+    typeof result.reasoning === "string" && result.reasoning.trim()
+      ? result.reasoning.trim()
+      : undefined;
   return {
     output: parseProviderJson(result.text, result.model),
     model: result.model,
     latencyMs: Date.now() - startTime,
+    ...(reasoning ? { reasoning } : {}),
   };
 }
 
@@ -972,7 +982,13 @@ async function callStepFunAgent({
   const text = extractChatCompletionText(data);
   if (!text) throw new Error(`StepFun API 没有返回可解析文本（${describeEmptyChatCompletion(data)}）。`);
 
-  return { text, model: `stepfun:${model}` };
+  // Reasoning models (step-3.7-flash) return thinking in message.reasoning (non-stream).
+  const reasoning =
+    typeof data?.choices?.[0]?.message?.reasoning === "string"
+      ? (data.choices[0].message.reasoning as string).trim()
+      : "";
+
+  return { text, model: `stepfun:${model}`, ...(reasoning ? { reasoning } : {}) };
 }
 
 async function loadAnthropicConfig(env: Record<string, string>) {
