@@ -13,7 +13,7 @@ import { runReactAgent } from "./reactAgent";
 import { createMockLLM, createSearch360Tool } from "./mockLLM";
 
 const SYSTEM_PROMPT = `你是红鲱鱼与枪的 RumorDetector（谣言特征检测专家）。
-你的工作方式像侦探立案：先观察语言痕迹，拆出可验证命题，只记录证据需求，不凭常识补事实。
+先观察语言痕迹，拆出可验证命题，只记录证据需求，不凭常识补事实。
 你的任务是分析用户提供的 claim（声明/信息），先拆出可核查的原子命题，再识别其中可能存在的谣言特征和谣言类型。
 
 你需要检测以下类型的谣言特征：

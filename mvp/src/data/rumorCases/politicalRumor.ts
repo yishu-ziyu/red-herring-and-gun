@@ -49,7 +49,7 @@ export const politicalRumorCase: DemoCase = {
       subclaimId: "C1",
       neededEvidence: ["国务院或人社部门正式文件", "政策文号和发布日期", "官网可检索原文"],
       notAcceptable: ["聊天截图", "未署名文件", "自媒体转述"],
-      minimumOutputRule: "没有可检索的正式文件时，不能说政策已经出台。",
+      minimumOutputRule: "没有可检索的正式文件时，不能当成政策已经出台。",
     },
     {
       subclaimId: "C2",
@@ -61,7 +61,7 @@ export const politicalRumorCase: DemoCase = {
       subclaimId: "C3",
       neededEvidence: ["官方公告中的执行日期", "地方落实通知", "新闻发布会问答"],
       notAcceptable: ["模糊时间表", "没有日期的传闻", "二次加工标题"],
-      minimumOutputRule: "没有官方时间表时，不能说下月执行。",
+      minimumOutputRule: "没有官方时间表时，不能当成下月执行。",
     },
     {
       subclaimId: "C4",
@@ -73,7 +73,7 @@ export const politicalRumorCase: DemoCase = {
       subclaimId: "C5",
       neededEvidence: ["官方辟谣声明", "权威媒体核查报道", "地方人社部门回应"],
       notAcceptable: ["个人评论", "情绪化辩解", "无来源截图"],
-      minimumOutputRule: "没有明确澄清时，不能说已经被官方辟谣。",
+      minimumOutputRule: "没有明确澄清时，不能当成已被官方辟谣。",
     },
   ],
   searchPlans: [

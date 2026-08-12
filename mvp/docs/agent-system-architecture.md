@@ -132,7 +132,7 @@ buildAdaptiveExecutionPlan(claim, intake)
 
 ### RumorDetector
 
-角色：声明分诊与谣言类型路由 Agent。
+角色：拆题与类型识别。
 
 任务：
 
@@ -180,7 +180,7 @@ buildAdaptiveExecutionPlan(claim, intake)
 
 ### ReportComposer
 
-角色：证据边界报告与闭环 Agent。
+角色：报告收束。
 
 任务：
 

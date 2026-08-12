@@ -119,14 +119,14 @@ export interface SubclaimReportStatus {
 
 export type SubclaimVerdictValue = "true" | "false" | "partial" | "exaggerated" | "unverified";
 
-/** 逐条定罪绑定的来源（url/title/snippet 三项，均为判定可追溯的可点击依据） */
+/** 逐条判定绑定的来源（url/title/snippet 三项，均为判定可追溯的可点击依据） */
 export interface VerdictSource {
   url: string;
   title: string;
   snippet: string;
 }
 
-/** 逐命题定罪条目：来自 fact_checker / report_composer 的 subclaimVerdicts，经 merge 闸门规范化后存档 */
+/** 逐条判定条目：来自 fact_checker / report_composer 的 subclaimVerdicts，经 merge 闸门规范化后存档 */
 export interface SubclaimVerdict {
   claimAtom: string;
   verdict: SubclaimVerdictValue;
@@ -156,7 +156,7 @@ export interface ClaimReportItem {
   text: string;
   verifiable: boolean;
   type: string;
-  /** 可核查原子带定罪；不可核查（立场型 value/prediction 等）verdict 缺省 */
+  /** 可核查原子带判定；不可核查（立场型 value/prediction 等）verdict 缺省 */
   verdict?: SubclaimVerdict;
 }
 
@@ -166,7 +166,7 @@ export interface FinalReport {
   allowedConclusion: string;
   claimDiagnosis: ClaimDiagnosis;
   subclaimStatuses: SubclaimReportStatus[];
-  // 逐命题定罪清单（权威清单，服务端 merge 闸门产出）；缺失/空时前端渲染空态
+  // 逐条判定清单（权威清单，服务端 merge 闸门产出）；缺失/空时前端渲染空态
   subclaimVerdicts?: SubclaimVerdict[];
   // 排除层：不可核查原子（立场型·不适用真/假判断），与 subclaimVerdicts 并列，保留原位
   nonVerifiableAtoms?: NonVerifiableAtom[];
@@ -469,7 +469,7 @@ export interface AgentEvidenceBundle {
   logicRiskCount?: number;
 }
 
-// ── M3: 结果闭环动作 ─────────────────────────────────────────
+// ── M3: 结果动作 ─────────────────────────────────────────
 
 export type ClosureAction =
   | "generate_rebuttal_card"
