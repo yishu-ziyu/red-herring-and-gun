@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import {
   adaptOrchestrateStreamToShell,
   FIXTURE_AGENT_ERROR,
+  FIXTURE_AGENT_THOUGHT,
   FIXTURE_COMPLETE,
   FIXTURE_DEBATE,
   FIXTURE_EARLY,
@@ -23,6 +24,7 @@ type FixtureKey =
   | "complete"
   | "error"
   | "agent_error"
+  | "agent_thought"
   | "review_fail"
   | "debate";
 
@@ -32,6 +34,7 @@ const MAP = {
   complete: FIXTURE_COMPLETE,
   error: FIXTURE_ERROR,
   agent_error: FIXTURE_AGENT_ERROR,
+  agent_thought: FIXTURE_AGENT_THOUGHT,
   review_fail: FIXTURE_REVIEW_FAIL,
   debate: FIXTURE_DEBATE,
 } as const;
@@ -42,6 +45,7 @@ const FIXTURE_LABEL: Record<FixtureKey, string> = {
   complete: "完成",
   error: "失败",
   agent_error: "角色失败",
+  agent_thought: "吐字中",
   review_fail: "审稿未过",
   debate: "调解",
 };
@@ -81,7 +85,16 @@ export function MissionShellPreview() {
       <div className="mps-preview-bar">
         <strong>Mission Shell 预览</strong>
         {(
-          ["early", "mid", "debate", "complete", "review_fail", "error", "agent_error"] as FixtureKey[]
+          [
+            "early",
+            "mid",
+            "agent_thought",
+            "debate",
+            "complete",
+            "review_fail",
+            "error",
+            "agent_error",
+          ] as FixtureKey[]
         ).map((k) => (
           <button
             key={k}

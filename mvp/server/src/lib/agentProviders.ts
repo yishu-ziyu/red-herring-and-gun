@@ -12,7 +12,7 @@ import { promisify } from "node:util";
 // 审查 P3-2 修复：extractAnthropicText 从共享模块引入并 re-export，
 // 不再在本文件维护独立副本（原 line 47-87 本地定义已删除）。
 // 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
-import { extractAnthropicText } from "./anthropicParse.js";
+import { extractAnthropicText, extractAnthropicThinking } from "./anthropicParse.js";
 export { extractAnthropicText };
 
 const execFileAsync = promisify(execFile);
@@ -220,7 +220,14 @@ export async function callStepFunAgent({
   const text = extractChatCompletionText(data);
   if (!text) throw new Error(`StepFun API 没有返回可解析文本（${describeEmptyChatCompletion(data)}）。`);
 
-  return { text, model: `stepfun:${model}` };
+  // 推理模型（step-3.7-flash）的 thinking 文本在 message.reasoning 一次性返回。
+  // 当前走非流式调用，无增量 chunk；reasoning 为空时不下发（不展示假思考）。
+  const reasoning =
+    typeof data?.choices?.[0]?.message?.reasoning === "string"
+      ? (data.choices[0].message.reasoning as string).trim()
+      : "";
+
+  return { text, model: `stepfun:${model}`, ...(reasoning ? { reasoning } : {}) };
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -360,7 +367,7 @@ export async function callMiniMaxAgent({
   }
   const text = extractAnthropicText(raw);
   if (!text) throw new Error("MiniMax API 没有返回可解析文本。");
-  return { text, model: `minimax:${model}` };
+  return { text, model: `minimax:${model}`, reasoning: extractAnthropicThinking(raw) || undefined };
 }
 
 function miniMaxMessagesUrl(baseUrl: string) {

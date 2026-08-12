@@ -8,6 +8,7 @@ import {
   FIXTURE_ERROR,
   FIXTURE_MID,
   FIXTURE_REVIEW_FAIL,
+  FIXTURE_AGENT_THOUGHT,
 } from "./fixtures";
 
 describe("adaptOrchestrateStreamToShell", () => {
@@ -46,7 +47,7 @@ describe("adaptOrchestrateStreamToShell", () => {
 
     // Agent summaries must not leak raw English enums into the process UI.
     const fact = model.agents.find((a) => a.agentId === "fact_checker");
-    expect(fact?.summary).toBe("事实判定：部分成立");
+    expect(fact?.summary).toBe("事实判定：只能信一部分");
     expect(fact?.summary).not.toMatch(/\bpartial\b/i);
 
     const source = model.agents.find((a) => a.agentId === "source_validator");
@@ -175,11 +176,11 @@ describe("adaptOrchestrateStreamToShell", () => {
     const rumor = model.agents.find((a) => a.agentId === "rumor_detector");
     expect(rumor).toBeDefined();
     expect(rumor?.status).toBe("error");
-    expect(rumor?.summary).toContain("立案分诊超时");
+    expect(rumor?.summary).toContain("拆题超时");
 
     const thought = model.thoughtItems.find((t) => t.key === "agent:rumor_detector");
     expect(thought?.status).toBe("error");
-    expect(thought?.description).toContain("立案分诊超时");
+    expect(thought?.description).toContain("拆题超时");
     expect(model.thoughtItems.some((t) => t.key === "error")).toBe(false);
   });
 
@@ -252,6 +253,151 @@ describe("adaptOrchestrateStreamToShell", () => {
 
     const tool = model.tools.find((t) => t.key === "tool:second_pass_counter_search");
     expect(tool?.title).toBe("建议二次反证检索");
+  });
+
+  it("FIXTURE_AGENT_THOUGHT: appends real reasoning to agent thought row and marks loading", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_AGENT_THOUGHT);
+
+    const rumor = model.thoughtItems.find((t) => t.key === "agent:rumor_detector");
+    expect(rumor).toBeDefined();
+    expect(rumor?.status).toBe("loading");
+    expect(rumor?.reasoning).toEqual([
+      "这句是拆题的真实思考句一。",
+      "这句是拆题的真实思考句二。",
+      "这句是拆题的真实思考句三。",
+    ]);
+    // agent_start ts=4 → last thought ts=7
+    expect(rumor?.reasoningStartedAt).toBe(4);
+    expect(rumor?.reasoningElapsedMs).toBe(3);
+    expect(model.agents.find((a) => a.agentId === "rumor_detector")?.status).toBe("loading");
+  });
+
+  it("agent_thought reasoning survives agent_complete (status success, reasoning kept)", () => {
+    const model = adaptOrchestrateStreamToShell([
+      ...FIXTURE_AGENT_THOUGHT,
+      {
+        type: "agent_complete",
+        agent: "rumor_detector",
+        agentName: "RumorDetector",
+        output: { analysis: "已识别因果健康类断言" },
+        latencyMs: 5100,
+        timestamp: 99,
+      },
+    ]);
+
+    const rumor = model.thoughtItems.find((t) => t.key === "agent:rumor_detector");
+    expect(rumor?.status).toBe("success");
+    expect(rumor?.reasoning).toHaveLength(3);
+    // Prefer agent latencyMs (model wall-clock), not SSE pacing span.
+    expect(rumor?.reasoningElapsedMs).toBe(5100);
+  });
+
+  it("agent_thought dedups out-of-order/duplicate seq (no double append)", () => {
+    const model = adaptOrchestrateStreamToShell([
+      ...FIXTURE_EARLY,
+      {
+        type: "agent_thought",
+        agent: "rumor_detector",
+        content: "思考句A",
+        seq: 0,
+        done: false,
+        timestamp: 5,
+      },
+      {
+        type: "agent_thought",
+        agent: "rumor_detector",
+        content: "思考句B",
+        seq: 1,
+        done: false,
+        timestamp: 6,
+      },
+      // 重复 seq=1（回退）不应再次追加
+      {
+        type: "agent_thought",
+        agent: "rumor_detector",
+        content: "思考句B(duplicate)",
+        seq: 1,
+        done: true,
+        timestamp: 7,
+      },
+    ]);
+
+    const rumor = model.thoughtItems.find((t) => t.key === "agent:rumor_detector");
+    expect(rumor?.reasoning).toEqual(["思考句A", "思考句B"]);
+  });
+
+  it("agent without reasoning exposes no reasoning (no fabricated thinking)", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_EARLY);
+    const rumor = model.thoughtItems.find((t) => t.key === "agent:rumor_detector");
+    expect(rumor?.reasoning).toBeUndefined();
+    expect(rumor?.reasoningElapsedMs).toBeUndefined();
+  });
+
+  it("understanding: rumor_detector claimAtomTypes 升格为一级理解卡", () => {
+    const model = adaptOrchestrateStreamToShell([
+      {
+        type: "agent_complete",
+        agent: "rumor_detector",
+        agentName: "RumorDetector",
+        output: {
+          claimAtoms: ["某药能治愈失眠", "某药已获批准上市"],
+          claimAtomTypes: [
+            { text: "某药能治愈失眠", verifiable: true, type: "causal" },
+            { text: "某药已获批准上市", verifiable: false, type: "normative" },
+          ],
+        },
+        timestamp: 1,
+      },
+    ], { claim: "某药宣称能治愈失眠，且声称已获批准" });
+
+    expect(model.understanding).toBeDefined();
+    expect(model.understanding?.claim).toBe("某药宣称能治愈失眠，且声称已获批准");
+    expect(model.understanding?.atoms).toEqual([
+      { text: "某药能治愈失眠", verifiable: true, type: "causal" },
+      { text: "某药已获批准上市", verifiable: false, type: "normative" },
+    ]);
+  });
+
+  it("understanding: 无 claimAtomTypes 时退回 claimAtoms 字符串", () => {
+    const model = adaptOrchestrateStreamToShell([
+      {
+        type: "agent_complete",
+        agent: "rumor_detector",
+        agentName: "RumorDetector",
+        output: {
+          claimAtoms: ["隔夜菜加热产生致癌物"],
+        },
+        timestamp: 1,
+      },
+    ], { claim: "隔夜菜加热会致癌吗" });
+
+    expect(model.understanding?.atoms).toEqual([
+      { text: "隔夜菜加热产生致癌物", verifiable: true, type: "fact" },
+    ]);
+  });
+
+  it("understanding: 非 rumor_detector 或无原子时不升格", () => {
+    const noRumor = adaptOrchestrateStreamToShell([
+      {
+        type: "agent_complete",
+        agent: "fact_checker",
+        agentName: "FactChecker",
+        output: { factCheckResult: "partial" },
+        timestamp: 1,
+      },
+    ]);
+    expect(noRumor.understanding).toBeUndefined();
+
+    const emptyAtoms = adaptOrchestrateStreamToShell([
+      {
+        type: "agent_complete",
+        agent: "rumor_detector",
+        agentName: "RumorDetector",
+        output: { analysis: "无原子" },
+        timestamp: 1,
+      },
+    ]);
+    expect(emptyAtoms.understanding).toBeUndefined();
   });
 
 });

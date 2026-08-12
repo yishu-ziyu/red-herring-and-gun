@@ -21,6 +21,12 @@ export interface ShellThoughtItem {
   timestamp?: number;
   /** Extra payload for right-rail drill-in */
   detail?: Record<string, unknown>;
+  /** 模型真实 thinking 字段：逐条推理句子（来自 agent_thought 增量） */
+  reasoning?: string[];
+  /** 推理首次下发时间戳（ns），用于折叠时展示「Thought for Ns」 */
+  reasoningStartedAt?: number;
+  /** 推理持续时间（ms），推理结束时定格 */
+  reasoningElapsedMs?: number;
 }
 
 /** Tool strip row (ToolUseBar-like) */
@@ -51,6 +57,16 @@ export interface ShellVerdictSource {
   url?: string;
 }
 
+/** 系统如何理解原句：原句 → 拆出的可核查原子命题（来自 rumor_detector） */
+export interface ShellUnderstanding {
+  claim: string;
+  atoms: Array<{
+    text: string;
+    verifiable: boolean;
+    type: string;
+  }>;
+}
+
 /** Final verdict card when complete — first-screen decision payload */
 export interface ShellVerdictCard {
   present: boolean;
@@ -74,6 +90,8 @@ export interface MissionShellModel {
   thoughtItems: ShellThoughtItem[];
   tools: ShellToolItem[];
   agents: ShellAgentChip[];
+  /** 系统把原句读成了哪些可核查命题（rumor_detector 拆分结果，一级可见） */
+  understanding?: ShellUnderstanding;
   verdict: ShellVerdictCard;
   /** true while stream has not completed */
   live: boolean;

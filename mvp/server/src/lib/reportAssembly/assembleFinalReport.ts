@@ -14,6 +14,7 @@ import {
   bindAtomEvidenceToVerdicts,
   type AtomSearchBundle,
 } from "../atomSearch.js";
+import { normalizeReportCitations } from "../citationBinding.js";
 
 export type AssembleFinalReportInput = {
   finalReport: Record<string, unknown>;
@@ -116,10 +117,19 @@ export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFi
   );
   finalReport.claimItems = claimItems;
 
+  // Align [n] with final source arrays (conclusion + evidenceChain + claimItems).
+  normalizeReportCitations(finalReport);
+  merged = Array.isArray(finalReport.subclaimVerdicts)
+    ? (finalReport.subclaimVerdicts as SubclaimVerdict[])
+    : merged;
+  const claimItemsSynced = Array.isArray(finalReport.claimItems)
+    ? (finalReport.claimItems as ClaimReportItem[])
+    : claimItems;
+
   return {
     subclaimVerdicts: merged,
     nonVerifiableAtoms: split.nonVerifiable,
-    claimItems,
+    claimItems: claimItemsSynced,
     stanceClaimType,
     atomSearchMeta,
   };

@@ -104,6 +104,34 @@ export function createAgentStartEvent({
   };
 }
 
+export function createAgentThoughtEvent({
+  agent,
+  agentName,
+  agentIcon,
+  content,
+  seq,
+  done,
+}: {
+  agent: string;
+  agentName: string;
+  agentIcon?: string;
+  content: string;
+  seq: number;
+  done: boolean;
+}): AgentRuntimeEvent {
+  return {
+    type: "agent_thought",
+    phase: "agent",
+    agent,
+    agentName,
+    agentIcon,
+    content,
+    seq,
+    done,
+    timestamp: now(),
+  };
+}
+
 export function createAgentCompleteEvent({
   agent,
   agentName,

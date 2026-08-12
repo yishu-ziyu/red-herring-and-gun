@@ -30,6 +30,11 @@ function AppContent() {
   const isShellPreviewRoute =
     window.location.pathname === "/shell-preview" ||
     new URLSearchParams(window.location.search).get("shellPreview") === "1";
+  // DEV: formal result page with numbered citations (no full pipeline needed)
+  const isResultPreviewRoute =
+    import.meta.env.DEV &&
+    (window.location.pathname === "/result-preview" ||
+      new URLSearchParams(window.location.search).get("resultPreview") === "1");
 
   useEffect(() => {
     if (appPhase === renderedPhase) return;
@@ -92,6 +97,98 @@ function AppContent() {
 
   if (isShellPreviewRoute) {
     return <MissionShellPreview />;
+  }
+
+  if (isResultPreviewRoute) {
+    return (
+      <ResultView
+        claim="Transformers 随数据与算力扩展良好，但注意力机制对序列长度是二次复杂度。"
+        finalReport={{
+          verdictType: "partial",
+          credibilityLabel: "部分可信",
+          credibilityScore: 72,
+          conclusion:
+            "Transformers 随数据与算力扩展良好[1]，但注意力机制对序列长度是二次复杂度[2]。",
+          recommendation: "引用时区分扩展规律与复杂度瓶颈，不要混为一谈。",
+          subclaimVerdicts: [
+            {
+              claimAtom: "Transformers 随数据与算力扩展良好",
+              verdict: "true",
+              evidence: "缩放规律在公开研究中有系统支持[1]。",
+              boundary: "不能推出任意任务都单调提升。",
+              supportingSources: [
+                {
+                  title: "Attention Is All You Need",
+                  url: "https://arxiv.org/abs/1706.03762",
+                  snippet: "Transformer architecture and scaling discussion.",
+                },
+              ],
+              contradictingSources: [],
+              evidenceGaps: [],
+              sourcesRelatedOnly: false,
+            },
+            {
+              claimAtom: "注意力机制对序列长度是二次复杂度",
+              verdict: "true",
+              evidence: "标准 self-attention 对序列长度呈二次复杂度[1]。",
+              boundary: "线性注意力等变体不在此断言范围。",
+              supportingSources: [
+                {
+                  title: "Efficient Transformers: A Survey",
+                  url: "https://arxiv.org/abs/2009.06732",
+                  snippet: "Survey of efficient attention and complexity.",
+                },
+              ],
+              contradictingSources: [],
+              evidenceGaps: [],
+              sourcesRelatedOnly: false,
+            },
+          ],
+          citationSources: [
+            {
+              title: "Attention Is All You Need",
+              url: "https://arxiv.org/abs/1706.03762",
+              snippet: "Transformer architecture and scaling discussion.",
+            },
+            {
+              title: "Efficient Transformers: A Survey",
+              url: "https://arxiv.org/abs/2009.06732",
+              snippet: "Survey of efficient attention and complexity.",
+            },
+          ],
+          evidenceChain: [
+            {
+              layer: "文献",
+              finding: "扩展与复杂度是两条可独立核查的论断",
+              evidence: "两篇 arXiv 文献分别支撑扩展性与复杂度主张[1][2]。",
+              boundary: "不能用一篇综述代替具体任务的实测。",
+              sourceRefs: [
+                "https://arxiv.org/abs/1706.03762",
+                "https://arxiv.org/abs/2009.06732",
+              ],
+              _citeSources: [
+                {
+                  title: "Attention Is All You Need",
+                  url: "https://arxiv.org/abs/1706.03762",
+                  snippet: "Transformer architecture and scaling discussion.",
+                },
+                {
+                  title: "Efficient Transformers: A Survey",
+                  url: "https://arxiv.org/abs/2009.06732",
+                  snippet: "Survey of efficient attention and complexity.",
+                },
+              ],
+            },
+          ],
+        }}
+        onBack={() => {
+          window.location.href = "/";
+        }}
+        onReverify={() => {
+          window.location.href = "/";
+        }}
+      />
+    );
   }
 
   if (isModelSettingsPreviewRoute) {
