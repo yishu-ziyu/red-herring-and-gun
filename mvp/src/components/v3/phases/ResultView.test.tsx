@@ -43,6 +43,8 @@ describe("ResultView", () => {
     );
 
     const report = screen.getByLabelText("最终核查判断");
+    expect(report.querySelector(".mission-final-conclusion > span")).toHaveTextContent("结论");
+    expect(report).not.toHaveTextContent("一句话结论");
     expect(report).toHaveTextContent(/该说法没有可靠证据支持/);
     expect(report).toHaveTextContent(/不能信|谣言|92/);
     expect(screen.getByLabelText("能不能信")).toHaveTextContent("不能信。");

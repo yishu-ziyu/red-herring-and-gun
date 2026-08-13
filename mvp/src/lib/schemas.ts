@@ -138,7 +138,7 @@ export interface SubclaimVerdict {
   evidenceGaps?: string[];
 }
 
-/** 排除层：不可核查原子（value/prediction/normative 等），原位灰标"立场型"，不订真/假 */
+/** 排除层：不可核查原子（value/normative 等；prediction 仅当无现在时抓手时），原位灰标"立场型"，不订真/假 */
 export interface NonVerifiableAtom {
   text: string;
   type: string;
@@ -156,7 +156,7 @@ export interface ClaimReportItem {
   text: string;
   verifiable: boolean;
   type: string;
-  /** 可核查原子带判定；不可核查（立场型 value/prediction 等）verdict 缺省 */
+  /** 可核查原子带判定；不可核查（立场型 value/normative 等）verdict 缺省 */
   verdict?: SubclaimVerdict;
 }
 

@@ -189,11 +189,11 @@ export function buildInvestigationTodos(model: MissionShellModel): TodoItem[] {
   // When stream is live and nothing is loading yet, first incomplete step is active.
   const raw: Array<{ id: string; label: string; status: ShellNodeStatus | undefined }> = [
     { id: "plan", label: "确认核查问题", status: planner },
-    { id: "triage", label: "拆成可核对要点", status: triage },
+    { id: "triage", label: "拆开要核对的部分", status: triage },
     { id: "search", label: "检索公开材料", status: search },
-    { id: "fact", label: "对照公开事实", status: fact },
-    { id: "source", label: "评估来源可信度", status: source },
-    { id: "report", label: "整理结论", status: report },
+    { id: "fact", label: "对照公开材料", status: fact },
+    { id: "source", label: "看来源能不能站住", status: source },
+    { id: "report", label: "整理能不能信", status: report },
   ];
 
   // Promote first non-done item to active when model is live (stream progressing).

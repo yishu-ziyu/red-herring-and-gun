@@ -4,14 +4,14 @@
  * Driven only by real agent_thought sentences from the stream.
  * Does not invent text or fake delays when sentences arrive from the backend.
  * Backend may pace SSE; this UI reveals whatever has arrived so far.
- * Copy avoids anthropomorphic "I am thinking" framing (DESIGN v0.7).
+ * Labels match the compact Kimi fold: 思考中 / 思考已完成. No invented speech.
  */
 import { useEffect, useRef, useState } from "react";
 import { formatThoughtElapsedLabel } from "../../../../lib/reasoningThoughts";
 import styles from "./ThinkingReasoning.module.css";
 
 // Geometry — keep in sync with ThinkingReasoning.module.css
-const SENT_H = 40; // 2 lines × 20px
+const SENT_H = 22; // one spoken line; long sentences clamp
 const GAP = 4;
 const MAX_H = 180;
 const FADE = 16;
@@ -111,20 +111,24 @@ export function ThinkingReasoning({
       className={[styles.tr, className].filter(Boolean).join(" ")}
       data-phase={phase}
       data-thinking={thinking ? "1" : "0"}
+      data-empty={count === 0 ? "1" : "0"}
     >
       <button
         type="button"
         className={styles.trHeader + (done && collapseReady ? " " + styles.isClickable : "")}
         aria-expanded={visuallyExpanded}
-        aria-label={thinking ? "模型推理进行中" : "切换推理记录"}
+        aria-label={thinking ? "思考中" : "切换思考记录"}
         onClick={done && collapseReady ? toggle : undefined}
       >
         {done && collapseReady ? (
           <span className={styles.trLabel}>
-            推理用时 <span className={styles.trVerb}>{elapsedLabel}</span>
+            思考已完成
+            {elapsedLabel ? (
+              <span className={styles.trVerb}> · {elapsedLabel}</span>
+            ) : null}
           </span>
         ) : (
-          <span className={styles.trLabel + " " + styles.trShimmer}>整理推理…</span>
+          <span className={styles.trLabel + " " + styles.trShimmer}>思考中</span>
         )}
         {done && collapseReady ? (
           <svg

@@ -87,6 +87,8 @@ export interface ShellVerdictCard {
 export interface MissionShellModel {
   claim: string;
   phaseLabel: string;
+  /** Planner claimType (causal / event / …). Display layer maps this to speech. */
+  claimType?: string;
   thoughtItems: ShellThoughtItem[];
   tools: ShellToolItem[];
   agents: ShellAgentChip[];

@@ -5,6 +5,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
 import styles from "./PromptInput.module.css";
 
@@ -232,7 +233,9 @@ export type PromptInputProps = {
   submitLabel?: string;
   disabled?: boolean;
   busy?: boolean;
-  /** Hide demo model picker; product uses ModelPicker outside. */
+  /** Extra control in the action row, immediately left of send. */
+  trailing?: ReactNode;
+  /** Demo-only model list inside the + menu. Product uses `trailing`. */
   showModelMenu?: boolean;
 };
 
@@ -249,6 +252,7 @@ export function PromptInput({
   submitLabel = "开始核查",
   disabled = false,
   busy = false,
+  trailing,
   showModelMenu = false,
 }: PromptInputProps = {}) {
   // `value` mirrors the editor's plain text (skill pills contribute their
@@ -1050,6 +1054,7 @@ export function PromptInput({
                 </button>
               )
             )}
+            {trailing}
             <button
               type="button"
               className={[styles.iconBtn, styles.send, sendActive && styles.sendActive]

@@ -7,7 +7,7 @@ describe("ThinkingReasoning", () => {
     cleanup();
   });
 
-  it("thinking: shows 整理推理… and only provided sentences (no invent)", () => {
+  it("thinking: shows 思考中 and only provided sentences (no invent)", () => {
     render(
       <ThinkingReasoning
         sentences={["真实句一。", "真实句二。"]}
@@ -15,22 +15,22 @@ describe("ThinkingReasoning", () => {
         elapsedMs={1000}
       />
     );
-    expect(screen.getByLabelText("模型推理进行中")).toBeInTheDocument();
-    expect(screen.getByText("整理推理…")).toBeInTheDocument();
+    expect(screen.getByLabelText("思考中")).toBeInTheDocument();
+    expect(screen.getByText("思考中")).toBeInTheDocument();
     expect(screen.getByText("真实句一。")).toBeInTheDocument();
     expect(screen.getByText("真实句二。")).toBeInTheDocument();
     expect(screen.queryByText(/jwt\.verify/)).not.toBeInTheDocument();
   });
 
-  it("done: folds to 推理用时 Ns using backend elapsedMs", async () => {
+  it("done: folds to 思考已完成 using backend elapsedMs", async () => {
     const { rerender } = render(
       <ThinkingReasoning sentences={["句A。"]} thinking elapsedMs={3500} />
     );
     rerender(<ThinkingReasoning sentences={["句A。"]} thinking={false} elapsedMs={3500} />);
     await waitFor(
       () => {
-        expect(screen.getByLabelText("切换推理记录")).toBeInTheDocument();
-        expect(screen.getByText(/推理用时/)).toBeInTheDocument();
+        expect(screen.getByLabelText("切换思考记录")).toBeInTheDocument();
+        expect(screen.getByText(/思考已完成/)).toBeInTheDocument();
         expect(screen.getByText(/3\.5s/)).toBeInTheDocument();
       },
       { timeout: 1500 }
@@ -53,13 +53,13 @@ describe("ThinkingReasoning", () => {
     );
     await waitFor(
       () => {
-        expect(screen.getByLabelText("切换推理记录").getAttribute("aria-expanded")).toBe(
+        expect(screen.getByLabelText("切换思考记录").getAttribute("aria-expanded")).toBe(
           "false"
         );
       },
       { timeout: 1500 }
     );
-    const btn = screen.getByLabelText("切换推理记录");
+    const btn = screen.getByLabelText("切换思考记录");
     fireEvent.click(btn);
     expect(btn.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("展开可见句。")).toBeInTheDocument();

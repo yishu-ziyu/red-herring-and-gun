@@ -28,18 +28,14 @@ describe("model settings preview", () => {
     window.localStorage.clear();
   });
 
-  it("keeps model configuration behind a lightweight home action", async () => {
+  it("keeps model configuration off the home page", () => {
     render(<App />);
 
     expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开快捷操作" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "打开快捷操作" }));
-
-    const menu = await screen.findByLabelText("快捷操作菜单");
-    const settingsLink = within(menu).getByRole("link", { name: "配置模型服务商" });
-    expect(settingsLink).toHaveAttribute("href", "/model-settings-preview");
-    // 分析预览链接已经移除，菜单里只留"配置模型服务商"一项
-    expect(within(menu).queryByRole("link", { name: "查看分析预览" })).not.toBeInTheDocument();
+    const settingsLink = screen.getByRole("link", { name: "模型设置" });
+    expect(settingsLink).toHaveAttribute("href", "/settings/api-key");
   });
 
   it("renders a dedicated provider settings preview page with preset defaults", async () => {
@@ -333,6 +329,7 @@ describe("landing Version A storytelling", () => {
     render(<App />);
 
     expect(await screen.findByText("溯源公开材料，核对是不是一手")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "红鲱鱼与枪" })).toBeInTheDocument();
     expect(screen.getByText("贴进来。追出处。告诉你能不能信。")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "它如何工作" })).toBeInTheDocument();
     expect(screen.getByText("交叉看")).toBeInTheDocument();
@@ -418,14 +415,15 @@ describe("model picker (simplified BYO)", () => {
 
     render(<App />);
 
-    // picker 标题可见，但默认折叠，preset 按钮不展开看不到
-    const picker = await screen.findByLabelText("模型选择");
+    const toggle = await screen.findByRole("button", { name: /模型选择/ });
+    const picker = screen.getByLabelText("模型选择");
+    const send = screen.getByRole("button", { name: /开始核查/ });
+    expect(send.parentElement).toContainElement(picker);
     expect(picker).toHaveAttribute("data-expanded", "false");
     expect(picker.querySelector(".model-picker-presets")).toBeNull();
     expect(within(picker).queryByRole("button", { name: /推荐组合/ })).not.toBeInTheDocument();
 
-    // 点标题展开 → preset 出现
-    fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
+    fireEvent.click(toggle);
     expect(picker).toHaveAttribute("data-expanded", "true");
     expect(within(picker).getByRole("button", { name: /推荐组合/ })).toBeInTheDocument();
   });
@@ -436,11 +434,11 @@ describe("model picker (simplified BYO)", () => {
 
     render(<App />);
 
-    const picker = await screen.findByLabelText("模型选择");
-    // 默认状态：4 个步骤都没指定 → 摘要应该提到"默认"
-    expect(within(picker).getByText(/默认/)).toBeInTheDocument();
+    const picker = (await screen.findByRole("button", { name: /模型选择/ })).closest(
+      '[aria-label="模型选择"]'
+    ) as HTMLElement;
+    expect(within(picker).getByText(/^默认$/)).toBeInTheDocument();
 
-    // 展开 → 选第一个步骤的 model
     fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
     const rumorSelect = within(picker).getByLabelText(/识别信息结构/);
     fireEvent.change(rumorSelect, { target: { value: "deepseek:deepseek-v4-flash" } });
@@ -467,12 +465,12 @@ describe("model picker (simplified BYO)", () => {
 
     render(<App />);
 
-    const picker = await screen.findByLabelText("模型选择");
-    // 默认折叠 → 先展开
+    const picker = (await screen.findByRole("button", { name: /模型选择/ })).closest(
+      '[aria-label="模型选择"]'
+    ) as HTMLElement;
     fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
     fireEvent.click(within(picker).getByRole("button", { name: /推荐组合/ }));
 
-    // 4 个 picker 都应显示已选 model
     expect(within(picker).getAllByText(/DeepSeek V4 Pro|DeepSeek V4 Flash/).length).toBeGreaterThanOrEqual(1);
     expect(within(picker).getByText(/识别信息结构/)).toBeTruthy();
   });
@@ -500,9 +498,9 @@ describe("model picker (simplified BYO)", () => {
 
     render(<App />);
 
-    // 触发 "推荐组合" preset
-    const picker = await screen.findByLabelText("模型选择");
-    // 默认折叠 → 先展开
+    const picker = (await screen.findByRole("button", { name: /模型选择/ })).closest(
+      '[aria-label="模型选择"]'
+    ) as HTMLElement;
     fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
     fireEvent.click(within(picker).getByRole("button", { name: /推荐组合/ }));
 

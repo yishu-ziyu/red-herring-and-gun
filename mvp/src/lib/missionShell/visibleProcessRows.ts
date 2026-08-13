@@ -65,12 +65,24 @@ export interface VisibleProcessNarrative {
 const BANNED_PRIMARY =
   /中控|派发|可行动线索|编排|handoff|relay|tool\s*result/i;
 
+/** One user-facing title for the rumor_detector beat (plan + process share this). */
+export const TRIAGE_STEP_TITLE = "已经拆开要核对的部分";
+/** Present-tense overlay while that beat is the current loading step. */
+export const TRIAGE_STEP_NOW = "正在单独核验原因";
+
+/** Now-tense triage line. Causal claims name the reason check; others stay generic. */
+export function triageNowTitle(claimType?: string | null): string {
+  const key = (claimType ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (key === "causal") return TRIAGE_STEP_NOW;
+  return "正在单独核对";
+}
+
 /** Semantic action title for an agent id — never the role label alone as primary. */
 const AGENT_ACTION_TITLE: Record<string, string> = {
-  rumor_detector: "确认核查切入点",
-  fact_checker: "对照公开事实",
-  source_validator: "评估材料可信度",
-  report_composer: "整理初步结论",
+  rumor_detector: TRIAGE_STEP_TITLE,
+  fact_checker: "对照公开材料",
+  source_validator: "看来源能不能站住",
+  report_composer: "整理能不能信",
   alternative_explanation_searcher: "寻找替代解释",
   counter_evidence_grader: "评估反证强度",
 };
@@ -89,7 +101,8 @@ const AGENT_ROLE_NAME: Record<string, string> = {
 export function humanizeProcessTitle(raw?: string | null): string {
   const t = (raw ?? "").trim();
   if (!t) return "核查步骤";
-  if (/先派发|可行动线索/.test(t)) return "确定核查切入点";
+  if (t === TRIAGE_STEP_NOW) return t;
+  if (/先派发|可行动线索|确定核查切入点|确认核查切入点/.test(t)) return TRIAGE_STEP_TITLE;
   if (/中控/.test(t)) return t.replace(/中控/g, "系统").replace(/已经判定命题类型[，,]?/, "已识别命题类型，");
   if (/理解命题与路径/.test(t)) return "确认核查问题";
   if (/Agent\s*冲突|冲突调解室/.test(t)) return "冲突调解";
@@ -109,6 +122,14 @@ export function humanizeProcessSummary(raw?: string | null): string | undefined 
   if (typeof raw !== "string" || !raw.trim()) return undefined;
   let s = raw.trim();
   if (s === "进行中") return undefined;
+  // Restates the triage step, or previews later pipeline work.
+  if (
+    /已识别命题类型|先拆出可检索的判断|不用等最终报告|先把可验证问题拆|进入事实核查|替代解释路径|因果类命题|规划核查路径|需查权威|来源与反证/.test(
+      s
+    )
+  ) {
+    return undefined;
+  }
   s = s
     .replace(/中控已经判定命题类型[，,]?\s*/g, "")
     .replace(/中控/g, "")
@@ -123,6 +144,71 @@ export function humanizeProcessSummary(raw?: string | null): string | undefined 
       .trim();
   }
   return s || undefined;
+}
+
+export type DeskPane = "atoms" | "sources" | "verdict";
+
+/** Right-desk pane for a left-column step. Click left → this is what the desk shows. */
+export function deskPaneForProcessTitle(title: string): DeskPane {
+  const beat = investigationBeat(title);
+  if (beat === "fact" || beat === "source" || /检索/.test(title)) return "sources";
+  if (beat === "report") return "verdict";
+  return "atoms";
+}
+
+/** Collapse planner/relay/agent titles that are the same investigation beat. */
+function investigationBeat(title: string): string {
+  const t = title.trim();
+  if (/核查问题|理解命题/.test(t)) return "plan";
+  if (
+    /切入点|拆成可核对|现在在拆|拆出可检索|可核对要点|单独核验|单独核对|已经拆开/.test(t)
+  ) {
+    return "triage";
+  }
+  if (/对照公开事实|对照公开材料/.test(t)) return "fact";
+  if (/来源可信|材料可信|评估材料|看来源能不能站住/.test(t)) return "source";
+  if (/整理初步结论|整理结论|整理能不能信/.test(t)) return "report";
+  if (/冲突调解/.test(t)) return "debate";
+  return `title:${t}`;
+}
+
+function sameInvestigationBeat(a: string, b: string): boolean {
+  return investigationBeat(a) === investigationBeat(b);
+}
+
+function absorbRow(into: VisibleProcessRow, from: VisibleProcessRow): void {
+  if (from.actor) {
+    into.actor = from.actor;
+    if (from.key.startsWith("action:")) into.key = from.key;
+    into.title = from.title;
+  }
+  if (from.status === "error" || into.status === "error") into.status = "error";
+  else if (from.status === "loading" || into.status === "loading") into.status = "loading";
+  else if (from.status === "success") into.status = "success";
+  if (from.summary) into.summary = from.summary;
+  if (from.reasoning?.length) into.reasoning = from.reasoning;
+  if (from.reasoningElapsedMs !== undefined) into.reasoningElapsedMs = from.reasoningElapsedMs;
+  for (const act of from.activities) {
+    if (!into.activities.some((a) => a.key === act.key)) into.activities.push(act);
+  }
+}
+
+function collapseSameBeatRows(rows: VisibleProcessRow[]): VisibleProcessRow[] {
+  const out: VisibleProcessRow[] = [];
+  for (const row of rows) {
+    const prev = out[out.length - 1];
+    if (
+      prev &&
+      prev.kind === "milestone" &&
+      row.kind === "milestone" &&
+      sameInvestigationBeat(prev.title, row.title)
+    ) {
+      absorbRow(prev, row);
+      continue;
+    }
+    out.push(row);
+  }
+  return out;
 }
 
 export function semanticActionTitleForAgent(agentId?: string, fallbackTitle?: string): string {
@@ -217,26 +303,27 @@ function upsertAgentAction(
     humanizeProcessSummary(chip?.summary) ||
     undefined;
 
-  // Prefer attaching actor onto the last open milestone if it has no actor yet
-  // and is still the "current" work surface (planner / materials).
+  // Attach onto the last milestone only when it is the same investigation beat
+  // (relay 「先派发…」 + rumor_detector). Never glue 拆题 onto 「确认核查问题」.
   const last = rows[rows.length - 1];
   if (
     last &&
     last.kind === "milestone" &&
     !last.actor &&
-    (last.key === "planner" || last.key === "materials") &&
-    item.status === "loading"
+    item.status === "loading" &&
+    sameInvestigationBeat(last.title, actionTitle)
   ) {
+    last.key = actionKey;
     last.actor = actor;
+    last.title = actionTitle;
     last.status = item.status;
-    if (summary) last.summary = summary;
+    last.summary = summary;
     if (item.reasoning) last.reasoning = item.reasoning;
     if (item.reasoningElapsedMs !== undefined) last.reasoningElapsedMs = item.reasoningElapsedMs;
-    // Keep semantic planner title; actor carries role.
     return;
   }
 
-  const existing = rows.find((r) => r.key === actionKey);
+  const existing = rows.find((r) => r.key === actionKey || r.actor?.agentId === id);
   if (existing) {
     existing.status = item.status;
     existing.actor = actor;
@@ -270,7 +357,7 @@ function upsertAgentAction(
  * Reduce MissionShellModel into a single user-facing process narrative.
  */
 export function buildVisibleProcessRows(model: MissionShellModel): VisibleProcessNarrative {
-  const rows: VisibleProcessRow[] = [];
+  let rows: VisibleProcessRow[] = [];
   const agentById = new Map(
     model.agents.map((a) => [a.agentId, { agentId: a.agentId, name: a.name, summary: a.summary }])
   );
@@ -362,6 +449,8 @@ export function buildVisibleProcessRows(model: MissionShellModel): VisibleProces
     });
   }
 
+  rows = collapseSameBeatRows(rows);
+
   const deferredReview =
     model.verdict.present && model.verdict.reviewPassed === false;
   const showVerdict =
@@ -430,9 +519,21 @@ export function buildVisibleProcessRows(model: MissionShellModel): VisibleProces
       r.title = semanticActionTitleForAgent(r.actor.agentId, r.title);
     }
     if (r.summary) r.summary = humanizeProcessSummary(r.summary);
+    if (r.summary && (r.summary === r.title || r.title.includes(r.summary))) {
+      r.summary = undefined;
+    }
     for (const a of r.activities) {
       a.title = humanizeProcessTitle(a.title);
     }
+  }
+
+  for (const r of rows) {
+    if (!(r.isCurrent && r.status === "loading")) continue;
+    const beat = investigationBeat(r.title);
+    if (beat === "triage") r.title = triageNowTitle(model.claimType);
+    else if (beat === "fact") r.title = "正在对照公开材料";
+    else if (beat === "source") r.title = "正在看来源能不能站住";
+    else if (beat === "report") r.title = "正在整理能不能信";
   }
 
   return {

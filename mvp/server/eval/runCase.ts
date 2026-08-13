@@ -2,17 +2,18 @@
  * eval/runCase.ts — 用生产依赖组装 casePipeline，跑单个 golden case。
  *
  * 复用生产模块（callAgentWithFallback / AGENT_CONFIGS / buildAgentInput /
- * runClaimAtomSelfProof / reviewAndRepairReport / searchClaimAcrossSources），
+ * runClaimAtomSelfProof / reviewAndRepairReport / retrieveAtomSources），
  * 不复制生产逻辑，保证评测跑的就是生产路径。
  *
  * 运行方式见 eval/run.ts（tsx 脚本，不参与 tsc build）。
  */
 
 import { AGENT_CONFIGS, buildAgentInput } from "../src/lib/agentConfigs.js";
-import { callAgentWithFallback } from "../src/lib/providerRouter.js";
+import { callAgentWithFallback, ProviderFallbackError } from "../src/lib/providerRouter.js";
 import { runCasePipeline, type PipelineStep } from "../src/lib/casePipeline/index.js";
-import { searchClaimAcrossSources } from "../src/lib/sherlockStyleSearch.js";
+import { retrieveAtomSources, buildDeterministicFinalReport } from "../src/handlers.js";
 import { applyFormulaScoreToReport, computeFormulaScore } from "../src/handlers.js";
+import { applyFactDeskPostProcessToReport } from "../src/lib/factDeskPostProcess.js";
 import type { ScoreCaseGolden } from "./golden.js";
 
 export interface EvalEnv {
@@ -49,7 +50,7 @@ function makeRunAgent({ env, codexBin }: EvalEnv, claim: string) {
       env,
       codexBin,
       reasoningEffort: "high",
-      options: { logger: { info: () => {}, error: () => {} } },
+      options: { logger: { info: () => {}, error: console.error.bind(console) } },
     });
 
     return {
@@ -83,15 +84,15 @@ function makeSelfProof({ env, codexBin }: EvalEnv) {
       env,
       codexBin,
       reasoningEffort: "low",
-      options: { logger: { info: () => {}, error: () => {} } },
+      options: { logger: { info: () => {}, error: console.error.bind(console) } },
     }).then((r) => ({ output: r.output, model: r.model }));
 }
 
-/** 生产搜索：searchClaimAcrossSources 已导出，返回结构含 sources 供 atomSearch 消费。 */
-function makeSearchOne() {
+/** 生产搜索：与 Case Pipeline HTTP 同一 retrieveAtomSources（双路查询 + 并行源）。 */
+function makeSearchOne(env: Record<string, string>) {
   return async (atom: string) => {
     try {
-      return await searchClaimAcrossSources(atom);
+      return await retrieveAtomSources(env, atom);
     } catch {
       return { sources: [], answer: "", model: "", traceText: "", _source: "error" };
     }
@@ -102,25 +103,44 @@ export interface EvalCaseResult {
   claims?: PipelineStep[] | never[];
   steps: PipelineStep[];
   finalReport: Record<string, unknown>;
+  atomSearchBundle?: unknown;
   error?: string;
 }
 
 export async function runCase(
   golden: ScoreCaseGolden,
   evalEnv: EvalEnv
-): Promise<{ steps: PipelineStep[]; finalReport: Record<string, unknown>; error?: string }> {
+): Promise<{
+  steps: PipelineStep[];
+  finalReport: Record<string, unknown>;
+  atomSearchBundle?: unknown;
+  error?: string;
+}> {
   const runAgent = makeRunAgent(evalEnv, golden.claim);
   const claim = golden.claim;
   try {
     const result = await runCasePipeline({
       claim,
       runAgent,
-      searchOne: makeSearchOne(),
+      searchOne: makeSearchOne(evalEnv.env),
       callSelfProofModel: makeSelfProof(evalEnv),
-      runReport: async ({ steps, search360Result, atomSearchBundle }) =>
-        runAgent("report_composer", steps, search360Result, atomSearchBundle),
+      runReport: async ({ claim: reportClaim, steps, search360Result, atomSearchBundle }) => {
+        try {
+          return await runAgent("report_composer", steps, search360Result, atomSearchBundle);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "report_composer failed";
+          return {
+            agent: "report_composer",
+            output: buildDeterministicFinalReport(reportClaim, steps, search360Result, message),
+            model: "fallback:deterministic-report",
+            status: "completed",
+            error: message,
+            timestamp: Date.now(),
+          };
+        }
+      },
       // 复用生产评分公式，保证评测分数 = 生产分数（eval 不绕过公式）
-      finalizeReport: ({ finalReport, rumorStep, factStep, sourceStep, search360Result }) => {
+      finalizeReport: ({ finalReport, claim: reportClaim, rumorStep, factStep, sourceStep, search360Result }) => {
         applyFormulaScoreToReport(
           finalReport,
           computeFormulaScore(
@@ -130,14 +150,24 @@ export async function runCase(
             search360Result
           )
         );
+        applyFactDeskPostProcessToReport(finalReport, reportClaim);
       },
     });
-    return { steps: result.steps, finalReport: result.finalReport };
+    return {
+      steps: result.steps,
+      finalReport: result.finalReport,
+      atomSearchBundle: result.atomSearchBundle,
+    };
   } catch (error) {
     return {
       steps: [],
       finalReport: {},
-      error: error instanceof Error ? error.message : "unknown error",
+      error:
+        error instanceof ProviderFallbackError
+          ? `${error.message}${error.providerErrors?.length ? ` | ${error.providerErrors.slice(0, 4).join("；")}` : ""}`
+          : error instanceof Error
+            ? error.message
+            : "unknown error",
     };
   }
 }
