@@ -50,10 +50,10 @@ describe("humanizeFactCheckResult", () => {
 
 describe("humanizeClaimType", () => {
   it("maps planner claimType enums", () => {
-    expect(humanizeClaimType("causal")).toBe("因果命题");
-    expect(humanizeClaimType("concept")).toBe("概念命题");
-    expect(humanizeClaimType("event")).toBe("事件命题");
-    expect(humanizeClaimType("mixed")).toBe("混合命题");
+    expect(humanizeClaimType("causal")).toBe("因果推断");
+    expect(humanizeClaimType("concept")).toBe("概念说法");
+    expect(humanizeClaimType("event")).toBe("事件说法");
+    expect(humanizeClaimType("mixed")).toBe("混合说法");
   });
 
   it("returns empty for missing claimType", () => {

@@ -10,6 +10,7 @@ import {
   FIXTURE_ERROR,
   FIXTURE_MID,
   FIXTURE_REVIEW_FAIL,
+  FIXTURE_TRIAGE_RUNNING,
 } from "../../../../lib/missionShell";
 import { MissionProcessShell } from "./MissionProcessShell";
 
@@ -18,7 +19,7 @@ describe("MissionProcessShell narrative UI", () => {
     cleanup();
   });
 
-  it("FIXTURE_MID: no tool strip, no agent cluster, no claim, one current step, activity chips", () => {
+  it("FIXTURE_MID: no tool strip, no agent cluster, no claim, speech + instrument cards", () => {
     const model = adaptOrchestrateStreamToShell(FIXTURE_MID);
     const { container } = render(<MissionProcessShell model={model} claimInParent />);
 
@@ -38,21 +39,21 @@ describe("MissionProcessShell narrative UI", () => {
     expect(currents.length).toBe(1);
     expect(container.querySelectorAll(".mps-step--current").length).toBe(1);
 
-    // Investigation checklist mirrors stream progress
-    const todos = container.querySelector('[data-testid="investigation-todos"]');
-    expect(todos).toBeTruthy();
-    expect(todos?.textContent || "").toMatch(/确认核查问题|检索公开材料|对照公开事实/);
-    expect(todos?.querySelector('[data-status="done"]')).toBeTruthy();
+    // Live stream: no 6-step plan preview. The desk on the right is the deliverable.
+    expect(container.querySelector('[data-testid="investigation-todos"]')).toBeNull();
 
-    // Search tools render WebSearch strip; memory remains activity chips
+    // Search results stay inside the instrument; tools are cards, not chips
     expect(container.querySelectorAll('[data-testid="web-search"]').length).toBeGreaterThan(0);
-    expect(screen.getByText(/隔夜菜 致癌 证据/)).toBeInTheDocument();
+    expect(screen.getAllByText(/隔夜菜 致癌 证据/).length).toBeGreaterThan(0);
     expect(screen.getByText(/食品安全与亚硝酸盐科普/)).toBeInTheDocument();
     const activities = screen.getAllByRole("list", { name: "步骤活动" });
     expect(activities.length).toBeGreaterThan(0);
-    expect(activities[0].classList.contains("mps-activities--chips")).toBe(true);
+    expect(activities.some((el) => el.classList.contains("mps-instruments"))).toBe(true);
     const activityText = activities.map((el) => el.textContent || "").join("\n");
     expect(activityText).toMatch(/历史|检索|公开材料/);
+    expect(container.querySelector(".mps-speech")).toBeTruthy();
+    expect(container.querySelector(".mps-inst")).toBeTruthy();
+    expect(container.querySelector(".mps-inst .mps-speech")).toBeNull();
 
     // Primary titles should not be pure tool strip duplicates as both strip+primary
     // (no 过程动作 list at all)
@@ -123,7 +124,8 @@ describe("MissionProcessShell narrative UI", () => {
       (el) => el.textContent?.trim()
     );
     expect(stepTitles).not.toContain("拆题");
-    expect(stepTitles.some((t) => t === "确认核查切入点" || t === "确认核查问题")).toBe(true);
+    expect(stepTitles.some((t) => t === "已经拆开要核对的部分" || t === "确认核查问题")).toBe(true);
+    expect(stepTitles.filter((t) => /切入点/.test(t || ""))).toEqual([]);
   });
 
   it("activity is static without onSelectTool; button when handler provided", () => {
@@ -160,9 +162,52 @@ describe("MissionProcessShell narrative UI", () => {
 
     const tr = container.querySelector('[data-thinking="1"]') as HTMLElement | null;
     expect(tr).toBeTruthy();
-    expect(screen.getByLabelText("模型推理进行中")).toBeInTheDocument();
+    expect(screen.getByLabelText("思考中")).toBeInTheDocument();
     const body = container.textContent || "";
     expect(body).toMatch(/真实思考句一/);
     expect(body).toMatch(/真实思考句三/);
+  });
+
+  it("FIXTURE_TRIAGE_RUNNING: one current title, no duplicate 切入点 card, 拆题 not a heading", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_TRIAGE_RUNNING);
+    const { container } = render(<MissionProcessShell model={model} claimInParent />);
+
+    const stepTitles = Array.from(container.querySelectorAll(".mps-step-title")).map(
+      (el) => el.textContent?.trim() || ""
+    );
+    expect(stepTitles.filter((t) => /切入点/.test(t))).toEqual([]);
+    expect(stepTitles.filter((t) => /单独核验|已经拆开/.test(t))).toHaveLength(1);
+    expect(stepTitles).toContain("正在单独核验原因");
+    expect(container.querySelectorAll(".mps-step--current")).toHaveLength(1);
+    expect(container.querySelector(".mps-step-actor")).toBeNull();
+    expect(container.textContent || "").not.toMatch(/已识别命题类型/);
+    expect(screen.getByText("查阅历史案件")).toBeInTheDocument();
+    expect(screen.getByText("思考中")).toBeInTheDocument();
+  });
+
+  it("deskMode: speech is outside the instrument; thinking stays inside the card", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_TRIAGE_RUNNING);
+    const { container } = render(
+      <MissionProcessShell model={model} claimInParent deskMode />
+    );
+
+    const current = container.querySelector(".mps-step--current");
+    expect(current?.querySelector(".mps-speech")?.textContent).toMatch(/正在单独核验原因/);
+    expect(container.querySelector(".mps-inst")?.textContent).toMatch(/查阅历史案件/);
+    expect(container.querySelector(".mps-inst [data-thinking=\"1\"]")).toBeTruthy();
+    expect(container.querySelector(".mps-speech [data-thinking]")).toBeNull();
+    expect(container.querySelectorAll('[data-testid="web-search"]').length).toBe(0);
+  });
+
+  it("deskMode: clicking a step reports its key", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_MID);
+    const onSelectRow = vi.fn();
+    render(
+      <MissionProcessShell model={model} claimInParent deskMode onSelectRow={onSelectRow} />
+    );
+    const btn = screen.getByRole("button", { name: "已经拆开要核对的部分" });
+    btn.click();
+    expect(onSelectRow).toHaveBeenCalledTimes(1);
+    expect(onSelectRow.mock.calls[0][0]).toMatch(/agent:rumor_detector|action:/);
   });
 });

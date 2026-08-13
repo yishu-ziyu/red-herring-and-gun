@@ -59,6 +59,22 @@ describe("postProcessHandoffFinalReport (Prompt A+F)", () => {
     expect(result!.report.cannotSay).toEqual(clean.cannotSay);
   });
 
+  it("decisive false 结论补上不能信，不再套「仍不足以确认」", () => {
+    const result = postProcessHandoffFinalReport(
+      {
+        verdictType: "false",
+        conclusion: "甘南州文旅局声明从未发布全州免票。",
+        summaryForPublic: "官方已说明该通知是假的。",
+        canSay: ["能信文旅局声明"],
+        cannotSay: ["不能把旅行社广告写成官方政策"],
+      },
+      "甘南所有景点一律免费",
+    );
+    expect(String(result!.report.conclusion)).toMatch(/^不能信/);
+    expect(String(result!.report.conclusion)).not.toMatch(/仍不足以按原强度确认/);
+    expect(result!.report.faceVerdict).toBe("不能信");
+  });
+
   it("mutates report in place via applyFactDeskPostProcessToReport", () => {
     const report: Record<string, unknown> = {
       conclusion: "铁证如山，毋庸置疑。",

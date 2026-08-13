@@ -113,6 +113,38 @@ describe("filterAtomSources pipeline", () => {
     expect(sources.filter((s) => s.url.includes("a.example"))).toHaveLength(1);
   });
 
+  it("标题含辟谣的来源得分更高", () => {
+    const rumor = scoreSource({
+      url: "https://www.piyao.org.cn/a",
+      title: "官方辟谣：该说法不实",
+      snippet: "文旅局声明从未发布",
+      providerRank: 2,
+    });
+    const generic = scoreSource({
+      url: "https://you.ctrip.com/a",
+      title: "甘南旅游攻略",
+      snippet: "景点推荐大全",
+      providerRank: 2,
+    });
+    expect(rumor).toBeGreaterThan(generic);
+  });
+
+  it("piyao.org.cn 比同标题的旅游站得分更高", () => {
+    const official = scoreSource({
+      url: "https://www.piyao.org.cn/a",
+      title: "三起典型网络谣言案例",
+      snippet: "合肥警方通报",
+      providerRank: 3,
+    });
+    const travel = scoreSource({
+      url: "https://you.ctrip.com/a",
+      title: "三起典型网络谣言案例",
+      snippet: "合肥警方通报",
+      providerRank: 3,
+    });
+    expect(official).toBeGreaterThan(travel);
+  });
+
   it("scoreSource 高可信摘要长 > 低可信", () => {
     const hi = scoreSource({
       url: "https://www.nih.gov/a",

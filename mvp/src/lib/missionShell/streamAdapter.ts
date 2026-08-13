@@ -280,6 +280,7 @@ export function adaptOrchestrateStreamToShell(
   let live = true;
   let errorMessage: string | undefined;
   let understanding: ShellUnderstanding | undefined;
+  let claimType: string | undefined;
   let verdict: ShellVerdictCard = { present: false };
 
   const orderThought: string[] = [];
@@ -304,15 +305,15 @@ export function adaptOrchestrateStreamToShell(
 
     switch (event.type) {
       case "planner_update": {
+        if (typeof event.plan?.claimType === "string" && event.plan.claimType.trim()) {
+          claimType = event.plan.claimType.trim();
+        }
+        const typeZh = humanizeClaimType(claimType);
+        const rationale = humanizeProcessSummary(event.plan?.rationale);
         touchThought("planner", {
           key: "planner",
           title: humanizeProcessTitle("理解命题与路径"),
-          description:
-            humanizeProcessSummary(
-              event.plan?.rationale ||
-                humanizeClaimType(event.plan?.claimType) ||
-                "规划核查路径"
-            ) || "规划核查路径",
+          description: rationale || (typeZh ? `这是${typeZh}。` : undefined),
           status: mapStatus("done"),
           kind: "planner",
           timestamp: ts,
@@ -579,6 +580,7 @@ export function adaptOrchestrateStreamToShell(
   return {
     claim,
     phaseLabel: phaseFromEvents(events),
+    claimType,
     thoughtItems: orderThought.map((k) => thoughtByKey.get(k)!).filter(Boolean),
     tools: orderTool.map((k) => toolByKey.get(k)!).filter(Boolean),
     agents: orderAgent.map((k) => agentById.get(k)!).filter(Boolean),

@@ -280,7 +280,7 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
           </div>
 
           <div className="mission-final-conclusion">
-            <span>一句话结论</span>
+            <span>结论</span>
             <InlineCitations text={conclusion} sources={conclusionSources} />
             {conclusionSources.length > 0 ? (
               <p className="result-cite-hint" role="note">

@@ -45,6 +45,56 @@ const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>([
   "codex",
 ]);
 
+/** Process-local: once a provider returns hard quota/balance, skip it for later agents in this run. */
+const quotaExhaustedUntil = new Map<string, number>();
+const timeoutStrikes = new Map<string, number>();
+const QUOTA_SKIP_MS = 10 * 60 * 1000;
+
+export function resetProviderQuotaSkipForTests(): void {
+  quotaExhaustedUntil.clear();
+  timeoutStrikes.clear();
+}
+
+export function isHardProviderQuotaError(message: string): boolean {
+  return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded)|billing hard limit|over_quota|无可用额度/i.test(
+    message
+  );
+}
+
+export function isHardProviderAuthError(message: string): boolean {
+  return /invalid api key|invalid_key|incorrect api key|unauthorized|ENOENT/i.test(message);
+}
+
+function canonicalProviderId(provider: string): string {
+  if (provider.startsWith("mimo")) return "mimo";
+  if (provider.startsWith("360")) return "360";
+  if (provider.startsWith("anthropic")) return "anthropic";
+  if (provider.startsWith("codex")) return "codex";
+  return provider;
+}
+
+function isProviderQuotaSkipped(provider: string): boolean {
+  const until = quotaExhaustedUntil.get(canonicalProviderId(provider));
+  return typeof until === "number" && until > Date.now();
+}
+
+function skipProvider(provider: string): void {
+  quotaExhaustedUntil.set(canonicalProviderId(provider), Date.now() + QUOTA_SKIP_MS);
+}
+
+function noteProviderFailure(provider: string, message: string): void {
+  if (isHardProviderQuotaError(message) || isHardProviderAuthError(message)) {
+    skipProvider(provider);
+    return;
+  }
+  if (/超时 \d+ms/.test(message)) {
+    const id = canonicalProviderId(provider);
+    const n = (timeoutStrikes.get(id) || 0) + 1;
+    timeoutStrikes.set(id, n);
+    if (n >= 2) skipProvider(provider);
+  }
+}
+
 // MiniMax is the local SSOT default chat; 360 is legacy hackathon sponsor path (low context).
 const DEFAULT_TEXT_PROVIDER_ORDER: AgentTextProviderId[] = [
   "minimax",
@@ -675,6 +725,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         latencyMs: Date.now() - ovStart,
         message,
       });
+      noteProviderFailure(ovProvider, message);
       errors.push(`[${ovProvider}:${ovModel}] ${message}`);
     }
   }
@@ -718,11 +769,16 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         latencyMs: Date.now() - providerStart,
         message,
       });
+      noteProviderFailure(provider, message);
       return { ok: false, msg: message };
     }
   };
 
   for (const provider of providerOrder) {
+    if (isProviderQuotaSkipped(provider)) {
+      errors.push(`[${canonicalProviderId(provider)}] 本进程已因额度耗尽跳过`);
+      continue;
+    }
     if (provider === "deepseek") {
       const apiKey = envValue(env, "DEEPSEEK_API_KEY");
       const baseUrl = (envValue(env, "DEEPSEEK_BASE_URL") || "https://api.deepseek.com/v1").replace(/\/$/, "");
@@ -758,6 +814,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         "https://token-plan-ams.xiaomimimo.com/anthropic",
       ];
       for (const clusterUrl of clusters) {
+        if (isProviderQuotaSkipped("mimo")) break;
         const out = await runOne(`mimo@${clusterUrl}`, model, (sys, user) =>
           callMimoAgent({ baseUrl: clusterUrl, apiKey, model, systemPrompt: sys, userContent: user, maxTokens })
         );

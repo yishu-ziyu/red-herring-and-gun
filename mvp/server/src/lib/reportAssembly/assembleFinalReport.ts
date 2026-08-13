@@ -16,6 +16,18 @@ import {
 } from "../atomSearch.js";
 import { normalizeReportCitations } from "../citationBinding.js";
 
+export const FACE_VERDICT: Record<string, string> = {
+  true: "能信",
+  false: "不能信",
+  mixed_misleading: "只能信一部分",
+  unverified: "还查不清",
+};
+
+export function faceVerdictFor(verdictType: unknown): string {
+  const key = typeof verdictType === "string" ? verdictType.trim() : "";
+  return FACE_VERDICT[key] || "还查不清";
+}
+
 export type AssembleFinalReportInput = {
   finalReport: Record<string, unknown>;
   /** rumor_detector step (or { output }) */
@@ -116,6 +128,7 @@ export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFi
     split.nonVerifiable
   );
   finalReport.claimItems = claimItems;
+  finalReport.faceVerdict = faceVerdictFor(finalReport.verdictType);
 
   // Align [n] with final source arrays (conclusion + evidenceChain + claimItems).
   normalizeReportCitations(finalReport);

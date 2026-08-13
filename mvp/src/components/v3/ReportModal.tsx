@@ -50,7 +50,7 @@ export function ReportModal({
   const verdicts = report.subclaimVerdicts ?? [];
   const nonVerifiableAtoms = report.nonVerifiableAtoms ?? [];
   const stanceClaimType = report.stanceClaimType;
-  // 排除层：整句判定为立场/价值/预测/规范型（verifiable=false）时，报告顶部显示"立场型"横幅
+  // 排除层：整句判定为立场/价值/规范型（verifiable=false）时，报告顶部显示"立场型"横幅
   const showStanceBanner = !!stanceClaimType && stanceClaimType.verifiable === false;
   // 逐命题清单：服务端预交错的 claimItems 已按原句序排好，前端零匹配直接渲染。
   let claimItems: Array<
@@ -133,7 +133,7 @@ export function ReportModal({
                 <div className="report-stance-banner" role="note">
                   <span className="stance-banner-pill">立场型</span>
                   <span className="stance-banner-text">
-                    本说法属立场/价值/预测型，不适用于事实核查；可核查部分照常判定，价值/预测原子原位标注、不订真/假。
+                    本说法属立场/价值/规范型，不适用于事实核查；可核查部分照常判定，价值/规范原子原位标注、不订真/假。
                   </span>
                 </div>
               )}

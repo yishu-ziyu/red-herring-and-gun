@@ -14,9 +14,10 @@ import {
   type OrchestrateStreamEvent,
   type SpeculativeRelayUpdate,
 } from "../../../lib/agentExpansion";
-import { adaptOrchestrateStreamToShell, shareAdviceFromVerdict } from "../../../lib/missionShell";
+import { adaptOrchestrateStreamToShell, buildVisibleProcessRows, shareAdviceFromVerdict } from "../../../lib/missionShell";
 import { resolveShellMode } from "../../../lib/missionShell/resolveShellMode";
 import { MissionProcessShell } from "./mission/MissionProcessShell";
+import { MissionWorkSurface } from "./mission/MissionWorkSurface";
 import type { ModelChoiceMap } from "../ModelPicker";
 import { calculateClaimSimilarity, createKnowledgeBase, type KnowledgeBase } from "../../../lib/knowledgeBase";
 import type {
@@ -3112,12 +3113,12 @@ function MissionFinalReportPanel({
 
       {conclusion ? (
         <div className="mission-final-conclusion">
-          <span>一句话结论</span>
+          <span>结论</span>
           <p>{conclusion}</p>
         </div>
       ) : (
         <div className="mission-final-conclusion mission-final-conclusion--empty">
-          <span>一句话结论</span>
+          <span>结论</span>
           <p>有结论了，但还没有适合展示的结论文本。</p>
         </div>
       )}
@@ -3757,6 +3758,8 @@ function ControllerRail({
   selectedShellAgentId,
   onSelectShellAgent,
   onSelectShellTool,
+  selectedShellRowKey,
+  onSelectShellRow,
 }: {
   controllerEvents: ControllerProcessEvent[];
   activeControllerEventId: string;
@@ -3773,6 +3776,8 @@ function ControllerRail({
   selectedShellAgentId?: string;
   onSelectShellAgent?: (agentId: string) => void;
   onSelectShellTool?: (toolKey: string) => void;
+  selectedShellRowKey?: string | null;
+  onSelectShellRow?: (rowKey: string) => void;
 }) {
   const transcriptItems = useMemo(() => buildControllerTranscript(controllerEvents), [controllerEvents]);
   const flowRef = useRef<HTMLDivElement | null>(null);
@@ -4019,6 +4024,9 @@ function ControllerRail({
               model={missionShellModel}
               variant={missionShellVariant ?? "token"}
               claimInParent
+              deskMode
+              selectedRowKey={selectedShellRowKey ?? null}
+              onSelectRow={onSelectShellRow}
               onSelectTool={onSelectShellTool}
             />
           </div>
@@ -4767,14 +4775,14 @@ function ConflictMediationPanel({ debates }: { debates: ConsensusDebateUpdate[] 
 function claimTypeLabel(type: ExecutionDagPlan["claimType"]) {
   switch (type) {
     case "causal":
-      return "因果命题";
+      return "因果推断";
     case "concept":
-      return "概念命题";
+      return "概念说法";
     case "event":
-      return "事件命题";
+      return "事件说法";
     case "mixed":
     default:
-      return "混合命题";
+      return "混合说法";
   }
 }
 
@@ -5160,6 +5168,7 @@ export function MissionControlView({
   const [selectedPropositionId, setSelectedPropositionId] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [selectedShellToolKey, setSelectedShellToolKey] = useState<string | null>(null);
+  const [selectedShellRowKey, setSelectedShellRowKey] = useState<string | null>(null);
   const [workbenchFocus, setWorkbenchFocus] = useState<WorkbenchFocus>("dispatch");
   const [activeControllerEventId, setActiveControllerEventId] = useState("");
   const [followLive, setFollowLive] = useState(true);
@@ -5185,6 +5194,14 @@ export function MissionControlView({
     () => adaptOrchestrateStreamToShell(sseEvents, { claim }),
     [sseEvents, claim]
   );
+  const missionNarrative = useMemo(
+    () => buildVisibleProcessRows(missionShellModel),
+    [missionShellModel]
+  );
+  const selectedDeskTitle =
+    missionNarrative.rows.find((r) => r.key === selectedShellRowKey)?.title ??
+    missionNarrative.rows.find((r) => r.isCurrent)?.title ??
+    null;
   /** Avoid double-firing onComplete if parent re-renders with same report */
   const onCompleteFiredRef = useRef(false);
 
@@ -5206,6 +5223,7 @@ export function MissionControlView({
     setSelectedPropositionId("");
     setSelectedAgentId("");
     setSelectedShellToolKey(null);
+    setSelectedShellRowKey(null);
     setActiveControllerEventId("");
     setFollowLive(true);
     setConsensusStarted(false);
@@ -5286,6 +5304,7 @@ export function MissionControlView({
         // Shell selection is run-scoped; clear so prior case filter/tool inspector does not stick.
         setSelectedAgentId("");
         setSelectedShellToolKey(null);
+        setSelectedShellRowKey(null);
         setExecutionPlan(null);
         setSpeculativeRelays([]);
         setDebateUpdates([]);
@@ -5919,11 +5938,11 @@ export function MissionControlView({
   /** Live execution: only top bar + process shell — no dual column / empty right grid. */
   const isLiveExecuting = runStatus === "running" || (runStatus === "idle" && !finalReport && !errorMessage);
   /**
-   * Stream-only layout: always in shell product path, and always while running.
-   * Detail column only after run ends (legacy) or for post-run tool inspect when no onComplete handoff.
+   * Shell path is a two-pane desk: left speech, right work surface.
+   * Legacy stays stream-only while running.
    */
-  const streamOnlyLayout = useMissionShell || runStatus === "running" || isLiveExecuting;
-  // Never open right column during live run. Shell mode: no dual workbench at all (errors inline under shell).
+  const streamOnlyLayout = !useMissionShell && (runStatus === "running" || isLiveExecuting);
+  const showWorkSurface = useMissionShell;
   // Legacy: after stop, allow detail when user inspects history or report is present without parent handoff.
   const showDetailColumn =
     !streamOnlyLayout &&
@@ -6004,8 +6023,10 @@ export function MissionControlView({
       </section>
 
       <section
-        className={`case-workbench-shell case-workbench-shell--stream-only${
-          useMissionShell ? " case-workbench-shell--process-shell" : ""
+        className={`case-workbench-shell${
+          useMissionShell
+            ? " case-workbench-shell--desk case-workbench-shell--process-shell"
+            : " case-workbench-shell--stream-only"
         }`}
         aria-label="核查卷宗工作区"
       >
@@ -6028,7 +6049,20 @@ export function MissionControlView({
             setSelectedShellToolKey(toolKey);
             setFollowLive(false);
           }}
+          selectedShellRowKey={
+            followLive
+              ? missionNarrative.rows.find((r) => r.isCurrent)?.key ?? selectedShellRowKey
+              : selectedShellRowKey
+          }
+          onSelectShellRow={(rowKey) => {
+            setSelectedShellRowKey(rowKey);
+            setFollowLive(false);
+          }}
         />
+
+        {showWorkSurface && missionShellModel ? (
+          <MissionWorkSurface model={missionShellModel} selectedTitle={selectedDeskTitle} />
+        ) : null}
 
         {/* Errors + brief handoff stay under the shell (no empty right column) */}
         {errorMessage ? (

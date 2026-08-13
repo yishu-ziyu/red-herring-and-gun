@@ -400,20 +400,20 @@
 .send {
   width: 28px;
   height: 28px;
-  color: #a1a1a1;
+  color: #6b6b6b;
 }
 .send::before {
-  background: rgba(26, 26, 26, 0.06);
+  background: rgba(26, 26, 26, 0.08);
 }
 .send:hover::before {
-  background: rgba(26, 26, 26, 0.1);
+  background: rgba(26, 26, 26, 0.14);
 }
 .send:disabled {
   cursor: default;
-  color: #c8c8c8;
+  color: #828282;
 }
 .send:disabled::before {
-  background: rgba(26, 26, 26, 0.04);
+  background: rgba(26, 26, 26, 0.06);
 }
 .send:disabled:active::before {
   transform: none;

@@ -32,6 +32,17 @@ describe("assembleFinalReport", () => {
       type: "mixed",
       reason: "mixed",
     });
+    expect(finalReport.faceVerdict).toBe("还查不清");
+  });
+
+  it("faceVerdict 跟随 verdictType", () => {
+    const finalReport: Record<string, unknown> = { verdictType: "false" };
+    assembleFinalReport({
+      finalReport,
+      rumorStep: { output: { claimAtoms: ["A"], claimAtomTypes: [{ text: "A", verifiable: true, type: "fact" }] } },
+      verdicts: [{ claimAtom: "A", verdict: "false", evidence: "e", boundary: "b" }],
+    });
+    expect(finalReport.faceVerdict).toBe("不能信");
   });
 });
 

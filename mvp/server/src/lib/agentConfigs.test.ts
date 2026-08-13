@@ -540,6 +540,25 @@ describe("排除层 · splitVerifiableAtoms 确定性拆分", () => {
     expect(prompt).toMatch(/概念定义/);
     expect(prompt).toMatch(/value 价值判断/);
     expect(prompt).toMatch(/不可核查/);
+    expect(prompt).toMatch(/预测 prediction/);
+    expect(prompt).toMatch(/公开承诺/);
+    expect(prompt).toMatch(/某公司未来三年营收将增长十倍/);
+    expect(prompt).toMatch(/不得一律标 false/);
+    expect(prompt).toMatch(/微博级谣言|流传短句/);
+    expect(prompt).toMatch(/太琐碎/);
+    expect(prompt).toMatch(/某地要建地铁/);
+    expect(prompt).not.toMatch(/value\/prediction\/normative 的 verifiable 必须为 false/);
+  });
+
+  it("fact_checker / report_composer 对预测只查现在时抓手，不把未来写成已发生", () => {
+    const fc = getAgentConfig("fact_checker")!.systemPrompt;
+    const rc = getAgentConfig("report_composer")!.systemPrompt;
+    expect(fc).toMatch(/现在时抓手|公开承诺/);
+    expect(fc).toMatch(/不得把原子改写成/);
+    expect(fc).toMatch(/Search-first|模型记忆不是核查/);
+    expect(fc).toMatch(/无证据 ≠ 假|无证据 ≠ 假/);
+    expect(rc).toMatch(/不得把未来写成已经发生/);
+    expect(rc).toMatch(/能信 \/ 不能信 \/ 只能信一部分 \/ 还查不清/);
   });
 });
 
@@ -601,7 +620,7 @@ describe("原句自证闸门 · 常量与 userContent", () => {
     expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/原句直接支持/);
     expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/独立含义|独立可核查/);
     expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/results/);
-    // 忠实 vs 可核查边界：本闸门只判忠实，不判可核查性；立场/价值/预测型若原句声称应判 supported
+    // 忠实 vs 可核查边界：本闸门只判忠实，不判可核查性；立场/价值/规范/预测若原句声称应判 supported
     expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/不判「可核查性」|不判"可核查性"/);
     expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/排除层/);
   });
