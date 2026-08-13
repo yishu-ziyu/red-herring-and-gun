@@ -86,13 +86,15 @@ export function humanizeClaimType(claimType?: string | null): string {
   const key = normalizeKey(claimType);
   switch (key) {
     case "causal":
-      return "因果命题";
+      return "因果推断";
     case "concept":
-      return "概念命题";
+      return "概念说法";
     case "event":
-      return "事件命题";
+      return "事件说法";
     case "mixed":
-      return "混合命题";
+      return "混合说法";
+    case "fact":
+      return "事实陈述";
     default: {
       const raw = typeof claimType === "string" ? claimType.trim() : "";
       if (!raw) return "";

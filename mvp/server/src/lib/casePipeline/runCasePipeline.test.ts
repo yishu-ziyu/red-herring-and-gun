@@ -102,6 +102,132 @@ describe("runCasePipeline", () => {
     expect(result.runId).toBeTruthy();
   });
 
+  it("rumor_detector 失败时把原句当可核查原子继续检索", async () => {
+    const searchOne = vi.fn(async (atom: string) => ({
+      sources: [{ url: "https://www.piyao.org.cn/x", title: "辟谣", snippet: "不实" }],
+    }));
+    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+      if (agentId === "rumor_detector") throw new Error("quota");
+      if (agentId === "fact_checker") {
+        return { agent: "fact_checker", output: { factCheckResult: "false", subclaimVerdicts: [] } };
+      }
+      if (agentId === "source_validator") {
+        return { agent: "source_validator", output: { sourceReliability: "high" } };
+      }
+      throw new Error(`unexpected ${agentId}`);
+    });
+
+    const selfProof = vi.fn(async () => {
+      throw new Error("selfproof quota");
+    });
+
+    const result = await runCasePipeline({
+      claim: "甘南所有景点一律免费",
+      runAgent,
+      searchOne,
+      callSelfProofModel: selfProof,
+      runReport: async () => ({
+        agent: "report_composer",
+        output: { verdictType: "false", conclusion: "不能信。官方已辟谣。" },
+      }),
+    });
+
+    expect(selfProof).not.toHaveBeenCalled();
+    expect(searchOne).toHaveBeenCalledWith("甘南所有景点一律免费");
+    expect(result.rumorStep.output.claimAtoms).toEqual(["甘南所有景点一律免费"]);
+    expect(result.finalReport.faceVerdict).toBe("不能信");
+  });
+
+  it("fact_checker 失败但检索已有辟谣链接时仍给出不能信", async () => {
+    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+      if (agentId === "rumor_detector") {
+        return {
+          agent: "rumor_detector",
+          output: {
+            claimAtoms: ["上海车展上演全武行"],
+            claimAtomTypes: [{ text: "上海车展上演全武行", verifiable: true, type: "fact" }],
+          },
+        };
+      }
+      if (agentId === "fact_checker") throw new Error("quota");
+      if (agentId === "source_validator") throw new Error("quota");
+      throw new Error(`unexpected ${agentId}`);
+    });
+
+    const result = await runCasePipeline({
+      claim: "上海车展上演全武行",
+      runAgent,
+      searchOne: async () => ({
+        sources: [{ url: "https://news.ifeng.com/c/fight", title: "警方辟谣上海车展打架系编造", snippet: "不实信息" }],
+      }),
+      callSelfProofModel: async () => ({
+        output: { results: [{ atom: "上海车展上演全武行", supported: true, reason: "ok" }] },
+        model: "m",
+      }),
+      runReport: async ({ steps }) => {
+        const fact = steps.find((s) => s.agent === "fact_checker");
+        return {
+          agent: "report_composer",
+          output: {
+            verdictType: fact?.output?.factCheckResult === "false" ? "false" : "unverified",
+            conclusion: "不能信。",
+          },
+        };
+      },
+    });
+
+    expect(result.factStep.output.factCheckResult).toBe("false");
+    expect(result.finalReport.faceVerdict).toBe("不能信");
+  });
+
+  it("检索已有对题辟谣时，把只能信一部分收成不能信", async () => {
+    const result = await runCasePipeline({
+      claim: "我说我的电瓶车叫谁偷走了，原来送给非洲人去了",
+      runAgent: async (agentId: string): Promise<PipelineStep> => {
+        if (agentId === "rumor_detector") {
+          return {
+            agent: "rumor_detector",
+            output: {
+              claimAtoms: ["我说我的电瓶车叫谁偷走了，原来送给非洲人去了"],
+              claimAtomTypes: [
+                { text: "我说我的电瓶车叫谁偷走了，原来送给非洲人去了", verifiable: true, type: "fact" },
+              ],
+            },
+          };
+        }
+        if (agentId === "fact_checker") {
+          return { agent: "fact_checker", output: { factCheckResult: "partial", subclaimVerdicts: [] } };
+        }
+        if (agentId === "source_validator") {
+          return { agent: "source_validator", output: { sourceReliability: "medium" } };
+        }
+        throw new Error(`unexpected ${agentId}`);
+      },
+      searchOne: async () => ({
+        sources: [
+          {
+            url: "https://www.piyao.org.cn/ebike",
+            title: "合肥警方通报P图编造电瓶车被偷至非洲",
+            snippet: "不实信息 辟谣",
+          },
+        ],
+      }),
+      callSelfProofModel: async () => ({
+        output: {
+          results: [{ atom: "我说我的电瓶车叫谁偷走了，原来送给非洲人去了", supported: true, reason: "ok" }],
+        },
+        model: "m",
+      }),
+      runReport: async () => ({
+        agent: "report_composer",
+        output: { verdictType: "mixed_misleading", conclusion: "只能信一部分。" },
+      }),
+    });
+
+    expect(result.finalReport.verdictType).toBe("false");
+    expect(result.finalReport.faceVerdict).toBe("不能信");
+  });
+
   it("report review hooks emit start/result and repair thin reports", async () => {
     const onReportReviewStart = vi.fn();
     const onReportReviewResult = vi.fn();

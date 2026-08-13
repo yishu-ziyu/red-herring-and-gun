@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  BYO_PROVIDER_PRESETS,
+  CUSTOM_PRESET_ID,
+  matchByoPreset,
+  type ByoProviderPreset,
+} from "../../../lib/byoProviderPresets";
+import { ProviderMark } from "./ProviderMark";
 
 const STORAGE_KEY = "gun-byo-key";
 const TIMESTAMP_KEY = "gun-byo-key-last-tested-at";
+const DEFAULT_PRESET = BYO_PROVIDER_PRESETS[0];
 
 interface StoredKey {
   baseUrl: string;
@@ -55,10 +63,18 @@ function formatTestedAt(timestamp: number): string {
   }
 }
 
+function modelsForPreset(preset: ByoProviderPreset, modelName: string) {
+  if (!modelName.trim() || preset.models.some((model) => model.id === modelName)) {
+    return preset.models;
+  }
+  return [...preset.models, { id: modelName, label: modelName }];
+}
+
 export function ApiKeySettings() {
-  const [baseUrl, setBaseUrl] = useState("");
+  const [presetId, setPresetId] = useState(DEFAULT_PRESET.id);
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_PRESET.baseUrl);
   const [apiKey, setApiKey] = useState("");
-  const [modelName, setModelName] = useState("");
+  const [modelName, setModelName] = useState(DEFAULT_PRESET.defaultModel);
   const [hydrated, setHydrated] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [testing, setTesting] = useState(false);
@@ -69,6 +85,8 @@ export function ApiKeySettings() {
     if (raw) {
       const parsed = deobfuscate(raw);
       if (parsed) {
+        const matched = matchByoPreset(parsed.baseUrl);
+        setPresetId(matched?.id ?? CUSTOM_PRESET_ID);
         setBaseUrl(parsed.baseUrl);
         setApiKey(parsed.apiKey);
         setModelName(parsed.modelName);
@@ -84,6 +102,13 @@ export function ApiKeySettings() {
     setHydrated(true);
   }, []);
 
+  const selectedPreset = useMemo(
+    () => BYO_PROVIDER_PRESETS.find((preset) => preset.id === presetId) ?? null,
+    [presetId]
+  );
+  const isCustom = presetId === CUSTOM_PRESET_ID;
+  const modelOptions = selectedPreset ? modelsForPreset(selectedPreset, modelName) : [];
+
   const baseUrlError = useMemo(() => {
     if (!hydrated) return "";
     if (!baseUrl.trim()) return "";
@@ -93,7 +118,21 @@ export function ApiKeySettings() {
     return "";
   }, [baseUrl, hydrated]);
 
-  const canSubmit = baseUrl.trim() && apiKey.trim() && !baseUrlError;
+  const canSubmit = Boolean(baseUrl.trim() && apiKey.trim() && !baseUrlError);
+
+  const selectPreset = (nextId: string) => {
+    if (nextId === CUSTOM_PRESET_ID) {
+      setPresetId(CUSTOM_PRESET_ID);
+      return;
+    }
+    const next = BYO_PROVIDER_PRESETS.find((preset) => preset.id === nextId);
+    if (!next) return;
+    setPresetId(next.id);
+    setBaseUrl(next.baseUrl);
+    if (!next.models.some((model) => model.id === modelName)) {
+      setModelName(next.defaultModel);
+    }
+  };
 
   const handleSave = () => {
     if (!canSubmit) return;
@@ -159,32 +198,48 @@ export function ApiKeySettings() {
   };
 
   return (
-    <main className="api-key-settings editorial" aria-label="BYO Key 设置">
-      <header className="api-key-settings-header cinema-rise">
-        <div>
-          <span className="small-caps">Local Key Vault</span>
-          <h1>自带 API Key</h1>
-        </div>
-        <a href="/" className="api-key-settings-back">返回首页</a>
-      </header>
+    <main className="api-key-settings" aria-label="模型设置">
+      <div className="api-key-settings-inner">
+        <header className="api-key-settings-header">
+          <div>
+            <h1>模型设置</h1>
+          </div>
+          <a href="/" className="api-key-settings-back">
+            返回首页
+          </a>
+        </header>
 
-      <section className="api-key-settings-card cinema-rise cinema-rise-d1" aria-label="配置表单">
         <p className="api-key-settings-intro">
-          填入 OpenAI 兼容协议的 Base URL、API Key 与模型名。密钥保存在本机浏览器存储中；测试连接时，本页会把密钥发送到当前站点的测试接口，由服务端代你向所填 Base URL 发起一次连接测试。
+          点一家，只填密钥。密钥保存在本机浏览器存储中。
         </p>
 
-        <aside className="api-key-settings-disclosure" aria-label="本机保存说明">
-          <strong>本机保存说明</strong>
-          <ul>
-            <li>base64 不是加密，只是避免明文直接写入 localStorage。</li>
-            <li>共享电脑或公共浏览器使用后，请清除这份配置。</li>
-            <li>点击测试连接时，会通过 /api/agent/test-llm 发起一次测试请求；页面不会在测试结果里回显密钥。</li>
-          </ul>
-        </aside>
+        <div className="api-key-chip-row" role="group" aria-label="服务商">
+          {BYO_PROVIDER_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className="api-key-chip"
+              aria-pressed={presetId === preset.id}
+              onClick={() => selectPreset(preset.id)}
+            >
+              <ProviderMark id={preset.id} />
+              {preset.name}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="api-key-chip"
+            aria-pressed={isCustom}
+            onClick={() => selectPreset(CUSTOM_PRESET_ID)}
+          >
+            <ProviderMark id="custom" />
+            自定义
+          </button>
+        </div>
 
         <div className="api-key-form-grid">
-          <label>
-            <span>Base URL</span>
+          <label className="api-key-field">
+            <span>接口地址</span>
             <input
               aria-label="Base URL"
               type="text"
@@ -195,7 +250,8 @@ export function ApiKeySettings() {
               onChange={(e) => setBaseUrl(e.target.value)}
             />
           </label>
-          <label>
+
+          <label className="api-key-field">
             <span>API Key</span>
             <input
               aria-label="API Key"
@@ -207,38 +263,51 @@ export function ApiKeySettings() {
               onChange={(e) => setApiKey(e.target.value)}
             />
           </label>
-          <label>
-            <span>Model Name</span>
-            <input
-              aria-label="Model Name"
-              type="text"
-              placeholder="gpt-4o-mini（可留空）"
-              autoComplete="off"
-              spellCheck={false}
-              value={modelName}
-              onChange={(e) => setModelName(e.target.value)}
-            />
-          </label>
+
+          {isCustom ? (
+            <label className="api-key-field">
+              <span>模型名</span>
+              <input
+                aria-label="Model Name"
+                type="text"
+                placeholder="可留空"
+                autoComplete="off"
+                spellCheck={false}
+                value={modelName}
+                onChange={(e) => setModelName(e.target.value)}
+              />
+            </label>
+          ) : (
+            <div className="api-key-field">
+              <span>模型</span>
+              <div className="api-key-chip-row" role="group" aria-label="模型">
+                {modelOptions.map((model) => (
+                  <button
+                    key={model.id}
+                    type="button"
+                    className="api-key-chip"
+                    aria-pressed={modelName === model.id}
+                    onClick={() => setModelName(model.id)}
+                  >
+                    {model.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {baseUrlError ? (
-          <p className="api-key-settings-error" role="alert">{baseUrlError}</p>
+          <p className="api-key-settings-error" role="alert">
+            {baseUrlError}
+          </p>
         ) : null}
 
         <div className="api-key-actions">
-          <button
-            type="button"
-            onClick={handleTest}
-            disabled={!canSubmit || testing}
-            aria-busy={testing}
-          >
+          <button type="button" onClick={handleTest} disabled={!canSubmit || testing} aria-busy={testing}>
             {testing ? "测试中…" : "测试连接"}
           </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!canSubmit}
-          >
+          <button type="button" onClick={handleSave} disabled={!canSubmit}>
             保存
           </button>
         </div>
@@ -260,7 +329,11 @@ export function ApiKeySettings() {
             <small>上次测试：{formatTestedAt(testResult.testedAt)}</small>
           </div>
         ) : null}
-      </section>
+
+        <p className="api-key-settings-footnote">
+          base64 不是加密，只是避免明文直接写入 localStorage。共享电脑或公共浏览器使用后，请清除这份配置。测试连接时，本页会把密钥发送到当前站点的测试接口，由服务端代你向所填地址发起一次连接测试。页面不会在测试结果里回显密钥。
+        </p>
+      </div>
     </main>
   );
 }

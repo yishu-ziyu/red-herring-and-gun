@@ -16,14 +16,11 @@ import {
   scrapeLinks,
   formatScrapedContent,
 } from "../../lib/linkScraper";
-import { FloatingActionMenu } from "./FloatingActionMenu";
 import { ModelPicker, type ModelChoiceMap } from "./ModelPicker";
-import { LiquidBlob } from "../../components/LiquidBlob";
 import { PromptInput, type PromptAttachment } from "./promptInput/PromptInput";
 
 interface DashboardProps {
   onStartAnalysis: (intake: CaseIntake, modelChoice: ModelChoiceMap) => void;
-  showUtilityMenu?: boolean;
   /** 重新核查时预填原 claim；普通进入首页为空 */
   initialClaim?: string;
 }
@@ -89,7 +86,7 @@ const DEMO_CASES = [
 const MAX_IMAGE_COUNT = 4;
 const MAX_TOTAL_IMAGE_BYTES = 6 * 1024 * 1024;
 
-export function Dashboard({ onStartAnalysis, showUtilityMenu = false, initialClaim = "" }: DashboardProps) {
+export function Dashboard({ onStartAnalysis, initialClaim = "" }: DashboardProps) {
   const [inputValue, setInputValue] = useState(initialClaim);
   const [images, setImages] = useState<CaseImage[]>([]);
   const [inputError, setInputError] = useState("");
@@ -331,8 +328,11 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false, initialCla
           </p>
           <p className="landing-tagline">溯源公开材料，核对是不是一手</p>
           <p className="landing-hero-body">
-            输入文字、链接或截图。系统去追这句话从哪来，对照公开来源，告诉你
-            <strong>能信、不能信，还是只能信其中一截</strong>。
+            输入文字、链接或截图。
+            <br />
+            系统去追这句话从哪来，对照公开来源。
+            <br />
+            告诉你<strong className="landing-hero-keep">能信</strong>、<strong className="landing-hero-keep">不能信</strong>，还是只能信其中一截。
           </p>
         </div>
       </section>
@@ -359,6 +359,9 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false, initialCla
             submitLabel={isScraping ? "正在抓取链接内容…" : "开始核查"}
             ariaLabel="待核查材料"
             placeholder="输入文字、粘贴链接，或添加聊天截图 / 网页截图"
+            trailing={
+              <ModelPicker value={modelChoice} onChange={setModelChoice} />
+            }
           />
           {detectedLinks.length > 0 ? (
             <div className="landing-link-row" aria-label="检测到的链接">
@@ -380,7 +383,6 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false, initialCla
               {inputError}
             </p>
           ) : null}
-          <ModelPicker value={modelChoice} onChange={setModelChoice} />
         </div>
       </section>
 
@@ -470,16 +472,7 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false, initialCla
 
             <div className="landing-report-verdict-block">
               <span className="landing-report-verdict-label">结论</span>
-              <LiquidBlob
-                blur={10}
-                contrast={20}
-                threshold={12}
-                className="landing-report-verdict-liquid"
-              >
-                <span className="landing-verdict-dot landing-verdict-dot--l" aria-hidden="true" />
-                <strong className="landing-report-verdict-main">只能信一部分</strong>
-                <span className="landing-verdict-dot landing-verdict-dot--r" aria-hidden="true" />
-              </LiquidBlob>
+              <strong className="landing-report-verdict-main">只能信一部分</strong>
               <p className="landing-report-verdict-why">
                 该说法混淆了「存在风险」和「必然致害」。硝酸盐在不当储存条件下可能升高，
                 但「等于吃毒药」省略了剂量、烹饪方式与人体证据链条。
@@ -576,20 +569,17 @@ export function Dashboard({ onStartAnalysis, showUtilityMenu = false, initialCla
         </div>
       </section>
 
-      {/* ── Footer ── */}
       <footer className="landing-footer">
-        <div className="landing-footer-brand">
-          <img src="/logo.png?v=20260615" alt="" className="landing-footer-logo" />
-          <span>红鲱鱼与枪</span>
+        <div className="landing-footer-inner">
+          <div className="landing-footer-brand">
+            <img src="/logo.png?v=20260615" alt="" className="landing-footer-logo" />
+            <span>红鲱鱼与枪</span>
+          </div>
+          <nav className="landing-footer-nav" aria-label="设置">
+            <a href="/settings/api-key">模型设置</a>
+          </nav>
         </div>
-        <p className="landing-footer-powered">
-          对照公开材料 · 来源可点开
-        </p>
-        <nav className="landing-footer-nav" aria-label="次要导航">
-          <a href="/settings/api-key">API Key 设置</a>
-        </nav>
       </footer>
-      {showUtilityMenu ? <FloatingActionMenu /> : null}
     </div>
   );
 }

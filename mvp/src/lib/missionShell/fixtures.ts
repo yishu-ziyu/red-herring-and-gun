@@ -42,6 +42,38 @@ export const FIXTURE_EARLY: OrchestrateStreamEvent[] = [
   },
 ];
 
+/**
+ * Live executing beat the user actually sees: planner done, memory nested,
+ * speculative relay ("先派发可行动线索") then rumor_detector running.
+ * Process UI must collapse relay + agent into one current triage step.
+ */
+export const FIXTURE_TRIAGE_RUNNING: OrchestrateStreamEvent[] = [
+  FIXTURE_EARLY[0],
+  FIXTURE_EARLY[1],
+  FIXTURE_EARLY[2],
+  {
+    type: "speculative_update",
+    relay: {
+      id: "relay-rumor-to-search",
+      title: "先派发可行动线索",
+      upstream: "Planner",
+      downstream: "RumorDetector",
+      trigger: "已识别命题类型，先拆出可检索的判断。",
+      status: "running",
+      savedReason: "不用等最终报告，先把可验证问题拆出来。",
+      confidence: "medium",
+    },
+    timestamp: 4,
+  },
+  {
+    type: "agent_start",
+    agent: "rumor_detector",
+    agentName: "RumorDetector",
+    agentIcon: "🚨",
+    timestamp: 5,
+  },
+];
+
 /** Fixture B: mid stream — agents done + search tools */
 export const FIXTURE_MID: OrchestrateStreamEvent[] = [
   ...FIXTURE_EARLY,

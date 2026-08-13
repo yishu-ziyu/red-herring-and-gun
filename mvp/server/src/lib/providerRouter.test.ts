@@ -1,11 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   agentEnvKey,
   callAgentWithFallback,
   envValue,
+  isHardProviderQuotaError,
   modelForAgent,
   parseAgentJson,
   providerOrderForAgent,
+  resetProviderQuotaSkipForTests,
 } from "./providerRouter.js";
 
 // Mock LLM provider；让 B2-B5 测试可以验证"哪个被调用、哪个没被调用"
@@ -413,6 +415,105 @@ describe("providerRouter modelOverride (BDD B2-B5)", () => {
     expect(result.output).toEqual({ ok: true, model: "mimo-v2.5-pro" });
     expect(result.model).toBe("mimo:mimo-v2.5-pro");
     expect(allProviders.callDeepSeekAgent).toHaveBeenCalledTimes(1);
+    expect(allProviders.callMimoAgent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("providerRouter quota skip", () => {
+  beforeEach(() => {
+    resetAllMocks();
+    resetProviderQuotaSkipForTests();
+  });
+
+  afterEach(() => {
+    resetProviderQuotaSkipForTests();
+  });
+
+  it("isHardProviderQuotaError 只认额度耗尽，不认普通 502", () => {
+    expect(isHardProviderQuotaError("Insufficient Balance")).toBe(true);
+    expect(isHardProviderQuotaError("余额不足")).toBe(true);
+    expect(isHardProviderQuotaError("quota exceeded")).toBe(true);
+    expect(isHardProviderQuotaError("DeepSeek 502")).toBe(false);
+  });
+
+  it("额度耗尽后同一进程不再打该 provider", async () => {
+    allProviders.callMiniMaxAgent.mockRejectedValue(new Error("insufficient balance"));
+    allProviders.callStepFunAgent.mockResolvedValue({
+      text: '{"ok":true,"provider":"stepfun"}',
+      model: "stepfun:step-2-mini",
+    });
+
+    await expect(
+      callAgentWithFallback({
+        agentId: "rumor_detector",
+        systemPrompt: "x",
+        userContent: "x",
+        responseSchema: { type: "object" },
+        maxTokens: 100,
+        env: {
+          MINIMAX_API_KEY: "sk-mm",
+          ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax",
+        },
+        codexBin: "/usr/bin/codex",
+      })
+    ).rejects.toThrow(/所有备用模型/);
+
+    const result = await callAgentWithFallback({
+      agentId: "fact_checker",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: {
+        MINIMAX_API_KEY: "sk-mm",
+        STEPFUN_API_KEY: "sk-sf",
+        ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax,stepfun",
+      },
+      codexBin: "/usr/bin/codex",
+    });
+
+    expect(result.output).toEqual({ ok: true, provider: "stepfun" });
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+    expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("Invalid API Key 后同一进程不再打该 provider", async () => {
+    allProviders.callMimoAgent.mockRejectedValue(new Error('{"error":{"code":"401","type":"invalid_key","message":"Invalid API Key"}}'));
+    allProviders.callStepFunAgent.mockResolvedValue({
+      text: '{"ok":true,"provider":"stepfun"}',
+      model: "stepfun:step-2-mini",
+    });
+
+    await expect(
+      callAgentWithFallback({
+        agentId: "rumor_detector",
+        systemPrompt: "x",
+        userContent: "x",
+        responseSchema: { type: "object" },
+        maxTokens: 100,
+        env: {
+          MIMO_API_KEY: "sk-bad",
+          ORCHESTRATE_TEXT_PROVIDER_ORDER: "mimo",
+        },
+        codexBin: "/usr/bin/codex",
+      })
+    ).rejects.toThrow(/所有备用模型/);
+
+    const result = await callAgentWithFallback({
+      agentId: "fact_checker",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: {
+        MIMO_API_KEY: "sk-bad",
+        STEPFUN_API_KEY: "sk-sf",
+        ORCHESTRATE_TEXT_PROVIDER_ORDER: "mimo,stepfun",
+      },
+      codexBin: "/usr/bin/codex",
+    });
+
+    expect(result.output).toEqual({ ok: true, provider: "stepfun" });
     expect(allProviders.callMimoAgent).toHaveBeenCalledTimes(1);
   });
 });

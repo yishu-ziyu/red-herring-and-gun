@@ -1,21 +1,11 @@
 /**
- * ModelPicker.tsx — 首页模型选择（简化版 BYO-API-key）
+ * ModelPicker.tsx — composer-inline model choice (BYO-API-key)
  *
- * 业务流程：
- * 1. 挂载时拉 GET /api/models/list（server 端按 env 过滤过的候选）
- * 2. 默认折叠（只露标题 + 一行摘要），点标题展开看到 4 个下拉
- * 3. 提供 4 个 preset：推荐组合 / 全部便宜 / 全部强 / 自定义（清空）
- * 4. 用户每次改动 → 调 onChange(modelChoice) 把当前选择冒泡给上层
- * 5. 如果 list 为空 → 渲染 "暂无可用模型" 提示，不让用户点启动
- *
- * 设计取舍：
- * - 选择状态完全受控（由父组件 lift 到 App.tsx），不在组件内 useState。
- * - 默认折叠避免首页一打开就 4 行下拉占满空间；展开动作由用户主动触发。
- * - 折叠态展示一个摘要：当前已配置的 agent 数量 / 用了哪个 preset。
- * - preset 的具体值写在本文件（推荐组合 / 全部便宜 / 全部强），这样测试和 UI 共享同一份事实。
+ * Lives in the PromptInput action row, left of send.
+ * Collapsed: a short name + chevron. Expanded: a popover with presets and 4 selects.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from "react";
 
 export type AgentId =
   | "rumor_detector"
@@ -146,11 +136,49 @@ async function fetchAvailableModels(): Promise<AvailableModel[]> {
 // 组件
 // ───────────────────────────────────────────────────────────────
 
+function sameChoiceMap(a: ModelChoiceMap, b: ModelChoiceMap): boolean {
+  return AGENT_IDS.every((id) => {
+    const left = a[id];
+    const right = b[id];
+    if (!left && !right) return true;
+    if (!left || !right) return false;
+    return left.provider === right.provider && left.model === right.model;
+  });
+}
+
+function shortTriggerLabel(
+  value: ModelChoiceMap,
+  loadedModels: AvailableModel[]
+): string {
+  const filledCount = AGENT_IDS.filter((id) => value[id]).length;
+  if (filledCount === 0) return "默认";
+  for (const preset of PRESETS) {
+    if (preset.id === "custom") continue;
+    const applied = preset.apply(loadedModels);
+    if (applied && sameChoiceMap(applied, value)) return preset.label;
+  }
+  const labels = AGENT_IDS.map((id) => {
+    const choice = value[id];
+    if (!choice) return null;
+    const match = loadedModels.find(
+      (item) => item.provider === choice.provider && item.model === choice.model
+    );
+    return match?.label ?? `${choice.provider}/${choice.model}`;
+  });
+  if (filledCount === AGENT_IDS.length) {
+    const first = labels[0];
+    const allSame = Boolean(first) && labels.every((label) => label === first);
+    if (allSame && first) return first;
+    return "已指定";
+  }
+  return `${filledCount}/4`;
+}
+
 export function ModelPicker({ value, onChange }: ModelPickerProps) {
   const [models, setModels] = useState<AvailableModel[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  // 默认折叠：减少首页视觉负担，用户主动点标题才展开
   const [expanded, setExpanded] = useState(false);
+  const rootRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -168,6 +196,63 @@ export function ModelPicker({ value, onChange }: ModelPickerProps) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onPointerDown = (event: Event) => {
+      const root = rootRef.current;
+      if (root && !root.contains(event.target as Node)) {
+        setExpanded(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setExpanded(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [expanded]);
+
+  useLayoutEffect(() => {
+    if (!expanded) return;
+    const root = rootRef.current;
+    const body = root?.querySelector<HTMLElement>("#model-picker-body");
+    if (!root || !body) return;
+
+    const place = () => {
+      const trigger = root.querySelector("button");
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const width = Math.min(360, window.innerWidth - 24);
+      let left = rect.right - width;
+      left = Math.max(12, Math.min(left, window.innerWidth - 12 - width));
+      const below = rect.bottom + 6;
+      const height = body.offsetHeight;
+      const flipUp =
+        below + height > window.innerHeight - 12 && rect.top - 6 - height > 12;
+      body.style.position = "fixed";
+      body.style.left = `${left}px`;
+      body.style.right = "auto";
+      body.style.width = `${width}px`;
+      body.style.top = flipUp ? `${rect.top - 6 - height}px` : `${below}px`;
+      body.style.bottom = "auto";
+    };
+
+    place();
+    const raf = window.requestAnimationFrame(place);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [expanded]);
 
   const handleAgentChange = useCallback(
     (agentId: AgentId, entry: ModelChoiceEntry | null) => {
@@ -201,60 +286,41 @@ export function ModelPicker({ value, onChange }: ModelPickerProps) {
     setExpanded((current) => !current);
   }, []);
 
-  // 加载中
   if (models === null && !loadError) {
     return (
       <section
+        ref={rootRef}
         aria-label="模型选择"
         className="model-picker"
         data-state="loading"
       >
-        <p className="model-picker-loading">正在加载可用模型…</p>
+        <span className="model-picker-inline-status">加载中</span>
       </section>
     );
   }
 
-  // 此时 models 要么是空数组，要么是非空数组（null 已在上面 return）
-  // 用 const 让 TypeScript 把它收窄成 AvailableModel[] 而不是 (AvailableModel[] | null)
   const loadedModels: AvailableModel[] = models ?? [];
 
-  // 列表为空 / 加载失败 → 提示 + 阻止用户选择
   if (loadedModels.length === 0) {
     return (
       <section
+        ref={rootRef}
         aria-label="模型选择"
         className="model-picker"
         data-state="empty"
       >
-        <p className="model-picker-empty">
-          {loadError
-            ? `暂无可用模型：${loadError}`
-            : "暂无可用模型。请在服务端配置至少一个 LLM 提供商的 API key 后刷新页面。"}
-        </p>
+        <span className="model-picker-empty">
+          {loadError ? `暂无可用模型：${loadError}` : "暂无可用模型"}
+        </span>
       </section>
     );
   }
 
-  // 折叠态摘要：告诉用户当前各步骤模型配置，避免展开才能知道有没有选
-  const filledCount = AGENT_IDS.filter((id) => value[id]).length;
-  const summaryLine: string = (() => {
-    if (filledCount === 0) return "默认（不指定模型，走默认配置）";
-    if (filledCount === AGENT_IDS.length) {
-      const seenLabel = AGENT_IDS.map((id) => {
-        const c = value[id];
-        if (!c) return null;
-        const m = loadedModels.find((x) => x.provider === c.provider && x.model === c.model);
-        return m?.label ?? `${c.provider}/${c.model}`;
-      });
-      const allSame = seenLabel.every((l) => l && l === seenLabel[0]);
-      if (allSame && seenLabel[0]) return `全部步骤使用 ${seenLabel[0]}`;
-      return `4 个步骤均已指定模型`;
-    }
-    return `已为 ${filledCount}/${AGENT_IDS.length} 个步骤指定模型`;
-  })();
+  const triggerLabel = shortTriggerLabel(value, loadedModels);
 
   return (
     <section
+      ref={rootRef}
       aria-label="模型选择"
       className="model-picker"
       data-state="ready"
@@ -266,18 +332,23 @@ export function ModelPicker({ value, onChange }: ModelPickerProps) {
         onClick={toggleExpanded}
         aria-expanded={expanded}
         aria-controls="model-picker-body"
+        aria-haspopup="dialog"
+        title={triggerLabel}
       >
-        <span className="model-picker-header-text">
-          <span className="model-picker-title">模型选择</span>
-          <span className="model-picker-hint">{summaryLine}</span>
-        </span>
+        <span className="model-picker-sr">模型选择</span>
+        <span className="model-picker-hint">{triggerLabel}</span>
         <span className="model-picker-chevron" aria-hidden="true">
-          {expanded ? "▾" : "▸"}
+          {expanded ? "▴" : "▾"}
         </span>
       </button>
 
       {expanded ? (
-        <div id="model-picker-body" className="model-picker-body">
+        <div
+          id="model-picker-body"
+          className="model-picker-body"
+          role="dialog"
+          aria-label="为各步骤指定模型"
+        >
           <div className="model-picker-presets" role="group" aria-label="预设组合">
             {PRESETS.map((preset) => (
               <button

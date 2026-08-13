@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { searchClaimAcrossSources } from "./lib/sherlockStyleSearch.js";
 import { AGENT_CONFIGS, buildAgentInput } from "./lib/agentConfigs.js";
 import { type AtomSearchBundle } from "./lib/atomSearch.js";
+import { buildAtomSearchQueries, mergeParallelSearchPayloads } from "./lib/atomSearchQuery.js";
 import { applyExclusionLayerToReport } from "./lib/reportAssembly/index.js";
 import { runCasePipeline, type PipelineStep, type RunAgentFn } from "./lib/casePipeline/index.js";
 import { getMemoryCandidateStore } from "./lib/memoryCandidateHandlers.js";
@@ -651,7 +652,7 @@ export function createHandlers(env: Record<string, string>) {
 
   async function get360SearchForClaim(claim: string) {
     try {
-      return await callParallelSearchProviders({ env, query: claim });
+      return await retrieveAtomSources(env, claim);
     } catch (error) {
       const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
       return build360SearchFailure(claim, message);
@@ -2832,6 +2833,35 @@ async function callParallelSearchProviders({
     traceText: `${has360Success ? "并行检索含 360 智搜(mweb)" : "360 智搜未返回可用结果，已用其它源交叉"}：${providerSummary}。${failures.length ? `失败：${failures.join("；")}` : ""}`,
     _source: "parallel-search",
   };
+}
+
+/** Production per-atom search: original query + 辟谣/规划 query, then merge URLs. */
+export async function retrieveAtomSources(env: Record<string, string>, atom: string) {
+  const queries = buildAtomSearchQueries(atom);
+  const settled = await Promise.allSettled(
+    queries.map((query) => callParallelSearchProviders({ env, query }))
+  );
+  const ok: Record<string, unknown>[] = [];
+  const failures: string[] = [];
+  settled.forEach((item, index) => {
+    if (item.status === "fulfilled") {
+      ok.push(item.value as Record<string, unknown>);
+      return;
+    }
+    const message = item.reason instanceof Error ? item.reason.message : String(item.reason);
+    failures.push(`${queries[index]}：${message}`);
+  });
+  if (ok.length === 0) {
+    return build360SearchFailure(atom, failures.join("；") || "检索未返回真实结果");
+  }
+  const merged = mergeParallelSearchPayloads(atom, ok);
+  if (failures.length > 0) {
+    const gaps = Array.isArray(merged.unresolvedEvidenceGaps)
+      ? merged.unresolvedEvidenceGaps.filter((g): g is string => typeof g === "string")
+      : [];
+    merged.unresolvedEvidenceGaps = [...gaps, ...failures].slice(0, 8);
+  }
+  return merged;
 }
 
 function getProviderLabel(provider: SearchProviderId | string) {

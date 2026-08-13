@@ -71,7 +71,7 @@ describe("adaptOrchestrateStreamToShell", () => {
       },
     ]);
     const planner = model.thoughtItems.find((t) => t.kind === "planner");
-    expect(planner?.description).toBe("因果命题");
+    expect(planner?.description).toBe("这是因果推断。");
     expect(planner?.description).not.toMatch(/causal/i);
   });
 
