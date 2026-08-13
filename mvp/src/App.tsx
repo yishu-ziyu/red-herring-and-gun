@@ -204,7 +204,6 @@ function AppContent() {
       {renderedPhase === "input" ? (
         <Dashboard
           onStartAnalysis={handleStartAnalysis}
-          showUtilityMenu={import.meta.env.DEV}
           initialClaim={activeClaim}
         />
       ) : renderedPhase === "executing" ? (
@@ -226,7 +225,6 @@ function AppContent() {
       ) : (
         <Dashboard
           onStartAnalysis={handleStartAnalysis}
-          showUtilityMenu={import.meta.env.DEV}
           initialClaim={activeClaim}
         />
       )}

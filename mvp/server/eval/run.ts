@@ -85,6 +85,43 @@ function historyPath(): string {
   return join(__dirname, "../../../.ship/evaluation/benchmark-history.jsonl");
 }
 
+function summarizeSearch(bundle: unknown, report: Record<string, unknown>) {
+  const rec = bundle && typeof bundle === "object" ? (bundle as Record<string, unknown>) : {};
+  const atoms = Array.isArray(rec.atomsSearched) ? rec.atomsSearched.filter((a) => typeof a === "string") : [];
+  const aggregate = rec.aggregate && typeof rec.aggregate === "object" ? (rec.aggregate as Record<string, unknown>) : {};
+  const sources = Array.isArray(aggregate.sources)
+    ? aggregate.sources
+    : Array.isArray(rec.forAgent)
+      ? (rec.forAgent as Array<{ sources?: unknown[] }>).flatMap((item) => item.sources ?? [])
+      : [];
+  const urls = sources
+    .map((s) => {
+      if (!s || typeof s !== "object") return "";
+      return String((s as { url?: unknown }).url || "").trim();
+    })
+    .filter((u) => /^https?:\/\//i.test(u));
+  const conclusion = String(report.conclusion || report.summaryForPublic || report.faceVerdict || "");
+  const face =
+    typeof report.faceVerdict === "string" && report.faceVerdict
+      ? report.faceVerdict
+      : /只能信一部分/.test(conclusion)
+        ? "只能信一部分"
+        : /还查不清/.test(conclusion)
+          ? "还查不清"
+          : /不能信/.test(conclusion)
+            ? "不能信"
+            : /能信/.test(conclusion)
+              ? "能信"
+              : "";
+  return {
+    searched: atoms.length > 0,
+    atoms,
+    urlCount: urls.length,
+    sampleUrls: urls.slice(0, 3),
+    face: face || "missing",
+  };
+}
+
 async function main() {
   if (!hasAnyKey) {
     console.error("未检测到任何 API key（STEPFUN/DEEPSEEK/MINIMAX/MIMO）。请先在 mvp/.env.local 配置。");
@@ -114,11 +151,14 @@ async function main() {
     let lastReport: Record<string, unknown> = {};
     let lastError: string | undefined;
 
+    let lastBundle: Awaited<ReturnType<typeof runCase>>["atomSearchBundle"];
+
     for (let r = 0; r < repeats; r++) {
-      const { steps, finalReport, error } = await runCase(golden, evalEnv);
+      const { steps, finalReport, error, atomSearchBundle } = await runCase(golden, evalEnv);
       lastSteps = steps;
       lastReport = finalReport;
       lastError = error;
+      lastBundle = atomSearchBundle;
       const verdict = error ? "ERROR" : String(finalReport.verdictType ?? "?");
       const cred =
         error || typeof finalReport.credibilityScore !== "number"
@@ -149,10 +189,11 @@ async function main() {
       verdictType: verdict === "ERROR" ? lastReport.verdictType : verdict,
       credibilityScore: typeof cred === "number" ? cred : lastReport.credibilityScore,
     };
+    const searchMeta = summarizeSearch(lastBundle, lastReport);
     process.stdout.write(
       repeats > 1
-        ? `→ majority=${verdict} medianCred=${cred} (${ms}ms)\n`
-        : `verdict=${verdict} credibility=${cred} (${ms}ms)\n`
+        ? `→ majority=${verdict} medianCred=${cred} search=${searchMeta.searched ? "yes" : "no"} urls=${searchMeta.urlCount} face=${searchMeta.face} (${ms}ms)\n`
+        : `verdict=${verdict} credibility=${cred} search=${searchMeta.searched ? "yes" : "no"} urls=${searchMeta.urlCount} face=${searchMeta.face} (${ms}ms)\n`
     );
 
     const score = scoreCase({
@@ -178,6 +219,7 @@ async function main() {
       error: agg.error ?? lastError,
       latencyMs: ms,
       agents: lastSteps.map((s) => s.agent),
+      search: searchMeta,
       scoreBreakdown: (lastReport as Record<string, unknown>)._scoreBreakdown ?? null,
       repeats: repeats > 1 ? { n: repeats, votes: agg.verdictVotes, samples: agg.credibilitySamples, runs: perRunDetails } : undefined,
     });
@@ -186,6 +228,31 @@ async function main() {
   const aggregate: AggregateMetrics = aggregateMetrics(scores);
   console.log("\n===== 聚合指标 =====");
   console.log(JSON.stringify(aggregate, null, 2));
+
+  const tiny = results.filter((r) => String(r.id).startsWith("TINY-"));
+  if (tiny.length > 0) {
+    const searched = tiny.filter((r) => (r.search as { searched?: boolean } | undefined)?.searched).length;
+    const withUrl = tiny.filter((r) => ((r.search as { urlCount?: number } | undefined)?.urlCount ?? 0) > 0).length;
+    const faceOk = tiny.filter((r) => {
+      const face = (r.search as { face?: string } | undefined)?.face;
+      return face && face !== "missing";
+    }).length;
+    const directionOk = tiny.filter((r) => r.verdict === "false" || r.verdict === "mixed_misleading").length;
+    console.log("\n===== 微博级短谣 =====");
+    console.log(
+      JSON.stringify(
+        {
+          total: tiny.length,
+          searchedShare: searched / tiny.length,
+          boundUrlShare: withUrl / tiny.length,
+          faceShare: faceOk / tiny.length,
+          correctDirectionShare: directionOk / tiny.length,
+        },
+        null,
+        2
+      )
+    );
+  }
 
   // 写历史
   const entry = {
@@ -225,8 +292,8 @@ async function main() {
     console.log("\n门禁通过。");
   }
 
-  // 写基线示例（非 gate 时）
-  if (!args.gate) {
+  // 写基线：仅全量跑且未指定 --gate 时更新，避免子集评测覆盖门禁基线
+  if (!args.gate && !args.ids && !args.domain) {
     const baselinePath = join(__dirname, "baseline.json");
     writeFileSync(baselinePath, JSON.stringify(aggregate, null, 2));
     console.log(`\n首次基线已写入 ${baselinePath}（后续 --gate baseline.json 校验）`);
