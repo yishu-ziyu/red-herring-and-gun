@@ -10,8 +10,6 @@ http://127.0.0.1:5180/?shell=1          # live token shell
 http://127.0.0.1:5180/?shell=antdx      # live Ant Design X ThoughtChain
 ```
 
-详见 `mvp/docs/SHELL_TRIAL.md`。
-
 ## 目录
 
 | 文件 | 作用 |

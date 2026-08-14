@@ -1,8 +1,8 @@
 // BDD 行为用例 S1-S4：buildStepFunRequestBody 的 wire body 构造
 // 背景：StepFun reasoning 系列（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
 // 三者皆会触发 400 Invalid request。这是用户遇到 6+ 次的根因。
-import { describe, expect, it } from "vitest";
-import { buildStepFunRequestBody } from "./agentProviders.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildStepFunRequestBody, callMiniMaxAgent } from "./agentProviders.js";
 
 describe("buildStepFunRequestBody", () => {
   const messages = [
@@ -84,5 +84,82 @@ describe("buildStepFunRequestBody", () => {
       expect(body).not.toHaveProperty("temperature");
       expect(body).not.toHaveProperty("reasoning_effort");
     }
+  });
+});
+
+describe("callMiniMaxAgent", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function jsonResponse(body: unknown, ok = true) {
+    return {
+      ok,
+      text: async () => JSON.stringify(body),
+    };
+  }
+
+  it("sends adaptive thinking for MiniMax-M3 and returns text JSON", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        content: [
+          { type: "thinking", thinking: "先拆命题" },
+          { type: "text", text: '{"severity":"low"}' },
+        ],
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await callMiniMaxAgent({
+      baseUrl: "https://api.minimaxi.com/anthropic",
+      apiKey: "sk-mm",
+      model: "MiniMax-M3",
+      systemPrompt: "sys",
+      userContent: "user",
+      maxTokens: 131072,
+    });
+
+    expect(result.text).toBe('{"severity":"low"}');
+    expect(result.reasoning).toBe("先拆命题");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.thinking).toEqual({ type: "adaptive" });
+    expect(body.stream).toBe(true);
+    expect(body.max_tokens).toBe(131072);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.minimaxi.com/anthropic/v1/messages");
+  });
+
+  it("streams thinking deltas to onThinking before the JSON text arrives", async () => {
+    const sse =
+      `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "thinking_delta", thinking: "先看原句" } })}\n\n` +
+      `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "thinking_delta", thinking: "是否可核。" } })}\n\n` +
+      `data: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: '{"severity":"low"}' } })}\n\n`;
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(sse));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: stream,
+      headers: { get: () => "text/event-stream" },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const seen: string[] = [];
+
+    const result = await callMiniMaxAgent({
+      baseUrl: "https://api.minimaxi.com/anthropic",
+      apiKey: "sk-mm",
+      model: "MiniMax-M3",
+      systemPrompt: "sys",
+      userContent: "user",
+      maxTokens: 131072,
+      onThinking: (text) => seen.push(text),
+    });
+
+    expect(seen).toEqual(["先看原句", "先看原句是否可核。"]);
+    expect(result.reasoning).toBe("先看原句是否可核。");
+    expect(result.text).toBe('{"severity":"low"}');
   });
 });

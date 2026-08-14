@@ -8,7 +8,7 @@
  * 3. Ensure conclusion has claim framing + uncertainty when evidence is thin
  * 4. Never invent sources or facts not already in the report
  *
- * Aligns with docs/FACTCHECK_WRITING_VOICE.md (Prompt A + F).
+ * Keep public copy plain and sourced.
  */
 
 import {
@@ -16,6 +16,7 @@ import {
   sanitizePublicReportText,
   PUBLIC_REPORT_FALLBACK_REASON,
 } from "./reportSanitizer.js";
+import { faceVerdictFor } from "./reportAssembly/index.js";
 
 const BANNED_DRAMA =
   /纯属捏造|纯属子虚乌有|令人啼笑皆非|令人啼笑|可笑至极|震惊全网|铁证如山|毋庸置疑|智慧的网友|作为AI|作为人工智能|速来围观|当帮凶|广大网友务必/g;
@@ -74,8 +75,28 @@ function stripDrama(text: string, notes: string[], label: string): string {
     .trim();
 }
 
+function hasFaceVerdict(text: string): boolean {
+  return /能信|不能信|只能信一部分|还查不清/.test(text);
+}
+
 function hasUncertainty(text: string): boolean {
-  return /不足|无法|未见|不能支持|尚未|缺口|不能|有限|待核|未证实|不宜/.test(text);
+  return /不足|无法|未见|不能支持|尚未|缺口|不能|有限|待核|未证实|不宜|不能信|还查不清/.test(text);
+}
+
+function ensureFaceLead(text: string, verdictType: unknown, notes: string[], label: string): string {
+  if (
+    verdictType !== "true" &&
+    verdictType !== "false" &&
+    verdictType !== "mixed_misleading" &&
+    verdictType !== "unverified"
+  ) {
+    return text;
+  }
+  const face = faceVerdictFor(verdictType);
+  if (!text) return `${face}。`;
+  if (hasFaceVerdict(text)) return text;
+  notes.push(`${label}: prepended face verdict`);
+  return `${face}。${text}`;
 }
 
 function hasClaimFraming(text: string, claim: string): boolean {
@@ -88,13 +109,14 @@ function ensureClaimAndUncertainty(
   conclusion: string,
   claim: string,
   notes: string[],
+  verdictType?: unknown,
 ): string {
   let out = conclusion.trim();
   if (!out) {
     notes.push("conclusion: empty → conservative default");
     return claim
-      ? `流传说法是：「${claim.slice(0, 42)}」。现有证据仍不足以确认，不宜按原强度传播。`
-      : "现有证据仍不足以确认该说法，不宜按原强度传播。";
+      ? `还查不清。流传说法是：「${claim.slice(0, 42)}」。现有证据仍不足以确认。`
+      : "还查不清。现有证据仍不足以确认该说法。";
   }
 
   if (claim && !hasClaimFraming(out, claim)) {
@@ -102,7 +124,8 @@ function ensureClaimAndUncertainty(
     out = `流传说法是：「${claim.slice(0, 42)}」。${out}`;
   }
 
-  if (!hasUncertainty(out)) {
+  const decisive = verdictType === "true" || verdictType === "false";
+  if (!decisive && !hasFaceVerdict(out) && !hasUncertainty(out)) {
     notes.push("conclusion: injected uncertainty boundary");
     out = `${out.replace(/[。．.]+$/g, "")}。现有证据仍不足以按原强度确认。`;
   }
@@ -177,21 +200,25 @@ export function postProcessHandoffFinalReport(
 
   // 3) Prompt A structure: claim framing + uncertainty when missing
   const safeClaim = (claim || asString(report.originalClaim) || "").trim();
-  conclusion = ensureClaimAndUncertainty(conclusion, safeClaim, notes);
+  const verdictType = report.verdictType;
+  conclusion = ensureClaimAndUncertainty(conclusion, safeClaim, notes, verdictType);
+  conclusion = ensureFaceLead(conclusion, verdictType, notes, "conclusion");
 
   if (!summaryForPublic) {
     summaryForPublic = conclusion.length > 120 ? `${conclusion.slice(0, 100)}…` : conclusion;
     notes.push("summaryForPublic: filled from conclusion");
-  } else if (!hasUncertainty(summaryForPublic)) {
+  } else if (verdictType !== "true" && verdictType !== "false" && !hasUncertainty(summaryForPublic) && !hasFaceVerdict(summaryForPublic)) {
     summaryForPublic = `${summaryForPublic.replace(/[。．.]+$/g, "")}。现有证据仍不足以按原强度确认。`;
     notes.push("summaryForPublic: injected uncertainty");
   }
+  summaryForPublic = ensureFaceLead(summaryForPublic, verdictType, notes, "summaryForPublic");
+  report.faceVerdict = faceVerdictFor(verdictType);
 
   if (!recommendation) {
-    recommendation = "转发前建议先看原始来源，并保留证据边界。";
+    recommendation = "先看来源再判断能不能信，并保留证据边界。";
     notes.push("recommendation: default action without lecture");
   } else if (/广大网友|当帮凶|速来/.test(recommendation)) {
-    recommendation = "转发前建议先看原始来源，并保留证据边界。";
+    recommendation = "先看来源再判断能不能信，并保留证据边界。";
     notes.push("recommendation: replaced lecture tone");
   }
 

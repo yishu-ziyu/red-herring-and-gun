@@ -1,97 +1,43 @@
 # 红鲱鱼与枪
 
-AI 驱动的信息核查 Agent。用户提交一条疑似传言、截图转写、链接或网页材料后，系统用多 Agent 流程完成立案、命题拆解、证据搜索、交叉验证和报告收束，输出可信度评分与证据链。
+信息真相猎人。丢进来一句话、截图或链接，去**追出处**，告诉你**能信还是不能信**。有问题就指出问题。来源能点开。
 
 公网入口：<https://gun.yishuziyu.cn>
 
-## 产品定位
-
-红鲱鱼与枪不是一个简单的搜索总结工具。它把一条说法拆成可核查判断，再用多个 Agent 分工处理：
+赛道：「词元工坊」黑客松 · AI Agent · 信息真相猎人。有技术含量的是溯源，不是话术。
 
 ```text
-用户材料
--> RumorDetector
--> FactChecker + SourceValidator
--> ReportComposer
--> 可信度评分 + 证据链 + can say / cannot say
+材料
+  → 溯源（从哪来、是不是一手）
+  → 对照公开材料
+  → 能信 / 不能信 / 还查不清
+  → 问题点 + 可点来源
 ```
 
-核心原则是：先别转发，先看证据链。
+## 它做什么
 
-## 核心能力
-
-- 多 Agent 核查：谣言特征识别、事实核验、信源可靠性评估、报告生成。
-- 证据链输出：区分“能说什么”和“不能推出什么”。
-- 逐命题定罪：把一条说法拆成可核查的原子命题，逐一判定（属实 / 不实 / 部分属实 / 夸大 / 未判定·待补证），报告里逐条可见，可审查、可审计。
-- 确定性评分：`credibilityScore` 由公式计算，不让 LLM 直接拍脑袋打分。
-- 多模型 fallback：DeepSeek、MiMo、StepFun、360、Anthropic Proxy 等 provider 按可用环境自动选择。
-- 公网部署：前端静态资源由 Nginx 承接，`/api/` 与 `/health` 代理到 Express 服务。
-
-## 逐命题定罪
-
-一条消息常夹着多个独立判断。系统先把整条说法拆成原子命题（`claimAtoms`，每条都能回溯原句），再让 FactChecker 对每个原子单独定罪，最终在报告中逐条列出判定、证据与边界。
-
-```text
-整条说法
--> 拆成原子命题 claimAtoms
--> FactChecker 逐条定罪（属实/不实/部分属实/夸大/未判定）
--> 报告逐条列出 判定 + 证据 + 边界
-```
-
-- 模型无权编造命题：只有真实存在于原句被拆出的原子才会进入清单，幻觉原子会被拦截。
-- 来源同样被拦截：定罪引用的证据来源必须真实存在于搜索结果，编造的 URL 会被丢弃。
-- 覆盖不全的原子会明确标为“未判定·待补证”，不伪装成已定罪。
-- 判定可追溯：每条定罪可展开，看支撑证据、反证/质疑、证据缺口，来源可点击回原文。默认不打扰，点开才展开。
-- 这是“可审查、可审计”承诺的落点：用户能看清单条，而不只是拿一个总分。
-
-## 可信度评分
-
-`credibilityScore` 是 0-100 分的确定性结果，由五类信号聚合：
-
-| 分量 | 来源 | 作用 |
-| --- | --- | --- |
-| 事实核查信号 | FactChecker | 判断核心事实是否成立 |
-| 搜索证据信号 | 外部搜索 | 检查外部证据方向和质量 |
-| 信源可靠性 | SourceValidator | 评估来源可信度 |
-| 谣言严重度惩罚 | RumorDetector | 识别情绪煽动、匿名信源、绝对化表述等风险 |
-| 缺失来源惩罚 | SourceValidator | 处理关键证据缺口 |
-
-分档：
-
-| 分数 | 标签 |
-| --- | --- |
-| 80-100 | 高度可信 |
-| 60-79 | 基本可信 |
-| 40-59 | 存疑 |
-| 20-39 | 低可信 |
-| 0-19 | 高度可疑 |
+- 对着公开材料核，不靠模型编造来源或命题。
+- 一句话里真假缝在一起时，分开判：哪一截能信、哪一截不能信。
+- 可信度 0–100 由公式计算，不让模型直接打分。
+- 查不清就说查不清；没搜到不等于假。
+- 国产模型与 360 搜索可按环境接入。
 
 ## 技术栈
 
 - 前端：React + Vite + TypeScript
 - 后端：Express + TypeScript
 - 测试：Vitest
-- 部署：Nginx + Docker + 阿里云服务器
+- 部署：Nginx + Docker + 阿里云
 
 ## 项目结构
 
 ```text
 .
 ├── README.md
-├── deploy-to-aliyun.sh
-├── docs/
-│   ├── DEPLOYMENT_INCIDENT_REVIEW_2026-06-15.md
-│   ├── PRODUCT_RELEASE_GATE.md
-│   └── PROJECT_MAP_2026-06-15.md
-├── scripts/
-│   ├── configure-aliyun-static-nginx.sh
-│   └── delete-stale-gun-a-record.sh
-└── mvp/
-    ├── src/                 # React 前端
-    ├── server/src/          # Express 后端
-    ├── public/              # 静态资源
-    ├── package.json
-    └── server/package.json
+├── docs/PRODUCT_SPEC.md     # 产品真相
+├── docs/adr/                # 架构决策
+├── mvp/src/                 # React 前端
+└── mvp/server/src/          # Express 后端
 ```
 
 ## 本地运行
@@ -125,45 +71,8 @@ npm run build
 
 ## 环境变量
 
-完整示例见：
+示例见 `mvp/.env.local.example`。常用：`DEEPSEEK_API_KEY`、`MIMO_API_KEY`、`STEPFUN_API_KEY`、`AIPING_*`、`PUBLIC_BASE_URL=https://gun.yishuziyu.cn`。不要把真实密钥提交进仓库。
 
-```text
-mvp/.env.local.example
-```
+## 部署
 
-常用变量包括：
-
-- `DEEPSEEK_API_KEY`
-- `MIMO_API_KEY`
-- `STEPFUN_API_KEY`
-- `AIPING_CLIENT_ID`
-- `AIPING_CLIENT_SECRET`
-- `AIPING_SESSION_SECRET`
-- `PUBLIC_BASE_URL=https://gun.yishuziyu.cn`
-
-真实密钥不应提交到仓库。
-
-## 部署与运维
-
-公网域名：
-
-```text
-gun.yishuziyu.cn
-```
-
-当前生产方案：
-
-- DNS：`gun A 121.89.90.68`
-- Nginx：服务 `/opt/red-herring/dist`
-- API：`/api/` 与 `/health` 代理到 `127.0.0.1:3000`
-
-部署和排障入口：
-
-```bash
-./ops.sh public
-./ops.sh aliyun-domain
-./ops.sh remote
-./ops.sh deploy --yes
-```
-
-部署事故复盘和发布门禁见 `docs/`。
+域名 `gun.yishuziyu.cn`。Nginx 服务静态资源，`/api/` 与 `/health` 代理到本机 Express。入口：`./ops.sh deploy --yes`。发布门禁见 `docs/PRODUCT_RELEASE_GATE.md`。

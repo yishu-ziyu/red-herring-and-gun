@@ -40,12 +40,14 @@ const REQUIRED_PATTERNS_SOURCE_VALIDATOR = [
 ];
 
 describe("AGENT_CONFIGS · P0-1 Grounding 硬约束", () => {
-  it("应暴露 4 个 Agent 配置（rumor_detector/fact_checker/source_validator/report_composer）", () => {
+  it("应暴露 6 个 Agent 配置（含因果分支 alternative_explanation_searcher / counter_evidence_grader）", () => {
     expect(AGENT_CONFIGS.map((a) => a.id)).toEqual([
       "rumor_detector",
       "fact_checker",
       "source_validator",
       "report_composer",
+      "alternative_explanation_searcher",
+      "counter_evidence_grader",
     ]);
   });
 
@@ -310,10 +312,10 @@ describe("buildAgentInput · 富化 handoff 字段", () => {
     expect(grader.contradictingSources).toEqual(["反方来源1"]);
   });
 
-  it("rumor_detector task 文案对齐分诊语义", () => {
+  it("rumor_detector task 文案对齐拆题语义", () => {
     const input = buildAgentInput("rumor_detector", "claim", []);
-    expect(input.task).toContain("分诊");
-    expect(input.task).toContain("原子命题");
+    expect(input.task).toContain("拆开");
+    expect(input.task).toContain("可核查");
   });
 });
 
@@ -341,6 +343,26 @@ describe("判定可追溯 · per-verdict 结构化来源", () => {
     expect(item.properties.supportingSources).toBeDefined();
     expect(item.properties.contradictingSources).toBeDefined();
     expect(item.properties.evidenceGaps).toBeDefined();
+  });
+
+  it("fact_checker / report_composer prompt 与 schema 要求句内 [n] 与 supportingSources 顺序对应", () => {
+    const fc = getAgentConfig("fact_checker")!;
+    const rc = getAgentConfig("report_composer")!;
+    expect(fc.systemPrompt).toContain("句内引用编号");
+    expect(fc.systemPrompt).toContain("supportingSources");
+    expect(fc.systemPrompt).toMatch(/\[n\]/);
+    expect(rc.systemPrompt).toContain("句内引用编号");
+    expect(rc.systemPrompt).toContain("全局编号");
+    expect(rc.systemPrompt).toMatch(/\[n\]/);
+
+    const fcEvidence = (fc.responseSchema as any).properties.subclaimVerdicts.items.properties.evidence;
+    expect(fcEvidence.description).toMatch(/\[n\]/);
+    expect(fcEvidence.description).toMatch(/supportingSources/);
+
+    const rcConclusion = (rc.responseSchema as any).properties.conclusion;
+    expect(rcConclusion.description).toMatch(/\[n\]/);
+    const chainEvidence = (rc.responseSchema as any).properties.evidenceChain.items.properties.evidence;
+    expect(chainEvidence.description).toMatch(/sourceRefs/);
   });
 
   it("mergeSubclaimVerdicts：URL 幻觉拦截——编造 URL 丢弃、真实 URL 保留", () => {
@@ -518,6 +540,25 @@ describe("排除层 · splitVerifiableAtoms 确定性拆分", () => {
     expect(prompt).toMatch(/概念定义/);
     expect(prompt).toMatch(/value 价值判断/);
     expect(prompt).toMatch(/不可核查/);
+    expect(prompt).toMatch(/预测 prediction/);
+    expect(prompt).toMatch(/公开承诺/);
+    expect(prompt).toMatch(/某公司未来三年营收将增长十倍/);
+    expect(prompt).toMatch(/不得一律标 false/);
+    expect(prompt).toMatch(/微博级谣言|流传短句/);
+    expect(prompt).toMatch(/太琐碎/);
+    expect(prompt).toMatch(/某地要建地铁/);
+    expect(prompt).not.toMatch(/value\/prediction\/normative 的 verifiable 必须为 false/);
+  });
+
+  it("fact_checker / report_composer 对预测只查现在时抓手，不把未来写成已发生", () => {
+    const fc = getAgentConfig("fact_checker")!.systemPrompt;
+    const rc = getAgentConfig("report_composer")!.systemPrompt;
+    expect(fc).toMatch(/现在时抓手|公开承诺/);
+    expect(fc).toMatch(/不得把原子改写成/);
+    expect(fc).toMatch(/Search-first|模型记忆不是核查/);
+    expect(fc).toMatch(/无证据 ≠ 假|无证据 ≠ 假/);
+    expect(rc).toMatch(/不得把未来写成已经发生/);
+    expect(rc).toMatch(/能信 \/ 不能信 \/ 只能信一部分 \/ 还查不清/);
   });
 });
 
@@ -579,7 +620,7 @@ describe("原句自证闸门 · 常量与 userContent", () => {
     expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/原句直接支持/);
     expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/独立含义|独立可核查/);
     expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/results/);
-    // 忠实 vs 可核查边界：本闸门只判忠实，不判可核查性；立场/价值/预测型若原句声称应判 supported
+    // 忠实 vs 可核查边界：本闸门只判忠实，不判可核查性；立场/价值/规范/预测若原句声称应判 supported
     expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/不判「可核查性」|不判"可核查性"/);
     expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/排除层/);
   });

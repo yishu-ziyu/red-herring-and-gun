@@ -55,13 +55,13 @@ export const entertainmentRumorCase: DemoCase = {
       subclaimId: "C2",
       neededEvidence: ["司法机关通报", "监管部门公告", "平台处罚说明"],
       notAcceptable: ["匿名爆料", "未证实聊天记录", "二手转述"],
-      minimumOutputRule: "没有正式通报时，不能说已违法。",
+      minimumOutputRule: "没有正式通报时，不能当成已违法。",
     },
     {
       subclaimId: "C3",
       neededEvidence: ["平台检索结果", "片方排播公告", "各平台上下架记录"],
       notAcceptable: ["单个平台截图", "无法复现的搜索结果", "截断页面"],
-      minimumOutputRule: "没有多平台核验时，不能说全部下架。",
+      minimumOutputRule: "没有多平台核验时，不能当成全部下架。",
     },
     {
       subclaimId: "C4",
@@ -73,7 +73,7 @@ export const entertainmentRumorCase: DemoCase = {
       subclaimId: "C5",
       neededEvidence: ["当事方声明", "片方公告", "权威媒体核查"],
       notAcceptable: ["粉丝后援会单方说法", "评论区截图", "无来源澄清"],
-      minimumOutputRule: "没有正式澄清时，不能说传言已被完全否定。",
+      minimumOutputRule: "没有正式澄清时，不能当成传言已被完全否定。",
     },
   ],
   searchPlans: [

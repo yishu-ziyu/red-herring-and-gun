@@ -61,7 +61,7 @@ export const socialRumorCase: DemoCase = {
       subclaimId: "C3",
       neededEvidence: ["地铁公司官网公告", "政府交通部门通知", "官方媒体发布"],
       notAcceptable: ["自媒体文章", "社交媒体帖子", "聊天截图"],
-      minimumOutputRule: "没有找到官方公告时，不能说「已确认」。",
+      minimumOutputRule: "没有找到官方公告时，不能当成已经确认。",
     },
     {
       subclaimId: "C4",
@@ -73,7 +73,7 @@ export const socialRumorCase: DemoCase = {
       subclaimId: "C5",
       neededEvidence: ["官方辟谣声明", "权威媒体澄清报道"],
       notAcceptable: ["个人否认", "非官方渠道"],
-      minimumOutputRule: "没有找到辟谣信息时，不能说「已被辟谣」。",
+      minimumOutputRule: "没有找到辟谣信息时，不能当成已被辟谣。",
     },
   ],
   searchPlans: [

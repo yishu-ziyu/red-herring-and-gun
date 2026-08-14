@@ -104,6 +104,37 @@ export function createAgentStartEvent({
   };
 }
 
+export function createAgentThoughtEvent({
+  agent,
+  agentName,
+  agentIcon,
+  content,
+  seq,
+  done,
+  partial,
+}: {
+  agent: string;
+  agentName: string;
+  agentIcon?: string;
+  content: string;
+  seq: number;
+  done: boolean;
+  partial?: boolean;
+}): AgentRuntimeEvent {
+  return {
+    type: "agent_thought",
+    phase: "agent",
+    agent,
+    agentName,
+    agentIcon,
+    content,
+    seq,
+    done,
+    ...(partial ? { partial: true } : {}),
+    timestamp: now(),
+  };
+}
+
 export function createAgentCompleteEvent({
   agent,
   agentName,
@@ -147,12 +178,14 @@ export function createAgentErrorEvent({
   agentIcon,
   agentContract,
   error,
+  recoverable = false,
 }: {
   agent: string;
   agentName: string;
   agentIcon?: string;
   agentContract?: unknown;
   error: string;
+  recoverable?: boolean;
 }): AgentRuntimeEvent {
   return {
     type: "agent_error",
@@ -162,6 +195,7 @@ export function createAgentErrorEvent({
     agentIcon,
     agentContract,
     error,
+    recoverable,
     timestamp: now(),
   };
 }

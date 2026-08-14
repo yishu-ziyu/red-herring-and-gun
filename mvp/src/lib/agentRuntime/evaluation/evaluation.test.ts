@@ -37,8 +37,8 @@ function makeValidReport(overrides: Record<string, unknown> = {}): Record<string
     conclusion: "证据表明该说法不成立，应判定为虚假。",
     credibilityScore: 10,
     summaryForPublic: "该说法经核查不成立。",
-    recommendation: "勿转发，建议以官方渠道为准。",
-    canSay: ["可说现有证据不支持该说法"],
+    recommendation: "不能信。以公开材料为准。",
+    canSay: ["现有证据不支持该说法"],
     cannotSay: ["不能把未核实材料当事实"],
     evidenceChain: [
       { layer: "1", finding: "命题拆解", evidence: "原文可核", boundary: "仅限本条 claim", sourceRefs: ["s1"] },

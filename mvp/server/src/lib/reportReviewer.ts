@@ -50,6 +50,23 @@ export function reviewAndRepairReport(
   const repaired: Record<string, unknown> = { ...report };
   const checks: Record<string, boolean> = {};
 
+  // Interrupted composer output is not a finished dossier — do not pad it into one.
+  if (asString(report._source) === "error-boundary") {
+    return {
+      passed: false,
+      score: 0,
+      issues: [
+        {
+          code: "error_boundary",
+          severity: "error",
+          message: "收束未完成，保持中断态，不补证据链",
+        },
+      ],
+      repaired: { ...report, _source: "error-boundary" },
+      checks: { interrupted: true },
+    };
+  }
+
   // 1) verdictType
   const verdict = asString(repaired.verdictType);
   checks.hasVerdictType = VERDICT_TYPES.has(verdict);

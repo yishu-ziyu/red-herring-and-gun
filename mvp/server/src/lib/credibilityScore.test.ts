@@ -274,6 +274,100 @@ describe("computeCredibilityScore", () => {
     expect(typeof b.supportForce).toBe("number");
     expect(typeof b.refuteForce).toBe("number");
   });
+
+  // ─── 校准：主裁决不被次级信源反转 ──
+
+  it("false 时 medium/high 信源不托高分数（sourceSignal 归零）", () => {
+    const withMediumSource = computeCredibilityScore(
+      { severity: "medium", rumorIndicators: [], detectedPatterns: [] },
+      {
+        factCheckResult: "false",
+        confidence: "high",
+        keyFindings: [],
+        counterEvidence: ["官方辟谣"],
+        sources: [],
+      },
+      {
+        sourceReliability: "medium",
+        verifiedSources: [],
+        questionableSources: [],
+        missingSources: [],
+        verificationNotes: "",
+      },
+      {
+        sources: [],
+        supportingEvidence: [],
+        contradictingEvidence: [],
+        unresolvedEvidenceGaps: [],
+      }
+    );
+    const withLowSource = computeCredibilityScore(
+      { severity: "medium", rumorIndicators: [], detectedPatterns: [] },
+      {
+        factCheckResult: "false",
+        confidence: "high",
+        keyFindings: [],
+        counterEvidence: ["官方辟谣"],
+        sources: [],
+      },
+      {
+        sourceReliability: "low",
+        verifiedSources: [],
+        questionableSources: ["匿名"],
+        missingSources: [],
+        verificationNotes: "",
+      },
+      {
+        sources: [],
+        supportingEvidence: [],
+        contradictingEvidence: [],
+        unresolvedEvidenceGaps: [],
+      }
+    );
+
+    expect(withMediumSource.breakdown.sourceSignal).toBe(0);
+    expect(withLowSource.breakdown.sourceSignal).toBe(-0.4);
+    // medium 信源不得托高已判假：分数应落在低可信带，且不低于 low 信源（low 仍可再压）
+    expect(withMediumSource.score).toBeLessThanOrEqual(20);
+    expect(withLowSource.score).toBeLessThanOrEqual(withMediumSource.score);
+  });
+
+  it("partial + medium 信源分数落在 mixed 低分带（约 10-35）", () => {
+    const result = computeCredibilityScore(
+      {
+        severity: "medium",
+        rumorIndicators: ["模糊引用"],
+        detectedPatterns: ["断章取义"],
+      },
+      {
+        factCheckResult: "partial",
+        confidence: "medium",
+        keyFindings: ["部分成立"],
+        counterEvidence: ["存在夸大"],
+        sources: ["来源A"],
+      },
+      {
+        sourceReliability: "medium",
+        verifiedSources: ["来源A"],
+        questionableSources: [],
+        missingSources: ["原始研究"],
+        verificationNotes: "部分可追溯",
+      },
+      {
+        sources: [
+          { direction: "support", credibility: "中" },
+          { direction: "neutral", credibility: "低" },
+        ],
+        supportingEvidence: ["部分佐证"],
+        contradictingEvidence: [],
+        unresolvedEvidenceGaps: ["缺少原始研究"],
+      }
+    );
+
+    expect(result.breakdown.sourceSignal).toBe(0);
+    expect(result.score).toBeGreaterThanOrEqual(10);
+    expect(result.score).toBeLessThanOrEqual(35);
+  });
 });
 
 // ─── 公式回归闸门（Plan P0-4） ─────────────────────────────
@@ -420,16 +514,16 @@ describe("computeCredibilityScore · 公式回归快照 (P0-4)", () => {
         unresolvedEvidenceGaps: ["缺少原始研究"],
       },
       expected: {
-        score: 44,
-        label: "存疑",
+        score: 35,
+        label: "低可信",
         verdict: "partial",
         breakdown: {
-          factCheckSignal: 0.14,
+          factCheckSignal: 0.03,
           searchSignal: 0.15,
-          sourceSignal: 0.5,
+          sourceSignal: 0,
           rumorPenalty: 0.55,
           missingPenalty: 0.05,
-          supportForce: 0.53,
+          supportForce: 0.15,
           refuteForce: 0,
         },
       },

@@ -8,6 +8,11 @@
 import { claimAtomKey } from "./claimAtom/index.js";
 import { splitVerifiableAtoms } from "./claimAtom/index.js";
 import { filterAtomSources, type FilterMeta, type FilterableSource } from "./retrievalFilter.js";
+import {
+  bindLocalCitations,
+  bindRelatedSourcesOnly,
+  stripCitationMarkers,
+} from "./citationBinding.js";
 
 export const MAX_ATOM_SEARCHES = 6;
 
@@ -175,16 +180,20 @@ export function buildAtomSearchBundle(
 
 export type BindableVerdict = {
   claimAtom: string;
+  evidence?: string;
   supportingSources?: AtomSearchSource[];
   contradictingSources?: AtomSearchSource[];
   evidenceGaps?: string[];
+  /** true when supportingSources came from retrieval fill, not model citation */
+  sourcesRelatedOnly?: boolean;
   [key: string]: unknown;
 };
 
 /**
  * 报告按条绑证据：
- * - 模型写出的 URL 仅保留「该原子本轮检索」里出现过的；
- * - 若支撑/反证都空且检索有结果 → 把检索来源填入 supportingSources（相关检索，供用户展开看）；
+ * - 模型写出的 URL 仅保留「该原子本轮检索」里出现过的，并按过滤结果重写 evidence [n]；
+ * - 若支撑/反证都空且检索有结果 → 填入 supportingSources 作「相关检索」，并剥离 [n]
+ *   （禁止把检索填充误绑成句内引用）；
  * - 若检索也为空 → evidenceGaps 补「该原子定向检索无结果」。
  */
 export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
@@ -197,42 +206,42 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
     const retrieved = byAtomKey[key] ?? [];
     const known = new Set(retrieved.map((s) => s.url));
 
-    const filterKnown = (list: unknown): AtomSearchSource[] => {
-      if (!Array.isArray(list)) return [];
-      const out: AtomSearchSource[] = [];
-      for (const item of list) {
-        if (!item || typeof item !== "object") continue;
-        const rec = item as Record<string, unknown>;
-        const url = typeof rec.url === "string" ? rec.url.trim() : "";
-        if (!url || !known.has(url)) continue;
-        out.push({
-          url,
-          title: typeof rec.title === "string" ? rec.title.slice(0, 200) : "",
-          snippet: typeof rec.snippet === "string" ? rec.snippet.slice(0, 320) : "",
-        });
-      }
-      return out.slice(0, 5);
-    };
+    const modelSupportingRaw = v.supportingSources;
+    const hadModelSupporting =
+      Array.isArray(modelSupportingRaw) &&
+      modelSupportingRaw.some((s) => s && typeof s === "object" && String((s as AtomSearchSource).url || "").trim());
 
-    let supporting = filterKnown(v.supportingSources);
-    let contradicting = filterKnown(v.contradictingSources);
+    const boundSupport = bindLocalCitations(v.evidence, modelSupportingRaw, known.size > 0 ? known : null);
+    let supporting = boundSupport.sources;
+    let evidence = boundSupport.text;
+    let sourcesRelatedOnly = false;
+
+    const boundContra = bindLocalCitations("", v.contradictingSources, known.size > 0 ? known : null);
+    let contradicting = boundContra.sources;
+
     let gaps = Array.isArray(v.evidenceGaps)
       ? v.evidenceGaps.filter((g): g is string => typeof g === "string").slice(0, 3)
       : [];
 
     if (supporting.length === 0 && contradicting.length === 0) {
       if (retrieved.length > 0) {
-        supporting = retrieved.slice(0, 5);
+        const related = bindRelatedSourcesOnly(hadModelSupporting ? evidence : v.evidence, retrieved);
+        supporting = related.sources;
+        evidence = related.text;
+        sourcesRelatedOnly = true;
       } else if (!gaps.some((g) => g.includes("定向检索"))) {
         gaps = [...gaps, "该原子定向检索无结果，待补证"].slice(0, 3);
+        evidence = stripCitationMarkers(typeof v.evidence === "string" ? v.evidence : evidence);
       }
     }
 
     return {
       ...v,
+      evidence,
       supportingSources: supporting,
       contradictingSources: contradicting,
       evidenceGaps: gaps,
+      sourcesRelatedOnly,
     };
   });
 }

@@ -46,29 +46,30 @@ export function summarizeMissionStreamStatus(
       return {
         ...counts,
         done,
-        headline: "等待事件",
-        detail: "中控已启动，等待第一条真实事件",
+        headline: "确认核查问题",
+        detail: "已启动，等待第一条可展示步骤",
       };
     }
 
     return {
       ...counts,
       done,
-      headline: "暂无事件",
-      detail: runStatus === "idle" ? "尚未开始真实核查" : "没有收到事件流记录",
+      headline: "暂无步骤",
+      detail: runStatus === "idle" ? "尚未开始核查" : "没有收到过程记录",
     };
   }
 
+  // Determinate when we know total steps: prefer k/N over vague activity copy.
   const parts = [
-    `${done} 步已完成`,
-    counts.running > 0 ? `${counts.running} 步进行中` : null,
-    counts.failed > 0 ? `${counts.failed} 步失败` : null,
+    `${done}/${counts.total}`,
+    counts.running > 0 ? `${counts.running} 进行中` : null,
+    counts.failed > 0 ? `${counts.failed} 失败` : null,
   ].filter((part): part is string => Boolean(part));
 
   return {
     ...counts,
     done,
     headline: parts.join(" · ") || "过程记录",
-    detail: `共 ${counts.total} 条过程记录${counts.queued > 0 ? ` · ${counts.queued} 待处理` : ""}`,
+    detail: `共 ${counts.total} 步${counts.queued > 0 ? ` · ${counts.queued} 待处理` : ""}`,
   };
 }

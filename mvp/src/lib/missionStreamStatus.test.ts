@@ -22,8 +22,8 @@ describe("summarizeMissionStreamStatus", () => {
       failed: 1,
       final: 1,
       done: 2,
-      headline: "2 步已完成 · 1 步进行中 · 1 步失败",
-      detail: "共 5 条过程记录 · 1 待处理",
+      headline: "2/5 · 1 进行中 · 1 失败",
+      detail: "共 5 步 · 1 待处理",
     });
   });
 
@@ -36,8 +36,8 @@ describe("summarizeMissionStreamStatus", () => {
       failed: 0,
       final: 0,
       done: 0,
-      headline: "等待事件",
-      detail: "中控已启动，等待第一条真实事件",
+      headline: "确认核查问题",
+      detail: "已启动，等待第一条可展示步骤",
     });
   });
 

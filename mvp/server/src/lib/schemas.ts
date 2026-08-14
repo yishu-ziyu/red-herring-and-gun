@@ -204,7 +204,7 @@ export interface Search360Response {
   _source?: "360-ai-search" | "demo-fallback";
 }
 
-// ── M3: 结果闭环动作 ─────────────────────────────────────────
+// ── M3: 结果动作 ─────────────────────────────────────────
 
 export type ClosureAction =
   | "generate_rebuttal_card"

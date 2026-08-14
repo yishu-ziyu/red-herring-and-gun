@@ -10,6 +10,7 @@ import {
   getVerificationLabel,
   getVerificationColor,
 } from "../../lib/reportExporter";
+import { InlineCitations } from "./InlineCitations";
 
 interface ReportModalProps {
   isOpen: boolean;
@@ -49,7 +50,7 @@ export function ReportModal({
   const verdicts = report.subclaimVerdicts ?? [];
   const nonVerifiableAtoms = report.nonVerifiableAtoms ?? [];
   const stanceClaimType = report.stanceClaimType;
-  // 排除层：整句判定为立场/价值/预测/规范型（verifiable=false）时，报告顶部显示"立场型"横幅
+  // 排除层：整句判定为立场/价值/规范型（verifiable=false）时，报告顶部显示"立场型"横幅
   const showStanceBanner = !!stanceClaimType && stanceClaimType.verifiable === false;
   // 逐命题清单：服务端预交错的 claimItems 已按原句序排好，前端零匹配直接渲染。
   let claimItems: Array<
@@ -132,7 +133,7 @@ export function ReportModal({
                 <div className="report-stance-banner" role="note">
                   <span className="stance-banner-pill">立场型</span>
                   <span className="stance-banner-text">
-                    本说法属立场/价值/预测型，不适用于事实核查；可核查部分照常判定，价值/预测原子原位标注、不订真/假。
+                    本说法属立场/价值/规范型，不适用于事实核查；可核查部分照常判定，价值/规范原子原位标注、不订真/假。
                   </span>
                 </div>
               )}
@@ -176,7 +177,7 @@ export function ReportModal({
               )}
 
               <div className="report-section">
-                <h3>逐命题定罪</h3>
+                <h3>逐条判定</h3>
                 {claimItems.length > 0 ? (
                   <div className="report-verdicts">
                     {claimItems.map((item, idx) => {
@@ -224,11 +225,15 @@ export function ReportModal({
                               </span>
                             </span>
                           </button>
-                          {v.evidence && (
-                            <p className="verdict-evidence">
+                          {(v.evidence || (v.supportingSources?.length ?? 0) > 0) && (
+                            <div className="verdict-evidence">
                               <span className="verdict-field-label">证据</span>
-                              {v.evidence}
-                            </p>
+                              <InlineCitations
+                                text={v.evidence ?? ""}
+                                sources={v.supportingSources ?? []}
+                                relatedOnly={(v as { sourcesRelatedOnly?: boolean }).sourcesRelatedOnly === true}
+                              />
+                            </div>
                           )}
                           {v.boundary && (
                             <p className="verdict-boundary">
@@ -238,25 +243,25 @@ export function ReportModal({
                           )}
                           {isOpen && (
                             <div id={`verdict-detail-${i}`} className="verdict-detail">
-                              {(v.supportingSources?.length ?? 0) > 0 && (
+                              {(v.supportingSources?.some((s) => s.snippet) ?? false) && (
                                 <div className="verdict-subsection">
                                   <h4 className="verdict-subsection-title">支撑证据</h4>
                                   <ul className="verdict-source-list">
-                                    {v.supportingSources!.map((s, si) => (
-                                      <li key={si} className="verdict-source-item">
-                                        <a
-                                          href={s.url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className="verdict-source-link"
-                                        >
-                                          {s.title || s.url}
-                                        </a>
-                                        {s.snippet && (
+                                    {v.supportingSources!.map((s, si) =>
+                                      s.snippet ? (
+                                        <li key={si} className="verdict-source-item">
+                                          <a
+                                            href={s.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="verdict-source-link"
+                                          >
+                                            {s.title || s.url}
+                                          </a>
                                           <p className="verdict-source-snippet">{s.snippet}</p>
-                                        )}
-                                      </li>
-                                    ))}
+                                        </li>
+                                      ) : null
+                                    )}
                                   </ul>
                                 </div>
                               )}
@@ -274,9 +279,9 @@ export function ReportModal({
                                         >
                                           {s.title || s.url}
                                         </a>
-                                        {s.snippet && (
+                                        {s.snippet ? (
                                           <p className="verdict-source-snippet">{s.snippet}</p>
-                                        )}
+                                        ) : null}
                                       </li>
                                     ))}
                                   </ul>
@@ -299,7 +304,7 @@ export function ReportModal({
                     })}
                   </div>
                 ) : (
-                  <p className="report-verdicts-empty">本次未生成逐命题判定</p>
+                  <p className="report-verdicts-empty">本次未生成逐条判定</p>
                 )}
               </div>
 

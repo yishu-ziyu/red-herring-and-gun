@@ -7,9 +7,12 @@ import {
   FIXTURE_ERROR,
   FIXTURE_MID,
   FIXTURE_REVIEW_FAIL,
+  FIXTURE_TRIAGE_RUNNING,
 } from "./fixtures";
 import {
   buildVisibleProcessRows,
+  deskPaneForProcessTitle,
+  humanizeProcessSummary,
   humanizeProcessTitle,
   narrativeHasBannedPrimaryCopy,
   primaryNarrativeCopy,
@@ -18,14 +21,24 @@ import {
 
 describe("buildVisibleProcessRows", () => {
   it("humanizeProcessTitle strips orchestrator voice", () => {
-    expect(humanizeProcessTitle("先派发可行动线索")).toBe("确定核查切入点");
+    expect(humanizeProcessTitle("先派发可行动线索")).toBe("已经拆开要核对的部分");
+    expect(humanizeProcessTitle("确定核查切入点")).toBe("已经拆开要核对的部分");
+    expect(humanizeProcessTitle("确认核查切入点")).toBe("已经拆开要核对的部分");
     expect(humanizeProcessTitle("理解命题与路径")).toBe("确认核查问题");
   });
 
+  it("deskPaneForProcessTitle maps left speech to the right window", () => {
+    expect(deskPaneForProcessTitle("正在单独核验原因")).toBe("atoms");
+    expect(deskPaneForProcessTitle("已经拆开要核对的部分")).toBe("atoms");
+    expect(deskPaneForProcessTitle("对照公开材料")).toBe("sources");
+    expect(deskPaneForProcessTitle("看来源能不能站住")).toBe("sources");
+    expect(deskPaneForProcessTitle("正在整理能不能信")).toBe("verdict");
+  });
+
   it("semanticActionTitleForAgent is action not role label", () => {
-    expect(semanticActionTitleForAgent("rumor_detector")).toBe("确认核查切入点");
-    expect(semanticActionTitleForAgent("fact_checker")).toBe("对照公开事实");
-    expect(semanticActionTitleForAgent("rumor_detector")).not.toBe("立案分诊");
+    expect(semanticActionTitleForAgent("rumor_detector")).toBe("已经拆开要核对的部分");
+    expect(semanticActionTitleForAgent("fact_checker")).toBe("对照公开材料");
+    expect(semanticActionTitleForAgent("rumor_detector")).not.toBe("拆题");
   });
 
   it("FIXTURE_EARLY: no pending wall; tools nested not primary", () => {
@@ -42,8 +55,31 @@ describe("buildVisibleProcessRows", () => {
     expect(nestedMemory).toBe(true);
     expect(n.currentKey).toBeTruthy();
     expect(n.rows.filter((r) => r.isCurrent)).toHaveLength(1);
+    expect(n.rows.filter((r) => r.isCurrent)[0].title).toBe("正在单独核验原因");
+    expect(primaryTitles.filter((t) => /切入点/.test(t))).toEqual([]);
+    expect(primaryTitles.filter((t) => /单独核验|已经拆开/.test(t))).toHaveLength(1);
     // Agents must not be primary kind
     expect(n.rows.every((r) => (r as { kind: string }).kind !== "agent")).toBe(true);
+  });
+
+  it("FIXTURE_TRIAGE_RUNNING: relay + rumor_detector collapse to one current step", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_TRIAGE_RUNNING);
+    const n = buildVisibleProcessRows(model);
+
+    const titles = n.rows.map((r) => r.title);
+    expect(titles.filter((t) => /切入点/.test(t))).toEqual([]);
+    expect(titles.filter((t) => t === "确定核查切入点" || t === "确认核查切入点")).toEqual([]);
+    expect(titles.filter((t) => /单独核验|已经拆开/.test(t))).toHaveLength(1);
+    expect(n.rows.filter((r) => r.isCurrent)).toHaveLength(1);
+    expect(n.rows.find((r) => r.isCurrent)?.title).toBe("正在单独核验原因");
+    expect(n.rows.find((r) => r.isCurrent)?.summary).toBeUndefined();
+    expect(titles).toContain("确认核查问题");
+    expect(titles).not.toContain("拆题");
+    const nestedMemory = n.rows.some((r) =>
+      r.activities.some((a) => /历史|查阅/.test(a.title))
+    );
+    expect(nestedMemory).toBe(true);
+    expect(humanizeProcessSummary("已识别命题类型，先拆出可检索的判断。")).toBeUndefined();
   });
 
   it("FIXTURE_MID: one current; tools nested; agents never primary rows", () => {
@@ -57,7 +93,7 @@ describe("buildVisibleProcessRows", () => {
     expect(n.rows.every((r) => r.kind !== ("agent" as never))).toBe(true);
     // Role labels are not primary titles
     const titles = n.rows.map((r) => r.title);
-    expect(titles).not.toContain("立案分诊");
+    expect(titles).not.toContain("拆题");
     expect(titles).not.toContain("事实核查");
     expect(titles).not.toContain("信源审计");
     // Role names appear only as actor attribution on semantic steps
@@ -122,7 +158,7 @@ describe("buildVisibleProcessRows", () => {
     const failed = n.rows.find((r) => r.status === "error");
     expect(failed).toBeTruthy();
     expect(failed!.kind).not.toBe("agent" as never);
-    expect(failed!.title).not.toBe("立案分诊");
+    expect(failed!.title).not.toBe("拆题");
     if (failed!.actor) {
       expect(failed!.title).not.toBe(failed!.actor.name);
     }

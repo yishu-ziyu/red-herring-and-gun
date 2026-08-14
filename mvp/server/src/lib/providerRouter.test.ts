@@ -1,11 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   agentEnvKey,
   callAgentWithFallback,
   envValue,
+  isEmptyProviderResponse,
+  isHardProviderQuotaError,
   modelForAgent,
   parseAgentJson,
   providerOrderForAgent,
+  resetProviderQuotaSkipForTests,
 } from "./providerRouter.js";
 
 // Mock LLM provider；让 B2-B5 测试可以验证"哪个被调用、哪个没被调用"
@@ -300,6 +303,33 @@ describe("providerRouter modelOverride (BDD B2-B5)", () => {
     expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(1);
   });
 
+  it("B2-minimax-m3: adaptive thinking stays on and uses MiniMax recommended max_tokens", async () => {
+    resetAllMocks();
+    vi.stubEnv("MINIMAX_M3_THINKING", "");
+    vi.stubEnv("MINIMAX_M3_MAX_TOKENS", "");
+    vi.stubEnv("MINIMAX_M3_MIN_MAX_TOKENS", "");
+    allProviders.callMiniMaxAgent.mockImplementation(async (args: any) => ({
+      text: JSON.stringify({ max_tokens: args.maxTokens, thinking: args.thinking }),
+      model: `minimax:${args.model}`,
+    }));
+
+    const result = await callAgentWithFallback({
+      agentId: "rumor_detector",
+      systemPrompt: "you are detector",
+      userContent: "claim",
+      responseSchema: { type: "object" },
+      maxTokens: 800,
+      env: {
+        MINIMAX_API_KEY: "sk-mm",
+      },
+      codexBin: "/usr/bin/codex",
+      modelOverride: { provider: "minimax", model: "MiniMax-M3" },
+    });
+
+    expect(result.output).toEqual({ max_tokens: 131072, thinking: "adaptive" });
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+  });
+
   it("B3: when modelOverride provider has no API key, continues with fallback provider", async () => {
     resetAllMocks();
     // envValue 会 fallback 到 process.env；测试机若配了 STEPFUN_API_KEY 会导致缺 key 不 throw。
@@ -414,5 +444,171 @@ describe("providerRouter modelOverride (BDD B2-B5)", () => {
     expect(result.model).toBe("mimo:mimo-v2.5-pro");
     expect(allProviders.callDeepSeekAgent).toHaveBeenCalledTimes(1);
     expect(allProviders.callMimoAgent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("providerRouter quota skip", () => {
+  beforeEach(() => {
+    resetAllMocks();
+    resetProviderQuotaSkipForTests();
+  });
+
+  afterEach(() => {
+    resetProviderQuotaSkipForTests();
+  });
+
+  it("isHardProviderQuotaError 只认额度耗尽，不认普通 502", () => {
+    expect(isHardProviderQuotaError("Insufficient Balance")).toBe(true);
+    expect(isHardProviderQuotaError("余额不足")).toBe(true);
+    expect(isHardProviderQuotaError("quota exceeded")).toBe(true);
+    expect(isHardProviderQuotaError("DeepSeek 502")).toBe(false);
+    expect(isEmptyProviderResponse("MiniMax API 没有返回可解析文本。")).toBe(true);
+    expect(isEmptyProviderResponse("DeepSeek 502")).toBe(false);
+  });
+
+  it("额度耗尽后同一进程不再打该 provider", async () => {
+    allProviders.callMiniMaxAgent.mockRejectedValue(new Error("insufficient balance"));
+    allProviders.callStepFunAgent.mockResolvedValue({
+      text: '{"ok":true,"provider":"stepfun"}',
+      model: "stepfun:step-2-mini",
+    });
+
+    await expect(
+      callAgentWithFallback({
+        agentId: "rumor_detector",
+        systemPrompt: "x",
+        userContent: "x",
+        responseSchema: { type: "object" },
+        maxTokens: 100,
+        env: {
+          MINIMAX_API_KEY: "sk-mm",
+          ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax",
+        },
+        codexBin: "/usr/bin/codex",
+      })
+    ).rejects.toThrow(/所有备用模型/);
+
+    const result = await callAgentWithFallback({
+      agentId: "fact_checker",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: {
+        MINIMAX_API_KEY: "sk-mm",
+        STEPFUN_API_KEY: "sk-sf",
+        ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax,stepfun",
+      },
+      codexBin: "/usr/bin/codex",
+    });
+
+    expect(result.output).toEqual({ ok: true, provider: "stepfun" });
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+    expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("Invalid API Key 后同一进程不再打该 provider", async () => {
+    allProviders.callMimoAgent.mockRejectedValue(new Error('{"error":{"code":"401","type":"invalid_key","message":"Invalid API Key"}}'));
+    allProviders.callStepFunAgent.mockResolvedValue({
+      text: '{"ok":true,"provider":"stepfun"}',
+      model: "stepfun:step-2-mini",
+    });
+
+    await expect(
+      callAgentWithFallback({
+        agentId: "rumor_detector",
+        systemPrompt: "x",
+        userContent: "x",
+        responseSchema: { type: "object" },
+        maxTokens: 100,
+        env: {
+          MIMO_API_KEY: "sk-bad",
+          ORCHESTRATE_TEXT_PROVIDER_ORDER: "mimo",
+        },
+        codexBin: "/usr/bin/codex",
+      })
+    ).rejects.toThrow(/所有备用模型/);
+
+    const result = await callAgentWithFallback({
+      agentId: "fact_checker",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: {
+        MIMO_API_KEY: "sk-bad",
+        STEPFUN_API_KEY: "sk-sf",
+        ORCHESTRATE_TEXT_PROVIDER_ORDER: "mimo,stepfun",
+      },
+      codexBin: "/usr/bin/codex",
+    });
+
+    expect(result.output).toEqual({ ok: true, provider: "stepfun" });
+    expect(allProviders.callMimoAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("无返回文本后同一进程不再打该 provider", async () => {
+    allProviders.callMiniMaxAgent.mockRejectedValue(new Error("MiniMax API 没有返回可解析文本。"));
+    allProviders.callStepFunAgent.mockResolvedValue({
+      text: '{"ok":true,"provider":"stepfun"}',
+      model: "stepfun:step-2-mini",
+    });
+
+    await expect(
+      callAgentWithFallback({
+        agentId: "rumor_detector",
+        systemPrompt: "x",
+        userContent: "x",
+        responseSchema: { type: "object" },
+        maxTokens: 100,
+        env: {
+          MINIMAX_API_KEY: "sk-mm",
+          ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax",
+        },
+        codexBin: "/usr/bin/codex",
+      })
+    ).rejects.toThrow(/所有备用模型/);
+
+    const result = await callAgentWithFallback({
+      agentId: "fact_checker",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: {
+        MINIMAX_API_KEY: "sk-mm",
+        STEPFUN_API_KEY: "sk-sf",
+        ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax,stepfun",
+      },
+      codexBin: "/usr/bin/codex",
+    });
+
+    expect(result.output).toEqual({ ok: true, provider: "stepfun" });
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+    expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("连续两次硬失败后跳过 Codex 慢速兜底", async () => {
+    allProviders.callMiniMaxAgent.mockRejectedValue(new Error("insufficient balance"));
+    allProviders.callStepFunAgent.mockRejectedValue(new Error("You exceeded your current quota"));
+    allProviders.callCodexAgent.mockRejectedValue(new Error("codex should not run"));
+
+    await expect(
+      callAgentWithFallback({
+        agentId: "report_composer",
+        systemPrompt: "x",
+        userContent: "x",
+        responseSchema: { type: "object" },
+        maxTokens: 100,
+        env: {
+          MINIMAX_API_KEY: "sk-mm",
+          STEPFUN_API_KEY: "sk-sf",
+          ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax,stepfun,codex",
+        },
+        codexBin: "/usr/bin/codex",
+      })
+    ).rejects.toThrow(/所有备用模型/);
+
+    expect(allProviders.callCodexAgent).not.toHaveBeenCalled();
   });
 });

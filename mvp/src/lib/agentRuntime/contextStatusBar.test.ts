@@ -81,7 +81,7 @@ describe("reviewAndRepairReport", () => {
       summaryForPublic: "该说法有夸大成分。",
       recommendation: "勿二次传播未经核实细节。",
       canSay: ["可说存在夸大"],
-      cannotSay: ["不能说完全虚假"],
+      cannotSay: ["不能当成完全虚假"],
       evidenceChain: [
         { layer: "a", finding: "f1", evidence: "e1", boundary: "b1", sourceRefs: [] },
         { layer: "b", finding: "f2", evidence: "e2", boundary: "b2", sourceRefs: [] },
@@ -129,5 +129,20 @@ describe("reviewAndRepairReport", () => {
 
     expect(result.repaired.verdictType).toBe("unverified");
     expect(result.issues.some((i) => i.code === "overclaim")).toBe(true);
+  });
+
+  it("does not pad an interrupted error-boundary report into a finished dossier", () => {
+    const result = reviewAndRepairReport({
+      verdictType: "unverified",
+      conclusion: "这次没查完，结论还没写出来。",
+      credibilityScore: 30,
+      citationSources: [{ title: "公开材料", url: "https://example.com/a" }],
+      _source: "error-boundary",
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.repaired._source).toBe("error-boundary");
+    expect(result.repaired.evidenceChain).toBeUndefined();
+    expect(result.issues.some((i) => i.code === "error_boundary")).toBe(true);
   });
 });
