@@ -118,6 +118,9 @@ export interface FinalReport {
     researchMemo: string;
   };
   nextEvidenceNeeded: string[];
+  evidenceQualitySummary?: { averageCredibility: number };
+  insufficientEvidence?: boolean;
+  groundingRationale?: string;
 }
 
 export interface DemoCase {
