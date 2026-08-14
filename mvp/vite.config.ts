@@ -26,8 +26,12 @@ import {
 } from "./src/lib/agentRuntime/orchestrateShared";
 import { callAgentWithFallback } from "./server/src/lib/providerRouter.js";
 import { listAvailableModels } from "./server/src/lib/availableModels.js";
+import { probeModelServiceHealth } from "./server/src/lib/modelServiceHealth.js";
 import { attachCondensedSnippets } from "./server/src/lib/sourceCondenser.js";
 import { applyFactDeskPostProcessToReport } from "./server/src/lib/factDeskPostProcess.js";
+import { connectEmailAndCaseApi } from "./server/src/lib/connectEmailAndCaseApi.js";
+import { commitFreeCheck, gateFreeCheck, releaseFreeCheck } from "./server/src/lib/checkQuota.js";
+// 开发验证码回显：改 emailAuthHandlers 后靠这一行让 Vite 重载中间件。
 
 // 把 lib 的 logger 适配到 vite 现有的 console.info / console.error 输出格式，
 // 保留旧实现里的 [orchestrate-provider] start / complete / error 日志格式。
@@ -222,6 +226,9 @@ async function callStepFunVisionForIntake({
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
+  for (const [key, value] of Object.entries(env)) {
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
 
   return {
     plugins: [react(), agentApiPlugin(env)],
@@ -273,8 +280,7 @@ function agentApiPlugin(env: Record<string, string>) {
 
   const getAgentTimeoutMs = (agentId: string) => {
     const envKey = `ORCHESTRATE_${agentId.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_TIMEOUT_MS`;
-    const defaultMs = agentId === "fact_checker" || agentId === "source_validator" || agentId === "report_composer" ? 120000 : 90000;
-    return getTimeoutMs(envKey, getTimeoutMs("ORCHESTRATE_AGENT_TIMEOUT_MS", defaultMs));
+    return getTimeoutMs(envKey, getTimeoutMs("ORCHESTRATE_AGENT_TIMEOUT_MS", 600000));
   };
 
   const getAgentReasoningEffort = (agentId: string): "low" | "medium" | "high" => {
@@ -552,6 +558,8 @@ function agentApiPlugin(env: Record<string, string>) {
     if (!claim || typeof claim !== "string") {
       return sendJson(res, 400, { message: "缺少 claim 参数" });
     }
+    const ticket = await gateFreeCheck(req, res);
+    if (!ticket) return;
     const intake = normalizeCaseIntake(payload.intake);
     const intakeMetadata = buildCaseIntakeMetadata(intake);
     let visualExtraction: Record<string, unknown> | undefined;
@@ -644,6 +652,7 @@ function agentApiPlugin(env: Record<string, string>) {
         steeringQueue: Array.isArray(payload.steeringQueue) ? payload.steeringQueue : undefined,
         followUpQueue: Array.isArray(payload.followUpQueue) ? payload.followUpQueue : undefined,
       });
+      commitFreeCheck(res, ticket);
       return sendJson(res, 200, result);
 
       if (intake?.images.length) {
@@ -680,6 +689,7 @@ function agentApiPlugin(env: Record<string, string>) {
         finalReport,
       });
     } catch (error) {
+      releaseFreeCheck(ticket);
       const message = error instanceof Error ? error.message : "Orchestrate 调用错误";
       return sendJson(res, 502, { message, steps: [] });
     }
@@ -703,6 +713,8 @@ function agentApiPlugin(env: Record<string, string>) {
     if (!claim || typeof claim !== "string") {
       return sendJson(res, 400, { message: "缺少 claim 参数" });
     }
+    const ticket = await gateFreeCheck(req, res);
+    if (!ticket) return;
     const intake = normalizeCaseIntake(payload.intake);
     const intakeMetadata = buildCaseIntakeMetadata(intake);
     let visualExtraction: Record<string, unknown> | undefined;
@@ -716,6 +728,9 @@ function agentApiPlugin(env: Record<string, string>) {
 
     const sendEvent = (data: object) => {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
+      if (typeof (res as { flush?: () => void }).flush === "function") {
+        (res as { flush: () => void }).flush();
+      }
     };
 
     // Helper: run a single agent and stream events
@@ -856,6 +871,7 @@ function agentApiPlugin(env: Record<string, string>) {
         timestamp: Date.now(),
       });
 
+      commitFreeCheck(res, ticket);
       res.end();
       return;
 
@@ -949,6 +965,7 @@ function agentApiPlugin(env: Record<string, string>) {
 
       res.end();
     } catch (error) {
+      releaseFreeCheck(ticket);
       const message = error instanceof Error ? error.message : "Orchestrate Stream 错误";
       sendEvent({ type: "error", message });
       res.end();
@@ -1000,9 +1017,23 @@ function agentApiPlugin(env: Record<string, string>) {
     return sendJson(res, 200, { models });
   }
 
+  async function modelsHealthHandler(req: any, res: any, _next: any) {
+    if (req.method !== "GET") return _next();
+    try {
+      const health = await probeModelServiceHealth(env);
+      return sendJson(res, 200, health);
+    } catch {
+      return sendJson(res, 200, {
+        status: "unknown",
+        message: "暂时无法确认模型服务是否可用。这次可能较久，也可能给不出最终判断；仍会尽量检索公开材料。",
+      });
+    }
+  }
+
   return {
     name: "red-herring-and-gun-api",
     configureServer(server: any) {
+      server.middlewares.use(connectEmailAndCaseApi());
       server.middlewares.use("/api/agent/expand", handler);
       server.middlewares.use("/api/agent/recursive-search", recursiveHandler);
       server.middlewares.use("/api/agent/sherlock-search", sherlockHandler);
@@ -1012,8 +1043,10 @@ function agentApiPlugin(env: Record<string, string>) {
       server.middlewares.use("/api/agent/orchestrate-stream", orchestrateStreamHandler);
       server.middlewares.use("/api/agent/orchestrate", orchestrateHandler);
       server.middlewares.use("/api/models/list", modelsListHandler);
+      server.middlewares.use("/api/models/health", modelsHealthHandler);
     },
     configurePreviewServer(server: any) {
+      server.middlewares.use(connectEmailAndCaseApi());
       server.middlewares.use("/api/agent/expand", handler);
       server.middlewares.use("/api/agent/recursive-search", recursiveHandler);
       server.middlewares.use("/api/agent/sherlock-search", sherlockHandler);
@@ -1023,6 +1056,7 @@ function agentApiPlugin(env: Record<string, string>) {
       server.middlewares.use("/api/agent/orchestrate-stream", orchestrateStreamHandler);
       server.middlewares.use("/api/agent/orchestrate", orchestrateHandler);
       server.middlewares.use("/api/models/list", modelsListHandler);
+      server.middlewares.use("/api/models/health", modelsHealthHandler);
     },
   };
 }

@@ -1,17 +1,16 @@
 /**
- * ThinkingReasoning — per-agent reasoning reveal (process chrome, not personhood).
+ * ThinkingReasoning — 思考折页。几何和收折节奏来自仓库里那份原型
+ * （流式句子、180 上限、查完自动折上）。
  *
- * Driven only by real agent_thought sentences from the stream.
- * Does not invent text or fake delays when sentences arrive from the backend.
- * Backend may pace SSE; this UI reveals whatever has arrived so far.
- * Labels match the compact Kimi fold: 思考中 / 思考已完成. No invented speech.
+ * 句子只来自真实 agent_thought，不编 jwt.verify 那类演示稿。
+ * 思考中默认展开，点标题可折上；查完自动折上，再点可回看。
  */
 import { useEffect, useRef, useState } from "react";
 import { formatThoughtElapsedLabel } from "../../../../lib/reasoningThoughts";
 import styles from "./ThinkingReasoning.module.css";
 
 // Geometry — keep in sync with ThinkingReasoning.module.css
-const SENT_H = 22; // one spoken line; long sentences clamp
+const SENT_H = 40; // 2 lines × 20px
 const GAP = 4;
 const MAX_H = 180;
 const FADE = 16;
@@ -22,9 +21,32 @@ export interface ThinkingReasoningProps {
   sentences: string[];
   /** True while this agent step is still loading. */
   thinking: boolean;
-  /** Wall-clock ms for "推理用时 Ns" (from agent latency / stream timestamps). */
+  /** Wall-clock ms for "思考已完成 · Ns". */
   elapsedMs?: number;
   className?: string;
+  /** thread = 核查页主折页（占位高度按原型）；inline = 嵌在步骤里 */
+  layout?: "inline" | "thread";
+}
+
+function Chevron() {
+  return (
+    <svg
+      className={styles.trChevron}
+      viewBox="0 0 24 24"
+      width="12"
+      height="12"
+      aria-hidden="true"
+    >
+      <path
+        d="m4.5 15.75 7.5-7.5 7.5 7.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 export function ThinkingReasoning({
@@ -32,51 +54,54 @@ export function ThinkingReasoning({
   thinking,
   elapsedMs,
   className,
+  layout = "inline",
 }: ThinkingReasoningProps) {
   const done = !thinking;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(thinking);
   const [collapseReady, setCollapseReady] = useState(done);
   const [fade, setFade] = useState({ top: false, bottom: true });
   const viewportRef = useRef<HTMLDivElement>(null);
-  const prevCountRef = useRef(0);
 
-  // When thinking finishes, wait a short beat then allow fold (matches design).
   useEffect(() => {
     if (thinking) {
-      setCollapseReady(false);
-      setOpen(false);
+      setOpen(true);
+      setCollapseReady(true);
       return;
     }
+    if (!open) {
+      setCollapseReady(true);
+      return;
+    }
+    setOpen(false);
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches) {
       setCollapseReady(true);
       return;
     }
+    setCollapseReady(false);
     const t = setTimeout(() => setCollapseReady(true), COLLAPSE_BEAT);
     return () => clearTimeout(t);
+    // Only react to the thinking → done edge. `open` is user state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [thinking]);
 
-  // Auto-scroll stream to newest sentence while thinking (not user-scroll mode).
-  useEffect(() => {
-    if (!thinking) return;
-    const count = sentences.length;
-    if (count <= prevCountRef.current) {
-      prevCountRef.current = count;
-      return;
-    }
-    prevCountRef.current = count;
-  }, [sentences.length, thinking]);
-
   const count = sentences.length;
-  if (!thinking && count === 0) return null;
+  const visuallyExpanded = thinking ? open : collapseReady ? open : true;
+  const clickable = thinking ? count > 0 : collapseReady;
 
-  // Stay expanded until collapse beat finishes after done.
-  const visuallyExpanded = done ? (collapseReady ? open : true) : true;
+  useEffect(() => {
+    if (!thinking || !visuallyExpanded) return;
+    const el = viewportRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [thinking, visuallyExpanded, sentences]);
+
+  if (layout !== "thread" && !thinking && count === 0) return null;
 
   const contentH = count > 0 ? count * SENT_H + (count - 1) * GAP : 0;
   const capped = contentH > MAX_H;
-  const viewH = count === 0 ? 0 : capped ? MAX_H : contentH;
-  const scrollable = done && open;
-  const translate = scrollable ? 0 : capped ? MAX_H - FADE - contentH : 0;
+  const viewH = count === 0 ? 0 : thinking && visuallyExpanded ? MAX_H : capped ? MAX_H : contentH;
+  const scrollable = (done && open) || (thinking && visuallyExpanded && count > 0);
+  const translate = thinking || scrollable ? 0 : capped ? MAX_H - FADE - contentH : 0;
 
   const showTop = scrollable ? fade.top : capped;
   const showBottom = scrollable ? fade.bottom : capped;
@@ -94,13 +119,16 @@ export function ThinkingReasoning({
   };
 
   const toggle = () => {
-    if (!done || !collapseReady) return;
-    const next = !open;
+    if (!clickable) return;
+    const next = !visuallyExpanded;
+    setCollapseReady(true);
+    setOpen(next);
     if (next) {
       setFade({ top: false, bottom: true });
-      if (viewportRef.current) viewportRef.current.scrollTop = 0;
+      if (viewportRef.current) {
+        viewportRef.current.scrollTop = thinking ? viewportRef.current.scrollHeight : 0;
+      }
     }
-    setOpen(next);
   };
 
   const phase = thinking || !collapseReady ? "thinking" : "done";
@@ -112,71 +140,55 @@ export function ThinkingReasoning({
       data-phase={phase}
       data-thinking={thinking ? "1" : "0"}
       data-empty={count === 0 ? "1" : "0"}
+      data-open={visuallyExpanded ? "1" : "0"}
+      data-layout={layout}
     >
       <button
         type="button"
-        className={styles.trHeader + (done && collapseReady ? " " + styles.isClickable : "")}
+        className={styles.trHeader + (clickable ? " " + styles.isClickable : "")}
         aria-expanded={visuallyExpanded}
-        aria-label={thinking ? "思考中" : "切换思考记录"}
-        onClick={done && collapseReady ? toggle : undefined}
+        aria-label={thinking || !collapseReady ? "思考中" : "切换思考记录"}
+        onClick={clickable ? toggle : undefined}
       >
-        {done && collapseReady ? (
-          <span className={styles.trLabel}>
-            思考已完成
-            {elapsedLabel ? (
-              <span className={styles.trVerb}> · {elapsedLabel}</span>
-            ) : null}
-          </span>
-        ) : (
+        {thinking || !collapseReady ? (
           <span className={styles.trLabel + " " + styles.trShimmer}>思考中</span>
+        ) : (
+          <span className={styles.trLabel}>
+            <span className={styles.trVerb}>思考已完成</span>
+            {elapsedLabel ? ` · ${elapsedLabel}` : ""}
+          </span>
         )}
-        {done && collapseReady ? (
-          <svg
-            className={styles.trChevron}
-            viewBox="0 0 24 24"
-            width="12"
-            height="12"
-            aria-hidden="true"
-          >
-            <path
-              d="m4.5 15.75 7.5-7.5 7.5 7.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        ) : null}
+        {clickable ? <Chevron /> : null}
       </button>
 
-      <div
-        className={
-          styles.trCollapsible + (visuallyExpanded ? "" : " " + styles.isCollapsed)
-        }
-      >
+      <div className={styles.trCollapsible + (visuallyExpanded ? "" : " " + styles.isCollapsed)}>
         <div className={styles.trInner}>
-          <div
-            ref={viewportRef}
-            className={styles.trViewport + (scrollable ? " " + styles.isScroll : "")}
-            style={{
-              height: `${viewH}px`,
-              WebkitMaskImage: mask,
-              maskImage: mask,
-            }}
-            onScroll={scrollable ? onScroll : undefined}
-          >
+          {count > 0 ? (
             <div
-              className={styles.trStream}
-              style={{ transform: `translateY(${translate}px)` }}
+              ref={viewportRef}
+              className={styles.trViewport + (scrollable ? " " + styles.isScroll : "")}
+              style={{
+                height: `${viewH}px`,
+                WebkitMaskImage: mask,
+                maskImage: mask,
+              }}
+              onScroll={scrollable ? onScroll : undefined}
             >
-              {sentences.slice(0, count).map((line, i) => (
-                <p key={`${i}-${line.slice(0, 24)}`} className={styles.trSentence}>
-                  {line}
-                </p>
-              ))}
+              <div className={styles.trStream} style={{ transform: `translateY(${translate}px)` }}>
+                {sentences.map((line, i) => (
+                  <p
+                    key={i}
+                    className={
+                      styles.trSentence +
+                      (thinking && i === count - 1 ? " " + styles.trSentenceLive : "")
+                    }
+                  >
+                    {line}
+                  </p>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
       </div>
     </div>

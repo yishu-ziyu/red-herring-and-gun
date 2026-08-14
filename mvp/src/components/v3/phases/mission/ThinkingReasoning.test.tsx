@@ -22,6 +22,35 @@ describe("ThinkingReasoning", () => {
     expect(screen.queryByText(/jwt\.verify/)).not.toBeInTheDocument();
   });
 
+  it("thinking: live unfinished sentence is visible under 思考中", () => {
+    render(
+      <ThinkingReasoning
+        layout="thread"
+        sentences={["先看原句是否"]}
+        thinking
+        elapsedMs={800}
+      />
+    );
+    expect(screen.getByText("思考中")).toBeInTheDocument();
+    expect(screen.getByText("先看原句是否")).toBeInTheDocument();
+  });
+
+  it("thinking: header chevron folds the live reasoning", () => {
+    render(
+      <ThinkingReasoning
+        layout="thread"
+        sentences={["原句拆成可核对判断。"]}
+        thinking
+        elapsedMs={800}
+      />
+    );
+    const btn = screen.getByLabelText("思考中");
+    expect(btn.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(btn);
+    expect(btn.getAttribute("aria-expanded")).toBe("false");
+    expect(btn.className).toMatch(/isClickable/);
+  });
+
   it("done: folds to 思考已完成 using backend elapsedMs", async () => {
     const { rerender } = render(
       <ThinkingReasoning sentences={["句A。"]} thinking elapsedMs={3500} />
@@ -42,6 +71,23 @@ describe("ThinkingReasoning", () => {
       <ThinkingReasoning sentences={[]} thinking={false} elapsedMs={1000} />
     );
     expect(container.firstChild).toBeNull();
+  });
+
+  it("thread: empty done still shows 思考已完成", async () => {
+    const { rerender } = render(
+      <ThinkingReasoning layout="thread" sentences={[]} thinking elapsedMs={15000} />
+    );
+    expect(screen.getByLabelText("思考中")).toBeInTheDocument();
+    rerender(
+      <ThinkingReasoning layout="thread" sentences={[]} thinking={false} elapsedMs={15000} />
+    );
+    await waitFor(
+      () => {
+        expect(screen.getByLabelText("切换思考记录")).toBeInTheDocument();
+        expect(screen.getByText(/思考已完成/)).toBeInTheDocument();
+      },
+      { timeout: 1500 }
+    );
   });
 
   it("done: toggle expands reasoning again", async () => {

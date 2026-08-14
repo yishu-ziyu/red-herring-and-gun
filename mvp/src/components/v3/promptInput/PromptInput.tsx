@@ -105,33 +105,6 @@ function Icon({
 }
 
 
-/**
- * Turn a raw prompt into an improved one. This is the integration seam:
- * replace the mock body with a real request to your model/API. The component
- * only depends on it resolving to the enhanced prompt string (and honouring
- * the AbortSignal so an in-flight call can be cancelled).
- */
-async function mockEnhance(prompt: string, signal?: AbortSignal): Promise<string> {
-  // --- MOCK (demo only) - remove when wiring a real backend ----------
-  await new Promise((r) => setTimeout(r, 1200));
-  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-  const trimmed = prompt.trim();
-  if (!trimmed) return trimmed;
-  return (
-    "请核查以下说法是否属实：\n" +
-    trimmed +
-    "\n\n要求：追出处；对照公开材料；标明支持/反驳/缺口；最后说明能不能信。"
-  );
-  // --- REAL API (example) --------------------------------------------
-  // const res = await fetch("/api/enhance", {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify({ prompt }),
-  //   signal,
-  // });
-  // if (!res.ok) throw new Error("Enhance request failed");
-  // return (await res.json()).prompt as string;
-}
 
 const MODELS = [
   {
@@ -205,7 +178,6 @@ const skillName = (id: string) => SKILLS.find((sk) => sk.id === id)?.name ?? id;
 const escapeHtml = (str: string) =>
   str.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] ?? c));
 
-type Phase = "idle" | "enhancing" | "enhanced";
 export type PromptInputHandle = {
   focus: () => void;
   setText: (text: string) => void;
@@ -223,7 +195,6 @@ export type PromptInputProps = {
   onChange?: (value: string) => void;
   /** Called on send (Enter without shift, or send button). */
   onSubmit?: (value: string) => void;
-  onEnhance?: (prompt: string, signal?: AbortSignal) => Promise<string>;
   /** Optional attachment chips rendered above the editor. */
   attachments?: PromptAttachment[];
   onAddFiles?: (files: File[], kind: "image" | "file") => void;
@@ -243,7 +214,6 @@ export function PromptInput({
   value: valueProp,
   onChange,
   onSubmit,
-  onEnhance = mockEnhance,
   attachments: attachmentsProp,
   onAddFiles,
   onRemoveAttachment,
@@ -264,7 +234,6 @@ export function PromptInput({
     if (!isControlled) setInternalValue(next);
     onChange?.(next);
   };
-  const [phase, setPhase] = useState<Phase>("idle");
   const [menuOpen, setMenuOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [hoveredModel, setHoveredModel] = useState<string | null>(null);
@@ -273,11 +242,6 @@ export function PromptInput({
   const attachments = attachmentsProp ?? internalAttachments;
   // ids of chips currently playing their exit animation before removal
   const [exitingAtt, setExitingAtt] = useState<string[]>([]);
-
-  // Keep the enhance pill mounted through a short exit so it leaves the same
-  // soft way it arrives (mirrors pi-pill-in / pi-pill-out).
-  const [pillMounted, setPillMounted] = useState(false);
-  const [pillExiting, setPillExiting] = useState(false);
 
   // Slash-command palette (typing "/" opens the same skill picker).
   const [slashOpen, setSlashOpen] = useState(false);
@@ -289,13 +253,7 @@ export function PromptInput({
   const frameRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const preEnhanceHTML = useRef("");
-  const pendingHTML = useRef<string | null>(null);
-  // height of the frame captured right before an enhance/revert swap, so the
-  // new height can be animated from it (FLIP) instead of jumping.
-  const flipFrom = useRef<number | null>(null);
   const savedRange = useRef<Range | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const nextId = useRef(1);
   const lastExternalValue = useRef(value);
   const slashOpenRef = useRef(false);
@@ -308,9 +266,7 @@ export function PromptInput({
   const slashKeyLock = useRef(false);
 
   const hasText = value.trim().length > 0;
-  const enhancing = phase === "enhancing";
-  const sendActive = (hasText || attachments.length > 0) && !enhancing && !disabled && !busy;
-  const showPill = hasText && !enhancing;
+  const sendActive = (hasText || attachments.length > 0) && !disabled && !busy;
   const slashResults = SKILLS.filter((sk) =>
     sk.name.toLowerCase().includes(slashQuery.toLowerCase())
   );
@@ -356,12 +312,12 @@ export function PromptInput({
     if (value === lastExternalValue.current) return;
     lastExternalValue.current = value;
     const editor = editorRef.current;
-    if (!editor || enhancing) return;
+    if (!editor) return;
     if ((editor.textContent ?? "") === value) return;
     editor.textContent = value;
     syncFromEditor();
     requestAnimationFrame(focusEnd);
-  }, [value, isControlled, enhancing]);
+  }, [value, isControlled]);
 
   // Remember the last caret position so the "+" menu can insert at it even
   // after the editor loses focus.
@@ -509,7 +465,6 @@ export function PromptInput({
 
   const onEditorInput = () => {
     syncFromEditor();
-    if (phase === "enhanced") setPhase("idle");
     detectSlash();
   };
 
@@ -653,68 +608,6 @@ export function PromptInput({
     }
   }, [menuOpen]);
 
-  // After an enhance/revert the editor is shown editable again — write the
-  // pending HTML into it (enhanced text, or the restored original w/ pills).
-  useLayoutEffect(() => {
-    if (enhancing || pendingHTML.current === null) return;
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.innerHTML = pendingHTML.current;
-    pendingHTML.current = null;
-    syncFromEditor();
-    requestAnimationFrame(focusEnd);
-
-    // Animate the frame from its previous height to the new one so the input
-    // doesn't jump when the enhanced/original text changes its size.
-    const frame = frameRef.current;
-    const from = flipFrom.current;
-    flipFrom.current = null;
-    if (!frame || from === null) return;
-    const to = frame.offsetHeight;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce || from === to) return;
-    frame.style.height = from + "px";
-    frame.style.overflow = "hidden";
-    void frame.offsetHeight; // force reflow so the start height is committed
-    frame.style.transition = "height 200ms cubic-bezier(0.22, 1, 0.36, 1)";
-    frame.style.height = to + "px";
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      frame.style.transition = "";
-      frame.style.height = "";
-      frame.style.overflow = "";
-      frame.removeEventListener("transitionend", finish);
-    };
-    frame.addEventListener("transitionend", finish);
-    setTimeout(finish, 260);
-  }, [phase, enhancing]);
-
-  // Drive the enhance pill's mount/exit. It enters when there's text; when it
-  // should leave it plays the exit animation first — except when handing over
-  // to the spinner (enhancing), where it swaps instantly.
-  useEffect(() => {
-    if (showPill) {
-      setPillMounted(true);
-      setPillExiting(false);
-      return;
-    }
-    if (!pillMounted) return;
-    if (enhancing) {
-      setPillMounted(false);
-      setPillExiting(false);
-      return;
-    }
-    setPillExiting(true);
-    const t = setTimeout(() => {
-      setPillMounted(false);
-      setPillExiting(false);
-    }, 200);
-    return () => clearTimeout(t);
-  }, [showPill, enhancing, pillMounted]);
-
-
   // Seed editor from initial/controlled value once on mount.
   useLayoutEffect(() => {
     const editor = editorRef.current;
@@ -726,45 +619,13 @@ export function PromptInput({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cancel any in-flight enhance on unmount.
-  useEffect(() => () => abortRef.current?.abort(), []);
-
-  const runEnhance = async () => {
-    if (!hasText || enhancing) return;
-    preEnhanceHTML.current = editorRef.current?.innerHTML ?? "";
-    setPhase("enhancing");
-    const ac = new AbortController();
-    abortRef.current = ac;
-    try {
-      const result = await onEnhance(value, ac.signal);
-      if (ac.signal.aborted) return;
-      pendingHTML.current = escapeHtml(result);
-      flipFrom.current = frameRef.current?.offsetHeight ?? null;
-      setPhase("enhanced");
-    } catch {
-      // Restore the untouched prompt if the call fails/aborts.
-      if (ac.signal.aborted) return;
-      pendingHTML.current = preEnhanceHTML.current;
-      setPhase("idle");
-    }
-  };
-
-  const revert = () => {
-    abortRef.current?.abort();
-    pendingHTML.current = preEnhanceHTML.current;
-    flipFrom.current = frameRef.current?.offsetHeight ?? null;
-    setPhase("idle");
-  };
-
   const send = () => {
-    if (enhancing) return;
     // Always hand off to parent so empty / disabled / busy can surface product errors.
     onSubmit?.(value);
     if (!onSubmit && sendActive && !isControlled) {
       const editor = editorRef.current;
       if (editor) editor.innerHTML = "";
       setValue("");
-      setPhase("idle");
       if (!attachmentsProp) setInternalAttachments([]);
       setExitingAtt([]);
     }
@@ -819,7 +680,7 @@ export function PromptInput({
         }}
       />
 
-      <div ref={frameRef} className={styles.frame} data-enhancing={enhancing || undefined}>
+      <div ref={frameRef} className={styles.frame}>
         {attachments.length > 0 && (
           <div className={styles.chips}>
             {attachments.map((att) => (
@@ -846,32 +707,26 @@ export function PromptInput({
         )}
 
         <div className={styles.editorWrap}>
-          {enhancing ? (
-            <div className={styles.enhancingText} aria-live="polite">
-              {value}
-            </div>
-          ) : (
-            <div
-              ref={editorRef}
-              id="claim-input"
-              className={styles.field}
-              contentEditable={!disabled && !busy}
-              suppressContentEditableWarning
-              role="textbox"
-              aria-multiline="true"
-              aria-label={ariaLabel}
-              data-empty={!hasText || undefined}
-              data-placeholder={placeholder}
-              onInput={onEditorInput}
-              onKeyDown={onEditorKeyDown}
-              onKeyUp={saveSelection}
-              onMouseUp={saveSelection}
-              onBlur={saveSelection}
-              onClick={onEditorClick}
-            />
-          )}
+          <div
+            ref={editorRef}
+            id="claim-input"
+            className={styles.field}
+            contentEditable={!disabled && !busy}
+            suppressContentEditableWarning
+            role="textbox"
+            aria-multiline="true"
+            aria-label={ariaLabel}
+            data-empty={!hasText || undefined}
+            data-placeholder={placeholder}
+            onInput={onEditorInput}
+            onKeyDown={onEditorKeyDown}
+            onKeyUp={saveSelection}
+            onMouseUp={saveSelection}
+            onBlur={saveSelection}
+            onClick={onEditorClick}
+          />
 
-          {slashOpen && !enhancing && (
+          {slashOpen && (
             <div
               className={styles.slashMenu}
               role="listbox"
@@ -1034,26 +889,6 @@ export function PromptInput({
           </div>
 
           <div className={styles.right}>
-            {enhancing ? (
-              <span
-                className={[styles.iconBtn, styles.spinnerBtn].join(" ")}
-                aria-label="正在优化表述"
-              >
-                <Icon name="loader" size={14} className={styles.spinner} />
-              </span>
-            ) : (
-              pillMounted && (
-                <button
-                  type="button"
-                  className={[styles.pill, pillExiting && styles.pillExit]
-                    .filter(Boolean)
-                    .join(" ")}
-                  onClick={phase === "enhanced" ? revert : runEnhance}
-                >
-                  {phase === "enhanced" ? "还原" : "优化表述"}
-                </button>
-              )
-            )}
             {trailing}
             <button
               type="button"

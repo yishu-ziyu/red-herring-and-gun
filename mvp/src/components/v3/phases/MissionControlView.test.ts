@@ -4,7 +4,9 @@ import {
   errorTechDetail,
   formatReportReviewerStreamDetail,
   formatReportReviewerStreamTitle,
+  isInterruptedFinalReport,
   isReportReviewerTool,
+  processStallNotice,
   reportReviewerIssueList,
   resolveErrorPresentation,
 } from "./MissionControlView";
@@ -51,6 +53,25 @@ describe("MissionControlView error 友好化（原始诊断不下主线）", () 
     expect(techDetail).toContain("deepseek");
   });
 
+  it("passes through the daily-check exhausted copy and hides infra detail", () => {
+    const { message, techDetail } = resolveErrorPresentation({
+      code: "checks_exhausted",
+      message: "今天的免费核查用完了。登录后每天可查 3 条。",
+      detail: RAW_ERROR,
+    });
+    expect(message).toBe("今天的免费核查用完了。登录后每天可查 3 条。");
+    expect(techDetail).toBe("");
+  });
+
+  it("still hides a spoofed checks_exhausted payload that is not the product copy", () => {
+    const { message } = resolveErrorPresentation({
+      code: "checks_exhausted",
+      message: RAW_ERROR,
+    });
+    expect(message).toBe(ERROR_FRIENDLY_MESSAGE);
+    expect(message).not.toContain("quota");
+  });
+
   it("errorTechDetail 无任何诊断时回退到默认文案", () => {
     expect(errorTechDetail({})).toBe("Orchestrate 流式调用失败");
   });
@@ -89,5 +110,33 @@ describe("report_reviewer stream humanize", () => {
     expect(formatReportReviewerStreamDetail({ passed: false, score: 30, issues: issues }, "completed")).toContain(
       "结论过短"
     );
+  });
+});
+
+describe("processStallNotice", () => {
+  it("检索/对照超过约 1 分钟无新步骤时给出人话说明", () => {
+    expect(
+      processStallNotice({ runStatus: "running", msSinceLastEvent: 60000, humanStage: "对照公开报道" })
+    ).toBe("还在查公开来源，可能比较慢。");
+    expect(
+      processStallNotice({ runStatus: "running", msSinceLastEvent: 90000, humanStage: "对照公开报道" })
+    ).toBe("这一步没有新进展，可以取消后重试。");
+  });
+
+  it("未卡住或已结束时不提示", () => {
+    expect(
+      processStallNotice({ runStatus: "running", msSinceLastEvent: 20000, humanStage: "对照公开报道" })
+    ).toBe("");
+    expect(
+      processStallNotice({ runStatus: "completed", msSinceLastEvent: 120000, humanStage: "整理结论" })
+    ).toBe("");
+  });
+});
+
+describe("isInterruptedFinalReport", () => {
+  it("treats error-boundary reports as interrupted, not unfinished verdicts", () => {
+    expect(isInterruptedFinalReport({ _source: "error-boundary", verdictType: "unverified" })).toBe(true);
+    expect(isInterruptedFinalReport({ verdictType: "unverified" })).toBe(false);
+    expect(isInterruptedFinalReport(null)).toBe(false);
   });
 });

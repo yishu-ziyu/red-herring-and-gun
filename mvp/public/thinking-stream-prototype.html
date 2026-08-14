@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>流式核查 · 思考折页</title>
+    <style>
+      :root {
+        --bg: #fefcf6;
+        --paper: #fffdf8;
+        --dossier: #efeae0;
+        --ink: #151821;
+        --muted: #888;
+        --secondary: #4a4a5a;
+        --think: #a1a1a1;
+        --cannot: #e84a5f;
+        --border: rgba(21, 24, 33, 0.08);
+        --font: ui-sans-serif, -apple-system, "SF Pro Text", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        --ease: cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--font);
+      }
+
+      .desk {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr) 0fr;
+        height: 100%;
+        transition: grid-template-columns 380ms var(--ease);
+      }
+      .desk.is-done {
+        grid-template-columns: 220px minmax(0, 1fr) minmax(320px, 38%);
+      }
+
+      .rail {
+        display: flex;
+        flex-direction: column;
+        padding: 16px 14px;
+        border-right: 1px solid var(--border);
+        background: #f7f3ea;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .brand i {
+        width: 18px;
+        height: 18px;
+        border-radius: 4px;
+        background: var(--ink);
+      }
+      .new {
+        margin: 16px 0 20px;
+        height: 36px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--ink);
+        color: #fff;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 650;
+      }
+      .rail-label {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      .case {
+        margin-top: 8px;
+        padding: 10px 10px;
+        border-radius: 8px;
+        background: rgba(21, 24, 33, 0.05);
+      }
+      .case strong {
+        display: block;
+        font-size: 13px;
+        font-weight: 650;
+        line-height: 1.4;
+      }
+      .case em {
+        display: block;
+        margin-top: 4px;
+        font-style: normal;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .center {
+        overflow: auto;
+        background: var(--bg);
+      }
+      .thread {
+        width: min(680px, calc(100% - 48px));
+        margin: 0 auto;
+        padding: 28px 0 80px;
+      }
+
+      .claim {
+        display: grid;
+        gap: 6px;
+        padding: 12px 16px;
+        border-radius: 12px;
+        background: rgba(21, 24, 33, 0.045);
+      }
+      .claim span {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      .claim p {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 650;
+        line-height: 1.5;
+      }
+
+      .tr { margin-top: 18px; }
+      .tr-head {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 20px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--think);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: -0.005em;
+        cursor: default;
+      }
+      .tr-head.is-click {
+        cursor: pointer;
+      }
+      .tr-verb { color: var(--think); }
+      .tr-shimmer {
+        color: transparent;
+        background: linear-gradient(
+          90deg,
+          #a1a1a1 0%,
+          #a1a1a1 30%,
+          rgba(161, 161, 161, 0.45) 45%,
+          rgba(161, 161, 161, 0.45) 55%,
+          #a1a1a1 70%,
+          #a1a1a1 100%
+        );
+        background-size: 300% 100%;
+        -webkit-background-clip: text;
+        background-clip: text;
+        animation: shine 2.25s cubic-bezier(0.25, 0.1, 0.25, 1) infinite;
+      }
+      @keyframes shine {
+        0%, 18% { background-position: 100% 0; }
+        82%, 100% { background-position: 0% 0; }
+      }
+      .chev {
+        width: 12px;
+        height: 12px;
+        transform: rotate(180deg);
+        transition: transform 280ms var(--ease);
+      }
+      .tr-head[aria-expanded="true"] .chev { transform: rotate(0deg); }
+      .tr-body {
+        display: grid;
+        grid-template-rows: 1fr;
+        opacity: 1;
+        transition: grid-template-rows 320ms var(--ease), opacity 220ms ease;
+      }
+      .tr-body.is-closed {
+        grid-template-rows: 0fr;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .tr-clip { min-height: 0; overflow: hidden; }
+      .tr-view {
+        position: relative;
+        margin-top: 6px;
+        height: 180px;
+        overflow: hidden;
+        mask-image: linear-gradient(to bottom, transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+      }
+      .tr-stream {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        transition: transform 560ms var(--ease);
+      }
+      .tr-s {
+        margin: 0;
+        height: 40px;
+        line-height: 20px;
+        font-size: 13px;
+        font-weight: 425;
+        color: var(--think);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        animation: in 420ms var(--ease) both;
+      }
+      @keyframes in { from { opacity: 0; } to { opacity: 1; } }
+
+      .tool {
+        margin-top: 10px;
+        display: none;
+      }
+      .tool.is-on { display: block; }
+      .tool-head {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--think);
+        font: inherit;
+        font-size: 13px;
+        cursor: default;
+      }
+      .tool-head.is-click { cursor: pointer; }
+      .tool-list {
+        display: none;
+        margin: 8px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .tool.is-open .tool-list { display: grid; gap: 6px; }
+      .tool-list a {
+        color: var(--secondary);
+        font-size: 13px;
+        text-decoration: none;
+      }
+      .tool-list a:hover { text-decoration: underline; }
+
+      .answer {
+        display: none;
+        margin-top: 22px;
+        animation: in 420ms var(--ease) both;
+      }
+      .answer.is-on { display: block; }
+      .verdict {
+        margin: 0 0 8px;
+        font-size: 28px;
+        font-weight: 750;
+        letter-spacing: -0.03em;
+        color: var(--cannot);
+      }
+      .lede {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.65;
+        color: var(--ink);
+      }
+      .cites {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 14px;
+      }
+      .cites a {
+        padding: 4px 8px;
+        border-radius: 999px;
+        background: rgba(21, 24, 33, 0.05);
+        color: var(--secondary);
+        font-size: 12px;
+        text-decoration: none;
+      }
+
+      .dossier {
+        overflow: hidden;
+        border-left: 1px solid var(--border);
+        background: var(--dossier);
+      }
+      .d-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 48px;
+        padding: 0 14px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .d-paper {
+        margin: 12px 14px 18px;
+        padding: 28px 24px;
+        min-height: calc(100% - 78px);
+        border-radius: 2px;
+        background: var(--paper);
+        box-shadow: 0 10px 40px rgba(30, 26, 22, 0.08);
+      }
+      .d-paper .verdict { font-size: 22px; }
+      .d-paper h3 {
+        margin: 22px 0 8px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      .d-paper p { margin: 0; font-size: 14px; line-height: 1.65; }
+      .d-paper ol {
+        margin: 0;
+        padding-left: 18px;
+        font-size: 14px;
+        line-height: 1.6;
+        color: var(--secondary);
+      }
+
+      .bar {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 4;
+        display: flex;
+        gap: 6px;
+        padding: 6px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--bg) 88%, white);
+        backdrop-filter: blur(10px);
+      }
+      .bar button {
+        height: 32px;
+        padding: 0 12px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--secondary);
+        font: inherit;
+        font-size: 12px;
+        font-weight: 650;
+        cursor: pointer;
+      }
+      .bar button.is-on,
+      .bar button:hover {
+        background: var(--ink);
+        color: #fff;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .tr-shimmer { animation: none; color: var(--think); background: none; }
+        .tr-body, .tr-stream, .desk { transition: none; }
+      }
+      @media (max-width: 960px) {
+        .desk, .desk.is-done { grid-template-columns: 1fr; }
+        .rail { display: none; }
+        .dossier { min-height: 40vh; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="desk" id="desk">
+      <aside class="rail">
+        <div class="brand"><i></i>红鲱鱼与枪</div>
+        <button class="new" type="button">新查一条</button>
+        <div class="rail-label">最近核查</div>
+        <div class="case">
+          <strong>5G信号塔辐射导致周围居民癌症高发</strong>
+          <em id="caseStatus">核查中</em>
+        </div>
+      </aside>
+
+      <main class="center">
+        <div class="thread">
+          <section class="claim">
+            <span>核查对象</span>
+            <p>5G信号塔辐射导致周围居民癌症高发</p>
+          </section>
+
+          <div class="tr" id="tr">
+            <button class="tr-head" id="trHead" type="button" aria-expanded="true">
+              <span id="trLabel" class="tr-shimmer">思考中</span>
+              <svg class="chev" id="trChev" viewBox="0 0 24 24" hidden aria-hidden="true">
+                <path d="m4.5 15.75 7.5-7.5 7.5 7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <div class="tr-body" id="trBody">
+              <div class="tr-clip">
+                <div class="tr-view">
+                  <div class="tr-stream" id="trStream"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tool" id="tool">
+            <button class="tool-head" id="toolHead" type="button">
+              <span id="toolLabel">正在检索公开来源</span>
+              <svg class="chev" id="toolChev" viewBox="0 0 24 24" hidden aria-hidden="true">
+                <path d="m4.5 15.75 7.5-7.5 7.5 7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <ul class="tool-list">
+              <li><a href="#">WHO · 射频电磁场与健康</a></li>
+              <li><a href="#">ICNIRP 2020 导则</a></li>
+              <li><a href="#">国家癌症中心 · 登记数据说明</a></li>
+              <li><a href="#">工信部 · 基站电磁辐射标准</a></li>
+            </ul>
+          </div>
+
+          <article class="answer" id="answer">
+            <p class="verdict">不能信</p>
+            <p class="lede">
+              公开材料里没有把 5G 基站辐射判成立即致癌。周围癌症高发需要登记数据对照，这条里没有给出来。
+            </p>
+            <div class="cites">
+              <a href="#">WHO</a>
+              <a href="#">ICNIRP</a>
+              <a href="#">国家癌症中心</a>
+            </div>
+          </article>
+        </div>
+      </main>
+
+      <aside class="dossier" id="dossier" hidden>
+        <div class="d-head">
+          <strong>核查卷宗</strong>
+        </div>
+        <div class="d-paper">
+          <p class="verdict">不能信</p>
+          <p>公开监测和导则都不支持「5G 基站辐射导致周围癌症高发」这一整句。</p>
+          <h3>问题在哪</h3>
+          <p>把基站存在和癌症高发直接串成因果。辐射是否超标、当地发病率是否异常，这条材料都没给。</p>
+          <h3>来源</h3>
+          <ol>
+            <li>WHO：射频电磁场与健康</li>
+            <li>ICNIRP 2020 导则</li>
+            <li>国家癌症中心登记说明</li>
+          </ol>
+        </div>
+      </aside>
+    </div>
+
+    <div class="bar">
+      <button type="button" data-phase="thinking">思考中</button>
+      <button type="button" data-phase="search">检索中</button>
+      <button type="button" data-phase="done">已完成</button>
+      <button type="button" id="play">重放</button>
+    </div>
+
+    <script>
+      const SENTENCES = [
+        "原句里有两截：基站辐射、周围癌症高发。",
+        "辐射致病是可核判断，先对公开监测和导则。",
+        "癌症高发要对照登记数据，不能用个案代替。",
+        "没看到把 5G 基站直接判为致癌源的监管结论。",
+      ];
+
+      const desk = document.getElementById("desk");
+      const trHead = document.getElementById("trHead");
+      const trLabel = document.getElementById("trLabel");
+      const trChev = document.getElementById("trChev");
+      const trBody = document.getElementById("trBody");
+      const trStream = document.getElementById("trStream");
+      const tool = document.getElementById("tool");
+      const toolHead = document.getElementById("toolHead");
+      const toolLabel = document.getElementById("toolLabel");
+      const toolChev = document.getElementById("toolChev");
+      const answer = document.getElementById("answer");
+      const dossier = document.getElementById("dossier");
+      const caseStatus = document.getElementById("caseStatus");
+
+      let phase = "thinking";
+      let thoughtOpen = true;
+      let toolOpen = false;
+      let timers = [];
+
+      function clearTimers() {
+        timers.forEach((t) => clearTimeout(t));
+        timers = [];
+      }
+
+      function paintSentences(n) {
+        trStream.innerHTML = SENTENCES.slice(0, n)
+          .map((s) => `<p class="tr-s">${s}</p>`)
+          .join("");
+        const extra = Math.max(0, n - 4);
+        trStream.style.transform = extra > 0 ? `translateY(${-extra * 44}px)` : "translateY(0)";
+      }
+
+      function setPhase(next, { animate } = { animate: false }) {
+        phase = next;
+        document.querySelectorAll(".bar [data-phase]").forEach((b) => {
+          b.classList.toggle("is-on", b.dataset.phase === next);
+        });
+
+        if (next === "thinking") {
+          thoughtOpen = true;
+          toolOpen = false;
+          desk.classList.remove("is-done");
+          dossier.hidden = true;
+          answer.classList.remove("is-on");
+          tool.classList.remove("is-on", "is-open");
+          toolHead.className = "tool-head";
+          toolLabel.textContent = "正在检索公开来源";
+          toolChev.hidden = true;
+          caseStatus.textContent = "核查中";
+          trHead.className = "tr-head";
+          trHead.setAttribute("aria-expanded", "true");
+          trLabel.className = "tr-shimmer";
+          trLabel.textContent = "思考中";
+          trChev.hidden = true;
+          trBody.classList.remove("is-closed");
+          paintSentences(animate ? 0 : 2);
+          return;
+        }
+
+        if (next === "search") {
+          thoughtOpen = true;
+          toolOpen = false;
+          desk.classList.remove("is-done");
+          dossier.hidden = true;
+          answer.classList.remove("is-on");
+          paintSentences(4);
+          trHead.className = "tr-head";
+          trHead.setAttribute("aria-expanded", "true");
+          trLabel.className = "tr-shimmer";
+          trLabel.textContent = "思考中";
+          trChev.hidden = true;
+          trBody.classList.remove("is-closed");
+          tool.classList.add("is-on");
+          tool.classList.remove("is-open");
+          toolHead.className = "tool-head";
+          toolLabel.textContent = "正在检索公开来源";
+          toolChev.hidden = true;
+          caseStatus.textContent = "核查中";
+          return;
+        }
+
+        thoughtOpen = false;
+        toolOpen = false;
+        desk.classList.add("is-done");
+        dossier.hidden = false;
+        answer.classList.add("is-on");
+        paintSentences(4);
+        trHead.className = "tr-head is-click";
+        trHead.setAttribute("aria-expanded", "false");
+        trLabel.className = "";
+        trLabel.innerHTML = `<span class="tr-verb">思考已完成</span> · 15s`;
+        trChev.hidden = false;
+        trBody.classList.add("is-closed");
+        tool.classList.add("is-on");
+        tool.classList.remove("is-open");
+        toolHead.className = "tool-head is-click";
+        toolHead.setAttribute("aria-expanded", "false");
+        toolLabel.textContent = "查了 4 处来源";
+        toolChev.hidden = false;
+        caseStatus.textContent = "已有判断";
+      }
+
+      trHead.addEventListener("click", () => {
+        if (phase !== "done") return;
+        thoughtOpen = !thoughtOpen;
+        trHead.setAttribute("aria-expanded", String(thoughtOpen));
+        trBody.classList.toggle("is-closed", !thoughtOpen);
+      });
+
+      toolHead.addEventListener("click", () => {
+        if (phase !== "done") return;
+        toolOpen = !toolOpen;
+        toolHead.setAttribute("aria-expanded", String(toolOpen));
+        tool.classList.toggle("is-open", toolOpen);
+      });
+
+      document.querySelectorAll(".bar [data-phase]").forEach((b) => {
+        b.addEventListener("click", () => {
+          clearTimers();
+          setPhase(b.dataset.phase);
+        });
+      });
+
+      document.getElementById("play").addEventListener("click", () => {
+        clearTimers();
+        setPhase("thinking", { animate: true });
+        SENTENCES.forEach((_, i) => {
+          timers.push(setTimeout(() => paintSentences(i + 1), 420 * (i + 1)));
+        });
+        timers.push(setTimeout(() => setPhase("search"), 2100));
+        timers.push(setTimeout(() => setPhase("done"), 3400));
+      });
+
+      const boot = new URLSearchParams(location.search).get("phase");
+      setPhase(boot === "search" || boot === "done" ? boot : "thinking");
+      if (boot !== "search" && boot !== "done") paintSentences(2);
+    </script>
+  </body>
+</html>

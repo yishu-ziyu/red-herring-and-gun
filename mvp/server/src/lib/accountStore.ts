@@ -4,36 +4,38 @@
  * 角色:
  * - requestCode / verifyAndCreate 走 6 位数字验证码流程
  * - 邮箱不是 Map key，只存 hash (SHA-256(email + serverSecret))
- * - 5 次 / 30 天的免费 quota,带滑动窗口重置
+ * - 登录用户每天 3 次免费核查（按自然日，上海时区）
  * - 文档级故意不写 DB 接口:Wave 4 后端替成 KV / Postgres 时改这一文件即可
  *
- * 注: 现状下我们故意不用 pino / 任何 logger,只 console.log 暴露验证码 —
- *      生产环境接 SMTP 时替换 console.log 那行。
+ * 注: 验证码由 emailAuthHandlers 发到用户邮箱（SMTP / Resend）。
+ *      没配发信且非生产时，才把码回显到登录面板。
  */
 
 import crypto from "node:crypto";
+import { ACCOUNT_DAILY_CHECKS, shanghaiDayKey } from "../../../src/lib/checkQuota.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 min
 const RATE_WINDOW_MS = 60 * 1000; // 1 min
-const QUOTA_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const QUOTA_TOTAL = 5;
-const SESSION_TTL_MS = 31 * 24 * 60 * 60 * 1000; // 31 days, > quota window
+const SESSION_TTL_MS = 31 * 24 * 60 * 60 * 1000; // 31 days
 
 export interface EmailAccount {
   email: string;
   hash: string;
   createdAt: number;
-  quota: {
-    total: number;
+  displayName: string;
+  loginCount: number;
+  lastLoginAt: number;
+  checks: {
+    day: string;
     used: number;
-    periodStartAt: number;
+    inflight: number;
   };
   history: EmailHistoryEntry[];
 }
 
 export interface EmailHistoryEntry {
   at: number;
-  kind: "verify" | "consume_quota" | "delete";
+  kind: "verify" | "check" | "delete";
   meta?: Record<string, unknown>;
 }
 
@@ -105,6 +107,22 @@ export async function requestCode(rawEmail: string, serverSecret: string): Promi
   return { ok: true, code, expiresAt };
 }
 
+/** 开发面板回显：取出尚未用完、尚未过期的码。 */
+export function peekOutstandingCode(rawEmail: string, serverSecret: string): string | null {
+  const email = normalizeEmail(rawEmail);
+  if (!EMAIL_REGEX.test(email)) return null;
+  const record = codes.get(hashEmail(email, serverSecret));
+  if (!record || record.consumed || record.expiresAt <= Date.now()) return null;
+  return record.code;
+}
+
+/** 发信失败时丢掉刚生成的码，让用户可以立刻重试。 */
+export function abandonOutstandingCode(rawEmail: string, serverSecret: string) {
+  const email = normalizeEmail(rawEmail);
+  if (!EMAIL_REGEX.test(email)) return;
+  codes.delete(hashEmail(email, serverSecret));
+}
+
 export interface VerifyResult {
   ok: boolean;
   sessionId?: string;
@@ -155,11 +173,23 @@ function upsertAccount(email: string, hash: string, now: number) {
       email,
       hash,
       createdAt: now,
-      quota: { total: QUOTA_TOTAL, used: 0, periodStartAt: now },
+      displayName: "",
+      loginCount: 1,
+      lastLoginAt: now,
+      checks: { day: shanghaiDayKey(now), used: 0, inflight: 0 },
       history: [],
     };
     accounts.set(hash, account);
+    return account;
   }
+  account.email = email;
+  account.loginCount += 1;
+  account.lastLoginAt = now;
+  return account;
+}
+
+export function updateDisplayName(account: EmailAccount, displayName: string) {
+  account.displayName = displayName;
   return account;
 }
 
@@ -176,57 +206,76 @@ export async function getBySession(sessionId: string, serverSecret: string): Pro
   return account ?? null;
 }
 
-export interface ConsumeQuotaResult {
-  ok: boolean;
-  remaining?: number;
-  error?: "no_session" | "quota_exceeded";
+export function getAccountByHash(hash: string): EmailAccount | null {
+  return accounts.get(hash) ?? null;
 }
 
-export async function consumeQuota(
-  sessionId: string,
-  serverSecret: string
-): Promise<ConsumeQuotaResult> {
-  const account = await getBySession(sessionId, serverSecret);
-  if (!account) return { ok: false, error: "no_session" };
-
-  const now = Date.now();
-  if (now - account.quota.periodStartAt >= QUOTA_WINDOW_MS) {
-    // 30 天窗口滑动,自动 reset
-    account.quota.periodStartAt = now;
-    account.quota.used = 0;
+function syncAccountChecks(account: EmailAccount, now = Date.now()) {
+  const day = shanghaiDayKey(now);
+  if (account.checks.day !== day) {
+    account.checks = { day, used: 0, inflight: 0 };
   }
-
-  if (account.quota.used >= QUOTA_TOTAL) {
-    return { ok: false, error: "quota_exceeded" };
-  }
-
-  account.quota.used += 1;
-  account.history.push({ at: now, kind: "consume_quota" });
-  return { ok: true, remaining: Math.max(0, QUOTA_TOTAL - account.quota.used) };
+  return account.checks;
 }
 
-export function getQuota(account: EmailAccount) {
-  const now = Date.now();
-  const inWindow = now - account.quota.periodStartAt < QUOTA_WINDOW_MS;
-  const remaining = inWindow ? Math.max(0, QUOTA_TOTAL - account.quota.used) : QUOTA_TOTAL;
-  return { remaining, total: QUOTA_TOTAL };
+export function getAccountChecks(account: EmailAccount, now = Date.now()) {
+  const checks = syncAccountChecks(account, now);
+  const remaining = Math.max(0, ACCOUNT_DAILY_CHECKS - checks.used - checks.inflight);
+  return {
+    remaining,
+    total: ACCOUNT_DAILY_CHECKS,
+    used: checks.used,
+    kind: "account" as const,
+    day: checks.day,
+  };
+}
+
+export function beginAccountCheck(account: EmailAccount, now = Date.now()): boolean {
+  const checks = syncAccountChecks(account, now);
+  if (checks.used + checks.inflight >= ACCOUNT_DAILY_CHECKS) return false;
+  checks.inflight += 1;
+  return true;
+}
+
+export function commitAccountCheck(account: EmailAccount, now = Date.now()) {
+  const checks = syncAccountChecks(account, now);
+  if (checks.inflight > 0) checks.inflight -= 1;
+  checks.used += 1;
+  account.history.push({ at: now, kind: "check" });
+}
+
+export function releaseAccountCheck(account: EmailAccount, now = Date.now()) {
+  const checks = syncAccountChecks(account, now);
+  if (checks.inflight > 0) checks.inflight -= 1;
 }
 
 export interface AccountExport {
-  account: { email: string; createdAt: number };
-  quota: { total: number; used: number; periodStartAt: number; remaining: number };
+  account: {
+    email: string;
+    displayName: string;
+    createdAt: number;
+    loginCount: number;
+    lastLoginAt: number;
+  };
+  checks: { day: string; used: number; remaining: number; total: number };
   history: EmailHistoryEntry[];
 }
 
 export function exportAccount(account: EmailAccount): AccountExport {
-  const quota = getQuota(account);
+  const checks = getAccountChecks(account);
   return {
-    account: { email: account.email, createdAt: account.createdAt },
-    quota: {
-      total: account.quota.total,
-      used: account.quota.used,
-      periodStartAt: account.quota.periodStartAt,
-      remaining: quota.remaining,
+    account: {
+      email: account.email,
+      displayName: account.displayName,
+      createdAt: account.createdAt,
+      loginCount: account.loginCount,
+      lastLoginAt: account.lastLoginAt,
+    },
+    checks: {
+      day: checks.day,
+      used: checks.used,
+      remaining: checks.remaining,
+      total: checks.total,
     },
     history: account.history.slice(),
   };
@@ -249,10 +298,8 @@ export function resetForTests() {
   sessions.clear();
 }
 
-export const QUOTA_CONSTANTS = {
+export const ACCOUNT_CONSTANTS = {
   TTL_MS: CODE_TTL_MS,
   RATE_MS: RATE_WINDOW_MS,
-  WINDOW_MS: QUOTA_WINDOW_MS,
-  TOTAL: QUOTA_TOTAL,
   SESSION_MS: SESSION_TTL_MS,
 } as const;

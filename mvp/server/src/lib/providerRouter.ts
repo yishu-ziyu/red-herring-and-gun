@@ -25,6 +25,7 @@ import {
 // 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
 import { extractJsonObject } from "./anthropicParse.js";
 export { extractJsonObject };
+import { miniMaxCallOptions } from "./minimaxM3.js";
 
 export type AgentTextProviderId =
   | "deepseek"
@@ -65,15 +66,29 @@ export function isHardProviderAuthError(message: string): boolean {
   return /invalid api key|invalid_key|incorrect api key|unauthorized|ENOENT/i.test(message);
 }
 
+/** Empty-body / no-text is usually a dead account or thinking-budget wipe, not a transient blip. */
+export function isEmptyProviderResponse(message: string): boolean {
+  return /没有返回可解析文本|无返回文本|empty (?:response|text)|no (?:usable )?text/i.test(message);
+}
+
+export function isHardProviderFailure(message: string): boolean {
+  return (
+    isHardProviderQuotaError(message) ||
+    isHardProviderAuthError(message) ||
+    isEmptyProviderResponse(message)
+  );
+}
+
 function canonicalProviderId(provider: string): string {
   if (provider.startsWith("mimo")) return "mimo";
   if (provider.startsWith("360")) return "360";
   if (provider.startsWith("anthropic")) return "anthropic";
   if (provider.startsWith("codex")) return "codex";
+  if (provider.startsWith("minimax")) return "minimax";
   return provider;
 }
 
-function isProviderQuotaSkipped(provider: string): boolean {
+export function isProviderQuotaSkipped(provider: string): boolean {
   const until = quotaExhaustedUntil.get(canonicalProviderId(provider));
   return typeof until === "number" && until > Date.now();
 }
@@ -82,8 +97,8 @@ function skipProvider(provider: string): void {
   quotaExhaustedUntil.set(canonicalProviderId(provider), Date.now() + QUOTA_SKIP_MS);
 }
 
-function noteProviderFailure(provider: string, message: string): void {
-  if (isHardProviderQuotaError(message) || isHardProviderAuthError(message)) {
+export function noteProviderFailure(provider: string, message: string): void {
+  if (isHardProviderFailure(message)) {
     skipProvider(provider);
     return;
   }
@@ -93,6 +108,57 @@ function noteProviderFailure(provider: string, message: string): void {
     timeoutStrikes.set(id, n);
     if (n >= 2) skipProvider(provider);
   }
+}
+
+const CLOUD_TEXT_PROVIDERS: AgentTextProviderId[] = [
+  "minimax",
+  "stepfun",
+  "anthropic",
+  "deepseek",
+  "mimo",
+  "360",
+];
+
+export function providerHasCredentials(env: Record<string, string>, provider: string): boolean {
+  const id = canonicalProviderId(provider);
+  if (id === "deepseek") return Boolean(envValue(env, "DEEPSEEK_API_KEY"));
+  if (id === "mimo") return Boolean(envValue(env, "MIMO_API_KEY"));
+  if (id === "minimax") return Boolean(getMiniMaxApiKey(env));
+  if (id === "stepfun") return Boolean(envValue(env, "STEPFUN_API_KEY"));
+  if (id === "360") return Boolean(getSearch360ApiKey(env));
+  if (id === "anthropic") {
+    return Boolean(
+      envValue(env, "ANTHROPIC_BASE_URL") ||
+        envValue(env, "ANTHROPIC_AUTH_TOKEN") ||
+        envValue(env, "ANTHROPIC_API_KEY")
+    );
+  }
+  if (id === "codex") return Boolean(envValue(env, "CODEX_BIN") || process.env.CODEX_BIN);
+  return false;
+}
+
+/** Configured cloud chat providers that are still eligible this process. */
+export function pendingCloudProviders(env: Record<string, string>, agentId?: string): AgentTextProviderId[] {
+  const order = providerOrderForAgent(env, agentId);
+  return order.filter(
+    (provider): provider is AgentTextProviderId =>
+      CLOUD_TEXT_PROVIDERS.includes(provider) &&
+      providerHasCredentials(env, provider) &&
+      !isProviderQuotaSkipped(provider)
+  );
+}
+
+export function areCloudProvidersHardSkipped(env: Record<string, string>, agentId?: string): boolean {
+  const order = providerOrderForAgent(env, agentId);
+  const configured = order.filter(
+    (provider) => CLOUD_TEXT_PROVIDERS.includes(provider) && providerHasCredentials(env, provider)
+  );
+  return configured.length > 0 && pendingCloudProviders(env, agentId).length === 0;
+}
+
+/** Skip 90s-class fallbacks once this invocation already saw multiple hard failures. */
+export function shouldSkipSlowFallback(provider: string, hardFailuresThisCall: number): boolean {
+  return canonicalProviderId(provider) === "codex" && hardFailuresThisCall >= 2;
 }
 
 // MiniMax is the local SSOT default chat; 360 is legacy hackathon sponsor path (low context).
@@ -183,17 +249,6 @@ function getMiniMaxAuthHeader(env: Record<string, string>): "x-api-key" | "beare
 function stepFunMaxTokensForModel(env: Record<string, string>, model: string, requested: number): number {
   if (!/^step-3\.7-flash$/i.test(model)) return requested;
   const minTokens = Number(envValue(env, "STEPFUN_3_7_MIN_MAX_TOKENS") || 4096);
-  return Number.isFinite(minTokens) && minTokens > requested ? minTokens : requested;
-}
-
-/**
- * MiniMax-M3 的 max_tokens 含 thinking：adaptive 思考不可控，会吃掉绝大部分预算。
- * 若 agent 配置的 maxTokens 过小（如 rumor_detector 800），text 会被截断为空。
- * 这里给 MiniMax-M3 提一个下限，保证思考 + 结构化发言都装得下。
- */
-function miniMaxMaxTokensForModel(env: Record<string, string>, model: string, requested: number): number {
-  if (!/^MiniMax-M3$/i.test(model)) return requested;
-  const minTokens = Number(envValue(env, "MINIMAX_M3_MIN_MAX_TOKENS") || 5500);
   return Number.isFinite(minTokens) && minTokens > requested ? minTokens : requested;
 }
 
@@ -481,10 +536,9 @@ function timeoutForProviderModel(
   if (provider === "stepfun" && /^step-3\.7-flash$/i.test(model)) {
     return getTimeoutMs(env, "STEPFUN_3_7_PROVIDER_TIMEOUT_MS", 135000);
   }
-  // MiniMax-M3 的 adaptive thinking 不可控、思考文本可能很长，单次推理常超 90s。
-  // 给它一条独立、更长的 timeout 通道，避免被默认 90s 掐断后误判为调用失败。
+  // MiniMax-M3 adaptive thinking is unbounded in practice; don't clip it with the 45s cloud default.
   if (provider === "minimax" && /^MiniMax-M3$/i.test(model)) {
-    return getTimeoutMs(env, "MINIMAX_M3_PROVIDER_TIMEOUT_MS", 180000);
+    return getTimeoutMs(env, "MINIMAX_M3_PROVIDER_TIMEOUT_MS", 600000);
   }
   return fallbackMs;
 }
@@ -555,7 +609,7 @@ export async function dispatchSingleProvider({
       model,
       systemPrompt,
       userContent,
-      maxTokens: miniMaxMaxTokensForModel(env, model, maxTokens),
+      ...miniMaxCallOptions(env, model, maxTokens),
     });
   }
   if (provider === "stepfun") {
@@ -618,6 +672,13 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   const startTime = Date.now();
   const errors: string[] = [];
   const providerOrder = providerOrderForAgent(env, agentId);
+  let hardFailuresThisCall = 0;
+
+  if (areCloudProvidersHardSkipped(env, agentId)) {
+    throw new ProviderFallbackError("所有备用模型均已调用失败，请检查模型配置或稍后重试", [
+      "configured cloud providers already skipped this process",
+    ]);
+  }
 
   // ───────────────────────────────────────────────────────────────
   // modelOverride 优先（用户在前端 model picker 选过 model 时先试这里）
@@ -726,6 +787,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         message,
       });
       noteProviderFailure(ovProvider, message);
+      if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
       errors.push(`[${ovProvider}:${ovModel}] ${message}`);
     }
   }
@@ -770,6 +832,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         message,
       });
       noteProviderFailure(provider, message);
+      if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
       return { ok: false, msg: message };
     }
   };
@@ -777,6 +840,10 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   for (const provider of providerOrder) {
     if (isProviderQuotaSkipped(provider)) {
       errors.push(`[${canonicalProviderId(provider)}] 本进程已因额度耗尽跳过`);
+      continue;
+    }
+    if (shouldSkipSlowFallback(provider, hardFailuresThisCall)) {
+      errors.push(`[${canonicalProviderId(provider)}] 已因连续失败跳过慢速兜底`);
       continue;
     }
     if (provider === "deepseek") {
@@ -844,7 +911,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           model,
           systemPrompt: sys,
           userContent: user,
-          maxTokens: miniMaxMaxTokensForModel(env, model, maxTokens),
+          ...miniMaxCallOptions(env, model, maxTokens),
         })
       );
       if (out.ok) {

@@ -1,5 +1,57 @@
 # 开发日志
 
+## 2026-08-14
+
+### 首轮真实用户评测（eval）与修复
+
+**触发**：对本地 dev server 用 3 个真实用户画像 + 内置浏览器做了首轮真实使用评测（eval skill）。
+
+#### 发现的问题
+
+产品拆解与检索能力正常，但所有 case 卡在最后一步「整理结论」——因全部 5 个 LLM provider（MiniMax / StepFun / DeepSeek / 360 / MiMo / codex）余额或配额耗尽，用户等 3-5 分钟后只看到「核查中断」，**一无所得**。
+
+3 个用户画像：
+- 周桂芳（47，小超市主）：查「鸡蛋豆浆相克」→ 等了 5 分 25 秒 → 中断
+- 林一鸣（29，核查编辑）：查「某公司取消年终奖」→ 卡在检索 90 秒 → 放弃
+- 苏航（34，产品岗）：查「房屋养老金」→ 两轮各 3-4 分钟 → 中断
+
+#### 已修复（2 处，+31 行）
+
+1. `src/lib/agentConfigs.ts` — `report_composer` 加入 `CONTINUE_AFTER_FAILURE_AGENTS`，失败时降级而非整轮抛错
+2. `src/lib/agentRuntime/AgentRuntime.ts` — `buildAgentFailureOutput` 增加 report_composer 分支：输出诚实降级报告（`verdictType: "unverified"` →「还查不清」、保留已检索来源）
+
+**复验结果**：新人物罗建国（科普写作者）完整走完 DAG，最终页显示「还查不清 / 未能判断（30/100）」+ 8 条可点开来源，不再空手中断。
+
+#### 待修复（需你处理）
+
+**🏁 高优先级 — 模型 provider 恢复**
+- MiniMax M3：无返回文本（疑似 key 异常或账户态）
+- StepFun：`You exceeded your current quota`（超额度）
+- DeepSeek：`Insufficient Balance`（余额不足）
+- 360 智脑：`余额不足`
+- MiMo：`Invalid API Key`
+- codex gpt-5.5：超时 90s
+
+这些在 `mvp/.env.local` 里配置。修复后重启 dev server。
+
+#### 复验 Checklist（修复后找我）
+
+1. 用「隔夜菜会致癌，等于吃毒药」提交一次完整核查，确认能拿到最终结论（能信/不能信/只能信一部分）+ 来源
+2. 用「国家要收房屋养老金，每月从工资里扣」带链接提交，确认结论有来源可点开
+3. 观察结果页：结论文案、来源编号、证据链、核查足迹各段是否正常
+4. 观察过程页：双栏工作台（左过程/右结果）在核查中途是否正常
+
+完整 eval 留痕：`~/.mirasim/eval/sessions/260814-1206-redherring/`（traces / evidence / feedback.md / 处置账）
+
+#### 续修（F-01-timing / F-03 / F-04）
+
+- 落地页 `GET /api/models/health`：轻量探测，人话提示模型服务不可用/不确定，不暴露 provider；探测失败不假装可用。
+- 全挂时尽快收束：进程 skip map、同一次调用连续 hard fail 跳过 Codex 90s；`report_composer` 在前序已 error-boundary 时不再空转 LLM。
+- 检索/对照超过约 1 分钟无新步骤时给白话说明；可恢复失败不再用「底层模型服务未能完成调用」盖过已有降级结论。
+- 复验：5175 落地页可见 unknown 预警；5176 对「微波炉加热食物会致癌」orchestrate-stream 3.4s 落到「未能判断」并保留检索来源，不再空手中断。
+
+---
+
 ## 2026-06-27
 
 ### 严格审查修复（14 项 findings）

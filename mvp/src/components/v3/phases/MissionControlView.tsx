@@ -14,10 +14,15 @@ import {
   type OrchestrateStreamEvent,
   type SpeculativeRelayUpdate,
 } from "../../../lib/agentExpansion";
-import { adaptOrchestrateStreamToShell, buildVisibleProcessRows, shareAdviceFromVerdict } from "../../../lib/missionShell";
+import { adaptOrchestrateStreamToShell, buildVisibleProcessRows, humanizeVerdictType } from "../../../lib/missionShell";
+import { collectReasoningSentences } from "../../../lib/reasoningThoughts";
+import { collectThreadSources, threadSearchStatus } from "../../../lib/threadSearch";
+import { isChecksExhaustedMessage } from "../../../lib/checkQuota";
 import { resolveShellMode } from "../../../lib/missionShell/resolveShellMode";
 import { MissionProcessShell } from "./mission/MissionProcessShell";
-import { MissionWorkSurface } from "./mission/MissionWorkSurface";
+import { MissionThoughtFold } from "./mission/MissionThoughtFold";
+import { MissionSearchFold } from "./mission/MissionSearchFold";
+import { MissionThreadAnswer } from "./mission/MissionThreadAnswer";
 import type { ModelChoiceMap } from "../ModelPicker";
 import { calculateClaimSimilarity, createKnowledgeBase, type KnowledgeBase } from "../../../lib/knowledgeBase";
 import type {
@@ -41,19 +46,22 @@ import { ReasoningTracePanel } from "../panels/ReasoningTracePanel";
 import { getTraceCollector } from "../../../lib/reasoningTrace";
 import type { CaseIntake } from "../../../lib/caseIntake";
 import type { MemoryCandidate, MemoryCandidateStatus } from "../../../lib/agentRuntime/memoryCandidateTypes";
-import { getAgentContract } from "../../../lib/agentConfigs";
-import { summarizeMissionStreamStatus } from "../../../lib/missionStreamStatus";
+import { getAgentContract, getAgentRegistry } from "../../../lib/agentConfigs";
 import { AGENT_SKILLS } from "../../../lib/agentRuntime/agentSkills";
 
 interface MissionControlViewProps {
   claim: string;
   intake?: CaseIntake | null;
   onCancel: () => void;
+  /** 同一条材料再跑一遍（中断态主按钮）。 */
+  onRetry?: () => void;
   previewMode?: boolean;
   /** 4-Agent 模型选择（home 透传）。undefined 表示走默认 fallback chain。 */
   modelChoice?: ModelChoiceMap;
   /** 最终报告就绪时回调；父层可切 ResultView。有回调时本视图保持极简，不自渲染完整报告页。 */
   onComplete?: (finalReport: Record<string, unknown>) => void;
+  /** 打开已保存的判断，跳过流水线。 */
+  initialFinalReport?: Record<string, unknown> | null;
 }
 
 type RunStatus = "idle" | "running" | "completed" | "failed";
@@ -194,6 +202,7 @@ export const ERROR_FRIENDLY_MESSAGE = "底层模型服务未能完成调用，�
 export interface ErrorEventLike {
   error?: string;
   message?: string;
+  code?: string;
   detail?: string;
   providerErrors?: string[];
 }
@@ -216,6 +225,10 @@ export function resolveErrorPresentation(event: ErrorEventLike): {
   message: string;
   techDetail: string;
 } {
+  const copy = event.message;
+  if (event.code === "checks_exhausted" && isChecksExhaustedMessage(copy)) {
+    return { message: copy, techDetail: "" };
+  }
   return { message: ERROR_FRIENDLY_MESSAGE, techDetail: errorTechDetail(event) };
 }
 
@@ -1934,6 +1947,25 @@ function runStatusText(runStatus: RunStatus, elapsedMs: number, finalReport: Rec
   return "准备核查";
 }
 
+/** 检索/对照长时间无新步骤时的人话说明（约 1 分钟起）。 */
+export function processStallNotice(params: {
+  runStatus: RunStatus;
+  msSinceLastEvent: number;
+  humanStage: string;
+}): string {
+  if (params.runStatus !== "running") return "";
+  if (params.msSinceLastEvent >= 90000) {
+    return "这一步没有新进展，可以取消后重试。";
+  }
+  if (params.msSinceLastEvent >= 60000) {
+    if (/对照|检索|来源/.test(params.humanStage)) {
+      return "还在查公开来源，可能比较慢。";
+    }
+    return "还在核查，这一步可能比较慢。";
+  }
+  return "";
+}
+
 /** 人话三态：理解 → 对照公开报道 → 整理结论（一级锚点） */
 function humanStageLabel(params: {
   runStatus: RunStatus;
@@ -1941,8 +1973,10 @@ function humanStageLabel(params: {
   steps: HandoffStep[];
   displayPhase: "agents" | "search" | "evidence" | "verdict";
 }): string {
+  if (isInterruptedFinalReport(params.finalReport)) return "核查中断";
+  if (params.finalReport) return "核查完成";
   if (params.runStatus === "failed") return "核查中断";
-  if (params.finalReport || params.displayPhase === "verdict") return "整理结论";
+  if (params.displayPhase === "verdict") return "整理结论";
   const hasSearch = params.steps.some((s) =>
     /fact_checker|source_validator|search/i.test(s.agent)
   );
@@ -1979,8 +2013,12 @@ function extractLiveKeyFindings(params: {
   };
 
   if (params.finalReport) {
+    if (isInterruptedFinalReport(params.finalReport)) {
+      return out.slice(0, max);
+    }
     // 完整结论留给结果首屏；这里只抬升依据与线索，避免同屏双份结论
     for (const item of evidenceChainItems(params.finalReport).slice(0, 3)) {
+      if (isPaddedEvidenceItem(item)) continue;
       if (item.finding) push(item.finding);
       if (item.evidence) push(item.evidence);
     }
@@ -2014,15 +2052,6 @@ function extractLiveKeyFindings(params: {
   }
 
   return out.slice(0, max);
-}
-
-/** 能不能信：优先 recommendation，否则按 verdict 推导 */
-function shareAdviceFromReport(finalReport: Record<string, unknown> | null): string {
-  if (!finalReport) return "";
-  return shareAdviceFromVerdict(
-    reportText(finalReport, "recommendation"),
-    reportText(finalReport, "verdictType")
-  );
 }
 
 function currentModelLine(steps: HandoffStep[], currentStep: HandoffStep | null) {
@@ -2526,20 +2555,76 @@ function logicRiskItems(report: Record<string, unknown> | null) {
 }
 
 function displayVerdictType(verdictType: string, score: number | null) {
-  if (score !== null && score <= 20) return "不实";
+  if (score !== null && score <= 20) return "不能信";
 
-  switch (verdictType) {
-    case "true":
-      return "可信";
-    case "false":
-      return "不实";
-    case "mixed_misleading":
-      return "混合误导";
-    case "unverified":
-      return "未证实";
-    default:
-      return "";
+  return humanizeVerdictType(verdictType);
+}
+
+/** Composer 没写出结论：中断，不是「还查不清」。 */
+export function isInterruptedFinalReport(report: Record<string, unknown> | null | undefined): boolean {
+  return Boolean(report && report._source === "error-boundary");
+}
+
+function isPaddedEvidenceItem(item: { finding: string; evidence: string }) {
+  return /审核器补全|审稿补全/.test(`${item.finding}${item.evidence}`);
+}
+
+function verdictTone(verdictType: string): "true" | "false" | "unverified" | "mixed" {
+  const key = verdictType.trim().toLowerCase();
+  if (key === "true") return "true";
+  if (key === "false" || key === "rumor") return "false";
+  if (key === "mixed_misleading" || key === "mixed" || key === "partial") return "mixed";
+  return "unverified";
+}
+
+function citationLinksFromReport(report: Record<string, unknown> | null): Array<{ title: string; url: string }> {
+  if (!report) return [];
+  const out: Array<{ title: string; url: string }> = [];
+  const seen = new Set<string>();
+  const push = (title: string, url: string) => {
+    const href = url.trim();
+    if (!href || seen.has(href)) return;
+    seen.add(href);
+    out.push({ title: (title.trim() || hostLabel(href)), url: href });
+  };
+
+  if (Array.isArray(report.citationSources)) {
+    for (const raw of report.citationSources) {
+      if (!raw || typeof raw !== "object") continue;
+      const row = raw as Record<string, unknown>;
+      const url = typeof row.url === "string" ? row.url : "";
+      const title = typeof row.title === "string" ? row.title : "";
+      if (url) push(title, url);
+    }
   }
+
+  for (const item of evidenceChainItems(report)) {
+    if (isPaddedEvidenceItem(item)) continue;
+    for (const ref of item.sourceRefs) {
+      const parsed = parseSourceReference(ref);
+      if (parsed.href) push(parsed.label, parsed.href);
+    }
+  }
+
+  return out.slice(0, 3);
+}
+
+function OpenSourceLinks({ sources }: { sources: Array<{ title: string; url: string }> }) {
+  if (sources.length === 0) return null;
+  return (
+    <div className="mission-source-links" aria-label="已找到的来源">
+      {sources.map((source) => (
+        <a
+          key={source.url}
+          href={source.url}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {source.title}
+        </a>
+      ))}
+    </div>
+  );
 }
 
 function displayCredibilityLabel(label: string, verdictType: string, score: number | null) {
@@ -3051,19 +3136,47 @@ function StructuredAgentOutput({ items }: { items: StructuredOutputItem[] }) {
 function MissionFinalReportPanel({
   claim,
   finalReport,
+  onRetry,
 }: {
   claim: string;
   finalReport: Record<string, unknown> | null;
+  onRetry?: () => void;
 }) {
   if (!finalReport) return null;
+
+  const interrupted = isInterruptedFinalReport(finalReport);
+  const sources = citationLinksFromReport(finalReport);
+  const evidenceChain = evidenceChainItems(finalReport).filter((item) => !isPaddedEvidenceItem(item));
+  const whyHardToVerify = interrupted ? [] : reportStringArray(finalReport, "whyHardToVerify");
+  const causalBoundary = interrupted ? "" : reportText(finalReport, "causalBoundary");
+
+  if (interrupted) {
+    return (
+      <section className="mission-final-report mission-final-report--interrupted" aria-label="最终核查判断">
+        <p className="mission-final-verdict-word" data-verdict="interrupted">这次没查完</p>
+        <p className="mission-final-lede">
+          {sources.length > 0
+            ? "结论还没写出来。已经找到的来源可以点开看。"
+            : "结论还没写出来。可以再查一次。"}
+        </p>
+        {onRetry ? (
+          <button type="button" className="mission-retry-btn" onClick={onRetry}>
+            再查一次
+          </button>
+        ) : null}
+        <div className="mission-final-claim">
+          <span>核查对象</span>
+          <p>{claim}</p>
+        </div>
+        {sources.length > 0 ? <OpenSourceLinks sources={sources} /> : null}
+      </section>
+    );
+  }
 
   const conclusion = reportText(finalReport, "conclusion");
   const recommendation = reportText(finalReport, "recommendation");
   const summaryForPublic = reportText(finalReport, "summaryForPublic");
   const verdictType = reportText(finalReport, "verdictType");
-  const causalBoundary = reportText(finalReport, "causalBoundary");
-  const whyHardToVerify = reportStringArray(finalReport, "whyHardToVerify");
-  const evidenceChain = evidenceChainItems(finalReport);
   const closureActions = closureActionItems(finalReport);
   const rawScore = reportNumber(finalReport, "credibilityScore");
   const rawLabel = reportText(finalReport, "credibilityLabel");
@@ -3083,70 +3196,30 @@ function MissionFinalReportPanel({
         detail: "",
       }));
   const risks = logicRiskItems(finalReport);
-  const verdictLabel = displayVerdictType(verdictType, score);
+  const verdictLabel = humanizeVerdictType(verdictType);
   const label = displayCredibilityLabel(rawLabel, verdictType, score);
-
-  const shareAdvice = shareAdviceFromReport(finalReport);
-  const topSources = evidenceChain
-    .flatMap((item) => item.sourceRefs)
-    .filter((s, i, arr) => arr.indexOf(s) === i)
-    .slice(0, 3);
 
   return (
     <section className="mission-final-report" aria-label="最终核查判断">
-      <div className="mission-final-report-head">
-        <div>
-          <span>核查结果</span>
-          <strong>结论</strong>
-        </div>
-        <div className="mission-final-verdict-badges">
-          {verdictLabel ? <em className="mission-final-verdict-primary">{verdictLabel}</em> : null}
-          {label ? <em>{label}</em> : null}
-          {confidenceScore !== null ? <strong>判断置信度 {confidenceScore}/100</strong> : null}
-        </div>
-      </div>
+      <p className="mission-final-verdict-word" data-verdict={verdictTone(verdictType)}>
+        {verdictLabel}
+      </p>
+      {conclusion ? <p className="mission-final-lede">{conclusion}</p> : null}
+      {recommendation ? <p className="mission-final-advice">{recommendation}</p> : null}
 
       <div className="mission-final-claim">
         <span>核查对象</span>
         <p>{claim}</p>
       </div>
 
-      {conclusion ? (
-        <div className="mission-final-conclusion">
-          <span>结论</span>
-          <p>{conclusion}</p>
-        </div>
-      ) : (
-        <div className="mission-final-conclusion mission-final-conclusion--empty">
-          <span>结论</span>
-          <p>有结论了，但还没有适合展示的结论文本。</p>
-        </div>
-      )}
-
-      {shareAdvice ? (
-        <div className="mission-share-advice" aria-label="能不能信">
-          <span>能不能信</span>
-          <p>{shareAdvice}</p>
-        </div>
-      ) : null}
-
-      <div className="mission-top-sources" aria-label="关键来源">
-        <span>关键来源（最多 3 条）</span>
-        {topSources.length > 0 ? (
-          <SourceReferenceList sources={topSources} />
-        ) : (
-          <p className="mission-top-sources-empty">
-            本案未挂接可点开的稳定来源链接。结论依据见下方「依据」与过程记录，请勿把空来源区当成「已核完」。
-          </p>
-        )}
-      </div>
+      {sources.length > 0 ? <OpenSourceLinks sources={sources} /> : null}
 
       {evidenceChain.length > 0 ? (
-        <div className="mission-evidence-chain" aria-label="证据链">
-          <span>依据</span>
+        <div className="mission-evidence-chain" aria-label="问题点">
+          <span>问题点</span>
           {evidenceChain.slice(0, 3).map((item, index) => (
             <article key={`${item.layer}-${index}`}>
-              <strong>{index + 1}. {item.finding || item.layer}</strong>
+              <strong>{item.finding || item.layer}</strong>
               {item.evidence ? <p>{item.evidence}</p> : null}
               {item.boundary ? <small>不能推出：{item.boundary}</small> : null}
               {item.sourceRefs.length > 0 ? (
@@ -3181,6 +3254,7 @@ function MissionFinalReportPanel({
           <div className="mission-score-explanation" aria-label="评分">
             <span>评分</span>
             <p>{scoreExplanation(score, verdictLabel, label)}</p>
+            {confidenceScore !== null ? <p>判断置信度 {confidenceScore}/100</p> : null}
             {scoreRows.length > 0 ? (
               <ul>
                 {scoreRows.map((dimension) => (
@@ -4517,7 +4591,7 @@ function ControllerEventDetailPanel({
           <MissionFinalReportPanel claim={claim} finalReport={finalReport} />
         ) : null}
 
-        {errorMessage ? (
+        {errorMessage && !finalReport ? (
           <section className="controller-reading-section controller-reading-section--error">
             <h3>阻塞原因</h3>
             <p>
@@ -5150,9 +5224,11 @@ export function MissionControlView({
   claim,
   intake,
   onCancel,
+  onRetry,
   previewMode = false,
   modelChoice,
   onComplete,
+  initialFinalReport = null,
 }: MissionControlViewProps) {
   const { state, dispatch } = useReasoning();
   const knowledgeBase = useMemo(() => createKnowledgeBase(), []);
@@ -5160,14 +5236,15 @@ export function MissionControlView({
   const [currentStep, setCurrentStep] = useState<HandoffStep | null>(null);
   const [outputItems, setOutputItems] = useState<string[]>([]);
   const [streamItems, setStreamItems] = useState<MissionStreamItem[]>([]);
-  const [finalReport, setFinalReport] = useState<Record<string, unknown> | null>(null);
+  const [finalReport, setFinalReport] = useState<Record<string, unknown> | null>(initialFinalReport);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
-  const [runStatus, setRunStatus] = useState<RunStatus>("idle");
+  const [stallMs, setStallMs] = useState(0);
+  const lastActivityAtRef = useRef<number>(Date.now());
+  const [runStatus, setRunStatus] = useState<RunStatus>(initialFinalReport ? "completed" : "idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [selectedPropositionId, setSelectedPropositionId] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState("");
-  const [selectedShellToolKey, setSelectedShellToolKey] = useState<string | null>(null);
   const [selectedShellRowKey, setSelectedShellRowKey] = useState<string | null>(null);
   const [workbenchFocus, setWorkbenchFocus] = useState<WorkbenchFocus>("dispatch");
   const [activeControllerEventId, setActiveControllerEventId] = useState("");
@@ -5198,10 +5275,18 @@ export function MissionControlView({
     () => buildVisibleProcessRows(missionShellModel),
     [missionShellModel]
   );
-  const selectedDeskTitle =
-    missionNarrative.rows.find((r) => r.key === selectedShellRowKey)?.title ??
-    missionNarrative.rows.find((r) => r.isCurrent)?.title ??
-    null;
+  const thoughtSentences = useMemo(
+    () => collectReasoningSentences(missionShellModel?.thoughtItems),
+    [missionShellModel]
+  );
+  const threadSources = useMemo(
+    () => collectThreadSources(missionShellModel?.tools, finalReport),
+    [missionShellModel, finalReport]
+  );
+  const searchStatus = useMemo(
+    () => threadSearchStatus(missionShellModel?.tools, finalReport),
+    [missionShellModel, finalReport]
+  );
   /** Avoid double-firing onComplete if parent re-renders with same report */
   const onCompleteFiredRef = useRef(false);
 
@@ -5209,7 +5294,9 @@ export function MissionControlView({
     if (runStatus !== "running" || startedAt === null) return;
 
     const timer = window.setInterval(() => {
-      setElapsedMs(Date.now() - startedAt);
+      const now = Date.now();
+      setElapsedMs(now - startedAt);
+      setStallMs(now - lastActivityAtRef.current);
     }, 250);
 
     return () => window.clearInterval(timer);
@@ -5222,7 +5309,6 @@ export function MissionControlView({
     dispatch({ type: "RESET_CONSENSUS" });
     setSelectedPropositionId("");
     setSelectedAgentId("");
-    setSelectedShellToolKey(null);
     setSelectedShellRowKey(null);
     setActiveControllerEventId("");
     setFollowLive(true);
@@ -5235,7 +5321,7 @@ export function MissionControlView({
     onCompleteFiredRef.current = false;
   }, [claim, dispatch]);
 
-  /** finalReport ready → hand off to parent ResultView (if provided) */
+  /** finalReport ready → notify parent (parent no longer switches phase; we stay mounted) */
   useEffect(() => {
     if (!finalReport || !onComplete || onCompleteFiredRef.current) return;
     onCompleteFiredRef.current = true;
@@ -5263,6 +5349,7 @@ export function MissionControlView({
   useEffect(() => {
     if (!claim.trim()) return;
     if (previewMode) return;
+    if (initialFinalReport) return;
 
     let cancelled = false;
     let streamEnded = false;
@@ -5303,7 +5390,6 @@ export function MissionControlView({
         setSseEvents([]);
         // Shell selection is run-scoped; clear so prior case filter/tool inspector does not stick.
         setSelectedAgentId("");
-        setSelectedShellToolKey(null);
         setSelectedShellRowKey(null);
         setExecutionPlan(null);
         setSpeculativeRelays([]);
@@ -5321,7 +5407,9 @@ export function MissionControlView({
           status: "queued",
         });
         setStartedAt(Date.now());
+        lastActivityAtRef.current = Date.now();
         setElapsedMs(0);
+        setStallMs(0);
         setRunStatus("running");
         setErrorMessage("");
 
@@ -5362,6 +5450,8 @@ export function MissionControlView({
 
           for await (const event of requestOrchestrateStream(intake ?? claim, localMemoryRecall ?? undefined, modelChoice)) {
             if (cancelled) return;
+            lastActivityAtRef.current = Date.now();
+            setStallMs(0);
             setSseEvents((prev) => [...prev, event]);
 
             switch (event.type) {
@@ -5588,16 +5678,29 @@ export function MissionControlView({
               case "agent_error": {
                 const step = buildStep(event, "failed");
                 const { message, techDetail } = resolveErrorPresentation(event);
+                const recoverable =
+                  event.recoverable === true ||
+                  getAgentRegistry().canContinueAfterFailure(step.agent);
                 accumulatedSteps = upsertStep(accumulatedSteps, step);
                 setSteps((prev) => upsertStep(prev, step));
                 setCurrentStep(step);
-                setErrorMessage(message);
-                appendRuntimeChunk(step.agent, "thought", `这一步核查异常：${message}。`);
+                if (!recoverable) {
+                  setErrorMessage(message);
+                }
+                appendRuntimeChunk(
+                  step.agent,
+                  "thought",
+                  recoverable
+                    ? "这一步没能写成判断，会用已检索到的材料继续。"
+                    : `这一步核查异常：${message}。`
+                );
                 pushStreamItem({
                   agentName: step.agentName,
-                  title: "调用失败，停止生成结论",
-                  detail: message,
-                  status: "failed",
+                  title: recoverable ? "这一步没写成判断，继续用已检索材料" : "调用失败，停止生成结论",
+                  detail: recoverable
+                    ? "模型服务这一步没完成。仍会尽量用已查到的公开材料往下走。"
+                    : message,
+                  status: recoverable ? "completed" : "failed",
                   techDetail,
                 });
                 dispatch({ type: "APPEND_HANDOFF_STEP", payload: step });
@@ -5638,7 +5741,15 @@ export function MissionControlView({
                 setFinalReport(finalReport ?? null);
                 setErrorMessage("");
                 setMemoryCandidates(proposedMemoryCandidates);
-                {
+                if (isInterruptedFinalReport(finalReport ?? null)) {
+                  setOutputItems(["这次没查完，结论还没写出来。"]);
+                  pushStreamItem({
+                    agentName: "写结论",
+                    title: "核查中断",
+                    detail: "结论还没写出来。",
+                    status: "final",
+                  });
+                } else {
                   const conclusion = reportText(finalReport ?? null, "conclusion");
                   const label = reportText(finalReport ?? null, "credibilityLabel");
                   const recommendation = reportText(finalReport ?? null, "recommendation");
@@ -5659,13 +5770,13 @@ export function MissionControlView({
                       : "",
                     recommendation ? `处理建议：${recommendation}` : "",
                   ].filter(Boolean));
+                  pushStreamItem({
+                    agentName: "写结论",
+                    title: "最终判断已生成",
+                    detail: reportText(finalReport ?? null, "conclusion") || "有结论了，但还没有适合展示的结论文本。",
+                    status: "final",
+                  });
                 }
-                pushStreamItem({
-                  agentName: "写结论",
-                  title: "最终判断已生成",
-                  detail: reportText(finalReport ?? null, "conclusion") || "有结论了，但还没有适合展示的结论文本。",
-                  status: "final",
-                });
                 setStartedAt(null);
                 setElapsedMs((current) => totalLatency || current);
                 setRunStatus("completed");
@@ -5790,7 +5901,7 @@ export function MissionControlView({
         dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: {} });
       }
     };
-  }, [claim, dispatch, intake, knowledgeBase, modelChoice, previewMode, runConsensusPipeline, state.diagnosis]);
+  }, [claim, dispatch, initialFinalReport, intake, knowledgeBase, modelChoice, previewMode, runConsensusPipeline, state.diagnosis]);
 
   useEffect(() => {
     if (!previewMode || !claim.trim()) return;
@@ -5830,10 +5941,6 @@ export function MissionControlView({
       null,
     [activeControllerEventId, controllerEvents, latestControllerEvent]
   );
-  const streamStatusSummary = useMemo(
-    () => summarizeMissionStreamStatus(streamItems, runStatus),
-    [streamItems, runStatus]
-  );
   const evidenceBundleCount = useMemo(
     () => steps.filter((step) => step.evidenceBundle).length,
     [steps]
@@ -5864,10 +5971,15 @@ export function MissionControlView({
       }),
     [runStatus, finalReport, steps, state.consensusReport, state.claimDecomposition]
   );
-  const claimPreview = useMemo(() => {
-    const t = claim.replace(/\s+/g, " ").trim();
-    return t.length > 96 ? `${t.slice(0, 93)}…` : t;
-  }, [claim]);
+  const stallNotice = useMemo(
+    () =>
+      processStallNotice({
+        runStatus,
+        msSinceLastEvent: stallMs,
+        humanStage,
+      }),
+    [runStatus, stallMs, humanStage]
+  );
 
   const handleMemoryCandidateStatus = useCallback(async (id: string, status: MemoryCandidateStatus) => {
     setMemoryCandidates((prev) =>
@@ -5942,27 +6054,20 @@ export function MissionControlView({
    * Legacy stays stream-only while running.
    */
   const streamOnlyLayout = !useMissionShell && (runStatus === "running" || isLiveExecuting);
-  const showWorkSurface = useMissionShell;
   // Legacy: after stop, allow detail when user inspects history or report is present without parent handoff.
   const showDetailColumn =
     !streamOnlyLayout &&
     !useMissionShell &&
     (Boolean(finalReport && !onComplete) || Boolean(errorMessage) || !followLive);
-  const selectedShellTool =
-    selectedShellToolKey && missionShellModel
-      ? missionShellModel.tools.find((t) => t.key === selectedShellToolKey) ?? null
-      : null;
-  /** Inline tool peek under shell (not a second column) */
-  const showInlineToolPeek = useMissionShell && Boolean(selectedShellTool) && runStatus !== "running";
-
   return (
     <main
       className={`mission-control-view case-workbench-view case-workbench-view--clean case-dossier-view ${
         hasStreamEvents ? "case-dossier-view--streaming" : "case-dossier-view--boot"
       }${useMissionShell ? " case-dossier-view--shell" : ""}${
         streamOnlyLayout ? " case-workbench-view--stream-executing" : ""
-      }`}
+      }${finalReport && onComplete ? " case-workbench-view--settled" : ""} mission-thread-view`}
     >
+      {useMissionShell ? null : (
       <header className="mission-topbar">
         <div className="mission-brand">
           <strong>红鲱鱼与枪</strong>
@@ -5973,172 +6078,121 @@ export function MissionControlView({
           <span className="mission-phase-label">{humanStage}</span>
         </div>
         <button className="mission-cancel-btn" type="button" onClick={onCancel}>
-          {runStatus === "completed" ? "返回" : "取消核查"}
+          {isInterruptedFinalReport(finalReport)
+            ? "换一条"
+            : finalReport && onComplete
+              ? "再查一条"
+              : runStatus === "completed"
+                ? "返回"
+                : "取消核查"}
         </button>
       </header>
+      )}
 
-      {/* Top bar body: claim + stage chips only (no findings grid / agent strips while running) */}
-      <section className={`mission-dossier-strip mission-dossier-strip--${runStatus}`} aria-live="polite">
-        <div className="mission-dossier-claim">
-          <span>正在核查</span>
-          <p title={claim}>{claimPreview || claim}</p>
-        </div>
-        <ol className="mission-dossier-stages" aria-label="核查阶段">
-          {["理解你在说什么", "对照公开报道", "整理结论"].map((label, index) => (
-            <li
-              key={label}
-              className={
-                index < stageIdx ? "is-done" : index === stageIdx ? "is-current" : "is-todo"
-              }
-            >
-              {label}
-            </li>
-          ))}
-        </ol>
-        <div className="mission-dossier-meta" role="status" aria-live="polite">
-          <span>{runStatusText(runStatus, elapsedMs, finalReport)}</span>
-          {runStatus === "running" && streamStatusSummary.total > 0 ? (
-            <strong className="mission-dossier-progress" title={streamStatusSummary.detail}>
-              {streamStatusSummary.done}/{streamStatusSummary.total}
-            </strong>
-          ) : null}
-          <strong>{formatElapsed(elapsedMs)}</strong>
-          {runStatus === "running" ? (
-            <button
-              type="button"
-              className="mission-cancel-btn mission-cancel-btn--inline"
-              onClick={onCancel}
-            >
-              取消核查
-            </button>
-          ) : null}
-        </div>
-        {fallbackNotice ? (
-          <p className="mission-run-status-notice">{fallbackNotice}</p>
-        ) : runStatus === "running" && elapsedMs >= 90000 ? (
-          <p className="mission-run-status-notice">
-            仍在推进，页面没有卡死。若超过数分钟无新步骤，可点「取消核查」后重试。
-          </p>
+      <div className="mission-thread">
+        <button className="mission-thread-cancel" type="button" onClick={onCancel}>
+          {isInterruptedFinalReport(finalReport)
+            ? "换一条"
+            : finalReport && onComplete
+              ? "再查一条"
+              : runStatus === "completed"
+                ? "返回"
+                : "取消核查"}
+        </button>
+
+        <section className="mission-thread-claim" aria-label="核查对象">
+          <span>核查对象</span>
+          <p>{claim}</p>
+        </section>
+
+        {runStatus === "running" && stallNotice ? (
+          <p className="mission-run-status-notice">{stallNotice}</p>
         ) : null}
-      </section>
 
-      <section
-        className={`case-workbench-shell${
-          useMissionShell
-            ? " case-workbench-shell--desk case-workbench-shell--process-shell"
-            : " case-workbench-shell--stream-only"
-        }`}
-        aria-label="核查卷宗工作区"
-      >
-        <ControllerRail
-          controllerEvents={controllerEvents}
-          activeControllerEventId={activeControllerEvent?.id ?? ""}
-          followLive={followLive}
-          onSelectControllerEvent={handleSelectControllerEvent}
-          onFollowLive={handleFollowLive}
-          claim={claim}
-          stageIdx={stageIdx}
-          finalReport={finalReport}
-          runStatus={runStatus}
-          missionShellModel={missionShellModel}
-          useMissionShell={useMissionShell}
-          missionShellVariant={missionShellVariant}
-          selectedShellAgentId={selectedAgentId}
-          onSelectShellAgent={setSelectedAgentId}
-          onSelectShellTool={(toolKey) => {
-            setSelectedShellToolKey(toolKey);
-            setFollowLive(false);
-          }}
-          selectedShellRowKey={
-            followLive
-              ? missionNarrative.rows.find((r) => r.isCurrent)?.key ?? selectedShellRowKey
-              : selectedShellRowKey
-          }
-          onSelectShellRow={(rowKey) => {
-            setSelectedShellRowKey(rowKey);
-            setFollowLive(false);
-          }}
+        <MissionThoughtFold
+          thinking={runStatus === "running" || (runStatus === "idle" && !finalReport && !errorMessage)}
+          elapsedMs={elapsedMs}
+          sentences={thoughtSentences}
         />
 
-        {showWorkSurface && missionShellModel ? (
-          <MissionWorkSurface model={missionShellModel} selectedTitle={selectedDeskTitle} />
-        ) : null}
+        <MissionSearchFold status={searchStatus} sources={threadSources} />
 
-        {/* Errors + brief handoff stay under the shell (no empty right column) */}
-        {errorMessage ? (
-          <p className="mission-run-status-notice mission-run-status-notice--under-shell" role="alert">
-            {errorMessage}
-          </p>
-        ) : null}
-        {finalReport && onComplete ? (
-          <p className="mission-run-status-notice mission-run-status-notice--under-shell" aria-live="polite">
-            结论已就绪，正在整理…
-          </p>
-        ) : null}
-        {showInlineToolPeek && selectedShellTool ? (
-          <div className="mps-tool-inspector mps-tool-inspector--inline" aria-label="过程材料检查器">
-            <div className="mps-tool-inspector-head">
-              <strong>{selectedShellTool.title}</strong>
-              <button
-                type="button"
-                className="mps-tool-inspector-close"
-                onClick={() => {
-                  setSelectedShellToolKey(null);
-                  setFollowLive(true);
-                }}
-              >
-                关闭
-              </button>
-            </div>
-            {selectedShellTool.detail ? (
-              <p className="mps-tool-inspector-detail">{selectedShellTool.detail}</p>
-            ) : null}
-            {selectedShellTool.query ? (
-              <p className="mps-tool-inspector-query">检索：{selectedShellTool.query}</p>
-            ) : null}
-            {selectedShellTool.result ? (
-              <pre className="mps-tool-inspector-json">
-                {JSON.stringify(selectedShellTool.result, null, 2).slice(0, 1200)}
-              </pre>
-            ) : null}
-          </div>
-        ) : null}
+        <MissionThreadAnswer finalReport={finalReport} sources={threadSources} />
 
-        {showDetailColumn ? (
-          <section className="case-center-column" aria-label="核心工作区">
-            <AnimatePresence initial={false}>
-              {finalReport && !onComplete ? (
-                <motion.div
-                  key="mission-final-report-stream"
-                  initial={{ opacity: 0, y: 18 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.28, ease: EASE_OUT }}
-                >
-                  <MissionFinalReportPanel claim={claim} finalReport={finalReport} />
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-            {activeControllerEvent ? (
-              <ControllerEventDetailPanel
-                claim={claim}
-                event={activeControllerEvent}
-                steps={steps}
-                outputItems={outputItems}
-                controllerEvents={controllerEvents}
-                finalReport={finalReport}
-                executionPlan={executionPlan}
-                runStatus={runStatus}
-                errorMessage={errorMessage}
-                followLive={followLive}
-                onSelectControllerEvent={handleSelectControllerEvent}
-              />
-            ) : !finalReport ? (
-              <p className="stream-detail-placeholder">点选左侧任一步，明细在此展开。</p>
+        {!useMissionShell ? (
+          <section className="case-workbench-shell case-workbench-shell--stream-only" aria-label="核查卷宗工作区">
+            <ControllerRail
+              controllerEvents={controllerEvents}
+              activeControllerEventId={activeControllerEvent?.id ?? ""}
+              followLive={followLive}
+              onSelectControllerEvent={handleSelectControllerEvent}
+              onFollowLive={handleFollowLive}
+              claim={claim}
+              stageIdx={stageIdx}
+              finalReport={finalReport}
+              runStatus={runStatus}
+              missionShellModel={missionShellModel}
+              useMissionShell={useMissionShell}
+              missionShellVariant={missionShellVariant}
+              selectedShellAgentId={selectedAgentId}
+              onSelectShellAgent={setSelectedAgentId}
+              selectedShellRowKey={
+                followLive
+                  ? missionNarrative.rows.find((r) => r.isCurrent)?.key ?? selectedShellRowKey
+                  : selectedShellRowKey
+              }
+              onSelectShellRow={(rowKey) => {
+                setSelectedShellRowKey(rowKey);
+                setFollowLive(false);
+              }}
+            />
+
+            {showDetailColumn ? (
+              <section className="case-center-column" aria-label="核心工作区">
+                <AnimatePresence initial={false}>
+                  {finalReport && !onComplete ? (
+                    <motion.div
+                      key="mission-final-report-stream"
+                      initial={{ opacity: 0, y: 18 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ duration: 0.28, ease: EASE_OUT }}
+                    >
+                      <MissionFinalReportPanel claim={claim} finalReport={finalReport} onRetry={onRetry} />
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+                {activeControllerEvent ? (
+                  <ControllerEventDetailPanel
+                    claim={claim}
+                    event={activeControllerEvent}
+                    steps={steps}
+                    outputItems={outputItems}
+                    controllerEvents={controllerEvents}
+                    finalReport={finalReport}
+                    executionPlan={executionPlan}
+                    runStatus={runStatus}
+                    errorMessage={errorMessage}
+                    followLive={followLive}
+                    onSelectControllerEvent={handleSelectControllerEvent}
+                  />
+                ) : !finalReport ? (
+                  <p className="stream-detail-placeholder">点选左侧任一步，明细在此展开。</p>
+                ) : null}
+              </section>
             ) : null}
           </section>
         ) : null}
-      </section>
+
+        {fallbackNotice ? (
+          <p className="mission-run-status-notice">{fallbackNotice}</p>
+        ) : null}
+        {errorMessage && !finalReport ? (
+          <p className="mission-run-status-notice" role="alert">
+            {errorMessage}
+          </p>
+        ) : null}
+      </div>
 
       {/* Product shell path: no parallel trace rail. Legacy only, and never while running. */}
       {!useMissionShell && runStatus !== "running" ? (
