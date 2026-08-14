@@ -78,6 +78,8 @@ export interface AgentRuntimeEvent {
   seq?: number;
   /** agent_thought: 是否为该 agent 最后一条 */
   done?: boolean;
+  /** agent_thought: 正在长出的未完成句，同 seq 可被下一次覆盖 */
+  partial?: boolean;
   toolId?: string;
   toolName?: string;
   query?: string;
@@ -86,6 +88,8 @@ export interface AgentRuntimeEvent {
   result?: unknown;
   evidenceBundle?: unknown;
   error?: string;
+  /** agent_error: 该步失败后仍可继续收束（不要当成整轮中断） */
+  recoverable?: boolean;
   claim?: string;
   sessionId?: string;
   steps?: unknown[];

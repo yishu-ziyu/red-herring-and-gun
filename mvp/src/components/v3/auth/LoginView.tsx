@@ -1,7 +1,7 @@
 /**
- * LoginView.tsx — v3 邮箱登录两段表单
- *
- * 设计：复用 dashboard 视觉锚点 + cinema 动效，杂志质感排版
+ * LoginView — 邮箱验证码两段表单。
+ * 登录不挡核查；只为跨设备记住最近核查。
+ * 配了发信时让用户从邮箱抄码；只有未配置发信的开发回退才展示面板验证码。
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -10,19 +10,23 @@ type Stage = "email" | "code" | "success";
 
 interface LoginViewProps {
   onSuccess?: () => void;
+  onCancel?: () => void;
 }
 
 interface ErrorPayload {
   error?: string;
   message?: string;
+  delivery?: string;
+  devCode?: string;
 }
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export function LoginView({ onSuccess }: LoginViewProps) {
+export function LoginView({ onSuccess, onCancel }: LoginViewProps) {
   const [stage, setStage] = useState<Stage>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  const [devCode, setDevCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -39,21 +43,28 @@ export function LoginView({ onSuccess }: LoginViewProps) {
       try {
         const res = await fetch("/api/auth/email/request", {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: trimmed }),
         });
         const data = (await res.json().catch(() => ({}))) as ErrorPayload;
         if (res.status === 429 || data.error === "rate_limit") {
-          setError("请求过于频繁,请 1 分钟后再试");
+          setError("请求过于频繁，请 1 分钟后再试");
           return;
         }
         if (!res.ok) {
           setError(data.message ?? data.error ?? "验证码发送失败");
           return;
         }
+        const nextDevCode =
+          data.delivery === "dev-panel" && typeof data.devCode === "string" && /^\d{6}$/.test(data.devCode)
+            ? data.devCode
+            : "";
+        setDevCode(nextDevCode);
+        setCode(nextDevCode);
         setStage("code");
       } catch {
-        setError("网络异常,请重试");
+        setError("网络异常，请重试");
       } finally {
         setSubmitting(false);
       }
@@ -89,11 +100,8 @@ export function LoginView({ onSuccess }: LoginViewProps) {
         }
         setStage("success");
         onSuccess?.();
-        window.setTimeout(() => {
-          window.location.href = "/";
-        }, 200);
       } catch {
-        setError("网络异常,请重试");
+        setError("网络异常，请重试");
       } finally {
         setSubmitting(false);
       }
@@ -107,142 +115,91 @@ export function LoginView({ onSuccess }: LoginViewProps) {
   }, [stage]);
 
   return (
-    <main className="dashboard editorial" aria-label="邮箱登录">
-      <section
-        className="dashboard-input-card cinema-rise"
-        style={{ maxWidth: 480 }}
-      >
-        <header>
-          <span className="small-caps" style={{ color: "var(--zt-text-secondary)" }}>
-            邮箱登录
-          </span>
-          <h1
-            style={{
-              margin: "4px 0 0",
-              fontFamily: "var(--font-serif)",
-              fontSize: "var(--type-headline)",
-              letterSpacing: "var(--tracking-tight)",
-              lineHeight: "var(--leading-snug)",
-            }}
-          >
-            {stage === "code"
-              ? "输入验证码"
-              : stage === "success"
-              ? "登录成功"
-              : "继续真实核查"}
-          </h1>
-          <p
-            style={{
-              margin: "12px 0 0",
-              fontFamily: "var(--font-serif)",
-              fontSize: "var(--type-meta)",
-              color: "var(--zt-text-secondary)",
-              fontStyle: "italic",
-              lineHeight: "var(--leading-snug)",
-            }}
-          >
-            {stage === "code"
-              ? `验证码已发送至 ${email}(开发模式请查看服务端 console)`
-              : "首次使用即自动注册免费账号。5 次 / 30 天免费额度,用完可在「设置 → 模型服务商」中接入 BYO Key。"}
-          </p>
-        </header>
+    <section className="app-login-panel" aria-label="邮箱登录">
+      <header>
+        <h2>
+          {stage === "code" ? "输入验证码" : stage === "success" ? "登录成功" : "登录"}
+        </h2>
+        <p>
+          {stage === "code"
+            ? devCode
+              ? "还没配发信。开发环境用下面这个验证码。"
+              : `验证码已发到 ${email}`
+            : "登录后，最近核查可以在别的设备接着看。不登录也能查。"}
+        </p>
+      </header>
 
-        {stage === "email" ? (
-          <form
-            onSubmit={handleSubmitEmail}
-            className="landing-input-actions cinema-rise cinema-rise-d1"
-            style={{ flexDirection: "column", alignItems: "stretch" }}
-          >
-            <label className="small-caps" htmlFor="email-input">
-              邮箱
-            </label>
-            <input
-              id="email-input"
-              type="email"
-              autoComplete="email"
-              placeholder="you@example.com"
-              className="dashboard-input"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-              disabled={submitting}
-            />
-            {error ? <p className="landing-input-error">{error}</p> : null}
-            <button
-              type="submit"
-              className="dashboard-submit-btn"
-              disabled={submitting || email.trim().length === 0}
-            >
+      {stage === "email" ? (
+        <form onSubmit={handleSubmitEmail}>
+          <label htmlFor="email-input">邮箱</label>
+          <input
+            id="email-input"
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+            disabled={submitting}
+          />
+          {error ? <p className="app-login-error">{error}</p> : null}
+          <div className="app-login-actions">
+            <button type="submit" disabled={submitting || email.trim().length === 0}>
               {submitting ? "发送中…" : "发送验证码"}
             </button>
-          </form>
-        ) : null}
+            {onCancel ? (
+              <button type="button" className="app-login-secondary" onClick={onCancel}>
+                取消
+              </button>
+            ) : null}
+          </div>
+        </form>
+      ) : null}
 
-        {stage === "code" ? (
-          <form
-            onSubmit={handleSubmitCode}
-            className="landing-input-actions cinema-rise cinema-rise-d1"
-            style={{ flexDirection: "column", alignItems: "stretch" }}
-          >
-            <label className="small-caps" htmlFor="code-input">
-              6 位验证码
-            </label>
-            <input
-              id="code-input"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              placeholder="123456"
-              className="dashboard-input"
-              value={code}
-              onChange={(event) =>
-                setCode(event.target.value.replace(/[^0-9]/g, "").slice(0, 6))
-              }
-              required
-              disabled={submitting}
-              autoFocus
-              style={{
-                letterSpacing: "0.4em",
-                fontFamily: "var(--font-mono)",
-                fontSize: "1.5rem",
-                textAlign: "center",
-              }}
-            />
-            {error ? <p className="landing-input-error">{error}</p> : null}
-            <button
-              type="submit"
-              className="dashboard-submit-btn"
-              disabled={submitting || code.length !== 6}
-            >
+      {stage === "code" ? (
+        <form onSubmit={handleSubmitCode}>
+          {devCode ? (
+            <p className="app-login-dev-code" aria-live="polite">
+              <span>开发验证码</span>
+              <strong>{devCode}</strong>
+            </p>
+          ) : null}
+          <label htmlFor="code-input">6 位验证码</label>
+          <input
+            id="code-input"
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={6}
+            placeholder="123456"
+            value={code}
+            onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, "").slice(0, 6))}
+            required
+            disabled={submitting}
+            autoFocus
+            className="app-login-code"
+          />
+          {error ? <p className="app-login-error">{error}</p> : null}
+          <div className="app-login-actions">
+            <button type="submit" disabled={submitting || code.length !== 6}>
               {submitting ? "校验中…" : "登录"}
             </button>
             <button
               type="button"
-              className="landing-material-btn"
-              onClick={() => setStage("email")}
-              style={{ alignSelf: "flex-start" }}
+              className="app-login-secondary"
+              onClick={() => {
+                setStage("email");
+                setDevCode("");
+                setCode("");
+              }}
             >
               换个邮箱
             </button>
-          </form>
-        ) : null}
+          </div>
+        </form>
+      ) : null}
 
-        {stage === "success" ? (
-          <p
-            className="cinema-veil"
-            style={{
-              color: "#15803d",
-              fontSize: 14,
-              margin: 0,
-              fontFamily: "var(--font-serif)",
-              fontStyle: "italic",
-            }}
-          >
-            登录成功,正在跳转…
-          </p>
-        ) : null}
-      </section>
-    </main>
+      {stage === "success" ? <p className="app-login-ok">登录成功</p> : null}
+    </section>
   );
 }

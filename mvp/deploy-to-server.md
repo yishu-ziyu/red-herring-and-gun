@@ -52,6 +52,19 @@ MINIMAX_API_KEY=你的MiniMaxKey
 # Anthropic (Kimi Code)
 ANTHROPIC_API_KEY=你的AnthropicKey
 ANTHROPIC_BASE_URL=https://api.kimi.com/coding
+
+# 邮箱验证码（配了才会真发信；页面不再回显验证码）
+# 方式 A：Resend
+# RESEND_API_KEY=你的ResendKey
+# MAIL_FROM=noreply@your-domain.com
+# 方式 B：SMTP
+# SMTP_HOST=
+# SMTP_PORT=465
+# SMTP_SECURE=true
+# SMTP_USER=
+# SMTP_PASS=
+# MAIL_FROM=noreply@your-domain.com
+# MAIL_FROM_NAME=红鲱鱼与枪
 EOF
 
 # 安装依赖并构建

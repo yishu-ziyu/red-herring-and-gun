@@ -870,12 +870,16 @@ export interface AgentRegistry {
   canContinueAfterFailure(id: string): boolean;
 }
 
-// 可选 / 并行 enrichment Agent 失败后可继续，其余失败不可继续。
+// rumor_detector / 可选 enrichment 失败后可继续检索与收束。
+// report_composer 失败时产出诚实降级报告（未完成 + 保留已检索材料），
+// 而不是让整轮抛错、用户等完后一无所得（eval 260814-1206 首轮三 case 均因此中断）。
 const CONTINUE_AFTER_FAILURE_AGENTS = new Set([
+  "rumor_detector",
   "fact_checker",
   "source_validator",
   "alternative_explanation_searcher",
   "counter_evidence_grader",
+  "report_composer",
 ]);
 
 function createAgentRegistry(configs: AgentConfig[]): AgentRegistry {

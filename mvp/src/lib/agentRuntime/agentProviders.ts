@@ -3,6 +3,16 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { callMiniMaxAgent } from "../../../server/src/lib/agentProviders.js";
+import { extractAnthropicText, extractJsonObject } from "../../../server/src/lib/anthropicParse.js";
+import { miniMaxCallOptions } from "../../../server/src/lib/minimaxM3.js";
+import {
+  areCloudProvidersHardSkipped,
+  isHardProviderFailure,
+  isProviderQuotaSkipped,
+  noteProviderFailure,
+  shouldSkipSlowFallback,
+} from "../../../server/src/lib/providerRouter.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +36,8 @@ export interface AgentProviderRequest {
   reasoningEffort?: AgentReasoningEffort;
   traceLabel?: string;
   deadlineAt?: number;
+  /** Called with accumulated thinking text as MiniMax (and similar) streams it. */
+  onReasoning?: (accumulated: string) => void;
 }
 
 export interface AgentProviderResult {
@@ -87,12 +99,18 @@ export async function callAgentWithFallback({
   reasoningEffort = "high",
   traceLabel = "Agent",
   deadlineAt,
+  onReasoning,
 }: AgentProviderRequest): Promise<AgentProviderResult> {
   const startTime = Date.now();
   const errors: string[] = [];
   const providerTimeoutMs = getProviderTimeoutMs(env, "ORCHESTRATE_PROVIDER_TIMEOUT_MS", 60000);
   const providerMaxTokens = getProviderMaxTokens(env, maxTokens);
   const inputBytes = new TextEncoder().encode(userContent).length;
+  let hardFailuresThisCall = 0;
+
+  if (areCloudProvidersHardSkipped(env)) {
+    throw new Error("所有备用模型均已调用失败，请检查模型配置或稍后重试");
+  }
 
   const runProvider = async <T,>(provider: string, modelName: string, call: (signal: AbortSignal) => Promise<T>) => {
     const providerStart = Date.now();
@@ -125,6 +143,8 @@ export async function callAgentWithFallback({
         latencyMs: Date.now() - providerStart,
         message,
       });
+      noteProviderFailure(provider, message);
+      if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
       throw error;
     }
   };
@@ -133,6 +153,14 @@ export async function callAgentWithFallback({
   console.info("[orchestrate-provider] order", { agent: traceLabel, order: textProviderOrder });
 
   for (const provider of textProviderOrder) {
+    if (isProviderQuotaSkipped(provider)) {
+      errors.push(`[${provider}] 本进程已跳过`);
+      continue;
+    }
+    if (shouldSkipSlowFallback(provider, hardFailuresThisCall)) {
+      errors.push(`[${provider}] 已因连续失败跳过慢速兜底`);
+      continue;
+    }
     if (provider === "minimax") {
       const minimaxModel = env.MINIMAX_MODEL || process.env.MINIMAX_MODEL || "MiniMax-M3";
       // Prefer local Anthropic-compatible proxy (SSOT) when present — direct MiniMax keys may be stale.
@@ -195,8 +223,9 @@ export async function callAgentWithFallback({
               model: minimaxModel,
               systemPrompt,
               userContent,
-              maxTokens: providerMaxTokens,
+              ...miniMaxCallOptions(env, minimaxModel, providerMaxTokens),
               signal,
+              onThinking: onReasoning,
             })
           );
           const parsed = await parseProviderTextWithRepair(result, startTime, {
@@ -212,7 +241,7 @@ export async function callAgentWithFallback({
                 model: minimaxModel,
                 systemPrompt: sys,
                 userContent: user,
-                maxTokens: providerMaxTokens,
+                ...miniMaxCallOptions(env, minimaxModel, providerMaxTokens),
                 signal,
               }),
             runProvider,
@@ -222,6 +251,7 @@ export async function callAgentWithFallback({
         } catch (error) {
           lastMsg = error instanceof Error ? error.message : "MiniMax Agent 调用失败";
           errors.push(`[${attempt.label}:${minimaxModel}] ${lastMsg}`);
+          if (isHardProviderFailure(lastMsg)) break;
         }
       }
       if (!succeeded && lastMsg) {
@@ -409,12 +439,11 @@ function getAttemptTimeoutMs(
     provider.startsWith("minimax") ||
     provider === "anthropic-local" ||
     provider.startsWith("anthropic");
+  const miniMaxTimeoutMs = getProviderTimeoutMs(env, "MINIMAX_M3_PROVIDER_TIMEOUT_MS", 600000);
   const providerCap = provider === "mimo"
     ? 12000
     : isMiniMaxFamily
-      ? isReportComposer
-        ? 120000
-        : 90000
+      ? miniMaxTimeoutMs
     : provider === "deepseek"
       ? isReportComposerDeepSeek
         ? reportComposerDeepSeekTimeout
@@ -427,10 +456,13 @@ function getAttemptTimeoutMs(
           ? isReportComposer
             ? 60000
             : 25000
-          : configuredTimeoutMs;
-  // MiniMax / Report need headroom — never let ORCHESTRATE_PROVIDER_TIMEOUT_MS=25s kill them.
-  const timeoutMs = isReportComposer || isMiniMaxFamily
-    ? Math.max(providerCap, isReportComposer ? 90000 : 60000)
+          : provider === "codex" || provider === "codex-cli"
+            ? 60000
+            : configuredTimeoutMs;
+  const timeoutMs = isMiniMaxFamily
+    ? miniMaxTimeoutMs
+    : isReportComposer
+    ? Math.max(providerCap, 90000)
     : isFactReasoningDeepSeek
       ? Math.min(providerConfigured, providerCap)
       : Math.min(configuredTimeoutMs, providerConfigured, providerCap);
@@ -608,65 +640,6 @@ function closeTruncatedJson(input: string): string {
     s += stack.pop() === "{" ? "}" : "]";
   }
   return s;
-}
-
-async function callMiniMaxAgent({
-  baseUrl,
-  apiKey,
-  authHeader = "x-api-key",
-  model,
-  systemPrompt,
-  userContent,
-  maxTokens,
-  signal,
-}: {
-  baseUrl: string;
-  apiKey: string;
-  authHeader?: "x-api-key" | "bearer";
-  model: string;
-  systemPrompt: string;
-  userContent: string;
-  maxTokens: number;
-  signal: AbortSignal;
-}) {
-  const normalized = baseUrl.replace(/\/$/, "");
-  // Local Anthropic proxy (127.0.0.1:15721) serves /v1/messages directly.
-  // Official MiniMax Anthropic base ends with /anthropic.
-  const url = normalized.endsWith("/v1/messages")
-    ? normalized
-    : normalized.endsWith("/anthropic")
-      ? `${normalized}/v1/messages`
-      : /localhost|127\.0\.0\.1/.test(normalized)
-        ? `${normalized}/v1/messages`
-        : `${normalized}/anthropic/v1/messages`;
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "anthropic-version": "2023-06-01",
-  };
-  if (authHeader === "bearer") {
-    headers.Authorization = `Bearer ${apiKey}`;
-  } else {
-    headers["x-api-key"] = apiKey;
-  }
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userContent }],
-      thinking: model === "MiniMax-M3" ? { type: "adaptive" } : undefined,
-    }),
-    signal,
-  });
-  const raw = await response.text();
-  if (!response.ok) {
-    throw new Error(`MiniMax API 调用失败：${raw.slice(0, 500)}`);
-  }
-  const text = extractAnthropicText(raw);
-  if (!text) throw new Error("MiniMax API 没有返回可解析文本。");
-  return { text, model: `minimax:${model}` };
 }
 
 async function call360ChatAgent({
@@ -1040,50 +1013,4 @@ function describeEmptyChatCompletion(data: any) {
   const finishReason = choice?.finish_reason || choice?.finishReason || "unknown";
   const reasoning = typeof message?.reasoning === "string" ? message.reasoning : "";
   return `finish_reason=${finishReason}, content_type=${typeof message?.content}, reasoning_chars=${reasoning.length}`;
-}
-
-function extractAnthropicText(raw: string) {
-  const trimmed = raw.trim();
-  if (!trimmed) return "";
-
-  if (trimmed.startsWith("{")) {
-    const data = JSON.parse(trimmed);
-    return extractAnthropicContent(data);
-  }
-
-  const parts: string[] = [];
-  for (const line of raw.split(/\r?\n/)) {
-    if (!line.startsWith("data:")) continue;
-
-    const dataText = line.slice(5).trim();
-    if (!dataText || dataText === "[DONE]") continue;
-
-    try {
-      const event = JSON.parse(dataText);
-      const deltaText = event?.delta?.text;
-      if (typeof deltaText === "string") parts.push(deltaText);
-      const blockText = event?.content_block?.text;
-      if (event?.type === "content_block_start" && typeof blockText === "string") parts.push(blockText);
-    } catch {
-      continue;
-    }
-  }
-
-  return parts.join("");
-}
-
-function extractAnthropicContent(data: any) {
-  const parts: string[] = [];
-  for (const item of data?.content ?? []) {
-    if (typeof item?.text === "string") parts.push(item.text);
-  }
-  return parts.join("");
-}
-
-function extractJsonObject(text: string) {
-  const trimmed = text.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```$/i, "").trim();
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) return trimmed;
-  return trimmed.slice(start, end + 1);
 }

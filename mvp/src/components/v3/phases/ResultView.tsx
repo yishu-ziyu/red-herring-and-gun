@@ -19,6 +19,8 @@ export interface ResultViewProps {
   onBack: () => void;
   onCancel?: () => void;
   onReverify: () => void;
+  /** page = 独立结果页；dossier = 嵌进右侧卷宗，不再自带顶栏和过程足迹 */
+  variant?: "page" | "dossier";
 }
 
 type ClaimListItem =
@@ -167,7 +169,33 @@ function readEvidenceChain(report: Record<string, unknown>): Array<{
     .filter((row): row is NonNullable<typeof row> => Boolean(row));
 }
 
-export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }: ResultViewProps) {
+function isInterruptedReport(report: Record<string, unknown>): boolean {
+  return report._source === "error-boundary";
+}
+
+function interruptedSourceLinks(report: Record<string, unknown>): Array<{ title: string; url: string }> {
+  if (!Array.isArray(report.citationSources)) return [];
+  const out: Array<{ title: string; url: string }> = [];
+  const seen = new Set<string>();
+  for (const raw of report.citationSources) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Record<string, unknown>;
+    const url = asString(row.url);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push({ title: asString(row.title) || url, url });
+  }
+  return out;
+}
+
+export function ResultView({
+  claim,
+  finalReport,
+  onBack,
+  onCancel,
+  onReverify,
+  variant = "page",
+}: ResultViewProps) {
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
   const [processOpen, setProcessOpen] = useState(false);
 
@@ -242,23 +270,84 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
   }, []);
 
   const handleBack = onCancel ?? onBack;
+  const interrupted = isInterruptedReport(finalReport);
+  const interruptedSources = interrupted ? interruptedSourceLinks(finalReport) : [];
+  const embedded = variant === "dossier";
+
+  if (interrupted) {
+    return (
+      <main
+        className={`result-view${embedded ? " result-view--dossier" : ""}`}
+        aria-label={embedded ? "核查判断" : "核查结果页"}
+      >
+        {embedded ? null : (
+          <header className="result-view-topbar">
+            <div className="result-view-brand">
+              <strong>红鲱鱼与枪</strong>
+              <span>核查结果</span>
+            </div>
+            <div className="result-view-actions">
+              <button type="button" className="result-view-btn result-view-btn--ghost" onClick={handleBack}>
+                返回
+              </button>
+            </div>
+          </header>
+        )}
+        <div className="result-view-body">
+          <section className="result-verdict-card mission-final-report mission-final-report--interrupted" aria-label="最终核查判断">
+            <p className="mission-final-verdict-word" data-verdict="interrupted">
+              这次没查完
+            </p>
+            <p className="mission-final-lede">
+              {interruptedSources.length > 0
+                ? "结论还没写出来。已经找到的来源可以点开看。"
+                : "结论还没写出来。可以再查一次。"}
+            </p>
+            <button type="button" className="mission-retry-btn" onClick={onReverify}>
+              再查一次
+            </button>
+            {embedded ? null : (
+              <div className="mission-final-claim">
+                <span>核查对象</span>
+                <p>{claim}</p>
+              </div>
+            )}
+            {interruptedSources.length > 0 ? (
+              <div className="mission-source-links" aria-label="已找到的来源">
+                {interruptedSources.map((source) => (
+                  <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">
+                    {source.title}
+                  </a>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <main className="result-view" aria-label="核查结果页">
-      <header className="result-view-topbar">
-        <div className="result-view-brand">
-          <strong>红鲱鱼与枪</strong>
-          <span>核查结果</span>
-        </div>
-        <div className="result-view-actions">
-          <button type="button" className="result-view-btn result-view-btn--ghost" onClick={handleBack}>
-            返回
-          </button>
-          <button type="button" className="result-view-btn result-view-btn--primary" onClick={onReverify}>
-            重新核查
-          </button>
-        </div>
-      </header>
+    <main
+      className={`result-view${embedded ? " result-view--dossier" : ""}`}
+      aria-label={embedded ? "核查判断" : "核查结果页"}
+    >
+      {embedded ? null : (
+        <header className="result-view-topbar">
+          <div className="result-view-brand">
+            <strong>红鲱鱼与枪</strong>
+            <span>核查结果</span>
+          </div>
+          <div className="result-view-actions">
+            <button type="button" className="result-view-btn result-view-btn--ghost" onClick={handleBack}>
+              返回
+            </button>
+            <button type="button" className="result-view-btn result-view-btn--primary" onClick={onReverify}>
+              重新核查
+            </button>
+          </div>
+        </header>
+      )}
 
       <div className="result-view-body">
         <section className="result-verdict-card mission-final-report" aria-label="最终核查判断">
@@ -274,10 +363,12 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
             </div>
           </div>
 
-          <div className="mission-final-claim">
-            <span>核查对象</span>
-            <p>{claim}</p>
-          </div>
+          {embedded ? null : (
+            <div className="mission-final-claim">
+              <span>核查对象</span>
+              <p>{claim}</p>
+            </div>
+          )}
 
           <div className="mission-final-conclusion">
             <span>结论</span>
@@ -441,6 +532,11 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
           </section>
         ) : null}
 
+        {embedded ? (
+          <button type="button" className="result-view-btn result-view-btn--primary" onClick={onReverify}>
+            重新核查
+          </button>
+        ) : (
         <section className="result-process-section" aria-label="回看核查过程">
           <button
             type="button"
@@ -502,11 +598,12 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
                 </li>
               </ol>
               <p className="result-process-note">
-                完整步骤时间线在执行页。本页足迹只保留与正式判断直接相关、可核对的摘要。
+                本页足迹只保留与正式判断直接相关、可核对的摘要。
               </p>
             </div>
           ) : null}
         </section>
+        )}
       </div>
     </main>
   );
