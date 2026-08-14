@@ -96,7 +96,7 @@ Agent Team 的角色、提示词、工具能力、记忆契约和结构化输出
 
 主要角色：
 
-- `rumor_detector`：立案分诊和谣言类型识别。
+- `rumor_detector`：拆题和谣言类型识别。
 - `fact_checker`：支持/反驳双向核查。
 - `source_validator`：信源可靠性、溯源和证据边界审计。
 - `report_composer`：最终报告、公众表达和闭环动作。

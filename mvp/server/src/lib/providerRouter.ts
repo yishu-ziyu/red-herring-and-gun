@@ -25,6 +25,7 @@ import {
 // 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
 import { extractJsonObject } from "./anthropicParse.js";
 export { extractJsonObject };
+import { miniMaxCallOptions } from "./minimaxM3.js";
 
 export type AgentTextProviderId =
   | "deepseek"
@@ -44,6 +45,121 @@ const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>([
   "anthropic",
   "codex",
 ]);
+
+/** Process-local: once a provider returns hard quota/balance, skip it for later agents in this run. */
+const quotaExhaustedUntil = new Map<string, number>();
+const timeoutStrikes = new Map<string, number>();
+const QUOTA_SKIP_MS = 10 * 60 * 1000;
+
+export function resetProviderQuotaSkipForTests(): void {
+  quotaExhaustedUntil.clear();
+  timeoutStrikes.clear();
+}
+
+export function isHardProviderQuotaError(message: string): boolean {
+  return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded)|billing hard limit|over_quota|无可用额度/i.test(
+    message
+  );
+}
+
+export function isHardProviderAuthError(message: string): boolean {
+  return /invalid api key|invalid_key|incorrect api key|unauthorized|ENOENT/i.test(message);
+}
+
+/** Empty-body / no-text is usually a dead account or thinking-budget wipe, not a transient blip. */
+export function isEmptyProviderResponse(message: string): boolean {
+  return /没有返回可解析文本|无返回文本|empty (?:response|text)|no (?:usable )?text/i.test(message);
+}
+
+export function isHardProviderFailure(message: string): boolean {
+  return (
+    isHardProviderQuotaError(message) ||
+    isHardProviderAuthError(message) ||
+    isEmptyProviderResponse(message)
+  );
+}
+
+function canonicalProviderId(provider: string): string {
+  if (provider.startsWith("mimo")) return "mimo";
+  if (provider.startsWith("360")) return "360";
+  if (provider.startsWith("anthropic")) return "anthropic";
+  if (provider.startsWith("codex")) return "codex";
+  if (provider.startsWith("minimax")) return "minimax";
+  return provider;
+}
+
+export function isProviderQuotaSkipped(provider: string): boolean {
+  const until = quotaExhaustedUntil.get(canonicalProviderId(provider));
+  return typeof until === "number" && until > Date.now();
+}
+
+function skipProvider(provider: string): void {
+  quotaExhaustedUntil.set(canonicalProviderId(provider), Date.now() + QUOTA_SKIP_MS);
+}
+
+export function noteProviderFailure(provider: string, message: string): void {
+  if (isHardProviderFailure(message)) {
+    skipProvider(provider);
+    return;
+  }
+  if (/超时 \d+ms/.test(message)) {
+    const id = canonicalProviderId(provider);
+    const n = (timeoutStrikes.get(id) || 0) + 1;
+    timeoutStrikes.set(id, n);
+    if (n >= 2) skipProvider(provider);
+  }
+}
+
+const CLOUD_TEXT_PROVIDERS: AgentTextProviderId[] = [
+  "minimax",
+  "stepfun",
+  "anthropic",
+  "deepseek",
+  "mimo",
+  "360",
+];
+
+export function providerHasCredentials(env: Record<string, string>, provider: string): boolean {
+  const id = canonicalProviderId(provider);
+  if (id === "deepseek") return Boolean(envValue(env, "DEEPSEEK_API_KEY"));
+  if (id === "mimo") return Boolean(envValue(env, "MIMO_API_KEY"));
+  if (id === "minimax") return Boolean(getMiniMaxApiKey(env));
+  if (id === "stepfun") return Boolean(envValue(env, "STEPFUN_API_KEY"));
+  if (id === "360") return Boolean(getSearch360ApiKey(env));
+  if (id === "anthropic") {
+    return Boolean(
+      envValue(env, "ANTHROPIC_BASE_URL") ||
+        envValue(env, "ANTHROPIC_AUTH_TOKEN") ||
+        envValue(env, "ANTHROPIC_API_KEY")
+    );
+  }
+  if (id === "codex") return Boolean(envValue(env, "CODEX_BIN") || process.env.CODEX_BIN);
+  return false;
+}
+
+/** Configured cloud chat providers that are still eligible this process. */
+export function pendingCloudProviders(env: Record<string, string>, agentId?: string): AgentTextProviderId[] {
+  const order = providerOrderForAgent(env, agentId);
+  return order.filter(
+    (provider): provider is AgentTextProviderId =>
+      CLOUD_TEXT_PROVIDERS.includes(provider) &&
+      providerHasCredentials(env, provider) &&
+      !isProviderQuotaSkipped(provider)
+  );
+}
+
+export function areCloudProvidersHardSkipped(env: Record<string, string>, agentId?: string): boolean {
+  const order = providerOrderForAgent(env, agentId);
+  const configured = order.filter(
+    (provider) => CLOUD_TEXT_PROVIDERS.includes(provider) && providerHasCredentials(env, provider)
+  );
+  return configured.length > 0 && pendingCloudProviders(env, agentId).length === 0;
+}
+
+/** Skip 90s-class fallbacks once this invocation already saw multiple hard failures. */
+export function shouldSkipSlowFallback(provider: string, hardFailuresThisCall: number): boolean {
+  return canonicalProviderId(provider) === "codex" && hardFailuresThisCall >= 2;
+}
 
 // MiniMax is the local SSOT default chat; 360 is legacy hackathon sponsor path (low context).
 const DEFAULT_TEXT_PROVIDER_ORDER: AgentTextProviderId[] = [
@@ -382,6 +498,8 @@ export interface CallAgentResult {
   output: any;
   model: string;
   latencyMs: number;
+  /** 推理模型的 thinking 文本（如 step-3.7-flash 的 message.reasoning）；无则缺省 */
+  reasoning?: string;
 }
 
 /**
@@ -417,6 +535,10 @@ function timeoutForProviderModel(
 ): number {
   if (provider === "stepfun" && /^step-3\.7-flash$/i.test(model)) {
     return getTimeoutMs(env, "STEPFUN_3_7_PROVIDER_TIMEOUT_MS", 135000);
+  }
+  // MiniMax-M3 adaptive thinking is unbounded in practice; don't clip it with the 45s cloud default.
+  if (provider === "minimax" && /^MiniMax-M3$/i.test(model)) {
+    return getTimeoutMs(env, "MINIMAX_M3_PROVIDER_TIMEOUT_MS", 600000);
   }
   return fallbackMs;
 }
@@ -463,7 +585,7 @@ export async function dispatchSingleProvider({
   maxTokens: number;
   codexBin: string;
   reasoningEffort: "low" | "medium" | "high";
-}): Promise<{ text: string; model: string }> {
+}): Promise<{ text: string; model: string; reasoning?: string }> {
   if (provider === "deepseek") {
     const apiKey = envValue(env, "DEEPSEEK_API_KEY");
     if (!apiKey) throw new Error(`未配置 DEEPSEEK_API_KEY`);
@@ -487,7 +609,7 @@ export async function dispatchSingleProvider({
       model,
       systemPrompt,
       userContent,
-      maxTokens,
+      ...miniMaxCallOptions(env, model, maxTokens),
     });
   }
   if (provider === "stepfun") {
@@ -550,6 +672,13 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   const startTime = Date.now();
   const errors: string[] = [];
   const providerOrder = providerOrderForAgent(env, agentId);
+  let hardFailuresThisCall = 0;
+
+  if (areCloudProvidersHardSkipped(env, agentId)) {
+    throw new ProviderFallbackError("所有备用模型均已调用失败，请检查模型配置或稍后重试", [
+      "configured cloud providers already skipped this process",
+    ]);
+  }
 
   // ───────────────────────────────────────────────────────────────
   // modelOverride 优先（用户在前端 model picker 选过 model 时先试这里）
@@ -567,14 +696,14 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   const invokeAndParse = async (
     provider: AgentTextProviderId | string,
     modelName: string,
-    call: (sys: string, user: string) => Promise<{ text: string; model: string }>,
+    call: (sys: string, user: string) => Promise<{ text: string; model: string; reasoning?: string }>,
     timeoutMs: number,
     logTag: string
   ): Promise<CallAgentResult> => {
     const raw = await withTimeout(call(systemPrompt, userContent), timeoutMs, `${traceLabel} ${provider}:${modelName}`);
     try {
       const output = parseAgentJson(raw.text, raw.model);
-      return { output, model: raw.model, latencyMs: Date.now() - startTime };
+      return { output, model: raw.model, latencyMs: Date.now() - startTime, reasoning: raw.reasoning };
     } catch (parseError) {
       if (!isAgentJsonParseError(parseError)) throw parseError;
       const parseMessage = parseError instanceof Error ? parseError.message : "JSON 解析失败";
@@ -606,7 +735,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         `${traceLabel} ${provider}:${modelName} json-repair`
       );
       const output = parseAgentJson(repairedRaw.text, repairedRaw.model);
-      return { output, model: repairedRaw.model, latencyMs: Date.now() - startTime };
+      return { output, model: repairedRaw.model, latencyMs: Date.now() - startTime, reasoning: repairedRaw.reasoning };
     }
   };
 
@@ -657,6 +786,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         latencyMs: Date.now() - ovStart,
         message,
       });
+      noteProviderFailure(ovProvider, message);
+      if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
       errors.push(`[${ovProvider}:${ovModel}] ${message}`);
     }
   }
@@ -700,11 +831,21 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         latencyMs: Date.now() - providerStart,
         message,
       });
+      noteProviderFailure(provider, message);
+      if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
       return { ok: false, msg: message };
     }
   };
 
   for (const provider of providerOrder) {
+    if (isProviderQuotaSkipped(provider)) {
+      errors.push(`[${canonicalProviderId(provider)}] 本进程已因额度耗尽跳过`);
+      continue;
+    }
+    if (shouldSkipSlowFallback(provider, hardFailuresThisCall)) {
+      errors.push(`[${canonicalProviderId(provider)}] 已因连续失败跳过慢速兜底`);
+      continue;
+    }
     if (provider === "deepseek") {
       const apiKey = envValue(env, "DEEPSEEK_API_KEY");
       const baseUrl = (envValue(env, "DEEPSEEK_BASE_URL") || "https://api.deepseek.com/v1").replace(/\/$/, "");
@@ -740,6 +881,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         "https://token-plan-ams.xiaomimimo.com/anthropic",
       ];
       for (const clusterUrl of clusters) {
+        if (isProviderQuotaSkipped("mimo")) break;
         const out = await runOne(`mimo@${clusterUrl}`, model, (sys, user) =>
           callMimoAgent({ baseUrl: clusterUrl, apiKey, model, systemPrompt: sys, userContent: user, maxTokens })
         );
@@ -769,7 +911,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           model,
           systemPrompt: sys,
           userContent: user,
-          maxTokens,
+          ...miniMaxCallOptions(env, model, maxTokens),
         })
       );
       if (out.ok) {

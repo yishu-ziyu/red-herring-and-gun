@@ -99,6 +99,14 @@ describe("Plan Item 2 · caseStore", () => {
     expect(getCase(e1.caseId)!.credibilityScore).toBe(80);
   });
 
+  it("listCases 可按 ownerHash 过滤", () => {
+    putCase({ ...makeEntry("a"), ownerHash: "hash-a" });
+    putCase({ ...makeEntry("b"), ownerHash: "hash-b" });
+    putCase(makeEntry("anon"));
+    expect(listCases(10, "hash-a").map((c) => c.claim)).toEqual(["a"]);
+    expect(listCases(10, "hash-b").map((c) => c.claim)).toEqual(["b"]);
+  });
+
   it("listCases 按 createdAt 降序", async () => {
     putCase(makeEntry("a"));
     await new Promise((r) => setTimeout(r, 2));

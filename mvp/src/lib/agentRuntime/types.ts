@@ -56,6 +56,7 @@ export interface AgentRuntimeEvent {
     | "agent_start"
     | "agent_complete"
     | "agent_error"
+    | "agent_thought"
     | "planner_update"
     | "speculative_update"
     | "consensus_debate_round"
@@ -71,6 +72,14 @@ export interface AgentRuntimeEvent {
   agentName?: string;
   agentIcon?: string;
   agentContract?: unknown;
+  /** agent_thought: 模型 thinking 文本增量（逐条） */
+  content?: string;
+  /** agent_thought: 句子序号（从 0 起） */
+  seq?: number;
+  /** agent_thought: 是否为该 agent 最后一条 */
+  done?: boolean;
+  /** agent_thought: 正在长出的未完成句，同 seq 可被下一次覆盖 */
+  partial?: boolean;
   toolId?: string;
   toolName?: string;
   query?: string;
@@ -79,6 +88,8 @@ export interface AgentRuntimeEvent {
   result?: unknown;
   evidenceBundle?: unknown;
   error?: string;
+  /** agent_error: 该步失败后仍可继续收束（不要当成整轮中断） */
+  recoverable?: boolean;
   claim?: string;
   sessionId?: string;
   steps?: unknown[];
