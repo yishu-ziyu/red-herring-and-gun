@@ -17,6 +17,13 @@ vi.mock("./lib/agentExpansion", async (importOriginal) => {
   };
 });
 
+vi.mock("react-resizable-panels", () => ({
+  Group: ({ children }: { children?: unknown }) => <div data-testid="desk-shell">{children as never}</div>,
+  Panel: ({ children }: { children?: unknown }) => <div>{children as never}</div>,
+  Separator: () => null,
+  usePanelRef: () => ({ current: { collapse() {}, expand() {}, isCollapsed: () => false } }),
+}));
+
 describe("model settings preview", () => {
   afterEach(() => {
     cleanup();
@@ -95,7 +102,7 @@ describe("real analysis workspace", () => {
     await fillClaimInput("隔夜菜会致癌，吃了等于吃毒药");
     fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
 
-    expect(await screen.findByLabelText("核查卷宗工作区")).toBeInTheDocument();
+    expect(await screen.findByLabelText("思考中")).toBeInTheDocument();
     return rendered;
   }
 
@@ -103,18 +110,90 @@ describe("real analysis workspace", () => {
     const { container } = await startRealAnalysis();
 
     expect(container.querySelector(".case-workbench-view--clean")).not.toBeNull();
-    expect(container.querySelector(".case-controller-panel")).not.toBeNull();
+    expect(screen.getByLabelText("思考中")).toBeInTheDocument();
+    expect(screen.queryByLabelText("活动过程时间线")).not.toBeInTheDocument();
+    expect(container.querySelector(".case-controller-panel")).toBeNull();
     expect(screen.queryByLabelText("执行画布缩略图")).not.toBeInTheDocument();
   });
 
   it("starts the real workspace from the stream-driven controller surface", async () => {
     const { container } = await startRealAnalysis();
 
-    expect(await screen.findByLabelText("活动过程时间线")).toBeInTheDocument();
+    expect(await screen.findByLabelText("思考中")).toBeInTheDocument();
+    expect(screen.queryByLabelText("活动过程时间线")).not.toBeInTheDocument();
     expect(container.querySelector(".controller-proof-card")).toBeNull();
     expect(container.querySelector(".controller-prompt-dock")).toBeNull();
     expect(container.querySelector(".mission-agent-icon")).toBeNull();
     expect(screen.queryByText("Agent 思考树")).not.toBeInTheDocument();
+  });
+
+  it("shows a compact search line outside thinking, then the verdict below", async () => {
+    vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
+      yield {
+        type: "tool_start",
+        toolId: "search360",
+        toolName: "360 Search",
+        query: "隔夜菜 致癌",
+      };
+      yield {
+        type: "tool_result",
+        toolId: "search360",
+        toolName: "360 Search",
+        query: "隔夜菜 致癌",
+        result: {
+          sourceCount: 2,
+          sources: [
+            { title: "食品安全与亚硝酸盐科普", url: "https://www.who.int/food" },
+            { title: "隔夜菜风险条件说明", url: "https://www.cdc.gov/foodsafety/" },
+          ],
+        },
+      };
+      yield {
+        type: "complete",
+        totalLatencyMs: 800,
+        steps: [],
+        finalReport: {
+          verdictType: "false",
+          credibilityLabel: "谣言",
+          credibilityScore: 90,
+          conclusion: "公开材料不支持整句。",
+          recommendation: "不能信。",
+          summaryForPublic: "不可靠。",
+          whyHardToVerify: [],
+          evidenceChain: [],
+          closureActions: [],
+          confidenceDimensions: [],
+        },
+      };
+    });
+
+    await startRealAnalysis();
+
+    expect(await screen.findByLabelText("切换来源列表")).toBeInTheDocument();
+    expect(screen.getByText("查了 2 处来源")).toBeInTheDocument();
+    expect(screen.queryByText("sourceCount")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("切换来源列表"));
+    expect(screen.getAllByRole("link", { name: "食品安全与亚硝酸盐科普" }).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("判断")).toHaveTextContent("不能信");
+    expect(screen.queryByLabelText("活动过程时间线")).not.toBeInTheDocument();
+  });
+
+  it("keeps 正在检索 as its own line while the stream is still running", async () => {
+    vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
+      yield {
+        type: "tool_start",
+        toolId: "search360",
+        toolName: "360 Search",
+        query: "隔夜菜 致癌",
+      };
+    });
+
+    await startRealAnalysis();
+
+    expect(await screen.findByLabelText("正在检索公开来源")).toBeInTheDocument();
+    expect(screen.getByLabelText("思考中")).toBeInTheDocument();
+    expect(screen.queryByLabelText("判断")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消核查" })).toBeInTheDocument();
   });
 
   it("separates false-claim confidence from original information credibility", async () => {
@@ -140,10 +219,21 @@ describe("real analysis workspace", () => {
 
     await startRealAnalysis();
 
-    // 结果首屏：结论 + 能不能信
-    const report = await screen.findByLabelText("最终核查判断");
+    // 结果首屏：判断词 + 结论，写在右侧卷宗里
+    const dossier = screen.getByLabelText("核查卷宗");
+    const report = await within(dossier).findByLabelText("最终核查判断");
+    expect(within(report).getByText("不能信")).toBeInTheDocument();
     expect(within(report).getByText(/该说法没有可靠证据支持/)).toBeInTheDocument();
     expect(within(report).getByText("不能信。")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByLabelText("切换思考记录")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByLabelText("切换思考记录"));
+    expect(screen.queryByLabelText("活动过程时间线")).not.toBeInTheDocument();
+    const threadAnswer = screen.getByLabelText("判断");
+    expect(threadAnswer).toHaveTextContent("不能信");
+    expect(threadAnswer).toHaveTextContent(/该说法没有可靠证据支持/);
+    expect(screen.getByRole("button", { name: "再查一条" })).toBeInTheDocument();
     // 折叠区仍可展开看评分细节
     const more = within(report).queryByText("更多细节（评分与审计）");
     if (more) {
@@ -282,6 +372,52 @@ describe("real analysis workspace", () => {
     expect(within(report).getAllByText(/https:\/\/example\.com\/news\/v1-release/).length).toBeGreaterThan(0);
     expect(screen.queryByText("最终写作服务暂时不可用，系统已改用保守兜底报告。")).not.toBeInTheDocument();
   });
+
+  it("shows an interrupted check instead of a padded unfinished dossier", async () => {
+    vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
+      yield {
+        type: "complete",
+        totalLatencyMs: 900,
+        steps: [],
+        finalReport: {
+          verdictType: "unverified",
+          credibilityLabel: "未能判断",
+          credibilityScore: 30,
+          conclusion: "本次核查未能完成最终判断：模型服务暂时不可用，系统保留了本次检索到的公开材料。",
+          recommendation: "请稍后重试，或检查模型配置后重新发起核查。",
+          citationSources: [{ title: "央行公开说明", url: "https://example.com/pboc" }],
+          evidenceChain: [
+            {
+              layer: "证据",
+              finding: "审核器补全：前序输出未提供完整证据链",
+              evidence: "（审稿补全，非新增外部事实）",
+              boundary: "不得据此推出比材料更强的结论",
+              sourceRefs: [],
+            },
+          ],
+          _source: "error-boundary",
+        },
+      };
+    });
+
+    await startRealAnalysis();
+
+    const report = await screen.findByLabelText("最终核查判断");
+    expect(within(report).getByText("这次没查完")).toBeInTheDocument();
+    expect(within(report).getByRole("button", { name: "再查一次" })).toBeInTheDocument();
+    expect(within(report).getByRole("link", { name: "央行公开说明" })).toHaveAttribute(
+      "href",
+      "https://example.com/pboc"
+    );
+    expect(within(report).queryByText("未证实")).not.toBeInTheDocument();
+    expect(within(report).queryByText(/判断置信度/)).not.toBeInTheDocument();
+    expect(within(report).queryByText(/审核器补全/)).not.toBeInTheDocument();
+    expect(within(report).queryByText(/模型服务暂时不可用/)).not.toBeInTheDocument();
+    expect(within(report).queryByText(/检查模型配置/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("判断")).toHaveTextContent("这次没查完");
+    expect(screen.getByText("没查完")).toBeInTheDocument();
+    expect(screen.queryByText("正在核查")).not.toBeInTheDocument();
+  });
 });
 
 // ───────────────────────────────────────────────────────────────
@@ -291,8 +427,26 @@ describe("real analysis workspace", () => {
 function mockModelsList(models: Array<{ provider: string; model: string; label: string; tier: string; hint: string }>) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: unknown) => {
     const url = typeof input === "string" ? input : (input as URL | Request)?.toString?.() ?? "";
+    if (url.includes("/api/models/health")) {
+      return new Response(JSON.stringify({ status: "available", message: "" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     if (url.includes("/api/models/list")) {
       return new Response(JSON.stringify({ models }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("/api/auth/email/me") || url.includes("/api/auth/me")) {
+      return new Response(JSON.stringify({ authenticated: false }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("/api/checks/quota")) {
+      return new Response(JSON.stringify({ remaining: 1, total: 1, used: 0, kind: "guest" }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -308,8 +462,7 @@ const FAKE_MODELS = [
 ];
 
 // ───────────────────────────────────────────────────────────────
-// Landing Version A — 产品叙事首页
-// Hero 5s 故事 + 示例「立即核查」启动路径
+// Landing — quiet desk + representative rumor chips
 // ───────────────────────────────────────────────────────────────
 
 describe("landing Version A storytelling", () => {
@@ -323,33 +476,146 @@ describe("landing Version A storytelling", () => {
     window.localStorage.clear();
   });
 
-  it("renders Version A storytelling blocks on the home dashboard", async () => {
+  it("renders a quiet desk: name, one line, input, representative examples", async () => {
     mockModelsList(FAKE_MODELS);
 
     render(<App />);
 
-    expect(await screen.findByText("溯源公开材料，核对是不是一手")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "红鲱鱼与枪" })).toBeInTheDocument();
+    expect(screen.getByLabelText("历史卷宗")).toBeInTheDocument();
+    expect(screen.getByLabelText("核查卷宗")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新查一条" })).toBeInTheDocument();
     expect(screen.getByText("贴进来。追出处。告诉你能不能信。")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "它如何工作" })).toBeInTheDocument();
-    expect(screen.getByText("交叉看")).toBeInTheDocument();
-    expect(screen.getByText("查完大概长这样")).toBeInTheDocument();
-    expect(screen.getByText("示例")).toBeInTheDocument();
-    expect(screen.getByText("能不能信")).toBeInTheDocument();
-    expect(screen.getByText("结论")).toBeInTheDocument();
-
-    const verifyButtons = screen.getAllByRole("button", { name: /查这条/ });
-    expect(verifyButtons).toHaveLength(3);
-    expect(verifyButtons[0]).toHaveAccessibleName("查这条：隔夜菜会致癌，等于吃毒药");
-    expect(verifyButtons[1]).toHaveAccessibleName(
-      "查这条：某公司未来三年营收将增长十倍"
-    );
-    expect(verifyButtons[2]).toHaveAccessibleName(
-      "查这条：某项政策已经正式确定并将立即实施"
-    );
+    expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "隔夜菜会致癌，等于吃毒药" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "5G信号塔辐射导致周边居民头晕失眠" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "人民币即将大幅贬值，赶紧换美元" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "它如何工作" })).not.toBeInTheDocument();
+    expect(screen.queryByText("某公司未来三年营收将增长十倍")).not.toBeInTheDocument();
+    expect(await screen.findByText("今天还能免费查 1 条")).toBeInTheDocument();
   });
 
-  it("starts analysis with the demo claim when「查这条」is clicked", async () => {
+  it("offers optional email login without blocking the desk", async () => {
+    mockModelsList(FAKE_MODELS);
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "登录" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    expect(screen.getByRole("heading", { name: "登录" })).toBeInTheDocument();
+    expect(screen.getByText("登录后，最近核查可以在别的设备接着看。不登录也能查。")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+  });
+
+  it("shows the development code on the login panel instead of claiming email delivery", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: unknown) => {
+      const url = typeof input === "string" ? input : (input as URL | Request)?.toString?.() ?? "";
+      if (url.includes("/api/auth/email/request")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            delivery: "dev-panel",
+            devCode: "482917",
+            message: "还没配发信。开发环境验证码显示在面板上。",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url.includes("/api/models/list")) {
+        return new Response(JSON.stringify({ models: FAKE_MODELS }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/auth/email/me") || url.includes("/api/auth/me") || url.includes("/api/models/health")) {
+        return new Response(JSON.stringify({ authenticated: false, status: "available" }), {
+          status: url.includes("/api/models/health") ? 200 : 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("not-found", { status: 404 });
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "登录" }));
+    fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "yishuziyu@gmail.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送验证码" }));
+
+    expect(await screen.findByText("还没配发信。开发环境用下面这个验证码。")).toBeInTheDocument();
+    expect(screen.getByText("482917")).toBeInTheDocument();
+    expect(screen.getByLabelText("6 位验证码")).toHaveValue("482917");
+  });
+
+  it("asks the user to copy the code from email when delivery is configured", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: unknown) => {
+      const url = typeof input === "string" ? input : (input as URL | Request)?.toString?.() ?? "";
+      if (url.includes("/api/auth/email/request")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            delivery: "email",
+            message: "验证码已发送",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url.includes("/api/models/list")) {
+        return new Response(JSON.stringify({ models: FAKE_MODELS }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (url.includes("/api/auth/email/me") || url.includes("/api/auth/me") || url.includes("/api/models/health")) {
+        return new Response(JSON.stringify({ authenticated: false, status: "available" }), {
+          status: url.includes("/api/models/health") ? 200 : 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("not-found", { status: 404 });
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "登录" }));
+    fireEvent.change(screen.getByLabelText("邮箱"), { target: { value: "yishuziyu@gmail.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送验证码" }));
+
+    expect(await screen.findByText("验证码已发到 yishuziyu@gmail.com")).toBeInTheDocument();
+    expect(screen.queryByText("开发验证码")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("6 位验证码")).toHaveValue("");
+  });
+
+  it("does not show a model-service banner on the landing desk", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: unknown) => {
+      const url = typeof input === "string" ? input : (input as URL | Request)?.toString?.() ?? "";
+      if (url.includes("/api/models/health")) {
+        return new Response(
+          JSON.stringify({
+            status: "unavailable",
+            message: "模型服务暂时不可用。这次可能给不出最终判断，但仍会尽量检索公开材料。",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      if (url.includes("/api/models/list")) {
+        return new Response(JSON.stringify({ models: FAKE_MODELS }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("not-found", { status: 404 });
+    });
+
+    render(<App />);
+
+    expect(await screen.findByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+    expect(screen.queryByText(/模型服务暂时不可用/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /开始核查/ })).toBeInTheDocument();
+  });
+
+  it("fills the claim when a representative example is clicked, then starts on 开始核查", async () => {
     mockModelsList(FAKE_MODELS);
 
     vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
@@ -359,9 +625,13 @@ describe("landing Version A storytelling", () => {
     const claim = "隔夜菜会致癌，等于吃毒药";
     render(<App />);
 
-    fireEvent.click(await screen.findByRole("button", { name: `查这条：${claim}` }));
+    fireEvent.click(await screen.findByRole("button", { name: claim }));
+    const editor = screen.getByRole("textbox", { name: "待核查材料" });
+    expect(editor).toHaveTextContent(claim);
 
-    expect(await screen.findByLabelText("核查卷宗工作区")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
+
+    expect(await screen.findByLabelText("思考中")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(requestOrchestrateStream).toHaveBeenCalled();
@@ -386,16 +656,13 @@ describe("landing Version A storytelling", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("请先填写待核查材料");
     expect(requestOrchestrateStream).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText("核查卷宗工作区")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("思考中")).not.toBeInTheDocument();
   });
 });
 
 // ───────────────────────────────────────────────────────────────
-// 模型选择（简化版 BYO-API-key）
-// B6: picker 在 home 露出，preview 路由不露出
-// B8: 点 "推荐组合" preset 自动填齐 4 个步骤
-// B9: /api/models/list 返回 [] → picker 显示 "暂无可用模型"，启动按钮 disabled
-// e2e: 选完 picker 后点启动，requestOrchestrateStream 收到正确的 modelChoice
+// 模型：落地页不放 picker；设置在 /settings/api-key
+// B9: /api/models/list 返回 [] → 启动按钮 disabled
 // ───────────────────────────────────────────────────────────────
 
 describe("model picker (simplified BYO)", () => {
@@ -409,44 +676,14 @@ describe("model picker (simplified BYO)", () => {
     window.localStorage.clear();
   });
 
-  // B6: home 露出 picker；preview 路由不露出
-  it("B6-a: home (Dashboard) shows the model picker, starting collapsed", async () => {
+  it("keeps the inline model picker off the landing desk", async () => {
     mockModelsList(FAKE_MODELS);
 
     render(<App />);
 
-    const toggle = await screen.findByRole("button", { name: /模型选择/ });
-    const picker = screen.getByLabelText("模型选择");
-    const send = screen.getByRole("button", { name: /开始核查/ });
-    expect(send.parentElement).toContainElement(picker);
-    expect(picker).toHaveAttribute("data-expanded", "false");
-    expect(picker.querySelector(".model-picker-presets")).toBeNull();
-    expect(within(picker).queryByRole("button", { name: /推荐组合/ })).not.toBeInTheDocument();
-
-    fireEvent.click(toggle);
-    expect(picker).toHaveAttribute("data-expanded", "true");
-    expect(within(picker).getByRole("button", { name: /推荐组合/ })).toBeInTheDocument();
-  });
-
-  // B7: 折叠态摘要：没选模型时显示"默认（不指定模型…）"
-  it("B7: collapsed picker shows a summary that reflects current selection", async () => {
-    mockModelsList(FAKE_MODELS);
-
-    render(<App />);
-
-    const picker = (await screen.findByRole("button", { name: /模型选择/ })).closest(
-      '[aria-label="模型选择"]'
-    ) as HTMLElement;
-    expect(within(picker).getByText(/^默认$/)).toBeInTheDocument();
-
-    fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
-    const rumorSelect = within(picker).getByLabelText(/识别信息结构/);
-    fireEvent.change(rumorSelect, { target: { value: "deepseek:deepseek-v4-flash" } });
-
-    // 折叠回去（再次点标题）
-    fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
-    // 摘要应该反映"已为 1/4 个步骤指定"
-    expect(within(picker).getByText(/1\/4/)).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("模型选择")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "模型设置" })).toHaveAttribute("href", "/settings/api-key");
   });
 
   it("B6-b: /model-settings-preview does not show the model picker", async () => {
@@ -459,74 +696,40 @@ describe("model picker (simplified BYO)", () => {
     expect(screen.queryByLabelText("模型选择")).not.toBeInTheDocument();
   });
 
-  // B8: 推荐组合 → 4 个 picker 都填上
-  it("B8: clicking '推荐组合' preset auto-fills all 4 step pickers", async () => {
-    mockModelsList(FAKE_MODELS);
-
-    render(<App />);
-
-    const picker = (await screen.findByRole("button", { name: /模型选择/ })).closest(
-      '[aria-label="模型选择"]'
-    ) as HTMLElement;
-    fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
-    fireEvent.click(within(picker).getByRole("button", { name: /推荐组合/ }));
-
-    expect(within(picker).getAllByText(/DeepSeek V4 Pro|DeepSeek V4 Flash/).length).toBeGreaterThanOrEqual(1);
-    expect(within(picker).getByText(/识别信息结构/)).toBeTruthy();
-  });
-
-  // B9: /api/models/list 空 → 提示信息 + 启动按钮 disabled
-  it("B9: empty /api/models/list shows fallback message and disables launch", async () => {
+  it("B9: empty /api/models/list disables launch", async () => {
     mockModelsList([]);
 
     render(<App />);
 
-    expect(await screen.findByText(/暂无可用模型|未配置任何 LLM/)).toBeInTheDocument();
+    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    editor.textContent = "隔夜菜会致癌，等于吃毒药";
+    fireEvent.input(editor);
 
-    const submit = screen.getByRole("button", { name: /开始核查/ });
-    expect(submit).toBeDisabled();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /开始核查/ })).toBeDisabled();
+    });
   });
 
-  // e2e: modelChoice 真的传到 requestOrchestrateStream
-  it("e2e: chosen modelChoice flows through to requestOrchestrateStream", async () => {
+  it("starts analysis with an empty modelChoice map from the landing desk", async () => {
     mockModelsList(FAKE_MODELS);
 
-    // 让 stream 立刻结束，避免 MissionControlView 内部继续等待
     vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
       yield { type: "complete", totalLatencyMs: 1, steps: [], finalReport: undefined as never };
     });
 
     render(<App />);
 
-    const picker = (await screen.findByRole("button", { name: /模型选择/ })).closest(
-      '[aria-label="模型选择"]'
-    ) as HTMLElement;
-    fireEvent.click(within(picker).getByRole("button", { name: /模型选择/ }));
-    fireEvent.click(within(picker).getByRole("button", { name: /推荐组合/ }));
-
-    // 填入 claim 并启动
     const editor = await screen.findByRole("textbox", { name: "待核查材料" });
-    editor.textContent = "测试 modelChoice 是否传递";
+    editor.textContent = "测试默认模型链路";
     fireEvent.input(editor);
     fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
 
-    // 等待 requestOrchestrateStream 被调用
     await waitFor(() => {
       expect(requestOrchestrateStream).toHaveBeenCalled();
     });
 
-    // 验证第三个参数是 modelChoice
-    const calls = vi.mocked(requestOrchestrateStream).mock.calls;
-    const lastCall = calls[calls.length - 1];
-    expect(lastCall.length).toBeGreaterThanOrEqual(3);
-    const modelChoice = lastCall[2] as Record<string, { provider: string; model: string }> | undefined;
-    expect(modelChoice).toBeDefined();
-    expect(Object.keys(modelChoice ?? {}).sort()).toEqual(
-      ["fact_checker", "report_composer", "rumor_detector", "source_validator"].sort()
-    );
-    // 推荐组合应该都用 deepseek
-    for (const entry of Object.values(modelChoice ?? {})) {
-      expect(entry.provider).toBe("deepseek");
-    }
+    const lastCall = vi.mocked(requestOrchestrateStream).mock.calls.at(-1);
+    const modelChoice = lastCall?.[2] as Record<string, unknown> | undefined;
+    expect(modelChoice).toEqual({});
   });
 });

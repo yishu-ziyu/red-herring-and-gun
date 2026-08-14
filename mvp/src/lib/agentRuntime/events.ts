@@ -111,6 +111,7 @@ export function createAgentThoughtEvent({
   content,
   seq,
   done,
+  partial,
 }: {
   agent: string;
   agentName: string;
@@ -118,6 +119,7 @@ export function createAgentThoughtEvent({
   content: string;
   seq: number;
   done: boolean;
+  partial?: boolean;
 }): AgentRuntimeEvent {
   return {
     type: "agent_thought",
@@ -128,6 +130,7 @@ export function createAgentThoughtEvent({
     content,
     seq,
     done,
+    ...(partial ? { partial: true } : {}),
     timestamp: now(),
   };
 }
@@ -175,12 +178,14 @@ export function createAgentErrorEvent({
   agentIcon,
   agentContract,
   error,
+  recoverable = false,
 }: {
   agent: string;
   agentName: string;
   agentIcon?: string;
   agentContract?: unknown;
   error: string;
+  recoverable?: boolean;
 }): AgentRuntimeEvent {
   return {
     type: "agent_error",
@@ -190,6 +195,7 @@ export function createAgentErrorEvent({
     agentIcon,
     agentContract,
     error,
+    recoverable,
     timestamp: now(),
   };
 }

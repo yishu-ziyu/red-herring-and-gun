@@ -421,9 +421,17 @@ export function adaptOrchestrateStreamToShell(
         const tsNow = event.timestamp ?? Date.now();
         const existing = thoughtByKey.get(key);
         const prevReasoning = existing?.reasoning ?? [];
-        // 防重：seq 已存在（或乱序回退）时不重复追加
-        if (typeof event.seq === "number" && event.seq < prevReasoning.length) break;
-        const reasoning = [...prevReasoning, content];
+        const seq = typeof event.seq === "number" ? event.seq : prevReasoning.length;
+        let reasoning: string[];
+        if (event.partial) {
+          if (seq === prevReasoning.length) reasoning = [...prevReasoning, content];
+          else if (seq === prevReasoning.length - 1) reasoning = [...prevReasoning.slice(0, seq), content];
+          else break;
+        } else {
+          // 防重：seq 已存在（或乱序回退）时不重复追加
+          if (typeof event.seq === "number" && event.seq < prevReasoning.length) break;
+          reasoning = [...prevReasoning, content];
+        }
         // Prefer agent_start timestamp so elapsed tracks real model work.
         const startedAt = existing?.reasoningStartedAt ?? tsNow;
         touchThought(key, {
@@ -448,12 +456,15 @@ export function adaptOrchestrateStreamToShell(
       }
       case "agent_error": {
         const id = event.agent || "agent";
-        const msg = event.message || event.error || "调用失败";
+        const recoverable = event.recoverable === true;
+        const msg = recoverable
+          ? "这一步没能写成判断，会用已检索到的材料继续。"
+          : event.message || event.error || "调用失败";
         touchThought(`agent:${id}`, {
           key: `agent:${id}`,
           title: agentLabel(id, event.agentName),
           description: msg,
-          status: mapStatus("fail"),
+          status: recoverable ? mapStatus("done") : mapStatus("fail"),
           kind: "agent",
           agentId: id,
           timestamp: ts,
@@ -461,7 +472,7 @@ export function adaptOrchestrateStreamToShell(
         touchAgent(id, {
           agentId: id,
           name: agentLabel(id, event.agentName),
-          status: mapStatus("fail"),
+          status: recoverable ? mapStatus("done") : mapStatus("fail"),
           summary: msg,
         });
         break;

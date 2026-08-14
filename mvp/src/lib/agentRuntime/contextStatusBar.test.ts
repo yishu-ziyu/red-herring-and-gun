@@ -130,4 +130,19 @@ describe("reviewAndRepairReport", () => {
     expect(result.repaired.verdictType).toBe("unverified");
     expect(result.issues.some((i) => i.code === "overclaim")).toBe(true);
   });
+
+  it("does not pad an interrupted error-boundary report into a finished dossier", () => {
+    const result = reviewAndRepairReport({
+      verdictType: "unverified",
+      conclusion: "这次没查完，结论还没写出来。",
+      credibilityScore: 30,
+      citationSources: [{ title: "公开材料", url: "https://example.com/a" }],
+      _source: "error-boundary",
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.repaired._source).toBe("error-boundary");
+    expect(result.repaired.evidenceChain).toBeUndefined();
+    expect(result.issues.some((i) => i.code === "error_boundary")).toBe(true);
+  });
 });

@@ -15,22 +15,14 @@ import { callAgentWithFallback, AgentTextProviderId, ProviderFallbackError } fro
 import { buildAgentStatusBar } from "./lib/contextStatusBar.js";
 import { formatSkillsForPrompt, selectAgentSkills } from "./lib/agentSkills.js";
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
+import { probeModelServiceHealth } from "./lib/modelServiceHealth.js";
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
 import { computeCredibilityScore, labelForScore, type CredibilityScoreResult } from "./lib/credibilityScore.js";
+import { commitFreeCheck, gateFreeCheck, releaseFreeCheck } from "./lib/checkQuota.js";
 // 审查 P3-2 修复：Anthropic 文本/JSON 提取统一从共享模块引入，不再各处独立定义。
 import { extractAnthropicText, extractJsonObject } from "./lib/anthropicParse.js";
 import { applyFactDeskPostProcessToReport } from "./lib/factDeskPostProcess.js";
 import { buildClaimReviewJsonLd } from "./lib/claimReview.js";
-import {
-  deleteAccount as accountDelete,
-  exportAccount,
-  getBySession as accountGetBySession,
-  getQuota,
-  requestCode as accountRequestCode,
-  verifyAndCreate as accountVerifyAndCreate,
-  type EmailAccount,
-} from "./lib/accountStore.js";
-import { emailCookieOptions, encodeSignedJson, decodeSignedJson, parseCookies } from "./lib/aipingAuth.js";
 import {
   splitReasoningSentences,
   thoughtInterSentenceDelayMs,
@@ -675,6 +667,19 @@ export function createHandlers(env: Record<string, string>) {
     }
   }
 
+  async function modelsHealthHandler(req: any, res: any, next: any) {
+    if (req.method !== "GET") return next();
+    try {
+      const health = await probeModelServiceHealth(env);
+      return sendJson(res, 200, health);
+    } catch {
+      return sendJson(res, 200, {
+        status: "unknown",
+        message: "暂时无法确认模型服务是否可用。这次可能较久，也可能给不出最终判断；仍会尽量检索公开材料。",
+      });
+    }
+  }
+
   // ───────────────────────────────────────────────────────────────
   // 多 Agent Orchestrate — thin HTTP adapters over Case Pipeline
   // ───────────────────────────────────────────────────────────────
@@ -907,6 +912,8 @@ function makeRunAgent(opts: {
     if (!mcValidation.ok) {
       return sendJson(res, 400, { message: mcValidation.error || "modelChoice 非法" });
     }
+    const ticket = await gateFreeCheck(req, res);
+    if (!ticket) return;
     const intake = normalizeCaseIntake(payload.intake);
     const intakeMetadata = buildCaseIntakeMetadata(intake);
     const clientMemoryRecall = normalizeClientMemoryRecall(payload.memoryRecall);
@@ -952,12 +959,14 @@ function makeRunAgent(opts: {
         `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length} memoryCandidates=${result.memoryCandidates.length}`
       );
 
+      commitFreeCheck(res, ticket);
       return sendJson(res, 200, {
         steps: result.steps,
         finalReport: result.finalReport,
         memoryCandidates: result.memoryCandidates,
       });
     } catch (error) {
+      releaseFreeCheck(ticket);
       const message = error instanceof Error ? error.message : "Orchestrate 调用错误";
       return sendJson(res, 502, { message, steps: [] });
     }
@@ -982,6 +991,8 @@ function makeRunAgent(opts: {
     if (!mcValidation.ok) {
       return sendJson(res, 400, { message: mcValidation.error || "modelChoice 非法" });
     }
+    const ticket = await gateFreeCheck(req, res);
+    if (!ticket) return;
     const intake = normalizeCaseIntake(payload.intake);
     const intakeMetadata = buildCaseIntakeMetadata(intake);
     const clientMemoryRecall = normalizeClientMemoryRecall(payload.memoryRecall);
@@ -1244,8 +1255,10 @@ function makeRunAgent(opts: {
         memoryCandidates: result.memoryCandidates,
         timestamp: Date.now(),
       });
+      commitFreeCheck(res, ticket);
       res.end();
     } catch (error) {
+      releaseFreeCheck(ticket);
       const { message, detail, providerErrors } = toFriendlyError(error, "Orchestrate Stream 调用错误");
       sendEvent({
         type: "error",
@@ -1365,6 +1378,7 @@ function makeRunAgent(opts: {
     search360Handler,
     searchProviderHandler,
     modelsListHandler,
+    modelsHealthHandler,
     orchestrateHandler,
     orchestrateStreamHandler,
     testLlmHandler,
@@ -3408,232 +3422,4 @@ function buildDemoFallback(payload: any) {
     sources: [],
     model: `demo-fallback:${mode}`,
   };
-}
-
-// ───────────────────────────────────────────────────────────────
-// v3 邮箱登录 + 隐私 / 数据导出 / 删除
-// 设计原则：
-// - 不写 DB：故意只用内存 Map，方便 Wave 4 一键切到 KV/SQL
-// - 用 emailCookieOptions（NODE_ENV-aware Secure）和现有 AIPING_SESSION_SECRET 做会话签名
-// - 故意走 console.log 暴露 6 位码，生产改 SMTP
-// - 字段命名沿用前端 mail-auth skill 习惯：email / quota.remaining / quota.total
-// ───────────────────────────────────────────────────────────────
-
-const EMAIL_SESSION_COOKIE = "v3_email_session";
-const EMAIL_SESSION_TTL_SECONDS = 31 * 24 * 60 * 60;
-
-function getServerSecret() {
-  return (process.env.AIPING_SESSION_SECRET ?? "").trim();
-}
-
-function readEmailSessionId(rawCookieHeader: string | undefined): string | null {
-  const cookies = parseCookies(rawCookieHeader);
-  const raw = cookies[EMAIL_SESSION_COOKIE];
-  if (!raw) return null;
-  const decoded = decodeSignedJson<{ sid: string }>(raw, getServerSecret());
-  return decoded?.sid ?? null;
-}
-
-function pickEmailAccountId(account: EmailAccount): { email: string; id: string } {
-  return { email: account.email, id: account.hash };
-}
-
-async function readAccountFromRequest(req: any, res: any): Promise<EmailAccount | null> {
-  const sessionId = readEmailSessionId(req.headers?.cookie);
-  if (!sessionId) {
-    res.statusCode = 401;
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ error: "Not authenticated" }));
-    return null;
-  }
-  const account = await accountGetBySession(sessionId, getServerSecret());
-  if (!account) {
-    res.statusCode = 401;
-    res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.end(JSON.stringify({ error: "Session expired" }));
-    return null;
-  }
-  return account;
-}
-
-async function readJsonFromReq(req: any): Promise<any> {
-  if (req.body && typeof req.body === "object") return req.body;
-  return new Promise((resolve, reject) => {
-    let raw = "";
-    req.on("data", (chunk: Buffer) => {
-      raw += chunk.toString("utf8");
-    });
-    req.on("end", () => {
-      try {
-        resolve(JSON.parse(raw || "{}"));
-      } catch (error) {
-        reject(error);
-      }
-    });
-    req.on("error", reject);
-  });
-}
-
-function endJson(res: any, status: number, body: unknown) {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.end(JSON.stringify(body));
-}
-
-function buildSetCookie(
-  name: string,
-  value: string,
-  options: { httpOnly?: boolean; secure?: boolean; sameSite?: string; path?: string; maxAge?: number }
-) {
-  const parts: string[] = [`${name}=${value}`];
-  if (options.httpOnly) parts.push("HttpOnly");
-  if (options.secure) parts.push("Secure");
-  if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
-  if (options.path) parts.push(`Path=${options.path}`);
-  if (typeof options.maxAge === "number") parts.push(`Max-Age=${Math.floor(options.maxAge / 1000)}`);
-  return parts.join("; ");
-}
-
-function buildClearCookie(name: string) {
-  return `${name}=; Path=/; Max-Age=0; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`;
-}
-
-export async function emailRequestHandler(req: any, res: any) {
-  if (req.method !== "POST") {
-    endJson(res, 405, { error: "Method not allowed" });
-    return;
-  }
-
-  let body: any;
-  try {
-    body = await readJsonFromReq(req);
-  } catch {
-    endJson(res, 400, { error: "Invalid JSON body" });
-    return;
-  }
-
-  const email = typeof body?.email === "string" ? body.email : "";
-  const result = await accountRequestCode(email, getServerSecret());
-
-  if (!result.ok) {
-    if (result.error === "rate_limit") {
-      endJson(res, 429, { error: "rate_limit", message: "请稍后再试，1 分钟内只能请求一次验证码" });
-      return;
-    }
-    endJson(res, 400, { error: result.error ?? "invalid_email", message: "邮箱格式不正确" });
-    return;
-  }
-
-  // 故意 console.log：生产环境接 SMTP 后替换这一行
-  console.log(`[v3-auth] requestCode email=${email} code=${result.code} expiresAt=${result.expiresAt}`);
-  endJson(res, 200, { ok: true, message: "验证码已发送（开发模式：见服务端 console 输出）" });
-}
-
-export async function emailVerifyHandler(req: any, res: any) {
-  if (req.method !== "POST") {
-    endJson(res, 405, { error: "Method not allowed" });
-    return;
-  }
-
-  let body: any;
-  try {
-    body = await readJsonFromReq(req);
-  } catch {
-    endJson(res, 400, { error: "Invalid JSON body" });
-    return;
-  }
-
-  const email = typeof body?.email === "string" ? body.email : "";
-  const code = typeof body?.code === "string" ? body.code : "";
-
-  const verify = await accountVerifyAndCreate(email, code, getServerSecret());
-  if (!verify.ok || !verify.sessionId) {
-    const status = verify.error === "expired" ? 401 : 401;
-    endJson(res, status, {
-      error: verify.error ?? "invalid_code",
-      message:
-        verify.error === "expired"
-          ? "验证码已过期，请重新获取"
-          : "验证码不正确或已使用",
-    });
-    return;
-  }
-
-  const signed = encodeSignedJson({ sid: verify.sessionId }, getServerSecret());
-  res.setHeader(
-    "Set-Cookie",
-    buildSetCookie(EMAIL_SESSION_COOKIE, signed, emailCookieOptions(EMAIL_SESSION_TTL_SECONDS))
-  );
-
-  endJson(res, 200, { ok: true, message: "登录成功" });
-}
-
-export async function emailMeHandler(req: any, res: any) {
-  if (req.method !== "GET") {
-    endJson(res, 405, { error: "Method not allowed" });
-    return;
-  }
-  const sessionId = readEmailSessionId(req.headers?.cookie);
-  if (!sessionId) {
-    endJson(res, 401, { error: "Not authenticated" });
-    return;
-  }
-  const account = await accountGetBySession(sessionId, getServerSecret());
-  if (!account) {
-    endJson(res, 401, { error: "Session expired" });
-    return;
-  }
-  const quota = getQuota(account);
-  endJson(res, 200, {
-    authenticated: true,
-    provider: "email",
-    email: account.email,
-    quota,
-    byokHint: quota.remaining === 0 ? "当前免费额度已用完，请在「设置 → 模型服务商」中接入 BYO Key 以继续。" : undefined,
-  });
-}
-
-export async function emailLogoutHandler(req: any, res: any) {
-  if (req.method !== "POST") {
-    endJson(res, 405, { error: "Method not allowed" });
-    return;
-  }
-  res.setHeader("Set-Cookie", buildClearCookie(EMAIL_SESSION_COOKIE));
-  endJson(res, 200, { ok: true });
-}
-
-export async function accountExportHandler(req: any, res: any) {
-  if (req.method !== "GET") {
-    endJson(res, 405, { error: "Method not allowed" });
-    return;
-  }
-  const account = await readAccountFromRequest(req, res);
-  if (!account) return;
-  const payload = exportAccount(account);
-  const id = pickEmailAccountId(account);
-  endJson(res, 200, {
-    ...payload,
-    account: { ...payload.account, id: id.id },
-    exportedAt: Date.now(),
-  });
-}
-
-export async function accountDeleteHandler(req: any, res: any) {
-  if (req.method !== "DELETE") {
-    endJson(res, 405, { error: "Method not allowed" });
-    return;
-  }
-  const account = await readAccountFromRequest(req, res);
-  if (!account) return;
-
-  const sessionId = readEmailSessionId(req.headers?.cookie);
-  if (!sessionId) {
-    endJson(res, 401, { error: "Not authenticated" });
-    return;
-  }
-  await accountDelete(sessionId, getServerSecret());
-
-  res.setHeader("Set-Cookie", buildClearCookie(EMAIL_SESSION_COOKIE));
-  console.log(`[v3-auth] deleteAccount email=${account.email}`);
-  endJson(res, 200, { ok: true, message: "账户已删除" });
 }

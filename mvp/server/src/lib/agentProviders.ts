@@ -12,8 +12,13 @@ import { promisify } from "node:util";
 // 审查 P3-2 修复：extractAnthropicText 从共享模块引入并 re-export，
 // 不再在本文件维护独立副本（原 line 47-87 本地定义已删除）。
 // 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
-import { extractAnthropicText, extractAnthropicThinking } from "./anthropicParse.js";
+import { extractAnthropicText, extractAnthropicThinking, readAnthropicSse } from "./anthropicParse.js";
 export { extractAnthropicText };
+import {
+  buildMiniMaxMessagesBody,
+  isMiniMaxM3,
+  type MiniMaxThinkingType,
+} from "./minimaxM3.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -331,6 +336,9 @@ export async function callMiniMaxAgent({
   systemPrompt,
   userContent,
   maxTokens,
+  thinking,
+  signal,
+  onThinking,
 }: {
   baseUrl: string;
   apiKey: string;
@@ -339,6 +347,9 @@ export async function callMiniMaxAgent({
   systemPrompt: string;
   userContent: string;
   maxTokens: number;
+  thinking?: MiniMaxThinkingType;
+  signal?: AbortSignal;
+  onThinking?: (accumulated: string) => void;
 }) {
   const url = miniMaxMessagesUrl(baseUrl);
   const headers: Record<string, string> = {
@@ -350,30 +361,67 @@ export async function callMiniMaxAgent({
   } else {
     headers["x-api-key"] = apiKey;
   }
+  const thinkingMode: MiniMaxThinkingType | undefined =
+    thinking ?? (isMiniMaxM3(model) ? "adaptive" : undefined);
+
   const response = await fetch(url, {
     method: "POST",
     headers,
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userContent }],
-      thinking: model === "MiniMax-M3" ? { type: "adaptive" } : undefined,
-    }),
+    body: JSON.stringify(
+      buildMiniMaxMessagesBody({
+        model,
+        systemPrompt,
+        userContent,
+        maxTokens,
+        thinking: thinkingMode,
+        stream: true,
+      })
+    ),
+    signal,
   });
-  const raw = await response.text();
   if (!response.ok) {
+    const raw = await response.text();
     throw new Error(`MiniMax API 调用失败：${raw.slice(0, 500)}`);
   }
-  const text = extractAnthropicText(raw);
-  if (!text) throw new Error("MiniMax API 没有返回可解析文本。");
-  return { text, model: `minimax:${model}`, reasoning: extractAnthropicThinking(raw) || undefined };
+
+  let text = "";
+  let reasoning = "";
+  if (response.body) {
+    let thinkingAcc = "";
+    const streamed = await readAnthropicSse(response.body, (delta) => {
+      if (!delta.thinkingChunk) return;
+      thinkingAcc += delta.thinkingChunk;
+      onThinking?.(thinkingAcc);
+    });
+    text = streamed.text;
+    reasoning = streamed.thinking || thinkingAcc;
+    if (!text && !reasoning && streamed.rawTail) {
+      text = extractAnthropicText(streamed.rawTail);
+      reasoning = extractAnthropicThinking(streamed.rawTail);
+    }
+  } else {
+    const raw = await response.text();
+    text = extractAnthropicText(raw);
+    reasoning = extractAnthropicThinking(raw);
+    if (reasoning) onThinking?.(reasoning);
+  }
+
+  if (!text) {
+    throw new Error(
+      `MiniMax API 没有返回可解析文本。${
+        reasoning ? "stop_reason=unknown, content_types=thinking" : "raw empty"
+      }`
+    );
+  }
+  return { text, model: `minimax:${model}`, reasoning: reasoning || undefined };
 }
 
 function miniMaxMessagesUrl(baseUrl: string) {
   const normalized = baseUrl.replace(/\/$/, "");
   if (normalized.endsWith("/v1/messages")) return normalized;
   if (normalized.endsWith("/anthropic")) return `${normalized}/v1/messages`;
+  // Local Anthropic proxy (127.0.0.1:15721) serves /v1/messages directly.
+  if (/localhost|127\.0\.0\.1/.test(normalized)) return `${normalized}/v1/messages`;
   return `${normalized}/anthropic/v1/messages`;
 }
 

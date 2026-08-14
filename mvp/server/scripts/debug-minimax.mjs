@@ -34,10 +34,10 @@ const user = "{\"claim\":\"某药宣称能治愈失眠，且声称已获国家�
 
 const body = {
   model: process.env.MINIMAX_MODEL || "MiniMax-M3",
-  max_tokens: 800,
+  max_tokens: Number(process.env.MINIMAX_M3_MAX_TOKENS || process.env.MINIMAX_M3_MIN_MAX_TOKENS || 131072),
   system,
   messages: [{ role: "user", content: user }],
-  thinking: { type: "adaptive" },
+  thinking: { type: process.env.MINIMAX_M3_THINKING === "disabled" ? "disabled" : "adaptive" },
 };
 
 const resp = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });

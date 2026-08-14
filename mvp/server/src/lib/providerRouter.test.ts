@@ -3,6 +3,7 @@ import {
   agentEnvKey,
   callAgentWithFallback,
   envValue,
+  isEmptyProviderResponse,
   isHardProviderQuotaError,
   modelForAgent,
   parseAgentJson,
@@ -302,6 +303,33 @@ describe("providerRouter modelOverride (BDD B2-B5)", () => {
     expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(1);
   });
 
+  it("B2-minimax-m3: adaptive thinking stays on and uses MiniMax recommended max_tokens", async () => {
+    resetAllMocks();
+    vi.stubEnv("MINIMAX_M3_THINKING", "");
+    vi.stubEnv("MINIMAX_M3_MAX_TOKENS", "");
+    vi.stubEnv("MINIMAX_M3_MIN_MAX_TOKENS", "");
+    allProviders.callMiniMaxAgent.mockImplementation(async (args: any) => ({
+      text: JSON.stringify({ max_tokens: args.maxTokens, thinking: args.thinking }),
+      model: `minimax:${args.model}`,
+    }));
+
+    const result = await callAgentWithFallback({
+      agentId: "rumor_detector",
+      systemPrompt: "you are detector",
+      userContent: "claim",
+      responseSchema: { type: "object" },
+      maxTokens: 800,
+      env: {
+        MINIMAX_API_KEY: "sk-mm",
+      },
+      codexBin: "/usr/bin/codex",
+      modelOverride: { provider: "minimax", model: "MiniMax-M3" },
+    });
+
+    expect(result.output).toEqual({ max_tokens: 131072, thinking: "adaptive" });
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+  });
+
   it("B3: when modelOverride provider has no API key, continues with fallback provider", async () => {
     resetAllMocks();
     // envValue 会 fallback 到 process.env；测试机若配了 STEPFUN_API_KEY 会导致缺 key 不 throw。
@@ -434,6 +462,8 @@ describe("providerRouter quota skip", () => {
     expect(isHardProviderQuotaError("余额不足")).toBe(true);
     expect(isHardProviderQuotaError("quota exceeded")).toBe(true);
     expect(isHardProviderQuotaError("DeepSeek 502")).toBe(false);
+    expect(isEmptyProviderResponse("MiniMax API 没有返回可解析文本。")).toBe(true);
+    expect(isEmptyProviderResponse("DeepSeek 502")).toBe(false);
   });
 
   it("额度耗尽后同一进程不再打该 provider", async () => {
@@ -515,5 +545,70 @@ describe("providerRouter quota skip", () => {
 
     expect(result.output).toEqual({ ok: true, provider: "stepfun" });
     expect(allProviders.callMimoAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("无返回文本后同一进程不再打该 provider", async () => {
+    allProviders.callMiniMaxAgent.mockRejectedValue(new Error("MiniMax API 没有返回可解析文本。"));
+    allProviders.callStepFunAgent.mockResolvedValue({
+      text: '{"ok":true,"provider":"stepfun"}',
+      model: "stepfun:step-2-mini",
+    });
+
+    await expect(
+      callAgentWithFallback({
+        agentId: "rumor_detector",
+        systemPrompt: "x",
+        userContent: "x",
+        responseSchema: { type: "object" },
+        maxTokens: 100,
+        env: {
+          MINIMAX_API_KEY: "sk-mm",
+          ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax",
+        },
+        codexBin: "/usr/bin/codex",
+      })
+    ).rejects.toThrow(/所有备用模型/);
+
+    const result = await callAgentWithFallback({
+      agentId: "fact_checker",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: {
+        MINIMAX_API_KEY: "sk-mm",
+        STEPFUN_API_KEY: "sk-sf",
+        ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax,stepfun",
+      },
+      codexBin: "/usr/bin/codex",
+    });
+
+    expect(result.output).toEqual({ ok: true, provider: "stepfun" });
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+    expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("连续两次硬失败后跳过 Codex 慢速兜底", async () => {
+    allProviders.callMiniMaxAgent.mockRejectedValue(new Error("insufficient balance"));
+    allProviders.callStepFunAgent.mockRejectedValue(new Error("You exceeded your current quota"));
+    allProviders.callCodexAgent.mockRejectedValue(new Error("codex should not run"));
+
+    await expect(
+      callAgentWithFallback({
+        agentId: "report_composer",
+        systemPrompt: "x",
+        userContent: "x",
+        responseSchema: { type: "object" },
+        maxTokens: 100,
+        env: {
+          MINIMAX_API_KEY: "sk-mm",
+          STEPFUN_API_KEY: "sk-sf",
+          ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax,stepfun,codex",
+        },
+        codexBin: "/usr/bin/codex",
+      })
+    ).rejects.toThrow(/所有备用模型/);
+
+    expect(allProviders.callCodexAgent).not.toHaveBeenCalled();
   });
 });
