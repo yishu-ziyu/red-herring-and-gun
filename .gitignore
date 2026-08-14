@@ -11,6 +11,9 @@ dist/
 .claude/
 .ship/
 
+# Evaluation baseline (env-dependent, regenerated per run)
+mvp/server/eval/baseline.json
+
 # Build artifacts
 dist-a/
 dist-b/

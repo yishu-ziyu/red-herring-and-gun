@@ -165,6 +165,13 @@ export function scoreSource(s: FilterableSource): number {
   if (!(s.title || "").trim()) usability -= 15;
   else usability += 5;
 
+  const text = `${s.title || ""} ${s.snippet || ""}`;
+  if (/(辟谣|不实|假消息|谣言|官方声明|从未发布|系编造)/.test(text)) usability += 22;
+  const hostBlob = `${s.url || ""} ${s.title || ""}`;
+  if (/piyao\.org\.cn|news\.cn|xinhuanet|gmw\.cn|people\.com\.cn|\.gov\.cn/.test(hostBlob)) {
+    usability += 12;
+  }
+
   const rank = typeof s.providerRank === "number" ? s.providerRank : 7;
   const providerRankScore = Math.max(0, 100 - rank * 12);
 

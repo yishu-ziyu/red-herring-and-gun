@@ -49,19 +49,19 @@ export const techRumorCase: DemoCase = {
       subclaimId: "C1",
       neededEvidence: ["电磁辐射定义", "电离辐射定义", "5G技术使用的频段和功率"],
       notAcceptable: ["混淆两种辐射概念", "没有技术参数的说法"],
-      minimumOutputRule: "没有明确辐射类型时，不能说「辐射有害」。",
+      minimumOutputRule: "没有明确辐射类型时，不能当成辐射有害。",
     },
     {
       subclaimId: "C2",
       neededEvidence: ["5G基站发射功率实测数据", "国家电磁辐射安全标准", "与4G/3G基站的对比数据"],
       notAcceptable: ["没有数据支撑的说法", "脱离标准的断言"],
-      minimumOutputRule: "没有实测数据时，不能说「超标」。",
+      minimumOutputRule: "没有实测数据时，不能当成已经超标。",
     },
     {
       subclaimId: "C3",
       neededEvidence: ["医学研究：电磁辐射与神经系统症状", "双盲实验或流行病学调查", "剂量-反应关系"],
       notAcceptable: ["个案报告", "没有对照组的研究", "体外实验"],
-      minimumOutputRule: "没有高质量医学研究时，不能说「导致」。",
+      minimumOutputRule: "没有高质量医学研究时，不能当成已经导致。",
     },
     {
       subclaimId: "C4",
@@ -73,7 +73,7 @@ export const techRumorCase: DemoCase = {
       subclaimId: "C5",
       neededEvidence: ["WHO立场文件", "ICNIRP指南", "各国监管机构评估"],
       notAcceptable: ["单一反对意见", "非权威机构"],
-      minimumOutputRule: "没有找到权威机构评估时，不能说「已被国际禁止」。",
+      minimumOutputRule: "没有找到权威机构评估时，不能当成已被国际禁止。",
     },
   ],
   searchPlans: [

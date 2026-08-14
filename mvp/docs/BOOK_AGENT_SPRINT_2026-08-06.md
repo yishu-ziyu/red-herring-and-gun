@@ -34,7 +34,6 @@
 
 - `missionShell` 适配器 + token/antdx UI + `/shell-preview`
 - 真跑：`/?shell=1` 或 `/?shell=antdx`
-- 文档：`mvp/docs/SHELL_TRIAL.md`
 
 ## 仍未做满（诚实边界）
 

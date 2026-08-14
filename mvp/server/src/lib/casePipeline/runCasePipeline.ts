@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import {
   claimAtomKey,
+  prefilterClaimAtoms,
   runClaimAtomSelfProof,
   type SelfProofModelCall,
 } from "../claimAtom/index.js";
@@ -15,7 +16,9 @@ import {
   type AtomSearchBundle,
   type SearchOneAtom,
 } from "../atomSearch.js";
-import { assembleFinalReport } from "../reportAssembly/index.js";
+import { assembleFinalReport, faceVerdictFor } from "../reportAssembly/index.js";
+import { looksLikePlanOrPrediction, isOnTopicDebunk, boundTinyRumorVerdict } from "../atomSearchQuery.js";
+import { normalizeReportCitations } from "../citationBinding.js";
 import {
   reviewAndRepairReport,
   type ReportReviewIssue,
@@ -130,20 +133,99 @@ export type CasePipelineResult = {
 const REPORT_REVIEWER_TOOL = "Report Reviewer (proposer-reviewer)";
 const MEMORY_WRITE_TOOL = "Agent Memory Write";
 
+function fallbackRumorStep(claim: string, error: unknown): PipelineStep {
+  const text = claim.replace(/\s+/g, " ").trim() || claim;
+  const type = looksLikePlanOrPrediction(text) ? "prediction" : "fact";
+  return {
+    agent: "rumor_detector",
+    agentName: "RumorDetector",
+    output: {
+      claimAtoms: [text],
+      claimAtomTypes: [{ text, verifiable: true, type }],
+      stanceClaimType: {
+        verifiable: true,
+        type,
+        reason: "拆题模型失败，整句按可核查流传说法继续检索",
+      },
+      rumorIndicators: [],
+      severity: "medium",
+      analysis: "拆题服务未完成，已把原句当作一条可核查判断继续检索。",
+      detectedPatterns: [],
+    },
+    status: "completed",
+    error: error instanceof Error ? error.message : "rumor_detector failed",
+    timestamp: Date.now(),
+  };
+}
+
+function fallbackAgentStep(agentId: string, error: unknown, search360Result?: unknown, claim = ""): PipelineStep {
+  const message = error instanceof Error ? error.message : `${agentId} failed`;
+  const sources = Array.isArray((search360Result as { sources?: unknown[] } | undefined)?.sources)
+    ? ((search360Result as { sources: Array<{ title?: unknown; snippet?: unknown; url?: unknown }> }).sources)
+    : [];
+  const debunkHits = sources.filter((s) => isOnTopicDebunk(claim, s as Record<string, unknown>));
+  if (agentId === "fact_checker") {
+    const urls = debunkHits
+      .map((s) => String(s.url || "").trim())
+      .filter((u) => /^https?:\/\//i.test(u))
+      .slice(0, 4);
+    return {
+      agent: "fact_checker",
+      output: {
+        factCheckResult: debunkHits.length > 0 ? "false" : "unverified",
+        confidence: debunkHits.length > 0 ? "medium" : "low",
+        sources: urls,
+        keyFindings:
+          debunkHits.length > 0
+            ? ["检索到公开辟谣或官方否定材料，核查模型未完成，结论先按检索材料收束。"]
+            : ["核查模型未完成，结论只能依据检索到的公开材料。"],
+        counterEvidence: urls,
+        subclaimVerdicts: [],
+      },
+      status: "completed",
+      error: message,
+      timestamp: Date.now(),
+    };
+  }
+  return {
+    agent: "source_validator",
+    output: {
+      sourceReliability: debunkHits.length > 0 ? "medium" : "unverified",
+      verifiedSources: debunkHits.map((s) => String(s.url || s.title || "")).filter(Boolean).slice(0, 4),
+      questionableSources: [],
+      missingSources: ["信源审计模型未完成"],
+      verificationNotes:
+        debunkHits.length > 0
+          ? "检索到可点开的辟谣/官方材料；信源审计未完成，请直接点开链接。"
+          : "暂无可靠证据支持这一说法。信源审计未完成，请直接看来源链接。",
+    },
+    status: "completed",
+    error: message,
+    timestamp: Date.now(),
+  };
+}
+
 export async function runCasePipeline(input: CasePipelineInput): Promise<CasePipelineResult> {
   const { claim, runAgent, searchOne, callSelfProofModel, runReport, hooks, finalizeReport } = input;
   const steps: PipelineStep[] = [];
 
-  // Phase 1: RumorDetector
-  const rumorStep = await runAgent("rumor_detector", steps);
+  // Phase 1: RumorDetector — fail-open to the original sentence so search still runs.
+  let rumorStep: PipelineStep;
+  try {
+    rumorStep = await runAgent("rumor_detector", steps);
+  } catch (error) {
+    rumorStep = fallbackRumorStep(claim, error);
+  }
   steps.push(rumorStep);
 
-  // Phase 1a: self-proof (must precede per-atom search)
-  const selfProof = await runClaimAtomSelfProof(
-    claim,
-    rumorStep?.output?.claimAtoms ?? [],
-    callSelfProofModel
-  );
+  // Phase 1a: self-proof (must precede per-atom search).
+  // If rumor_detector already exhausted providers, don't spend another full fallback chain.
+  const selfProof = rumorStep.error
+    ? (() => {
+        const pre = prefilterClaimAtoms(claim, rumorStep?.output?.claimAtoms ?? []);
+        return { kept: pre.atoms, dropped: pre.dropped, model: "fallback:skip-after-rumor-error" };
+      })()
+    : await runClaimAtomSelfProof(claim, rumorStep?.output?.claimAtoms ?? [], callSelfProofModel);
   if (!rumorStep.output || typeof rumorStep.output !== "object") {
     rumorStep.output = {};
   }
@@ -168,11 +250,19 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     },
   });
 
-  // Phase 2: FactChecker // SourceValidator
-  const [factStep, sourceStep] = await Promise.all([
+  // Phase 2: FactChecker // SourceValidator — fail-open so检索到的 URL 仍能进报告
+  const [factSettled, sourceSettled] = await Promise.allSettled([
     runAgent("fact_checker", steps, search360Result, atomSearchBundle),
     runAgent("source_validator", steps, search360Result, atomSearchBundle),
   ]);
+  const factStep =
+    factSettled.status === "fulfilled"
+      ? factSettled.value
+      : fallbackAgentStep("fact_checker", factSettled.reason, search360Result, claim);
+  const sourceStep =
+    sourceSettled.status === "fulfilled"
+      ? sourceSettled.value
+      : fallbackAgentStep("source_validator", sourceSettled.reason, search360Result, claim);
   steps.push(factStep, sourceStep);
 
   if (hooks?.afterFactSource) {
@@ -183,6 +273,20 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       search360Result,
       atomSearchBundle,
     });
+  }
+
+  // Phase 2a: Causal enrichment — 仅当 RumorDetector 拆出的原子含因果断言时，
+  // 并行运行替代解释搜索 + 反证评分，失败可继续（不阻断收束）。
+  const hasCausalAtom = Array.isArray(rumorStep?.output?.claimAtomTypes)
+    && rumorStep.output.claimAtomTypes.some((t) => (t as { type?: string })?.type === "causal");
+  if (hasCausalAtom) {
+    const causalSteps = await Promise.allSettled([
+      runAgent("alternative_explanation_searcher", steps, search360Result, atomSearchBundle),
+      runAgent("counter_evidence_grader", steps, search360Result, atomSearchBundle),
+    ]);
+    for (const settled of causalSteps) {
+      if (settled.status === "fulfilled") steps.push(settled.value);
+    }
   }
 
   // Phase 3: ReportComposer (+ fallback owned by adapter)
@@ -213,6 +317,21 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     atomSearchBundle,
   });
 
+  const searchSources = Array.isArray((search360Result as { sources?: unknown[] } | undefined)?.sources)
+    ? ((search360Result as { sources: Array<Record<string, unknown>> }).sources)
+    : [];
+  const bound = boundTinyRumorVerdict(claim, searchSources);
+  if (
+    bound === "false" &&
+    (finalReport.verdictType === "mixed_misleading" || finalReport.verdictType === "unverified")
+  ) {
+    finalReport.verdictType = "false";
+    const conclusion = typeof finalReport.conclusion === "string" ? finalReport.conclusion : "";
+    if (conclusion && !/不能信/.test(conclusion)) {
+      finalReport.conclusion = `不能信。${conclusion}`;
+    }
+  }
+
   finalizeReport?.({
     finalReport,
     claim,
@@ -232,6 +351,9 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     previousOutputs: steps.map((s) => s.output),
   });
   Object.assign(finalReport, review.repaired);
+  // Reviewer may pad evidenceChain / rewrite conclusion — re-bind [n] to sources.
+  normalizeReportCitations(finalReport);
+  finalReport.faceVerdict = faceVerdictFor(finalReport.verdictType);
   reportStep.output = finalReport;
   hooks?.onReportReviewResult?.({
     toolName: REPORT_REVIEWER_TOOL,

@@ -146,7 +146,7 @@ function rumorUpstreamObservations(steps?: ReactObserveStep[]): ReactObservation
   if (atoms.length > 0) {
     out.push({
       kind: "upstream",
-      summary: `分诊给出 ${atoms.length} 个原子命题`,
+      summary: `拆题给出 ${atoms.length} 个原子命题`,
       detail: atoms.join(" | "),
       source: "upstream:rumor_detector",
     });
@@ -189,7 +189,7 @@ function factUpstreamObservations(steps?: ReactObserveStep[]): ReactObservation[
   if (gaps.length > 0) {
     out.push({
       kind: "gap",
-      summary: `核查员标注未决缺口 ${gaps.length} 项`,
+      summary: `事实核查标注未决缺口 ${gaps.length} 项`,
       detail: gaps.join("；"),
       source: "upstream:fact_checker.unresolvedEvidenceGaps",
     });

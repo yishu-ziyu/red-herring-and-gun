@@ -42,6 +42,38 @@ export const FIXTURE_EARLY: OrchestrateStreamEvent[] = [
   },
 ];
 
+/**
+ * Live executing beat the user actually sees: planner done, memory nested,
+ * speculative relay ("先派发可行动线索") then rumor_detector running.
+ * Process UI must collapse relay + agent into one current triage step.
+ */
+export const FIXTURE_TRIAGE_RUNNING: OrchestrateStreamEvent[] = [
+  FIXTURE_EARLY[0],
+  FIXTURE_EARLY[1],
+  FIXTURE_EARLY[2],
+  {
+    type: "speculative_update",
+    relay: {
+      id: "relay-rumor-to-search",
+      title: "先派发可行动线索",
+      upstream: "Planner",
+      downstream: "RumorDetector",
+      trigger: "已识别命题类型，先拆出可检索的判断。",
+      status: "running",
+      savedReason: "不用等最终报告，先把可验证问题拆出来。",
+      confidence: "medium",
+    },
+    timestamp: 4,
+  },
+  {
+    type: "agent_start",
+    agent: "rumor_detector",
+    agentName: "RumorDetector",
+    agentIcon: "🚨",
+    timestamp: 5,
+  },
+];
+
 /** Fixture B: mid stream — agents done + search tools */
 export const FIXTURE_MID: OrchestrateStreamEvent[] = [
   ...FIXTURE_EARLY,
@@ -67,7 +99,30 @@ export const FIXTURE_MID: OrchestrateStreamEvent[] = [
     type: "tool_result",
     toolId: "search360",
     toolName: "360 Search",
-    result: { sourceCount: 5, sources: [1, 2, 3, 4, 5] },
+    query: "隔夜菜 致癌 证据",
+    result: {
+      sourceCount: 3,
+      sources: [
+        {
+          title: "食品安全与亚硝酸盐科普",
+          url: "https://www.who.int/news-room/fact-sheets/detail/food-safety",
+          snippet: "不当储存可能升高风险，但不等于必然致癌。",
+          domain: "who.int",
+        },
+        {
+          title: "隔夜菜风险条件说明",
+          url: "https://www.cdc.gov/foodsafety/",
+          snippet: "风险与储存温度、时间相关。",
+          domain: "cdc.gov",
+        },
+        {
+          title: "科普中国：隔夜菜致癌说法辨析",
+          url: "https://www.kepuchina.cn/",
+          snippet: "说法混淆条件风险与必然致害。",
+          domain: "kepuchina.cn",
+        },
+      ],
+    },
     timestamp: 7,
   },
   {
@@ -146,7 +201,7 @@ export const FIXTURE_COMPLETE: OrchestrateStreamEvent[] = [
       verdictType: "mixed_misleading",
       conclusion: "说法存在夸大，加热不当有风险但不宜直接等同致癌。",
       credibilityScore: 42,
-      recommendation: "不宜整段转发。可说明加热不当有风险，但不宜直接等同致癌。",
+      recommendation: "只能信一部分。加热不当有风险，不能等同致癌。",
       keyFindings: ["加热不当可能产生有害物，但不等于必然致癌"],
       evidenceChain: [
         {
@@ -205,7 +260,7 @@ export const FIXTURE_AGENT_ERROR: OrchestrateStreamEvent[] = [
     type: "agent_error",
     agent: "rumor_detector",
     agentName: "RumorDetector",
-    message: "立案分诊超时",
+    message: "拆题超时",
     timestamp: 5,
   },
 ];
@@ -319,5 +374,44 @@ export const FIXTURE_DEBATE: OrchestrateStreamEvent[] = [
       finalConsensus: "结论从「加热等于致癌」降级为「储存/加热不当可能增加风险」。",
       confidenceAdjustment: -8,
     },
+  },
+];
+
+/**
+ * Fixture H: an agent streaming real reasoning (agent_thought increments).
+ *
+ * Adapter behavior:
+ * - same key `agent:rumor_detector` (from agent_start) accumulates reasoning
+ * - status stays loading until agent_complete
+ * - reasoningElapsedMs grows from first to last increment
+ */
+export const FIXTURE_AGENT_THOUGHT: OrchestrateStreamEvent[] = [
+  ...FIXTURE_EARLY,
+  {
+    type: "agent_thought",
+    agent: "rumor_detector",
+    agentName: "RumorDetector",
+    content: "这句是拆题的真实思考句一。",
+    seq: 0,
+    done: false,
+    timestamp: 5,
+  },
+  {
+    type: "agent_thought",
+    agent: "rumor_detector",
+    agentName: "RumorDetector",
+    content: "这句是拆题的真实思考句二。",
+    seq: 1,
+    done: false,
+    timestamp: 6,
+  },
+  {
+    type: "agent_thought",
+    agent: "rumor_detector",
+    agentName: "RumorDetector",
+    content: "这句是拆题的真实思考句三。",
+    seq: 2,
+    done: true,
+    timestamp: 7,
   },
 ];

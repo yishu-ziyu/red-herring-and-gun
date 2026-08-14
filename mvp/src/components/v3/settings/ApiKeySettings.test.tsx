@@ -2,6 +2,24 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiKeySettings } from "./ApiKeySettings";
 
+function fillKey(value: string) {
+  fireEvent.change(screen.getByLabelText(/API Key/i), {
+    target: { value },
+  });
+}
+
+function useCustomEndpoint(baseUrl: string, modelName?: string) {
+  fireEvent.click(screen.getByRole("button", { name: "自定义" }));
+  fireEvent.change(screen.getByLabelText(/Base URL/i), {
+    target: { value: baseUrl },
+  });
+  if (modelName !== undefined) {
+    fireEvent.change(screen.getByLabelText(/Model Name/i), {
+      target: { value: modelName },
+    });
+  }
+}
+
 describe("ApiKeySettings", () => {
   afterEach(() => {
     cleanup();
@@ -13,12 +31,55 @@ describe("ApiKeySettings", () => {
     window.localStorage.clear();
   });
 
-  it("renders three fields: baseUrl, apiKey, modelName", () => {
+  it("starts on a provider preset so the user only fills the key", () => {
     render(<ApiKeySettings />);
-    expect(screen.getByLabelText(/Base URL/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/API Key/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Model Name/i)).toBeInTheDocument();
+
+    expect(screen.getByRole("heading", { name: "模型设置" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "DeepSeek" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "V4 Flash" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText(/API Key/i)).toHaveAttribute("type", "password");
+    expect(screen.getByLabelText(/Base URL/i)).toHaveValue("https://api.deepseek.com/v1");
+    expect(screen.queryByLabelText(/Model Name/i)).not.toBeInTheDocument();
+  });
+
+  it("fills base URL and model when a provider chip is clicked", () => {
+    render(<ApiKeySettings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "OpenAI" }));
+
+    expect(screen.getByRole("button", { name: "OpenAI" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText(/Base URL/i)).toHaveValue("https://api.openai.com/v1");
+    expect(screen.getByRole("button", { name: "GPT-5.4 mini" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("keeps the prefilled address editable", () => {
+    render(<ApiKeySettings />);
+
+    fireEvent.change(screen.getByLabelText(/Base URL/i), {
+      target: { value: "https://api.deepseek.com" },
+    });
+
+    expect(screen.getByLabelText(/Base URL/i)).toHaveValue("https://api.deepseek.com");
+    expect(screen.getByRole("button", { name: "DeepSeek" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("lets the user pick a model by clicking a chip", () => {
+    render(<ApiKeySettings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "V4 Pro" }));
+
+    expect(screen.getByRole("button", { name: "V4 Pro" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "V4 Flash" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("reveals address and model fields in custom mode", () => {
+    render(<ApiKeySettings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "自定义" }));
+
+    expect(screen.getByLabelText(/Base URL/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Model Name/i)).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "模型" })).not.toBeInTheDocument();
   });
 
   it("accurately explains local storage and test-time transmission", () => {
@@ -48,23 +109,34 @@ describe("ApiKeySettings", () => {
     window.localStorage.setItem("gun-byo-key", stored);
 
     render(<ApiKeySettings />);
+    expect(screen.getByRole("button", { name: "自定义" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText(/Base URL/i)).toHaveValue("https://api.example.com/v1");
     expect(screen.getByLabelText(/API Key/i)).toHaveValue("sk-test-1234");
     expect(screen.getByLabelText(/Model Name/i)).toHaveValue("gpt-4o-mini");
   });
 
+  it("recognizes a saved DeepSeek URL as the DeepSeek preset", () => {
+    const stored = btoa(
+      JSON.stringify({
+        baseUrl: "https://api.deepseek.com",
+        apiKey: "sk-saved",
+        modelName: "deepseek-v4-pro",
+      })
+    );
+    window.localStorage.setItem("gun-byo-key", stored);
+
+    render(<ApiKeySettings />);
+    expect(screen.getByRole("button", { name: "DeepSeek" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "V4 Pro" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText(/API Key/i)).toHaveValue("sk-saved");
+    expect(screen.getByLabelText(/Base URL/i)).toHaveValue("https://api.deepseek.com");
+  });
+
   it("saves base64-obfuscated values to localStorage on save", () => {
     render(<ApiKeySettings />);
 
-    fireEvent.change(screen.getByLabelText(/Base URL/i), {
-      target: { value: "https://api.deepseek.com" },
-    });
-    fireEvent.change(screen.getByLabelText(/API Key/i), {
-      target: { value: "sk-abc" },
-    });
-    fireEvent.change(screen.getByLabelText(/Model Name/i), {
-      target: { value: "deepseek-v4-flash" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "V4 Flash" }));
+    fillKey("sk-abc");
 
     fireEvent.click(screen.getByRole("button", { name: /^保存$/ }));
 
@@ -72,7 +144,7 @@ describe("ApiKeySettings", () => {
     expect(stored).toBeTruthy();
     const decoded = JSON.parse(atob(stored as string));
     expect(decoded).toEqual({
-      baseUrl: "https://api.deepseek.com",
+      baseUrl: "https://api.deepseek.com/v1",
       apiKey: "sk-abc",
       modelName: "deepseek-v4-flash",
     });
@@ -88,16 +160,7 @@ describe("ApiKeySettings", () => {
 
     const secret = "sk-visible-leak-check";
     render(<ApiKeySettings />);
-
-    fireEvent.change(screen.getByLabelText(/Base URL/i), {
-      target: { value: "https://api.example.com/v1" },
-    });
-    fireEvent.change(screen.getByLabelText(/API Key/i), {
-      target: { value: secret },
-    });
-    fireEvent.change(screen.getByLabelText(/Model Name/i), {
-      target: { value: "gpt-4o-mini" },
-    });
+    fillKey(secret);
 
     fireEvent.click(screen.getByRole("button", { name: /^保存$/ }));
     fireEvent.click(screen.getByRole("button", { name: /测试连接/ }));
@@ -117,16 +180,8 @@ describe("ApiKeySettings", () => {
     );
 
     render(<ApiKeySettings />);
-
-    fireEvent.change(screen.getByLabelText(/Base URL/i), {
-      target: { value: "https://api.deepseek.com/v1" },
-    });
-    fireEvent.change(screen.getByLabelText(/API Key/i), {
-      target: { value: "sk-xyz" },
-    });
-    fireEvent.change(screen.getByLabelText(/Model Name/i), {
-      target: { value: "deepseek-v4-pro" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "V4 Pro" }));
+    fillKey("sk-xyz");
 
     fireEvent.click(screen.getByRole("button", { name: /测试连接/ }));
 
@@ -155,13 +210,7 @@ describe("ApiKeySettings", () => {
     );
 
     render(<ApiKeySettings />);
-
-    fireEvent.change(screen.getByLabelText(/Base URL/i), {
-      target: { value: "https://api.example.com" },
-    });
-    fireEvent.change(screen.getByLabelText(/API Key/i), {
-      target: { value: "sk-bad" },
-    });
+    fillKey("sk-bad");
 
     fireEvent.click(screen.getByRole("button", { name: /测试连接/ }));
 
@@ -172,13 +221,8 @@ describe("ApiKeySettings", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
 
     render(<ApiKeySettings />);
-
-    fireEvent.change(screen.getByLabelText(/Base URL/i), {
-      target: { value: "http://10.0.0.5:8000" },
-    });
-    fireEvent.change(screen.getByLabelText(/API Key/i), {
-      target: { value: "sk-x" },
-    });
+    useCustomEndpoint("http://10.0.0.5:8000");
+    fillKey("sk-x");
 
     fireEvent.click(screen.getByRole("button", { name: /测试连接/ }));
 
@@ -195,13 +239,7 @@ describe("ApiKeySettings", () => {
     );
 
     render(<ApiKeySettings />);
-
-    fireEvent.change(screen.getByLabelText(/Base URL/i), {
-      target: { value: "https://api.deepseek.com" },
-    });
-    fireEvent.change(screen.getByLabelText(/API Key/i), {
-      target: { value: "sk-y" },
-    });
+    fillKey("sk-y");
 
     fireEvent.click(screen.getByRole("button", { name: /测试连接/ }));
 

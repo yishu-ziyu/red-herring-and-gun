@@ -5,6 +5,10 @@ import type { MemoryCandidate, MemoryCandidateStatus } from "./agentRuntime/memo
 import type { AgentEvidenceBundle } from "./schemas";
 import type { AgentContract } from "./agentConfigs";
 import { getTraceCollector, type TraceStatus } from "./reasoningTrace";
+import {
+  checksExhaustedMessage,
+  isChecksExhaustedMessage,
+} from "./checkQuota";
 import type {
   ConsensusDebateUpdate,
   ExecutionDagPlan,
@@ -159,6 +163,7 @@ export interface OrchestrateStreamEvent {
     | "agent_start"
     | "agent_complete"
     | "agent_error"
+    | "agent_thought"
     | "tool_start"
     | "tool_result"
     | "tool_error"
@@ -168,6 +173,14 @@ export interface OrchestrateStreamEvent {
   agentName?: string;
   agentIcon?: string;
   agentContract?: AgentContract;
+  /** agent_thought: 模型 thinking 文本增量（逐条） */
+  content?: string;
+  /** agent_thought: 句子序号（从 0 起） */
+  seq?: number;
+  /** agent_thought: 是否为该 agent 最后一条 */
+  done?: boolean;
+  /** agent_thought: 正在长出的未完成句，同 seq 可被下一次覆盖 */
+  partial?: boolean;
   toolId?: string;
   toolName?: string;
   query?: string;
@@ -194,7 +207,10 @@ export interface OrchestrateStreamEvent {
   claim?: string;
   error?: string;
   message?: string;
+  code?: string;
   providerErrors?: string[];
+  /** agent_error: 该步失败后仍可继续收束 */
+  recoverable?: boolean;
   timestamp?: number;
 }
 
@@ -238,9 +254,19 @@ export async function* requestOrchestrateStream(
   try {
     const response = await fetch(`${API_BASE}/api/agent/orchestrate-stream`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+
+    if (response.status === 429) {
+      const data = (await response.json().catch(() => ({}))) as { message?: string };
+      const message = isChecksExhaustedMessage(data.message)
+        ? data.message
+        : checksExhaustedMessage("guest");
+      yield { type: "error", code: "checks_exhausted", message };
+      return;
+    }
 
     if (!response.ok || !response.body) {
       yield { type: "error", message: `Orchestrate Stream API 失败：HTTP ${response.status}` };

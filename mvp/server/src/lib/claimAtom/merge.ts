@@ -1,30 +1,19 @@
 import type { SubclaimVerdict, VerdictSource } from "./types.js";
 import { claimAtomKey, compactStrings, compactText } from "./text.js";
+import { bindLocalCitations, filterSourcesWithRemap } from "../citationBinding.js";
 
 const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated"];
+
+function allowedUrlSet(searchSources?: Array<{ url?: unknown }>): Set<string> | null {
+  if (!searchSources) return null;
+  return new Set(searchSources.map((s) => String(s?.url ?? "").trim()).filter(Boolean));
+}
 
 function sanitizeVerdictSources(
   value: unknown,
   searchSources?: Array<{ url?: unknown }>
 ): VerdictSource[] {
-  if (!Array.isArray(value)) return [];
-  const knownUrls = searchSources
-    ? new Set(searchSources.map((s) => String(s?.url ?? "").trim()).filter(Boolean))
-    : null;
-  const out: VerdictSource[] = [];
-  for (const candidate of value) {
-    if (!candidate || typeof candidate !== "object") continue;
-    const rec = candidate as Record<string, unknown>;
-    const url = typeof rec.url === "string" ? rec.url.trim() : "";
-    if (!url) continue;
-    if (knownUrls && !knownUrls.has(url)) continue;
-    out.push({
-      url,
-      title: typeof rec.title === "string" ? rec.title.slice(0, 200) : "",
-      snippet: typeof rec.snippet === "string" ? rec.snippet.slice(0, 320) : "",
-    });
-  }
-  return out.slice(0, 5);
+  return filterSourcesWithRemap(value, allowedUrlSet(searchSources)).sources;
 }
 
 function sanitizeEvidenceGaps(value: unknown): string[] {
@@ -33,6 +22,7 @@ function sanitizeEvidenceGaps(value: unknown): string[] {
 
 /**
  * 锚原子 merge：幻觉拦截 + 未覆盖补 unverified + 可选 URL 交叉校验。
+ * supportingSources 过滤后会按旧序号重写 evidence 中的 [n]，保证编号仍指向存活来源。
  * 调用方应对「可核查原子」调用（排除层之后），不要把立场原子塞进来。
  */
 export function mergeSubclaimVerdicts(
@@ -44,6 +34,7 @@ export function mergeSubclaimVerdicts(
   const raw = Array.isArray(verdicts) ? verdicts : [];
   const covered = new Set<string>();
   const result: SubclaimVerdict[] = [];
+  const allowed = allowedUrlSet(searchSources);
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const rec = item as Record<string, unknown>;
@@ -52,14 +43,15 @@ export function mergeSubclaimVerdicts(
     const atomKey = claimAtomKey(atom);
     if (!atoms.includes(atomKey)) continue;
     covered.add(atomKey);
+    const bound = bindLocalCitations(rec.evidence, rec.supportingSources, allowed);
     result.push({
       claimAtom: atom,
       verdict: (SUBCLAIM_VERDICTS.includes(String(rec.verdict))
         ? String(rec.verdict)
         : "unverified") as SubclaimVerdict["verdict"],
-      evidence: compactText(rec.evidence, 200),
+      evidence: compactText(bound.text, 240),
       boundary: compactText(rec.boundary, 200),
-      supportingSources: sanitizeVerdictSources(rec.supportingSources, searchSources),
+      supportingSources: bound.sources,
       contradictingSources: sanitizeVerdictSources(rec.contradictingSources, searchSources),
       evidenceGaps: sanitizeEvidenceGaps(rec.evidenceGaps),
     });

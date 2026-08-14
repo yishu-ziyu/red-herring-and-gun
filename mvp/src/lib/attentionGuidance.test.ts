@@ -63,7 +63,7 @@ describe("Change D: boundary spans", () => {
   it("forces cannot-say items to blocked", () => {
     const { cannotSaySpans } = buildBoundarySpans(
       ["官方已否认该政策文件存在"],
-      ["不能说政策已落地取消", "不能把转载热度当成多源证实"],
+      ["不能当成政策已落地取消", "不能把转载热度当成多源证实"],
     );
     expect(cannotSaySpans.length).toBe(2);
     expect(cannotSaySpans.every((s) => s.spanType === "blocked")).toBe(true);
@@ -80,7 +80,7 @@ describe("Change D: boundary spans", () => {
   });
 
   it("drops can-say items that duplicate cannot-say (blocked wins)", () => {
-    const dup = "不能说政策已落地取消";
+    const dup = "不能当成政策已落地取消";
     const { canSaySpans, cannotSaySpans } = buildBoundarySpans([dup], [dup]);
     expect(canSaySpans.find((s) => s.text === dup)).toBeUndefined();
     expect(cannotSaySpans.some((s) => s.text === dup && s.spanType === "blocked")).toBe(
@@ -95,7 +95,7 @@ describe("Change A: conclusion span sequence", () => {
       conclusion:
         "主管部门已公开否认存在取消退休金政策。网传内部文件目前无法追溯到可验证原始出处。因此不能推出政策已确定取消。",
       canSay: ["官方已否认该政策文件存在"],
-      cannotSay: ["不能说政策已落地取消"],
+      cannotSay: ["不能当成政策已落地取消"],
       doNotInfer: ["不能把转载热度当成多源证实"],
       nextEvidenceNeeded: ["可验证的文件扫描件"],
     });
@@ -129,7 +129,7 @@ describe("Change A: conclusion span sequence", () => {
   it("end-to-end guidance has canSaySpans assert/gap only and cannotSaySpans all blocked", () => {
     const guided = buildAttentionGuidance({
       conclusion: "生成式 AI 可能正在改变初级内容岗位的任务结构，但现有材料不足以确认其导致岗位减少。",
-      canSay: ["可以说任务结构可能变化"],
+      canSay: ["能信任务结构可能变化"],
       cannotSay: ["不能使用“导致”作为最终结论"],
     });
 
@@ -198,7 +198,7 @@ describe("Change C: attention rail", () => {
     const guided = buildAttentionGuidance({
       conclusion:
         "主管部门已公开否认存在取消退休金政策。网传内部文件目前无法追溯到可验证原始出处。因此不能推出政策已确定取消。",
-      cannotSay: ["不能说政策已落地取消"],
+      cannotSay: ["不能当成政策已落地取消"],
       nextEvidenceNeeded: ["可验证的文件扫描件"],
       candidates: demoCase.candidates,
     });

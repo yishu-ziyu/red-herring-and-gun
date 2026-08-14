@@ -6,6 +6,12 @@
 
 import { useMemo, useState, useCallback } from "react";
 import { humanizeVerdictType } from "../../../lib/missionShell";
+import { InlineCitations } from "../InlineCitations";
+import {
+  buildGlobalSources,
+  sourcesFromStringRefs,
+  type CiteSource,
+} from "../../../lib/citationBinding";
 
 export interface ResultViewProps {
   claim: string;
@@ -13,6 +19,8 @@ export interface ResultViewProps {
   onBack: () => void;
   onCancel?: () => void;
   onReverify: () => void;
+  /** page = 独立结果页；dossier = 嵌进右侧卷宗，不再自带顶栏和过程足迹 */
+  variant?: "page" | "dossier";
 }
 
 type ClaimListItem =
@@ -25,7 +33,8 @@ type ClaimListItem =
       boundary: string;
       canSay: string[];
       cannotSay: string[];
-      sources: Array<{ title: string; url: string; snippet?: string }>;
+      sources: CiteSource[];
+      sourcesRelatedOnly: boolean;
     }
   | {
       kind: "atom";
@@ -78,7 +87,7 @@ function readClaimList(report: Record<string, unknown>): ClaimListItem[] {
             snippet: asString(row.snippet) || undefined,
           };
         })
-        .filter((row): row is { title: string; url: string; snippet: string | undefined } => Boolean(row));
+        .filter((row): row is CiteSource => Boolean(row));
 
       const canSay = asStringArray(item.canSay);
       const cannotSay = asStringArray(item.cannotSay);
@@ -97,6 +106,7 @@ function readClaimList(report: Record<string, unknown>): ClaimListItem[] {
         canSay,
         cannotSay,
         sources,
+        sourcesRelatedOnly: item.sourcesRelatedOnly === true,
       };
     });
   }
@@ -159,7 +169,33 @@ function readEvidenceChain(report: Record<string, unknown>): Array<{
     .filter((row): row is NonNullable<typeof row> => Boolean(row));
 }
 
-export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }: ResultViewProps) {
+function isInterruptedReport(report: Record<string, unknown>): boolean {
+  return report._source === "error-boundary";
+}
+
+function interruptedSourceLinks(report: Record<string, unknown>): Array<{ title: string; url: string }> {
+  if (!Array.isArray(report.citationSources)) return [];
+  const out: Array<{ title: string; url: string }> = [];
+  const seen = new Set<string>();
+  for (const raw of report.citationSources) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Record<string, unknown>;
+    const url = asString(row.url);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push({ title: asString(row.title) || url, url });
+  }
+  return out;
+}
+
+export function ResultView({
+  claim,
+  finalReport,
+  onBack,
+  onCancel,
+  onReverify,
+  variant = "page",
+}: ResultViewProps) {
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
   const [processOpen, setProcessOpen] = useState(false);
 
@@ -170,12 +206,59 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
   const conclusion =
     safePublicText(finalReport.conclusion) ||
     safePublicText(finalReport.summaryForPublic) ||
-    "报告已收束，但还没有生成适合展示给用户的结论文本。";
+    "有结论了，但还没有适合展示的结论文本。";
   const recommendation = safePublicText(finalReport.recommendation);
   const claimItems = useMemo(() => readClaimList(finalReport), [finalReport]);
   const evidenceChain = useMemo(() => readEvidenceChain(finalReport), [finalReport]);
+  /**
+   * Global conclusion numbering: first-seen unique cited sources (skip related-only fills).
+   * Prefer server-normalized citationSources when present.
+   */
+  const conclusionSources = useMemo(() => {
+    if (Array.isArray(finalReport.citationSources)) {
+      return (finalReport.citationSources as unknown[])
+        .map((raw) => {
+          const row = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+          const url = asString(row.url);
+          if (!url) return null;
+          return {
+            title: asString(row.title) || url,
+            url,
+            snippet: asString(row.snippet) || undefined,
+          };
+        })
+        .filter((row): row is CiteSource => Boolean(row));
+    }
+    return buildGlobalSources(
+      claimItems
+        .filter((item): item is Extract<ClaimListItem, { kind: "verdict" }> => item.kind === "verdict")
+        .map((item) => ({ sources: item.sources, relatedOnly: item.sourcesRelatedOnly }))
+    );
+  }, [finalReport, claimItems]);
   const canSayTop = asStringArray(finalReport.canSay);
   const cannotSayTop = asStringArray(finalReport.cannotSay);
+
+  /** Compact process footprint for result-page audit (DESIGN: Footprints). */
+  const processFootprint = useMemo(() => {
+    const verdictCount = claimItems.filter((item) => item.kind === "verdict").length;
+    const atomCount = claimItems.length;
+    const boundSourceCount = claimItems
+      .filter((item): item is Extract<ClaimListItem, { kind: "verdict" }> => item.kind === "verdict")
+      .filter((item) => !item.sourcesRelatedOnly && item.sources.length > 0).length;
+    const relatedOnlyCount = claimItems
+      .filter((item): item is Extract<ClaimListItem, { kind: "verdict" }> => item.kind === "verdict")
+      .filter((item) => item.sourcesRelatedOnly && item.sources.length > 0).length;
+    const chainCount = evidenceChain.length;
+    const globalCiteCount = conclusionSources.length;
+    return {
+      atomCount,
+      verdictCount,
+      boundSourceCount,
+      relatedOnlyCount,
+      chainCount,
+      globalCiteCount,
+    };
+  }, [claimItems, evidenceChain, conclusionSources]);
 
   const toggleExpanded = useCallback((key: string) => {
     setExpandedKeys((prev) => {
@@ -187,23 +270,84 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
   }, []);
 
   const handleBack = onCancel ?? onBack;
+  const interrupted = isInterruptedReport(finalReport);
+  const interruptedSources = interrupted ? interruptedSourceLinks(finalReport) : [];
+  const embedded = variant === "dossier";
+
+  if (interrupted) {
+    return (
+      <main
+        className={`result-view${embedded ? " result-view--dossier" : ""}`}
+        aria-label={embedded ? "核查判断" : "核查结果页"}
+      >
+        {embedded ? null : (
+          <header className="result-view-topbar">
+            <div className="result-view-brand">
+              <strong>红鲱鱼与枪</strong>
+              <span>核查结果</span>
+            </div>
+            <div className="result-view-actions">
+              <button type="button" className="result-view-btn result-view-btn--ghost" onClick={handleBack}>
+                返回
+              </button>
+            </div>
+          </header>
+        )}
+        <div className="result-view-body">
+          <section className="result-verdict-card mission-final-report mission-final-report--interrupted" aria-label="最终核查判断">
+            <p className="mission-final-verdict-word" data-verdict="interrupted">
+              这次没查完
+            </p>
+            <p className="mission-final-lede">
+              {interruptedSources.length > 0
+                ? "结论还没写出来。已经找到的来源可以点开看。"
+                : "结论还没写出来。可以再查一次。"}
+            </p>
+            <button type="button" className="mission-retry-btn" onClick={onReverify}>
+              再查一次
+            </button>
+            {embedded ? null : (
+              <div className="mission-final-claim">
+                <span>核查对象</span>
+                <p>{claim}</p>
+              </div>
+            )}
+            {interruptedSources.length > 0 ? (
+              <div className="mission-source-links" aria-label="已找到的来源">
+                {interruptedSources.map((source) => (
+                  <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">
+                    {source.title}
+                  </a>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <main className="result-view" aria-label="核查结果页">
-      <header className="result-view-topbar">
-        <div className="result-view-brand">
-          <strong>红鲱鱼与枪</strong>
-          <span>核查结果</span>
-        </div>
-        <div className="result-view-actions">
-          <button type="button" className="result-view-btn result-view-btn--ghost" onClick={handleBack}>
-            返回
-          </button>
-          <button type="button" className="result-view-btn result-view-btn--primary" onClick={onReverify}>
-            重新核查
-          </button>
-        </div>
-      </header>
+    <main
+      className={`result-view${embedded ? " result-view--dossier" : ""}`}
+      aria-label={embedded ? "核查判断" : "核查结果页"}
+    >
+      {embedded ? null : (
+        <header className="result-view-topbar">
+          <div className="result-view-brand">
+            <strong>红鲱鱼与枪</strong>
+            <span>核查结果</span>
+          </div>
+          <div className="result-view-actions">
+            <button type="button" className="result-view-btn result-view-btn--ghost" onClick={handleBack}>
+              返回
+            </button>
+            <button type="button" className="result-view-btn result-view-btn--primary" onClick={onReverify}>
+              重新核查
+            </button>
+          </div>
+        </header>
+      )}
 
       <div className="result-view-body">
         <section className="result-verdict-card mission-final-report" aria-label="最终核查判断">
@@ -219,19 +363,30 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
             </div>
           </div>
 
-          <div className="mission-final-claim">
-            <span>核查对象</span>
-            <p>{claim}</p>
-          </div>
+          {embedded ? null : (
+            <div className="mission-final-claim">
+              <span>核查对象</span>
+              <p>{claim}</p>
+            </div>
+          )}
 
           <div className="mission-final-conclusion">
-            <span>一句话结论</span>
-            <p>{conclusion}</p>
+            <span>结论</span>
+            <InlineCitations text={conclusion} sources={conclusionSources} />
+            {conclusionSources.length > 0 ? (
+              <p className="result-cite-hint" role="note">
+                句内编号对应下方来源；点开可核对原文。相关检索不等于句内支撑。
+              </p>
+            ) : (
+              <p className="result-cite-hint" role="note">
+                没有来源，就不要当成已经证实。
+              </p>
+            )}
           </div>
 
           {recommendation ? (
-            <div className="mission-share-advice" aria-label="转发建议">
-              <span>转发建议</span>
+            <div className="mission-share-advice" aria-label="能不能信">
+              <span>能不能信</span>
               <p>{recommendation}</p>
             </div>
           ) : null}
@@ -240,7 +395,7 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
             <div className="result-boundary-grid">
               {canSayTop.length > 0 ? (
                 <div>
-                  <span>可以说</span>
+                  <span>能信</span>
                   <ul>
                     {canSayTop.map((item) => (
                       <li key={item}>{item}</li>
@@ -250,7 +405,7 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
               ) : null}
               {cannotSayTop.length > 0 ? (
                 <div>
-                  <span>不能说</span>
+                  <span>不能信</span>
                   <ul>
                     {cannotSayTop.map((item) => (
                       <li key={item}>{item}</li>
@@ -297,15 +452,19 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
                     </button>
                     {open && hasDetail ? (
                       <div className="result-claim-detail">
-                        {item.evidence ? (
-                          <p>
-                            <span>证据</span>
-                            {item.evidence}
-                          </p>
+                        {item.evidence || item.sources.length > 0 ? (
+                          <div>
+                            <span>证据与来源</span>
+                            <InlineCitations
+                              text={item.evidence}
+                              sources={item.sources}
+                              relatedOnly={item.sourcesRelatedOnly}
+                            />
+                          </div>
                         ) : null}
                         {item.canSay.length > 0 ? (
                           <div>
-                            <span>可以说</span>
+                            <span>能信</span>
                             <ul>
                               {item.canSay.map((line) => (
                                 <li key={line}>{line}</li>
@@ -315,25 +474,10 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
                         ) : null}
                         {item.cannotSay.length > 0 ? (
                           <div>
-                            <span>不能说</span>
+                            <span>不能信</span>
                             <ul>
                               {item.cannotSay.map((line) => (
                                 <li key={line}>{line}</li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-                        {item.sources.length > 0 ? (
-                          <div>
-                            <span>来源</span>
-                            <ul>
-                              {item.sources.map((source) => (
-                                <li key={source.url}>
-                                  <a href={source.url} target="_blank" rel="noopener noreferrer">
-                                    {source.title}
-                                  </a>
-                                  {source.snippet ? <p>{source.snippet}</p> : null}
-                                </li>
                               ))}
                             </ul>
                           </div>
@@ -354,30 +498,45 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
               <strong>{evidenceChain.length} 条</strong>
             </header>
             <ul>
-              {evidenceChain.map((item, index) => (
-                <li key={item.key}>
-                  <strong>
-                    {index + 1}. {item.title}
-                  </strong>
-                  {item.evidence ? <p>{item.evidence}</p> : null}
-                  {item.boundary ? <small>不能推出：{item.boundary}</small> : null}
-                  {item.sources.length > 0 ? (
-                    <ul className="result-source-links">
-                      {item.sources.map((url) => (
-                        <li key={url}>
-                          <a href={url} target="_blank" rel="noopener noreferrer">
-                            {url}
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </li>
-              ))}
+              {evidenceChain.map((item, index) => {
+                const titleByUrl = new Map(
+                  conclusionSources.map((s) => [s.url, { title: s.title, snippet: s.snippet }] as const)
+                );
+                // Prefer server-normalized _citeSources when present on the raw chain item.
+                const rawChain = Array.isArray(finalReport.evidenceChain)
+                  ? (finalReport.evidenceChain as unknown[])[index]
+                  : null;
+                const prebound =
+                  rawChain &&
+                  typeof rawChain === "object" &&
+                  Array.isArray((rawChain as Record<string, unknown>)._citeSources)
+                    ? ((rawChain as Record<string, unknown>)._citeSources as CiteSource[])
+                    : null;
+                const chainSources =
+                  prebound && prebound.length > 0
+                    ? prebound
+                    : sourcesFromStringRefs(item.sources, titleByUrl);
+                return (
+                  <li key={item.key}>
+                    <strong>
+                      {index + 1}. {item.title}
+                    </strong>
+                    {item.evidence || chainSources.length > 0 ? (
+                      <InlineCitations text={item.evidence} sources={chainSources} />
+                    ) : null}
+                    {item.boundary ? <small>不能推出：{item.boundary}</small> : null}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         ) : null}
 
+        {embedded ? (
+          <button type="button" className="result-view-btn result-view-btn--primary" onClick={onReverify}>
+            重新核查
+          </button>
+        ) : (
         <section className="result-process-section" aria-label="回看核查过程">
           <button
             type="button"
@@ -385,17 +544,66 @@ export function ResultView({ claim, finalReport, onBack, onCancel, onReverify }:
             aria-expanded={processOpen}
             onClick={() => setProcessOpen((open) => !open)}
           >
-            <span>回看核查过程</span>
+            <span>核查足迹</span>
             <em>{processOpen ? "收起" : "展开"}</em>
           </button>
           {processOpen ? (
             <div className="result-process-body">
-              <p>
-                过程记录保留在执行页时间线中。本页聚焦正式判断；若需逐步回看，请重新发起核查或从执行流导出。
+              <ol className="result-process-footprint" aria-label="本页可核对的核查足迹">
+                <li>
+                  <strong>主张</strong>
+                  <span>{claim}</span>
+                </li>
+                <li>
+                  <strong>拆题</strong>
+                  <span>
+                    {processFootprint.atomCount > 0
+                      ? `共 ${processFootprint.atomCount} 条可核对要点${
+                          processFootprint.verdictCount > 0
+                            ? `，其中 ${processFootprint.verdictCount} 条已给出判断`
+                            : ""
+                        }`
+                      : "本报告未附带拆题清单"}
+                  </span>
+                </li>
+                <li>
+                  <strong>来源</strong>
+                  <span>
+                    {processFootprint.globalCiteCount > 0
+                      ? `结论层 ${processFootprint.globalCiteCount} 个已绑定来源`
+                      : "结论层暂无句内绑定来源"}
+                    {processFootprint.boundSourceCount > 0
+                      ? ` · ${processFootprint.boundSourceCount} 条命题有支撑来源`
+                      : ""}
+                    {processFootprint.relatedOnlyCount > 0
+                      ? ` · ${processFootprint.relatedOnlyCount} 条仅为相关检索`
+                      : ""}
+                  </span>
+                </li>
+                <li>
+                  <strong>依据链</strong>
+                  <span>
+                    {processFootprint.chainCount > 0
+                      ? `${processFootprint.chainCount} 条依据`
+                      : "未附带分层依据"}
+                  </span>
+                </li>
+                <li>
+                  <strong>判断</strong>
+                  <span>
+                    {[verdictLabel, credibilityLabel, score !== null ? `${score}/100` : ""]
+                      .filter(Boolean)
+                      .join(" · ") || "见上方正式判断"}
+                  </span>
+                </li>
+              </ol>
+              <p className="result-process-note">
+                本页足迹只保留与正式判断直接相关、可核对的摘要。
               </p>
             </div>
           ) : null}
         </section>
+        )}
       </div>
     </main>
   );

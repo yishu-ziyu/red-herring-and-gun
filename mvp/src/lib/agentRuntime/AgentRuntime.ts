@@ -11,11 +11,17 @@ import {
   createAgentCompleteEvent,
   createAgentErrorEvent,
   createAgentStartEvent,
+  createAgentThoughtEvent,
   createToolErrorEvent,
   createToolResultEvent,
   createToolStartEvent,
 } from "./events";
 import { callAgentWithFallback, type AgentReasoningEffort } from "./agentProviders";
+import {
+  createLiveThoughtPump,
+  splitReasoningSentences,
+  thoughtInterSentenceDelayMs,
+} from "../reasoningThoughts";
 import { buildConfidenceAssessments } from "../confidenceEngine";
 import { buildMemoryCandidatesFromRun } from "./memoryCandidateGenerator";
 import { JsonlMemoryCandidateStore, type MemoryCandidateStore } from "./memoryCandidateStore";
@@ -516,10 +522,29 @@ export class AgentRuntime {
 
     let output: Record<string, unknown>;
     let modelUsed: string;
+    let modelLatencyMs = 0;
+    let reasoningText: string | undefined;
     const timeoutMs = this.deps.getAgentTimeoutMs(agentId);
     const reasoningEffort = this.deps.getAgentReasoningEffort(agentId);
+    const thoughtPump = createLiveThoughtPump((content, seq, partial) => {
+      onEvent?.(
+        createAgentThoughtEvent({
+          agent: agentId,
+          agentName: agentConfig.name,
+          agentIcon: agentConfig.icon,
+          content,
+          seq,
+          done: false,
+          partial,
+        })
+      );
+    });
     // 状态栏放在 JSON 外的稳定前缀，提升「环境感知」与可读性
     const userContent = `${statusBar.text}\n\n${JSON.stringify(agentInput, null, 2)}`;
+    const priorBoundaries = steps.filter(
+      (step) => step.model === "runtime:error-boundary" || step.status === "failed"
+    ).length;
+    const skipLlmAfterPriorFailures = agentId === "report_composer" && priorBoundaries >= 2;
 
     try {
       this.deps.log?.("agent_start", {
@@ -530,7 +555,11 @@ export class AgentRuntime {
         reasoningEffort,
         skills: skills.map((s) => s.id),
         claimType,
+        skipLlmAfterPriorFailures,
       });
+      if (skipLlmAfterPriorFailures) {
+        throw new Error("前序步骤已无法完成判断，不再空等，改为用已检索材料收束。");
+      }
       const agentCaller = this.deps.callAgentWithFallback ?? callAgentWithFallback;
       const result = await withRuntimeTimeout(
         agentCaller({
@@ -543,17 +572,21 @@ export class AgentRuntime {
           reasoningEffort,
           traceLabel: agentConfig.name,
           deadlineAt: stepStart + timeoutMs,
+          onReasoning: (text) => thoughtPump.push(text),
         }),
         timeoutMs,
         `${agentConfig.name} Agent`
       );
       output = result.output;
       modelUsed = result.model;
+      reasoningText = typeof result.reasoning === "string" ? result.reasoning : undefined;
+      // Model wall-clock only — exclude thought SSE pacing from "Thought for Ns".
+      modelLatencyMs = Date.now() - stepStart;
       this.deps.log?.("agent_complete", {
         agent: agentId,
         agentName: agentConfig.name,
         model: modelUsed,
-        latencyMs: Date.now() - stepStart,
+        latencyMs: modelLatencyMs,
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Agent 调用失败";
@@ -571,15 +604,43 @@ export class AgentRuntime {
         agentIcon: agentConfig.icon,
         agentContract: agentConfig.contract,
         error: `${agentConfig.name} 真实模型调用失败：${msg}`,
+        recoverable: this.agentRegistry.canContinueAfterFailure(agentId),
       }));
       const continueAfterFailure = this.agentRegistry.canContinueAfterFailure(agentId);
       this.deps.log?.("agent_registry", { phase: "can_continue_after_failure", agentId, canContinue: continueAfterFailure });
       if (!continueAfterFailure) {
         throw new Error(`${agentConfig.name} 真实模型调用失败：${msg}`);
       }
-      output = buildAgentFailureOutput(agentId, msg, searchResult);
+      output = buildAgentFailureOutput(agentId, msg, searchResult, claim);
       modelUsed = "runtime:error-boundary";
+      modelLatencyMs = Date.now() - stepStart;
       this.deps.log?.("agent_error_fallback", { phase: "error_boundary", agentId, modelUsed });
+    }
+
+    // Live MiniMax thinking already went out over SSE. Only replay leftover
+    // providers that return reasoning after the call finishes.
+    if (onEvent && reasoningText && reasoningText.trim()) {
+      if (thoughtPump.didEmit) {
+        thoughtPump.finish(reasoningText);
+      } else {
+        const sentences = splitReasoningSentences(reasoningText);
+        const gap = thoughtInterSentenceDelayMs(sentences.length);
+        for (let index = 0; index < sentences.length; index++) {
+          onEvent(
+            createAgentThoughtEvent({
+              agent: agentId,
+              agentName: agentConfig.name,
+              agentIcon: agentConfig.icon,
+              content: sentences[index],
+              seq: index,
+              done: index === sentences.length - 1,
+            })
+          );
+          if (index < sentences.length - 1 && gap > 0) {
+            await new Promise((r) => setTimeout(r, gap));
+          }
+        }
+      }
     }
 
     const step: RuntimeStep = {
@@ -592,7 +653,7 @@ export class AgentRuntime {
       output,
       evidenceBundle: buildAgentEvidenceBundle(agentConfig.id, output, searchResult),
       model: modelUsed,
-      latencyMs: Date.now() - stepStart,
+      latencyMs: modelLatencyMs || Date.now() - stepStart,
       timestamp: Date.now(),
       // 审查 P2-7 修复：catch 路径走 error-boundary，应标记为 failed 而非 completed
       status: modelUsed === "runtime:error-boundary" ? "failed" : "completed",
@@ -769,7 +830,7 @@ export class AgentRuntime {
                 title: "先派发可行动线索",
                 upstream: "Planner",
                 downstream: "RumorDetector",
-                trigger: "中控已经判定命题类型，先让分诊 Agent 提取可检索子问题。",
+                trigger: "已识别命题类型，先拆出可检索的判断。",
                 status: "running",
                 savedReason: "不用等最终报告，先把可验证问题拆出来。",
                 confidence: "medium",
@@ -849,7 +910,7 @@ export class AgentRuntime {
       downstream: "360 AI Search",
       trigger: firstActionableClaimSeed(steps[0]?.output, claim),
       status: "running",
-      savedReason: "一旦分诊产出可检索线索，搜索与后续 Agent 准备可以重叠执行。",
+      savedReason: "一旦拆题产出可检索线索，搜索与后续 Agent 准备可以重叠执行。",
       confidence: "high",
     });
 
@@ -1011,7 +1072,7 @@ function buildAdaptiveExecutionPlan(claim: string, intakeMetadata?: ReturnType<t
       : "该输入需要事实核查、来源审计和证据边界收束。",
     nodes,
     edges: [
-      { from: "planner", to: "rumor_detector", label: "立案" },
+      { from: "planner", to: "rumor_detector", label: "拆题" },
       { from: "rumor_detector", to: "fact_checker", label: "支持/反驳线索" },
       { from: "rumor_detector", to: "source_validator", label: "来源需求" },
       ...(claimType === "causal"
@@ -1348,12 +1409,32 @@ function compactSourceSnippets(searchResult: Search360Response, maxLength: numbe
   searchResult.contradictingEvidence?.forEach(shorten);
 }
 
-function buildAgentFailureOutput(agentId: string, message: string, searchResult?: Search360Response): Record<string, unknown> {
+function buildAgentFailureOutput(
+  agentId: string,
+  message: string,
+  searchResult?: Search360Response,
+  claim = ""
+): Record<string, unknown> {
   const sourceUrls = (searchResult?.sources ?? [])
     .map((source: any) => source?.url)
     .filter((url): url is string => typeof url === "string" && url.length > 0)
     .slice(0, 6);
   const boundary = `该 Agent 的真实模型调用失败：${message}`;
+
+  if (agentId === "rumor_detector") {
+    const text = claim.replace(/\s+/g, " ").trim() || claim;
+    return {
+      claimAtoms: text ? [text] : [],
+      rumorTypes: [],
+      rumorIndicators: [],
+      severity: "low",
+      analysis: "拆题未能完成，已把原句当作一条可核查判断继续检索。",
+      detectedPatterns: [],
+      neededEvidence: ["需要对照公开材料"],
+      handoffTargets: ["fact_checker", "source_validator"],
+      _source: "error-boundary",
+    };
+  }
 
   if (agentId === "fact_checker") {
     return {
@@ -1400,6 +1481,33 @@ function buildAgentFailureOutput(agentId: string, message: string, searchResult?
       recommendation: "反证评分未完成，不对前序置信度做额外升降。",
       unresolvedEvidenceGaps: [boundary],
       _source: "error-boundary",
+    };
+  }
+
+  if (agentId === "report_composer") {
+    // 收束节点失败时给出诚实降级报告：不编造判断，但保留本次真实检索到的公开材料，
+    // 让用户拿到「已查到什么 + 为什么没结论」而不是空手（eval 260814-1206 首轮发现）。
+    // 公开文案刻意避开 ResultView 的 looksLikeInfrastructureError 关键词（ReportComposer/API/quota 等）。
+    const sources = (searchResult?.sources ?? [])
+      .map((source: any) => ({
+        title: String(source?.title || ""),
+        url: String(source?.url || ""),
+        snippet: String(source?.snippet || ""),
+      }))
+      .filter((source) => source.url || source.title);
+    return {
+      verdictType: "unverified",
+      credibilityLabel: "未能判断",
+      credibilityScore: 30,
+      conclusion: "这次没查完，结论还没写出来。",
+      summaryForPublic: "这次没查完，结论还没写出来。",
+      recommendation: "",
+      canSay: ["本次只可引用下方已检索到的公开材料。"],
+      cannotSay: ["不能把本次未完成的核查当作已证实的结论。"],
+      citationSources: sources,
+      unresolvedEvidenceGaps: [`报告收束模型调用失败：${message}`],
+      _source: "error-boundary",
+      fallbackReason: `报告收束模型调用失败：${message}`,
     };
   }
 

@@ -9,14 +9,20 @@
  * MissionProcessShellAntd.tsx is kept on disk but not loaded here.
  */
 import { useMemo, useState } from "react";
-import type { MissionShellModel } from "../../../../lib/missionShell";
+import type { MissionShellModel, ShellToolItem } from "../../../../lib/missionShell";
 import {
   buildVisibleProcessRows,
+  flattenRowToBlocks,
   formatReviewIssue,
   humanizeVerdictType,
+  type InstrumentBlock,
+  type InstrumentVariant,
   type VisibleProcessNarrative,
   type VisibleProcessRow,
 } from "../../../../lib/missionShell";
+import { ThinkingReasoning } from "./ThinkingReasoning";
+import { buildInvestigationTodos, TodoList } from "./TodoList";
+import { isSearchShellTool, sitesFromSearchResult, WebSearch } from "./WebSearch";
 
 export type MissionProcessShellVariant = "token" | "antdx";
 
@@ -26,93 +32,298 @@ export interface MissionProcessShellProps {
   selectedAgentId?: string | null;
   onSelectAgent?: (agentId: string) => void;
   onSelectTool?: (toolKey: string) => void;
+  selectedRowKey?: string | null;
+  onSelectRow?: (rowKey: string) => void;
   className?: string;
   /** antdx is frozen — always token narrative */
   variant?: MissionProcessShellVariant;
   /** When true, claim is already shown by parent — shell never re-prints it */
   claimInParent?: boolean;
+  /** Left speech only. Atoms / sources / verdict live on MissionWorkSurface. */
+  deskMode?: boolean;
 }
 
-function statusDotClass(status: VisibleProcessRow["status"]): string {
-  if (status === "loading") return "mps-dot mps-dot--loading mps-orb";
-  if (status === "error") return "mps-dot mps-dot--error";
-  if (status === "success") return "mps-dot mps-dot--success";
-  return "mps-dot mps-dot--pending";
+const GLYPH_MAP: Record<InstrumentVariant, number[]> = {
+  search: [0, 1, 0, 1, 0, 1, 0, 1, 0],
+  memory: [1, 1, 1, 1, 0, 1, 1, 1, 1],
+  think: [0, 1, 0, 1, 1, 1, 0, 1, 0],
+  work: [1, 0, 1, 0, 1, 0, 1, 0, 1],
+};
+
+function NothingGlyph({ variant, live }: { variant: InstrumentVariant; live?: boolean }) {
+  return (
+    <span className={`mps-glyph${live ? " mps-glyph--live" : ""}`} data-variant={variant} aria-hidden>
+      {GLYPH_MAP[variant].map((on, i) => (
+        <i key={i} className={on ? "is-on" : undefined} />
+      ))}
+    </span>
+  );
+}
+
+function InstrumentChevron() {
+  return (
+    <svg className="mps-inst-chevron" viewBox="0 0 24 24" width="12" height="12" aria-hidden>
+      <path
+        d="m9 6 6 6-6 6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/**
+ * 真实推理揭示：ThinkingReasoning。
+ * - 句子只来自 agent_thought，绝不编造。
+ * - loading 且有 actor → 即使尚无句子也显示「思考中」
+ * - done 且无句子 → 不渲染。
+ * - 耗时用后端 latency / stream 时间戳，与模型真实推理时长一致。
+ */
+function ReasoningReveal({
+  reasoning,
+  elapsedMs,
+  status,
+  hasActor,
+}: {
+  reasoning?: string[];
+  elapsedMs?: number;
+  status: VisibleProcessRow["status"];
+  hasActor?: boolean;
+}) {
+  const thinking = status === "loading";
+  const sentences = reasoning ?? [];
+  if (!thinking && sentences.length === 0) return null;
+  if (thinking && !hasActor && sentences.length === 0) return null;
+  return (
+    <ThinkingReasoning
+      sentences={sentences}
+      thinking={thinking}
+      elapsedMs={elapsedMs}
+    />
+  );
+}
+
+function resolveTool(
+  tools: ShellToolItem[],
+  toolKey?: string
+): ShellToolItem | undefined {
+  if (!toolKey) return undefined;
+  return tools.find((t) => t.key === toolKey);
+}
+
+function instrumentTitle(block: InstrumentBlock, tools: ShellToolItem[]): string {
+  const tool = resolveTool(tools, block.toolKey);
+  if (tool && isSearchShellTool(tool)) {
+    const q = (tool.query || tool.detail || "").trim();
+    return q ? `检索「${q}」` : block.title;
+  }
+  return block.title;
+}
+
+function hideSummary(row: VisibleProcessRow, deskMode: boolean): boolean {
+  if (!row.summary) return true;
+  if (row.isCurrent && row.status === "loading") return true;
+  if (deskMode && /事实判定|信源：|置信/.test(row.summary)) return true;
+  return false;
+}
+
+function InstrumentCard({
+  block,
+  tools,
+  live,
+  deskMode,
+  thoughtStatus,
+  onSelectTool,
+  onSelectRow,
+}: {
+  block: InstrumentBlock;
+  tools: ShellToolItem[];
+  live: boolean;
+  deskMode: boolean;
+  thoughtStatus: VisibleProcessRow["status"];
+  onSelectTool?: (toolKey: string) => void;
+  onSelectRow?: (rowKey: string) => void;
+}) {
+  const tool = resolveTool(tools, block.toolKey);
+  const title = instrumentTitle(block, tools);
+  const searchable = Boolean(tool && isSearchShellTool(tool) && !deskMode);
+  const clickable = Boolean((onSelectTool && block.toolKey) || onSelectRow);
+  const showChevron = block.status !== "loading";
+
+  const activate = () => {
+    onSelectRow?.(block.rowKey);
+    if (block.toolKey) onSelectTool?.(block.toolKey);
+  };
+
+  if (block.variant === "think") {
+    return (
+      <li
+        className={`mps-inst mps-inst--think mps-activity mps-activity--${block.status}`}
+        data-variant="think"
+      >
+        <div className="mps-inst-think">
+          <NothingGlyph variant="think" live={thoughtStatus === "loading"} />
+          <ReasoningReveal
+            reasoning={block.reasoning}
+            elapsedMs={block.reasoningElapsedMs}
+            status={thoughtStatus}
+            hasActor
+          />
+        </div>
+      </li>
+    );
+  }
+
+  const head = (
+    <>
+      <NothingGlyph variant={block.variant} live={block.status === "loading"} />
+      <span className="mps-inst-copy">
+        <span className="mps-activity-title mps-inst-title">{title}</span>
+        {block.detail && block.variant !== "search" ? (
+          <span className="mps-inst-detail">{block.detail}</span>
+        ) : null}
+      </span>
+      {showChevron ? <InstrumentChevron /> : <span className="mps-inst-live" aria-hidden />}
+    </>
+  );
+
+  return (
+    <li
+      className={`mps-inst mps-activity mps-activity--${block.status}`}
+      data-variant={block.variant}
+    >
+      {clickable ? (
+        <button
+          type="button"
+          className="mps-inst-head mps-activity-btn"
+          onClick={activate}
+          title={block.detail || title}
+        >
+          {head}
+        </button>
+      ) : (
+        <div className="mps-inst-head mps-activity-static" title={block.detail || title}>
+          {head}
+        </div>
+      )}
+      {block.hostsReasoning ? (
+        <div className="mps-inst-child">
+          <span className="mps-inst-child-rail" aria-hidden />
+          <ReasoningReveal
+            reasoning={block.reasoning}
+            elapsedMs={block.reasoningElapsedMs}
+            status={thoughtStatus}
+            hasActor
+          />
+        </div>
+      ) : null}
+      {searchable && tool ? (
+        <div className="mps-search-blocks" aria-label="联网检索">
+          <WebSearch
+            query={tool.query || tool.detail || tool.title}
+            sites={sitesFromSearchResult(tool.result)}
+            status={tool.status}
+            instantDone={!live && tool.status === "success"}
+          />
+        </div>
+      ) : null}
+    </li>
+  );
 }
 
 function ProcessRowView({
   row,
+  tools,
+  live,
   onSelectTool,
+  deskMode,
+  selected,
+  onSelectRow,
 }: {
   row: VisibleProcessRow;
+  tools: ShellToolItem[];
+  live: boolean;
   onSelectTool?: (toolKey: string) => void;
+  deskMode: boolean;
+  selected: boolean;
+  onSelectRow?: (rowKey: string) => void;
 }) {
+  const blocks = flattenRowToBlocks(row);
+  const speech = blocks.find((b) => b.kind === "speech");
+  const instruments = blocks.filter((b) => b.kind === "instrument");
+  const more = speech && speech.kind === "speech" && !hideSummary(row, deskMode) ? speech.more : undefined;
+
   return (
     <li
-      key={row.key}
-      className={`mps-step mps-step--${row.status} mps-step--${row.kind}${row.isCurrent ? " mps-step--current" : ""}`}
+      className={`mps-step mps-beat mps-step--${row.status} mps-step--${row.kind}${
+        row.isCurrent ? " mps-step--current" : ""
+      }${selected ? " mps-step--selected" : ""}`}
       aria-current={row.isCurrent ? "step" : undefined}
       data-row-key={row.key}
     >
-      <div className="mps-step-rail">
-        <span className={statusDotClass(row.status)} aria-hidden />
-        <span className="mps-step-line" aria-hidden />
-      </div>
-      <div className="mps-step-body">
-        <div className="mps-step-title-row">
-          {row.status === "success" && !row.isCurrent ? (
-            <span className="mps-step-check" aria-hidden>
-              ✓
-            </span>
-          ) : null}
-          <div className="mps-step-title">{row.title}</div>
+      {speech && speech.kind === "speech" ? (
+        <div className="mps-speech">
+          {deskMode && onSelectRow ? (
+            <button
+              type="button"
+              className="mps-step-title mps-step-title-btn mps-speech-text"
+              onClick={() => onSelectRow(row.key)}
+              aria-pressed={selected}
+            >
+              {speech.text}
+            </button>
+          ) : (
+            <div className="mps-step-title mps-speech-text">{speech.text}</div>
+          )}
+          {more ? <p className="mps-step-desc mps-speech-more">{more}</p> : null}
         </div>
-        {row.summary ? <div className="mps-step-desc">{row.summary}</div> : null}
-        {row.actor ? (
-          <div className="mps-step-actor">{row.actor.name}</div>
-        ) : null}
-        {row.activities.length > 0 ? (
-          <ul className="mps-activities mps-activities--chips" aria-label="步骤活动">
-            {row.activities.map((act) => (
-              <li
-                key={act.key}
-                className={`mps-activity mps-activity-chip mps-activity--${act.status}`}
-              >
-                {onSelectTool && act.toolKey ? (
-                  <button
-                    type="button"
-                    className="mps-activity-btn mps-activity-chip-btn"
-                    onClick={() => onSelectTool(act.toolKey!)}
-                    title={act.detail || act.title}
-                  >
-                    <span className="mps-activity-title">{act.title}</span>
-                  </button>
-                ) : (
-                  <span
-                    className="mps-activity-static mps-activity-chip-static"
-                    title={act.detail || act.title}
-                  >
-                    <span className="mps-activity-title">{act.title}</span>
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {row.nextHint ? <div className="mps-step-next">下一步：{row.nextHint}</div> : null}
-      </div>
+      ) : null}
+
+      {instruments.length > 0 ? (
+        <ul className="mps-instruments mps-activities" aria-label="步骤活动">
+          {instruments.map((block) =>
+            block.kind === "instrument" ? (
+              <InstrumentCard
+                key={block.key}
+                block={block}
+                tools={tools}
+                live={live}
+                deskMode={deskMode}
+                thoughtStatus={row.status}
+                onSelectTool={onSelectTool}
+                onSelectRow={onSelectRow}
+              />
+            ) : null
+          )}
+        </ul>
+      ) : null}
+
+      {row.nextHint && !deskMode ? <div className="mps-step-next">下一步：{row.nextHint}</div> : null}
     </li>
   );
 }
 
 function NarrativeStream({
   narrative,
+  tools,
+  live,
   onSelectTool,
   forceExpandAll,
+  deskMode,
+  selectedRowKey,
+  onSelectRow,
 }: {
   narrative: VisibleProcessNarrative;
+  tools: ShellToolItem[];
+  live: boolean;
   onSelectTool?: (toolKey: string) => void;
   forceExpandAll: boolean;
+  deskMode: boolean;
+  selectedRowKey?: string | null;
+  onSelectRow?: (rowKey: string) => void;
 }) {
   const visible = narrative.rows.filter((r) => forceExpandAll || r.expanded);
 
@@ -123,7 +334,16 @@ function NarrativeStream({
   return (
     <ol className="mps-chain mps-chain--narrative">
       {visible.map((row) => (
-        <ProcessRowView key={row.key} row={row} onSelectTool={onSelectTool} />
+        <ProcessRowView
+          key={row.key}
+          row={row}
+          tools={tools}
+          live={live}
+          onSelectTool={onSelectTool}
+          deskMode={deskMode}
+          selected={selectedRowKey === row.key}
+          onSelectRow={onSelectRow}
+        />
       ))}
     </ol>
   );
@@ -158,7 +378,7 @@ function VerdictBlock({ narrative, model }: { narrative: VisibleProcessNarrative
 
   return (
     <div className="mps-verdict mps-verdict--hero" role="region" aria-label="核查结论">
-      <div className="mps-verdict-label">现在可以怎么看</div>
+      <div className="mps-verdict-label">结论</div>
       <div className="mps-verdict-badges">
         <div className="mps-verdict-type">{humanizeVerdictType(model.verdict.verdictType)}</div>
         {typeof model.verdict.credibilityScore === "number" ? (
@@ -167,8 +387,8 @@ function VerdictBlock({ narrative, model }: { narrative: VisibleProcessNarrative
       </div>
       {model.verdict.conclusion ? <p className="mps-verdict-text">{model.verdict.conclusion}</p> : null}
       {model.verdict.shareAdvice ? (
-        <div className="mps-share-advice" aria-label="转发建议">
-          <span className="mps-share-advice-label">转发建议</span>
+        <div className="mps-share-advice" aria-label="能不能信">
+          <span className="mps-share-advice-label">能不能信</span>
           <p className="mps-share-advice-text">{model.verdict.shareAdvice}</p>
         </div>
       ) : null}
@@ -226,16 +446,29 @@ export function MissionProcessShell({
   className,
   variant = "token",
   claimInParent = true,
+  deskMode = false,
+  selectedRowKey = null,
+  onSelectRow,
 }: MissionProcessShellProps) {
   // antdx frozen: always token narrative (MissionProcessShellAntd not loaded in product)
   void variant;
   const narrative = useMemo(() => buildVisibleProcessRows(model), [model]);
+  const todos = useMemo(() => buildInvestigationTodos(model), [model]);
   const [expandAll, setExpandAll] = useState(false);
 
   const foldProcess =
-    narrative.mode === "complete" || narrative.mode === "deferred";
+    !deskMode && (narrative.mode === "complete" || narrative.mode === "deferred");
   const showCollapseToggle =
     narrative.collapsedCount > 0 && !expandAll && !foldProcess;
+  const showTodos =
+    !deskMode &&
+    !model.live &&
+    todos.length > 0 &&
+    (model.thoughtItems.length > 0 ||
+      model.tools.length > 0 ||
+      model.agents.length > 0 ||
+      model.verdict.present ||
+      Boolean(model.errorMessage));
 
   return (
     <section
@@ -245,11 +478,21 @@ export function MissionProcessShell({
       data-mode={narrative.mode}
       data-variant="token"
       data-claim-in-parent={claimInParent ? "1" : "0"}
+      data-desk={deskMode ? "1" : "0"}
     >
       {/* No inner claim / phase / live pill — parent Mission Control owns those */}
 
-      {narrative.showVerdict || narrative.deferredReview ? (
+      {!deskMode && (narrative.showVerdict || narrative.deferredReview) ? (
         <VerdictBlock narrative={narrative} model={model} />
+      ) : null}
+
+      {/* Stream-derived checklist — same agent/tool truth as the narrative below */}
+      {showTodos ? (
+        <TodoList
+          items={todos}
+          title="核查计划"
+          defaultCollapsed={foldProcess}
+        />
       ) : null}
 
       {foldProcess ? (
@@ -274,8 +517,13 @@ export function MissionProcessShell({
           ) : null}
           <NarrativeStream
             narrative={narrative}
+            tools={model.tools}
+            live={model.live}
             onSelectTool={onSelectTool}
-            forceExpandAll={expandAll || narrative.mode === "error"}
+            forceExpandAll={expandAll || narrative.mode === "error" || deskMode}
+            deskMode={deskMode}
+            selectedRowKey={selectedRowKey}
+            onSelectRow={onSelectRow}
           />
         </>
       )}

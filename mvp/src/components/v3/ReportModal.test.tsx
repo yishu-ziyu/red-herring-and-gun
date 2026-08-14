@@ -36,21 +36,21 @@ function renderModal(report: FinalReport) {
   );
 }
 
-describe("ReportModal 逐命题定罪区块", () => {
+describe("ReportModal 逐条判定区块", () => {
   afterEach(() => {
     cleanup();
   });
 
   it("subclaimVerdicts 缺失时渲染空态提示，不显示任何条目", () => {
     renderModal(makeReport());
-    expect(screen.getByText("逐命题定罪")).toBeInTheDocument();
-    expect(screen.getByText("本次未生成逐命题判定")).toBeInTheDocument();
+    expect(screen.getByText("逐条判定")).toBeInTheDocument();
+    expect(screen.getByText("本次未生成逐条判定")).toBeInTheDocument();
     expect(document.querySelector(".report-verdict-item")).toBeNull();
   });
 
   it("subclaimVerdicts 为空数组时渲染空态提示", () => {
     renderModal(makeReport({ subclaimVerdicts: [] }));
-    expect(screen.getByText("本次未生成逐命题判定")).toBeInTheDocument();
+    expect(screen.getByText("本次未生成逐条判定")).toBeInTheDocument();
   });
 
   it("单条 item 渲染 claimAtom / evidence / boundary", () => {
@@ -67,7 +67,7 @@ describe("ReportModal 逐命题定罪区块", () => {
     expect(screen.getByText("隔夜菜会致癌")).toBeInTheDocument();
     expect(screen.getByText("未检索到支持该致癌结论的可靠证据")).toBeInTheDocument();
     expect(screen.getByText("仅针对常温隔夜存放场景")).toBeInTheDocument();
-    expect(screen.queryByText("本次未生成逐命题判定")).not.toBeInTheDocument();
+    expect(screen.queryByText("本次未生成逐条判定")).not.toBeInTheDocument();
   });
 
   it("verdict 五值分别渲染对应标签与着色 class", () => {
@@ -94,7 +94,7 @@ describe("ReportModal 逐命题定罪区块", () => {
     expect(badges[4].textContent).toBe("未判定·待补证");
   });
 
-  it("unverified 明确标注待补证而非伪装成定罪", () => {
+  it("unverified 明确标注待补证而非伪装成已判定", () => {
     const verdicts: SubclaimVerdict[] = [
       { claimAtom: "a", verdict: "unverified", evidence: "", boundary: "模型未覆盖，待补证" },
     ];
@@ -103,7 +103,7 @@ describe("ReportModal 逐命题定罪区块", () => {
     expect(screen.getByText("模型未覆盖，待补证")).toBeInTheDocument();
   });
 
-  it("默认收起：分区不渲染，aria-expanded 为 false", () => {
+  it("默认收起：展开区标题不渲染，aria-expanded 为 false（编号来源可在证据区常显）", () => {
     const verdicts: SubclaimVerdict[] = [
       {
         claimAtom: "隔夜菜会致癌",
@@ -117,9 +117,11 @@ describe("ReportModal 逐命题定罪区块", () => {
     ];
     renderModal(makeReport({ subclaimVerdicts: verdicts }));
 
+    // Expand-only sections stay closed; numbered cite footer under 证据 may still list sources.
     expect(screen.queryByText("支撑证据")).not.toBeInTheDocument();
     expect(screen.queryByText("反证 / 质疑")).not.toBeInTheDocument();
     expect(screen.queryByText("证据缺口")).not.toBeInTheDocument();
+    expect(screen.getByText("来源A")).toBeInTheDocument();
     const header = screen.getByRole("button", { name: /隔夜菜会致癌/ });
     expect(header.getAttribute("aria-expanded")).toBe("false");
   });
@@ -163,11 +165,14 @@ describe("ReportModal 逐命题定罪区块", () => {
     ];
     renderModal(makeReport({ subclaimVerdicts: verdicts }));
 
-    fireEvent.click(screen.getByRole("button", { name: /隔夜菜会致癌/ }));
+    // Supporting: numbered cite footer always under 证据
+    const supportLinks = screen.getAllByRole("link").filter((el) =>
+      (el.getAttribute("href") ?? "").startsWith("https://support.example.com/a")
+    );
+    expect(supportLinks.length).toBeGreaterThanOrEqual(1);
+    expect(supportLinks[0].getAttribute("target")).toBe("_blank");
 
-    const supportLink = screen.getByRole("link", { name: "支撑来源" });
-    expect(supportLink.getAttribute("href")).toBe("https://support.example.com/a");
-    expect(supportLink.getAttribute("target")).toBe("_blank");
+    fireEvent.click(screen.getByRole("button", { name: /隔夜菜会致癌/ }));
 
     const contradictLink = screen.getByRole("link", { name: "反证来源" });
     expect(contradictLink.getAttribute("href")).toBe("https://contradict.example.com/b");
@@ -217,7 +222,7 @@ describe("ReportModal 排除层 · 不可核查原子与整句立场标注", () 
     // 不订真/假：该原子不渲染任何 verdict 五值标签
     expect(screen.queryByText("属实")).not.toBeNull();
     expect(stanceBadges[0].className).toContain("verdict-stance");
-    // 可核查原子照常定罪
+    // 可核查原子照常判定
     expect(screen.getByText("事实A")).toBeInTheDocument();
     expect(screen.getByText("属实")).toBeInTheDocument();
   });
