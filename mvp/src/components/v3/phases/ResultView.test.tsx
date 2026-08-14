@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ResultView } from "./ResultView";
 
@@ -111,5 +111,59 @@ describe("ResultView", () => {
     expect(footprint).toHaveTextContent("隔夜菜会致癌");
     expect(footprint).toHaveTextContent(/1 条/);
     expect(footprint).toHaveTextContent(/已绑定来源|支撑来源/);
+  });
+
+  it("renders interrupted judgment without padded composer copy", () => {
+    render(
+      <ResultView
+        claim="房屋养老金要从工资里扣"
+        finalReport={{
+          verdictType: "unverified",
+          credibilityLabel: "未能判断",
+          credibilityScore: 30,
+          conclusion: "本次核查未能完成最终判断：模型服务暂时不可用。",
+          recommendation: "请稍后重试，或检查模型配置后重新发起核查。",
+          citationSources: [{ title: "央行公开说明", url: "https://example.com/pboc" }],
+          evidenceChain: [
+            {
+              layer: "证据",
+              finding: "审核器补全：前序输出未提供完整证据链",
+              evidence: "（审稿补全，非新增外部事实）",
+              sourceRefs: [],
+            },
+          ],
+          _source: "error-boundary",
+        }}
+        onBack={() => {}}
+        onReverify={() => {}}
+      />
+    );
+
+    const report = screen.getByLabelText("最终核查判断");
+    expect(within(report).getByText("这次没查完")).toBeInTheDocument();
+    expect(within(report).getByRole("button", { name: "再查一次" })).toBeInTheDocument();
+    expect(within(report).getByRole("link", { name: "央行公开说明" })).toHaveAttribute(
+      "href",
+      "https://example.com/pboc"
+    );
+    expect(within(report).queryByText(/审核器补全/)).not.toBeInTheDocument();
+    expect(within(report).queryByText(/模型服务暂时不可用/)).not.toBeInTheDocument();
+  });
+
+  it("dossier variant drops page chrome and process footprint", () => {
+    render(
+      <ResultView
+        variant="dossier"
+        claim="隔夜菜会致癌，吃了等于吃毒药"
+        finalReport={SAMPLE_REPORT}
+        onBack={() => {}}
+        onReverify={() => {}}
+      />
+    );
+
+    expect(screen.queryByText("返回")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /核查足迹/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新核查" })).toBeInTheDocument();
+    expect(screen.getByLabelText("最终核查判断")).toHaveTextContent(/该说法没有可靠证据支持/);
   });
 });

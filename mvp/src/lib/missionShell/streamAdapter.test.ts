@@ -184,6 +184,38 @@ describe("adaptOrchestrateStreamToShell", () => {
     expect(model.thoughtItems.some((t) => t.key === "error")).toBe(false);
   });
 
+  it("recoverable agent_error then complete does not abort as 核查中断", () => {
+    const model = adaptOrchestrateStreamToShell([
+      ...FIXTURE_AGENT_ERROR.slice(0, -1),
+      {
+        type: "agent_error",
+        agent: "report_composer",
+        agentName: "ReportComposer",
+        error: "真实模型调用失败",
+        recoverable: true,
+        timestamp: 12,
+      },
+      {
+        type: "complete",
+        claim: "隔夜菜加热会致癌吗",
+        finalReport: {
+          verdictType: "unverified",
+          conclusion: "未能给出能信/不能信的判断，仅保留已检索到的公开材料。",
+          credibilityLabel: "未能判断",
+        },
+        timestamp: 13,
+      },
+    ]);
+
+    expect(model.live).toBe(false);
+    expect(model.errorMessage).toBeUndefined();
+    expect(model.verdict.present).toBe(true);
+    expect(model.verdict.verdictType).toBe("unverified");
+    const reportAgent = model.agents.find((a) => a.agentId === "report_composer");
+    expect(reportAgent?.status).toBe("success");
+    expect(reportAgent?.summary).toMatch(/已检索/);
+  });
+
   it("FIXTURE_REVIEW_FAIL: verdict present with reviewPassed=false", () => {
     const model = adaptOrchestrateStreamToShell(FIXTURE_REVIEW_FAIL);
 
@@ -324,6 +356,32 @@ describe("adaptOrchestrateStreamToShell", () => {
 
     const rumor = model.thoughtItems.find((t) => t.key === "agent:rumor_detector");
     expect(rumor?.reasoning).toEqual(["思考句A", "思考句B"]);
+  });
+
+  it("agent_thought partial grows the current sentence in place", () => {
+    const model = adaptOrchestrateStreamToShell([
+      ...FIXTURE_EARLY,
+      {
+        type: "agent_thought",
+        agent: "rumor_detector",
+        content: "先",
+        seq: 0,
+        done: false,
+        partial: true,
+        timestamp: 5,
+      },
+      {
+        type: "agent_thought",
+        agent: "rumor_detector",
+        content: "先看原句是否可核。",
+        seq: 0,
+        done: false,
+        partial: true,
+        timestamp: 6,
+      },
+    ]);
+    const rumor = model.thoughtItems.find((t) => t.key === "agent:rumor_detector");
+    expect(rumor?.reasoning).toEqual(["先看原句是否可核。"]);
   });
 
   it("agent without reasoning exposes no reasoning (no fabricated thinking)", () => {

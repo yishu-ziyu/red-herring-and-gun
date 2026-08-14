@@ -21,6 +21,8 @@ export interface CaseEntry {
   claimReview: ClaimReviewJsonLd;
   credibilityScore: number;
   createdAt: number;
+  /** 邮箱账号 hash；未登录写入的 case 没有归属，不会出现在任何人的列表里。 */
+  ownerHash?: string;
 }
 
 const LRU_LIMIT = 1000;
@@ -69,12 +71,14 @@ export function getCase(caseId: string): CaseEntry | null {
 }
 
 /**
- * 列出 case（按 createdAt 降序，最多 max 条）
+ * 列出 case（按 createdAt 降序，最多 max 条）。
+ * 传入 ownerHash 时只返回该账号的 case。
  */
-export function listCases(max: number = 50): CaseEntry[] {
-  return Array.from(store.values())
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .slice(0, max);
+export function listCases(max: number = 50, ownerHash?: string): CaseEntry[] {
+  const items = ownerHash
+    ? Array.from(store.values()).filter((entry) => entry.ownerHash === ownerHash)
+    : Array.from(store.values());
+  return items.sort((a, b) => b.createdAt - a.createdAt).slice(0, max);
 }
 
 /**

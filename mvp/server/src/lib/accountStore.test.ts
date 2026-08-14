@@ -1,16 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  consumeQuota,
+  abandonOutstandingCode,
+  beginAccountCheck,
+  commitAccountCheck,
   deleteAccount,
   generateCode,
+  getAccountChecks,
   getBySession,
-  getQuota,
   hashEmail,
+  peekOutstandingCode,
+  releaseAccountCheck,
   requestCode,
   resetForTests,
+  updateDisplayName,
   verifyAndCreate,
   type EmailAccount,
 } from "./accountStore.js";
+import { ACCOUNT_DAILY_CHECKS } from "../../../src/lib/checkQuota.js";
 
 const SERVER_SECRET = "test-server-secret-for-account-store";
 const EMAIL = "user@example.com";
@@ -29,7 +35,10 @@ function emailAccount(email: string): EmailAccount {
     email,
     hash: hashEmail(email, SERVER_SECRET),
     createdAt: Date.now(),
-    quota: { total: 5, used: 0, periodStartAt: Date.now() },
+    displayName: "",
+    loginCount: 1,
+    lastLoginAt: Date.now(),
+    checks: { day: "2026-08-14", used: 0, inflight: 0 },
     history: [],
   };
 }
@@ -91,6 +100,21 @@ describe("accountStore", () => {
       expect(second.error).toBe("rate_limit");
     });
 
+    it("peekOutstandingCode returns the unused code during the rate window", async () => {
+      const first = await requestCode(EMAIL, SERVER_SECRET);
+      expect(peekOutstandingCode(EMAIL, SERVER_SECRET)).toBe(first.code);
+    });
+
+    it("abandonOutstandingCode drops the unused code so a retry is allowed", async () => {
+      const first = await requestCode(EMAIL, SERVER_SECRET);
+      expect(first.ok).toBe(true);
+      abandonOutstandingCode(EMAIL, SERVER_SECRET);
+      expect(peekOutstandingCode(EMAIL, SERVER_SECRET)).toBeNull();
+      const second = await requestCode(EMAIL, SERVER_SECRET);
+      expect(second.ok).toBe(true);
+      expect(second.code).toMatch(/^\d{6}$/);
+    });
+
     it("rejects malformed emails", async () => {
       const result = await requestCode("not-an-email", SERVER_SECRET);
       expect(result.ok).toBe(false);
@@ -124,8 +148,8 @@ describe("accountStore", () => {
       const account = await getBySession(verify.sessionId!, SERVER_SECRET);
       expect(account).not.toBeNull();
       expect(account!.email).toBe(EMAIL);
-      expect(account!.quota.total).toBe(5);
-      expect(account!.quota.used).toBe(0);
+      expect(getAccountChecks(account!).remaining).toBe(ACCOUNT_DAILY_CHECKS);
+      expect(getAccountChecks(account!).used).toBe(0);
     });
 
     it("rejects an invalid code", async () => {
@@ -164,7 +188,7 @@ describe("accountStore", () => {
     });
   });
 
-  describe("consumeQuota / getQuota", () => {
+  describe("daily checks", () => {
     async function bootstrap(email: string) {
       const req = await requestCode(email, SERVER_SECRET);
       expect(req.ok).toBe(true);
@@ -172,49 +196,51 @@ describe("accountStore", () => {
       return verify.sessionId!;
     }
 
-    it("decrements remaining quota and persists", async () => {
+    it("reserves a slot, then commits it as one completed check", async () => {
       const sessionId = await bootstrap(EMAIL);
-      const before = await getBySession(sessionId, SERVER_SECRET);
-      expect(before!.quota.used).toBe(0);
-
-      const result = await consumeQuota(sessionId, SERVER_SECRET);
-      expect(result.ok).toBe(true);
-      expect(result.remaining).toBe(4);
-
-      const after = await getBySession(sessionId, SERVER_SECRET);
-      expect(after!.quota.used).toBe(1);
-      expect(getQuota(after!)).toEqual({ remaining: 4, total: 5 });
+      const account = await getBySession(sessionId, SERVER_SECRET);
+      expect(account).not.toBeNull();
+      expect(beginAccountCheck(account!)).toBe(true);
+      expect(getAccountChecks(account!).remaining).toBe(ACCOUNT_DAILY_CHECKS - 1);
+      commitAccountCheck(account!);
+      expect(getAccountChecks(account!).used).toBe(1);
+      expect(getAccountChecks(account!).remaining).toBe(ACCOUNT_DAILY_CHECKS - 1);
+      expect(account!.history.some((h) => h.kind === "check")).toBe(true);
     });
 
-    it("rejects when quota is exhausted for the active 30-day period", async () => {
+    it("releases an in-flight check when the run fails", async () => {
       const sessionId = await bootstrap(EMAIL);
-      for (let i = 0; i < 5; i += 1) {
-        const r = await consumeQuota(sessionId, SERVER_SECRET);
-        expect(r.ok).toBe(true);
-      }
-      const sixth = await consumeQuota(sessionId, SERVER_SECRET);
-      expect(sixth.ok).toBe(false);
-      expect(sixth.error).toBe("quota_exceeded");
+      const account = (await getBySession(sessionId, SERVER_SECRET))!;
+      expect(beginAccountCheck(account)).toBe(true);
+      releaseAccountCheck(account);
+      expect(getAccountChecks(account)).toMatchObject({ remaining: ACCOUNT_DAILY_CHECKS, used: 0 });
     });
 
-    it("resets the quota window after 30 days", async () => {
-      // 先用真实时间启动，到 bootstrap 这一刻
-      const baseline = Date.now();
-
+    it("rejects a fourth check on the same day", async () => {
       const sessionId = await bootstrap(EMAIL);
-      for (let i = 0; i < 5; i += 1) {
-        await consumeQuota(sessionId, SERVER_SECRET);
+      const account = (await getBySession(sessionId, SERVER_SECRET))!;
+      for (let i = 0; i < ACCOUNT_DAILY_CHECKS; i += 1) {
+        expect(beginAccountCheck(account)).toBe(true);
+        commitAccountCheck(account);
       }
-      const exhausted = await consumeQuota(sessionId, SERVER_SECRET);
-      expect(exhausted.ok).toBe(false);
+      expect(beginAccountCheck(account)).toBe(false);
+      expect(getAccountChecks(account).remaining).toBe(0);
+    });
 
-      // 越过 30 天 quota 窗口,但离 31 天 session TTL 还差 1 小时
+    it("resets after the Shanghai calendar day rolls over", async () => {
       vi.useFakeTimers();
-      vi.setSystemTime(new Date(baseline + 30 * 24 * 60 * 60 * 1000 + 60 * 60 * 1000));
+      vi.setSystemTime(new Date("2026-08-14T04:00:00Z"));
+      const sessionId = await bootstrap(EMAIL);
+      const account = (await getBySession(sessionId, SERVER_SECRET))!;
+      for (let i = 0; i < ACCOUNT_DAILY_CHECKS; i += 1) {
+        beginAccountCheck(account);
+        commitAccountCheck(account);
+      }
+      expect(beginAccountCheck(account)).toBe(false);
 
-      const after = await consumeQuota(sessionId, SERVER_SECRET);
-      expect(after.ok).toBe(true);
-      expect(after.remaining).toBe(4);
+      vi.setSystemTime(new Date("2026-08-14T16:00:00Z"));
+      expect(getAccountChecks(account).remaining).toBe(ACCOUNT_DAILY_CHECKS);
+      expect(beginAccountCheck(account)).toBe(true);
     });
 
     it("returns null for a missing session", async () => {
@@ -247,7 +273,28 @@ describe("accountStore", () => {
       const account = (await getBySession(verify.sessionId!, SERVER_SECRET)) as EmailAccount | null;
       expect(account).not.toBeNull();
       expect(account!.history.length).toBeGreaterThanOrEqual(1);
-      expect(account!.history[0].kind).toBe("verify");
+      expect(account!.history.some((h) => h.kind === "verify")).toBe(true);
+    });
+  });
+
+  describe("profile", () => {
+    it("counts each successful login and stores a display name", async () => {
+      const firstReq = await requestCode(EMAIL, SERVER_SECRET);
+      const first = await verifyAndCreate(EMAIL, firstReq.code!, SERVER_SECRET);
+      const created = await getBySession(first.sessionId!, SERVER_SECRET);
+      expect(created?.loginCount).toBe(1);
+      expect(created?.displayName).toBe("");
+
+      updateDisplayName(created!, "奕枢");
+      expect(created?.displayName).toBe("奕枢");
+
+      vi.useFakeTimers();
+      vi.setSystemTime(Date.now() + 61_000);
+      const secondReq = await requestCode(EMAIL, SERVER_SECRET);
+      const second = await verifyAndCreate(EMAIL, secondReq.code!, SERVER_SECRET);
+      const again = await getBySession(second.sessionId!, SERVER_SECRET);
+      expect(again?.loginCount).toBe(2);
+      expect(again?.displayName).toBe("奕枢");
     });
   });
 });
