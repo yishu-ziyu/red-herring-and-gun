@@ -18,16 +18,17 @@ import type {
   ShellNodeStatus,
   ShellThoughtItem,
   ShellToolItem,
+  ShellUnderstanding,
   ShellVerdictCard,
   ShellVerdictSource,
 } from "./types";
 import { humanizeProcessSummary, humanizeProcessTitle } from "./visibleProcessRows";
 
 const AGENT_LABEL: Record<string, string> = {
-  rumor_detector: "立案分诊",
+  rumor_detector: "拆题",
   fact_checker: "事实核查",
-  source_validator: "信源审计",
-  report_composer: "报告收束",
+  source_validator: "溯源",
+  report_composer: "写结论",
   alternative_explanation_searcher: "替代解释",
   counter_evidence_grader: "反证评分",
 };
@@ -278,6 +279,8 @@ export function adaptOrchestrateStreamToShell(
   const agentById = new Map<string, ShellAgentChip>();
   let live = true;
   let errorMessage: string | undefined;
+  let understanding: ShellUnderstanding | undefined;
+  let claimType: string | undefined;
   let verdict: ShellVerdictCard = { present: false };
 
   const orderThought: string[] = [];
@@ -302,15 +305,15 @@ export function adaptOrchestrateStreamToShell(
 
     switch (event.type) {
       case "planner_update": {
+        if (typeof event.plan?.claimType === "string" && event.plan.claimType.trim()) {
+          claimType = event.plan.claimType.trim();
+        }
+        const typeZh = humanizeClaimType(claimType);
+        const rationale = humanizeProcessSummary(event.plan?.rationale);
         touchThought("planner", {
           key: "planner",
           title: humanizeProcessTitle("理解命题与路径"),
-          description:
-            humanizeProcessSummary(
-              event.plan?.rationale ||
-                humanizeClaimType(event.plan?.claimType) ||
-                "规划核查路径"
-            ) || "规划核查路径",
+          description: rationale || (typeZh ? `这是${typeZh}。` : undefined),
           status: mapStatus("done"),
           kind: "planner",
           timestamp: ts,
@@ -348,6 +351,7 @@ export function adaptOrchestrateStreamToShell(
       }
       case "agent_start": {
         const id = event.agent || "agent";
+        const startedAt = ts ?? Date.now();
         touchThought(`agent:${id}`, {
           key: `agent:${id}`,
           title: agentLabel(id, event.agentName),
@@ -356,6 +360,8 @@ export function adaptOrchestrateStreamToShell(
           kind: "agent",
           agentId: id,
           timestamp: ts,
+          // Wall-clock from agent_start — "Thought for Ns" must match model work, not SSE pacing.
+          reasoningStartedAt: startedAt,
         });
         touchAgent(id, {
           agentId: id,
@@ -367,8 +373,19 @@ export function adaptOrchestrateStreamToShell(
       }
       case "agent_complete": {
         const id = event.agent || "agent";
-        touchThought(`agent:${id}`, {
-          key: `agent:${id}`,
+        const key = `agent:${id}`;
+        const existing = thoughtByKey.get(key);
+        const startedAt = existing?.reasoningStartedAt;
+        const latency =
+          typeof event.latencyMs === "number" && Number.isFinite(event.latencyMs)
+            ? Math.max(0, event.latencyMs)
+            : undefined;
+        const elapsedFromStart =
+          startedAt != null && ts != null ? Math.max(0, ts - startedAt) : undefined;
+        const reasoningElapsedMs =
+          latency ?? elapsedFromStart ?? existing?.reasoningElapsedMs;
+        touchThought(key, {
+          key,
           title: agentLabel(id, event.agentName),
           description: summarizeAgentOutput(event.output),
           status: mapStatus("done"),
@@ -376,6 +393,9 @@ export function adaptOrchestrateStreamToShell(
           agentId: id,
           timestamp: ts,
           detail: event.output ? { output: event.output } : undefined,
+          // Preserve reasoning via merge; freeze elapsed to real agent latency.
+          reasoningStartedAt: startedAt,
+          reasoningElapsedMs,
         });
         touchAgent(id, {
           agentId: id,
@@ -384,16 +404,67 @@ export function adaptOrchestrateStreamToShell(
           icon: event.agentIcon,
           summary: summarizeAgentOutput(event.output),
         });
+        // 一级可见：系统如何理解原句。rumor_detector 拆出的原子命题升至理解卡。
+        if (id === "rumor_detector" && event.output) {
+          const atoms = extractClaimAtoms(event.output);
+          if (atoms.length > 0) {
+            understanding = { claim, atoms };
+          }
+        }
+        break;
+      }
+      case "agent_thought": {
+        const id = event.agent || "agent";
+        const key = `agent:${id}`;
+        const content = (event.content ?? "").trim();
+        if (!content) break;
+        const tsNow = event.timestamp ?? Date.now();
+        const existing = thoughtByKey.get(key);
+        const prevReasoning = existing?.reasoning ?? [];
+        const seq = typeof event.seq === "number" ? event.seq : prevReasoning.length;
+        let reasoning: string[];
+        if (event.partial) {
+          if (seq === prevReasoning.length) reasoning = [...prevReasoning, content];
+          else if (seq === prevReasoning.length - 1) reasoning = [...prevReasoning.slice(0, seq), content];
+          else break;
+        } else {
+          // 防重：seq 已存在（或乱序回退）时不重复追加
+          if (typeof event.seq === "number" && event.seq < prevReasoning.length) break;
+          reasoning = [...prevReasoning, content];
+        }
+        // Prefer agent_start timestamp so elapsed tracks real model work.
+        const startedAt = existing?.reasoningStartedAt ?? tsNow;
+        touchThought(key, {
+          key,
+          title: agentLabel(id, event.agentName),
+          description: existing?.description || "进行中",
+          status: "loading",
+          kind: "agent",
+          agentId: id,
+          timestamp: tsNow,
+          reasoning,
+          reasoningStartedAt: startedAt,
+          reasoningElapsedMs: Math.max(0, tsNow - startedAt),
+        });
+        touchAgent(id, {
+          agentId: id,
+          name: agentLabel(id, event.agentName),
+          status: "loading",
+          icon: event.agentIcon,
+        });
         break;
       }
       case "agent_error": {
         const id = event.agent || "agent";
-        const msg = event.message || event.error || "调用失败";
+        const recoverable = event.recoverable === true;
+        const msg = recoverable
+          ? "这一步没能写成判断，会用已检索到的材料继续。"
+          : event.message || event.error || "调用失败";
         touchThought(`agent:${id}`, {
           key: `agent:${id}`,
           title: agentLabel(id, event.agentName),
           description: msg,
-          status: mapStatus("fail"),
+          status: recoverable ? mapStatus("done") : mapStatus("fail"),
           kind: "agent",
           agentId: id,
           timestamp: ts,
@@ -401,7 +472,7 @@ export function adaptOrchestrateStreamToShell(
         touchAgent(id, {
           agentId: id,
           name: agentLabel(id, event.agentName),
-          status: mapStatus("fail"),
+          status: recoverable ? mapStatus("done") : mapStatus("fail"),
           summary: msg,
         });
         break;
@@ -520,9 +591,11 @@ export function adaptOrchestrateStreamToShell(
   return {
     claim,
     phaseLabel: phaseFromEvents(events),
+    claimType,
     thoughtItems: orderThought.map((k) => thoughtByKey.get(k)!).filter(Boolean),
     tools: orderTool.map((k) => toolByKey.get(k)!).filter(Boolean),
     agents: orderAgent.map((k) => agentById.get(k)!).filter(Boolean),
+    understanding,
     verdict,
     live,
     errorMessage,
@@ -546,6 +619,42 @@ function asString(v: unknown): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
 }
 
+/**
+ * 从 rumor_detector 的 output 提取「系统如何理解原句」的原子命题清单。
+ * 优先用 claimAtomTypes（带可核查性与类型），缺失时退回 claimAtoms 字符串。
+ */
+function extractClaimAtoms(output: Record<string, unknown>): ShellUnderstanding["atoms"] {
+  const types = Array.isArray(output.claimAtomTypes)
+    ? (output.claimAtomTypes as Array<{
+        text?: unknown;
+        verifiable?: unknown;
+        type?: unknown;
+      }>)
+    : [];
+  const hasTypes =
+    types.length > 0 &&
+    types.some((t) => typeof t?.text === "string" && t.text.trim());
+
+  if (hasTypes) {
+    return types
+      .filter((t) => typeof t?.text === "string" && t.text.trim())
+      .map((t) => ({
+        text: String(t.text).trim(),
+        verifiable: t.verifiable === true,
+        type: typeof t.type === "string" ? t.type : "fact",
+      }));
+  }
+
+  const atoms = (Array.isArray(output.claimAtoms) ? output.claimAtoms : []) as unknown[];
+  return atoms
+    .filter((a): a is string => typeof a === "string" && Boolean(a.trim()))
+    .map((a) => ({
+      text: a.trim(),
+      verifiable: true,
+      type: "fact",
+    }));
+}
+
 function summarizeAgentOutput(output?: Record<string, unknown>): string | undefined {
   if (!output) return undefined;
   if (typeof output.analysis === "string") return output.analysis.slice(0, 120);
@@ -562,6 +671,6 @@ function summarizeAgentOutput(output?: Record<string, unknown>): string | undefi
 
 function debateRoundHint(event: OrchestrateStreamEvent): string | undefined {
   const rounds = event.debate?.rounds;
-  if (Array.isArray(rounds) && rounds.length > 0) return `第 ${rounds.length} 轮质询`;
+  if (Array.isArray(rounds) && rounds.length > 0) return `第 ${rounds.length} 轮对证据`;
   return undefined;
 }

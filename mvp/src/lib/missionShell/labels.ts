@@ -10,31 +10,31 @@ export function humanizeVerdictType(verdictType?: string | null): string {
   const key = normalizeKey(verdictType);
   switch (key) {
     case "true":
-      return "倾向成立";
+      return "能信";
     case "false":
     case "rumor":
-      return "倾向不成立";
+      return "不能信";
     case "mixed_misleading":
     case "mixed":
     case "partial":
-      return "部分误导/夸大";
+      return "只能信一部分";
     case "unverified":
     case "uncertain":
     case "maybe":
     case "unknown":
-      return "尚难核实";
+      return "还查不清";
     default: {
       const raw = typeof verdictType === "string" ? verdictType.trim() : "";
       if (!raw) return "—";
       // Machine-looking enums must not leak into Chinese UI.
-      if (looksLikeMachineToken(raw)) return "尚难核实";
+      if (looksLikeMachineToken(raw)) return "还查不清";
       return raw;
     }
   }
 }
 
 /**
- * Forwarding advice: prefer report.recommendation, else derive from verdictType.
+ * 能不能信：优先用报告 recommendation，否则按 verdictType 推导。
  */
 export function shareAdviceFromVerdict(
   recommendation?: string | null,
@@ -44,18 +44,18 @@ export function shareAdviceFromVerdict(
   if (rec) return rec;
   const key = normalizeKey(verdictType);
   if (key === "false" || key === "rumor") {
-    return "不建议转发。现有公开材料不支持该说法。";
+    return "不能信。公开材料不支持这句话。";
   }
   if (key === "true") {
-    return "可谨慎引用，请附带来源链接，勿二次改写。";
+    return "能信。看来源，不要改写成更满的说法。";
   }
   if (key === "partial" || key === "mixed" || key === "mixed_misleading") {
-    return "不宜整段转发。可说明「部分成立、有限定条件」。";
+    return "只能信一部分。哪一截成立、哪一截没有依据，看下面。";
   }
   if (key === "unverified" || key === "uncertain" || key === "maybe" || key === "unknown") {
-    return "证据不足，先不要转发；等待更可靠来源。";
+    return "还查不清。先别当已经证实。";
   }
-  return "请先阅读结论与来源，再决定是否转发。";
+  return "先看来源，再判断能不能信。";
 }
 
 /** Map fact_checker factCheckResult → Chinese. */
@@ -63,19 +63,19 @@ export function humanizeFactCheckResult(result?: string | null): string {
   const key = normalizeKey(result);
   switch (key) {
     case "true":
-      return "倾向成立";
+      return "能信";
     case "false":
-      return "倾向不成立";
+      return "不能信";
     case "partial":
-      return "部分成立";
+      return "只能信一部分";
     case "unverified":
     case "uncertain":
     case "maybe":
-      return "尚难核实";
+      return "还查不清";
     default: {
       const raw = typeof result === "string" ? result.trim() : "";
       if (!raw) return "—";
-      if (looksLikeMachineToken(raw)) return "尚难核实";
+      if (looksLikeMachineToken(raw)) return "还查不清";
       return raw;
     }
   }
@@ -86,13 +86,15 @@ export function humanizeClaimType(claimType?: string | null): string {
   const key = normalizeKey(claimType);
   switch (key) {
     case "causal":
-      return "因果命题";
+      return "因果推断";
     case "concept":
-      return "概念命题";
+      return "概念说法";
     case "event":
-      return "事件命题";
+      return "事件说法";
     case "mixed":
-      return "混合命题";
+      return "混合说法";
+    case "fact":
+      return "事实陈述";
     default: {
       const raw = typeof claimType === "string" ? claimType.trim() : "";
       if (!raw) return "";

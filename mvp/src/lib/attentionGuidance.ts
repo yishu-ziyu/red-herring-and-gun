@@ -196,7 +196,7 @@ export function buildBoundarySpans(
         spanType,
         license: isGap ? "insufficient" : "allowed",
         attention: isGap ? "p2" : "p3",
-        attentionReason: isGap ? "可以说的边界内仍点名缺口" : "许可范围内可说",
+        attentionReason: isGap ? "能信的范围内仍点名缺口" : "范围内能信",
       };
     });
 
@@ -444,7 +444,7 @@ export function buildAttentionRail(
         spanId: s.id,
         priority: "p0",
         title: clipReason(s.text, 22),
-        reason: "这条推不出去，先别当结论转发",
+        reason: "这条推不出去，先别当已经证实",
         actionHint: "focus-span",
       });
     } else if (s.spanType === "gap") {

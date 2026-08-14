@@ -799,7 +799,7 @@ Phase 3 输出 credibilityScore
 - 新增 `mvp/server/src/lib/accountStore.ts`: in-memory store,emailHash 作为 Map key(SHA-256),6 位验证码,1 分钟 rate-limit,5/30 天 quota。
 - 新增 6 个 endpoints: `/api/auth/email/{request,verify,me,logout}` + `/api/account/{export}` (DELETE/GET)。
 - 新增 `LoginView.tsx` (邮箱 → 验证码 两步表单) + `PrivacyPolicy.tsx` (服务条款 + 隐私政策 + 导出/删除)。
-- 验证码通过 `console.log [v3-auth]` 输出(生产环境接 SMTP)。
+- 验证码配了 SMTP / Resend 后发到用户邮箱；没配且非生产才回显到登录面板。
 
 ### Wave 4 — 部署 + 修复
 - `decodeSignedJson` 在 secret 为空字符串时返回 null (false condition: `!secret`),改为 `if (!token) return null` 信任 HMAC 校验。
@@ -811,7 +811,7 @@ Phase 3 输出 credibilityScore
 
 | 项目 | 状态 |
 |------|------|
-| 真邮件发送 (SMTP) | 计划中,当前 console.log |
+| 真邮件发送 (SMTP / Resend) | 已接：`RESEND_API_KEY`+`MAIL_FROM` 或 `SMTP_HOST`/`SMTP_USER`/`SMTP_PASS`+`MAIL_FROM`。没配时开发回显，生产不假装已发送。 |
 | 微信登录 | 用户决定暂不接入 |
 | 微信支付/支付宝 | 用户决定下一阶段 |
 | accountStore 数据持久化 | 当前 in-memory,重启会丢 |

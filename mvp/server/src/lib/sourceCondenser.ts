@@ -123,7 +123,7 @@ export async function condenseSourcesInYishuStyle(
   if (usable.length === 0) return new Map();
 
   const map = new Map<string, string>();
-  const timeoutMs = getTimeoutMs(env, "SOURCE_CONDENSER_TIMEOUT_MS", 12000);
+  const timeoutMs = getTimeoutMs(env, "SOURCE_CONDENSER_TIMEOUT_MS", 180000);
 
   for (let offset = 0; offset < usable.length; offset += CONDENSE_BATCH_SIZE) {
     const batch = usable.slice(offset, offset + CONDENSE_BATCH_SIZE);

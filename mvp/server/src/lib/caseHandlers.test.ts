@@ -10,9 +10,14 @@ import {
   listCasesHandler,
 } from "./caseHandlers";
 import { clearCases, putCase, generateCaseId } from "./caseStore";
+import { resetForTests, requestCode, verifyAndCreate } from "./accountStore";
+import { encodeSignedJson } from "./aipingAuth";
+import { EMAIL_SESSION_COOKIE } from "./emailSession";
 import type { FinalReport } from "./schemas";
 
-function makeReport(claim: string): FinalReport {
+const TEST_SECRET = "test-server-secret-for-case-auth";
+
+function makeReport(claim: string, extra: Record<string, unknown> = {}): FinalReport {
   return {
     originalClaim: claim,
     overallStatus: "原句过强",
@@ -23,11 +28,12 @@ function makeReport(claim: string): FinalReport {
     doNotInfer: [],
     rewrittenClaim: { cautious: "cautious version", publicFacing: "public version", researchMemo: "" },
     nextEvidenceNeeded: [],
+    ...extra,
   };
 }
 
-function mockReq(params: Record<string, string> = {}, body: unknown = null): any {
-  return { params, body };
+function mockReq(params: Record<string, string> = {}, body: unknown = null, cookie?: string): any {
+  return { params, body, headers: cookie ? { cookie } : {} };
 }
 
 function mockRes(): any {
@@ -54,8 +60,21 @@ function mockRes(): any {
   return res;
 }
 
+async function sessionCookie(email: string): Promise<string> {
+  const requested = await requestCode(email, TEST_SECRET);
+  expect(requested.ok).toBe(true);
+  const verified = await verifyAndCreate(email, requested.code ?? "", TEST_SECRET);
+  expect(verified.ok).toBe(true);
+  const signed = encodeSignedJson({ sid: verified.sessionId }, TEST_SECRET);
+  return `${EMAIL_SESSION_COOKIE}=${signed}`;
+}
+
 describe("Plan Item 2 · postCaseHandler", () => {
-  beforeEach(() => clearCases());
+  beforeEach(() => {
+    clearCases();
+    resetForTests();
+    process.env.AIPING_SESSION_SECRET = TEST_SECRET;
+  });
 
   it("缺少 claim → 400", async () => {
     const res = mockRes();
@@ -95,21 +114,25 @@ describe("Plan Item 2 · postCaseHandler", () => {
 });
 
 describe("Plan Item 2 · getCaseHandler", () => {
-  beforeEach(() => clearCases());
+  beforeEach(() => {
+    clearCases();
+    resetForTests();
+    process.env.AIPING_SESSION_SECRET = TEST_SECRET;
+  });
 
-  it("缺 caseId → 400", () => {
+  it("缺 caseId → 400", async () => {
     const res = mockRes();
-    getCaseHandler(mockReq() as never, res);
+    await getCaseHandler(mockReq() as never, res);
     expect(res.statusCode).toBe(400);
   });
 
-  it("不存在 caseId → 404", () => {
+  it("不存在 caseId → 404", async () => {
     const res = mockRes();
-    getCaseHandler(mockReq({ caseId: "nope000" }) as never, res);
+    await getCaseHandler(mockReq({ caseId: "nope000" }) as never, res);
     expect(res.statusCode).toBe(404);
   });
 
-  it("已存 case → 200 + JSON", () => {
+  it("已存无归属 case → 200 + JSON", async () => {
     const entry = putCase({
       claim: "stored",
       report: makeReport("stored"),
@@ -117,9 +140,29 @@ describe("Plan Item 2 · getCaseHandler", () => {
       credibilityScore: 60,
     });
     const res = mockRes();
-    getCaseHandler(mockReq({ caseId: entry.caseId }) as never, res);
+    await getCaseHandler(mockReq({ caseId: entry.caseId }) as never, res);
     expect(res.statusCode).toBe(200);
     expect(res.body.claim).toBe("stored");
+    expect(res.body.ownerHash).toBeUndefined();
+  });
+
+  it("有归属的 case 只给主人", async () => {
+    const cookieA = await sessionCookie("a@example.com");
+    const postRes = mockRes();
+    await postCaseHandler(
+      mockReq({}, { claim: "mine", report: makeReport("mine") }, cookieA) as never,
+      postRes,
+    );
+    const caseId = postRes.body.caseId as string;
+
+    const stranger = mockRes();
+    await getCaseHandler(mockReq({ caseId }, null) as never, stranger);
+    expect(stranger.statusCode).toBe(404);
+
+    const owner = mockRes();
+    await getCaseHandler(mockReq({ caseId }, null, cookieA) as never, owner);
+    expect(owner.statusCode).toBe(200);
+    expect(owner.body.claim).toBe("mine");
   });
 });
 
@@ -172,20 +215,38 @@ describe("Plan Item 2 · renderCaseHtmlHandler", () => {
 });
 
 describe("Plan Item 2 · listCasesHandler", () => {
-  beforeEach(() => clearCases());
+  beforeEach(() => {
+    clearCases();
+    resetForTests();
+    process.env.AIPING_SESSION_SECRET = TEST_SECRET;
+  });
 
-  it("空 → 返回空数组", () => {
+  it("未登录 → 空数组，不泄漏全库", async () => {
+    putCase({ claim: "secret", report: makeReport("secret"), claimReview: {} as never, credibilityScore: 50 });
     const res = mockRes();
-    listCasesHandler({} as never, res);
+    await listCasesHandler(mockReq() as never, res);
     expect(res.body.cases).toEqual([]);
   });
 
-  it("多 case → 返回", () => {
-    putCase({ claim: "a", report: makeReport("a"), claimReview: {} as never, credibilityScore: 50 });
-    putCase({ claim: "b", report: makeReport("b"), claimReview: {} as never, credibilityScore: 50 });
-    const res = mockRes();
-    listCasesHandler({} as never, res);
-    expect(res.body.cases.length).toBe(2);
+  it("只返回当前账号的 case", async () => {
+    const cookieA = await sessionCookie("a@example.com");
+    const cookieB = await sessionCookie("b@example.com");
+    await postCaseHandler(
+      mockReq({}, { claim: "from-a", report: makeReport("from-a") }, cookieA) as never,
+      mockRes(),
+    );
+    await postCaseHandler(
+      mockReq({}, { claim: "from-b", report: makeReport("from-b") }, cookieB) as never,
+      mockRes(),
+    );
+
+    const resA = mockRes();
+    await listCasesHandler(mockReq({}, null, cookieA) as never, resA);
+    expect(resA.body.cases.map((item: { claim: string }) => item.claim)).toEqual(["from-a"]);
+
+    const resB = mockRes();
+    await listCasesHandler(mockReq({}, null, cookieB) as never, resB);
+    expect(resB.body.cases.map((item: { claim: string }) => item.claim)).toEqual(["from-b"]);
   });
 });
 

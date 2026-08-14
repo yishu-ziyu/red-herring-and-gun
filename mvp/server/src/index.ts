@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -22,11 +23,15 @@ import {
   accountExportHandler,
   emailLogoutHandler,
   emailMeHandler,
+  emailProfileHandler,
   emailRequestHandler,
   emailVerifyHandler,
-} from "./handlers.js";
+} from "./lib/emailAuthHandlers.js";
+import { checksQuotaHandler } from "./lib/checkQuota.js";
 
 dotenv.config();
+dotenv.config({ path: resolve(process.cwd(), ".env.local") });
+dotenv.config({ path: resolve(process.cwd(), "../.env.local") });
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -180,6 +185,7 @@ app.post("/api/agent/orchestrate", (req, res, next) => handlers.orchestrateHandl
 app.post("/api/agent/orchestrate-stream", (req, res, next) => handlers.orchestrateStreamHandler(req, res, next));
 app.post("/api/agent/test-llm", (req, res, next) => handlers.testLlmHandler(req, res, next));
 app.get("/api/models/list", (req, res, next) => handlers.modelsListHandler(req, res, next));
+app.get("/api/models/health", (req, res, next) => handlers.modelsHealthHandler(req, res, next));
 app.get("/api/agent/memory-candidates", (req, res, next) => listMemoryCandidatesHandler(req, res).catch(next));
 app.post("/api/agent/memory-candidates", (req, res, next) => updateMemoryCandidateHandler(req, res).catch(next));
 
@@ -187,7 +193,9 @@ app.post("/api/agent/memory-candidates", (req, res, next) => updateMemoryCandida
 app.post("/api/auth/email/request", (req, res, next) => emailRequestHandler(req, res).catch(next));
 app.post("/api/auth/email/verify", (req, res, next) => emailVerifyHandler(req, res).catch(next));
 app.get("/api/auth/email/me", (req, res, next) => emailMeHandler(req, res).catch(next));
+app.patch("/api/auth/email/profile", (req, res, next) => emailProfileHandler(req, res).catch(next));
 app.post("/api/auth/email/logout", (req, res, next) => emailLogoutHandler(req, res).catch(next));
+app.get("/api/checks/quota", (req, res, next) => checksQuotaHandler(req, res).catch(next));
 app.get("/api/account/export", (req, res, next) => accountExportHandler(req, res).catch(next));
 app.delete("/api/account", (req, res, next) => accountDeleteHandler(req, res).catch(next));
 

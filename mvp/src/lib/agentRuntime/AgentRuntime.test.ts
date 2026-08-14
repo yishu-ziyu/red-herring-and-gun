@@ -147,4 +147,24 @@ describe("AgentRuntime — DAG migration pipelines", () => {
     ).toBe(true);
   });
 
+  it("skips report_composer LLM after two prior error-boundaries", async () => {
+    mockCallAgent.mockImplementation(async (req: { traceLabel?: string }) => {
+      if (req.traceLabel === "FactChecker" || req.traceLabel === "SourceValidator") {
+        throw new Error("模型调用失败");
+      }
+      return {
+        output: { claimAtoms: ["网传某地发生食品安全事件"], factCheckResult: "unverified" },
+        model: "mock",
+      };
+    });
+
+    const runtime = new AgentRuntime(makeDeps());
+    const result = await runtime.runCase({ claim: "网传某地发生食品安全事件" });
+    const report = result.steps.find((s) => s.agent === "report_composer");
+    expect(report?.model).toBe("runtime:error-boundary");
+    expect(report?.output.verdictType).toBe("unverified");
+    expect(report?.output.credibilityLabel).toBe("未能判断");
+    const labels = mockCallAgent.mock.calls.map((call) => call[0]?.traceLabel);
+    expect(labels).not.toContain("ReportComposer");
+  });
 });

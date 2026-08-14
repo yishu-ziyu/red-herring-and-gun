@@ -160,16 +160,16 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     id: "rumor_detector",
     name: "RumorDetector",
     icon: "🚨",
-    roleTitle: "声明分诊与谣言类型路由 Agent",
+    roleTitle: "拆题与类型识别",
     mission: "把用户输入改写成可核查的原子命题，识别谣言类型、风险信号和后续证据需求，但不直接判断真假。",
     nonGoals: ["不生成最终结论", "不把语言风险等同于事实为假", "不补充没有证据的背景解释", "不使用模型常识判断人物状态、死因、政策、时间等外部事实"],
     tools: [
-      { id: "llm_claim_triage", name: "LLM 声明分诊", kind: "llm", description: "用国产大模型理解 claim、拆分原子命题并识别谣言类型。" },
+      { id: "llm_claim_triage", name: "拆题", kind: "llm", description: "用国产大模型理解 claim、拆分原子命题并识别谣言类型。" },
       { id: "memory_search", name: "谣言类型知识库", kind: "memory", description: "读取健康、社会、科技、财经、政治、娱乐等类型的风险模式。" },
-      { id: "memory_search", name: "历史案例检索", kind: "memory", description: "检索相似 claim 的历史分诊和有效核查路径。" },
+      { id: "memory_search", name: "历史案例检索", kind: "memory", description: "检索相似 claim 的历史拆题和有效核查路径。" },
     ],
     memory: {
-      reads: ["历史谣言类型", "相似 claim 分诊记录", "高风险表达模式"],
+      reads: ["历史谣言类型", "相似 claim 拆题记录", "高风险表达模式"],
       writes: ["原子命题", "谣言类型标签", "证据需求", "下游 handoff 目标"],
     },
     inputContract: ["原始 claim", "可选历史相似案例", "可选用户场景"],
@@ -187,7 +187,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     id: "fact_checker",
     name: "FactChecker",
     icon: "🔍",
-    roleTitle: "多源事实交叉验证 Agent",
+    roleTitle: "事实核查",
     mission: "围绕原子命题寻找支持、反驳和限定证据，用多搜索源一致性判断事实状态。",
     nonGoals: ["不审判信源身份本身", "不把单一搜索摘要当作最终事实", "不把未找到反证等同于真实"],
     tools: [
@@ -214,7 +214,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     id: "source_validator",
     name: "SourceValidator",
     icon: "📋",
-    roleTitle: "溯源与信源可靠性 Agent",
+    roleTitle: "溯源",
     mission: "验证来源是否存在、是否权威、是否被断章取义，并在画布节点上提供递归证据搜索能力。",
     nonGoals: ["不替 FactChecker 判断核心事实", "不自动无限展开 frontier", "不把聚合搜索结果包装成原始出处"],
     tools: [
@@ -241,35 +241,35 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     id: "report_composer",
     name: "ReportComposer",
     icon: "📝",
-    roleTitle: "证据边界报告与闭环 Agent",
-    mission: "只基于前序 Agent 的结构化输出生成结论、置信度维度、公众表达和闭环动作建议。",
+    roleTitle: "写结论",
+    mission: "只基于前序输出写结论：能信还是不能信，依据是什么。",
     nonGoals: ["不新增未经前序 Agent 验证的事实", "不把未出结论包装成确定判断", "不隐藏证据缺口"],
     tools: [
       { id: "llm_report_synthesis", name: "LLM 报告合成", kind: "llm", description: "将多 Agent 输出合成为结构化核查报告。" },
       { id: "fire_confidence", name: "FIRE 置信度评估", kind: "report", description: "按来源、完整度、一致性、时效、权威五维调制置信度。" },
-      { id: "closure_actions", name: "闭环动作生成", kind: "report", description: "生成辟谣卡片、存疑归档、分享表达等后续动作。" },
+      { id: "closure_actions", name: "收束", kind: "report", description: "生成核查摘要、存疑归档、分享文案。" },
       { id: "memory_write", name: "Agent Memory 写入", kind: "memory", description: "把核查报告、证据和搜索策略沉淀为可复用案例。" },
     ],
     memory: {
       reads: ["前序 Agent 输出", "相似案例结论", "证据质量摘要"],
-      writes: ["最终报告", "置信度维度", "可复用案例记忆", "闭环动作记录"],
+      writes: ["最终报告", "置信度维度", "可复用案例记忆", "收束记录"],
     },
     inputContract: ["RumorDetector 输出", "FactChecker 输出", "SourceValidator 输出", "多搜索引擎证据包"],
     outputContract: ["verdictType", "conclusion", "whyHardToVerify", "evidenceChain", "causalBoundary", "closureActions", "confidenceDimensions"],
     handoffRules: ["只在证据足够时给可发布结论", "证据不足时输出未出结论和 nextEvidenceNeeded", "结果必须写入 Agent Memory"],
     uiTrace: {
       start: ["读取三方 Agent 结果", "检查证据边界"],
-      running: ["合成结论", "计算 FIRE 置信度", "生成公众版表达"],
-      complete: ["写入报告和闭环动作"],
+      running: ["合成结论", "计算 FIRE 置信度", "写给人看的结论"],
+      complete: ["写入报告"],
     },
     failurePolicy: "如果前序输出为空或来自 fallback，必须输出未出结论，不得生成补充性判断。",
-    evaluationChecks: ["是否忠实引用前序证据", "是否暴露证据缺口", "是否生成闭环动作建议"],
+    evaluationChecks: ["是否忠实引用前序证据", "是否暴露证据缺口", "是否写清下一步"],
   },
   alternative_explanation_searcher: {
     id: "alternative_explanation_searcher",
     name: "AlternativeExplanationSearcher",
     icon: "🔎",
-    roleTitle: "替代解释搜索专家",
+    roleTitle: "替代解释",
     mission: "主动寻找能同样解释观察结果的替代因果链，不否定现有证据",
     nonGoals: ["不捏造证据", "不否定现有证据", "不预设立场"],
     tools: [
@@ -294,7 +294,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     id: "counter_evidence_grader",
     name: "CounterEvidenceGrader",
     icon: "⚖️",
-    roleTitle: "反证评分专家",
+    roleTitle: "反证评分",
     mission: "评估反证强度和对结论的降权影响",
     nonGoals: ["不预设立场", "不修改前序结论"],
     tools: [
@@ -326,7 +326,7 @@ function summarizeAgentContract(contract: AgentContract) {
     "",
     "Agent Contract:",
     `- 身份: ${contract.roleTitle}`,
-    `- 使命: ${contract.mission}`,
+    `- 职责: ${contract.mission}`,
     `- 不能做: ${contract.nonGoals.join("；")}`,
     `- 可用工具: ${contract.tools.map((tool) => `${tool.name}(${tool.kind})`).join("；")}`,
     `- 读取记忆: ${contract.memory.reads.join("；")}`,
@@ -376,6 +376,17 @@ const rumorDetectorSchema = {
   required: ["claimAtoms", "rumorTypes", "rumorIndicators", "severity", "analysis", "detectedPatterns", "neededEvidence", "handoffTargets"],
 };
 
+const verdictSourceSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    url: { type: "string" },
+    title: { type: "string" },
+    snippet: { type: "string" },
+  },
+  required: ["url", "title", "snippet"],
+};
+
 const factCheckerSchema = {
   type: "object",
   additionalProperties: false,
@@ -397,8 +408,20 @@ const factCheckerSchema = {
         properties: {
           claimAtom: { type: "string" },
           verdict: { type: "string", enum: ["true", "false", "partial", "unverified", "exaggerated"] },
-          evidence: { type: "string" },
+          evidence: {
+            type: "string",
+            description:
+              "Evidence prose for this atom. When supportingSources is non-empty, insert [n] after the claim it supports; n is 1-based and matches this item's supportingSources order (first source → [1]). No [n] when supportingSources is empty. Do not invent numbers outside that array.",
+          },
           boundary: { type: "string" },
+          supportingSources: {
+            type: "array",
+            items: verdictSourceSchema,
+            description:
+              "Sources that support this atom, in citation order. evidence [n] maps to the n-th entry (1-based).",
+          },
+          contradictingSources: { type: "array", items: verdictSourceSchema },
+          evidenceGaps: { type: "array", items: { type: "string" } },
         },
         required: ["claimAtom", "verdict", "evidence", "boundary"],
       },
@@ -425,7 +448,11 @@ const reportComposerSchema = {
   additionalProperties: false,
   properties: {
     verdictType: { type: "string", enum: ["true", "false", "mixed_misleading", "unverified"] },
-    conclusion: { type: "string" },
+    conclusion: {
+      type: "string",
+      description:
+        "Verdict prose. When the report has supporting web sources, insert [n] markers for claims that rely on them. n is 1-based global order: unique URLs from subclaimVerdicts.supportingSources in claim order (first-seen). No [n] without a matching source.",
+    },
     credibilityScore: { type: "number" },
     credibilityLabel: { type: "string" },
     recommendation: { type: "string" },
@@ -439,8 +466,20 @@ const reportComposerSchema = {
         properties: {
           claimAtom: { type: "string" },
           verdict: { type: "string", enum: ["true", "false", "partial", "unverified", "exaggerated"] },
-          evidence: { type: "string" },
+          evidence: {
+            type: "string",
+            description:
+              "Evidence prose for this atom. When supportingSources is non-empty, insert [n] after the claim it supports; n is 1-based and matches this item's supportingSources order. No [n] when empty.",
+          },
           boundary: { type: "string" },
+          supportingSources: {
+            type: "array",
+            items: verdictSourceSchema,
+            description:
+              "Sources for this atom in citation order. evidence [n] maps to the n-th entry (1-based).",
+          },
+          contradictingSources: { type: "array", items: verdictSourceSchema },
+          evidenceGaps: { type: "array", items: { type: "string" } },
         },
         required: ["claimAtom", "verdict", "evidence", "boundary"],
       },
@@ -453,9 +492,18 @@ const reportComposerSchema = {
         properties: {
           layer: { type: "string" },
           finding: { type: "string" },
-          evidence: { type: "string" },
+          evidence: {
+            type: "string",
+            description:
+              "Layer evidence prose. When sourceRefs is non-empty, insert [n] matching this layer's sourceRefs order (1-based). Prefer full URLs in sourceRefs.",
+          },
           boundary: { type: "string" },
-          sourceRefs: { type: "array", items: { type: "string" } },
+          sourceRefs: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Citation list for this layer, preferably full http(s) URLs in the same order as [n] in evidence.",
+          },
         },
         required: ["layer", "finding", "evidence", "boundary", "sourceRefs"],
       },
@@ -575,8 +623,8 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     contract: AGENT_CONTRACTS.rumor_detector,
     maxTokens: 800,
     systemPrompt: withAgentContract("rumor_detector", [
-      "你是红鲱鱼与枪的 RumorDetector（谣言特征检测专家）。",
-      "你的工作方式像侦探立案：先观察语言痕迹，拆出可验证命题，只记录证据需求，不凭常识补事实。",
+      "你是红鲱鱼与枪的 RumorDetector。",
+      "先观察语言痕迹，拆出可验证命题，只记录证据需求，不凭常识补事实。",
       "你的任务是分析用户提供的 claim（声明/信息），先拆出可核查的原子命题，再识别其中可能存在的谣言特征和谣言类型。",
       "",
       "原子命题的判定标准（拆分时严格遵循）：",
@@ -622,8 +670,8 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     contract: AGENT_CONTRACTS.fact_checker,
     maxTokens: 1000,
     systemPrompt: withAgentContract("fact_checker", [
-      "你是红鲱鱼与枪的 FactChecker（事实核查专家）。",
-      "你的工作方式像侦探复盘案发现场：每个判断都必须追到材料、反证或未解缺口，不把搜索摘要当最终事实。",
+      "你是红鲱鱼与枪的 FactChecker。",
+      "每个判断都必须追到材料、反证或未解缺口，不把搜索摘要当最终事实。",
       "只根据输入里的 search360、前序 Agent 输出和用户材料做事实核查，不得调用模型记忆补事实。",
       "当 search360._source 为 tool-error 或 sources 为空：factCheckResult=unverified，证据数组为空。",
       "搜索摘要只能当线索。必须区分：支持证据、反驳证据、仍缺少的官方/原始/医学/公告来源。",
@@ -633,13 +681,15 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "健康/医学 claim 要特别标出：观察性相关不能证明因果，成分机制不能等于真实健康收益。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "字段：factCheckResult, confidence, sources, supportingEvidence, contradictingSources, keyFindings, counterEvidence, unresolvedEvidenceGaps, logicRisks。",
+      "字段：factCheckResult, confidence, sources, supportingEvidence, contradictingSources, keyFindings, counterEvidence, unresolvedEvidenceGaps, logicRisks, subclaimVerdicts。",
       "数组每项不超过 80 个中文字符；keyFindings 2-4 条；counterEvidence 1-3 条；unresolvedEvidenceGaps 1-3 条。",
       "",
       "factCheckResult 必须是 'true'、'false'、'partial'、'unverified' 之一。",
       "confidence 必须是 'low'、'medium'、'high' 之一。",
       "subclaimVerdicts 必须覆盖输入 claimAtoms 中的每个原子命题，且每条 claimAtom 必须能回溯到原句；不得引入原句未声称的信息。",
       "verdict 取值：true=该原子命题成立；false=该原子命题不成立；partial=有真实片段但夸大/偷换；exaggerated=被夸大；unverified=证据不足。",
+      "每条 subclaimVerdicts 可含 supportingSources / contradictingSources / evidenceGaps（url/title/snippet 必须来自输入真实来源）。",
+      "【句内引用编号】supportingSources 非空时，evidence 必须在对应论断后写 [n]（1-based，对本条 supportingSources 顺序）；为空则不得写 [n]；禁止编造编号。",
     ].join("\n")),
     responseSchema: factCheckerSchema,
   },
@@ -651,8 +701,8 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     contract: AGENT_CONTRACTS.source_validator,
     maxTokens: 900,
     systemPrompt: withAgentContract("source_validator", [
-      "你是红鲱鱼与枪的 SourceValidator（信源验证专家）。",
-      "你的工作方式像侦探核验证词：先问来源是谁、是否原始、是否可追溯，再决定能不能进入证据链。",
+      "你是红鲱鱼与枪的 SourceValidator。",
+      "先问来源是谁、是否原始、是否可追溯，再决定能不能进入证据链。",
       "你的任务是验证原始 claim 中提到的信源的可靠性和真实性。",
       "如果输入包含 search360 字段，请把 360 AI Search 返回的 sources 纳入信源验证，区分权威来源、媒体线索和社交传播线索。",
       "不得把搜索聚合结果包装成原始出处；没有官方/原始链接时必须写入 missingSources。",
@@ -685,23 +735,23 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     contract: AGENT_CONTRACTS.report_composer,
     maxTokens: 2600,
     systemPrompt: withAgentContract("report_composer", [
-      "你是红鲱鱼与枪的 ReportComposer（核查报告生成专家）。",
-      "你的工作方式像侦探结案：只写证据已经许可的判断，把证据、反证、缺口和不能推出的边界全部摆出来。",
-      "你的任务是基于 RumorDetector、FactChecker 和 SourceValidator 的分析结果，生成一份像调查记者办案台一样的综合核查报告。",
+      "你是红鲱鱼与枪的 ReportComposer。",
+      "只写证据已经许可的判断，把证据、反证、缺口和不能推出的边界全部摆出来。",
+      "你的任务是基于 RumorDetector、FactChecker 和 SourceValidator 的分析结果，生成一份综合核查报告。",
       "",
-      "【写作声音 / Prompt A — 强制】参考 docs/FACTCHECK_WRITING_VOICE.md：",
-      "Voice: plain, precise, adult. Like AFP Fact Check + Full Fact. No sarcasm, no meme tone, no moral lecture.",
+      "写作要求：",
+      "用平实、准确的中文。不要阴阳怪气、口号、道德训诫。",
       "conclusion / summaryForPublic 结构（2–5 短句）：(1) 流传说法是什么 (2) 现有证据支持/反驳什么 (3) 仍无法证实或不能推出什么。",
       "Prefer「不能支持 / 不足以确认 / 未见公开记录」over「纯属捏造 / 可笑 / 震惊」。",
-      "禁止：阴阳怪气、口号体、作为AI自述、句内「可说/不可说」元标签、未出现在输入中的来源/日期/官员名。",
-      "canSay / cannotSay 必须诚实分离；不得把 cannotSay 内容用语气包装成可说。",
+      "禁止：阴阳怪气、口号体、作为AI自述、句内元标签、未出现在输入中的来源/日期/官员名。",
+      "canSay / cannotSay 必须诚实分离；不得把 cannotSay 用语气包装成能信。",
       "",
-      "【自检 Loop / Prompt F — 输出前执行】",
+      "输出前自检：",
       "1) 是否有无来源硬断言？2) cannotSay 是否被写成真？3) 是否有震惊体/嘲讽？4) 是否用导致/已经/证明却无机制与数据？5) 读者能否不靠信任作者就找到来源？不合格则改写后再输出。",
       "",
       "硬约束：不得新增前序 Agent 和 search360.sources 中没有出现的事实；不得把搜索摘要中的未经核验说法改写成确定事实。",
       "如果 FactChecker 或 SourceValidator 标记缺少官方/原始/医学来源，summaryForPublic 必须保留这个证据边界。",
-      "不要只给模糊结论。必须解释：这句话为什么难甄别、哪一层有真实成分、哪一层发生偷换、现有证据能说到哪里、不能说到哪里。",
+      "不要只给模糊结论。必须解释：这句话为什么难甄别、哪一层有真实成分、哪一层发生偷换、现有证据哪些能信、哪些不能信。",
       "对健康、医学、营养、金融、政策等 claim，必须特别审计“观察性相关被说成因果”“成分机制被说成真实收益”“旧研究被说成当前建议”“个体经验被说成普遍规律”。",
       "",
       "输入包含：",
@@ -711,7 +761,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "- SourceValidator 的信源验证结果",
       "- 可选 search360 搜索摘要与来源",
       "- 可选 logicRisks / biasWarnings / doNotInfer，需要归入逻辑风险审计并反映到 consistency 分数",
-      "- 逐命题定罪 subclaimVerdicts（每个 claimAtom 对应的判定结果，作为报告的可审计要点）",
+      "- 逐条判定 subclaimVerdicts（每个 claimAtom 对应的判定结果，作为报告的可审计要点）",
       "",
       "verdictType 判定：",
       "- true：核心断言被可靠证据支持",
@@ -721,11 +771,17 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "",
       "报告结构要求：",
       "1. whyHardToVerify：用 2-4 条解释为什么它不是简单真假题，例如“有真实成分”“研究类型有限”“公共卫生建议已收紧”。",
-      "2. evidenceChain：至少 3 层。每层必须写 finding、evidence、boundary。sourceRefs 只能引用输入里出现过的来源标题/URL/编号。",
+      "2. evidenceChain：至少 3 层。每层必须写 finding、evidence、boundary。sourceRefs 只能引用输入里出现过的来源标题/URL/编号；优先完整 URL。",
       "3. causalBoundary：明确说明是否存在因果证据，不能把相关性、机制 plausibility、观察性研究直接写成健康收益。",
-      "4. closureActions：给出可执行闭环，至少包含公众辟谣卡片文案、存疑归档/继续追证动作、分享表达。证据不足的动作 status 必须是 needs_review 或 blocked。",
-      "5. conclusion 必须是可审计结论，不得只写“缺乏科学依据”这类空泛话；要点明哪部分真、哪部分误导、最终用户该怎么做。",
-      "6. 逐命题定罪清单：把 subclaimVerdicts 作为报告的一部分渲染，逐条列出每个 claimAtom 的判定（verdict）、证据与边界，不得遗漏、不得编造输入中不存在的原子。",
+      "4. closureActions：给出可执行下一步：核查摘要、存疑归档、继续追证。证据不足的动作 status 必须是 needs_review 或 blocked。",
+      "5. conclusion 必须是可审计结论，不得只写“缺乏科学依据”这类空泛话；要点明哪部分能信、哪部分不能信。",
+      "6. 逐条判定清单：把 subclaimVerdicts 作为报告的一部分渲染，逐条列出每个 claimAtom 的判定（verdict）、证据与边界，不得遗漏、不得编造输入中不存在的原子；保留 supportingSources 与 evidence 中的 [n] 对应关系。",
+      "",
+      "【句内引用编号 / Inline citations — 强制】",
+      "1. conclusion：全局编号 = subclaimVerdicts 顺序中 supportingSources URL 去重后的首次出现 [1][2]…；有来源支撑的论断后写 [n]。",
+      "2. 逐条 evidence：本条 supportingSources 非空时用本条局部 [1]…[k]；为空不得写 [n]。",
+      "3. evidenceChain 每层：evidence 中的 [n] 与本层 sourceRefs 顺序一一对应。",
+      "4. 禁止编造 URL/编号；禁止用 Markdown 链接替代 [n]。",
       "",
       "输出要求：严格 JSON，不要 Markdown，不要代码块。字段必须符合 schema。",
       "字段长度控制：whyHardToVerify 2-3 条；evidenceChain 恰好 3 层；closureActions 3 条；每个中文字符串尽量控制在 90 字以内，conclusion 可到 180 字。",
@@ -755,8 +811,8 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     contract: AGENT_CONTRACTS.alternative_explanation_searcher,
     maxTokens: 900,
     systemPrompt: withAgentContract("alternative_explanation_searcher", [
-      "你是红鲱鱼与枪的 AlternativeExplanationSearcher（替代解释搜索专家）。",
-      "你的工作方式像侦探找替代表：不否定现有证据，但主动寻找其他同样能解释观察结果的因果链。",
+      "你是红鲱鱼与枪的 AlternativeExplanationSearcher。",
+      "不否定现有证据，但主动寻找其他同样能解释观察结果的因果链。",
       "你的任务是针对当前 claim 的因果断言，生成 2-4 条合理的替代解释。",
       "每条替代解释必须：说明它能如何解释观察到的现象、指出它需要的额外前提、评估它与现有证据的兼容度。",
       "不得捏造不存在的证据来支持替代解释；替代解释的价值在于它的逻辑合理性，不在于它已被证明。",
@@ -776,8 +832,8 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     contract: AGENT_CONTRACTS.counter_evidence_grader,
     maxTokens: 800,
     systemPrompt: withAgentContract("counter_evidence_grader", [
-      "你是红鲱鱼与枪的 CounterEvidenceGrader（反证评分专家）。",
-      "你的工作方式像法官权衡：不预设立场，只评估现有证据对当前结论的支持度和反证力度。",
+      "你是红鲱鱼与枪的 CounterEvidenceGrader。",
+      "不预设立场，只评估现有证据对当前结论的支持度和反证力度。",
       "你的任务是评估 FactChecker 和搜索结果的证据强度，对反证和证据缺口做降权评分。",
       "",
       "评估维度：",
@@ -814,12 +870,16 @@ export interface AgentRegistry {
   canContinueAfterFailure(id: string): boolean;
 }
 
-// 可选 / 并行 enrichment Agent 失败后可继续，其余失败不可继续。
+// rumor_detector / 可选 enrichment 失败后可继续检索与收束。
+// report_composer 失败时产出诚实降级报告（未完成 + 保留已检索材料），
+// 而不是让整轮抛错、用户等完后一无所得（eval 260814-1206 首轮三 case 均因此中断）。
 const CONTINUE_AFTER_FAILURE_AGENTS = new Set([
+  "rumor_detector",
   "fact_checker",
   "source_validator",
   "alternative_explanation_searcher",
   "counter_evidence_grader",
+  "report_composer",
 ]);
 
 function createAgentRegistry(configs: AgentConfig[]): AgentRegistry {
@@ -866,7 +926,7 @@ export function buildAgentInput(
 ): Record<string, unknown> {
   switch (agentId) {
     case "rumor_detector":
-      return { claim, task: "分诊 claim、拆分原子命题、识别谣言类型与后续证据需求" };
+      return { claim, task: "拆开 claim、标出可核查判断、识别谣言类型与后续证据需求" };
 
     case "fact_checker": {
       const prev = previousSteps.find((s) => s.agent === "rumor_detector");
