@@ -9,7 +9,7 @@
  */
 
 import type { RumorDetectorOutput } from "./types";
-import { runReactAgent } from "./reactAgent";
+import { runReactAgent, type AgentToolExecutor } from "./reactAgent";
 import { createMockLLM, createSearch360Tool } from "./mockLLM";
 
 const SYSTEM_PROMPT = `你是红鲱鱼与枪的 RumorDetector（谣言特征检测专家）。
@@ -95,7 +95,7 @@ export async function runRumorDetector(
     onStepComplete?.(step, messages);
   };
 
-  const result = await runReactAgent(claim, mockLLM, [searchTool], {
+  const result = await runReactAgent(claim, mockLLM, [searchTool as unknown as AgentToolExecutor], {
     systemPrompt: SYSTEM_PROMPT,
     maxIterations: 4,
     onStepComplete: wrappedOnStep,
@@ -109,7 +109,7 @@ export async function runRumorDetector(
 
   return {
     claim,
-    output: result.finalOutput as RumorDetectorOutput,
+    output: result.finalOutput as unknown as RumorDetectorOutput,
     trace,
   };
 }

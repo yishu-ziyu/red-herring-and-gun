@@ -637,7 +637,8 @@ describe("landing Version A storytelling", () => {
       expect(requestOrchestrateStream).toHaveBeenCalled();
     });
 
-    const lastCall = vi.mocked(requestOrchestrateStream).mock.calls.at(-1);
+    const calls = vi.mocked(requestOrchestrateStream).mock.calls;
+    const lastCall = calls[calls.length - 1];
     const streamInput = lastCall?.[0];
     if (typeof streamInput === "string") {
       expect(streamInput).toContain(claim);
