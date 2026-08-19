@@ -1,5 +1,8 @@
 /** Shared string compaction for claim-atom domain. */
 
+/** 展示/分类可见条数。检索预算仍是 atomSearch.MAX_ATOM_SEARCHES（6）。 */
+export const MAX_CLAIM_ATOMS = 12;
+
 export function compactStrings(value: unknown, limit = 5, maxLength = 260): string[] {
   return Array.isArray(value)
     ? value

@@ -45,5 +45,5 @@ ssh "$SERVER_USER@$SERVER_IP" << REMOTE
 REMOTE
 
 echo "=== Deployment complete ==="
-echo "API: http://$SERVER_IP:3000"
+echo "API: http://$SERVER_IP/api (nginx :80 -> 127.0.0.1:3000)"
 rm "$ARCHIVE"

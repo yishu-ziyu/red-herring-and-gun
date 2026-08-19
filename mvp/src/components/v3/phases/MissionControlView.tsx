@@ -16,15 +16,18 @@ import {
 } from "../../../lib/agentExpansion";
 import { adaptOrchestrateStreamToShell, buildVisibleProcessRows, humanizeVerdictType } from "../../../lib/missionShell";
 import { collectReasoningSentences } from "../../../lib/reasoningThoughts";
-import { collectThreadSources, threadSearchStatus } from "../../../lib/threadSearch";
+import { collectThreadSources, threadSearchQuery, threadSearchStatus } from "../../../lib/threadSearch";
+import { formatPursuitDetail, hopsFromReport, hopsFromTools } from "../../../lib/evidencePursuitUi";
 import { isChecksExhaustedMessage } from "../../../lib/checkQuota";
 import { resolveShellMode } from "../../../lib/missionShell/resolveShellMode";
 import { MissionProcessShell } from "./mission/MissionProcessShell";
 import { MissionThoughtFold } from "./mission/MissionThoughtFold";
 import { MissionSearchFold } from "./mission/MissionSearchFold";
+import { MissionPursuitFold } from "./mission/MissionPursuitFold";
 import { MissionThreadAnswer } from "./mission/MissionThreadAnswer";
 import type { ModelChoiceMap } from "../ModelPicker";
 import { calculateClaimSimilarity, createKnowledgeBase, type KnowledgeBase } from "../../../lib/knowledgeBase";
+import { semanticClaimSimilarity } from "../../../lib/semanticRecall";
 import type {
   AtomicProposition,
   ClaimDiagnosis,
@@ -225,7 +228,7 @@ export function resolveErrorPresentation(event: ErrorEventLike): {
   message: string;
   techDetail: string;
 } {
-  const copy = event.message;
+  const copy = event.message ?? "";
   if (event.code === "checks_exhausted" && isChecksExhaustedMessage(copy)) {
     return { message: copy, techDetail: "" };
   }
@@ -1609,11 +1612,12 @@ async function buildLocalMemoryRecall(knowledgeBase: KnowledgeBase, claim: strin
   ]);
   const scoredCandidates = acceptedCandidates
     .map((candidate) => {
-      const matchedTerms = matchedLocalMemoryTerms(
-        claim,
-        `${candidate.title} ${candidate.summary} ${candidate.tags.join(" ")} ${candidate.provenance.claim}`
-      );
-      return { candidate, matchedTerms, score: matchedTerms.length };
+      const candidateText = `${candidate.title} ${candidate.summary} ${candidate.tags.join(" ")} ${candidate.provenance.claim}`;
+      const matchedTerms = matchedLocalMemoryTerms(claim, candidateText);
+      // G2 语义召回：词面命中数为主，语义相似度兜底（同义说法零词面交集时仍可召回）
+      const semanticScore = semanticClaimSimilarity(claim, candidate.provenance.claim);
+      const score = Math.max(matchedTerms.length, semanticScore / 25);
+      return { candidate, matchedTerms, score };
     })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score || b.candidate.confidence - a.candidate.confidence)
@@ -2873,8 +2877,15 @@ export function formatReportReviewerStreamDetail(
   return "审稿结果已返回。";
 }
 
+function isEvidencePursuitToolName(toolName?: string | null, toolId?: string | null, result?: Record<string, unknown> | null) {
+  if (result && result.kind === "evidence_pursuit") return true;
+  const key = compactToolKey(`${toolName ?? ""} ${toolId ?? ""}`);
+  return /evidenceloop|evidencepursuit|证据追索|追索证据/.test(key);
+}
+
 function toolStartTitle(toolName?: string | null, toolId?: string | null) {
   if (isReportReviewerTool(toolName, toolId)) return "报告审稿";
+  if (isEvidencePursuitToolName(toolName, toolId)) return "追索证据";
   const key = compactToolKey(`${toolName ?? ""} ${toolId ?? ""}`);
   if (key.includes("memorysearch")) return "查阅历史案件参考";
   if (key.includes("memorywrite")) return "归档可复用线索";
@@ -2891,6 +2902,7 @@ function toolResultTitle(
   if (isReportReviewerTool(toolName, toolId, result)) {
     return formatReportReviewerStreamTitle(result, "completed");
   }
+  if (isEvidencePursuitToolName(toolName, toolId, result)) return "追索证据";
   const key = compactToolKey(`${toolName ?? ""} ${toolId ?? ""}`);
   if (key.includes("memorysearch")) return "历史案件参考已返回";
   if (key.includes("memorywrite")) return "可复用线索已归档";
@@ -2901,7 +2913,7 @@ function toolResultTitle(
 
 function isSearchToolName(toolName?: string | null, toolId?: string | null) {
   const key = compactToolKey(`${toolName ?? ""} ${toolId ?? ""}`);
-  if (key.includes("memory") || key.includes("reportreviewer") || key.includes("proposerreviewer")) {
+  if (key.includes("memory") || key.includes("reportreviewer") || key.includes("proposerreviewer") || /evidenceloop|evidencepursuit|证据追索|追索证据/.test(key)) {
     return false;
   }
   return /360|anysearch|metaso|tavily|exa|parallel|search/.test(key);
@@ -2923,6 +2935,7 @@ function toolDisplayName(toolName?: string | null, source?: string | null) {
     return "公开材料检索";
   }
   if (normalized.includes("vision") || normalized.includes("stepfun")) return "图片材料解析";
+  if (/evidenceloop|evidencepursuit|证据追索|追索证据/.test(normalized)) return "追索证据";
   const raw = toolName?.trim() || "";
   if (!raw) return "核查工具";
   // 兜底：仍过滤供应商墙英文名
@@ -2948,6 +2961,17 @@ function toolStartDetail(event: OrchestrateStreamEvent, _fallbackClaim: string) 
   if (isReportReviewerTool(event.toolName, event.toolId, event.result)) {
     return formatReportReviewerStreamDetail(null, "running");
   }
+  if (isEvidencePursuitToolName(event.toolName, event.toolId, event.result)) {
+    const result = event.result ?? {};
+    const missing = Array.isArray(result.missingEvidence)
+      ? result.missingEvidence.filter((x): x is string => typeof x === "string")
+      : [];
+    return formatPursuitDetail({
+      goal: typeof result.goal === "string" ? result.goal : "追索证据",
+      query: event.query,
+      missingAfter: missing,
+    });
+  }
   const key = compactToolKey(`${event.toolName ?? ""} ${event.toolId ?? ""}`);
   if (key.includes("memorysearch")) {
     return "对照历史类似案件，不作本案直接证据。";
@@ -2971,6 +2995,18 @@ function toolResultDetail(event: OrchestrateStreamEvent) {
   const result = event.result;
   if (isReportReviewerTool(event.toolName, event.toolId, result)) {
     return formatReportReviewerStreamDetail(result, "completed");
+  }
+  if (isEvidencePursuitToolName(event.toolName, event.toolId, result)) {
+    const missing = Array.isArray(result?.missingAfter)
+      ? result.missingAfter.filter((x): x is string => typeof x === "string")
+      : [];
+    return formatPursuitDetail({
+      goal: typeof result?.goal === "string" ? result.goal : undefined,
+      query: event.query,
+      resultKind: typeof result?.resultKind === "string" ? result.resultKind : undefined,
+      missingAfter: missing,
+      reasonText: typeof result?.reasonText === "string" ? result.reasonText : undefined,
+    });
   }
   const hitCount = resultNumber(result, "hitCount");
   const acceptedCandidateCount = resultNumber(result, "acceptedCandidateCount");
@@ -5287,6 +5323,15 @@ export function MissionControlView({
     () => threadSearchStatus(missionShellModel?.tools, finalReport),
     [missionShellModel, finalReport]
   );
+  const searchQuery = useMemo(
+    () => threadSearchQuery(missionShellModel?.tools),
+    [missionShellModel]
+  );
+  const pursuitHops = useMemo(() => {
+    const live = hopsFromTools(missionShellModel?.tools ?? []);
+    if (live.length > 0) return live;
+    return hopsFromReport(finalReport);
+  }, [missionShellModel, finalReport]);
   /** Avoid double-firing onComplete if parent re-renders with same report */
   const onCompleteFiredRef = useRef(false);
 
@@ -6115,7 +6160,8 @@ export function MissionControlView({
           sentences={thoughtSentences}
         />
 
-        <MissionSearchFold status={searchStatus} sources={threadSources} />
+        <MissionSearchFold status={searchStatus} sources={threadSources} query={searchQuery} />
+        <MissionPursuitFold hops={pursuitHops} live={runStatus === "running"} />
 
         <MissionThreadAnswer finalReport={finalReport} sources={threadSources} />
 

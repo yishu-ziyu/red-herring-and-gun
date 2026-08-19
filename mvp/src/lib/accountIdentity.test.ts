@@ -20,7 +20,8 @@ describe("accountIdentity", () => {
   });
 
   it("rejects names longer than the ChatGPT-style nickname cap", () => {
-    expect(normalizeAccountName("奕枢").value).toBe("奕枢");
+    const normalized = normalizeAccountName("奕枢");
+    expect(normalized.ok ? normalized.value : "").toBe("奕枢");
     expect(normalizeAccountName("a".repeat(ACCOUNT_NAME_MAX + 1)).ok).toBe(false);
   });
 });

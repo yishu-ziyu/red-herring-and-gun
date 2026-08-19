@@ -31,6 +31,7 @@ import { attachCondensedSnippets } from "./server/src/lib/sourceCondenser.js";
 import { applyFactDeskPostProcessToReport } from "./server/src/lib/factDeskPostProcess.js";
 import { connectEmailAndCaseApi } from "./server/src/lib/connectEmailAndCaseApi.js";
 import { commitFreeCheck, gateFreeCheck, releaseFreeCheck } from "./server/src/lib/checkQuota.js";
+import { createHandlers } from "./server/src/handlers.js";
 // 开发验证码回显：改 emailAuthHandlers 后靠这一行让 Vite 重载中间件。
 
 // 把 lib 的 logger 适配到 vite 现有的 console.info / console.error 输出格式，
@@ -259,6 +260,7 @@ async function withRuntimeTimeout<T>(promise: Promise<T>, timeoutMs: number, lab
 
 function agentApiPlugin(env: Record<string, string>) {
   const memoryCandidateStore = new JsonlMemoryCandidateStore();
+  const productionHandlers = createHandlers(env);
 
   const getTimeoutMs = (key: string, fallbackMs: number) => {
     const value = Number(env[key] || process.env[key] || fallbackMs);
@@ -1040,8 +1042,8 @@ function agentApiPlugin(env: Record<string, string>) {
       server.middlewares.use("/api/search/360", search360Handler);
       server.middlewares.use("/api/search/provider", searchProviderHandler);
       server.middlewares.use("/api/agent/memory-candidates", memoryCandidatesHandler);
-      server.middlewares.use("/api/agent/orchestrate-stream", orchestrateStreamHandler);
-      server.middlewares.use("/api/agent/orchestrate", orchestrateHandler);
+      server.middlewares.use("/api/agent/orchestrate-stream", productionHandlers.orchestrateStreamHandler);
+      server.middlewares.use("/api/agent/orchestrate", productionHandlers.orchestrateHandler);
       server.middlewares.use("/api/models/list", modelsListHandler);
       server.middlewares.use("/api/models/health", modelsHealthHandler);
     },
@@ -1053,8 +1055,8 @@ function agentApiPlugin(env: Record<string, string>) {
       server.middlewares.use("/api/search/360", search360Handler);
       server.middlewares.use("/api/search/provider", searchProviderHandler);
       server.middlewares.use("/api/agent/memory-candidates", memoryCandidatesHandler);
-      server.middlewares.use("/api/agent/orchestrate-stream", orchestrateStreamHandler);
-      server.middlewares.use("/api/agent/orchestrate", orchestrateHandler);
+      server.middlewares.use("/api/agent/orchestrate-stream", productionHandlers.orchestrateStreamHandler);
+      server.middlewares.use("/api/agent/orchestrate", productionHandlers.orchestrateHandler);
       server.middlewares.use("/api/models/list", modelsListHandler);
       server.middlewares.use("/api/models/health", modelsHealthHandler);
     },

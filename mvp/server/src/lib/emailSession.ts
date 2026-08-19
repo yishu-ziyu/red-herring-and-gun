@@ -10,7 +10,12 @@ export const EMAIL_SESSION_COOKIE = "v3_email_session";
 export const EMAIL_SESSION_TTL_SECONDS = 31 * 24 * 60 * 60;
 
 export function getServerSecret() {
-  return (process.env.AIPING_SESSION_SECRET ?? "").trim();
+  const secret = (process.env.AIPING_SESSION_SECRET ?? "").trim();
+  // 生产环境密钥缺失必须当场炸出来：空密钥签出来的 cookie 谁都能伪造
+  if (!secret && process.env.NODE_ENV === "production") {
+    throw new Error("AIPING_SESSION_SECRET is required in production");
+  }
+  return secret;
 }
 
 function cookieHeader(raw: unknown): string | undefined {

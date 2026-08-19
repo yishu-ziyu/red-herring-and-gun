@@ -19,13 +19,13 @@ export function MemoryCandidatePanel({ candidates, onStatusChange }: MemoryCandi
   if (candidates.length === 0) return null;
 
   return (
-    <section className="memory-candidate-panel" aria-label="Agent 记忆候选">
+    <section className="memory-candidate-panel" aria-label="知识库候选">
       <div className="memory-candidate-panel__header">
         <div>
           <span>知识库候选</span>
           <strong>{candidates.filter((candidate) => candidate.status === "proposed").length}</strong>
         </div>
-        <p>Agent 只提出可复用经验；确认后才进入后续案件召回。</p>
+        <p>只提出可复用经验；确认后才进入后续案件召回。</p>
       </div>
       <div className="memory-candidate-list">
         {candidates.map((candidate) => (

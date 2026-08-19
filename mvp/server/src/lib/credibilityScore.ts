@@ -153,7 +153,9 @@ export function computeCredibilityScore(
   const totalRumorPenalty = rumorPenalty + indicatorPenalty;
 
   // 分量 E：缺失来源惩罚
-  const missingPenalty = Math.min(source.missingSources.length * 0.05, 0.15);
+  // 校准（2026-08-15）：封顶 0.15（-15 分）重于假判词级惩罚，mixed 案例被砍出期望带；
+  // 缺源是软信号（原始研究/官方原文难溯源是常态），封顶降到 0.10（-5 到 -10 分）。
+  const missingPenalty = Math.min(source.missingSources.length * 0.05, 0.1);
 
   // ─── 聚合：log₂ 收敛 ──────────────────────────────────────
 

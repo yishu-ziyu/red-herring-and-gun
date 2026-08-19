@@ -23,6 +23,7 @@ import type {
   ShellVerdictSource,
 } from "./types";
 import { humanizeProcessSummary, humanizeProcessTitle } from "./visibleProcessRows";
+import { formatPursuitDetail, isEvidencePursuitTool } from "../evidencePursuitUi";
 
 const AGENT_LABEL: Record<string, string> = {
   rumor_detector: "拆题",
@@ -37,6 +38,14 @@ function agentLabel(id?: string, name?: string): string {
   if (id && AGENT_LABEL[id]) return AGENT_LABEL[id];
   if (name && name.trim()) return name.trim();
   return id || "核查角色";
+}
+
+function isPursuit(event: Pick<OrchestrateStreamEvent, "toolId" | "toolName" | "result">): boolean {
+  return isEvidencePursuitTool({
+    toolId: event.toolId,
+    toolName: event.toolName,
+    result: event.result,
+  });
 }
 
 function isReviewer(toolId?: string, toolName?: string): boolean {
@@ -103,6 +112,8 @@ function humanToolTitle(toolId?: string, toolName?: string, event?: OrchestrateS
   if (event && isSecondPassCounterSearch(event)) return SECOND_PASS_COUNTER_SEARCH_TITLE;
   if (isSecondPassCounterSearch({ toolId, toolName })) return SECOND_PASS_COUNTER_SEARCH_TITLE;
   if (isReviewer(toolId, toolName)) return "报告审稿";
+  if (event && isPursuit(event)) return "追索证据";
+  if (isEvidencePursuitTool({ toolId, toolName })) return "追索证据";
   const key = `${toolId ?? ""} ${toolName ?? ""}`.toLowerCase().replace(/[\s_-]+/g, "");
   if (key.includes("memorysearch")) return "查阅历史案件";
   if (key.includes("memorywrite")) return "归档案件记忆";
@@ -125,6 +136,7 @@ function phaseFromEvents(events: OrchestrateStreamEvent[]): string {
     case "tool_result":
     case "tool_error":
       if (isReviewer(last.toolId, last.toolName)) return "报告审稿";
+      if (isPursuit(last)) return "追索证据";
       if (last.type === "tool_error") return "工具异常";
       return "对照材料";
     case "agent_start":
@@ -149,6 +161,21 @@ function phaseFromEvents(events: OrchestrateStreamEvent[]): string {
 function toolDetailFromEvent(event: OrchestrateStreamEvent): string | undefined {
   if (event.type === "tool_error") {
     return event.message || event.error || "工具调用失败";
+  }
+  if (isPursuit(event)) {
+    const result = event.result ?? {};
+    const missingAfter = Array.isArray(result.missingAfter)
+      ? result.missingAfter.filter((x): x is string => typeof x === "string")
+      : Array.isArray(result.missingEvidence)
+        ? result.missingEvidence.filter((x): x is string => typeof x === "string")
+        : [];
+    return formatPursuitDetail({
+      goal: typeof result.goal === "string" ? result.goal : undefined,
+      query: event.query,
+      resultKind: typeof result.resultKind === "string" ? result.resultKind : undefined,
+      missingAfter,
+      reasonText: typeof result.reasonText === "string" ? result.reasonText : undefined,
+    });
   }
   if (isReviewer(event.toolId, event.toolName) && event.result) {
     const passed = event.result.passed === true;
@@ -605,6 +632,13 @@ export function adaptOrchestrateStreamToShell(
 function toolKey(event: OrchestrateStreamEvent): string {
   if (isReviewer(event.toolId, event.toolName)) return "tool:report_reviewer";
   if (isSecondPassCounterSearch(event)) return "tool:second_pass_counter_search";
+  if (isPursuit(event)) {
+    const reason = typeof event.result?.reason === "string" ? event.result.reason : "";
+    if (reason) return `tool:evidence_pursuit:stop:${reason}`;
+    const round = typeof event.result?.round === "number" ? event.result.round : "x";
+    const q = (event.query ?? "").slice(0, 48);
+    return `tool:evidence_pursuit:${round}:${q}`;
+  }
   const id = event.toolId || event.toolName || "tool";
   // Collapse memory/search families to one live row
   const compact = id.toLowerCase().replace(/[\s_-]+/g, "");

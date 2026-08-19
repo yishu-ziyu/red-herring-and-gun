@@ -16,6 +16,20 @@ export interface ScoreCaseGolden {
   expectedCredibilityRange: [number, number];
   expectedAgentSequence: string[];
   traps: string[];
+  /** 口语说法与官方口径词表错位，期望 evidenceLoop 补查被触发（ADR-004） */
+  expectsEvidenceLoop?: boolean;
+  /** 半真半假按条期望；缺省则不按条打分 */
+  expectedAtoms?: ExpectedAtom[];
+  /** 必须出现在 atomSearchBundle.atomsSearched；不读拆题 verifiable */
+  mustSearch?: string[];
+}
+
+export type ExpectedAtomVerdict = "true" | "false" | "partial" | "unverified" | "exaggerated";
+
+export interface ExpectedAtom {
+  atom: string;
+  expectedVerdict: ExpectedAtomVerdict;
+  requireBoundUrl?: boolean;
 }
 
 export const goldenDataset: ScoreCaseGolden[] = [
@@ -160,6 +174,10 @@ export const goldenDataset: ScoreCaseGolden[] = [
       "report_composer",
     ],
     traps: ["相关≠因果", "混杂因素"],
+    expectedAtoms: [
+      { atom: "每天喝红酒可以预防心脏病", expectedVerdict: "false" },
+      { atom: "法国人喝红酒且心脏病少", expectedVerdict: "true", requireBoundUrl: true },
+    ],
   },
   {
     id: "RUMOR-012",
@@ -291,5 +309,73 @@ export const goldenDataset: ScoreCaseGolden[] = [
     expectedCredibilityRange: [0, 25],
     expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["P图当现场", "太琐碎丢掉"],
+  },
+  // ── evidenceLoop 翻案案例（ADR-004）：口语说法与官方口径词表错位，
+  // 第一轮按原子原文检索常未命中，需换官方来源词/原文语境补查 ──
+  {
+    id: "LOOP-001",
+    claim: "听说电动车都被集中拉去国外销毁了，一批一批装船运走",
+    category: "event",
+    difficulty: "hard",
+    domain: "social",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 25],
+    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
+    traps: ["口语「拉去销毁」≠官方「回收处置/以旧换新」", "词表错位一轮未命中"],
+    expectsEvidenceLoop: true,
+  },
+  {
+    id: "LOOP-002",
+    claim: "网上那张公安局发的悬赏公告图片说是真的，扫码就能领线索费",
+    category: "event",
+    difficulty: "hard",
+    domain: "social",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 25],
+    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
+    traps: ["合成公告", "「悬赏公告」口语检索未命中需换「警方通报」"],
+    expectsEvidenceLoop: true,
+  },
+  {
+    id: "LOOP-003",
+    claim: "人社部发文说生育津贴直接打到个人卡里了，不用再走单位",
+    category: "event",
+    difficulty: "medium",
+    domain: "policy",
+    expectedVerdictType: "mixed_misleading",
+    expectedCredibilityRange: [10, 35],
+    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
+    traps: ["部分地方试点当全国政策", "「打到卡里」口语需换「生育津贴 直发」官方口径"],
+    expectsEvidenceLoop: true,
+  },
+  {
+    id: "EVAL-UNVERIFIED-001",
+    claim: "同事群里说我们公司下周一会被收购，没有公告也没有监管披露",
+    category: "event",
+    difficulty: "hard",
+    domain: "finance",
+    expectedVerdictType: "unverified",
+    expectedCredibilityRange: [10, 70],
+    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
+    traps: ["没搜到不等于假", "无公开出处却写成能信或不能信"],
+  },
+  {
+    id: "EVAL-TYPEGATE-001",
+    claim: "隔夜菜会致癌",
+    category: "causal",
+    difficulty: "medium",
+    domain: "health",
+    expectedVerdictType: "false",
+    expectedCredibilityRange: [0, 25],
+    expectedAgentSequence: [
+      "rumor_detector",
+      "fact_checker",
+      "source_validator",
+      "alternative_explanation_searcher",
+      "counter_evidence_grader",
+      "report_composer",
+    ],
+    traps: ["类型闸标成立场导致不检索"],
+    mustSearch: ["隔夜菜会致癌"],
   },
 ];

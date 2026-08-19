@@ -1,6 +1,7 @@
 .ws {
   --c-text: #0b0d12;
   --c-muted: #a1a1a1;
+  --c-shimmer: #565b66;
   --c-subtle: #a1a1a1;
   --c-border: #e6e8ec;
   --c-border-strong: #d4d7dd;
@@ -22,6 +23,7 @@
   .ws {
     --c-text: #f2f4f8;
     --c-muted: #9aa4b4;
+    --c-shimmer: #b8bfcc;
     --c-subtle: #6b7484;
     --c-border: #232834;
     --c-border-strong: #2f3645;
@@ -31,10 +33,17 @@
   }
 }
 
+.wsThread {
+  margin-top: -6px;
+  margin-bottom: 0;
+}
+
 .wsRow {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   min-height: 20px;
 }
 
@@ -48,32 +57,43 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-weight: 550;
-  color: var(--c-text);
-  white-space: nowrap;
   min-width: 0;
+  max-width: 100%;
+  font-weight: 550;
+  color: var(--c-muted);
+  white-space: nowrap;
+}
+
+.ws[data-state="done"] .wsLabel,
+.ws[data-state="error"] .wsLabel {
+  color: var(--c-text);
 }
 
 .wsQuote {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wsShimmer {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--c-text) 45%, transparent) 0%,
-    var(--c-text) 44%,
-    color-mix(in srgb, var(--c-text) 45%, transparent) 80%
+    var(--c-shimmer) 35%,
+    var(--c-text) 50%,
+    var(--c-shimmer) 65%
   );
-  background-size: 220% 100%;
+  background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: ws-shimmer 2.7s linear infinite;
+  animation: ws-shimmer 1.4s linear infinite;
 }
 
 .wsShimmer.isDone {
@@ -85,6 +105,7 @@
 
 .wsChevron {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 16px;
@@ -164,6 +185,7 @@
   line-height: 18px;
   color: var(--c-muted);
   min-width: 0;
+  overflow: hidden;
   opacity: 0;
   transform: translateY(4px);
   animation: ws-enter 0.34s var(--ease) forwards;
@@ -173,6 +195,7 @@
   text-align: left;
   width: 100%;
   font: inherit;
+  text-decoration: none;
 }
 
 .wsSite[data-state="done"] {
@@ -263,23 +286,25 @@
   text-overflow: ellipsis;
 }
 
-.wsSite[data-state="pending"] .wsTitle {
+.wsSite[data-state="pending"] .wsTitle,
+.wsSite[data-state="pending"] .wsSep,
+.wsSite[data-state="pending"] .wsUrl {
   color: var(--c-muted);
 }
 
 .wsSite[data-state="loading"] .wsTitle {
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--c-text) 50%, transparent) 0%,
-    var(--c-text) 44%,
-    color-mix(in srgb, var(--c-text) 50%, transparent) 80%
+    var(--c-shimmer) 35%,
+    var(--c-text) 50%,
+    var(--c-shimmer) 65%
   );
-  background-size: 220% 100%;
+  background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: ws-shimmer 2.7s linear infinite;
+  animation: ws-shimmer 1.4s linear infinite;
 }
 
 .wsSep {
@@ -318,10 +343,10 @@
 
 @keyframes ws-shimmer {
   0% {
-    background-position: -200% 0;
+    background-position: 200% center;
   }
   100% {
-    background-position: 200% 0;
+    background-position: -200% center;
   }
 }
 
@@ -337,12 +362,51 @@
   .wsSite[data-state="loading"] .wsTitle {
     animation: none;
     background: none;
+    -webkit-text-fill-color: var(--c-shimmer);
+    color: var(--c-shimmer);
+  }
+
+  .wsShimmer.isDone {
     -webkit-text-fill-color: var(--c-text);
     color: var(--c-text);
   }
+
   .wsSite {
     animation: none;
     opacity: 1;
     transform: none;
   }
+
+  .wsChevron,
+  .wsCollapsible,
+  .wsDots,
+  .wsGlobe,
+  .wsCheck,
+  .wsArrow,
+  .wsUrl {
+    transition: none;
+  }
+}
+
+.wsHopList {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0 0 0 20px;
+  display: grid;
+  gap: 6px;
+}
+
+.wsHop {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--c-text);
+}
+
+.wsHopGoal {
+  font-weight: 550;
+}
+
+.wsHopMeta {
+  color: var(--c-muted);
+  display: block;
 }

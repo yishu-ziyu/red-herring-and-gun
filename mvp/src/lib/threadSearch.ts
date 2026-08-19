@@ -16,11 +16,12 @@ type SearchToolLike = {
   key?: string;
   title?: string;
   status?: string;
+  query?: string;
   result?: Record<string, unknown>;
 };
 
 const SEARCH_RE = /search|360|anysearch|metaso|tavily|exa|parallel/;
-const NOT_SEARCH_RE = /memory|reviewer|vision|stepfun/;
+const NOT_SEARCH_RE = /memory|reviewer|vision|stepfun|evidenceloop|evidencepursuit|证据追索|追索证据/;
 
 export function isSearchTool(tool: SearchToolLike): boolean {
   const blob = `${tool.toolId ?? ""} ${tool.toolName ?? ""} ${tool.key ?? ""} ${tool.title ?? ""}`.toLowerCase();
@@ -105,6 +106,28 @@ export function collectThreadSources(
     ingestToolResult(out, seen, tool.result);
   }
   return out;
+}
+
+export function sourceDisplayUrl(url?: string): string {
+  if (!url) return "";
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "");
+    const path = parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/$/, "");
+    return `${host}${path}`;
+  } catch {
+    return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  }
+}
+
+export function threadSearchQuery(tools: SearchToolLike[] | null | undefined): string {
+  const searchTools = (tools ?? []).filter(isSearchTool);
+  const loading = [...searchTools]
+    .reverse()
+    .find((tool) => tool.status === "loading" || tool.status === "pending");
+  const raw = (loading ?? searchTools[searchTools.length - 1]) as { query?: unknown } | undefined;
+  const query = typeof raw?.query === "string" ? raw.query.trim() : "";
+  return query;
 }
 
 export function threadSearchStatus(

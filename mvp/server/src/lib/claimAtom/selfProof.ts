@@ -1,5 +1,5 @@
 import type { ClaimAtomDropped } from "./types.js";
-import { claimAtomKey } from "./text.js";
+import { claimAtomKey, MAX_CLAIM_ATOMS } from "./text.js";
 
 export function prefilterClaimAtoms(
   claim: string,
@@ -23,7 +23,8 @@ export function prefilterClaimAtoms(
       atoms.push(normKey);
     }
   }
-  return { atoms: atoms.slice(0, 6), dropped };
+  // 检索预算由 selectAtomsToSearch 截 6；这里只挡住异常长表。
+  return { atoms: atoms.slice(0, MAX_CLAIM_ATOMS), dropped };
 }
 
 export const SELF_PROOF_SYSTEM_PROMPT = [

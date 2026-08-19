@@ -9,12 +9,30 @@
  */
 
 import { AGENT_CONFIGS, buildAgentInput } from "../src/lib/agentConfigs.js";
-import { callAgentWithFallback, ProviderFallbackError } from "../src/lib/providerRouter.js";
+import {
+  callAgentWithFallback,
+  providerOrderForAgent,
+  ProviderFallbackError,
+} from "../src/lib/providerRouter.js";
 import { runCasePipeline, type PipelineStep } from "../src/lib/casePipeline/index.js";
 import { retrieveAtomSources, buildDeterministicFinalReport } from "../src/handlers.js";
 import { applyFormulaScoreToReport, computeFormulaScore } from "../src/handlers.js";
 import { applyFactDeskPostProcessToReport } from "../src/lib/factDeskPostProcess.js";
+import { makeRewriteQueryCall } from "../src/lib/evidenceLoop/index.js";
 import type { ScoreCaseGolden } from "./golden.js";
+
+/** Cross exam 第二意见（G3）：与主判 provider 异源优先，与生产 handlers 同策略。 */
+function pickCrossExamModel(env: Record<string, string>): { provider: string; model: string } | undefined {
+  const candidates = [
+    { provider: "stepfun", model: "step-3.7-flash", hasKey: Boolean(env.STEPFUN_API_KEY) },
+    { provider: "minimax", model: "MiniMax-M3", hasKey: Boolean(env.MINIMAX_API_KEY || env.MINIMAX_TOKEN_PLAN_KEY) },
+    { provider: "mimo", model: "mimo-v2.5-pro", hasKey: Boolean(env.MIMO_API_KEY) },
+  ].filter((c) => c.hasKey);
+  if (candidates.length === 0) return undefined;
+  const primary = providerOrderForAgent(env).find((p) => p !== "codex");
+  const crossSource = candidates.find((c) => c.provider !== primary);
+  return crossSource ?? candidates[0];
+}
 
 export interface EvalEnv {
   env: Record<string, string>;
@@ -99,11 +117,57 @@ function makeSearchOne(env: Record<string, string>) {
   };
 }
 
+/** evidenceLoop 裸模型改写调用（与 handlers.makeRewriteCaller 同款）。 */
+function makeRewriteRaw({ env, codexBin }: EvalEnv) {
+  return (input: {
+    systemPrompt: string;
+    userContent: string;
+    responseSchema: object;
+    maxTokens: number;
+  }) =>
+    callAgentWithFallback({
+      agentId: "evidence_loop_rewriter",
+      systemPrompt: input.systemPrompt,
+      userContent: input.userContent,
+      responseSchema: input.responseSchema,
+      maxTokens: input.maxTokens,
+      env,
+      codexBin,
+      reasoningEffort: "low",
+      options: { logger: { info: () => {}, error: console.error.bind(console) } },
+    }).then((r) => ({ output: r.output, model: r.model }));
+}
+
+/** cross exam 第二意见裸调用（与 handlers.makeCrossExamCaller 同款，国产优先）。 */
+function makeCrossExamRaw(evalEnv: EvalEnv) {
+  const modelOverride = pickCrossExamModel(evalEnv.env);
+  if (!modelOverride) return undefined;
+  return (input: {
+    systemPrompt: string;
+    userContent: string;
+    responseSchema: object;
+    maxTokens: number;
+  }) =>
+    callAgentWithFallback({
+      agentId: "cross_examiner",
+      systemPrompt: input.systemPrompt,
+      userContent: input.userContent,
+      responseSchema: input.responseSchema,
+      maxTokens: input.maxTokens,
+      env: evalEnv.env,
+      codexBin: evalEnv.codexBin,
+      reasoningEffort: "high",
+      modelOverride,
+      options: { logger: { info: () => {}, error: console.error.bind(console) } },
+    }).then((r) => ({ output: r.output, model: r.model }));
+}
+
 export interface EvalCaseResult {
   claims?: PipelineStep[] | never[];
   steps: PipelineStep[];
   finalReport: Record<string, unknown>;
   atomSearchBundle?: unknown;
+  evidenceLoop?: unknown;
   error?: string;
 }
 
@@ -114,6 +178,7 @@ export async function runCase(
   steps: PipelineStep[];
   finalReport: Record<string, unknown>;
   atomSearchBundle?: unknown;
+  evidenceLoop?: unknown;
   error?: string;
 }> {
   const runAgent = makeRunAgent(evalEnv, golden.claim);
@@ -124,6 +189,9 @@ export async function runCase(
       runAgent,
       searchOne: makeSearchOne(evalEnv.env),
       callSelfProofModel: makeSelfProof(evalEnv),
+      // LLM 语义改写（与生产 handlers 同款）：eval 必须跑生产路径
+      evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteRaw(evalEnv)) },
+      crossExam: { callRaw: makeCrossExamRaw(evalEnv) },
       runReport: async ({ claim: reportClaim, steps, search360Result, atomSearchBundle }) => {
         try {
           return await runAgent("report_composer", steps, search360Result, atomSearchBundle);
@@ -157,6 +225,7 @@ export async function runCase(
       steps: result.steps,
       finalReport: result.finalReport,
       atomSearchBundle: result.atomSearchBundle,
+      evidenceLoop: result.evidenceLoop,
     };
   } catch (error) {
     return {

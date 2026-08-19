@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildMemoryCandidatesFromRun } from "./memoryCandidateGenerator";
 import { JsonlMemoryCandidateStore } from "./memoryCandidateStore";
+import type { SearchStrategyMemoryPayload } from "./memoryCandidateTypes";
 
 describe("buildMemoryCandidatesFromRun", () => {
   it("always emits actionable case_pattern from claim + finalReport", () => {
@@ -65,6 +66,57 @@ describe("buildMemoryCandidatesFromRun", () => {
     expect(failure?.provenance.unresolvedQuestions).toEqual(
       expect.arrayContaining(["缺少双盲试验原文", "缺少监管批件"])
     );
+  });
+
+  it("effectiveQueries 收 support/contradict 与打中的 hop query，不含原句、未打中 hop、旧案 URL", () => {
+    const claim = "我说我的电瓶车叫谁偷走了，原来送到非洲去了";
+    const candidates = buildMemoryCandidatesFromRun({
+      runId: "run-reuse",
+      claim,
+      steps: [
+        {
+          output: {
+            pursuitHops: [
+              { query: "电瓶车 失窃 警方通报", resultKind: "primary", newEvidence: 1 },
+            ],
+          },
+        },
+      ],
+      finalReport: {
+        conclusion: "不能信",
+        credibilityScore: 18,
+        evidencePursuit: {
+          hops: [
+            { query: "电瓶车被偷至境外 非洲 P图 辟谣 警方通报", resultKind: "refutation", newEvidence: 2 },
+            { query: "无关天气 问法", resultKind: "empty", newEvidence: 0 },
+          ],
+        },
+      },
+      searchResult: {
+        sources: [{ url: "https://old-case.example/africa", title: "旧案", domain: "old-case.example" }],
+        supportQuery: "电瓶车 非洲 证据",
+        contradictQuery: "电瓶车 非洲 辟谣 官方通报",
+        relatedQuestions: ["冷藏多久安全"],
+        hops: [{ query: "https://old-case.example/africa", resultKind: "repost", newEvidence: 0 }],
+      },
+    });
+
+    const strategy = candidates.find((c) => c.kind === "search_strategy");
+    expect(strategy).toBeTruthy();
+    const queries = (strategy?.payload as SearchStrategyMemoryPayload).effectiveQueries;
+    expect(queries).toEqual(
+      expect.arrayContaining([
+        "电瓶车 非洲 证据",
+        "电瓶车 非洲 辟谣 官方通报",
+        "电瓶车被偷至境外 非洲 P图 辟谣 警方通报",
+        "电瓶车 失窃 警方通报",
+      ])
+    );
+    expect(queries).not.toContain(claim);
+    expect(queries).not.toContain("无关天气 问法");
+    expect(queries).not.toContain("冷藏多久安全");
+    expect(queries.some((q) => q.includes("https://"))).toBe(false);
+    expect(strategy?.provenance.sourceUrls).toContain("https://old-case.example/africa");
   });
 });
 

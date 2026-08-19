@@ -250,7 +250,7 @@ export function AppShell({
         id="desk-shell"
         className="app-shell-group"
         orientation="horizontal"
-        resizeTargetMinimumSize={8}
+        resizeTargetMinimumSize={{ coarse: 8, fine: 8 }}
       >
         <Panel
           id="rail"
