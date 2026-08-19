@@ -2,7 +2,7 @@
  * Folded evidence-pursuit hops under the search line.
  * Cognitive process: why / what / found / still missing. Collapsed next to the verdict.
  */
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { PursuitHopView } from "../../../../lib/evidencePursuitUi";
 import { formatPursuitDetail } from "../../../../lib/evidencePursuitUi";
 import styles from "./WebSearch.module.css";
@@ -24,11 +24,6 @@ export function MissionPursuitFold({ hops, live = false }: MissionPursuitFoldPro
   const n = hops.length;
   const [open, setOpen] = useState(false);
   const running = live && hops.some((h) => h.status === "loading");
-
-  useEffect(() => {
-    if (running) setOpen(true);
-    if (!live && n > 0) setOpen(false);
-  }, [running, live, n]);
 
   if (n === 0) return null;
 

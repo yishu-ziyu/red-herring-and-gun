@@ -28,11 +28,23 @@ describe("evidencePursuitUi", () => {
   it("reads hops from the report and from live tools", () => {
     const fromReport = hopsFromReport({
       evidencePursuit: {
-        hops: [{ hop: 1, goal: "找原始发布", query: "q", resultKind: "primary", missingAfter: [] }],
+        hops: [
+          {
+            hop: 1,
+            atom: "某地地震",
+            goal: "找原始发布",
+            query: "q",
+            resultKind: "primary",
+            missingAfter: [],
+            stopReason: "evidence-found",
+          },
+        ],
       },
     });
     expect(fromReport).toHaveLength(1);
     expect(fromReport[0]?.resultKindLabel).toBe("原始来源");
+    expect(fromReport[0]?.atom).toBe("某地地震");
+    expect(fromReport[0]?.stopReasonLabel).toBe("已收敛");
 
     const fromTools = hopsFromTools([
       {
@@ -44,5 +56,29 @@ describe("evidencePursuitUi", () => {
     ]);
     expect(fromTools[0]?.status).toBe("loading");
     expect(fromTools[0]?.goal).toBe("找反证或辟谣");
+  });
+
+  it("stamps a later stop event onto the last hop of that atom", () => {
+    const fromTools = hopsFromTools([
+      {
+        toolName: "证据追索",
+        query: "q2",
+        status: "success",
+        result: {
+          kind: "evidence_pursuit",
+          atom: "某地地震",
+          goal: "找原始发布",
+          resultKind: "repost",
+        },
+      },
+      {
+        toolName: "证据追索",
+        query: "某地地震",
+        status: "success",
+        result: { kind: "evidence_pursuit", atom: "某地地震", reason: "no-new-evidence" },
+      },
+    ]);
+    expect(fromTools).toHaveLength(1);
+    expect(fromTools[0]?.stopReasonLabel).toBe("没有新证据");
   });
 });
