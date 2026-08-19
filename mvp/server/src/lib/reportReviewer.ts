@@ -4,8 +4,11 @@
  * ReportComposer is the proposer; this module is a non-LLM reviewer:
  * contract fields, evidence chain, boundary language, minimal repair.
  * Keep in sync with src/lib/agentRuntime/reportReviewer.ts (client/AgentRuntime).
- * Server cannot import client src (tsconfig rootDir); copy is intentional (ADR-004).
+ * Server cannot import client src (tsconfig rootDir); copy is intentional (ADR-003).
  */
+
+import { boundTinyRumorVerdict } from "./atomSearchQuery.js";
+import { applyPublicCopy, faceWord } from "./publicCopy.js";
 
 export interface ReportReviewIssue {
   code: string;
@@ -33,6 +36,42 @@ function asString(value: unknown): string {
 
 function hasMinStrings(value: unknown, min: number): boolean {
   return asArray(value).filter((item) => typeof item === "string" && item.trim().length > 0).length >= min;
+}
+
+function sourceHasHttpUrl(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  return /^https?:\/\//i.test(String((value as { url?: unknown }).url || "").trim());
+}
+
+function listSourceRecords(value: unknown): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  for (const item of asArray(value)) {
+    if (item && typeof item === "object") out.push(item as Record<string, unknown>);
+  }
+  return out;
+}
+
+/** 非 related-only 的可点开 URL 才算有据。 */
+function reportHasBoundHttpUrl(report: Record<string, unknown>): boolean {
+  for (const item of asArray(report.subclaimVerdicts)) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    if (rec.sourcesRelatedOnly === true) continue;
+    if (listSourceRecords(rec.supportingSources).some(sourceHasHttpUrl)) return true;
+    if (listSourceRecords(rec.contradictingSources).some(sourceHasHttpUrl)) return true;
+  }
+  return false;
+}
+
+function collectReportSources(report: Record<string, unknown>): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  for (const item of asArray(report.subclaimVerdicts)) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    out.push(...listSourceRecords(rec.supportingSources), ...listSourceRecords(rec.contradictingSources));
+  }
+  out.push(...listSourceRecords(report.citationSources));
+  return out;
 }
 
 /**
@@ -110,8 +149,8 @@ export function reviewAndRepairReport(
       const i = evidenceChain.length;
       evidenceChain.push({
         layer: ["命题", "证据", "边界"][i] ?? `层${i + 1}`,
-        finding: i === 0 ? asString(opts?.claim) || "待核查命题" : "审核器补全：前序输出未提供完整证据链",
-        evidence: "（审稿补全，非新增外部事实）",
+        finding: i === 0 ? asString(opts?.claim) || "待核查命题" : "这一层还没有查到可点开的出处",
+        evidence: "没有新的外部出处",
         boundary: "不得据此推出比材料更强的结论",
         sourceRefs: [],
       });
@@ -185,6 +224,22 @@ export function reviewAndRepairReport(
     }
   }
 
+  // 7b) 整句 true/false 必须有非 related-only 绑定 URL；短谣 related-only 对题辟谣除外。
+  const hardType = asString(repaired.verdictType);
+  const keepBoundTinyFalse =
+    hardType === "false" && boundTinyRumorVerdict(asString(opts?.claim), collectReportSources(repaired)) === "false";
+  const unsourcedHard =
+    (hardType === "true" || hardType === "false") && !reportHasBoundHttpUrl(repaired) && !keepBoundTinyFalse;
+  checks.noUnsourcedHardVerdict = !unsourcedHard;
+  if (unsourcedHard) {
+    issues.push({
+      code: "unsourced_hard_verdict",
+      severity: "error",
+      message: "整句 true/false 没有非 related-only 绑定 URL，已降为 unverified",
+    });
+    repaired.verdictType = "unverified";
+  }
+
   // 8) summaryForPublic must not be more absolute than conclusion (coarse)
   const publicSummary = asString(repaired.summaryForPublic);
   const absoluteWords = ["铁定", "百分百", "绝对是", "毫无疑问是谣言", "完全真实"];
@@ -202,7 +257,7 @@ export function reviewAndRepairReport(
   }
 
   if (!asString(repaired.recommendation)) {
-    repaired.recommendation = "请结合证据链与 canSay/cannotSay 边界再传播。";
+    repaired.recommendation = `${faceWord(repaired.verdictType)}。`;
   }
 
   if (!Array.isArray(repaired.closureActions) || asArray(repaired.closureActions).length === 0) {
@@ -227,6 +282,8 @@ export function reviewAndRepairReport(
     errorCount: issues.filter((i) => i.severity === "error").length,
     passed: issues.filter((i) => i.severity === "error").length === 0,
   };
+
+  applyPublicCopy(repaired);
 
   const errorCount = issues.filter((i) => i.severity === "error").length;
   const warnCount = issues.filter((i) => i.severity === "warn").length;

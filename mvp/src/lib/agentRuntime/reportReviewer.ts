@@ -201,7 +201,7 @@ export function reviewAndRepairReport(
   }
 
   if (!asString(repaired.recommendation)) {
-    repaired.recommendation = "请结合证据链与 canSay/cannotSay 边界再传播。";
+    repaired.recommendation = "还查不清。";
   }
 
   if (!Array.isArray(repaired.closureActions) || asArray(repaired.closureActions).length === 0) {

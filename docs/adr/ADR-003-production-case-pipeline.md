@@ -1,4 +1,4 @@
-# ADR-004: Production Case Pipeline is the runtime truth for claim-atom domain
+# ADR-003: Production Case Pipeline is the runtime truth for claim-atom domain
 
 ## 日期
 

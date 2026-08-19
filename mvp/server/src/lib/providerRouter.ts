@@ -106,7 +106,8 @@ export function noteProviderFailure(provider: string, message: string): void {
     const id = canonicalProviderId(provider);
     const n = (timeoutStrikes.get(id) || 0) + 1;
     timeoutStrikes.set(id, n);
-    if (n >= 2) skipProvider(provider);
+    // MiniMax-M3 default wait is 10 min; one hang is enough to skip the rest of this process.
+    if (n >= (id === "minimax" ? 1 : 2)) skipProvider(provider);
   }
 }
 
@@ -744,51 +745,55 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
     if (!TEXT_PROVIDER_IDS.has(ovProvider)) {
       throw new Error(`modelOverride 指向未知 provider: ${ovProvider}`);
     }
-    const ovStart = Date.now();
-    logger.info("[orchestrate-provider] start (override)", {
-      agent: traceLabel,
-      provider: ovProvider,
-      model: ovModel,
-    });
-    try {
-      const result = await invokeAndParse(
-        ovProvider,
-        ovModel,
-        (sys, user) =>
-          dispatchSingleProvider({
-            provider: ovProvider,
-            model: ovModel,
-            env,
-            agentId,
-            systemPrompt: sys,
-            userContent: user,
-            responseSchema,
-            maxTokens,
-            codexBin,
-            reasoningEffort,
-          }),
-        timeoutForProviderModel(env, ovProvider, ovModel, providerTimeoutMs),
-        "override"
-      );
-      logger.info("[orchestrate-provider] complete (override)", {
+    if (isProviderQuotaSkipped(ovProvider)) {
+      errors.push(`[${canonicalProviderId(ovProvider)}] 本进程已因额度耗尽跳过`);
+    } else {
+      const ovStart = Date.now();
+      logger.info("[orchestrate-provider] start (override)", {
         agent: traceLabel,
         provider: ovProvider,
         model: ovModel,
-        latencyMs: Date.now() - ovStart,
       });
-      return result;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : `${ovProvider} 调用失败`;
-      logger.error("[orchestrate-provider] error (override)", {
-        agent: traceLabel,
-        provider: ovProvider,
-        model: ovModel,
-        latencyMs: Date.now() - ovStart,
-        message,
-      });
-      noteProviderFailure(ovProvider, message);
-      if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
-      errors.push(`[${ovProvider}:${ovModel}] ${message}`);
+      try {
+        const result = await invokeAndParse(
+          ovProvider,
+          ovModel,
+          (sys, user) =>
+            dispatchSingleProvider({
+              provider: ovProvider,
+              model: ovModel,
+              env,
+              agentId,
+              systemPrompt: sys,
+              userContent: user,
+              responseSchema,
+              maxTokens,
+              codexBin,
+              reasoningEffort,
+            }),
+          timeoutForProviderModel(env, ovProvider, ovModel, providerTimeoutMs),
+          "override"
+        );
+        logger.info("[orchestrate-provider] complete (override)", {
+          agent: traceLabel,
+          provider: ovProvider,
+          model: ovModel,
+          latencyMs: Date.now() - ovStart,
+        });
+        return result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : `${ovProvider} 调用失败`;
+        logger.error("[orchestrate-provider] error (override)", {
+          agent: traceLabel,
+          provider: ovProvider,
+          model: ovModel,
+          latencyMs: Date.now() - ovStart,
+          message,
+        });
+        noteProviderFailure(ovProvider, message);
+        if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
+        errors.push(`[${ovProvider}:${ovModel}] ${message}`);
+      }
     }
   }
 

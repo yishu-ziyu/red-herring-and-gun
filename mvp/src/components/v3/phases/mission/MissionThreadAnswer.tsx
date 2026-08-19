@@ -47,7 +47,9 @@ export function MissionThreadAnswer({ finalReport, sources = [] }: MissionThread
   const verdictLabel = humanizeVerdictType(verdictType);
   const lede =
     asString(finalReport.conclusion) || asString(finalReport.summaryForPublic);
-  const chips = sources.filter((s) => s.url).slice(0, 3);
+  const chips = sources
+    .filter((s): s is ThreadSource & { url: string } => Boolean(s.url))
+    .slice(0, 3);
 
   return (
     <article className="mission-thread-answer" aria-label="判断">

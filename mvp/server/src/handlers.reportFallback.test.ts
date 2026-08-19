@@ -73,7 +73,13 @@ describe("deterministic final report fallback", () => {
           counterEvidence: [],
           sources: [],
           subclaimVerdicts: [
-            { claimAtom: "原子A", verdict: "true", evidence: "证据A", boundary: "边界A" },
+            {
+              claimAtom: "原子A",
+              verdict: "true",
+              evidence: "证据A",
+              boundary: "边界A",
+              supportingSources: [{ url: "https://a.example/1", title: "A", snippet: "s" }],
+            },
             { claimAtom: "编造原子", verdict: "false", evidence: "幻觉", boundary: "幻觉" },
           ],
         },
@@ -218,7 +224,7 @@ describe("deterministic final report fallback", () => {
     expect(report.claimItems[2].verdict?.claimAtom).toBe("事实C");
   });
 
-  it("buildDeterministicFinalReport 排除层：claimItems 只含真正展示的原子（超限原子不进）", () => {
+  it("buildDeterministicFinalReport 排除层：第 7 条立场型仍按原句序出现，不进检索桶", () => {
     const steps = [
       {
         agent: "rumor_detector",
@@ -250,9 +256,18 @@ describe("deterministic final report fallback", () => {
       },
     ];
     const report = buildDeterministicFinalReport("测试命题", steps, {}, "fallback reason");
-    // compactStrings 截断到 6 条：原子7 超限不展示，也就不能进 claimItems
-    expect(report.claimItems.map((i: any) => i.text)).toEqual(["原子1", "原子2", "原子3", "原子4", "原子5", "原子6"]);
-    expect(report.claimItems.map((i: any) => i.text)).not.toContain("原子7");
+    expect(report.claimItems.map((i: any) => i.text)).toEqual([
+      "原子1",
+      "原子2",
+      "原子3",
+      "原子4",
+      "原子5",
+      "原子6",
+      "原子7",
+    ]);
+    expect(report.claimItems[6]).toEqual({ text: "原子7", verifiable: false, type: "value" });
+    expect(report.nonVerifiableAtoms).toEqual([{ text: "原子7", type: "value" }]);
+    expect(report.subclaimVerdicts.some((row: any) => row.claimAtom === "原子7")).toBe(false);
   });
 
   it("buildDeterministicFinalReport 排除层：claimAtomTypes 缺失时全部可核查、不产生非核查桶", () => {

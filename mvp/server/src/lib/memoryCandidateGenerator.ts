@@ -2,7 +2,7 @@
  * memoryCandidateGenerator — server copy of src/lib/agentRuntime/memoryCandidateGenerator.ts
  *
  * Pure builder: case run → proposed MemoryCandidate[].
- * Server cannot import client src (ADR-004); keep in sync with client generator.
+ * Server cannot import client src (ADR-003); keep in sync with client generator.
  * Steps accept pipeline-shaped records (output / optional evidenceBundle).
  */
 
@@ -28,6 +28,11 @@ export interface MemorySearchSnapshot {
   contradictQuery?: string;
   relatedQuestions?: string[];
   unresolvedEvidenceGaps?: string[];
+  hops?: Array<{
+    query?: string;
+    resultKind?: string;
+    newEvidence?: number;
+  }>;
   traceText?: string;
   _source?: string;
 }
@@ -106,7 +111,14 @@ export function buildMemoryCandidatesFromRun({
     },
   });
 
-  const strategy = buildSearchStrategyPayload(claim, rumorType, searchResult ?? undefined, unresolvedQuestions);
+  const hopQueries = collectHitHopQueries(searchResult ?? undefined, finalReport, steps);
+  const strategy = buildSearchStrategyPayload(
+    claim,
+    rumorType,
+    searchResult ?? undefined,
+    unresolvedQuestions,
+    hopQueries
+  );
   if (strategy.effectiveQueries.length > 0 || strategy.sourceDomains.length > 0) {
     candidates.push({
       ...base,
@@ -125,7 +137,13 @@ export function buildMemoryCandidatesFromRun({
     candidates.push(candidate);
   }
 
-  const recursivePath = buildRecursivePathPayload(claim, searchResult ?? undefined, finalReport, unresolvedQuestions);
+  const recursivePath = buildRecursivePathPayload(
+    claim,
+    searchResult ?? undefined,
+    finalReport,
+    unresolvedQuestions,
+    hopQueries
+  );
   if (recursivePath.subquestions.length > 0 || recursivePath.evidenceGaps.length > 0) {
     candidates.push({
       ...base,
@@ -185,15 +203,15 @@ function buildSearchStrategyPayload(
   claim: string,
   rumorType: string,
   searchResult?: MemorySearchSnapshot,
-  unresolvedQuestions: string[] = []
+  unresolvedQuestions: string[] = [],
+  hopQueries: string[] = []
 ): SearchStrategyMemoryPayload {
   return {
     rumorType,
     effectiveQueries: uniqueStrings([
-      claim,
       searchResult?.supportQuery,
       searchResult?.contradictQuery,
-      ...(searchResult?.relatedQuestions ?? []),
+      ...hopQueries,
     ]).slice(0, 10),
     ineffectiveQueries: searchResult?._source === "tool-error" ? [claim] : [],
     sourceDomains: uniqueStrings((searchResult?.sources ?? []).map(sourceDomain)).slice(0, 16),
@@ -255,7 +273,8 @@ function buildRecursivePathPayload(
   claim: string,
   searchResult?: MemorySearchSnapshot,
   finalReport?: Record<string, unknown>,
-  unresolvedQuestions: string[] = []
+  unresolvedQuestions: string[] = [],
+  hopQueries: string[] = []
 ): RecursivePathMemoryPayload {
   return {
     rootClaim: claim,
@@ -263,7 +282,11 @@ function buildRecursivePathPayload(
       ...(searchResult?.relatedQuestions ?? []),
       ...getStringArray(finalReport, "nextEvidenceNeeded"),
     ]).slice(0, 10),
-    effectiveQueries: uniqueStrings([searchResult?.supportQuery, searchResult?.contradictQuery]).slice(0, 6),
+    effectiveQueries: uniqueStrings([
+      searchResult?.supportQuery,
+      searchResult?.contradictQuery,
+      ...hopQueries,
+    ]).slice(0, 6),
     evidenceGaps: unresolvedQuestions,
     stopRules: uniqueStrings([
       ...getStringArray(finalReport, "doNotInfer"),
@@ -333,7 +356,7 @@ function scoreMemoryUsefulness(candidate: MemoryCandidate, context: MemorySelect
 function hasReusableSearchStrategy(payload: unknown) {
   const strategy = payload as Partial<SearchStrategyMemoryPayload>;
   return Boolean(
-    (strategy.effectiveQueries?.length ?? 0) > 1 ||
+    (strategy.effectiveQueries?.length ?? 0) > 0 ||
       strategy.ineffectiveQueries?.length ||
       strategy.sourceDomains?.length ||
       (strategy.stopRules?.length ?? 0) > 2
@@ -359,6 +382,45 @@ function sourceReputationChangesNextAction(payload: SourceReputationMemoryPayloa
     roleText.includes("不可用") ||
     roleText.includes("线索")
   );
+}
+
+function collectHitHopQueries(
+  searchResult?: MemorySearchSnapshot,
+  finalReport?: Record<string, unknown>,
+  steps: MemoryStepSnapshot[] = []
+): string[] {
+  const hops: unknown[] = [];
+  if (Array.isArray(searchResult?.hops)) hops.push(...searchResult.hops);
+  const reportBlock = finalReport?.evidencePursuit;
+  if (reportBlock && typeof reportBlock === "object") {
+    const reportHops = (reportBlock as { hops?: unknown }).hops;
+    if (Array.isArray(reportHops)) hops.push(...reportHops);
+  }
+  for (const step of steps) {
+    const output = step.output;
+    if (!output) continue;
+    if (Array.isArray(output.pursuitHops)) hops.push(...output.pursuitHops);
+    const stepBlock = output.evidencePursuit;
+    if (stepBlock && typeof stepBlock === "object") {
+      const stepHops = (stepBlock as { hops?: unknown }).hops;
+      if (Array.isArray(stepHops)) hops.push(...stepHops);
+    }
+  }
+  return uniqueStrings(hops.map(hopHitQuery));
+}
+
+function hopHitQuery(hop: unknown): string | undefined {
+  if (!hop || typeof hop !== "object") return undefined;
+  const rec = hop as Record<string, unknown>;
+  const query = typeof rec.query === "string" ? rec.query.trim() : "";
+  if (!query || /^https?:\/\//i.test(query)) return undefined;
+  const kind = rec.resultKind;
+  const newEvidence = rec.newEvidence;
+  const hit =
+    kind === "primary" ||
+    kind === "refutation" ||
+    (typeof newEvidence === "number" && newEvidence > 0);
+  return hit ? query : undefined;
 }
 
 function candidateId(runId: string, suffix: string) {

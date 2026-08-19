@@ -18077,6 +18077,10 @@ button:disabled {
   gap: 18px;
 }
 
+.result-view .memory-candidate-panel {
+  margin-top: 8px;
+}
+
 .result-section-head {
   display: flex;
   justify-content: space-between;
@@ -18140,6 +18144,22 @@ button:disabled {
   border-radius: 999px;
   background: color-mix(in srgb, var(--accent, #b91c3c) 12%, #fff);
   color: var(--accent, #b91c3c);
+}
+
+.result-claim-badge--stance {
+  background: color-mix(in srgb, var(--text-tertiary, #888) 16%, #fff);
+  color: var(--text-secondary, #4a4a5a);
+}
+
+.result-claim-item--stance .result-claim-toggle {
+  cursor: default;
+}
+
+.result-claim-stance-note {
+  margin: 0;
+  padding: 0 14px 12px;
+  font-size: 13px;
+  color: var(--text-tertiary, #888);
 }
 
 .result-claim-detail {
@@ -18813,25 +18833,40 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  min-height: 44px;
-  padding: 0 12px;
-  border-bottom: 1px solid rgba(21, 24, 33, 0.08);
-  background: #f7f3ea;
-  font-size: 13px;
+  gap: 10px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(21, 24, 33, 0.25);
+  background: #f2ecdd;
+  color: var(--zt-ink, #151821);
+  font-size: 14px;
   font-weight: 700;
 }
 
+.app-shell-narrow-bar > span {
+  letter-spacing: 0.04em;
+}
+
 .app-shell-narrow-bar button {
-  border: 0;
-  background: transparent;
+  border: 1px solid rgba(21, 24, 33, 0.35);
+  background: #fffdf8;
+  color: var(--zt-ink, #151821);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
+  line-height: 1;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.app-shell-narrow-bar button:active {
+  background: #f5efe2;
 }
 
 .app-shell-narrow-body {
-  height: calc(100dvh - 44px);
+  height: calc(100dvh - 52px);
 }
 
 .app-shell .landing-page {
@@ -18992,83 +19027,6 @@ button:disabled {
   color: var(--ink, #151821);
 }
 
-.mission-search-fold {
-  margin-top: -6px;
-}
-
-.mission-search-head {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 20px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #a1a1a1;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: -0.005em;
-  cursor: default;
-}
-
-.mission-search-head.is-clickable {
-  cursor: pointer;
-}
-
-.mission-search-chev {
-  width: 12px;
-  height: 12px;
-  transform: rotate(180deg);
-  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.mission-search-head[aria-expanded="true"] .mission-search-chev {
-  transform: rotate(0deg);
-}
-
-.mission-search-list {
-  display: grid;
-  gap: 6px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.mission-search-list a,
-.mission-search-list span {
-  color: var(--zt-text-secondary, #4a4a5a);
-  font-size: 13px;
-  line-height: 1.45;
-  text-decoration: none;
-}
-
-.mission-search-list a:hover {
-  text-decoration: underline;
-}
-
-.mission-search-shimmer {
-  color: transparent;
-  background: linear-gradient(
-    90deg,
-    #a1a1a1 0%,
-    #a1a1a1 30%,
-    rgba(161, 161, 161, 0.45) 45%,
-    rgba(161, 161, 161, 0.45) 55%,
-    #a1a1a1 70%,
-    #a1a1a1 100%
-  );
-  background-size: 300% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  animation: mission-search-shine 2.25s cubic-bezier(0.25, 0.1, 0.25, 1) infinite;
-}
-
-@keyframes mission-search-shine {
-  0%, 18% { background-position: 100% 0; }
-  82%, 100% { background-position: 0% 0; }
-}
-
 .mission-thread-answer {
   margin-top: 6px;
   display: grid;
@@ -19114,15 +19072,8 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mission-search-shimmer {
+  .mission-thread-answer {
     animation: none;
-    color: #a1a1a1;
-    background: none;
-  }
-  .mission-thread-answer,
-  .mission-search-chev {
-    animation: none;
-    transition: none;
   }
 }
 
