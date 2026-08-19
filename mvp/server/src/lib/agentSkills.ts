@@ -2,7 +2,7 @@
  * agentSkills.ts — AI Agent Book Ch.2 Skills 按需加载（server copy）
  *
  * Keep in sync with src/lib/agentRuntime/agentSkills.ts (client/AgentRuntime).
- * Server cannot import client src (tsconfig rootDir); copy is intentional (ADR-004).
+ * Server cannot import client src (tsconfig rootDir); copy is intentional (ADR-003).
  */
 
 export interface AgentSkill {

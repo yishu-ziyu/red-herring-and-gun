@@ -49,5 +49,6 @@ describe("flattenRowToBlocks", () => {
     expect(instrumentVariantFromTitle("检索公开材料", "tool:search360")).toBe("search");
     expect(instrumentVariantFromTitle("思考")).toBe("think");
     expect(instrumentVariantFromTitle("报告审稿")).toBe("work");
+    expect(instrumentVariantFromTitle("追索证据", "tool:evidence_pursuit:1:q")).toBe("work");
   });
 });

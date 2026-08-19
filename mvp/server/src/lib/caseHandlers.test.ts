@@ -88,10 +88,20 @@ describe("Plan Item 2 · postCaseHandler", () => {
     expect(res.statusCode).toBe(400);
   });
 
-  it("合法 case → 200 + caseId", async () => {
+  it("未登录 → 401（case 写入必须登录）", async () => {
     const res = mockRes();
     await postCaseHandler(
-      mockReq({}, { claim: "test", report: makeReport("test"), credibilityScore: 75 }) as never,
+      mockReq({}, { claim: "test", report: makeReport("test") }) as never,
+      res,
+    );
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("合法 case → 200 + caseId", async () => {
+    const cookie = await sessionCookie("ok@example.com");
+    const res = mockRes();
+    await postCaseHandler(
+      mockReq({}, { claim: "test", report: makeReport("test"), credibilityScore: 75 }, cookie) as never,
       res,
     );
     expect(res.statusCode).toBe(200);
@@ -100,13 +110,14 @@ describe("Plan Item 2 · postCaseHandler", () => {
   });
 
   it("显式 caseId → 保留", async () => {
+    const cookie = await sessionCookie("ok@example.com");
     const res = mockRes();
     await postCaseHandler(
       mockReq({}, {
         claim: "test",
         report: makeReport("test"),
         caseId: "custom12",
-      }) as never,
+      }, cookie) as never,
       res,
     );
     expect(res.body.caseId).toBe("custom12");
@@ -197,6 +208,19 @@ describe("Plan Item 2 · renderCaseHtmlHandler", () => {
     expect(res.body).toContain("application/ld+json");
     expect(res.body).toContain("ClaimReview");
     expect(res.body).toContain("测试说法");
+  });
+
+  it("中断报告（无 rewrittenClaim）→ 200，不 500", () => {
+    const entry = putCase({
+      claim: "中断的核查",
+      report: { _source: "error-boundary", message: "provider down" } as never,
+      claimReview: {} as never,
+      credibilityScore: 50,
+    });
+    const res = mockRes();
+    renderCaseHtmlHandler(mockReq({ caseId: entry.caseId }) as never, res);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain("结论未生成");
   });
 
   it("HTML 转义：claim 含 <script> 必须 htmlEscape", () => {

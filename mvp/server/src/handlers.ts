@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import dns from "node:dns/promises";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,11 +8,19 @@ import { promisify } from "node:util";
 import { searchClaimAcrossSources } from "./lib/sherlockStyleSearch.js";
 import { AGENT_CONFIGS, buildAgentInput } from "./lib/agentConfigs.js";
 import { type AtomSearchBundle } from "./lib/atomSearch.js";
-import { buildAtomSearchQueries, mergeParallelSearchPayloads } from "./lib/atomSearchQuery.js";
+import { mergeParallelSearchPayloads } from "./lib/atomSearchQuery.js";
 import { applyExclusionLayerToReport } from "./lib/reportAssembly/index.js";
 import { runCasePipeline, type PipelineStep, type RunAgentFn } from "./lib/casePipeline/index.js";
+import { makeRewriteQueryCall } from "./lib/evidenceLoop/index.js";
 import { getMemoryCandidateStore } from "./lib/memoryCandidateHandlers.js";
-import { callAgentWithFallback, AgentTextProviderId, ProviderFallbackError } from "./lib/providerRouter.js";
+import type { MemoryCandidateHit } from "./lib/memoryCandidateTypes.js";
+import { buildQueriesWithReuse } from "./lib/queryReuse.js";
+import {
+  callAgentWithFallback,
+  providerOrderForAgent,
+  AgentTextProviderId,
+  ProviderFallbackError,
+} from "./lib/providerRouter.js";
 import { buildAgentStatusBar } from "./lib/contextStatusBar.js";
 import { formatSkillsForPrompt, selectAgentSkills } from "./lib/agentSkills.js";
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
@@ -817,8 +826,21 @@ function makeRunAgent(opts: {
   }
 
   function makeSearchOneAtom() {
+    let reuseHitsPromise: Promise<MemoryCandidateHit[]> | undefined;
     return async (atom: string) => {
-      const result = await get360SearchForClaim(atom);
+      if (!reuseHitsPromise) {
+        reuseHitsPromise = getMemoryCandidateStore()
+          .searchAccepted(atom)
+          .catch(() => []);
+      }
+      const reuseHits = await reuseHitsPromise;
+      let result: Record<string, unknown>;
+      try {
+        result = await retrieveAtomSources(env, atom, reuseHits);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
+        result = build360SearchFailure(atom, message);
+      }
       try {
         await attachCondensedSnippets(env, atom, result);
       } catch {
@@ -848,6 +870,98 @@ function makeRunAgent(opts: {
           modelChoice && modelChoice["rumor_detector"] ? modelChoice["rumor_detector"] : undefined,
         options: { logger: console },
       }).then((r) => ({ output: r.output, model: r.model }));
+  }
+
+  // Evidence loop 语义改写（ADR-004）：裸模型调用 → makeRewriteQueryCall 绑定 prompt/解析。
+  // 失败回退确定性模板（evidenceLoop 内部处理），这里不需要 try/catch。
+  function makeRewriteCaller(modelChoice: any) {
+    return (input: {
+      systemPrompt: string;
+      userContent: string;
+      responseSchema: object;
+      maxTokens: number;
+    }) =>
+      callAgentWithFallback({
+        agentId: "evidence_loop_rewriter",
+        systemPrompt: input.systemPrompt,
+        userContent: input.userContent,
+        responseSchema: input.responseSchema,
+        maxTokens: input.maxTokens,
+        env,
+        codexBin,
+        reasoningEffort: "low",
+        modelOverride:
+          modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
+        options: { logger: console },
+      }).then((r) => ({ output: r.output, model: r.model }));
+  }
+
+  // Cross exam 第二意见（G3/P1）：国产优先、与主判 provider 不同源（真双模型交叉）。
+  // 主判 = 主 provider order 的第一个可用项；候选里先挑异源，全同源才退回第一个可用。
+  function pickCrossExamModel(
+    modelChoice: any
+  ): { provider: AgentTextProviderId; model: string } | undefined {
+    if (modelChoice && modelChoice["cross_examiner"]) return modelChoice["cross_examiner"];
+    const candidates: Array<{ provider: AgentTextProviderId; model: string; hasKey: boolean }> = [
+      { provider: "stepfun", model: "step-3.7-flash", hasKey: Boolean(env.STEPFUN_API_KEY) },
+      { provider: "minimax", model: "MiniMax-M3", hasKey: Boolean(env.MINIMAX_API_KEY || env.MINIMAX_TOKEN_PLAN_KEY) },
+      { provider: "mimo", model: "mimo-v2.5-pro", hasKey: Boolean(env.MIMO_API_KEY) },
+    ].filter((c) => c.hasKey) as Array<{ provider: AgentTextProviderId; model: string }>;
+    if (candidates.length === 0) return undefined;
+    const primary = providerOrderForAgent(env).find((p) => p !== "codex");
+    return candidates.find((c) => c.provider !== primary) ?? candidates[0];
+  }
+
+  function makeCrossExamCaller(modelChoice: any, sendAgentEvent?: (data: object) => void) {
+    const modelOverride = pickCrossExamModel(modelChoice);
+    if (!modelOverride) return undefined;
+    return (input: {
+      systemPrompt: string;
+      userContent: string;
+      responseSchema: object;
+      maxTokens: number;
+    }) => {
+      sendAgentEvent?.({
+        type: "agent_start",
+        agent: "cross_examiner",
+        agentName: "CrossExaminer",
+        query: "第二模型独立复核冲突证据",
+        timestamp: Date.now(),
+      });
+      return callAgentWithFallback({
+        agentId: "cross_examiner",
+        systemPrompt: input.systemPrompt,
+        userContent: input.userContent,
+        responseSchema: input.responseSchema,
+        maxTokens: input.maxTokens,
+        env,
+        codexBin,
+        reasoningEffort: "high",
+        modelOverride,
+        options: { logger: console },
+      })
+        .then((r) => {
+          sendAgentEvent?.({
+            type: "agent_complete",
+            agent: "cross_examiner",
+            agentName: "CrossExaminer",
+            output: r.output,
+            model: r.model,
+            timestamp: Date.now(),
+          });
+          return { output: r.output, model: r.model };
+        })
+        .catch((error) => {
+          sendAgentEvent?.({
+            type: "agent_error",
+            agent: "cross_examiner",
+            agentName: "CrossExaminer",
+            error: error instanceof Error ? error.message : "cross examiner failed",
+            timestamp: Date.now(),
+          });
+          throw error;
+        });
+    };
   }
 
   function makeReportRunner(runAgent: RunAgentFn) {
@@ -940,6 +1054,8 @@ function makeRunAgent(opts: {
         searchOne: makeSearchOneAtom(),
         callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
         runReport: (args) => makeReportRunner(runAgent)(args),
+        evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteCaller(modelChoice)) },
+        crossExam: { callRaw: makeCrossExamCaller(modelChoice) },
         hooks: {
           searchMode: "parallel",
           onSelfProof: (info) => {
@@ -949,6 +1065,11 @@ function makeRunAgent(opts: {
           },
           onAtomSearchResult: (_atom, _result) => {
             /* aggregate log after pipeline via result */
+          },
+          onEvidenceLoopStopped: (info) => {
+            console.log(
+              `[evidence_loop] atom=${JSON.stringify(info.atom).slice(0, 80)} rounds=${info.rounds} reason=${info.reason}`
+            );
           },
         },
         finalizeReport: pipelineFinalize,
@@ -1107,6 +1228,8 @@ function makeRunAgent(opts: {
         runAgent,
         searchOne: makeSearchOneAtom(),
         callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
+        evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteCaller(modelChoice)) },
+        crossExam: { callRaw: makeCrossExamCaller(modelChoice, (data) => sendEvent(data)) },
         runReport: (args) =>
           makeReportRunner(runAgent)({
             ...args,
@@ -1159,6 +1282,66 @@ function makeRunAgent(opts: {
                 timestamp: Date.now(),
               });
             }
+          },
+          onEvidenceLoopRoundStart: (info) => {
+            sendEvent({
+              type: "tool_start",
+              toolName: "证据追索",
+              query: info.query,
+              result: {
+                kind: "evidence_pursuit",
+                atom: info.atom,
+                round: info.round,
+                goal: info.goal,
+                purpose: info.purpose,
+                missingEvidence: info.missingEvidence,
+                trigger: info.trigger,
+              },
+              timestamp: Date.now(),
+            });
+          },
+          onEvidenceLoopRoundResult: (info) => {
+            sendEvent({
+              type: "tool_result",
+              toolName: "证据追索",
+              query: info.query,
+              result: {
+                kind: "evidence_pursuit",
+                atom: info.atom,
+                round: info.round,
+                sourceCount: info.sourceCount,
+                newSourceCount: info.newSourceCount,
+                goal: info.goal,
+                purpose: info.purpose,
+                resultKind: info.resultKind,
+                gain: info.gain,
+                missingAfter: info.missingAfter,
+                action: info.action,
+                detail: info.detail,
+              },
+              timestamp: Date.now(),
+            });
+          },
+          onEvidenceLoopStopped: (info) => {
+            const reasonText: Record<string, string> = {
+              "evidence-found": "缺口收窄，转入重判",
+              "no-new-evidence": "继续搜也没有新证据，判停",
+              "rewrite-empty": "没有可用的新查询，判停",
+              "search-failed": "补查检索失败，判停",
+            };
+            sendEvent({
+              type: "tool_result",
+              toolName: "证据追索",
+              query: info.atom,
+              result: {
+                kind: "evidence_pursuit",
+                atom: info.atom,
+                rounds: info.rounds,
+                reason: info.reason,
+                reasonText: reasonText[info.reason] ?? info.reason,
+              },
+              timestamp: Date.now(),
+            });
           },
           afterFactSource: async ({ factStep, sourceStep, search360Result }) => {
             const debate = buildConsensusDebate(factStep, sourceStep, search360Result);
@@ -1280,6 +1463,51 @@ function makeRunAgent(opts: {
   //   - 永不记录 apiKey
   // ───────────────────────────────────────────────────────────────
 
+  /** 覆盖 IPv4 私网/保留段、IPv6 ULA/链路本地、以及内网惯用主机名。 */
+  function isPrivateAddressText(host: string): boolean {
+    const h = host.toLowerCase().replace(/^\[|\]$/g, "");
+    if (h === "localhost" || h.endsWith(".local") || h.endsWith(".internal") || h.endsWith(".lan")) {
+      return true;
+    }
+    const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (v4) {
+      const a = Number(v4[1]);
+      const b = Number(v4[2]);
+      if (a === 0 || a === 10 || a === 127) return true;
+      if (a === 172 && b >= 16 && b <= 31) return true;
+      if (a === 192 && b === 168) return true;
+      if (a === 169 && b === 254) return true; // 含云 metadata 169.254.169.254
+      if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+      if (a >= 224) return true; // 组播/保留段
+      return false;
+    }
+    if (h.includes(":")) {
+      if (h === "::" || h === "::1") return true;
+      if (/^f[cd][0-9a-f]{2}:/.test(h) || h.startsWith("fc") || h.startsWith("fd")) return true; // fc00::/7
+      if (/^fe[89ab][0-9a-f]:/.test(h) || h.startsWith("fe8") || h.startsWith("fe9") || h.startsWith("fea") || h.startsWith("feb")) return true; // fe80::/10
+      return false;
+    }
+    return false;
+  }
+
+  /** 域名可能解析到内网 IP（含 DNS rebinding），生产环境必须解析后再核验。 */
+  async function baseUrlTargetsPrivateNetwork(baseUrl: string): Promise<boolean> {
+    let hostname = "";
+    try {
+      hostname = new URL(baseUrl).hostname;
+    } catch {
+      return true; // 非法 URL 一律拦
+    }
+    if (isPrivateAddressText(hostname)) return true;
+    try {
+      const resolved = await dns.lookup(hostname, { all: true });
+      return resolved.some((row) => isPrivateAddressText(row.address));
+    } catch {
+      // DNS 解析失败：交给后续 fetch 自然报错，不在这里放结论
+      return false;
+    }
+  }
+
   async function testLlmHandler(req: any, res: any, next: any) {
     if (req.method !== "POST") return next();
 
@@ -1307,8 +1535,7 @@ function makeRunAgent(opts: {
       });
     }
 
-    const loopbackPattern = /(127\.|10\.\d+\.\d+\.\d+|192\.168\.|169\.254\.|::1|localhost)/i;
-    if (isProd && loopbackPattern.test(baseUrl)) {
+    if (isProd && (await baseUrlTargetsPrivateNetwork(baseUrl))) {
       return sendJson(res, 400, {
         ok: false,
         error: "生产环境禁止 baseUrl 指向 loopback 或内网地址",
@@ -2268,6 +2495,9 @@ function extractOutputText(data: any) {
   return chunks.join("");
 }
 
+// 与 express.json 上限一致：兜底路径同样要有界，防止无上限累积打爆内存
+const READ_JSON_MAX_BYTES = 10 * 1024 * 1024;
+
 function readJson(req: any) {
   if (req.body && typeof req.body === "object") {
     return Promise.resolve(req.body);
@@ -2275,10 +2505,21 @@ function readJson(req: any) {
 
   return new Promise((resolve, reject) => {
     let raw = "";
+    let bytes = 0;
+    let overflowed = false;
     req.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > READ_JSON_MAX_BYTES) {
+        overflowed = true;
+        return; // 不再累积，等 end 直接拒绝
+      }
       raw += chunk.toString("utf8");
     });
     req.on("end", () => {
+      if (overflowed) {
+        reject(new Error("payload too large"));
+        return;
+      }
       try {
         resolve(JSON.parse(raw || "{}"));
       } catch (error) {
@@ -2849,9 +3090,13 @@ async function callParallelSearchProviders({
   };
 }
 
-/** Production per-atom search: original query + 辟谣/规划 query, then merge URLs. */
-export async function retrieveAtomSources(env: Record<string, string>, atom: string) {
-  const queries = buildAtomSearchQueries(atom);
+/** Production per-atom search: recipe + accepted reuse query, then merge URLs. */
+export async function retrieveAtomSources(
+  env: Record<string, string>,
+  atom: string,
+  reuseHits?: MemoryCandidateHit[]
+) {
+  const queries = buildQueriesWithReuse(atom, reuseHits ?? []);
   const settled = await Promise.allSettled(
     queries.map((query) => callParallelSearchProviders({ env, query }))
   );

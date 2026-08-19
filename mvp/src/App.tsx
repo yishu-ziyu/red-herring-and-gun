@@ -78,6 +78,9 @@ function AppContent() {
     return () => window.clearTimeout(timer);
   }, [appPhase, renderedPhase]);
 
+  // 注意：这里刻意不用 AbortSignal——Chrome 会把被中止的在途 fetch 记成
+  // net::ERR_ABORTED 控制台错误（StrictMode 双挂载每次必触发）。/me 与 /cases
+  // 都是幂等 GET，让它自然完成即可，重复结果幂等。
   const hydrateAccountCases = useCallback(async () => {
     try {
       const me = await fetch("/api/auth/email/me", { credentials: "include" });
@@ -274,12 +277,66 @@ function AppContent() {
       <ResultView
         claim="Transformers 随数据与算力扩展良好，但注意力机制对序列长度是二次复杂度。"
         finalReport={{
-          verdictType: "partial",
+          verdictType: "mixed_misleading",
+          faceVerdict: "只能信一部分",
           credibilityLabel: "部分可信",
           credibilityScore: 72,
           conclusion:
-            "Transformers 随数据与算力扩展良好[1]，但注意力机制对序列长度是二次复杂度[2]。",
-          recommendation: "引用时区分扩展规律与复杂度瓶颈，不要混为一谈。",
+            "只能信一部分。这句话同时断言扩展规律和注意力复杂度。公开文献分别支撑这两点[1][2]。不能推出所有长文本任务都会失败。",
+          recommendation: "只能信一部分。",
+          claimItems: [
+            {
+              text: "Transformers 随数据与算力扩展良好",
+              verifiable: true,
+              type: "fact",
+              verdict: {
+                claimAtom: "Transformers 随数据与算力扩展良好",
+                verdict: "true",
+                evidence: "缩放规律在公开研究中有系统支持[1]。",
+                boundary: "不能推出任意任务都单调提升。",
+                supportingSources: [
+                  {
+                    title: "Attention Is All You Need",
+                    url: "https://arxiv.org/abs/1706.03762",
+                    snippet: "Transformer architecture and scaling discussion.",
+                  },
+                ],
+              },
+            },
+            {
+              text: "不应该盲目堆模型",
+              verifiable: false,
+              type: "value",
+            },
+            {
+              text: "注意力机制对序列长度是二次复杂度",
+              verifiable: true,
+              type: "fact",
+              verdict: {
+                claimAtom: "注意力机制对序列长度是二次复杂度",
+                verdict: "true",
+                evidence: "标准 self-attention 对序列长度呈二次复杂度[1]。",
+                boundary: "线性注意力等变体不在此断言范围。",
+                supportingSources: [
+                  {
+                    title: "Efficient Transformers: A Survey",
+                    url: "https://arxiv.org/abs/2009.06732",
+                    snippet: "Survey of efficient attention and complexity.",
+                  },
+                ],
+              },
+            },
+            {
+              text: "因此它导致所有长文本任务都会失败",
+              verifiable: true,
+              type: "causal",
+              verdict: {
+                claimAtom: "因此它导致所有长文本任务都会失败",
+                verdict: "unverified",
+                evidenceGaps: ["检索预算未覆盖"],
+              },
+            },
+          ],
           subclaimVerdicts: [
             {
               claimAtom: "Transformers 随数据与算力扩展良好",

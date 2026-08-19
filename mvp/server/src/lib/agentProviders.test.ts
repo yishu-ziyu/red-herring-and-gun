@@ -2,7 +2,12 @@
 // 背景：StepFun reasoning 系列（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
 // 三者皆会触发 400 Invalid request。这是用户遇到 6+ 次的根因。
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildStepFunRequestBody, callMiniMaxAgent } from "./agentProviders.js";
+import {
+  buildStepFunRequestBody,
+  callMiniMaxAgent,
+  callStepFunAgent,
+  callStepFunPlanAgent,
+} from "./agentProviders.js";
 
 describe("buildStepFunRequestBody", () => {
   const messages = [
@@ -161,5 +166,118 @@ describe("callMiniMaxAgent", () => {
     expect(seen).toEqual(["先看原句", "先看原句是否可核。"]);
     expect(result.reasoning).toBe("先看原句是否可核。");
     expect(result.text).toBe('{"severity":"low"}');
+  });
+});
+
+describe("StepFun token plan（Anthropic 协议 /step_plan）", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function jsonResponse(body: unknown, ok = true) {
+    return {
+      ok,
+      text: async () => JSON.stringify(body),
+    };
+  }
+
+  it("plan 端点：/v1/messages + Bearer + system 字段，解析 thinking/text 块", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        content: [
+          { type: "thinking", thinking: "先核对证据" },
+          { type: "text", text: '{"verdict":"false"}' },
+        ],
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await callStepFunPlanAgent({
+      baseUrl: "https://api.stepfun.com/step_plan",
+      apiKey: "sk-sf",
+      model: "step-3.7-flash",
+      systemPrompt: "你是复核员",
+      userContent: "判断",
+      maxTokens: 512,
+    });
+
+    expect(result.text).toBe('{"verdict":"false"}');
+    expect(result.reasoning).toBe("先核对证据");
+    expect(result.model).toBe("stepfun:step-3.7-flash");
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.stepfun.com/step_plan/v1/messages");
+    const init = fetchMock.mock.calls[0][1] as { headers: Record<string, string>; body: string };
+    expect(init.headers.Authorization).toBe("Bearer sk-sf");
+    expect(init.headers["anthropic-version"]).toBe("2023-06-01");
+    const body = JSON.parse(init.body);
+    expect(body.system).toBe("你是复核员");
+    expect(body.messages).toEqual([{ role: "user", content: "判断" }]);
+    expect(body.max_tokens).toBe(512);
+  });
+
+  it("callStepFunAgent 按 baseUrl 分流：含 /step_plan 走 plan 路径，否则 OpenAI 路径", async () => {
+    const planBody = { content: [{ type: "text", text: '{"ok":true}' }] };
+    const openAiBody = { choices: [{ message: { content: '{"ok":true}' } }] };
+    const fetchMock = vi.fn(async (_url: string) => ({
+      ok: true,
+      text: async () => JSON.stringify(_url.includes("/step_plan") ? planBody : openAiBody),
+      json: async () => (_url.includes("/step_plan") ? planBody : openAiBody),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await callStepFunAgent({
+      baseUrl: "https://api.stepfun.com/step_plan",
+      apiKey: "sk-sf",
+      model: "step-3.7-flash",
+      systemPrompt: "s",
+      userContent: "u",
+      maxTokens: 256,
+    });
+    expect(fetchMock.mock.calls[0][0]).toBe("https://api.stepfun.com/step_plan/v1/messages");
+
+    await callStepFunAgent({
+      baseUrl: "https://api.stepfun.com/v1",
+      apiKey: "sk-sf",
+      model: "step-2-mini",
+      systemPrompt: "s",
+      userContent: "u",
+      maxTokens: 256,
+    });
+    expect(fetchMock.mock.calls[1][0]).toBe("https://api.stepfun.com/v1/chat/completions");
+  });
+
+  it("plan 端点报错透传：quota/402 文本进错误信息", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ error: { message: "quota exceeded", type: "quota_exceeded" } }, false)
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      callStepFunPlanAgent({
+        baseUrl: "https://api.stepfun.com/step_plan",
+        apiKey: "sk-sf",
+        model: "step-3.7-flash",
+        systemPrompt: "s",
+        userContent: "u",
+        maxTokens: 256,
+      })
+    ).rejects.toThrow("quota exceeded");
+  });
+
+  it("plan 端点无 text 块（纯 thinking 截断）→ 显式报错不返回空文本", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ content: [{ type: "thinking", thinking: "思考中截断" }] })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      callStepFunPlanAgent({
+        baseUrl: "https://api.stepfun.com/step_plan",
+        apiKey: "sk-sf",
+        model: "step-3.7-flash",
+        systemPrompt: "s",
+        userContent: "u",
+        maxTokens: 64,
+      })
+    ).rejects.toThrow("没有返回可解析文本");
   });
 });

@@ -13,6 +13,7 @@ import type {
   MemoryCandidateKind,
   MemoryCandidateStatus,
 } from "./memoryCandidateTypes.js";
+import { semanticClaimSimilarity } from "./semanticRecall.js";
 
 export interface MemoryCandidateStore {
   propose(candidates: MemoryCandidate[]): Promise<void>;
@@ -62,13 +63,21 @@ export class JsonlMemoryCandidateStore implements MemoryCandidateStore {
     return records
       .map((candidate) => {
         const payloadText = safeStringify(candidate.payload);
-        const candidateTerms = tokenizeClaim(
-          [candidate.title, candidate.summary, candidate.provenance.claim, candidate.tags.join(" "), payloadText].join(
-            " ",
-          ),
-        );
+        const candidateText = [
+          candidate.title,
+          candidate.summary,
+          candidate.provenance.claim,
+          candidate.tags.join(" "),
+          payloadText,
+        ].join(" ");
+        const candidateTerms = tokenizeClaim(candidateText);
         const matchedTerms = queryTerms.filter((term) => candidateTerms.includes(term));
-        const score = matchedTerms.length / Math.max(queryTerms.length, 1);
+        const lexicalScore = matchedTerms.length / Math.max(queryTerms.length, 1);
+        // G2 语义召回：同义词桥接 + 字符 Dice（synonym/dice 命中但词面未命中时兜底召回）
+        const semanticScore =
+          semanticClaimSimilarity(claim, candidate.provenance.claim) / 100 ||
+          semanticClaimSimilarity(claim, candidateText.slice(0, 400)) / 100;
+        const score = Math.max(lexicalScore, semanticScore * 0.85);
         return { candidate, score, matchedTerms: Array.from(new Set(matchedTerms)) };
       })
       .filter((hit) => hit.score > 0)

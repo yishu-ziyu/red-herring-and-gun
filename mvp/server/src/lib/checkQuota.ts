@@ -70,15 +70,27 @@ function cookieHeader(raw: unknown): string | undefined {
   return undefined;
 }
 
+function headerValue(raw: unknown): string {
+  if (typeof raw === "string") return raw.trim();
+  if (Array.isArray(raw) && typeof raw[0] === "string") return raw[0].trim();
+  return "";
+}
+
 function clientIp(req: { headers?: { [key: string]: unknown }; socket?: { remoteAddress?: string } }) {
-  const forwarded = req.headers?.["x-forwarded-for"];
-  const raw =
-    typeof forwarded === "string"
-      ? forwarded.split(",")[0]?.trim()
-      : Array.isArray(forwarded) && typeof forwarded[0] === "string"
-        ? forwarded[0]
-        : "";
-  return raw || req.socket?.remoteAddress || "unknown";
+  // nginx 用 $remote_addr 覆盖 X-Real-IP，客户端无法伪造（前提：3000 不对外，见 docker-compose）。
+  const realIp = headerValue(req.headers?.["x-real-ip"]);
+  if (realIp) return realIp;
+  // XFF 只取最后一跳：由我们自己的反代追加，客户端伪造的段排在前面。
+  const forwarded = headerValue(req.headers?.["x-forwarded-for"]);
+  if (forwarded) {
+    const lastHop = forwarded
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .pop();
+    if (lastHop) return lastHop;
+  }
+  return req.socket?.remoteAddress || "unknown";
 }
 
 function hashIp(ip: string) {

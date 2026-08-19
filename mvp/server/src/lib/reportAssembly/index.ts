@@ -2,6 +2,7 @@ export {
   assembleFinalReport,
   applyExclusionLayerToReport,
   buildClaimItems,
+  deriveOverallVerdict,
   faceVerdictFor,
   FACE_VERDICT,
   type AssembleFinalReportInput,

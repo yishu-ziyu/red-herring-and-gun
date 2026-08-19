@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import {
   claimAtomKey,
+  forceCheckableAtomTypes,
   prefilterClaimAtoms,
   runClaimAtomSelfProof,
   type SelfProofModelCall,
@@ -16,8 +17,8 @@ import {
   type AtomSearchBundle,
   type SearchOneAtom,
 } from "../atomSearch.js";
-import { assembleFinalReport, faceVerdictFor } from "../reportAssembly/index.js";
-import { looksLikePlanOrPrediction, isOnTopicDebunk, boundTinyRumorVerdict } from "../atomSearchQuery.js";
+import { assembleFinalReport, deriveOverallVerdict, faceVerdictFor } from "../reportAssembly/index.js";
+import { looksLikePlanOrPrediction, boundTinyRumorVerdict } from "../atomSearchQuery.js";
 import { normalizeReportCitations } from "../citationBinding.js";
 import {
   reviewAndRepairReport,
@@ -26,6 +27,24 @@ import {
 import { buildMemoryCandidatesFromRun } from "../memoryCandidateGenerator.js";
 import type { MemoryCandidate } from "../memoryCandidateTypes.js";
 import type { MemoryCandidateStore } from "../memoryCandidateStore.js";
+import {
+  findLoopTargets,
+  runEvidenceLoop,
+  MAX_EVIDENCE_LOOP_PASSES,
+  MAX_EVIDENCE_LOOP_ROUNDS,
+  type EvidenceLoopAtomOutcome,
+  type EvidenceLoopOutcome,
+  type EvidenceLoopHooks,
+  type RewriteQueryModelCall,
+} from "../evidenceLoop/index.js";
+import { compactPursuitHops, type PursuitHop } from "../evidencePursuit/index.js";
+import {
+  findCrossExamTargets,
+  makeSecondOpinionCall,
+  runCrossExam,
+  type CrossExamOutcome,
+  type CrossExamRawModelCall,
+} from "../crossExam/index.js";
 
 export type PipelineStep = {
   agent: string;
@@ -63,6 +82,11 @@ export type CasePipelineHooks = {
     atomSearchBundle: AtomSearchBundle;
   }) => Promise<void>;
   searchMode?: "parallel" | "sequential";
+  /** evidence sufficiency loop — ADR-004（SSE：tool_start / tool_result 风格） */
+  onEvidenceLoopStart?: (targets: Array<{ atom: string; trigger: string }>) => void;
+  onEvidenceLoopRoundStart?: EvidenceLoopHooks["onRoundStart"];
+  onEvidenceLoopRoundResult?: EvidenceLoopHooks["onRoundResult"];
+  onEvidenceLoopStopped?: (info: { atom: string; rounds: number; reason: string }) => void;
   /** deterministic report reviewer — tool_start style (SSE) */
   onReportReviewStart?: (info: { toolName: string; query: string }) => void;
   /** deterministic report reviewer — tool_result style (SSE) */
@@ -109,6 +133,28 @@ export type CasePipelineInput = {
   /** stable id for memory provenance; default randomUUID */
   runId?: string;
   /**
+   * Evidence sufficiency loop — ADR-004 + 翻案续期. 默认开启。
+   * 提问 → 重判 → 判词仍翻转中且问题仍产证据 → 换策略再问（pass 2+）。
+   * 判停全确定性：无新证据（坏问题停）/ 全部收敛（问完了）/ pass 上限（笼子）。
+   */
+  evidenceLoop?: {
+    enabled?: boolean;
+    maxRounds?: number;
+    /** 翻案续期 pass 上限（默认 2，总轮数 ≤ maxPasses × maxRounds/原子） */
+    maxPasses?: number;
+    /** LLM 语义改写（官方来源词 / 原文语境 / 当事方与原始数据策略内）；缺省用确定性模板 */
+    callRewriteModel?: RewriteQueryModelCall;
+  };
+  /**
+   * Cross exam — G3/P1：证据冲突时第二模型独立复核（真辩论）。
+   * 分歧不重写判词：降可信度、标 contested、SSE 可见。
+   */
+  crossExam?: {
+    enabled?: boolean;
+    /** 第二意见裸模型调用（域模块绑 prompt/解析） */
+    callRaw?: CrossExamRawModelCall;
+  };
+  /**
    * When set, proposed candidates are persisted after the run.
    * Handlers should pass the shared JsonlMemoryCandidateStore.
    * When omitted, candidates are still built and returned (no I/O).
@@ -127,6 +173,10 @@ export type CasePipelineResult = {
   reportStep: PipelineStep;
   /** proposed memory candidates (same shape as AgentRuntime) */
   memoryCandidates: MemoryCandidate[];
+  /** evidence sufficiency loop outcome — ADR-004（未开启或无触发时为 undefined） */
+  evidenceLoop?: EvidenceLoopOutcome;
+  /** cross exam outcome — G3/P1（未开启 / 无冲突 / 无注入时为 undefined） */
+  crossExam?: CrossExamOutcome;
   runId: string;
 };
 
@@ -158,28 +208,24 @@ function fallbackRumorStep(claim: string, error: unknown): PipelineStep {
   };
 }
 
-function fallbackAgentStep(agentId: string, error: unknown, search360Result?: unknown, claim = ""): PipelineStep {
+function fallbackAgentStep(agentId: string, error: unknown, search360Result?: unknown, _claim = ""): PipelineStep {
   const message = error instanceof Error ? error.message : `${agentId} failed`;
   const sources = Array.isArray((search360Result as { sources?: unknown[] } | undefined)?.sources)
     ? ((search360Result as { sources: Array<{ title?: unknown; snippet?: unknown; url?: unknown }> }).sources)
     : [];
-  const debunkHits = sources.filter((s) => isOnTopicDebunk(claim, s as Record<string, unknown>));
+  const urls = sources
+    .map((s) => String(s.url || "").trim())
+    .filter((u) => /^https?:\/\//i.test(u))
+    .slice(0, 4);
   if (agentId === "fact_checker") {
-    const urls = debunkHits
-      .map((s) => String(s.url || "").trim())
-      .filter((u) => /^https?:\/\//i.test(u))
-      .slice(0, 4);
     return {
       agent: "fact_checker",
       output: {
-        factCheckResult: debunkHits.length > 0 ? "false" : "unverified",
-        confidence: debunkHits.length > 0 ? "medium" : "low",
+        factCheckResult: "unverified",
+        confidence: "low",
         sources: urls,
-        keyFindings:
-          debunkHits.length > 0
-            ? ["检索到公开辟谣或官方否定材料，核查模型未完成，结论先按检索材料收束。"]
-            : ["核查模型未完成，结论只能依据检索到的公开材料。"],
-        counterEvidence: urls,
+        keyFindings: ["核查模型未完成，结论只能依据检索到的公开材料。"],
+        counterEvidence: [],
         subclaimVerdicts: [],
       },
       status: "completed",
@@ -190,14 +236,11 @@ function fallbackAgentStep(agentId: string, error: unknown, search360Result?: un
   return {
     agent: "source_validator",
     output: {
-      sourceReliability: debunkHits.length > 0 ? "medium" : "unverified",
-      verifiedSources: debunkHits.map((s) => String(s.url || s.title || "")).filter(Boolean).slice(0, 4),
+      sourceReliability: "unverified",
+      verifiedSources: [],
       questionableSources: [],
       missingSources: ["信源审计模型未完成"],
-      verificationNotes:
-        debunkHits.length > 0
-          ? "检索到可点开的辟谣/官方材料；信源审计未完成，请直接点开链接。"
-          : "暂无可靠证据支持这一说法。信源审计未完成，请直接看来源链接。",
+      verificationNotes: "信源审计未完成，请直接看来源链接。",
     },
     status: "completed",
     error: message,
@@ -235,6 +278,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     dropped: selfProof.dropped,
     model: selfProof.model,
   };
+  rumorStep.output.claimAtomTypes = forceCheckableAtomTypes(rumorStep.output.claimAtomTypes);
   hooks?.onSelfProof?.(selfProof);
 
   // Phase 1b: per-atom retrieval
@@ -255,7 +299,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     runAgent("fact_checker", steps, search360Result, atomSearchBundle),
     runAgent("source_validator", steps, search360Result, atomSearchBundle),
   ]);
-  const factStep =
+  let factStep =
     factSettled.status === "fulfilled"
       ? factSettled.value
       : fallbackAgentStep("fact_checker", factSettled.reason, search360Result, claim);
@@ -264,6 +308,131 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       ? sourceSettled.value
       : fallbackAgentStep("source_validator", sourceSettled.reason, search360Result, claim);
   steps.push(factStep, sourceStep);
+
+  // Phase 2a: Evidence sufficiency loop — ADR-004 + 翻案续期
+  // 提问 → 重判 → 判词仍翻转中且问题仍产证据 → 换策略再问（pass 2+）→ 再重判。
+  // 好问题续命（翻转判词的提问 earns another pass），坏问题判停（整 pass 零新增）。
+  let evidenceLoop: EvidenceLoopOutcome | undefined;
+  if (input.evidenceLoop?.enabled !== false && atomSearchBundle.atomsSearched.length > 0) {
+    const roundsPerPass = Math.max(
+      1,
+      input.evidenceLoop?.maxRounds ?? MAX_EVIDENCE_LOOP_ROUNDS
+    );
+    const maxPasses = Math.max(
+      1,
+      input.evidenceLoop?.maxPasses ?? MAX_EVIDENCE_LOOP_PASSES
+    );
+    const atomOutcomes = new Map<string, EvidenceLoopAtomOutcome>();
+    const currentVerdicts = () =>
+      Array.isArray(factStep?.output?.subclaimVerdicts)
+        ? (factStep!.output.subclaimVerdicts as Array<Record<string, unknown>>)
+        : [];
+    let totalNewSources = 0;
+    let recheckFactChecker = false;
+    let passes = 0;
+    const pursuitHops: PursuitHop[] = [];
+
+    while (passes < maxPasses) {
+      passes += 1;
+      const seedQueriesByAtomKey: Record<string, string[]> = {};
+      for (const [key, outcome] of atomOutcomes) {
+        seedQueriesByAtomKey[key] = outcome.rounds.map((r) => r.query);
+      }
+      const passOutcome = await runEvidenceLoop({
+        claim,
+        bundle: atomSearchBundle,
+        factVerdicts: currentVerdicts(),
+        searchOne,
+        claimAtomKeyFn: claimAtomKey,
+        callRewriteModel: input.evidenceLoop?.callRewriteModel,
+        maxRounds: roundsPerPass,
+        startRound: (passes - 1) * roundsPerPass + 1,
+        seedQueriesByAtomKey,
+        hooks: {
+          onLoopStart: hooks?.onEvidenceLoopStart,
+          onRoundStart: hooks?.onEvidenceLoopRoundStart,
+          onRoundResult: hooks?.onEvidenceLoopRoundResult,
+          onAtomStopped: hooks?.onEvidenceLoopStopped,
+        },
+      });
+      for (const a of passOutcome.atoms) {
+        const prev = atomOutcomes.get(a.atomKey);
+        if (prev) {
+          prev.rounds.push(...a.rounds);
+          prev.stopReason = a.stopReason;
+          prev.trigger = a.trigger;
+        } else {
+          atomOutcomes.set(a.atomKey, { ...a, rounds: [...a.rounds] });
+        }
+      }
+      totalNewSources += passOutcome.totalNewSources;
+      if (passOutcome.pursuitHops?.length) pursuitHops.push(...passOutcome.pursuitHops);
+      // 坏问题停：整 pass 零新增（边际增益判停）
+      if (!passOutcome.recheckFactChecker) break;
+      recheckFactChecker = true;
+      // 有新证据 → 重判（判词可能翻转）
+      try {
+        const rechecked = await runAgent("fact_checker", steps, search360Result, atomSearchBundle);
+        steps.push(rechecked);
+        factStep = rechecked;
+      } catch {
+        // 重判失败保留原 factStep；补查证据已入 bundle，报告/溯源仍可见。不再续期。
+        break;
+      }
+      // 问完了：重判后无 unverified / 冲突原子 → 停
+      const remaining = findLoopTargets({
+        atomsSearched: atomSearchBundle.atomsSearched,
+        verdicts: currentVerdicts(),
+        claimAtomKeyFn: claimAtomKey,
+      });
+      if (remaining.length === 0) break;
+      // 仍有未解决原子且上一 pass 问题还在产证据 → 翻案续期（下一 pass 换策略）
+    }
+
+    if (atomOutcomes.size > 0) {
+      evidenceLoop = {
+        ran: true,
+        atoms: [...atomOutcomes.values()],
+        totalNewSources,
+        recheckFactChecker,
+        passes,
+        pursuitHops,
+      };
+    }
+  }
+
+  // Phase 2b: Cross exam — G3/P1（证据冲突 → 第二模型独立复核，分歧降分不重写判词）
+  let crossExam: CrossExamOutcome | undefined;
+  if (input.crossExam?.enabled !== false && input.crossExam?.callRaw) {
+    const factVerdicts = Array.isArray(factStep?.output?.subclaimVerdicts)
+      ? (factStep.output.subclaimVerdicts as Array<Record<string, unknown>>)
+      : [];
+    const crossTargets = findCrossExamTargets({
+      verdicts: factVerdicts,
+      bundle: atomSearchBundle,
+      claimAtomKeyFn: claimAtomKey,
+    });
+    if (crossTargets.length > 0) {
+      crossExam = await runCrossExam({
+        claim,
+        targets: crossTargets,
+        callSecondOpinion: makeSecondOpinionCall(input.crossExam.callRaw),
+      });
+      steps.push({
+        agent: "cross_examiner",
+        agentName: "CrossExaminer",
+        output: {
+          kind: "cross_exam",
+          atoms: crossExam.atoms,
+          confidenceAdjustment: crossExam.confidenceAdjustment,
+          model: crossExam.model,
+        },
+        model: crossExam.model,
+        status: "completed",
+        timestamp: Date.now(),
+      });
+    }
+  }
 
   if (hooks?.afterFactSource) {
     await hooks.afterFactSource({
@@ -317,6 +486,29 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     atomSearchBundle,
   });
 
+  // 原子级整句守门（确定性收束）——「分截判决」的收束端：
+  // 整体 factCheckResult / verdictType 是单 LLM 字段，会把「真假交织」漂成 false；
+  // 有据之真（bind 后 supportingSources 带真实 URL）+ 有假 → mixed，救回真的部分。
+  // 最小干预：只救 false→partial 这一方向；tiny-bound 随后仍可按短谣辟谣压回 false。
+  const atomVerdicts = Array.isArray(finalReport.subclaimVerdicts)
+    ? (finalReport.subclaimVerdicts as Array<Record<string, unknown>>)
+    : [];
+  if (deriveOverallVerdict(atomVerdicts) === "partial") {
+    const originalOverall = String(factStep?.output?.factCheckResult ?? "").trim();
+    if (originalOverall === "false" && factStep?.output) {
+      factStep.output._factCheckResultDerived = { from: "false", to: "partial", rule: "有据之真 + 假原子" };
+      factStep.output.factCheckResult = "partial";
+    }
+    if (finalReport.verdictType === "false") {
+      finalReport.verdictType = "mixed_misleading";
+      finalReport._mixedGuard = "有据之真 + 假原子 → mixed（原子级守门）";
+      const conclusion = typeof finalReport.conclusion === "string" ? finalReport.conclusion : "";
+      if (conclusion && !/只能信一部分/.test(conclusion)) {
+        finalReport.conclusion = `只能信一部分。${conclusion}`;
+      }
+    }
+  }
+
   const searchSources = Array.isArray((search360Result as { sources?: unknown[] } | undefined)?.sources)
     ? ((search360Result as { sources: Array<Record<string, unknown>> }).sources)
     : [];
@@ -340,6 +532,35 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     sourceStep,
     search360Result,
   });
+
+  // Cross exam 分歧处置（在 finalizeReport 之后，公式分不被覆盖；确定性代码）：
+  // 不重写判词，降可信度并标注 contested，报告可审计。
+  if (crossExam && crossExam.confidenceAdjustment !== 0) {
+    const base =
+      typeof finalReport.credibilityScore === "number" ? finalReport.credibilityScore : 50;
+    finalReport.credibilityScore = Math.max(
+      0,
+      Math.min(100, Math.round(base + crossExam.confidenceAdjustment))
+    );
+  }
+  if (crossExam?.ran) {
+    finalReport.crossExam = {
+      model: crossExam.model,
+      adjustment: crossExam.confidenceAdjustment,
+      atoms: crossExam.atoms.map((a) => ({
+        atom: a.atom,
+        primaryVerdict: a.primaryVerdict,
+        secondVerdict: a.secondVerdict,
+        relation: a.relation,
+        reason: a.secondReason,
+      })),
+    };
+  }
+  if (evidenceLoop?.pursuitHops && evidenceLoop.pursuitHops.length > 0) {
+    finalReport.evidencePursuit = {
+      hops: compactPursuitHops(evidenceLoop.pursuitHops),
+    };
+  }
 
   // Phase 3b: deterministic report reviewer (same as AgentRuntime; non-LLM)
   hooks?.onReportReviewStart?.({
@@ -396,6 +617,8 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     sourceStep,
     reportStep,
     memoryCandidates,
+    evidenceLoop,
+    crossExam,
     runId,
   };
 }

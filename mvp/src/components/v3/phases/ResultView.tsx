@@ -4,7 +4,7 @@
  * MissionControlView 只负责执行；本页只读 finalReport 做正式结论展示。
  */
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { humanizeVerdictType } from "../../../lib/missionShell";
 import { InlineCitations } from "../InlineCitations";
 import {
@@ -12,6 +12,11 @@ import {
   sourcesFromStringRefs,
   type CiteSource,
 } from "../../../lib/citationBinding";
+import { hopsFromReport } from "../../../lib/evidencePursuitUi";
+import { MemoryCandidatePanel } from "../MemoryCandidatePanel";
+import { createKnowledgeBase } from "../../../lib/knowledgeBase";
+import { updateMemoryCandidateStatus } from "../../../lib/agentExpansion";
+import type { MemoryCandidate, MemoryCandidateStatus } from "../../../lib/agentRuntime/memoryCandidateTypes";
 
 export interface ResultViewProps {
   claim: string;
@@ -37,6 +42,11 @@ type ClaimListItem =
       sourcesRelatedOnly: boolean;
     }
   | {
+      kind: "stance";
+      key: string;
+      text: string;
+    }
+  | {
       kind: "atom";
       key: string;
       text: string;
@@ -58,7 +68,7 @@ function asStringArray(value: unknown): string[] {
 function looksLikeInfrastructureError(text: string): boolean {
   // Provider/runtime diagnostics only. Do not treat public news paths like
   // /news/v1-release as infrastructure errors (require /v1/... or /api/... segment).
-  return /ReportComposer|providers?\s+failed|API\s+error|quota\s+(?:exceeded|limit)|https?:\/\/\S+\/(?:v\d+|api)\/[A-Za-z0-9]/i.test(
+  return /ReportComposer|FactChecker|search360|Tavily|MiniMax|工具调用|providers?\s+failed|API\s+error|quota\s+(?:exceeded|limit)|https?:\/\/\S+\/(?:v\d+|api)\/[A-Za-z0-9]/i.test(
     text
   );
 }
@@ -70,44 +80,80 @@ function safePublicText(value: unknown): string {
   return text;
 }
 
+function sourcesFromVerdict(item: Record<string, unknown>): CiteSource[] {
+  const buckets = [
+    ...(Array.isArray(item.supportingSources) ? item.supportingSources : []),
+    ...(Array.isArray(item.contradictingSources) ? item.contradictingSources : []),
+  ];
+  const seen = new Set<string>();
+  const out: CiteSource[] = [];
+  for (const source of buckets) {
+    const row = (source && typeof source === "object" ? source : {}) as Record<string, unknown>;
+    const url = asString(row.url);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push({
+      title: asString(row.title) || url,
+      url,
+      snippet: asString(row.snippet) || undefined,
+    });
+  }
+  return out;
+}
+
+function verdictItemFromRecord(
+  item: Record<string, unknown>,
+  index: number,
+  textFallback = ""
+): ClaimListItem {
+  const canSay = asStringArray(item.canSay);
+  const cannotSay = asStringArray(item.cannotSay);
+  const boundary = safePublicText(item.boundary);
+  if (boundary && cannotSay.length === 0) {
+    cannotSay.push(boundary);
+  }
+  return {
+    kind: "verdict",
+    key: `verdict-${index}`,
+    text: textFallback || safePublicText(item.claimAtom) || `命题 ${index + 1}`,
+    verdictLabel: humanizeVerdictType(asString(item.verdict)),
+    evidence: safePublicText(item.evidence),
+    boundary,
+    canSay,
+    cannotSay,
+    sources: sourcesFromVerdict(item),
+    sourcesRelatedOnly: item.sourcesRelatedOnly === true,
+  };
+}
+
 function readClaimList(report: Record<string, unknown>): ClaimListItem[] {
+  const claimItems = Array.isArray(report.claimItems) ? report.claimItems : [];
+  if (claimItems.length > 0) {
+    return claimItems.flatMap((raw, index) => {
+      if (!raw || typeof raw !== "object") return [];
+      const rec = raw as Record<string, unknown>;
+      if (rec.verifiable === false) {
+        return [
+          {
+            kind: "stance" as const,
+            key: `stance-${index}`,
+            text: safePublicText(rec.text) || `立场 ${index + 1}`,
+          },
+        ];
+      }
+      const verdict =
+        rec.verdict && typeof rec.verdict === "object"
+          ? (rec.verdict as Record<string, unknown>)
+          : rec;
+      return [verdictItemFromRecord(verdict, index, safePublicText(rec.text))];
+    });
+  }
+
   const subclaimVerdicts = Array.isArray(report.subclaimVerdicts) ? report.subclaimVerdicts : [];
   if (subclaimVerdicts.length > 0) {
-    return subclaimVerdicts.map((raw, index) => {
-      const item = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-      const supporting = Array.isArray(item.supportingSources) ? item.supportingSources : [];
-      const sources = supporting
-        .map((source) => {
-          const row = (source && typeof source === "object" ? source : {}) as Record<string, unknown>;
-          const url = asString(row.url);
-          if (!url) return null;
-          return {
-            title: asString(row.title) || url,
-            url,
-            snippet: asString(row.snippet) || undefined,
-          };
-        })
-        .filter((row): row is CiteSource => Boolean(row));
-
-      const canSay = asStringArray(item.canSay);
-      const cannotSay = asStringArray(item.cannotSay);
-      const boundary = safePublicText(item.boundary);
-      if (boundary && cannotSay.length === 0) {
-        cannotSay.push(boundary);
-      }
-
-      return {
-        kind: "verdict" as const,
-        key: `verdict-${index}`,
-        text: safePublicText(item.claimAtom) || `命题 ${index + 1}`,
-        verdictLabel: humanizeVerdictType(asString(item.verdict)),
-        evidence: safePublicText(item.evidence),
-        boundary,
-        canSay,
-        cannotSay,
-        sources,
-        sourcesRelatedOnly: item.sourcesRelatedOnly === true,
-      };
+    return subclaimVerdicts.flatMap((raw, index) => {
+      if (!raw || typeof raw !== "object") return [];
+      return [verdictItemFromRecord(raw as Record<string, unknown>, index)];
     });
   }
 
@@ -198,9 +244,13 @@ export function ResultView({
 }: ResultViewProps) {
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
   const [processOpen, setProcessOpen] = useState(false);
+  const [memoryCandidates, setMemoryCandidates] = useState<MemoryCandidate[]>([]);
+  const knowledgeBase = useMemo(() => createKnowledgeBase(), []);
+  const interrupted = isInterruptedReport(finalReport);
+  const embedded = variant === "dossier";
 
   const verdictType = asString(finalReport.verdictType);
-  const verdictLabel = humanizeVerdictType(verdictType);
+  const verdictLabel = asString(finalReport.faceVerdict) || humanizeVerdictType(verdictType);
   const score = asNumber(finalReport.credibilityScore);
   const credibilityLabel = asString(finalReport.credibilityLabel);
   const conclusion =
@@ -217,7 +267,7 @@ export function ResultView({
   const conclusionSources = useMemo(() => {
     if (Array.isArray(finalReport.citationSources)) {
       return (finalReport.citationSources as unknown[])
-        .map((raw) => {
+        .map((raw): CiteSource | null => {
           const row = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
           const url = asString(row.url);
           if (!url) return null;
@@ -227,7 +277,7 @@ export function ResultView({
             snippet: asString(row.snippet) || undefined,
           };
         })
-        .filter((row): row is CiteSource => Boolean(row));
+        .filter((row): row is CiteSource => row !== null);
     }
     return buildGlobalSources(
       claimItems
@@ -250,6 +300,7 @@ export function ResultView({
       .filter((item) => item.sourcesRelatedOnly && item.sources.length > 0).length;
     const chainCount = evidenceChain.length;
     const globalCiteCount = conclusionSources.length;
+    const pursuitHops = hopsFromReport(finalReport);
     return {
       atomCount,
       verdictCount,
@@ -257,8 +308,9 @@ export function ResultView({
       relatedOnlyCount,
       chainCount,
       globalCiteCount,
+      pursuitHops,
     };
-  }, [claimItems, evidenceChain, conclusionSources]);
+  }, [claimItems, evidenceChain, conclusionSources, finalReport]);
 
   const toggleExpanded = useCallback((key: string) => {
     setExpandedKeys((prev) => {
@@ -269,10 +321,38 @@ export function ResultView({
     });
   }, []);
 
+  useEffect(() => {
+    if (!embedded || interrupted) {
+      setMemoryCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    void knowledgeBase.listMemoryCandidates().then((listed) => {
+      if (cancelled) return;
+      setMemoryCandidates(listed.filter((candidate) => candidate.provenance.claim === claim));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [embedded, interrupted, claim, knowledgeBase]);
+
+  const handleMemoryCandidateStatus = useCallback(
+    async (id: string, status: MemoryCandidateStatus) => {
+      try {
+        const updated = await updateMemoryCandidateStatus(id, status);
+        await knowledgeBase.saveMemoryCandidate(updated);
+        setMemoryCandidates((prev) =>
+          prev.map((candidate) => (candidate.id === id ? updated : candidate))
+        );
+      } catch {
+        // Remote status did not change; keep proposed in the panel.
+      }
+    },
+    [knowledgeBase]
+  );
+
   const handleBack = onCancel ?? onBack;
-  const interrupted = isInterruptedReport(finalReport);
   const interruptedSources = interrupted ? interruptedSourceLinks(finalReport) : [];
-  const embedded = variant === "dossier";
 
   if (interrupted) {
     return (
@@ -417,6 +497,15 @@ export function ResultView({
           )}
         </section>
 
+        {embedded ? (
+          <MemoryCandidatePanel
+            candidates={memoryCandidates}
+            onStatusChange={(id, status) => {
+              void handleMemoryCandidateStatus(id, status);
+            }}
+          />
+        ) : null}
+
         {claimItems.length > 0 ? (
           <section className="result-claim-list" aria-label="命题核查清单">
             <header className="result-section-head">
@@ -429,6 +518,17 @@ export function ResultView({
                   return (
                     <li key={item.key} className="result-claim-item result-claim-item--atom">
                       <p>{item.text}</p>
+                    </li>
+                  );
+                }
+                if (item.kind === "stance") {
+                  return (
+                    <li key={item.key} className="result-claim-item result-claim-item--stance">
+                      <div className="result-claim-toggle" aria-disabled="true">
+                        <span className="result-claim-text">{item.text}</span>
+                        <em className="result-claim-badge result-claim-badge--stance">立场型</em>
+                      </div>
+                      <p className="result-claim-stance-note">不适用真/假判断</p>
                     </li>
                   );
                 }
@@ -588,6 +688,24 @@ export function ResultView({
                       : "未附带分层依据"}
                   </span>
                 </li>
+                {processFootprint.pursuitHops.length > 0 ? (
+                  <li>
+                    <strong>证据追索</strong>
+                    <span>
+                      {processFootprint.pursuitHops
+                        .slice(0, 4)
+                        .map((hop) => {
+                          const kind = hop.resultKindLabel || "";
+                          const miss = hop.missingAfter.length > 0 ? `还缺${hop.missingAfter.slice(0, 2).join("、")}` : "";
+                          return [hop.goal, kind, miss].filter(Boolean).join(" · ");
+                        })
+                        .join("；")}
+                      {processFootprint.pursuitHops.length > 4
+                        ? ` 等 ${processFootprint.pursuitHops.length} 跳`
+                        : ""}
+                    </span>
+                  </li>
+                ) : null}
                 <li>
                   <strong>判断</strong>
                   <span>

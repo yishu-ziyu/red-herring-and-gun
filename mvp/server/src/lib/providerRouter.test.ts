@@ -611,4 +611,42 @@ describe("providerRouter quota skip", () => {
 
     expect(allProviders.callCodexAgent).not.toHaveBeenCalled();
   });
+
+  it("MiniMax 超时一次后本进程含 override 不再打", async () => {
+    allProviders.callMiniMaxAgent.mockImplementation(() => new Promise(() => {}));
+    allProviders.callStepFunAgent.mockResolvedValue({
+      text: '{"ok":true,"provider":"stepfun"}',
+      model: "stepfun:step-2-mini",
+    });
+
+    const params = {
+      agentId: "rumor_detector",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: {
+        MINIMAX_API_KEY: "sk-mm",
+        STEPFUN_API_KEY: "sk-sf",
+        MINIMAX_M3_PROVIDER_TIMEOUT_MS: "1",
+        ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax,stepfun",
+      },
+      codexBin: "/usr/bin/codex",
+    };
+
+    const first = await callAgentWithFallback(params);
+    expect(first.output).toEqual({ ok: true, provider: "stepfun" });
+    expect(first.model).toBe("stepfun:step-2-mini");
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+
+    const second = await callAgentWithFallback({
+      ...params,
+      agentId: "fact_checker",
+      modelOverride: { provider: "minimax", model: "MiniMax-M3" },
+    });
+    expect(second.output).toEqual({ ok: true, provider: "stepfun" });
+    expect(second.model).toBe("stepfun:step-2-mini");
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+    expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(2);
+  });
 });

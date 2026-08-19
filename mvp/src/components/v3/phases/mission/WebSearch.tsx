@@ -225,7 +225,7 @@ export function isSearchShellTool(tool: {
   const key = `${tool.toolId ?? ""} ${tool.toolName ?? ""} ${tool.title ?? ""}`
     .toLowerCase()
     .replace(/[\s_-]+/g, "");
-  if (/memorysearch|memorywrite|reportreviewer|vision|stepfun/.test(key)) return false;
+  if (/memorysearch|memorywrite|reportreviewer|vision|stepfun|evidenceloop|evidencepursuit|证据追索|追索证据/.test(key)) return false;
   if (/search|360|anysearch|metaso|tavily|exa|parallel|serp|bing|google/.test(key)) return true;
   if (tool.result && Array.isArray(tool.result.sources)) return true;
   if (typeof tool.query === "string" && /检索|公开材料/.test(tool.title ?? "")) return true;
@@ -260,13 +260,12 @@ export function WebSearch({
       return;
     }
 
-    if (status === "pending" || status === "loading") {
-      setSiteStates(sites.map(() => "pending"));
+    if (status === "pending") {
+      setSiteStates(sites.map((_, i) => (i === 0 ? "loading" : "pending")));
       return;
     }
 
-    // success: optionally stagger reveal so rows do not hard-pop
-    if (instantDone) {
+    if (status === "success" || instantDone) {
       setSiteStates(sites.map(() => "done"));
       return;
     }
@@ -279,20 +278,22 @@ export function WebSearch({
       return;
     }
 
-    setSiteStates(sites.map(() => "pending"));
+    setSiteStates(sites.map((_, i) => (i === 0 ? "loading" : "pending")));
     const timers: ReturnType<typeof setTimeout>[] = [];
     sites.forEach((_, i) => {
-      const discover = 120 + i * 220;
-      const finish = discover + 420;
-      timers.push(
-        setTimeout(() => {
-          setSiteStates((prev) => prev.map((v, j) => (j === i ? "loading" : v)));
-        }, discover)
-      );
+      const loadAt = i * 800;
+      const doneAt = loadAt + 1600;
+      if (loadAt > 0) {
+        timers.push(
+          setTimeout(() => {
+            setSiteStates((prev) => prev.map((v, j) => (j === i && v !== "done" ? "loading" : v)));
+          }, loadAt)
+        );
+      }
       timers.push(
         setTimeout(() => {
           setSiteStates((prev) => prev.map((v, j) => (j === i ? "done" : v)));
-        }, finish)
+        }, doneAt)
       );
     });
     return () => timers.forEach(clearTimeout);
