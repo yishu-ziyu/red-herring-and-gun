@@ -115,6 +115,8 @@ describe("ResultView", () => {
     );
 
     const report = screen.getByLabelText("最终核查判断");
+    expect(report.querySelector(".mission-final-report-head strong")).toHaveTextContent("不能信");
+    expect(report.querySelector(".mission-final-verdict-badges")).toBeNull();
     expect(report.querySelector(".mission-final-conclusion > span")).toHaveTextContent("结论");
     expect(report).not.toHaveTextContent("一句话结论");
     expect(report).toHaveTextContent(/该说法没有可靠证据支持/);
@@ -168,24 +170,8 @@ describe("ResultView", () => {
     expect(screen.getByText("食品安全要点摘要")).toBeInTheDocument();
   });
 
-  it("process footprint expands with claim → atoms → sources → verdict summary", () => {
-    render(
-      <ResultView
-        claim="隔夜菜会致癌，吃了等于吃毒药"
-        finalReport={SAMPLE_REPORT}
-        onBack={() => {}}
-        onReverify={() => {}}
-      />
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /核查足迹/ }));
-    const footprint = screen.getByLabelText("本页可核对的核查足迹");
-    expect(footprint).toHaveTextContent("隔夜菜会致癌");
-    expect(footprint).toHaveTextContent(/1 条/);
-    expect(footprint).toHaveTextContent(/已绑定来源|支撑来源/);
-  });
-
-  it("process footprint lists evidence pursuit hops when present", () => {
+  it("判断层默认打开，看不到完整 query，轨迹入口始终在", () => {
+    const query = "某地明天发生7级地震 官方通报 这一句必须完整出现在轨迹里";
     render(
       <ResultView
         claim="某地明天发生7级地震"
@@ -195,8 +181,9 @@ describe("ResultView", () => {
             hops: [
               {
                 hop: 1,
+                atom: "某地明天发生7级地震",
                 goal: "找原始发布",
-                query: "某地明天发生7级地震 官方通报",
+                query,
                 resultKind: "primary",
                 resultKindLabel: "原始来源",
                 missingAfter: ["反证"],
@@ -208,11 +195,212 @@ describe("ResultView", () => {
         onReverify={() => {}}
       />
     );
-    fireEvent.click(screen.getByRole("button", { name: /核查足迹/ }));
-    const footprint = screen.getByLabelText("本页可核对的核查足迹");
-    expect(footprint).toHaveTextContent("证据追索");
-    expect(footprint).toHaveTextContent("找原始发布");
-    expect(footprint).toHaveTextContent("原始来源");
+
+    expect(screen.getByRole("tab", { name: "判断" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "轨迹" })).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByLabelText("最终核查判断")).toBeInTheDocument();
+    expect(screen.queryByLabelText("核查轨迹")).not.toBeInTheDocument();
+    expect(screen.queryByText(query)).not.toBeInTheDocument();
+  });
+
+  it("轨迹展开后是主张 → 要点原文 → hops（含 query）→ 来源链接", () => {
+    render(
+      <ResultView
+        claim="隔夜菜会致癌，吃了等于吃毒药"
+        finalReport={{
+          ...SAMPLE_REPORT,
+          evidencePursuit: {
+            hops: [
+              {
+                hop: 1,
+                atom: "隔夜菜会致癌",
+                goal: "找原始发布",
+                query: "隔夜菜会致癌 官方通报",
+                resultKind: "primary",
+                resultKindLabel: "原始来源",
+                missingAfter: ["反证"],
+              },
+            ],
+          },
+        }}
+        onBack={() => {}}
+        onReverify={() => {}}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "轨迹" }));
+    const trail = screen.getByLabelText("核查轨迹");
+    expect(trail).toHaveTextContent("隔夜菜会致癌，吃了等于吃毒药");
+    expect(trail).toHaveTextContent("隔夜菜会致癌");
+    expect(trail).toHaveTextContent("找原始发布");
+    expect(trail).toHaveTextContent("隔夜菜会致癌 官方通报");
+    expect(trail).toHaveTextContent("原始来源");
+    const sourceLinks = within(trail).getAllByRole("link", { name: "WHO 食品安全" });
+    expect(sourceLinks.length).toBeGreaterThan(0);
+    expect(sourceLinks[0]).toHaveAttribute(
+      "href",
+      "https://www.who.int/news-room/fact-sheets/detail/food-safety"
+    );
+    expect(screen.queryByText("等 1 跳")).not.toBeInTheDocument();
+  });
+
+  it("hops=5 时第 5 跳仍在，不写等 N 跳", () => {
+    const hops = [1, 2, 3, 4, 5].map((hop) => ({
+      hop,
+      atom: "某地明天发生7级地震",
+      goal: hop === 5 ? "换一个解释框架" : "找原始发布",
+      query: `第${hop}跳完整检索句 不能裁切`,
+      resultKind: hop === 5 ? "empty" : "repost",
+      resultKindLabel: hop === 5 ? "没有新材料" : "二手转载",
+      missingAfter: hop === 5 ? [] : ["原始来源"],
+      stopReason: hop === 5 ? "no-new-evidence" : undefined,
+    }));
+    render(
+      <ResultView
+        claim="某地明天发生7级地震"
+        finalReport={{ ...SAMPLE_REPORT, evidencePursuit: { hops } }}
+        onBack={() => {}}
+        onReverify={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "轨迹" }));
+    const trail = screen.getByLabelText("核查轨迹");
+    expect(trail).toHaveTextContent("第 5 跳");
+    expect(trail).toHaveTextContent("第5跳完整检索句 不能裁切");
+    expect(trail).toHaveTextContent("没有新材料");
+    expect(trail).toHaveTextContent("没有新证据");
+    expect(trail).not.toHaveTextContent("等 5 跳");
+    expect(trail).not.toHaveTextContent("等 1 跳");
+  });
+
+  it("无 hops 时轨迹仍能打开，并写清没有补查", () => {
+    render(
+      <ResultView
+        claim="隔夜菜会致癌，吃了等于吃毒药"
+        finalReport={SAMPLE_REPORT}
+        onBack={() => {}}
+        onReverify={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "轨迹" }));
+    expect(screen.getByLabelText("核查轨迹")).toHaveTextContent("没有补查，只有首次检索与判断。");
+  });
+
+  it("轨迹里立场型仍是不适用真/假判断，无 URL 的可核要点不写成能信/不能信", () => {
+    render(
+      <ResultView
+        claim="背景一。立场。隔夜菜导致癌症。"
+        finalReport={{
+          verdictType: "unverified",
+          faceVerdict: "还查不清",
+          conclusion: "有一截还没查到。",
+          claimItems: [
+            {
+              text: "背景一",
+              verifiable: true,
+              type: "fact",
+              verdict: { claimAtom: "背景一", verdict: "true", evidenceGaps: [] },
+            },
+            { text: "不该吃隔夜菜", verifiable: false, type: "value" },
+            {
+              text: "隔夜菜导致癌症",
+              verifiable: true,
+              type: "causal",
+              verdict: {
+                claimAtom: "隔夜菜导致癌症",
+                verdict: "false",
+                evidence: "反证[1]。",
+                contradictingSources: [{ title: "辟谣", url: "https://piyao.example/1" }],
+              },
+            },
+          ],
+        }}
+        onBack={() => {}}
+        onReverify={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "轨迹" }));
+    const trail = screen.getByLabelText("核查轨迹");
+    const closing = within(trail).getByLabelText("轨迹收尾");
+    expect(closing).toHaveTextContent("不该吃隔夜菜");
+    expect(closing).toHaveTextContent("立场型 / 不适用真/假判断");
+    expect(closing).not.toHaveTextContent("灰");
+    const unbound = within(closing)
+      .getAllByRole("listitem")
+      .find((row) => row.textContent?.includes("背景一"));
+    expect(unbound).toBeTruthy();
+    expect(unbound).toHaveTextContent("没有绑定出处");
+    expect(unbound).not.toHaveTextContent("能信");
+    expect(unbound).not.toHaveTextContent("不能信");
+    const refuteLinks = within(closing).getAllByRole("link", { name: "辟谣" });
+    expect(refuteLinks.length).toBeGreaterThan(0);
+    expect(refuteLinks[0]).toHaveAttribute("href", "https://piyao.example/1");
+  });
+
+  it("轨迹把仅为相关检索标出来，不和已绑定出处写成同等证据", () => {
+    render(
+      <ResultView
+        claim="某说法"
+        finalReport={{
+          verdictType: "unverified",
+          faceVerdict: "还查不清",
+          conclusion: "还查不清。",
+          claimItems: [
+            {
+              text: "某说法",
+              verifiable: true,
+              type: "fact",
+              verdict: {
+                claimAtom: "某说法",
+                verdict: "true",
+                sourcesRelatedOnly: true,
+                supportingSources: [{ title: "相关检索", url: "https://related.example/1" }],
+              },
+            },
+          ],
+        }}
+        onBack={() => {}}
+        onReverify={() => {}}
+      />
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "轨迹" }));
+    const closing = within(screen.getByLabelText("核查轨迹")).getByLabelText("轨迹收尾");
+    expect(closing).toHaveTextContent("仅为相关检索");
+    expect(closing).not.toHaveTextContent("能信");
+    expect(within(closing).getByRole("link", { name: "相关检索" })).toHaveAttribute(
+      "href",
+      "https://related.example/1"
+    );
+  });
+
+  it("判断层和轨迹层都不出现模型名、Agent 名、工具商品名", () => {
+    render(
+      <ResultView
+        claim="隔夜菜会致癌"
+        finalReport={{
+          ...SAMPLE_REPORT,
+          evidencePursuit: {
+            hops: [
+              {
+                hop: 1,
+                atom: "隔夜菜会致癌",
+                goal: "找原始发布",
+                query: "隔夜菜会致癌 官方通报",
+                resultKind: "empty",
+                resultKindLabel: "没有新材料",
+                missingAfter: ["原始来源"],
+              },
+            ],
+          },
+        }}
+        onBack={() => {}}
+        onReverify={() => {}}
+      />
+    );
+    const banned = /FactChecker|ReportComposer|MiniMax|Tavily|search360|Agent|智能体/;
+    expect(document.body.textContent || "").not.toMatch(banned);
+    fireEvent.click(screen.getByRole("tab", { name: "轨迹" }));
+    expect(document.body.textContent || "").not.toMatch(banned);
   });
 
   it("renders interrupted judgment without padded composer copy", () => {
@@ -264,7 +452,9 @@ describe("ResultView", () => {
     );
 
     expect(screen.queryByText("返回")).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "轨迹" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /核查足迹/ })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("核查轨迹")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重新核查" })).toBeInTheDocument();
     expect(screen.getByLabelText("最终核查判断")).toHaveTextContent(/该说法没有可靠证据支持/);
   });

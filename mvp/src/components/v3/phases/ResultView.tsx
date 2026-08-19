@@ -1,7 +1,8 @@
 /**
  * ResultView — 核查完成后的结果页（execution 与 result 分离）
  *
- * MissionControlView 只负责执行；本页只读 finalReport 做正式结论展示。
+ * page：判断 / 轨迹两层。判断是结论；轨迹是全量 hops 收据，默认不打开。
+ * dossier：只保留判断，不显示轨迹。
  */
 
 import { useMemo, useState, useCallback, useEffect } from "react";
@@ -13,6 +14,7 @@ import {
   type CiteSource,
 } from "../../../lib/citationBinding";
 import { hopsFromReport } from "../../../lib/evidencePursuitUi";
+import { ResultTrace } from "./ResultTrace";
 import { MemoryCandidatePanel } from "../MemoryCandidatePanel";
 import { createKnowledgeBase } from "../../../lib/knowledgeBase";
 import { updateMemoryCandidateStatus } from "../../../lib/agentExpansion";
@@ -24,7 +26,7 @@ export interface ResultViewProps {
   onBack: () => void;
   onCancel?: () => void;
   onReverify: () => void;
-  /** page = 独立结果页；dossier = 嵌进右侧卷宗，不再自带顶栏和过程足迹 */
+  /** page = 独立结果页，含判断 / 轨迹两层；dossier = 嵌进右侧卷宗，不显示轨迹 */
   variant?: "page" | "dossier";
 }
 
@@ -243,7 +245,7 @@ export function ResultView({
   variant = "page",
 }: ResultViewProps) {
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
-  const [processOpen, setProcessOpen] = useState(false);
+  const [layer, setLayer] = useState<"judgment" | "trace">("judgment");
   const [memoryCandidates, setMemoryCandidates] = useState<MemoryCandidate[]>([]);
   const knowledgeBase = useMemo(() => createKnowledgeBase(), []);
   const interrupted = isInterruptedReport(finalReport);
@@ -288,29 +290,19 @@ export function ResultView({
   const canSayTop = asStringArray(finalReport.canSay);
   const cannotSayTop = asStringArray(finalReport.cannotSay);
 
-  /** Compact process footprint for result-page audit (DESIGN: Footprints). */
-  const processFootprint = useMemo(() => {
-    const verdictCount = claimItems.filter((item) => item.kind === "verdict").length;
-    const atomCount = claimItems.length;
-    const boundSourceCount = claimItems
-      .filter((item): item is Extract<ClaimListItem, { kind: "verdict" }> => item.kind === "verdict")
-      .filter((item) => !item.sourcesRelatedOnly && item.sources.length > 0).length;
-    const relatedOnlyCount = claimItems
-      .filter((item): item is Extract<ClaimListItem, { kind: "verdict" }> => item.kind === "verdict")
-      .filter((item) => item.sourcesRelatedOnly && item.sources.length > 0).length;
-    const chainCount = evidenceChain.length;
-    const globalCiteCount = conclusionSources.length;
-    const pursuitHops = hopsFromReport(finalReport);
-    return {
-      atomCount,
-      verdictCount,
-      boundSourceCount,
-      relatedOnlyCount,
-      chainCount,
-      globalCiteCount,
-      pursuitHops,
-    };
-  }, [claimItems, evidenceChain, conclusionSources, finalReport]);
+  const pursuitHops = useMemo(() => hopsFromReport(finalReport), [finalReport]);
+  const traceItems = useMemo(
+    () =>
+      claimItems.map((item) => ({
+        key: item.key,
+        kind: item.kind,
+        text: item.text,
+        verdictLabel: item.kind === "verdict" ? item.verdictLabel : undefined,
+        sources: item.kind === "verdict" ? item.sources : [],
+        sourcesRelatedOnly: item.kind === "verdict" ? item.sourcesRelatedOnly : false,
+      })),
+    [claimItems]
+  );
 
   const toggleExpanded = useCallback((key: string) => {
     setExpandedKeys((prev) => {
@@ -414,9 +406,34 @@ export function ResultView({
     >
       {embedded ? null : (
         <header className="result-view-topbar">
-          <div className="result-view-brand">
-            <strong>红鲱鱼与枪</strong>
-            <span>核查结果</span>
+          <div className="result-view-leading">
+            <div className="result-view-brand">
+              <strong>红鲱鱼与枪</strong>
+            </div>
+            <div className="result-layer-switch" role="tablist" aria-label="结果分层">
+              <button
+                type="button"
+                role="tab"
+                id="result-tab-judgment"
+                aria-selected={layer === "judgment"}
+                aria-controls="result-panel-judgment"
+                className="result-layer-tab"
+                onClick={() => setLayer("judgment")}
+              >
+                判断
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="result-tab-trace"
+                aria-selected={layer === "trace"}
+                aria-controls="result-panel-trace"
+                className="result-layer-tab"
+                onClick={() => setLayer("trace")}
+              >
+                轨迹
+              </button>
+            </div>
           </div>
           <div className="result-view-actions">
             <button type="button" className="result-view-btn result-view-btn--ghost" onClick={handleBack}>
@@ -429,17 +446,34 @@ export function ResultView({
         </header>
       )}
 
-      <div className="result-view-body">
+      <div className={`result-view-body${layer === "trace" && !embedded ? " result-view-body--trace" : ""}`}>
+
+        {!embedded && layer === "trace" ? (
+          <div role="tabpanel" id="result-panel-trace" aria-labelledby="result-tab-trace">
+            <ResultTrace
+              claim={claim}
+              items={traceItems}
+              hops={pursuitHops}
+              sources={conclusionSources}
+            />
+          </div>
+        ) : (
+        <div
+          role={embedded ? undefined : "tabpanel"}
+          id={embedded ? undefined : "result-panel-judgment"}
+          aria-labelledby={embedded ? undefined : "result-tab-judgment"}
+        >
         <section className="result-verdict-card mission-final-report" aria-label="最终核查判断">
           <div className="mission-final-report-head">
             <div>
-              <span>核查结果</span>
-              <strong>正式判断</strong>
-            </div>
-            <div className="mission-final-verdict-badges">
-              {verdictLabel ? <em className="mission-final-verdict-primary">{verdictLabel}</em> : null}
-              {credibilityLabel ? <em>{credibilityLabel}</em> : null}
-              {score !== null ? <strong>{score}/100</strong> : null}
+              <strong>{verdictLabel || "正式判断"}</strong>
+              {credibilityLabel || score !== null ? (
+                <p className="result-verdict-meta">
+                  {credibilityLabel ? <span>{credibilityLabel}</span> : null}
+                  {credibilityLabel && score !== null ? <i aria-hidden="true">·</i> : null}
+                  {score !== null ? <span>{score}/100</span> : null}
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -636,91 +670,8 @@ export function ResultView({
           <button type="button" className="result-view-btn result-view-btn--primary" onClick={onReverify}>
             重新核查
           </button>
-        ) : (
-        <section className="result-process-section" aria-label="回看核查过程">
-          <button
-            type="button"
-            className="result-process-toggle"
-            aria-expanded={processOpen}
-            onClick={() => setProcessOpen((open) => !open)}
-          >
-            <span>核查足迹</span>
-            <em>{processOpen ? "收起" : "展开"}</em>
-          </button>
-          {processOpen ? (
-            <div className="result-process-body">
-              <ol className="result-process-footprint" aria-label="本页可核对的核查足迹">
-                <li>
-                  <strong>主张</strong>
-                  <span>{claim}</span>
-                </li>
-                <li>
-                  <strong>拆题</strong>
-                  <span>
-                    {processFootprint.atomCount > 0
-                      ? `共 ${processFootprint.atomCount} 条可核对要点${
-                          processFootprint.verdictCount > 0
-                            ? `，其中 ${processFootprint.verdictCount} 条已给出判断`
-                            : ""
-                        }`
-                      : "本报告未附带拆题清单"}
-                  </span>
-                </li>
-                <li>
-                  <strong>来源</strong>
-                  <span>
-                    {processFootprint.globalCiteCount > 0
-                      ? `结论层 ${processFootprint.globalCiteCount} 个已绑定来源`
-                      : "结论层暂无句内绑定来源"}
-                    {processFootprint.boundSourceCount > 0
-                      ? ` · ${processFootprint.boundSourceCount} 条命题有支撑来源`
-                      : ""}
-                    {processFootprint.relatedOnlyCount > 0
-                      ? ` · ${processFootprint.relatedOnlyCount} 条仅为相关检索`
-                      : ""}
-                  </span>
-                </li>
-                <li>
-                  <strong>依据链</strong>
-                  <span>
-                    {processFootprint.chainCount > 0
-                      ? `${processFootprint.chainCount} 条依据`
-                      : "未附带分层依据"}
-                  </span>
-                </li>
-                {processFootprint.pursuitHops.length > 0 ? (
-                  <li>
-                    <strong>证据追索</strong>
-                    <span>
-                      {processFootprint.pursuitHops
-                        .slice(0, 4)
-                        .map((hop) => {
-                          const kind = hop.resultKindLabel || "";
-                          const miss = hop.missingAfter.length > 0 ? `还缺${hop.missingAfter.slice(0, 2).join("、")}` : "";
-                          return [hop.goal, kind, miss].filter(Boolean).join(" · ");
-                        })
-                        .join("；")}
-                      {processFootprint.pursuitHops.length > 4
-                        ? ` 等 ${processFootprint.pursuitHops.length} 跳`
-                        : ""}
-                    </span>
-                  </li>
-                ) : null}
-                <li>
-                  <strong>判断</strong>
-                  <span>
-                    {[verdictLabel, credibilityLabel, score !== null ? `${score}/100` : ""]
-                      .filter(Boolean)
-                      .join(" · ") || "见上方正式判断"}
-                  </span>
-                </li>
-              </ol>
-              <p className="result-process-note">
-                本页足迹只保留与正式判断直接相关、可核对的摘要。
-              </p>
-            </div>
-          ) : null}
-        </section>
+        ) : null}
+        </div>
         )}
       </div>
     </main>

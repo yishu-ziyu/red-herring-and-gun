@@ -55,6 +55,8 @@ export type PursuitHop = {
   missingAfter: string[];
   gain: number;
   action: PursuitAction;
+  /** Why this atom's pursuit stopped. Set on the last hop only; not a search-policy input. */
+  stopReason?: "evidence-found" | "no-new-evidence" | "rewrite-empty" | "search-failed";
 };
 
 export type RankedDoc = {
@@ -456,5 +458,6 @@ export function compactPursuitHops(hops: PursuitHop[]): Array<Record<string, unk
     missingAfter: h.missingAfter,
     gain: Number(h.gain.toFixed(3)),
     action: h.action,
+    ...(h.stopReason ? { stopReason: h.stopReason } : {}),
   }));
 }

@@ -595,6 +595,13 @@ export async function runEvidenceLoop(options: {
       // 整轮无有效增益 → 预算内换下一策略（action=switch 记在下一轮 goal）
     }
 
+    for (let i = pursuitHops.length - 1; i >= 0; i -= 1) {
+      if (pursuitHops[i].atom === target.atom) {
+        pursuitHops[i].stopReason = stopReason;
+        break;
+      }
+    }
+
     atoms.push({ atom: target.atom, atomKey: target.atomKey, trigger: target.trigger, rounds, stopReason });
     options.hooks?.onAtomStopped?.({ atom: target.atom, rounds: rounds.length, reason: stopReason });
   }
