@@ -283,6 +283,8 @@ describe("runEvidenceLoop", () => {
     expect(outcome.recheckFactChecker).toBe(true);
     expect(outcome.pursuitHops?.some((h) => h.resultKind === "repost")).toBe(true);
     expect(outcome.pursuitHops?.some((h) => h.action === "stop" && h.resultKind === "primary")).toBe(true);
+    expect(outcome.pursuitHops?.at(-1)?.atom).toBe(atom);
+    expect(outcome.pursuitHops?.at(-1)?.stopReason).toBe("evidence-found");
   });
 
   it("hooks 透出 round 事件（SSE 消费）", async () => {
