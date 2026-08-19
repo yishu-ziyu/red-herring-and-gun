@@ -7,7 +7,8 @@ services:
       dockerfile: Dockerfile
     container_name: red-herring-api
     ports:
-      - "3000:3000"
+      # 只绑回环：外部一律走 nginx(80)，不能直连 3000 绕过反代的可信头
+      - "127.0.0.1:3000:3000"
     env_file:
       - .env.local
     restart: unless-stopped

@@ -458,4 +458,42 @@ describe("adaptOrchestrateStreamToShell", () => {
     expect(emptyAtoms.understanding).toBeUndefined();
   });
 
+  it("maps 证据追索 hops as cognitive process, not a search-engine strip", () => {
+    const model = adaptOrchestrateStreamToShell([
+      {
+        type: "tool_start",
+        toolName: "证据追索",
+        query: "某地地震 官方通报",
+        result: {
+          kind: "evidence_pursuit",
+          round: 1,
+          goal: "找原始发布",
+          missingEvidence: ["原始来源"],
+        },
+        timestamp: 1,
+      },
+      {
+        type: "tool_result",
+        toolName: "证据追索",
+        query: "某地地震 官方通报",
+        result: {
+          kind: "evidence_pursuit",
+          round: 1,
+          goal: "找原始发布",
+          resultKind: "repost",
+          missingAfter: ["原始来源", "反证"],
+          sourceCount: 3,
+        },
+        timestamp: 2,
+      },
+    ]);
+    const hop = model.tools.find((t) => t.key.startsWith("tool:evidence_pursuit"));
+    expect(hop?.title).toBe("追索证据");
+    expect(hop?.detail).toContain("目标：找原始发布");
+    expect(hop?.detail).toContain("二手转载");
+    expect(hop?.detail).toContain("还缺原始来源");
+    expect(hop?.detail).not.toMatch(/返回来源 \d+ 条/);
+    expect(model.phaseLabel).toBe("追索证据");
+  });
+
 });

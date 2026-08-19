@@ -41,6 +41,7 @@ export function instrumentVariantFromTitle(title: string, toolKey?: string): Ins
   const s = `${title} ${toolKey ?? ""}`.toLowerCase();
   if (/思考/.test(title) && !/检索|查阅|对照/.test(title)) return "think";
   if (/历史|memory|查阅/.test(s)) return "memory";
+  if (/追索/.test(title)) return "work";
   if (/检索|search|360|公开材料/.test(s)) return "search";
   return "work";
 }

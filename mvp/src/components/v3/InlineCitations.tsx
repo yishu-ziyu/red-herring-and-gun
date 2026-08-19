@@ -27,7 +27,10 @@ export {
 export function toCiteRefs(
   sources: Array<{ title?: string; url: string; snippet?: string }>
 ): CiteRef[] {
-  return buildCiteRefs("", sources).refs;
+  return buildCiteRefs(
+    "",
+    sources.map((s) => ({ url: s.url, title: s.title ?? "", snippet: s.snippet }))
+  ).refs;
 }
 
 export function toCiteRefsFromStrings(sourceRefs: string[]): CiteRef[] {

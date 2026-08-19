@@ -252,11 +252,13 @@ export async function* requestOrchestrateStream(
   };
 
   try {
+    const controller = new AbortController();
     const response = await fetch(`${API_BASE}/api/agent/orchestrate-stream`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
 
     if (response.status === 429) {
@@ -276,6 +278,7 @@ export async function* requestOrchestrateStream(
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let drained = false;
 
     try {
       while (true) {
@@ -311,7 +314,13 @@ export async function* requestOrchestrateStream(
           // 忽略
         }
       }
+      drained = true;
     } finally {
+      // 消费端提前退出（组件卸载/重置）：取消读取并断开连接，避免服务端空跑
+      if (!drained) {
+        controller.abort();
+        await reader.cancel().catch(() => {});
+      }
       reader.releaseLock();
     }
   } catch (error) {

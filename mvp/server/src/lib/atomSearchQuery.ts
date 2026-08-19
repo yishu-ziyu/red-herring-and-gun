@@ -1,7 +1,10 @@
 /**
  * Per-atom retrieval queries for Case Pipeline.
  * Raw atom text is not enough for Weibo-scale rumors: also hunt 辟谣 / 规划 traces.
+ * Query portfolio + RRF live in evidencePursuit (ADR-005); this file remains the retrieve seam.
  */
+
+import { buildQueryPortfolio, fuseByRrf, type RankedDoc } from "./evidencePursuit/index.js";
 
 const FILLER = /我说|原来|叫谁|这是|那个|一下|真的吗|是不是/g;
 const STOP = new Set([
@@ -40,15 +43,45 @@ export function extraRumorQueries(atom: string): string[] {
   return extra;
 }
 
+const SCREENSHOT_RE = /截图|P图|p图|配图|原图|聊天记录/;
+const QUOTE_RE = /[「『"]([^」』"]{4,40})[」』"]/;
+
+/** Percentage / 万亿 / 例 / GDP·同比·确诊 + number. Dates and version numbers do not count. */
+function looksLikeStatistic(atom: string): boolean {
+  if (/\d+(?:\.\d+)?\s*[%％]|百分之\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?\s*个百分点/.test(atom)) return true;
+  if (/\d+(?:\.\d+)?\s*[万亿]|\d+\s*例/.test(atom)) return true;
+  const stripped = atom
+    .replace(/20\d{2}(?:\s*年)?/g, " ")
+    .replace(/\d{1,2}\s*月(?:\s*\d{1,2}\s*日)?/g, " ")
+    .replace(/\d{1,2}\s*日/g, " ");
+  return /(?:GDP|gdp|同比|环比|确诊).{0,12}\d/.test(stripped);
+}
+
 export function buildAtomSearchQueries(atom: string): string[] {
   const t = atom.replace(/\s+/g, " ").trim();
   if (!t) return [];
+  const extras = extraRumorQueries(t);
+  const portfolio = buildQueryPortfolio(t);
+  const exact = portfolio.find((p) => p.purpose === "exact")?.query || t;
+  const screenshotQ = SCREENSHOT_RE.test(t) ? `${t} 原图 出处 首发` : undefined;
+  const quoteQ = QUOTE_RE.test(t) ? `${t} 原话 语境` : undefined;
+  const statisticQ = looksLikeStatistic(t) ? `${t} 公报 原始数据` : undefined;
+  const second = looksLikePlanOrPrediction(t)
+    ? portfolio.find((p) => p.purpose === "primary")?.query
+    : portfolio.find((p) => p.purpose === "refutation")?.query;
   const compact = compactAtomForSearch(t);
   const suffix = looksLikePlanOrPrediction(t) ? "规划 批复 承诺 文件 辟谣" : "辟谣 不实 谣言 官方通报";
-  const extras = extraRumorQueries(t);
-  const out: string[] = extras.length > 0 ? [...extras, `${t} ${suffix}`] : [t, `${t} ${suffix}`];
-  if (compact && compact !== t && extras.length === 0) out.push(`${compact} ${suffix}`);
-  return uniqueKeep(out, 3);
+  const typed = Boolean(screenshotQ || quoteQ || statisticQ);
+  const allowThird = extras.length > 0 || /\d/.test(t) || /20\d{2}|月|日/.test(t) || typed;
+  const third =
+    allowThird && compact && compact !== t && extras.length === 0 ? `${compact} ${suffix}` : undefined;
+  const temporal = allowThird ? portfolio.find((p) => p.purpose === "temporal")?.query : undefined;
+  return uniqueKeep(
+    [...extras, exact, screenshotQ, quoteQ, statisticQ, second, third, temporal].filter(
+      (q): q is string => Boolean(q)
+    ),
+    allowThird ? 3 : 2
+  );
 }
 
 export function mergeParallelSearchPayloads(
@@ -56,6 +89,7 @@ export function mergeParallelSearchPayloads(
   payloads: Array<Record<string, unknown>>
 ): Record<string, unknown> {
   const sources: Record<string, unknown>[] = [];
+  const rankedLists: RankedDoc[][] = [];
   const seenUrl = new Set<string>();
   const answers: string[] = [];
   const traces: string[] = [];
@@ -79,14 +113,26 @@ export function mergeParallelSearchPayloads(
       }
     }
     const list = Array.isArray(p.sources) ? p.sources : [];
+    const ranked: RankedDoc[] = [];
     for (const raw of list) {
       if (!raw || typeof raw !== "object") continue;
       const rec = raw as Record<string, unknown>;
       const url = String(rec.url || rec.link || "").trim();
-      if (!url || seenUrl.has(url)) continue;
+      if (!url) continue;
+      ranked.push({ url, rec });
+    }
+    rankedLists.push(ranked);
+    for (const { url, rec } of ranked) {
+      if (seenUrl.has(url)) continue;
       seenUrl.add(url);
       sources.push(rec);
     }
+  }
+
+  if (rankedLists.length > 1) {
+    const fused = fuseByRrf(rankedLists);
+    const byUrl = new Map(fused.map((d) => [d.url, d.rec]));
+    sources.splice(0, sources.length, ...fused.map((d) => byUrl.get(d.url)!));
   }
 
   sources.sort((a, b) => {

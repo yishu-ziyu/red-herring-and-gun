@@ -7,6 +7,7 @@ import type {
   SearchStrategyMemory,
 } from "./schemas";
 import type { MemoryCandidate, MemoryCandidateKind, MemoryCandidateStatus } from "./agentRuntime/memoryCandidateTypes";
+import { semanticClaimSimilarity } from "./semanticRecall";
 
 export interface KnowledgeBase {
   saveCase(entry: KnowledgeBaseEntry): Promise<void>;
@@ -68,21 +69,8 @@ function tokenize(text: string): Set<string> {
 }
 
 export function calculateClaimSimilarity(claimA: string, claimB: string): number {
-  const tokensA = tokenize(claimA);
-  const tokensB = tokenize(claimB);
-  if (tokensA.size === 0 || tokensB.size === 0) return 0;
-
-  let intersection = 0;
-  tokensA.forEach((token) => {
-    if (tokensB.has(token)) intersection += 1;
-  });
-
-  const union = new Set([...tokensA, ...tokensB]).size;
-  const jaccard = union > 0 ? intersection / union : 0;
-  const substringBonus =
-    claimA.includes(claimB.slice(0, 8)) || claimB.includes(claimA.slice(0, 8)) ? 0.18 : 0;
-
-  return Math.min(100, Math.round((jaccard * 0.82 + substringBonus) * 100));
+  // G2 语义召回：同义词桥接 + 字符 Dice，词面 bigram 为主信号（semanticRecall.ts）
+  return semanticClaimSimilarity(claimA, claimB);
 }
 
 function sortByTimestamp<T extends { timestamp: number }>(items: T[]) {
