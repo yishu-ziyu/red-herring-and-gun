@@ -86,6 +86,29 @@ describe("MissionPursuitFold", () => {
     expect(screen.getByText(/二手转载/)).toBeInTheDocument();
     expect(screen.queryByText(/Google|Search Agent/i)).not.toBeInTheDocument();
   });
+
+  it("stays folded while a live hop is running", () => {
+    render(
+      <MissionPursuitFold
+        live
+        hops={[
+          {
+            hop: 1,
+            goal: "找原始发布",
+            query: "某地地震 官方通报",
+            resultKind: "empty",
+            resultKindLabel: "没有新材料",
+            missingAfter: ["原始来源"],
+            status: "loading",
+          },
+        ]}
+      />
+    );
+    expect(screen.getByText(/正在追索证据/)).toBeInTheDocument();
+    expect(screen.queryByText("某地地震 官方通报")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("切换证据追索"));
+    expect(screen.getByText(/某地地震 官方通报/)).toBeInTheDocument();
+  });
 });
 
 describe("MissionThreadAnswer", () => {
