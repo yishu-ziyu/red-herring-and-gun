@@ -234,7 +234,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), agentApiPlugin(env)],
     preview: {
-      allowedHosts: ["gun.yishuziyu.cn", "121.89.90.68", "localhost", "127.0.0.1"],
+      allowedHosts: ["gun.yishuziyu.cn", "localhost", "127.0.0.1"],
     },
   };
 });

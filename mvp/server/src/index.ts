@@ -27,21 +27,67 @@ import {
   emailRequestHandler,
   emailVerifyHandler,
 } from "./lib/emailAuthHandlers.js";
-import { checksQuotaHandler } from "./lib/checkQuota.js";
+import { checksQuotaHandler, gateFreeCheck } from "./lib/checkQuota.js";
+import { readEmailAccountOptional } from "./lib/emailSession.js";
 
 dotenv.config();
 dotenv.config({ path: resolve(process.cwd(), ".env.local") });
 dotenv.config({ path: resolve(process.cwd(), "../.env.local") });
 
+if (process.env.NODE_ENV === "production" && !(process.env.AIPING_SESSION_SECRET ?? "").trim()) {
+  console.error("AIPING_SESSION_SECRET is required in production");
+  process.exit(1);
+}
+
 const app = express();
+app.set("trust proxy", 1);
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(cors());
+const DEFAULT_CORS_ORIGINS = "https://gun.yishuziyu.cn,http://localhost:5173,http://127.0.0.1:5173";
+const corsAllowlist = (process.env.CORS_ORIGINS || DEFAULT_CORS_ORIGINS)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter((origin) => origin && origin !== "*");
+const allowedOrigins = corsAllowlist.length > 0 ? corsAllowlist : DEFAULT_CORS_ORIGINS.split(",");
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (origin && allowedOrigins.includes(origin)) {
+        callback(null, origin);
+        return;
+      }
+      callback(null, false);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: "10mb" }));
 
 const env = process.env as Record<string, string>;
 const handlers = createHandlers(env);
 const aipingConfig = getAipingConfig(env);
+
+async function requireQuota(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const ticket = await gateFreeCheck(req, res);
+  if (!ticket) return;
+  (req as express.Request & { checkTicket?: typeof ticket }).checkTicket = ticket;
+  next();
+}
+
+async function requireIdentity(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const account = await readEmailAccountOptional(req);
+  if (account) {
+    next();
+    return;
+  }
+  const session = readSessionCookie(req, aipingConfig);
+  if (session) {
+    next();
+    return;
+  }
+  res.status(401).json({ error: "Not authenticated" });
+}
 
 function redactAipingApiKeys(data: unknown) {
   if (!data || typeof data !== "object" || !("apikeyBaseInfo" in data)) return data;
@@ -66,7 +112,7 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
 });
 
-app.all("/mcp", (req, res) => {
+app.all("/mcp", requireQuota, (req, res) => {
   void mcpHttpHandler(req, res, env);
 });
 
@@ -176,18 +222,24 @@ app.get("/api/auth/aiping/apikeys", async (req, res) => {
 });
 
 // API routes
-app.post("/api/agent/expand", (req, res, next) => handlers.handler(req, res, next));
-app.post("/api/agent/recursive-search", (req, res, next) => handlers.recursiveHandler(req, res, next));
-app.post("/api/agent/sherlock-search", (req, res, next) => handlers.sherlockHandler(req, res, next));
-app.post("/api/search/360", (req, res, next) => handlers.search360Handler(req, res, next));
-app.post("/api/search/provider", (req, res, next) => handlers.searchProviderHandler(req, res, next));
-app.post("/api/agent/orchestrate", (req, res, next) => handlers.orchestrateHandler(req, res, next));
-app.post("/api/agent/orchestrate-stream", (req, res, next) => handlers.orchestrateStreamHandler(req, res, next));
-app.post("/api/agent/test-llm", (req, res, next) => handlers.testLlmHandler(req, res, next));
+app.post("/api/agent/expand", requireQuota, (req, res, next) => handlers.handler(req, res, next));
+app.post("/api/agent/recursive-search", requireQuota, (req, res, next) => handlers.recursiveHandler(req, res, next));
+app.post("/api/agent/sherlock-search", requireQuota, (req, res, next) => handlers.sherlockHandler(req, res, next));
+app.post("/api/search/360", requireQuota, (req, res, next) => handlers.search360Handler(req, res, next));
+app.post("/api/search/provider", requireQuota, (req, res, next) => handlers.searchProviderHandler(req, res, next));
+app.post("/api/agent/orchestrate", requireQuota, (req, res, next) => handlers.orchestrateHandler(req, res, next));
+app.post("/api/agent/orchestrate-stream", requireQuota, (req, res, next) => handlers.orchestrateStreamHandler(req, res, next));
+if (process.env.NODE_ENV === "production") {
+  app.post("/api/agent/test-llm", (_req, res) => {
+    res.status(404).json({ error: "Not found" });
+  });
+} else {
+  app.post("/api/agent/test-llm", requireQuota, (req, res, next) => handlers.testLlmHandler(req, res, next));
+}
 app.get("/api/models/list", (req, res, next) => handlers.modelsListHandler(req, res, next));
-app.get("/api/models/health", (req, res, next) => handlers.modelsHealthHandler(req, res, next));
-app.get("/api/agent/memory-candidates", (req, res, next) => listMemoryCandidatesHandler(req, res).catch(next));
-app.post("/api/agent/memory-candidates", (req, res, next) => updateMemoryCandidateHandler(req, res).catch(next));
+app.get("/api/models/health", requireQuota, (req, res, next) => handlers.modelsHealthHandler(req, res, next));
+app.get("/api/agent/memory-candidates", requireIdentity, (req, res, next) => listMemoryCandidatesHandler(req, res).catch(next));
+app.post("/api/agent/memory-candidates", requireIdentity, (req, res, next) => updateMemoryCandidateHandler(req, res).catch(next));
 
 // v3 邮箱登录 + 账号数据（用 email 前缀避开与 AI Ping /api/auth/{me,logout} 的第一匹配冲突）
 app.post("/api/auth/email/request", (req, res, next) => emailRequestHandler(req, res).catch(next));

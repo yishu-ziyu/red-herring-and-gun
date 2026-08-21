@@ -177,6 +177,46 @@ describe("Plan Item 2 · getCaseHandler", () => {
   });
 });
 
+describe("Plan Item 2 · postCaseHandler owner match", () => {
+  beforeEach(() => {
+    clearCases();
+    resetForTests();
+    process.env.AIPING_SESSION_SECRET = TEST_SECRET;
+  });
+
+  it("putting an existing owned case requires owner match", async () => {
+    const cookieA = await sessionCookie("a@example.com");
+    const cookieB = await sessionCookie("b@example.com");
+    const created = mockRes();
+    await postCaseHandler(
+      mockReq({}, { claim: "mine", report: makeReport("mine"), caseId: "owned001" }, cookieA) as never,
+      created,
+    );
+    expect(created.statusCode).toBe(200);
+
+    const hijack = mockRes();
+    await postCaseHandler(
+      mockReq({}, { claim: "stolen", report: makeReport("stolen"), caseId: "owned001" }, cookieB) as never,
+      hijack,
+    );
+    expect(hijack.statusCode).toBe(403);
+
+    const guest = mockRes();
+    await postCaseHandler(
+      mockReq({}, { claim: "stolen", report: makeReport("stolen"), caseId: "owned001" }) as never,
+      guest,
+    );
+    expect(guest.statusCode).toBe(403);
+
+    const ownerUpdate = mockRes();
+    await postCaseHandler(
+      mockReq({}, { claim: "updated", report: makeReport("updated"), caseId: "owned001" }, cookieA) as never,
+      ownerUpdate,
+    );
+    expect(ownerUpdate.statusCode).toBe(200);
+  });
+});
+
 describe("Plan Item 2 · renderCaseHtmlHandler", () => {
   beforeEach(() => clearCases());
 
