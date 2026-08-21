@@ -44,6 +44,7 @@ interface EmailCode {
   expiresAt: number;
   rateExpiresAt: number;
   consumed: boolean;
+  attempts: number;
 }
 
 interface SessionRecord {
@@ -103,7 +104,7 @@ export async function requestCode(rawEmail: string, serverSecret: string): Promi
   const code = generateCode();
   const expiresAt = now + CODE_TTL_MS;
   const rateExpiresAt = now + RATE_WINDOW_MS;
-  codes.set(hash, { code, expiresAt, rateExpiresAt, consumed: false });
+  codes.set(hash, { code, expiresAt, rateExpiresAt, consumed: false, attempts: 0 });
   return { ok: true, code, expiresAt };
 }
 
@@ -134,6 +135,10 @@ export async function verifyAndCreate(
   rawCode: string,
   serverSecret: string
 ): Promise<VerifyResult> {
+  if (!(serverSecret ?? "").trim() || !(process.env.AIPING_SESSION_SECRET ?? "").trim()) {
+    return { ok: false, error: "invalid_code" };
+  }
+
   const email = normalizeEmail(rawEmail);
   if (!EMAIL_REGEX.test(email)) {
     return { ok: false, error: "invalid_email" };
@@ -141,7 +146,22 @@ export async function verifyAndCreate(
 
   const hash = hashEmail(email, serverSecret);
   const record = codes.get(hash);
-  if (!record || record.code !== rawCode || record.consumed) {
+  if (!record || record.consumed) {
+    return { ok: false, error: "invalid_code" };
+  }
+
+  if (record.attempts >= 5) {
+    record.consumed = true;
+    codes.delete(hash);
+    return { ok: false, error: "invalid_code" };
+  }
+
+  if (record.code !== rawCode) {
+    record.attempts += 1;
+    if (record.attempts >= 5) {
+      record.consumed = true;
+      codes.delete(hash);
+    }
     return { ok: false, error: "invalid_code" };
   }
 
