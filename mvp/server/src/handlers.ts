@@ -27,7 +27,7 @@ import { listAvailableModels, validateModelChoice } from "./lib/availableModels.
 import { probeModelServiceHealth } from "./lib/modelServiceHealth.js";
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
 import { computeCredibilityScore, labelForScore, type CredibilityScoreResult } from "./lib/credibilityScore.js";
-import { commitFreeCheck, gateFreeCheck, releaseFreeCheck } from "./lib/checkQuota.js";
+import { commitFreeCheck, releaseFreeCheck } from "./lib/checkQuota.js";
 // 审查 P3-2 修复：Anthropic 文本/JSON 提取统一从共享模块引入，不再各处独立定义。
 import { extractAnthropicText, extractJsonObject } from "./lib/anthropicParse.js";
 import { applyFactDeskPostProcessToReport } from "./lib/factDeskPostProcess.js";
@@ -524,6 +524,62 @@ function composeClaimWithVision(claim: string, intake: CaseIntakePayload, visual
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function ipv4OctetsFromHostname(hostname: string): number[] | "blocked" | null {
+  const host = hostname.replace(/^\[|\]$/g, "");
+  if (/0x/i.test(host) || /^\d+$/.test(host)) return "blocked";
+  if (!/^[\d.]+$/.test(host)) return null;
+  const parts = host.split(".");
+  if (parts.length !== 4) return "blocked";
+  if (parts.some((part) => part.length > 1 && part.startsWith("0"))) return "blocked";
+  const nums = parts.map((part) => Number(part));
+  if (nums.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return "blocked";
+  return nums;
+}
+
+function isBlockedPrivateIpv4(parts: number[]): boolean {
+  const [a, b] = parts;
+  if (a === 0) return true;
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  return false;
+}
+
+function isBlockedTestLlmUrl(raw: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return true;
+  }
+  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "metadata.google.internal" ||
+    host === "metadata" ||
+    host === "metadata.tencentyun.com" ||
+    host === "::1" ||
+    host === "0:0:0:0:0:0:0:1" ||
+    host === "::"
+  ) {
+    return true;
+  }
+  if (host.startsWith("::ffff:")) {
+    return isBlockedTestLlmUrl(`https://${host.slice("::ffff:".length)}`);
+  }
+  if (host.includes(":")) {
+    if (host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80")) return true;
+  }
+  const ipv4 = ipv4OctetsFromHostname(host);
+  if (ipv4 === "blocked") return true;
+  if (ipv4 && isBlockedPrivateIpv4(ipv4)) return true;
+  return false;
 }
 
 // Express handlers extracted from vite.config.ts
@@ -1026,7 +1082,7 @@ function makeRunAgent(opts: {
     if (!mcValidation.ok) {
       return sendJson(res, 400, { message: mcValidation.error || "modelChoice 非法" });
     }
-    const ticket = await gateFreeCheck(req, res);
+    const ticket = req.checkTicket;
     if (!ticket) return;
     const intake = normalizeCaseIntake(payload.intake);
     const intakeMetadata = buildCaseIntakeMetadata(intake);
@@ -1112,7 +1168,7 @@ function makeRunAgent(opts: {
     if (!mcValidation.ok) {
       return sendJson(res, 400, { message: mcValidation.error || "modelChoice 非法" });
     }
-    const ticket = await gateFreeCheck(req, res);
+    const ticket = req.checkTicket;
     if (!ticket) return;
     const intake = normalizeCaseIntake(payload.intake);
     const intakeMetadata = buildCaseIntakeMetadata(intake);
@@ -1509,6 +1565,9 @@ function makeRunAgent(opts: {
   }
 
   async function testLlmHandler(req: any, res: any, next: any) {
+    if (process.env.NODE_ENV === "production") {
+      return sendJson(res, 404, { error: "Not found" });
+    }
     if (req.method !== "POST") return next();
 
     let payload: any;
@@ -1526,19 +1585,24 @@ function makeRunAgent(opts: {
       return sendJson(res, 400, { ok: false, error: "缺少 baseUrl 或 apiKey" });
     }
 
-    const isProd = process.env.NODE_ENV === "production";
     const isLocalhost = baseUrl.startsWith("http://localhost") || baseUrl.startsWith("http://127.0.0.1");
-    if (!baseUrl.startsWith("https://") && !(process.env.NODE_ENV !== "production" && isLocalhost)) {
+    if (!baseUrl.startsWith("https://") && !isLocalhost) {
       return sendJson(res, 400, {
         ok: false,
         error: "baseUrl 必须以 https:// 开头（dev 环境允许 http://localhost）",
       });
     }
 
-    if (isProd && (await baseUrlTargetsPrivateNetwork(baseUrl))) {
+    if (!isLocalhost && (await baseUrlTargetsPrivateNetwork(baseUrl))) {
       return sendJson(res, 400, {
         ok: false,
-        error: "生产环境禁止 baseUrl 指向 loopback 或内网地址",
+        error: "禁止 baseUrl 指向 loopback 或内网地址",
+      });
+    }
+    if (isBlockedTestLlmUrl(baseUrl) && !isLocalhost) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: "禁止 baseUrl 指向 loopback、内网或 metadata 地址",
       });
     }
 
@@ -1564,17 +1628,17 @@ function makeRunAgent(opts: {
           max_tokens: 5,
         }),
         signal: controller.signal,
+        redirect: "manual",
       });
 
       const latencyMs = Date.now() - startedAt;
-      const rawText = await upstream.text();
+      await upstream.arrayBuffer().catch(() => undefined);
 
       if (!upstream.ok) {
         return sendJson(res, 200, {
           ok: false,
           latencyMs,
           status: upstream.status,
-          error: `上游返回 ${upstream.status}`,
         });
       }
 
@@ -1582,7 +1646,6 @@ function makeRunAgent(opts: {
         ok: true,
         latencyMs,
         status: upstream.status,
-        echo: rawText.slice(0, 120),
       });
     } catch (error) {
       const latencyMs = Date.now() - startedAt;

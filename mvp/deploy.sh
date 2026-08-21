@@ -6,8 +6,12 @@
 
 set -e
 
-SERVER_IP="121.89.90.68"
-SERVER_USER="root"
+ALIYUN_HOST="${ALIYUN_HOST:-}"
+ALIYUN_USER="${ALIYUN_USER:-}"
+if [ -z "$ALIYUN_HOST" ] || [ -z "$ALIYUN_USER" ]; then
+  echo "Set ALIYUN_HOST and ALIYUN_USER"
+  exit 1
+fi
 REMOTE_DIR="/opt/red-herring"
 ARCHIVE="red-herring-source.tar.gz"
 
@@ -29,12 +33,12 @@ tar czf "$ARCHIVE" \
   --exclude="$ARCHIVE" \
   .
 
-echo "=== Deploying to $SERVER_IP ==="
-ssh "$SERVER_USER@$SERVER_IP" "mkdir -p $REMOTE_DIR"
-scp "$ARCHIVE" "$SERVER_USER@$SERVER_IP:/tmp/$ARCHIVE"
-scp .env.local "$SERVER_USER@$SERVER_IP:$REMOTE_DIR/.env.local"
+echo "=== Deploying to $ALIYUN_HOST ==="
+ssh "$ALIYUN_USER@$ALIYUN_HOST" "mkdir -p $REMOTE_DIR"
+scp "$ARCHIVE" "$ALIYUN_USER@$ALIYUN_HOST:/tmp/$ARCHIVE"
+scp .env.local "$ALIYUN_USER@$ALIYUN_HOST:$REMOTE_DIR/.env.local"
 
-ssh "$SERVER_USER@$SERVER_IP" << REMOTE
+ssh "$ALIYUN_USER@$ALIYUN_HOST" << REMOTE
   set -e
   mkdir -p "$REMOTE_DIR"
   cd "$REMOTE_DIR"
@@ -45,5 +49,5 @@ ssh "$SERVER_USER@$SERVER_IP" << REMOTE
 REMOTE
 
 echo "=== Deployment complete ==="
-echo "API: http://$SERVER_IP/api (nginx :80 -> 127.0.0.1:3000)"
+echo "API: http://$ALIYUN_HOST/api (nginx :80 -> 127.0.0.1:3000)"
 rm "$ARCHIVE"
