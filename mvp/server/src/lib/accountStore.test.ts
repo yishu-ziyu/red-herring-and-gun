@@ -186,6 +186,30 @@ describe("accountStore", () => {
       expect(second.ok).toBe(false);
       expect(second.error).toBe("invalid_code");
     });
+
+    it("invalidates a code after 5 failed verifies", async () => {
+      const req = await requestCode(EMAIL, SERVER_SECRET);
+      expect(req.ok).toBe(true);
+      for (let i = 0; i < 5; i += 1) {
+        const verify = await verifyAndCreate(EMAIL, "abcdef", SERVER_SECRET);
+        expect(verify.ok).toBe(false);
+        expect(verify.error).toBe("invalid_code");
+      }
+      const late = await verifyAndCreate(EMAIL, req.code!, SERVER_SECRET);
+      expect(late.ok).toBe(false);
+      expect(late.error).toBe("invalid_code");
+    });
+
+    it("refuses verify when AIPING_SESSION_SECRET is empty", async () => {
+      const req = await requestCode(EMAIL, SERVER_SECRET);
+      expect(req.ok).toBe(true);
+      const previous = process.env.AIPING_SESSION_SECRET;
+      process.env.AIPING_SESSION_SECRET = "";
+      const verify = await verifyAndCreate(EMAIL, req.code!, SERVER_SECRET);
+      process.env.AIPING_SESSION_SECRET = previous;
+      expect(verify.ok).toBe(false);
+      expect(verify.error).toBe("invalid_code");
+    });
   });
 
   describe("daily checks", () => {
