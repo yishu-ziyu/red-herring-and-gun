@@ -136,6 +136,10 @@ export async function verifyAndCreate(
   rawCode: string,
   serverSecret: string
 ): Promise<VerifyResult> {
+  if (!(serverSecret ?? "").trim() || !(process.env.AIPING_SESSION_SECRET ?? "").trim()) {
+    return { ok: false, error: "invalid_code" };
+  }
+
   const email = normalizeEmail(rawEmail);
   if (!EMAIL_REGEX.test(email)) {
     return { ok: false, error: "invalid_email" };
@@ -153,9 +157,16 @@ export async function verifyAndCreate(
     return { ok: false, error: "expired" };
   }
 
+  if (record.attempts >= MAX_VERIFY_ATTEMPTS) {
+    record.consumed = true;
+    codes.delete(hash);
+    return { ok: false, error: "invalid_code" };
+  }
+
   if (record.code !== rawCode) {
     record.attempts += 1;
     if (record.attempts >= MAX_VERIFY_ATTEMPTS) {
+      record.consumed = true;
       codes.delete(hash);
     }
     return { ok: false, error: "invalid_code" };

@@ -4,6 +4,13 @@
 
 set -e
 
+ALIYUN_HOST="${ALIYUN_HOST:-}"
+ALIYUN_USER="${ALIYUN_USER:-}"
+if [ -z "$ALIYUN_HOST" ] || [ -z "$ALIYUN_USER" ]; then
+    echo "Set ALIYUN_HOST and ALIYUN_USER"
+    exit 1
+fi
+
 APP_DIR="/opt/red-herring"
 PORT=3000
 
@@ -25,7 +32,7 @@ cd $APP_DIR
 if [ ! -f "package.json" ]; then
     echo "ERROR: Code not found in $APP_DIR"
     echo "Please upload the project files first:"
-    echo "  scp -r * root@121.89.90.68:$APP_DIR/"
+    echo "  scp -r * ${ALIYUN_USER}@${ALIYUN_HOST}:$APP_DIR/"
     exit 1
 fi
 
@@ -79,8 +86,8 @@ sleep 5
 # 6. 健康检查
 if curl -sf http://localhost:$PORT/health > /dev/null; then
     echo "=== SUCCESS ==="
-    echo "API Server running at http://121.89.90.68:$PORT"
-    echo "Test: curl -X POST http://121.89.90.68:$PORT/api/search/360 -H 'Content-Type: application/json' -d '{\"query\":\"test\"}'"
+    echo "API Server running at http://${ALIYUN_HOST}:$PORT"
+    echo "Test: curl -X POST http://${ALIYUN_HOST}:$PORT/api/search/360 -H 'Content-Type: application/json' -d '{\"query\":\"test\"}'"
 else
     echo "=== WARNING ==="
     echo "Service may not be ready yet. Check logs: docker logs red-herring-api"
