@@ -7,11 +7,18 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MVP_DIR="${ROOT_DIR}/mvp"
 SERVER_DIR="${MVP_DIR}/server"
 
-ALIYUN_HOST="${ALIYUN_HOST:-121.89.90.68}"
-ALIYUN_USER="${ALIYUN_USER:-root}"
+ALIYUN_HOST="${ALIYUN_HOST:-}"
+ALIYUN_USER="${ALIYUN_USER:-}"
 REMOTE_MVP_DIR="${REMOTE_MVP_DIR:-}"
 APP_DOMAIN="${APP_DOMAIN:-gun.yishuziyu.cn}"
 SSH_TARGET="${ALIYUN_USER}@${ALIYUN_HOST}"
+
+require_aliyun() {
+  if [ -z "$ALIYUN_HOST" ] || [ -z "$ALIYUN_USER" ]; then
+    echo "Set ALIYUN_HOST and ALIYUN_USER"
+    exit 1
+  fi
+}
 
 usage() {
   cat <<EOF
@@ -199,6 +206,7 @@ local_api_smoke() {
 }
 
 public_check() {
+  require_aliyun
   section "Public DNS and HTTP probes"
   need_cmd curl
   need_cmd python3
@@ -236,6 +244,7 @@ public_check() {
 }
 
 aliyun_domain_check() {
+  require_aliyun
   section "Aliyun domain takeover probes"
   need_cmd python3
 
@@ -245,10 +254,11 @@ aliyun_domain_check() {
 }
 
 remote_check() {
+  require_aliyun
   section "Remote Docker/API status"
   need_cmd ssh
 
-  ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "$SSH_TARGET" <<EOF
+  ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" <<EOF
 set -euo pipefail
 if [ -n "$REMOTE_MVP_DIR" ] && [ -f "$REMOTE_MVP_DIR/docker-compose.yml" ]; then
   APP_DIR="$REMOTE_MVP_DIR"
@@ -275,6 +285,7 @@ EOF
 }
 
 deploy_current_mvp() {
+  require_aliyun
   if [ "${1:-}" != "--yes" ]; then
     echo "This will upload the current local mvp directory and restart the remote Docker service."
     echo "Run: ./ops.sh deploy --yes"
@@ -309,10 +320,10 @@ deploy_current_mvp() {
 
   section "Upload and rebuild remote Docker"
   local remote_dir
-  remote_dir="$(ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "$SSH_TARGET" \
+  remote_dir="$(ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" \
     "if [ -n '$REMOTE_MVP_DIR' ]; then echo '$REMOTE_MVP_DIR'; elif [ -f /opt/red-herring/mvp/docker-compose.yml ]; then echo /opt/red-herring/mvp; else echo /opt/red-herring; fi")"
   echo "Remote dir: $remote_dir"
-  ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "$SSH_TARGET" "mkdir -p '$remote_dir'"
+  ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" "mkdir -p '$remote_dir'"
   scp "$archive" "$SSH_TARGET:/tmp/red-herring-mvp.tar.gz"
   if [ -f "$MVP_DIR/.env.local" ]; then
     scp "$MVP_DIR/.env.local" "$SSH_TARGET:${remote_dir}/.env.local"
@@ -340,8 +351,9 @@ EOF
 }
 
 remote_logs() {
+  require_aliyun
   need_cmd ssh
-  ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "$SSH_TARGET" \
+  ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" \
     "if [ -n '$REMOTE_MVP_DIR' ] && [ -f '$REMOTE_MVP_DIR/docker-compose.yml' ]; then cd '$REMOTE_MVP_DIR'; elif [ -f /opt/red-herring/mvp/docker-compose.yml ]; then cd /opt/red-herring/mvp; else cd /opt/red-herring; fi && docker compose logs --tail=120 red-herring-api"
 }
 
