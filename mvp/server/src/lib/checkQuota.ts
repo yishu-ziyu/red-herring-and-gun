@@ -71,14 +71,29 @@ function cookieHeader(raw: unknown): string | undefined {
 }
 
 function clientIp(req: { headers?: { [key: string]: unknown }; socket?: { remoteAddress?: string } }) {
-  const forwarded = req.headers?.["x-forwarded-for"];
-  const raw =
-    typeof forwarded === "string"
-      ? forwarded.split(",")[0]?.trim()
-      : Array.isArray(forwarded) && typeof forwarded[0] === "string"
-        ? forwarded[0]
+  const realIpHeader = req.headers?.["x-real-ip"];
+  const realIp =
+    typeof realIpHeader === "string"
+      ? realIpHeader.trim()
+      : Array.isArray(realIpHeader) && typeof realIpHeader[0] === "string"
+        ? realIpHeader[0].trim()
         : "";
-  return raw || req.socket?.remoteAddress || "unknown";
+  if (realIp) return realIp.split(",")[0]?.trim() || realIp;
+
+  const forwarded = req.headers?.["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    const hops = forwarded.split(",").map((hop) => hop.trim()).filter(Boolean);
+    if (hops.length > 0) return hops[hops.length - 1];
+  }
+  if (Array.isArray(forwarded)) {
+    for (let i = forwarded.length - 1; i >= 0; i -= 1) {
+      if (typeof forwarded[i] === "string" && forwarded[i].trim()) {
+        const hops = forwarded[i].split(",").map((hop) => hop.trim()).filter(Boolean);
+        if (hops.length > 0) return hops[hops.length - 1];
+      }
+    }
+  }
+  return req.socket?.remoteAddress || "unknown";
 }
 
 function hashIp(ip: string) {

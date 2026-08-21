@@ -68,6 +68,15 @@ export async function postCaseHandler(req: any, res: any): Promise<void> {
 
   const account = await readEmailAccountOptional(req);
   const caseId = typeof body.caseId === "string" ? body.caseId : undefined;
+  if (caseId) {
+    const existing = getCase(caseId);
+    if (existing?.ownerHash) {
+      if (!account || account.hash !== existing.ownerHash) {
+        sendJson(res, 403, { error: "forbidden" });
+        return;
+      }
+    }
+  }
   const claimReview = buildClaimReviewJsonLd(body.report, { url: undefined });
   const entry = putCase({
     caseId,

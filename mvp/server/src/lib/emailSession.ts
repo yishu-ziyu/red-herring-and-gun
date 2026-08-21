@@ -10,7 +10,11 @@ export const EMAIL_SESSION_COOKIE = "v3_email_session";
 export const EMAIL_SESSION_TTL_SECONDS = 31 * 24 * 60 * 60;
 
 export function getServerSecret() {
-  return (process.env.AIPING_SESSION_SECRET ?? "").trim();
+  const secret = (process.env.AIPING_SESSION_SECRET ?? "").trim();
+  if (process.env.NODE_ENV === "production" && secret.length < 16) {
+    throw new Error("AIPING_SESSION_SECRET must be at least 16 characters in production");
+  }
+  return secret;
 }
 
 function cookieHeader(raw: unknown): string | undefined {
