@@ -9,7 +9,7 @@
     },
     {
       "source": "/api/:path*",
-      "destination": "http://121.89.90.68/api/:path*"
+      "destination": "https://gun.yishuziyu.cn/api/:path*"
     },
     {
       "source": "/((?!api/|.*\\..+$).*)",
