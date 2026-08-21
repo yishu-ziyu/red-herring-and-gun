@@ -4,7 +4,7 @@
 # 流程：SSH → git pull → docker compose rebuild → 验证
 #
 # 前提：
-#   - SSH key 已配置（能直接 ssh root@121.89.90.68）
+#   - SSH key 已配置（能直接 ssh ${ALIYUN_USER}@${ALIYUN_HOST}）
 #   - 阿里云上 /opt/red-herring/ 已有 git clone
 #   - .env.local 在阿里云上（不在 git 里，不会被覆盖）
 #
@@ -12,8 +12,12 @@
 
 set -euo pipefail
 
-ALIYUN_HOST="121.89.90.68"
-ALIYUN_USER="root"
+ALIYUN_HOST="${ALIYUN_HOST:-}"
+ALIYUN_USER="${ALIYUN_USER:-}"
+if [ -z "$ALIYUN_HOST" ] || [ -z "$ALIYUN_USER" ]; then
+  echo "Set ALIYUN_HOST and ALIYUN_USER"
+  exit 1
+fi
 REPO_DIR="/opt/red-herring"
 
 echo "🚀 开始部署 → ${ALIYUN_HOST}"
@@ -22,7 +26,7 @@ echo ""
 # ─── Step 1: 拉取最新代码 ───────────────────────────────────
 
 echo "📥 Step 1/3: 拉取最新代码..."
-ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new \
+ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes \
   "${ALIYUN_USER}@${ALIYUN_HOST}" << REMOTE_EOF
 set -euo pipefail
 
@@ -49,7 +53,7 @@ REMOTE_EOF
 echo ""
 echo "🐳 Step 2/3: 重新构建 Docker 镜像..."
 
-ssh -o ConnectTimeout=10 "${ALIYUN_USER}@${ALIYUN_HOST}" << REMOTE_EOF
+ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "${ALIYUN_USER}@${ALIYUN_HOST}" << REMOTE_EOF
 set -euo pipefail
 
 cd ${REPO_DIR}/mvp
@@ -74,7 +78,7 @@ REMOTE_EOF
 echo ""
 echo "🔍 Step 3/3: 验证部署..."
 
-ssh -o ConnectTimeout=10 "${ALIYUN_USER}@${ALIYUN_HOST}" << REMOTE_EOF
+ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "${ALIYUN_USER}@${ALIYUN_HOST}" << REMOTE_EOF
 set -euo pipefail
 
 # 检查容器是否运行

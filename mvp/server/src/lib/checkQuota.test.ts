@@ -15,10 +15,10 @@ import { EMAIL_SESSION_COOKIE } from "./emailSession.js";
 
 const SECRET = "test-server-secret-for-check-quota";
 
-function mockReq(cookie = "", ip = "127.0.0.1") {
+function mockReq(cookie = "", ip = "127.0.0.1", extraHeaders: Record<string, string> = {}) {
   const listeners = new Map<string, Array<() => void>>();
   return {
-    headers: { cookie },
+    headers: { cookie, ...extraHeaders },
     socket: { remoteAddress: ip },
     on(event: string, fn: () => void) {
       const list = listeners.get(event) ?? [];
@@ -101,6 +101,51 @@ describe("checkQuota", () => {
 
     const second = await beginFreeCheck(mockReq("", "10.0.0.8"), mockRes());
     expect(second.ok).toBe(false);
+  });
+
+  it("does not trust the first X-Forwarded-For hop", async () => {
+    const firstReq = mockReq("", "9.9.9.9", { "x-forwarded-for": "1.1.1.1, 8.8.8.8" });
+    const firstRes = mockRes();
+    const begun = await beginFreeCheck(firstReq, firstRes);
+    expect(begun.ok).toBe(true);
+    if (!begun.ok) return;
+    commitFreeCheck(firstRes, begun.ticket);
+
+    const spoofedFirstHop = await beginFreeCheck(
+      mockReq("", "9.9.9.9", { "x-forwarded-for": "2.2.2.2, 8.8.8.8" }),
+      mockRes()
+    );
+    expect(spoofedFirstHop.ok).toBe(false);
+
+    const otherLastHop = await beginFreeCheck(
+      mockReq("", "9.9.9.9", { "x-forwarded-for": "1.1.1.1, 7.7.7.7" }),
+      mockRes()
+    );
+    expect(otherLastHop.ok).toBe(true);
+  });
+
+  it("prefers X-Real-IP over X-Forwarded-For", async () => {
+    const firstReq = mockReq("", "9.9.9.9", {
+      "x-real-ip": "10.0.0.5",
+      "x-forwarded-for": "1.1.1.1, 8.8.8.8",
+    });
+    const firstRes = mockRes();
+    const begun = await beginFreeCheck(firstReq, firstRes);
+    expect(begun.ok).toBe(true);
+    if (!begun.ok) return;
+    commitFreeCheck(firstRes, begun.ticket);
+
+    const sameRealIp = await beginFreeCheck(
+      mockReq("", "9.9.9.9", { "x-real-ip": "10.0.0.5", "x-forwarded-for": "3.3.3.3" }),
+      mockRes()
+    );
+    expect(sameRealIp.ok).toBe(false);
+
+    const otherRealIp = await beginFreeCheck(
+      mockReq("", "9.9.9.9", { "x-real-ip": "10.0.0.6", "x-forwarded-for": "1.1.1.1, 8.8.8.8" }),
+      mockRes()
+    );
+    expect(otherRealIp.ok).toBe(true);
   });
 
   it("releases a guest slot when the run fails before a verdict", async () => {
