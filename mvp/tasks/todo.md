@@ -57,7 +57,7 @@ AIPING_SCOPE=profile phone
 | 工具调用 | 用户在 MiXer 中输入待核查材料后，能触发真实 Agent 链路 | `tools/call` 会调用本服务 `/api/agent/orchestrate` 并返回 structuredContent；本地协议测试通过，未跑公网真实调用 | POST `/mcp` 调用 `tools/call`，检查 conclusion、score、models | [ ] ECS 恢复后验证 |
 | 平台注册 | Agent 出现在 MiXer 小程序 | 代码侧 URL 已准备；平台侧需手动登录小程序/开发者平台注册 | 在 MiXer 小程序“上传 Agent”粘贴 MCP URL | [ ] 待注册 |
 
-当前阻断：2026-06-15 20:31 起，`121.89.90.68` TCP 22/80/443/3000 可建立连接，但 SSH 不返回 banner，HTTP 不返回响应；`ops.sh deploy --yes` 在 SSH banner exchange 阶段超时，说明新 MCP 代码尚未部署到公网。需要先在阿里云控制台重启或排查 ECS 负载/sshd/nginx/docker。
+当前阻断：2026-06-15 20:31 起，`YOUR_HOST` TCP 22/80/443/3000 可建立连接，但 SSH 不返回 banner，HTTP 不返回响应；`ops.sh deploy --yes` 在 SSH banner exchange 阶段超时，说明新 MCP 代码尚未部署到公网。需要先在阿里云控制台重启或排查 ECS 负载/sshd/nginx/docker。
 
 | 模块 | 用户视角成功标准 | 当前状态 | 验收方法 | 结论 |
 | --- | --- | --- | --- | --- |
@@ -113,11 +113,11 @@ AIPING_SCOPE=profile phone
 ## Review
 
 - Changed files: `ops.sh`, `DEPLOYMENT_CHECKLIST.md`, `setup-server.sh`，以及后端/部署修复文件。
-- Verification: `npm test` 通过 5 个测试文件、47 个测试；`npm run build` 通过；`npm --prefix server run build` 通过；`./ops.sh deploy --yes` 已部署到阿里云；`http://121.89.90.68/health` 和 `/api/models/list` 返回 200。
-- Agent QA: `POST http://121.89.90.68/api/agent/orchestrate` 返回 200，4 个步骤完成；前三个 Agent 为 `stepfun:step-2-mini`，最终报告在模型超时时走 `fallback:deterministic-report`，避免 502/长时间挂起。
+- Verification: `npm test` 通过 5 个测试文件、47 个测试；`npm run build` 通过；`npm --prefix server run build` 通过；`./ops.sh deploy --yes` 已部署到阿里云；`http://YOUR_HOST/health` 和 `/api/models/list` 返回 200。
+- Agent QA: `POST http://YOUR_HOST/api/agent/orchestrate` 返回 200，4 个步骤完成；前三个 Agent 为 `stepfun:step-2-mini`，最终报告在模型超时时走 `fallback:deterministic-report`，避免 502/长时间挂起。
 - DNS QA: Google / Cloudflare DoH 返回 `gun.yishuziyu.cn CNAME ba0744552526ea06.vercel-dns-017.com`，A 记录为 Vercel 边缘 IP；阿里云控制台未显示隐藏的 `gun A 76.76.21.21`。
 - Vercel QA: 使用 DoH 返回的 Vercel 真实边缘 IP 强制解析后，`https://gun.yishuziyu.cn/` 返回 200，`/api/models/list` 返回 200，`/api/agent/orchestrate` 返回 4 个 Agent steps 与 `finalReport`。
-- Aliyun QA: 使用 Python TLS/SNI 强制解析到 `121.89.90.68` 后，`https://gun.yishuziyu.cn/`、`/health`、`/api/models/list` 均返回 200；`/api/agent/orchestrate` 返回 4 个 Agent steps 与 `finalReport`。
+- Aliyun QA: 使用 Python TLS/SNI 强制解析到 `YOUR_HOST` 后，`https://gun.yishuziyu.cn/`、`/health`、`/api/models/list` 均返回 200；`/api/agent/orchestrate` 返回 4 个 Agent steps 与 `finalReport`。
 - Remaining risk: 本机系统 DNS / 代理路径仍把 `gun.yishuziyu.cn` 解析到旧 `76.76.21.21` 并导致普通 curl TLS 失败；这是本机解析缓存/代理拦截问题，不是公网 DNS 配置问题。
 
 # Mock Streaming Reasoning Data Generator
