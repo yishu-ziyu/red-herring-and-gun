@@ -772,7 +772,7 @@ Phase 3 输出 credibilityScore
 ```
 本地 Mac → git push → GitHub → Vercel（前端自动部署）
                                     ↓ /api/* proxy
-                              阿里云 121.89.90.68（Docker, 需手动 deploy-to-aliyun.sh）
+                              阿里云 YOUR_HOST（Docker, 需手动 deploy-to-aliyun.sh）
 ```
 
 *日志最后更新：2026-06-14 20:50*

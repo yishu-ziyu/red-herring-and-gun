@@ -1,7 +1,7 @@
 # 云服务器部署指南
 
 ## 前提
-- 服务器：121.89.90.68（已安装 Docker）
+- 服务器：YOUR_HOST（已安装 Docker）
 - 域名：gun.yishuziyu.cn（已绑定 Vercel）
 
 ## 部署步骤
@@ -19,7 +19,7 @@ tar czvf red-herring.tar.gz \
   -C /Users/mahaoxuan/Desktop/黑客松/01-语境化可核查分解/mvp .
 
 # 上传到服务器（需要密码）
-scp red-herring.tar.gz root@121.89.90.68:/opt/
+scp red-herring.tar.gz $REMOTE_HOST:/opt/
 ```
 
 ### 2. 在服务器上解压并启动
@@ -112,6 +112,6 @@ server {
 
 ```
 用户 → gun.yishuziyu.cn (Vercel 前端)
-     → API 请求 → 121.89.90.68:3000 (云服务器 API)
+     → API 请求 → YOUR_HOST:3000 (云服务器 API)
      → LLM 调用 → StepFun / 360 / DeepSeek / MiMo
 ```
