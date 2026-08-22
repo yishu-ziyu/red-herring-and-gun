@@ -13,10 +13,10 @@
 
 最终稳定方案：
 
-- DNS：`gun A 121.89.90.68`
+- DNS：`gun A YOUR_HOST`
 - Nginx：`/opt/red-herring/dist` 服务前端静态文件
 - Nginx：`/api/` 和 `/health` 代理到 `127.0.0.1:3000`
-- 本机 hosts 临时兜底：`121.89.90.68 gun.yishuziyu.cn`
+- 本机 hosts 临时兜底：`YOUR_HOST gun.yishuziyu.cn`
 
 ## 为什么绕了很久
 
@@ -43,7 +43,7 @@ curl --noproxy '*' -sS \
 可信结果应为：
 
 ```text
-121.89.90.68
+YOUR_HOST
 ```
 
 ### 2. 查本机覆盖
@@ -58,7 +58,7 @@ dig +short gun.yishuziyu.cn
 
 - `76.76.21.21`：旧 hosts 或旧缓存。
 - `198.18.x.x`：代理 fake-ip，不是公网解析。
-- `121.89.90.68`：本机解析正确。
+- `YOUR_HOST`：本机解析正确。
 
 ### 3. 查代理接管
 
@@ -86,7 +86,7 @@ aliyun domain models HTTP/1.1 200 OK
 ### 5. 验证 Agent 主链路
 
 ```bash
-curl --noproxy '*' --resolve gun.yishuziyu.cn:443:121.89.90.68 \
+curl --noproxy '*' --resolve gun.yishuziyu.cn:443:YOUR_HOST \
   -sS -m 180 \
   -X POST https://gun.yishuziyu.cn/api/agent/orchestrate \
   -H 'Content-Type: application/json' \
@@ -101,9 +101,9 @@ curl --noproxy '*' --resolve gun.yishuziyu.cn:443:121.89.90.68 \
 
 ## 当前修复记录
 
-- 阿里云 DNS：`gun A 121.89.90.68`。
+- 阿里云 DNS：`gun A YOUR_HOST`。
 - 阿里云 Nginx：已切换为静态前端 + API 代理。
-- 本机 `/etc/hosts`：已加入 `121.89.90.68 gun.yishuziyu.cn`。
+- 本机 `/etc/hosts`：已加入 `YOUR_HOST gun.yishuziyu.cn`。
 - macOS 代理绕过列表：已加入 `gun.yishuziyu.cn` 和 `*.yishuziyu.cn`。
 - `ops.sh public`：已加入公共 DoH 验证。
 - `ops.sh aliyun-domain`：已加入阿里云承接验证。
