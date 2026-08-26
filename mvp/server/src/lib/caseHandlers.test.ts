@@ -206,7 +206,7 @@ describe("Plan Item 2 · postCaseHandler owner match", () => {
       mockReq({}, { claim: "stolen", report: makeReport("stolen"), caseId: "owned001" }) as never,
       guest,
     );
-    expect(guest.statusCode).toBe(403);
+    expect(guest.statusCode).toBe(401);
 
     const ownerUpdate = mockRes();
     await postCaseHandler(
