@@ -712,3 +712,91 @@ describe("model picker (simplified BYO)", () => {
     expect(modelChoice).toEqual({});
   });
 });
+
+describe("same-thread follow-up", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.history.pushState({}, "", "/");
+    window.localStorage.clear();
+    mockModelsList([
+      { provider: "deepseek", model: "deepseek-v4-pro", label: "DeepSeek V4 Pro", tier: "high", hint: "强推理" },
+    ]);
+  });
+
+  it("sends a follow-up on the same thread without going home", async () => {
+    const firstReport = {
+      verdictType: "false",
+      credibilityLabel: "谣言",
+      credibilityScore: 90,
+      conclusion: "公开材料不支持整句。",
+      recommendation: "不能信。",
+      summaryForPublic: "不可靠。",
+      whyHardToVerify: [],
+      evidenceChain: [],
+      closureActions: [],
+      confidenceDimensions: [],
+    };
+    vi.mocked(requestOrchestrateStream)
+      .mockImplementationOnce(async function* () {
+        yield {
+          type: "complete",
+          totalLatencyMs: 20,
+          steps: [],
+          finalReport: firstReport,
+        };
+      })
+      .mockImplementationOnce(async function* () {
+        yield {
+          type: "complete",
+          totalLatencyMs: 20,
+          steps: [],
+          finalReport: {
+            ...firstReport,
+            conclusion: "微波炉加热同样不能等同致癌。",
+          },
+        };
+      });
+
+    render(<App />);
+    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    editor.textContent = "隔夜菜会致癌，吃了等于吃毒药";
+    fireEvent.input(editor);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /开始核查/ })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
+
+    const report = await screen.findByLabelText("核心结论");
+    expect(report).toHaveTextContent("公开材料不支持整句");
+
+    const box = screen.getByPlaceholderText("再问一句…");
+    expect(box).toBeEnabled();
+    fireEvent.change(box, { target: { value: "那微波炉加热呢" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("那微波炉加热呢")).toBeInTheDocument();
+    const bubbles = screen.getAllByTestId("claim-bubble");
+    expect(bubbles.map((el) => el.textContent)).toEqual([
+      "隔夜菜会致癌，吃了等于吃毒药",
+      "那微波炉加热呢",
+    ]);
+    expect(screen.queryByRole("textbox", { name: "待核查材料" })).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(requestOrchestrateStream).toHaveBeenCalledTimes(2);
+    });
+    const second = vi.mocked(requestOrchestrateStream).mock.calls[1]?.[0];
+    const payload = typeof second === "string" ? second : second?.text;
+    expect(payload).toBeTruthy();
+    expect(payload?.startsWith("那微波炉加热呢")).toBe(true);
+    expect(payload).toContain("隔夜菜会致癌，吃了等于吃毒药");
+    expect(payload).toContain("同一条核查的追问");
+    expect(payload).toContain("公开材料不支持整句");
+
+    expect((await screen.findAllByText(/微波炉加热同样不能等同致癌/)).length).toBeGreaterThan(0);
+  });
+});

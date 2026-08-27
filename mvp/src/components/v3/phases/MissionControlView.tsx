@@ -26,7 +26,8 @@ import { MissionSearchFold } from "./mission/MissionSearchFold";
 import { MissionPursuitFold } from "./mission/MissionPursuitFold";
 import { MissionThreadAnswer } from "./mission/MissionThreadAnswer";
 import { ApodexRunView } from "./mission/ApodexRunView";
-import { mapShellToApodexRun } from "./mission/apodexRunMap";
+import { mapShellToApodexRun, type ApodexRunModel } from "./mission/apodexRunMap";
+import { composeFollowUpClaim, previousAnswerText } from "../../../lib/composeFollowUpClaim";
 import type { ModelChoiceMap } from "../ModelPicker";
 import { calculateClaimSimilarity, createKnowledgeBase, type KnowledgeBase } from "../../../lib/knowledgeBase";
 import { semanticClaimSimilarity } from "../../../lib/semanticRecall";
@@ -5294,6 +5295,10 @@ export function MissionControlView({
   const [debateUpdates, setDebateUpdates] = useState<ConsensusDebateUpdate[]>([]);
   /** SSE raw events for process shell narrative */
   const [sseEvents, setSseEvents] = useState<OrchestrateStreamEvent[]>([]);
+  const [priorTurns, setPriorTurns] = useState<ApodexRunModel[]>([]);
+  const [displayClaim, setDisplayClaim] = useState(claim);
+  const [streamKey, setStreamKey] = useState(0);
+  const streamJobRef = useRef<string | CaseIntake>(intake ?? claim);
   const searchParams =
     typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const shellQuery = searchParams?.get("shell") ?? null;
@@ -5306,8 +5311,8 @@ export function MissionControlView({
   /** Product path freezes antdx → always token even if resolve says antdx */
   const missionShellVariant: "token" | "antdx" = "token";
   const missionShellModel = useMemo(
-    () => adaptOrchestrateStreamToShell(sseEvents, { claim }),
-    [sseEvents, claim]
+    () => adaptOrchestrateStreamToShell(sseEvents, { claim: displayClaim }),
+    [sseEvents, displayClaim]
   );
   const apodexRun = useMemo(() => mapShellToApodexRun(missionShellModel), [missionShellModel]);
   const missionNarrative = useMemo(
@@ -5366,8 +5371,12 @@ export function MissionControlView({
     setSpeculativeRelays([]);
     setDebateUpdates([]);
     setSseEvents([]);
+    setPriorTurns([]);
+    setDisplayClaim(claim);
+    setStreamKey(0);
+    streamJobRef.current = intake ?? claim;
     onCompleteFiredRef.current = false;
-  }, [claim, dispatch]);
+  }, [claim, dispatch, intake]);
 
   /** finalReport ready → notify parent (parent no longer switches phase; we stay mounted) */
   useEffect(() => {
@@ -5397,7 +5406,7 @@ export function MissionControlView({
   useEffect(() => {
     if (!claim.trim()) return;
     if (previewMode) return;
-    if (initialFinalReport) return;
+    if (initialFinalReport && streamKey === 0) return;
 
     let cancelled = false;
     let streamEnded = false;
@@ -5496,7 +5505,8 @@ export function MissionControlView({
             });
           }
 
-          for await (const event of requestOrchestrateStream(intake ?? claim, localMemoryRecall ?? undefined, modelChoice)) {
+          const streamPayload = streamKey > 0 ? streamJobRef.current : (intake ?? claim);
+          for await (const event of requestOrchestrateStream(streamPayload, localMemoryRecall ?? undefined, modelChoice)) {
             if (cancelled) return;
             lastActivityAtRef.current = Date.now();
             setStallMs(0);
@@ -5949,7 +5959,7 @@ export function MissionControlView({
         dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: {} });
       }
     };
-  }, [claim, dispatch, initialFinalReport, intake, knowledgeBase, modelChoice, previewMode, runConsensusPipeline, state.diagnosis]);
+  }, [claim, dispatch, initialFinalReport, intake, knowledgeBase, modelChoice, previewMode, runConsensusPipeline, state.diagnosis, streamKey]);
 
   useEffect(() => {
     if (!previewMode || !claim.trim()) return;
@@ -6093,6 +6103,31 @@ export function MissionControlView({
     }
   }, [latestControllerEvent]);
 
+  const handleFollowUp = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || runStatus === "running") return;
+      const frozen: ApodexRunModel = { ...apodexRun, live: false, claim: displayClaim };
+      const history = [...priorTurns, frozen];
+      const composed = composeFollowUpClaim({
+        originalClaim: claim,
+        previousAnswer: previousAnswerText(frozen.report),
+        followUp: trimmed,
+        priorFollowUps: history.map((turn) => turn.claim).filter((item) => item !== claim),
+      });
+      streamJobRef.current = intake ? { ...intake, text: composed } : composed;
+      setPriorTurns(history);
+      setDisplayClaim(trimmed);
+      setSseEvents([]);
+      setFinalReport(null);
+      setErrorMessage("");
+      onCompleteFiredRef.current = false;
+      setRunStatus("running");
+      setStreamKey((n) => n + 1);
+    },
+    [apodexRun, claim, displayClaim, intake, priorTurns, runStatus]
+  );
+
   const stageIdx = humanStageIndex(humanStage);
   const hasStreamEvents = controllerEvents.length > 0 || (useMissionShell && sseEvents.length > 0);
   /** Live execution: only top bar + process shell — no dual column / empty right grid. */
@@ -6153,6 +6188,8 @@ export function MissionControlView({
             }
             stallNotice={runStatus === "running" ? stallNotice : undefined}
             fallbackNotice={fallbackNotice}
+            priorTurns={priorTurns}
+            onFollowUp={previewMode ? undefined : handleFollowUp}
           />
         ) : (
           <>

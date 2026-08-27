@@ -1,6 +1,6 @@
 /**
  * Live Apodex-shaped run surface. Events come from orchestrate-stream.
- * Follow-up send is not wired — the box is chrome, not a second round.
+ * Completed rounds can send a follow-up; it stays on this thread.
  */
 import { useEffect, useRef, useState } from "react";
 import { TodoList } from "./TodoList";
@@ -19,6 +19,10 @@ export type ApodexRunViewProps = {
   stopLabel?: string;
   stallNotice?: string;
   fallbackNotice?: string;
+  /** Prior completed turns stay above the current bubble. */
+  priorTurns?: ApodexRunModel[];
+  /** Same-case follow-up. Omit to keep the box decorative (previews). */
+  onFollowUp?: (text: string) => void;
 };
 
 function formatClock(ms: number): string {
@@ -84,46 +88,61 @@ export function ApodexRunView({
   stopLabel,
   stallNotice,
   fallbackNotice,
+  priorTurns = [],
+  onFollowUp,
 }: ApodexRunViewProps) {
   const { copy } = useUiLang();
-  const live = model.live || runStatus === "running";
-  const [processOpen, setProcessOpen] = useState(!model.report);
+  const live =
+    runStatus === "running" ||
+    (runStatus !== "completed" && runStatus !== "failed" && model.live);
+  const canFollow = Boolean(onFollowUp) && !live;
   const [boardOpen, setBoardOpen] = useState(true);
-  const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
-  const [ticker, setTicker] = useState<{ id: string; at: number } | null>(null);
+  const [draft, setDraft] = useState("");
   const threadRef = useRef<HTMLDivElement>(null);
-  const tickingId = model.steps.find((s) => s.kind === "thought" && s.ticker && s.status === "loading")?.id;
-  if (tickingId && ticker?.id !== tickingId) setTicker({ id: tickingId, at: Date.now() });
-  if (!tickingId && ticker != null) setTicker(null);
-
-  useEffect(() => {
-    if (model.report) setProcessOpen(false);
-  }, [model.report?.verdictLabel]);
+  const currentTurnRef = useRef<HTMLDivElement>(null);
+  const composeRef = useRef<HTMLTextAreaElement>(null);
+  const sentRef = useRef(false);
 
   useEffect(() => {
     const el = threadRef.current;
     if (!el) return;
     if (!live && model.report) {
-      el.scrollTop = 0;
+      const current = currentTurnRef.current;
+      if (priorTurns.length > 0 && current && typeof current.scrollIntoView === "function") {
+        current.scrollIntoView({ block: "start", behavior: "auto" });
+      } else {
+        el.scrollTop = 0;
+      }
       return;
     }
     if (!live) return;
     el.scrollTop = el.scrollHeight;
-  }, [live, model.steps.length, model.report?.verdictLabel]);
+  }, [live, model.steps.length, model.report?.verdictLabel, priorTurns.length]);
 
-  const isOpen = (id: string) => openIds[id] === true;
-
-  const toggle = (id: string) => {
-    setOpenIds((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
+  useEffect(() => {
+    if (!canFollow) return;
+    sentRef.current = false;
+    composeRef.current?.focus();
+  }, [canFollow]);
 
   const showBoard = model.boardVisible && boardOpen && model.board.length > 0;
-  const stepCount = model.steps.filter((s) => s.kind !== "board").length;
   const boardDone = model.board.filter((t) => t.status === "done").length;
-  const pill = live
-    ? `${formatClock(elapsedMs)} · ${stepCount} ${copy.stepsUnit}`
-    : `${stepCount} ${copy.stepsUnit} · ${copy.stepsComplete}`;
   const doneLabel = stopChromeLabel(live, stopLabel, copy);
+  const canSend = canFollow && draft.trim().length > 0;
+
+  const fitCompose = (el: HTMLTextAreaElement) => {
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  };
+
+  const submitFollowUp = () => {
+    const next = draft.trim();
+    if (!canFollow || !next || !onFollowUp || sentRef.current) return;
+    sentRef.current = true;
+    onFollowUp(next);
+    setDraft("");
+    if (composeRef.current) composeRef.current.style.height = "";
+  };
 
   return (
     <div
@@ -136,88 +155,55 @@ export function ApodexRunView({
         <div className={styles.langDock}>
           <UiLangSwitch />
         </div>
-        <div className={styles.qRow}>
-          <div className={styles.qBubble}>{model.claim}</div>
+        {priorTurns.map((turn, index) => (
+          <TurnSection
+            key={`prior-${index}`}
+            model={turn}
+            live={false}
+            copy={copy}
+            boardOpen={false}
+            onBoardToggle={() => undefined}
+          />
+        ))}
+        <div ref={currentTurnRef}>
+          <TurnSection
+            key={`current-${priorTurns.length}`}
+            model={model}
+            live={live}
+            elapsedMs={elapsedMs}
+            stallNotice={stallNotice}
+            fallbackNotice={fallbackNotice}
+            copy={copy}
+            boardOpen={boardOpen}
+            onBoardToggle={() => setBoardOpen((v) => !v)}
+          />
         </div>
-
-        {live && stallNotice ? <p className={styles.stall}>{stallNotice}</p> : null}
-        {live && fallbackNotice ? <p className={styles.stall}>{fallbackNotice}</p> : null}
-        {model.errorMessage && !model.report ? (
-          <p className={styles.alert} role="alert">
-            {model.errorMessage}
-          </p>
-        ) : null}
-
-        {model.steps.length === 0 && live ? (
-          <div className={styles.planning}>
-            <span className={styles.spin} aria-hidden />
-            <span>{copy.planning}</span>
-          </div>
-        ) : null}
-
-        {model.steps.length > 0 && (live || stepCount > 0) ? (
-          <div>
-            <button
-              className={styles.runHead}
-              type="button"
-              aria-expanded={processOpen}
-              onClick={() => setProcessOpen((v) => !v)}
-            >
-              <span className={styles.runLeft}>
-                {live ? <span className={styles.spin} aria-hidden /> : <IcoCheck />}
-                <span>{copy.runProcess}</span>
-              </span>
-              <span className={styles.runRight}>
-                <span className={styles.runPill}>{pill}</span>
-                <IcoChev />
-              </span>
-            </button>
-
-            {processOpen ? (
-              <div className={styles.steps}>
-                {model.steps.map((step) => (
-                  <StepRow
-                    key={step.id}
-                    step={step}
-                    open={isOpen(step.id)}
-                    tickerOrigin={ticker?.at ?? null}
-                    onToggle={() => {
-                      if (step.kind === "board") {
-                        setBoardOpen((v) => !v);
-                        return;
-                      }
-                      toggle(step.id);
-                    }}
-                    boardOpen={boardOpen}
-                    copy={copy}
-                  />
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {model.report ? (
-          <article className={styles.report} aria-label="核心结论">
-            <ResearchMemo markdown={model.report.memo} sources={model.report.sources} />
-            {fallbackNotice && !live ? (
-              <p className={styles.advice}>{fallbackNotice}</p>
-            ) : null}
-          </article>
-        ) : null}
 
         <div className={styles.follow}>
           <form
             className={styles.compose}
             onSubmit={(e) => {
               e.preventDefault();
+              submitFollowUp();
             }}
           >
             <textarea
+              ref={composeRef}
               rows={1}
+              value={canFollow ? draft : ""}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                fitCompose(e.currentTarget);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== "Enter" || e.shiftKey) return;
+                e.preventDefault();
+                submitFollowUp();
+              }}
               placeholder={live ? copy.checking : copy.followUp}
-              disabled
-              aria-disabled="true"
+              disabled={!canFollow}
+              aria-disabled={!canFollow}
+              aria-label={copy.followUp}
               title={live ? copy.followLiveTitle : copy.followDoneTitle}
             />
             <button
@@ -228,7 +214,12 @@ export function ApodexRunView({
             >
               {live ? `■ ${doneLabel}` : doneLabel}
             </button>
-            <button className={styles.send} type="submit" disabled aria-label={copy.sendUnavailable}>
+            <button
+              className={styles.send}
+              type="submit"
+              disabled={!canSend}
+              aria-label={canFollow ? copy.send : copy.sendUnavailable}
+            >
               <IcoUp />
             </button>
           </form>
@@ -251,6 +242,123 @@ export function ApodexRunView({
           </div>
           <TodoList items={model.board} title={copy.todoTitle} hideHead />
         </aside>
+      ) : null}
+    </div>
+  );
+}
+
+function TurnSection({
+  model,
+  live,
+  elapsedMs = 0,
+  stallNotice,
+  fallbackNotice,
+  copy,
+  boardOpen,
+  onBoardToggle,
+}: {
+  model: ApodexRunModel;
+  live: boolean;
+  elapsedMs?: number;
+  stallNotice?: string;
+  fallbackNotice?: string;
+  copy: UiCopy;
+  boardOpen: boolean;
+  onBoardToggle: () => void;
+}) {
+  const [processOpen, setProcessOpen] = useState(!model.report);
+  const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
+  const [ticker, setTicker] = useState<{ id: string; at: number } | null>(null);
+  const tickingId = model.steps.find((s) => s.kind === "thought" && s.ticker && s.status === "loading")?.id;
+  if (tickingId && ticker?.id !== tickingId) setTicker({ id: tickingId, at: Date.now() });
+  if (!tickingId && ticker != null) setTicker(null);
+
+  useEffect(() => {
+    if (model.report) setProcessOpen(false);
+    else if (live) setProcessOpen(true);
+  }, [model.report?.verdictLabel, live]);
+
+  const isOpen = (id: string) => openIds[id] === true;
+  const toggle = (id: string) => {
+    setOpenIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+  const stepCount = model.steps.filter((s) => s.kind !== "board").length;
+  const pill = live
+    ? `${formatClock(elapsedMs)} · ${stepCount} ${copy.stepsUnit}`
+    : `${stepCount} ${copy.stepsUnit} · ${copy.stepsComplete}`;
+
+  return (
+    <div className={styles.turn}>
+      <div className={styles.qRow}>
+        <div className={styles.qBubble} data-testid="claim-bubble">
+          {model.claim}
+        </div>
+      </div>
+
+      {live && stallNotice ? <p className={styles.stall}>{stallNotice}</p> : null}
+      {live && fallbackNotice ? <p className={styles.stall}>{fallbackNotice}</p> : null}
+      {model.errorMessage && !model.report ? (
+        <p className={styles.alert} role="alert">
+          {model.errorMessage}
+        </p>
+      ) : null}
+
+      {model.steps.length === 0 && live ? (
+        <div className={styles.planning}>
+          <span className={styles.spin} aria-hidden />
+          <span>{copy.planning}</span>
+        </div>
+      ) : null}
+
+      {model.steps.length > 0 && (live || stepCount > 0) ? (
+        <div>
+          <button
+            className={styles.runHead}
+            type="button"
+            aria-expanded={processOpen}
+            onClick={() => setProcessOpen((v) => !v)}
+          >
+            <span className={styles.runLeft}>
+              {live ? <span className={styles.spin} aria-hidden /> : <IcoCheck />}
+              <span>{copy.runProcess}</span>
+            </span>
+            <span className={styles.runRight}>
+              <span className={styles.runPill}>{pill}</span>
+              <IcoChev />
+            </span>
+          </button>
+
+          {processOpen ? (
+            <div className={styles.steps}>
+              {model.steps.map((step) => (
+                <StepRow
+                  key={step.id}
+                  step={step}
+                  open={isOpen(step.id)}
+                  tickerOrigin={ticker?.at ?? null}
+                  onToggle={() => {
+                    if (step.kind === "board") {
+                      onBoardToggle();
+                      return;
+                    }
+                    toggle(step.id);
+                  }}
+                  boardOpen={boardOpen}
+                  copy={copy}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {model.report ? (
+        <article className={styles.report} aria-label="核心结论">
+          <ResearchMemo markdown={model.report.memo} sources={model.report.sources} />
+          {fallbackNotice && !live ? (
+            <p className={styles.advice}>{fallbackNotice}</p>
+          ) : null}
+        </article>
       ) : null}
     </div>
   );
