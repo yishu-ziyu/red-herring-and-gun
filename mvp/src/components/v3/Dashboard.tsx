@@ -18,6 +18,7 @@ import {
 } from "../../lib/linkScraper";
 import { type ModelChoiceMap } from "./ModelPicker";
 import { PromptInput, type PromptAttachment } from "./promptInput/PromptInput";
+import { UiLangSwitch } from "./UiLangSwitch";
 import {
   checksRemainingMessage,
   parseCheckQuota,
@@ -276,28 +277,31 @@ export function Dashboard({
 
   return (
     <div className="landing-page">
-      {aipingAuth.status !== "disabled" ? (
-        <div className="landing-account-bar" aria-label="AI Ping 账号状态">
-          <span className="landing-account-provider">AI Ping</span>
-          {aipingAuth.status === "checking" ? (
-            <span className="landing-account-muted">账号检测中</span>
-          ) : aipingAuth.status === "authenticated" ? (
-            <>
-              <span className="landing-account-user">
-                {aipingAuth.user.short_phone_number || aipingAuth.user.another_name || "已登录"}
-              </span>
-              <span className="landing-account-balance">{aipingBalanceText}</span>
-              <button type="button" className="landing-account-btn" onClick={handleAipingLogout}>
-                退出
+      <div className="landing-top-corner">
+        <UiLangSwitch />
+        {aipingAuth.status !== "disabled" ? (
+          <div className="landing-account-bar" aria-label="AI Ping 账号状态">
+            <span className="landing-account-provider">AI Ping</span>
+            {aipingAuth.status === "checking" ? (
+              <span className="landing-account-muted">账号检测中</span>
+            ) : aipingAuth.status === "authenticated" ? (
+              <>
+                <span className="landing-account-user">
+                  {aipingAuth.user.short_phone_number || aipingAuth.user.another_name || "已登录"}
+                </span>
+                <span className="landing-account-balance">{aipingBalanceText}</span>
+                <button type="button" className="landing-account-btn" onClick={handleAipingLogout}>
+                  退出
+                </button>
+              </>
+            ) : (
+              <button type="button" className="landing-account-btn landing-account-btn-primary" onClick={handleAipingLogin}>
+                登录账号
               </button>
-            </>
-          ) : (
-            <button type="button" className="landing-account-btn landing-account-btn-primary" onClick={handleAipingLogin}>
-              登录账号
-            </button>
-          )}
-        </div>
-      ) : null}
+            )}
+          </div>
+        ) : null}
+      </div>
 
       <div className="landing-stage">
         <section className="landing-hero">

@@ -9,6 +9,7 @@ import {
   FIXTURE_MID,
   FIXTURE_REVIEW_FAIL,
   FIXTURE_AGENT_THOUGHT,
+  FIXTURE_LOOP_PROGRESSIVE,
 } from "./fixtures";
 
 describe("adaptOrchestrateStreamToShell", () => {
@@ -382,6 +383,39 @@ describe("adaptOrchestrateStreamToShell", () => {
     ]);
     const rumor = model.thoughtItems.find((t) => t.key === "agent:rumor_detector");
     expect(rumor?.reasoning).toEqual(["先看原句是否可核。"]);
+  });
+
+  it("search/visit/todo close the current thought span so the next thought sits after the tool", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_LOOP_PROGRESSIVE, {
+      claim: "隔夜菜加热会致癌吗",
+    });
+    const agentKeys = model.thoughtItems.filter((t) => t.kind === "agent").map((t) => t.key);
+    expect(agentKeys).toEqual([
+      "agent:investigator",
+      "agent:investigator:1",
+      "agent:investigator:2",
+      "agent:investigator:3",
+    ]);
+    expect(model.thoughtItems.find((t) => t.key === "agent:investigator")?.status).toBe("success");
+    expect(model.thoughtItems.find((t) => t.key === "agent:investigator:3")?.status).toBe("success");
+    const kinds = model.thoughtItems.map((t) => (t.kind === "agent" ? t.key : t.kind));
+    expect(kinds).toEqual([
+      "agent:investigator",
+      "tool",
+      "agent:investigator:1",
+      "tool",
+      "agent:investigator:2",
+      "tool",
+      "agent:investigator:3",
+      "tool",
+    ]);
+  });
+
+  it("memory_search does not split the agent thought span", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_AGENT_THOUGHT);
+    expect(model.thoughtItems.filter((t) => t.kind === "agent").map((t) => t.key)).toEqual([
+      "agent:rumor_detector",
+    ]);
   });
 
   it("agent without reasoning exposes no reasoning (no fabricated thinking)", () => {

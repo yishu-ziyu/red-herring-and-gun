@@ -684,7 +684,7 @@ describe("runCasePipeline", () => {
 
     // 整句救回 mixed：真的部分（法国人喝红酒）不被一起否掉
     expect(result.finalReport.verdictType).toBe("mixed_misleading");
-    expect(String(result.finalReport.conclusion)).toMatch(/^只能信一部分/);
+    expect(String(result.finalReport.conclusion)).not.toMatch(/^(能信|不能信|只能信一部分|还查不清)/);
     expect(result.finalReport.faceVerdict).toBe("只能信一部分");
     expect(result.finalReport._mixedGuard).toBeTruthy();
     // 公式输入也被纠正为 partial（false → cap 15 不再触发）

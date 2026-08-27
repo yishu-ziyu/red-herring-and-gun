@@ -8,6 +8,7 @@ import { EvidenceMatrixDemoPage } from "./components/v3/EvidenceMatrixDemoPage";
 import { ModelProviderSettingsPreview } from "./components/v3/settings/ModelProviderSettingsPreview";
 import { ApiKeySettings } from "./components/v3/settings/ApiKeySettings";
 import { MissionShellPreview } from "./components/v3/phases/mission/MissionShellPreview";
+import { ApodexProcessPreview } from "./components/v3/phases/mission/ApodexProcessPreview";
 import { LoginView } from "./components/v3/auth/LoginView";
 import { AccountView } from "./components/v3/auth/AccountView";
 import type { AccountProfile } from "./components/v3/auth/accountTypes";
@@ -60,6 +61,8 @@ function AppContent() {
   const isShellPreviewRoute =
     window.location.pathname === "/shell-preview" ||
     new URLSearchParams(window.location.search).get("shellPreview") === "1";
+  const isProcessPreviewRoute =
+    import.meta.env.DEV && window.location.pathname === "/process-preview";
   // DEV: formal result page with numbered citations (no full pipeline needed)
   const isResultPreviewRoute =
     import.meta.env.DEV &&
@@ -167,7 +170,6 @@ function AppContent() {
     setCases((prev) =>
       prev.map((item) => (item.id === localId ? { ...item, status, report: finalReport } : item))
     );
-    setArtifactOpen(true);
     if (!shouldPersist || !localId) return;
     void (async () => {
       try {
@@ -270,6 +272,10 @@ function AppContent() {
 
   if (isShellPreviewRoute) {
     return <MissionShellPreview />;
+  }
+
+  if (isProcessPreviewRoute) {
+    return <ApodexProcessPreview />;
   }
 
   if (isResultPreviewRoute) {

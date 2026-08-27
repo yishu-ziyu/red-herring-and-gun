@@ -6,7 +6,7 @@
  *   thoughtHint (Think) → observations (Observe) → nextActionHint (Act 建议)
  *
  * 注入 fact_checker / source_validator 的 agentInput。
- * full ReAct 多轮工具环见 deepagents-poc/（不进生产）。
+ * 多轮工具环不在本模块；生产编排见 casePipeline。
  */
 
 import type { Search360Response } from "../schemas";

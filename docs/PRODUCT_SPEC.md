@@ -14,12 +14,12 @@
 ```text
 材料进来
   → 追出处
-  → 能信 / 不能信 / 还查不清
+  → 直接回答原句（会不会、是不是、哪一层成立）
   → 问题在哪
   → 来源
 ```
 
-半真半假就点名哪一截能信。查不清就说查不清。没搜到不等于假。过程默认收着。
+半真半假就点名哪一截站住。查不清就说查不清。没搜到不等于假。过程默认收着。
 
 ### 用户看见的字（输出语言）
 
@@ -27,17 +27,17 @@
 
 | 只许出现 | 不许出现 |
 |----------|----------|
-| 能信 / 不能信 / 只能信一部分 / 还查不清 | FactChecker、ReportComposer、search360、Tavily、MiniMax、Agent、智能体、工具调用 |
+| 对原句的直接回答（会不会、是不是、哪一层成立） | 「能信 / 不能信 / 只能信一部分 / 还查不清」当结论第一句；FactChecker、ReportComposer、search360、Tavily、MiniMax、Agent、智能体、工具调用 |
 | 立场型 / 不适用真/假判断 | 灰 |
 | 哪一截有出处、哪一截没有 | 先别转发、转不转、建议你转 |
 | 来源标题和可点开的链接 | 模型记忆、函数名、检索商标当结论 |
 
-conclusion 首句必须是上面四个判断之一。recommendation 只重复判断，不写行动建议。代码在收束时再剥一遍工具名（`publicCopy`），不靠模型自觉。
+conclusion 第一句直接回答原问题，像 **不会。** / **原句站不住。** / **只有后半截能站住。** 禁止用「能信 / 不能信 / 只能信一部分 / 还查不清」当第一句——那四个词是内部类型（`verdictType` / `faceVerdict`），留给闸门，不盖在脸上。小节标题写成判断本身（「一、已发生的事实：…」），不要写成「问题拆三层 / 分析 / 建议」。recommendation 只重复答案，不写行动建议。代码在收束时再剥一遍工具名和四字章（`publicCopy`），不靠模型自觉。
 
 写法从教材文（如 [工具使用](https://adp.xindoo.xyz/chapters/Chapter%205_%20Tool%20Use/)）借结构，不借题材：
 
 ```text
-判断。   ← 第一句就给答案
+答案。   ← 第一句就回答原问题，不是盖章
 对象。   ← 这句话在断言什么
 材料。   ← 哪条出处支持或反驳了什么
 边界。   ← 仍不能推出什么
@@ -85,7 +85,7 @@ conclusion 首句必须是上面四个判断之一。recommendation 只重复判
 | 拆题 RumorDetector | MiniMax-M3 | 这句话在断言什么：`type`（事实 / 因果 / 价值 / 预测 / …）和 `verifiable`（能不能去查） | 不许写能信 / 不能信 |
 | 自证 | 还是 MiniMax-M3 | 这条判断原句有没有说过 | 不许改类型、不许判真假 |
 | 核查 FactChecker | 还是 MiniMax-M3 | 对着检索来源，这条能核的判断是 true / false / partial / unverified | 不许重新分类 |
-| 写报告 ReportComposer | 还是 MiniMax-M3 | 根据前序 JSON 写能信 / 不能信 / 只能信一部分 / 还查不清 | 不许自己想起事实 |
+| 写报告 ReportComposer | 还是 MiniMax-M3 | 根据前序 JSON 直接回答原句；verdictType 用 true / false / mixed_misleading / unverified | 不许自己想起事实；不许把四字章写成第一句 |
 
 代码只读拆题工单上的两个字段决定搜不搜。`verifiable: false` → 不检索、不进真假清单；该条在报告上显示「立场型」「不适用真/假判断」。不要把这叫「灰」——那是内部样式类名，用户看见的是这两句。
 
@@ -105,7 +105,7 @@ conclusion 首句必须是上面四个判断之一。recommendation 只重复判
 
 - 不是「先别转发」公益广告。
 - 不是「转不转」决策工具。
-- 不是「可以说 / 不可以说」的措辞教练。用户语言是 **能信 / 不能信**。
+- 不是「可以说 / 不可以说」的措辞教练。用户要的是对原句的直接回答，不是四字章。
 - 不是给评委看的多 Agent 运维台。多 Agent 是流水线分工。
 - 不是编排框架演示。不迁移 LangGraph / DeepAgents（ADR-002 结论维持）；动态加在证据维度，不加在拓扑维度。
 - 不是自治 Agent。LLM 自主决定路径与判决纪律冲突：不可复现、慢、引用会编。
@@ -130,6 +130,7 @@ conclusion 首句必须是上面四个判断之一。recommendation 只重复判
 - （2026-08-19）《Agentic Design Patterns》21 章对照后已落地：无网址不得真/假；7 条按负荷选 6、未选仍展示为还查不清；eval 能抓半真半假拆反 / 该查不清却下判 / 该搜没搜。总表：`docs/reviews/agentic-patterns/INDEX.md`。验收：`docs/reviews/agentic-patterns/specs/done/`。
 - （2026-08-19）结果页逐条清单改读 `claimItems`：原句序、立场型夹在中间、反证 URL 也能点开。整句判断优先用 `faceVerdict`。本地 Vite `/api/agent/orchestrate(-stream)` 与生产同一条 Case Pipeline，不再走 AgentRuntime 实验床。
 - （2026-08-19）输出语言按工具使用那一章的产品含义收束：结论只来自检索；用户看见的字不露工具名、不写转不转。见第二节「用户看见的字」；代码闸 `mvp/server/src/lib/publicCopy.ts`。
+- （2026-08-27）结论第一句不再盖「能信 / 不能信 / 只能信一部分 / 还查不清」。那四个词留作内部类型。用户看见的是对原句的直接回答。
 
 ## 八、业界对照与差异化（2026-08-15 调研）
 

@@ -11,6 +11,7 @@ import { type AtomSearchBundle } from "./lib/atomSearch.js";
 import { mergeParallelSearchPayloads } from "./lib/atomSearchQuery.js";
 import { applyExclusionLayerToReport } from "./lib/reportAssembly/index.js";
 import { runCasePipeline, type PipelineStep, type RunAgentFn } from "./lib/casePipeline/index.js";
+import { createLoopLlm, modelFromChoice, runClaimLoop, wantsAgentLoop } from "./lib/agentLoop/index.js";
 import { makeRewriteQueryCall } from "./lib/evidenceLoop/index.js";
 import { getMemoryCandidateStore } from "./lib/memoryCandidateHandlers.js";
 import type { MemoryCandidateHit } from "./lib/memoryCandidateTypes.js";
@@ -1096,6 +1097,21 @@ function makeRunAgent(opts: {
         claim = composeClaimWithVision(claim, intake, visualExtraction);
       }
 
+      if (wantsAgentLoop(payload, env)) {
+        const loop = await runClaimLoop({
+          claim,
+          search: makeSearchOneAtom(),
+          callLlm: createLoopLlm({ env, model: modelFromChoice(modelChoice) }),
+          callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
+        });
+        commitFreeCheck(res, ticket);
+        return sendJson(res, 200, {
+          steps: [],
+          finalReport: loop.finalReport,
+          execution: "loop",
+        });
+      }
+
       const runAgent = makeRunAgent({
         claim,
         modelChoice,
@@ -1219,6 +1235,26 @@ function makeRunAgent(opts: {
           });
           throw error;
         }
+      }
+
+      if (wantsAgentLoop(payload, env)) {
+        const loop = await runClaimLoop({
+          claim,
+          search: makeSearchOneAtom(),
+          callLlm: createLoopLlm({ env, model: modelFromChoice(modelChoice) }),
+          callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
+          onEvent: sendEvent,
+        });
+        sendEvent({
+          type: "complete",
+          claim,
+          steps: [],
+          finalReport: loop.finalReport,
+          timestamp: Date.now(),
+        });
+        commitFreeCheck(res, ticket);
+        res.end();
+        return;
       }
 
       const runAgent = makeRunAgent({
@@ -2861,8 +2897,8 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
       : verdictType === "false"
         ? `当前证据不支持该说法。`
         : verdictType === "mixed_misleading"
-          ? `该说法只能信一部分：有真实片段，也有夸大或偷换。`
-          : `该说法目前还查不清。`;
+          ? `这条说法要拆开看：有真实片段，也有夸大或偷换。`
+          : `公开材料还撑不住这条说法。`;
 
   const report: Record<string, unknown> = {
     verdictType,
@@ -2870,8 +2906,8 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
     credibilityScore,
     credibilityLabel,
     recommendation: hasMissingSources
-      ? "还查不清。先把出处补上，再判断能不能信。"
-      : "按现有证据判断能不能信，并标出查不清的部分。",
+      ? "先把出处补上，再判断这句话站不站得住。"
+      : "按现有证据判断原句站不站得住，并标出查不清的部分。",
     summaryForPublic: `${conclusion} 本报告由兜底生成，因为最终写作模型未在服务时间内完成。`,
     whyHardToVerify: [
       reason.slice(0, 220),

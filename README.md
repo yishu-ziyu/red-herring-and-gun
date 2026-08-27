@@ -42,21 +42,16 @@
 
 ## 本地运行
 
-前端：
+一次起前端和 API（Vite 把 `/api` 代理到 Express）：
 
 ```bash
 cd mvp
 npm install
+npm --prefix server install
 npm run dev
 ```
 
-后端：
-
-```bash
-cd mvp/server
-npm install
-npm run dev
-```
+只要 API：`cd mvp/server && npm run dev`（默认 `http://127.0.0.1:3000`）。只要前端、自己已经起了 API：`cd mvp && npm run dev:web`。
 
 构建与测试：
 

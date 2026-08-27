@@ -22,6 +22,7 @@ export interface TodoListProps {
   title?: string;
   defaultCollapsed?: boolean;
   className?: string;
+  hideHead?: boolean;
 }
 
 const cls = (base: string, on?: boolean) => base + (on ? " " + styles.on : "");
@@ -239,6 +240,7 @@ export function TodoList({
   title = "核查计划",
   defaultCollapsed = false,
   className,
+  hideHead = false,
 }: TodoListProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const n = items.length;
@@ -258,6 +260,7 @@ export function TodoList({
       data-testid="investigation-todos"
       data-state={allDone ? "done" : hasError ? "error" : running ? "running" : "idle"}
     >
+      {hideHead ? null : (
       <button
         type="button"
         className={styles.todoHead}
@@ -315,8 +318,9 @@ export function TodoList({
           <RollingCount value={countValue} />
         </span>
       </button>
+      )}
 
-      <div className={styles.todoCollapsible + (collapsed ? " " + styles.isCollapsed : "")}>
+      <div className={styles.todoCollapsible + (!hideHead && collapsed ? " " + styles.isCollapsed : "")}>
         <div className={styles.todoInner}>
           <ul className={styles.todoList}>
             {items.map((item, i) => {

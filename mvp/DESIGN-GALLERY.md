@@ -44,7 +44,7 @@
 
 ## 场景 2 · 判断结果与问题点
 
-**这是什么：** 查完。第一眼是能信 / 不能信 / 还查不清，以及问题在哪。对应 `ResultView`、`DiagnosisBanner`、`ConclusionDockV3`、`ClaimReviewBadge`。半真半假要点名哪一截。
+**这是什么：** 查完。第一眼是对原句的直接回答，以及问题在哪。对应 `ApodexRunView` 的核心结论、`ResultView`。半真半假要点名哪一截。不要盖「能信」四字章。
 
 **视觉约束：** 能信 `#16a34a`、不能信 `#E84A5F`、还查不清 `#d97706`，但**不要用颜色单独表示判断**（须有文字）。一页一个主按钮。判断词是主秀，分数条、Agent 署名、模型名退后。
 
@@ -63,7 +63,7 @@
 
 ## 场景 3 · 过程回看（推理 / 来源 / 引用）
 
-**这是什么：** 过程默认可折起，评委或较真用户再展开。对应 `ThinkingReasoning`、`AgentTraceV3`、`ReasoningTracePanel`、`StreamingReasoningPanel`、`InlineCitations`、`EvidenceChain`、`WebSearch`。来源能点开。
+**这是什么：** 过程默认可折起，评委或较真用户再展开。对应 `ApodexRunView`、`InlineCitations`、`WebSearch`。来源能点开。
 
 **视觉约束：** 不和判断抢第一屏。推理用时、工具调用、模型名放在展开层。引用是脚注节奏（`[n]` → 来源行），不是聊天气泡墙。
 
@@ -99,7 +99,7 @@
 
 ## 场景 5 · API Key / 设置行
 
-**这是什么：** 自带 key、选供应商、测连通。对应 `settings/ApiKeySettings`、`ProviderMark`、`SettingsPanel`。测通后的延迟是附属数字，不是仪表盘。
+**这是什么：** 自带 key、选供应商、测连通。对应 `settings/ApiKeySettings`、`ProviderMark`。测通后的延迟是附属数字，不是仪表盘。
 
 **视觉约束：** 表单行、标签、密文输入、次要按钮。纸色表面，不要「开发者控制台」暗色玻璃。供应商标记安静，不要变成模型秀。
 
