@@ -3,6 +3,7 @@ import {
   applyPublicCopy,
   constrainRecommendation,
   leadWithFace,
+  looksLikeResearchMemo,
   shapeConclusion,
   scrubPublicText,
 } from "./publicCopy";
@@ -23,39 +24,45 @@ describe("scrubPublicText", () => {
 });
 
 describe("leadWithFace", () => {
-  it("无判断词时把还查不清放在句首", () => {
-    expect(leadWithFace("目前没有可点开的出处。", "unverified")).toBe(
-      "还查不清。目前没有可点开的出处。"
-    );
+  it("不把还查不清盖在句首", () => {
+    expect(leadWithFace("目前没有可点开的出处。", "unverified")).toBe("目前没有可点开的出处。");
   });
 
-  it("已有判断词不重复加", () => {
-    expect(leadWithFace("不能信。官方已辟谣。", "false")).toBe("不能信。官方已辟谣。");
+  it("剥掉四字章，留下真正的答案", () => {
+    expect(leadWithFace("不能信。官方已辟谣。", "false")).toBe("官方已辟谣。");
+  });
+
+  it("闸门改判后，用直接回答而不是四字章打头", () => {
+    expect(leadWithFace("能信。全市发钱。", "unverified")).toBe(
+      "公开材料还撑不住判断。全市发钱。"
+    );
   });
 });
 
 describe("constrainRecommendation", () => {
-  it("转发建议收成判断词", () => {
-    expect(constrainRecommendation("先别转发这条。", "false")).toBe("不能信。");
-    expect(constrainRecommendation("请结合 canSay 再传播。", "unverified")).toBe("还查不清。");
+  it("转发建议收成直接回答，不盖四字章", () => {
+    expect(constrainRecommendation("先别转发这条。", "false")).toBe("公开材料不支持这条说法。");
+    expect(constrainRecommendation("请结合 canSay 再传播。", "unverified")).toBe(
+      "公开材料还撑不住判断。"
+    );
   });
 
-  it("已是判断词则保留", () => {
+  it("剥掉四字章，留下依据", () => {
     expect(constrainRecommendation("只能信一部分。前半有出处。", "mixed_misleading")).toBe(
-      "只能信一部分。前半有出处。"
+      "前半有出处。"
     );
   });
 });
 
 describe("shapeConclusion", () => {
-  it("去掉作文开头和行动建议，保留判断打头", () => {
+  it("去掉作文开头和行动建议，第一句是答案不是四字章", () => {
     const out = shapeConclusion(
       "截至目前研究表明属实。官方通报不支持该说法[1]。建议你先观察。仍不能推出全国范围。",
       "false"
     );
-    expect(out.startsWith("不能信")).toBe(true);
+    expect(out.startsWith("不能信")).toBe(false);
+    expect(out.startsWith("官方通报不支持该说法")).toBe(true);
     expect(out).not.toMatch(/截至目前|建议你/);
-    expect(out).toContain("官方通报不支持该说法");
   });
 
   it("超过五句只留前五句", () => {
@@ -91,9 +98,9 @@ describe("applyPublicCopy", () => {
     };
     applyPublicCopy(report);
     expect(report.faceVerdict).toBe("还查不清");
-    expect(String(report.conclusion).startsWith("还查不清")).toBe(true);
+    expect(String(report.conclusion).startsWith("还查不清")).toBe(false);
     expect(String(report.conclusion)).not.toMatch(/ReportComposer|search360/);
-    expect(report.recommendation).toBe("还查不清。");
+    expect(report.recommendation).toBe("公开材料还撑不住判断。");
     expect((report.canSay as string[])[0]).not.toMatch(/FactChecker/);
     expect((report.evidenceChain as Array<{ finding: string }>)[0].finding).not.toMatch(
       /FactChecker/
@@ -101,5 +108,36 @@ describe("applyPublicCopy", () => {
     expect(
       (report.subclaimVerdicts as Array<{ evidence: string }>)[0].evidence
     ).not.toMatch(/Tavily/);
+  });
+
+  it("does not clip a research memo down to five sentences", () => {
+    const memo = [
+      "## 核心结论",
+      "",
+      "**不能信。** 这一判断分两层。",
+      "",
+      "## 一、已核对的事实",
+      "",
+      "| 说法 | 判断 |",
+      "| --- | --- |",
+      "| 必然致癌 | 不成立 |",
+      "",
+      "REFERENCES",
+      "",
+      "1. [WHO](https://www.who.int/food)",
+    ].join("\n");
+    expect(looksLikeResearchMemo(memo)).toBe(true);
+    const report: Record<string, unknown> = {
+      verdictType: "false",
+      conclusion: memo,
+      summaryForPublic: "不能信。",
+      recommendation: "不能信。",
+    };
+    applyPublicCopy(report);
+    expect(String(report.conclusion)).toContain("## 核心结论");
+    expect(String(report.conclusion)).toContain("| 说法 | 判断 |");
+    expect(String(report.conclusion)).toContain("REFERENCES");
+    expect(String(report.conclusion)).toContain("这一判断分两层");
+    expect(String(report.conclusion)).not.toMatch(/## 核心结论\s+\*\*不能信/);
   });
 });

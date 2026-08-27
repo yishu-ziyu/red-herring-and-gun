@@ -25,6 +25,8 @@ import { MissionThoughtFold } from "./mission/MissionThoughtFold";
 import { MissionSearchFold } from "./mission/MissionSearchFold";
 import { MissionPursuitFold } from "./mission/MissionPursuitFold";
 import { MissionThreadAnswer } from "./mission/MissionThreadAnswer";
+import { ApodexRunView } from "./mission/ApodexRunView";
+import { mapShellToApodexRun } from "./mission/apodexRunMap";
 import type { ModelChoiceMap } from "../ModelPicker";
 import { calculateClaimSimilarity, createKnowledgeBase, type KnowledgeBase } from "../../../lib/knowledgeBase";
 import { semanticClaimSimilarity } from "../../../lib/semanticRecall";
@@ -5307,6 +5309,7 @@ export function MissionControlView({
     () => adaptOrchestrateStreamToShell(sseEvents, { claim }),
     [sseEvents, claim]
   );
+  const apodexRun = useMemo(() => mapShellToApodexRun(missionShellModel), [missionShellModel]);
   const missionNarrative = useMemo(
     () => buildVisibleProcessRows(missionShellModel),
     [missionShellModel]
@@ -6134,7 +6137,25 @@ export function MissionControlView({
       </header>
       )}
 
-      <div className="mission-thread">
+      <div className={`mission-thread${useMissionShell ? " mission-thread--desk" : ""}`}>
+        {useMissionShell ? (
+          <ApodexRunView
+            model={apodexRun}
+            elapsedMs={elapsedMs}
+            runStatus={runStatus}
+            onStop={onCancel}
+            stopLabel={
+              isInterruptedFinalReport(finalReport)
+                ? "换一条"
+                : runStatus === "running"
+                  ? "停止"
+                  : "再查一条"
+            }
+            stallNotice={runStatus === "running" ? stallNotice : undefined}
+            fallbackNotice={fallbackNotice}
+          />
+        ) : (
+          <>
         <button className="mission-thread-cancel" type="button" onClick={onCancel}>
           {isInterruptedFinalReport(finalReport)
             ? "换一条"
@@ -6164,6 +6185,9 @@ export function MissionControlView({
         <MissionPursuitFold hops={pursuitHops} live={runStatus === "running"} />
 
         <MissionThreadAnswer finalReport={finalReport} sources={threadSources} />
+
+        </>
+        )}
 
         {!useMissionShell ? (
           <section className="case-workbench-shell case-workbench-shell--stream-only" aria-label="核查卷宗工作区">
@@ -6230,7 +6254,7 @@ export function MissionControlView({
           </section>
         ) : null}
 
-        {fallbackNotice ? (
+        {!useMissionShell && fallbackNotice ? (
           <p className="mission-run-status-notice">{fallbackNotice}</p>
         ) : null}
         {errorMessage && !finalReport ? (

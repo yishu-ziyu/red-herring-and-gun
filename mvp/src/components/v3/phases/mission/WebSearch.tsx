@@ -225,7 +225,7 @@ export function isSearchShellTool(tool: {
   const key = `${tool.toolId ?? ""} ${tool.toolName ?? ""} ${tool.title ?? ""}`
     .toLowerCase()
     .replace(/[\s_-]+/g, "");
-  if (/memorysearch|memorywrite|reportreviewer|vision|stepfun|evidenceloop|evidencepursuit|证据追索|追索证据/.test(key)) return false;
+  if (/memorysearch|memorywrite|reportreviewer|vision|stepfun|evidenceloop|evidencepursuit|证据追索|追索证据|todowrite|任务板/.test(key)) return false;
   if (/search|360|anysearch|metaso|tavily|exa|parallel|serp|bing|google/.test(key)) return true;
   if (tool.result && Array.isArray(tool.result.sources)) return true;
   if (typeof tool.query === "string" && /检索|公开材料/.test(tool.title ?? "")) return true;
