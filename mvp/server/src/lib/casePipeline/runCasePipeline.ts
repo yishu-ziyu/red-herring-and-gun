@@ -502,10 +502,6 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     if (finalReport.verdictType === "false") {
       finalReport.verdictType = "mixed_misleading";
       finalReport._mixedGuard = "有据之真 + 假原子 → mixed（原子级守门）";
-      const conclusion = typeof finalReport.conclusion === "string" ? finalReport.conclusion : "";
-      if (conclusion && !/只能信一部分/.test(conclusion)) {
-        finalReport.conclusion = `只能信一部分。${conclusion}`;
-      }
     }
   }
 
@@ -518,10 +514,6 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     (finalReport.verdictType === "mixed_misleading" || finalReport.verdictType === "unverified")
   ) {
     finalReport.verdictType = "false";
-    const conclusion = typeof finalReport.conclusion === "string" ? finalReport.conclusion : "";
-    if (conclusion && !/不能信/.test(conclusion)) {
-      finalReport.conclusion = `不能信。${conclusion}`;
-    }
   }
 
   finalizeReport?.({

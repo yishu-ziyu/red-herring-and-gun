@@ -8,7 +8,7 @@
  */
 
 import { boundTinyRumorVerdict } from "./atomSearchQuery.js";
-import { applyPublicCopy, faceWord } from "./publicCopy.js";
+import { applyPublicCopy, directAnswer } from "./publicCopy.js";
 
 export interface ReportReviewIssue {
   code: string;
@@ -257,7 +257,7 @@ export function reviewAndRepairReport(
   }
 
   if (!asString(repaired.recommendation)) {
-    repaired.recommendation = `${faceWord(repaired.verdictType)}。`;
+    repaired.recommendation = directAnswer(repaired.verdictType);
   }
 
   if (!Array.isArray(repaired.closureActions) || asArray(repaired.closureActions).length === 0) {
