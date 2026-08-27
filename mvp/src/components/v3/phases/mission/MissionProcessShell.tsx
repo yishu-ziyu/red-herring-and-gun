@@ -6,7 +6,6 @@
  * via buildVisibleProcessRows.
  *
  * antdx variant is frozen: product always renders the token narrative path.
- * MissionProcessShellAntd.tsx is kept on disk but not loaded here.
  */
 import { useMemo, useState } from "react";
 import type { MissionShellModel, ShellToolItem } from "../../../../lib/missionShell";
@@ -450,7 +449,6 @@ export function MissionProcessShell({
   selectedRowKey = null,
   onSelectRow,
 }: MissionProcessShellProps) {
-  // antdx frozen: always token narrative (MissionProcessShellAntd not loaded in product)
   void variant;
   const narrative = useMemo(() => buildVisibleProcessRows(model), [model]);
   const todos = useMemo(() => buildInvestigationTodos(model), [model]);

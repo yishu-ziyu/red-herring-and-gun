@@ -10,7 +10,7 @@
  *   - P1-6 buildBlindSpotReport (盲点视图)
  *
  * 入口：buildEnhancements(report, caseData) → 一次调用聚合所有输出（async）。
- * UI 组件 <EnhancementPanel /> 在 useEffect 中 await result 后渲染。
+ * Pure helper for tests and leftover report chrome. Not on the live claim path.
  */
 
 import type { FinalReport, DemoCase, GradedEvidence, Subclaim } from "./schemas";

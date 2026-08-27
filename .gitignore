@@ -59,3 +59,17 @@ mvp/tmp/
 vendor/
 .worktrees/
 .playwright-mcp/
+
+# Design-study clones (FrontierAgent, visual replica). Not product.
+tmp-apodex-study/
+mvp/apodex-replica/
+
+# Local Teable CLI
+.teable/
+
+# Local agent / IDE scratch
+.agents/
+.cursor/
+.grok/
+skills-lock.json
+

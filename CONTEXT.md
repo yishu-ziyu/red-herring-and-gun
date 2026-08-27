@@ -1,7 +1,7 @@
 # Domain context (claim verification)
 
 Lazy glossary for agents. Product truth remains `docs/PRODUCT_SPEC.md`.  
-用户语言是能信 / 不能信；下表是管线术语，不是产品口号。
+用户看见的是对原句的直接回答。能信 / 不能信 是内部类型（`verdictType` / `faceVerdict`），不是结论第一句。下表是管线术语。
 
 ## Terms
 
@@ -20,10 +20,13 @@ Lazy glossary for agents. Product truth remains `docs/PRODUCT_SPEC.md`.
 
 ## Architecture modules (depth)
 
+运行时怎么接在一起：`docs/ARCHITECTURE.md`。
+
 - `claimAtom` — key, split, merge, self-proof
 - `atomSearch` — select, bundle, bind, `retrieveForAtoms(searchOne)`
 - `evidenceLoop` — trigger, rewrite fallback, bundle merge, budget & stop reasons (ADR-004)
 - `evidencePursuit` — query portfolio, discriminability, evidence gap, RRF, information gain (ADR-005); used by atomSearchQuery + evidenceLoop
 - `reportAssembly` — `assembleFinalReport`
-- `casePipeline` — runCasePipeline (HTTP/SSE are thin adapters)
-- `AgentRuntime` — eval/dev only until migrated (ADR-003)
+- `casePipeline` — **production** orchestrate (`runCasePipeline`). HTTP / SSE are adapters. Default path (ADR-003).
+- `agentLoop` — ReAct execution (`runAgentLoop` + tools + `finalizeLoopReport`). Feature-flagged (ADR-006). Does not own 能信/不能信.
+- `AgentRuntime` — eval / tests leftover. Not the live claim path (ADR-003). Local HTTP is Express.

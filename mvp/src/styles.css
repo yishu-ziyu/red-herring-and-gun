@@ -8370,6 +8370,43 @@ button:disabled {
   position: relative;
 }
 
+.ui-lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ui-lang-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--zt-text-muted, #888);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ui-lang-switch button[aria-pressed="true"] {
+  color: var(--ink, #151821);
+  font-weight: 650;
+}
+
+.ui-lang-switch button:hover {
+  background: rgba(21, 24, 33, 0.05);
+}
+
+.landing-top-corner {
+  position: absolute;
+  top: 18px;
+  right: 24px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .landing-stage {
   flex: 1;
   display: flex;
@@ -8379,10 +8416,7 @@ button:disabled {
 }
 
 .landing-account-bar {
-  position: absolute;
-  top: 18px;
-  right: 24px;
-  z-index: 5;
+  position: static;
   min-height: 40px;
   display: flex;
   align-items: center;
@@ -9553,10 +9587,18 @@ button:disabled {
 }
 
 @media (max-width: 640px) {
+  .landing-top-corner {
+    position: static;
+    align-self: flex-end;
+    margin: 14px 16px 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
   .landing-account-bar {
     position: static;
     align-self: center;
-    margin: 14px 16px 0;
+    margin: 0;
     flex-wrap: wrap;
     justify-content: center;
   }
@@ -19364,6 +19406,13 @@ button:disabled {
   padding: 36px 0 64px;
   display: grid;
   gap: 16px;
+}
+
+.mission-thread--desk {
+  width: min(1120px, calc(100% - 24px));
+  display: block;
+  padding: 12px 0 8px;
+  min-height: 100%;
 }
 
 .mission-thread-cancel {

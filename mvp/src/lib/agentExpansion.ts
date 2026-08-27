@@ -223,6 +223,16 @@ export async function* requestOrchestrateStream(
   const payload: Record<string, unknown> = typeof input === "string" ? { claim } : { claim, intake: input };
   if (memoryRecall) payload.memoryRecall = memoryRecall;
   if (modelChoice && Object.keys(modelChoice).length > 0) payload.modelChoice = modelChoice;
+  if (typeof window !== "undefined") {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("loop") === "1" || params.get("execution") === "loop") {
+        payload.execution = "loop";
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 
   // v2-iteration 2026-07-04: PR-3 Site B (peer spec) — emit trace per SSE event.
   // 不修改 AgentRuntime.ts,此函数作为 SSE adapter 接入 trace collector。
