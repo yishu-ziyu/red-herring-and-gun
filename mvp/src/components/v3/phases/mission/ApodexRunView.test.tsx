@@ -104,4 +104,85 @@ describe("ApodexRunView", () => {
     fireEvent.click(screen.getByRole("button", { name: "再查一条" }));
     expect(onStop).toHaveBeenCalledTimes(1);
   });
+
+  it("complete with onFollowUp: send the follow-up without leaving the thread", () => {
+    const onFollowUp = vi.fn();
+    const model = mapShellToApodexRun(adaptOrchestrateStreamToShell(FIXTURE_COMPLETE));
+    render(
+      <ApodexRunView
+        model={model}
+        runStatus="completed"
+        onStop={() => undefined}
+        onFollowUp={onFollowUp}
+      />
+    );
+
+    const box = screen.getByPlaceholderText("再问一句…");
+    expect(box).toBeEnabled();
+    const send = screen.getByRole("button", { name: "发送" });
+    expect(send).toBeDisabled();
+
+    fireEvent.change(box, { target: { value: "那微波炉加热呢" } });
+    expect(send).toBeEnabled();
+    fireEvent.click(send);
+    expect(onFollowUp).toHaveBeenCalledTimes(1);
+    expect(onFollowUp).toHaveBeenCalledWith("那微波炉加热呢");
+  });
+
+  it("completed runStatus unlocks follow-up even if the model is still marked live", () => {
+    const onFollowUp = vi.fn();
+    const model = mapShellToApodexRun(adaptOrchestrateStreamToShell(FIXTURE_EARLY));
+    expect(model.live).toBe(true);
+    render(
+      <ApodexRunView
+        model={model}
+        runStatus="completed"
+        onStop={() => undefined}
+        onFollowUp={onFollowUp}
+      />
+    );
+    expect(screen.getByPlaceholderText("再问一句…")).toBeEnabled();
+  });
+
+  it("complete with onFollowUp: Enter sends, Shift+Enter does not", () => {
+    const onFollowUp = vi.fn();
+    const model = mapShellToApodexRun(adaptOrchestrateStreamToShell(FIXTURE_COMPLETE));
+    render(
+      <ApodexRunView
+        model={model}
+        runStatus="completed"
+        onStop={() => undefined}
+        onFollowUp={onFollowUp}
+      />
+    );
+
+    const box = screen.getByPlaceholderText("再问一句…");
+    fireEvent.change(box, { target: { value: "那隔夜的鱼呢" } });
+    fireEvent.keyDown(box, { key: "Enter", shiftKey: true });
+    expect(onFollowUp).not.toHaveBeenCalled();
+    fireEvent.keyDown(box, { key: "Enter", shiftKey: false });
+    expect(onFollowUp).toHaveBeenCalledWith("那隔夜的鱼呢");
+  });
+
+  it("prior turns keep the original bubble above the follow-up", () => {
+    const prior = mapShellToApodexRun(adaptOrchestrateStreamToShell(FIXTURE_COMPLETE));
+    const current = {
+      ...mapShellToApodexRun(adaptOrchestrateStreamToShell(FIXTURE_EARLY, { claim: "那微波炉加热呢" })),
+      claim: "那微波炉加热呢",
+    };
+    render(
+      <ApodexRunView
+        model={current}
+        priorTurns={[prior]}
+        runStatus="running"
+        onStop={() => undefined}
+        onFollowUp={() => undefined}
+      />
+    );
+
+    const bubbles = screen.getAllByTestId("claim-bubble");
+    expect(bubbles.map((el) => el.textContent)).toEqual(["隔夜菜加热会致癌吗", "那微波炉加热呢"]);
+    expect(screen.getByPlaceholderText("核查进行中")).toBeDisabled();
+    expect(screen.getByLabelText("发送不可用")).toBeDisabled();
+  });
 });
