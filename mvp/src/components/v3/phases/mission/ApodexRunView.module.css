@@ -364,7 +364,7 @@
   max-height: 120px;
   border: 0;
   resize: none;
-  overflow: hidden;
+  overflow: auto;
   background: transparent;
   font: inherit;
   font-size: 14px;
@@ -390,6 +390,20 @@
   display: grid;
   place-items: center;
   cursor: not-allowed;
+}
+
+.send:not(:disabled) {
+  background: var(--ink, #151821);
+  color: #fff;
+  cursor: pointer;
+}
+
+.send:not(:disabled):hover {
+  background: #2a3040;
+}
+
+.turn + .turn {
+  margin-top: 32px;
 }
 
 .board {
