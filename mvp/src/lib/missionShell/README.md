@@ -4,10 +4,7 @@
 
 ## 试用
 
-```text
-http://127.0.0.1:5180/shell-preview     # fixture-driven process preview
-http://127.0.0.1:5180/?shell=1          # live shell（默认已开）
-```
+直播过程是 `ApodexRunView`。`?shell=legacy` 不是产品路径。
 
 ## 目录
 
@@ -36,8 +33,8 @@ const model = adaptOrchestrateStreamToShell(events, { claim });
 | 组件 | 路径 |
 |------|------|
 | 直播过程 | `components/v3/phases/mission/ApodexRunView.tsx` |
-| 旧叙事壳（侧栏仍会挂） | `.../MissionProcessShell.tsx` |
-| 预览 | `.../MissionShellPreview.tsx` + App `/shell-preview` |
+| 旧叙事壳（非 live 产品路径） | `.../MissionProcessShell.tsx` |
+| 预览 | `.../MissionShellPreview.tsx` |
 | 直播接线 | `MissionControlView` 累积 `sseEvents` → adapter → `mapShellToApodexRun` |
 
 ## 字段映射（SSE → Shell）

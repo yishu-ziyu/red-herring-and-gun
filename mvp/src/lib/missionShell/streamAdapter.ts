@@ -236,7 +236,7 @@ function joinedToolQuery(prev?: string, next?: string): string | undefined {
 /**
  * Reduce a full or partial SSE event list into shell model.
  * Later events overwrite earlier keys (agent/tool identity collapse).
- * Live default: narrative token shell. Opt out `?shell=legacy`. antdx: `?shell=antdx`.
+ * Live UI is ApodexRunView. ?shell=legacy is not a product path.
  */
 
 function extractKeyFindings(report?: Record<string, unknown> | null): string[] {
