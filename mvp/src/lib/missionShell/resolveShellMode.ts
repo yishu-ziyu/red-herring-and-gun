@@ -1,7 +1,7 @@
 /**
- * resolveShellMode — live default is narrative token shell.
- * Opt out with ?shell=legacy | VITE_MISSION_SHELL=legacy|off|0|false
- * Opt into antdx with ?shell=antdx | VITE_MISSION_SHELL=antdx
+ * resolveShellMode — live check is always the product token shell.
+ * ?shell=legacy | ?legacyStream=1 | VITE_MISSION_SHELL=legacy|off|0|false
+ * are not opt-outs. antdx remains a resolver token only; live UI freezes to token.
  */
 
 export type MissionShellVariant = "token" | "antdx";
@@ -11,7 +11,19 @@ export interface ResolvedShellMode {
   variant: MissionShellVariant;
 }
 
-const LEGACY = new Set(["legacy", "off", "0", "false", "no"]);
+export function readLiveShellQuery(
+  search: string | URLSearchParams | null | undefined
+): string | null {
+  if (search == null || search === "") return null;
+  const params =
+    typeof search === "string"
+      ? new URLSearchParams(search.startsWith("?") ? search.slice(1) : search)
+      : search;
+  const shell = params.get("shell");
+  if (shell !== null) return shell;
+  if (params.get("legacyStream") === "1") return "legacy";
+  return null;
+}
 
 export function resolveShellMode(
   shellQuery: string | null | undefined,
@@ -20,14 +32,9 @@ export function resolveShellMode(
   const q = (shellQuery ?? "").trim().toLowerCase();
   const env = (envShell ?? "").trim().toLowerCase();
 
-  if (LEGACY.has(q) || LEGACY.has(env)) {
-    return { enabled: false, variant: "token" };
-  }
-
   if (q === "antdx" || env === "antdx") {
     return { enabled: true, variant: "antdx" };
   }
 
-  // Default: narrative token shell (product decision 2026-08-06)
   return { enabled: true, variant: "token" };
 }
