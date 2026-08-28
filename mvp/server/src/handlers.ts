@@ -27,6 +27,7 @@ import { formatSkillsForPrompt, selectAgentSkills } from "./lib/agentSkills.js";
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
 import { probeModelServiceHealth } from "./lib/modelServiceHealth.js";
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
+import { lookupImageOrigin, visionHintsFromExtraction } from "./lib/imageOrigin/index.js";
 import { computeCredibilityScore, labelForScore, type CredibilityScoreResult } from "./lib/credibilityScore.js";
 import { commitFreeCheck, releaseFreeCheck } from "./lib/checkQuota.js";
 // 审查 P3-2 修复：Anthropic 文本/JSON 提取统一从共享模块引入，不再各处独立定义。
@@ -882,6 +883,25 @@ function makeRunAgent(opts: {
     };
   }
 
+  function makeImageOriginLookup(
+    intake: CaseIntakePayload | null,
+    visualExtraction: Record<string, unknown> | undefined
+  ) {
+    if (!intake?.images.length) return undefined;
+    const hints = visionHintsFromExtraction(visualExtraction);
+    const images = intake.images
+      .filter((image): image is CaseIntakeImagePayload & { dataUrl: string } => typeof image.dataUrl === "string")
+      .map((image) => ({ mimeType: image.type, dataUrl: image.dataUrl }));
+    // Keep bytes in this closure for a reverse-image adapter. Do not log them.
+    // Current 360 / AnySearch / Exa / Tavily / Metaso adapters have no image endpoint.
+    return () =>
+      lookupImageOrigin({
+        images,
+        ocrTexts: hints.ocrTexts,
+        sourceHints: hints.sourceHints,
+      });
+  }
+
   function makeSearchOneAtom() {
     let reuseHitsPromise: Promise<MemoryCandidateHit[]> | undefined;
     return async (atom: string) => {
@@ -1124,6 +1144,7 @@ function makeRunAgent(opts: {
         claim,
         runAgent,
         searchOne: makeSearchOneAtom(),
+        lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
         callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
         runReport: (args) => makeReportRunner(runAgent)(args),
         evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteCaller(modelChoice)) },
@@ -1319,6 +1340,7 @@ function makeRunAgent(opts: {
         claim,
         runAgent,
         searchOne: makeSearchOneAtom(),
+        lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
         callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
         evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteCaller(modelChoice)) },
         crossExam: { callRaw: makeCrossExamCaller(modelChoice, (data) => sendEvent(data)) },
