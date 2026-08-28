@@ -176,6 +176,33 @@ describe("runEvidenceLoop", () => {
     expect(onAtomStopped).toHaveBeenCalledWith({ atom, rounds: 1, reason: "evidence-found" });
   });
 
+  it("截图补查走原图问法，文字命中不写进 imageOrigin", async () => {
+    const shot = "某地地铁已经开通";
+    const shotKey = claimAtomKey(shot);
+    const secondHand = "https://weibo.com/second-hand-repost";
+    const bundle = mkBundle([shot], { [shotKey]: [] });
+    bundle.imageOrigin = { status: "not_found", channel: "none", label: "原图没查到" };
+    const searchOne = vi.fn(async () => ({
+      sources: [{ url: secondHand, title: "转发帖", snippet: "OCR 配文" }],
+    }));
+    const outcome = await runEvidenceLoop({
+      claim: "群里这张截图说某地地铁已经开通",
+      bundle,
+      factVerdicts: [{ claimAtom: shot, verdict: "unverified" }],
+      searchOne,
+      claimAtomKeyFn: claimAtomKey,
+      needImageOrigin: true,
+      maxRounds: 1,
+    });
+    expect(outcome.ran).toBe(true);
+    expect(searchOne.mock.calls.some((c) => String(c[0]).includes("原图"))).toBe(true);
+    expect(bundle.byAtomKey[shotKey]?.some((s) => s.url === secondHand)).toBe(true);
+    expect(bundle.imageOrigin?.url).toBeUndefined();
+    expect(bundle.imageOrigin?.status).not.toBe("found");
+    expect(bundle.imageOrigin?.label).toMatch(/原图没查到|原图出处未查到/);
+    expect(bundle.aggregate.unresolvedEvidenceGaps).toContain("原图没查到");
+  });
+
   it("两轮策略全零新增 → no-new-evidence，不重跑", async () => {
     const bundle = loopBundle();
     const searchOne = vi.fn(async () => ({
@@ -341,6 +368,12 @@ describe("fallbackRewriteQueries", () => {
     expect(fallbackRewriteQueries("某地地震", 2)[0]).toContain("原文");
     expect(fallbackRewriteQueries("某地地震", 3)[0]).toContain("当事方");
     expect(fallbackRewriteQueries("某地地震", 4)[0]).toContain("当事方");
+  });
+
+  it("截图案优先原图/首发，不改非截图配方", () => {
+    const q = fallbackRewriteQueries("某地地铁已经开通", 1, { needImageOrigin: true });
+    expect(q.some((item) => item.includes("原图") && item.includes("出处"))).toBe(true);
+    expect(fallbackRewriteQueries("某地地震", 1)[0]).toContain("官方通报");
   });
 });
 

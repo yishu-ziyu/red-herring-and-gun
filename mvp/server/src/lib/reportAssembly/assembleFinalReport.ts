@@ -18,6 +18,7 @@ import {
 } from "../atomSearch.js";
 import { normalizeReportCitations } from "../citationBinding.js";
 import { applyPublicCopy } from "../publicCopy.js";
+import { applyImageOriginToReport, type ImageOriginResult } from "../imageOrigin/index.js";
 
 export const FACE_VERDICT: Record<string, string> = {
   true: "能信",
@@ -95,6 +96,8 @@ export type AssembleFinalReportInput = {
   verdicts: unknown;
   searchSources?: Array<{ url?: unknown }>;
   atomSearchBundle?: AtomSearchBundle | null;
+  /** Screenshot origin from reverse-image; OCR/text hits are not this field. */
+  imageOrigin?: ImageOriginResult;
 };
 
 export type AssembleFinalReportResult = {
@@ -145,6 +148,7 @@ export function buildClaimItems(
  */
 export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFinalReportResult {
   const { finalReport, rumorStep, verdicts, searchSources, atomSearchBundle } = input;
+  const imageOrigin = input.imageOrigin ?? atomSearchBundle?.imageOrigin;
   if (!finalReport || typeof finalReport !== "object") {
     return {
       subclaimVerdicts: [],
@@ -197,6 +201,7 @@ export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFi
   // Align [n] with final source arrays (conclusion + evidenceChain + claimItems).
   normalizeReportCitations(finalReport);
   applyPublicCopy(finalReport);
+  if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
   merged = Array.isArray(finalReport.subclaimVerdicts)
     ? (finalReport.subclaimVerdicts as SubclaimVerdict[])
     : merged;
