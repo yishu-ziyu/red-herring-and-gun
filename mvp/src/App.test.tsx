@@ -463,7 +463,9 @@ describe("landing Version A storytelling", () => {
     expect(screen.getByLabelText("历史卷宗")).toBeInTheDocument();
     expect(screen.getByLabelText("核查卷宗")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "新查一条" })).toBeInTheDocument();
-    expect(screen.getByText("贴进来。追出处。告诉你能不能信。")).toBeInTheDocument();
+    const landingMission = document.querySelector(".landing-mission");
+    expect(landingMission).toHaveTextContent("贴进来。追出处。");
+    expect(landingMission).not.toHaveTextContent("能不能信");
     expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "隔夜菜会致癌，等于吃毒药" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "5G信号塔辐射导致周边居民头晕失眠" })).toBeInTheDocument();

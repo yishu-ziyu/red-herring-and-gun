@@ -318,7 +318,7 @@ export function Dashboard({
                 <span className="landing-title-dark">枪</span>
               </h1>
             </div>
-            <p className="landing-mission">贴进来。追出处。告诉你能不能信。</p>
+            <p className="landing-mission">贴进来。追出处。</p>
           </div>
         </section>
 
