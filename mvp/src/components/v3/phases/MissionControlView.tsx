@@ -14,17 +14,9 @@ import {
   type OrchestrateStreamEvent,
   type SpeculativeRelayUpdate,
 } from "../../../lib/agentExpansion";
-import { adaptOrchestrateStreamToShell, buildVisibleProcessRows, humanizeVerdictType } from "../../../lib/missionShell";
-import { collectReasoningSentences } from "../../../lib/reasoningThoughts";
-import { collectThreadSources, threadSearchQuery, threadSearchStatus } from "../../../lib/threadSearch";
-import { formatPursuitDetail, hopsFromReport, hopsFromTools } from "../../../lib/evidencePursuitUi";
+import { adaptOrchestrateStreamToShell, humanizeVerdictType } from "../../../lib/missionShell";
+import { formatPursuitDetail } from "../../../lib/evidencePursuitUi";
 import { isChecksExhaustedMessage } from "../../../lib/checkQuota";
-import { resolveShellMode } from "../../../lib/missionShell/resolveShellMode";
-import { MissionProcessShell } from "./mission/MissionProcessShell";
-import { MissionThoughtFold } from "./mission/MissionThoughtFold";
-import { MissionSearchFold } from "./mission/MissionSearchFold";
-import { MissionPursuitFold } from "./mission/MissionPursuitFold";
-import { MissionThreadAnswer } from "./mission/MissionThreadAnswer";
 import { ApodexRunView } from "./mission/ApodexRunView";
 import { mapShellToApodexRun, type ApodexRunModel } from "./mission/apodexRunMap";
 import { composeFollowUpClaim, previousAnswerText } from "../../../lib/composeFollowUpClaim";
@@ -48,8 +40,6 @@ import { buildSearchJobs, executeSearchJobs } from "../../../lib/evidenceSearchR
 import { evaluateConsensus } from "../../../lib/evidenceConsensus";
 import type { ChunkType, StreamingChunk, StreamingReasoningSession } from "../../../lib/streamingTypes";
 import { AgentStatusDot } from "../mission/AgentStatusDot";
-import { ReasoningTracePanel } from "../panels/ReasoningTracePanel";
-import { getTraceCollector } from "../../../lib/reasoningTrace";
 import type { CaseIntake } from "../../../lib/caseIntake";
 import type { MemoryCandidate, MemoryCandidateStatus } from "../../../lib/agentRuntime/memoryCandidateTypes";
 import { getAgentContract, getAgentRegistry } from "../../../lib/agentConfigs";
@@ -4131,19 +4121,6 @@ function ControllerRail({
       ) : null}
 
       <div className="controller-transcript-flow stream-rail-flow" ref={flowRef}>
-        {useMissionShell && missionShellModel ? (
-          <div className="mps-live-wrap mps-live-wrap--narrative">
-            <MissionProcessShell
-              model={missionShellModel}
-              variant={missionShellVariant ?? "token"}
-              claimInParent
-              deskMode
-              selectedRowKey={selectedShellRowKey ?? null}
-              onSelectRow={onSelectShellRow}
-              onSelectTool={onSelectShellTool}
-            />
-          </div>
-        ) : null}
         {!useMissionShell && !hasItems ? (
           <motion.p
             className="stream-boot-hint"
@@ -4187,17 +4164,6 @@ function ControllerRail({
               </motion.section>
             ))}
           </AnimatePresence>
-        ) : null}
-        {/* Shell 已挂载时由 mps-empty 承担空态；仅模型尚未就绪时显示启动提示，避免双空态 */}
-        {useMissionShell && !missionShellModel ? (
-          <motion.p
-            className="stream-boot-hint"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.3, ease: EASE_OUT }}
-          >
-            已提交材料。思考、检索与协作角色会按时间顺序出现在这里。
-          </motion.p>
         ) : null}
       </div>
     </aside>
@@ -5299,47 +5265,11 @@ export function MissionControlView({
   const [displayClaim, setDisplayClaim] = useState(claim);
   const [streamKey, setStreamKey] = useState(0);
   const streamJobRef = useRef<string | CaseIntake>(intake ?? claim);
-  const searchParams =
-    typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const shellQuery = searchParams?.get("shell") ?? null;
-  /** Live default = narrative token shell. Opt out: ?shell=legacy | ?legacyStream=1 | VITE_MISSION_SHELL=legacy */
-  const shellMode = resolveShellMode(
-    shellQuery === null && searchParams?.get("legacyStream") === "1" ? "legacy" : shellQuery,
-    import.meta.env.VITE_MISSION_SHELL as string | undefined
-  );
-  const useMissionShell = shellMode.enabled;
-  /** Product path freezes antdx → always token even if resolve says antdx */
-  const missionShellVariant: "token" | "antdx" = "token";
   const missionShellModel = useMemo(
     () => adaptOrchestrateStreamToShell(sseEvents, { claim: displayClaim }),
     [sseEvents, displayClaim]
   );
   const apodexRun = useMemo(() => mapShellToApodexRun(missionShellModel), [missionShellModel]);
-  const missionNarrative = useMemo(
-    () => buildVisibleProcessRows(missionShellModel),
-    [missionShellModel]
-  );
-  const thoughtSentences = useMemo(
-    () => collectReasoningSentences(missionShellModel?.thoughtItems),
-    [missionShellModel]
-  );
-  const threadSources = useMemo(
-    () => collectThreadSources(missionShellModel?.tools, finalReport),
-    [missionShellModel, finalReport]
-  );
-  const searchStatus = useMemo(
-    () => threadSearchStatus(missionShellModel?.tools, finalReport),
-    [missionShellModel, finalReport]
-  );
-  const searchQuery = useMemo(
-    () => threadSearchQuery(missionShellModel?.tools),
-    [missionShellModel]
-  );
-  const pursuitHops = useMemo(() => {
-    const live = hopsFromTools(missionShellModel?.tools ?? []);
-    if (live.length > 0) return live;
-    return hopsFromReport(finalReport);
-  }, [missionShellModel, finalReport]);
   /** Avoid double-firing onComplete if parent re-renders with same report */
   const onCompleteFiredRef = useRef(false);
 
@@ -5992,13 +5922,6 @@ export function MissionControlView({
     [streamItems, runStatus]
   );
   const latestControllerEvent = controllerEvents[controllerEvents.length - 1] ?? null;
-  const activeControllerEvent = useMemo(
-    () =>
-      controllerEvents.find((event) => event.id === activeControllerEventId) ??
-      latestControllerEvent ??
-      null,
-    [activeControllerEventId, controllerEvents, latestControllerEvent]
-  );
   const evidenceBundleCount = useMemo(
     () => steps.filter((step) => step.evidenceBundle).length,
     [steps]
@@ -6060,14 +5983,6 @@ export function MissionControlView({
     }
   }, [knowledgeBase]);
 
-  /* ── 阶段判定：当前该看什么 ─────────────────────────────────── */
-  const displayPhase = useMemo(() => {
-    if (finalReport) return "verdict";
-    if (state.consensusReport) return "evidence";
-    if (state.claimDecomposition) return "search";
-    return "agents";
-  }, [finalReport, state.consensusReport, state.claimDecomposition]);
-
   useEffect(() => {
     if (runStatus === "running") {
       setWorkbenchFocus("dispatch");
@@ -6078,30 +5993,6 @@ export function MissionControlView({
     if (!latestControllerEvent || !followLive) return;
     setActiveControllerEventId(latestControllerEvent.id);
   }, [latestControllerEvent, followLive]);
-
-  const handleWorkbenchFocusChange = useCallback((focus: WorkbenchFocus) => {
-    setSelectedAgentId("");
-    setWorkbenchFocus(focus);
-  }, []);
-
-  const handleSelectControllerEvent = useCallback(
-    (event: ControllerProcessEvent) => {
-      setSelectedAgentId("");
-      setActiveControllerEventId(event.id);
-      setWorkbenchFocus(event.focus);
-      const isLatest = event.id === latestControllerEvent?.id;
-      setFollowLive(isLatest && runStatus === "running");
-    },
-    [latestControllerEvent?.id, runStatus]
-  );
-
-  const handleFollowLive = useCallback(() => {
-    setFollowLive(true);
-    if (latestControllerEvent) {
-      setActiveControllerEventId(latestControllerEvent.id);
-      setWorkbenchFocus(latestControllerEvent.focus);
-    }
-  }, [latestControllerEvent]);
 
   const handleFollowUp = useCallback(
     (text: string) => {
@@ -6128,172 +6019,33 @@ export function MissionControlView({
     [apodexRun, claim, displayClaim, intake, priorTurns, runStatus]
   );
 
-  const stageIdx = humanStageIndex(humanStage);
-  const hasStreamEvents = controllerEvents.length > 0 || (useMissionShell && sseEvents.length > 0);
-  /** Live execution: only top bar + process shell — no dual column / empty right grid. */
-  const isLiveExecuting = runStatus === "running" || (runStatus === "idle" && !finalReport && !errorMessage);
-  /**
-   * Shell path is a two-pane desk: left speech, right work surface.
-   * Legacy stays stream-only while running.
-   */
-  const streamOnlyLayout = !useMissionShell && (runStatus === "running" || isLiveExecuting);
-  // Legacy: after stop, allow detail when user inspects history or report is present without parent handoff.
-  const showDetailColumn =
-    !streamOnlyLayout &&
-    !useMissionShell &&
-    (Boolean(finalReport && !onComplete) || Boolean(errorMessage) || !followLive);
+  const hasStreamEvents = controllerEvents.length > 0 || sseEvents.length > 0;
   return (
     <main
       className={`mission-control-view case-workbench-view case-workbench-view--clean case-dossier-view ${
         hasStreamEvents ? "case-dossier-view--streaming" : "case-dossier-view--boot"
-      }${useMissionShell ? " case-dossier-view--shell" : ""}${
-        streamOnlyLayout ? " case-workbench-view--stream-executing" : ""
-      }${finalReport && onComplete ? " case-workbench-view--settled" : ""} mission-thread-view`}
+      } case-dossier-view--shell${
+        finalReport && onComplete ? " case-workbench-view--settled" : ""
+      } mission-thread-view`}
     >
-      {useMissionShell ? null : (
-      <header className="mission-topbar">
-        <div className="mission-brand">
-          <strong>红鲱鱼与枪</strong>
-          <span>核查卷宗</span>
-        </div>
-        <div className="mission-phase-indicator">
-          <span className={`mission-phase-dot mission-phase-dot--${displayPhase}`} />
-          <span className="mission-phase-label">{humanStage}</span>
-        </div>
-        <button className="mission-cancel-btn" type="button" onClick={onCancel}>
-          {isInterruptedFinalReport(finalReport)
-            ? "换一条"
-            : finalReport && onComplete
-              ? "再查一条"
-              : runStatus === "completed"
-                ? "返回"
-                : "取消核查"}
-        </button>
-      </header>
-      )}
-
-      <div className={`mission-thread${useMissionShell ? " mission-thread--desk" : ""}`}>
-        {useMissionShell ? (
-          <ApodexRunView
-            model={apodexRun}
-            elapsedMs={elapsedMs}
-            runStatus={runStatus}
-            onStop={onCancel}
-            stopLabel={
-              isInterruptedFinalReport(finalReport)
-                ? "换一条"
-                : runStatus === "running"
-                  ? "停止"
-                  : "再查一条"
-            }
-            stallNotice={runStatus === "running" ? stallNotice : undefined}
-            fallbackNotice={fallbackNotice}
-            priorTurns={priorTurns}
-            onFollowUp={previewMode ? undefined : handleFollowUp}
-          />
-        ) : (
-          <>
-        <button className="mission-thread-cancel" type="button" onClick={onCancel}>
-          {isInterruptedFinalReport(finalReport)
-            ? "换一条"
-            : finalReport && onComplete
-              ? "再查一条"
-              : runStatus === "completed"
-                ? "返回"
-                : "取消核查"}
-        </button>
-
-        <section className="mission-thread-claim" aria-label="核查对象">
-          <span>核查对象</span>
-          <p>{claim}</p>
-        </section>
-
-        {runStatus === "running" && stallNotice ? (
-          <p className="mission-run-status-notice">{stallNotice}</p>
-        ) : null}
-
-        <MissionThoughtFold
-          thinking={runStatus === "running" || (runStatus === "idle" && !finalReport && !errorMessage)}
+      <div className="mission-thread mission-thread--desk">
+        <ApodexRunView
+          model={apodexRun}
           elapsedMs={elapsedMs}
-          sentences={thoughtSentences}
+          runStatus={runStatus}
+          onStop={onCancel}
+          stopLabel={
+            isInterruptedFinalReport(finalReport)
+              ? "换一条"
+              : runStatus === "running"
+                ? "停止"
+                : "再查一条"
+          }
+          stallNotice={runStatus === "running" ? stallNotice : undefined}
+          fallbackNotice={fallbackNotice}
+          priorTurns={priorTurns}
+          onFollowUp={previewMode ? undefined : handleFollowUp}
         />
-
-        <MissionSearchFold status={searchStatus} sources={threadSources} query={searchQuery} />
-        <MissionPursuitFold hops={pursuitHops} live={runStatus === "running"} />
-
-        <MissionThreadAnswer finalReport={finalReport} sources={threadSources} />
-
-        </>
-        )}
-
-        {!useMissionShell ? (
-          <section className="case-workbench-shell case-workbench-shell--stream-only" aria-label="核查卷宗工作区">
-            <ControllerRail
-              controllerEvents={controllerEvents}
-              activeControllerEventId={activeControllerEvent?.id ?? ""}
-              followLive={followLive}
-              onSelectControllerEvent={handleSelectControllerEvent}
-              onFollowLive={handleFollowLive}
-              claim={claim}
-              stageIdx={stageIdx}
-              finalReport={finalReport}
-              runStatus={runStatus}
-              missionShellModel={missionShellModel}
-              useMissionShell={useMissionShell}
-              missionShellVariant={missionShellVariant}
-              selectedShellAgentId={selectedAgentId}
-              onSelectShellAgent={setSelectedAgentId}
-              selectedShellRowKey={
-                followLive
-                  ? missionNarrative.rows.find((r) => r.isCurrent)?.key ?? selectedShellRowKey
-                  : selectedShellRowKey
-              }
-              onSelectShellRow={(rowKey) => {
-                setSelectedShellRowKey(rowKey);
-                setFollowLive(false);
-              }}
-            />
-
-            {showDetailColumn ? (
-              <section className="case-center-column" aria-label="核心工作区">
-                <AnimatePresence initial={false}>
-                  {finalReport && !onComplete ? (
-                    <motion.div
-                      key="mission-final-report-stream"
-                      initial={{ opacity: 0, y: 18 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.28, ease: EASE_OUT }}
-                    >
-                      <MissionFinalReportPanel claim={claim} finalReport={finalReport} onRetry={onRetry} />
-                    </motion.div>
-                  ) : null}
-                </AnimatePresence>
-                {activeControllerEvent ? (
-                  <ControllerEventDetailPanel
-                    claim={claim}
-                    event={activeControllerEvent}
-                    steps={steps}
-                    outputItems={outputItems}
-                    controllerEvents={controllerEvents}
-                    finalReport={finalReport}
-                    executionPlan={executionPlan}
-                    runStatus={runStatus}
-                    errorMessage={errorMessage}
-                    followLive={followLive}
-                    onSelectControllerEvent={handleSelectControllerEvent}
-                  />
-                ) : !finalReport ? (
-                  <p className="stream-detail-placeholder">点选左侧任一步，明细在此展开。</p>
-                ) : null}
-              </section>
-            ) : null}
-          </section>
-        ) : null}
-
-        {!useMissionShell && fallbackNotice ? (
-          <p className="mission-run-status-notice">{fallbackNotice}</p>
-        ) : null}
         {errorMessage && !finalReport ? (
           <p className="mission-run-status-notice" role="alert">
             {errorMessage}
@@ -6301,12 +6053,6 @@ export function MissionControlView({
         ) : null}
       </div>
 
-      {/* Product shell path: no parallel trace rail. Legacy only, and never while running. */}
-      {!useMissionShell && runStatus !== "running" ? (
-        <ReasoningTracePanel sessionId={getTraceCollector().getSessionId() ?? undefined} />
-      ) : null}
-
-      {/* Consensus drawer only when user explicitly opened a proposition (not during live stream panels) */}
       {state.consensusReport && runStatus !== "running" ? (
         <EvidenceDetailDrawer
           isOpen={Boolean(selectedPropositionId)}
