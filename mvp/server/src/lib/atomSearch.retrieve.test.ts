@@ -96,4 +96,24 @@ describe("retrieveForAtoms", () => {
     expect(searchOne).toHaveBeenCalledTimes(1);
     expect(searchOne).toHaveBeenCalledWith("隔夜菜含细菌");
   });
+
+  it("lookupImageOrigin 与文字检索分开：二手帖进 bundle，不进 imageOrigin", async () => {
+    const secondHand = "https://weibo.com/second-hand-repost";
+    const searchOne = vi.fn(async () => ({
+      sources: [{ url: secondHand, title: "转发帖", snippet: "OCR 配文" }],
+    }));
+    const { atomSearchBundle } = await retrieveForAtoms({
+      claimAtoms: ["某地地铁已经开通"],
+      claimAtomTypes: [{ text: "某地地铁已经开通", verifiable: true, type: "fact" }],
+      searchOne,
+      lookupImageOrigin: async () => {
+        throw new Error("no reverse-image vendor");
+      },
+    });
+    expect(atomSearchBundle.byAtomKey["某地地铁已经开通"]?.[0]?.url).toBe(secondHand);
+    expect(atomSearchBundle.imageOrigin?.url).toBeUndefined();
+    expect(atomSearchBundle.imageOrigin?.status).not.toBe("found");
+    expect(atomSearchBundle.imageOrigin?.label).toMatch(/原图没查到|原图出处未查到/);
+    expect(atomSearchBundle.aggregate.unresolvedEvidenceGaps).toContain("原图没查到");
+  });
 });

@@ -18,6 +18,11 @@ import {
   bindRelatedSourcesOnly,
   stripCitationMarkers,
 } from "./citationBinding.js";
+import {
+  attachImageOriginToBundle,
+  safeLookupImageOrigin,
+  type ImageOriginResult,
+} from "./imageOrigin/index.js";
 
 export const MAX_ATOM_SEARCHES = 6;
 /** @deprecated 用 claimAtom.MAX_CLAIM_ATOMS */
@@ -72,6 +77,8 @@ export type AtomSearchBundle = {
     perAtom: Record<string, FilterMeta>;
     totals: FilterMeta;
   };
+  /** Screenshot origin — reverse-image only; never filled from OCR/text hits. */
+  imageOrigin?: ImageOriginResult;
 };
 
 function asSourceList(result: unknown): FilterableSource[] {
@@ -384,12 +391,22 @@ export async function retrieveForAtoms(options: {
   searchOne: SearchOneAtom;
   hooks?: RetrieveForAtomsHooks;
   claimAtomKeyFn?: (s: string) => string;
-}): Promise<{ atomsToSearch: string[]; atomSearchBundle: AtomSearchBundle; search360Result: AtomSearchBundle["aggregate"] }> {
+  /** Screenshot reverse-image lookup, beside searchOne. OCR/text hits must not fill origin. */
+  lookupImageOrigin?: () => Promise<ImageOriginResult>;
+}): Promise<{
+  atomsToSearch: string[];
+  atomSearchBundle: AtomSearchBundle;
+  search360Result: AtomSearchBundle["aggregate"];
+  imageOrigin?: ImageOriginResult;
+}> {
   const keyFn = options.claimAtomKeyFn ?? claimAtomKey;
   const listed = listAtomsForSearch(options.claimAtoms, options.claimAtomTypes);
   const atomsToSearch = selectAtomsToSearch(listed.verifiable, listed.typeByKey);
   const mode = options.hooks?.mode ?? "parallel";
   const items: AtomSearchItem[] = [];
+  const originPromise = options.lookupImageOrigin
+    ? safeLookupImageOrigin(options.lookupImageOrigin)
+    : Promise.resolve(undefined);
 
   if (mode === "sequential") {
     for (const atom of atomsToSearch) {
@@ -411,9 +428,12 @@ export async function retrieveForAtoms(options: {
   }
 
   const atomSearchBundle = buildAtomSearchBundle(items, keyFn);
+  const imageOrigin = await originPromise;
+  if (imageOrigin) attachImageOriginToBundle(atomSearchBundle, imageOrigin);
   return {
     atomsToSearch,
     atomSearchBundle,
     search360Result: atomSearchBundle.aggregate,
+    imageOrigin: atomSearchBundle.imageOrigin,
   };
 }
