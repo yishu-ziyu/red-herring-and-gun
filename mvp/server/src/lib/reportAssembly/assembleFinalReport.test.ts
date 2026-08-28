@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { assembleFinalReport, buildClaimItems, deriveOverallVerdict } from "./assembleFinalReport";
+import { resolveImageOrigin } from "../imageOrigin/imageOrigin";
 
 describe("assembleFinalReport", () => {
   it("可核查进 subclaimVerdicts，立场进 nonVerifiableAtoms，claimItems 原句序", () => {
@@ -43,6 +44,33 @@ describe("assembleFinalReport", () => {
       verdicts: [{ claimAtom: "A", verdict: "false", evidence: "e", boundary: "b" }],
     });
     expect(finalReport.faceVerdict).toBe("不能信");
+  });
+
+  it("截图 origin 只来自 imageOrigin，文字检索 URL 不当成这张图的来源", () => {
+    const secondHand = "https://weibo.com/second-hand-repost";
+    const finalReport: Record<string, unknown> = {
+      verdictType: "unverified",
+      conclusion: `这张图的来源是 ${secondHand}。配文还查不清。`,
+    };
+    assembleFinalReport({
+      finalReport,
+      rumorStep: {
+        output: {
+          claimAtoms: ["某地地铁已经开通"],
+          claimAtomTypes: [{ text: "某地地铁已经开通", verifiable: true, type: "fact" }],
+        },
+      },
+      verdicts: [{ claimAtom: "某地地铁已经开通", verdict: "unverified", evidence: "e", boundary: "b" }],
+      searchSources: [{ url: secondHand }],
+      imageOrigin: resolveImageOrigin({
+        reverseImageHits: [],
+        textSearchHits: [{ url: secondHand, title: "转发帖" }],
+      }),
+    });
+    const origin = finalReport.imageOrigin as { url?: string; label?: string };
+    expect(origin.url).toBeUndefined();
+    expect(origin.label).toMatch(/原图没查到|原图出处未查到/);
+    expect(String(finalReport.conclusion)).not.toMatch(/这张图的来源/);
   });
 });
 

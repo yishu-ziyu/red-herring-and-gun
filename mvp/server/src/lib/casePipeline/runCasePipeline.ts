@@ -39,6 +39,10 @@ import {
 } from "../evidenceLoop/index.js";
 import { compactPursuitHops, type PursuitHop } from "../evidencePursuit/index.js";
 import {
+  applyImageOriginToReport,
+  type ImageOriginResult,
+} from "../imageOrigin/index.js";
+import {
   findCrossExamTargets,
   makeSecondOpinionCall,
   runCrossExam,
@@ -160,6 +164,11 @@ export type CasePipelineInput = {
    * When omitted, candidates are still built and returned (no I/O).
    */
   memoryCandidateStore?: MemoryCandidateStore;
+  /**
+   * Screenshot reverse-image lookup (P2 origin gate). Beside searchOne.
+   * OCR/text hits must not become image origin.
+   */
+  lookupImageOrigin?: () => Promise<ImageOriginResult>;
 };
 
 export type CasePipelineResult = {
@@ -178,6 +187,8 @@ export type CasePipelineResult = {
   /** cross exam outcome — G3/P1（未开启 / 无冲突 / 无注入时为 undefined） */
   crossExam?: CrossExamOutcome;
   runId: string;
+  /** Screenshot origin from reverse-image; absent when the case has no image. */
+  imageOrigin?: ImageOriginResult;
 };
 
 const REPORT_REVIEWER_TOOL = "Report Reviewer (proposer-reviewer)";
@@ -281,18 +292,20 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   rumorStep.output.claimAtomTypes = forceCheckableAtomTypes(rumorStep.output.claimAtomTypes);
   hooks?.onSelfProof?.(selfProof);
 
-  // Phase 1b: per-atom retrieval
+  // Phase 1b: per-atom retrieval (+ screenshot reverse-image beside searchOne)
   const { atomSearchBundle, search360Result } = await retrieveForAtoms({
     claimAtoms: rumorStep.output.claimAtoms,
     claimAtomTypes: rumorStep.output.claimAtomTypes,
     searchOne,
     claimAtomKeyFn: claimAtomKey,
+    lookupImageOrigin: input.lookupImageOrigin,
     hooks: {
       mode: hooks?.searchMode ?? "parallel",
       onAtomStart: hooks?.onAtomSearchStart,
       onAtomResult: hooks?.onAtomSearchResult,
     },
   });
+  const imageOrigin = atomSearchBundle.imageOrigin;
 
   // Phase 2: FactChecker // SourceValidator — fail-open so检索到的 URL 仍能进报告
   const [factSettled, sourceSettled] = await Promise.allSettled([
@@ -348,6 +361,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
         maxRounds: roundsPerPass,
         startRound: (passes - 1) * roundsPerPass + 1,
         seedQueriesByAtomKey,
+        needImageOrigin: Boolean(input.lookupImageOrigin),
         hooks: {
           onLoopStart: hooks?.onEvidenceLoopStart,
           onRoundStart: hooks?.onEvidenceLoopRoundStart,
@@ -484,6 +498,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     verdicts: verdictSource,
     searchSources: (search360Result as { sources?: Array<{ url?: unknown }> })?.sources,
     atomSearchBundle,
+    imageOrigin,
   });
 
   // 原子级整句守门（确定性收束）——「分截判决」的收束端：
@@ -566,6 +581,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   Object.assign(finalReport, review.repaired);
   // Reviewer may pad evidenceChain / rewrite conclusion — re-bind [n] to sources.
   normalizeReportCitations(finalReport);
+  if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
   finalReport.faceVerdict = faceVerdictFor(finalReport.verdictType);
   reportStep.output = finalReport;
   hooks?.onReportReviewResult?.({
@@ -612,5 +628,6 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     evidenceLoop,
     crossExam,
     runId,
+    imageOrigin,
   };
 }
