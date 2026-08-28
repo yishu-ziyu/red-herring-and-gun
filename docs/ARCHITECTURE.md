@@ -68,9 +68,9 @@ HTTP 只该是薄 adapter。`handlers.ts`（约 3700 行）不该再往里堆产
    生产与本地核查都走 Express：`mvp/server/src/index.ts` → `handlers.ts`。  
    Vite 只代理 `/api`、`/health`、`/mcp`、`/r`。不要再往 `vite.config.ts` 里写编排。
 
-3. **过程壳两套代码还在**  
-   默认只画 `ApodexRunView`。  
-   `?shell=legacy` 和 `/shell-preview` 仍走 `MissionProcessShell`。同一文件里两套过程 UI，用户默认看不到旧的那套。
+3. **过程壳（live 已只留 ApodexRunView）**  
+   核查过程只画 `ApodexRunView`。`?shell=legacy` / `?legacyStream=1` 不再切回旧轨。  
+   `/shell-preview` 仍可打开 `MissionProcessShell`，不是产品路径。`MissionControlView` 里还有未挂载的 controller 残骸，拆文件时再清。
 
 客户端 `mvp/src/lib` 与服务端 `mvp/server/src/lib` 还有约 10 个同名文件（部分是有意再导出，部分是历史拷贝）。不要在两边各写一套判决。
 
@@ -104,8 +104,8 @@ claim
 ## 下一刀（按这个顺序）
 
 1. ~~开发 HTTP 只代理 Express~~（已做）。AgentRuntime 已不在本地 HTTP 上，eval 迁完即可删。  
-2. 过程只留 `ApodexRunView`，从 `MissionControlView` 拿掉 legacy 过程轨。  
+2. ~~过程只留 `ApodexRunView`，从 live 路径拿掉 legacy 过程轨~~（已做）。`?shell=legacy` 不是产品路径。  
 3. ~~`runAgentLoop` feature-flag 与 `casePipeline` 并列~~（ADR-006，默认关）。直到判断质量不低于现管线之前，不切默认。  
-4. 再拆 `MissionControlView` / `handlers.ts`。
+4. 再拆 `MissionControlView` / `handlers.ts`。截图原图闸已进 Case Pipeline（`imageOrigin`）；现网检索适配器还没有以图搜图，所以有图时会写「原图没查到」，不会把 OCR 二手帖当图源。真正能点到更早出处，要等接上以图搜图适配器。`AGENT_LOOP=1` 那条路还没接这道闸。
 
 不要从删判决模块开始。不要把研究克隆提交进仓库。
