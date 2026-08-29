@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { runDemoPipeline, assertRelevantCase, getDemoCase } from "./pipeline";
-import { demoCase } from "../data/demoCase";
+import { demoCase } from "../data/aiContentJobsCase";
 
 describe("assertRelevantCase", () => {
   it("returns true when input is highly similar to first subclaim", () => {
