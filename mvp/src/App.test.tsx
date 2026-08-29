@@ -70,6 +70,32 @@ describe("model settings preview", () => {
   });
 });
 
+describe("removed preview routes", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mockModelsList(FAKE_MODELS);
+  });
+
+  it.each(["/demo", "/shell-preview", "/process-preview", "/result-preview"])(
+    "%s falls through to the landing desk",
+    async (pathname) => {
+      window.history.pushState({}, "", pathname);
+
+      render(<App />);
+
+      expect(await screen.findByText("贴进来。追出处。")).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "隔夜菜会致癌，等于吃毒药" })).toBeInTheDocument();
+      expect(screen.queryByLabelText("核心结论")).not.toBeInTheDocument();
+    }
+  );
+});
+
 describe("real analysis workspace", () => {
   afterEach(() => {
     cleanup();

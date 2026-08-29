@@ -1,5 +1,5 @@
 /**
- * TodoList — investigation checklist for MissionProcessShell.
+ * TodoList — investigation checklist for the live run surface.
  *
  * Items and status come from MissionShellModel (SSE-derived), not a demo timer.
  * Presentation only: collapse, roll count, active shimmer.

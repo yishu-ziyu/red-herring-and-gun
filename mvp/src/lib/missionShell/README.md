@@ -21,11 +21,9 @@
 import { adaptOrchestrateStreamToShell } from "./missionShell";
 
 const model = adaptOrchestrateStreamToShell(events, { claim });
-// model.thoughtItems → MissionProcessShell ThoughtChain
-// model.tools → 动作条
-// model.agents → 集群芯片
-// model.verdict → 完成态判决
-// model.errorMessage → 中断卡（role=alert）
+// model.thoughtItems / model.tools / model.agents → ApodexRunView 过程条目
+// model.verdict → ApodexRunView 完成态判断
+// model.errorMessage → ApodexRunView 中断提示（role=alert）
 ```
 
 ## UI
@@ -33,8 +31,6 @@ const model = adaptOrchestrateStreamToShell(events, { claim });
 | 组件 | 路径 |
 |------|------|
 | 直播过程 | `components/v3/phases/mission/ApodexRunView.tsx` |
-| 旧叙事壳（非 live 产品路径） | `.../MissionProcessShell.tsx` |
-| 预览 | `.../MissionShellPreview.tsx` |
 | 直播接线 | `MissionControlView` 累积 `sseEvents` → adapter → `mapShellToApodexRun` |
 
 ## 字段映射（SSE → Shell）
