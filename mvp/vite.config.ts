@@ -2,7 +2,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type ProxyOptions } from "vite";
 
 /**
- * Vite is the frontend only. Local /api (and /health /mcp /r) go to Express.
+ * Vite is the frontend only. Local /api (and /health /mcp /r/:caseId) go to Express.
  * Start both with `npm run dev` (see scripts/dev.mjs).
  */
 function apiProxy(mode: string): Record<string, ProxyOptions> {
@@ -27,7 +27,9 @@ function apiProxy(mode: string): Record<string, ProxyOptions> {
     "/api": proxy,
     "/health": proxy,
     "/mcp": proxy,
-    "/r": proxy,
+    // 永久报告只代理 /r/:caseId；裸 /r 前缀会把 /result-preview 等前端路径
+    // 也转给 Express，导致 Vite 无法回落到 index.html。
+    "/r/": proxy,
   };
 }
 

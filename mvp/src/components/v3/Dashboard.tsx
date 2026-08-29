@@ -247,6 +247,9 @@ export function Dashboard({
           setInputError("图片总大小不能超过 6MB。");
           return;
         }
+        if (images.length + imageFiles.length > MAX_IMAGE_COUNT) {
+          setInputError("最多支持 4 张图片附件，超出部分未添加。");
+        }
         const nextImages = await Promise.all(imageFiles.map(imageFileToCaseImage));
         setImages((prev) => [...prev, ...nextImages].slice(0, MAX_IMAGE_COUNT));
       } catch (error) {
