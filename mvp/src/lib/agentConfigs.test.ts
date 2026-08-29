@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AGENT_CONFIGS, getAgentConfig, buildAgentInput } from "./agentConfigs";
+import { claimAtomKey } from "./claimAtom";
 
 describe("agentConfigs — DAG migration new agents", () => {
   it("registers AlternativeExplanationSearcher in AGENT_CONFIGS", () => {
@@ -74,13 +75,14 @@ describe("agentConfigs — DAG migration new agents", () => {
     const input = buildAgentInput("report_composer", "测试claim", steps as any);
     const verdicts = (input.factCheck as any).subclaimVerdicts;
     expect(verdicts).toHaveLength(2);
-    expect(verdicts.find((v: any) => v.claimAtom === "原子A")!.verdict).toBe("false");
+    // 没有可点开的支撑/反证来源时，当前合并闸门将 true/false 收为 unverified。
+    expect(verdicts.find((v: any) => v.claimAtom === "原子A")!.verdict).toBe("unverified");
     const missing = verdicts.find((v: any) => v.claimAtom === "原子B")!;
     expect(missing.verdict).toBe("unverified");
     expect(missing.boundary).toContain("未覆盖");
   });
 
-  it("超长 claimAtom 被 verdict 覆盖时不被误判为 unverified，也不产生重复补充项", () => {
+  it("超长 claimAtom 按截断键覆盖并按当前证据闸门处理，不产生重复补充项", () => {
     const longAtom = "某地卫生健康委员会就本月疫情发布的最新通报中强调" + "超".repeat(200) + "该说法需要进一步核实。";
     const shortAtom = "短原子";
     const steps = [
@@ -88,15 +90,21 @@ describe("agentConfigs — DAG migration new agents", () => {
       { agent: "fact_checker", output: { subclaimVerdicts: [{ claimAtom: longAtom, verdict: "false", evidence: "证据", boundary: "边界" }] } },
     ];
     const input = buildAgentInput("report_composer", "测试claim", steps as any);
+    // report_composer 的输入仍按 claimAtomKey 的 180 字符规则压缩原子。
+    expect((input.rumorAnalysis as any).claimAtoms).toEqual([claimAtomKey(longAtom), shortAtom]);
     const verdicts = (input.factCheck as any).subclaimVerdicts;
-    // 覆盖的 verdict 保留原始超长串，且不出现未覆盖补充项
+    // verdict 以截断键匹配到原子；无来源时按当前证据闸门归为 unverified。
     const covered = verdicts.filter((v: any) => v.claimAtom === longAtom);
     expect(covered).toHaveLength(1);
-    expect(covered[0].verdict).toBe("false");
-    // 只有一条补充项（shortAtom），且无重复的未覆盖补充项
-    const unverified = verdicts.filter((v: any) => v.verdict === "unverified");
-    expect(unverified).toHaveLength(1);
-    expect(unverified[0].claimAtom).toBe(shortAtom);
+    expect(covered[0].verdict).toBe("unverified");
+    // 只有一条补充项（shortAtom），且覆盖项不会因截断键再次被补入。
+    expect(verdicts).toHaveLength(2);
+    const supplementary = verdicts.filter(
+      (v: any) => v.verdict === "unverified" && v.claimAtom !== longAtom
+    );
+    expect(supplementary).toEqual([
+      expect.objectContaining({ claimAtom: shortAtom, verdict: "unverified" }),
+    ]);
   });
 
   it("幻觉原子拦截：模型编造、不在输入 claimAtoms 中的原子被丢弃", () => {
