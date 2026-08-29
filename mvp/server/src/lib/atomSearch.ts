@@ -115,7 +115,8 @@ function typeOfAtom(
   if (!typeByKey) return undefined;
   const key = claimAtomKey(atom);
   if (typeByKey instanceof Map) return typeByKey.get(key) ?? typeByKey.get(atom);
-  return typeByKey[key] ?? typeByKey[atom];
+  const record = typeByKey as Record<string, string>;
+  return record[key] ?? record[atom];
 }
 
 /**
