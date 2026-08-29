@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demoCase } from "../data/demoCase";
+import { demoCase } from "../data/aiContentJobsCase";
 import {
   healthRumorCase,
   politicalRumorCase,

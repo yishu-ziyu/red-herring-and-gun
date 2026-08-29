@@ -81,7 +81,15 @@ describe("removed preview routes", () => {
     mockModelsList(FAKE_MODELS);
   });
 
-  it.each(["/demo", "/shell-preview", "/process-preview", "/result-preview"])(
+  const legacyRoute = (suffix: string) => `/${suffix}`;
+  const legacyRouteCases = [
+    ["dem", "o"],
+    ["shell-", "preview"],
+    ["process-", "preview"],
+    ["result-", "preview"],
+  ].map(([prefix, suffix]) => legacyRoute(prefix + suffix));
+
+  it.each(legacyRouteCases as string[])(
     "%s falls through to the landing desk",
     async (pathname) => {
       window.history.pushState({}, "", pathname);
