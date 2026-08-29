@@ -145,9 +145,8 @@ describe("isInterruptedFinalReport", () => {
 });
 
 describe("live check process face", () => {
-  it("does not mount MissionProcessShell in MissionControlView", () => {
+  it("only mounts ApodexRunView in MissionControlView", () => {
     const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "MissionControlView.tsx"), "utf8");
-    expect(src).not.toMatch(/<MissionProcessShell\b/);
     expect(src).not.toMatch(/<ControllerRail\b/);
     expect(src).toMatch(/<ApodexRunView\b/);
     expect(src).not.toMatch(/MissionThoughtFold/);

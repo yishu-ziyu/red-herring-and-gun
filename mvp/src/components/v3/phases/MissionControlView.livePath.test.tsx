@@ -1,13 +1,23 @@
 /** @vitest-environment jsdom */
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReasoningProvider } from "../../../store/reasoningStore";
 import { MissionControlView } from "./MissionControlView";
+
+vi.mock("../../../lib/agentExpansion", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../lib/agentExpansion")>();
+  return {
+    ...actual,
+    requestOrchestrateStream: vi.fn(async function* () {
+      yield { type: "error", message: "test stream stopped" };
+    }),
+  };
+});
 
 function renderLiveCheck() {
   return render(
     <ReasoningProvider>
-      <MissionControlView claim="隔夜菜会致癌" onCancel={() => undefined} previewMode />
+      <MissionControlView claim="隔夜菜会致癌" onCancel={() => undefined} />
     </ReasoningProvider>
   );
 }
@@ -18,11 +28,10 @@ describe("MissionControlView live product path", () => {
     window.history.pushState({}, "", "/");
   });
 
-  it("always paints ApodexRunView, not MissionProcessShell or the legacy transcript", () => {
+  it("always paints ApodexRunView, not the legacy process transcript", () => {
     const { container } = renderLiveCheck();
 
     expect(screen.getByTestId("apodex-run")).toBeInTheDocument();
-    expect(container.querySelector(".mps-root")).toBeNull();
     expect(container.querySelector(".mission-topbar")).toBeNull();
     expect(screen.queryByLabelText("活动过程时间线")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("核查对象")).not.toBeInTheDocument();
@@ -33,16 +42,14 @@ describe("MissionControlView live product path", () => {
     const { container } = renderLiveCheck();
 
     expect(screen.getByTestId("apodex-run")).toBeInTheDocument();
-    expect(container.querySelector(".mps-root")).toBeNull();
     expect(container.querySelector(".mission-topbar")).toBeNull();
     expect(screen.queryByLabelText("活动过程时间线")).not.toBeInTheDocument();
   });
 
   it("?legacyStream=1 still shows ApodexRunView", () => {
     window.history.pushState({}, "", "/?legacyStream=1");
-    const { container } = renderLiveCheck();
+    renderLiveCheck();
 
     expect(screen.getByTestId("apodex-run")).toBeInTheDocument();
-    expect(container.querySelector(".mps-root")).toBeNull();
   });
 });

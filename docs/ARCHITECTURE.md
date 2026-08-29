@@ -41,7 +41,7 @@ mvp/apodex-replica/       外观草稿，不进 git
 
 用户看见的是判断。过程可回看。默认内核仍是**固定管线**。循环是并列执行引擎：开 flag 时过程是真工具事件；关着时过程仍是管线映射。
 
-默认壳：`resolveShellMode` 开着。历史卷宗走 `ResultView`（右侧 dossier）。`/demo` 是证据矩阵演示，不是核查。
+默认壳：`resolveShellMode` 开着。历史卷宗走 `ResultView`（右侧 dossier）。`App.tsx` 不做 404，未匹配路径（包括已删除的演示与预览路径）会落入首页 `Dashboard`，不再作为独立产品页渲染。
 
 ## 三层（该留的）
 
@@ -52,7 +52,7 @@ mvp/apodex-replica/       外观草稿，不进 git
 | 执行 | 默认 `casePipeline`。并列：`agentLoop`（`runAgentLoop` + 工具 + observer，ADR-006，flag 关闭） | 想、搜、打开网页、改任务板、收束 |
 
 HTTP 只该是薄 adapter。`handlers.ts`（约 3700 行）不该再往里堆产品规则。  
-`MissionControlView.tsx`（约 6300 行）仍同时养旧过程轨和新过程壳。
+`MissionControlView.tsx` 负责流式接线、状态收束和追问，过程视图只挂载 `ApodexRunView`。
 
 前端若要域规则，从 `mvp/src/lib/claimAtom` 再导出服务端 SSOT，不要复制一份。
 
@@ -70,7 +70,7 @@ HTTP 只该是薄 adapter。`handlers.ts`（约 3700 行）不该再往里堆产
 
 3. **过程壳（live 已只留 ApodexRunView）**  
    核查过程只画 `ApodexRunView`。`?shell=legacy` / `?legacyStream=1` 不再切回旧轨。  
-   `/shell-preview` 仍可打开 `MissionProcessShell`，不是产品路径。`MissionControlView` 里还有未挂载的 controller 残骸，拆文件时再清。
+   `/demo`、`/shell-preview`、`/process-preview`、`/result-preview` 及其专属组件已经删除；访问这些未匹配路径时按现有 SPA 机制回到首页。
 
 客户端 `mvp/src/lib` 与服务端 `mvp/server/src/lib` 还有约 10 个同名文件（部分是有意再导出，部分是历史拷贝）。不要在两边各写一套判决。
 
@@ -96,7 +96,7 @@ claim
 | `tmp-apodex-study/` | 本地对照（FrontierAgent 克隆、截图）。不进 git |
 | `mvp/apodex-replica/` | 外观 1:1 草稿。不进 git |
 | `mvp/src/lib/pipeline.ts` + `data/rumorCases/` | 早期静态 demo，测试还在用 |
-| `/demo`、EvidenceMatrixGSAP | 证据矩阵演示页 |
+| 已删除的演示/预览组件 | 不属于运行时；对应路径访问时落入首页 |
 | `ConclusionDockV3` 一簇 | 旧判断页，现网不挂；测试和 git-diff 契约还指着 |
 | `docs/reviews/agentic-patterns/` | 读书笔记，不是运行时 |
 | `vendor/`、`Chinese_Rumor_Dataset/` | 本地资料，已 gitignore |
@@ -106,6 +106,6 @@ claim
 1. ~~开发 HTTP 只代理 Express~~（已做）。AgentRuntime 已不在本地 HTTP 上，eval 迁完即可删。  
 2. ~~过程只留 `ApodexRunView`，从 live 路径拿掉 legacy 过程轨~~（已做）。`?shell=legacy` 不是产品路径。  
 3. ~~`runAgentLoop` feature-flag 与 `casePipeline` 并列~~（ADR-006，默认关）。直到判断质量不低于现管线之前，不切默认。  
-4. 再拆 `MissionControlView` / `handlers.ts`。截图原图闸已进 Case Pipeline（`imageOrigin`）；现网检索适配器还没有以图搜图，所以有图时会写「原图没查到」，不会把 OCR 二手帖当图源。真正能点到更早出处，要等接上以图搜图适配器。`AGENT_LOOP=1` 那条路还没接这道闸。
+4. 继续拆 `handlers.ts`，并在后续里程碑评估 `MissionControlView` 的 hook/纯函数拆分。截图原图闸已进 Case Pipeline（`imageOrigin`）；现网检索适配器还没有以图搜图，所以有图时会写「原图没查到」，不会把 OCR 二手帖当图源。真正能点到更早出处，要等接上以图搜图适配器。`AGENT_LOOP=1` 那条路还没接这道闸。
 
 不要从删判决模块开始。不要把研究克隆提交进仓库。
