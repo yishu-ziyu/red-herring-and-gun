@@ -10,7 +10,7 @@ import {
   splitIntoUnits,
 } from "./attentionGuidance";
 import type { CandidateMaterial, ClaimSpan } from "./schemas";
-import { demoCase } from "../data/demoCase";
+import { demoCase } from "../data/aiContentJobsCase";
 
 describe("splitIntoUnits", () => {
   it("splits Chinese sentences and keeps punctuation", () => {

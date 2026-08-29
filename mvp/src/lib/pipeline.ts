@@ -1,4 +1,4 @@
-import { demoCase } from "../data/demoCase";
+import { demoCase } from "../data/aiContentJobsCase";
 import {
   healthRumorCase,
   socialRumorCase,

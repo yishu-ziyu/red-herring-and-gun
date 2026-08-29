@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { composeReport } from "./reportComposer";
 import { gradeAll } from "./graderRules";
-import { demoCase } from "../data/demoCase";
+import { demoCase } from "../data/aiContentJobsCase";
 import { aggregateInferences } from "./inferenceLicense";
 import { foldLineage } from "./sourceLineage";
 import { requestOrchestrateStream } from "./agentExpansion";
