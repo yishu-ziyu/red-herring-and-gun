@@ -121,6 +121,7 @@ export function ResearchMemo({ markdown, sources }: ResearchMemoProps) {
             </div>
           );
         }
+        if (block.type !== "refs") return null;
         return (
           <section key={i} className={styles.refs} aria-label="REFERENCES">
             <p className={styles.refsKicker}>REFERENCES</p>
