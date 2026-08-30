@@ -149,11 +149,14 @@ export function bindRelatedSourcesOnly(
 
 /** Global first-seen unique sources across verdicts (claim order). */
 export function buildGlobalCiteSources(
-  verdicts: Array<{ supportingSources?: CiteSource[] | null | undefined }>
+  verdicts: Array<{ supportingSources?: CiteSource[] | null | undefined; sourcesRelatedOnly?: unknown }>
 ): CiteSource[] {
   const out: CiteSource[] = [];
   const seen = new Set<string>();
   for (const v of verdicts) {
+    // relatedOnly（检索填充）源从未被模型引用：出处只是关键词检索命中，可能完全不相关。
+    // 混进全局「参考资料」会让用户点开无关页面，打破「来源能点开」的承诺。
+    if (v.sourcesRelatedOnly === true) continue;
     const list = Array.isArray(v.supportingSources) ? v.supportingSources : [];
     for (const s of list) {
       const url = normalizeUrl(s?.url ?? "");
@@ -175,7 +178,7 @@ export function buildGlobalCiteSources(
  */
 export function bindGlobalConclusion(
   conclusion: unknown,
-  verdicts: Array<{ supportingSources?: CiteSource[] | null | undefined }>
+  verdicts: Array<{ supportingSources?: CiteSource[] | null | undefined; sourcesRelatedOnly?: unknown }>
 ): { text: string; sources: CiteSource[] } {
   const sources = buildGlobalCiteSources(verdicts);
   const textIn = typeof conclusion === "string" ? conclusion : "";

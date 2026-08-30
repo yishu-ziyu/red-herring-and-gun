@@ -96,6 +96,19 @@ describe("bindGlobalConclusion", () => {
     ]);
     expect(text).not.toMatch(/\[9\]/);
   });
+
+  it("excludes relatedOnly (retrieval fill) sources from global references", () => {
+    const { sources } = bindGlobalConclusion("结论。", [
+      {
+        supportingSources: [{ url: "https://cited.example", title: "Cited", snippet: "" }],
+      },
+      {
+        sourcesRelatedOnly: true,
+        supportingSources: [{ url: "https://fill.example", title: "Fill", snippet: "" }],
+      },
+    ]);
+    expect(sources.map((s) => s.url)).toEqual(["https://cited.example"]);
+  });
 });
 
 describe("normalizeReportCitations", () => {
