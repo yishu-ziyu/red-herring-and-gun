@@ -267,7 +267,7 @@ function AppContent() {
       onSelectCase={(id) => {
         void handleSelectCase(id);
       }}
-      artifactTitle={activeClaim || "核查卷宗"}
+      artifactTitle={activeClaim}
       artifactOpen={artifactOpen}
       onArtifactOpenChange={setArtifactOpen}
       artifact={
