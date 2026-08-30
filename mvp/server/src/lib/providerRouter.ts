@@ -900,7 +900,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
 
     if (provider === "minimax") {
       const apiKey = getMiniMaxApiKey(env);
-      const model = modelForAgent(env, "MINIMAX", agentId, "MiniMax-M3");
+      const model = modelForAgent(env, "MINIMAX", agentId, "MiniMax-M2.7-highspeed");
       const baseUrl = (envValue(env, "MINIMAX_BASE_URL") || "https://api.minimaxi.com/anthropic").replace(/\/$/, "");
       if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
       if (!apiKey) {
