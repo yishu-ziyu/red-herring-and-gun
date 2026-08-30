@@ -214,7 +214,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
     if (modelChoice && modelChoice["cross_examiner"]) return modelChoice["cross_examiner"];
     const candidates: Array<{ provider: AgentTextProviderId; model: string; hasKey: boolean }> = [
       { provider: "stepfun", model: "step-3.7-flash", hasKey: Boolean(env.STEPFUN_API_KEY) },
-      { provider: "minimax", model: "MiniMax-M3", hasKey: Boolean(env.MINIMAX_API_KEY || env.MINIMAX_TOKEN_PLAN_KEY) },
+      { provider: "minimax", model: "MiniMax-M3", hasKey: Boolean(env.MINIMAX_API_KEY) },
       { provider: "mimo", model: "mimo-v2.5-pro", hasKey: Boolean(env.MIMO_API_KEY) },
     ].filter(
       (c): c is { provider: AgentTextProviderId; model: string; hasKey: boolean } => c.hasKey

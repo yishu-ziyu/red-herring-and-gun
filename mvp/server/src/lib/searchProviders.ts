@@ -16,15 +16,7 @@ import { stringItems } from "./valueCoerce.js";
 import { fetchWithTimeout, getTimeoutMs, withTimeout } from "./httpUtils.js";
 
 function getSearch360ApiKey(env: Record<string, string>) {
-  return (
-    env.QIHOO_360_API_KEY ||
-    env.ZHINAO_API_KEY ||
-    env.AI360_API_KEY ||
-    process.env.QIHOO_360_API_KEY ||
-    process.env.ZHINAO_API_KEY ||
-    process.env.AI360_API_KEY ||
-    ""
-  );
+  return env.QIHOO_360_API_KEY || process.env.QIHOO_360_API_KEY || "";
 }
 
 function getTavilyApiKey(env: Record<string, string>) {

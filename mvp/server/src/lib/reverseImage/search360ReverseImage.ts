@@ -102,15 +102,7 @@ async function sweepExpired(dir: string): Promise<void> {
 }
 
 function get360ApiKey(env: Record<string, string>): string {
-  return (
-    env.QIHOO_360_API_KEY ||
-    env.ZHINAO_API_KEY ||
-    env.AI360_API_KEY ||
-    process.env.QIHOO_360_API_KEY ||
-    process.env.ZHINAO_API_KEY ||
-    process.env.AI360_API_KEY ||
-    ""
-  );
+  return env.QIHOO_360_API_KEY || process.env.QIHOO_360_API_KEY || "";
 }
 
 /** 宽容解析 360 图搜响应：递归收集「对象含 http(s) url + 就近 title」的命中。响应结构未公开，故做深度遍历而非绑定字段。 */
