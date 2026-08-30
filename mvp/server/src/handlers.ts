@@ -12,8 +12,6 @@ import dns from "node:dns/promises";
 
 import { searchClaimAcrossSources } from "./lib/sherlockStyleSearch.js";
 
-import { AGENT_CONFIGS, buildAgentInput } from "./lib/agentConfigs.js";
-
 import { type AtomSearchBundle } from "./lib/atomSearch.js";
 
 import { runCasePipeline, type PipelineStep, type RunAgentFn } from "./lib/casePipeline/index.js";
@@ -27,16 +25,7 @@ import { getMemoryCandidateStore } from "./lib/memoryCandidateHandlers.js";
 
 import type { MemoryCandidateHit } from "./lib/memoryCandidateTypes.js";
 
-import {
-  callAgentWithFallback,
-  providerOrderForAgent,
-  AgentTextProviderId,
-  ProviderFallbackError,
-} from "./lib/providerRouter.js";
-
-import { buildAgentStatusBar } from "./lib/contextStatusBar.js";
-
-import { formatSkillsForPrompt, selectAgentSkills } from "./lib/agentSkills.js";
+import { ProviderFallbackError } from "./lib/providerRouter.js";
 
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
 
@@ -52,12 +41,7 @@ import { applyFactDeskPostProcessToReport } from "./lib/factDeskPostProcess.js";
 
 import { buildClaimReviewJsonLd } from "./lib/claimReview.js";
 
-import {
-  splitReasoningSentences,
-  thoughtInterSentenceDelayMs,
-} from "../../src/lib/reasoningThoughts.js";
-
-import { readJson, sendJson, sleepMs, wait, getTimeoutMs, withTimeout } from "./lib/httpUtils.js";
+import { readJson, sendJson, wait, getTimeoutMs, withTimeout } from "./lib/httpUtils.js";
 
 import { asRecord } from "./lib/valueCoerce.js";
 
@@ -77,10 +61,8 @@ import {
 
 import {
   build360SearchFailure,
-  buildReportEvidenceInputs,
   callParallelSearchProviders,
   callSearchProvider,
-  compactSearchResultForAgent,
   getProviderLabel,
   getSearchToolName,
   retrieveAtomSources,
@@ -102,6 +84,8 @@ import {
 import { makeSearch360ReverseImage } from "./lib/reverseImage/search360ReverseImage.js";
 
 import { applyContextCrossCheckToReport } from "./lib/contextCrossCheck.js";
+
+import { createOrchestrateAdapter } from "./lib/orchestrate.js";
 
 // ───────────────────────────────────────────────────────────────
 // 错误信息泄漏修复：把任意异常收敛成"用户可读友好文案 + 结构化诊断"。
@@ -142,6 +126,10 @@ export function createHandlers(env: Record<string, string>) {
   const model = env.OPENAI_MODEL || "gpt-4.1-mini";
   const codexBin = env.CODEX_BIN || process.env.CODEX_BIN || "/usr/local/bin/codex";
   const codexModel = env.CODEX_LOCAL_MODEL || process.env.CODEX_LOCAL_MODEL || "gpt-5.5";
+
+  // 多 Agent Orchestrate 编排（组装/状态栏/Skills/自证/改写/交叉二审）收在 lib/orchestrate。
+  const { makeRunAgent, makeSelfProofCaller, makeRewriteCaller, makeCrossExamCaller } =
+    createOrchestrateAdapter({ env, codexBin });
 
   async function handler(req: any, res: any, next: any) {
     if (req.method !== "POST") return next();
@@ -297,141 +285,6 @@ export function createHandlers(env: Record<string, string>) {
   }
 
   // ───────────────────────────────────────────────────────────────
-  // 多 Agent Orchestrate — thin HTTP adapters over Case Pipeline
-  // ───────────────────────────────────────────────────────────────
-
-  /** Prefer rumor_detector stanceClaimType; default mixed for skill routing. */
-  function inferClaimTypeForSkills(steps: Array<{ agent?: string; output?: Record<string, unknown> }>): string | undefined {
-    const rumor = steps.find((s) => s.agent === "rumor_detector");
-    const stance = rumor?.output?.stanceClaimType as { type?: string } | undefined;
-    if (stance && typeof stance.type === "string" && stance.type.length > 0) {
-      return stance.type;
-    }
-    return undefined;
-  }
-
-function makeRunAgent(opts: {
-  claim: string;
-  modelChoice: any;
-  intakeMetadata: any;
-  visualExtraction: Record<string, unknown> | undefined;
-  clientMemoryRecall: any;
-  onStart?: (agentId: string, agentConfig: (typeof AGENT_CONFIGS)[number]) => void;
-  onThought?: (
-    agentId: string,
-    agentConfig: (typeof AGENT_CONFIGS)[number],
-    content: string,
-    seq: number,
-    done: boolean
-  ) => void;
-  onComplete?: (step: any) => void;
-  onError?: (agentId: string, agentConfig: (typeof AGENT_CONFIGS)[number], error: unknown) => void;
-}): RunAgentFn {
-    return async function runAgent(agentId, steps, search360Result?, atomSearchBundle?) {
-      const agentConfig = AGENT_CONFIGS.find((a) => a.id === agentId);
-      if (!agentConfig) {
-        throw new Error(`Unknown agent: ${agentId}`);
-      }
-      opts.onStart?.(agentId, agentConfig);
-      const stepStart = Date.now();
-      const agentInput = buildAgentInput(agentId, opts.claim, steps as any);
-      if (opts.intakeMetadata) agentInput.intake = opts.intakeMetadata;
-      if (opts.visualExtraction) agentInput.visualExtraction = opts.visualExtraction;
-      if (opts.clientMemoryRecall) agentInput.memoryRecall = opts.clientMemoryRecall;
-      if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
-        agentInput.search360 = compactSearchResultForAgent(search360Result);
-        if (atomSearchBundle && (agentId === "fact_checker" || agentId === "report_composer")) {
-          agentInput.atomSearches = atomSearchBundle.forAgent;
-        }
-      }
-      if (agentId === "report_composer") {
-        agentInput.evidenceInputs = buildReportEvidenceInputs(steps as any, search360Result);
-      }
-
-      // Book Ch.2：状态栏 + 按需 Skills（与 client AgentRuntime 对齐）
-      const claimType = inferClaimTypeForSkills(steps as any) ?? "mixed";
-      const memoryRecall = opts.clientMemoryRecall as
-        | { hitCount?: number; acceptedCandidateCount?: number }
-        | undefined;
-      const statusBar = buildAgentStatusBar({
-        agentId,
-        agentName: agentConfig.name,
-        claim: opts.claim,
-        claimType,
-        stepIndex: steps.length + 1,
-        totalStepsHint: 4,
-        tools: [],
-        memoryHitCount: memoryRecall?.hitCount ?? 0,
-        acceptedCandidateCount: memoryRecall?.acceptedCandidateCount ?? 0,
-        searchReady: Boolean(search360Result),
-      });
-      agentInput.agentStatusBar = statusBar.text;
-      agentInput.agentStatusFields = statusBar.fields;
-      const skills = selectAgentSkills({ agentId, claimType, maxSkills: 3 });
-      const systemPrompt = `${agentConfig.systemPrompt}${formatSkillsForPrompt(skills)}`;
-      agentInput.loadedSkills = skills.map((s) => s.id);
-      const userContent = `${statusBar.text}\n\n${JSON.stringify(agentInput, null, 2)}`;
-
-      let output: Record<string, unknown>;
-      let modelUsed: string;
-      try {
-        const modelOverride =
-          opts.modelChoice && typeof opts.modelChoice === "object"
-            ? (opts.modelChoice as Record<string, { provider: string; model: string }>)[agentConfig.id]
-            : undefined;
-        const result = await callAgentWithFallback({
-          agentId: agentConfig.id,
-          systemPrompt,
-          userContent,
-          responseSchema: agentConfig.responseSchema,
-          maxTokens: agentConfig.maxTokens,
-          env,
-          codexBin,
-          reasoningEffort: "high",
-          modelOverride: modelOverride as { provider: AgentTextProviderId; model: string } | undefined,
-          options: { logger: console },
-        });
-        output = result.output;
-        modelUsed = result.model;
-        // Capture model wall-clock before SSE thought pacing (UI must show real think time).
-        const modelLatencyMs = Date.now() - stepStart;
-        // Real reasoning only: split + pace SSE so ThinkingReasoning can reveal sentence-by-sentence.
-        if (opts.onThought && typeof result.reasoning === "string" && result.reasoning.trim()) {
-          const sentences = splitReasoningSentences(result.reasoning);
-          const gap = thoughtInterSentenceDelayMs(sentences.length);
-          for (let index = 0; index < sentences.length; index++) {
-            opts.onThought!(
-              agentConfig.id,
-              agentConfig,
-              sentences[index],
-              index,
-              index === sentences.length - 1
-            );
-            if (index < sentences.length - 1) await sleepMs(gap);
-          }
-        }
-        const step = {
-          agent: agentConfig.id,
-          agentName: agentConfig.name,
-          agentIcon: agentConfig.icon,
-          systemPrompt,
-          input: agentInput,
-          output,
-          model: modelUsed,
-          latencyMs: modelLatencyMs,
-          timestamp: Date.now(),
-          status: "completed" as const,
-        };
-        opts.onComplete?.(step);
-        return step;
-      } catch (error) {
-        opts.onError?.(agentId, agentConfig, error);
-        const message = error instanceof Error ? error.message : "Agent 调用失败";
-        throw new Error(`${agentConfig.name} 真实模型调用失败：${message}`);
-      }
-    };
-  }
-
   function makeImageOriginLookup(
     intake: CaseIntakePayload | null,
     visualExtraction: Record<string, unknown> | undefined
@@ -475,122 +328,6 @@ function makeRunAgent(opts: {
         /* 浓缩失败不阻断 */
       }
       return result;
-    };
-  }
-
-  function makeSelfProofCaller(claim: string, modelChoice: any) {
-    return (input: {
-      systemPrompt: string;
-      userContent: string;
-      responseSchema: object;
-      maxTokens: number;
-    }) =>
-      callAgentWithFallback({
-        agentId: "rumor_detector_selfproof",
-        systemPrompt: input.systemPrompt,
-        userContent: input.userContent,
-        responseSchema: input.responseSchema,
-        maxTokens: input.maxTokens,
-        env,
-        codexBin,
-        reasoningEffort: "low",
-        modelOverride:
-          modelChoice && modelChoice["rumor_detector"] ? modelChoice["rumor_detector"] : undefined,
-        options: { logger: console },
-      }).then((r) => ({ output: r.output, model: r.model }));
-  }
-
-  // Evidence loop 语义改写（ADR-004）：裸模型调用 → makeRewriteQueryCall 绑定 prompt/解析。
-  // 失败回退确定性模板（evidenceLoop 内部处理），这里不需要 try/catch。
-  function makeRewriteCaller(modelChoice: any) {
-    return (input: {
-      systemPrompt: string;
-      userContent: string;
-      responseSchema: object;
-      maxTokens: number;
-    }) =>
-      callAgentWithFallback({
-        agentId: "evidence_loop_rewriter",
-        systemPrompt: input.systemPrompt,
-        userContent: input.userContent,
-        responseSchema: input.responseSchema,
-        maxTokens: input.maxTokens,
-        env,
-        codexBin,
-        reasoningEffort: "low",
-        modelOverride:
-          modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
-        options: { logger: console },
-      }).then((r) => ({ output: r.output, model: r.model }));
-  }
-
-  // Cross exam 第二意见（G3/P1）：国产优先、与主判 provider 不同源（真双模型交叉）。
-  // 主判 = 主 provider order 的第一个可用项；候选里先挑异源，全同源才退回第一个可用。
-  function pickCrossExamModel(
-    modelChoice: any
-  ): { provider: AgentTextProviderId; model: string } | undefined {
-    if (modelChoice && modelChoice["cross_examiner"]) return modelChoice["cross_examiner"];
-    const candidates: Array<{ provider: AgentTextProviderId; model: string; hasKey: boolean }> = [
-      { provider: "stepfun", model: "step-3.7-flash", hasKey: Boolean(env.STEPFUN_API_KEY) },
-      { provider: "minimax", model: "MiniMax-M3", hasKey: Boolean(env.MINIMAX_API_KEY || env.MINIMAX_TOKEN_PLAN_KEY) },
-      { provider: "mimo", model: "mimo-v2.5-pro", hasKey: Boolean(env.MIMO_API_KEY) },
-    ].filter(
-      (c): c is { provider: AgentTextProviderId; model: string; hasKey: boolean } => c.hasKey
-    );
-    if (candidates.length === 0) return undefined;
-    const primary = providerOrderForAgent(env).find((p) => p !== "codex");
-    return candidates.find((c) => c.provider !== primary) ?? candidates[0];
-  }
-
-  function makeCrossExamCaller(modelChoice: any, sendAgentEvent?: (data: object) => void) {
-    const modelOverride = pickCrossExamModel(modelChoice);
-    if (!modelOverride) return undefined;
-    return (input: {
-      systemPrompt: string;
-      userContent: string;
-      responseSchema: object;
-      maxTokens: number;
-    }) => {
-      sendAgentEvent?.({
-        type: "agent_start",
-        agent: "cross_examiner",
-        agentName: "CrossExaminer",
-        query: "第二模型独立复核冲突证据",
-        timestamp: Date.now(),
-      });
-      return callAgentWithFallback({
-        agentId: "cross_examiner",
-        systemPrompt: input.systemPrompt,
-        userContent: input.userContent,
-        responseSchema: input.responseSchema,
-        maxTokens: input.maxTokens,
-        env,
-        codexBin,
-        reasoningEffort: "high",
-        modelOverride,
-        options: { logger: console },
-      })
-        .then((r) => {
-          sendAgentEvent?.({
-            type: "agent_complete",
-            agent: "cross_examiner",
-            agentName: "CrossExaminer",
-            output: r.output,
-            model: r.model,
-            timestamp: Date.now(),
-          });
-          return { output: r.output, model: r.model };
-        })
-        .catch((error) => {
-          sendAgentEvent?.({
-            type: "agent_error",
-            agent: "cross_examiner",
-            agentName: "CrossExaminer",
-            error: error instanceof Error ? error.message : "cross examiner failed",
-            timestamp: Date.now(),
-          });
-          throw error;
-        });
     };
   }
 
