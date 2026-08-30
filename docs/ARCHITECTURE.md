@@ -60,7 +60,7 @@ HTTP 只该是薄 adapter。`handlers.ts`（约 3700 行）不该再往里堆产
 
 1. **双运行时（遗物）**  
    生产默认：`mvp/server/src/lib/casePipeline`。  
-   遗物：`mvp/src/lib/agentRuntime`（eval / 测试还在用，本地 HTTP 已不走它）。  
+   遗物：`mvp/src/lib/agentRuntime`（客户端 benchmark 与运行时专测已关停，剩余源码等待类型抽取后删除；本地 HTTP 已不走它）。
    ADR-003：只改 AgentRuntime 等于没进生产。  
    并列执行（ADR-006，默认关）：`mvp/server/src/lib/agentLoop`。这是要留下的执行引擎，不是第三套判决。
 
@@ -103,7 +103,7 @@ claim
 
 ## 下一刀（按这个顺序）
 
-1. ~~开发 HTTP 只代理 Express~~（已做）。AgentRuntime 已不在本地 HTTP 上，eval 迁完即可删。  
+1. ~~开发 HTTP 只代理 Express~~（已做）。AgentRuntime 已不在本地 HTTP 上，客户端 eval 已迁到 `mvp/server/eval`，剩余类型抽取后即可删。
 2. ~~过程只留 `ApodexRunView`，从 live 路径拿掉 legacy 过程轨~~（已做）。`?shell=legacy` 不是产品路径。  
 3. ~~`runAgentLoop` feature-flag 与 `casePipeline` 并列~~（ADR-006，默认关）。直到判断质量不低于现管线之前，不切默认。  
 4. 继续拆 `handlers.ts`，并在后续里程碑评估 `MissionControlView` 的 hook/纯函数拆分。截图原图闸已进 Case Pipeline（`imageOrigin`）；现网检索适配器还没有以图搜图，所以有图时会写「原图没查到」，不会把 OCR 二手帖当图源。真正能点到更早出处，要等接上以图搜图适配器。`AGENT_LOOP=1` 那条路还没接这道闸。
