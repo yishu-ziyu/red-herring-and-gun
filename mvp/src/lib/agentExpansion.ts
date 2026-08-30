@@ -1,7 +1,7 @@
 import type { CanvasNode } from "../data/reasoningCanvas";
 import { caseIntakePrimaryText, type CaseIntake } from "./caseIntake";
 import type { SherlockSearchRequest, SherlockSearchResponse } from "./sherlockStyleSearch";
-import type { MemoryCandidate, MemoryCandidateStatus } from "./agentRuntime/memoryCandidateTypes";
+import type { MemoryCandidate, MemoryCandidateStatus } from "./memoryCandidateTypes";
 import type { AgentEvidenceBundle } from "./schemas";
 import type { AgentContract } from "./agentConfigs";
 import { getTraceCollector, type TraceStatus } from "./reasoningTrace";
