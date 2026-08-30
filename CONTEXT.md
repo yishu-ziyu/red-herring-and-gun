@@ -29,4 +29,4 @@ Lazy glossary for agents. Product truth remains `docs/PRODUCT_SPEC.md`.
 - `reportAssembly` — `assembleFinalReport`
 - `casePipeline` — **production** orchestrate (`runCasePipeline`). HTTP / SSE are adapters. Default path (ADR-003).
 - `agentLoop` — ReAct execution (`runAgentLoop` + tools + `finalizeLoopReport`). Feature-flagged (ADR-006). Does not own 能信/不能信.
-- `AgentRuntime` — eval / tests leftover. Not the live claim path (ADR-003). Local HTTP is Express.
+- `AgentRuntime` — leftover client runtime source; its benchmark and dedicated tests are retired. Not the live claim path (ADR-003). Local HTTP is Express.

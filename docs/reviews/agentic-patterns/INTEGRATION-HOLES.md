@@ -83,7 +83,7 @@ ch-18 验收已写明：浏览器副本未同步。
 | 文件 | 条数 / 作用 |
 |------|-------------|
 | `mvp/server/eval/golden.ts` | **26** 条：RUMOR-001–014、TINY-001–007、LOOP-001–003、EVAL-UNVERIFIED-001、EVAL-TYPEGATE-001 |
-| `mvp/src/lib/agentRuntime/evaluation/goldenDataset.ts` | 前端 14 条 RUMOR，不是生产评测 |
+| 客户端旧 benchmark（已删除） | 曾为 14 条 RUMOR，不是生产评测 |
 | `mvp/server/eval/baseline.json` | 仍是 **14** 条时期聚合（`totalCases: 14`，`passed: 5`） |
 
 怎么跑：
