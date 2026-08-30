@@ -11,8 +11,8 @@
  *   - LRU 上限 1000 条（超出时按 createdAt 淘汰最旧）
  */
 
-import type { FinalReport } from "./schemas";
-import type { ClaimReviewJsonLd } from "./claimReview";
+import type { FinalReport } from "./schemas.js";
+import type { ClaimReviewJsonLd } from "./claimReview.js";
 
 export interface CaseFeedback {
   reason: string;
