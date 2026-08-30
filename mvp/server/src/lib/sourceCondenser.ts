@@ -186,6 +186,9 @@ export async function attachCondensedSnippets(
   claim: string,
   search360Result: any
 ): Promise<void> {
+  // 原始搜索摘要已经足够进入事实核查。LLM 风格润色是可选增强，
+  // 默认不得占用核心链路的模型额度与总时限。
+  if (env.SOURCE_CONDENSER_ENABLED !== "1") return;
   if (!search360Result || !Array.isArray(search360Result.sources)) return;
   const sources = search360Result.sources as Array<Record<string, unknown>>;
   if (sources.length === 0) return;
