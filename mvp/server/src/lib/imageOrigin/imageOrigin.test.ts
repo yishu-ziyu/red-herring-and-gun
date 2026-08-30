@@ -288,6 +288,8 @@ describe("case pipeline · screenshot origin", () => {
       runReport: async ({ steps, search360Result, atomSearchBundle }) =>
         runAgent("report_composer", steps, search360Result, atomSearchBundle),
       evidenceLoop: { enabled: false },
+      // 引用探活注入结果：单元测试不触网，且保住 origin 引用不被探活剔除
+      citationLiveness: { liveness: new Map([[EARLIER, "alive" as const]]) },
     });
 
     expect(result.finalReport.imageOrigin).toEqual(
