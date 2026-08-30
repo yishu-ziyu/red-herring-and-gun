@@ -113,7 +113,7 @@ export function compactSearchResultForAgent(searchResult: any) {
         title: String(source?.title || source?.name || `来源 ${index + 1}`).slice(0, 120),
         url: String(source?.url || source?.link || ""),
         domain: String(source?.domain || source?.site || ""),
-        snippet: String(source?.condensedSnippet || source?.snippet || source?.summary || source?.content || "").slice(0, 450),
+        snippet: String(source?.snippet || source?.summary || source?.content || "").slice(0, 450),
         credibility: source?.credibility || source?.credibilityScore || "",
         role: source?.evidenceRole || source?.role || "线索",
       }))
