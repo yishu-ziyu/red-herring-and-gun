@@ -6,7 +6,7 @@ import type {
   ScoreLevel,
   SearchStrategyMemory,
 } from "./schemas";
-import type { MemoryCandidate, MemoryCandidateKind, MemoryCandidateStatus } from "./agentRuntime/memoryCandidateTypes";
+import type { MemoryCandidate, MemoryCandidateKind, MemoryCandidateStatus } from "./memoryCandidateTypes";
 import { semanticClaimSimilarity } from "./semanticRecall";
 
 export interface KnowledgeBase {
