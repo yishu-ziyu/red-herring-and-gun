@@ -1,7 +1,7 @@
 :root {
   color: #1A1A2E;
   background: #fefcf6;
-  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  font-family: var(--font-sans);
   line-height: 1.5;
 
   /* ── Esther brand color system ── */
@@ -82,7 +82,7 @@
   --zt-radius-full: 999px;
 
   /* ── Font Stack References ── */
-  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-sans: "Noto Sans SC", ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   --font-serif: "Noto Serif SC", "Huiwen Mincho", "STSong", "Songti SC", serif;
   --font-mono: "SF Mono", "JetBrains Mono", "Menlo", "Consolas", monospace;
 
@@ -8195,10 +8195,10 @@ button:disabled {
 .landing-title {
   margin: 0;
   font-family: var(--font-serif);
-  font-size: 28px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0.02em;
+  font-size: clamp(36px, 4.6vw, 54px);
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: 0.05em;
 }
 
 .landing-title-dark {
@@ -8210,21 +8210,21 @@ button:disabled {
 }
 
 .landing-mission {
-  margin: 0;
+  margin: 2px 0 0;
   max-width: 28em;
   font-family: var(--font-serif);
-  font-size: 16px;
-  font-weight: 400;
-  line-height: 1.5;
-  color: var(--zt-text-secondary);
-  letter-spacing: 0.01em;
+  font-size: clamp(17px, 1.6vw, 20px);
+  font-weight: 600;
+  line-height: 1.55;
+  color: var(--zt-text);
+  letter-spacing: 0.02em;
 }
 
 .landing-outcome {
-  margin: -4px 0 0;
+  margin: -2px 0 0;
   max-width: 34em;
   color: var(--zt-text-muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 }
 
@@ -16921,6 +16921,14 @@ button:disabled {
   letter-spacing: 0.01em;
 }
 
+/* 品牌字标与主标题同一身份：衬线 */
+.app-shell-rail-brand span {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
 .app-shell-logo {
   width: 22px;
   height: 22px;
@@ -17375,8 +17383,10 @@ button:disabled {
 
 .app-shell-dossier-head strong {
   overflow: hidden;
-  font-size: 13px;
+  font-family: var(--font-serif);
+  font-size: 14px;
   font-weight: 700;
+  letter-spacing: 0.03em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -17428,7 +17438,8 @@ button:disabled {
 }
 
 .app-shell-narrow-bar > span {
-  letter-spacing: 0.04em;
+  font-family: var(--font-serif);
+  letter-spacing: 0.06em;
 }
 
 .app-shell-narrow-bar button {
@@ -17474,7 +17485,7 @@ button:disabled {
 }
 
 .app-shell .landing-title {
-  font-size: 22px;
+  font-size: clamp(30px, 3.4vw, 42px);
 }
 
 .app-shell .landing-hero {
