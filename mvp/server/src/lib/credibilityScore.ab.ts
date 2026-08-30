@@ -2,7 +2,7 @@
  * A/B 对比：公式评分 vs 模拟 LLM 评分
  */
 
-import { computeCredibilityScore, type SearchInput } from "./credibilityScore";
+import { computeCredibilityScore, type SearchInput } from "./credibilityScore.js";
 
 const cases = [
   {
