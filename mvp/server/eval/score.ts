@@ -1,9 +1,8 @@
 /**
  * eval/score.ts — 针对 casePipeline 的评估指标（生产路径）。
  *
- * 前端 agentRuntime/evaluation 的指标绑定 AgentRuntime 结构，不可直接复用。
- * 这里是 casePipeline 的自有指标：输入是 PipelineStep[] + finalReport，
- * 与前端指标维度对齐（routing / verdict / credibility / hallucination / contract）。
+ * 客户端旧 benchmark 绑定已退役的 AgentRuntime，不能作为生产评测入口。
+ * 这里是 casePipeline 的唯一评分实现：输入是 PipelineStep[] + finalReport，
  * 纯函数，无 I/O，可单测。
  */
 
