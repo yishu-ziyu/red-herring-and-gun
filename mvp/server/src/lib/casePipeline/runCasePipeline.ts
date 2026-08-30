@@ -20,6 +20,7 @@ import {
 import { assembleFinalReport, deriveOverallVerdict, faceVerdictFor } from "../reportAssembly/index.js";
 import { looksLikePlanOrPrediction, boundTinyRumorVerdict } from "../atomSearchQuery.js";
 import { normalizeReportCitations } from "../citationBinding.js";
+import { pruneDeadCitations, type LivenessDeps } from "../citationLiveness.js";
 import {
   reviewAndRepairReport,
   type ReportReviewIssue,
@@ -174,6 +175,11 @@ export type CasePipelineInput = {
    * OCR/text hits must not become image origin.
    */
   lookupImageOrigin?: () => Promise<ImageOriginResult>;
+  /**
+   * 引用探活依赖（「来源能点开」门）。默认真实网络探活；
+   * `false` 关闭；测试传 { liveness: Map } 注入结果避免触网。
+   */
+  citationLiveness?: LivenessDeps | false;
 };
 
 export type CasePipelineResult = {
@@ -602,6 +608,16 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   // Reviewer may pad evidenceChain / rewrite conclusion — re-bind [n] to sources.
   normalizeReportCitations(finalReport);
   if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
+  // 「来源能点开」门：发布前对全局引用真实探活，死链剔除并重绑 [n] 标记。
+  // 探活通道自身故障不阻断主流程——宁可用未剪枝的报告，也不丢结论。
+  try {
+    await pruneDeadCitations(
+      finalReport,
+      input.citationLiveness === false ? { liveness: new Map() } : input.citationLiveness
+    );
+  } catch (pruneError) {
+    console.warn(`[casePipeline] 引用探活失败，跳过死链剔除: ${String(pruneError)}`);
+  }
   finalReport.faceVerdict = faceVerdictFor(finalReport.verdictType);
   // 结论文本会写「按当前信息」，这里打上实际核查时间；结论时效随来源窗口走。
   finalReport.checkedAt = new Date().toISOString();
