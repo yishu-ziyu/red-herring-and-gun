@@ -240,6 +240,24 @@ describe("runEvidenceLoop", () => {
     expect(outcome.totalNewSources).toBe(1);
   });
 
+  it("时间预算耗尽 → time-budget 立即收敛，不再发起检索", async () => {
+    const bundle = loopBundle();
+    const searchOne = vi.fn(async () => ({
+      sources: [{ url: "https://gov/notice", title: "官方", snippet: "通报" }],
+    }));
+    const outcome = await runEvidenceLoop({
+      claim: "原句",
+      bundle,
+      factVerdicts: [{ claimAtom: atom, verdict: "unverified" }],
+      searchOne,
+      claimAtomKeyFn: claimAtomKey,
+      shouldStopEarly: () => true,
+    });
+    expect(outcome.atoms[0]?.stopReason).toBe("time-budget");
+    expect(searchOne).not.toHaveBeenCalled();
+    expect(outcome.recheckFactChecker).toBe(false);
+  });
+
   it("检索抛错 → search-failed，不阻断", async () => {
     const bundle = loopBundle();
     const searchOne = vi.fn(async () => {

@@ -137,6 +137,11 @@ export type CasePipelineInput = {
   /** stable id for memory provenance; default randomUUID */
   runId?: string;
   /**
+   * 管线截止时间（epoch ms）：报告写作前的补查/复核/增强在此前必须收敛。
+   * 不传 = 无预算（测试/脚本用）。handlers 侧 = 总超时 − 收尾余量。
+   */
+  deadline?: number;
+  /**
    * Evidence sufficiency loop — ADR-004 + 翻案续期. 默认开启。
    * 提问 → 重判 → 判词仍翻转中且问题仍产证据 → 换策略再问（pass 2+）。
    * 判停全确定性：无新证据（坏问题停）/ 全部收敛（问完了）/ pass 上限（笼子）。
@@ -263,6 +268,14 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const { claim, runAgent, searchOne, callSelfProofModel, runReport, hooks, finalizeReport } = input;
   const steps: PipelineStep[] = [];
 
+  // 时间预算：证据补查/交叉复核/因果增强是「锦上添花」，报告写作是「必须发生」。
+  // 剩余时间不足时提前收敛补查类阶段，把时间让给 ReportComposer。
+  const COMPOSER_RESERVE_MS = 90_000;
+  const CROSS_EXAM_MIN_MS = 45_000;
+  const EVIDENCE_PASS_MIN_MS = 100_000;
+  const timeLeftMs = () =>
+    input.deadline == null ? Number.POSITIVE_INFINITY : input.deadline - Date.now();
+
   // Phase 1: RumorDetector — fail-open to the original sentence so search still runs.
   let rumorStep: PipelineStep;
   try {
@@ -346,6 +359,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     const pursuitHops: PursuitHop[] = [];
 
     while (passes < maxPasses) {
+      if (timeLeftMs() < EVIDENCE_PASS_MIN_MS) break;
       passes += 1;
       const seedQueriesByAtomKey: Record<string, string[]> = {};
       for (const [key, outcome] of atomOutcomes) {
@@ -362,6 +376,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
         startRound: (passes - 1) * roundsPerPass + 1,
         seedQueriesByAtomKey,
         needImageOrigin: Boolean(input.lookupImageOrigin),
+        shouldStopEarly: () => timeLeftMs() < COMPOSER_RESERVE_MS,
         hooks: {
           onLoopStart: hooks?.onEvidenceLoopStart,
           onRoundStart: hooks?.onEvidenceLoopRoundStart,
@@ -383,6 +398,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       if (passOutcome.pursuitHops?.length) pursuitHops.push(...passOutcome.pursuitHops);
       // 坏问题停：整 pass 零新增（边际增益判停）
       if (!passOutcome.recheckFactChecker) break;
+      if (timeLeftMs() < COMPOSER_RESERVE_MS) break;
       recheckFactChecker = true;
       // 有新证据 → 重判（判词可能翻转）
       try {
@@ -417,7 +433,11 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
 
   // Phase 2b: Cross exam — G3/P1（证据冲突 → 第二模型独立复核，分歧降分不重写判词）
   let crossExam: CrossExamOutcome | undefined;
-  if (input.crossExam?.enabled !== false && input.crossExam?.callRaw) {
+  if (
+    input.crossExam?.enabled !== false &&
+    input.crossExam?.callRaw &&
+    timeLeftMs() > CROSS_EXAM_MIN_MS
+  ) {
     const factVerdicts = Array.isArray(factStep?.output?.subclaimVerdicts)
       ? (factStep.output.subclaimVerdicts as Array<Record<string, unknown>>)
       : [];
@@ -462,7 +482,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   // 并行运行替代解释搜索 + 反证评分，失败可继续（不阻断收束）。
   const hasCausalAtom = Array.isArray(rumorStep?.output?.claimAtomTypes)
     && rumorStep.output.claimAtomTypes.some((t) => (t as { type?: string })?.type === "causal");
-  if (hasCausalAtom) {
+  if (hasCausalAtom && timeLeftMs() > COMPOSER_RESERVE_MS) {
     const causalSteps = await Promise.allSettled([
       runAgent("alternative_explanation_searcher", steps, search360Result, atomSearchBundle),
       runAgent("counter_evidence_grader", steps, search360Result, atomSearchBundle),
