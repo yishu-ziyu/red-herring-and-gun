@@ -323,9 +323,52 @@ function stripJsonNoise(text: string): string {
     .trim();
 }
 
+/**
+ * 修复字符串值内部未转义的引号（"他说"不会"…" 这类中文文本常见 slip，
+ * JSON.parse 报 Expected ',' or '}' after property value）。
+ * 启发式：字符串内遇到 `"` 时，向后看第一个非空白字符——
+ * 是 `,` `}` `]` `:` 或 EOF 才算真正的闭合引号，否则当内容转义。
+ */
+export function escapeUnescapedInnerQuotes(json: string): string {
+  let out = "";
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < json.length; i += 1) {
+    const ch = json[i];
+    if (!inString) {
+      if (ch === '"') inString = true;
+      out += ch;
+      continue;
+    }
+    if (escape) {
+      escape = false;
+      out += ch;
+      continue;
+    }
+    if (ch === "\\") {
+      escape = true;
+      out += ch;
+      continue;
+    }
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < json.length && /\s/.test(json[j])) j += 1;
+      const next = j < json.length ? json[j] : "";
+      if (next === "," || next === "}" || next === "]" || next === ":" || next === "") {
+        inString = false;
+        out += ch;
+      } else {
+        out += '\\"';
+      }
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
 /** 尝试修复 LLM 输出的 loose JSON（尾随逗号、未加引号的值、截断闭合） */
-function repairLooseJsonObject(json: string): string {
-  let repaired = stripJsonNoise(json)
+function repairLooseJsonObject(json: string): string {  let repaired = stripJsonNoise(json)
     // // line comments and /* block comments */ (outside of perfect string handling — best effort)
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/(^|[^:])\/\/.*$/gm, "$1")
@@ -415,8 +458,10 @@ export function parseAgentJson(text: string, label: string): any {
   const extracted = extractJsonObject(cleaned);
   const candidates = [
     extracted,
+    escapeUnescapedInnerQuotes(extracted),
     repairLooseJsonObject(extracted),
     closeTruncatedJson(extracted),
+    repairLooseJsonObject(closeTruncatedJson(escapeUnescapedInnerQuotes(extracted))),
     repairLooseJsonObject(closeTruncatedJson(extracted)),
     // last resort: whole cleaned text if it already looks like an object
     cleaned.startsWith("{") ? repairLooseJsonObject(cleaned) : "",
