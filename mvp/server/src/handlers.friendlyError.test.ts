@@ -54,4 +54,31 @@ describe("toFriendlyError — 顶层 error 出口收口", () => {
     });
     expect(JSON.stringify(event)).not.toMatch(/DeepSeek|quota|request_id|minimax|api key/i);
   });
+
+  it("SSE egress scrubs provider model names and latencyMs nested inside steps and reports", () => {
+    const event = toPublicStreamEvent({
+      type: "complete",
+      claim: "原句",
+      steps: [
+        {
+          agent: "rumor_detector",
+          model: "minimax:MiniMax-M2.7-highspeed",
+          latencyMs: 21500,
+          output: { claimAtomSelfProof: { kept: [], model: "minimax:MiniMax-M2.7-highspeed" } },
+        },
+        {
+          agent: "report_composer",
+          model: "fallback:deterministic-report",
+          latencyMs: 40,
+        },
+      ],
+      finalReport: { verdictType: "false", _scoreSource: "minimax:MiniMax-M2.7-highspeed" },
+    });
+
+    const text = JSON.stringify(event);
+    expect(text).not.toMatch(/minimax/i);
+    expect(text).not.toContain("latencyMs");
+    expect(text).toContain("fallback:deterministic-report");
+    expect((event.finalReport as Record<string, unknown>).verdictType).toBe("false");
+  });
 });
