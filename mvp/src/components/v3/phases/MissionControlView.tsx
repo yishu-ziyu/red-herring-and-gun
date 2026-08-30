@@ -11,7 +11,7 @@ import { ReportFooter } from "../ReportFooter";
 import { isChecksExhaustedMessage } from "../../../lib/checkQuota";
 import { mapShellToApodexRun, type ApodexRunModel } from "./mission/apodexRunMap";
 import { composeFollowUpClaim, previousAnswerText } from "../../../lib/composeFollowUpClaim";
-import type { ModelChoiceMap } from "../ModelPicker";
+import type { ModelChoiceMap } from "../../../lib/agentExpansion";
 import { calculateClaimSimilarity, createKnowledgeBase, type KnowledgeBase } from "../../../lib/knowledgeBase";
 import { semanticClaimSimilarity } from "../../../lib/semanticRecall";
 import type {

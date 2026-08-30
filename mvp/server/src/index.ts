@@ -10,7 +10,6 @@ import {
   clearStateCookie,
   createOauthState,
   exchangeCodeForToken,
-  fetchAipingApiKeys,
   fetchAipingUserInfo,
   getAipingConfig,
   readSessionCookie,
@@ -101,24 +100,6 @@ async function requireIdentity(req: express.Request, res: express.Response, next
   res.status(401).json({ error: "Not authenticated" });
 }
 
-function redactAipingApiKeys(data: unknown) {
-  if (!data || typeof data !== "object" || !("apikeyBaseInfo" in data)) return data;
-  const payload = data as { apikeyBaseInfo?: unknown };
-  if (!Array.isArray(payload.apikeyBaseInfo)) return data;
-  return {
-    ...payload,
-    apikeyBaseInfo: payload.apikeyBaseInfo.map((item) => {
-      if (!item || typeof item !== "object") return item;
-      const record = item as Record<string, unknown>;
-      const apiKey = typeof record.apikey === "string" ? record.apikey : "";
-      return {
-        ...record,
-        apikey: apiKey ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "",
-      };
-    }),
-  };
-}
-
 // Health check
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
@@ -126,16 +107,6 @@ app.get("/health", (_req, res) => {
 
 app.all("/mcp", requireQuota, (req, res) => {
   void mcpHttpHandler(req, res, env);
-});
-
-app.get("/api/auth/aiping/config", (_req, res) => {
-  res.json({
-    enabled: aipingConfig.enabled,
-    provider: "aiping",
-    loginUrl: "/api/auth/aiping/login",
-    callbackUrl: aipingConfig.redirectUri,
-    scope: aipingConfig.scope,
-  });
 });
 
 app.get("/api/auth/aiping/login", (req, res) => {
@@ -213,33 +184,7 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/auth/aiping/apikeys", async (req, res) => {
-  if (!aipingConfig.enabled) {
-    res.status(503).json({ error: "AI Ping OAuth is not configured" });
-    return;
-  }
-
-  const session = readSessionCookie(req, aipingConfig);
-  if (!session) {
-    res.status(401).json({ error: "Not authenticated" });
-    return;
-  }
-
-  try {
-    const data = await fetchAipingApiKeys(aipingConfig, session.accessToken);
-    res.json(redactAipingApiKeys(data));
-  } catch (error) {
-    res.status(502).json({ error: error instanceof Error ? error.message : "AI Ping apikey list failed" });
-  }
-});
-
 // API routes
-app.post("/api/agent/expand", requireQuota, (req, res, next) => handlers.handler(req, res, next));
-app.post("/api/agent/recursive-search", requireQuota, (req, res, next) => handlers.recursiveHandler(req, res, next));
-app.post("/api/agent/sherlock-search", requireQuota, (req, res, next) => handlers.sherlockHandler(req, res, next));
-app.post("/api/search/360", requireQuota, (req, res, next) => handlers.search360Handler(req, res, next));
-app.post("/api/search/provider", requireQuota, (req, res, next) => handlers.searchProviderHandler(req, res, next));
-app.post("/api/agent/orchestrate", requireQuota, (req, res, next) => handlers.orchestrateHandler(req, res, next));
 app.post("/api/agent/orchestrate-stream", requireQuota, (req, res, next) => handlers.orchestrateStreamHandler(req, res, next));
 app.post("/api/agent/batch", requireQuota, (req, res, next) => handlers.batchHandler(req, res, next));
 if (process.env.NODE_ENV === "production") {
@@ -251,7 +196,6 @@ if (process.env.NODE_ENV === "production") {
 }
 app.get("/api/models/list", (req, res, next) => handlers.modelsListHandler(req, res, next));
 app.get("/api/models/health", requireQuota, (req, res, next) => handlers.modelsHealthHandler(req, res, next));
-app.get("/api/agent/memory-candidates", requireIdentity, (req, res, next) => listMemoryCandidatesHandler(req, res).catch(next));
 app.post("/api/agent/memory-candidates", requireIdentity, (req, res, next) => updateMemoryCandidateHandler(req, res).catch(next));
 
 // v3 邮箱登录 + 账号数据（用 email 前缀避开与 AI Ping /api/auth/{me,logout} 的第一匹配冲突）
@@ -267,19 +211,16 @@ app.delete("/api/account", (req, res, next) => accountDeleteHandler(req, res).ca
 // Plan Item 2 · 报告 URL 永久路由 /r/:caseId
 import {
   postCaseHandler,
-  postCaseFeedbackHandler,
   getCaseHandler,
   renderCaseHtmlHandler,
   listCasesHandler,
 } from "./lib/caseHandlers.js";
 import {
-  listMemoryCandidatesHandler,
   updateMemoryCandidateHandler,
 } from "./lib/memoryCandidateHandlers.js";
 import { appendUserFeedback } from "./lib/userFeedback.js";
 
 app.post("/api/case", (req, res, next) => postCaseHandler(req, res).catch(next));
-app.post("/api/case/:caseId/feedback", (req, res, next) => postCaseFeedbackHandler(req, res).catch(next));
 app.post("/api/feedback", (req, res, next) => postGeneralFeedbackHandler(req, res).catch(next));
 app.get("/api/case/:caseId", (req, res, next) => getCaseHandler(req, res));
 app.get("/api/cases", (req, res, next) => listCasesHandler(req, res));

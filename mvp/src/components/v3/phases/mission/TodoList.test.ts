@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  adaptOrchestrateStreamToShell,
-  FIXTURE_COMPLETE,
-  FIXTURE_EARLY,
-  FIXTURE_MID,
-} from "../../../../lib/missionShell";
+import { adaptOrchestrateStreamToShell } from "../../../../lib/missionShell";
+import { FIXTURE_COMPLETE, FIXTURE_EARLY, FIXTURE_MID } from "../../../../lib/missionShell/fixtures";
 import { buildInvestigationTodos } from "./TodoList";
 
 describe("buildInvestigationTodos", () => {
