@@ -12,6 +12,7 @@ import {
   type CaseImage,
   type CaseIntake,
 } from "../../lib/caseIntake";
+import { extractFramesFromVideo } from "../../lib/videoFrames";
 import {
   scrapeLinks,
   formatScrapedContent,
@@ -225,20 +226,42 @@ export function Dashboard({
       if (files.length === 0) return;
       setInputError("");
       try {
+        const videoFiles = files.filter((file) => file.type.startsWith("video/"));
+        const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+        if (videoFiles.length > 0) {
+          const frames = (
+            await Promise.all(videoFiles.map((file) => extractFramesFromVideo(file)))
+          ).flat();
+          if (frames.length === 0) {
+            setInputError("视频抽帧失败，请换一个短视频文件。");
+            return;
+          }
+          const nextTotalSize = images.reduce((sum, image) => sum + image.size, 0) + frames.reduce((sum, f) => sum + f.size, 0);
+          const nextCount = images.length + frames.length;
+          if (nextTotalSize > MAX_TOTAL_IMAGE_BYTES) {
+            setInputError("视频抽帧后图片总大小超过 6MB，请换更短视频。");
+            return;
+          }
+          if (nextCount > MAX_IMAGE_COUNT) {
+            setInputError("同一次最多核查 4 张图（视频抽帧也算）。");
+            return;
+          }
+          setImages((prev) => [...prev, ...frames].slice(0, MAX_IMAGE_COUNT));
+          return;
+        }
         if (kind === "file") {
           const nonImages = files.filter((file) => !file.type.startsWith("image/"));
           if (nonImages.length > 0) {
-            setInputError("当前仅支持图片附件（聊天截图 / 网页截图）。");
+            setInputError("当前仅支持图片附件（聊天截图 / 网页截图 / 短视频）。");
             return;
           }
         }
-        const imageFiles = files.filter((file) => file.type.startsWith("image/"));
         if (imageFiles.length === 0) {
-          setInputError("只支持图片文件。");
+          setInputError("只支持图片和视频文件。");
           return;
         }
         if (imageFiles.length !== files.length) {
-          setInputError("只支持图片文件。");
+          setInputError("只支持图片和视频文件。");
         }
         const nextTotalSize =
           images.reduce((sum, image) => sum + image.size, 0) +

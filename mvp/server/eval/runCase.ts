@@ -15,8 +15,9 @@ import {
   ProviderFallbackError,
 } from "../src/lib/providerRouter.js";
 import { runCasePipeline, type PipelineStep } from "../src/lib/casePipeline/index.js";
-import { retrieveAtomSources, buildDeterministicFinalReport } from "../src/handlers.js";
-import { applyFormulaScoreToReport, computeFormulaScore } from "../src/handlers.js";
+import { retrieveAtomSources } from "../src/lib/searchProviders.js";
+import { buildDeterministicFinalReport } from "../src/lib/reportFallback.js";
+import { applyFormulaScoreToReport, computeFormulaScore } from "../src/lib/formulaScore.js";
 import { applyFactDeskPostProcessToReport } from "../src/lib/factDeskPostProcess.js";
 import { makeRewriteQueryCall } from "../src/lib/evidenceLoop/index.js";
 import type { ScoreCaseGolden } from "./golden.js";

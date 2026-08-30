@@ -57,6 +57,29 @@ function looksLikeStatistic(atom: string): boolean {
   return /(?:GDP|gdp|同比|环比|确诊).{0,12}\d/.test(stripped);
 }
 
+/** 权威站点评分提升（检索结果排序里 officialHint 的站点清单，保持同一口径）。 */
+const AUTHORITY_SITES: ReadonlyArray<string> = [
+  "site:piyao.org.cn", // 中国互联网联合辟谣平台（综合官方回应）
+  "site:nhc.gov.cn", // 国家卫健委（健康类）
+];
+const HEALTH_RE = /(癌|疫苗|治疗|养生|食品|药品|血压|血糖|健康|病|感染|传染|停课|封城)/;
+const SOCIAL_RE = /(死亡|爆炸|火灾|车祸|地震|下雪|补贴|领钱|疫苗|停课|封城|转发)/;
+
+export function looksLikeHealthOrSocialRumor(atom: string): boolean {
+  return HEALTH_RE.test(atom) || SOCIAL_RE.test(atom);
+}
+
+/** 权威站点直查：健康/社会谣言至少带 1 路，独立于 3 路配额，官方来源命中即高权重。 */
+export function authoritySiteQueries(atom: string): string[] {
+  const compact = compactAtomForSearch(atom);
+  if (!compact) return [];
+  const isHealth = HEALTH_RE.test(atom);
+  const out: string[] = [];
+  out.push(`${AUTHORITY_SITES[0]} ${compact}`); // 联合辟谣平台恒带
+  if (isHealth) out.push(`${AUTHORITY_SITES[1]} ${compact}`);
+  return out;
+}
+
 export function buildAtomSearchQueries(atom: string): string[] {
   const t = atom.replace(/\s+/g, " ").trim();
   if (!t) return [];
@@ -76,11 +99,15 @@ export function buildAtomSearchQueries(atom: string): string[] {
   const third =
     allowThird && compact && compact !== t && extras.length === 0 ? `${compact} ${suffix}` : undefined;
   const temporal = allowThird ? portfolio.find((p) => p.purpose === "temporal")?.query : undefined;
+  // 权威站点直查独立于 3 路配额：健康/社会/截图谣言必带官方站点查询。
+  const siteQueries = looksLikeHealthOrSocialRumor(t) || /截图|P图|p图/.test(t)
+    ? authoritySiteQueries(t)
+    : [];
   return uniqueKeep(
-    [...extras, exact, screenshotQ, quoteQ, statisticQ, second, third, temporal].filter(
+    [...extras, ...siteQueries, exact, screenshotQ, quoteQ, statisticQ, second, third, temporal].filter(
       (q): q is string => Boolean(q)
     ),
-    allowThird ? 3 : 2
+    allowThird ? 3 + siteQueries.length : 2 + siteQueries.length
   );
 }
 
