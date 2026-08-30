@@ -35,6 +35,57 @@ export type UiCopy = {
   todoTitle: string;
   stepsComplete: string;
   stepsUnit: string;
+  /* 首页落地层 */
+  mission: string;
+  outcome: string;
+  materialLabel: string;
+  materialPlaceholder: string;
+  submitStart: string;
+  submitScraping: string;
+  examplesAria: string;
+  examplesLabel: string;
+  demoClaims: [string, string, string];
+  linksDetected: string;
+  fillMaterialFirst: string;
+  scrapeFailed: string;
+  imageReadFailed: string;
+  videoFrameFailed: string;
+  videoFrameTooLarge: string;
+  tooManyFrames: string;
+  imagesOnly: string;
+  filesUnsupported: string;
+  imagesTooLarge: string;
+  tooManyImages: string;
+  accountStateLabel: string;
+  accountChecking: string;
+  signedIn: string;
+  signOut: string;
+  signInAccount: string;
+  pointsPrefix: string;
+  addMaterialOrSkill: string;
+  addImage: string;
+  addAttachment: string;
+  skills: string;
+  noSkillMatch: string;
+  docTitle: string;
+  /* 桌面壳层 */
+  historyLabel: string;
+  newCheck: string;
+  recentLabel: string;
+  recentEmpty: string;
+  statusRunning: string;
+  statusInterrupted: string;
+  statusDone: string;
+  signIn: string;
+  accountNavLabel: string;
+  accountMenu: string;
+  modelSettings: string;
+  dossierLabel: string;
+  dossierTitle: string;
+  collapse: string;
+  paperEmpty: string;
+  dossierToggle: string;
+  dossierCollapse: string;
 };
 
 export const UI_COPY: Record<UiLang, UiCopy> = {
@@ -66,6 +117,59 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     todoTitle: "核查计划",
     stepsComplete: "完成",
     stepsUnit: "步",
+    mission: "贴进来。追出处。",
+    outcome: "告诉你哪一截站得住，问题在哪里，来源能点开。",
+    materialLabel: "待核查材料",
+    materialPlaceholder: "一句话、一条链接，或一张截图",
+    submitStart: "开始核查",
+    submitScraping: "正在抓取链接内容…",
+    examplesAria: "试一条",
+    examplesLabel: "或试一条",
+    demoClaims: [
+      "隔夜菜会致癌，等于吃毒药",
+      "5G信号塔辐射导致周边居民头晕失眠",
+      "人民币即将大幅贬值，赶紧换美元",
+    ],
+    linksDetected: "检测到的链接",
+    fillMaterialFirst: "请先填写待核查材料。",
+    scrapeFailed: "链接抓取失败",
+    imageReadFailed: "图片读取失败",
+    videoFrameFailed: "视频抽帧失败，请换一个短视频文件。",
+    videoFrameTooLarge: "视频抽帧后图片总大小超过 6MB，请换更短视频。",
+    tooManyFrames: "同一次最多核查 4 张图（视频抽帧也算）。",
+    imagesOnly: "当前仅支持图片附件（聊天截图 / 网页截图 / 短视频）。",
+    filesUnsupported: "只支持图片和视频文件。",
+    imagesTooLarge: "图片总大小不能超过 6MB。",
+    tooManyImages: "最多支持 4 张图片附件，超出部分未添加。",
+    accountStateLabel: "AI Ping 账号状态",
+    accountChecking: "账号检测中",
+    signedIn: "已登录",
+    signOut: "退出",
+    signInAccount: "登录账号",
+    pointsPrefix: "点数",
+    addMaterialOrSkill: "添加材料或技能",
+    addImage: "添加图片",
+    addAttachment: "添加附件",
+    skills: "技能",
+    noSkillMatch: "没有匹配的技能",
+    docTitle: "红鲱鱼与枪｜查出处，判断原句哪里站得住",
+    historyLabel: "历史卷宗",
+    newCheck: "新查一条",
+    recentLabel: "最近核查",
+    recentEmpty: "还没有查过",
+    statusRunning: "核查中",
+    statusInterrupted: "没查完",
+    statusDone: "已有判断",
+    signIn: "登录",
+    accountNavLabel: "账号与设置",
+    accountMenu: "账户",
+    modelSettings: "模型设置",
+    dossierLabel: "核查卷宗",
+    dossierTitle: "核查卷宗",
+    collapse: "收起",
+    paperEmpty: "查完的判断会出现在这里。",
+    dossierToggle: "卷宗",
+    dossierCollapse: "收起卷宗",
   },
   en: {
     runProcess: "Run process",
@@ -95,6 +199,59 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     todoTitle: "Investigation plan",
     stepsComplete: "complete",
     stepsUnit: "steps",
+    mission: "Paste it in. Trace the source.",
+    outcome: "Tells you which part holds up, where the problems are, with sources you can open.",
+    materialLabel: "Material to check",
+    materialPlaceholder: "A sentence, a link, or a screenshot",
+    submitStart: "Start the check",
+    submitScraping: "Fetching the link content…",
+    examplesAria: "Try one",
+    examplesLabel: "Or try one",
+    demoClaims: [
+      "Leftover overnight vegetables cause cancer — eating them is like taking poison",
+      "Radiation from 5G towers gives nearby residents dizziness and insomnia",
+      "The yuan is about to crash — swap it for dollars now",
+    ],
+    linksDetected: "Links detected",
+    fillMaterialFirst: "Add something to check first.",
+    scrapeFailed: "Could not fetch the link",
+    imageReadFailed: "Could not read the image",
+    videoFrameFailed: "Frame extraction failed — try a shorter video clip.",
+    videoFrameTooLarge: "Extracted frames exceed 6MB — use a shorter clip.",
+    tooManyFrames: "Up to 4 images per check (video frames included).",
+    imagesOnly: "Only image attachments are supported (chat / web screenshots, short videos).",
+    filesUnsupported: "Only image and video files are supported.",
+    imagesTooLarge: "Total image size must stay under 6MB.",
+    tooManyImages: "Up to 4 image attachments — extras were dropped.",
+    accountStateLabel: "AI Ping account status",
+    accountChecking: "Checking account",
+    signedIn: "Signed in",
+    signOut: "Sign out",
+    signInAccount: "Sign in",
+    pointsPrefix: "Points",
+    addMaterialOrSkill: "Add material or a skill",
+    addImage: "Add image",
+    addAttachment: "Add attachment",
+    skills: "Skills",
+    noSkillMatch: "No matching skills",
+    docTitle: "Red Herring & Gun | Trace the source, judge what holds up",
+    historyLabel: "Past cases",
+    newCheck: "New check",
+    recentLabel: "Recent checks",
+    recentEmpty: "Nothing checked yet",
+    statusRunning: "Checking",
+    statusInterrupted: "Interrupted",
+    statusDone: "Verdict ready",
+    signIn: "Sign in",
+    accountNavLabel: "Account & settings",
+    accountMenu: "Account",
+    modelSettings: "Model settings",
+    dossierLabel: "Case file",
+    dossierTitle: "Case file",
+    collapse: "Collapse",
+    paperEmpty: "The verdict will appear here once the check is done.",
+    dossierToggle: "File",
+    dossierCollapse: "Hide file",
   },
 };
 
@@ -115,6 +272,7 @@ export function readUiLang(): UiLang {
 export function applyUiLang(lang: UiLang): void {
   if (typeof document !== "undefined") {
     document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+    document.title = UI_COPY[lang].docTitle;
   }
 }
 
