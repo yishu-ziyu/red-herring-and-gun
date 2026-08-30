@@ -14,6 +14,11 @@
 import type { FinalReport } from "./schemas";
 import type { ClaimReviewJsonLd } from "./claimReview";
 
+export interface CaseFeedback {
+  reason: string;
+  createdAt: number;
+}
+
 export interface CaseEntry {
   caseId: string;
   claim: string;
@@ -23,6 +28,8 @@ export interface CaseEntry {
   createdAt: number;
   /** 邮箱账号 hash；未登录写入的 case 没有归属，不会出现在任何人的列表里。 */
   ownerHash?: string;
+  /** 用户纠错反馈：结论有异议时由 report 页提交；供审计与后续 golden 采集。 */
+  feedback?: CaseFeedback[];
 }
 
 const LRU_LIMIT = 1000;
@@ -86,6 +93,20 @@ export function listCases(max: number = 50, ownerHash?: string): CaseEntry[] {
  */
 export function clearCases(): void {
   store.clear();
+}
+
+const MAX_FEEDBACK_PER_CASE = 20;
+
+/**
+ * 追加用户纠错反馈。case 不存在返回 false；每 case 上限 20 条防刷。
+ */
+export function appendCaseFeedback(caseId: string, reason: string): { ok: boolean; error?: string } {
+  const entry = store.get(caseId);
+  if (!entry) return { ok: false, error: "case not found" };
+  const feedback = Array.isArray(entry.feedback) ? entry.feedback : [];
+  if (feedback.length >= MAX_FEEDBACK_PER_CASE) return { ok: false, error: "too many feedback" };
+  entry.feedback = [...feedback, { reason: reason.slice(0, 2000), createdAt: Date.now() }];
+  return { ok: true };
 }
 
 /**

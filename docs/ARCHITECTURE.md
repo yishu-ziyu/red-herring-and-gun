@@ -106,6 +106,6 @@ claim
 1. ~~开发 HTTP 只代理 Express~~（已做）。AgentRuntime 已不在本地 HTTP 上，客户端 eval 已迁到 `mvp/server/eval`，剩余类型抽取后即可删。
 2. ~~过程只留 `ApodexRunView`，从 live 路径拿掉 legacy 过程轨~~（已做）。`?shell=legacy` 不是产品路径。  
 3. ~~`runAgentLoop` feature-flag 与 `casePipeline` 并列~~（ADR-006，默认关）。直到判断质量不低于现管线之前，不切默认。  
-4. 继续拆 `handlers.ts`，并在后续里程碑评估 `MissionControlView` 的 hook/纯函数拆分。截图原图闸已进 Case Pipeline（`imageOrigin`）；现网检索适配器还没有以图搜图，所以有图时会写「原图没查到」，不会把 OCR 二手帖当图源。真正能点到更早出处，要等接上以图搜图适配器。`AGENT_LOOP=1` 那条路还没接这道闸。
+4. ~~拆 `handlers.ts`~~（已做，2026-08-30）。3793 行 → 1272 行 HTTP adapter + 编排；六个单职责模块进 `mvp/server/src/lib/`：`llmGateway`（Canvas 调度类 LLM 调用）、`searchProviders`（并行搜索矩阵 + retrieveAtomSources）、`visionIntake`（材料摄入 + StepFun 视觉）、`reportFallback`（确定性兜底报告）、`formulaScore`（公式评分）、`httpUtils`/`valueCoerce`/`ssrfGuard`（小工具）。同时删除两处与 `agentProviders` 重复的函数（`extractChatCompletionText`、`buildStepFunRequestBody`）和六个零调用 demo fallback 函数；eval 导入改指 lib 模块。`makeRunAgent` 与 orchestrate 接线仍在 handlers.ts，后续里程碑再评估拆分。截图原图闸已进 Case Pipeline（`imageOrigin`）；现网检索适配器还没有以图搜图，所以有图时会写「原图没查到」，不会把 OCR 二手帖当图源。真正能点到更早出处，要等接上以图搜图适配器。`AGENT_LOOP=1` 那条路还没接这道闸。
 
 不要从删判决模块开始。不要把研究克隆提交进仓库。

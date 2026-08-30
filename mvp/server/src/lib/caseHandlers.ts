@@ -7,7 +7,7 @@
  * GET  /api/cases     → 当前登录账号的最近核查；未登录返回 []
  */
 
-import { getCase, listCases, putCase } from "./caseStore.js";
+import { getCase, listCases, putCase, appendCaseFeedback } from "./caseStore.js";
 import type { FinalReport } from "./schemas.js";
 import { buildClaimReviewJsonLd } from "./claimReview.js";
 import { readEmailAccountOptional } from "./emailSession.js";
@@ -161,6 +161,30 @@ export async function getCaseHandler(req: any, res: any): Promise<void> {
     }
   }
   sendJson(res, 200, toPublicCase(entry));
+}
+
+/**
+ * POST /api/case/:caseId/feedback — 用户纠错反馈（报告页可见）。
+ * key 是公开分享链接，故匿名允许；每 case 上限防刷。
+ * 反馈落入 caseStore.feedback，供审计与后续 golden 反向采集（真实错例进评测）。
+ */
+export async function postCaseFeedbackHandler(req: any, res: any): Promise<void> {
+  const caseId = String(req.params?.caseId ?? "").trim();
+  if (!caseId) {
+    sendJson(res, 400, { error: "caseId is required" });
+    return;
+  }
+  const reason = String((req.body ?? {}).reason ?? "").trim();
+  if (!reason) {
+    sendJson(res, 400, { error: "reason is required" });
+    return;
+  }
+  const result = appendCaseFeedback(caseId, reason);
+  if (!result.ok) {
+    sendJson(res, result.error === "case not found" ? 404 : 429, { error: result.error });
+    return;
+  }
+  sendJson(res, 200, { ok: true });
 }
 
 /**

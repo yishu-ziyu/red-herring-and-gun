@@ -107,11 +107,12 @@ describe("atomSearchQuery", () => {
     ).toBe("false");
   });
 
-  it("截图句至少一路追原图出处，不超过三路", () => {
+  it("截图句至少一路追原图出处，且带官方辟谣站点直查", () => {
     const q = buildAtomSearchQueries("群里那张截图说某地地铁已经开通");
     expect(q.some((item) => item.includes("原图") && item.includes("出处") && item.includes("首发"))).toBe(true);
-    expect(q.length).toBeGreaterThanOrEqual(2);
-    expect(q.length).toBeLessThanOrEqual(3);
+    expect(q.length).toBeGreaterThanOrEqual(3);
+    expect(q.some((item) => item.startsWith("site:piyao.org.cn"))).toBe(true);
+    expect(q.length).toBeLessThanOrEqual(4);
   });
 
   it("聊天记录句同样追原图出处", () => {

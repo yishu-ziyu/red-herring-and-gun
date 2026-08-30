@@ -583,6 +583,8 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   normalizeReportCitations(finalReport);
   if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
   finalReport.faceVerdict = faceVerdictFor(finalReport.verdictType);
+  // 结论文本会写「按当前信息」，这里打上实际核查时间；结论时效随来源窗口走。
+  finalReport.checkedAt = new Date().toISOString();
   reportStep.output = finalReport;
   hooks?.onReportReviewResult?.({
     toolName: REPORT_REVIEWER_TOOL,

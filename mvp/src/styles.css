@@ -17665,3 +17665,49 @@ button:disabled {
   max-height: none;
   min-height: 0;
 }
+
+/* 结论异议反馈（报告页底部弱通道） */
+.report-feedback {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--border, #e4e1ec);
+  font: 14px/20px var(--font-sans, -apple-system, "PingFang SC", "Segoe UI", sans-serif);
+}
+.report-feedback--sent {
+  color: var(--text-muted, #6e6880);
+}
+.report-feedback__link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted, #6e6880);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.report-feedback__link:hover {
+  color: var(--text, #1f1b2e);
+}
+.report-feedback__form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 520px;
+}
+.report-feedback__form label {
+  font-size: 13px;
+  color: var(--text-muted, #6e6880);
+}
+.report-feedback__form textarea {
+  resize: vertical;
+  min-height: 52px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #e4e1ec);
+  border-radius: 8px;
+  background: var(--surface, #ffffff);
+  color: var(--text, #1f1b2e);
+  font: 14px/20px var(--font-sans, -apple-system, "PingFang SC", "Segoe UI", sans-serif);
+}
+.report-feedback__form .result-view-btn {
+  align-self: flex-start;
+}

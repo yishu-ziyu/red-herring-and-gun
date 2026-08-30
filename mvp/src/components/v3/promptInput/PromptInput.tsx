@@ -645,7 +645,7 @@ export function PromptInput({
   const openPicker = (kind: "image" | "file") => {
     const input = fileRef.current;
     if (!input) return;
-    input.accept = kind === "image" ? "image/*" : "";
+    input.accept = kind === "image" ? "image/*,video/*" : "";
     input.value = "";
     input.dataset.kind = kind;
     input.click();
