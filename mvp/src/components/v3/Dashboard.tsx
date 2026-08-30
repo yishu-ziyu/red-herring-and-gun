@@ -13,6 +13,7 @@ import {
   type CaseIntake,
 } from "../../lib/caseIntake";
 import { extractFramesFromVideo } from "../../lib/videoFrames";
+import { BatchChecker } from "./BatchChecker";
 import {
   scrapeLinks,
   formatScrapedContent,
@@ -370,6 +371,7 @@ export function Dashboard({
               ariaLabel="待核查材料"
               placeholder="一句话、一条链接，或一张截图"
             />
+            <BatchChecker initialText={inputValue} />
             {detectedLinks.length > 0 ? (
               <div className="landing-link-row" aria-label="检测到的链接">
                 {detectedLinks.map((link) => (

@@ -7,6 +7,7 @@ import {
 import { adaptOrchestrateStreamToShell } from "../../../lib/missionShell";
 import { formatPursuitDetail } from "../../../lib/evidencePursuitUi";
 import { ApodexRunView } from "./mission/ApodexRunView";
+import { ReportFooter } from "../ReportFooter";
 import { isChecksExhaustedMessage } from "../../../lib/checkQuota";
 import { mapShellToApodexRun, type ApodexRunModel } from "./mission/apodexRunMap";
 import { composeFollowUpClaim, previousAnswerText } from "../../../lib/composeFollowUpClaim";
@@ -1209,6 +1210,17 @@ export function MissionControlView({
           <p className="mission-run-status-notice" role="alert">
             {errorMessage}
           </p>
+        ) : null}
+        {runStatus === "completed" ? (
+          <ReportFooter
+            claim={displayClaim}
+            verdictType={reportText(finalReport, "verdictType") || "unverified"}
+            score={
+              finalReport && typeof finalReport.credibilityScore === "number"
+                ? finalReport.credibilityScore
+                : undefined
+            }
+          />
         ) : null}
       </div>
     </main>
