@@ -74,8 +74,8 @@ interface LocalMemoryRecall extends Record<string, unknown> {
   traceText: string;
 }
 
-// 错误信息泄漏修复：主线只展示这条友好文案，原始诊断收进"技术细节"折叠区。
-export const ERROR_FRIENDLY_MESSAGE = "底层模型服务未能完成调用，请稍后重试或检查模型配置";
+// 公开界面只说明结果与下一步，不把 provider、额度、密钥或本机命令交给用户处理。
+export const ERROR_FRIENDLY_MESSAGE = "这次核查没能完成，请稍后重试。";
 
 export interface ErrorEventLike {
   error?: string;
@@ -85,20 +85,11 @@ export interface ErrorEventLike {
   providerErrors?: string[];
 }
 
-// 把事件里的原始诊断整理成"技术细节"正文：优先后端结构化 detail，其次 providerErrors，否则回退原始字符串。
-export function errorTechDetail(event: ErrorEventLike): string {
-  if (typeof event.detail === "string" && event.detail) {
-    return event.detail;
-  }
-  if (Array.isArray(event.providerErrors) && event.providerErrors.length > 0) {
-    return ["各候选模型调用明细：", ...event.providerErrors].join("\n");
-  }
-  return event.error ?? event.message ?? "Orchestrate 流式调用失败";
+export function errorTechDetail(_event: ErrorEventLike): string {
+  return "";
 }
 
-// 收敛任意 error 事件为 { 用户可读 message, 折叠区 techDetail }。
-// message 恒为友好文案，绝不包含 request_id / quota / provider 名 / 原始 JSON；
-// 原始诊断只进入 techDetail 或 providerErrors。四个 error 入口共用，便于单测钉死。
+// 收敛任意 error 事件为公开文案；诊断不进入浏览器展示层。
 export function resolveErrorPresentation(event: ErrorEventLike): {
   message: string;
   techDetail: string;
@@ -775,6 +766,7 @@ export function MissionControlView({
   claim,
   intake,
   onCancel,
+  onRetry,
   modelChoice,
   onComplete,
   initialFinalReport = null,
@@ -986,7 +978,7 @@ export function MissionControlView({
               }
               case "agent_error": {
                 const step = buildStep(event, "failed");
-                const { message, techDetail } = resolveErrorPresentation(event);
+                const { message } = resolveErrorPresentation(event);
                 const recoverable =
                   event.recoverable === true ||
                   getAgentRegistry().canContinueAfterFailure(step.agent);
@@ -1095,7 +1087,7 @@ export function MissionControlView({
                 break;
               }
               case "error": {
-                const { message, techDetail } = resolveErrorPresentation(event);
+                const { message } = resolveErrorPresentation(event);
                 setStartedAt(null);
                 setRunStatus("failed");
                 setErrorMessage(message);
@@ -1180,6 +1172,7 @@ export function MissionControlView({
   );
 
   const hasStreamEvents = sseEvents.length > 0;
+  const retryableFailure = runStatus === "failed" || isInterruptedFinalReport(finalReport);
   return (
     <main
       className={`mission-control-view case-workbench-view case-workbench-view--clean case-dossier-view ${
@@ -1193,10 +1186,10 @@ export function MissionControlView({
           model={apodexRun}
           elapsedMs={elapsedMs}
           runStatus={runStatus}
-          onStop={onCancel}
+          onStop={retryableFailure && onRetry ? onRetry : onCancel}
           stopLabel={
-            isInterruptedFinalReport(finalReport)
-              ? "换一条"
+            retryableFailure
+              ? "重新核查"
               : runStatus === "running"
                 ? "停止"
                 : "再查一条"
