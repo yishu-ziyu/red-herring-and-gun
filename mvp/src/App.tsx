@@ -11,7 +11,7 @@ import { AccountView } from "./components/v3/auth/AccountView";
 import type { AccountProfile } from "./components/v3/auth/accountTypes";
 import { accountDisplayName } from "./lib/accountIdentity";
 import { caseIntakePrimaryText, type CaseIntake } from "./lib/caseIntake";
-import type { ModelChoiceMap } from "./components/v3/ModelPicker";
+import type { ModelChoiceMap } from "./lib/agentExpansion";
 
 type AppPhase = "input" | "executing";
 

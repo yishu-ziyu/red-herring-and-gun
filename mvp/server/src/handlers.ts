@@ -2,15 +2,13 @@
  * handlers.ts — Express HTTP adapter + Case Pipeline / Agent Loop 编排接线。
  *
  * 只做三件事：路由分发、SSE 流式输出、调 runCasePipeline（ADR-003 生产路径）。
- * LLM provider 调用 → lib/llmGateway.js；搜索矩阵 → lib/searchProviders.js；
+ * 搜索矩阵 → lib/searchProviders.js；
  * 视觉摄入 → lib/visionIntake.js；兜底报告 → lib/reportFallback.js；
  * 公式评分 → lib/formulaScore.js；HTTP 工具 → lib/httpUtils.js。
  * 产品规则不写在 HTTP 层；域深度在 mvp/server/src/lib/。
  */
 
 import dns from "node:dns/promises";
-
-import { searchClaimAcrossSources } from "./lib/sherlockStyleSearch.js";
 
 import { type AtomSearchBundle } from "./lib/atomSearch.js";
 
@@ -37,8 +35,6 @@ import { commitFreeCheck, releaseFreeCheck } from "./lib/checkQuota.js";
 
 import { applyFactDeskPostProcessToReport } from "./lib/factDeskPostProcess.js";
 
-import { buildClaimReviewJsonLd } from "./lib/claimReview.js";
-
 import { readJson, sendJson, wait, getTimeoutMs, withTimeout } from "./lib/httpUtils.js";
 
 import { asRecord } from "./lib/valueCoerce.js";
@@ -60,18 +56,9 @@ import {
 import {
   build360SearchFailure,
   callParallelSearchProviders,
-  callSearchProvider,
-  getProviderLabel,
   getSearchToolName,
   retrieveAtomSources,
 } from "./lib/searchProviders.js";
-
-import {
-  callLocalProvider,
-  callLocalProviderRecursive,
-  callOpenAI,
-  callOpenAIRecursive,
-} from "./lib/llmGateway.js";
 
 import {
   runReportComposerWithFallback,
@@ -160,135 +147,6 @@ export function createHandlers(env: Record<string, string>) {
   // 多 Agent Orchestrate 编排（组装/状态栏/Skills/自证/改写/交叉二审）收在 lib/orchestrate。
   const { makeRunAgent, makeSelfProofCaller, makeRewriteCaller, makeCrossExamCaller } =
     createOrchestrateAdapter({ env, codexBin });
-
-  async function handler(req: any, res: any, next: any) {
-    if (req.method !== "POST") return next();
-
-    let payload: any;
-    try {
-      payload = await readJson(req);
-    } catch {
-      return sendJson(res, 400, { message: "无法解析请求 JSON" });
-    }
-
-    try {
-      const llmResult = apiKey
-        ? await callOpenAI({ apiKey, baseUrl, model, payload })
-        : await callLocalProvider({ codexBin, model: codexModel, payload, env });
-      return sendJson(res, 200, llmResult);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "未知 LLM 调用错误";
-      return sendJson(res, 502, { message });
-    }
-  }
-
-  async function recursiveHandler(req: any, res: any, next: any) {
-    if (req.method !== "POST") return next();
-
-    let payload: any;
-    try {
-      payload = await readJson(req);
-    } catch {
-      return sendJson(res, 400, { message: "无法解析请求 JSON" });
-    }
-
-    try {
-      const llmResult = apiKey
-        ? await callOpenAIRecursive({ apiKey, baseUrl, model, payload })
-        : await callLocalProviderRecursive({ codexBin, model: codexModel, payload, env });
-      return sendJson(res, 200, llmResult);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "未知递归搜索错误";
-      return sendJson(res, 502, { message });
-    }
-  }
-
-  async function sherlockHandler(req: any, res: any, next: any) {
-    if (req.method !== "POST") return next();
-
-    let payload: any;
-    try {
-      payload = await readJson(req);
-    } catch {
-      return sendJson(res, 400, { message: "无法解析请求 JSON" });
-    }
-
-    try {
-      const result = await searchClaimAcrossSources(payload.claim, payload.keywords);
-      return sendJson(res, 200, result);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Sherlock 搜索错误";
-      return sendJson(res, 502, { message });
-    }
-  }
-
-  async function search360Handler(req: any, res: any, next: any) {
-    if (req.method !== "POST") return next();
-
-    let payload: any;
-    try {
-      payload = await readJson(req);
-    } catch {
-      return sendJson(res, 400, { message: "无法解析请求 JSON" });
-    }
-
-    const query = typeof payload.query === "string" ? payload.query.trim() : "";
-    if (!query) return sendJson(res, 400, { message: "缺少 query 参数" });
-
-    try {
-      const result = await withTimeout(
-        callParallelSearchProviders({ env, query, model: payload.model, refProm: payload.refProm }),
-        getTimeoutMs(env, "SEARCH_TOTAL_TIMEOUT_MS", 20000),
-        "并行搜索服务"
-      );
-      return sendJson(res, 200, result);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
-      return sendJson(res, 504, { message });
-    }
-  }
-
-  async function searchProviderHandler(req: any, res: any, next: any) {
-    if (req.method !== "POST") return next();
-
-    let payload: any;
-    try {
-      payload = await readJson(req);
-    } catch {
-      return sendJson(res, 400, { message: "无法解析请求 JSON" });
-    }
-
-    const query = typeof payload.query === "string" ? payload.query.trim() : "";
-    const provider = typeof payload.provider === "string" ? payload.provider.trim() : "";
-    if (!query) return sendJson(res, 400, { message: "缺少 query 参数" });
-    if (!provider) return sendJson(res, 400, { message: "缺少 provider 参数" });
-
-    try {
-      const result = await withTimeout(
-        callSearchProvider({ env, provider, query, model: payload.model, refProm: payload.refProm }),
-        getTimeoutMs(env, "SEARCH_PROVIDER_ENDPOINT_TIMEOUT_MS", 15000),
-        getProviderLabel(provider)
-      );
-      return sendJson(res, 200, result);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : `${provider} 未返回真实结果`;
-      return sendJson(res, 504, { message });
-    }
-  }
-
-  async function get360SearchForClaim(claim: string) {
-    try {
-      return await retrieveAtomSources(env, claim);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
-      return build360SearchFailure(claim, message);
-    }
-  }
-
-  // ───────────────────────────────────────────────────────────────
-  // GET /api/models/list — 返回 server 端已配 key 的所有 model 候选
-  // 用于前端 ModelPicker 渲染下拉选项
-  // ───────────────────────────────────────────────────────────────
 
   async function modelsListHandler(req: any, res: any, next: any) {
     if (req.method !== "GET") return next();
@@ -468,121 +326,6 @@ export function createHandlers(env: Record<string, string>) {
     const report = buildDeterministicFinalReport(c, [], undefined, "核查超过时限，先给中间结论。");
     report._source = "error-boundary";
     return report;
-  }
-
-  async function orchestrateHandler(req: any, res: any, next: any) {
-    if (req.method !== "POST") return next();
-
-    let payload: any;
-    try {
-      payload = await readJson(req);
-    } catch {
-      return sendJson(res, 400, { message: "无法解析请求 JSON" });
-    }
-
-    let claim = payload.claim;
-    if (!claim || typeof claim !== "string") {
-      return sendJson(res, 400, { message: "缺少 claim 参数" });
-    }
-    const modelChoice = payload.modelChoice;
-    const mcValidation = validateModelChoice(env, modelChoice);
-    if (!mcValidation.ok) {
-      return sendJson(res, 400, { message: mcValidation.error || "modelChoice 非法" });
-    }
-    const ticket = req.checkTicket;
-    if (!ticket) return;
-    const intake = normalizeCaseIntake(payload.intake);
-    const intakeMetadata = buildCaseIntakeMetadata(intake);
-    const clientMemoryRecall = normalizeClientMemoryRecall(payload.memoryRecall);
-    let visualExtraction: Record<string, unknown> | undefined;
-
-    try {
-      if (intake?.images.length) {
-        const visionResult = await callStepFunVisionForIntake({ env, claim, intake });
-        visualExtraction = asRecord(visionResult.output);
-        claim = composeClaimWithVision(claim, intake, visualExtraction);
-      }
-
-      if (wantsAgentLoop(payload, env)) {
-        const loop = await runClaimLoopPi({
-          claim,
-          env,
-          callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
-          lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
-        });
-        commitFreeCheck(res, ticket);
-        return sendJson(res, 200, {
-          steps: [],
-          finalReport: loop.finalReport,
-          execution: "loop",
-        });
-      }
-
-      const runAgent = makeRunAgent({
-        claim,
-        modelChoice,
-        intakeMetadata,
-        visualExtraction,
-        clientMemoryRecall,
-      });
-
-      const result = await withTimeout(
-        runCasePipeline({
-          claim,
-          // 截止 = 总超时 − 10s 收尾余量：补查/复核提前收敛，报告写作不再被总超时截断
-          deadline: Date.now() + PIPELINE_TOTAL_TIMEOUT_MS - 10_000,
-          runAgent,
-          searchOne: makeSearchOneAtom(),
-          lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
-          callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
-          runReport: (args) => makeReportRunner(runAgent)(args),
-          evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteCaller(modelChoice)) },
-          crossExam: { callRaw: makeCrossExamCaller(modelChoice) },
-          hooks: {
-            searchMode: "parallel",
-            onSelfProof: (info) => {
-              console.log(
-                `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${info.kept.length} dropped=${info.dropped.length}`
-              );
-            },
-            onAtomSearchResult: (_atom, _result) => {
-              /* aggregate log after pipeline via result */
-            },
-            onEvidenceLoopStopped: (info) => {
-              console.log(
-                `[evidence_loop] atom=${JSON.stringify(info.atom).slice(0, 80)} rounds=${info.rounds} reason=${info.reason}`
-              );
-            },
-        },
-        finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>
-          pipelineFinalize(fctx, visualExtraction),
-        memoryCandidateStore: getMemoryCandidateStore(),
-      }),
-        PIPELINE_TOTAL_TIMEOUT_MS,
-        "整体核查"
-      );
-
-      console.log(
-        `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length} memoryCandidates=${result.memoryCandidates.length}`
-      );
-
-      commitFreeCheck(res, ticket);
-      return sendJson(res, 200, {
-        steps: result.steps,
-        finalReport: result.finalReport,
-        memoryCandidates: result.memoryCandidates,
-      });
-    } catch (error) {
-      releaseFreeCheck(ticket);
-      // 整体超时 → 给「还没查完」的中间结论，不 502
-      if (error instanceof Error && error.message.includes("整体核查")) {
-        const timedOut = buildTimedOutReport(claim);
-        applyContextCrossCheckToReport(timedOut, { claim, visualExtraction });
-        return sendJson(res, 200, { steps: [], finalReport: timedOut, memoryCandidates: [] });
-      }
-      const message = error instanceof Error ? error.message : "Orchestrate 调用错误";
-      return sendJson(res, 502, { message, steps: [] });
-    }
   }
 
   async function orchestrateStreamHandler(req: any, res: any, next: any) {
@@ -1137,14 +880,8 @@ export function createHandlers(env: Record<string, string>) {
   }
 
   return {
-    handler,
-    recursiveHandler,
-    sherlockHandler,
-    search360Handler,
-    searchProviderHandler,
     modelsListHandler,
     modelsHealthHandler,
-    orchestrateHandler,
     orchestrateStreamHandler,
     testLlmHandler,
     batchHandler,

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { adaptOrchestrateStreamToShell } from "../../../../lib/missionShell";
 import {
-  adaptOrchestrateStreamToShell,
   FIXTURE_AGENT_THOUGHT,
   FIXTURE_COMPLETE,
   FIXTURE_EARLY,
   FIXTURE_ERROR,
   FIXTURE_MID,
   FIXTURE_LOOP_PROGRESSIVE,
-} from "../../../../lib/missionShell";
+} from "../../../../lib/missionShell/fixtures";
 import { mapShellToApodexRun } from "./apodexRunMap";
 
 const FED = /美联储|Federal Reserve|FOMC|dot plot/i;

@@ -18,7 +18,7 @@ import {
   scrapeLinks,
   formatScrapedContent,
 } from "../../lib/linkScraper";
-import { type ModelChoiceMap } from "./ModelPicker";
+import { type ModelChoiceMap } from "../../lib/agentExpansion";
 import { PromptInput, type PromptAttachment } from "./promptInput/PromptInput";
 import { UiLangSwitch } from "./UiLangSwitch";
 import { useUiLang } from "../../lib/useUiLang";

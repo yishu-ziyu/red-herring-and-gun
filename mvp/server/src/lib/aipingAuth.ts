@@ -225,16 +225,3 @@ export async function fetchAipingUserInfo(config: AipingConfig, accessToken: str
   }
   return data as AipingUserInfo;
 }
-
-export async function fetchAipingApiKeys(config: AipingConfig, accessToken: string) {
-  const url = new URL("/api/v1/oauth/apikey/list", config.authBaseUrl);
-  url.searchParams.set("access_token", accessToken);
-
-  const response = await fetch(url);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message = typeof data.error === "string" ? data.error : response.statusText;
-    throw new Error(`AI Ping apikey list failed: ${message}`);
-  }
-  return data;
-}
