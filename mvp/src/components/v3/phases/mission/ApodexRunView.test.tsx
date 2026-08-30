@@ -92,7 +92,7 @@ describe("ApodexRunView", () => {
     expect(screen.getByLabelText("核心结论")).toBeInTheDocument();
     expect(screen.queryByText(/^\s*只能信一部分/)).not.toBeInTheDocument();
     expect(screen.getByText(/说法存在夸大/)).toBeInTheDocument();
-    expect(screen.getByText("REFERENCES")).toBeInTheDocument();
+    expect(screen.getByText("参考资料")).toBeInTheDocument();
     expect(screen.queryByText("检索网页")).not.toBeInTheDocument();
     expect(screen.queryByText(/美联储|Federal Reserve/)).not.toBeInTheDocument();
 

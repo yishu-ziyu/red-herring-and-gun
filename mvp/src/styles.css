@@ -4,8 +4,10 @@
   font-family: var(--font-sans);
   line-height: 1.5;
 
-  /* ── Esther brand color system ── */
-  --zt-primary: #2B7FD8;
+  /* ── Esther brand color system ──
+     --zt-primary 已退役：原电光蓝 #2B7FD8 与品牌 accent 冲突，别名指向 --accent，
+     40+ 处历史引用随别名自动收敛；新代码禁止使用 --zt-primary，直接用 --accent。 */
+  --zt-primary: var(--accent);
   --zt-accent: #F4D758;
   --zt-alert: #E84A5F;
 
@@ -45,18 +47,27 @@
   --zt-success: #16a34a;
   --zt-warning: #d97706;
 
-  /* Agent colors */
-  --agent-rumor: #b45309;
-  --agent-fact: var(--zt-primary);
-  --agent-source: #7c3aed;
-  --agent-report: var(--zt-success);
+  /* ── 判断语义色（verdict）──
+     只做文字 + 细线 + 淡底（color-mix 派生，标准浓度 6% 底 / 14% 高亮 / 20% 线），
+     不做大面积色块——颜色不当说服工具，文字证据当主角。 */
+  --verdict-true: #16a34a;
+  --verdict-false: #e84a5f;
+  --verdict-unclear: #d97706;
 
-  /* Credibility colors */
-  --credibility-high: #15803d;
-  --credibility-good: #16a34a;
-  --credibility-medium: #d97706;
-  --credibility-low: #ea580c;
-  --credibility-critical: var(--zt-alert);
+  /* ── Agent 角色色（已退役）──
+     Agent 网格不再做主秀，四色按语义归档为别名，历史引用自动收敛；
+     新代码禁止使用 --agent-*，直接用对应语义 token。 */
+  --agent-rumor: var(--verdict-unclear);
+  --agent-fact: var(--accent);
+  --agent-source: var(--ink-muted);
+  --agent-report: var(--verdict-true);
+
+  /* Credibility colors（已归档到判断三色，五档三色相） */
+  --credibility-high: var(--verdict-true);
+  --credibility-good: var(--verdict-true);
+  --credibility-medium: var(--verdict-unclear);
+  --credibility-low: var(--verdict-false);
+  --credibility-critical: var(--verdict-false);
 
   /* Shadows */
   --zt-shadow-none: none;
@@ -113,14 +124,14 @@
   --motion-reveal: var(--t-reveal) var(--ease-cinema);
   --motion-glide: var(--t-soft) var(--ease-soft);
 
-  /* ── 排版层级 (杂志 / 出版级) ── */
-  --type-display: clamp(2.4rem, 5vw, 3.6rem);   /* 顶级标题 */
-  --type-headline: clamp(1.8rem, 3vw, 2.4rem); /* 二级标题 */
-  --type-title: 1.375rem;                       /* 板块标题 */
-  --type-subtitle: 1.125rem;                    /* 子标题 */
-  --type-body: 1rem;                            /* 正文 */
-  --type-meta: 0.875rem;                        /* 标注 */
-  --type-caption: 0.75rem;                      /* 辅助 */
+  /* ── 排版层级（对齐桌面节奏 12 / 14 / 17 / 20 / 24，display 给品牌 hero）── */
+  --type-display: clamp(36px, 4.6vw, 54px);     /* 顶级标题（品牌 hero） */
+  --type-headline: clamp(20px, 2.2vw, 24px);   /* 二级标题（判定句档） */
+  --type-title: 1.25rem;                        /* 板块标题 20px */
+  --type-subtitle: 1.0625rem;                   /* 子标题 17px */
+  --type-body: 1rem;                            /* 正文（长文阅读 16px） */
+  --type-meta: 0.875rem;                        /* 标注 14px */
+  --type-caption: 0.75rem;                      /* 辅助 12px */
   --type-micro: 0.6875rem;                      /* 极小 */
 
   --tracking-tight: -0.02em;
@@ -1927,7 +1938,7 @@ button:disabled {
 }
 
 .claim-span--assert {
-  background: linear-gradient(transparent 62%, rgba(22, 163, 74, 0.14) 62%);
+  background: linear-gradient(transparent 62%, color-mix(in srgb, var(--verdict-true) 14%, transparent) 62%);
 }
 
 .claim-span--hedge {
@@ -1936,8 +1947,8 @@ button:disabled {
 }
 
 .claim-span--gap {
-  background: linear-gradient(transparent 58%, rgba(217, 119, 6, 0.18) 58%);
-  box-shadow: inset 0 -1px 0 rgba(217, 119, 6, 0.35);
+  background: linear-gradient(transparent 58%, color-mix(in srgb, var(--verdict-unclear) 18%, transparent) 58%);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--verdict-unclear) 35%, transparent);
 }
 
 .claim-span--blocked {
@@ -6003,19 +6014,19 @@ button:disabled {
 }
 
 .mission-final-verdict-word[data-verdict="true"] {
-  color: #16a34a;
+  color: var(--verdict-true);
 }
 
 .mission-final-verdict-word[data-verdict="false"] {
-  color: #e84a5f;
+  color: var(--verdict-false);
 }
 
 .mission-final-verdict-word[data-verdict="unverified"] {
-  color: #d97706;
+  color: var(--verdict-unclear);
 }
 
 .mission-final-verdict-word[data-verdict="mixed"] {
-  color: #d97706;
+  color: var(--verdict-unclear);
 }
 
 .mission-final-verdict-word[data-verdict="interrupted"] {
@@ -8195,7 +8206,7 @@ button:disabled {
 .landing-title {
   margin: 0;
   font-family: var(--font-serif);
-  font-size: clamp(36px, 4.6vw, 54px);
+  font-size: var(--type-display);
   font-weight: 900;
   line-height: 1.15;
   letter-spacing: 0.05em;
@@ -8565,7 +8576,8 @@ button:disabled {
 
 .landing-input-error {
   margin: -4px 0 0;
-  color: #b91c3c;
+  /* 提示类文案用暗橙（用户没犯错），破坏性错误才用 accent 红；78% 混墨保 12px 可读对比度 */
+  color: color-mix(in srgb, var(--verdict-unclear) 78%, var(--ink));
   font-size: 12px;
 }
 
@@ -8577,7 +8589,7 @@ button:disabled {
 }
 
 .landing-input-hint--warning {
-  color: #9f1239;
+  color: color-mix(in srgb, var(--verdict-unclear) 78%, var(--ink));
 }
 
 .landing-input-hint-link {
