@@ -373,9 +373,10 @@ function TurnSection({
 function TickerSeconds({ startedAt }: { startedAt: number }) {
   const [sec, setSec] = useState(() => Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
   useEffect(() => {
+    // 展示粒度是整秒，1s 一跳足够；避免 4 次/秒的全组件 re-render
     const id = window.setInterval(() => {
       setSec(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
-    }, 250);
+    }, 1000);
     return () => window.clearInterval(id);
   }, [startedAt]);
   return <span>{` ${sec}s`}</span>;
