@@ -1,9 +1,8 @@
 /**
- * eval/golden.ts — 评估基准数据（来源：前端 goldenDataset，作为"正确长什么样"的真相源）。
+ * eval/golden.ts — 生产评测基准数据。
  *
- * 为避免 server 独立构建跨目录依赖前端，这里声明了与前端同构的 golden case 结构。
- * 数据本源是 mvp/src/lib/agentRuntime/evaluation/goldenDataset.ts（真实谣言 + 官方结论）。
- * 若前端 golden 数据演进，需同步本文件（两者同源，门禁以本文件为准）。
+ * 这里是 casePipeline 评测的唯一 golden source of truth；客户端旧评测已关停，
+ * 因此不再维护另一份需要同步的标准答案集。
  */
 
 export interface ScoreCaseGolden {

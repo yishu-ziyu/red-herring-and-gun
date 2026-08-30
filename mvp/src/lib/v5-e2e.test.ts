@@ -7,7 +7,7 @@ import { getTraceCollector, resetTraceCollector } from "./reasoningTrace";
  * E2E v5: Stage 2-5 acceptance criteria.
  *
  * Tests the integration of sourceLineage into evaluateConsensus,
- * and trace collector emission in AgentRuntime.
+ * and trace collector event emission.
  */
 
 describe("v5 E2E: PR-2 sourceLineage in consensus report", () => {

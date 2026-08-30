@@ -2,6 +2,35 @@ import { describe, expect, it } from "vitest";
 import { goldenDataset } from "./golden";
 import { aggregateMetrics, aggregateRepeats, compareToBaseline, scoreCase, type CaseResult } from "./score";
 
+describe("production golden dataset contract", () => {
+  it("keeps the production cases unique and structurally complete", () => {
+    expect(goldenDataset.length).toBeGreaterThanOrEqual(20);
+    expect(new Set(goldenDataset.map((c) => c.id)).size).toBe(goldenDataset.length);
+    expect(new Set(goldenDataset.map((c) => c.category)).size).toBeGreaterThanOrEqual(2);
+
+    for (const golden of goldenDataset) {
+      expect(golden.traps.length, `${golden.id} should document at least one trap`).toBeGreaterThanOrEqual(1);
+      expect(golden.expectedCredibilityRange[0]).toBeGreaterThanOrEqual(0);
+      expect(golden.expectedCredibilityRange[1]).toBeLessThanOrEqual(100);
+      expect(golden.expectedCredibilityRange[0]).toBeLessThanOrEqual(golden.expectedCredibilityRange[1]);
+    }
+  });
+
+  it("retains causal routing expectations and the known RUMOR-010 case", () => {
+    const causalCases = goldenDataset.filter((c) => c.category === "causal");
+    expect(causalCases.length).toBeGreaterThanOrEqual(3);
+    for (const golden of causalCases) {
+      expect(golden.expectedAgentSequence).toContain("alternative_explanation_searcher");
+      expect(golden.expectedAgentSequence).toContain("counter_evidence_grader");
+    }
+
+    const rumor010 = goldenDataset.find((c) => c.id === "RUMOR-010");
+    expect(rumor010).toBeDefined();
+    expect(rumor010?.claim).toBe("常穿黑色内衣易患癌");
+    expect(rumor010?.category).toBe("causal");
+  });
+});
+
 describe("aggregateRepeats", () => {
   it("verdict 取多数票，credibility 取中位数", () => {
     const result = aggregateRepeats([
@@ -400,5 +429,26 @@ describe("scoreCase 旧案", () => {
     expect(score.hallucinationDetected).toBe(false);
     expect(score.verdictCorrect).toBe(false);
     expect(score.overallPass).toBe(false);
+  });
+
+  it("确定性 verdict 反转会被标记为 hallucination", () => {
+    const result = mkLoopCase("RUMOR-001", false);
+    result.finalReport.verdictType = "true";
+    const score = scoreCase(result);
+    expect(score.hallucinationDetected).toBe(true);
+    expect(score.verdictCorrect).toBe(false);
+    expect(score.overallPass).toBe(false);
+  });
+
+  it("聚合报告契约通过率并保留失败原因", () => {
+    const good = scoreCase(mkLoopCase("RUMOR-001", false));
+    const badResult = mkLoopCase("RUMOR-002", false);
+    badResult.finalReport._review = { passed: false, errorCount: 1, issueCount: 1 };
+    const bad = scoreCase(badResult);
+    const aggregate = aggregateMetrics([good, bad]);
+
+    expect(aggregate.reportContractPassRate).toBe(0.5);
+    expect(aggregate.avgReportReviewScore).toBeLessThan(good.reportReviewScore);
+    expect(aggregate.failures.some((failure) => failure.reason.includes("report contract"))).toBe(true);
   });
 });
