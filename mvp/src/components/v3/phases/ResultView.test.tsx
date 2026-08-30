@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MemoryCandidate } from "../../../lib/agentRuntime/memoryCandidateTypes";
+import type { MemoryCandidate } from "../../../lib/memoryCandidateTypes";
 import { createKnowledgeBase } from "../../../lib/knowledgeBase";
 import { ResultView } from "./ResultView";
 

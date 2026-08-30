@@ -80,6 +80,24 @@ export function authoritySiteQueries(atom: string): string[] {
   return out;
 }
 
+/** 英文谣言分语言策略：claim 主体为英文时，检索走英文谣言语境（rumor/debunk/fact-check），
+ *  而不是套中文「辟谣/官方通报」后缀。 */
+export function looksLikeEnglishClaim(atom: string): boolean {
+  const letters = (atom.match(/[a-zA-Z]/g) ?? []).length;
+  const cjk = (atom.match(/[\u4e00-\u9fff]/g) ?? []).length;
+  return letters > 0 && letters > cjk * 2;
+}
+export function enRumorQueries(atom: string): string[] {
+  if (!looksLikeEnglishClaim(atom)) return [];
+  const words = atom.match(/[a-zA-Z][a-zA-Z0-9'-]{2,}/g) ?? [];
+  const head = words.slice(0, 3).join(" ");
+  const base = head || atom.slice(0, 40);
+  const out: string[] = [];
+  out.push(`${base} debunked OR rumour OR fact check`);
+  out.push(`${base} official statement OR statement`);
+  return out.slice(0, 2);
+}
+
 export function buildAtomSearchQueries(atom: string): string[] {
   const t = atom.replace(/\s+/g, " ").trim();
   if (!t) return [];
@@ -103,11 +121,13 @@ export function buildAtomSearchQueries(atom: string): string[] {
   const siteQueries = looksLikeHealthOrSocialRumor(t) || /截图|P图|p图/.test(t)
     ? authoritySiteQueries(t)
     : [];
+  // 英文谣言走分语言查询（不套中文后缀）。
+  const enQueries = enRumorQueries(t);
   return uniqueKeep(
-    [...extras, ...siteQueries, exact, screenshotQ, quoteQ, statisticQ, second, third, temporal].filter(
+    [...extras, ...siteQueries, ...enQueries, exact, screenshotQ, quoteQ, statisticQ, second, third, temporal].filter(
       (q): q is string => Boolean(q)
     ),
-    allowThird ? 3 + siteQueries.length : 2 + siteQueries.length
+    allowThird ? 3 + siteQueries.length + enQueries.length : 2 + siteQueries.length + enQueries.length
   );
 }
 
