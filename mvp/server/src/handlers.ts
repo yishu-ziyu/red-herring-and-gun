@@ -115,7 +115,9 @@ function scrubProviderDiagnostics(value: unknown, depth = 0): unknown {
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      if (key === "latencyMs") continue;
+      // systemPrompt / userContent 是内部工程文本（含 provider 名与规则清单），
+      // 前端过程层不读取，剥离后顺带大幅减小公开载荷。
+      if (key === "latencyMs" || key === "systemPrompt" || key === "userContent") continue;
       if (
         typeof item === "string" &&
         PROVIDER_NAME_RE.test(item) &&
