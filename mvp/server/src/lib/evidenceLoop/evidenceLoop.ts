@@ -32,7 +32,8 @@ export type EvidenceLoopStopReason =
   | "evidence-found"
   | "no-new-evidence"
   | "rewrite-empty"
-  | "search-failed";
+  | "search-failed"
+  | "time-budget";
 
 export type EvidenceLoopTarget = {
   atom: string;
@@ -442,6 +443,8 @@ export async function runEvidenceLoop(options: {
   seedQueriesByAtomKey?: Record<string, string[]>;
   /** Screenshot case: prefer 原图/首发 queries; never promote text hits to imageOrigin. */
   needImageOrigin?: boolean;
+  /** 每轮/每原子开工前问一次；true 时以 time-budget 收敛，把剩余时间让给报告写作。 */
+  shouldStopEarly?: () => boolean;
   hooks?: EvidenceLoopHooks;
 }): Promise<EvidenceLoopOutcome> {
   const maxRounds = Math.max(1, options.maxRounds ?? MAX_EVIDENCE_LOOP_ROUNDS);
@@ -464,6 +467,17 @@ export async function runEvidenceLoop(options: {
   let meaningfulEvidence = false;
 
   for (const target of targets) {
+    if (options.shouldStopEarly?.()) {
+      atoms.push({
+        atom: target.atom,
+        atomKey: target.atomKey,
+        trigger: target.trigger,
+        rounds: [],
+        stopReason: "time-budget",
+      });
+      options.hooks?.onAtomStopped?.({ atom: target.atom, rounds: 0, reason: "time-budget" });
+      continue;
+    }
     const rounds: EvidenceLoopRoundLog[] = [];
     const priorQueries = new Set<string>([target.atom]);
     for (const q of options.seedQueriesByAtomKey?.[target.atomKey] ?? []) {
@@ -473,6 +487,10 @@ export async function runEvidenceLoop(options: {
     const sideCounts = verdictSideCounts(options.factVerdicts, target.atomKey, options.claimAtomKeyFn);
 
     for (let round = startRound; round < startRound + maxRounds; round += 1) {
+      if (options.shouldStopEarly?.()) {
+        stopReason = "time-budget";
+        break;
+      }
       const existing = options.bundle.byAtomKey[target.atomKey] ?? [];
       const plan = await planRoundQueries(
         options,
