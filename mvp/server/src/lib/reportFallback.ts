@@ -11,6 +11,8 @@ import { applyExclusionLayerToReport } from "./reportAssembly/index.js";
 
 import { applyFactDeskPostProcessToReport } from "./factDeskPostProcess.js";
 
+import { applyPublicCopy } from "./publicCopy.js";
+
 import { stringItems } from "./valueCoerce.js";
 
 export async function runReportComposerWithFallback({
@@ -197,6 +199,8 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
 
   // Same A+F path as live LLM reports
   applyFactDeskPostProcessToReport(report, claim);
+  // 兜底报告同样不能泄露内部 Agent 名/检索商标（证据链 sourceRefs 里的 RumorDetector 等）
+  applyPublicCopy(report);
   return report;
 }
 

@@ -241,6 +241,7 @@ app.post("/api/search/360", requireQuota, (req, res, next) => handlers.search360
 app.post("/api/search/provider", requireQuota, (req, res, next) => handlers.searchProviderHandler(req, res, next));
 app.post("/api/agent/orchestrate", requireQuota, (req, res, next) => handlers.orchestrateHandler(req, res, next));
 app.post("/api/agent/orchestrate-stream", requireQuota, (req, res, next) => handlers.orchestrateStreamHandler(req, res, next));
+app.post("/api/agent/batch", requireQuota, (req, res, next) => handlers.batchHandler(req, res, next));
 if (process.env.NODE_ENV === "production") {
   app.post("/api/agent/test-llm", (_req, res) => {
     res.status(404).json({ error: "Not found" });

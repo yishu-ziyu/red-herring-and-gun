@@ -61,23 +61,30 @@ pi（badlogic/pi，OpenClaw 的运行时引擎）是 TypeScript 的极简嵌入�
 
 ### P0 · pi-ai 试点（不动行为，先换腿）
 
-- server 引入 `@mariozechner/pi-ai`。
-- 把 `llmGateway` / `providerRouter` 的 provider 调用换成 `getModel(provider, modelId)` + `completeSimple`，**保留**现有 `providerOrderForAgent` fallback 顺序与 `ProviderFallbackError` 语义。
-- 验证：eval gate 全绿、1090+ 测试全绿、真实 case 冒烟一致。
-- 说明：pi-ai 自带 cost tracking 与 thinking 统一，顺手拿去喂 eval 的成本断言。
+- ✅ server 引入 `@earendil-works/pi-coding-agent@0.83.0`（版本基线：装基线不装 latest，升级先评估 CHANGELOG）。
+- ✅ 试点骨架落地 `server/src/lib/piBridge/`：
+  - `piModels.ts` — 现网模型链（MiniMax-M3 / DeepSeek / StepFun）注册进 pi `ModelRuntime.registerProvider`（OpenAI 兼容，env key 同源）。
+  - `piTools.ts` — 内联扩展工厂注册业务工具：`web_search`（接现网检索矩阵）+ `todo_write`（证据缺口/任务板）。
+  - `piSession.ts` — `createPiCheckSession`：覆盖 pi 默认人设（`systemPromptOverride`）+ `noTools: true`（只关内置编码工具，保留扩展工具）+ `SessionManager.inMemory()`（Web 多用户不落盘）。
+  - `piEvents.ts` — AgentEvent → 统一事件（delta / tool_call / tool_result / done）。
+- ✅ 真实冒烟 `eval/probePi.ts` 通过：StepFun 会话跑出 `todo_write → web_search×4 → agent_settled` 的真工具循环，`P0A_PROBE_PASS`。
+- ⚠️ 踩坑记录：`tools: []` 会把扩展工具也一起清掉（模型退化到文本模拟 `<invoke>`），正确写法是 `noTools: true`；DeepSeek reasoning 与 MiniMax 在此链未触发原生 tool-call，StepFun 正常。
+- 说明：pi-ai 自带 cost tracking 与 thinking 统一，P1 拿去喂 eval 的成本断言。
+- 下一步 P1：把 `wantsAgentLoop` 切到 pi 会话（工具加 `judge_atom`/`submit_verdict`），事件接现有 SSE，双引擎同案对比。
 
-### P1 · pi-agent-core 试点自治循环（flag 并列，默认关）
+### P1 · pi-agent-core 试点自治循环（✅ 已接入，flag 并列，默认关）
 
-- `wantsAgentLoop`（现有 `execution:loop` / `AGENT_LOOP=1` / `?loop=1`）切到 pi 会话实现：
-  ```
-  createAgentSession({ modelRegistry, defaultModel, workspace })
-    → 注入 7+1 工具（web_search/web_fetch/reverse_image/vision_ocr/memory_recall/
-       todo_write/judge_atom/submit_verdict）→ session.subscribe(AgentEvent → SSE)
-  ```
-- observer：`AgentEvent`（message_update / toolCall / toolResult / thinking…）→ 现有 SSE 事件 → `ApodexRunView`。todo_write 直接驱动任务板。
-- 会话树：每一次 /api/agent/orchestrate 是根；追问走同树 fork（「查完再问一句」）。
-- eval：`agentLoop-vs-casePipeline 同案对比`（新增评测组：同一 golden 两引擎各跑一遍，比较 verdict/credibility/引用命中，gate 门槛 = 不低于现管线）。
-- Quality 不够就留在 flag 后，不切默认。
+- `wantsAgentLoop` 切到 pi 会话实现：`runClaimLoopPi`（`agentLoop/runClaimLoopPi.ts`）：
+  - 工具：`web_search` / `todo_write` / `submit_verdict`（3 工具）；PP 判决草稿由 `submit_verdict` 提交，
+    收束 100% 走 `finalizeLoopReport`（自证 / URL 闸 / 公式分 / publicCopy）。
+  - 事件：PiStreamItem → 现有 SSE（agent_start / agent_thought / tool_start / tool_result / agent_complete）。
+  - 截图原图闸：与 casePipeline 同策略（`lookupImageOrigin` → `applyImageOriginToReport`）接入 loop 路径。
+  - 预算器：`maxToolCalls` 上限，超限显式 stop（turns/max_turns SSE reason）。
+- 双引擎对比工具：`eval/compareEngines.ts`（同案跑 pi vs casePipeline 出对比卡）。
+- ✅ 冒烟：真实 StepFun 会话 `todo_write → web_search×2 → submit_verdict → finalizeLoopReport`（P1_PROBE_PASS）。
+- 验收发现并修复：default 引擎无总超时兜底会无限卡 → 加 `ORCHESTRATE_TOTAL_TIMEOUT_MS`（默认 90s）整体超时，
+  超时给 `error-boundary` 中间结论；`publicCopy.scrubChain` 补 `sourceRefs` 清洗（内部 Agent 名不再下发）。
+- 已知优化点：`submit_verdict` 草稿未给 conclusion 时 `finalizeLoopReport` 会回退 lastText（观察到的结论长度偏长），P2 打磨。
 
 ### P2 · 切默认（另写 ADR）
 
