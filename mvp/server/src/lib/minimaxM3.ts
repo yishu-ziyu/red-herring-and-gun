@@ -37,6 +37,11 @@ export function miniMaxMaxTokensForModel(
   model: string,
   requested: number
 ): number {
+  if (/^MiniMax-M2\.7(?:-highspeed)?$/i.test(model)) {
+    const explicitFloor = Number(envPick(env, "MINIMAX_M27_MIN_MAX_TOKENS"));
+    const floor = Number.isFinite(explicitFloor) && explicitFloor > 0 ? explicitFloor : 4096;
+    return Math.max(requested, Math.floor(floor));
+  }
   if (!isMiniMaxM3(model)) return requested;
   const explicit = Number(envPick(env, "MINIMAX_M3_MAX_TOKENS"));
   const floor = Number(envPick(env, "MINIMAX_M3_MIN_MAX_TOKENS"));
