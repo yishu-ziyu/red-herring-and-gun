@@ -203,6 +203,8 @@ export type PromptInputProps = {
   ariaLabel?: string;
   submitLabel?: string;
   disabled?: boolean;
+  /** Keep the editor usable while preventing submission, e.g. during service readiness checks. */
+  submitDisabled?: boolean;
   busy?: boolean;
   /** Extra control in the action row, immediately left of send. */
   trailing?: ReactNode;
@@ -221,6 +223,7 @@ export function PromptInput({
   ariaLabel = "待核查材料",
   submitLabel = "开始核查",
   disabled = false,
+  submitDisabled = false,
   busy = false,
   trailing,
   showModelMenu = false,
@@ -266,7 +269,7 @@ export function PromptInput({
   const slashKeyLock = useRef(false);
 
   const hasText = value.trim().length > 0;
-  const sendActive = (hasText || attachments.length > 0) && !disabled && !busy;
+  const sendActive = (hasText || attachments.length > 0) && !disabled && !submitDisabled && !busy;
   const slashResults = SKILLS.filter((sk) =>
     sk.name.toLowerCase().includes(slashQuery.toLowerCase())
   );
@@ -911,4 +914,3 @@ export function PromptInput({
     </div>
   );
 }
-
