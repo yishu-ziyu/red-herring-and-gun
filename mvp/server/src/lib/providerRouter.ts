@@ -230,17 +230,13 @@ export function modelForAgent(
   return (key && envValue(env, `${prefix}_${key}_MODEL`)) || envValue(env, `${prefix}_MODEL`) || fallback;
 }
 
-/** 360 智脑 API key 多别名查找（兼容历史命名：QIHOO_360 → ZHINAO → AI360） */
+/** 360 智脑 API key */
 export function getSearch360ApiKey(env: Record<string, string>): string {
-  return (
-    envValue(env, "QIHOO_360_API_KEY") ||
-    envValue(env, "ZHINAO_API_KEY") ||
-    envValue(env, "AI360_API_KEY")
-  );
+  return envValue(env, "QIHOO_360_API_KEY");
 }
 
 export function getMiniMaxApiKey(env: Record<string, string>): string {
-  return envValue(env, "MINIMAX_API_KEY") || envValue(env, "MINIMAX_TOKEN_PLAN_KEY");
+  return envValue(env, "MINIMAX_API_KEY");
 }
 
 function getMiniMaxAuthHeader(env: Record<string, string>): "x-api-key" | "bearer" {
@@ -646,7 +642,7 @@ export async function dispatchSingleProvider({
   }
   if (provider === "minimax") {
     const apiKey = getMiniMaxApiKey(env);
-    if (!apiKey) throw new Error(`未配置 MINIMAX_API_KEY / MINIMAX_TOKEN_PLAN_KEY`);
+    if (!apiKey) throw new Error(`未配置 MINIMAX_API_KEY`);
     const baseUrl = (envValue(env, "MINIMAX_BASE_URL") || "https://api.minimaxi.com/anthropic").replace(/\/$/, "");
     return await callMiniMaxAgent({
       baseUrl,
@@ -950,7 +946,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
       if (!apiKey) {
         if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "minimax", model });
-        if (onMissing === "error") errors.push(`[minimax:${model}] 未配置 MINIMAX_API_KEY / MINIMAX_TOKEN_PLAN_KEY`);
+        if (onMissing === "error") errors.push(`[minimax:${model}] 未配置 MINIMAX_API_KEY`);
         continue;
       }
       const out = await runOne("minimax", model, (sys, user) =>

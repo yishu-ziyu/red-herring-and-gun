@@ -7,14 +7,12 @@ const SECRET = "test-server-secret-for-email-auth";
 const MAIL_KEYS = [
   "RESEND_API_KEY",
   "MAIL_FROM",
-  "EMAIL_FROM",
   "MAIL_FROM_NAME",
   "SMTP_HOST",
   "SMTP_PORT",
   "SMTP_SECURE",
   "SMTP_USER",
   "SMTP_PASS",
-  "SMTP_PASSWORD",
 ] as const;
 
 function mockReq(body: unknown) {
