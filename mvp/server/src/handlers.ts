@@ -18,7 +18,8 @@ import { type AtomSearchBundle } from "./lib/atomSearch.js";
 
 import { runCasePipeline, type PipelineStep, type RunAgentFn } from "./lib/casePipeline/index.js";
 
-import { createLoopLlm, modelFromChoice, runClaimLoop, wantsAgentLoop } from "./lib/agentLoop/index.js";
+import { createLoopLlm, modelFromChoice, wantsAgentLoop } from "./lib/agentLoop/index.js";
+import { runClaimLoopPi } from "./lib/agentLoop/runClaimLoopPi.js";
 
 import { makeRewriteQueryCall } from "./lib/evidenceLoop/index.js";
 
@@ -92,9 +93,15 @@ import {
   callOpenAIRecursive,
 } from "./lib/llmGateway.js";
 
-import { runReportComposerWithFallback, buildConsensusDebate } from "./lib/reportFallback.js";
+import {
+  runReportComposerWithFallback,
+  buildConsensusDebate,
+  buildDeterministicFinalReport,
+} from "./lib/reportFallback.js";
 
 import { makeSearch360ReverseImage } from "./lib/reverseImage/search360ReverseImage.js";
+
+import { applyContextCrossCheckToReport } from "./lib/contextCrossCheck.js";
 
 // ───────────────────────────────────────────────────────────────
 // 错误信息泄漏修复：把任意异常收敛成"用户可读友好文案 + 结构化诊断"。
@@ -610,14 +617,17 @@ function makeRunAgent(opts: {
       });
   }
 
-  function pipelineFinalize(ctx: {
-    finalReport: Record<string, unknown>;
-    claim: string;
-    rumorStep: PipelineStep;
-    factStep: PipelineStep;
-    sourceStep: PipelineStep;
-    search360Result: unknown;
-  }) {
+  function pipelineFinalize(
+    ctx: {
+      finalReport: Record<string, unknown>;
+      claim: string;
+      rumorStep: PipelineStep;
+      factStep: PipelineStep;
+      sourceStep: PipelineStep;
+      search360Result: unknown;
+    },
+    visualExtraction?: Record<string, unknown>
+  ) {
     applyFormulaScoreToReport(
       ctx.finalReport,
       computeFormulaScore(
@@ -628,6 +638,69 @@ function makeRunAgent(opts: {
       )
     );
     applyFactDeskPostProcessToReport(ctx.finalReport, ctx.claim);
+    applyContextCrossCheckToReport(ctx.finalReport, { claim: ctx.claim, visualExtraction });
+  }
+
+  /** POST /api/agent/batch — 一次核查多条（newsroom 批量）。逐条走 pi agent 循环，判决纪律不变。 */
+  async function batchHandler(req: any, res: any, next: any) {
+    if (req.method !== "POST") return next();
+    let payload: any;
+    try {
+      payload = await readJson(req);
+    } catch {
+      return sendJson(res, 400, { message: "无法解析请求 JSON" });
+    }
+    const claims = Array.isArray(payload.claims)
+      ? payload.claims
+          .map((c: unknown) => (typeof c === "string" ? c.trim() : ""))
+          .filter((c: string) => c.length > 0)
+          .slice(0, 20)
+      : [];
+    if (claims.length === 0) {
+      return sendJson(res, 400, { message: "缺少 claims（至少一条）" });
+    }
+    if (claims.some((c: string) => c.length > 2000)) {
+      return sendJson(res, 400, { message: "单条最多 2000 字" });
+    }
+    const modelChoice = payload.modelChoice;
+    const mcValidation = validateModelChoice(env, modelChoice);
+    if (!mcValidation.ok) {
+      return sendJson(res, 400, { message: mcValidation.error || "modelChoice 非法" });
+    }
+    const intake = normalizeCaseIntake(payload.intake);
+    const maxToolCalls = typeof payload.maxToolCalls === "number" ? payload.maxToolCalls : 24;
+    try {
+      const results = [];
+      for (const one of claims) {
+        const loop = await runClaimLoopPi({
+          claim: one,
+          env,
+          maxToolCalls,
+          callSelfProofModel: makeSelfProofCaller(one, modelChoice),
+        });
+        results.push({
+          claim: one,
+          verdictType: loop.finalReport.verdictType,
+          credibilityScore: loop.finalReport.credibilityScore,
+          conclusion: loop.finalReport.conclusion,
+          faceVerdict: loop.finalReport.faceVerdict,
+          finalReport: loop.finalReport,
+        });
+      }
+      return sendJson(res, 200, { results, execution: "loop", count: results.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "批量核查失败";
+      return sendJson(res, 502, { message });
+    }
+  }
+
+  const PIPELINE_TOTAL_TIMEOUT_MS = Number(env.ORCHESTRATE_TOTAL_TIMEOUT_MS || 90_000);
+
+  /** 整体核查超时兜底：不憋用户，先给「还没查完」的中间结论（unverified + error-boundary）。 */
+  function buildTimedOutReport(c: string): Record<string, unknown> {
+    const report = buildDeterministicFinalReport(c, [], undefined, "核查超过时限，先给中间结论。");
+    report._source = "error-boundary";
+    return report;
   }
 
   async function orchestrateHandler(req: any, res: any, next: any) {
@@ -664,11 +737,11 @@ function makeRunAgent(opts: {
       }
 
       if (wantsAgentLoop(payload, env)) {
-        const loop = await runClaimLoop({
+        const loop = await runClaimLoopPi({
           claim,
-          search: makeSearchOneAtom(),
-          callLlm: createLoopLlm({ env, model: modelFromChoice(modelChoice) }),
+          env,
           callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
+          lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
         });
         commitFreeCheck(res, ticket);
         return sendJson(res, 200, {
@@ -686,34 +759,39 @@ function makeRunAgent(opts: {
         clientMemoryRecall,
       });
 
-      const result = await runCasePipeline({
-        claim,
-        runAgent,
-        searchOne: makeSearchOneAtom(),
-        lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
-        callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
-        runReport: (args) => makeReportRunner(runAgent)(args),
-        evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteCaller(modelChoice)) },
-        crossExam: { callRaw: makeCrossExamCaller(modelChoice) },
-        hooks: {
-          searchMode: "parallel",
-          onSelfProof: (info) => {
-            console.log(
-              `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${info.kept.length} dropped=${info.dropped.length}`
-            );
-          },
-          onAtomSearchResult: (_atom, _result) => {
-            /* aggregate log after pipeline via result */
-          },
-          onEvidenceLoopStopped: (info) => {
-            console.log(
-              `[evidence_loop] atom=${JSON.stringify(info.atom).slice(0, 80)} rounds=${info.rounds} reason=${info.reason}`
-            );
-          },
+      const result = await withTimeout(
+        runCasePipeline({
+          claim,
+          runAgent,
+          searchOne: makeSearchOneAtom(),
+          lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
+          callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
+          runReport: (args) => makeReportRunner(runAgent)(args),
+          evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteCaller(modelChoice)) },
+          crossExam: { callRaw: makeCrossExamCaller(modelChoice) },
+          hooks: {
+            searchMode: "parallel",
+            onSelfProof: (info) => {
+              console.log(
+                `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${info.kept.length} dropped=${info.dropped.length}`
+              );
+            },
+            onAtomSearchResult: (_atom, _result) => {
+              /* aggregate log after pipeline via result */
+            },
+            onEvidenceLoopStopped: (info) => {
+              console.log(
+                `[evidence_loop] atom=${JSON.stringify(info.atom).slice(0, 80)} rounds=${info.rounds} reason=${info.reason}`
+              );
+            },
         },
-        finalizeReport: pipelineFinalize,
+        finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>
+          pipelineFinalize(fctx, visualExtraction),
         memoryCandidateStore: getMemoryCandidateStore(),
-      });
+      }),
+        PIPELINE_TOTAL_TIMEOUT_MS,
+        "整体核查"
+      );
 
       console.log(
         `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length} memoryCandidates=${result.memoryCandidates.length}`
@@ -727,6 +805,12 @@ function makeRunAgent(opts: {
       });
     } catch (error) {
       releaseFreeCheck(ticket);
+      // 整体超时 → 给「还没查完」的中间结论，不 502
+      if (error instanceof Error && error.message.includes("整体核查")) {
+        const timedOut = buildTimedOutReport(claim);
+        applyContextCrossCheckToReport(timedOut, { claim, visualExtraction });
+        return sendJson(res, 200, { steps: [], finalReport: timedOut, memoryCandidates: [] });
+      }
       const message = error instanceof Error ? error.message : "Orchestrate 调用错误";
       return sendJson(res, 502, { message, steps: [] });
     }
@@ -805,11 +889,11 @@ function makeRunAgent(opts: {
       }
 
       if (wantsAgentLoop(payload, env)) {
-        const loop = await runClaimLoop({
+        const loop = await runClaimLoopPi({
           claim,
-          search: makeSearchOneAtom(),
-          callLlm: createLoopLlm({ env, model: modelFromChoice(modelChoice) }),
+          env,
           callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
+          lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
           onEvent: sendEvent,
         });
         sendEvent({
@@ -882,7 +966,7 @@ function makeRunAgent(opts: {
         },
       });
 
-      const result = await runCasePipeline({
+      const result = await withTimeout(runCasePipeline({
         claim,
         runAgent,
         searchOne: makeSearchOneAtom(),
@@ -1082,9 +1166,13 @@ function makeRunAgent(opts: {
             });
           },
         },
-        finalizeReport: pipelineFinalize,
+        finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>
+          pipelineFinalize(fctx, visualExtraction),
         memoryCandidateStore: getMemoryCandidateStore(),
-      });
+      }),
+        PIPELINE_TOTAL_TIMEOUT_MS,
+        "整体核查"
+      );
 
       console.log(
         `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length} memoryCandidates=${result.memoryCandidates.length}`
@@ -1102,6 +1190,22 @@ function makeRunAgent(opts: {
       res.end();
     } catch (error) {
       releaseFreeCheck(ticket);
+      // 整体超时 → 给「还没查完」的中间结论，不发 error
+      if (error instanceof Error && error.message.includes("整体核查")) {
+        const timedOut = buildTimedOutReport(claim);
+        applyContextCrossCheckToReport(timedOut, { claim, visualExtraction });
+        commitFreeCheck(res, ticket);
+        sendEvent({
+          type: "complete",
+          claim,
+          steps: [],
+          finalReport: timedOut,
+          memoryCandidates: [],
+          timestamp: Date.now(),
+        });
+        res.end();
+        return;
+      }
       const { message, detail, providerErrors } = toFriendlyError(error, "Orchestrate Stream 调用错误");
       sendEvent({
         type: "error",
@@ -1276,5 +1380,6 @@ function makeRunAgent(opts: {
     orchestrateHandler,
     orchestrateStreamHandler,
     testLlmHandler,
+    batchHandler,
   };
 }

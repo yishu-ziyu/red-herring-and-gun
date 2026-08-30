@@ -8,6 +8,7 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { humanizeVerdictType } from "../../../lib/missionShell";
 import { InlineCitations } from "../InlineCitations";
+import { ReportFooter } from "../ReportFooter";
 import {
   buildGlobalSources,
   sourcesFromStringRefs,
@@ -672,7 +673,7 @@ export function ResultView({
           </button>
         ) : null}
         {!embedded ? (
-          <ReportFeedbackFooter
+          <ReportFooter
             claim={claim}
             verdictType={verdictType}
             score={Number.isFinite(score) ? (score as number) : undefined}
@@ -682,72 +683,5 @@ export function ResultView({
         )}
       </div>
     </main>
-  );
-}
-
-/** 结论异议反馈：判断可能错了 → 留下原因 → 进入 RHG_DATA_DIR，供 golden 反向采集。 */
-function ReportFeedbackFooter({
-  claim,
-  verdictType,
-  score,
-}: {
-  claim: string;
-  verdictType: string;
-  score?: number;
-}) {
-  const [open, setOpen] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [reason, setReason] = useState("");
-
-  const submit = async () => {
-    if (!reason.trim()) return;
-    try {
-      await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          claim: claim.slice(0, 2000),
-          verdictType,
-          score,
-          reason: reason.trim().slice(0, 2000),
-        }),
-      });
-      setSent(true);
-    } catch {
-      setSent(true); // 弱通道：失败也按已记录处理，不打扰主结论
-    }
-  };
-
-  if (sent) {
-    return (
-      <p className="report-feedback report-feedback--sent">
-        已记录。核查结论会随新证据变化，但这条异议会进评测集。
-      </p>
-    );
-  }
-
-  return (
-    <div className="report-feedback">
-      {open ? (
-        <div className="report-feedback__form">
-          <label htmlFor="rhg-feedback-reason">这个判断可能有误——哪里不对？</label>
-          <textarea
-            id="rhg-feedback-reason"
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            rows={2}
-            maxLength={2000}
-            placeholder="例如：配文断章取义 / 来源已失效 / 截图是旧闻…"
-          />
-          <button type="button" className="result-view-btn" onClick={submit} disabled={!reason.trim()}>
-            提交异议
-          </button>
-        </div>
-      ) : (
-        <button type="button" className="report-feedback__link" onClick={() => setOpen(true)}>
-          这个判断可能有误
-        </button>
-      )}
-    </div>
   );
 }

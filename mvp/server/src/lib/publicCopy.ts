@@ -190,14 +190,33 @@ function scrubChain(value: unknown): unknown {
   return value.map((item) => {
     if (!item || typeof item !== "object") return item;
     const rec = item as Record<string, unknown>;
+    // sourceRefs 只保留可跳转的外部 URL；内部 Agent 角色名（RumorDetector 等）一律不下发
+    const refs = Array.isArray(rec.sourceRefs) ? rec.sourceRefs : [];
+    const sourceRefs = refs.filter((s) => {
+      if (typeof s !== "string" || !s.trim()) return false;
+      if (/^https?:\/\//i.test(s.trim())) return true;
+      return !INTERNAL_SOURCE_REF_WORDS.some((w) => s.includes(w));
+    });
     return {
       ...rec,
       finding: scrubPublicText(rec.finding) || rec.finding,
       evidence: scrubPublicText(rec.evidence) || rec.evidence,
       boundary: scrubPublicText(rec.boundary) || rec.boundary,
+      sourceRefs,
     };
   });
 }
+
+const INTERNAL_SOURCE_REF_WORDS: string[] = [
+  "RumorDetector",
+  "FactChecker",
+  "SourceValidator",
+  "ReportComposer",
+  "CrossExaminer",
+  "AlternativeExplanationSearcher",
+  "AgentRuntime",
+  "FallbackReport",
+];
 
 function scrubVerdicts(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
