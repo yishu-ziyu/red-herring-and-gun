@@ -802,7 +802,7 @@ export function MissionControlView({
       const now = Date.now();
       setElapsedMs(now - startedAt);
       setStallMs(now - lastActivityAtRef.current);
-    }, 250);
+    }, 1000);
 
     return () => window.clearInterval(timer);
   }, [runStatus, startedAt]);
