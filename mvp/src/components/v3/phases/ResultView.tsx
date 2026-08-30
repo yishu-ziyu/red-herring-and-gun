@@ -19,7 +19,7 @@ import { ResultTrace } from "./ResultTrace";
 import { MemoryCandidatePanel } from "../MemoryCandidatePanel";
 import { createKnowledgeBase } from "../../../lib/knowledgeBase";
 import { updateMemoryCandidateStatus } from "../../../lib/agentExpansion";
-import type { MemoryCandidate, MemoryCandidateStatus } from "../../../lib/agentRuntime/memoryCandidateTypes";
+import type { MemoryCandidate, MemoryCandidateStatus } from "../../../lib/memoryCandidateTypes";
 
 export interface ResultViewProps {
   claim: string;

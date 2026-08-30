@@ -1,4 +1,4 @@
-import type { MemoryCandidate, MemoryCandidateStatus } from "../../lib/agentRuntime/memoryCandidateTypes";
+import type { MemoryCandidate, MemoryCandidateStatus } from "../../lib/memoryCandidateTypes";
 
 interface MemoryCandidatePanelProps {
   candidates: MemoryCandidate[];

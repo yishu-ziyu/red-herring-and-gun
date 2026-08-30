@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   boundTinyRumorVerdict,
   buildAtomSearchQueries,
+  enRumorQueries,
+  looksLikeEnglishClaim,
   looksLikePlanOrPrediction,
   mergeParallelSearchPayloads,
 } from "./atomSearchQuery";
@@ -157,5 +159,18 @@ describe("atomSearchQuery", () => {
         (item) => item.includes("公报") && item.includes("原始数据")
       )
     ).toBe(false);
+  });
+});
+
+describe("英文谣言分语言策略", () => {
+  it("英文 claim 生成英文谣言语境查询，中文 claim 不生成", () => {
+    expect(looksLikeEnglishClaim("Drinking milk causes cancer study")).toBe(true);
+    expect(looksLikeEnglishClaim("常喝牛奶会致癌")).toBe(false);
+    const en = enRumorQueries("Drinking milk causes cancer study");
+    expect(en.length).toBeGreaterThanOrEqual(1);
+    expect(en.some((q) => /debunked|rumour|fact check/i.test(q))).toBe(true);
+    expect(enRumorQueries("常喝牛奶会致癌")).toEqual([]);
+    const zh = buildAtomSearchQueries("常喝牛奶会致癌");
+    expect(zh.some((q) => /^Drinking milk causes cancer study debunked/i.test(q))).toBe(false);
   });
 });
