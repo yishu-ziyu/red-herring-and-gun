@@ -4,6 +4,9 @@
  * No reverse-image vendor → explicit gap, never invent a source.
  */
 
+// reverseImage 模块对本文件仅 type-import（ReverseImageHit 等），运行时无环。
+import { isReverseImageVendorConfigured } from "../reverseImage/search360ReverseImage.js";
+
 export const IMAGE_ORIGIN_NOT_FOUND = "原图没查到";
 export const IMAGE_ORIGIN_NOT_FOUND_ALT = "原图出处未查到";
 
@@ -140,11 +143,11 @@ export function resolveImageOrigin(input: {
 }
 
 /**
- * Current 360 / AnySearch / Exa / Tavily / Metaso adapters are text search only.
- * No reverse-image endpoint is wired. Do not treat OCR text hits as a substitute.
+ * Reverse-image vendor configured = API key + public base URL（临时图床）。
+ * 无配置 → false：上层按「查不到原图」降级，绝不发明图源。
  */
-export function reverseImageVendorAvailable(_env?: Record<string, string>): boolean {
-  return false;
+export function reverseImageVendorAvailable(env?: Record<string, string>): boolean {
+  return env ? isReverseImageVendorConfigured(env) : false;
 }
 
 export async function lookupImageOrigin(input: ImageOriginLookupInput): Promise<ImageOriginResult> {
