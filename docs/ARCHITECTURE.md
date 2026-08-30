@@ -28,11 +28,11 @@ mvp/apodex-replica/       外观草稿，不进 git
   Dashboard（贴材料）
     → App 切到 MissionControlView
       → POST /api/agent/orchestrate-stream（SSE）
-        → Express handlers（薄 adapter，现在仍过厚）
+        → Express handlers（薄 adapter）
           → 默认 runCasePipeline（ADR-003）
             或 AGENT_LOOP=1 / execution=loop / ?loop=1
               → runClaimLoop（ADR-006）
-                runAgentLoop：think ↔ todo_write / web_search / web_fetch / submit_verdict
+                runClaimLoopPi（pi 会话引擎）：think ↔ web_search / web_fetch / submit_verdict
                 finalizeLoopReport：自证 / URL 闸 / publicCopy / 公式分
       → adaptOrchestrateStreamToShell
       → mapShellToApodexRun
@@ -49,20 +49,19 @@ mvp/apodex-replica/       外观草稿，不进 git
 |----|------|------|
 | 脸 | `mvp/src/components/v3/` | 首页、核查过程、判断、账号 |
 | 判决 | `mvp/server/src/lib/{claimAtom,atomSearch,evidenceLoop,evidencePursuit,reportAssembly,publicCopy,credibilityScore}` | 能信 / 不能信 的纪律 |
-| 执行 | 默认 `casePipeline`。并列：`agentLoop`（`runAgentLoop` + 工具 + observer，ADR-006，flag 关闭） | 想、搜、打开网页、改任务板、收束 |
+| 执行 | 默认 `casePipeline`。并列：`agentLoop`（`runClaimLoopPi` + `gates` + observer，ADR-006，flag 关闭） | 想、搜、打开网页、改任务板、收束 |
 
-HTTP 只该是薄 adapter。`handlers.ts`（约 3700 行）不该再往里堆产品规则。  
+HTTP 只该是薄 adapter。`handlers.ts`（2026-08-30 清理后约 900 行）不该再往里堆产品规则。  
 `MissionControlView.tsx` 负责流式接线、状态收束和追问，过程视图只挂载 `ApodexRunView`。
 
 前端若要域规则，从 `mvp/src/lib/claimAtom` 再导出服务端 SSOT，不要复制一份。
 
 ## 两套不该并存的东西
 
-1. **双运行时（遗物）**  
+1. **双运行时（已收）**  
    生产默认：`mvp/server/src/lib/casePipeline`。  
-   遗物：`mvp/src/lib/agentRuntime`（客户端 benchmark 与运行时专测已关停，剩余源码等待类型抽取后删除；本地 HTTP 已不走它）。
-   ADR-003：只改 AgentRuntime 等于没进生产。  
-   并列执行（ADR-006，默认关）：`mvp/server/src/lib/agentLoop`。这是要留下的执行引擎，不是第三套判决。
+   客户端 AgentRuntime 已删（2026-08-30）：本地 HTTP 早已不走它，eval 已迁 `mvp/server/eval`。  
+   并列执行（ADR-006，默认关）：`mvp/server/src/lib/agentLoop`。pi 会话引擎 `runClaimLoopPi` 是唯一循环实现（非 pi 旧引擎 `runAgentLoop`/`runClaimLoop`/tools/prompt 已删）。这是要留下的执行引擎，不是第三套判决。
 
 2. **双 HTTP（已收）**  
    生产与本地核查都走 Express：`mvp/server/src/index.ts` → `handlers.ts`。  
@@ -80,8 +79,7 @@ HTTP 只该是薄 adapter。`handlers.ts`（约 3700 行）不该再往里堆产
 
 ```text
 claim
-  → runAgentLoop（ReAct：LLM ↔ 工具，直到 submit_verdict）
-      工具：web_search / web_fetch / todo_write / submit_verdict
+  → runClaimLoopPi（ReAct：LLM ↔ pi 会话工具，直到 submit_verdict）
       observer → 现有 SSE 事件
       submit_verdict → finalizeLoopReport（闸门）
   → ApodexRunView
@@ -95,9 +93,9 @@ claim
 |------|--------|
 | `tmp-apodex-study/` | 本地对照（FrontierAgent 克隆、截图）。不进 git |
 | `mvp/apodex-replica/` | 外观 1:1 草稿。不进 git |
-| `mvp/src/lib/pipeline.ts` + `data/rumorCases/` | 早期静态 demo，测试还在用 |
+| `mvp/src/lib/pipeline.ts` + `data/rumorCases/` | 早期静态 demo（连同整条 demo 报告管线，2026-08-30 已删） |
 | 已删除的演示/预览组件 | 不属于运行时；对应路径访问时落入首页 |
-| `ConclusionDockV3` 一簇 | 旧判断页，现网不挂；测试和 git-diff 契约还指着 |
+| 2026-08-30 删除的死功能 | 13 个死组件、~40 个死 lib、12 条前端不可达路由、`llmGateway`、非 pi 旧循环引擎、aiping config/apikeys 端点 |
 | `docs/reviews/agentic-patterns/` | 读书笔记，不是运行时 |
 | `vendor/`、`Chinese_Rumor_Dataset/` | 本地资料，已 gitignore |
 

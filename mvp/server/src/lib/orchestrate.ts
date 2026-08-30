@@ -17,7 +17,7 @@ import {
   AgentTextProviderId,
 } from "./providerRouter.js";
 import { compactSearchResultForAgent, buildReportEvidenceInputs } from "./searchProviders.js";
-import { splitReasoningSentences, thoughtInterSentenceDelayMs } from "../../../src/lib/reasoningThoughts.js";
+import { splitReasoningSentences, thoughtInterSentenceDelayMs } from "./reasoningThoughts.js";
 import { sleepMs } from "./httpUtils.js";
 import type { RunAgentFn } from "./casePipeline/index.js";
 

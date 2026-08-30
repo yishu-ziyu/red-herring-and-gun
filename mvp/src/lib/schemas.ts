@@ -411,6 +411,22 @@ export interface BiasAuditFinding {
   mitigation: string;
 }
 
+// ── 证据来源条目（过程与判断页通用） ─────────────────────────
+
+export interface SourceHit {
+  sourceId: string;
+  sourceName: string;
+  sourceIcon: string;
+  matchedUrl: string;
+  detectionMethod: string;
+  trustLevel: string;
+  matchedKeywords: string[];
+  factCheckResult?: "true" | "false" | "partial" | "unverified";
+  evidenceRole?: EvidenceRole;
+  sourceQuality?: Pick<Search360Source, "sourceType" | "credibilityScore" | "sourceTier" | "freshnessScore" | "domain">;
+  summary: string;
+}
+
 // ── M2: 360 搜索 ─────────────────────────────────────────────
 
 export interface Search360Request {
