@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { adaptOrchestrateStreamToShell } from "../../../../lib/missionShell";
 import {
-  adaptOrchestrateStreamToShell,
   FIXTURE_COMPLETE,
   FIXTURE_EARLY,
   FIXTURE_MID,
   FIXTURE_LOOP_PROGRESSIVE,
-} from "../../../../lib/missionShell";
+} from "../../../../lib/missionShell/fixtures";
 import { setUiLang, UI_LANG_KEY } from "../../../../lib/uiLang";
 import { mapShellToApodexRun } from "./apodexRunMap";
 import { ApodexRunView } from "./ApodexRunView";

@@ -1,6 +1,4 @@
-import type { CanvasNode } from "../data/reasoningCanvas";
 import { caseIntakePrimaryText, type CaseIntake } from "./caseIntake";
-import type { SherlockSearchRequest, SherlockSearchResponse } from "./sherlockStyleSearch";
 import type { MemoryCandidate, MemoryCandidateStatus } from "./memoryCandidateTypes";
 import type { AgentEvidenceBundle } from "./schemas";
 import type { AgentContract } from "./agentConfigs";
@@ -23,38 +21,10 @@ export type {
   ExecutionDagPlan,
   SpeculativeRelayUpdate,
 } from "./agentOrchestrationTypes";
-export type { SherlockSearchResponse } from "./sherlockStyleSearch";
-export { request360Search } from "./search360";
-export type { Search360Request, Search360Response, Search360Source } from "./schemas";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 export type ExpansionMode = "search" | "evidence_audit" | "counter" | "rewrite" | "rumor_check";
-
-export interface AgentExpansionRequest {
-  claim: string;
-  node: Pick<CanvasNode, "id" | "type" | "title" | "subtitle" | "status">;
-  mode: ExpansionMode;
-  prompt: string;
-  visibleNodeTitles: string[];
-}
-
-export interface AgentExpansionResponse {
-  controllerNote: string;
-  agentTitle: string;
-  agentSubtitle: string;
-  resultTitle: string;
-  resultSubtitle: string;
-  resultStatus: NonNullable<CanvasNode["status"]>;
-  traceText: string;
-  inspectorSummary: string;
-  canSay: string[];
-  cannotSay: string[];
-  sources: string[];
-  model: string;
-  agentType?: "rumor_detector" | "fact_checker" | "source_validator" | "evidence_grader" | "report_composer";
-  rumorIndicators?: string[];
-}
 
 export interface EvidenceClue {
   id: string;
@@ -79,27 +49,24 @@ export interface SearchStoppedItem {
   reason: "duplicate" | "budget" | "low_confidence" | "out_of_scope";
 }
 
-export interface RecursiveSearchRequest {
-  claim: string;
-  seedNode: Pick<CanvasNode, "id" | "type" | "title" | "subtitle" | "status">;
-  question: string;
-  depthLimit: number;
-  budgetLimit: number;
-  visibleNodeTitles: string[];
-  existingSources: string[];
+// ───────────────────────────────────────────────────────────────
+// 按 Agent 的模型选择（payload 层；UI 未挂载，默认空 map 走 fallback 链）
+// ───────────────────────────────────────────────────────────────
+
+export type AgentId = "rumor_detector" | "fact_checker" | "source_validator" | "report_composer";
+
+export interface AvailableModel {
+  provider: string;
+  model: string;
+  label?: string;
 }
 
-export interface RecursiveSearchResponse {
-  controllerNote: string;
-  runTitle: string;
-  traceText: string;
-  clues: EvidenceClue[];
-  frontier: SearchFrontierItem[];
-  stopped: SearchStoppedItem[];
-  canSay: string[];
-  cannotSay: string[];
+export interface ModelChoiceEntry {
+  provider: string;
   model: string;
 }
+
+export type ModelChoiceMap = Partial<Record<AgentId, ModelChoiceEntry>>;
 
 // ───────────────────────────────────────────────────────────────
 // 多 Agent Handoff Orchestrate
@@ -119,39 +86,6 @@ export interface HandoffStep {
   status: "pending" | "running" | "completed" | "failed";
   evidenceBundle?: AgentEvidenceBundle;
   error?: string;
-}
-
-export interface HandoffResult {
-  claim: string;
-  steps: HandoffStep[];
-  finalReport?: Record<string, unknown>;
-  /** Book Ch.1/6 proposer-reviewer 结果（确定性审稿） */
-  reportReview?: {
-    passed: boolean;
-    score: number;
-    issues: Array<{ code: string; severity: string; message: string }>;
-  };
-}
-
-export async function requestOrchestrate(claim: string): Promise<HandoffResult> {
-  try {
-    const response = await fetch(`${API_BASE}/api/agent/orchestrate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ claim }),
-    });
-
-    const data = (await response.json().catch(() => null)) as HandoffResult | { message?: string } | null;
-
-    if (!response.ok) {
-      const message = data && "message" in data && data.message ? data.message : `HTTP ${response.status}`;
-      throw new Error(`Orchestrate API 失败：${message}`);
-    }
-
-    return data as HandoffResult;
-  } catch (error) {
-    throw error instanceof Error ? error : new Error("Orchestrate API 调用异常");
-  }
 }
 
 export interface OrchestrateStreamEvent {
@@ -235,7 +169,6 @@ export async function* requestOrchestrateStream(
   }
 
   // v2-iteration 2026-07-04: PR-3 Site B (peer spec) — emit trace per SSE event.
-  // 不修改 AgentRuntime.ts,此函数作为 SSE adapter 接入 trace collector。
   const trace = getTraceCollector();
   const traceSessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   trace.setSessionId(traceSessionId);
@@ -362,67 +295,4 @@ export async function updateMemoryCandidateStatus(
     throw new Error(data?.message ?? `Memory Candidate API 失败：HTTP ${response.status}`);
   }
   return data.candidate;
-}
-
-export async function requestAgentExpansion(payload: AgentExpansionRequest): Promise<AgentExpansionResponse> {
-  try {
-    const response = await fetch(`${API_BASE}/api/agent/expand`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const data = (await response.json().catch(() => null)) as AgentExpansionResponse | { message?: string } | null;
-
-    if (!response.ok) {
-      const message = data && "message" in data && data.message ? data.message : `HTTP ${response.status}`;
-      throw new Error(`Agent Expansion API 失败：${message}`);
-    }
-
-    return data as AgentExpansionResponse;
-  } catch (error) {
-    throw error instanceof Error ? error : new Error("Agent Expansion API 调用异常");
-  }
-}
-
-export async function requestRecursiveSearch(payload: RecursiveSearchRequest): Promise<RecursiveSearchResponse> {
-  try {
-    const response = await fetch(`${API_BASE}/api/agent/recursive-search`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const data = (await response.json().catch(() => null)) as RecursiveSearchResponse | { message?: string } | null;
-
-    if (!response.ok) {
-      const message = data && "message" in data && data.message ? data.message : `HTTP ${response.status}`;
-      throw new Error(`Recursive Search API 失败：${message}`);
-    }
-
-    return data as RecursiveSearchResponse;
-  } catch (error) {
-    throw error instanceof Error ? error : new Error("Recursive Search API 调用异常");
-  }
-}
-
-export async function requestSherlockSearch(payload: SherlockSearchRequest): Promise<SherlockSearchResponse> {
-  try {
-    const response = await fetch(`${API_BASE}/api/agent/sherlock-search`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const data = (await response.json().catch(() => null)) as SherlockSearchResponse | { message?: string } | null;
-
-    if (!response.ok) {
-      const message = data && "message" in data && data.message ? data.message : `HTTP ${response.status}`;
-      throw new Error(`Sherlock Search API 失败：${message}`);
-    }
-
-    return data as SherlockSearchResponse;
-  } catch (error) {
-    throw error instanceof Error ? error : new Error("Sherlock Search API 调用异常");
-  }
 }

@@ -8,7 +8,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   getMemoryCandidateStore,
-  listMemoryCandidatesHandler,
   setMemoryCandidateStoreForTests,
   updateMemoryCandidateHandler,
 } from "./memoryCandidateHandlers";
@@ -143,14 +142,6 @@ describe("memoryCandidateHandlers", () => {
   afterEach(async () => {
     setMemoryCandidateStoreForTests(previous);
     await rm(dir, { recursive: true, force: true });
-  });
-
-  it("GET list → 200 + candidates", async () => {
-    const res = mockRes();
-    await listMemoryCandidatesHandler(mockReq() as never, res);
-    expect(res.statusCode).toBe(200);
-    expect(res.body.candidates).toHaveLength(1);
-    expect(res.body.candidates[0].id).toBe("mc-1");
   });
 
   it("POST setStatus accepted → 200 + candidate", async () => {

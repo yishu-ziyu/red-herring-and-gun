@@ -20,8 +20,7 @@ import type {
 import type { StreamingReasoningSession } from "../lib/streamingTypes";
 import type { CanvasNode, CanvasEdge, ReasoningStep } from "../data/reasoningCanvas";
 import type { EvidenceClue, ExpansionMode, SearchFrontierItem, SearchStoppedItem, HandoffStep } from "../lib/agentExpansion";
-import type { VerificationResult } from "../lib/reportExporter";
-import type { SourceHit } from "../lib/sherlockStyleSearch";
+import type { VerificationResult, SourceHit } from "../lib/schemas";
 
 // ───────────────────────────────────────────────────────────────
 // State Shape
