@@ -64,6 +64,7 @@ describe("toFriendlyError — 顶层 error 出口收口", () => {
           agent: "rumor_detector",
           model: "minimax:MiniMax-M2.7-highspeed",
           latencyMs: 21500,
+          systemPrompt: "你是红鲱鱼与枪的 RumorDetector…MiniMax 规则清单",
           output: { claimAtomSelfProof: { kept: [], model: "minimax:MiniMax-M2.7-highspeed" } },
         },
         {
@@ -78,6 +79,7 @@ describe("toFriendlyError — 顶层 error 出口收口", () => {
     const text = JSON.stringify(event);
     expect(text).not.toMatch(/minimax/i);
     expect(text).not.toContain("latencyMs");
+    expect(text).not.toContain("systemPrompt");
     expect(text).toContain("fallback:deterministic-report");
     expect((event.finalReport as Record<string, unknown>).verdictType).toBe("false");
   });
