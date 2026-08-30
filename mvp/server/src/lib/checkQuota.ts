@@ -97,6 +97,21 @@ function hashIp(ip: string) {
   return crypto.createHash("sha256").update(`${ip}|${getServerSecret()}`, "utf8").digest("hex").slice(0, 32);
 }
 
+/**
+ * 运维旁路：开发者/服务器自己验证真实链路时不受免费额度限制。
+ * token 只存在服务端 env（OPS_CHECK_BYPASS_TOKEN），未配置时旁路完全关闭；
+ * 头名 x-ops-check-token。恒时比较防探测。
+ */
+export function hasOpsCheckBypass(req: { headers?: { [key: string]: unknown } }): boolean {
+  const expected = process.env.OPS_CHECK_BYPASS_TOKEN?.trim();
+  if (!expected) return false;
+  const supplied = headerValue(req.headers?.["x-ops-check-token"]);
+  if (!supplied) return false;
+  const a = crypto.createHash("sha256").update(expected, "utf8").digest();
+  const b = crypto.createHash("sha256").update(supplied, "utf8").digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 function readGuestCookie(req: { headers?: { cookie?: unknown } }): GuestCookiePayload | null {
   const cookies = parseCookies(cookieHeader(req.headers?.cookie));
   const raw = cookies[GUEST_CHECKS_COOKIE];
@@ -196,6 +211,7 @@ export async function peekCheckQuota(
   req: { headers?: { cookie?: unknown; [key: string]: unknown }; socket?: { remoteAddress?: string } }
 ): Promise<CheckQuotaView> {
   const account = await readEmailAccountOptional(req);
+  if (hasOpsCheckBypass(req)) return bypassQuotaView(account ? "account" : "guest");
   if (!isCheckQuotaEnforced()) {
     return bypassQuotaView(account ? "account" : "guest");
   }
@@ -218,6 +234,9 @@ export async function beginFreeCheck(
   res: any
 ): Promise<{ ok: true; ticket: CheckTicket } | { ok: false; kind: CheckQuotaKind }> {
   const account: EmailAccount | null = await readEmailAccountOptional(req);
+  if (hasOpsCheckBypass(req)) {
+    return { ok: true, ticket: { kind: "guest", day: shanghaiDayKey(), settled: true } };
+  }
   if (!isCheckQuotaEnforced()) {
     return {
       ok: true,
