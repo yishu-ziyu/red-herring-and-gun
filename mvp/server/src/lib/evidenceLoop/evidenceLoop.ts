@@ -277,7 +277,7 @@ function extractSources(result: unknown): AtomSearchSource[] {
     out.push({
       url,
       title: String(rec.title || rec.name || "").slice(0, 200),
-      snippet: String(rec.condensedSnippet || rec.snippet || rec.summary || rec.content || "").slice(0, 320),
+      snippet: String(rec.snippet || rec.summary || rec.content || "").slice(0, 320),
       credibility: typeof rec.credibility === "string" ? rec.credibility : undefined,
     });
   }

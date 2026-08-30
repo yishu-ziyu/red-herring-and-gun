@@ -27,8 +27,6 @@ import { listAvailableModels, validateModelChoice } from "./lib/availableModels.
 
 import { MODEL_UNKNOWN_MESSAGE, probeModelServiceHealth } from "./lib/modelServiceHealth.js";
 
-import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
-
 import { lookupImageOrigin, visionHintsFromExtraction } from "./lib/imageOrigin/index.js";
 
 import { commitFreeCheck, releaseFreeCheck } from "./lib/checkQuota.js";
@@ -209,11 +207,6 @@ export function createHandlers(env: Record<string, string>) {
       } catch (error) {
         const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
         result = build360SearchFailure(atom, message);
-      }
-      try {
-        await attachCondensedSnippets(env, atom, result);
-      } catch {
-        /* 浓缩失败不阻断 */
       }
       return result;
     };
