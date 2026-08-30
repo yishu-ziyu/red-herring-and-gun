@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { tmpdir } from "node:os";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -64,6 +65,16 @@ app.use(
   })
 );
 app.use(express.json({ limit: "10mb" }));
+
+// 临时图床：以图搜图适配器把用户图片落盘到 UPLOAD_DIR（默认系统临时目录），
+// 通过 /uploads 静态暴露给 reverse-image vendor 抓取。生产需 Nginx 转发 /uploads 并设 PUBLIC_BASE_URL。
+app.use(
+  "/uploads",
+  express.static(join(process.env.UPLOAD_DIR || tmpdir(), "rhg-uploads"), {
+    maxAge: "1h",
+    index: false,
+  })
+);
 
 const env = process.env as Record<string, string>;
 const handlers = createHandlers(env);
@@ -255,6 +266,7 @@ app.delete("/api/account", (req, res, next) => accountDeleteHandler(req, res).ca
 // Plan Item 2 · 报告 URL 永久路由 /r/:caseId
 import {
   postCaseHandler,
+  postCaseFeedbackHandler,
   getCaseHandler,
   renderCaseHtmlHandler,
   listCasesHandler,
@@ -263,11 +275,33 @@ import {
   listMemoryCandidatesHandler,
   updateMemoryCandidateHandler,
 } from "./lib/memoryCandidateHandlers.js";
+import { appendUserFeedback } from "./lib/userFeedback.js";
 
 app.post("/api/case", (req, res, next) => postCaseHandler(req, res).catch(next));
+app.post("/api/case/:caseId/feedback", (req, res, next) => postCaseFeedbackHandler(req, res).catch(next));
+app.post("/api/feedback", (req, res, next) => postGeneralFeedbackHandler(req, res).catch(next));
 app.get("/api/case/:caseId", (req, res, next) => getCaseHandler(req, res));
 app.get("/api/cases", (req, res, next) => listCasesHandler(req, res));
 app.get("/r/:caseId", (req, res, next) => renderCaseHtmlHandler(req, res));
+
+/** POST /api/feedback — 用户对某次判断的异议。落在 RHG_DATA_DIR，供 golden 反向采集。 */
+async function postGeneralFeedbackHandler(req: any, res: any): Promise<void> {
+  const body = (req.body ?? {}) as { claim?: unknown; verdictType?: unknown; score?: unknown; reason?: unknown };
+  const claim = String(body.claim ?? "").trim().slice(0, 2000);
+  const reason = String(body.reason ?? "").trim().slice(0, 2000);
+  if (!reason) {
+    res.status(400).json({ error: "reason is required" });
+    return;
+  }
+  await appendUserFeedback(env, {
+    kind: "general",
+    claim,
+    verdictType: typeof body.verdictType === "string" ? body.verdictType : undefined,
+    score: typeof body.score === "number" ? body.score : undefined,
+    reason,
+  });
+  res.json({ ok: true });
+}
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Red Herring API Server running on http://0.0.0.0:${PORT}`);

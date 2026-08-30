@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDeterministicFinalReport } from "./handlers";
+import { buildDeterministicFinalReport } from "./reportFallback.js";
 
 function expectNoInfraLeak(value: unknown) {
   const text = JSON.stringify(value);
