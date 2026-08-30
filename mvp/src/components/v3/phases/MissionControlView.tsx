@@ -916,7 +916,7 @@ export function MissionControlView({
                 }
 
                 appendRuntimeChunk(step.agent, step.model.includes("demo-fallback") ? "thought" : "result", summarizeStepOutput(step));
-                appendRuntimeChunk(step.agent, "result", `模型链路：${step.model}，耗时 ${formatLatency(step.latencyMs)}。`);
+                appendRuntimeChunk(step.agent, "result", `这一步完成，耗时 ${formatLatency(step.latencyMs)}。`);
                 if (isDeterministicReportFallback(step)) {
                   appendRuntimeChunk(step.agent, "thought", deterministicFallbackReason(step));
                 }
