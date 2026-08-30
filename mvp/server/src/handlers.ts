@@ -25,11 +25,9 @@ import { getMemoryCandidateStore } from "./lib/memoryCandidateHandlers.js";
 
 import type { MemoryCandidateHit } from "./lib/memoryCandidateTypes.js";
 
-import { ProviderFallbackError } from "./lib/providerRouter.js";
-
 import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
 
-import { probeModelServiceHealth } from "./lib/modelServiceHealth.js";
+import { MODEL_UNKNOWN_MESSAGE, probeModelServiceHealth } from "./lib/modelServiceHealth.js";
 
 import { attachCondensedSnippets } from "./lib/sourceCondenser.js";
 
@@ -88,9 +86,8 @@ import { applyContextCrossCheckToReport } from "./lib/contextCrossCheck.js";
 import { createOrchestrateAdapter } from "./lib/orchestrate.js";
 
 // ───────────────────────────────────────────────────────────────
-// 错误信息泄漏修复：把任意异常收敛成"用户可读友好文案 + 结构化诊断"。
-// message 只承载用户可读文案；原始诊断放 detail / providerErrors，绝不上屏。
-// 供顶层 error 出口与 agent_error 出口共用，也让后端回归测试能直接钉死。
+// 公开 SSE 只发用户可读文案。原始 provider 诊断留在服务端 logger，
+// 不再随 detail / providerErrors 下发到浏览器，避免 UI 或网络面板泄漏运维信息。
 // ───────────────────────────────────────────────────────────────
 export interface FriendlyErrorInfo {
   /** 用户可读友好文案（不包含原始诊断） */
@@ -102,18 +99,22 @@ export interface FriendlyErrorInfo {
 }
 
 export function toFriendlyError(error: unknown, fallback: string): FriendlyErrorInfo {
-  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  const providerErrors =
-    error instanceof ProviderFallbackError && error.providerErrors?.length
-      ? error.providerErrors
-      : undefined;
-  // ProviderFallbackError.message 已是友好文案，直接复用；其余一律用 fallback 兜底。
-  const userFacing = error instanceof ProviderFallbackError && raw ? raw : fallback;
-  return {
-    message: userFacing,
-    ...(raw && raw !== userFacing ? { detail: raw } : {}),
-    ...(providerErrors ? { providerErrors } : {}),
-  };
+  void error;
+  return { message: fallback };
+}
+
+export function toPublicStreamEvent(data: object): Record<string, unknown> {
+  const event = { ...(data as Record<string, unknown>) };
+  delete event.detail;
+  delete event.providerErrors;
+  if (event.type === "error" && event.code !== "checks_exhausted") {
+    event.message = "这次核查没能完成，请稍后重试";
+    delete event.error;
+  } else if (event.type === "agent_error" || event.type === "tool_error") {
+    event.error = "这一步没能完成，核查会按现有材料继续";
+    delete event.message;
+  }
+  return event;
 }
 
 
@@ -279,7 +280,7 @@ export function createHandlers(env: Record<string, string>) {
     } catch {
       return sendJson(res, 200, {
         status: "unknown",
-        message: "暂时无法确认模型服务是否可用。这次可能较久，也可能给不出最终判断；仍会尽量检索公开材料。",
+        message: MODEL_UNKNOWN_MESSAGE,
       });
     }
   }
@@ -431,7 +432,7 @@ export function createHandlers(env: Record<string, string>) {
     }
   }
 
-  const PIPELINE_TOTAL_TIMEOUT_MS = Number(env.ORCHESTRATE_TOTAL_TIMEOUT_MS || 90_000);
+  const PIPELINE_TOTAL_TIMEOUT_MS = Number(env.ORCHESTRATE_TOTAL_TIMEOUT_MS || 210_000);
 
   /** 整体核查超时兜底：不憋用户，先给「还没查完」的中间结论（unverified + error-boundary）。 */
   function buildTimedOutReport(c: string): Record<string, unknown> {
@@ -586,7 +587,7 @@ export function createHandlers(env: Record<string, string>) {
     });
 
     const sendEvent = (data: object) => {
-      res.write(`data: ${JSON.stringify(data)}\n\n`);
+      res.write(`data: ${JSON.stringify(toPublicStreamEvent(data))}\n\n`);
     };
 
     try {
@@ -686,9 +687,9 @@ export function createHandlers(env: Record<string, string>) {
           });
         },
         onError: (agentId, agentConfig, error) => {
-          const { message, detail, providerErrors } = toFriendlyError(
+          const { message } = toFriendlyError(
             error,
-            `${agentConfig.name} 真实模型调用失败`
+            "核查服务暂时不可用，请稍后重试"
           );
           sendEvent({
             type: "agent_error",
@@ -696,8 +697,6 @@ export function createHandlers(env: Record<string, string>) {
             agentName: agentConfig.name,
             agentIcon: agentConfig.icon,
             error: message,
-            ...(detail ? { detail } : {}),
-            ...(providerErrors ? { providerErrors } : {}),
             timestamp: Date.now(),
           });
         },
@@ -943,12 +942,10 @@ export function createHandlers(env: Record<string, string>) {
         res.end();
         return;
       }
-      const { message, detail, providerErrors } = toFriendlyError(error, "Orchestrate Stream 调用错误");
+      const { message } = toFriendlyError(error, "这次核查没能完成，请稍后重试");
       sendEvent({
         type: "error",
         message,
-        ...(detail ? { detail } : {}),
-        ...(providerErrors ? { providerErrors } : {}),
         timestamp: Date.now(),
       });
       res.end();

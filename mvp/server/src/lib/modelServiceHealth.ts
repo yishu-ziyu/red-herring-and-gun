@@ -24,10 +24,10 @@ export interface ModelServiceHealth {
 }
 
 export const MODEL_UNAVAILABLE_MESSAGE =
-  "模型服务暂时不可用。这次可能给不出最终判断，但仍会尽量检索公开材料。";
+  "核查服务暂时不可用。你的材料还没有提交，请稍后重试。";
 
 export const MODEL_UNKNOWN_MESSAGE =
-  "暂时无法确认模型服务是否可用。这次可能较久，也可能给不出最终判断；仍会尽量检索公开材料。";
+  "暂时无法确认核查服务状态。你可以继续尝试，若中断请稍后重试。";
 
 const PROBE_TOTAL_MS = 8000;
 const PROBE_ONE_MS = 2500;
