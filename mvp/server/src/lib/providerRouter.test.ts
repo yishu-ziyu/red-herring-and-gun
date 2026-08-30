@@ -138,6 +138,21 @@ describe("providerRouter env helpers", () => {
     expect(parseAgentJson('{“ok”: yes, "note": done,}', "test")).toEqual({ ok: "yes", note: "done" });
   });
 
+  it("parseAgentJson repairs unescaped inner quotes inside string values", () => {
+    const broken =
+      '{"conclusion":"酒精擦身不能退烧，医生说"物理降温"已过时","items":[{"claim":"酒精经皮吸收"可能中毒","verdict":false}]}';
+    const parsed = parseAgentJson(broken, "test");
+    expect(parsed.conclusion).toContain("物理降温");
+    expect(parsed.items[0].claim).toContain("可能中毒");
+  });
+
+  it("parseAgentJson keeps legitimate closing quotes untouched", () => {
+    expect(parseAgentJson('{"a":"x","b":[1,{"c":"y"}]}', "test")).toEqual({
+      a: "x",
+      b: [1, { c: "y" }],
+    });
+  });
+
   // 9. parseAgentJson: 无法解析时抛带 label 的错误
   it("parseAgentJson throws with label prefix when input is not parseable", () => {
     expect(() => parseAgentJson("not json at all", "my-label")).toThrow(/my-label/);
