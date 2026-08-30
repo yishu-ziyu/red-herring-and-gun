@@ -354,7 +354,11 @@ function TurnSection({
 
       {model.report ? (
         <article className={styles.report} aria-label="核心结论">
-          <ResearchMemo markdown={model.report.memo} sources={model.report.sources} />
+          <ResearchMemo
+            markdown={model.report.memo}
+            sources={model.report.sources}
+            tone={model.report.tone}
+          />
           {fallbackNotice && !live ? (
             <p className={styles.advice}>{fallbackNotice}</p>
           ) : null}

@@ -14,16 +14,22 @@
   letter-spacing: -0.4px;
 }
 
+/* L2 被检原句：证物待遇 — 引号排版（左墨线 + 深纸底），层级低于判定句 */
 .memo h1 {
-  margin: 0 0 12px;
-  font-size: 24px;
-  line-height: 32px;
-  letter-spacing: -0.55px;
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-left: 2px solid var(--ink, #151821);
+  border-radius: 0 6px 6px 0;
+  background: var(--zt-bg-deep, #faf6eb);
+  font-size: clamp(17px, 1.8vw, 19px);
+  font-weight: 600;
+  line-height: 1.55;
+  letter-spacing: 0;
 }
 
 .memo h2 {
   margin: 23px 0 9px;
-  font-size: 20px;
+  font-size: var(--type-title, 20px);
   line-height: 28px;
 }
 
@@ -39,6 +45,34 @@
 
 .memo p {
   margin: 0 0 8px;
+}
+
+/* L1 判定句：serif 700、19-24px，墨色文字 + 判断色高亮下划线（颜色不当说服工具） */
+.verdictLead {
+  --verdict-mark: rgba(21, 24, 33, 0.08);
+}
+
+.verdictLead[data-verdict="true"] {
+  --verdict-mark: color-mix(in srgb, var(--verdict-true, #16a34a) 16%, transparent);
+}
+
+.verdictLead[data-verdict="false"] {
+  --verdict-mark: color-mix(in srgb, var(--verdict-false, #e84a5f) 16%, transparent);
+}
+
+.verdictLead[data-verdict="mixed"],
+.verdictLead[data-verdict="unverified"] {
+  --verdict-mark: color-mix(in srgb, var(--verdict-unclear, #d97706) 16%, transparent);
+}
+
+.verdictLead strong:first-child {
+  font-family: var(--font-serif, "Noto Serif SC", "Songti SC", serif);
+  font-size: clamp(19px, 2.2vw, 24px);
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  color: var(--ink, #151821);
+  background: linear-gradient(transparent 62%, var(--verdict-mark) 62%);
 }
 
 .memo strong {
@@ -96,6 +130,7 @@
 }
 
 .chip {
+  position: relative; /* 供链接 chip 的伪元素扩大命中区 */
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -109,6 +144,13 @@
   text-decoration: none;
   vertical-align: middle;
   white-space: nowrap;
+}
+
+/* 视觉 20px 高的行内 chip 触控命中区扩到 ≥32px */
+a.chip::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
 }
 
 .chip img {

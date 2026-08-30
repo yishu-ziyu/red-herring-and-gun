@@ -7,11 +7,15 @@ import {
   type MemoInline,
   type MemoSource,
 } from "./memoMarkdown";
+import type { ApodexVerdictTone } from "./apodexRunMap";
+import { useUiLang } from "../../../../lib/useUiLang";
 import styles from "./ResearchMemo.module.css";
 
 export type ResearchMemoProps = {
   markdown: string;
   sources?: MemoSource[];
+  /** 判定档位：给判定句（首个段落的首个 strong）联动判断色标记 */
+  tone?: ApodexVerdictTone;
 };
 
 function CiteChip({ label, href, extra }: { label: string; href?: string; extra?: string }) {
@@ -65,8 +69,10 @@ function Cell({ text, sources }: { text: string; sources?: MemoSource[] }) {
   return <Inline spans={parseInline(text)} sources={sources} />;
 }
 
-export function ResearchMemo({ markdown, sources }: ResearchMemoProps) {
+export function ResearchMemo({ markdown, sources, tone }: ResearchMemoProps) {
+  const { copy } = useUiLang();
   const blocks = parseResearchMemo(markdown);
+  let leadStyled = false;
   return (
     <div className={styles.memo}>
       {blocks.map((block, i) => {
@@ -75,8 +81,11 @@ export function ResearchMemo({ markdown, sources }: ResearchMemoProps) {
         if (block.type === "h3") return <h3 key={i}>{block.text}</h3>;
         if (block.type === "hr") return <hr key={i} />;
         if (block.type === "p") {
+          // 判定句 = 全 memo 第一个段落（composeResearchMemo 把判定词放在首个 strong）
+          const isLead = tone !== undefined && !leadStyled;
+          if (isLead) leadStyled = true;
           return (
-            <p key={i}>
+            <p key={i} className={isLead ? styles.verdictLead : undefined} data-verdict={isLead ? tone : undefined}>
               <Inline spans={block.spans} sources={sources} />
             </p>
           );
@@ -123,8 +132,8 @@ export function ResearchMemo({ markdown, sources }: ResearchMemoProps) {
         }
         if (block.type !== "refs") return null;
         return (
-          <section key={i} className={styles.refs} aria-label="REFERENCES">
-            <p className={styles.refsKicker}>REFERENCES</p>
+          <section key={i} className={styles.refs} aria-label={copy.references}>
+            <p className={styles.refsKicker}>{copy.references}</p>
             <ol>
               {block.items.map((item) => (
                 <li key={item.n}>

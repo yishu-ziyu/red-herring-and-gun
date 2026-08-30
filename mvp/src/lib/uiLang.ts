@@ -86,6 +86,7 @@ export type UiCopy = {
   paperEmpty: string;
   dossierToggle: string;
   dossierCollapse: string;
+  references: string;
 };
 
 export const UI_COPY: Record<UiLang, UiCopy> = {
@@ -170,6 +171,7 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     paperEmpty: "查完的判断会出现在这里。",
     dossierToggle: "卷宗",
     dossierCollapse: "收起卷宗",
+    references: "参考资料",
   },
   en: {
     runProcess: "Run process",
@@ -252,6 +254,7 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     paperEmpty: "The verdict will appear here once the check is done.",
     dossierToggle: "File",
     dossierCollapse: "Hide file",
+    references: "References",
   },
 };
 
