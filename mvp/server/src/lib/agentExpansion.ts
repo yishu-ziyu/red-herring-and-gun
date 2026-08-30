@@ -1,5 +1,5 @@
-import type { SherlockSearchRequest, SherlockSearchResponse } from "./sherlockStyleSearch";
-export type { SherlockSearchResponse } from "./sherlockStyleSearch";
+import type { SherlockSearchRequest, SherlockSearchResponse } from "./sherlockStyleSearch.js";
+export type { SherlockSearchResponse } from "./sherlockStyleSearch.js";
 
 type CanvasNodeStatus = "risk" | "active" | "supported" | "limited" | "blocked" | "rewrite";
 
