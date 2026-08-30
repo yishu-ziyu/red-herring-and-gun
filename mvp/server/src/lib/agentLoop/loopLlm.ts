@@ -45,7 +45,7 @@ export function createLoopLlm(opts: {
     /\/$/,
     ""
   );
-  const model = (opts.model || envValue(env, "MINIMAX_MODEL") || "MiniMax-M3").trim();
+  const model = (opts.model || envValue(env, "MINIMAX_MODEL") || "MiniMax-M2.7-highspeed").trim();
   const authHeader =
     envValue(env, "MINIMAX_AUTH_HEADER").toLowerCase() === "bearer" ? "bearer" : "x-api-key";
   const { maxTokens, thinking } = miniMaxCallOptions(
@@ -105,7 +105,7 @@ export function createLoopLlm(opts: {
 
 export function modelFromChoice(
   modelChoice: unknown,
-  fallback = "MiniMax-M3"
+  fallback = "MiniMax-M2.7-highspeed"
 ): string {
   if (!modelChoice || typeof modelChoice !== "object") return fallback;
   const rec = modelChoice as Record<string, { model?: string }>;

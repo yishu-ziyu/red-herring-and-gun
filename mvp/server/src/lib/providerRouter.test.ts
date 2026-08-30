@@ -628,6 +628,7 @@ describe("providerRouter quota skip", () => {
       env: {
         MINIMAX_API_KEY: "sk-mm",
         STEPFUN_API_KEY: "sk-sf",
+        MINIMAX_MODEL: "MiniMax-M3",
         MINIMAX_M3_PROVIDER_TIMEOUT_MS: "1",
         ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax,stepfun",
       },
