@@ -500,6 +500,8 @@ export function createHandlers(env: Record<string, string>) {
       const result = await withTimeout(
         runCasePipeline({
           claim,
+          // 截止 = 总超时 − 10s 收尾余量：补查/复核提前收敛，报告写作不再被总超时截断
+          deadline: Date.now() + PIPELINE_TOTAL_TIMEOUT_MS - 10_000,
           runAgent,
           searchOne: makeSearchOneAtom(),
           lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
@@ -704,6 +706,8 @@ export function createHandlers(env: Record<string, string>) {
 
       const result = await withTimeout(runCasePipeline({
         claim,
+        // 截止 = 总超时 − 10s 收尾余量：补查/复核提前收敛，报告写作不再被总超时截断
+        deadline: Date.now() + PIPELINE_TOTAL_TIMEOUT_MS - 10_000,
         runAgent,
         searchOne: makeSearchOneAtom(),
         lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),

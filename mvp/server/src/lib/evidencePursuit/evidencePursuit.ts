@@ -56,7 +56,7 @@ export type PursuitHop = {
   gain: number;
   action: PursuitAction;
   /** Why this atom's pursuit stopped. Set on the last hop only; not a search-policy input. */
-  stopReason?: "evidence-found" | "no-new-evidence" | "rewrite-empty" | "search-failed";
+  stopReason?: "evidence-found" | "no-new-evidence" | "rewrite-empty" | "search-failed" | "time-budget";
 };
 
 export type RankedDoc = {
