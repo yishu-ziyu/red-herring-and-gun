@@ -50,6 +50,15 @@ type AipingAuthState =
   | { status: "anonymous"; loginUrl: string }
   | { status: "authenticated"; user: AipingUser };
 
+type ModelServiceState = {
+  status: "checking" | "available" | "unavailable" | "unknown";
+  message: string;
+};
+
+const MODEL_SERVICE_CHECKING_MESSAGE = "正在确认核查服务…";
+const MODEL_SERVICE_UNAVAILABLE_MESSAGE = "核查服务暂时不可用。你的材料还没有提交，请稍后重试。";
+const MODEL_SERVICE_UNKNOWN_MESSAGE = "暂时无法确认核查服务状态。你可以继续尝试，若中断请稍后重试。";
+
 /** 首页试一条：用 rumorCases 里三类具体谣言，不用「某公司 / 某项政策」空壳。 */
 const DEMO_CASES = [
   "隔夜菜会致癌，等于吃毒药",
@@ -72,6 +81,10 @@ export function Dashboard({
   const [isScraping, setIsScraping] = useState(false);
   const [modelChoice, setModelChoice] = useState<ModelChoiceMap>({});
   const [hasAvailableModels, setHasAvailableModels] = useState(true);
+  const [modelService, setModelService] = useState<ModelServiceState>({
+    status: "checking",
+    message: MODEL_SERVICE_CHECKING_MESSAGE,
+  });
   const [aipingAuth, setAipingAuth] = useState<AipingAuthState>({ status: "checking" });
   const [highlightedDemo, setHighlightedDemo] = useState<string | null>(null);
   const [checkQuota, setCheckQuota] = useState<CheckQuotaView | null>(null);
@@ -89,7 +102,17 @@ export function Dashboard({
     return `点数 ${point + recharge}`;
   }, [aipingAuth]);
 
-  const canSubmit = hasMaterial && !isScraping && hasAvailableModels && !quotaIsExhausted(checkQuota);
+  const modelServiceBlocksSubmit =
+    !hasAvailableModels || modelService.status === "checking" || modelService.status === "unavailable";
+  const displayedModelService: ModelServiceState = hasAvailableModels
+    ? modelService
+    : { status: "unavailable", message: MODEL_SERVICE_UNAVAILABLE_MESSAGE };
+  const canSubmit =
+    hasMaterial &&
+    !isScraping &&
+    hasAvailableModels &&
+    !modelServiceBlocksSubmit &&
+    !quotaIsExhausted(checkQuota);
 
   const handleStart = useCallback(async () => {
     if (quotaIsExhausted(checkQuota) && checkQuota) {
@@ -98,7 +121,11 @@ export function Dashboard({
       return;
     }
     if (!hasAvailableModels) {
-      setInputError("暂无可用模型，请先配置 API Key。");
+      setInputError(MODEL_SERVICE_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    if (modelServiceBlocksSubmit) {
+      setInputError(modelService.message);
       return;
     }
     if (isScraping) return;
@@ -140,7 +167,18 @@ export function Dashboard({
     }
 
     onStartAnalysis(enrichedIntake, modelChoice);
-  }, [checkQuota, hasAvailableModels, images, inputValue, isScraping, modelChoice, onNeedLogin, onStartAnalysis]);
+  }, [
+    checkQuota,
+    hasAvailableModels,
+    images,
+    inputValue,
+    isScraping,
+    modelChoice,
+    modelService.message,
+    modelServiceBlocksSubmit,
+    onNeedLogin,
+    onStartAnalysis,
+  ]);
 
   const fillDemoClaim = useCallback((claim: string) => {
     setInputValue(claim);
@@ -167,6 +205,31 @@ export function Dashboard({
       .catch(() => {
         if (cancelled) return;
         setHasAvailableModels(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/models/health")
+      .then((response) => (response.ok ? response.json() : { status: "unknown" }))
+      .then((data: { status?: string }) => {
+        if (cancelled) return;
+        if (data.status === "available") {
+          setModelService({ status: "available", message: "" });
+          return;
+        }
+        if (data.status === "unavailable") {
+          setModelService({ status: "unavailable", message: MODEL_SERVICE_UNAVAILABLE_MESSAGE });
+          return;
+        }
+        setModelService({ status: "unknown", message: MODEL_SERVICE_UNKNOWN_MESSAGE });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setModelService({ status: "unknown", message: MODEL_SERVICE_UNKNOWN_MESSAGE });
       });
     return () => {
       cancelled = true;
@@ -295,12 +358,23 @@ export function Dashboard({
       } else if (!hasMaterial) {
         setInputError("请先填写待核查材料。");
       } else if (!hasAvailableModels) {
-        setInputError("暂无可用模型，请先配置 API Key。");
+        setInputError(MODEL_SERVICE_UNAVAILABLE_MESSAGE);
+      } else if (modelServiceBlocksSubmit) {
+        setInputError(modelService.message);
       }
       return;
     }
     void handleStart();
-  }, [canSubmit, checkQuota, handleStart, hasAvailableModels, hasMaterial, onNeedLogin]);
+  }, [
+    canSubmit,
+    checkQuota,
+    handleStart,
+    hasAvailableModels,
+    hasMaterial,
+    modelService.message,
+    modelServiceBlocksSubmit,
+    onNeedLogin,
+  ]);
 
   return (
     <div className="landing-page">
@@ -346,6 +420,7 @@ export function Dashboard({
               </h1>
             </div>
             <p className="landing-mission">贴进来。追出处。</p>
+            <p className="landing-outcome">告诉你哪一截站得住，问题在哪里，来源能点开。</p>
           </div>
         </section>
 
@@ -365,7 +440,7 @@ export function Dashboard({
               attachments={promptAttachments}
               onAddFiles={handleAddFiles}
               onRemoveAttachment={removeImage}
-              disabled={!hasAvailableModels}
+              submitDisabled={modelServiceBlocksSubmit}
               busy={isScraping}
               submitLabel={isScraping ? "正在抓取链接内容…" : "开始核查"}
               ariaLabel="待核查材料"
@@ -390,6 +465,13 @@ export function Dashboard({
             {inputError ? (
               <p id="landing-input-error" className="landing-input-error" role="alert">
                 {inputError}
+              </p>
+            ) : displayedModelService.status !== "available" ? (
+              <p
+                className={`landing-input-hint${displayedModelService.status === "unavailable" ? " landing-input-hint--warning" : ""}`}
+                role="status"
+              >
+                {displayedModelService.message}
               </p>
             ) : checkQuota?.enforced ? (
               <p className="landing-input-hint">

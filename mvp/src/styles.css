@@ -8220,6 +8220,14 @@ button:disabled {
   letter-spacing: 0.01em;
 }
 
+.landing-outcome {
+  margin: -4px 0 0;
+  max-width: 34em;
+  color: var(--zt-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .landing-tagline {
   margin: 0;
   font-family: var(--font-serif);
@@ -8566,6 +8574,10 @@ button:disabled {
   color: var(--zt-text-muted);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.landing-input-hint--warning {
+  color: #9f1239;
 }
 
 .landing-input-hint-link {

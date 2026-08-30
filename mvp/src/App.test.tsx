@@ -421,7 +421,7 @@ describe("real analysis workspace", () => {
 
     const report = await screen.findByLabelText("核心结论");
     expect(within(report).getByText(/这一轮没有收成判断/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "换一条" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新核查" })).toBeInTheDocument();
     expect(within(report).getByRole("link")).toHaveAttribute("href", "https://example.com/pboc");
     expect(within(report).queryByText("未证实")).not.toBeInTheDocument();
     expect(within(report).queryByText(/判断置信度/)).not.toBeInTheDocument();
@@ -500,6 +500,7 @@ describe("landing Version A storytelling", () => {
     const landingMission = document.querySelector(".landing-mission");
     expect(landingMission).toHaveTextContent("贴进来。追出处。");
     expect(landingMission).not.toHaveTextContent("能不能信");
+    expect(screen.getByText("告诉你哪一截站得住，问题在哪里，来源能点开。")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "隔夜菜会致癌，等于吃毒药" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "5G信号塔辐射导致周边居民头晕失眠" })).toBeInTheDocument();
@@ -601,7 +602,7 @@ describe("landing Version A storytelling", () => {
     expect(screen.getByLabelText("6 位验证码")).toHaveValue("");
   });
 
-  it("does not show a model-service banner on the landing desk", async () => {
+  it("blocks a doomed run and explains model-service unavailability without provider details", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input: unknown) => {
       const url = typeof input === "string" ? input : (input as URL | Request)?.toString?.() ?? "";
       if (url.includes("/api/models/health")) {
@@ -624,9 +625,12 @@ describe("landing Version A storytelling", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
-    expect(screen.queryByText(/模型服务暂时不可用/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /开始核查/ })).toBeInTheDocument();
+    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    expect(editor).toHaveAttribute("contenteditable", "true");
+    expect(await screen.findByText("核查服务暂时不可用。你的材料还没有提交，请稍后重试。")).toBeInTheDocument();
+    fireEvent.input(editor, { target: { textContent: "测试材料" } });
+    expect(screen.getByRole("button", { name: /开始核查/ })).toBeDisabled();
+    expect(document.body.textContent).not.toMatch(/DeepSeek|MiniMax|API Key|quota|余额|密钥/i);
   });
 
   it("fills the claim when a representative example is clicked, then starts on 开始核查", async () => {
