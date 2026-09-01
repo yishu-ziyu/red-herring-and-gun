@@ -222,15 +222,39 @@ export async function* requestOrchestrateStream(
     const decoder = new TextDecoder();
     let buffer = "";
     let drained = false;
+    // 损坏帧不再静默丢弃：丢的可能就是 complete 帧，静默=整单核查凭空蒸发
+    let malformedFrames = 0;
+    const noteMalformed = (where: string, head: string) => {
+      malformedFrames += 1;
+      console.error(`[stream] ${where} JSON 解析失败（第 ${malformedFrames} 帧）: ${head.slice(0, 120)}`);
+    };
 
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        // F1：服务端每 15s 发心跳注释帧；60s 无任何字节 = 死连接，不再无限等待
+        const read = reader.read();
+        read.catch(() => {}); // 竞态落败后 abort 会让它 reject，别变成 unhandled rejection
+        let readTimer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+          readTimer = setTimeout(() => reject(new Error("stream-read-timeout")), 60_000);
+        });
+        let chunk: Awaited<ReturnType<typeof reader.read>>;
+        try {
+          chunk = await Promise.race([read, timeout]);
+        } catch (error) {
+          console.error("[stream] 60 秒无数据，判定连接已断", error);
+          controller.abort();
+          yield { type: "error", message: "与核查服务的连接中断了，这次没有查完。请重试。" };
+          return;
+        } finally {
+          if (readTimer) clearTimeout(readTimer);
+        }
+        const { done, value } = chunk;
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
 
-        // 解析 SSE 事件
+        // 解析 SSE 事件（": keepalive" 心跳注释行不以 "data: " 开头，天然被跳过）
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
 
@@ -241,7 +265,7 @@ export async function* requestOrchestrateStream(
               emitTraceFromEvent(data);
               yield data;
             } catch {
-              // 忽略无法解析的行
+              noteMalformed("行帧", line);
             }
           }
         }
@@ -254,7 +278,7 @@ export async function* requestOrchestrateStream(
           emitTraceFromEvent(data);
           yield data;
         } catch {
-          // 忽略
+          noteMalformed("尾帧", buffer);
         }
       }
       drained = true;
