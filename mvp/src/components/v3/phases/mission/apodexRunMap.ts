@@ -262,7 +262,7 @@ function stripLeadingVerdictEcho(text: string | undefined, label: string): strin
   return t || undefined;
 }
 
-function buildReport(model: MissionShellModel, claim: string): ApodexReport | undefined {
+function buildReport(model: MissionShellModel): ApodexReport | undefined {
   if (model.verdict.present && model.verdict.interrupted) {
     const sources = (model.verdict.topSources ?? []).map((s) => ({
       title: s.title,
@@ -295,11 +295,18 @@ function buildReport(model: MissionShellModel, claim: string): ApodexReport | un
       tone: incomplete ? "unverified" : toneFromVerdict(model.verdict.verdictType),
       conclusion,
       memo: composeResearchMemo({
-        title: claim,
         verdictLabel,
         conclusion: model.verdict.conclusion,
         findings,
         sources,
+        // 完成态把任务板沉淀成「核查路径」凭据：每步留下它的量化产出。
+        // 末步「整理能不能信」不进凭据——它的产出就是上方的判决句。
+        path: buildInvestigationTodos(model)
+          .filter((item) => item.id !== "report")
+          .map((item) => ({
+            label: item.label,
+            detail: item.detail,
+          })),
       }),
       findings,
       sources,
@@ -461,7 +468,7 @@ export function mapShellToApodexRun(model: MissionShellModel): ApodexRunModel {
     steps,
     board,
     boardVisible: model.live || started,
-    report: buildReport(model, model.claim),
+    report: buildReport(model),
     errorMessage: model.errorMessage,
   };
 }

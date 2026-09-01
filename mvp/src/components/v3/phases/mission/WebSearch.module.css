@@ -18,21 +18,6 @@
   max-width: 100%;
   min-width: 0;
 }
-
-@media (prefers-color-scheme: dark) {
-  .ws {
-    --c-text: #f2f4f8;
-    --c-muted: #9aa4b4;
-    --c-shimmer: #b8bfcc;
-    --c-subtle: #6b7484;
-    --c-border: #232834;
-    --c-border-strong: #2f3645;
-    --c-surface-2: #161a22;
-    --c-success: #34d399;
-    --c-success-soft: rgba(52, 211, 153, 0.16);
-  }
-}
-
 .wsThread {
   margin-top: -6px;
   margin-bottom: 0;
