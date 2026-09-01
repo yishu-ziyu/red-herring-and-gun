@@ -1,8 +1,8 @@
 /**
  * caseStore.ts — Plan Item 2 · 报告 URL 永久路由 /r/:caseId
  *
- * 进程内 case 存储（in-memory LRU Map）。
- * 不依赖外部 DB：黑客松 MVP 阶段足够。
+ * 进程内 case 存储（LRU Map）+ 防抖 JSON 快照落盘（DATA_DIR/cases.json）。
+ * 不依赖外部 DB：黑客松 MVP 阶段足够；重启/重部署不再丢「永久」报告链接。
  * 后续可平滑迁移到 SQLite / Redis / Postgres。
  *
  * 路由规则：
@@ -13,6 +13,7 @@
 
 import type { FinalReport } from "./schemas.js";
 import type { ClaimReviewJsonLd } from "./claimReview.js";
+import { loadSnapshot, saveSnapshotDebounced } from "./jsonSnapshot.js";
 
 export interface CaseFeedback {
   reason: string;
@@ -37,11 +38,36 @@ const CASE_ID_LENGTH = 8;
 
 const store = new Map<string, CaseEntry>();
 
+const SNAPSHOT_FILE = "cases.json";
+
+// 启动恢复：按 createdAt 升序插回，LRU 顺序与真实创建时间一致
+const restored = loadSnapshot<CaseEntry[]>(SNAPSHOT_FILE);
+if (Array.isArray(restored)) {
+  for (const entry of restored
+    .filter((e) => e && typeof e.caseId === "string" && typeof e.createdAt === "number")
+    .sort((a, b) => a.createdAt - b.createdAt)) {
+    store.set(entry.caseId, entry);
+  }
+}
+
+function persist(): void {
+  saveSnapshotDebounced(SNAPSHOT_FILE, [...store.values()]);
+}
+
 function evictOldest(): void {
-  if (store.size <= LRU_LIMIT) return;
-  // Map 保持插入顺序；最早的 entry 是第一个
-  const firstKey = store.keys().next().value;
-  if (firstKey) store.delete(firstKey);
+  // 按 createdAt 淘汰最旧（插入顺序在重启后不再可信）
+  while (store.size > LRU_LIMIT) {
+    let oldestKey: string | undefined;
+    let oldest = Number.POSITIVE_INFINITY;
+    for (const [key, entry] of store) {
+      if (entry.createdAt < oldest) {
+        oldest = entry.createdAt;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey === undefined) break;
+    store.delete(oldestKey);
+  }
 }
 
 /**
@@ -67,6 +93,7 @@ export function putCase(entry: Omit<CaseEntry, "caseId" | "createdAt"> & { caseI
   const full: CaseEntry = { ...entry, caseId, createdAt: Date.now() };
   store.set(caseId, full);
   evictOldest();
+  persist();
   return full;
 }
 
@@ -93,6 +120,7 @@ export function listCases(max: number = 50, ownerHash?: string): CaseEntry[] {
  */
 export function clearCases(): void {
   store.clear();
+  persist();
 }
 
 const MAX_FEEDBACK_PER_CASE = 20;
@@ -106,6 +134,7 @@ export function appendCaseFeedback(caseId: string, reason: string): { ok: boolea
   const feedback = Array.isArray(entry.feedback) ? entry.feedback : [];
   if (feedback.length >= MAX_FEEDBACK_PER_CASE) return { ok: false, error: "too many feedback" };
   entry.feedback = [...feedback, { reason: reason.slice(0, 2000), createdAt: Date.now() }];
+  persist();
   return { ok: true };
 }
 

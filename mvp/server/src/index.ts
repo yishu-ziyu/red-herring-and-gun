@@ -29,6 +29,7 @@ import {
   emailVerifyHandler,
 } from "./lib/emailAuthHandlers.js";
 import { checksQuotaHandler, gateFreeCheck } from "./lib/checkQuota.js";
+import { flushSnapshots, startSnapshotLoop } from "./lib/jsonSnapshot.js";
 import { readEmailAccountOptional } from "./lib/emailSession.js";
 
 dotenv.config();
@@ -270,4 +271,15 @@ async function postGeneralFeedbackHandler(req: any, res: any): Promise<void> {
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Red Herring API Server running on http://0.0.0.0:${PORT}`);
+  // D1：周期快照落盘 + 退出前 flush（SIGTERM 也覆盖 tsx watch 的热重载）
+  startSnapshotLoop();
+  let flushed = false;
+  const flushAndExit = () => {
+    if (flushed) return;
+    flushed = true;
+    flushSnapshots();
+    process.exit(0);
+  };
+  process.on("SIGTERM", flushAndExit);
+  process.on("SIGINT", flushAndExit);
 });
