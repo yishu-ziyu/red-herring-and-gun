@@ -351,11 +351,36 @@ export function createHandlers(env: Record<string, string>) {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+      // 不依赖反代配置：任何 nginx（含未关 proxy_buffering 的旧配置）见此头即不缓冲本响应
+      "X-Accel-Buffering": "no",
+    });
+
+    // B1：客户端断开（关页/刷新/断网）→ abort 流水线，不再僵尸烧 token；
+    // 必须挂 res 而不是 req：body 已被中间件读完，req 的 close 早已发生不会再触发。
+    // 响应已结束后的事件写入一律空操作，避免对已关闭流写数据触发无监听 EPIPE。
+    const disconnect = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) disconnect.abort(new Error("client-disconnected"));
     });
 
     const sendEvent = (data: object) => {
-      res.write(`data: ${JSON.stringify(toPublicStreamEvent(data))}\n\n`);
+      if (res.writableEnded || disconnect.signal.aborted) return;
+      try {
+        res.write(`data: ${JSON.stringify(toPublicStreamEvent(data))}\n\n`);
+      } catch {
+        disconnect.abort(new Error("stream-write-failed"));
+      }
     };
+
+    // 心跳：report_composer 等阶段可静默 ~50s，SSE 注释帧让中间代理与浏览器
+    // 知道流还活着（客户端解析器只认 "data: " 行，注释天然被忽略）。
+    const heartbeat = setInterval(() => {
+      try {
+        res.write(": keepalive\n\n");
+      } catch {
+        // 响应已断开：由主流程的 EPIPE/写失败路径统一收尾
+      }
+    }, 15_000);
 
     try {
       if (intake?.images.length) {
@@ -469,8 +494,9 @@ export function createHandlers(env: Record<string, string>) {
         },
       });
 
-      const result = await withTimeout(runCasePipeline({
+      const pipelinePromise = runCasePipeline({
         claim,
+        signal: disconnect.signal,
         // 截止 = 总超时 − 10s 收尾余量：补查/复核提前收敛，报告写作不再被总超时截断
         deadline: Date.now() + PIPELINE_TOTAL_TIMEOUT_MS - 10_000,
         runAgent,
@@ -674,10 +700,11 @@ export function createHandlers(env: Record<string, string>) {
         finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>
           pipelineFinalize(fctx, visualExtraction),
         memoryCandidateStore: getMemoryCandidateStore(),
-      }),
-        PIPELINE_TOTAL_TIMEOUT_MS,
-        "整体核查"
-      );
+      });
+      // withTimeout 是 race：落败方的 rejection 必须被吸收，
+      // 否则断连/超时触发的 abort 会变成 unhandledRejection 直接崩进程
+      pipelinePromise.catch(() => {});
+      const result = await withTimeout(pipelinePromise, PIPELINE_TOTAL_TIMEOUT_MS, "整体核查");
 
       console.log(
         `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length} memoryCandidates=${result.memoryCandidates.length}`
@@ -694,11 +721,16 @@ export function createHandlers(env: Record<string, string>) {
       commitFreeCheck(res, ticket);
       res.end();
     } catch (error) {
-      releaseFreeCheck(ticket);
+      // B1：无论总超时还是其它异常，流水线都是 race 的落败方仍在跑——abort 它，
+      // 各阶段边界会立即退出，不再僵尸烧 token
+      if (!disconnect.signal.aborted) {
+        disconnect.abort(error instanceof Error ? error : new Error("aborted"));
+      }
       // 整体超时 → 给「还没查完」的中间结论，不发 error
       if (error instanceof Error && error.message.includes("整体核查")) {
         const timedOut = buildTimedOutReport(claim);
         applyContextCrossCheckToReport(timedOut, { claim, visualExtraction });
+        // B2：先计费再收尾（原先 release 在前把 settled 置真，这里的 commit 变空操作 → 超时=白嫖）
         commitFreeCheck(res, ticket);
         sendEvent({
           type: "complete",
@@ -711,6 +743,13 @@ export function createHandlers(env: Record<string, string>) {
         res.end();
         return;
       }
+      // 客户端主动断开（刷新/关页/写失败）→ 照常计费，放弃不能变成免费重试入口；
+      // 服务端真失败 → 退还这次核查
+      if (error instanceof Error && (error.message.includes("client-disconnected") || error.name === "AbortError")) {
+        commitFreeCheck(res, ticket);
+      } else {
+        releaseFreeCheck(ticket);
+      }
       const { message } = toFriendlyError(error, "这次核查没能完成，请稍后重试");
       sendEvent({
         type: "error",
@@ -718,6 +757,8 @@ export function createHandlers(env: Record<string, string>) {
         timestamp: Date.now(),
       });
       res.end();
+    } finally {
+      clearInterval(heartbeat);
     }
   }
 
