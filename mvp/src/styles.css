@@ -1,4 +1,7 @@
 :root {
+  /* 产品真相是固定的米纸浅色主题：显式声明，避免 OS 深色模式把
+     滚动条 / 表单控件 / 自动填充翻成深色，与站点主题打架。 */
+  color-scheme: light;
   color: #1A1A2E;
   background: #fefcf6;
   font-family: var(--font-sans);
@@ -17710,6 +17713,12 @@ button:disabled {
 }
 .report-feedback--sent {
   color: var(--text-muted, #6e6880);
+}
+.report-feedback__error {
+  margin: 8px 0 0;
+  color: var(--accent, #b91c3c);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 .report-feedback__link {
   background: none;
