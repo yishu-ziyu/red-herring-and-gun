@@ -143,6 +143,11 @@ export type CasePipelineInput = {
    */
   deadline?: number;
   /**
+   * 协作式取消：客户端断开 / 总超时后 abort，各阶段边界立即退出，
+   * 流水线不再作为 Promise.race 落败方僵尸烧 token（阶段内在途调用不受此控制）。
+   */
+  signal?: AbortSignal;
+  /**
    * Evidence sufficiency loop — ADR-004 + 翻案续期. 默认开启。
    * 提问 → 重判 → 判词仍翻转中且问题仍产证据 → 换策略再问（pass 2+）。
    * 判停全确定性：无新证据（坏问题停）/ 全部收敛（问完了）/ pass 上限（笼子）。
@@ -274,6 +279,11 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const { claim, runAgent, searchOne, callSelfProofModel, runReport, hooks, finalizeReport } = input;
   const steps: PipelineStep[] = [];
 
+  // 协作式取消：各阶段边界检查一次。fail-open 的 catch 会吞掉 AbortError，
+  // 所以下一个边界必须再查，断连后最多再浪费一个阶段调用就会整体退出。
+  const throwIfAborted = () => input.signal?.throwIfAborted();
+  throwIfAborted();
+
   // 时间预算：证据补查/交叉复核/因果增强是「锦上添花」，报告写作是「必须发生」。
   // 剩余时间不足时提前收敛补查类阶段，把时间让给 ReportComposer。
   const COMPOSER_RESERVE_MS = 90_000;
@@ -291,6 +301,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   }
   steps.push(rumorStep);
 
+  throwIfAborted();
   // Phase 1a: self-proof (must precede per-atom search).
   // If rumor_detector already exhausted providers, don't spend another full fallback chain.
   const selfProof = rumorStep.error
@@ -311,6 +322,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   rumorStep.output.claimAtomTypes = forceCheckableAtomTypes(rumorStep.output.claimAtomTypes);
   hooks?.onSelfProof?.(selfProof);
 
+  throwIfAborted();
   // Phase 1b: per-atom retrieval (+ screenshot reverse-image beside searchOne)
   const { atomSearchBundle, search360Result } = await retrieveForAtoms({
     claimAtoms: rumorStep.output.claimAtoms,
@@ -326,6 +338,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   });
   const imageOrigin = atomSearchBundle.imageOrigin;
 
+  throwIfAborted();
   // Phase 2: FactChecker // SourceValidator — fail-open so检索到的 URL 仍能进报告
   const [factSettled, sourceSettled] = await Promise.allSettled([
     runAgent("fact_checker", steps, search360Result, atomSearchBundle),
@@ -341,6 +354,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       : fallbackAgentStep("source_validator", sourceSettled.reason, search360Result, claim);
   steps.push(factStep, sourceStep);
 
+  throwIfAborted();
   // Phase 2a: Evidence sufficiency loop — ADR-004 + 翻案续期
   // 提问 → 重判 → 判词仍翻转中且问题仍产证据 → 换策略再问（pass 2+）→ 再重判。
   // 好问题续命（翻转判词的提问 earns another pass），坏问题判停（整 pass 零新增）。
@@ -453,6 +467,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       claimAtomKeyFn: claimAtomKey,
     });
     if (crossTargets.length > 0) {
+      throwIfAborted();
       crossExam = await runCrossExam({
         claim,
         targets: crossTargets,
@@ -498,6 +513,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     }
   }
 
+  throwIfAborted();
   // Phase 3: ReportComposer (+ fallback owned by adapter)
   const reportStep = await runReport({
     claim,
