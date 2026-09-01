@@ -31,4 +31,15 @@ describe("buildInvestigationTodos", () => {
     const todos = buildInvestigationTodos(model);
     expect(todos.every((t) => t.status === "done")).toBe(true);
   });
+
+  it("done stages carry quantitative receipts; pending stages never preview numbers", () => {
+    const mid = buildInvestigationTodos(adaptOrchestrateStreamToShell(FIXTURE_MID));
+    const search = mid.find((t) => t.id === "search");
+    expect(search?.status).toBe("done");
+    expect(search?.detail).toMatch(/\d+ 条来源/);
+    // 未完成的环节不得预告数字
+    for (const item of mid) {
+      if (item.status !== "done" && item.status !== "error") expect(item.detail).toBeUndefined();
+    }
+  });
 });

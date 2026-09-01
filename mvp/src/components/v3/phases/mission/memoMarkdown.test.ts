@@ -13,19 +13,43 @@ describe("looksLikeResearchMemo", () => {
 describe("composeResearchMemo", () => {
   it("wraps a short verdict into 核心结论 + REFERENCES, not a slogan card", () => {
     const md = composeResearchMemo({
-      title: "隔夜菜加热会致癌吗",
       verdictLabel: "只能信一部分",
       conclusion: "说法存在夸大，加热不当有风险但不宜直接等同致癌。",
       findings: ["加热不当可能产生有害物，但不等于必然致癌"],
       sources: [{ title: "食品安全科普", url: "https://example.com/food-safety" }],
     });
-    expect(md).toContain("# 隔夜菜加热会致癌吗");
-    expect(md).toContain("## 核心结论");
+    // 被核查原句绝不作为 h1 出现：放大谣言=暗示谣言（错觉真相效应）
+    expect(md).not.toContain("# 隔夜菜加热会致癌吗");
+    expect(md).not.toMatch(/^# /m);
+    expect(md.startsWith("## 核心结论")).toBe(true);
     expect(md).not.toContain("**只能信一部分。**");
     expect(md).toContain("说法存在夸大");
     expect(md).toContain("REFERENCES");
     expect(md).toContain("https://example.com/food-safety");
     expect(md).not.toMatch(/美联储|Federal Reserve/);
+  });
+
+  it("renders the 核查路径 receipt with per-stage quantitative details", () => {
+    const md = composeResearchMemo({
+      verdictLabel: "不能信",
+      conclusion: "该说法没有证据支持。",
+      path: [
+        { label: "确认核查问题" },
+        { label: "拆开要核对的部分", detail: "2 个可核查命题" },
+        { label: "检索公开材料", detail: "8 条来源" },
+      ],
+    });
+    expect(md).toContain("## 核查路径");
+    expect(md).toContain("- ✓ 拆开要核对的部分 · 2 个可核查命题");
+    expect(md).toContain("- ✓ 检索公开材料 · 8 条来源");
+    expect(md).toContain("- ✓ 确认核查问题");
+  });
+
+  it("emphasizes the short verdict clause when the first sentence is too long", () => {
+    const long =
+      "该说法无法核查：未指明具体历史人物姓名、未定义精神病症状类型、没有任何历史文献或学术研究出处，检索到的全部来源均为咖啡因安全摄入量的通用科普，与「历史人物精神病症状」无关。";
+    const md = composeResearchMemo({ verdictLabel: "还查不清", conclusion: long });
+    expect(md).toContain("**该说法无法核查：**");
   });
 
   it("strips a four-word stamp from an already-written memo", () => {
