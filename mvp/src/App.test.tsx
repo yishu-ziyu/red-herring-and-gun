@@ -221,6 +221,9 @@ describe("real analysis workspace", () => {
         toolName: "360 Search",
         query: "隔夜菜 致癌",
       };
+      // F1 语义：流若「结束」而无终态事件会被判为断流失败；
+      // 本用例要的是流仍开着——挂起生成器，永不返回
+      await new Promise(() => {});
     });
 
     await startRealAnalysis();
