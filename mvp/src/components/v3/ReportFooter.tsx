@@ -14,6 +14,7 @@ export function ReportFooter({
 }) {
   const [open, setOpen] = useState(false);
   const [sent, setSent] = useState(false);
+  const [failed, setFailed] = useState(false);
   const [reason, setReason] = useState("");
 
   const downloadLongImage = async () => {
@@ -24,15 +25,16 @@ export function ReportFooter({
       a.href = url;
       a.download = `核查-${claim.slice(0, 12) || "结论"}.png`;
       a.click();
-    } catch {
-      /* 导出失败静默：核心结论已在页面 */
+    } catch (error) {
+      // F2：导出失败不打扰主结论，但留现场
+      console.error("[feedback] 长图导出失败", error);
     }
   };
 
   const submit = async () => {
     if (!reason.trim()) return;
     try {
-      await fetch("/api/feedback", {
+      const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -42,9 +44,13 @@ export function ReportFooter({
           reason: reason.trim().slice(0, 2000),
         }),
       });
+      if (!res.ok) throw new Error(`feedback HTTP ${res.status}`);
       setSent(true);
-    } catch {
-      setSent(true); // 弱通道：失败也按已记录处理，不打扰主结论
+      setFailed(false);
+    } catch (error) {
+      // F2：不再谎报「已记录」——异议确实没存上，用户必须知道并能重试
+      console.error("[feedback] 异议提交失败", error);
+      setFailed(true);
     }
   };
 
@@ -72,6 +78,11 @@ export function ReportFooter({
           <button type="button" className="result-view-btn" onClick={submit} disabled={!reason.trim()}>
             提交异议
           </button>
+          {failed ? (
+            <p className="report-feedback__error" role="alert">
+              没能提交成功，内容还留在框里，可以再试一次。
+            </p>
+          ) : null}
         </div>
       ) : (
         <div className="report-feedback__actions">

@@ -167,15 +167,20 @@ function AppContent() {
             credibilityScore: typeof finalReport.credibilityScore === "number" ? finalReport.credibilityScore : 50,
           }),
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          // F2：不挡当前判断，但要留现场——否则登录用户的案例刷新后凭空消失无从排查
+          console.error(`[cases] 服务端存档失败 HTTP ${res.status}`);
+          return;
+        }
         const data = (await res.json()) as { caseId?: string };
         if (!data.caseId) return;
         setCases((prev) =>
           prev.map((item) => (item.id === localId ? { ...item, id: data.caseId as string, report: finalReport } : item))
         );
         setActiveCaseId((current) => (current === localId ? data.caseId ?? current : current));
-      } catch {
-        // 记住失败不挡当前判断
+      } catch (error) {
+        // 记住失败不挡当前判断（F2：留现场）
+        console.error("[cases] 服务端存档异常", error);
       }
     })();
   }, [activeCaseId, activeClaim]);
