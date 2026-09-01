@@ -957,3 +957,55 @@ describe("runCasePipeline", () => {
     expect(result.finalReport.faceVerdict).toBe("还查不清");
   });
 });
+
+describe("runCasePipeline abort（B1 僵尸流水线回归）", () => {
+  const stubRunReport = async (): Promise<PipelineStep> => ({
+    agent: "report_composer",
+    output: { verdictType: "unverified", conclusion: "c" },
+  });
+
+  it("信号已 abort 时立即拒绝，一个 agent 都不调用", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const runAgent = vi.fn();
+    await expect(
+      runCasePipeline({
+        claim: "测试句",
+        runAgent,
+        searchOne: async () => ({ answer: "", model: "m", sources: [] }),
+        callSelfProofModel: async () => ({ output: { results: [] }, model: "m" }),
+        runReport: stubRunReport,
+        signal: controller.signal,
+      }),
+    ).rejects.toBeDefined();
+    expect(runAgent).not.toHaveBeenCalled();
+  });
+
+  it("阶段中途 abort 后在下一边界终止，跳过后续 LLM 与检索", async () => {
+    const controller = new AbortController();
+    const searchOne = vi.fn(async () => ({ answer: "", model: "m", sources: [] }));
+    const callSelfProofModel = vi.fn(async () => ({ output: { results: [] }, model: "m" }));
+    const runAgent = vi.fn(async (): Promise<PipelineStep> => {
+      controller.abort(new Error("client-disconnected"));
+      return {
+        agent: "rumor_detector",
+        output: {
+          claimAtoms: ["A"],
+          claimAtomTypes: [{ text: "A", verifiable: true, type: "fact" }],
+        },
+      };
+    });
+    await expect(
+      runCasePipeline({
+        claim: "A",
+        runAgent,
+        searchOne,
+        callSelfProofModel,
+        runReport: stubRunReport,
+        signal: controller.signal,
+      }),
+    ).rejects.toBeDefined();
+    expect(callSelfProofModel).not.toHaveBeenCalled();
+    expect(searchOne).not.toHaveBeenCalled();
+  });
+});
