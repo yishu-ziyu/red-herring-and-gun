@@ -382,16 +382,17 @@ function tokenizeLocalMemoryText(value: string) {
 }
 
 function isNonAuthenticStep(step: HandoffStep) {
-  const source = typeof step.output._source === "string" ? step.output._source : "";
-  return step.model.includes("demo-fallback") || source === "demo-fallback";
+  const source = typeof step.output?._source === "string" ? step.output._source : "";
+  return String(step.model ?? "").includes("demo-fallback") || source === "demo-fallback";
 }
 
 function isDeterministicReportFallback(step: HandoffStep) {
-  return step.model.includes("fallback:deterministic-report");
+  return String(step.model ?? "").includes("fallback:deterministic-report");
 }
 
 function deterministicFallbackReason(step: HandoffStep) {
-  const reason = typeof step.output.fallbackReason === "string" ? step.output.fallbackReason.trim() : "";
+  const reason =
+    typeof step.output?.fallbackReason === "string" ? step.output.fallbackReason.trim() : "";
   return reason ? sanitizePublicReportText(reason) : "最终写作模型未返回稳定结构，系统已用确定性报告兜底，避免长时间挂起。";
 }
 
@@ -865,6 +866,8 @@ export function MissionControlView({
             localMemoryRecall = memoryRecall;
             if (cancelled) return;
           } catch (error) {
+            // F2：召回降级不阻断核查，但必须留现场（否则历史记忆静默失效无从排查）
+            console.error("[mission] 本地记忆召回失败，本次核查不带历史", error);
             if (cancelled) return;
           }
 
@@ -998,8 +1001,21 @@ export function MissionControlView({
                 break;
               }
               case "complete": {
-                const finalSteps =
+                // 服务端 complete 携带的是原始 PipelineStep：model / status 等字段可缺省，
+                // 先归一到 HandoffStep 默认值再消费，避免个别步骤缺字段把成功核查判成失败。
+                const rawFinalSteps =
                   event.steps && event.steps.length > 0 ? event.steps : accumulatedSteps;
+                const finalSteps = rawFinalSteps.map((step) => ({
+                  ...step,
+                  agent: normalizeAgent(step.agent) || "unknown",
+                  agentName: displayAgentName(step.agentName ?? step.agent ?? "Unknown"),
+                  agentIcon: step.agentIcon ?? "◆",
+                  output: step.output ?? {},
+                  model: step.model ?? "multi-agent",
+                  latencyMs: typeof step.latencyMs === "number" ? step.latencyMs : 0,
+                  timestamp: typeof step.timestamp === "number" ? step.timestamp : Date.now(),
+                  status: (step.status as HandoffStep["status"]) ?? "completed",
+                }));
                 const finalReport = event.finalReport;
                 const proposedMemoryCandidates = event.memoryCandidates ?? [];
                 const nonAuthenticStep = finalSteps.find(isNonAuthenticStep);
@@ -1081,8 +1097,9 @@ export function MissionControlView({
                   proposedMemoryCandidates.forEach((candidate) => {
                     void knowledgeBase.saveMemoryCandidate(candidate);
                   });
-                } catch {
-                  // 本地持久化失败不影响结果首屏
+                } catch (error) {
+                  // 本地持久化失败不影响结果首屏，但要留现场（F2）
+                  console.error("[mission] 案例写入本地知识库失败", error);
                 }
                 break;
               }
@@ -1100,7 +1117,18 @@ export function MissionControlView({
               }
             }
           }
+          // F1：流正常结束但既没收到 complete 也没收到 error（服务端崩/代理断）→
+          // 兜底成可重试的失败态，而不是永远转圈
+          if (!streamEnded) {
+            const message = "连接中断了，这次核查没有走完。可以重新核查一次。";
+            setStartedAt(null);
+            setRunStatus("failed");
+            setErrorMessage(message);
+            dispatch({ type: "COMPLETE_HANDOFF_STREAM", payload: { error: message } });
+            streamEnded = true;
+          }
         } catch (error) {
+          console.error("[mission] 核查流异常", error); // F2：留下原始错误现场，不再吞错
           if (cancelled) return;
           setStartedAt(null);
           setRunStatus("failed");
