@@ -49,7 +49,24 @@ function readList<T>(key: string): T[] {
 
 function writeList<T>(key: string, value: T[]) {
   if (!canUseStorage()) return;
-  window.localStorage.setItem(key, JSON.stringify(value));
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    // D2：localStorage 写满时不再静默停写——列表是新→旧排序，
+    // 从尾部（最旧）折半裁剪重试，并留下可观测的 console.error
+    console.error(`[knowledgeBase] ${key} 写入失败，尝试裁剪重试`, error);
+    let list = value;
+    while (list.length > 1) {
+      list = list.slice(0, Math.max(1, Math.floor(list.length / 2)));
+      try {
+        window.localStorage.setItem(key, JSON.stringify(list));
+        return;
+      } catch {
+        // 继续折半
+      }
+    }
+    console.error(`[knowledgeBase] ${key} 裁剪后仍无法写入，本地知识库降级为只读`);
+  }
 }
 
 function tokenize(text: string): Set<string> {
