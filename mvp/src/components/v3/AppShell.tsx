@@ -258,7 +258,7 @@ export function AppShell({
         <Panel
           id="rail"
           className="app-shell-panel"
-          defaultSize={240}
+          defaultSize={248}
           minSize={196}
           maxSize={320}
           groupResizeBehavior="preserve-pixel-size"

@@ -96,8 +96,8 @@ describe("removed preview routes", () => {
 
       render(<App />);
 
-      expect(await screen.findByText("贴进来。追出处。")).toBeInTheDocument();
-      expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+      expect(await screen.findByText("把你想核查的句子、链接或截图放进来")).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "隔夜菜会致癌，等于吃毒药" })).toBeInTheDocument();
       expect(screen.queryByLabelText("核心结论")).not.toBeInTheDocument();
     }
@@ -121,7 +121,7 @@ describe("real analysis workspace", () => {
   });
 
   async function fillClaimInput(text: string) {
-    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    const editor = await screen.findByRole("textbox", { name: "你想核查什么？" });
     editor.textContent = text;
     fireEvent.input(editor);
     await waitFor(() => {
@@ -498,10 +498,10 @@ describe("landing Version A storytelling", () => {
     expect(screen.getByLabelText("核查卷宗")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "新查一条" })).toBeInTheDocument();
     const landingMission = document.querySelector(".landing-mission");
-    expect(landingMission).toHaveTextContent("贴进来。追出处。");
+    expect(landingMission).toHaveTextContent("把你想核查的句子、链接或截图放进来");
     expect(landingMission).not.toHaveTextContent("能不能信");
-    expect(screen.getByText("告诉你哪一截站得住，问题在哪里，来源能点开。")).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+    expect(screen.getByText("告诉你这条说法是否可靠，问题在哪里，来源能点开。")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "隔夜菜会致癌，等于吃毒药" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "5G信号塔辐射导致周边居民头晕失眠" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "人民币即将大幅贬值，赶紧换美元" })).toBeInTheDocument();
@@ -516,13 +516,13 @@ describe("landing Version A storytelling", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: "登录" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
 
     expect(screen.getByRole("heading", { name: "登录" })).toBeInTheDocument();
     expect(screen.getByText("登录后，最近核查可以在别的设备接着看。不登录也能查。")).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
   });
 
   it("shows the development code on the login panel instead of claiming email delivery", async () => {
@@ -625,7 +625,7 @@ describe("landing Version A storytelling", () => {
 
     render(<App />);
 
-    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    const editor = await screen.findByRole("textbox", { name: "你想核查什么？" });
     expect(editor).toHaveAttribute("contenteditable", "true");
     expect(await screen.findByText("核查服务暂时不可用。你的材料还没有提交，请稍后重试。")).toBeInTheDocument();
     fireEvent.input(editor, { target: { textContent: "测试材料" } });
@@ -644,7 +644,7 @@ describe("landing Version A storytelling", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: claim }));
-    const editor = screen.getByRole("textbox", { name: "待核查材料" });
+    const editor = screen.getByRole("textbox", { name: "你想核查什么？" });
     expect(editor).toHaveTextContent(claim);
 
     fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
@@ -670,7 +670,7 @@ describe("landing Version A storytelling", () => {
 
     render(<App />);
 
-    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    const editor = await screen.findByRole("textbox", { name: "你想核查什么？" });
     fireEvent.keyDown(editor, { key: "Enter", code: "Enter", shiftKey: false });
 
     expect(await screen.findByRole("alert")).toHaveTextContent("请先填写待核查材料");
@@ -700,7 +700,7 @@ describe("model picker (simplified BYO)", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
     expect(screen.queryByLabelText("模型选择")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "模型设置" })).toHaveAttribute("href", "/settings/api-key");
   });
@@ -720,7 +720,7 @@ describe("model picker (simplified BYO)", () => {
 
     render(<App />);
 
-    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    const editor = await screen.findByRole("textbox", { name: "你想核查什么？" });
     editor.textContent = "隔夜菜会致癌，等于吃毒药";
     fireEvent.input(editor);
 
@@ -738,7 +738,7 @@ describe("model picker (simplified BYO)", () => {
 
     render(<App />);
 
-    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    const editor = await screen.findByRole("textbox", { name: "你想核查什么？" });
     editor.textContent = "测试默认模型链路";
     fireEvent.input(editor);
     fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
@@ -802,7 +802,7 @@ describe("same-thread follow-up", () => {
       });
 
     render(<App />);
-    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    const editor = await screen.findByRole("textbox", { name: "你想核查什么？" });
     editor.textContent = "隔夜菜会致癌，吃了等于吃毒药";
     fireEvent.input(editor);
     await waitFor(() => {
@@ -824,7 +824,7 @@ describe("same-thread follow-up", () => {
       "隔夜菜会致癌，吃了等于吃毒药",
       "那微波炉加热呢",
     ]);
-    expect(screen.queryByRole("textbox", { name: "待核查材料" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "你想核查什么？" })).not.toBeInTheDocument();
 
     await waitFor(() => {
       expect(requestOrchestrateStream).toHaveBeenCalledTimes(2);

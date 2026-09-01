@@ -8052,11 +8052,11 @@ button:disabled {
    ═══════════════════════════════════════════════════════════════ */
 
 .landing-page {
-  --landing-column: 560px;
+  --landing-column: 680px;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--paper);
+  background: #FAF9F6;
   color: var(--ink);
   font-family: var(--font-sans);
   font-size: var(--type-body);
@@ -8307,47 +8307,52 @@ button:disabled {
 .landing-examples {
   width: 100%;
   max-width: var(--landing-column);
-  margin: 28px auto 0;
+  margin: 24px auto 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   gap: 10px;
 }
 
 .landing-examples-label {
   margin: 0;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  color: var(--zt-text-muted);
+  align-self: flex-start;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0;
+  color: var(--zt-text-secondary);
 }
 
 .landing-examples-list {
+  width: 100%;
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
+  display: grid;
+  gap: 0;
 }
 
 .landing-example {
+  width: 100%;
+  display: block;
   max-width: 100%;
-  padding: 7px 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid rgba(21, 24, 33, 0.08);
+  border-radius: 0;
   background: transparent;
   color: var(--zt-text-secondary);
   font: inherit;
   font-size: 13px;
   line-height: 1.35;
+  text-align: left;
   cursor: pointer;
   transition: border-color 120ms ease-out, color 120ms ease-out, background 120ms ease-out;
 }
 
 .landing-example:hover {
-  border-color: var(--ink);
   color: var(--ink);
+  background: rgba(21, 24, 33, 0.035);
 }
 
 .landing-example:active {
@@ -8355,9 +8360,8 @@ button:disabled {
 }
 
 .landing-example.is-active {
-  border-color: var(--accent);
   color: var(--accent);
-  background: rgba(185, 28, 60, 0.04);
+  background: rgba(185, 28, 60, 0.035);
 }
 
 .landing-link-row {
@@ -16919,7 +16923,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   padding: 16px 12px 12px;
-  background: #f7f3ea;
+  background: #F3EFE7;
   border-right: 0;
 }
 
@@ -17033,15 +17037,7 @@ button:disabled {
   position: relative;
   display: grid;
   gap: 2px;
-  padding: 5px;
-  border: 1px solid rgba(21, 24, 33, 0.08);
-  border-radius: 12px;
-  background:
-    linear-gradient(180deg, rgba(255, 253, 248, 0.96) 0%, rgba(252, 247, 238, 0.88) 100%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.72),
-    0 1px 1px rgba(21, 24, 33, 0.03),
-    0 6px 14px rgba(21, 24, 33, 0.05);
+  padding: 0;
 }
 
 .app-shell-account-mark {
@@ -17169,22 +17165,26 @@ button:disabled {
 }
 
 .app-shell-rail-meta {
-  display: block;
-  padding: 7px 8px 6px;
-  color: var(--zt-text-muted, #888);
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  color: var(--ink, #151821);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
   text-decoration: none;
+  transition: background-color 160ms ease;
 }
 
 .app-shell-rail-dock > * + .app-shell-rail-meta {
-  margin-top: 2px;
-  border-top: 1px solid rgba(21, 24, 33, 0.07);
+  margin-top: 0;
+  border-top: 0;
 }
 
 .app-shell-rail-meta:hover {
-  color: var(--ink, #151821);
+  background: rgba(255, 255, 255, 0.55);
 }
 
 .app-login-overlay {
@@ -17374,7 +17374,7 @@ button:disabled {
 }
 
 .app-shell-center {
-  background: var(--paper, #fefcf6);
+  background: #FAF9F6;
 }
 
 .app-shell-dossier {
@@ -17488,8 +17488,8 @@ button:disabled {
 }
 
 .app-shell .landing-stage {
-  justify-content: center;
-  padding: 32px 24px 40px;
+  justify-content: flex-start;
+  padding: clamp(120px, 20vh, 220px) 24px 40px;
 }
 
 .app-shell .landing-logo {
