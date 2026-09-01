@@ -22,6 +22,7 @@ import {
 } from "./accountStore.js";
 import { decodeSignedJson, emailCookieOptions, encodeSignedJson, parseCookies } from "./aipingAuth.js";
 import { getServerSecret, readEmailAccountOptional } from "./emailSession.js";
+import { loadSnapshot, registerSnapshotSource } from "./jsonSnapshot.js";
 
 export const GUEST_CHECKS_COOKIE = "v3_guest_checks";
 const GUEST_COOKIE_TTL_SECONDS = 2 * 24 * 60 * 60;
@@ -52,6 +53,28 @@ type GuestBucket = {
 
 const guests = new Map<string, GuestBucket>();
 const guestsByIp = new Map<string, GuestBucket>();
+
+// ── D1：访客配额桶持久化（重启后 inflight 不可信，清零；跨天的桶不再恢复）──
+const QUOTA_SNAPSHOT_FILE = "quota.json";
+
+function snapshotQuota() {
+  const today = shanghaiDayKey();
+  return {
+    guests: [...guests.entries()].filter(([, b]) => b.day === today),
+    guestsByIp: [...guestsByIp.entries()].filter(([, b]) => b.day === today),
+  };
+}
+
+{
+  const today = shanghaiDayKey();
+  const restored = loadSnapshot<ReturnType<typeof snapshotQuota>>(QUOTA_SNAPSHOT_FILE);
+  if (restored) {
+    for (const [id, b] of restored.guests ?? []) if (b.day === today) guests.set(id, { ...b, inflight: 0 });
+    for (const [ip, b] of restored.guestsByIp ?? [])
+      if (b.day === today) guestsByIp.set(ip, { ...b, inflight: 0 });
+  }
+  registerSnapshotSource(QUOTA_SNAPSHOT_FILE, snapshotQuota);
+}
 
 export type CheckTicket = {
   kind: CheckQuotaKind;

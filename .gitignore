@@ -6,6 +6,7 @@ dist/
 
 # Runtime directories
 .agent-memory/
+mvp/server/.data/
 .agent-swarm/
 .superpowers/
 .claude/
