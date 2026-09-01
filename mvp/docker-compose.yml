@@ -12,9 +12,17 @@ services:
     env_file:
       - .env.local
     restart: unless-stopped
+    # D1：内存存储的 JSON 快照 + 记忆候选 JSONL 挂命名卷，重建容器不丢账号/报告/配额
+    volumes:
+      - rhg-data:/app/server/.data
+      - rhg-memory:/app/server/.agent-memory
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+
+volumes:
+  rhg-data:
+  rhg-memory:

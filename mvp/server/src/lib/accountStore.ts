@@ -13,6 +13,7 @@
 
 import crypto from "node:crypto";
 import { ACCOUNT_DAILY_CHECKS, shanghaiDayKey } from "../../../src/lib/checkQuota.js";
+import { loadSnapshot, registerSnapshotSource } from "./jsonSnapshot.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 min
 const RATE_WINDOW_MS = 60 * 1000; // 1 min
@@ -317,6 +318,25 @@ export function resetForTests() {
   accounts.clear();
   codes.clear();
   sessions.clear();
+}
+
+// ── D1：账号与会话快照持久化（验证码短时效，不持久化）──
+const ACCOUNT_SNAPSHOT_FILE = "accounts.json";
+
+export function snapshotState() {
+  return {
+    accounts: [...accounts.entries()],
+    sessions: [...sessions.entries()].filter(([, record]) => record.expiresAt > Date.now()),
+  };
+}
+
+{
+  const restored = loadSnapshot<ReturnType<typeof snapshotState>>(ACCOUNT_SNAPSHOT_FILE);
+  if (restored) {
+    for (const [hash, account] of restored.accounts ?? []) accounts.set(hash, account);
+    for (const [id, record] of restored.sessions ?? []) sessions.set(id, record);
+  }
+  registerSnapshotSource(ACCOUNT_SNAPSHOT_FILE, snapshotState);
 }
 
 export const ACCOUNT_CONSTANTS = {
