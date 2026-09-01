@@ -40,16 +40,16 @@ export function stripFaceStamp(text: string): string {
   return t.trim();
 }
 
-function isFaceLabel(label: string): boolean {
-  return /^(能信|不能信|只能信一部分|还查不清|这次没查完)$/.test(label.trim().replace(/[。．.]$/, ""));
-}
-
 function emphasizeFirstSentence(text: string): string {
   const t = text.trim();
   if (!t) return "";
   if (t.startsWith("**")) return t;
   const m = t.match(/^(.{1,40}?[。！？])([\s\S]*)$/u);
   if (m) return `**${m[1]}**${m[2] ? ` ${m[2].trim()}` : ""}`;
+  // 首句过长（常因内联引用撑爆 40 字）时，退而强调冒号前的短判决从句：
+  // 「该说法无法核查：未指明…」→ 放大「该说法无法核查：」，判决仍是第一视觉主角。
+  const cm = t.match(/^([^。！？：；「」]{4,24}[：:])([\s\S]*)$/u);
+  if (cm) return `**${cm[1]}**${cm[2] ? ` ${cm[2].trim()}` : ""}`;
   return t;
 }
 
@@ -218,11 +218,12 @@ export function parseResearchMemo(markdown: string): MemoBlock[] {
 }
 
 export function composeResearchMemo(input: {
-  title?: string;
   verdictLabel: string;
   conclusion?: string;
   findings?: string[];
   sources?: MemoSource[];
+  /** 核查路径：六步流水线各自的量化产出，让「怎么查的」随结论一起被看见/转发 */
+  path?: Array<{ label: string; detail?: string }>;
 }): string {
   const raw = (input.conclusion ?? "").trim();
   const stripped = stripFaceStamp(raw);
@@ -230,19 +231,25 @@ export function composeResearchMemo(input: {
   if (looksLikeResearchMemo(raw)) return stripped || raw;
   const lead = emphasizeFirstSentence(stripLeadingVerdictEcho(stripped, input.verdictLabel));
   const lines: string[] = [];
-  if (input.title?.trim()) {
-    lines.push(`# ${input.title.trim()}`, "");
-  }
+  // 备忘不再以被核查原句作 h1：放大谣言等于给谣言做暗示（错觉真相效应），
+  // 而「能信/不能信」四字章又违反直接回答标准。首屏主角 = 结论首句（判决句）。
+  // 原句的唯一一次回声保留在顶部气泡。
   lines.push("## 核心结论", "");
   if (lead) {
     lines.push(lead, "");
-  } else if (input.verdictLabel?.trim() && !isFaceLabel(input.verdictLabel)) {
-    lines.push(`**${input.verdictLabel.trim()}。**`, "");
   }
   const findings = (input.findings ?? []).map((f) => f.trim()).filter(Boolean);
   if (findings.length > 0) {
     findings.forEach((f, i) => {
       lines.push(`${i + 1}. ${f}`);
+    });
+    lines.push("");
+  }
+  const path = (input.path ?? []).filter((p) => p.label.trim());
+  if (path.length > 0) {
+    lines.push("## 核查路径", "");
+    path.forEach((p) => {
+      lines.push(`- ✓ ${p.detail ? `${p.label} · ${p.detail}` : p.label}`);
     });
     lines.push("");
   }
