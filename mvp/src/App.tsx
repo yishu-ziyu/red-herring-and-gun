@@ -1,8 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { lazy, Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { ReasoningProvider, useReasoning } from "./store/reasoningStore";
 import { AppShell, type DeskCase } from "./components/v3/AppShell";
 import { Dashboard } from "./components/v3/Dashboard";
-import { MissionControlView } from "./components/v3/phases/MissionControlView";
 import { ResultView } from "./components/v3/phases/ResultView";
 import { ModelProviderSettingsPreview } from "./components/v3/settings/ModelProviderSettingsPreview";
 import { ApiKeySettings } from "./components/v3/settings/ApiKeySettings";
@@ -12,6 +11,19 @@ import type { AccountProfile } from "./components/v3/auth/accountTypes";
 import { accountDisplayName } from "./lib/accountIdentity";
 import { caseIntakePrimaryText, type CaseIntake } from "./lib/caseIntake";
 import type { ModelChoiceMap } from "./lib/agentExpansion";
+
+let missionControlViewPromise: Promise<
+  typeof import("./components/v3/phases/MissionControlView")
+> | null = null;
+
+function loadMissionControlView() {
+  missionControlViewPromise ??= import("./components/v3/phases/MissionControlView");
+  return missionControlViewPromise;
+}
+
+const MissionControlView = lazy(() =>
+  loadMissionControlView().then((module) => ({ default: module.MissionControlView }))
+);
 
 type AppPhase = "input" | "executing";
 
@@ -108,6 +120,7 @@ function AppContent() {
 
   const handleStartAnalysis = useCallback(
     (intake: CaseIntake, modelChoice: ModelChoiceMap) => {
+      void loadMissionControlView();
       dispatch({ type: "RESET" });
       persistOnCompleteRef.current = true;
       const claim = caseIntakePrimaryText(intake);
@@ -214,6 +227,7 @@ function AppContent() {
       setRestoredReport(report);
       setArtifactOpen(true);
       setExecutionNonce((n) => n + 1);
+      void loadMissionControlView();
       setAppPhase("executing");
     },
     [cases, dispatch]
@@ -303,16 +317,33 @@ function AppContent() {
             onNeedLogin={() => setLoginOpen(true)}
           />
         ) : (
-          <MissionControlView
-            key={executionNonce}
-            claim={activeClaim}
-            intake={activeIntake}
-            onCancel={handleCancelExecution}
-            onRetry={handleRetryExecution}
-            onComplete={handleExecutionComplete}
-            modelChoice={activeModelChoice}
-            initialFinalReport={restoredReport}
-          />
+          <Suspense
+            fallback={
+              <div
+                role="status"
+                style={{
+                  display: "grid",
+                  minHeight: 240,
+                  placeItems: "center",
+                  color: "#77736b",
+                  fontSize: 14,
+                }}
+              >
+                正在打开核查工作台…
+              </div>
+            }
+          >
+            <MissionControlView
+              key={executionNonce}
+              claim={activeClaim}
+              intake={activeIntake}
+              onCancel={handleCancelExecution}
+              onRetry={handleRetryExecution}
+              onComplete={handleExecutionComplete}
+              modelChoice={activeModelChoice}
+              initialFinalReport={restoredReport}
+            />
+          </Suspense>
         )}
       </div>
     </AppShell>
