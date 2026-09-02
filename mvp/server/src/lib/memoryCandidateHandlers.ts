@@ -23,20 +23,6 @@ export function getMemoryCandidateStore(): MemoryCandidateStore {
   return defaultStore;
 }
 
-/**
- * GET /api/agent/memory-candidates — list all candidates (newest first).
- */
-export async function listMemoryCandidatesHandler(req: Request, res: Response): Promise<void> {
-  void req;
-  try {
-    const candidates = await defaultStore.list();
-    res.status(200).json({ candidates });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Memory candidate 列表失败";
-    res.status(500).json({ message });
-  }
-}
-
 interface SetStatusBody {
   action?: string;
   id?: string;

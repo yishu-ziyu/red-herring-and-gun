@@ -1,0 +1,5 @@
+.session/
+tasks/*
+!tasks/TEMPLATE.md
+bin/__pycache__/
+*.pyc

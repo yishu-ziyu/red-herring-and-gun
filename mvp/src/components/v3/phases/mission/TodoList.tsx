@@ -1,5 +1,5 @@
 /**
- * TodoList — investigation checklist for MissionProcessShell.
+ * TodoList — investigation checklist for the live run surface.
  *
  * Items and status come from MissionShellModel (SSE-derived), not a demo timer.
  * Presentation only: collapse, roll count, active shimmer.
@@ -15,6 +15,8 @@ export interface TodoItem {
   id: string;
   label: string;
   status: TodoStatus;
+  /** 该环节的量化产出（如「2 个可核查命题」）：让流水线严谨性以证据形式被看见 */
+  detail?: string;
 }
 
 export interface TodoListProps {
@@ -22,6 +24,7 @@ export interface TodoListProps {
   title?: string;
   defaultCollapsed?: boolean;
   className?: string;
+  hideHead?: boolean;
 }
 
 const cls = (base: string, on?: boolean) => base + (on ? " " + styles.on : "");
@@ -186,11 +189,25 @@ export function buildInvestigationTodos(model: MissionShellModel): TodoItem[] {
       ? "loading"
       : reportAgent;
 
+  // 各环节量化产出：证据式展示「怎么查的」，而不是罗列 Agent 名字
+  const verifiableAtoms = (model.understanding?.atoms ?? []).filter((a) => a.verifiable).length;
+  const triageDetail =
+    model.understanding && verifiableAtoms > 0 ? `${verifiableAtoms} 个可核查命题` : undefined;
+  const totalSources = searchTools.reduce((sum, tool) => {
+    const result = tool.result as { sources?: unknown[]; sourceCount?: number } | undefined;
+    if (Array.isArray(result?.sources)) return sum + result.sources.length;
+    if (typeof result?.sourceCount === "number") return sum + result.sourceCount;
+    return sum;
+  }, 0);
+  const searchDetail = totalSources > 0 ? `${totalSources} 条来源` : undefined;
+  // 注意：整理环节不放判决词——「能信/不能信」四字章被产品红线禁止出现在界面，
+  // 判断由备忘的判决句独家承载。
+
   // When stream is live and nothing is loading yet, first incomplete step is active.
-  const raw: Array<{ id: string; label: string; status: ShellNodeStatus | undefined }> = [
+  const raw: Array<{ id: string; label: string; status: ShellNodeStatus | undefined; detail?: string }> = [
     { id: "plan", label: "确认核查问题", status: planner },
-    { id: "triage", label: "拆开要核对的部分", status: triage },
-    { id: "search", label: "检索公开材料", status: search },
+    { id: "triage", label: "拆开要核对的部分", status: triage, detail: triageDetail },
+    { id: "search", label: "检索公开材料", status: search, detail: searchDetail },
     { id: "fact", label: "对照公开材料", status: fact },
     { id: "source", label: "看来源能不能站住", status: source },
     { id: "report", label: "整理能不能信", status: report },
@@ -200,7 +217,9 @@ export function buildInvestigationTodos(model: MissionShellModel): TodoItem[] {
   let sawActive = false;
   const items: TodoItem[] = raw.map((row) => {
     let st = shellToTodo(row.status);
-    if (st === "error" || st === "done") return { id: row.id, label: row.label, status: st };
+    // detail 只在环节完成/出错后保留（进行中不预告未发生的数字）
+    const detail = st === "done" || st === "error" ? row.detail : undefined;
+    if (st === "error" || st === "done") return { id: row.id, label: row.label, status: st, detail };
     if (model.live && !sawActive && st === "pending") {
       // Only auto-activate when something has started (not a blank empty model).
       const anyProgress = raw.some((r) => r.status === "loading" || r.status === "success" || r.status === "error");
@@ -239,6 +258,7 @@ export function TodoList({
   title = "核查计划",
   defaultCollapsed = false,
   className,
+  hideHead = false,
 }: TodoListProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const n = items.length;
@@ -258,6 +278,7 @@ export function TodoList({
       data-testid="investigation-todos"
       data-state={allDone ? "done" : hasError ? "error" : running ? "running" : "idle"}
     >
+      {hideHead ? null : (
       <button
         type="button"
         className={styles.todoHead}
@@ -315,8 +336,9 @@ export function TodoList({
           <RollingCount value={countValue} />
         </span>
       </button>
+      )}
 
-      <div className={styles.todoCollapsible + (collapsed ? " " + styles.isCollapsed : "")}>
+      <div className={styles.todoCollapsible + (!hideHead && collapsed ? " " + styles.isCollapsed : "")}>
         <div className={styles.todoInner}>
           <ul className={styles.todoList}>
             {items.map((item, i) => {
@@ -341,6 +363,11 @@ export function TodoList({
                   <span className={styles.todoLabel} data-label={item.label}>
                     {item.label}
                   </span>
+                  {item.detail ? (
+                    <span className={styles.todoDetail} data-testid={`todo-detail-${item.id}`}>
+                      {item.detail}
+                    </span>
+                  ) : null}
                 </li>
               );
             })}

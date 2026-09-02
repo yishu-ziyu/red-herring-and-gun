@@ -4,7 +4,7 @@
  */
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { retrieveAtomSources } from "../src/handlers.js";
+import { retrieveAtomSources } from "../src/lib/searchProviders.js";
 import { buildAtomSearchQueries } from "../src/lib/atomSearchQuery.js";
 
 function loadLocalEnv() {

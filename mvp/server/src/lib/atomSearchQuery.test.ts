@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   boundTinyRumorVerdict,
   buildAtomSearchQueries,
+  enRumorQueries,
+  looksLikeEnglishClaim,
   looksLikePlanOrPrediction,
   mergeParallelSearchPayloads,
 } from "./atomSearchQuery";
@@ -12,6 +14,17 @@ describe("atomSearchQuery", () => {
     expect(q[0]).toBe("甘南所有景点一律免费");
     expect(q[1]).toMatch(/辟谣/);
     expect(q).toHaveLength(2);
+  });
+
+  it("带日期的具体句会多一路时间锚点查询", () => {
+    const q = buildAtomSearchQueries(
+      "马斯克表示 Grok 4.6 在 Cursor 中提供双倍用量，持续到 8 月 19 日"
+    );
+    expect(q[0]).toContain("Grok 4.6");
+    expect(q.some((item) => /辟谣|官方/.test(item))).toBe(true);
+    expect(q.some((item) => /8\s*月|19/.test(item))).toBe(true);
+    expect(q.length).toBeGreaterThanOrEqual(2);
+    expect(q.length).toBeLessThanOrEqual(3);
   });
 
   it("电瓶车口语短句会加境外P图通报查询", () => {
@@ -40,7 +53,7 @@ describe("atomSearchQuery", () => {
     expect(q[0]).toMatch(/警方通报|不实/);
   });
 
-  it("合并多路检索时按 URL 去重并保留可点开链接", () => {
+  it("合并多路检索时按 URL 去重，并对多 query 列表做 RRF 再按题权重排", () => {
     const merged = mergeParallelSearchPayloads("甘南景区免票", [
       {
         answer: "a1",
@@ -94,5 +107,70 @@ describe("atomSearchQuery", () => {
         { title: "用OpenClaw登录微信被刷走600块不实", snippet: "今日辟谣", url: "https://gov.example/jrpy" },
       ])
     ).toBe("false");
+  });
+
+  it("截图句至少一路追原图出处，且带官方辟谣站点直查", () => {
+    const q = buildAtomSearchQueries("群里那张截图说某地地铁已经开通");
+    expect(q.some((item) => item.includes("原图") && item.includes("出处") && item.includes("首发"))).toBe(true);
+    expect(q.length).toBeGreaterThanOrEqual(3);
+    expect(q.some((item) => item.startsWith("site:piyao.org.cn"))).toBe(true);
+    expect(q.length).toBeLessThanOrEqual(4);
+  });
+
+  it("聊天记录句同样追原图出处", () => {
+    const q = buildAtomSearchQueries("聊天记录里说某地地铁已经开通");
+    expect(q.some((item) => item.includes("原图") && item.includes("出处"))).toBe(true);
+    expect(q.length).toBeLessThanOrEqual(3);
+  });
+
+  it("统计数字句至少一路追公报原始数据，不超过三路", () => {
+    const q = buildAtomSearchQueries("某市去年 GDP 增长 8.5%");
+    expect(q.some((item) => item.includes("公报") && item.includes("原始数据"))).toBe(true);
+    expect(q.length).toBeLessThanOrEqual(3);
+  });
+
+  it("引语句至少一路追原话语境，并保住引号内原句", () => {
+    const q = buildAtomSearchQueries("某官员在发布会上称「明年房价必跌」");
+    expect(q.some((item) => item.includes("原话") && item.includes("语境") && item.includes("明年房价必跌"))).toBe(
+      true
+    );
+    expect(q.length).toBeLessThanOrEqual(3);
+  });
+
+  it("带版本号和日期的产品句不走公报原始数据问法", () => {
+    const q = buildAtomSearchQueries(
+      "马斯克表示 Grok 4.6 在 Cursor 中提供双倍用量，持续到 8 月 19 日"
+    );
+    expect(q.some((item) => item.includes("公报") && item.includes("原始数据"))).toBe(false);
+    expect(q.length).toBeLessThanOrEqual(3);
+  });
+
+  it("确诊例数与万亿句走公报原始数据，光谈百分点不走", () => {
+    expect(
+      buildAtomSearchQueries("某地新增确诊 128 例").some(
+        (item) => item.includes("公报") && item.includes("原始数据")
+      )
+    ).toBe(true);
+    expect(
+      buildAtomSearchQueries("某省投资 3 万亿").some((item) => item.includes("公报") && item.includes("原始数据"))
+    ).toBe(true);
+    expect(
+      buildAtomSearchQueries("他们在讨论百分点怎么算").some(
+        (item) => item.includes("公报") && item.includes("原始数据")
+      )
+    ).toBe(false);
+  });
+});
+
+describe("英文谣言分语言策略", () => {
+  it("英文 claim 生成英文谣言语境查询，中文 claim 不生成", () => {
+    expect(looksLikeEnglishClaim("Drinking milk causes cancer study")).toBe(true);
+    expect(looksLikeEnglishClaim("常喝牛奶会致癌")).toBe(false);
+    const en = enRumorQueries("Drinking milk causes cancer study");
+    expect(en.length).toBeGreaterThanOrEqual(1);
+    expect(en.some((q) => /debunked|rumour|fact check/i.test(q))).toBe(true);
+    expect(enRumorQueries("常喝牛奶会致癌")).toEqual([]);
+    const zh = buildAtomSearchQueries("常喝牛奶会致癌");
+    expect(zh.some((q) => /^Drinking milk causes cancer study debunked/i.test(q))).toBe(false);
   });
 });

@@ -13,13 +13,13 @@
 | Ch.1 ReAct 观察切片 | fact_checker / source_validator 注入 `reactTrace` | `src/lib/agentRuntime/reactObserve.ts` |
 | Ch.10 显式 handoff | 上游→下游精简 packet，非整段 trajectory | `src/lib/agentRuntime/handoffPacket.ts` |
 | Ch.3 Memory 闭环 | Express 补 `/api/agent/memory-candidates` | `server/src/lib/memoryCandidateHandlers.ts` + `index.ts` |
-| Ch.6 Eval | `reportContractPass` / `reportReviewScore` | `src/lib/agentRuntime/evaluation/*` |
+| Ch.6 Eval | `reportContractPass` / `reportReviewScore` | `server/eval/*`（生产 Case Pipeline 评测） |
 | 流式 UI | 「报告审稿 · 通过/需补证」+ 分数与最多 3 条 issue | `MissionControlView.tsx` |
 | SSE complete | 透出 `reportReview` | `vite.config.ts` + `agentExpansion.ts` |
 
 ## 试用时你会看到
 
-1. 本地：**http://127.0.0.1:5180/**（Vite + AgentRuntime 路径）
+1. 本地：**http://localhost:3101/**（Vite + Express 生产路径）
 2. 跑完一案后流里多一步工具事件：**报告审稿**
 3. 空壳/过强结论会被审稿降级或补 canSay/cannotSay/evidenceChain
 4. 历史案件记忆确认 API 在 Express 生产侧已挂路由（本地 Vite 原本就有）

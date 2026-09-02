@@ -5,8 +5,8 @@
  * SSE handler.ts:1047 在 type:"complete" 事件中加入 claimReview 字段。
  */
 
-import type { FinalReport } from "./schemas";
-import { labelForScore } from "./credibilityScore";
+import type { FinalReport } from "./schemas.js";
+import { labelForScore } from "./credibilityScore.js";
 
 export interface ClaimReviewJsonLd {
   "@context": "https://schema.org";

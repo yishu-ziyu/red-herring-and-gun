@@ -1,7 +1,5 @@
-import type { CanvasNode } from "../data/reasoningCanvas";
 import { caseIntakePrimaryText, type CaseIntake } from "./caseIntake";
-import type { SherlockSearchRequest, SherlockSearchResponse } from "./sherlockStyleSearch";
-import type { MemoryCandidate, MemoryCandidateStatus } from "./agentRuntime/memoryCandidateTypes";
+import type { MemoryCandidate, MemoryCandidateStatus } from "./memoryCandidateTypes";
 import type { AgentEvidenceBundle } from "./schemas";
 import type { AgentContract } from "./agentConfigs";
 import { getTraceCollector, type TraceStatus } from "./reasoningTrace";
@@ -23,38 +21,10 @@ export type {
   ExecutionDagPlan,
   SpeculativeRelayUpdate,
 } from "./agentOrchestrationTypes";
-export type { SherlockSearchResponse } from "./sherlockStyleSearch";
-export { request360Search } from "./search360";
-export type { Search360Request, Search360Response, Search360Source } from "./schemas";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 export type ExpansionMode = "search" | "evidence_audit" | "counter" | "rewrite" | "rumor_check";
-
-export interface AgentExpansionRequest {
-  claim: string;
-  node: Pick<CanvasNode, "id" | "type" | "title" | "subtitle" | "status">;
-  mode: ExpansionMode;
-  prompt: string;
-  visibleNodeTitles: string[];
-}
-
-export interface AgentExpansionResponse {
-  controllerNote: string;
-  agentTitle: string;
-  agentSubtitle: string;
-  resultTitle: string;
-  resultSubtitle: string;
-  resultStatus: NonNullable<CanvasNode["status"]>;
-  traceText: string;
-  inspectorSummary: string;
-  canSay: string[];
-  cannotSay: string[];
-  sources: string[];
-  model: string;
-  agentType?: "rumor_detector" | "fact_checker" | "source_validator" | "evidence_grader" | "report_composer";
-  rumorIndicators?: string[];
-}
 
 export interface EvidenceClue {
   id: string;
@@ -79,27 +49,24 @@ export interface SearchStoppedItem {
   reason: "duplicate" | "budget" | "low_confidence" | "out_of_scope";
 }
 
-export interface RecursiveSearchRequest {
-  claim: string;
-  seedNode: Pick<CanvasNode, "id" | "type" | "title" | "subtitle" | "status">;
-  question: string;
-  depthLimit: number;
-  budgetLimit: number;
-  visibleNodeTitles: string[];
-  existingSources: string[];
+// ───────────────────────────────────────────────────────────────
+// 按 Agent 的模型选择（payload 层；UI 未挂载，默认空 map 走 fallback 链）
+// ───────────────────────────────────────────────────────────────
+
+export type AgentId = "rumor_detector" | "fact_checker" | "source_validator" | "report_composer";
+
+export interface AvailableModel {
+  provider: string;
+  model: string;
+  label?: string;
 }
 
-export interface RecursiveSearchResponse {
-  controllerNote: string;
-  runTitle: string;
-  traceText: string;
-  clues: EvidenceClue[];
-  frontier: SearchFrontierItem[];
-  stopped: SearchStoppedItem[];
-  canSay: string[];
-  cannotSay: string[];
+export interface ModelChoiceEntry {
+  provider: string;
   model: string;
 }
+
+export type ModelChoiceMap = Partial<Record<AgentId, ModelChoiceEntry>>;
 
 // ───────────────────────────────────────────────────────────────
 // 多 Agent Handoff Orchestrate
@@ -119,39 +86,6 @@ export interface HandoffStep {
   status: "pending" | "running" | "completed" | "failed";
   evidenceBundle?: AgentEvidenceBundle;
   error?: string;
-}
-
-export interface HandoffResult {
-  claim: string;
-  steps: HandoffStep[];
-  finalReport?: Record<string, unknown>;
-  /** Book Ch.1/6 proposer-reviewer 结果（确定性审稿） */
-  reportReview?: {
-    passed: boolean;
-    score: number;
-    issues: Array<{ code: string; severity: string; message: string }>;
-  };
-}
-
-export async function requestOrchestrate(claim: string): Promise<HandoffResult> {
-  try {
-    const response = await fetch(`${API_BASE}/api/agent/orchestrate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ claim }),
-    });
-
-    const data = (await response.json().catch(() => null)) as HandoffResult | { message?: string } | null;
-
-    if (!response.ok) {
-      const message = data && "message" in data && data.message ? data.message : `HTTP ${response.status}`;
-      throw new Error(`Orchestrate API 失败：${message}`);
-    }
-
-    return data as HandoffResult;
-  } catch (error) {
-    throw error instanceof Error ? error : new Error("Orchestrate API 调用异常");
-  }
 }
 
 export interface OrchestrateStreamEvent {
@@ -223,9 +157,18 @@ export async function* requestOrchestrateStream(
   const payload: Record<string, unknown> = typeof input === "string" ? { claim } : { claim, intake: input };
   if (memoryRecall) payload.memoryRecall = memoryRecall;
   if (modelChoice && Object.keys(modelChoice).length > 0) payload.modelChoice = modelChoice;
+  if (typeof window !== "undefined") {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("loop") === "1" || params.get("execution") === "loop") {
+        payload.execution = "loop";
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 
   // v2-iteration 2026-07-04: PR-3 Site B (peer spec) — emit trace per SSE event.
-  // 不修改 AgentRuntime.ts,此函数作为 SSE adapter 接入 trace collector。
   const trace = getTraceCollector();
   const traceSessionId = `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   trace.setSessionId(traceSessionId);
@@ -252,11 +195,13 @@ export async function* requestOrchestrateStream(
   };
 
   try {
+    const controller = new AbortController();
     const response = await fetch(`${API_BASE}/api/agent/orchestrate-stream`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
 
     if (response.status === 429) {
@@ -276,15 +221,40 @@ export async function* requestOrchestrateStream(
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+    let drained = false;
+    // 损坏帧不再静默丢弃：丢的可能就是 complete 帧，静默=整单核查凭空蒸发
+    let malformedFrames = 0;
+    const noteMalformed = (where: string, head: string) => {
+      malformedFrames += 1;
+      console.error(`[stream] ${where} JSON 解析失败（第 ${malformedFrames} 帧）: ${head.slice(0, 120)}`);
+    };
 
     try {
       while (true) {
-        const { done, value } = await reader.read();
+        // F1：服务端每 15s 发心跳注释帧；60s 无任何字节 = 死连接，不再无限等待
+        const read = reader.read();
+        read.catch(() => {}); // 竞态落败后 abort 会让它 reject，别变成 unhandled rejection
+        let readTimer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<never>((_, reject) => {
+          readTimer = setTimeout(() => reject(new Error("stream-read-timeout")), 60_000);
+        });
+        let chunk: Awaited<ReturnType<typeof reader.read>>;
+        try {
+          chunk = await Promise.race([read, timeout]);
+        } catch (error) {
+          console.error("[stream] 60 秒无数据，判定连接已断", error);
+          controller.abort();
+          yield { type: "error", message: "与核查服务的连接中断了，这次没有查完。请重试。" };
+          return;
+        } finally {
+          if (readTimer) clearTimeout(readTimer);
+        }
+        const { done, value } = chunk;
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
 
-        // 解析 SSE 事件
+        // 解析 SSE 事件（": keepalive" 心跳注释行不以 "data: " 开头，天然被跳过）
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
 
@@ -295,7 +265,7 @@ export async function* requestOrchestrateStream(
               emitTraceFromEvent(data);
               yield data;
             } catch {
-              // 忽略无法解析的行
+              noteMalformed("行帧", line);
             }
           }
         }
@@ -308,10 +278,16 @@ export async function* requestOrchestrateStream(
           emitTraceFromEvent(data);
           yield data;
         } catch {
-          // 忽略
+          noteMalformed("尾帧", buffer);
         }
       }
+      drained = true;
     } finally {
+      // 消费端提前退出（组件卸载/重置）：取消读取并断开连接，避免服务端空跑
+      if (!drained) {
+        controller.abort();
+        await reader.cancel().catch(() => {});
+      }
       reader.releaseLock();
     }
   } catch (error) {
@@ -343,67 +319,4 @@ export async function updateMemoryCandidateStatus(
     throw new Error(data?.message ?? `Memory Candidate API 失败：HTTP ${response.status}`);
   }
   return data.candidate;
-}
-
-export async function requestAgentExpansion(payload: AgentExpansionRequest): Promise<AgentExpansionResponse> {
-  try {
-    const response = await fetch(`${API_BASE}/api/agent/expand`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const data = (await response.json().catch(() => null)) as AgentExpansionResponse | { message?: string } | null;
-
-    if (!response.ok) {
-      const message = data && "message" in data && data.message ? data.message : `HTTP ${response.status}`;
-      throw new Error(`Agent Expansion API 失败：${message}`);
-    }
-
-    return data as AgentExpansionResponse;
-  } catch (error) {
-    throw error instanceof Error ? error : new Error("Agent Expansion API 调用异常");
-  }
-}
-
-export async function requestRecursiveSearch(payload: RecursiveSearchRequest): Promise<RecursiveSearchResponse> {
-  try {
-    const response = await fetch(`${API_BASE}/api/agent/recursive-search`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const data = (await response.json().catch(() => null)) as RecursiveSearchResponse | { message?: string } | null;
-
-    if (!response.ok) {
-      const message = data && "message" in data && data.message ? data.message : `HTTP ${response.status}`;
-      throw new Error(`Recursive Search API 失败：${message}`);
-    }
-
-    return data as RecursiveSearchResponse;
-  } catch (error) {
-    throw error instanceof Error ? error : new Error("Recursive Search API 调用异常");
-  }
-}
-
-export async function requestSherlockSearch(payload: SherlockSearchRequest): Promise<SherlockSearchResponse> {
-  try {
-    const response = await fetch(`${API_BASE}/api/agent/sherlock-search`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const data = (await response.json().catch(() => null)) as SherlockSearchResponse | { message?: string } | null;
-
-    if (!response.ok) {
-      const message = data && "message" in data && data.message ? data.message : `HTTP ${response.status}`;
-      throw new Error(`Sherlock Search API 失败：${message}`);
-    }
-
-    return data as SherlockSearchResponse;
-  } catch (error) {
-    throw error instanceof Error ? error : new Error("Sherlock Search API 调用异常");
-  }
 }

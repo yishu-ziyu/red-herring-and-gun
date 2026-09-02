@@ -11,6 +11,7 @@ export const EMAIL_SESSION_TTL_SECONDS = 31 * 24 * 60 * 60;
 
 export function getServerSecret() {
   const secret = (process.env.AIPING_SESSION_SECRET ?? "").trim();
+  // 生产环境密钥过短等于可伪造 cookie；空密钥长度是 0，也会被拦住。
   if (process.env.NODE_ENV === "production" && secret.length < 16) {
     throw new Error("AIPING_SESSION_SECRET must be at least 16 characters in production");
   }

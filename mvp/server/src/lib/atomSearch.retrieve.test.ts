@@ -59,4 +59,61 @@ describe("retrieveForAtoms", () => {
       "done:B",
     ]);
   });
+
+  it("7 条可核查、第 7 条含导致 → 检索 6 次且含第 7 条", async () => {
+    const searchOne = vi.fn(async () => ({ sources: [] }));
+    const atoms = [
+      "背景一",
+      "背景二",
+      "背景三",
+      "背景四",
+      "背景五",
+      "背景六",
+      "隔夜菜导致癌症",
+    ];
+    const { atomsToSearch, atomSearchBundle } = await retrieveForAtoms({
+      claimAtoms: atoms,
+      claimAtomTypes: atoms.map((text) => ({ text, verifiable: true, type: "fact" })),
+      searchOne,
+    });
+    expect(searchOne).toHaveBeenCalledTimes(6);
+    expect(atomsToSearch).toHaveLength(6);
+    expect(atomsToSearch).toContain("隔夜菜导致癌症");
+    expect(atomSearchBundle.atomsSearched).toContain("隔夜菜导致癌症");
+    expect(atomsToSearch).not.toContain("背景六");
+  });
+
+  it("立场条不进 searchOne", async () => {
+    const searchOne = vi.fn(async () => ({ sources: [] }));
+    await retrieveForAtoms({
+      claimAtoms: ["隔夜菜含细菌", "不该吃隔夜菜"],
+      claimAtomTypes: [
+        { text: "隔夜菜含细菌", verifiable: true, type: "fact" },
+        { text: "不该吃隔夜菜", verifiable: false, type: "value" },
+      ],
+      searchOne,
+    });
+    expect(searchOne).toHaveBeenCalledTimes(1);
+    expect(searchOne).toHaveBeenCalledWith("隔夜菜含细菌");
+  });
+
+  it("lookupImageOrigin 与文字检索分开：二手帖进 bundle，不进 imageOrigin", async () => {
+    const secondHand = "https://weibo.com/second-hand-repost";
+    const searchOne = vi.fn(async () => ({
+      sources: [{ url: secondHand, title: "转发帖", snippet: "OCR 配文" }],
+    }));
+    const { atomSearchBundle } = await retrieveForAtoms({
+      claimAtoms: ["某地地铁已经开通"],
+      claimAtomTypes: [{ text: "某地地铁已经开通", verifiable: true, type: "fact" }],
+      searchOne,
+      lookupImageOrigin: async () => {
+        throw new Error("no reverse-image vendor");
+      },
+    });
+    expect(atomSearchBundle.byAtomKey["某地地铁已经开通"]?.[0]?.url).toBe(secondHand);
+    expect(atomSearchBundle.imageOrigin?.url).toBeUndefined();
+    expect(atomSearchBundle.imageOrigin?.status).not.toBe("found");
+    expect(atomSearchBundle.imageOrigin?.label).toMatch(/原图没查到|原图出处未查到/);
+    expect(atomSearchBundle.aggregate.unresolvedEvidenceGaps).toContain("原图没查到");
+  });
 });

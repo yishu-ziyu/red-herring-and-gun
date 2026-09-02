@@ -19,6 +19,38 @@ interface PostCaseBody {
   caseId?: string;
 }
 
+const CASE_CLAIM_MAX_CHARS = 500;
+const CASE_REPORT_JSON_MAX_BYTES = 128 * 1024;
+const CASE_WRITES_PER_HOUR = 10;
+
+// ownerHash -> 最近写入时间戳（进程内，限流防打爆内存）
+const ownerWriteLog = new Map<string, number[]>();
+
+function ownerWritesWithinLimit(ownerHash: string, now = Date.now()): boolean {
+  const windowStart = now - 60 * 60 * 1000;
+  const log = (ownerWriteLog.get(ownerHash) ?? []).filter((t) => t > windowStart);
+  if (log.length >= CASE_WRITES_PER_HOUR) {
+    ownerWriteLog.set(ownerHash, log);
+    return false;
+  }
+  log.push(now);
+  ownerWriteLog.set(ownerHash, log);
+  return true;
+}
+
+/** 只接受长得像核查报告的对象：有结论字段或标记为中断报告。 */
+function looksLikeReportShape(report: unknown): report is Record<string, unknown> {
+  if (!report || typeof report !== "object" || Array.isArray(report)) return false;
+  const row = report as Record<string, unknown>;
+  return (
+    row._source === "error-boundary" ||
+    typeof row.conclusion === "string" ||
+    typeof row.allowedConclusion === "string" ||
+    Array.isArray(row.subclaimVerdicts) ||
+    Array.isArray(row.claimAtoms)
+  );
+}
+
 function sendJson(res: any, status: number, body: unknown) {
   if (typeof res.status === "function" && typeof res.json === "function") {
     res.status(status).json(body);
@@ -52,7 +84,7 @@ function toPublicCase(entry: NonNullable<ReturnType<typeof getCase>>) {
 }
 
 /**
- * POST /api/case — 保存 case。有邮箱会话则写入归属。
+ * POST /api/case — 保存 case。需邮箱会话；写入归属与限流。
  */
 export async function postCaseHandler(req: any, res: any): Promise<void> {
   const body = (req.body ?? {}) as PostCaseBody;
@@ -61,12 +93,30 @@ export async function postCaseHandler(req: any, res: any): Promise<void> {
     sendJson(res, 400, { error: "claim is required" });
     return;
   }
-  if (!body.report) {
+  if (claim.length > CASE_CLAIM_MAX_CHARS) {
+    sendJson(res, 400, { error: "claim too long" });
+    return;
+  }
+  if (!body.report || !looksLikeReportShape(body.report)) {
     sendJson(res, 400, { error: "report is required" });
+    return;
+  }
+  if (JSON.stringify(body.report).length > CASE_REPORT_JSON_MAX_BYTES) {
+    sendJson(res, 413, { error: "report too large" });
     return;
   }
 
   const account = await readEmailAccountOptional(req);
+  if (!account) {
+    // 客户端本来就只在登录后保存；未登录写入只喂内存，直接拒绝
+    sendJson(res, 401, { error: "login required" });
+    return;
+  }
+  if (!ownerWritesWithinLimit(account.hash)) {
+    sendJson(res, 429, { error: "too many saves" });
+    return;
+  }
+
   const caseId = typeof body.caseId === "string" ? body.caseId : undefined;
   if (caseId) {
     const existing = getCase(caseId);
@@ -84,7 +134,7 @@ export async function postCaseHandler(req: any, res: any): Promise<void> {
     report: body.report,
     claimReview,
     credibilityScore: typeof body.credibilityScore === "number" ? body.credibilityScore : 50,
-    ownerHash: account?.hash,
+    ownerHash: account.hash,
   });
   sendJson(res, 200, { caseId: entry.caseId, createdAt: entry.createdAt });
 }
@@ -194,9 +244,15 @@ function buildSharePageHtml(caseId: string, entry: ReturnType<typeof getCase>): 
     </p>
     <div class="report-block">
       <h2>核查结论</h2>
-      <p>${escapeHtml(entry.report.rewrittenClaim.cautious)}</p>
-      <h3>对公众的简化版</h3>
-      <p>${escapeHtml(entry.report.rewrittenClaim.publicFacing)}</p>
+      <p>${escapeHtml(
+        typeof entry.report?.rewrittenClaim?.cautious === "string"
+          ? entry.report.rewrittenClaim.cautious
+          : "这次核查没有完成，结论未生成。可以回到首页重新发起核查。"
+      )}</p>
+      ${typeof entry.report?.rewrittenClaim?.publicFacing === "string" && entry.report.rewrittenClaim.publicFacing
+        ? `<h3>对公众的简化版</h3>
+      <p>${escapeHtml(entry.report.rewrittenClaim.publicFacing)}</p>`
+        : ""}
     </div>
     <p><a href="https://gun.yishuziyu.cn/r/${escapeHtml(entry.caseId)}">分享此报告</a> · <a href="/">回到红鲱鱼与枪</a></p>
   </main>

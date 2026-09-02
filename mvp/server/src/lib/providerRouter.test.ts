@@ -138,6 +138,21 @@ describe("providerRouter env helpers", () => {
     expect(parseAgentJson('{“ok”: yes, "note": done,}', "test")).toEqual({ ok: "yes", note: "done" });
   });
 
+  it("parseAgentJson repairs unescaped inner quotes inside string values", () => {
+    const broken =
+      '{"conclusion":"酒精擦身不能退烧，医生说"物理降温"已过时","items":[{"claim":"酒精经皮吸收"可能中毒","verdict":false}]}';
+    const parsed = parseAgentJson(broken, "test");
+    expect(parsed.conclusion).toContain("物理降温");
+    expect(parsed.items[0].claim).toContain("可能中毒");
+  });
+
+  it("parseAgentJson keeps legitimate closing quotes untouched", () => {
+    expect(parseAgentJson('{"a":"x","b":[1,{"c":"y"}]}', "test")).toEqual({
+      a: "x",
+      b: [1, { c: "y" }],
+    });
+  });
+
   // 9. parseAgentJson: 无法解析时抛带 label 的错误
   it("parseAgentJson throws with label prefix when input is not parseable", () => {
     expect(() => parseAgentJson("not json at all", "my-label")).toThrow(/my-label/);
@@ -610,5 +625,44 @@ describe("providerRouter quota skip", () => {
     ).rejects.toThrow(/所有备用模型/);
 
     expect(allProviders.callCodexAgent).not.toHaveBeenCalled();
+  });
+
+  it("MiniMax 超时一次后本进程含 override 不再打", async () => {
+    allProviders.callMiniMaxAgent.mockImplementation(() => new Promise(() => {}));
+    allProviders.callStepFunAgent.mockResolvedValue({
+      text: '{"ok":true,"provider":"stepfun"}',
+      model: "stepfun:step-2-mini",
+    });
+
+    const params = {
+      agentId: "rumor_detector",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: {
+        MINIMAX_API_KEY: "sk-mm",
+        STEPFUN_API_KEY: "sk-sf",
+        MINIMAX_MODEL: "MiniMax-M3",
+        MINIMAX_M3_PROVIDER_TIMEOUT_MS: "1",
+        ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax,stepfun",
+      },
+      codexBin: "/usr/bin/codex",
+    };
+
+    const first = await callAgentWithFallback(params);
+    expect(first.output).toEqual({ ok: true, provider: "stepfun" });
+    expect(first.model).toBe("stepfun:step-2-mini");
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+
+    const second = await callAgentWithFallback({
+      ...params,
+      agentId: "fact_checker",
+      modelOverride: { provider: "minimax", model: "MiniMax-M3" },
+    });
+    expect(second.output).toEqual({ ok: true, provider: "stepfun" });
+    expect(second.model).toBe("stepfun:step-2-mini");
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+    expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(2);
   });
 });

@@ -5,16 +5,31 @@
  * 整句兜底 / query 合并 / 缓存不在本模块。
  */
 
-import { claimAtomKey } from "./claimAtom/index.js";
-import { splitVerifiableAtoms } from "./claimAtom/index.js";
+import {
+  MAX_CLAIM_ATOMS,
+  claimAtomKey,
+  compactStrings,
+  type NonVerifiableAtom,
+  type SubclaimVerdict,
+} from "./claimAtom/index.js";
 import { filterAtomSources, type FilterMeta, type FilterableSource } from "./retrievalFilter.js";
 import {
   bindLocalCitations,
   bindRelatedSourcesOnly,
   stripCitationMarkers,
 } from "./citationBinding.js";
+import {
+  attachImageOriginToBundle,
+  safeLookupImageOrigin,
+  type ImageOriginResult,
+} from "./imageOrigin/index.js";
 
 export const MAX_ATOM_SEARCHES = 6;
+/** @deprecated 用 claimAtom.MAX_CLAIM_ATOMS */
+export const MAX_CLAIM_ATOMS_LISTED = MAX_CLAIM_ATOMS;
+const CAUSAL_LOAD_RE = /导致|造成|引起|致使/;
+const DIGIT_LOAD_RE = /\d/;
+export const SEARCH_BUDGET_GAP = "检索预算未覆盖";
 
 /** Adapter at the search seam: one atom → raw search result. */
 export type SearchOneAtom = (atom: string) => Promise<unknown>;
@@ -62,6 +77,8 @@ export type AtomSearchBundle = {
     perAtom: Record<string, FilterMeta>;
     totals: FilterMeta;
   };
+  /** Screenshot origin — reverse-image only; never filled from OCR/text hits. */
+  imageOrigin?: ImageOriginResult;
 };
 
 function asSourceList(result: unknown): FilterableSource[] {
@@ -77,7 +94,7 @@ function asSourceList(result: unknown): FilterableSource[] {
     out.push({
       url,
       title: String(rec.title || rec.name || "").slice(0, 200),
-      snippet: String(rec.condensedSnippet || rec.snippet || rec.summary || rec.content || "").slice(0, 320),
+      snippet: String(rec.snippet || rec.summary || rec.content || "").slice(0, 320),
       credibility: typeof rec.credibility === "string" ? rec.credibility : undefined,
       providerRank: i,
     });
@@ -85,19 +102,125 @@ function asSourceList(result: unknown): FilterableSource[] {
   return out;
 }
 
-/** 选取要检索的可核查原子（上限 MAX_ATOM_SEARCHES） */
-export function selectAtomsToSearch(verifiableAtoms: string[]): string[] {
+export function atomSearchLoad(atom: string, type?: string): number {
+  if (type === "causal" || CAUSAL_LOAD_RE.test(atom)) return 2;
+  if (DIGIT_LOAD_RE.test(atom)) return 1;
+  return 0;
+}
+
+function typeOfAtom(
+  atom: string,
+  typeByKey?: ReadonlyMap<string, string> | Record<string, string>
+): string | undefined {
+  if (!typeByKey) return undefined;
+  const key = claimAtomKey(atom);
+  if (typeByKey instanceof Map) return typeByKey.get(key) ?? typeByKey.get(atom);
+  const record = typeByKey as Record<string, string>;
+  return record[key] ?? record[atom];
+}
+
+/**
+ * 可核查原子全表（不被检索上限先切）。立场条进 nonVerifiable，不进检索。
+ */
+export function listAtomsForSearch(
+  claimAtoms: unknown,
+  claimAtomTypes: unknown
+): {
+  verifiable: string[];
+  nonVerifiable: NonVerifiableAtom[];
+  typeByKey: Map<string, string>;
+} {
+  const atoms = compactStrings(claimAtoms, MAX_CLAIM_ATOMS, 180).map((s) => claimAtomKey(s));
+  const typed = new Map<string, { verifiable: boolean; type: string }>();
+  if (Array.isArray(claimAtomTypes)) {
+    for (const item of claimAtomTypes) {
+      if (!item || typeof item !== "object") continue;
+      const rec = item as Record<string, unknown>;
+      const text = typeof rec.text === "string" ? rec.text : "";
+      if (!text) continue;
+      typed.set(claimAtomKey(text), {
+        verifiable: rec.verifiable !== false,
+        type: typeof rec.type === "string" ? rec.type.slice(0, 40) : "",
+      });
+    }
+  }
+  const verifiable: string[] = [];
+  const nonVerifiable: NonVerifiableAtom[] = [];
+  const typeByKey = new Map<string, string>();
+  for (const atom of atoms) {
+    const info = typed.get(atom);
+    if (info && info.verifiable === false) {
+      nonVerifiable.push({ text: atom, type: info.type });
+      continue;
+    }
+    verifiable.push(atom);
+    if (info?.type) typeByKey.set(atom, info.type);
+  }
+  return { verifiable, nonVerifiable, typeByKey };
+}
+
+/** 按负荷排序再取 MAX_ATOM_SEARCHES。同分保持原句序。 */
+export function selectAtomsToSearch(
+  verifiableAtoms: string[],
+  typeByKey?: ReadonlyMap<string, string> | Record<string, string>
+): string[] {
   const seen = new Set<string>();
-  const out: string[] = [];
+  const unique: string[] = [];
   for (const atom of verifiableAtoms) {
     if (typeof atom !== "string" || !atom.trim()) continue;
     const key = atom.trim();
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(key);
-    if (out.length >= MAX_ATOM_SEARCHES) break;
+    unique.push(key);
   }
-  return out;
+  return unique
+    .map((atom, index) => ({
+      atom,
+      index,
+      load: atomSearchLoad(atom, typeOfAtom(atom, typeByKey)),
+    }))
+    .sort((a, b) => b.load - a.load || a.index - b.index)
+    .slice(0, MAX_ATOM_SEARCHES)
+    .map((row) => row.atom);
+}
+
+/** 未进检索名额的可核查条只能是 unverified。 */
+export function applyUnsearchedAtomVerdicts(
+  merged: SubclaimVerdict[],
+  verifiable: string[],
+  searched: string[]
+): SubclaimVerdict[] {
+  const searchedKeys = new Set(searched.map((atom) => claimAtomKey(atom)));
+  const byKey = new Map<string, SubclaimVerdict>();
+  for (const verdict of merged) {
+    const key = claimAtomKey(verdict.claimAtom);
+    if (searchedKeys.has(key)) {
+      byKey.set(key, verdict);
+      continue;
+    }
+    const gaps = Array.isArray(verdict.evidenceGaps) ? verdict.evidenceGaps : [];
+    byKey.set(key, {
+      ...verdict,
+      verdict: "unverified",
+      evidenceGaps: gaps.some((gap) => gap.includes(SEARCH_BUDGET_GAP))
+        ? gaps
+        : [SEARCH_BUDGET_GAP, ...gaps].slice(0, 3),
+    });
+  }
+  return verifiable.map((atom) => {
+    const key = claimAtomKey(atom);
+    return (
+      byKey.get(key) ?? {
+        claimAtom: atom,
+        verdict: "unverified" as const,
+        evidence: "",
+        boundary: "",
+        supportingSources: [],
+        contradictingSources: [],
+        evidenceGaps: [SEARCH_BUDGET_GAP],
+      }
+    );
+  });
 }
 
 /**
@@ -192,9 +315,11 @@ export type BindableVerdict = {
 /**
  * 报告按条绑证据：
  * - 模型写出的 URL 仅保留「该原子本轮检索」里出现过的，并按过滤结果重写 evidence [n]；
+ *   始终传入该原子 known 集合，空集合不是 null，以免幻觉 URL 留下；
  * - 若支撑/反证都空且检索有结果 → 填入 supportingSources 作「相关检索」，并剥离 [n]
  *   （禁止把检索填充误绑成句内引用）；
  * - 若检索也为空 → evidenceGaps 补「该原子定向检索无结果」。
+ * - 仅 related-only，或两侧都无 http(s)，且 verdict 为 true/false → unverified，补「待补证」。
  */
 export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
   verdicts: T[],
@@ -211,12 +336,12 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
       Array.isArray(modelSupportingRaw) &&
       modelSupportingRaw.some((s) => s && typeof s === "object" && String((s as AtomSearchSource).url || "").trim());
 
-    const boundSupport = bindLocalCitations(v.evidence, modelSupportingRaw, known.size > 0 ? known : null);
+    const boundSupport = bindLocalCitations(v.evidence, modelSupportingRaw, known);
     let supporting = boundSupport.sources;
     let evidence = boundSupport.text;
     let sourcesRelatedOnly = false;
 
-    const boundContra = bindLocalCitations("", v.contradictingSources, known.size > 0 ? known : null);
+    const boundContra = bindLocalCitations("", v.contradictingSources, known);
     let contradicting = boundContra.sources;
 
     let gaps = Array.isArray(v.evidenceGaps)
@@ -235,6 +360,16 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
       }
     }
 
+    const hasHttpUrl = [...supporting, ...contradicting].some(
+      (s) => typeof s?.url === "string" && /^https?:\/\//i.test(s.url)
+    );
+    const verdictNorm = typeof v.verdict === "string" ? v.verdict.trim().toLowerCase() : "";
+    const downgradeTrueFalse =
+      (verdictNorm === "true" || verdictNorm === "false") && (sourcesRelatedOnly || !hasHttpUrl);
+    if (downgradeTrueFalse && !gaps.some((g) => g.includes("待补证"))) {
+      gaps = ["待补证", ...gaps].slice(0, 3);
+    }
+
     return {
       ...v,
       evidence,
@@ -242,6 +377,7 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
       contradictingSources: contradicting,
       evidenceGaps: gaps,
       sourcesRelatedOnly,
+      ...(downgradeTrueFalse ? { verdict: "unverified" } : {}),
     };
   });
 }
@@ -256,12 +392,22 @@ export async function retrieveForAtoms(options: {
   searchOne: SearchOneAtom;
   hooks?: RetrieveForAtomsHooks;
   claimAtomKeyFn?: (s: string) => string;
-}): Promise<{ atomsToSearch: string[]; atomSearchBundle: AtomSearchBundle; search360Result: AtomSearchBundle["aggregate"] }> {
+  /** Screenshot reverse-image lookup, beside searchOne. OCR/text hits must not fill origin. */
+  lookupImageOrigin?: () => Promise<ImageOriginResult>;
+}): Promise<{
+  atomsToSearch: string[];
+  atomSearchBundle: AtomSearchBundle;
+  search360Result: AtomSearchBundle["aggregate"];
+  imageOrigin?: ImageOriginResult;
+}> {
   const keyFn = options.claimAtomKeyFn ?? claimAtomKey;
-  const split = splitVerifiableAtoms(options.claimAtoms, options.claimAtomTypes);
-  const atomsToSearch = selectAtomsToSearch(split.verifiable);
+  const listed = listAtomsForSearch(options.claimAtoms, options.claimAtomTypes);
+  const atomsToSearch = selectAtomsToSearch(listed.verifiable, listed.typeByKey);
   const mode = options.hooks?.mode ?? "parallel";
   const items: AtomSearchItem[] = [];
+  const originPromise = options.lookupImageOrigin
+    ? safeLookupImageOrigin(options.lookupImageOrigin)
+    : Promise.resolve(undefined);
 
   if (mode === "sequential") {
     for (const atom of atomsToSearch) {
@@ -283,9 +429,12 @@ export async function retrieveForAtoms(options: {
   }
 
   const atomSearchBundle = buildAtomSearchBundle(items, keyFn);
+  const imageOrigin = await originPromise;
+  if (imageOrigin) attachImageOriginToBundle(atomSearchBundle, imageOrigin);
   return {
     atomsToSearch,
     atomSearchBundle,
     search360Result: atomSearchBundle.aggregate,
+    imageOrigin: atomSearchBundle.imageOrigin,
   };
 }

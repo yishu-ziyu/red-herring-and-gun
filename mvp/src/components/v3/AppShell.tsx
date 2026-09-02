@@ -7,6 +7,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Group, Panel, Separator, usePanelRef } from "react-resizable-panels";
 import { accountInitial } from "../../lib/accountIdentity";
+import { useUiLang } from "../../lib/useUiLang";
+import type { UiCopy } from "../../lib/uiLang";
 import type { AccountProfile } from "./auth/accountTypes";
 
 export type DeskCaseStatus = "running" | "done" | "interrupted";
@@ -34,10 +36,10 @@ type AppShellProps = {
   children: ReactNode;
 };
 
-function statusLabel(status: DeskCaseStatus) {
-  if (status === "running") return "核查中";
-  if (status === "interrupted") return "没查完";
-  return "已有判断";
+function statusLabel(status: DeskCaseStatus, copy: UiCopy) {
+  if (status === "running") return copy.statusRunning;
+  if (status === "interrupted") return copy.statusInterrupted;
+  return copy.statusDone;
 }
 
 export function AppShell({
@@ -55,6 +57,7 @@ export function AppShell({
   onAccountClick,
   children,
 }: AppShellProps) {
+  const { copy } = useUiLang();
   const dossierRef = usePanelRef();
   const [narrow, setNarrow] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -120,11 +123,11 @@ export function AppShell({
                 onAccountClick();
               }}
             >
-              账户
+              {copy.accountMenu}
             </button>
           ) : null}
           <a className="app-shell-account-menu-link" role="menuitem" href="/settings/api-key">
-            模型设置
+            {copy.modelSettings}
           </a>
           {onLogout ? (
             <button
@@ -135,7 +138,7 @@ export function AppShell({
                 onLogout();
               }}
             >
-              退出
+              {copy.signOut}
             </button>
           ) : null}
         </div>
@@ -144,22 +147,22 @@ export function AppShell({
   ) : onLoginClick ? (
     <button type="button" className="app-shell-login" onClick={onLoginClick}>
       <span className="app-shell-account-mark" aria-hidden="true" />
-      登录
+      {copy.signIn}
     </button>
   ) : null;
 
   const rail = (
-    <aside className="app-shell-rail" aria-label="历史卷宗">
+    <aside className="app-shell-rail" aria-label={copy.historyLabel}>
       <div className="app-shell-rail-brand">
         <img src="/logo.png?v=20260615" alt="" className="app-shell-logo" />
         <span>红鲱鱼与枪</span>
       </div>
       <button type="button" className="app-shell-new" onClick={onNewCase}>
-        新查一条
+        {copy.newCheck}
       </button>
-      <p className="app-shell-rail-label">最近核查</p>
+      <p className="app-shell-rail-label">{copy.recentLabel}</p>
       {cases.length === 0 ? (
-        <p className="app-shell-rail-empty">还没有查过</p>
+        <p className="app-shell-rail-empty">{copy.recentEmpty}</p>
       ) : (
         <ul className="app-shell-case-list">
           {cases.map((item) => (
@@ -170,18 +173,18 @@ export function AppShell({
                 onClick={() => onSelectCase(item.id)}
               >
                 <strong>{item.claim}</strong>
-                <em>{statusLabel(item.status)}</em>
+                <em>{statusLabel(item.status, copy)}</em>
               </button>
             </li>
           ))}
         </ul>
       )}
-      <nav className="app-shell-rail-foot" aria-label="账号与设置">
+      <nav className="app-shell-rail-foot" aria-label={copy.accountNavLabel}>
         <div className="app-shell-rail-dock">
           {accountChip}
           {account ? null : (
             <a className="app-shell-rail-meta" href="/settings/api-key">
-              模型设置
+              {copy.modelSettings}
             </a>
           )}
         </div>
@@ -192,24 +195,24 @@ export function AppShell({
   const dossier = (
     <aside
       className="app-shell-dossier"
-      aria-label="核查卷宗"
+      aria-label={copy.dossierLabel}
       aria-hidden={artifactOpen ? undefined : true}
       {...(artifactOpen ? {} : { inert: true })}
     >
       <header className="app-shell-dossier-head">
-        <strong>{artifactTitle || "核查卷宗"}</strong>
+        <strong>{artifactTitle || copy.dossierTitle}</strong>
         <button
           type="button"
           className="app-shell-dossier-close"
           onClick={() => onArtifactOpenChange(false)}
         >
-          收起
+          {copy.collapse}
         </button>
       </header>
       <div className="app-shell-dossier-stage">
         <div className="app-shell-paper">
           {artifact ?? (
-            <p className="app-shell-paper-empty">查完的判断会出现在这里。</p>
+            <p className="app-shell-paper-empty">{copy.paperEmpty}</p>
           )}
         </div>
       </div>
@@ -221,7 +224,7 @@ export function AppShell({
       <div className="app-shell app-shell--narrow">
         <header className="app-shell-narrow-bar">
           <button type="button" onClick={onNewCase}>
-            新查一条
+            {copy.newCheck}
           </button>
           <span>红鲱鱼与枪</span>
           {account ? (
@@ -230,11 +233,11 @@ export function AppShell({
             </button>
           ) : onLoginClick ? (
             <button type="button" onClick={onLoginClick}>
-              登录
+              {copy.signIn}
             </button>
           ) : null}
           <button type="button" onClick={() => onArtifactOpenChange(!artifactOpen)}>
-            {artifactOpen ? "收起卷宗" : "卷宗"}
+            {artifactOpen ? copy.dossierCollapse : copy.dossierToggle}
           </button>
         </header>
         <div className="app-shell-narrow-body">
@@ -250,12 +253,12 @@ export function AppShell({
         id="desk-shell"
         className="app-shell-group"
         orientation="horizontal"
-        resizeTargetMinimumSize={8}
+        resizeTargetMinimumSize={{ coarse: 8, fine: 8 }}
       >
         <Panel
           id="rail"
           className="app-shell-panel"
-          defaultSize={240}
+          defaultSize={248}
           minSize={196}
           maxSize={320}
           groupResizeBehavior="preserve-pixel-size"

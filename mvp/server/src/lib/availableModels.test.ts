@@ -32,29 +32,21 @@ describe("availableModels", () => {
     }
   });
 
-  // B1-bonus: 360 智脑多 key 别名支持
-  it("B1-bonus: 360 provider is detected when any of QIHOO_360 / ZHINAO / AI360 key is set", () => {
+  // B1-bonus: 360 provider 检测（唯一 key 名）
+  it("B1-bonus: 360 provider is detected when QIHOO_360_API_KEY is set", () => {
     expect(
-      listAvailableModels({ ZHINAO_API_KEY: "x" })
-        .some((m) => m.provider === "360")
-    ).toBe(true);
-    expect(
-      listAvailableModels({ AI360_API_KEY: "x" })
+      listAvailableModels({ QIHOO_360_API_KEY: "x" })
         .some((m) => m.provider === "360")
     ).toBe(true);
   });
 
-  it("B1-bonus: MiniMax appears only when MiniMax API key or token-plan key is configured", () => {
+  it("B1-bonus: MiniMax appears only when MiniMax API key is configured", () => {
     expect(
       listAvailableModels({ ANTHROPIC_MODEL: "MiniMax-M3" })
         .some((m) => m.provider === "minimax")
     ).toBe(false);
     expect(
       listAvailableModels({ MINIMAX_API_KEY: "sk-mm" })
-        .some((m) => m.provider === "minimax" && m.model === "MiniMax-M3")
-    ).toBe(true);
-    expect(
-      listAvailableModels({ MINIMAX_TOKEN_PLAN_KEY: "tp-mm" })
         .some((m) => m.provider === "minimax" && m.model === "MiniMax-M3")
     ).toBe(true);
   });

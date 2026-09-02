@@ -106,7 +106,8 @@ export function noteProviderFailure(provider: string, message: string): void {
     const id = canonicalProviderId(provider);
     const n = (timeoutStrikes.get(id) || 0) + 1;
     timeoutStrikes.set(id, n);
-    if (n >= 2) skipProvider(provider);
+    // MiniMax-M3 default wait is 10 min; one hang is enough to skip the rest of this process.
+    if (n >= (id === "minimax" ? 1 : 2)) skipProvider(provider);
   }
 }
 
@@ -229,17 +230,13 @@ export function modelForAgent(
   return (key && envValue(env, `${prefix}_${key}_MODEL`)) || envValue(env, `${prefix}_MODEL`) || fallback;
 }
 
-/** 360 智脑 API key 多别名查找（兼容历史命名：QIHOO_360 → ZHINAO → AI360） */
+/** 360 智脑 API key */
 export function getSearch360ApiKey(env: Record<string, string>): string {
-  return (
-    envValue(env, "QIHOO_360_API_KEY") ||
-    envValue(env, "ZHINAO_API_KEY") ||
-    envValue(env, "AI360_API_KEY")
-  );
+  return envValue(env, "QIHOO_360_API_KEY");
 }
 
 export function getMiniMaxApiKey(env: Record<string, string>): string {
-  return envValue(env, "MINIMAX_API_KEY") || envValue(env, "MINIMAX_TOKEN_PLAN_KEY");
+  return envValue(env, "MINIMAX_API_KEY");
 }
 
 function getMiniMaxAuthHeader(env: Record<string, string>): "x-api-key" | "bearer" {
@@ -322,9 +319,52 @@ function stripJsonNoise(text: string): string {
     .trim();
 }
 
+/**
+ * 修复字符串值内部未转义的引号（"他说"不会"…" 这类中文文本常见 slip，
+ * JSON.parse 报 Expected ',' or '}' after property value）。
+ * 启发式：字符串内遇到 `"` 时，向后看第一个非空白字符——
+ * 是 `,` `}` `]` `:` 或 EOF 才算真正的闭合引号，否则当内容转义。
+ */
+export function escapeUnescapedInnerQuotes(json: string): string {
+  let out = "";
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < json.length; i += 1) {
+    const ch = json[i];
+    if (!inString) {
+      if (ch === '"') inString = true;
+      out += ch;
+      continue;
+    }
+    if (escape) {
+      escape = false;
+      out += ch;
+      continue;
+    }
+    if (ch === "\\") {
+      escape = true;
+      out += ch;
+      continue;
+    }
+    if (ch === '"') {
+      let j = i + 1;
+      while (j < json.length && /\s/.test(json[j])) j += 1;
+      const next = j < json.length ? json[j] : "";
+      if (next === "," || next === "}" || next === "]" || next === ":" || next === "") {
+        inString = false;
+        out += ch;
+      } else {
+        out += '\\"';
+      }
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
 /** 尝试修复 LLM 输出的 loose JSON（尾随逗号、未加引号的值、截断闭合） */
-function repairLooseJsonObject(json: string): string {
-  let repaired = stripJsonNoise(json)
+function repairLooseJsonObject(json: string): string {  let repaired = stripJsonNoise(json)
     // // line comments and /* block comments */ (outside of perfect string handling — best effort)
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/(^|[^:])\/\/.*$/gm, "$1")
@@ -414,8 +454,10 @@ export function parseAgentJson(text: string, label: string): any {
   const extracted = extractJsonObject(cleaned);
   const candidates = [
     extracted,
+    escapeUnescapedInnerQuotes(extracted),
     repairLooseJsonObject(extracted),
     closeTruncatedJson(extracted),
+    repairLooseJsonObject(closeTruncatedJson(escapeUnescapedInnerQuotes(extracted))),
     repairLooseJsonObject(closeTruncatedJson(extracted)),
     // last resort: whole cleaned text if it already looks like an object
     cleaned.startsWith("{") ? repairLooseJsonObject(cleaned) : "",
@@ -600,7 +642,7 @@ export async function dispatchSingleProvider({
   }
   if (provider === "minimax") {
     const apiKey = getMiniMaxApiKey(env);
-    if (!apiKey) throw new Error(`未配置 MINIMAX_API_KEY / MINIMAX_TOKEN_PLAN_KEY`);
+    if (!apiKey) throw new Error(`未配置 MINIMAX_API_KEY`);
     const baseUrl = (envValue(env, "MINIMAX_BASE_URL") || "https://api.minimaxi.com/anthropic").replace(/\/$/, "");
     return await callMiniMaxAgent({
       baseUrl,
@@ -744,51 +786,55 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
     if (!TEXT_PROVIDER_IDS.has(ovProvider)) {
       throw new Error(`modelOverride 指向未知 provider: ${ovProvider}`);
     }
-    const ovStart = Date.now();
-    logger.info("[orchestrate-provider] start (override)", {
-      agent: traceLabel,
-      provider: ovProvider,
-      model: ovModel,
-    });
-    try {
-      const result = await invokeAndParse(
-        ovProvider,
-        ovModel,
-        (sys, user) =>
-          dispatchSingleProvider({
-            provider: ovProvider,
-            model: ovModel,
-            env,
-            agentId,
-            systemPrompt: sys,
-            userContent: user,
-            responseSchema,
-            maxTokens,
-            codexBin,
-            reasoningEffort,
-          }),
-        timeoutForProviderModel(env, ovProvider, ovModel, providerTimeoutMs),
-        "override"
-      );
-      logger.info("[orchestrate-provider] complete (override)", {
+    if (isProviderQuotaSkipped(ovProvider)) {
+      errors.push(`[${canonicalProviderId(ovProvider)}] 本进程已因额度耗尽跳过`);
+    } else {
+      const ovStart = Date.now();
+      logger.info("[orchestrate-provider] start (override)", {
         agent: traceLabel,
         provider: ovProvider,
         model: ovModel,
-        latencyMs: Date.now() - ovStart,
       });
-      return result;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : `${ovProvider} 调用失败`;
-      logger.error("[orchestrate-provider] error (override)", {
-        agent: traceLabel,
-        provider: ovProvider,
-        model: ovModel,
-        latencyMs: Date.now() - ovStart,
-        message,
-      });
-      noteProviderFailure(ovProvider, message);
-      if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
-      errors.push(`[${ovProvider}:${ovModel}] ${message}`);
+      try {
+        const result = await invokeAndParse(
+          ovProvider,
+          ovModel,
+          (sys, user) =>
+            dispatchSingleProvider({
+              provider: ovProvider,
+              model: ovModel,
+              env,
+              agentId,
+              systemPrompt: sys,
+              userContent: user,
+              responseSchema,
+              maxTokens,
+              codexBin,
+              reasoningEffort,
+            }),
+          timeoutForProviderModel(env, ovProvider, ovModel, providerTimeoutMs),
+          "override"
+        );
+        logger.info("[orchestrate-provider] complete (override)", {
+          agent: traceLabel,
+          provider: ovProvider,
+          model: ovModel,
+          latencyMs: Date.now() - ovStart,
+        });
+        return result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : `${ovProvider} 调用失败`;
+        logger.error("[orchestrate-provider] error (override)", {
+          agent: traceLabel,
+          provider: ovProvider,
+          model: ovModel,
+          latencyMs: Date.now() - ovStart,
+          message,
+        });
+        noteProviderFailure(ovProvider, message);
+        if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
+        errors.push(`[${ovProvider}:${ovModel}] ${message}`);
+      }
     }
   }
 
@@ -895,12 +941,12 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
 
     if (provider === "minimax") {
       const apiKey = getMiniMaxApiKey(env);
-      const model = modelForAgent(env, "MINIMAX", agentId, "MiniMax-M3");
+      const model = modelForAgent(env, "MINIMAX", agentId, "MiniMax-M2.7-highspeed");
       const baseUrl = (envValue(env, "MINIMAX_BASE_URL") || "https://api.minimaxi.com/anthropic").replace(/\/$/, "");
       if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
       if (!apiKey) {
         if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "minimax", model });
-        if (onMissing === "error") errors.push(`[minimax:${model}] 未配置 MINIMAX_API_KEY / MINIMAX_TOKEN_PLAN_KEY`);
+        if (onMissing === "error") errors.push(`[minimax:${model}] 未配置 MINIMAX_API_KEY`);
         continue;
       }
       const out = await runOne("minimax", model, (sys, user) =>

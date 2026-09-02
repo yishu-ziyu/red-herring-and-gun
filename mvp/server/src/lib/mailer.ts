@@ -36,14 +36,12 @@ const SMTP_TIMEOUT_MS = 20_000;
 const MAIL_ENV_KEYS = new Set([
   "RESEND_API_KEY",
   "MAIL_FROM",
-  "EMAIL_FROM",
   "MAIL_FROM_NAME",
   "SMTP_HOST",
   "SMTP_PORT",
   "SMTP_SECURE",
   "SMTP_USER",
   "SMTP_PASS",
-  "SMTP_PASSWORD",
 ]);
 
 function overlayMailEnvFromDotenv(env: EnvMap): EnvMap {
@@ -84,7 +82,7 @@ function readEnv(env: EnvMap, key: string): string {
 }
 
 function mailFrom(env: EnvMap): string {
-  return readEnv(env, "MAIL_FROM") || readEnv(env, "EMAIL_FROM");
+  return readEnv(env, "MAIL_FROM");
 }
 
 function mailFromName(env: EnvMap): string {
@@ -104,7 +102,7 @@ export function resolveMailTransport(env: EnvMap = process.env): MailTransport |
 
   const host = readEnv(resolved, "SMTP_HOST");
   const user = readEnv(resolved, "SMTP_USER");
-  const pass = readEnv(resolved, "SMTP_PASS") || readEnv(resolved, "SMTP_PASSWORD");
+  const pass = readEnv(resolved, "SMTP_PASS");
   if (!host || !user || !pass) return null;
 
   const portRaw = readEnv(resolved, "SMTP_PORT");

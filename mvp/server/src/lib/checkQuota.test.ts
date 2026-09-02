@@ -215,4 +215,54 @@ describe("checkQuota", () => {
     const ticket = await gateFreeCheck(req, mockRes());
     expect(ticket).not.toBeNull();
   });
+
+  it("ops bypass token lets owners check without consuming guest quota", async () => {
+    process.env.OPS_CHECK_BYPASS_TOKEN = "ops-secret-token";
+    try {
+      const req = mockReq("", "203.0.113.9", { "x-ops-check-token": "ops-secret-token" });
+      const peek = await peekCheckQuota(req);
+      expect(peek).toMatchObject({ used: 0, kind: "guest", enforced: false });
+
+      for (let i = 0; i < 3; i += 1) {
+        const res = mockRes();
+        const begun = await beginFreeCheck(req, res);
+        expect(begun.ok).toBe(true);
+        if (!begun.ok) return;
+        expect(begun.ticket.settled).toBe(true);
+        commitFreeCheck(res, begun.ticket);
+      }
+
+      // 同 IP 的普通游客不受旁路影响：额度独立计数
+      const plain = await peekCheckQuota(mockReq("", "203.0.113.9"));
+      expect(plain).toMatchObject({ remaining: 1, used: 0, enforced: true });
+    } finally {
+      delete process.env.OPS_CHECK_BYPASS_TOKEN;
+    }
+  });
+
+  it("without OPS_CHECK_BYPASS_TOKEN configured the bypass header does nothing", async () => {
+    delete process.env.OPS_CHECK_BYPASS_TOKEN;
+    const req = mockReq("", "203.0.113.10", { "x-ops-check-token": "anything" });
+    const peek = await peekCheckQuota(req);
+    expect(peek).toMatchObject({ remaining: 1, enforced: true });
+    const res = mockRes();
+    const begun = await beginFreeCheck(req, res);
+    expect(begun.ok).toBe(true);
+    if (!begun.ok) return;
+    expect(begun.ticket.settled).toBe(false);
+  });
+
+  it("a wrong ops token does not bypass", async () => {
+    process.env.OPS_CHECK_BYPASS_TOKEN = "ops-secret-token";
+    try {
+      const req = mockReq("", "203.0.113.11", { "x-ops-check-token": "wrong" });
+      const res = mockRes();
+      const begun = await beginFreeCheck(req, res);
+      expect(begun.ok).toBe(true);
+      if (!begun.ok) return;
+      expect(begun.ticket.settled).toBe(false);
+    } finally {
+      delete process.env.OPS_CHECK_BYPASS_TOKEN;
+    }
+  });
 });

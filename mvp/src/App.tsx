@@ -4,16 +4,14 @@ import { AppShell, type DeskCase } from "./components/v3/AppShell";
 import { Dashboard } from "./components/v3/Dashboard";
 import { MissionControlView } from "./components/v3/phases/MissionControlView";
 import { ResultView } from "./components/v3/phases/ResultView";
-import { EvidenceMatrixDemoPage } from "./components/v3/EvidenceMatrixDemoPage";
 import { ModelProviderSettingsPreview } from "./components/v3/settings/ModelProviderSettingsPreview";
 import { ApiKeySettings } from "./components/v3/settings/ApiKeySettings";
-import { MissionShellPreview } from "./components/v3/phases/mission/MissionShellPreview";
 import { LoginView } from "./components/v3/auth/LoginView";
 import { AccountView } from "./components/v3/auth/AccountView";
 import type { AccountProfile } from "./components/v3/auth/accountTypes";
 import { accountDisplayName } from "./lib/accountIdentity";
 import { caseIntakePrimaryText, type CaseIntake } from "./lib/caseIntake";
-import type { ModelChoiceMap } from "./components/v3/ModelPicker";
+import type { ModelChoiceMap } from "./lib/agentExpansion";
 
 type AppPhase = "input" | "executing";
 
@@ -52,19 +50,8 @@ function AppContent() {
   const { dispatch } = useReasoning();
   accountEmailRef.current = account?.email ?? null;
 
-  // Demo route
-  const isDemoRoute = window.location.pathname === "/demo";
   const isModelSettingsPreviewRoute = import.meta.env.DEV && window.location.pathname === "/model-settings-preview";
   const isApiKeySettingsRoute = window.location.pathname === "/settings/api-key";
-  // Phase 0/1 shell preview (fixture-driven ThoughtChain-like process UI)
-  const isShellPreviewRoute =
-    window.location.pathname === "/shell-preview" ||
-    new URLSearchParams(window.location.search).get("shellPreview") === "1";
-  // DEV: formal result page with numbered citations (no full pipeline needed)
-  const isResultPreviewRoute =
-    import.meta.env.DEV &&
-    (window.location.pathname === "/result-preview" ||
-      new URLSearchParams(window.location.search).get("resultPreview") === "1");
 
   useEffect(() => {
     if (appPhase === renderedPhase) return;
@@ -78,6 +65,9 @@ function AppContent() {
     return () => window.clearTimeout(timer);
   }, [appPhase, renderedPhase]);
 
+  // 注意：这里刻意不用 AbortSignal——Chrome 会把被中止的在途 fetch 记成
+  // net::ERR_ABORTED 控制台错误（StrictMode 双挂载每次必触发）。/me 与 /cases
+  // 都是幂等 GET，让它自然完成即可，重复结果幂等。
   const hydrateAccountCases = useCallback(async () => {
     try {
       const me = await fetch("/api/auth/email/me", { credentials: "include" });
@@ -164,7 +154,6 @@ function AppContent() {
     setCases((prev) =>
       prev.map((item) => (item.id === localId ? { ...item, status, report: finalReport } : item))
     );
-    setArtifactOpen(true);
     if (!shouldPersist || !localId) return;
     void (async () => {
       try {
@@ -178,15 +167,20 @@ function AppContent() {
             credibilityScore: typeof finalReport.credibilityScore === "number" ? finalReport.credibilityScore : 50,
           }),
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          // F2：不挡当前判断，但要留现场——否则登录用户的案例刷新后凭空消失无从排查
+          console.error(`[cases] 服务端存档失败 HTTP ${res.status}`);
+          return;
+        }
         const data = (await res.json()) as { caseId?: string };
         if (!data.caseId) return;
         setCases((prev) =>
           prev.map((item) => (item.id === localId ? { ...item, id: data.caseId as string, report: finalReport } : item))
         );
         setActiveCaseId((current) => (current === localId ? data.caseId ?? current : current));
-      } catch {
-        // 记住失败不挡当前判断
+      } catch (error) {
+        // 记住失败不挡当前判断（F2：留现场）
+        console.error("[cases] 服务端存档异常", error);
       }
     })();
   }, [activeCaseId, activeClaim]);
@@ -261,106 +255,6 @@ function AppContent() {
     setAppPhase("input");
   }, [dispatch]);
 
-  if (isDemoRoute) {
-    return <EvidenceMatrixDemoPage />;
-  }
-
-  if (isShellPreviewRoute) {
-    return <MissionShellPreview />;
-  }
-
-  if (isResultPreviewRoute) {
-    return (
-      <ResultView
-        claim="Transformers 随数据与算力扩展良好，但注意力机制对序列长度是二次复杂度。"
-        finalReport={{
-          verdictType: "partial",
-          credibilityLabel: "部分可信",
-          credibilityScore: 72,
-          conclusion:
-            "Transformers 随数据与算力扩展良好[1]，但注意力机制对序列长度是二次复杂度[2]。",
-          recommendation: "引用时区分扩展规律与复杂度瓶颈，不要混为一谈。",
-          subclaimVerdicts: [
-            {
-              claimAtom: "Transformers 随数据与算力扩展良好",
-              verdict: "true",
-              evidence: "缩放规律在公开研究中有系统支持[1]。",
-              boundary: "不能推出任意任务都单调提升。",
-              supportingSources: [
-                {
-                  title: "Attention Is All You Need",
-                  url: "https://arxiv.org/abs/1706.03762",
-                  snippet: "Transformer architecture and scaling discussion.",
-                },
-              ],
-              contradictingSources: [],
-              evidenceGaps: [],
-              sourcesRelatedOnly: false,
-            },
-            {
-              claimAtom: "注意力机制对序列长度是二次复杂度",
-              verdict: "true",
-              evidence: "标准 self-attention 对序列长度呈二次复杂度[1]。",
-              boundary: "线性注意力等变体不在此断言范围。",
-              supportingSources: [
-                {
-                  title: "Efficient Transformers: A Survey",
-                  url: "https://arxiv.org/abs/2009.06732",
-                  snippet: "Survey of efficient attention and complexity.",
-                },
-              ],
-              contradictingSources: [],
-              evidenceGaps: [],
-              sourcesRelatedOnly: false,
-            },
-          ],
-          citationSources: [
-            {
-              title: "Attention Is All You Need",
-              url: "https://arxiv.org/abs/1706.03762",
-              snippet: "Transformer architecture and scaling discussion.",
-            },
-            {
-              title: "Efficient Transformers: A Survey",
-              url: "https://arxiv.org/abs/2009.06732",
-              snippet: "Survey of efficient attention and complexity.",
-            },
-          ],
-          evidenceChain: [
-            {
-              layer: "文献",
-              finding: "扩展与复杂度是两条可独立核查的论断",
-              evidence: "两篇 arXiv 文献分别支撑扩展性与复杂度主张[1][2]。",
-              boundary: "不能用一篇综述代替具体任务的实测。",
-              sourceRefs: [
-                "https://arxiv.org/abs/1706.03762",
-                "https://arxiv.org/abs/2009.06732",
-              ],
-              _citeSources: [
-                {
-                  title: "Attention Is All You Need",
-                  url: "https://arxiv.org/abs/1706.03762",
-                  snippet: "Transformer architecture and scaling discussion.",
-                },
-                {
-                  title: "Efficient Transformers: A Survey",
-                  url: "https://arxiv.org/abs/2009.06732",
-                  snippet: "Survey of efficient attention and complexity.",
-                },
-              ],
-            },
-          ],
-        }}
-        onBack={() => {
-          window.location.href = "/";
-        }}
-        onReverify={() => {
-          window.location.href = "/";
-        }}
-      />
-    );
-  }
-
   if (isModelSettingsPreviewRoute) {
     return <ModelProviderSettingsPreview />;
   }
@@ -378,7 +272,7 @@ function AppContent() {
       onSelectCase={(id) => {
         void handleSelectCase(id);
       }}
-      artifactTitle={activeClaim || "核查卷宗"}
+      artifactTitle={activeClaim}
       artifactOpen={artifactOpen}
       onArtifactOpenChange={setArtifactOpen}
       artifact={

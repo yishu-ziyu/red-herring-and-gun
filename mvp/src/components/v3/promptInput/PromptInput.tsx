@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import styles from "./PromptInput.module.css";
+import { useUiLang } from "../../../lib/useUiLang";
 
 function Icon({
   name,
@@ -203,6 +204,8 @@ export type PromptInputProps = {
   ariaLabel?: string;
   submitLabel?: string;
   disabled?: boolean;
+  /** Keep the editor usable while preventing submission, e.g. during service readiness checks. */
+  submitDisabled?: boolean;
   busy?: boolean;
   /** Extra control in the action row, immediately left of send. */
   trailing?: ReactNode;
@@ -221,10 +224,12 @@ export function PromptInput({
   ariaLabel = "待核查材料",
   submitLabel = "开始核查",
   disabled = false,
+  submitDisabled = false,
   busy = false,
   trailing,
   showModelMenu = false,
 }: PromptInputProps = {}) {
+  const { copy: uiCopy } = useUiLang();
   // `value` mirrors the editor's plain text (skill pills contribute their
   // label), so it drives the empty/placeholder + enhance/send logic.
   const [internalValue, setInternalValue] = useState(valueProp ?? "");
@@ -266,7 +271,7 @@ export function PromptInput({
   const slashKeyLock = useRef(false);
 
   const hasText = value.trim().length > 0;
-  const sendActive = (hasText || attachments.length > 0) && !disabled && !busy;
+  const sendActive = (hasText || attachments.length > 0) && !disabled && !submitDisabled && !busy;
   const slashResults = SKILLS.filter((sk) =>
     sk.name.toLowerCase().includes(slashQuery.toLowerCase())
   );
@@ -645,7 +650,7 @@ export function PromptInput({
   const openPicker = (kind: "image" | "file") => {
     const input = fileRef.current;
     if (!input) return;
-    input.accept = kind === "image" ? "image/*" : "";
+    input.accept = kind === "image" ? "image/*,video/*" : "";
     input.value = "";
     input.dataset.kind = kind;
     input.click();
@@ -730,14 +735,14 @@ export function PromptInput({
             <div
               className={styles.slashMenu}
               role="listbox"
-              aria-label="技能"
+              aria-label={uiCopy.skills}
               data-keyboard={slashKeyboard || undefined}
               onMouseMove={() => {
                 ignoreHoverRef.current = false;
                 if (slashKeyboard) setSlashKeyboard(false);
               }}
             >
-              <div className={styles.slashLabel}>技能</div>
+              <div className={styles.slashLabel}>{uiCopy.skills}</div>
               {slashResults.length ? (
                 slashResults.map((sk, i) => (
                   <button
@@ -759,7 +764,7 @@ export function PromptInput({
                   </button>
                 ))
               ) : (
-                <div className={styles.slashEmpty}>没有匹配的技能</div>
+                <div className={styles.slashEmpty}>{uiCopy.noSkillMatch}</div>
               )}
             </div>
           )}
@@ -771,7 +776,7 @@ export function PromptInput({
               type="button"
               className={[styles.iconBtn, styles.plus].join(" ")}
               data-open={menuOpen || undefined}
-              aria-label="添加材料或技能"
+              aria-label={uiCopy.addMaterialOrSkill}
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen((o) => !o)}
             >
@@ -791,7 +796,7 @@ export function PromptInput({
                   <span className={styles.menuIcon}>
                     <Icon name="image" size={14} />
                   </span>
-                  <span className={styles.menuName}>添加图片</span>
+                  <span className={styles.menuName}>{uiCopy.addImage}</span>
                 </button>
                 <button
                   type="button"
@@ -802,7 +807,7 @@ export function PromptInput({
                   <span className={styles.menuIcon}>
                     <Icon name="paperclip" size={14} />
                   </span>
-                  <span className={styles.menuName}>添加附件</span>
+                  <span className={styles.menuName}>{uiCopy.addAttachment}</span>
                 </button>
                 <div className={styles.menuDivider} />
                 <div
@@ -821,7 +826,7 @@ export function PromptInput({
                     <span className={styles.menuIcon}>
                       <Icon name="book" size={14} />
                     </span>
-                    <span className={styles.menuName}>技能</span>
+                    <span className={styles.menuName}>{uiCopy.skills}</span>
                     <span className={styles.menuChevron}>
                       <Icon name="chevron-right" size={14} />
                     </span>
@@ -911,4 +916,3 @@ export function PromptInput({
     </div>
   );
 }
-

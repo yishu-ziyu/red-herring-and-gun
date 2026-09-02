@@ -78,7 +78,7 @@ describe("v4-ui E2E: Cinema Motion Library", () => {
 describe("v4-ui E2E: v4 改动的零 framer-motion / gsap 依赖", () => {
   it("v4 改动的 tsx 文件不引入 framer-motion 或 gsap", () => {
     const result = execSync(
-      `git diff 3f96e0c..HEAD -- mvp/src/components/v3/ConclusionDockV3.tsx mvp/src/components/v3/auth/LoginView.tsx mvp/src/components/v3/Dashboard.tsx mvp/src/components/v3/settings/PrivacyPolicy.tsx mvp/src/components/v3/panels/InferenceLicensePanel.tsx mvp/src/components/v3/panels/ReasoningTracePanel.tsx mvp/src/components/v3/mission/AgentStatusDot.tsx`,
+      `git diff 3f96e0c..HEAD -- mvp/src/components/v3/auth/LoginView.tsx mvp/src/components/v3/Dashboard.tsx mvp/src/components/v3/settings/PrivacyPolicy.tsx mvp/src/components/v3/panels/InferenceLicensePanel.tsx mvp/src/components/v3/panels/ReasoningTracePanel.tsx mvp/src/components/v3/mission/AgentStatusDot.tsx`,
       { cwd: PROJECT_ROOT, encoding: "utf-8" }
     );
     expect(result).not.toMatch(/framer-motion|gsap/);
