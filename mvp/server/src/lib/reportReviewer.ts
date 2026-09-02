@@ -3,12 +3,10 @@
  *
  * ReportComposer is the proposer; this module is a non-LLM reviewer:
  * contract fields, evidence chain, boundary language, minimal repair.
- * Keep in sync with src/lib/agentRuntime/reportReviewer.ts (client/AgentRuntime).
- * Server cannot import client src (tsconfig rootDir); copy is intentional (ADR-003).
  */
 
 import { boundTinyRumorVerdict } from "./atomSearchQuery.js";
-import { applyPublicCopy, directAnswer } from "./publicCopy.js";
+import { applyPublicCopy, directAnswer, findFuzzyQuantifiers } from "./publicCopy.js";
 
 export interface ReportReviewIssue {
   code: string;
@@ -249,6 +247,31 @@ export function reviewAndRepairReport(
       code: "absolute_public_summary",
       severity: "warn",
       message: "公众摘要用了过绝对措辞",
+    });
+  }
+
+  // 8b) 有绑定来源时，结论必须带 [n] — 判断有出处，不留无主断言句
+  const conclusionText = asString(repaired.conclusion);
+  const hasCitationMark = /\[\d+\]/.test(conclusionText);
+  checks.conclusionCited = !reportHasBoundHttpUrl(repaired) || hasCitationMark;
+  if (!checks.conclusionCited) {
+    issues.push({
+      code: "uncited_conclusion",
+      severity: "warn",
+      message: "存在绑定来源但结论未带 [n] 引用",
+    });
+  }
+
+  // 8c) 模糊量词 — 来源里的具体数字不得改写成「很多 / 大量」等
+  const fuzzyHits = Array.from(
+    new Set([...findFuzzyQuantifiers(conclusionText), ...findFuzzyQuantifiers(publicSummary)])
+  );
+  checks.noFuzzyQuantifiers = fuzzyHits.length === 0;
+  if (!checks.noFuzzyQuantifiers) {
+    issues.push({
+      code: "fuzzy_quantifier",
+      severity: "warn",
+      message: `结论用了模糊量词「${fuzzyHits.join("、")}」，应保留来源中的具体数字`,
     });
   }
 

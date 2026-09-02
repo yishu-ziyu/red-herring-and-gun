@@ -19,8 +19,16 @@ const JARGON_RE =
   /ReportComposer|FactChecker|RumorDetector|SourceValidator|CrossExaminer|AlternativeExplanationSearcher|AgentRuntime|search360|atomSearches|MiniMax-M3|MiniMax|Mimic|StepFun|Tavily|AnySearch|Metaso|function calling|Function Calling|工具调用|智能体|LangChain|CrewAI|\bADK\b|\bAgent\b|360 AI Search|canSay|cannotSay|web_search|web_fetch|todo_write|submit_verdict|investigator/gi;
 
 const FORWARD_RE = /先别转发|建议转发|转不转|二次传播|再传播|勿传播/;
+/** 模糊量词 — 来源里的具体数字不得被改写成这些词。 */
+const FUZZY_QUANTIFIER_RE = /很多|大量|许多|不少|众多/;
 const ESSAY_OPEN_RE = /^(截至目前|总的来说|值得注意的是|众所周知|在当今|综上所述)/;
 const ADVICE_RE = /建议你|请你务必|你应该|应当转发/;
+
+/** 检测模糊量词，返回命中的词（确定性闸上报用）。 */
+export function findFuzzyQuantifiers(text: string): string[] {
+  const matches = (text ?? "").match(new RegExp(FUZZY_QUANTIFIER_RE.source, "g"));
+  return matches ? Array.from(new Set(matches)) : [];
+}
 
 export function faceWord(verdictType: unknown): (typeof FACE_WORDS)[number] {
   const key = typeof verdictType === "string" ? verdictType.trim() : "";

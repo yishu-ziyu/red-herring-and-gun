@@ -293,6 +293,77 @@ describe("reviewAndRepairReport (server)", () => {
     expect(result.issues.some((i) => i.code === "unsourced_hard_verdict")).toBe(false);
   });
 
+  function completeReport(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      verdictType: "true",
+      conclusion: "属实，有公开记录支持[1]。",
+      credibilityScore: 80,
+      summaryForPublic: "有公开记录支持。",
+      recommendation: "答案。",
+      canSay: ["可说属实"],
+      cannotSay: ["无"],
+      evidenceChain: [
+        { layer: "a", finding: "f1", evidence: "e1", boundary: "b1", sourceRefs: [] },
+        { layer: "b", finding: "f2", evidence: "e2", boundary: "b2", sourceRefs: [] },
+        { layer: "c", finding: "f3", evidence: "e3", boundary: "b3", sourceRefs: [] },
+      ],
+      confidenceDimensions: [
+        { dimension: "source_reliability" },
+        { dimension: "evidence_completeness" },
+        { dimension: "consistency" },
+        { dimension: "recency" },
+        { dimension: "authority" },
+      ],
+      closureActions: [{ type: "archive_doubt", label: "归档", content: "x", status: "ready" }],
+      subclaimVerdicts: [
+        {
+          claimAtom: "A",
+          verdict: "true",
+          supportingSources: [{ url: "https://gov.cn/1", title: "通报", snippet: "属实" }],
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  it("warns uncited_conclusion when bound URLs exist but conclusion has no [n]", () => {
+    const result = reviewAndRepairReport(completeReport({ conclusion: "属实，有公开记录支持。" }));
+    expect(result.checks.conclusionCited).toBe(false);
+    expect(result.issues.some((i) => i.code === "uncited_conclusion")).toBe(true);
+  });
+
+  it("no uncited_conclusion when conclusion carries [n]", () => {
+    const result = reviewAndRepairReport(completeReport());
+    expect(result.checks.conclusionCited).toBe(true);
+    expect(result.issues.some((i) => i.code === "uncited_conclusion")).toBe(false);
+  });
+
+  it("no uncited_conclusion when there is no bound URL (unverified)", () => {
+    const result = reviewAndRepairReport(
+      completeReport({
+        verdictType: "unverified",
+        conclusion: "公开材料还撑不住判断。",
+        subclaimVerdicts: [{ claimAtom: "A", verdict: "unverified", supportingSources: [] }],
+      })
+    );
+    expect(result.checks.conclusionCited).toBe(true);
+    expect(result.issues.some((i) => i.code === "uncited_conclusion")).toBe(false);
+  });
+
+  it("warns fuzzy_quantifier when conclusion uses 很多/大量", () => {
+    const result = reviewAndRepairReport(completeReport({ conclusion: "很多公开记录支持该说法[1]。" }));
+    expect(result.checks.noFuzzyQuantifiers).toBe(false);
+    expect(result.issues.some((i) => i.code === "fuzzy_quantifier")).toBe(true);
+  });
+
+  it("no fuzzy_quantifier when concrete numbers are kept", () => {
+    const result = reviewAndRepairReport(
+      completeReport({ conclusion: "2024 年营收 4500 亿元，有公开记录支持[1]。" })
+    );
+    expect(result.checks.noFuzzyQuantifiers).toBe(true);
+    expect(result.issues.some((i) => i.code === "fuzzy_quantifier")).toBe(false);
+  });
+
   it("does not pad an interrupted error-boundary report into a finished dossier", () => {
     const result = reviewAndRepairReport({
       verdictType: "unverified",
