@@ -56,6 +56,7 @@ import {
   callParallelSearchProviders,
   getSearchToolName,
   retrieveAtomSources,
+  type SearchProgressEvent,
 } from "./lib/searchProviders.js";
 
 import {
@@ -192,7 +193,7 @@ export function createHandlers(env: Record<string, string>) {
       });
   }
 
-  function makeSearchOneAtom() {
+  function makeSearchOneAtom(onSearchProgress?: (event: SearchProgressEvent) => void) {
     let reuseHitsPromise: Promise<MemoryCandidateHit[]> | undefined;
     return async (atom: string) => {
       if (!reuseHitsPromise) {
@@ -203,7 +204,7 @@ export function createHandlers(env: Record<string, string>) {
       const reuseHits = await reuseHitsPromise;
       let result: Record<string, unknown>;
       try {
-        result = await retrieveAtomSources(env, atom, reuseHits);
+        result = await retrieveAtomSources(env, atom, reuseHits, onSearchProgress);
       } catch (error) {
         const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
         result = build360SearchFailure(atom, message);
@@ -500,7 +501,7 @@ export function createHandlers(env: Record<string, string>) {
         // 截止 = 总超时 − 10s 收尾余量：补查/复核提前收敛，报告写作不再被总超时截断
         deadline: Date.now() + PIPELINE_TOTAL_TIMEOUT_MS - 10_000,
         runAgent,
-        searchOne: makeSearchOneAtom(),
+        searchOne: makeSearchOneAtom((event) => sendEvent(event)),
         lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
         callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
         evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteCaller(modelChoice)) },
