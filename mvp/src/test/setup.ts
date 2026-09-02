@@ -10,6 +10,35 @@ if (typeof window === "undefined") {
     writable: true,
   });
 
+  // jsdom 无 ResizeObserver：@xyflow/react（核查地图）挂载即需要，给一个 no-op 实现。
+  if (typeof (globalThis as { ResizeObserver?: unknown }).ResizeObserver === "undefined") {
+    class ResizeObserverStub {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    (globalThis as { ResizeObserver?: unknown }).ResizeObserver = ResizeObserverStub;
+  }
+
+  // jsdom 不提供可调用的 matchMedia：mission 组件（雷达/拆解图/动效）默认按「桌面 + 不减弱动效」渲染。
+  // 单个测试文件仍可覆写（ClaimDecompositionFlow.test 的窄屏用例即如此）。
+  if (typeof window.matchMedia !== "function") {
+    Object.defineProperty(window, "matchMedia", {
+      writable: true,
+      configurable: true,
+      value: (query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }),
+    });
+  }
+
   // jsdom 在 vitest 环境下 window.localStorage 可能未挂载（取决于 jsdom 版本与环境配置）。
   // 提供一个 in-memory Storage polyfill，避免 App.test.tsx 的 beforeEach localStorage.clear() 报 undefined。
   if (!window.localStorage) {

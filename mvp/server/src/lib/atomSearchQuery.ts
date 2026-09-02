@@ -137,7 +137,7 @@ export function mergeParallelSearchPayloads(
 ): Record<string, unknown> {
   const sources: Record<string, unknown>[] = [];
   const rankedLists: RankedDoc[][] = [];
-  const seenUrl = new Set<string>();
+  const seenUrl = new Map<string, Record<string, unknown>>();
   const answers: string[] = [];
   const traces: string[] = [];
   const gaps: string[] = [];
@@ -170,8 +170,13 @@ export function mergeParallelSearchPayloads(
     }
     rankedLists.push(ranked);
     for (const { url, rec } of ranked) {
-      if (seenUrl.has(url)) continue;
-      seenUrl.add(url);
+      const first = seenUrl.get(url);
+      if (first) {
+        // 同 URL 再次出现（同 provider 的其它 query 或别的 provider）：UNION 归属，不覆盖。
+        unionProviderOrigins(first, rec.providerOrigins);
+        continue;
+      }
+      seenUrl.set(url, rec);
       sources.push(rec);
     }
   }
@@ -207,6 +212,18 @@ export function mergeParallelSearchPayloads(
     supportQuery: queries[0] || atom,
     contradictQuery: queries[1] || queries[0] || atom,
   };
+}
+
+/** 把 incoming 的 provider 归属并入 target 记录（去重、保序）。 */
+function unionProviderOrigins(target: Record<string, unknown>, incoming: unknown): void {
+  if (!Array.isArray(incoming)) return;
+  const list = Array.isArray(target.providerOrigins)
+    ? (target.providerOrigins.filter((o): o is string => typeof o === "string"))
+    : [];
+  for (const origin of incoming) {
+    if (typeof origin === "string" && !list.includes(origin)) list.push(origin);
+  }
+  target.providerOrigins = list;
 }
 
 function uniqueKeep(items: string[], max: number): string[] {
