@@ -296,6 +296,39 @@ describe("retrieveAtomSources — search_progress 事件", () => {
     expect(done.stats!.rawResultCount).toBe(10);
   });
 
+  it("统计不受 24 条公开来源展示上限污染", async () => {
+    const calls = new Map<string, number>();
+    installFetchStub({
+      byProvider: Object.fromEntries(
+        ALL_PROVIDERS.map((provider) => [
+          provider,
+          () => {
+            const call = (calls.get(provider) ?? 0) + 1;
+            calls.set(provider, call);
+            return {
+              urls: Array.from(
+                { length: 3 },
+                (_, index) => `https://sources.test/${provider}/${call}/${index}`
+              ),
+            };
+          },
+        ])
+      ),
+    });
+    const { events, onProgress } = collectProgress();
+    await retrieveAtomSources(ENV, ATOM, undefined, onProgress);
+
+    const done = events[events.length - 1];
+    expect(done.stats).toEqual({
+      rawResultCount: 30,
+      uniqueSourceCount: 30,
+      sharedSourceCount: 0,
+      singleProviderSourceCount: 30,
+    });
+    // SSE 来源清单可以限长，但统计必须来自限长前的完整结果集。
+    expect(done.sources).toHaveLength(24);
+  });
+
   it("SSE 出口：search_progress 经 toPublicStreamEvent 后只剩产品字段", async () => {
     installFetchStub({ byProvider: eachProviderUrls(["https://a.test/x"]) });
     const { events, onProgress } = collectProgress();

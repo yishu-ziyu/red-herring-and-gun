@@ -127,7 +127,7 @@ describe("T2 nginx writers emit SSE and /r/", () => {
 describe("T3 single live deploy entry", () => {
   it("docs name only ./ops.sh deploy --yes; leftover scripts fail pointing at ops.sh", () => {
     const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
-    const checklist = readFileSync(join(repoRoot, "DEPLOYMENT_CHECKLIST.md"), "utf8");
+    const checklist = readFileSync(join(repoRoot, "docs/PRODUCT_RELEASE_GATE.md"), "utf8");
     expect(readme).toMatch(/\.\/ops\.sh deploy --yes/);
     expect(checklist).toMatch(/\.\/ops\.sh deploy --yes/);
     expect(readme).not.toMatch(/git reset --hard origin\/main/);
