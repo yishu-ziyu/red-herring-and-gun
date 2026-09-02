@@ -278,6 +278,15 @@
   color: var(--zt-text-secondary, #4a4a5a);
 }
 
+/* 核查地图（拆解 + 雷达）：一级内容，位于折叠的运行日志之上 */
+.map {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 12px;
+  min-width: 0;
+}
+
 .advice {
   margin: 0 0 12px;
   max-width: 38em;
