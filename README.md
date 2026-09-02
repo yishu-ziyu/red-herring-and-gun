@@ -70,4 +70,4 @@ npm run build
 
 ## 部署
 
-域名 `gun.yishuziyu.cn`。Nginx 服务静态资源，`/api/` 与 `/health` 代理到本机 Express。入口：`./ops.sh deploy --yes`。发布门禁见 `docs/PRODUCT_RELEASE_GATE.md`。
+域名 `gun.yishuziyu.cn`。Nginx 服务静态资源，`/api/` 与 `/health` 代理到本机 Express。唯一发布入口：`./ops.sh deploy --yes`（不要跑 `deploy-to-aliyun.sh` 或 `mvp/deploy.sh`）。发布门禁见 `docs/PRODUCT_RELEASE_GATE.md`。
