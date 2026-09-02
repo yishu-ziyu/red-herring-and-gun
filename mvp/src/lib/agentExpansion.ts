@@ -88,8 +88,42 @@ export interface HandoffStep {
   error?: string;
 }
 
+/** search_progress 提供方标识（Issue #9 冻结契约） */
+export type SearchProgressProviderId =
+  | "360_search"
+  | "any_search"
+  | "metaso_search"
+  | "tavily_search"
+  | "exa_search";
+
+export type SearchProgressProviderStatus = "pending" | "running" | "completed" | "partial" | "failed";
+
+/** search_progress: 单个检索提供方的实时状态 */
+export interface SearchProgressProvider {
+  id: SearchProgressProviderId;
+  label: string;
+  status: SearchProgressProviderStatus;
+  resultCount: number;
+}
+
+/** search_progress: completed 阶段携带的汇总统计 */
+export interface SearchProgressStats {
+  rawResultCount: number;
+  uniqueSourceCount: number;
+  sharedSourceCount: number;
+  singleProviderSourceCount: number;
+}
+
+/** search_progress: completed 阶段携带的来源清单 */
+export interface SearchProgressSource {
+  title: string;
+  url: string;
+  providerOrigins: string[];
+}
+
 export interface OrchestrateStreamEvent {
   type:
+    | "search_progress"
     | "planner_update"
     | "speculative_update"
     | "consensus_debate_round"
@@ -143,6 +177,18 @@ export interface OrchestrateStreamEvent {
   message?: string;
   code?: string;
   providerErrors?: string[];
+  /** search_progress: 该事件所属原子命题 */
+  atom?: string;
+  /** search_progress: 检索阶段 */
+  phase?: "started" | "progress" | "completed";
+  /** search_progress: 已发出的查询数 */
+  queryCount?: number;
+  /** search_progress: 各检索提供方快照 */
+  providers?: SearchProgressProvider[];
+  /** search_progress: completed 时的汇总统计 */
+  stats?: SearchProgressStats;
+  /** search_progress: completed 时的来源清单 */
+  sources?: SearchProgressSource[];
   /** agent_error: 该步失败后仍可继续收束 */
   recoverable?: boolean;
   timestamp?: number;
