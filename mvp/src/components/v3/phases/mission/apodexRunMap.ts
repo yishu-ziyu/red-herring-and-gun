@@ -3,10 +3,14 @@
  * No Fed replay. No invented URLs. Memo lede answers the claim, not 能信/不能信.
  */
 import type { MissionShellModel, ShellNodeStatus, ShellToolItem } from "../../../../lib/missionShell";
+import type { ShellAtomSearchState } from "../../../../lib/missionShell/types";
 import { humanizeVerdictType } from "../../../../lib/missionShell";
+import { claimAtomKey } from "../../../../lib/claimAtom";
 import { isSearchShellTool, sitesFromSearchResult, type WebSearchSite } from "./WebSearch";
 import { buildInvestigationTodos, type TodoItem } from "./TodoList";
 import { composeResearchMemo } from "./memoMarkdown";
+import type { ClaimDecompositionNode, ClaimDecompositionStatus } from "./ClaimDecompositionFlow";
+import type { SearchRadarProvider, SearchRadarStats } from "./SearchRadar";
 
 export type ApodexStepKind = "thought" | "search" | "visit" | "board";
 
@@ -44,6 +48,25 @@ export type ApodexReport = {
   sources: Array<{ title: string; url?: string }>;
 };
 
+/** 命题节点：ClaimDecompositionFlow 入参 + 最终报告逐条判定（按 claimAtomKey 稳定关联） */
+export type ApodexAtomNode = ClaimDecompositionNode & { verdictLabel?: string };
+
+/** 单个原子的检索雷达数据（search_progress 收敛态直通 SearchRadar props） */
+export type ApodexAtomRadar = {
+  providers: SearchRadarProvider[];
+  stats?: SearchRadarStats;
+  phase: "idle" | "started" | "progress" | "completed";
+  sources: Array<{ title: string; url?: string }>;
+};
+
+/** 核查地图：原句 → 命题拆解 + 每原子雷达。rumor_detector 完成即出现，不等最终报告。 */
+export type ApodexClaimMap = {
+  atoms: ApodexAtomNode[];
+  /** 默认选中的首个可核查原子；无可核查原子时缺省（此时不展示雷达） */
+  defaultAtomId?: string;
+  radarByAtom: Record<string, ApodexAtomRadar>;
+};
+
 export type ApodexRunModel = {
   claim: string;
   live: boolean;
@@ -51,6 +74,7 @@ export type ApodexRunModel = {
   steps: ApodexStep[];
   board: TodoItem[];
   boardVisible: boolean;
+  claimMap?: ApodexClaimMap;
   report?: ApodexReport;
   errorMessage?: string;
 };
@@ -328,6 +352,100 @@ function buildReport(model: MissionShellModel): ApodexReport | undefined {
   return undefined;
 }
 
+/** search_progress 状态 → 命题节点状态（Issue #14 固定映射）。 */
+function atomNodeStatus(
+  verifiable: boolean,
+  state: ShellAtomSearchState | undefined
+): ClaimDecompositionStatus {
+  if (!verifiable) return "unverifiable";
+  if (!state || state.phase === "idle") return "idle";
+  if (state.phase === "completed") {
+    const hasEvidence = (state.stats?.uniqueSourceCount ?? 0) > 0 || state.sources.length > 0;
+    return hasEvidence ? "completed" : "failed";
+  }
+  return "searching";
+}
+
+/** complete 事件的 finalReport 留在 report:final 思考条目的 detail 里（streamAdapter 契约）。 */
+function finalReportOf(model: MissionShellModel): Record<string, unknown> | undefined {
+  if (!model.verdict.present) return undefined;
+  const item = model.thoughtItems.find((t) => t.key === "report:final");
+  const report = item?.detail?.finalReport;
+  return report && typeof report === "object" ? (report as Record<string, unknown>) : undefined;
+}
+
+/**
+ * 最终报告逐条判定 → claimAtomKey → verdict 原值。
+ * 稳定 ID = claimAtomKey：服务端 claimItems.text 与 subclaimVerdicts.claimAtom 都是这个键
+ * （buildClaimItems 预交错时已 key 化），精确匹配，不做模糊文本包含、不按数组位置猜。
+ */
+function finalVerdictByAtom(model: MissionShellModel): Map<string, string> {
+  const out = new Map<string, string>();
+  const report = finalReportOf(model);
+  if (!report) return out;
+  const rows = Array.isArray(report.claimItems)
+    ? report.claimItems.map((raw) => {
+        const rec = (raw ?? {}) as Record<string, unknown>;
+        const verdict = (rec.verdict ?? {}) as Record<string, unknown>;
+        return { text: typeof rec.text === "string" ? rec.text : "", value: verdict.verdict };
+      })
+    : Array.isArray(report.subclaimVerdicts)
+      ? report.subclaimVerdicts.map((raw) => {
+          const rec = (raw ?? {}) as Record<string, unknown>;
+          return {
+            text: typeof rec.claimAtom === "string" ? rec.claimAtom : "",
+            value: rec.verdict,
+          };
+        })
+      : [];
+  for (const row of rows) {
+    if (!row.text || typeof row.value !== "string" || !row.value) continue;
+    out.set(claimAtomKey(row.text), row.value);
+  }
+  return out;
+}
+
+/** exaggerated（被夸大）没有独立人话档，就近并入「只能信一部分」。 */
+function humanizeAtomVerdict(value: string): string {
+  return humanizeVerdictType(value === "exaggerated" ? "partial" : value);
+}
+
+/**
+ * 核查地图：rumor_detector 完成（understanding 出现）即生成，不等最终报告。
+ * 原子 id 用 claimAtomKey(text)：与 search_progress 的 atom 键、报告 claimItems 的
+ * text 键同属一个稳定键空间，三方精确对齐。
+ */
+function buildClaimMap(model: MissionShellModel): ApodexClaimMap | undefined {
+  const understanding = model.understanding;
+  if (!understanding || understanding.atoms.length === 0) return undefined;
+  const verdictByKey = finalVerdictByAtom(model);
+  const atoms: ApodexAtomNode[] = [];
+  const radarByAtom: Record<string, ApodexAtomRadar> = {};
+  let defaultAtomId: string | undefined;
+  for (const atom of understanding.atoms) {
+    const id = claimAtomKey(atom.text);
+    const state = model.atomSearch[id];
+    const verdict = atom.verifiable ? verdictByKey.get(id) : undefined;
+    atoms.push({
+      id,
+      text: atom.text,
+      verifiable: atom.verifiable,
+      type: atom.type,
+      status: atomNodeStatus(atom.verifiable, state),
+      verdictLabel: verdict ? humanizeAtomVerdict(verdict) : undefined,
+    });
+    if (!atom.verifiable) continue;
+    radarByAtom[id] = {
+      phase: state?.phase ?? "idle",
+      providers: state?.providers ?? [],
+      stats: state?.stats,
+      sources: (state?.sources ?? []).map((s) => ({ title: s.title, url: s.url || undefined })),
+    };
+    if (!defaultAtomId) defaultAtomId = id;
+  }
+  return { atoms, defaultAtomId, radarByAtom };
+}
+
 export function mapShellToApodexRun(model: MissionShellModel): ApodexRunModel {
   const steps: ApodexStep[] = [];
   let boardInserted = false;
@@ -468,6 +586,7 @@ export function mapShellToApodexRun(model: MissionShellModel): ApodexRunModel {
     steps,
     board,
     boardVisible: model.live || started,
+    claimMap: buildClaimMap(model),
     report: buildReport(model),
     errorMessage: model.errorMessage,
   };
