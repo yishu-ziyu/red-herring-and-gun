@@ -25,6 +25,8 @@ export type ClaimDecompositionNode = {
   verifiable: boolean;
   type?: string;
   status: ClaimDecompositionStatus;
+  /** 最终报告到位后展示的逐条判定（人话档，如「不能信」）；缺省不显示 */
+  verdictLabel?: string;
 };
 
 export type ClaimDecompositionFlowProps = {
@@ -92,7 +94,7 @@ function ClaimCard({
       role="button"
       tabIndex={0}
       aria-pressed={selected}
-      aria-label={`命题 ${index! + 1}：${atom.text}，${label}`}
+      aria-label={`命题 ${index! + 1}：${atom.text}，${label}${atom.verdictLabel ? `，判定 ${atom.verdictLabel}` : ""}`}
       className={`${styles.card} ${styles.cardAtom}`}
       data-testid={`atom-card-${atom.id}`}
       data-atom-id={atom.id}
@@ -115,6 +117,11 @@ function ClaimCard({
         <span className={styles.pill} data-status={st}>
           {label}
         </span>
+        {atom.verdictLabel ? (
+          <span className={styles.verdict} data-testid={`atom-verdict-${atom.id}`}>
+            {atom.verdictLabel}
+          </span>
+        ) : null}
       </span>
     </div>
   );

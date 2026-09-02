@@ -5,6 +5,8 @@
 import { useEffect, useRef, useState } from "react";
 import { TodoList } from "./TodoList";
 import type { ApodexRunModel, ApodexStep } from "./apodexRunMap";
+import { ClaimDecompositionFlow } from "./ClaimDecompositionFlow";
+import { SearchRadar } from "./SearchRadar";
 import { ResearchMemo } from "./ResearchMemo";
 import { UiLangSwitch } from "../../UiLangSwitch";
 import { processStepLabel, stopChromeLabel, type UiCopy } from "../../../../lib/uiLang";
@@ -268,15 +270,29 @@ function TurnSection({
 }) {
   const [processOpen, setProcessOpen] = useState(!model.report);
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
+  // 选中命题只由用户点击改变：新 SSE 事件与原子状态更新都不重置、不自动跳（Issue #14）。
+  const [pickedAtomId, setPickedAtomId] = useState<string | null>(null);
+  const [sourcesOpenFor, setSourcesOpenFor] = useState<string | null>(null);
   const [ticker, setTicker] = useState<{ id: string; at: number } | null>(null);
   const tickingId = model.steps.find((s) => s.kind === "thought" && s.ticker && s.status === "loading")?.id;
   if (tickingId && ticker?.id !== tickingId) setTicker({ id: tickingId, at: Date.now() });
   if (!tickingId && ticker != null) setTicker(null);
 
+  // 核查地图是一级内容（渲染在日志之前）；运行日志仍是次要折叠区：
+  // 报告到位自动收起，直播中保持展开。依赖只在「报告到位」时变化，
+  // 用户手动展开日志不会被新事件重置。
   useEffect(() => {
     if (model.report) setProcessOpen(false);
     else if (live) setProcessOpen(true);
   }, [model.report?.verdictLabel, live]);
+
+  const claimMap = model.claimMap;
+  const selectedAtomId = claimMap
+    ? pickedAtomId && claimMap.atoms.some((a) => a.id === pickedAtomId)
+      ? pickedAtomId
+      : claimMap.defaultAtomId
+    : undefined;
+  const selectedRadar = selectedAtomId ? claimMap?.radarByAtom[selectedAtomId] : undefined;
 
   const isOpen = (id: string) => openIds[id] === true;
   const toggle = (id: string) => {
@@ -303,11 +319,53 @@ function TurnSection({
         </p>
       ) : null}
 
-      {model.steps.length === 0 && live ? (
+      {model.steps.length === 0 && live && !claimMap ? (
         <div className={styles.planning}>
           <span className={styles.spin} aria-hidden />
           <span>{copy.planning}</span>
         </div>
+      ) : null}
+
+      {claimMap ? (
+        <section className={styles.map} aria-label="核查地图" data-testid="claim-map">
+          <ClaimDecompositionFlow
+            claim={model.claim}
+            atoms={claimMap.atoms}
+            selectedAtomId={selectedAtomId}
+            onSelectAtom={(id) => {
+              setPickedAtomId(id);
+              setSourcesOpenFor(null);
+            }}
+          />
+          {selectedRadar && selectedRadar.providers.length > 0 ? (
+            <SearchRadar
+              providers={selectedRadar.providers}
+              stats={selectedRadar.stats}
+              phase={selectedRadar.phase}
+              onOpenSources={
+                selectedRadar && selectedRadar.sources.length > 0 && selectedAtomId
+                  ? () =>
+                      setSourcesOpenFor((v) => (v === selectedAtomId ? null : selectedAtomId))
+                  : undefined
+              }
+            />
+          ) : null}
+          {sourcesOpenFor && sourcesOpenFor === selectedAtomId && selectedRadar ? (
+            <div className={styles.visitPanel} data-testid="atom-sources">
+              {selectedRadar.sources.map((s) => (
+                <div key={s.url || s.title} className={styles.visitBox}>
+                  {s.url ? (
+                    <a href={s.url} target="_blank" rel="noopener noreferrer">
+                      {s.title}
+                    </a>
+                  ) : (
+                    s.title
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
       {model.steps.length > 0 && (live || stepCount > 0) ? (
