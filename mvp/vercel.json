@@ -5,11 +5,15 @@
   "rewrites": [
     {
       "source": "/health",
-      "destination": "/health.json"
+      "destination": "http://121.89.90.68/health"
     },
     {
       "source": "/api/:path*",
-      "destination": "https://gun.yishuziyu.cn/api/:path*"
+      "destination": "http://121.89.90.68/api/:path*"
+    },
+    {
+      "source": "/r/:path*",
+      "destination": "http://121.89.90.68/r/:path*"
     },
     {
       "source": "/((?!api/|.*\\..+$).*)",
