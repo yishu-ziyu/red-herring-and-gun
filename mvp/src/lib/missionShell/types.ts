@@ -67,6 +67,41 @@ export interface ShellUnderstanding {
   }>;
 }
 
+/** search_progress 收敛后的单个检索提供方状态（id 已放宽为 string，兼容未知提供方） */
+export interface ShellAtomSearchProvider {
+  id: string;
+  label: string;
+  status: "pending" | "running" | "completed" | "partial" | "failed";
+  resultCount: number;
+}
+
+/** search_progress completed 阶段的汇总统计 */
+export interface ShellAtomSearchStats {
+  rawResultCount: number;
+  uniqueSourceCount: number;
+  sharedSourceCount: number;
+  singleProviderSourceCount: number;
+}
+
+/** search_progress completed 阶段的来源清单 */
+export interface ShellAtomSearchSource {
+  title: string;
+  url: string;
+  providerOrigins: string[];
+}
+
+/** 单个原子命题的检索进度（search_progress SSE 按 atom 累积后的稳定状态模型） */
+export interface ShellAtomSearchState {
+  atom: string;
+  phase: "idle" | "started" | "progress" | "completed";
+  queryCount: number;
+  providers: ShellAtomSearchProvider[];
+  stats?: ShellAtomSearchStats;
+  sources: ShellAtomSearchSource[];
+  /** 最近一次被采纳事件的 timestamp，用于乱序事件守卫 */
+  timestamp?: number;
+}
+
 /** Final verdict card when complete — first-screen decision payload */
 export interface ShellVerdictCard {
   present: boolean;
@@ -96,6 +131,8 @@ export interface MissionShellModel {
   agents: ShellAgentChip[];
   /** 系统把原句读成了哪些可核查命题（rumor_detector 拆分结果，一级可见） */
   understanding?: ShellUnderstanding;
+  /** 各原子命题的检索进度（search_progress 按 atom 独立累积，互不覆盖） */
+  atomSearch: Record<string, ShellAtomSearchState>;
   verdict: ShellVerdictCard;
   /** true while stream has not completed */
   live: boolean;
