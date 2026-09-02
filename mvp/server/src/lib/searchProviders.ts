@@ -449,12 +449,18 @@ export async function retrieveAtomSources(
       : [];
     merged.unresolvedEvidenceGaps = [...gaps, ...failures].slice(0, 8);
   }
-  const mergedSources = Array.isArray(merged.sources)
-    ? (merged.sources as Array<Record<string, unknown>>)
-    : [];
+  // 统计必须基于截断前的完整结果集。merged.sources 只保留前 24 条供后续 Agent
+  // 使用，不能反过来污染“真实去重来源数”。公开来源清单仍限长，避免 SSE 过大。
+  const progressSources = ok.flatMap((payload) =>
+    Array.isArray(payload.sources)
+      ? payload.sources.filter(
+          (source): source is Record<string, unknown> => Boolean(source) && typeof source === "object"
+        )
+      : []
+  );
   emit("completed", {
-    stats: computeSearchProgressStats(mergedSources, rawResultCount),
-    sources: publicProgressSources(mergedSources),
+    stats: computeSearchProgressStats(progressSources, rawResultCount),
+    sources: publicProgressSources(progressSources).slice(0, 24),
   });
   return merged;
 }
