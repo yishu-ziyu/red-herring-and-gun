@@ -1,0 +1,12 @@
+/* Ported from Magic UI AnimatedBeam (MIT); Tailwind utilities inlined here. */
+.beam {
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateZ(0);
+  overflow: visible;
+}
+.gpu {
+  transform: translateZ(0);
+}
