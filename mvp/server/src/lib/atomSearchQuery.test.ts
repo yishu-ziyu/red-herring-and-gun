@@ -76,6 +76,21 @@ describe("atomSearchQuery", () => {
     expect(String(merged.contradictQuery)).toMatch(/辟谣/);
   });
 
+  it("跨 query 合并同 URL 时 UNION providerOrigins，不丢后到归属", () => {
+    const merged = mergeParallelSearchPayloads("甘南景区免票", [
+      { sources: [{ url: "https://a.test/x", title: "t", providerOrigins: ["360_search"] }] },
+      {
+        sources: [
+          { url: "https://a.test/x", title: "t-dup", providerOrigins: ["tavily_search"] },
+          { url: "https://a.test/x", title: "t-same-provider", providerOrigins: ["360_search"] },
+        ],
+      },
+    ]);
+    const sources = merged.sources as Array<{ url: string; providerOrigins: string[] }>;
+    expect(sources).toHaveLength(1);
+    expect(sources[0].providerOrigins.slice().sort()).toEqual(["360_search", "tavily_search"]);
+  });
+
   it("对题辟谣页排在零重叠的今日辟谣合集前面", () => {
     const merged = mergeParallelSearchPayloads("电瓶车被偷送到非洲", [
       {
