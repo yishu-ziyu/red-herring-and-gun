@@ -1,0 +1,202 @@
+/* SearchRadar — 多路检索雷达（Issue #12，纯展示组件）。 */
+.radar {
+  --c-text: #0b0d12;
+  --c-muted: #6b7078;
+  --c-border: #e6e8ec;
+  --c-line: #d4d7dd;
+  --c-success: #15a06a;
+  --c-partial: #b45309;
+  --c-failed: #b3261e;
+  --c-accent: #0ea5b7;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font: 13px/1.45 system-ui, -apple-system, sans-serif;
+  color: var(--c-text);
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px var(--c-border);
+  padding: 10px 12px 12px;
+  margin: 6px 0 12px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.phase {
+  color: var(--c-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 画布：provider 行在上，证据池在下；beam 层绝对铺满且位于文字之下。 */
+.canvas {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 2px 0 0;
+}
+.canvas > ul,
+.pool {
+  position: relative;
+  z-index: 1;
+}
+
+.providers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.provider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: #f7f8fa;
+}
+.providerIcon {
+  flex: none;
+  display: inline-flex;
+  color: var(--c-muted);
+}
+.provider[data-status="completed"] .providerIcon {
+  color: var(--c-success);
+}
+.provider[data-status="partial"] .providerIcon {
+  color: var(--c-partial);
+}
+.provider[data-status="failed"] .providerIcon {
+  color: var(--c-failed);
+}
+.provider[data-status="running"] .providerIcon {
+  color: var(--c-accent);
+}
+.providerLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+}
+.providerStatus {
+  flex: none;
+  color: var(--c-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.provider[data-status="completed"] .providerStatus {
+  color: var(--c-success);
+}
+.provider[data-status="partial"] .providerStatus {
+  color: var(--c-partial);
+}
+.provider[data-status="failed"] .providerStatus {
+  color: var(--c-failed);
+}
+/* beam 出发点：行右端的小端口。 */
+.port {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--c-line);
+}
+.provider[data-status="running"] .port {
+  background: var(--c-accent);
+}
+
+.pool {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: #f4f5f7;
+  box-shadow: inset 0 0 0 1px var(--c-border);
+  max-width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+.poolTitle {
+  font-weight: 600;
+}
+.poolStats {
+  color: var(--c-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.poolPending {
+  color: var(--c-muted);
+  font-size: 12px;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.summaryLine {
+  margin: 0;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.footnote {
+  margin: 0;
+  color: var(--c-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.openSources {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--c-line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--c-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.openSources:disabled {
+  color: var(--c-muted);
+  cursor: default;
+  background: #f7f8fa;
+}
+.openSources:not(:disabled):hover {
+  background: #f4f5f7;
+}
+
+/* 兜底：即使 JS 未捕获到偏好变化，动画元素也不在 reduce 下循环。 */
+@media (prefers-reduced-motion: reduce) {
+  .canvas svg {
+    animation: none !important;
+  }
+}

@@ -9,6 +9,8 @@ import { buildQueriesWithReuse } from "./queryReuse.js";
 
 import { mergeParallelSearchPayloads } from "./atomSearchQuery.js";
 
+import { canonicalizeUrl } from "./retrievalFilter.js";
+
 import type { MemoryCandidateHit } from "./memoryCandidateTypes.js";
 
 import { stringItems } from "./valueCoerce.js";
@@ -155,6 +157,33 @@ async function call360AiSearch({
 
 export type SearchProviderId = "360_search" | "any_search" | "metaso_search" | "tavily_search" | "exa_search";
 
+/** 单 Provider 在产品侧的进度态（SSE search_progress 用，不含任何诊断/密钥/请求 ID）。 */
+export type SearchProviderProgress = {
+  id: SearchProviderId;
+  label: string;
+  status: "pending" | "running" | "completed" | "partial" | "failed";
+  resultCount: number;
+};
+
+/** 每原子一条的多路检索进度事件（前端消费，字段语义冻结自 Issue #9）。 */
+export type SearchProgressEvent = {
+  type: "search_progress";
+  atom: string;
+  phase: "started" | "progress" | "completed";
+  queryCount: number;
+  providers: SearchProviderProgress[];
+  stats?: {
+    rawResultCount: number;
+    uniqueSourceCount: number;
+    sharedSourceCount: number;
+    singleProviderSourceCount: number;
+  };
+  sources?: Array<{ title: string; url: string; providerOrigins: string[] }>;
+  timestamp: number;
+};
+
+const SEARCH_PROVIDERS: SearchProviderId[] = ["360_search", "any_search", "metaso_search", "tavily_search", "exa_search"];
+
 export async function callSearchProvider({
   env,
   provider,
@@ -204,23 +233,41 @@ async function callSearchProviderWithTimeout({
   );
 }
 
+/** 单 Provider 单次查询的调用结果（仅产品字段，无诊断）。 */
+export type ProviderCallEvent = {
+  provider: SearchProviderId;
+  status: "running" | "completed" | "failed";
+  resultCount: number;
+};
+
 export async function callParallelSearchProviders({
   env,
   query,
   model,
   refProm,
+  onProviderEvent,
 }: {
   env: Record<string, string>;
   query: string;
   model?: string;
   refProm?: string;
+  /** 每个 Provider 的 start/success/failure 实时上报（SSE search_progress 数据源）。 */
+  onProviderEvent?: (event: ProviderCallEvent) => void;
 }) {
-  const providers: SearchProviderId[] = ["360_search", "any_search", "metaso_search", "tavily_search", "exa_search"];
+  const providers: SearchProviderId[] = SEARCH_PROVIDERS;
   const settled = await Promise.allSettled(
-    providers.map(async (provider) => ({
-      provider,
-      result: await callSearchProviderWithTimeout({ env, provider, query, model, refProm }),
-    }))
+    providers.map(async (provider) => {
+      onProviderEvent?.({ provider, status: "running", resultCount: 0 });
+      try {
+        const result = await callSearchProviderWithTimeout({ env, provider, query, model, refProm });
+        const resultCount = Array.isArray(result?.sources) ? result.sources.length : 0;
+        onProviderEvent?.({ provider, status: "completed", resultCount });
+        return { provider, result };
+      } catch (error) {
+        onProviderEvent?.({ provider, status: "failed", resultCount: 0 });
+        throw error;
+      }
+    })
   );
 
   const successes: Array<{ provider: SearchProviderId; result: any }> = [];
@@ -239,7 +286,10 @@ export async function callParallelSearchProviders({
     throw new Error(failures.join("；") || "所有搜索 Provider 均未返回真实结果");
   }
 
-  const sources = successes.flatMap(({ result }) => result.sources ?? []);
+  // 每条来源打上来源 Provider 归属；mergeParallelSearchPayloads 跨查询 UNION。
+  const sources = successes.flatMap(({ provider, result }) =>
+    (result.sources ?? []).map((source: any) => ({ ...source, providerOrigins: [provider] }))
+  );
   const has360Success = successes.some(({ provider }) => provider === "360_search");
   const providerSummary = successes
     .map(({ provider, result }) => `${getProviderLabel(provider)} ${result.sources?.length ?? 0} 条`)
@@ -257,15 +307,120 @@ export async function callParallelSearchProviders({
   };
 }
 
+/** 收敛统计：rawResultCount 由调用方传入（含重复的逐 provider 逐 query 返回数之和）。 */
+export function computeSearchProgressStats(
+  sources: Array<Record<string, unknown>>,
+  rawResultCount: number
+): NonNullable<SearchProgressEvent["stats"]> {
+  const originsByKey = new Map<string, Set<string>>();
+  for (const rec of sources) {
+    if (!rec || typeof rec !== "object") continue;
+    const url = String(rec.url ?? "").trim();
+    if (!url) continue;
+    const key = canonicalizeUrl(url) ?? url;
+    const origins = Array.isArray(rec.providerOrigins)
+      ? rec.providerOrigins.filter((o): o is string => typeof o === "string")
+      : [];
+    const set = originsByKey.get(key) ?? new Set<string>();
+    origins.forEach((o) => set.add(o));
+    originsByKey.set(key, set);
+  }
+  let sharedSourceCount = 0;
+  let singleProviderSourceCount = 0;
+  for (const set of originsByKey.values()) {
+    if (set.size >= 2) sharedSourceCount += 1;
+    else if (set.size === 1) singleProviderSourceCount += 1;
+  }
+  return { rawResultCount, uniqueSourceCount: originsByKey.size, sharedSourceCount, singleProviderSourceCount };
+}
+
+/** 事件 sources 与 stats 同口径：按规范化 URL 合并 providerOrigins，只留产品字段。 */
+function publicProgressSources(
+  sources: Array<Record<string, unknown>>
+): NonNullable<SearchProgressEvent["sources"]> {
+  const byKey = new Map<string, { title: string; url: string; providerOrigins: string[] }>();
+  for (const rec of sources) {
+    if (!rec || typeof rec !== "object") continue;
+    const url = String(rec.url ?? "").trim();
+    if (!url) continue;
+    const key = canonicalizeUrl(url) ?? url;
+    const origins = Array.isArray(rec.providerOrigins)
+      ? rec.providerOrigins.filter((o): o is string => typeof o === "string")
+      : [];
+    const existing = byKey.get(key);
+    if (existing) {
+      for (const o of origins) if (!existing.providerOrigins.includes(o)) existing.providerOrigins.push(o);
+      continue;
+    }
+    byKey.set(key, { title: String(rec.title ?? "").slice(0, 200), url, providerOrigins: [...origins] });
+  }
+  return [...byKey.values()];
+}
+
 /** Production per-atom search: recipe + accepted reuse query, then merge URLs. */
 export async function retrieveAtomSources(
   env: Record<string, string>,
   atom: string,
-  reuseHits?: MemoryCandidateHit[]
+  reuseHits?: MemoryCandidateHit[],
+  onProgress?: (event: SearchProgressEvent) => void
 ) {
   const queries = buildQueriesWithReuse(atom, reuseHits ?? []);
+  const queryCount = queries.length;
+
+  // 跨 query 聚合的 provider 状态：running 计数 + 成功/失败调用数 + 累计返回条数。
+  const inFlight = new Map<SearchProviderId, number>();
+  const okCalls = new Map<SearchProviderId, number>();
+  const failedCalls = new Map<SearchProviderId, number>();
+  const resultTotals = new Map<SearchProviderId, number>();
+
+  const statusOf = (provider: SearchProviderId): SearchProviderProgress["status"] => {
+    if ((inFlight.get(provider) ?? 0) > 0) return "running";
+    const ok = okCalls.get(provider) ?? 0;
+    const fail = failedCalls.get(provider) ?? 0;
+    if (ok + fail === 0) return "pending";
+    if (ok === 0) return "failed";
+    return fail > 0 ? "partial" : "completed";
+  };
+  const emit = (
+    phase: SearchProgressEvent["phase"],
+    extra?: Pick<SearchProgressEvent, "stats" | "sources">
+  ) => {
+    if (!onProgress) return;
+    onProgress({
+      type: "search_progress",
+      atom,
+      phase,
+      queryCount,
+      providers: SEARCH_PROVIDERS.map((provider) => ({
+        id: provider,
+        label: getProviderLabel(provider),
+        status: statusOf(provider),
+        resultCount: resultTotals.get(provider) ?? 0,
+      })),
+      timestamp: Date.now(),
+      ...extra,
+    });
+  };
+
+  const onProviderEvent = (event: ProviderCallEvent) => {
+    const provider = event.provider;
+    if (event.status === "running") {
+      inFlight.set(provider, (inFlight.get(provider) ?? 0) + 1);
+    } else {
+      inFlight.set(provider, Math.max(0, (inFlight.get(provider) ?? 1) - 1));
+      if (event.status === "completed") {
+        okCalls.set(provider, (okCalls.get(provider) ?? 0) + 1);
+        resultTotals.set(provider, (resultTotals.get(provider) ?? 0) + event.resultCount);
+      } else {
+        failedCalls.set(provider, (failedCalls.get(provider) ?? 0) + 1);
+      }
+    }
+    emit("progress");
+  };
+
+  emit("started");
   const settled = await Promise.allSettled(
-    queries.map((query) => callParallelSearchProviders({ env, query }))
+    queries.map((query) => callParallelSearchProviders({ env, query, onProviderEvent }))
   );
   const ok: Record<string, unknown>[] = [];
   const failures: string[] = [];
@@ -277,7 +432,14 @@ export async function retrieveAtomSources(
     const message = item.reason instanceof Error ? item.reason.message : String(item.reason);
     failures.push(`${queries[index]}：${message}`);
   });
+  const rawResultCount = SEARCH_PROVIDERS.reduce((n, p) => n + (resultTotals.get(p) ?? 0), 0);
+
   if (ok.length === 0) {
+    // 全失败：completed 帧给出可解释的全 failed 状态（无来源、统计归零），兜底行为不变。
+    emit("completed", {
+      stats: computeSearchProgressStats([], rawResultCount),
+      sources: [],
+    });
     return build360SearchFailure(atom, failures.join("；") || "检索未返回真实结果");
   }
   const merged = mergeParallelSearchPayloads(atom, ok);
@@ -287,6 +449,13 @@ export async function retrieveAtomSources(
       : [];
     merged.unresolvedEvidenceGaps = [...gaps, ...failures].slice(0, 8);
   }
+  const mergedSources = Array.isArray(merged.sources)
+    ? (merged.sources as Array<Record<string, unknown>>)
+    : [];
+  emit("completed", {
+    stats: computeSearchProgressStats(mergedSources, rawResultCount),
+    sources: publicProgressSources(mergedSources),
+  });
   return merged;
 }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { OrchestrateStreamEvent } from "../agentExpansion";
 import { adaptOrchestrateStreamToShell } from "./streamAdapter";
 import {
   FIXTURE_AGENT_ERROR,
@@ -530,4 +531,121 @@ describe("adaptOrchestrateStreamToShell", () => {
     expect(model.phaseLabel).toBe("追索证据");
   });
 
+  // ── Issue #11: search_progress → 按 atom 累积的检索状态 ──────────────
+
+  const sp = (e: {
+    atom: string;
+    phase: "started" | "progress" | "completed";
+    queryCount: number;
+    providers?: Array<{ id: string; label: string; status: string; resultCount: number }>;
+    stats?: Record<string, number>;
+    sources?: Array<{ title: string; url: string; providerOrigins: string[] }>;
+    timestamp: number;
+  }): OrchestrateStreamEvent => ({ type: "search_progress", ...e }) as OrchestrateStreamEvent;
+
+  const ATOM_A = "隔夜菜加热会产生致癌物";
+  const ATOM_B = "隔夜菜亚硝酸盐超标";
+
+  it("search_progress: 两个 atom 的事件交错到达时各自独立累积", () => {
+    const model = adaptOrchestrateStreamToShell([
+      sp({ atom: ATOM_A, phase: "started", queryCount: 1, providers: [{ id: "360_search", label: "360", status: "running", resultCount: 0 }], timestamp: 1 }),
+      sp({ atom: ATOM_B, phase: "started", queryCount: 1, providers: [{ id: "exa_search", label: "Exa", status: "running", resultCount: 0 }], timestamp: 2 }),
+      sp({ atom: ATOM_A, phase: "progress", queryCount: 2, providers: [{ id: "360_search", label: "360", status: "completed", resultCount: 5 }], timestamp: 3 }),
+      sp({ atom: ATOM_B, phase: "progress", queryCount: 1, providers: [{ id: "exa_search", label: "Exa", status: "completed", resultCount: 3 }], timestamp: 4 }),
+    ]);
+
+    const a = model.atomSearch[ATOM_A];
+    const b = model.atomSearch[ATOM_B];
+    expect(a?.phase).toBe("progress");
+    expect(a?.queryCount).toBe(2);
+    expect(a?.providers).toEqual([{ id: "360_search", label: "360", status: "completed", resultCount: 5 }]);
+    expect(b?.phase).toBe("progress");
+    expect(b?.queryCount).toBe(1);
+    expect(b?.providers).toEqual([{ id: "exa_search", label: "Exa", status: "completed", resultCount: 3 }]);
+  });
+
+  it("search_progress: 同一 provider 重复相同 progress 幂等，不产生重复行", () => {
+    const ev = sp({ atom: ATOM_A, phase: "progress", queryCount: 1, providers: [{ id: "tavily_search", label: "Tavily", status: "running", resultCount: 2 }], timestamp: 5 });
+    const model = adaptOrchestrateStreamToShell([ev, { ...ev }, { ...ev }]);
+    const a = model.atomSearch[ATOM_A];
+    expect(a?.providers).toHaveLength(1);
+    expect(a?.providers[0]).toEqual({ id: "tavily_search", label: "Tavily", status: "running", resultCount: 2 });
+    expect(a?.phase).toBe("progress");
+  });
+
+  it("search_progress: completed 后迟到的旧 running 不回退 atom 状态", () => {
+    const model = adaptOrchestrateStreamToShell([
+      sp({ atom: ATOM_A, phase: "started", queryCount: 1, providers: [{ id: "metaso_search", label: "Metaso", status: "running", resultCount: 0 }], timestamp: 10 }),
+      sp({ atom: ATOM_A, phase: "completed", queryCount: 2, providers: [{ id: "metaso_search", label: "Metaso", status: "completed", resultCount: 8 }], timestamp: 12 }),
+      // 乱序：timestamp 更旧的 running 到达
+      sp({ atom: ATOM_A, phase: "progress", queryCount: 1, providers: [{ id: "metaso_search", label: "Metaso", status: "running", resultCount: 1 }], timestamp: 11 }),
+    ]);
+    const a = model.atomSearch[ATOM_A];
+    expect(a?.phase).toBe("completed");
+    expect(a?.queryCount).toBe(2);
+    expect(a?.providers[0].status).toBe("completed");
+    expect(a?.providers[0].resultCount).toBe(8);
+  });
+
+  it("search_progress: 提供方失败状态可被 UI 消费（failed/partial 保留）", () => {
+    const model = adaptOrchestrateStreamToShell([
+      sp({
+        atom: ATOM_A,
+        phase: "progress",
+        queryCount: 1,
+        providers: [
+          { id: "360_search", label: "360", status: "failed", resultCount: 0 },
+          { id: "any_search", label: "AnySearch", status: "partial", resultCount: 4 },
+        ],
+        timestamp: 3,
+      }),
+    ]);
+    const statuses = model.atomSearch[ATOM_A]?.providers.map((p) => `${p.id}:${p.status}`);
+    expect(statuses).toEqual(["360_search:failed", "any_search:partial"]);
+  });
+
+  it("search_progress: completed 的 stats/sources 落到正确 atom，且新 atom 开始时旧 atom 状态保留", () => {
+    const model = adaptOrchestrateStreamToShell([
+      sp({
+        atom: ATOM_A,
+        phase: "completed",
+        queryCount: 2,
+        providers: [{ id: "360_search", label: "360", status: "completed", resultCount: 6 }],
+        stats: { rawResultCount: 18, uniqueSourceCount: 9, sharedSourceCount: 4, singleProviderSourceCount: 5 },
+        sources: [{ title: "官方通报", url: "https://example.gov/a", providerOrigins: ["360_search", "exa_search"] }],
+        timestamp: 20,
+      }),
+      // 新 atom 开始，不影响 A
+      sp({ atom: ATOM_B, phase: "started", queryCount: 1, providers: [], timestamp: 21 }),
+    ]);
+    const a = model.atomSearch[ATOM_A];
+    expect(a?.phase).toBe("completed");
+    expect(a?.stats).toEqual({ rawResultCount: 18, uniqueSourceCount: 9, sharedSourceCount: 4, singleProviderSourceCount: 5 });
+    expect(a?.sources).toEqual([{ title: "官方通报", url: "https://example.gov/a", providerOrigins: ["360_search", "exa_search"] }]);
+    expect(model.atomSearch[ATOM_B]?.phase).toBe("started");
+    expect(model.atomSearch[ATOM_B]?.stats).toBeUndefined();
+    expect(model.atomSearch[ATOM_B]?.sources).toEqual([]);
+  });
+
+  it("search_progress: 未知 provider id 用服务端 label 兜底，适配器不崩溃", () => {
+    const model = adaptOrchestrateStreamToShell([
+      sp({ atom: ATOM_A, phase: "progress", queryCount: 1, providers: [{ id: "bing_search", label: "Bing", status: "running", resultCount: 7 }], timestamp: 2 }),
+    ]);
+    expect(model.atomSearch[ATOM_A]?.providers).toEqual([{ id: "bing_search", label: "Bing", status: "running", resultCount: 7 }]);
+  });
+
+  it("search_progress: 缺 atom 或 providers 非数组的脏事件被忽略，不崩溃", () => {
+    const model = adaptOrchestrateStreamToShell([
+      sp({ atom: "  ", phase: "progress", queryCount: 1, timestamp: 1 }),
+      { type: "search_progress", atom: ATOM_A, phase: "progress", queryCount: 1, providers: "oops" as never, timestamp: 2 },
+    ]);
+    expect(model.atomSearch[ATOM_A]?.providers).toEqual([]);
+    expect(Object.keys(model.atomSearch)).toEqual([ATOM_A]);
+  });
+
+  it("旧流（无 search_progress）不受影响：atomSearch 为空对象", () => {
+    const model = adaptOrchestrateStreamToShell(FIXTURE_COMPLETE);
+    expect(model.atomSearch).toEqual({});
+    expect(model.verdict.present).toBe(true);
+  });
 });
