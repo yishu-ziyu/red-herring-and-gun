@@ -156,6 +156,19 @@
   color: var(--c-faint);
 }
 
+/* 最终报告逐条判定：与状态 pill 并列，独立强调色，不靠颜色单独区分（文字即判定） */
+.verdict {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--c-accent);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-accent);
+  background: var(--c-accent-soft);
+}
+
 /* ---- 窄屏纵向堆叠：无横向滚动 ---- */
 
 .stack {
