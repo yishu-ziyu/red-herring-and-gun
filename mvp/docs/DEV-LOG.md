@@ -1,5 +1,58 @@
 # 开发日志
 
+## 2026-08-19
+
+### 输出语言：检索是工具，用户只看判断和出处
+
+对照 [工具使用](https://adp.xindoo.xyz/chapters/Chapter%205_%20Tool%20Use/)：不把 function calling 给用户看。写报告只许能信/不能信/只能信一部分/还查不清，禁止工具名、Agent 名、先别转发。`publicCopy` 在 assemble 和 reviewer 出口再剥一遍。
+
+### 21 章施工落地 + 合龙
+
+规范：`docs/reviews/agentic-patterns/specs/`，验收：`specs/done/`。
+生产上已改：类型闸强制可核查、问法三类、检索复用、失败不得写不能信、结果页写入知识库、无网址不得真/假、整句守门、按负荷选 6 条、eval 三类错。
+
+合龙修了用户看得见的洞：结果页原先只读 `subclaimVerdicts`，第 7 条和立场条会丢；现在读 `claimItems`。`split`/`merge` 展示上限 6→12，检索仍 6。无出处整句不得写成能信。本地 Vite 的核查接口改挂 Case Pipeline，和 Express 生产同一条路。
+
+说明书已追上：`docs/PRODUCT_SPEC.md` 第四节、第七节；`CONTEXT.md` type gate。
+
+### 《Agentic Design Patterns》21 章对照（只审不改代码）
+
+书仓：`vendor/agentic-design-patterns`（gitignored）。
+21 个审查员各写一章：`docs/reviews/agentic-patterns/ch-01.md` … `ch-21.md`。
+总表：`docs/reviews/agentic-patterns/INDEX.md`。
+
+均分 4.2/5。14 章用我们的形状完成了该章目的。7 章 partial。没有一章要按书补自治 Agent。
+
+建议动手顺序（存在条件）：eval 三类错 → 无网址不得真/假 → 类型闸复核 → 检索预算按负荷选 6 条。P2 / 问法复用 / 记忆确认按钮往后。
+
+### 拆题类型闸：同一模型换工单，不是更强分类器（创始人不满，先记清）
+
+**触发**：对照 *Agentic Design Patterns* 第 2 章「路由 / 意图识别」讲项目时，创始人连续问：价值句 / 事实句 / 因果句 / 预测句 / 查不清 **到底谁来判断**？是不是更强的模型？并纠正内部把「立场型」说成「灰」——压缩表达造成歧义。有这个困惑 = 对这一块不满意。先写进说明书和本日志，未拍板不改管线。
+
+**事实（代码与本机配置）**
+
+- 拆题、核查、写报告，开发默认都是 **MiniMax-M3**（`MINIMAX_MODEL=MiniMax-M3`，备用链首位 minimax）。不是 Mimic。
+- 没有单独的更强分类模型。同一模型多次调用，每次一张工单：
+  - RumorDetector：只许写 `type` + `verifiable`，不许写能信/不能信
+  - 自证：只问原句有没有说过这条，不问类型
+  - FactChecker：只许对着检索来源写 true/false/partial/unverified，不许重新分类
+  - ReportComposer：只许根据前序 JSON 写能信/不能信
+- 代码读 `verifiable === false` → 不检索。报告该条徽章「立场型」，说明「不适用真/假判断」。
+- 「还查不清」是核查之后的状态，不是拆题标的。证据两边打架才换 StepFun `step-3.7-flash` 二审。
+
+**不满点（开放）**
+
+1. 类型闸在产品里不可见，连创始人都要猜是不是更强模型。
+2. 证据冲突有第二意见，类型标签没有。MiniMax-M3 把能核对的流传说法标成立场，系统不去查。
+3. 模型挂掉会 fail-open（整句当可核查继续搜）；模型自信标错反而跳过检索。两种失败不对称。
+4. 对内说「灰」是 CSS，不是用户看见的话。以后对内对外都用「立场型 / 不适用真/假判断」。
+
+**未决**
+
+要不要给拆题标签做第二意见，或对「读起来像流传说法却被标立场」强制检索。未拍板。
+
+落盘：`docs/PRODUCT_SPEC.md` 第四节「类型谁标」+ 第七节 2026-08-19 条；`CONTEXT.md` 补 type gate。
+
 ## 2026-08-14
 
 ### 首轮真实用户评测（eval）与修复

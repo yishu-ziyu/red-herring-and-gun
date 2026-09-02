@@ -1,17 +1,25 @@
 /**
  * ResultView — 核查完成后的结果页（execution 与 result 分离）
  *
- * MissionControlView 只负责执行；本页只读 finalReport 做正式结论展示。
+ * page：判断 / 轨迹两层。判断是结论；轨迹是全量 hops 收据，默认不打开。
+ * dossier：只保留判断，不显示轨迹。
  */
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { humanizeVerdictType } from "../../../lib/missionShell";
 import { InlineCitations } from "../InlineCitations";
+import { ReportFooter } from "../ReportFooter";
 import {
   buildGlobalSources,
   sourcesFromStringRefs,
   type CiteSource,
 } from "../../../lib/citationBinding";
+import { hopsFromReport } from "../../../lib/evidencePursuitUi";
+import { ResultTrace } from "./ResultTrace";
+import { MemoryCandidatePanel } from "../MemoryCandidatePanel";
+import { createKnowledgeBase } from "../../../lib/knowledgeBase";
+import { updateMemoryCandidateStatus } from "../../../lib/agentExpansion";
+import type { MemoryCandidate, MemoryCandidateStatus } from "../../../lib/memoryCandidateTypes";
 
 export interface ResultViewProps {
   claim: string;
@@ -19,7 +27,7 @@ export interface ResultViewProps {
   onBack: () => void;
   onCancel?: () => void;
   onReverify: () => void;
-  /** page = 独立结果页；dossier = 嵌进右侧卷宗，不再自带顶栏和过程足迹 */
+  /** page = 独立结果页，含判断 / 轨迹两层；dossier = 嵌进右侧卷宗，不显示轨迹 */
   variant?: "page" | "dossier";
 }
 
@@ -35,6 +43,11 @@ type ClaimListItem =
       cannotSay: string[];
       sources: CiteSource[];
       sourcesRelatedOnly: boolean;
+    }
+  | {
+      kind: "stance";
+      key: string;
+      text: string;
     }
   | {
       kind: "atom";
@@ -58,7 +71,7 @@ function asStringArray(value: unknown): string[] {
 function looksLikeInfrastructureError(text: string): boolean {
   // Provider/runtime diagnostics only. Do not treat public news paths like
   // /news/v1-release as infrastructure errors (require /v1/... or /api/... segment).
-  return /ReportComposer|providers?\s+failed|API\s+error|quota\s+(?:exceeded|limit)|https?:\/\/\S+\/(?:v\d+|api)\/[A-Za-z0-9]/i.test(
+  return /ReportComposer|FactChecker|search360|Tavily|MiniMax|工具调用|providers?\s+failed|API\s+error|quota\s+(?:exceeded|limit)|https?:\/\/\S+\/(?:v\d+|api)\/[A-Za-z0-9]/i.test(
     text
   );
 }
@@ -70,44 +83,80 @@ function safePublicText(value: unknown): string {
   return text;
 }
 
+function sourcesFromVerdict(item: Record<string, unknown>): CiteSource[] {
+  const buckets = [
+    ...(Array.isArray(item.supportingSources) ? item.supportingSources : []),
+    ...(Array.isArray(item.contradictingSources) ? item.contradictingSources : []),
+  ];
+  const seen = new Set<string>();
+  const out: CiteSource[] = [];
+  for (const source of buckets) {
+    const row = (source && typeof source === "object" ? source : {}) as Record<string, unknown>;
+    const url = asString(row.url);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    out.push({
+      title: asString(row.title) || url,
+      url,
+      snippet: asString(row.snippet) || undefined,
+    });
+  }
+  return out;
+}
+
+function verdictItemFromRecord(
+  item: Record<string, unknown>,
+  index: number,
+  textFallback = ""
+): ClaimListItem {
+  const canSay = asStringArray(item.canSay);
+  const cannotSay = asStringArray(item.cannotSay);
+  const boundary = safePublicText(item.boundary);
+  if (boundary && cannotSay.length === 0) {
+    cannotSay.push(boundary);
+  }
+  return {
+    kind: "verdict",
+    key: `verdict-${index}`,
+    text: textFallback || safePublicText(item.claimAtom) || `命题 ${index + 1}`,
+    verdictLabel: humanizeVerdictType(asString(item.verdict)),
+    evidence: safePublicText(item.evidence),
+    boundary,
+    canSay,
+    cannotSay,
+    sources: sourcesFromVerdict(item),
+    sourcesRelatedOnly: item.sourcesRelatedOnly === true,
+  };
+}
+
 function readClaimList(report: Record<string, unknown>): ClaimListItem[] {
+  const claimItems = Array.isArray(report.claimItems) ? report.claimItems : [];
+  if (claimItems.length > 0) {
+    return claimItems.flatMap((raw, index) => {
+      if (!raw || typeof raw !== "object") return [];
+      const rec = raw as Record<string, unknown>;
+      if (rec.verifiable === false) {
+        return [
+          {
+            kind: "stance" as const,
+            key: `stance-${index}`,
+            text: safePublicText(rec.text) || `立场 ${index + 1}`,
+          },
+        ];
+      }
+      const verdict =
+        rec.verdict && typeof rec.verdict === "object"
+          ? (rec.verdict as Record<string, unknown>)
+          : rec;
+      return [verdictItemFromRecord(verdict, index, safePublicText(rec.text))];
+    });
+  }
+
   const subclaimVerdicts = Array.isArray(report.subclaimVerdicts) ? report.subclaimVerdicts : [];
   if (subclaimVerdicts.length > 0) {
-    return subclaimVerdicts.map((raw, index) => {
-      const item = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-      const supporting = Array.isArray(item.supportingSources) ? item.supportingSources : [];
-      const sources = supporting
-        .map((source) => {
-          const row = (source && typeof source === "object" ? source : {}) as Record<string, unknown>;
-          const url = asString(row.url);
-          if (!url) return null;
-          return {
-            title: asString(row.title) || url,
-            url,
-            snippet: asString(row.snippet) || undefined,
-          };
-        })
-        .filter((row): row is CiteSource => Boolean(row));
-
-      const canSay = asStringArray(item.canSay);
-      const cannotSay = asStringArray(item.cannotSay);
-      const boundary = safePublicText(item.boundary);
-      if (boundary && cannotSay.length === 0) {
-        cannotSay.push(boundary);
-      }
-
-      return {
-        kind: "verdict" as const,
-        key: `verdict-${index}`,
-        text: safePublicText(item.claimAtom) || `命题 ${index + 1}`,
-        verdictLabel: humanizeVerdictType(asString(item.verdict)),
-        evidence: safePublicText(item.evidence),
-        boundary,
-        canSay,
-        cannotSay,
-        sources,
-        sourcesRelatedOnly: item.sourcesRelatedOnly === true,
-      };
+    return subclaimVerdicts.flatMap((raw, index) => {
+      if (!raw || typeof raw !== "object") return [];
+      return [verdictItemFromRecord(raw as Record<string, unknown>, index)];
     });
   }
 
@@ -197,10 +246,14 @@ export function ResultView({
   variant = "page",
 }: ResultViewProps) {
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
-  const [processOpen, setProcessOpen] = useState(false);
+  const [layer, setLayer] = useState<"judgment" | "trace">("judgment");
+  const [memoryCandidates, setMemoryCandidates] = useState<MemoryCandidate[]>([]);
+  const knowledgeBase = useMemo(() => createKnowledgeBase(), []);
+  const interrupted = isInterruptedReport(finalReport);
+  const embedded = variant === "dossier";
 
   const verdictType = asString(finalReport.verdictType);
-  const verdictLabel = humanizeVerdictType(verdictType);
+  const verdictLabel = asString(finalReport.faceVerdict) || humanizeVerdictType(verdictType);
   const score = asNumber(finalReport.credibilityScore);
   const credibilityLabel = asString(finalReport.credibilityLabel);
   const conclusion =
@@ -217,7 +270,7 @@ export function ResultView({
   const conclusionSources = useMemo(() => {
     if (Array.isArray(finalReport.citationSources)) {
       return (finalReport.citationSources as unknown[])
-        .map((raw) => {
+        .map((raw): CiteSource | null => {
           const row = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
           const url = asString(row.url);
           if (!url) return null;
@@ -227,7 +280,7 @@ export function ResultView({
             snippet: asString(row.snippet) || undefined,
           };
         })
-        .filter((row): row is CiteSource => Boolean(row));
+        .filter((row): row is CiteSource => row !== null);
     }
     return buildGlobalSources(
       claimItems
@@ -238,27 +291,19 @@ export function ResultView({
   const canSayTop = asStringArray(finalReport.canSay);
   const cannotSayTop = asStringArray(finalReport.cannotSay);
 
-  /** Compact process footprint for result-page audit (DESIGN: Footprints). */
-  const processFootprint = useMemo(() => {
-    const verdictCount = claimItems.filter((item) => item.kind === "verdict").length;
-    const atomCount = claimItems.length;
-    const boundSourceCount = claimItems
-      .filter((item): item is Extract<ClaimListItem, { kind: "verdict" }> => item.kind === "verdict")
-      .filter((item) => !item.sourcesRelatedOnly && item.sources.length > 0).length;
-    const relatedOnlyCount = claimItems
-      .filter((item): item is Extract<ClaimListItem, { kind: "verdict" }> => item.kind === "verdict")
-      .filter((item) => item.sourcesRelatedOnly && item.sources.length > 0).length;
-    const chainCount = evidenceChain.length;
-    const globalCiteCount = conclusionSources.length;
-    return {
-      atomCount,
-      verdictCount,
-      boundSourceCount,
-      relatedOnlyCount,
-      chainCount,
-      globalCiteCount,
-    };
-  }, [claimItems, evidenceChain, conclusionSources]);
+  const pursuitHops = useMemo(() => hopsFromReport(finalReport), [finalReport]);
+  const traceItems = useMemo(
+    () =>
+      claimItems.map((item) => ({
+        key: item.key,
+        kind: item.kind,
+        text: item.text,
+        verdictLabel: item.kind === "verdict" ? item.verdictLabel : undefined,
+        sources: item.kind === "verdict" ? item.sources : [],
+        sourcesRelatedOnly: item.kind === "verdict" ? item.sourcesRelatedOnly : false,
+      })),
+    [claimItems]
+  );
 
   const toggleExpanded = useCallback((key: string) => {
     setExpandedKeys((prev) => {
@@ -269,10 +314,38 @@ export function ResultView({
     });
   }, []);
 
+  useEffect(() => {
+    if (!embedded || interrupted) {
+      setMemoryCandidates([]);
+      return;
+    }
+    let cancelled = false;
+    void knowledgeBase.listMemoryCandidates().then((listed) => {
+      if (cancelled) return;
+      setMemoryCandidates(listed.filter((candidate) => candidate.provenance.claim === claim));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [embedded, interrupted, claim, knowledgeBase]);
+
+  const handleMemoryCandidateStatus = useCallback(
+    async (id: string, status: MemoryCandidateStatus) => {
+      try {
+        const updated = await updateMemoryCandidateStatus(id, status);
+        await knowledgeBase.saveMemoryCandidate(updated);
+        setMemoryCandidates((prev) =>
+          prev.map((candidate) => (candidate.id === id ? updated : candidate))
+        );
+      } catch {
+        // Remote status did not change; keep proposed in the panel.
+      }
+    },
+    [knowledgeBase]
+  );
+
   const handleBack = onCancel ?? onBack;
-  const interrupted = isInterruptedReport(finalReport);
   const interruptedSources = interrupted ? interruptedSourceLinks(finalReport) : [];
-  const embedded = variant === "dossier";
 
   if (interrupted) {
     return (
@@ -334,9 +407,34 @@ export function ResultView({
     >
       {embedded ? null : (
         <header className="result-view-topbar">
-          <div className="result-view-brand">
-            <strong>红鲱鱼与枪</strong>
-            <span>核查结果</span>
+          <div className="result-view-leading">
+            <div className="result-view-brand">
+              <strong>红鲱鱼与枪</strong>
+            </div>
+            <div className="result-layer-switch" role="tablist" aria-label="结果分层">
+              <button
+                type="button"
+                role="tab"
+                id="result-tab-judgment"
+                aria-selected={layer === "judgment"}
+                aria-controls="result-panel-judgment"
+                className="result-layer-tab"
+                onClick={() => setLayer("judgment")}
+              >
+                判断
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="result-tab-trace"
+                aria-selected={layer === "trace"}
+                aria-controls="result-panel-trace"
+                className="result-layer-tab"
+                onClick={() => setLayer("trace")}
+              >
+                轨迹
+              </button>
+            </div>
           </div>
           <div className="result-view-actions">
             <button type="button" className="result-view-btn result-view-btn--ghost" onClick={handleBack}>
@@ -349,17 +447,34 @@ export function ResultView({
         </header>
       )}
 
-      <div className="result-view-body">
+      <div className={`result-view-body${layer === "trace" && !embedded ? " result-view-body--trace" : ""}`}>
+
+        {!embedded && layer === "trace" ? (
+          <div role="tabpanel" id="result-panel-trace" aria-labelledby="result-tab-trace">
+            <ResultTrace
+              claim={claim}
+              items={traceItems}
+              hops={pursuitHops}
+              sources={conclusionSources}
+            />
+          </div>
+        ) : (
+        <div
+          role={embedded ? undefined : "tabpanel"}
+          id={embedded ? undefined : "result-panel-judgment"}
+          aria-labelledby={embedded ? undefined : "result-tab-judgment"}
+        >
         <section className="result-verdict-card mission-final-report" aria-label="最终核查判断">
           <div className="mission-final-report-head">
             <div>
-              <span>核查结果</span>
-              <strong>正式判断</strong>
-            </div>
-            <div className="mission-final-verdict-badges">
-              {verdictLabel ? <em className="mission-final-verdict-primary">{verdictLabel}</em> : null}
-              {credibilityLabel ? <em>{credibilityLabel}</em> : null}
-              {score !== null ? <strong>{score}/100</strong> : null}
+              <strong>{verdictLabel || "正式判断"}</strong>
+              {credibilityLabel || score !== null ? (
+                <p className="result-verdict-meta">
+                  {credibilityLabel ? <span>{credibilityLabel}</span> : null}
+                  {credibilityLabel && score !== null ? <i aria-hidden="true">·</i> : null}
+                  {score !== null ? <span>{score}/100</span> : null}
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -417,6 +532,15 @@ export function ResultView({
           )}
         </section>
 
+        {embedded ? (
+          <MemoryCandidatePanel
+            candidates={memoryCandidates}
+            onStatusChange={(id, status) => {
+              void handleMemoryCandidateStatus(id, status);
+            }}
+          />
+        ) : null}
+
         {claimItems.length > 0 ? (
           <section className="result-claim-list" aria-label="命题核查清单">
             <header className="result-section-head">
@@ -429,6 +553,17 @@ export function ResultView({
                   return (
                     <li key={item.key} className="result-claim-item result-claim-item--atom">
                       <p>{item.text}</p>
+                    </li>
+                  );
+                }
+                if (item.kind === "stance") {
+                  return (
+                    <li key={item.key} className="result-claim-item result-claim-item--stance">
+                      <div className="result-claim-toggle" aria-disabled="true">
+                        <span className="result-claim-text">{item.text}</span>
+                        <em className="result-claim-badge result-claim-badge--stance">立场型</em>
+                      </div>
+                      <p className="result-claim-stance-note">不适用真/假判断</p>
                     </li>
                   );
                 }
@@ -536,73 +671,15 @@ export function ResultView({
           <button type="button" className="result-view-btn result-view-btn--primary" onClick={onReverify}>
             重新核查
           </button>
-        ) : (
-        <section className="result-process-section" aria-label="回看核查过程">
-          <button
-            type="button"
-            className="result-process-toggle"
-            aria-expanded={processOpen}
-            onClick={() => setProcessOpen((open) => !open)}
-          >
-            <span>核查足迹</span>
-            <em>{processOpen ? "收起" : "展开"}</em>
-          </button>
-          {processOpen ? (
-            <div className="result-process-body">
-              <ol className="result-process-footprint" aria-label="本页可核对的核查足迹">
-                <li>
-                  <strong>主张</strong>
-                  <span>{claim}</span>
-                </li>
-                <li>
-                  <strong>拆题</strong>
-                  <span>
-                    {processFootprint.atomCount > 0
-                      ? `共 ${processFootprint.atomCount} 条可核对要点${
-                          processFootprint.verdictCount > 0
-                            ? `，其中 ${processFootprint.verdictCount} 条已给出判断`
-                            : ""
-                        }`
-                      : "本报告未附带拆题清单"}
-                  </span>
-                </li>
-                <li>
-                  <strong>来源</strong>
-                  <span>
-                    {processFootprint.globalCiteCount > 0
-                      ? `结论层 ${processFootprint.globalCiteCount} 个已绑定来源`
-                      : "结论层暂无句内绑定来源"}
-                    {processFootprint.boundSourceCount > 0
-                      ? ` · ${processFootprint.boundSourceCount} 条命题有支撑来源`
-                      : ""}
-                    {processFootprint.relatedOnlyCount > 0
-                      ? ` · ${processFootprint.relatedOnlyCount} 条仅为相关检索`
-                      : ""}
-                  </span>
-                </li>
-                <li>
-                  <strong>依据链</strong>
-                  <span>
-                    {processFootprint.chainCount > 0
-                      ? `${processFootprint.chainCount} 条依据`
-                      : "未附带分层依据"}
-                  </span>
-                </li>
-                <li>
-                  <strong>判断</strong>
-                  <span>
-                    {[verdictLabel, credibilityLabel, score !== null ? `${score}/100` : ""]
-                      .filter(Boolean)
-                      .join(" · ") || "见上方正式判断"}
-                  </span>
-                </li>
-              </ol>
-              <p className="result-process-note">
-                本页足迹只保留与正式判断直接相关、可核对的摘要。
-              </p>
-            </div>
-          ) : null}
-        </section>
+        ) : null}
+        {!embedded ? (
+          <ReportFooter
+            claim={claim}
+            verdictType={verdictType}
+            score={Number.isFinite(score) ? (score as number) : undefined}
+          />
+        ) : null}
+        </div>
         )}
       </div>
     </main>

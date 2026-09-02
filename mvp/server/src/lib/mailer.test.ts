@@ -24,14 +24,6 @@ describe("mailer config", () => {
     expect(transport).toMatchObject({ kind: "resend", apiKey: "re_test", from: "noreply@example.com" });
   });
 
-  it("accepts EMAIL_FROM as an alias for MAIL_FROM", () => {
-    const transport = resolveMailTransport({
-      RESEND_API_KEY: "re_test",
-      EMAIL_FROM: "hello@example.com",
-    });
-    expect(transport?.from).toBe("hello@example.com");
-  });
-
   it("uses SMTP when host/user/pass/from are set and Resend is absent", () => {
     const transport = resolveMailTransport({
       SMTP_HOST: "smtp.example.com",

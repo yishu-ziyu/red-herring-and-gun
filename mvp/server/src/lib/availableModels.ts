@@ -11,7 +11,6 @@ export type ProviderId =
   | "mimo"
   | "stepfun"
   | "360"
-  | "kimi"
   | "minimax"
   | "anthropic"
   | "codex";
@@ -56,11 +55,6 @@ const MODEL_CATALOG: ModelSpec[] = [
   { provider: "360", model: "360gpt-pro",   label: "360GPT Pro",    tier: "mid",  hint: "推荐" },
   { provider: "360", model: "360gpt-turbo", label: "360GPT Turbo",  tier: "low",  hint: "便宜" },
 
-  // Moonshot / Kimi（项目无 API key，UI 占位；拿到 key 后会自动出现在 picker）
-  { provider: "kimi", model: "kimi-latest",          label: "Kimi Latest",          tier: "high", hint: "可选" },
-  { provider: "kimi", model: "kimi-k2-thinking",     label: "Kimi K2 Thinking",     tier: "mid",  hint: "可选" },
-  { provider: "kimi", model: "kimi-k2-0905-preview", label: "Kimi K2 0905 Preview", tier: "low",  hint: "可选" },
-
   // MiMo
   { provider: "mimo", model: "mimo-v2.5-pro",         label: "MiMo v2.5 Pro",     tier: "mid",  hint: "国产" },
 
@@ -80,11 +74,7 @@ export function isProviderConfigured(
   if (provider === "mimo") return Boolean(env.MIMO_API_KEY);
   if (provider === "stepfun") return Boolean(env.STEPFUN_API_KEY);
   if (provider === "360") {
-    return Boolean(env.QIHOO_360_API_KEY || env.ZHINAO_API_KEY || env.AI360_API_KEY);
-  }
-  if (provider === "kimi") {
-    // Moonshot / Kimi：项目目前没配 key，留作 UI 占位
-    return Boolean(env.KIMI_API_KEY || env.MOONSHOT_API_KEY);
+    return Boolean(env.QIHOO_360_API_KEY);
   }
   if (provider === "minimax") {
     return Boolean(getMiniMaxApiKey(env));
@@ -211,9 +201,8 @@ function _keyNameForProvider(provider: string): string {
   if (provider === "deepseek") return "DEEPSEEK_API_KEY";
   if (provider === "mimo") return "MIMO_API_KEY";
   if (provider === "stepfun") return "STEPFUN_API_KEY";
-  if (provider === "360") return "QIHOO_360_API_KEY / ZHINAO_API_KEY / AI360_API_KEY";
-  if (provider === "kimi") return "KIMI_API_KEY / MOONSHOT_API_KEY";
-  if (provider === "minimax") return "MINIMAX_API_KEY / MINIMAX_TOKEN_PLAN_KEY";
+  if (provider === "360") return "QIHOO_360_API_KEY";
+  if (provider === "minimax") return "MINIMAX_API_KEY";
   if (provider === "anthropic") return "ANTHROPIC_BASE_URL + ANTHROPIC_MODEL (+ token)";
   if (provider === "codex") return "CODEX_BIN";
   return "对应 API key";

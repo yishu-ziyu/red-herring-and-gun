@@ -33,6 +33,17 @@ describe("minimaxM3", () => {
     })).not.toHaveProperty("thinking");
   });
 
+  it("reserves enough output budget for M2.7 highspeed reasoning plus JSON", () => {
+    expect(miniMaxMaxTokensForModel({}, "MiniMax-M2.7-highspeed", 1200)).toBe(4096);
+    expect(
+      miniMaxMaxTokensForModel(
+        { MINIMAX_M27_MIN_MAX_TOKENS: "6000" },
+        "MiniMax-M2.7-highspeed",
+        1200
+      )
+    ).toBe(6000);
+  });
+
   it("only turns thinking off when explicitly disabled", () => {
     expect(miniMaxM3ThinkingType({ MINIMAX_M3_THINKING: "disabled" }, "MiniMax-M3")).toBe("disabled");
     expect(miniMaxMaxTokensForModel({ MINIMAX_M3_MAX_TOKENS: "524288" }, "MiniMax-M3", 800)).toBe(524288);
