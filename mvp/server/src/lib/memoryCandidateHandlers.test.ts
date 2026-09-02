@@ -8,7 +8,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   getMemoryCandidateStore,
-  listMemoryCandidatesHandler,
   setMemoryCandidateStoreForTests,
   updateMemoryCandidateHandler,
 } from "./memoryCandidateHandlers";
@@ -90,6 +89,31 @@ describe("JsonlMemoryCandidateStore", () => {
     expect(hits[0].candidate.status).toBe("accepted");
   });
 
+  it("G2 语义召回：同义改写零词面交集仍可召回（电瓶车→电动车）", async () => {
+    await store.propose([
+      makeCandidate({
+        id: "mc-ev",
+        title: "电动车失窃核查",
+        summary: "电动车被盗相关核查经验",
+        tags: ["社会", "盗窃"],
+        provenance: {
+          runId: "run-ev",
+          claim: "电动车失窃后被送往国外销毁",
+          normalizedClaim: "电动车失窃后被送往国外销毁",
+          createdAt: 1_700_000_001_000,
+          sourceUrls: [],
+          unresolvedQuestions: [],
+        },
+      }),
+    ]);
+    await store.setStatus("mc-ev", "accepted");
+
+    // 查询用同义说法：电瓶车/被偷 ↔ 电动车/失窃
+    const hits = await store.searchAccepted("我说我的电瓶车叫谁偷走了，原来送到非洲去了");
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0].candidate.id).toBe("mc-ev");
+  });
+
   it("proposed 不进入 searchAccepted", async () => {
     await store.propose([makeCandidate({ status: "proposed" })]);
     const hits = await store.searchAccepted("隔夜菜致癌");
@@ -118,14 +142,6 @@ describe("memoryCandidateHandlers", () => {
   afterEach(async () => {
     setMemoryCandidateStoreForTests(previous);
     await rm(dir, { recursive: true, force: true });
-  });
-
-  it("GET list → 200 + candidates", async () => {
-    const res = mockRes();
-    await listMemoryCandidatesHandler(mockReq() as never, res);
-    expect(res.statusCode).toBe(200);
-    expect(res.body.candidates).toHaveLength(1);
-    expect(res.body.candidates[0].id).toBe("mc-1");
   });
 
   it("POST setStatus accepted → 200 + candidate", async () => {

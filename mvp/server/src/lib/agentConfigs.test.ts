@@ -67,6 +67,14 @@ describe("AGENT_CONFIGS · P0-1 Grounding 硬约束", () => {
     }
   });
 
+  it("ReportComposer 用户可见字禁止工具名与转发建议", () => {
+    const prompt = getAgentConfig("report_composer")!.systemPrompt;
+    expect(prompt).toMatch(/能信 \/ 不能信 \/ 只能信一部分 \/ 还查不清/);
+    expect(prompt).toMatch(/不要写转不转|先别转发/);
+    expect(prompt).toMatch(/禁止出现：FactChecker|search360|工具调用/);
+    expect(prompt).toMatch(/模型记忆不是出处/);
+  });
+
   it("两个 Agent prompt 都应包含禁止编造的硬约束（来源/日期/专家名）", () => {
     const fc = getAgentConfig("fact_checker")!.systemPrompt;
     const sv = getAgentConfig("source_validator")!.systemPrompt;
@@ -111,7 +119,13 @@ describe("subclaimVerdicts / claimAtoms 数据契约", () => {
   it("mergeSubclaimVerdicts：覆盖不全补 unverified + 幻觉拦截 + 非法 verdict 回退", () => {
     const claimAtoms = ["原子A", "原子B", "原子C"];
     const verdicts = [
-      { claimAtom: "原子A", verdict: "true", evidence: "证据A", boundary: "边界A" },
+      {
+        claimAtom: "原子A",
+        verdict: "true",
+        evidence: "证据A",
+        boundary: "边界A",
+        supportingSources: [{ url: "https://a.example.com", title: "A", snippet: "s" }],
+      },
       { claimAtom: "编造原子", verdict: "false", evidence: "幻觉", boundary: "幻觉" }, // 幻觉拦截
       { claimAtom: "原子B", verdict: "非法值", evidence: "证据B", boundary: "边界B" }, // 非法回退
     ];
@@ -156,7 +170,7 @@ describe("subclaimVerdicts / claimAtoms 数据契约", () => {
     const rcInput = buildAgentInput("report_composer", "claim", previousSteps);
     const factCheck = rcInput.factCheck as any;
     expect(factCheck.subclaimVerdicts).toHaveLength(2);
-    expect(factCheck.subclaimVerdicts.find((r: any) => r.claimAtom === "原子A").verdict).toBe("false");
+    expect(factCheck.subclaimVerdicts.find((r: any) => r.claimAtom === "原子A").verdict).toBe("unverified");
     expect(factCheck.subclaimVerdicts.find((r: any) => r.claimAtom === "原子B").verdict).toBe("unverified");
   });
 });
@@ -236,7 +250,7 @@ describe("buildAgentInput · 富化 handoff 字段", () => {
     expect(fact.unresolvedEvidenceGaps).toEqual(["缺口1"]);
     expect(fact.logicRisks).toEqual(["因果倒置风险"]);
     expect(fact.subclaimVerdicts).toHaveLength(2);
-    expect(fact.subclaimVerdicts.find((r: any) => r.claimAtom === "原子A").verdict).toBe("false");
+    expect(fact.subclaimVerdicts.find((r: any) => r.claimAtom === "原子A").verdict).toBe("unverified");
     expect(fact.subclaimVerdicts.find((r: any) => r.claimAtom === "原子B").verdict).toBe("unverified");
 
     const source = input.sourceValidation as any;
@@ -280,7 +294,7 @@ describe("buildAgentInput · 富化 handoff 字段", () => {
 
     const input = buildAgentInput("report_composer", "claim", steps);
     const rumor = input.rumorAnalysis as any;
-    expect(rumor.claimAtoms).toHaveLength(6);
+    expect(rumor.claimAtoms).toHaveLength(10);
     expect(rumor.indicators[0].endsWith("…")).toBe(true);
     expect(rumor.indicators[0].length).toBe(121); // 120 + ellipsis
     expect(rumor.analysis.endsWith("…")).toBe(true);
@@ -433,6 +447,56 @@ describe("判定可追溯 · per-verdict 结构化来源", () => {
     const result = mergeSubclaimVerdicts(claimAtoms, verdicts, []);
     expect(result[0].supportingSources).toEqual([]);
     expect(result[0].contradictingSources).toEqual([]);
+    expect(result[0].verdict).toBe("unverified");
+    expect(result[0].evidenceGaps.some((g) => g.includes("待补证"))).toBe(true);
+  });
+
+  it("mergeSubclaimVerdicts：false 且 URL 被剥光 → unverified", () => {
+    const claimAtoms = ["原子A"];
+    const verdicts = [
+      {
+        claimAtom: "原子A",
+        verdict: "false",
+        evidence: "证据",
+        boundary: "边界",
+        supportingSources: [{ url: "https://fabricated.example.com/x", title: "编造", snippet: "x" }],
+        contradictingSources: [{ url: "https://ghost.example.com/y", title: "幽灵", snippet: "y" }],
+        evidenceGaps: [],
+      },
+    ];
+    const result = mergeSubclaimVerdicts(claimAtoms, verdicts, [
+      { url: "https://real.example.com/a", title: "真实", snippet: "s" },
+    ]);
+    expect(result[0].supportingSources).toEqual([]);
+    expect(result[0].contradictingSources).toEqual([]);
+    expect(result[0].verdict).toBe("unverified");
+    expect(result[0].evidenceGaps.some((g) => g.includes("待补证"))).toBe(true);
+  });
+
+  it("mergeSubclaimVerdicts：false 留下反证 http(s) 时不改判词", () => {
+    const realUrl = "https://real.example.com/contra";
+    const result = mergeSubclaimVerdicts(
+      ["原子A"],
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "false",
+          evidence: "辟谣",
+          boundary: "边界",
+          contradictingSources: [{ url: realUrl, title: "辟谣", snippet: "不实" }],
+        },
+      ],
+      [{ url: realUrl, title: "辟谣", snippet: "不实" }]
+    );
+    expect(result[0].verdict).toBe("false");
+  });
+
+  it("mergeSubclaimVerdicts：partial 无 URL 不改判词", () => {
+    const result = mergeSubclaimVerdicts(
+      ["原子A"],
+      [{ claimAtom: "原子A", verdict: "partial", evidence: "e", boundary: "b" }]
+    );
+    expect(result[0].verdict).toBe("partial");
   });
 
   it("mergeSubclaimVerdicts：evidenceGaps 截断长度与条数", () => {
@@ -583,11 +647,12 @@ describe("原句自证闸门 · prefilterClaimAtoms 确定性预过滤", () => {
     expect(dropped).toEqual([]);
   });
 
-  it("截断：超过 6 条只保留前 6 条；单条超过 180 字截断并加省略号", () => {
-    const many = Array.from({ length: 8 }, (_, i) => `原子${i}`);
+  it("截断：超过 12 条只保留前 12 条；单条超过 180 字截断并加省略号", () => {
+    const many = Array.from({ length: 14 }, (_, i) => `原子${i}`);
     const { atoms: limited } = prefilterClaimAtoms("claim", many);
-    expect(limited).toHaveLength(6);
+    expect(limited).toHaveLength(12);
     expect(limited[0]).toBe("原子0");
+    expect(limited[11]).toBe("原子11");
 
     const long = "长".repeat(200);
     const { atoms: truncated } = prefilterClaimAtoms("claim", [long]);

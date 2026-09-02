@@ -2,7 +2,7 @@
  * contextStatusBar.ts — AI Agent Book Ch.2 上下文工程：Agent 状态栏（server copy）
  *
  * Keep in sync with src/lib/agentRuntime/contextStatusBar.ts (client/AgentRuntime).
- * Server cannot import client src (tsconfig rootDir); copy is intentional (ADR-004).
+ * Server cannot import client src (tsconfig rootDir); copy is intentional (ADR-003).
  */
 
 export interface AgentStatusBarInput {

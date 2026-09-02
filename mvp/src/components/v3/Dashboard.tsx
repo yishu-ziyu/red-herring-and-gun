@@ -12,12 +12,16 @@ import {
   type CaseImage,
   type CaseIntake,
 } from "../../lib/caseIntake";
+import { extractFramesFromVideo } from "../../lib/videoFrames";
+import { BatchChecker } from "./BatchChecker";
 import {
   scrapeLinks,
   formatScrapedContent,
 } from "../../lib/linkScraper";
-import { type ModelChoiceMap } from "./ModelPicker";
+import { type ModelChoiceMap } from "../../lib/agentExpansion";
 import { PromptInput, type PromptAttachment } from "./promptInput/PromptInput";
+import { UiLangSwitch } from "./UiLangSwitch";
+import { useUiLang } from "../../lib/useUiLang";
 import {
   checksRemainingMessage,
   parseCheckQuota,
@@ -47,12 +51,14 @@ type AipingAuthState =
   | { status: "anonymous"; loginUrl: string }
   | { status: "authenticated"; user: AipingUser };
 
-/** 首页试一条：用 rumorCases 里三类具体谣言，不用「某公司 / 某项政策」空壳。 */
-const DEMO_CASES = [
-  "隔夜菜会致癌，等于吃毒药",
-  "5G信号塔辐射导致周边居民头晕失眠",
-  "人民币即将大幅贬值，赶紧换美元",
-] as const;
+type ModelServiceState = {
+  status: "checking" | "available" | "unavailable" | "unknown";
+  message: string;
+};
+
+const MODEL_SERVICE_CHECKING_MESSAGE = "正在确认核查服务…";
+const MODEL_SERVICE_UNAVAILABLE_MESSAGE = "核查服务暂时不可用。你的材料还没有提交，请稍后重试。";
+const MODEL_SERVICE_UNKNOWN_MESSAGE = "暂时无法确认核查服务状态。你可以继续尝试，若中断请稍后重试。";
 
 const MAX_IMAGE_COUNT = 4;
 const MAX_TOTAL_IMAGE_BYTES = 6 * 1024 * 1024;
@@ -63,12 +69,17 @@ export function Dashboard({
   accountEmail = null,
   onNeedLogin,
 }: DashboardProps) {
+  const { copy } = useUiLang();
   const [inputValue, setInputValue] = useState(initialClaim);
   const [images, setImages] = useState<CaseImage[]>([]);
   const [inputError, setInputError] = useState("");
   const [isScraping, setIsScraping] = useState(false);
   const [modelChoice, setModelChoice] = useState<ModelChoiceMap>({});
   const [hasAvailableModels, setHasAvailableModels] = useState(true);
+  const [modelService, setModelService] = useState<ModelServiceState>({
+    status: "checking",
+    message: MODEL_SERVICE_CHECKING_MESSAGE,
+  });
   const [aipingAuth, setAipingAuth] = useState<AipingAuthState>({ status: "checking" });
   const [highlightedDemo, setHighlightedDemo] = useState<string | null>(null);
   const [checkQuota, setCheckQuota] = useState<CheckQuotaView | null>(null);
@@ -83,10 +94,20 @@ export function Dashboard({
     if (aipingAuth.status !== "authenticated") return "";
     const point = Number(aipingAuth.user.point_remain ?? 0);
     const recharge = Number(aipingAuth.user.recharge_remain ?? 0);
-    return `点数 ${point + recharge}`;
-  }, [aipingAuth]);
+    return `${copy.pointsPrefix} ${point + recharge}`;
+  }, [aipingAuth, copy.pointsPrefix]);
 
-  const canSubmit = hasMaterial && !isScraping && hasAvailableModels && !quotaIsExhausted(checkQuota);
+  const modelServiceBlocksSubmit =
+    !hasAvailableModels || modelService.status === "checking" || modelService.status === "unavailable";
+  const displayedModelService: ModelServiceState = hasAvailableModels
+    ? modelService
+    : { status: "unavailable", message: MODEL_SERVICE_UNAVAILABLE_MESSAGE };
+  const canSubmit =
+    hasMaterial &&
+    !isScraping &&
+    hasAvailableModels &&
+    !modelServiceBlocksSubmit &&
+    !quotaIsExhausted(checkQuota);
 
   const handleStart = useCallback(async () => {
     if (quotaIsExhausted(checkQuota) && checkQuota) {
@@ -95,14 +116,18 @@ export function Dashboard({
       return;
     }
     if (!hasAvailableModels) {
-      setInputError("暂无可用模型，请先配置 API Key。");
+      setInputError(MODEL_SERVICE_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    if (modelServiceBlocksSubmit) {
+      setInputError(modelService.message);
       return;
     }
     if (isScraping) return;
 
     const intake = createCaseIntake(inputValue, images);
     if (!intake.text && intake.links.length === 0 && intake.images.length === 0) {
-      setInputError("请先填写待核查材料。");
+      setInputError(copy.fillMaterialFirst);
       return;
     }
 
@@ -129,7 +154,7 @@ export function Dashboard({
             : intake.text,
         };
       } catch (error) {
-        setInputError(error instanceof Error ? error.message : "链接抓取失败");
+        setInputError(error instanceof Error ? error.message : copy.scrapeFailed);
         // 即使抓取失败也继续，使用原始 intake
       } finally {
         setIsScraping(false);
@@ -137,7 +162,19 @@ export function Dashboard({
     }
 
     onStartAnalysis(enrichedIntake, modelChoice);
-  }, [checkQuota, hasAvailableModels, images, inputValue, isScraping, modelChoice, onNeedLogin, onStartAnalysis]);
+  }, [
+    checkQuota,
+    copy,
+    hasAvailableModels,
+    images,
+    inputValue,
+    isScraping,
+    modelChoice,
+    modelService.message,
+    modelServiceBlocksSubmit,
+    onNeedLogin,
+    onStartAnalysis,
+  ]);
 
   const fillDemoClaim = useCallback((claim: string) => {
     setInputValue(claim);
@@ -164,6 +201,31 @@ export function Dashboard({
       .catch(() => {
         if (cancelled) return;
         setHasAvailableModels(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/models/health")
+      .then((response) => (response.ok ? response.json() : { status: "unknown" }))
+      .then((data: { status?: string }) => {
+        if (cancelled) return;
+        if (data.status === "available") {
+          setModelService({ status: "available", message: "" });
+          return;
+        }
+        if (data.status === "unavailable") {
+          setModelService({ status: "unavailable", message: MODEL_SERVICE_UNAVAILABLE_MESSAGE });
+          return;
+        }
+        setModelService({ status: "unknown", message: MODEL_SERVICE_UNKNOWN_MESSAGE });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setModelService({ status: "unknown", message: MODEL_SERVICE_UNKNOWN_MESSAGE });
       });
     return () => {
       cancelled = true;
@@ -224,35 +286,60 @@ export function Dashboard({
       if (files.length === 0) return;
       setInputError("");
       try {
+        const videoFiles = files.filter((file) => file.type.startsWith("video/"));
+        const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+        if (videoFiles.length > 0) {
+          const frames = (
+            await Promise.all(videoFiles.map((file) => extractFramesFromVideo(file)))
+          ).flat();
+          if (frames.length === 0) {
+            setInputError(copy.videoFrameFailed);
+            return;
+          }
+          const nextTotalSize = images.reduce((sum, image) => sum + image.size, 0) + frames.reduce((sum, f) => sum + f.size, 0);
+          const nextCount = images.length + frames.length;
+          if (nextTotalSize > MAX_TOTAL_IMAGE_BYTES) {
+            setInputError(copy.videoFrameTooLarge);
+            return;
+          }
+          if (nextCount > MAX_IMAGE_COUNT) {
+            setInputError(copy.tooManyFrames);
+            return;
+          }
+          setImages((prev) => [...prev, ...frames].slice(0, MAX_IMAGE_COUNT));
+          return;
+        }
         if (kind === "file") {
           const nonImages = files.filter((file) => !file.type.startsWith("image/"));
           if (nonImages.length > 0) {
-            setInputError("当前仅支持图片附件（聊天截图 / 网页截图）。");
+            setInputError(copy.imagesOnly);
             return;
           }
         }
-        const imageFiles = files.filter((file) => file.type.startsWith("image/"));
         if (imageFiles.length === 0) {
-          setInputError("只支持图片文件。");
+          setInputError(copy.filesUnsupported);
           return;
         }
         if (imageFiles.length !== files.length) {
-          setInputError("只支持图片文件。");
+          setInputError(copy.filesUnsupported);
         }
         const nextTotalSize =
           images.reduce((sum, image) => sum + image.size, 0) +
           imageFiles.reduce((sum, file) => sum + file.size, 0);
         if (nextTotalSize > MAX_TOTAL_IMAGE_BYTES) {
-          setInputError("图片总大小不能超过 6MB。");
+          setInputError(copy.imagesTooLarge);
           return;
+        }
+        if (images.length + imageFiles.length > MAX_IMAGE_COUNT) {
+          setInputError(copy.tooManyImages);
         }
         const nextImages = await Promise.all(imageFiles.map(imageFileToCaseImage));
         setImages((prev) => [...prev, ...nextImages].slice(0, MAX_IMAGE_COUNT));
       } catch (error) {
-        setInputError(error instanceof Error ? error.message : "图片读取失败");
+        setInputError(error instanceof Error ? error.message : copy.imageReadFailed);
       }
     },
-    [images]
+    [copy, images]
   );
 
   const removeImage = useCallback((imageId: string) => {
@@ -265,39 +352,54 @@ export function Dashboard({
         setInputError(checksRemainingMessage(checkQuota));
         if (checkQuota.kind === "guest") onNeedLogin?.();
       } else if (!hasMaterial) {
-        setInputError("请先填写待核查材料。");
+        setInputError(copy.fillMaterialFirst);
       } else if (!hasAvailableModels) {
-        setInputError("暂无可用模型，请先配置 API Key。");
+        setInputError(MODEL_SERVICE_UNAVAILABLE_MESSAGE);
+      } else if (modelServiceBlocksSubmit) {
+        setInputError(modelService.message);
       }
       return;
     }
     void handleStart();
-  }, [canSubmit, checkQuota, handleStart, hasAvailableModels, hasMaterial, onNeedLogin]);
+  }, [
+    canSubmit,
+    checkQuota,
+    copy,
+    handleStart,
+    hasAvailableModels,
+    hasMaterial,
+    modelService.message,
+    modelServiceBlocksSubmit,
+    onNeedLogin,
+  ]);
 
   return (
     <div className="landing-page">
-      {aipingAuth.status !== "disabled" ? (
-        <div className="landing-account-bar" aria-label="AI Ping 账号状态">
-          <span className="landing-account-provider">AI Ping</span>
-          {aipingAuth.status === "checking" ? (
-            <span className="landing-account-muted">账号检测中</span>
-          ) : aipingAuth.status === "authenticated" ? (
-            <>
-              <span className="landing-account-user">
-                {aipingAuth.user.short_phone_number || aipingAuth.user.another_name || "已登录"}
-              </span>
-              <span className="landing-account-balance">{aipingBalanceText}</span>
-              <button type="button" className="landing-account-btn" onClick={handleAipingLogout}>
-                退出
+      <div className="landing-top-corner">
+        <UiLangSwitch />
+        {aipingAuth.status !== "disabled" ? (
+          <div className="landing-account-bar" aria-label={copy.accountStateLabel}>
+            <span className="landing-account-provider">AI Ping</span>
+            {aipingAuth.status === "checking" ? (
+              <span className="landing-account-muted">{copy.accountChecking}</span>
+            ) : aipingAuth.status === "authenticated" ? (
+              <>
+                <span className="landing-account-user">
+                  {aipingAuth.user.short_phone_number || aipingAuth.user.another_name || copy.signedIn}
+                </span>
+                <span className="landing-account-balance">{aipingBalanceText}</span>
+                <button type="button" className="landing-account-btn" onClick={handleAipingLogout}>
+                  {copy.signOut}
+                </button>
+              </>
+            ) : (
+              <button type="button" className="landing-account-btn landing-account-btn-primary" onClick={handleAipingLogin}>
+                {copy.signInAccount}
               </button>
-            </>
-          ) : (
-            <button type="button" className="landing-account-btn landing-account-btn-primary" onClick={handleAipingLogin}>
-              登录账号
-            </button>
-          )}
-        </div>
-      ) : null}
+            )}
+          </div>
+        ) : null}
+      </div>
 
       <div className="landing-stage">
         <section className="landing-hero">
@@ -314,14 +416,15 @@ export function Dashboard({
                 <span className="landing-title-dark">枪</span>
               </h1>
             </div>
-            <p className="landing-mission">贴进来。追出处。告诉你能不能信。</p>
+            <p className="landing-mission">{copy.mission}</p>
+            <p className="landing-outcome">{copy.outcome}</p>
           </div>
         </section>
 
         <section className="landing-input-section" ref={claimInputSectionRef}>
           <div className="landing-input-card landing-input-card--prompt">
             <label htmlFor="claim-input" className="landing-input-label">
-              待核查材料
+              {copy.materialLabel}
             </label>
             <PromptInput
               value={inputValue}
@@ -334,14 +437,15 @@ export function Dashboard({
               attachments={promptAttachments}
               onAddFiles={handleAddFiles}
               onRemoveAttachment={removeImage}
-              disabled={!hasAvailableModels}
+              submitDisabled={modelServiceBlocksSubmit}
               busy={isScraping}
-              submitLabel={isScraping ? "正在抓取链接内容…" : "开始核查"}
-              ariaLabel="待核查材料"
-              placeholder="一句话、一条链接，或一张截图"
+              submitLabel={isScraping ? copy.submitScraping : copy.submitStart}
+              ariaLabel={copy.materialLabel}
+              placeholder={copy.materialPlaceholder}
             />
+            <BatchChecker initialText={inputValue} />
             {detectedLinks.length > 0 ? (
-              <div className="landing-link-row" aria-label="检测到的链接">
+              <div className="landing-link-row" aria-label={copy.linksDetected}>
                 {detectedLinks.map((link) => (
                   <a
                     key={link.id}
@@ -359,6 +463,13 @@ export function Dashboard({
               <p id="landing-input-error" className="landing-input-error" role="alert">
                 {inputError}
               </p>
+            ) : displayedModelService.status !== "available" ? (
+              <p
+                className={`landing-input-hint${displayedModelService.status === "unavailable" ? " landing-input-hint--warning" : ""}`}
+                role="status"
+              >
+                {displayedModelService.message}
+              </p>
             ) : checkQuota?.enforced ? (
               <p className="landing-input-hint">
                 {checksRemainingMessage(checkQuota)}
@@ -366,7 +477,7 @@ export function Dashboard({
                   <>
                     {" "}
                     <button type="button" className="landing-input-hint-link" onClick={onNeedLogin}>
-                      登录
+                      {copy.signIn}
                     </button>
                   </>
                 ) : null}
@@ -375,10 +486,10 @@ export function Dashboard({
           </div>
         </section>
 
-        <section className="landing-examples" aria-label="试一条">
-          <p className="landing-examples-label">或试一条</p>
+        <section className="landing-examples" aria-label={copy.examplesAria}>
+          <p className="landing-examples-label">{copy.examplesLabel}</p>
           <ul className="landing-examples-list">
-            {DEMO_CASES.map((claim) => {
+            {copy.demoClaims.map((claim) => {
               const isActive = highlightedDemo === claim;
               return (
                 <li key={claim}>

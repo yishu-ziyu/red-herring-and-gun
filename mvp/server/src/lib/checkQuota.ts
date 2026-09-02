@@ -22,6 +22,7 @@ import {
 } from "./accountStore.js";
 import { decodeSignedJson, emailCookieOptions, encodeSignedJson, parseCookies } from "./aipingAuth.js";
 import { getServerSecret, readEmailAccountOptional } from "./emailSession.js";
+import { loadSnapshot, registerSnapshotSource } from "./jsonSnapshot.js";
 
 export const GUEST_CHECKS_COOKIE = "v3_guest_checks";
 const GUEST_COOKIE_TTL_SECONDS = 2 * 24 * 60 * 60;
@@ -53,6 +54,28 @@ type GuestBucket = {
 const guests = new Map<string, GuestBucket>();
 const guestsByIp = new Map<string, GuestBucket>();
 
+// ── D1：访客配额桶持久化（重启后 inflight 不可信，清零；跨天的桶不再恢复）──
+const QUOTA_SNAPSHOT_FILE = "quota.json";
+
+function snapshotQuota() {
+  const today = shanghaiDayKey();
+  return {
+    guests: [...guests.entries()].filter(([, b]) => b.day === today),
+    guestsByIp: [...guestsByIp.entries()].filter(([, b]) => b.day === today),
+  };
+}
+
+{
+  const today = shanghaiDayKey();
+  const restored = loadSnapshot<ReturnType<typeof snapshotQuota>>(QUOTA_SNAPSHOT_FILE);
+  if (restored) {
+    for (const [id, b] of restored.guests ?? []) if (b.day === today) guests.set(id, { ...b, inflight: 0 });
+    for (const [ip, b] of restored.guestsByIp ?? [])
+      if (b.day === today) guestsByIp.set(ip, { ...b, inflight: 0 });
+  }
+  registerSnapshotSource(QUOTA_SNAPSHOT_FILE, snapshotQuota);
+}
+
 export type CheckTicket = {
   kind: CheckQuotaKind;
   day: string;
@@ -70,34 +93,46 @@ function cookieHeader(raw: unknown): string | undefined {
   return undefined;
 }
 
-function clientIp(req: { headers?: { [key: string]: unknown }; socket?: { remoteAddress?: string } }) {
-  const realIpHeader = req.headers?.["x-real-ip"];
-  const realIp =
-    typeof realIpHeader === "string"
-      ? realIpHeader.trim()
-      : Array.isArray(realIpHeader) && typeof realIpHeader[0] === "string"
-        ? realIpHeader[0].trim()
-        : "";
-  if (realIp) return realIp.split(",")[0]?.trim() || realIp;
+function headerValue(raw: unknown): string {
+  if (typeof raw === "string") return raw.trim();
+  if (Array.isArray(raw) && typeof raw[0] === "string") return raw[0].trim();
+  return "";
+}
 
-  const forwarded = req.headers?.["x-forwarded-for"];
-  if (typeof forwarded === "string" && forwarded.trim()) {
-    const hops = forwarded.split(",").map((hop) => hop.trim()).filter(Boolean);
-    if (hops.length > 0) return hops[hops.length - 1];
-  }
-  if (Array.isArray(forwarded)) {
-    for (let i = forwarded.length - 1; i >= 0; i -= 1) {
-      if (typeof forwarded[i] === "string" && forwarded[i].trim()) {
-        const hops = forwarded[i].split(",").map((hop) => hop.trim()).filter(Boolean);
-        if (hops.length > 0) return hops[hops.length - 1];
-      }
-    }
+function clientIp(req: { headers?: { [key: string]: unknown }; socket?: { remoteAddress?: string } }) {
+  // nginx 用 $remote_addr 覆盖 X-Real-IP，客户端无法伪造（前提：3000 不对外，见 docker-compose）。
+  const realIp = headerValue(req.headers?.["x-real-ip"]);
+  if (realIp) return realIp.split(",")[0]?.trim() || realIp;
+  // XFF 只取最后一跳：由我们自己的反代追加，客户端伪造的段排在前面。
+  const forwarded = headerValue(req.headers?.["x-forwarded-for"]);
+  if (forwarded) {
+    const lastHop = forwarded
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .pop();
+    if (lastHop) return lastHop;
   }
   return req.socket?.remoteAddress || "unknown";
 }
 
 function hashIp(ip: string) {
   return crypto.createHash("sha256").update(`${ip}|${getServerSecret()}`, "utf8").digest("hex").slice(0, 32);
+}
+
+/**
+ * 运维旁路：开发者/服务器自己验证真实链路时不受免费额度限制。
+ * token 只存在服务端 env（OPS_CHECK_BYPASS_TOKEN），未配置时旁路完全关闭；
+ * 头名 x-ops-check-token。恒时比较防探测。
+ */
+export function hasOpsCheckBypass(req: { headers?: { [key: string]: unknown } }): boolean {
+  const expected = process.env.OPS_CHECK_BYPASS_TOKEN?.trim();
+  if (!expected) return false;
+  const supplied = headerValue(req.headers?.["x-ops-check-token"]);
+  if (!supplied) return false;
+  const a = crypto.createHash("sha256").update(expected, "utf8").digest();
+  const b = crypto.createHash("sha256").update(supplied, "utf8").digest();
+  return crypto.timingSafeEqual(a, b);
 }
 
 function readGuestCookie(req: { headers?: { cookie?: unknown } }): GuestCookiePayload | null {
@@ -199,6 +234,7 @@ export async function peekCheckQuota(
   req: { headers?: { cookie?: unknown; [key: string]: unknown }; socket?: { remoteAddress?: string } }
 ): Promise<CheckQuotaView> {
   const account = await readEmailAccountOptional(req);
+  if (hasOpsCheckBypass(req)) return bypassQuotaView(account ? "account" : "guest");
   if (!isCheckQuotaEnforced()) {
     return bypassQuotaView(account ? "account" : "guest");
   }
@@ -221,6 +257,9 @@ export async function beginFreeCheck(
   res: any
 ): Promise<{ ok: true; ticket: CheckTicket } | { ok: false; kind: CheckQuotaKind }> {
   const account: EmailAccount | null = await readEmailAccountOptional(req);
+  if (hasOpsCheckBypass(req)) {
+    return { ok: true, ticket: { kind: "guest", day: shanghaiDayKey(), settled: true } };
+  }
   if (!isCheckQuotaEnforced()) {
     return {
       ok: true,

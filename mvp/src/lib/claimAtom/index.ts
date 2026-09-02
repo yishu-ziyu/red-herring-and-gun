@@ -6,6 +6,7 @@ export {
   claimAtomKey,
   compactStrings,
   compactText,
+  MAX_CLAIM_ATOMS,
   mergeSubclaimVerdicts,
   splitVerifiableAtoms,
   prefilterClaimAtoms,

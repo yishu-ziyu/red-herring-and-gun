@@ -192,6 +192,10 @@ export async function callStepFunAgent({
   maxTokens: number;
   reasoningEffort?: "low" | "medium" | "high";
 }) {
+  // Token Plan（Anthropic 协议）：/step_plan 前缀走 /v1/messages + Bearer，非流式。
+  if (baseUrl.includes("/step_plan")) {
+    return callStepFunPlanAgent({ baseUrl, apiKey, model, systemPrompt, userContent, maxTokens });
+  }
   // Reasoning 系列模型（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
   // 三者皆会触发 400 Invalid request。仅 chat 模型才发这些字段。
   const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -232,6 +236,70 @@ export async function callStepFunAgent({
       ? (data.choices[0].message.reasoning as string).trim()
       : "";
 
+  return { text, model: `stepfun:${model}`, ...(reasoning ? { reasoning } : {}) };
+}
+
+/**
+ * StepFun Token Plan — Anthropic 协议端点（https://api.stepfun.com/step_plan/v1/messages）。
+ * Bearer 认证；content 块数组（thinking + text）；无 response_format，JSON 靠 prompt 约束 + 下游 parseAgentJson。
+ */
+export async function callStepFunPlanAgent({
+  baseUrl,
+  apiKey,
+  model,
+  systemPrompt,
+  userContent,
+  maxTokens,
+}: {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+  userContent: string;
+  maxTokens: number;
+}) {
+  const url = `${baseUrl.replace(/\/$/, "")}/v1/messages`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userContent }],
+    }),
+  });
+
+  const raw = await response.text();
+  if (!response.ok) {
+    throw new Error(`StepFun API 调用失败：${raw.slice(0, 500)}`);
+  }
+
+  let data: {
+    content?: Array<{ type?: string; text?: string; thinking?: string }>;
+  } | null = null;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    data = null;
+  }
+  const blocks = Array.isArray(data?.content) ? data!.content : [];
+  const text = blocks
+    .filter((b) => b?.type === "text" && typeof b.text === "string")
+    .map((b) => b.text as string)
+    .join("")
+    .trim();
+  const reasoning = blocks
+    .filter((b) => b?.type === "thinking" && typeof b.thinking === "string")
+    .map((b) => b.thinking as string)
+    .join("")
+    .trim();
+
+  if (!text) throw new Error(`StepFun API 没有返回可解析文本（content_blocks=${blocks.map((b) => b.type).join(",") || "empty"}）。`);
   return { text, model: `stepfun:${model}`, ...(reasoning ? { reasoning } : {}) };
 }
 

@@ -1,9 +1,8 @@
 /**
  * eval/score.ts — 针对 casePipeline 的评估指标（生产路径）。
  *
- * 前端 agentRuntime/evaluation 的指标绑定 AgentRuntime 结构，不可直接复用。
- * 这里是 casePipeline 的自有指标：输入是 PipelineStep[] + finalReport，
- * 与前端指标维度对齐（routing / verdict / credibility / hallucination / contract）。
+ * 客户端旧 benchmark 绑定已退役的 AgentRuntime，不能作为生产评测入口。
+ * 这里是 casePipeline 的唯一评分实现：输入是 PipelineStep[] + finalReport，
  * 纯函数，无 I/O，可单测。
  */
 
@@ -16,9 +15,25 @@ export interface CaseResult {
     expectedVerdictType: string;
     expectedCredibilityRange: [number, number];
     expectedAgentSequence: string[];
+    expectsEvidenceLoop?: boolean;
+    expectedAtoms?: Array<{
+      atom: string;
+      expectedVerdict: string;
+      requireBoundUrl?: boolean;
+    }>;
+    mustSearch?: string[];
   };
   steps: Array<{ agent?: string; output?: Record<string, unknown> }>;
   finalReport: Record<string, unknown>;
+  /** 生产 atomSearchBundle；只读 atomsSearched */
+  atomSearchBundle?: unknown;
+  /** ADR-004 evidenceLoop 结果（结构兼容 EvidenceLoopOutcome） */
+  evidenceLoop?: {
+    ran: boolean;
+    atoms: Array<{ atom: string; trigger: string; stopReason: string; rounds?: number }>;
+    totalNewSources: number;
+    recheckFactChecker: boolean;
+  };
   error?: string;
 }
 
@@ -34,6 +49,12 @@ export interface MetricScores {
   reportContractPass: boolean;
   reportReviewScore: number;
   overallPass: boolean;
+  atomMatchPass: boolean;
+  mustSearchPass: boolean;
+  /** ADR-004 观测指标（不进门禁）：期望补查的 case 是否真触发 / 是否翻案 */
+  evidenceLoopExpected: boolean;
+  evidenceLoopRan: boolean;
+  evidenceLoopRescued: boolean;
 }
 
 export interface AggregateMetrics {
@@ -48,6 +69,10 @@ export interface AggregateMetrics {
   avgReportReviewScore: number;
   byCategory: Record<string, { total: number; passed: number; verdictCorrectCount: number }>;
   failures: Array<{ caseId: string; claim: string; reason: string }>;
+  /** ADR-004 观测指标：分母 = expectsEvidenceLoop 的 case 数 */
+  evidenceLoopExpectedCount: number;
+  evidenceLoopTriggerRate: number;
+  evidenceLoopRescueRate: number;
 }
 
 function extractVerdict(report: Record<string, unknown>): string {
@@ -69,8 +94,93 @@ function isHallucination(goldenVerdict: string, actual: string): boolean {
   return false;
 }
 
+function normalizeAtom(text: string): string {
+  return text.replace(/\u3000/g, " ").trim();
+}
+
+function atomTextMatches(expected: string, actual: string): boolean {
+  const e = normalizeAtom(expected);
+  const a = normalizeAtom(actual);
+  if (!e || !a) return false;
+  return a === e || a.includes(e) || e.includes(a);
+}
+
+function hasBoundHttpUrl(verdict: { supportingSources?: unknown; sourcesRelatedOnly?: unknown }): boolean {
+  if (verdict.sourcesRelatedOnly === true) return false;
+  const sources = Array.isArray(verdict.supportingSources) ? verdict.supportingSources : [];
+  return sources.some((s) => {
+    if (!s || typeof s !== "object") return false;
+    return /^https?:\/\//i.test(String((s as { url?: unknown }).url || "").trim());
+  });
+}
+
+function readSubclaimVerdicts(report: Record<string, unknown>): Array<{
+  claimAtom: string;
+  verdict: string;
+  supportingSources?: unknown;
+  sourcesRelatedOnly?: unknown;
+}> {
+  const raw = report.subclaimVerdicts;
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{
+    claimAtom: string;
+    verdict: string;
+    supportingSources?: unknown;
+    sourcesRelatedOnly?: unknown;
+  }> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    if (typeof rec.claimAtom !== "string") continue;
+    out.push({
+      claimAtom: rec.claimAtom,
+      verdict: typeof rec.verdict === "string" ? rec.verdict : "",
+      supportingSources: rec.supportingSources,
+      sourcesRelatedOnly: rec.sourcesRelatedOnly,
+    });
+  }
+  return out;
+}
+
+function readAtomsSearched(bundle: unknown): string[] {
+  if (!bundle || typeof bundle !== "object") return [];
+  const atoms = (bundle as { atomsSearched?: unknown }).atomsSearched;
+  if (!Array.isArray(atoms)) return [];
+  return atoms.filter((a): a is string => typeof a === "string");
+}
+
+function scoreAtomMatch(
+  expectedAtoms: CaseResult["case"]["expectedAtoms"],
+  report: Record<string, unknown>
+): boolean {
+  if (!expectedAtoms || expectedAtoms.length === 0) return true;
+  const actuals = readSubclaimVerdicts(report);
+  for (const exp of expectedAtoms) {
+    const hit = actuals.find((a) => atomTextMatches(exp.atom, a.claimAtom));
+    if (!hit) return false;
+    if (hit.verdict !== exp.expectedVerdict) return false;
+    if (exp.requireBoundUrl && !hasBoundHttpUrl(hit)) return false;
+  }
+  return true;
+}
+
+function scoreMustSearch(needles: string[] | undefined, bundle: unknown): boolean {
+  if (!needles || needles.length === 0) return true;
+  const searched = readAtomsSearched(bundle);
+  return needles.every((needle) => {
+    const n = normalizeAtom(needle);
+    if (!n) return true;
+    return searched.some((atom) => atomTextMatches(n, atom));
+  });
+}
+
 export function scoreCase(result: CaseResult): MetricScores {
   const golden = result.case;
+  const loopExpected = golden.expectsEvidenceLoop === true;
+  const loop = result.evidenceLoop;
+  const loopRan = loop?.ran === true;
+  // 翻案 = 补查命中新证据（任一原子 evidence-found）
+  const loopRescued = loopRan && (loop?.atoms?.some((a) => a.stopReason === "evidence-found") ?? false);
   if (result.error) {
     return {
       caseId: golden.id,
@@ -84,6 +194,11 @@ export function scoreCase(result: CaseResult): MetricScores {
       reportContractPass: false,
       reportReviewScore: 0,
       overallPass: false,
+      atomMatchPass: true,
+      mustSearchPass: true,
+      evidenceLoopExpected: loopExpected,
+      evidenceLoopRan: false,
+      evidenceLoopRescued: false,
     };
   }
 
@@ -107,6 +222,8 @@ export function scoreCase(result: CaseResult): MetricScores {
     actualCredibility >= golden.expectedCredibilityRange[0] &&
     actualCredibility <= golden.expectedCredibilityRange[1];
   const hallucinationDetected = isHallucination(golden.expectedVerdictType, actualVerdict);
+  const atomMatchPass = scoreAtomMatch(golden.expectedAtoms, result.finalReport);
+  const mustSearchPass = scoreMustSearch(golden.mustSearch, result.atomSearchBundle);
 
   // 报告契约：确定性 reviewer 检查（与生产 reviewAndRepairReport 同源，写入 finalReport._review）
   const review = result.finalReport._review as
@@ -127,7 +244,9 @@ export function scoreCase(result: CaseResult): MetricScores {
     verdictCorrect &&
     credibilityInRange &&
     !hallucinationDetected &&
-    reportContractPass;
+    reportContractPass &&
+    atomMatchPass &&
+    mustSearchPass;
 
   return {
     caseId: golden.id,
@@ -141,6 +260,11 @@ export function scoreCase(result: CaseResult): MetricScores {
     reportContractPass,
     reportReviewScore,
     overallPass,
+    atomMatchPass,
+    mustSearchPass,
+    evidenceLoopExpected: loopExpected,
+    evidenceLoopRan: loopRan,
+    evidenceLoopRescued: loopRescued,
   };
 }
 
@@ -220,6 +344,12 @@ export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
     if (s.verdictCorrect) byCategory[s.category].verdictCorrectCount++;
   }
 
+  // ADR-004 观测指标：分母 = expectsEvidenceLoop 的 case
+  const loopExpectedScores = scores.filter((s) => s.evidenceLoopExpected);
+  const loopExpectedCount = loopExpectedScores.length;
+  const loopTriggeredCount = loopExpectedScores.filter((s) => s.evidenceLoopRan).length;
+  const loopRescuedCount = loopExpectedScores.filter((s) => s.evidenceLoopRescued).length;
+
   const failures = scores
     .filter((s) => !s.overallPass)
     .map((s) => ({
@@ -231,6 +361,8 @@ export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
         !s.credibilityInRange && "credibility out of range",
         s.hallucinationDetected && "hallucination detected",
         !s.reportContractPass && `report contract fail (score ${s.reportReviewScore})`,
+        !s.atomMatchPass && "atom verdict mismatch",
+        !s.mustSearchPass && "mustSearch miss",
       ]
         .filter(Boolean)
         .join("; "),
@@ -248,5 +380,51 @@ export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
     avgReportReviewScore: total > 0 ? reviewScoreSum / total : 0,
     byCategory,
     failures,
+    evidenceLoopExpectedCount: loopExpectedCount,
+    evidenceLoopTriggerRate: loopExpectedCount > 0 ? loopTriggeredCount / loopExpectedCount : 0,
+    evidenceLoopRescueRate: loopExpectedCount > 0 ? loopRescuedCount / loopExpectedCount : 0,
   };
+}
+
+const GATE_METRICS = ["verdictAccuracy", "routingAccuracy", "reportContractPassRate"] as const;
+
+export type BaselineGateInput = {
+  totalCases: number;
+  verdictAccuracy?: number;
+  routingAccuracy?: number;
+  reportContractPassRate?: number;
+};
+
+export type BaselineCheck = {
+  name: string;
+  baseline: number;
+  current: number;
+  ok: boolean;
+};
+
+/** 先比 totalCases（条数变了旧聚合不能当门禁），再比三项准确率，容忍 5 个点。 */
+export function compareToBaseline(
+  baseline: BaselineGateInput,
+  current: BaselineGateInput,
+  tolerance = 0.05
+): { passed: boolean; checks: BaselineCheck[] } {
+  const checks: BaselineCheck[] = [
+    {
+      name: "totalCases",
+      baseline: baseline.totalCases,
+      current: current.totalCases,
+      ok: baseline.totalCases === current.totalCases,
+    },
+  ];
+  for (const name of GATE_METRICS) {
+    const base = baseline[name] ?? 0;
+    const cur = current[name] ?? 0;
+    checks.push({
+      name,
+      baseline: base,
+      current: cur,
+      ok: cur - base >= -tolerance,
+    });
+  }
+  return { passed: checks.every((c) => c.ok), checks };
 }

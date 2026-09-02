@@ -1,4 +1,4 @@
-import type { HandoffStep } from "./agentExpansion";
+import type { HandoffStep } from "./agentConfigs.js";
 
 export type ClaimType =
   | "概念"

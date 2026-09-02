@@ -1,0 +1,208 @@
+.memo {
+  max-width: 46rem;
+  color: var(--zt-text-secondary, #4a4a5a);
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.memo h1,
+.memo h2,
+.memo h3 {
+  font-family: var(--font-serif, "Noto Serif SC", "Songti SC", serif);
+  font-weight: 600;
+  color: var(--ink, #151821);
+  letter-spacing: -0.4px;
+}
+
+/* h1 只作中性章节头：不再给被核查原句做「证物框」（底色条 + 左墨线会把谣言
+   抬成告示牌，放大错觉真相）。判决句（.verdictLead strong）才是全页最大元素。 */
+.memo h1 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0;
+  color: var(--zt-text-secondary, #4a4a5a);
+}
+
+.memo h2 {
+  margin: 23px 0 9px;
+  font-size: var(--type-title, 20px);
+  line-height: 28px;
+}
+
+.memo hr + h2 {
+  margin-top: 0;
+}
+
+.memo h3 {
+  margin: 18px 0 8px;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.memo p {
+  margin: 0 0 8px;
+}
+
+/* L1 判定句：serif 700、19-24px，墨色文字 + 判断色高亮下划线（颜色不当说服工具） */
+.verdictLead {
+  --verdict-mark: rgba(21, 24, 33, 0.08);
+}
+
+.verdictLead[data-verdict="true"] {
+  --verdict-mark: color-mix(in srgb, var(--verdict-true, #16a34a) 16%, transparent);
+}
+
+.verdictLead[data-verdict="false"] {
+  --verdict-mark: color-mix(in srgb, var(--verdict-false, #e84a5f) 16%, transparent);
+}
+
+.verdictLead[data-verdict="mixed"],
+.verdictLead[data-verdict="unverified"] {
+  --verdict-mark: color-mix(in srgb, var(--verdict-unclear, #d97706) 16%, transparent);
+}
+
+/* 原句横幅移除后，判决句是全页第一视觉主角 */
+.verdictLead strong:first-child {
+  font-family: var(--font-serif, "Noto Serif SC", "Songti SC", serif);
+  font-size: clamp(21px, 2.4vw, 26px);
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  color: var(--ink, #151821);
+  background: linear-gradient(transparent 62%, var(--verdict-mark) 62%);
+}
+
+.memo strong {
+  font-weight: 600;
+  color: var(--ink, #151821);
+}
+
+.memo ol,
+.memo ul {
+  margin: 0 0 16px;
+  padding-left: 1.35em;
+}
+
+.memo li {
+  margin: 0 0 10px;
+}
+
+.memo li strong:first-child {
+  font-weight: 680;
+}
+
+.memo hr {
+  border: 0;
+  border-top: 1px solid var(--border-subtle, #e8e4d9);
+  margin: 14px 0;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  margin: 0 0 16px;
+}
+
+.memo table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.memo th {
+  text-align: left;
+  font-weight: 650;
+  color: var(--zt-text-muted, #888);
+  font-size: 12px;
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--border-subtle, #e8e4d9);
+  white-space: nowrap;
+}
+
+.memo td {
+  padding: 10px 12px 10px 0;
+  border-bottom: 1px solid var(--border-subtle, #e8e4d9);
+  vertical-align: top;
+  color: var(--zt-text-secondary, #4a4a5a);
+}
+
+.chip {
+  position: relative; /* 供链接 chip 的伪元素扩大命中区 */
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 3px;
+  padding: 1px 7px 1px 5px;
+  border-radius: 999px;
+  background: rgba(21, 24, 33, 0.06);
+  color: var(--zt-text-secondary, #4a4a5a);
+  font-size: 11.5px;
+  line-height: 18px;
+  text-decoration: none;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+/* 视觉 20px 高的行内 chip 触控命中区扩到 ≥32px */
+a.chip::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+
+.chip img {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.chip:hover {
+  background: rgba(21, 24, 33, 0.1);
+  color: var(--ink, #151821);
+}
+
+.chipExtra {
+  color: var(--zt-text-muted, #888);
+}
+
+.refs {
+  margin-top: 28px;
+  padding-top: 8px;
+}
+
+.refsKicker {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--zt-text-muted, #888);
+}
+
+.refs ol {
+  margin: 0;
+  padding-left: 1.4em;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--zt-text-secondary, #4a4a5a);
+}
+
+.refs li {
+  margin: 0 0 8px;
+}
+
+.refs a {
+  color: var(--ink, #151821);
+  text-decoration: none;
+}
+
+.refs a:hover {
+  text-decoration: underline;
+}
+
+.refHost {
+  margin-left: 8px;
+  color: var(--zt-text-muted, #888);
+  font-size: 12px;
+}
