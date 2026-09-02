@@ -15,6 +15,9 @@ import {
 import type {
   MissionShellModel,
   ShellAgentChip,
+  ShellAtomSearchProvider,
+  ShellAtomSearchSource,
+  ShellAtomSearchState,
   ShellNodeStatus,
   ShellThoughtItem,
   ShellToolItem,
@@ -346,6 +349,7 @@ export function adaptOrchestrateStreamToShell(
   const thoughtByKey = new Map<string, ShellThoughtItem>();
   const toolByKey = new Map<string, ShellToolItem>();
   const agentById = new Map<string, ShellAgentChip>();
+  const atomSearchById = new Map<string, ShellAtomSearchState>();
   let live = true;
   let errorMessage: string | undefined;
   let understanding: ShellUnderstanding | undefined;
@@ -409,6 +413,10 @@ export function adaptOrchestrateStreamToShell(
     const ts = event.timestamp;
 
     switch (event.type) {
+      case "search_progress": {
+        applySearchProgress(atomSearchById, event);
+        break;
+      }
       case "planner_update": {
         if (typeof event.plan?.claimType === "string" && event.plan.claimType.trim()) {
           claimType = event.plan.claimType.trim();
@@ -723,6 +731,9 @@ export function adaptOrchestrateStreamToShell(
     }
   }
 
+  const atomSearch: Record<string, ShellAtomSearchState> = {};
+  for (const [atom, state] of atomSearchById) atomSearch[atom] = state;
+
   return {
     claim,
     phaseLabel: phaseFromEvents(events),
@@ -731,10 +742,114 @@ export function adaptOrchestrateStreamToShell(
     tools: orderTool.map((k) => toolByKey.get(k)!).filter(Boolean),
     agents: orderAgent.map((k) => agentById.get(k)!).filter(Boolean),
     understanding,
+    atomSearch,
     verdict,
     live,
     errorMessage,
   };
+}
+
+const PROVIDER_STATUSES = new Set<ShellAtomSearchProvider["status"]>([
+  "pending",
+  "running",
+  "completed",
+  "partial",
+  "failed",
+]);
+
+/** 服务端可能下发契约外的提供方 id/字段：用 label 兜底、状态退回 pending，不崩溃。 */
+function sanitizeProviders(list: unknown): ShellAtomSearchProvider[] {
+  if (!Array.isArray(list)) return [];
+  const out: ShellAtomSearchProvider[] = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== "object") continue;
+    const p = raw as Record<string, unknown>;
+    const id = typeof p.id === "string" && p.id.trim() ? p.id.trim() : "unknown";
+    const label = typeof p.label === "string" && p.label.trim() ? p.label.trim() : id;
+    const status = PROVIDER_STATUSES.has(p.status as ShellAtomSearchProvider["status"])
+      ? (p.status as ShellAtomSearchProvider["status"])
+      : "pending";
+    const resultCount =
+      typeof p.resultCount === "number" && Number.isFinite(p.resultCount) ? p.resultCount : 0;
+    out.push({ id, label, status, resultCount });
+  }
+  return out;
+}
+
+/** 同 id 覆盖（不产生重复行），新 id 追加；先见顺序保留。 */
+function mergeProviders(
+  prev: ShellAtomSearchProvider[] | undefined,
+  next: ShellAtomSearchProvider[]
+): ShellAtomSearchProvider[] {
+  if (!prev || prev.length === 0) return next;
+  if (next.length === 0) return prev;
+  const byId = new Map(prev.map((p) => [p.id, p]));
+  for (const p of next) byId.set(p.id, p);
+  return [...byId.values()];
+}
+
+function sanitizeSources(list: unknown): ShellAtomSearchSource[] {
+  if (!Array.isArray(list)) return [];
+  const out: ShellAtomSearchSource[] = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== "object") continue;
+    const s = raw as Record<string, unknown>;
+    const url = typeof s.url === "string" ? s.url.trim() : "";
+    const title = typeof s.title === "string" ? s.title.trim() : "";
+    if (!title && !url) continue;
+    out.push({
+      title: title || url,
+      url,
+      providerOrigins: Array.isArray(s.providerOrigins)
+        ? s.providerOrigins.filter((x): x is string => typeof x === "string")
+        : [],
+    });
+  }
+  return out;
+}
+
+function sanitizeStats(v: OrchestrateStreamEvent["stats"]): ShellAtomSearchState["stats"] {
+  if (!v || typeof v !== "object") return undefined;
+  const n = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? x : 0);
+  return {
+    rawResultCount: n(v.rawResultCount),
+    uniqueSourceCount: n(v.uniqueSourceCount),
+    sharedSourceCount: n(v.sharedSourceCount),
+    singleProviderSourceCount: n(v.singleProviderSourceCount),
+  };
+}
+
+/**
+ * search_progress → 按 atom 独立累积的检索状态。
+ * 守卫：completed 原子不被更旧/非 completed 事件回退；时间戳更旧的事件整体忽略；
+ * 同刻重复事件按快照覆盖，天然幂等。
+ */
+function applySearchProgress(
+  byAtom: Map<string, ShellAtomSearchState>,
+  event: OrchestrateStreamEvent
+): void {
+  const atom = (event.atom ?? "").trim();
+  if (!atom) return;
+  const prev = byAtom.get(atom);
+  const phase: ShellAtomSearchState["phase"] =
+    event.phase === "started" || event.phase === "completed" ? event.phase : "progress";
+  const ts = typeof event.timestamp === "number" ? event.timestamp : undefined;
+
+  if (prev && ts != null && prev.timestamp != null && ts < prev.timestamp) return;
+  // completed 原子只接受 completed 事件更新（旧时间戳已被上一条守卫拦截）
+  if (prev?.phase === "completed" && phase !== "completed") return;
+
+  const providers = mergeProviders(prev?.providers, sanitizeProviders(event.providers));
+  const nextTs = ts ?? prev?.timestamp;
+  byAtom.set(atom, {
+    atom,
+    phase,
+    queryCount: Math.max(prev?.queryCount ?? 0, typeof event.queryCount === "number" ? event.queryCount : 0),
+    providers,
+    stats: sanitizeStats(event.stats) ?? prev?.stats,
+    sources: Array.isArray(event.sources) ? sanitizeSources(event.sources) : (prev?.sources ?? []),
+    timestamp: nextTs,
+  });
 }
 
 function toolKey(event: OrchestrateStreamEvent): string {
