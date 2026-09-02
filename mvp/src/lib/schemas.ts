@@ -81,8 +81,8 @@ export interface CandidateMaterial {
   independence: ScoreLevel;
   limitations: string[];
   // 审查 P2-8 修复：新增可选 publishedAt（毫秒时间戳），
-  // evidenceQuality.ts 据此计算 freshnessScore；缺失时回退到 50（scoreFreshnessFromTimestamp 默认）。
-  // demo 数据可选择性填充，未来 Search360Source→CandidateMaterial 转换器应自动写入。
+  // 缺失时证据质量按未知新鲜度处理。
+  // demo 数据可选择性填充。
   publishedAt?: number;
 }
 
@@ -411,6 +411,22 @@ export interface BiasAuditFinding {
   mitigation: string;
 }
 
+// ── 证据来源条目（过程与判断页通用） ─────────────────────────
+
+export interface SourceHit {
+  sourceId: string;
+  sourceName: string;
+  sourceIcon: string;
+  matchedUrl: string;
+  detectionMethod: string;
+  trustLevel: string;
+  matchedKeywords: string[];
+  factCheckResult?: "true" | "false" | "partial" | "unverified";
+  evidenceRole?: EvidenceRole;
+  sourceQuality?: Pick<Search360Source, "sourceType" | "credibilityScore" | "sourceTier" | "freshnessScore" | "domain">;
+  summary: string;
+}
+
 // ── M2: 360 搜索 ─────────────────────────────────────────────
 
 export interface Search360Request {
@@ -435,11 +451,6 @@ export interface Search360Source {
   evidenceRole?: EvidenceRole;
   publishedAt?: string;
   publishedTimestamp?: number;
-  /**
-   * 后端 sourceCondenser 浓缩出的 奕枢风格 摘要（30-200 字）。
-   * 不在 schema 必填字段，失败/缺失时为 undefined,UI fallback 到 snippet。
-   */
-  condensedSnippet?: string;
 }
 
 export interface Search360Response {

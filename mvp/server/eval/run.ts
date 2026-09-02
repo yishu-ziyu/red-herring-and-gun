@@ -23,7 +23,9 @@ import {
   scoreCase,
   aggregateMetrics,
   aggregateRepeats,
+  compareToBaseline,
   type AggregateMetrics,
+  type CaseResult,
   type RepeatRun,
 } from "./score.js";
 
@@ -152,13 +154,15 @@ async function main() {
     let lastError: string | undefined;
 
     let lastBundle: Awaited<ReturnType<typeof runCase>>["atomSearchBundle"];
+    let lastLoop: Awaited<ReturnType<typeof runCase>>["evidenceLoop"];
 
     for (let r = 0; r < repeats; r++) {
-      const { steps, finalReport, error, atomSearchBundle } = await runCase(golden, evalEnv);
+      const { steps, finalReport, error, atomSearchBundle, evidenceLoop } = await runCase(golden, evalEnv);
       lastSteps = steps;
       lastReport = finalReport;
       lastError = error;
       lastBundle = atomSearchBundle;
+      lastLoop = evidenceLoop;
       const verdict = error ? "ERROR" : String(finalReport.verdictType ?? "?");
       const cred =
         error || typeof finalReport.credibilityScore !== "number"
@@ -205,9 +209,14 @@ async function main() {
         expectedVerdictType: golden.expectedVerdictType,
         expectedCredibilityRange: golden.expectedCredibilityRange,
         expectedAgentSequence: golden.expectedAgentSequence,
+        expectsEvidenceLoop: golden.expectsEvidenceLoop,
+        expectedAtoms: golden.expectedAtoms,
+        mustSearch: golden.mustSearch,
       },
       steps: lastSteps,
       finalReport: scoredReport,
+      atomSearchBundle: lastBundle,
+      evidenceLoop: lastLoop as CaseResult["evidenceLoop"],
       error: agg.error,
     });
     scores.push(score);
@@ -220,6 +229,7 @@ async function main() {
       latencyMs: ms,
       agents: lastSteps.map((s) => s.agent),
       search: searchMeta,
+      evidenceLoop: lastLoop ?? undefined,
       scoreBreakdown: (lastReport as Record<string, unknown>)._scoreBreakdown ?? null,
       repeats: repeats > 1 ? { n: repeats, votes: agg.verdictVotes, samples: agg.credibilitySamples, runs: perRunDetails } : undefined,
     });
@@ -254,6 +264,22 @@ async function main() {
     );
   }
 
+  // ADR-004 evidenceLoop 观测汇总：只看 expectsEvidenceLoop 的 case
+  if (aggregate.evidenceLoopExpectedCount > 0) {
+    console.log("\n===== Evidence Loop（翻案案例） =====");
+    console.log(
+      JSON.stringify(
+        {
+          expected: aggregate.evidenceLoopExpectedCount,
+          triggerRate: aggregate.evidenceLoopTriggerRate,
+          rescueRate: aggregate.evidenceLoopRescueRate,
+        },
+        null,
+        2
+      )
+    );
+  }
+
   // 写历史
   const entry = {
     timestamp: new Date().toISOString(),
@@ -272,21 +298,24 @@ async function main() {
       process.exit(1);
     }
     const baseline = JSON.parse(readFileSync(args.gate, "utf8")) as AggregateMetrics;
-    const TOLERANCE = 0.05;
-    const checks = [
-      ["verdictAccuracy", baseline.verdictAccuracy, aggregate.verdictAccuracy],
-      ["routingAccuracy", baseline.routingAccuracy, aggregate.routingAccuracy],
-      ["reportContractPassRate", baseline.reportContractPassRate, aggregate.reportContractPassRate],
-    ];
-    let failed = false;
-    for (const [name, base, cur] of checks) {
-      const delta = (cur ?? 0) - (base ?? 0);
-      const ok = delta >= -TOLERANCE;
-      console.log(`  ${name}: baseline=${base?.toFixed(3)} now=${cur?.toFixed(3)} delta=${delta.toFixed(3)} ${ok ? "PASS" : "FAIL"}`);
-      if (!ok) failed = true;
+    const comparison = compareToBaseline(baseline, aggregate);
+    for (const check of comparison.checks) {
+      if (check.name === "totalCases") {
+        console.log(`  totalCases: baseline=${check.baseline} now=${check.current} ${check.ok ? "PASS" : "FAIL"}`);
+        continue;
+      }
+      const delta = check.current - check.baseline;
+      console.log(
+        `  ${check.name}: baseline=${check.baseline.toFixed(3)} now=${check.current.toFixed(3)} delta=${delta.toFixed(3)} ${check.ok ? "PASS" : "FAIL"}`
+      );
     }
-    if (failed) {
-      console.error("\n门禁失败：核心指标相对基线退化超过 5 个点。");
+    if (!comparison.passed) {
+      const casesMismatch = comparison.checks.some((c) => c.name === "totalCases" && !c.ok);
+      console.error(
+        casesMismatch
+          ? "\n门禁失败：黄金集条数与基线不一致，禁止用旧聚合当门禁。"
+          : "\n门禁失败：核心指标相对基线退化超过 5 个点。"
+      );
       process.exit(1);
     }
     console.log("\n门禁通过。");

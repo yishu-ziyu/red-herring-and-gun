@@ -17,6 +17,7 @@ import {
   PUBLIC_REPORT_FALLBACK_REASON,
 } from "./reportSanitizer.js";
 import { faceVerdictFor } from "./reportAssembly/index.js";
+import { stripFaceStamp } from "./publicCopy.js";
 
 const BANNED_DRAMA =
   /纯属捏造|纯属子虚乌有|令人啼笑皆非|令人啼笑|可笑至极|震惊全网|铁证如山|毋庸置疑|智慧的网友|作为AI|作为人工智能|速来围观|当帮凶|广大网友务必/g;
@@ -83,20 +84,10 @@ function hasUncertainty(text: string): boolean {
   return /不足|无法|未见|不能支持|尚未|缺口|不能|有限|待核|未证实|不宜|不能信|还查不清/.test(text);
 }
 
-function ensureFaceLead(text: string, verdictType: unknown, notes: string[], label: string): string {
-  if (
-    verdictType !== "true" &&
-    verdictType !== "false" &&
-    verdictType !== "mixed_misleading" &&
-    verdictType !== "unverified"
-  ) {
-    return text;
-  }
-  const face = faceVerdictFor(verdictType);
-  if (!text) return `${face}。`;
-  if (hasFaceVerdict(text)) return text;
-  notes.push(`${label}: prepended face verdict`);
-  return `${face}。${text}`;
+function ensureFaceLead(text: string, _verdictType: unknown, notes: string[], label: string): string {
+  const stripped = stripFaceStamp(text);
+  if (stripped !== text.trim()) notes.push(`${label}: stripped face stamp`);
+  return stripped || text;
 }
 
 function hasClaimFraming(text: string, claim: string): boolean {
@@ -115,8 +106,8 @@ function ensureClaimAndUncertainty(
   if (!out) {
     notes.push("conclusion: empty → conservative default");
     return claim
-      ? `还查不清。流传说法是：「${claim.slice(0, 42)}」。现有证据仍不足以确认。`
-      : "还查不清。现有证据仍不足以确认该说法。";
+      ? `公开材料还撑不住判断。流传说法是：「${claim.slice(0, 42)}」。现有证据仍不足以确认。`
+      : "公开材料还撑不住判断。现有证据仍不足以确认该说法。";
   }
 
   if (claim && !hasClaimFraming(out, claim)) {

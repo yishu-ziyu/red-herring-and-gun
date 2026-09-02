@@ -13,10 +13,12 @@
 
 import crypto from "node:crypto";
 import { ACCOUNT_DAILY_CHECKS, shanghaiDayKey } from "../../../src/lib/checkQuota.js";
+import { loadSnapshot, registerSnapshotSource } from "./jsonSnapshot.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 min
 const RATE_WINDOW_MS = 60 * 1000; // 1 min
 const SESSION_TTL_MS = 31 * 24 * 60 * 60 * 1000; // 31 days
+const MAX_VERIFY_ATTEMPTS = 5; // 单个验证码最多允许试错次数，超过立即作废
 
 export interface EmailAccount {
   email: string;
@@ -150,7 +152,13 @@ export async function verifyAndCreate(
     return { ok: false, error: "invalid_code" };
   }
 
-  if (record.attempts >= 5) {
+  const now = Date.now();
+  if (record.expiresAt <= now) {
+    codes.delete(hash);
+    return { ok: false, error: "expired" };
+  }
+
+  if (record.attempts >= MAX_VERIFY_ATTEMPTS) {
     record.consumed = true;
     codes.delete(hash);
     return { ok: false, error: "invalid_code" };
@@ -158,17 +166,11 @@ export async function verifyAndCreate(
 
   if (record.code !== rawCode) {
     record.attempts += 1;
-    if (record.attempts >= 5) {
+    if (record.attempts >= MAX_VERIFY_ATTEMPTS) {
       record.consumed = true;
       codes.delete(hash);
     }
     return { ok: false, error: "invalid_code" };
-  }
-
-  const now = Date.now();
-  if (record.expiresAt <= now) {
-    codes.delete(hash);
-    return { ok: false, error: "expired" };
   }
 
   record.consumed = true;
@@ -316,6 +318,25 @@ export function resetForTests() {
   accounts.clear();
   codes.clear();
   sessions.clear();
+}
+
+// ── D1：账号与会话快照持久化（验证码短时效，不持久化）──
+const ACCOUNT_SNAPSHOT_FILE = "accounts.json";
+
+export function snapshotState() {
+  return {
+    accounts: [...accounts.entries()],
+    sessions: [...sessions.entries()].filter(([, record]) => record.expiresAt > Date.now()),
+  };
+}
+
+{
+  const restored = loadSnapshot<ReturnType<typeof snapshotState>>(ACCOUNT_SNAPSHOT_FILE);
+  if (restored) {
+    for (const [hash, account] of restored.accounts ?? []) accounts.set(hash, account);
+    for (const [id, record] of restored.sessions ?? []) sessions.set(id, record);
+  }
+  registerSnapshotSource(ACCOUNT_SNAPSHOT_FILE, snapshotState);
 }
 
 export const ACCOUNT_CONSTANTS = {

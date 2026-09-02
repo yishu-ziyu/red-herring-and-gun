@@ -6,7 +6,8 @@
 
 ## 状态
 
-已批准
+部分执行，已被 ADR-003（生产 Case Pipeline）收编。  
+Phase 1（executeDag）已落地；Phase 2–5 未启动。2026-08 起生产真相是 Case Pipeline，AgentRuntime 退居 eval/dev 实验床。本 ADR 的 DAG 目标不再单独推进，见 ADR-003 第 3、4 条。
 
 ## 背景
 

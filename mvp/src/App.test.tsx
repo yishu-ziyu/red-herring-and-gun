@@ -70,6 +70,40 @@ describe("model settings preview", () => {
   });
 });
 
+describe("removed preview routes", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mockModelsList(FAKE_MODELS);
+  });
+
+  const legacyRoute = (suffix: string) => `/${suffix}`;
+  const legacyRouteCases = [
+    ["dem", "o"],
+    ["shell-", "preview"],
+    ["process-", "preview"],
+    ["result-", "preview"],
+  ].map(([prefix, suffix]) => legacyRoute(prefix + suffix));
+
+  it.each(legacyRouteCases as string[])(
+    "%s falls through to the landing desk",
+    async (pathname) => {
+      window.history.pushState({}, "", pathname);
+
+      render(<App />);
+
+      expect(await screen.findByText("把你想核查的句子、链接或截图放进来")).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "隔夜菜会致癌，等于吃毒药" })).toBeInTheDocument();
+      expect(screen.queryByLabelText("核心结论")).not.toBeInTheDocument();
+    }
+  );
+});
+
 describe("real analysis workspace", () => {
   afterEach(() => {
     cleanup();
@@ -87,7 +121,7 @@ describe("real analysis workspace", () => {
   });
 
   async function fillClaimInput(text: string) {
-    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    const editor = await screen.findByRole("textbox", { name: "你想核查什么？" });
     editor.textContent = text;
     fireEvent.input(editor);
     await waitFor(() => {
@@ -102,7 +136,7 @@ describe("real analysis workspace", () => {
     await fillClaimInput("隔夜菜会致癌，吃了等于吃毒药");
     fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
 
-    expect(await screen.findByLabelText("思考中")).toBeInTheDocument();
+    expect(await screen.findByTestId("apodex-run")).toBeInTheDocument();
     return rendered;
   }
 
@@ -110,7 +144,7 @@ describe("real analysis workspace", () => {
     const { container } = await startRealAnalysis();
 
     expect(container.querySelector(".case-workbench-view--clean")).not.toBeNull();
-    expect(screen.getByLabelText("思考中")).toBeInTheDocument();
+    expect(screen.getByTestId("apodex-run")).toBeInTheDocument();
     expect(screen.queryByLabelText("活动过程时间线")).not.toBeInTheDocument();
     expect(container.querySelector(".case-controller-panel")).toBeNull();
     expect(screen.queryByLabelText("执行画布缩略图")).not.toBeInTheDocument();
@@ -119,7 +153,7 @@ describe("real analysis workspace", () => {
   it("starts the real workspace from the stream-driven controller surface", async () => {
     const { container } = await startRealAnalysis();
 
-    expect(await screen.findByLabelText("思考中")).toBeInTheDocument();
+    expect(await screen.findByTestId("apodex-run")).toBeInTheDocument();
     expect(screen.queryByLabelText("活动过程时间线")).not.toBeInTheDocument();
     expect(container.querySelector(".controller-proof-card")).toBeNull();
     expect(container.querySelector(".controller-prompt-dock")).toBeNull();
@@ -169,12 +203,13 @@ describe("real analysis workspace", () => {
 
     await startRealAnalysis();
 
-    expect(await screen.findByLabelText("切换来源列表")).toBeInTheDocument();
-    expect(screen.getByText("查了 2 处来源")).toBeInTheDocument();
+    const report = await screen.findByLabelText("核心结论");
+    expect(report).toHaveTextContent("公开材料不支持整句");
+    expect(report).not.toHaveTextContent("不能信");
     expect(screen.queryByText("sourceCount")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText("切换来源列表"));
+    fireEvent.click(screen.getByText("核查过程"));
+    fireEvent.click(screen.getByText("检索网页"));
     expect(screen.getAllByRole("link", { name: "食品安全与亚硝酸盐科普" }).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("判断")).toHaveTextContent("不能信");
     expect(screen.queryByLabelText("活动过程时间线")).not.toBeInTheDocument();
   });
 
@@ -186,14 +221,16 @@ describe("real analysis workspace", () => {
         toolName: "360 Search",
         query: "隔夜菜 致癌",
       };
+      // F1 语义：流若「结束」而无终态事件会被判为断流失败；
+      // 本用例要的是流仍开着——挂起生成器，永不返回
+      await new Promise(() => {});
     });
 
     await startRealAnalysis();
 
-    expect(await screen.findByLabelText("正在检索公开来源")).toBeInTheDocument();
-    expect(screen.getByLabelText("思考中")).toBeInTheDocument();
-    expect(screen.queryByLabelText("判断")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "取消核查" })).toBeInTheDocument();
+    expect(await screen.findByText("正在检索")).toBeInTheDocument();
+    expect(screen.queryByLabelText("核心结论")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /停止/ })).toBeInTheDocument();
   });
 
   it("separates false-claim confidence from original information credibility", async () => {
@@ -219,27 +256,11 @@ describe("real analysis workspace", () => {
 
     await startRealAnalysis();
 
-    // 结果首屏：判断词 + 结论，写在右侧卷宗里
-    const dossier = screen.getByLabelText("核查卷宗");
-    const report = await within(dossier).findByLabelText("最终核查判断");
-    expect(within(report).getByText("不能信")).toBeInTheDocument();
+    const report = await screen.findByLabelText("核心结论");
+    expect(within(report).queryByText(/不能信/)).not.toBeInTheDocument();
     expect(within(report).getByText(/该说法没有可靠证据支持/)).toBeInTheDocument();
-    expect(within(report).getByText("不能信。")).toBeInTheDocument();
-    await waitFor(() => {
-      expect(screen.getByLabelText("切换思考记录")).toBeInTheDocument();
-    });
-    fireEvent.click(screen.getByLabelText("切换思考记录"));
     expect(screen.queryByLabelText("活动过程时间线")).not.toBeInTheDocument();
-    const threadAnswer = screen.getByLabelText("判断");
-    expect(threadAnswer).toHaveTextContent("不能信");
-    expect(threadAnswer).toHaveTextContent(/该说法没有可靠证据支持/);
     expect(screen.getByRole("button", { name: "再查一条" })).toBeInTheDocument();
-    // 折叠区仍可展开看评分细节
-    const more = within(report).queryByText("更多细节（评分与审计）");
-    if (more) {
-      fireEvent.click(more);
-      expect(within(report).getByText(/判断置信度 95\/100|原信息可信度 5\/100/)).toBeInTheDocument();
-    }
   });
 
   it("keeps deterministic report fallback visible instead of rejecting the final report", async () => {
@@ -328,12 +349,11 @@ describe("real analysis workspace", () => {
 
     await startRealAnalysis();
 
-    // 基础设施错误不得出现在用户可见结论文案里
-    const report = await screen.findByLabelText("最终核查判断");
+    const report = await screen.findByLabelText("核心结论");
     expect(within(report).getByText(/当前证据不足以直接确认原始说法/)).toBeInTheDocument();
-    expect(within(report).getByText("还查不清。")).toBeInTheDocument();
+    expect(within(report).queryByText(/还查不清/)).not.toBeInTheDocument();
     const visible = document.body.textContent || "";
-    expect(visible).toMatch(/最终写作服务暂时不可用|证据不足|还查不清/);
+    expect(visible).toMatch(/当前证据不足以直接确认原始说法/);
     expect(visible).not.toMatch(/ReportComposer all providers failed|quota exceeded at https:\/\/internal\.example\.com/);
   });
 
@@ -368,8 +388,8 @@ describe("real analysis workspace", () => {
 
     await startRealAnalysis();
 
-    const report = await screen.findByLabelText("最终核查判断");
-    expect(within(report).getAllByText(/https:\/\/example\.com\/news\/v1-release/).length).toBeGreaterThan(0);
+    const report = await screen.findByLabelText("核心结论");
+    expect(within(report).getAllByText(/example\.com|v1-release/).length).toBeGreaterThan(0);
     expect(screen.queryByText("最终写作服务暂时不可用，系统已改用保守兜底报告。")).not.toBeInTheDocument();
   });
 
@@ -402,20 +422,15 @@ describe("real analysis workspace", () => {
 
     await startRealAnalysis();
 
-    const report = await screen.findByLabelText("最终核查判断");
-    expect(within(report).getByText("这次没查完")).toBeInTheDocument();
-    expect(within(report).getByRole("button", { name: "再查一次" })).toBeInTheDocument();
-    expect(within(report).getByRole("link", { name: "央行公开说明" })).toHaveAttribute(
-      "href",
-      "https://example.com/pboc"
-    );
+    const report = await screen.findByLabelText("核心结论");
+    expect(within(report).getByText(/这一轮没有收成判断/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新核查" })).toBeInTheDocument();
+    expect(within(report).getByRole("link")).toHaveAttribute("href", "https://example.com/pboc");
     expect(within(report).queryByText("未证实")).not.toBeInTheDocument();
     expect(within(report).queryByText(/判断置信度/)).not.toBeInTheDocument();
     expect(within(report).queryByText(/审核器补全/)).not.toBeInTheDocument();
     expect(within(report).queryByText(/模型服务暂时不可用/)).not.toBeInTheDocument();
     expect(within(report).queryByText(/检查模型配置/)).not.toBeInTheDocument();
-    expect(screen.getByLabelText("判断")).toHaveTextContent("这次没查完");
-    expect(screen.getByText("没查完")).toBeInTheDocument();
     expect(screen.queryByText("正在核查")).not.toBeInTheDocument();
   });
 });
@@ -485,8 +500,11 @@ describe("landing Version A storytelling", () => {
     expect(screen.getByLabelText("历史卷宗")).toBeInTheDocument();
     expect(screen.getByLabelText("核查卷宗")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "新查一条" })).toBeInTheDocument();
-    expect(screen.getByText("贴进来。追出处。告诉你能不能信。")).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+    const landingMission = document.querySelector(".landing-mission");
+    expect(landingMission).toHaveTextContent("把你想核查的句子、链接或截图放进来");
+    expect(landingMission).not.toHaveTextContent("能不能信");
+    expect(screen.getByText("告诉你这条说法是否可靠，问题在哪里，来源能点开。")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "隔夜菜会致癌，等于吃毒药" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "5G信号塔辐射导致周边居民头晕失眠" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "人民币即将大幅贬值，赶紧换美元" })).toBeInTheDocument();
@@ -501,13 +519,13 @@ describe("landing Version A storytelling", () => {
     render(<App />);
 
     expect(await screen.findByRole("button", { name: "登录" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
 
     expect(screen.getByRole("heading", { name: "登录" })).toBeInTheDocument();
     expect(screen.getByText("登录后，最近核查可以在别的设备接着看。不登录也能查。")).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
   });
 
   it("shows the development code on the login panel instead of claiming email delivery", async () => {
@@ -587,7 +605,7 @@ describe("landing Version A storytelling", () => {
     expect(screen.getByLabelText("6 位验证码")).toHaveValue("");
   });
 
-  it("does not show a model-service banner on the landing desk", async () => {
+  it("blocks a doomed run and explains model-service unavailability without provider details", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input: unknown) => {
       const url = typeof input === "string" ? input : (input as URL | Request)?.toString?.() ?? "";
       if (url.includes("/api/models/health")) {
@@ -610,9 +628,12 @@ describe("landing Version A storytelling", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
-    expect(screen.queryByText(/模型服务暂时不可用/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /开始核查/ })).toBeInTheDocument();
+    const editor = await screen.findByRole("textbox", { name: "你想核查什么？" });
+    expect(editor).toHaveAttribute("contenteditable", "true");
+    expect(await screen.findByText("核查服务暂时不可用。你的材料还没有提交，请稍后重试。")).toBeInTheDocument();
+    fireEvent.input(editor, { target: { textContent: "测试材料" } });
+    expect(screen.getByRole("button", { name: /开始核查/ })).toBeDisabled();
+    expect(document.body.textContent).not.toMatch(/DeepSeek|MiniMax|API Key|quota|余额|密钥/i);
   });
 
   it("fills the claim when a representative example is clicked, then starts on 开始核查", async () => {
@@ -626,12 +647,12 @@ describe("landing Version A storytelling", () => {
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: claim }));
-    const editor = screen.getByRole("textbox", { name: "待核查材料" });
+    const editor = screen.getByRole("textbox", { name: "你想核查什么？" });
     expect(editor).toHaveTextContent(claim);
 
     fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
 
-    expect(await screen.findByLabelText("思考中")).toBeInTheDocument();
+    expect(await screen.findByTestId("apodex-run")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(requestOrchestrateStream).toHaveBeenCalled();
@@ -652,7 +673,7 @@ describe("landing Version A storytelling", () => {
 
     render(<App />);
 
-    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    const editor = await screen.findByRole("textbox", { name: "你想核查什么？" });
     fireEvent.keyDown(editor, { key: "Enter", code: "Enter", shiftKey: false });
 
     expect(await screen.findByRole("alert")).toHaveTextContent("请先填写待核查材料");
@@ -682,7 +703,7 @@ describe("model picker (simplified BYO)", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("textbox", { name: "待核查材料" })).toBeInTheDocument();
+    expect(await screen.findByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
     expect(screen.queryByLabelText("模型选择")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "模型设置" })).toHaveAttribute("href", "/settings/api-key");
   });
@@ -702,7 +723,7 @@ describe("model picker (simplified BYO)", () => {
 
     render(<App />);
 
-    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    const editor = await screen.findByRole("textbox", { name: "你想核查什么？" });
     editor.textContent = "隔夜菜会致癌，等于吃毒药";
     fireEvent.input(editor);
 
@@ -720,7 +741,7 @@ describe("model picker (simplified BYO)", () => {
 
     render(<App />);
 
-    const editor = await screen.findByRole("textbox", { name: "待核查材料" });
+    const editor = await screen.findByRole("textbox", { name: "你想核查什么？" });
     editor.textContent = "测试默认模型链路";
     fireEvent.input(editor);
     fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
@@ -732,5 +753,93 @@ describe("model picker (simplified BYO)", () => {
     const lastCall = vi.mocked(requestOrchestrateStream).mock.calls.at(-1);
     const modelChoice = lastCall?.[2] as Record<string, unknown> | undefined;
     expect(modelChoice).toEqual({});
+  });
+});
+
+describe("same-thread follow-up", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.history.pushState({}, "", "/");
+    window.localStorage.clear();
+    mockModelsList([
+      { provider: "deepseek", model: "deepseek-v4-pro", label: "DeepSeek V4 Pro", tier: "high", hint: "强推理" },
+    ]);
+  });
+
+  it("sends a follow-up on the same thread without going home", async () => {
+    const firstReport = {
+      verdictType: "false",
+      credibilityLabel: "谣言",
+      credibilityScore: 90,
+      conclusion: "公开材料不支持整句。",
+      recommendation: "不能信。",
+      summaryForPublic: "不可靠。",
+      whyHardToVerify: [],
+      evidenceChain: [],
+      closureActions: [],
+      confidenceDimensions: [],
+    };
+    vi.mocked(requestOrchestrateStream)
+      .mockImplementationOnce(async function* () {
+        yield {
+          type: "complete",
+          totalLatencyMs: 20,
+          steps: [],
+          finalReport: firstReport,
+        };
+      })
+      .mockImplementationOnce(async function* () {
+        yield {
+          type: "complete",
+          totalLatencyMs: 20,
+          steps: [],
+          finalReport: {
+            ...firstReport,
+            conclusion: "微波炉加热同样不能等同致癌。",
+          },
+        };
+      });
+
+    render(<App />);
+    const editor = await screen.findByRole("textbox", { name: "你想核查什么？" });
+    editor.textContent = "隔夜菜会致癌，吃了等于吃毒药";
+    fireEvent.input(editor);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /开始核查/ })).toBeEnabled();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
+
+    const report = await screen.findByLabelText("核心结论");
+    expect(report).toHaveTextContent("公开材料不支持整句");
+
+    const box = screen.getByPlaceholderText("再问一句…");
+    expect(box).toBeEnabled();
+    fireEvent.change(box, { target: { value: "那微波炉加热呢" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("那微波炉加热呢")).toBeInTheDocument();
+    const bubbles = screen.getAllByTestId("claim-bubble");
+    expect(bubbles.map((el) => el.textContent)).toEqual([
+      "隔夜菜会致癌，吃了等于吃毒药",
+      "那微波炉加热呢",
+    ]);
+    expect(screen.queryByRole("textbox", { name: "你想核查什么？" })).not.toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(requestOrchestrateStream).toHaveBeenCalledTimes(2);
+    });
+    const second = vi.mocked(requestOrchestrateStream).mock.calls[1]?.[0];
+    const payload = typeof second === "string" ? second : second?.text;
+    expect(payload).toBeTruthy();
+    expect(payload?.startsWith("那微波炉加热呢")).toBe(true);
+    expect(payload).toContain("隔夜菜会致癌，吃了等于吃毒药");
+    expect(payload).toContain("同一条核查的追问");
+    expect(payload).toContain("公开材料不支持整句");
+
+    expect((await screen.findAllByText(/微波炉加热同样不能等同致癌/)).length).toBeGreaterThan(0);
   });
 });

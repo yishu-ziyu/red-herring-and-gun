@@ -6,15 +6,19 @@
 import {
   claimAtomKey,
   mergeSubclaimVerdicts,
-  splitVerifiableAtoms,
   type ClaimReportItem,
   type SubclaimVerdict,
 } from "../claimAtom/index.js";
 import {
+  applyUnsearchedAtomVerdicts,
   bindAtomEvidenceToVerdicts,
+  listAtomsForSearch,
+  selectAtomsToSearch,
   type AtomSearchBundle,
 } from "../atomSearch.js";
 import { normalizeReportCitations } from "../citationBinding.js";
+import { applyPublicCopy } from "../publicCopy.js";
+import { applyImageOriginToReport, type ImageOriginResult } from "../imageOrigin/index.js";
 
 export const FACE_VERDICT: Record<string, string> = {
   true: "能信",
@@ -28,6 +32,62 @@ export function faceVerdictFor(verdictType: unknown): string {
   return FACE_VERDICT[key] || "还查不清";
 }
 
+/** 肯定为真侧的原子判词（exaggerated 有真实内核，计入真侧）。 */
+const TRUEISH_VERDICTS = new Set(["true", "partial", "mostly_true", "exaggerated"]);
+
+type DeriveVerdictInput = {
+  verdict?: unknown;
+  supportingSources?: unknown;
+  contradictingSources?: unknown;
+  sourcesRelatedOnly?: unknown;
+};
+
+function sourceHasHttpUrl(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  return /^https?:\/\//i.test(String((value as { url?: unknown }).url || "").trim());
+}
+
+/** 有据：非 related-only，且支撑或反证里有可点开的 http(s) URL。 */
+function hasBoundHttpUrl(v: DeriveVerdictInput): boolean {
+  if (v?.sourcesRelatedOnly === true) return false;
+  const supporting = Array.isArray(v?.supportingSources) ? v.supportingSources : [];
+  const contradicting = Array.isArray(v?.contradictingSources) ? v.contradictingSources : [];
+  return supporting.some(sourceHasHttpUrl) || contradicting.some(sourceHasHttpUrl);
+}
+
+function isSourcedTrueishVerdict(v: DeriveVerdictInput): boolean {
+  const verdict = String(v?.verdict ?? "").trim().toLowerCase();
+  return TRUEISH_VERDICTS.has(verdict) && hasBoundHttpUrl(v);
+}
+
+function isSourcedFalseVerdict(v: DeriveVerdictInput): boolean {
+  return String(v?.verdict ?? "").trim().toLowerCase() === "false" && hasBoundHttpUrl(v);
+}
+
+/**
+ * 原子级整句推导（确定性收束）——「分截判决」的收束端。
+ * fact_checker 的整体 factCheckResult 是单 LLM 字段，会把「真假交织」漂成 false；
+ * 原子判词 + 绑定证据才是依据：
+ * - 有据之真 + 有据之假 → partial（mixed_misleading 的公式载体，救回真的部分）；
+ * - 单独有据之假 → false（无据之假不撑整句；短谣 boundTiny 不在本函数）；
+ * - 全 true 且至少一条有据 → true（无据之真不升整句）；
+ * - 仅 partial/exaggerated → partial；无肯定判词 → null（保留 LLM 整体字段）。
+ */
+export function deriveOverallVerdict(
+  verdicts: Array<DeriveVerdictInput>
+): "true" | "false" | "partial" | null {
+  if (!Array.isArray(verdicts) || verdicts.length === 0) return null;
+  const norms = verdicts.map((v) => String(v?.verdict ?? "").trim().toLowerCase());
+  const hasSourcedFalse = verdicts.some((v) => isSourcedFalseVerdict(v));
+  const hasSourcedTrueish = verdicts.some((v) => isSourcedTrueishVerdict(v));
+  if (hasSourcedFalse && hasSourcedTrueish) return "partial";
+  if (hasSourcedFalse) return "false";
+  const affirmative = norms.filter((n) => TRUEISH_VERDICTS.has(n));
+  if (affirmative.length === 0) return null;
+  if (affirmative.every((n) => n === "true")) return hasSourcedTrueish ? "true" : null;
+  return "partial";
+}
+
 export type AssembleFinalReportInput = {
   finalReport: Record<string, unknown>;
   /** rumor_detector step (or { output }) */
@@ -36,6 +96,8 @@ export type AssembleFinalReportInput = {
   verdicts: unknown;
   searchSources?: Array<{ url?: unknown }>;
   atomSearchBundle?: AtomSearchBundle | null;
+  /** Screenshot origin from reverse-image; OCR/text hits are not this field. */
+  imageOrigin?: ImageOriginResult;
 };
 
 export type AssembleFinalReportResult = {
@@ -86,6 +148,7 @@ export function buildClaimItems(
  */
 export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFinalReportResult {
   const { finalReport, rumorStep, verdicts, searchSources, atomSearchBundle } = input;
+  const imageOrigin = input.imageOrigin ?? atomSearchBundle?.imageOrigin;
   if (!finalReport || typeof finalReport !== "object") {
     return {
       subclaimVerdicts: [],
@@ -95,8 +158,12 @@ export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFi
   }
 
   const rumorOutput = rumorStep?.output ?? {};
-  const split = splitVerifiableAtoms(rumorOutput.claimAtoms, rumorOutput.claimAtomTypes);
-  let merged = mergeSubclaimVerdicts(split.verifiable, verdicts, searchSources);
+  const listed = listAtomsForSearch(rumorOutput.claimAtoms, rumorOutput.claimAtomTypes);
+  const searched =
+    atomSearchBundle?.atomsSearched && atomSearchBundle.atomsSearched.length > 0
+      ? atomSearchBundle.atomsSearched
+      : selectAtomsToSearch(listed.verifiable, listed.typeByKey);
+  let merged = mergeSubclaimVerdicts(searched, verdicts, searchSources);
   if (atomSearchBundle?.byAtomKey) {
     merged = bindAtomEvidenceToVerdicts(
       merged as Array<SubclaimVerdict & { [key: string]: unknown }>,
@@ -104,9 +171,10 @@ export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFi
       claimAtomKey
     ) as SubclaimVerdict[];
   }
+  merged = applyUnsearchedAtomVerdicts(merged, listed.verifiable, searched);
 
   finalReport.subclaimVerdicts = merged;
-  finalReport.nonVerifiableAtoms = split.nonVerifiable;
+  finalReport.nonVerifiableAtoms = listed.nonVerifiable;
 
   let atomSearchMeta: AssembleFinalReportResult["atomSearchMeta"];
   if (atomSearchBundle) {
@@ -125,13 +193,15 @@ export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFi
   const claimItems = buildClaimItems(
     rumorOutput.claimAtoms,
     merged,
-    split.nonVerifiable
+    listed.nonVerifiable
   );
   finalReport.claimItems = claimItems;
   finalReport.faceVerdict = faceVerdictFor(finalReport.verdictType);
 
   // Align [n] with final source arrays (conclusion + evidenceChain + claimItems).
   normalizeReportCitations(finalReport);
+  applyPublicCopy(finalReport);
+  if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
   merged = Array.isArray(finalReport.subclaimVerdicts)
     ? (finalReport.subclaimVerdicts as SubclaimVerdict[])
     : merged;
@@ -141,7 +211,7 @@ export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFi
 
   return {
     subclaimVerdicts: merged,
-    nonVerifiableAtoms: split.nonVerifiable,
+    nonVerifiableAtoms: listed.nonVerifiable,
     claimItems: claimItemsSynced,
     stanceClaimType,
     atomSearchMeta,

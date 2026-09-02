@@ -1,14 +1,10 @@
-# missionShell — Ant Design X 过程层适配
+# missionShell — SSE → 过程模型
 
-**决策：** 主选 Ant Design X 组件套过程层；禁 Lobe 整仓；后端/SSE 不动。
+把 `orchestrate-stream` 事件收成 `MissionShellModel`。直播 UI 是 `ApodexRunView`（`mapShellToApodexRun`）。本目录不负责编排。
 
 ## 试用
 
-```text
-http://127.0.0.1:5180/shell-preview     # early / mid / complete / error / agent_error + token|antdx
-http://127.0.0.1:5180/?shell=1          # live token shell
-http://127.0.0.1:5180/?shell=antdx      # live Ant Design X ThoughtChain
-```
+直播过程是 `ApodexRunView`。`?shell=legacy` 不是产品路径。
 
 ## 目录
 
@@ -25,21 +21,17 @@ http://127.0.0.1:5180/?shell=antdx      # live Ant Design X ThoughtChain
 import { adaptOrchestrateStreamToShell } from "./missionShell";
 
 const model = adaptOrchestrateStreamToShell(events, { claim });
-// model.thoughtItems → MissionProcessShell ThoughtChain
-// model.tools → 动作条
-// model.agents → 集群芯片
-// model.verdict → 完成态判决
-// model.errorMessage → 中断卡（role=alert）
+// model.thoughtItems / model.tools / model.agents → ApodexRunView 过程条目
+// model.verdict → ApodexRunView 完成态判断
+// model.errorMessage → ApodexRunView 中断提示（role=alert）
 ```
 
 ## UI
 
 | 组件 | 路径 |
 |------|------|
-| token 壳（默认） | `components/v3/phases/mission/MissionProcessShell.tsx` |
-| antdx 壳 | `.../MissionProcessShellAntd.tsx`（scoped XProvider） |
-| 预览 | `.../MissionShellPreview.tsx` + App `/shell-preview` |
-| 直播接线 | `MissionControlView` 累积 `sseEvents` → adapter |
+| 直播过程 | `components/v3/phases/mission/ApodexRunView.tsx` |
+| 直播接线 | `MissionControlView` 累积 `sseEvents` → adapter → `mapShellToApodexRun` |
 
 ## 字段映射（SSE → Shell）
 

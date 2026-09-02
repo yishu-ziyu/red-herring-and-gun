@@ -21,13 +21,14 @@
   完成：`curl -sI https://gun.yishuziyu.cn/this-path-should-404` 状态码 404（或明确 404 页，状态码仍为 404）。
 
 - [ ] GUN-004 固定公开路由表 #routing @area:routing
-  当前真实可用：`/`、`/demo`、`/settings/api-key`。
+  当前 SPA 产品入口：`/`、`/settings/api-key`。`/demo` 已从前端路由删除；按现有未匹配路径机制访问时回到首页，不作为独立公开页。
   完成：在本文件或路由模块写死清单；sitemap 与实现一致。
 
 - [ ] GUN-005 /settings/api-key noindex #seo !high @area:crawl
   完成：页面含 `noindex`；robots.txt Disallow 该路径。
 
 - [ ] GUN-006 决定 /demo 是否公开收录 #seo #product !high @area:routing
+  本轮决定：`/demo` 不作为独立公开页，前端演示路由已删除。SEO 层面的 noindex/robots 收尾仍归本任务的 SEO 条目，不在本次 SPA 清理内。
   完成：公开则进 sitemap 并有说明文案；内部则 noindex + robots Disallow。结论写进本任务正文。
 
 ## SEO 元信息

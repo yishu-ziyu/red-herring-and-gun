@@ -16,7 +16,7 @@ Opus 没有写出 `Recursive Evidence Search` 的正式规划，但它的读取�
 - `docs/MVP_V3_SPEC.md`：确认产品已经从 revealStage 线性流程转为用户点击节点后的自由探索。
 - `docs/flowith-ux-analysis.md` 与 `docs/UIUX_RESEARCH.md`：确认 UX 借鉴对象和不能照搬自动展开。
 - `src/store/reasoningStore.tsx`：确认状态机和动态节点写入方式。
-- `src/data/reasoningCanvas.ts` 与 `src/data/demoCase.ts`：确认预置图谱和 demo 证据结构。
+- `src/data/reasoningCanvas.ts` 与 `src/data/aiContentJobsCase.ts`：确认预置图谱和案例证据结构。
 - `src/lib/agentExpansion.ts` 与 `vite.config.ts`：确认用户触发后的 LLM 调度和 fallback 位置。
 - `src/components/v3/*`：确认现有 Canvas、Inspector、Trace、Dock 的真实交互入口。
 - `src/styles.css`：确认视觉实现仍是最大集中面。
@@ -118,7 +118,7 @@ Maigret 的价值不是 OSINT 用户名搜索，而是 `seed -> search -> extrac
 暂时不要动：
 
 - 不要恢复旧 `src/components/canvas/*` 流程组件。
-- 不要把 `demoCase.ts` 改成复杂证据库。
+- 不要把 `aiContentJobsCase.ts` 改成复杂证据库。
 - 不要把递归搜索做成全自动后台任务。
 - 不要让 Report Composer 绕过 Grader 或证据许可直接总结。
 

@@ -6,7 +6,8 @@ import type {
   ScoreLevel,
   SearchStrategyMemory,
 } from "./schemas";
-import type { MemoryCandidate, MemoryCandidateKind, MemoryCandidateStatus } from "./agentRuntime/memoryCandidateTypes";
+import type { MemoryCandidate, MemoryCandidateKind, MemoryCandidateStatus } from "./memoryCandidateTypes";
+import { semanticClaimSimilarity } from "./semanticRecall";
 
 export interface KnowledgeBase {
   saveCase(entry: KnowledgeBaseEntry): Promise<void>;
@@ -48,7 +49,24 @@ function readList<T>(key: string): T[] {
 
 function writeList<T>(key: string, value: T[]) {
   if (!canUseStorage()) return;
-  window.localStorage.setItem(key, JSON.stringify(value));
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    // D2：localStorage 写满时不再静默停写——列表是新→旧排序，
+    // 从尾部（最旧）折半裁剪重试，并留下可观测的 console.error
+    console.error(`[knowledgeBase] ${key} 写入失败，尝试裁剪重试`, error);
+    let list = value;
+    while (list.length > 1) {
+      list = list.slice(0, Math.max(1, Math.floor(list.length / 2)));
+      try {
+        window.localStorage.setItem(key, JSON.stringify(list));
+        return;
+      } catch {
+        // 继续折半
+      }
+    }
+    console.error(`[knowledgeBase] ${key} 裁剪后仍无法写入，本地知识库降级为只读`);
+  }
 }
 
 function tokenize(text: string): Set<string> {
@@ -68,21 +86,8 @@ function tokenize(text: string): Set<string> {
 }
 
 export function calculateClaimSimilarity(claimA: string, claimB: string): number {
-  const tokensA = tokenize(claimA);
-  const tokensB = tokenize(claimB);
-  if (tokensA.size === 0 || tokensB.size === 0) return 0;
-
-  let intersection = 0;
-  tokensA.forEach((token) => {
-    if (tokensB.has(token)) intersection += 1;
-  });
-
-  const union = new Set([...tokensA, ...tokensB]).size;
-  const jaccard = union > 0 ? intersection / union : 0;
-  const substringBonus =
-    claimA.includes(claimB.slice(0, 8)) || claimB.includes(claimA.slice(0, 8)) ? 0.18 : 0;
-
-  return Math.min(100, Math.round((jaccard * 0.82 + substringBonus) * 100));
+  // G2 语义召回：同义词桥接 + 字符 Dice，词面 bigram 为主信号（semanticRecall.ts）
+  return semanticClaimSimilarity(claimA, claimB);
 }
 
 function sortByTimestamp<T extends { timestamp: number }>(items: T[]) {

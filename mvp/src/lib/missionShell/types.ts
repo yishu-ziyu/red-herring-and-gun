@@ -79,6 +79,8 @@ export interface ShellVerdictCard {
   keyFindings?: string[];
   /** Up to 3 sources for the hero card */
   topSources?: ShellVerdictSource[];
+  /** error-boundary / interrupted run — not a finished 还查不清 */
+  interrupted?: boolean;
   reviewPassed?: boolean;
   reviewScore?: number;
   reviewIssues?: Array<{ code: string; severity: string; message: string }>;

@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { tmpdir } from "node:os";
+import { readdir, rm, stat as statFile } from "node:fs/promises";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -9,7 +11,6 @@ import {
   clearStateCookie,
   createOauthState,
   exchangeCodeForToken,
-  fetchAipingApiKeys,
   fetchAipingUserInfo,
   getAipingConfig,
   readSessionCookie,
@@ -28,6 +29,7 @@ import {
   emailVerifyHandler,
 } from "./lib/emailAuthHandlers.js";
 import { checksQuotaHandler, gateFreeCheck } from "./lib/checkQuota.js";
+import { flushSnapshots, startSnapshotLoop } from "./lib/jsonSnapshot.js";
 import { readEmailAccountOptional } from "./lib/emailSession.js";
 
 dotenv.config();
@@ -43,7 +45,8 @@ const app = express();
 app.set("trust proxy", 1);
 const PORT = Number(process.env.PORT) || 3000;
 
-const DEFAULT_CORS_ORIGINS = "https://gun.yishuziyu.cn,http://localhost:5173,http://127.0.0.1:5173";
+const DEFAULT_CORS_ORIGINS =
+  "https://gun.yishuziyu.cn,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5180,http://127.0.0.1:5180";
 const corsAllowlist = (process.env.CORS_ORIGINS || DEFAULT_CORS_ORIGINS)
   .split(",")
   .map((origin) => origin.trim())
@@ -63,6 +66,38 @@ app.use(
   })
 );
 app.use(express.json({ limit: "10mb" }));
+
+// 临时图床：以图搜图适配器把用户图片落盘到 UPLOAD_DIR（默认系统临时目录），
+// 通过 /uploads 静态暴露给 reverse-image vendor 抓取。生产需 Nginx 转发 /uploads 并设 PUBLIC_BASE_URL。
+app.use(
+  "/uploads",
+  express.static(join(process.env.UPLOAD_DIR || tmpdir(), "rhg-uploads"), {
+    maxAge: "1h",
+    index: false,
+  })
+);
+
+// 有界清扫：启动时删掉 24h 前的临时上传图。一次性、无常驻任务；
+// 图搜图回调只需几分钟内的可访问窗口，长跑进程不再无界累积。
+const uploadRoot = join(process.env.UPLOAD_DIR || tmpdir(), "rhg-uploads");
+void readdir(uploadRoot)
+  .then((files) => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    return Promise.all(
+      files.map(async (name) => {
+        const filePath = join(uploadRoot, name);
+        try {
+          const info = await statFile(filePath);
+          if (info.mtimeMs < cutoff) await rm(filePath, { force: true });
+        } catch {
+          /* 单个文件失败不影响启动与其余文件 */
+        }
+      })
+    );
+  })
+  .catch(() => {
+    /* 目录不存在 = 没有历史文件 */
+  });
 
 const env = process.env as Record<string, string>;
 const handlers = createHandlers(env);
@@ -89,24 +124,6 @@ async function requireIdentity(req: express.Request, res: express.Response, next
   res.status(401).json({ error: "Not authenticated" });
 }
 
-function redactAipingApiKeys(data: unknown) {
-  if (!data || typeof data !== "object" || !("apikeyBaseInfo" in data)) return data;
-  const payload = data as { apikeyBaseInfo?: unknown };
-  if (!Array.isArray(payload.apikeyBaseInfo)) return data;
-  return {
-    ...payload,
-    apikeyBaseInfo: payload.apikeyBaseInfo.map((item) => {
-      if (!item || typeof item !== "object") return item;
-      const record = item as Record<string, unknown>;
-      const apiKey = typeof record.apikey === "string" ? record.apikey : "";
-      return {
-        ...record,
-        apikey: apiKey ? `${apiKey.slice(0, 6)}...${apiKey.slice(-4)}` : "",
-      };
-    }),
-  };
-}
-
 // Health check
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
@@ -114,16 +131,6 @@ app.get("/health", (_req, res) => {
 
 app.all("/mcp", requireQuota, (req, res) => {
   void mcpHttpHandler(req, res, env);
-});
-
-app.get("/api/auth/aiping/config", (_req, res) => {
-  res.json({
-    enabled: aipingConfig.enabled,
-    provider: "aiping",
-    loginUrl: "/api/auth/aiping/login",
-    callbackUrl: aipingConfig.redirectUri,
-    scope: aipingConfig.scope,
-  });
 });
 
 app.get("/api/auth/aiping/login", (req, res) => {
@@ -201,34 +208,9 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/auth/aiping/apikeys", async (req, res) => {
-  if (!aipingConfig.enabled) {
-    res.status(503).json({ error: "AI Ping OAuth is not configured" });
-    return;
-  }
-
-  const session = readSessionCookie(req, aipingConfig);
-  if (!session) {
-    res.status(401).json({ error: "Not authenticated" });
-    return;
-  }
-
-  try {
-    const data = await fetchAipingApiKeys(aipingConfig, session.accessToken);
-    res.json(redactAipingApiKeys(data));
-  } catch (error) {
-    res.status(502).json({ error: error instanceof Error ? error.message : "AI Ping apikey list failed" });
-  }
-});
-
 // API routes
-app.post("/api/agent/expand", requireQuota, (req, res, next) => handlers.handler(req, res, next));
-app.post("/api/agent/recursive-search", requireQuota, (req, res, next) => handlers.recursiveHandler(req, res, next));
-app.post("/api/agent/sherlock-search", requireQuota, (req, res, next) => handlers.sherlockHandler(req, res, next));
-app.post("/api/search/360", requireQuota, (req, res, next) => handlers.search360Handler(req, res, next));
-app.post("/api/search/provider", requireQuota, (req, res, next) => handlers.searchProviderHandler(req, res, next));
-app.post("/api/agent/orchestrate", requireQuota, (req, res, next) => handlers.orchestrateHandler(req, res, next));
 app.post("/api/agent/orchestrate-stream", requireQuota, (req, res, next) => handlers.orchestrateStreamHandler(req, res, next));
+app.post("/api/agent/batch", requireQuota, (req, res, next) => handlers.batchHandler(req, res, next));
 if (process.env.NODE_ENV === "production") {
   app.post("/api/agent/test-llm", (_req, res) => {
     res.status(404).json({ error: "Not found" });
@@ -238,7 +220,6 @@ if (process.env.NODE_ENV === "production") {
 }
 app.get("/api/models/list", (req, res, next) => handlers.modelsListHandler(req, res, next));
 app.get("/api/models/health", requireQuota, (req, res, next) => handlers.modelsHealthHandler(req, res, next));
-app.get("/api/agent/memory-candidates", requireIdentity, (req, res, next) => listMemoryCandidatesHandler(req, res).catch(next));
 app.post("/api/agent/memory-candidates", requireIdentity, (req, res, next) => updateMemoryCandidateHandler(req, res).catch(next));
 
 // v3 邮箱登录 + 账号数据（用 email 前缀避开与 AI Ping /api/auth/{me,logout} 的第一匹配冲突）
@@ -259,15 +240,46 @@ import {
   listCasesHandler,
 } from "./lib/caseHandlers.js";
 import {
-  listMemoryCandidatesHandler,
   updateMemoryCandidateHandler,
 } from "./lib/memoryCandidateHandlers.js";
+import { appendUserFeedback } from "./lib/userFeedback.js";
 
 app.post("/api/case", (req, res, next) => postCaseHandler(req, res).catch(next));
+app.post("/api/feedback", (req, res, next) => postGeneralFeedbackHandler(req, res).catch(next));
 app.get("/api/case/:caseId", (req, res, next) => getCaseHandler(req, res));
 app.get("/api/cases", (req, res, next) => listCasesHandler(req, res));
 app.get("/r/:caseId", (req, res, next) => renderCaseHtmlHandler(req, res));
 
+/** POST /api/feedback — 用户对某次判断的异议。落在 RHG_DATA_DIR，供 golden 反向采集。 */
+async function postGeneralFeedbackHandler(req: any, res: any): Promise<void> {
+  const body = (req.body ?? {}) as { claim?: unknown; verdictType?: unknown; score?: unknown; reason?: unknown };
+  const claim = String(body.claim ?? "").trim().slice(0, 2000);
+  const reason = String(body.reason ?? "").trim().slice(0, 2000);
+  if (!reason) {
+    res.status(400).json({ error: "reason is required" });
+    return;
+  }
+  await appendUserFeedback(env, {
+    kind: "general",
+    claim,
+    verdictType: typeof body.verdictType === "string" ? body.verdictType : undefined,
+    score: typeof body.score === "number" ? body.score : undefined,
+    reason,
+  });
+  res.json({ ok: true });
+}
+
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Red Herring API Server running on http://0.0.0.0:${PORT}`);
+  // D1：周期快照落盘 + 退出前 flush（SIGTERM 也覆盖 tsx watch 的热重载）
+  startSnapshotLoop();
+  let flushed = false;
+  const flushAndExit = () => {
+    if (flushed) return;
+    flushed = true;
+    flushSnapshots();
+    process.exit(0);
+  };
+  process.on("SIGTERM", flushAndExit);
+  process.on("SIGINT", flushAndExit);
 });

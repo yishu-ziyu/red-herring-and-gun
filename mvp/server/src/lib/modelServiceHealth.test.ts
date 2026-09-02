@@ -19,7 +19,7 @@ describe("probeModelServiceHealth", () => {
     const health = await probeModelServiceHealth({
       DEEPSEEK_API_KEY: "sk-test",
       STEPFUN_API_KEY: "sk-test",
-      AI360_API_KEY: "sk-test",
+      QIHOO_360_API_KEY: "sk-test",
       MIMO_API_KEY: "sk-test",
       MINIMAX_API_KEY: "sk-test",
       ANTHROPIC_BASE_URL: "https://example.invalid",

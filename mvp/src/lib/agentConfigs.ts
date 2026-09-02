@@ -987,7 +987,7 @@ export function buildAgentInput(
         claim,
         task: "生成综合核查报告",
         rumorAnalysis: {
-          claimAtoms: compactStrings(rumorStep?.output?.claimAtoms, 6, 180),
+          claimAtoms: compactStrings(rumorStep?.output?.claimAtoms, 12, 180),
           rumorTypes: compactStrings(rumorStep?.output?.rumorTypes, 4, 80),
           indicators: compactStrings(rumorStep?.output?.rumorIndicators, 5, 120),
           severity: rumorStep?.output?.severity ?? "low",

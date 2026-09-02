@@ -1,0 +1,13 @@
+{
+  "name": "红鲱鱼与枪 · 信息真相核查",
+  "short_name": "红鲱鱼与枪",
+  "description": "丢一句话、截图或链接，查它能信不能信。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf7f2",
+  "theme_color": "#1f1b2e",
+  "icons": [
+    { "src": "/logo.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/logo.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
