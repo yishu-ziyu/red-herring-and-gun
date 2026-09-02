@@ -1,5 +1,19 @@
 # Agent Reasoning Canvas v3
 
+# 发布门禁写回 2026-09-02
+
+T1–T6 上线后跑 T7。命令：`./ops.sh check`、`./ops.sh remote`、`./ops.sh public`。失败非零退出。
+
+| 门禁 | 退出码 | 观察 |
+| --- | --- | --- |
+| `./ops.sh check` | 0（重跑） | 767 passed / 1 skipped；build 通过；本机 smoke `/health` 与 `/api/models/list` 200。第一次因 3010 被占失败（非零），随后 `ops.sh` 自动换端口。 |
+| `./ops.sh remote` | 0 | 容器 healthy；容器内 `/health` 与 `/api/models/list` 200。 |
+| `./ops.sh public` | 0 | 域名 HTTPS `/`、`/health`、`/api/models/list` 200。公网 HTTP :80 被备案拦截 403（Beaver）；机内 nginx :80 对域名是 301 → https://gun.yishuziyu.cn/。 |
+
+回滚演练：`./ops.sh rollback --yes` 7s 内把前端 hash 恢复为部署前的 `index-BzvRdTkF.js` / `index--krNXqXn.css`，命名卷未加 `-v`；随后 `./ops.sh restore-keep --yes` 回到当前 hash。证书 CN=`gun.yishuziyu.cn`，2026-08-04 → 2026-11-02。用户入口只走域名 443；裸 IP :80 仅探针，SSE 与 `/r/` 已对齐。
+
+# Agent Reasoning Canvas v3 (continued)
+
 # Product Flow Acceptance Checklist 2026-06-15
 
 目标：公网用户访问 `gun.yishuziyu.cn` 后，能完整使用“红鲱鱼与枪”的 Agent 核查服务；每一环都要有可观察证据，不能只靠 UI 文案或 demo 状态。

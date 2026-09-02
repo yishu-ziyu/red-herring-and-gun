@@ -27,7 +27,13 @@ Usage:
   ./ops.sh public             Probe public domain/IP without using local proxy
   ./ops.sh aliyun-domain      Probe the domain as if DNS points to the Aliyun server
   ./ops.sh remote             Read-only remote Docker/API status check over SSH
-  ./ops.sh deploy --yes       Build locally, upload current mvp, rebuild Docker remotely, verify
+  ./ops.sh deploy --yes       Build locally, upload current mvp (including dist/), rebuild Docker, publish /opt/red-herring/dist, apply host nginx, verify
+  ./ops.sh rollback --yes     Restore /opt/red-herring/dist.prev and image :prev (no compose down -v)
+  ./ops.sh restore-keep --yes Restore dist.keep and image :keep after a rollback drill
+  ./ops.sh pack <archive.tgz> Pack the mvp payload (PACK_SRC overrides the tree; tests use this)
+  ./ops.sh print-remote-deploy [remote-dir]
+                              Print the remote extract/migrate/compose steps (no SSH)
+  ./ops.sh print-rollback     Print the remote rollback steps (no SSH)
   ./ops.sh logs               Show recent remote container logs
 
 Environment overrides:
@@ -47,6 +53,217 @@ need_cmd() {
     echo "Missing required command: $1" >&2
     exit 1
   }
+}
+
+# PACK_SRC overrides the tree that is archived (tests point this at a fixture).
+# Frontend dist/ is included. server/dist is not (the image rebuilds it).
+# Never globally exclude *.png — that dropped logo.png in 2026-06-15.
+pack_mvp_archive() {
+  local archive="$1"
+  local src="${PACK_SRC:-$MVP_DIR}"
+  need_cmd tar
+
+  if [ ! -f "$src/dist/index.html" ]; then
+    echo "missing $src/dist/index.html — run npm run build before pack" >&2
+    exit 1
+  fi
+  if [ ! -f "$src/dist/logo.png" ]; then
+    echo "missing $src/dist/logo.png — public/logo.png must land in dist/" >&2
+    exit 1
+  fi
+
+  tar czf "$archive" \
+    --exclude='node_modules' \
+    --exclude='server/node_modules' \
+    --exclude='.git' \
+    --exclude='.vercel' \
+    --exclude='server/dist' \
+    --exclude='.agent-memory' \
+    --exclude='server/.data' \
+    --exclude='.superpowers' \
+    --exclude='multi-agent-viz-research' \
+    --exclude='output' \
+    --exclude='output/**' \
+    --exclude='screenshots' \
+    --exclude='screenshots/**' \
+    -C "$src" .
+  echo "Archive: $archive"
+}
+
+# Exact remote steps piped over SSH. Tests dump this; deploy uses the same function.
+print_remote_deploy() {
+  local remote_dir="${1:-/opt/red-herring}"
+  sed "s|__REMOTE_DIR__|${remote_dir}|g" <<'EOF'
+set -euo pipefail
+APP_DIR="__REMOTE_DIR__"
+NGINX_DIST="/opt/red-herring/dist"
+MIGRATE_DIR="/tmp/rhg-volume-migrate-$$"
+
+PREV_DIST="/opt/red-herring/dist.prev"
+if [ -f "$NGINX_DIST/index.html" ]; then
+  rm -rf "$PREV_DIST"
+  cp -a "$NGINX_DIST" "$PREV_DIST"
+  echo "snapshotted $NGINX_DIST -> $PREV_DIST"
+fi
+if docker image inspect red-herring-red-herring-api:latest >/dev/null 2>&1; then
+  docker tag red-herring-red-herring-api:latest red-herring-red-herring-api:prev
+  echo "tagged red-herring-red-herring-api:prev"
+fi
+
+cd "$APP_DIR"
+tar xzf /tmp/red-herring-mvp.tar.gz
+rm -f /tmp/red-herring-mvp.tar.gz
+
+if [ ! -d "$APP_DIR/dist" ] || [ ! -f "$APP_DIR/dist/index.html" ]; then
+  echo "pack missing dist/; frontend not in payload" >&2
+  exit 1
+fi
+
+mkdir -p "$NGINX_DIST"
+app_dist="$(cd "$APP_DIR/dist" && pwd)"
+nginx_dist="$(cd "$NGINX_DIST" && pwd)"
+if [ "$app_dist" != "$nginx_dist" ]; then
+  rm -rf "$NGINX_DIST"
+  mkdir -p "$NGINX_DIST"
+  cp -a "$APP_DIR/dist/." "$NGINX_DIST/"
+fi
+
+mkdir -p "$MIGRATE_DIR/data" "$MIGRATE_DIR/memory"
+if docker ps -q -f name=red-herring-api | grep -q .; then
+  docker cp red-herring-api:/app/server/.data/. "$MIGRATE_DIR/data/" 2>/dev/null || true
+  docker cp red-herring-api:/app/server/.agent-memory/. "$MIGRATE_DIR/memory/" 2>/dev/null || true
+  echo "-- pre-migration counts"
+  echo "cases: $(find "$MIGRATE_DIR/data" -type f 2>/dev/null | wc -l | tr -d ' ')"
+  echo "memory: $(find "$MIGRATE_DIR/memory" -type f 2>/dev/null | wc -l | tr -d ' ')"
+else
+  echo "-- pre-migration counts"
+  echo "cases: 0"
+  echo "memory: 0"
+  echo "pre-migration empty (no running container)"
+fi
+
+docker compose down
+docker compose up -d --build
+sleep 5
+
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if docker ps -q -f name=red-herring-api | grep -q .; then
+    break
+  fi
+  sleep 2
+done
+
+copy_if_dest_empty() {
+  local dest="$1"
+  local src="$2"
+  local dest_count src_count
+  dest_count="$(docker exec red-herring-api sh -c "find $dest -type f 2>/dev/null | wc -l" | tr -d ' ')"
+  src_count="$(find "$src" -type f 2>/dev/null | wc -l | tr -d ' ')"
+  if [ "${dest_count:-0}" -eq 0 ] && [ "${src_count:-0}" -gt 0 ]; then
+    docker cp "$src/." "red-herring-api:$dest/"
+    echo "migrated $src_count files into $dest"
+  else
+    echo "skip migrate $dest (dest=$dest_count src=$src_count)"
+  fi
+}
+
+copy_if_dest_empty /app/server/.data "$MIGRATE_DIR/data"
+copy_if_dest_empty /app/server/.agent-memory "$MIGRATE_DIR/memory"
+rm -rf "$MIGRATE_DIR"
+
+docker compose ps
+docker exec red-herring-api wget -qO- http://127.0.0.1:3000/health
+echo
+docker exec red-herring-api wget -qO- http://127.0.0.1:3000/api/models/list
+echo
+EOF
+}
+
+print_remote_rollback() {
+  cat <<'EOF'
+set -euo pipefail
+cd /opt/red-herring
+PREV_DIST=/opt/red-herring/dist.prev
+LIVE_DIST=/opt/red-herring/dist
+if [ ! -f "$PREV_DIST/index.html" ]; then
+  echo "missing $PREV_DIST/index.html" >&2
+  exit 1
+fi
+if ! docker image inspect red-herring-red-herring-api:prev >/dev/null 2>&1; then
+  echo "missing image red-herring-red-herring-api:prev" >&2
+  exit 1
+fi
+rm -rf /opt/red-herring/dist.keep
+cp -a "$LIVE_DIST" /opt/red-herring/dist.keep
+docker tag red-herring-red-herring-api:latest red-herring-red-herring-api:keep
+rm -rf "$LIVE_DIST"
+cp -a "$PREV_DIST" "$LIVE_DIST"
+docker tag red-herring-red-herring-api:prev red-herring-red-herring-api:latest
+docker compose down
+docker compose up -d
+sleep 5
+docker compose ps
+docker exec red-herring-api wget -qO- http://127.0.0.1:3000/health
+echo
+EOF
+}
+
+print_remote_restore_keep() {
+  cat <<'EOF'
+set -euo pipefail
+cd /opt/red-herring
+if [ ! -f /opt/red-herring/dist.keep/index.html ]; then
+  echo "missing /opt/red-herring/dist.keep/index.html" >&2
+  exit 1
+fi
+if ! docker image inspect red-herring-red-herring-api:keep >/dev/null 2>&1; then
+  echo "missing image red-herring-red-herring-api:keep" >&2
+  exit 1
+fi
+rm -rf /opt/red-herring/dist
+cp -a /opt/red-herring/dist.keep /opt/red-herring/dist
+docker tag red-herring-red-herring-api:keep red-herring-red-herring-api:latest
+docker compose down
+docker compose up -d
+sleep 5
+docker exec red-herring-api wget -qO- http://127.0.0.1:3000/health
+echo
+EOF
+}
+
+rollback_live() {
+  require_aliyun
+  if [ "${1:-}" != "--yes" ]; then
+    echo "This restores dist.prev and image :prev, then docker compose up -d (never -v)."
+    echo "Run: ./ops.sh rollback --yes"
+    exit 2
+  fi
+  print_remote_rollback | ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" bash
+}
+
+restore_keep() {
+  require_aliyun
+  if [ "${1:-}" != "--yes" ]; then
+    echo "This restores dist.keep and image :keep after a rollback drill."
+    echo "Run: ./ops.sh restore-keep --yes"
+    exit 2
+  fi
+  print_remote_restore_keep | ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" bash
+}
+
+env_file_is_uploadable() {
+  local src="$1"
+  [ -f "$src" ] || return 1
+  grep -q '^[[:space:]]*[^#[:space:]]' "$src"
+}
+
+apply_host_nginx() {
+  need_cmd scp
+  need_cmd ssh
+  scp "${ROOT_DIR}/scripts/configure-aliyun-static-nginx.sh" "$SSH_TARGET:/tmp/configure-aliyun-static-nginx.sh"
+  scp "${ROOT_DIR}/scripts/configure-aliyun-ip-api-nginx.sh" "$SSH_TARGET:/tmp/configure-aliyun-ip-api-nginx.sh"
+  ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" \
+    "bash /tmp/configure-aliyun-static-nginx.sh && ALIYUN_HOST='$ALIYUN_HOST' bash /tmp/configure-aliyun-ip-api-nginx.sh"
 }
 
 probe() {
@@ -179,15 +396,26 @@ local_builds() {
 
 local_api_smoke() {
   section "Local standalone server smoke"
-  local port="${LOCAL_API_PORT:-3010}"
-  local log="/tmp/red-herring-server-${port}.log"
-
-  if lsof -tiTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-    echo "Port $port is already in use. Set LOCAL_API_PORT to another port." >&2
+  local port="${LOCAL_API_PORT:-}"
+  if [ -z "$port" ]; then
+    for try in 3010 3011 3012 3013 3014 3015; do
+      if ! lsof -tiTCP:"$try" -sTCP:LISTEN >/dev/null 2>&1; then
+        port="$try"
+        break
+      fi
+    done
+  fi
+  if [ -z "$port" ]; then
+    echo "No free local API port in 3010-3015. Set LOCAL_API_PORT." >&2
     exit 1
   fi
+  local log="/tmp/red-herring-server-${port}.log"
+  local entry="dist/index.js"
+  if [ -f "$SERVER_DIR/dist/server/src/index.js" ]; then
+    entry="dist/server/src/index.js"
+  fi
 
-  (cd "$SERVER_DIR" && PORT="$port" node dist/index.js >"$log" 2>&1 & echo $! >"/tmp/red-herring-server-${port}.pid")
+  (cd "$SERVER_DIR" && PORT="$port" node "$entry" >"$log" 2>&1 & echo $! >"/tmp/red-herring-server-${port}.pid")
   local pid
   pid="$(cat "/tmp/red-herring-server-${port}.pid")"
   trap 'kill "$pid" >/dev/null 2>&1 || true' RETURN
@@ -301,22 +529,7 @@ deploy_current_mvp() {
 
   local archive
   archive="/tmp/red-herring-mvp-$(date +%Y%m%d-%H%M%S).tar.gz"
-  tar czf "$archive" \
-    --exclude='node_modules' \
-    --exclude='server/node_modules' \
-    --exclude='.git' \
-    --exclude='.vercel' \
-    --exclude='dist' \
-    --exclude='server/dist' \
-    --exclude='.agent-memory' \
-    --exclude='.superpowers' \
-    --exclude='multi-agent-viz-research' \
-    --exclude='output' \
-    --exclude='output/**' \
-    --exclude='screenshots' \
-    --exclude='screenshots/**' \
-    -C "$MVP_DIR" .
-  echo "Archive: $archive"
+  pack_mvp_archive "$archive"
 
   section "Upload and rebuild remote Docker"
   local remote_dir
@@ -325,26 +538,18 @@ deploy_current_mvp() {
   echo "Remote dir: $remote_dir"
   ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" "mkdir -p '$remote_dir'"
   scp "$archive" "$SSH_TARGET:/tmp/red-herring-mvp.tar.gz"
-  if [ -f "$MVP_DIR/.env.local" ]; then
+  if env_file_is_uploadable "$MVP_DIR/.env.local"; then
     scp "$MVP_DIR/.env.local" "$SSH_TARGET:${remote_dir}/.env.local"
+  elif [ -f "$MVP_DIR/.env.local" ]; then
+    echo "Local .env.local is empty; not overwriting remote env."
   else
     echo "Local .env.local not found; keeping remote env file unchanged."
   fi
 
-  ssh "$SSH_TARGET" <<EOF
-set -euo pipefail
-cd "$remote_dir"
-tar xzf /tmp/red-herring-mvp.tar.gz
-rm /tmp/red-herring-mvp.tar.gz
-docker compose down
-docker compose up -d --build
-sleep 5
-docker compose ps
-docker exec red-herring-api wget -qO- http://127.0.0.1:3000/health
-echo
-docker exec red-herring-api wget -qO- http://127.0.0.1:3000/api/models/list
-echo
-EOF
+  print_remote_deploy "$remote_dir" | ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" bash
+
+  section "Apply host nginx (SSE unbuffered + /r/)"
+  apply_host_nginx
 
   rm -f "$archive"
   public_check
@@ -371,8 +576,27 @@ case "${1:-}" in
   remote)
     remote_check
     ;;
+  pack)
+    if [ -z "${2:-}" ]; then
+      echo "Usage: ./ops.sh pack <archive.tgz>" >&2
+      exit 2
+    fi
+    pack_mvp_archive "$2"
+    ;;
+  print-remote-deploy)
+    print_remote_deploy "${2:-/opt/red-herring}"
+    ;;
+  print-rollback)
+    print_remote_rollback
+    ;;
   deploy)
     deploy_current_mvp "${2:-}"
+    ;;
+  rollback)
+    rollback_live "${2:-}"
+    ;;
+  restore-keep)
+    restore_keep "${2:-}"
     ;;
   logs)
     remote_logs

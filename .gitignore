@@ -71,6 +71,8 @@ mvp/apodex-replica/
 # Local agent / IDE scratch
 .agents/
 .cursor/
-.grok/
+.grok/*
+!.grok/hooks/
+!.grok/hooks/**
 skills-lock.json
 
