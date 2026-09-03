@@ -93,7 +93,9 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
     case: input.case,
     llm: deps.llm,
     now: deps.now,
+    clock,
     signal,
+    deadline,
     onEvent: (event) => stream.push(event),
   });
 
@@ -114,7 +116,7 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
     if (aborted()) return "abort";
     const left = remaining();
     if ((stage === "investigate" || stage === "crossExam") && left < composeReserveMs) return "skip";
-    if ((stage === "retrieve" || stage === "assess" || stage === "judge") && left <= 0) return "jump";
+    if ((stage === "retrieve" || stage === "assess") && left <= 0) return "jump";
     return "run";
   };
 
@@ -246,7 +248,7 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
       stage: "assess",
       wrap: false,
       run: async () => {
-        await runAssess(ctx, {});
+        await runAssess(ctx, { deadline, now: clock });
       },
     },
     {

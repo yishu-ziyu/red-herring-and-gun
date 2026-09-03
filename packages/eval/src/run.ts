@@ -5,7 +5,7 @@ import { createCase, reduce, runTurn, type CaseEvent } from "@rhg/core";
 import { fakeDeps, hasLlmKey, liveDeps, loadLocalEnv, readProcessEnv } from "./env.js";
 import { compareGate, formatGateLine, parseBaseline, snapshotFromSummary } from "./gate.js";
 import { goldenDataset, type ScoreCaseGolden } from "./golden.js";
-import { scoreCase, summarize, type CaseMetrics } from "./score.js";
+import { judgeRanOf, scoreCase, summarizeRun, type CaseMetrics, type RunSummary } from "./score.js";
 
 type CliArgs = {
   ids?: string[];
@@ -13,6 +13,7 @@ type CliArgs = {
   repeats: number;
   gate?: string;
   fake: boolean;
+  noDump: boolean;
 };
 
 export type CaseRecord = {
@@ -22,23 +23,31 @@ export type CaseRecord = {
   metrics: CaseMetrics;
   elapsedMs: number;
   turnReason: string | null;
+  judgeRan: boolean;
+  llmCalls: number;
 };
+
+export type { RunSummary } from "./score.js";
 
 export type EvalOutput = {
   runId: string;
   startedAt: string;
   cases: CaseRecord[];
-  summary: CaseMetrics;
+  summary: RunSummary;
 };
 
 const RUNS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../runs");
 
 function parseArgs(argv: string[]): CliArgs {
-  const out: CliArgs = { repeats: 1, fake: false };
+  const out: CliArgs = { repeats: 1, fake: false, noDump: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--fake") {
       out.fake = true;
+      continue;
+    }
+    if (a === "--no-dump") {
+      out.noDump = true;
       continue;
     }
     if (a === "--gate") {
@@ -75,7 +84,9 @@ function filterCases(args: CliArgs): ScoreCaseGolden[] {
   return goldenDataset;
 }
 
-async function runOne(golden: ScoreCaseGolden, fake: boolean, repeat: number): Promise<CaseRecord> {
+type CaseRun = { record: CaseRecord; events: CaseEvent[] };
+
+async function runOne(golden: ScoreCaseGolden, fake: boolean, repeat: number): Promise<CaseRun> {
   const started = Date.now();
   const { case: start } = createCase({
     id: `${golden.id}-${repeat}-${started}`,
@@ -97,12 +108,17 @@ async function runOne(golden: ScoreCaseGolden, fake: boolean, repeat: number): P
   const metrics = scoreCase(golden, { case: finished, events, report, elapsedMs });
   const turn = [...finished.turns].reverse().find((item) => item.reason !== undefined);
   return {
-    id: golden.id,
-    verdictType: finished.overall?.verdictType ?? null,
-    score: finished.overall?.score ?? null,
-    metrics,
-    elapsedMs,
-    turnReason: turn?.reason ?? null,
+    record: {
+      id: golden.id,
+      verdictType: finished.overall?.verdictType ?? null,
+      score: finished.overall?.score ?? null,
+      metrics,
+      elapsedMs,
+      turnReason: turn?.reason ?? null,
+      judgeRan: judgeRanOf(events),
+      llmCalls: events.filter((event) => event.type === "llm.called").length,
+    },
+    events,
   };
 }
 
@@ -143,20 +159,30 @@ async function main(): Promise<void> {
   }
 
   const selected = filterCases(args);
+  const startedAt = new Date().toISOString();
+  const runId = `eval-${Date.now()}`;
+  const dumpDir = join(RUNS_DIR, runId);
+  if (!args.noDump) mkdirSync(dumpDir, { recursive: true });
+
   const cases: CaseRecord[] = [];
+  const eventLists: CaseEvent[][] = [];
   for (const golden of selected) {
     for (let r = 0; r < args.repeats; r += 1) {
-      cases.push(await runOne(golden, args.fake, r));
+      const { record, events } = await runOne(golden, args.fake, r);
+      cases.push(record);
+      eventLists.push(events);
+      if (!args.noDump) {
+        const lines = events.map((event) => JSON.stringify(event)).join("\n");
+        writeFileSync(join(dumpDir, `${golden.id}.jsonl`), lines.length > 0 ? `${lines}\n` : "");
+      }
     }
   }
 
-  const startedAt = new Date().toISOString();
-  const runId = `eval-${Date.now()}`;
   const output: EvalOutput = {
     runId,
     startedAt,
     cases,
-    summary: summarize(cases),
+    summary: summarizeRun(cases, eventLists),
   };
 
   mkdirSync(RUNS_DIR, { recursive: true });
