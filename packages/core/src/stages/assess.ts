@@ -155,8 +155,9 @@ function selectEvidence(
 }
 
 function selectClaims(ctx: StageContext, claimIds: string[] | undefined) {
-  if (claimIds === undefined) return ctx.current.claims.slice();
-  const byId = new Map(ctx.current.claims.map((claim) => [claim.id, claim]));
+  const pool = ctx.current.claims.filter((claim) => claim.checkable);
+  if (claimIds === undefined) return pool;
+  const byId = new Map(pool.map((claim) => [claim.id, claim]));
   const out = [];
   for (const id of claimIds) {
     const claim = byId.get(id);
