@@ -1,4 +1,4 @@
-import type { Case, ClaimVerdict, Evidence, Pivot, Stance } from "../casefile/schema.js";
+import type { Case, Claim, ClaimVerdict, Evidence, Pivot, Stance } from "../casefile/schema.js";
 import type { StageContext } from "./context.js";
 import { ComposeOutputSchema, type ComposeDraft } from "./compose.schema.js";
 import { parseJobOutput } from "./parseOutput.js";
@@ -15,10 +15,14 @@ export const COMPOSE_SYSTEM_PROMPT = `第一句必须直接回答原句，例如
 
 true、false、partial 的行要说明依据是什么，并引 [n]。unverified 行只说没查到什么，不要猜测，不要替原句补理由。contested 行要把两边各说一句，各自带 [n]。
 
+checkable=false 的命题只写一句『这是评价或立场，不做真假判断』类说明。
+正文不得出现 true / false / partial / unverified / contested / mixed_misleading 这些英文判决词，也不得写『该判断为…』。
+
 输出 JSON：{ "conclusion": string, "claimItems": [{ "claimId": string, "line": string }] }。claimId 只能用输入里出现的，每条命题恰好一行。`;
 
 export type ComposeInput = {
   systemPromptSuffix?: string;
+  deadline?: number;
 };
 
 export type ComposeResult = { draft: ComposeDraft | null };
@@ -40,6 +44,7 @@ type PromptCite = {
 type PromptClaim = {
   claimId: string;
   text: string;
+  checkable: boolean;
   verdict: ClaimVerdict["verdict"];
   rule: string;
   tally?: { sup: number; ref: number; par: number };
@@ -98,6 +103,7 @@ export async function runCompose(ctx: StageContext, input: ComposeInput = {}): P
       systemPrompt,
       userContent,
       responseSchema: ComposeOutputSchema,
+      ...(input.deadline !== undefined ? { deadlineMs: input.deadline } : {}),
     });
     output = result.output;
   } catch {
@@ -128,7 +134,7 @@ function buildUserContent(c: Case, table: CitationTable): string {
   };
   const payload = {
     原句: c.text,
-    命题: c.claims.map((claim) => promptClaim(c, claim.id, claim.text, table, lookup)),
+    命题: c.claims.map((claim) => promptClaim(c, claim, table, lookup)),
     frontier: frontierSummary(c),
   };
   return JSON.stringify(payload, null, 2);
@@ -136,15 +142,16 @@ function buildUserContent(c: Case, table: CitationTable): string {
 
 function promptClaim(
   c: Case,
-  claimId: string,
-  text: string,
+  claim: Claim,
   table: CitationTable,
   lookup: CiteLookup,
 ): PromptClaim {
+  const claimId = claim.id;
   const verdict = c.verdicts.find((item) => item.claimId === claimId);
   const row: PromptClaim = {
     claimId,
-    text,
+    text: claim.text,
+    checkable: claim.checkable,
     verdict: verdict?.verdict ?? "unverified",
     rule: verdict?.rule ?? "",
     citations: promptCites(c, claimId, table.nsByClaim.get(claimId) ?? [], table, lookup),
