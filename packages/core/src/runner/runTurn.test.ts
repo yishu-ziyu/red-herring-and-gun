@@ -174,6 +174,44 @@ describe("runTurn", () => {
     assertReplay(created, events, c);
   });
 
+  it("investigate 越过 stage deadline 后 compose 仍用硬截止", async () => {
+    const start = Date.now();
+    const totalMs = 120_000;
+    const composeReserveMs = 30_000;
+    const time = { ms: start };
+    const inner = createFakeLlm(script());
+    let clockAtCompose = start;
+    const llm: LlmJob = async (params) => {
+      if (params.job === "investigate") time.ms = start + 95_000;
+      if (params.job === "compose") clockAtCompose = time.ms;
+      return inner(params);
+    };
+    const blog: SearchProviderFn = async () => [
+      { url: "https://www.example.com/allowance", title: "通报", snippet: SNIPPET },
+    ];
+    const { case: c } = createCase({ id: "case-compose-hard", text: TEXT, at: AT });
+    const events = await collect(
+      runTurn(
+        input(c, {
+          deps: deps({ llm, clock: () => time.ms, searchProviders: [blog] }),
+          budget: { totalMs, composeReserveMs },
+        }),
+      ),
+    );
+    const composeCall = inner.calls.find((call) => call.job === "compose");
+    expect(clockAtCompose).toBeGreaterThan(start + totalMs - composeReserveMs);
+    expect(clockAtCompose).toBeLessThan(start + totalMs);
+    expect(composeCall?.deadlineMs).toBe(start + totalMs);
+    expect(events.at(-1)).not.toMatchObject({ type: "turn.finished", reason: "error" });
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "stage.finished", stage: "compose", outcome: "ok" }),
+    );
+    expect(events.some((event) => event.type === "report.finalized")).toBe(true);
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: "stage.finished", stage: "investigate", outcome: "skipped" }),
+    );
+  });
+
   it("clock 在 assess 结束后超过 totalMs，judge 仍 ok 且有 verdict.updated，reason=timeout", async () => {
     const time = { ms: 0 };
     const inner = createFakeLlm(script());

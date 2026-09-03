@@ -22,6 +22,7 @@ checkable=false 的命题只写一句『这是评价或立场，不做真假判�
 
 export type ComposeInput = {
   systemPromptSuffix?: string;
+  deadline?: number;
 };
 
 export type ComposeResult = { draft: ComposeDraft | null };
@@ -102,6 +103,7 @@ export async function runCompose(ctx: StageContext, input: ComposeInput = {}): P
       systemPrompt,
       userContent,
       responseSchema: ComposeOutputSchema,
+      ...(input.deadline !== undefined ? { deadlineMs: input.deadline } : {}),
     });
     output = result.output;
   } catch {
