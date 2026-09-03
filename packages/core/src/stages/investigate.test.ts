@@ -290,6 +290,59 @@ describe("runInvestigator", () => {
     assertInvariants(ctx.current);
   });
 
+  it("forceGaps 下已 resolved 的命题仍跑到 budget", async () => {
+    const seeded = seedCase();
+    seeded.emit({
+      type: "evidence.added",
+      evidence: {
+        id: "e1",
+        url: GOV_URL,
+        canonicalUrl: "https://gov.cn/zhengce/202409/allowance",
+        host: "gov.cn",
+        excerpt: "官方确认属实",
+        text: "官方确认属实",
+        retrievedAt: AT,
+        tier: "A",
+        provenance: { kind: "user" },
+      },
+    });
+    seeded.emit({
+      type: "stance.added",
+      stance: {
+        id: "s1",
+        claimId: "c1",
+        evidenceId: "e1",
+        stance: "supports",
+        quote: "官方确认属实",
+        confidence: 0.9,
+        quoteFidelity: true,
+        by: "main",
+      },
+    });
+    seeded.emit({
+      type: "verdict.updated",
+      verdict: {
+        claimId: "c1",
+        verdict: "true",
+        basis: ["s1"],
+        rule: "true",
+        tally: { sup: 4, ref: 0, par: 0 },
+        updatedAt: AT,
+      },
+    });
+    const fake = createFakeLlm({ investigate: pickFirstCandidate });
+    const ctx = createStageContext({ case: seeded.current, llm: fake, now: () => AT });
+    const result = await runInvestigator(ctx, {
+      role: "defender",
+      budget: 2,
+      forceGaps: true,
+      tools: emptySearchTools(),
+    });
+    expect(result).toEqual({ stopReason: "budget", steps: 2 });
+    expect(ctx.emitted.filter((event) => event.type === "investigator.step")).toHaveLength(2);
+    assertInvariants(ctx.current);
+  });
+
   it("搜索返回 A 级无正文命中 → frontier 出 link pivot，fetch 后有 text", async () => {
     const hitUrl = "https://www.gov.cn/zhengce/unread-hit";
     const seeded = seedCase();

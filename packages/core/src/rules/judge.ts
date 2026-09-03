@@ -86,7 +86,11 @@ export function judge(input: JudgeInput, config: JudgeConfig = defaultJudgeConfi
   }
 
   const tally = { sup, ref, par };
-  if (sup >= config.CONTESTED_MIN && ref >= config.CONTESTED_MIN) {
+  if (
+    sup >= config.CONTESTED_MIN &&
+    ref >= config.CONTESTED_MIN &&
+    Math.max(sup, ref) < config.CONTESTED_DOMINANCE * Math.min(sup, ref)
+  ) {
     return { claimId: input.claimId, verdict: "contested", basis, rule: "contested", tally, updatedAt };
   }
   if (ref >= config.FALSE_MIN && ref > sup) {
