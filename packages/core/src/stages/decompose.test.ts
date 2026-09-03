@@ -86,7 +86,7 @@ describe("runDecompose", () => {
     expect(dropped).toHaveLength(1);
     expect(dropped[0]).toMatchObject({
       type: "claims.dropped",
-      dropped: [{ text: "地球绕太阳转", reason: "self-proof" }],
+      dropped: [{ text: "地球绕太阳转", reason: "原句没说" }],
     });
   });
 
@@ -128,6 +128,59 @@ describe("runDecompose", () => {
       stage: "decompose",
       outcome: "failed-open",
     });
+  });
+
+  it("自证把全部命题丢掉则失败开放", async () => {
+    const source = "药能治失眠，药已获批准。";
+    const { ctx } = setup({
+      decompose: {
+        claims: [
+          { text: "药能治失眠", type: "fact", checkable: true },
+          { text: "药已获批准", type: "fact", checkable: true },
+        ],
+      },
+      "self-proof": {
+        results: [
+          { atom: "药能治失眠", supported: false, reason: "不成立" },
+          { atom: "药已获批准", supported: false, reason: "不成立" },
+        ],
+      },
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    const dropped = ctx.emitted.filter((e) => e.type === "claims.dropped");
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0]).toMatchObject({
+      dropped: [
+        { text: "药能治失眠", reason: "不成立" },
+        { text: "药已获批准", reason: "不成立" },
+      ],
+    });
+    expect(claims).toEqual([{ id: "c1", text: source, type: "fact", checkable: true, order: 0 }]);
+    expect(ctx.emitted.filter((e) => e.type === "claims.added")).toHaveLength(1);
+    expect(ctx.emitted.filter((e) => e.type === "stage.finished").at(-1)).toMatchObject({
+      stage: "decompose",
+      outcome: "failed-open",
+    });
+  });
+
+  it("非法 span 被丢掉且命题保留", async () => {
+    const source = "药能治失眠，药已获批准。";
+    const { ctx } = setup({
+      decompose: {
+        claims: [
+          { text: "药能治失眠", type: "fact", checkable: true, span: { start: -1, end: 5 } },
+          { text: "药已获批准", type: "fact", checkable: true, span: { start: 0, end: source.length + 1 } },
+          { text: "药能治失眠且已获批准", type: "fact", checkable: true, span: { start: 5, end: 2 } },
+        ],
+      },
+      "self-proof": keepAll(),
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims).toHaveLength(3);
+    expect(claims.map((c) => c.text)).toEqual(["药能治失眠", "药已获批准", "药能治失眠且已获批准"]);
+    for (const claim of claims) {
+      expect(claim.span).toBeUndefined();
+    }
   });
 
   it("自证抛错则命题仍产出且有 error 事件", async () => {

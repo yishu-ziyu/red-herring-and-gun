@@ -14,8 +14,8 @@ export const DecomposeOutputSchema = Type.Object(
           span: Type.Optional(
             Type.Object(
               {
-                start: Type.Integer({ minimum: 0 }),
-                end: Type.Integer({ minimum: 0 }),
+                start: Type.Integer(),
+                end: Type.Integer(),
               },
               closed,
             ),

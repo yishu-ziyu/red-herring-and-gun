@@ -3,7 +3,6 @@ import type { Claim, ClaimAtomType } from "../casefile/schema.js";
 import {
   claimAtomKey,
   forceCheckableAtomTypes,
-  prefilterClaimAtoms,
   runClaimAtomSelfProof,
   type SelfProofModelCall,
 } from "../text/claimAtom/index.js";
@@ -118,6 +117,12 @@ function applyForceCheckable(drafts: DraftClaim[]): DraftClaim[] {
   });
 }
 
+function keepSpan(span: { start: number; end: number } | undefined, source: string): { start: number; end: number } | undefined {
+  if (!span) return undefined;
+  if (span.start < 0 || span.end > source.length || span.end <= span.start) return undefined;
+  return span;
+}
+
 function toClaims(ctx: StageContext, drafts: DraftClaim[]): Claim[] {
   const start = ctx.current.claims.length;
   return drafts.map((draft, i) => {
@@ -158,14 +163,16 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
   if (!Value.Check(DecomposeOutputSchema, output)) return failOpen(ctx, input.claimSource);
 
   const parsed: DecomposeOutput = output;
-  const drafts: DraftClaim[] = parsed.claims.map((item) => ({
-    text: item.text,
-    type: item.type,
-    checkable: item.checkable,
-    ...(item.span ? { span: item.span } : {}),
-  }));
+  const drafts: DraftClaim[] = parsed.claims.map((item) => {
+    const span = keepSpan(item.span, input.claimSource);
+    return {
+      text: item.text,
+      type: item.type,
+      checkable: item.checkable,
+      ...(span ? { span } : {}),
+    };
+  });
   const rawTexts = drafts.map((draft) => draft.text);
-  const { atoms: prefiltered } = prefilterClaimAtoms(input.claimSource, rawTexts);
 
   let selfProofError: string | undefined;
   const callModel: SelfProofModelCall = async (params) => {
@@ -177,7 +184,7 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
     }
   };
   // runClaimAtomSelfProof 吞掉 callModel 抛错并保留原子；抛错时发 error，不整段失败开放。
-  const proof = await runClaimAtomSelfProof(input.claimSource, prefiltered, callModel);
+  const proof = await runClaimAtomSelfProof(input.claimSource, rawTexts, callModel);
   const byKey = indexDrafts(drafts);
   const keptDrafts: DraftClaim[] = [];
   for (const key of proof.kept) {
@@ -192,7 +199,7 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
       dropped: proof.dropped.map((item, i) => ({
         id: `d${origin + i + 1}`,
         text: item.text,
-        reason: "self-proof",
+        reason: item.reason,
       })),
     });
   }
@@ -201,8 +208,9 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
   }
 
   const forced = applyForceCheckable(keptDrafts);
+  if (forced.length === 0) return failOpen(ctx, input.claimSource);
   const claims = toClaims(ctx, forced);
-  if (claims.length > 0) ctx.emit({ type: "claims.added", claims });
+  ctx.emit({ type: "claims.added", claims });
   ctx.emit({ type: "stage.finished", stage: "decompose", outcome: "ok" });
   return { claims };
 }
