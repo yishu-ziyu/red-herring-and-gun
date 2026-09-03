@@ -38,6 +38,7 @@ export const DECOMPOSE_SYSTEM_PROMPT = [
   "4. 拆分完成后，把命题拼接回读一遍，确认每条都能回溯到原句——不能回溯的删掉。",
   "5. 拆解不得删除原句的限定条件（「某种情况下 X」不得拆成「X」）。",
   "6. 不得产出无独立含义的碎片；能合并进同一判断的不要拆成多条。",
+  "7. 转述结构「X 宣布 / 表示 / 称 / 发文说 Y」是一条命题，不拆成「X 宣布了某事」+「Y」；text 写成带来源的完整句（如「国家医保局宣布：2026 年起生育津贴直接发个人」），checkable 按 Y 判。命题文本里不得出现「该事项 / 该内容 / 上述 / 某事」这类指代或占位词，必须自足。",
   "",
   "【可否核对 / type 与 checkable — 强制】",
   "对每个命题给出 checkable（是否可核对）与 type（类型）。",
@@ -139,7 +140,7 @@ function toClaims(ctx: StageContext, drafts: DraftClaim[]): Claim[] {
 }
 
 const FRAGMENT_TAIL = /(宣布|表示|称|指出|发布|说|透露|回应|通报|认为|强调)(了)?$/;
-const FRAGMENT_PLACEHOLDER = /某事|某些内容|某项|某种/;
+const FRAGMENT_PLACEHOLDER = /某事|某些内容|某项|某种|该事项|该内容|该政策|上述|前述/;
 
 // ponytail: 正则启发，上限是误杀「X 已表示」类完整句；要改成句法分析再换实现。
 export function isFragmentClaim(text: string): boolean {
