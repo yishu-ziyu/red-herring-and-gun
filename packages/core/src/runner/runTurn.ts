@@ -12,6 +12,8 @@ import { runIntake, type IntakeAttachment, type IntakeTools } from "../stages/in
 import { runInvestigator, type InvestigatorTools } from "../stages/investigate.js";
 import { runJudge } from "../stages/judgeStage.js";
 import { runRetrieve } from "../stages/retrieve.js";
+import { routeMessage, type RouteKind } from "./route.js";
+import { runAskCase, runChallenge, runOffTopic, runPursueFrontier } from "./turns.js";
 
 export type RunTurnDeps = {
   llm: LlmJob;
@@ -24,8 +26,8 @@ export type RunTurnDeps = {
 
 export type RunTurnInput = {
   case: Case;
-  message: { text: string; attachments?: IntakeAttachment[] };
-  route: "new_claim" | "pursue_frontier" | "ask_case" | "challenge" | "off_topic";
+  message: { text: string; attachments?: IntakeAttachment[]; pivotId?: string };
+  route?: RouteKind;
   deps: RunTurnDeps;
   budget?: { totalMs?: number; composeReserveMs?: number };
   signal?: AbortSignal;
@@ -128,6 +130,18 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
   };
 
   ctx.emit({ type: "turn.started", turnId });
+
+  const route =
+    input.route ??
+    (await routeMessage(
+      ctx.current,
+      {
+        text: input.message.text,
+        ...(input.message.pivotId ? { pivotId: input.message.pivotId } : {}),
+      },
+      ctx.llm,
+    ));
+
   ctx.emit({
     type: "message.added",
     message: {
@@ -135,17 +149,53 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
       role: "user",
       text: input.message.text,
       at: ctx.now(),
-      route: input.route,
+      route,
       ...(input.message.attachments && input.message.attachments.length > 0
         ? { attachments: input.message.attachments }
         : {}),
     },
   });
 
-  if (input.route !== "new_claim") {
-    ctx.emit({ type: "error", stage: "route", message: "该路由尚未实现" });
-    finish("error");
-    return;
+  const investigatorTools: InvestigatorTools = {
+    search: deps.tools.search,
+    fetch: deps.tools.fetch,
+    ...(deps.tools.reverseImage ? { reverseImage: deps.tools.reverseImage } : {}),
+    ...(deps.tools.recall ? { recall: deps.tools.recall } : {}),
+  };
+
+  if (route !== "new_claim") {
+    try {
+      if (route === "pursue_frontier") {
+        const result = await runPursueFrontier(ctx, {
+          pivotId: input.message.pivotId,
+          tools: investigatorTools,
+          deadline,
+        });
+        finish(result);
+        return;
+      }
+      if (route === "challenge") {
+        await runChallenge(ctx, { text: input.message.text, fetch: deps.tools.fetch });
+        finish("done");
+        return;
+      }
+      if (route === "ask_case") {
+        await runAskCase(ctx, { text: input.message.text });
+        finish("done");
+        return;
+      }
+      runOffTopic(ctx);
+      finish("done");
+      return;
+    } catch (error) {
+      if (aborted()) {
+        finish("aborted");
+        return;
+      }
+      ctx.emit({ type: "error", stage: "runner", message: errorMessage(error) });
+      finish("error");
+      return;
+    }
   }
 
   const goCompose = async (): Promise<void> => {
@@ -187,13 +237,6 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
       return;
     }
     finish(reason);
-  };
-
-  const investigatorTools: InvestigatorTools = {
-    search: deps.tools.search,
-    fetch: deps.tools.fetch,
-    ...(deps.tools.reverseImage ? { reverseImage: deps.tools.reverseImage } : {}),
-    ...(deps.tools.recall ? { recall: deps.tools.recall } : {}),
   };
 
   let claimSource = input.message.text;
