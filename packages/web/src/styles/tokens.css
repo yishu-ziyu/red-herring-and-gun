@@ -39,9 +39,12 @@
   --type-17: 17px;
   --type-20: 20px;
   --type-24: 24px;
+  --type-32: 32px;
+  --type-lede: clamp(17px, 1.8vw, 19px);
   --type-display: clamp(28px, 4vw, 40px);
   --leading-body: 1.6;
   --leading-title: 1.3;
+  --leading-lede: 1.7;
   --dur: 160ms;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
