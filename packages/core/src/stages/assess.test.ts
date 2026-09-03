@@ -168,6 +168,93 @@ describe("runAssess", () => {
     expect(ctx.current.stances).toHaveLength(1);
   });
 
+  it("30 条证据只喂 12 条且 A 级优先", async () => {
+    const many: Evidence[] = [];
+    for (let i = 1; i <= 30; i += 1) {
+      const tier = i <= 2 ? "A" : i <= 8 ? "B" : "C";
+      many.push(
+        officialEvidence({
+          id: `e${i}`,
+          url: `https://example.com/${i}`,
+          canonicalUrl: `https://example.com/${i}`,
+          host: tier === "A" ? "www.gov.cn" : "blog.example.com",
+          excerpt: `材料${i}`,
+          text: `材料${i} 官方通报此事不实`,
+          tier,
+        }),
+      );
+    }
+    const seeded = seedClaimAndEvidence(many);
+    const fake = createFakeLlm({ assess: { stances: [] } });
+    const ctx = createStageContext({ case: seeded.current, llm: fake, now: () => AT });
+    await runAssess(ctx, {});
+    const ids = [...(fake.calls[0]?.userContent ?? "").matchAll(/"id": "(e\d+)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(12);
+    expect(ids.slice(0, 2)).toEqual(["e1", "e2"]);
+    expect(ids).not.toContain("e30");
+  });
+
+  it("他命题的证据不喂", async () => {
+    const seeded = seedClaimAndEvidence([
+      officialEvidence({
+        id: "e1",
+        provenance: { kind: "search", query: "津贴", claimId: "c1" },
+      }),
+      officialEvidence({
+        id: "e2",
+        url: "https://www.gov.cn/other",
+        canonicalUrl: "https://www.gov.cn/other",
+        excerpt: "另一命题",
+        text: "另一命题材料",
+        provenance: { kind: "search", query: "宣布", claimId: "c2" },
+      }),
+    ]);
+    const extra = createStageContext({ case: seeded.current, llm: createFakeLlm({}), now: () => AT });
+    extra.emit({
+      type: "claims.added",
+      claims: [{ id: "c2", text: "国家医保局宣布", type: "fact", checkable: true, order: 1 }],
+    });
+    const fake = createFakeLlm({ assess: { stances: [] } });
+    const ctx = createStageContext({ case: extra.current, llm: fake, now: () => AT });
+    await runAssess(ctx, { claimIds: ["c1"] });
+    const userContent = fake.calls[0]?.userContent ?? "";
+    expect(userContent).toContain("e1");
+    expect(userContent).not.toContain("e2");
+  });
+
+  it("首次输出 {} 第二次合规 → assess ok 且 llm.called 两条", async () => {
+    const seeded = seedClaimAndEvidence([officialEvidence()]);
+    const fake = createFakeLlm({
+      assess: [{}, { stances: [{ evidenceId: "e1", stance: "refutes", quote: "官方通报此事不实", confidence: 0.9 }] }],
+    });
+    const ctx = createStageContext({ case: seeded.current, llm: fake, now: () => AT });
+    await runAssess(ctx, {});
+    expect(fake.calls).toHaveLength(2);
+    expect(fake.calls[1]?.userContent).toContain("上一次输出不合规");
+    expect(ctx.current.stances).toHaveLength(1);
+    expect(
+      ctx.emitted.filter((event) => event.type === "stage.finished" && event.stage === "assess"),
+    ).toEqual([expect.objectContaining({ outcome: "ok", claimId: "c1" })]);
+    expect(ctx.emitted.filter((event) => event.type === "llm.called")).toHaveLength(2);
+  });
+
+  it("过 deadline 的命题 skipped 无 llm 调用", async () => {
+    const seeded = seedClaimAndEvidence([officialEvidence()]);
+    const fake = createFakeLlm({ assess: { stances: [] } });
+    const ctx = createStageContext({
+      case: seeded.current,
+      llm: fake,
+      now: () => AT,
+      deadline: 10,
+      clock: () => 11,
+    });
+    await runAssess(ctx, {});
+    expect(fake.calls).toHaveLength(0);
+    expect(ctx.emitted.filter((event) => event.type === "stage.finished")).toEqual([
+      expect.objectContaining({ stage: "assess", claimId: "c1", outcome: "skipped" }),
+    ]);
+  });
+
   it("system prompt 只让模型判关系，不含命题级真假输出", async () => {
     const seeded = seedClaimAndEvidence([officialEvidence()]);
     const fake = createFakeLlm({ assess: { stances: [] } });
