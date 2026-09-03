@@ -44,13 +44,14 @@ function buildFallbackReport(ctx: StageContext, table: CitationTable): Report {
     claimId: claim.id,
     line: scrubJargon(fallbackLine(ctx, claim, table)),
   }));
-  return assembleReport(ctx, scrubJargon(fallbackConclusion(ctx)), items, table);
+  const conclusion = ensureCitedConclusion(ctx, fallbackConclusion(ctx), table);
+  return assembleReport(ctx, scrubJargon(conclusion), items, table);
 }
 
 function repairDraft(ctx: StageContext, draft: ComposeDraft, table: CitationTable): Report {
   const repaired = repairCitationMarkers(ctx, draft, table);
-  let conclusion = ensureCitedConclusion(ctx, repaired.conclusion, table);
-  conclusion = repairLeadSentence(conclusion, ctx);
+  // 先修首句再补引用：首句被整句替换成兜底时，补上的 [n] 才不会一起丢
+  let conclusion = ensureCitedConclusion(ctx, repairLeadSentence(repaired.conclusion, ctx), table);
   let items = repaired.items.map((item) => ({ ...item, line: scrubJargon(item.line) }));
   conclusion = scrubJargon(conclusion);
   emitFuzzyQuantifiers(ctx, conclusion, items);
