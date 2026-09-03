@@ -18,6 +18,7 @@ const quotaLimit = env.DAILY_CHECKS_PER_IP === undefined ? 20 : Number(env.DAILY
 
 const deps = buildDeps(env);
 const store = new FileCaseStore(casesDir);
+await store.repairIncomplete();
 const turns = new TurnRunner(store, deps);
 const quota = createQuota({ limit: Number.isFinite(quotaLimit) ? quotaLimit : 20 });
 const app = createApp({ deps, store, turns, quota });

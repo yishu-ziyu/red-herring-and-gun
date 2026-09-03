@@ -78,4 +78,35 @@ export class FileCaseStore implements CaseStore {
     items.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
     return items;
   }
+
+  async repairIncomplete(): Promise<void> {
+    if (!(await exists(this.dir))) return;
+    const names = (await readdir(this.dir)).filter((name) => name.endsWith(".jsonl"));
+    for (const name of names) {
+      const caseId = name.slice(0, -".jsonl".length);
+      const events = await this.load(caseId);
+      if (!events || events.length === 0) continue;
+      const last = events[events.length - 1];
+      if (!last || last.type === "turn.finished") continue;
+      const started = [...events].reverse().find((event) => event.type === "turn.started");
+      const turnId = started && started.type === "turn.started" ? started.turnId : "t1";
+      const at = last.at;
+      await this.append(caseId, [
+        validateEvent({
+          type: "error",
+          seq: last.seq + 1,
+          at,
+          stage: "runner",
+          message: "服务重启，本轮中断",
+        }),
+        validateEvent({
+          type: "turn.finished",
+          seq: last.seq + 2,
+          at,
+          turnId,
+          reason: "error",
+        }),
+      ]);
+    }
+  }
 }
