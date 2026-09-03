@@ -55,6 +55,23 @@ describe("toEvidence", () => {
     expect(ev!.excerpt.includes("额")).toBe(false);
   });
 
+  it("title 与 excerpt 解开实体并去掉标签", () => {
+    const ev = toEvidence(
+      {
+        url: "https://example.com/bt",
+        title: "Insect-Resistant&lt;italic&gt;Bt&lt;/italic&gt; Plants &amp; Bees",
+        snippet: "It&#39;s&nbsp;a <b>field</b> trial",
+      },
+      SEARCH_PROVENANCE,
+    );
+    expect(ev).not.toBeNull();
+    expect(ev!.title).toBe("Insect-ResistantBt Plants & Bees");
+    expect(ev!.excerpt).toBe("It's a field trial");
+    expect(ev!.excerpt).not.toMatch(/<[^>]*>/);
+    expect(ev!.excerpt).not.toContain("&nbsp;");
+    expect(ev!.excerpt).not.toContain("&#39;");
+  });
+
   it("tier 为 unknown", () => {
     const now = new Date("2026-09-03T00:00:00.000Z");
     const ev = toEvidence(
