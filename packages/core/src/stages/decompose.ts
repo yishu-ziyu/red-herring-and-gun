@@ -138,6 +138,25 @@ function toClaims(ctx: StageContext, drafts: DraftClaim[]): Claim[] {
   });
 }
 
+const FRAGMENT_TAIL = /(宣布|表示|称|指出|发布|说|透露|回应|通报|认为|强调)(了)?$/;
+const FRAGMENT_PLACEHOLDER = /某事|某些内容|某项|某种/;
+
+// ponytail: 正则启发，上限是误杀「X 已表示」类完整句；要改成句法分析再换实现。
+export function isFragmentClaim(text: string): boolean {
+  const compact = text.replace(/\s+/g, "");
+  return compact.length < 6 || FRAGMENT_TAIL.test(compact) || FRAGMENT_PLACEHOLDER.test(compact);
+}
+
+function splitFragments(drafts: DraftClaim[]): { kept: DraftClaim[]; fragments: DraftClaim[] } {
+  const kept: DraftClaim[] = [];
+  const fragments: DraftClaim[] = [];
+  for (const draft of drafts) {
+    if (isFragmentClaim(draft.text)) fragments.push(draft);
+    else kept.push(draft);
+  }
+  return { kept, fragments };
+}
+
 function failOpen(ctx: StageContext, claimSource: string): DecomposeResult {
   const claims = toClaims(ctx, [{ text: claimSource, type: "fact", checkable: true }]);
   ctx.emit({ type: "claims.added", claims });
@@ -154,7 +173,7 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
       systemPrompt: DECOMPOSE_SYSTEM_PROMPT,
       userContent: ["原句：", input.claimSource, "", "请拆成 claims 数组。"].join("\n"),
       responseSchema: DecomposeOutputSchema,
-      maxTokens: 1000,
+      maxTokens: 4096,
     });
     output = result.output;
   } catch {
@@ -211,8 +230,20 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
   }
 
   const forced = applyForceCheckable(keptDrafts);
-  if (forced.length === 0) return failOpen(ctx, input.claimSource);
-  const claims = toClaims(ctx, forced);
+  const { kept, fragments } = splitFragments(forced);
+  if (fragments.length > 0) {
+    const origin = ctx.current.droppedClaims.length;
+    ctx.emit({
+      type: "claims.dropped",
+      dropped: fragments.map((item, i) => ({
+        id: `d${origin + i + 1}`,
+        text: item.text,
+        reason: "fragment",
+      })),
+    });
+  }
+  if (kept.length === 0) return failOpen(ctx, input.claimSource);
+  const claims = toClaims(ctx, kept);
   ctx.emit({ type: "claims.added", claims });
   ctx.emit({ type: "stage.finished", stage: "decompose", outcome: "ok" });
   return { claims };
