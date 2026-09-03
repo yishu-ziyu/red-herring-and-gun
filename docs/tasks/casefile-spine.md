@@ -289,6 +289,28 @@ Evaluator：`runTurn.test.ts` 全假依赖：事件顺序符合阶段顺序；`t
 
 Evidence：测试名。
 
+验收清单（checker 在 `.worktrees/T13` 逐条执行，每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 1 | `npm test --workspace=@rhg/core` | 退出码 0；用例总数 ≥ 378 + 7 |
+| 2 | `npm run build --workspace=@rhg/core` | 退出码 0 |
+| 3 | `git status --short`；`git diff spine --stat` | 干净；改动只在 `packages/core/src/runner/`，不含 `stages/index.ts`、`packages/core/src/index.ts`、`mvp/` |
+| 4 | `rg "process\.env" packages/core/src/runner/` | 0 命中 |
+| 5 | `rg "from \"../../mvp\|from \"mvp" packages/core/src/runner/` | 0 命中 |
+| 6 | 读 `runTurn.ts`：找事件流的来源 | 事件来自 `createStageContext({ onEvent })`，没有自写的 emit 拦截或第二个 reducer |
+| 7 | 读 `runTurn.ts`：new_claim 阶段顺序 | intake → decompose → retrieve → assess → judge → investigate → crossExam → compose → finalize，无缺无换位 |
+| 8 | 读测试「事件顺序」用例的断言 | 断言 `stage.started.stage` 序列是第 7 条的子序列，且首事件 `turn.started`、末事件 `turn.finished`，`message.added` 恰两条（user 先 assistant 后） |
+| 9 | 读四种 reason 用例的触发方式 | done：正常走完；timeout：靶向 `clock`，且断言有 `stage.finished(outcome: skipped)`；aborted：真的 `AbortController.abort()`，断言 abort 后到 `turn.finished(aborted)` 之间 `stage.started` ≤ 1 条，且没有 compose/finalize 事件；error：触发路径真实可达（如 `tools.fetch` 抛 TypeError 或 invariants 违反），不是在 runner 里为测试加的后门 |
+| 10 | 读 timeout 用例 | investigate 被 skipped 时仍有 `report.finalized` |
+| 11 | 读「llm.called 每阶段存在」用例 | 至少覆盖 decompose、assess、compose 三个 job |
+| 12 | 读「同案并发」用例 | 第二轮只产生 `error`，不产生 `turn.started`；第一轮不受影响 |
+| 13 | 读「消费者 break」用例 | for-await 里 break 后测试正常结束、无 unhandled rejection |
+| 14 | 读「replay」用例 | `replay(全部事件)` deepEqual 运行器最终快照，且 `assertInvariants` 通过 |
+| 15 | 读 `runTurn.ts` 非 new_claim 分支 | 发 `error` + `turn.finished(error)`，没有实现其他路由的半成品逻辑 |
+| 16 | 读 `runTurn.ts` 的并发锁 | 模块级 `Set<caseId>`，finally 里释放，有 `ponytail:` 注释标明单进程 |
+| 17 | `rg "能信\|不能信\|可信\|不可信" packages/core/src/runner/` | 0 命中（runner 不写用户文案） |
+
 ### T14 · 追问路由与多轮
 
 依赖：T13。
