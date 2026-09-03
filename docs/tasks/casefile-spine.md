@@ -5,7 +5,7 @@
 
 ## 通用约定（每条任务都适用）
 
-**分支**：集成分支 `spine`（自 `dev` 切出）。每条任务在 `spine/Txx-<slug>` 上做，完成后由验收人合回 `spine`。不碰 `dev` / `main`。不改 `mvp/` 下任何文件（它是参照，eval 打平后整体删除）。
+**分支**：集成分支 `spine`（自 `dev` 切出）。每条任务在 `spine-Txx-<slug>` 上做（git 不允许 `spine/…` 与分支 `spine` 并存），完成后由验收人合回 `spine`。并行任务在 `.worktrees/Txx/` 里做，不共用工作区。不碰 `dev` / `main`。不改 `mvp/` 下任何文件（它是参照，eval 打平后整体删除）。
 
 **布局**：根 `package.json` 用 npm workspaces 管 `packages/*`；`mvp/` 不进 workspaces。
 
@@ -24,7 +24,7 @@ packages/web/src/
 packages/eval/
 ```
 
-**依赖白名单**：core：`typebox`、`node-html-parser`。server：`express`、`cors`、`dotenv`。web：`react`、`react-dom`、`vite`、`@vitejs/plugin-react`、`@xyflow/react`。eval：无新增。测试：`vitest`。其它依赖必须先在任务契约里列出，否则不得加。
+**依赖白名单**：core：`typebox`、`node-html-parser`。server：`express`、`cors`、`dotenv`。web：`react`、`react-dom`、`vite`、`@vitejs/plugin-react`、`@xyflow/react`。eval：无新增。工具链（已在 T01 装好，不再算新增）：`typescript`、`vitest`、`tsx`（server dev 运行器；Node 22 无原生 TS 执行）、对应 `@types/*`。其它依赖必须先在任务契约里列出，否则不得加。
 
 **代码约束**：TS strict、ESM、相对导入带 `.js` 后缀（node ESM 运行时需要）。域状态不得用 `Record<string, unknown>`；禁止下划线前缀字段当补丁。注释只写非显然的意图与约束，不叙述代码。
 
