@@ -378,24 +378,28 @@ Evidence：测试名；`curl` 一次真实 SSE 的前 5 行（不含密钥）。
 设计定案（2026-09-03 验收人）：
 
 - 修订：**不搬 `checkQuota`**。它缠着 accountStore / aipingAuth / emailSession / jsonSnapshot 和客户端 lib，搬它等于搬账号系统。改为进程内按 IP 的日配额：`Map<ip, { day, count }>`，环境变量 `DAILY_CHECKS_PER_IP`（默认 20，`0` 关闭），只拦两个 POST，超限 429 + `publicCopy` 文案。标 `ponytail:` 注明进程内存、重启清零、升级路径是账号。账号与登录配额记入任务页，T20 之后单独立项。
-- 文件：`src/app.ts`（express 5，路由挂载）、`src/deps.ts`（`buildDeps(env): RunTurnDeps`）、`src/store.ts`（`CaseStore` 接口 + `FileCaseStore(dir)`）、`src/sse.ts`（写帧、心跳、断连）、`src/publicEvent.ts`（`toPublicEvent`）、`src/quota.ts`。handler 里不出现任何域规则；`Case` 状态只用 core 的 `replay`。
+- 修订二（2026-09-03 19:20，替代原稿「断连即 abort」）：**轮次是服务端作业，SSE 只是视图。** 手机切后台、网络抖动会断 fetch 流，断了就废掉一次两分钟的调查是产品缺陷。所以：POST 只启动轮次并立刻返回 JSON；事件从 `GET /api/cases/:id/stream?since=<seq>` 订阅，断了重连补齐；显式 `POST /api/cases/:id/abort` 才中止；进程收 SIGTERM 时 abort 所有在跑轮次让日志收口。`src/turns.ts`：`TurnRunner`——每案一个 `AbortController` + 进程内 `EventEmitter` 总线（`Map<caseId, …>`），事件到达即 `store.append` 一条（不是轮次结束再批量写，崩了日志也是一致前缀）再广播。同案并发以 `TurnRunner` 为准返回 409（runner 自己的锁是第二道）。标 `ponytail:` 单进程总线，多实例升级路径是 Redis pub/sub。
+- 文件：`src/app.ts`（express 5，路由挂载）、`src/deps.ts`（`buildDeps(env): RunTurnDeps`）、`src/store.ts`（`CaseStore` 接口 + `FileCaseStore(dir)`）、`src/turns.ts`（`TurnRunner`）、`src/sse.ts`（写帧、心跳、断连清理）、`src/publicEvent.ts`（`toPublicEvent`）、`src/quota.ts`。handler 里不出现任何域规则；`Case` 状态只用 core 的 `replay`。
 - `buildDeps(env)`：`llm = (p) => callJob({ ...p, env })`；`searchProviders = defaultSearchProviders(env)`（core 已导出）；`tools.search = (q) => searchAll({}, q, { providers: searchProviders })`（同一组 providers，两处不再各造）；`tools.fetch = (url) => webFetch(url)`；`tools.reverseImage = makeSearch360ReverseImage(env)`（未配置则 undefined）；`tools.vision` 有 StepFun key 时包 `callStepFunVisionForIntake`，否则 undefined；`providers = listAvailableModels(env)` 映射成 `ModelChoice[]`。`process.env` 只在 `index.ts` 读一次传进来。
 - 存储：`.data/cases/<caseId>.jsonl`，每行一个 `CaseEvent`，只追加；目录由 `CASES_DIR` 配置，默认 `.data/cases`。`CaseStore = { append(caseId, events), load(caseId): CaseEvent[] | null, list(): { caseId, text, createdAt, updatedAt, verdictType? }[] }`。不存快照；任何时候的状态 = `replay(load())`。`list()` 逐文件 replay，标 `ponytail:` O(n)、升级路径索引文件。
 - 路由：
-  - `POST /api/cases` body `{ text, attachments? }` → 200 SSE。第一帧 `event: case` `data: {"caseId"}`；之后每个 CaseEvent 一帧 `event: case.event`；结束帧 `event: done`。`case.created` 与首轮所有事件都进日志。
-  - `POST /api/cases/:id/turns` body `{ text, pivotId?, attachments? }` → 200 SSE，同帧格式（无 `case` 帧）。案件不存在 404。同案并发不在服务端重复上锁：runner 会发 `error` 事件，原样流出。
-  - `GET /api/cases/:id` → `{ case, events }`，两者都是公开形态，且 `case === replay(events)`（公开事件折叠后等于公开状态）。不存在 404。
+  - `POST /api/cases` body `{ text, attachments? }` → 202 `{ caseId, turnId }`。`createCase` 的事件先落日志，再启动首轮（detached）。
+  - `POST /api/cases/:id/turns` body `{ text, pivotId?, attachments? }` → 202 `{ turnId }`；案件不存在 404；该案有轮次在跑 409 `{ error }`。
+  - `POST /api/cases/:id/abort` → 204；没有在跑的轮次也 204。
+  - `GET /api/cases/:id/stream?since=<seq>` → 200 SSE。先把日志里 `seq > since` 的事件按序发出（补齐），再接总线直播；`since` 缺省为 0。每帧 `event: case.event`，`id: <seq>`，`data: <公开事件 JSON>`。流不主动结束（客户端看到 `turn.finished` 自己决定留或走）；客户端断开只是解除订阅，**不 abort 轮次**。补齐与直播衔接不得丢事件、不得重复（订阅总线在读日志之前，缓冲期间到达的事件按 seq 去重）。
+  - `GET /api/cases/:id` → `{ case, events, running: boolean }`，`case` 与 `events` 都是公开形态，且 `case === replay(events)`。不存在 404。
   - `GET /api/cases` → `list()` 结果，按 `updatedAt` 降序。
   - 请求体非法 400；`text` 空或 > 4000 字 400。
-- SSE：`Content-Type: text/event-stream`、`Cache-Control: no-cache`、`X-Accel-Buffering: no`；每 15s 一帧注释 `: ping`；`req` 的 `close` 事件 → `AbortController.abort()`，runner 的 `signal` 就是它；abort 后不再写帧。
+- SSE：`Content-Type: text/event-stream`、`Cache-Control: no-cache`、`X-Accel-Buffering: no`；每 15s 一帧注释 `: ping`；`res` 的 `close` → 解除总线订阅、清心跳；关闭后 `write` 有守卫。
+- 进程退出：`SIGTERM` / `SIGINT` → `TurnRunner.abortAll()`，等 `turn.finished` 落盘（上限 5s）再 `server.close()`。
 - `toPublicEvent(e)`（定点脱敏，不做全文正则，证据正文里合法出现的公司名不能被删）：`llm.called` → `model: ""`、删 `error`；`error.message` → `scrubPublicText`；`evidence.added` / `evidence.updated` 里 `provenance.kind === "search"` → 删 `provider`；其它事件原样。返回值必须仍通过 `validateEvent`。
-- `index.ts`：读 `process.env` → `buildDeps` + `FileCaseStore` → `createApp({ deps, store, quota })` → listen。`createApp` 接受注入，测试全用假 deps / 临时目录。
+- `index.ts`：读 `process.env` → `buildDeps` + `FileCaseStore` + `TurnRunner` → `createApp({ deps, store, turns, quota })` → listen + 信号处理。`createApp` 接受注入，测试全用假 deps / 临时目录。
 
 验收清单（checker 在 `.worktrees/T15` 逐条执行，每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
 
 | # | 动作 | 通过条件 |
 |---|---|---|
-| 1 | `npm run build --workspace=@rhg/core && npm test --workspace=@rhg/server` | 退出码 0；server 用例 ≥ 14 |
+| 1 | `npm run build --workspace=@rhg/core && npm test --workspace=@rhg/server` | 退出码 0；server 用例 ≥ 18 |
 | 2 | `npm run build --workspace=@rhg/server` | 退出码 0 |
 | 3 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动仅在 `packages/server/**`、`package-lock.json`、`.gitignore`；不含 `packages/core/`、`mvp/` |
 | 4 | `rg "process\.env" packages/server/src` | 只在 `index.ts` 命中 |
@@ -405,18 +409,26 @@ Evidence：测试名；`curl` 一次真实 SSE 的前 5 行（不含密钥）。
 | 8 | 读 `store.ts` | 只有 append / load / list；没有写快照；`list` 用 `replay`；有 `ponytail:` 注释 |
 | 9 | 读「GET 等于 replay」用例 | 断言 `body.case` toEqual `replay(body.events)` |
 | 10 | 读「日志等于状态」用例 | 假 deps 跑完一轮后，直接读 `.jsonl` 文件逐行 `JSON.parse` → `replay` → toEqual 服务端 `GET` 返回的 `case`（公开形态差异只在 `llmCalls[].model` 与 provenance.provider，用例要么用无 llm/无 provider 的假 deps，要么先 `toPublicEvent` 再比） |
+| 10b | 读「逐条落盘」实现 | `turns.ts` 里每收到一个事件就 `store.append` 再广播，不是轮次结束批量写；有用例：假 llm 在 assess 阶段抛错 / 挂起时，`.jsonl` 已含 `turn.started` 与之前的阶段事件 |
 | 11 | 读 SSE 脱敏用例 | 假 deps 产生的事件里故意含 `model: "minimax-x"`、`error: "stepfun 500"`、`provenance.provider: "web_search"`；对整条 SSE 文本断言 `/minimax\|stepfun\|deepseek\|mimo\|openai\|anthropic\|web_search\|gpt\|claude/i` 不匹配 |
 | 12 | 读 `publicEvent.ts` 用例 | `toPublicEvent` 输出再过 `validateEvent` 不抛；含 "OpenAI" 字样的证据 `text` 原样保留 |
-| 13 | 读断连用例 | 客户端 `AbortController.abort()` 后，假 deps 记录到 `signal.aborted === true`（在 llm 或 search 假函数里读 signal，或 runner 的 `turn.finished(aborted)` 进了日志） |
+| 13a | 读「断连不中止」用例 | 客户端在轮次中途关掉 stream 连接后，轮次继续跑完，日志末尾是 `turn.finished(done)`，不是 `aborted` |
+| 13b | 读「显式 abort」用例 | `POST /api/cases/:id/abort` 后假 deps 观察到 `signal.aborted === true`，日志末尾 `turn.finished(aborted)`；再 abort 一次仍 204 |
+| 13c | 读「重连补齐」用例 | 轮次跑到中途，新开 `stream?since=<已收到的最大 seq>`，收到的第一条事件 `seq === since + 1`，且到 `turn.finished` 为止 seq 连续无重复 |
+| 13d | 读「409」用例 | 同案第二个 `POST turns` 在第一轮跑完前返回 409；跑完后再 POST 返回 202 |
 | 14 | 读心跳用例 | 假 clock / 缩短心跳间隔后，SSE 文本里出现 `: ping` |
-| 15 | 读 SSE 帧格式用例 | `POST /api/cases` 首帧 `event: case` 且 data 含 `caseId`；末帧 `event: done`；中间帧 `event: case.event` 的 data 能 `JSON.parse` 并过 `validateEvent` |
-| 16 | 读 404 / 400 用例 | 未知 id 的 GET 与 POST turns 都 404；空 `text` 400；非 JSON body 400 |
+| 15 | 读 SSE 帧格式用例 | 每帧 `event: case.event`、`id: <seq>`、`data:` 能 `JSON.parse` 并过 `validateEvent`；`since` 缺省时从 `case.created` 开始 |
+| 15b | 读 `POST /api/cases` 用例 | 返回 202 且 body 有 `caseId`、`turnId`；随后 `GET /api/cases/:id` 的 `running === true`（首轮未完）或事件里已有 `turn.started` |
+| 16 | 读 404 / 400 用例 | 未知 id 的 GET、stream、POST turns、abort 都 404；空 `text` 400；非 JSON body 400 |
+| 16b | 读 `index.ts` | `SIGTERM` / `SIGINT` → `abortAll()` → 等待（上限 5s）→ `server.close()` |
 | 17 | 读配额用例 | `DAILY_CHECKS_PER_IP=2` 时第 3 次 POST 429；`0` 时不拦；响应文案不含「请勿」「谣言」 |
 | 18 | 读 `quota.ts` | `Map` 按日键；有 `ponytail:` 注释 |
-| 19 | 读 `app.ts` | `createApp` 参数注入 deps / store / quota；`express.json({ limit })` 有限制（≤ 2mb，附件 data URL 要过） |
-| 20 | 读 `sse.ts` | 响应头三件齐（`text/event-stream`、`no-cache`、`X-Accel-Buffering: no`）；`res.on("close")` 或 `req.on("close")` → abort；abort 后 `write` 有守卫 |
-| 21 | 真实运行：工作树根 `cp ../../mvp/.env.local .env.local`（不提交）后 `npm run dev --workspace=@rhg/server`，另一终端 `curl -N -s -X POST localhost:<port>/api/cases -H 'content-type: application/json' -d '{"text":"国家医保局宣布 2026 年起生育津贴直接发个人"}' \| head -12` | 前 12 行里有 `event: case`、`event: case.event`，data 里能看到 `turn.started`、`stage.started`；`rg -i "minimax\|stepfun\|deepseek"` 对完整输出 0 命中。把前 12 行（不含密钥）贴进报告 |
-| 22 | 第 21 条跑完后 `ls .data/cases/` 与 `wc -l .data/cases/*.jsonl` | 有一个文件，行数 ≥ 10；`git status --short` 不含 `.data/`（已 gitignore） |
+| 19 | 读 `app.ts` | `createApp` 参数注入 deps / store / turns / quota；`express.json({ limit })` 有限制（≤ 2mb，附件 data URL 要过） |
+| 20 | 读 `sse.ts` | 响应头三件齐（`text/event-stream`、`no-cache`、`X-Accel-Buffering: no`）；`res.on("close")` → 解除订阅 + 清心跳；关闭后 `write` 有守卫 |
+| 20b | 读 `turns.ts` | 每案一个 `AbortController`；总线是进程内 `EventEmitter`（或等价）；有 `ponytail:` 注释写单进程与 Redis 升级路径；`abortAll()` 存在 |
+| 21 | 真实运行：工作树根 `cp ../../mvp/.env.local .env.local`（不提交）后 `npm run dev --workspace=@rhg/server`，另一终端：`curl -s -X POST localhost:<port>/api/cases -H 'content-type: application/json' -d '{"text":"国家医保局宣布 2026 年起生育津贴直接发个人"}'` 拿 `caseId`，随即 `curl -N -s localhost:<port>/api/cases/<caseId>/stream \| head -20` | POST 返回 202 含 `caseId` / `turnId`；stream 前 20 行里有 `event: case.event`、`id:`，data 里能看到 `case.created`、`turn.started`、`stage.started`；`rg -i "minimax\|stepfun\|deepseek"` 对完整输出 0 命中。把 POST 响应与 stream 前 20 行（不含密钥）贴进报告 |
+| 21b | 第 21 条 stream 断开（head 退出）后等 90s，`curl -s localhost:<port>/api/cases/<caseId>` | `running` 变为 `false`（轮次没因断连而中止），`events` 末尾 `turn.finished` 的 `reason` 是 `done` 或 `timeout`，不是 `aborted`；`case.report` 非空。把 `report.conclusion` 贴进报告 |
+| 22 | 第 21b 条后 `ls .data/cases/` 与 `wc -l .data/cases/*.jsonl` | 有一个文件，行数 ≥ 10；`git status --short` 不含 `.data/`（已 gitignore） |
 | 23 | `rg "console\.log" packages/server/src --glob '!index.ts'` | 0 命中 |
 | 24 | `rg ": any\b" packages/server/src` | 0 命中 |
 
