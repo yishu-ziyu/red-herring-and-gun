@@ -1,4 +1,3 @@
-export type { Evidence, Provenance, Tier } from "./types.js";
 export { canonicalizeUrl, toEvidence, TRACKING_QUERY_PARAMS } from "./toEvidence.js";
 export {
   searchAll,
