@@ -75,11 +75,6 @@ function abortError(): Error {
   return error;
 }
 
-function isAbortLike(error: unknown): boolean {
-  if (error instanceof Error && (error.name === "AbortError" || error.message === "aborted")) return true;
-  return false;
-}
-
 export async function defaultDispatch(args: Parameters<JobDispatch>[0]): ReturnType<JobDispatch> {
   return dispatchSingleProvider({
     provider: args.candidate.provider,

@@ -46,7 +46,7 @@ describe("runRetrieve", () => {
     const staged = ctx.emitted
       .filter((event) => event.type === "stage.started" || event.type === "stage.finished")
       .map((event) => ("claimId" in event ? event.claimId : undefined));
-    expect(staged).toEqual(["c2", "c2", "c3", "c3", "c5", "c5"]);
+    expect(staged).toEqual(["c2", "c3", "c5", "c2", "c3", "c5"]);
     expect(ctx.emitted.some((event) => "claimId" in event && event.claimId === "c7")).toBe(false);
     expect(ctx.emitted.some((event) => "claimId" in event && event.claimId === "c8")).toBe(false);
   });
@@ -190,6 +190,19 @@ describe("runRetrieve", () => {
     const b = await run((q) => (q.includes("甘南") || q.includes("免票") ? 1 : 20));
     expect(a).toEqual(b);
     expect(a.some((line) => line.includes("evidence.added") && line.includes("claimId"))).toBe(true);
+  });
+
+  it("搜之前已发出 stage.started retrieve", async () => {
+    const { ctx } = setup([claim({ id: "c1", text: "官方发了通知", type: "fact", order: 0 })]);
+    let sawStarted = false;
+    const provider: SearchProviderFn = async () => {
+      sawStarted = ctx.emitted.some(
+        (event) => event.type === "stage.started" && event.stage === "retrieve" && event.claimId === "c1",
+      );
+      return [{ url: "https://news.cn/ok", snippet: "通报" }];
+    };
+    await runRetrieve(ctx, { providers: [provider], queriesPerClaim: 1 });
+    expect(sawStarted).toBe(true);
   });
 
   it("只有一条证据的 host → 没有 evidence.updated", async () => {
