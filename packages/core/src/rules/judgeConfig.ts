@@ -1,5 +1,6 @@
 /**
- * 裁判与打分的全部阈值。改这里，不要在 judge / overall / score 里再写魔法数。
+ * 分数是原句可信度 0–100，不是证据质量；一句话的可信度不高于它最弱的一环。
+ * 裁判阈值也集中在这里：改这里，不要在 judge / overall / score 里再写魔法数。
  *
  * 权重刻度故意用 1/2/3：A 单独够证伪（FALSE_MIN=3），两独立 B 或 A+C 才够证实（TRUE_MIN=4）。
  * 证伪门槛低于证实——一条官方口径足以推翻，一条官方口径不足以单独坐实。
@@ -26,26 +27,29 @@ export const FALSE_MIN = 3;
 /** partial 权重至少这么多、且占比最高才判部分成立。2 = 两独立 C 或一 B，一条 C 不够。 */
 export const PARTIAL_MIN = 2;
 
-/** 分数起点。覆盖/簇/A 级加分到满配 100；全未核 = 30 − 15 = 15，表示「几乎没查到」而不是 0。 */
-export const SCORE_BASE = 30;
+/** true 的可信度下限；strength 再在 SPAN 上加。 */
+export const SCORE_TRUE_BASE = 0.70;
 
-/** 有 basis 的命题占比满分。依据覆盖是「查过」的主信号。 */
-export const SCORE_COVERAGE_MAX = 30;
+/** true 随 strength 从 BASE 走到 1.0 的幅度。 */
+export const SCORE_TRUE_SPAN = 0.30;
 
-/** 独立簇项满分。来源独立性与覆盖分开计，避免同稿堆量。 */
-export const SCORE_CLUSTER_MAX = 20;
+/** partial / contested 的固定可信度。 */
+export const SCORE_MID = 0.50;
 
-/** 4 个独立簇就把独立性学分用尽；再多的来源改走覆盖率和 A 级占比。 */
-export const SCORE_CLUSTER_CAP = 4;
+/** unverified 且 tally.sup 为 0 时的可信度。 */
+export const SCORE_UNVERIFIED_BASE = 0.15;
 
-/** basis 里 A 级证据占比满分。一手来源是可解释加分，不是关键词启发式。 */
-export const SCORE_TIER_A_MAX = 20;
+/** unverified 且 tally.sup > 0 时在 BASE 上再加的幅度。 */
+export const SCORE_UNVERIFIED_SUPPORTED = 0.15;
 
-/** 未核命题占比的扣分上限。全未核 −15，避免「没查清」看起来像中性。 */
-export const SCORE_UNVERIFIED_PENALTY = 15;
+/** false 的可信度上限；strength 越大越往 0 压。 */
+export const SCORE_FALSE_BASE = 0.15;
+
+/** strength 里独立簇数的封顶，超过不再加分。 */
+export const SCORE_STRENGTH_CLUSTER_CAP = 3;
 
 /** 整句 contested 时的固定扣分。两边都有据就不应还是高可信。 */
-export const SCORE_CONTESTED_PENALTY = 15;
+export const SCORE_CONTESTED_PENALTY = 10;
 export const ASSESS_MAX_EVIDENCE = 12;
 
 export const defaultJudgeConfig = {
@@ -56,12 +60,13 @@ export const defaultJudgeConfig = {
   TRUE_MIN,
   FALSE_MIN,
   PARTIAL_MIN,
-  SCORE_BASE,
-  SCORE_COVERAGE_MAX,
-  SCORE_CLUSTER_MAX,
-  SCORE_CLUSTER_CAP,
-  SCORE_TIER_A_MAX,
-  SCORE_UNVERIFIED_PENALTY,
+  SCORE_TRUE_BASE,
+  SCORE_TRUE_SPAN,
+  SCORE_MID,
+  SCORE_UNVERIFIED_BASE,
+  SCORE_UNVERIFIED_SUPPORTED,
+  SCORE_FALSE_BASE,
+  SCORE_STRENGTH_CLUSTER_CAP,
   SCORE_CONTESTED_PENALTY,
 } as const;
 
@@ -73,11 +78,12 @@ export type JudgeConfig = {
   TRUE_MIN: number;
   FALSE_MIN: number;
   PARTIAL_MIN: number;
-  SCORE_BASE: number;
-  SCORE_COVERAGE_MAX: number;
-  SCORE_CLUSTER_MAX: number;
-  SCORE_CLUSTER_CAP: number;
-  SCORE_TIER_A_MAX: number;
-  SCORE_UNVERIFIED_PENALTY: number;
+  SCORE_TRUE_BASE: number;
+  SCORE_TRUE_SPAN: number;
+  SCORE_MID: number;
+  SCORE_UNVERIFIED_BASE: number;
+  SCORE_UNVERIFIED_SUPPORTED: number;
+  SCORE_FALSE_BASE: number;
+  SCORE_STRENGTH_CLUSTER_CAP: number;
   SCORE_CONTESTED_PENALTY: number;
 };
