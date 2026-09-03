@@ -50,10 +50,12 @@ export function createStageContext(init: {
 
   const llm: LlmJob = async (params) => {
     const started = Date.now();
+    // 默认绑 context deadline；调用方显式传的 deadlineMs 优先（compose 用轮次硬截止）。
     const bound = {
       ...params,
       ...(init.signal ? { signal: init.signal } : {}),
       ...(init.deadline !== undefined ? { deadlineMs: init.deadline } : {}),
+      ...(params.deadlineMs !== undefined ? { deadlineMs: params.deadlineMs } : {}),
     };
     try {
       const result = await init.llm(bound);
