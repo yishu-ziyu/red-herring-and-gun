@@ -856,15 +856,36 @@ Evidence：测试名；截图 / 录屏路径 `packages/web/output/acceptance/T18
 
 ### T19 · 首页与摄入
 
-依赖：T17。
+依赖：T17（T18 合入后在其上改，或基于 T17 分支、T18 合入后 rebase——验收人按合入顺序安排）。
 
-Change：首页：一句话定位 + 输入区（文本 / 粘贴链接自动识别 / 拖拽或粘贴图片，图片本地预览）、最近案件；提交后进入案件视图并立即显示「正在拆题」状态；空态与错误态文案由 `publicCopy` 风格约束（不训人、不写转不转）。
+Change：首页（`pages/HomePage.tsx`）：
 
-Not this：不做营销落地页；不展示「Powered by 厂商名」；不做账号（记任务页）。
+- 一句话定位（现有「贴一句要核的话。先给判断，再拆问题。」保留或微调，衬线）+ 输入区：
+  - 文本 textarea（现有）；粘贴内容含 `https?://` 时下方出一行小字「链接会一起核对」（`copy.ts`），不自动拆成附件；
+  - 拖拽图片到输入区或 `Cmd/Ctrl+V` 粘贴图片：本地 `FileReader` → dataURL 预览缩略（≤ 96px，可点 × 移除），最多 1 张；提交时 `createCase(text, [{ kind: "image", value: dataURL }])`（`api.ts` 的 `Attachment` 已在 T18 加好）；图片 > 2MB 时错误文案「图太大了，换一张小一点的」（`copy.ts`）；
+  - 提交后 `navigate(/cases/<id>)`，案件视图自己显示「正在拆题」（T18 已有），首页不做进度。
+- 最近案件：`listCases()`（api 已有）取前 5 条，每条一行：首条用户消息前 24 字 + 相对时间（「3 分钟前」）；点击进案件；空态「还没有案子，贴一句试试」（`copy.ts`）。
+- 错误态：429 → 「今天查得太多了，明天再来」；网络错误 → 「没连上，再试一次」；均 `copy.ts`。
 
-Evaluator：验收人真实浏览器：文本 / 链接 / 图片三种输入各走一次到案件视图；375px 截图。
+Not this：不做营销落地页；不展示「Powered by 厂商名」；不做账号（记任务页）；不改 server（attachments 与 listCases 都已存在）；不做多图。
 
-Evidence：截图路径。
+验收清单（checker 在 T18 合入后的 `spine` 上执行；每条只答 PASS / FAIL + 一行证据）：
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 1 | `npm test --workspace=@rhg/web` | 退出 0；用例数 ≥ T18 合入时 + 6 |
+| 2 | `npm run build --workspace=@rhg/web` | 退出 0 |
+| 3 | `git diff --stat spine...HEAD` | 仅 `packages/web/**` |
+| 4 | 读测试 | 有：粘贴含链接文本 → 提示行出现；粘贴图片 → 预览出现且 `createCase` 收到 `attachments[0].kind === "image"`；>2MB 图 → 错误文案、不提交；429 → 配额文案；空列表 → 空态文案；最近案件点击 → navigate |
+| 5 | 浏览器真后端：首页输入一句话提交 | 落到 `/cases/<id>` 且 3s 内出现「正在拆题」；截图 `T19-text.png` |
+| 6 | 浏览器真后端：粘贴一张含文字 png + 一句「这图说的是真的吗」提交 | 案件页用户消息有缩略图；60s 内有命题或「这张图的来源」芯片；截图 `T19-image.png` |
+| 7 | 浏览器 375×812：首页 + 提交后案件页 | 无横滚；截图 `T19-mobile.png` |
+| 8 | 浏览器：首页粘贴「看看这个 https://www.gov.cn/zhengce/ 说的对不对」 | 提示行出现；提交后案件正常建立 |
+| 9 | `rg "#[0-9a-fA-F]{3,8}\b\|rgba\?(\|hsla\?(\|font-family" packages/web/src --glob '!tokens.css' --glob '!*.test.*'`；`rg ": any\b\|console\.log" packages/web/src` | 均 0 命中 |
+
+Evaluator：验收人真实浏览器三种输入各走一次。
+
+Evidence：截图路径；commit。
 
 ---
 
