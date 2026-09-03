@@ -39,7 +39,7 @@ export async function searchAll(
     timeoutMs?: number;
   }
 ): Promise<Evidence[]> {
-  const providers = opts?.providers ?? defaultProviders(env);
+  const providers = opts?.providers ?? defaultSearchProviders(env);
   const onProgress = opts?.onProgress;
   const names = providers.map((fn, index) => providerName(fn, index));
 
@@ -95,7 +95,7 @@ export async function searchAll(
   return withIds;
 }
 
-function defaultProviders(
+export function defaultSearchProviders(
   env: Readonly<{ [key: string]: string | undefined }>
 ): SearchProviderFn[] {
   return DEFAULT_PROVIDER_IDS.map((id) => {
