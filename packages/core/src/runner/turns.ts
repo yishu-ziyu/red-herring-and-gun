@@ -4,10 +4,7 @@ import type { FetchedPage } from "../fetch/types.js";
 import { tierOf } from "../rules/sourceTiers.js";
 import { canonicalizeUrl } from "../search/toEvidence.js";
 import { runAssess } from "../stages/assess.js";
-import { runCompose } from "../stages/compose.js";
-import type { ComposeDraft } from "../stages/compose.schema.js";
 import type { StageContext } from "../stages/context.js";
-import { runFinalize } from "../stages/finalize.js";
 import { runInvestigator, type InvestigatorTools } from "../stages/investigate.js";
 import { runJudge } from "../stages/judgeStage.js";
 import { parseJobOutput } from "../stages/parseOutput.js";
@@ -44,21 +41,10 @@ function addAssistant(ctx: StageContext, text: string): void {
   });
 }
 
-async function composeAndReply(ctx: StageContext): Promise<void> {
-  let draft: ComposeDraft | null = null;
-  try {
-    draft = (await runCompose(ctx, {})).draft;
-  } catch {
-    draft = null;
-  }
-  const { report } = await runFinalize(ctx, { draft });
-  addAssistant(ctx, report.conclusion);
-}
-
 export async function runPursueFrontier(
   ctx: StageContext,
   input: { pivotId: string | undefined; tools: InvestigatorTools; deadline: number },
-): Promise<"done" | "error"> {
+): Promise<"compose" | "error"> {
   const pivotId = input.pivotId;
   const pivot = pivotId ? ctx.current.frontier.find((item) => item.id === pivotId) : undefined;
   const consumed = pivotId ? ctx.current.consumedPivotIds.includes(pivotId) : false;
@@ -82,41 +68,40 @@ export async function runPursueFrontier(
     await runAssess(ctx, { claimIds: checkable, evidenceIds: newIds });
   }
   await runJudge(ctx, {});
-  await composeAndReply(ctx);
-  return "done";
+  return "compose";
 }
 
 export async function runChallenge(
   ctx: StageContext,
   input: { text: string; fetch: InvestigatorTools["fetch"] },
-): Promise<void> {
+): Promise<"compose" | "replied"> {
   const url = firstUrlInText(input.text);
   if (!url) {
     addAssistant(ctx, CHALLENGE_UNREACHABLE);
-    return;
+    return "replied";
   }
   let page: FetchedPage;
   try {
     page = await input.fetch(url);
   } catch {
     addAssistant(ctx, CHALLENGE_UNREACHABLE);
-    return;
+    return "replied";
   }
   if (!page.reachable || page.text.trim().length === 0) {
     addAssistant(ctx, CHALLENGE_UNREACHABLE);
-    return;
+    return "replied";
   }
   const id = addUserEvidence(ctx, page, url);
   if (!id) {
     addAssistant(ctx, CHALLENGE_UNREACHABLE);
-    return;
+    return "replied";
   }
   const checkable = ctx.current.claims.filter((claim) => claim.checkable).map((claim) => claim.id);
   if (checkable.length > 0) {
     await runAssess(ctx, { claimIds: checkable, evidenceIds: [id] });
   }
   await runJudge(ctx, {});
-  await composeAndReply(ctx);
+  return "compose";
 }
 
 function addUserEvidence(ctx: StageContext, page: FetchedPage, url: string): string | undefined {
