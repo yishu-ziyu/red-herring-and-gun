@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { faceWord } from '@rhg/core/publicCopy';
-import { ROLES, STATUS, STOP_REASONS, claimFace, faceTone } from "./copy.js";
+import { ROLES, STATUS, STOP_REASONS, claimFace, faceTone, pursueText } from "./copy.js";
 
 describe("copy", () => {
   it("状态词只有规定的八个", () => {
@@ -34,5 +34,9 @@ describe("copy", () => {
     expect(claimFace("true")).toBe(faceWord("true"));
     expect(claimFace("false")).toBe(faceWord("false"));
     expect(faceTone("unverified")).toBe("unclear");
+  });
+
+  it("pursueText 生成追查正文", () => {
+    expect(pursueText("gov.cn/zhengce")).toBe("追查 · gov.cn/zhengce");
   });
 });

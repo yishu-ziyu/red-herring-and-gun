@@ -1,4 +1,4 @@
-import type { Case } from '@rhg/core/casefile';
+import type { Case, Pivot } from '@rhg/core/casefile';
 import { FRONTIER_TITLE, PURSUING } from "../lib/copy.js";
 import { openFrontier, pivotLabel } from "../lib/select.js";
 
@@ -6,7 +6,7 @@ export function FrontierChips(props: {
   current: Case;
   running: boolean;
   pendingId?: string | null;
-  onPursue: (pivotId: string) => void;
+  onPursue: (pivot: Pivot) => void;
 }) {
   const items = openFrontier(props.current);
   if (items.length === 0) return null;
@@ -23,7 +23,7 @@ export function FrontierChips(props: {
               type="button"
               className="chip-frontier"
               disabled={pending || used || props.running}
-              onClick={() => props.onPursue(pivot.id)}
+              onClick={() => props.onPursue(pivot)}
             >
               {pending ? PURSUING : pivotLabel(pivot)}
             </button>

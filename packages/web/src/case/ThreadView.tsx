@@ -1,7 +1,7 @@
-import type { Case, Message } from '@rhg/core/casefile';
+import type { Case, Message, Pivot } from '@rhg/core/casefile';
 import { useEffect, useState } from "react";
-import { ATTACH_ALT, MEMO_FOLLOW, MEMO_USER, errorLine } from "../lib/copy.js";
-import { userMessageIndex } from "../lib/select.js";
+import { ATTACH_ALT, MEMO_FOLLOW, MEMO_USER, errorLine, pursueText } from "../lib/copy.js";
+import { pivotLabel, userMessageIndex } from "../lib/select.js";
 import type { StreamStatus } from "../lib/useCaseStream.js";
 import { Composer } from "./Composer.js";
 import { ReportCard } from "./ReportCard.js";
@@ -26,9 +26,9 @@ export function ThreadView(props: {
     if (!props.running) setPursuingId(null);
   }, [props.running]);
 
-  function onPursue(pivotId: string) {
-    setPursuingId(pivotId);
-    void props.onSend("", pivotId);
+  function onPursue(pivot: Pivot) {
+    setPursuingId(pivot.id);
+    void props.onSend(pursueText(pivotLabel(pivot)), pivot.id);
   }
 
   return (
