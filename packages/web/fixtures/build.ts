@@ -123,11 +123,28 @@ function pipelineScript(assess: unknown) {
 
 async function buildDoneLike(id: string): Promise<CaseEvent[]> {
   const { case: c, events: created } = createCase({ id, text: TEXT, at: AT });
-  const llm = createFakeLlm(
-    pipelineScript({
+  const llm = createFakeLlm({
+    ...pipelineScript({
       stances: [{ evidenceId: "e1", stance: "refutes" as const, quote: "官方通报此事不实", confidence: 0.9 }],
     }),
-  );
+    assess: [
+      { stances: [{ evidenceId: "e1", stance: "contextual" as const, quote: "官方通报此事不实", confidence: 0.3 }] },
+      {
+        stances: [
+          {
+            evidenceId: "e4",
+            stance: "refutes" as const,
+            quote: "记者调查：多地仍由单位申领，暂未直发个人。",
+            confidence: 0.9,
+          },
+        ],
+      },
+    ],
+    investigate: [
+      { action: { kind: "search" as const, target: "not-a-candidate", why: "补独立来源" } },
+      { action: { kind: "stop" as const, target: "", why: "够了" } },
+    ],
+  });
   const turn = await collect(
     runTurn({
       case: c,
@@ -142,6 +159,24 @@ async function buildDoneLike(id: string): Promise<CaseEvent[]> {
             hit(BLOG_URL, "转载", BLOG_SNIP),
           ]),
         ],
+        tools: {
+          search: async () => [
+            {
+              id: "tmp",
+              url: NEWS_URL,
+              canonicalUrl: "https://news.cn/fortune/allowance",
+              host: "news.cn",
+              title: "报道",
+              excerpt: "记者调查：多地仍由单位申领，暂未直发个人。",
+              retrievedAt: AT,
+              tier: "A" as const,
+              provenance: { kind: "search" as const, query: "" },
+            },
+          ],
+          fetch: async () => {
+            throw new Error("fetch should not run");
+          },
+        },
       }),
     }),
   );
