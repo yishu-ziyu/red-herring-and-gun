@@ -19,6 +19,7 @@ packages/core/src/
   rules/         sourceTiers、judge、overall、score
   stages/        intake、decompose、retrieve、assess、investigate、crossExam、compose、finalize
   runner/        runTurn、路由、时间预算、失败开放
+  util/          搬入的无域小工具（httpUtils、valueCoerce）
 packages/server/src/
 packages/web/src/
 packages/eval/
@@ -28,7 +29,45 @@ packages/eval/
 
 **代码约束**：TS strict、ESM、相对导入带 `.js` 后缀（node ESM 运行时需要）。域状态不得用 `Record<string, unknown>`；禁止下划线前缀字段当补丁。注释只写非显然的意图与约束，不叙述代码。
 
-**搬迁规则**：标注「搬」的模块连同 `*.test.ts` 一起移动，只允许改 import 路径与文件位置。发现旧模块有 bug 记进任务页，不在搬迁时修。
+**搬迁规则**：标注「搬」的模块连同 `*.test.ts` 一起移动，只允许改 import 路径与文件位置。用复制（`cp`），不用 `git mv`——`mvp/` 保持原样。被搬模块若 import 了清单外的 `mvp/server/src/lib/*` 文件：小而无域的进 `util/`，其余按目录归类，一并原样复制并在报告里列「额外搬入」；不得内联或重写。发现旧模块有 bug 记进任务页，不在搬迁时修。
+
+**共享形状**（Wave 1 并行任务之间的类型约定；T02 在 `casefile/` 定义正式版本，T04 / T06 在本目录 `types.ts` 里只声明自己用到的结构类型，字段名与下面完全一致，合并后由验收人改成从 `casefile/` 引）：
+
+```ts
+type Tier = "A" | "B" | "C" | "unknown";
+type Provenance =
+  | { kind: "search"; query: string; provider?: string }
+  | { kind: "pivot"; fromEvidenceId: string; pivotId: string }
+  | { kind: "user" }
+  | { kind: "memory"; recallId?: string }
+  | { kind: "reverse-image"; imageUrl: string };
+interface Evidence {
+  id: string;             // "e1", "e2", …
+  url: string;            // 原始 URL
+  canonicalUrl: string;   // 规范化后，用于去重
+  host: string;
+  title?: string;
+  excerpt: string;        // ≤ 320 字
+  text?: string;          // 抓取后的正文
+  publishedAt?: string;   // ISO 8601
+  retrievedAt: string;    // ISO 8601
+  tier: Tier;
+  clusterId?: string;
+  reachable?: boolean;    // 抓取失败置 false
+  provenance: Provenance;
+}
+interface Pivot {
+  id: string;
+  kind: "link" | "doc_number" | "date" | "image" | "entity" | "query";
+  value: string;          // URL / 文号 / 日期 / 机构名 / 查询串
+  why: string;
+  expectedValue: 1 | 2 | 3;
+  fromEvidenceId?: string;
+  depth: number;          // 距用户输入的跳数
+}
+```
+
+时间戳一律 ISO 8601 字符串，事件对象必须可 `JSON.stringify` 往返。
 
 **每条任务的通用验收**：根目录 `npm test` 全绿；`npm run build` 通过；`mvp/` 无 diff；新增文件在对应 `packages/*/src/` 下；任务分支只含本任务改动。
 
@@ -78,7 +117,7 @@ Evidence：测试文件与用例名；`tsc --noEmit` 退出码。
 
 依赖：T01。
 
-Change：`mvp/server/src/lib/{providerRouter,agentProviders,anthropicParse,minimaxM3,availableModels,modelServiceHealth}.ts` 及其测试搬到 `packages/core/src/llm/`；导出统一入口 `callJob({ job, systemPrompt, userContent, responseSchema, maxTokens, env, modelOverride, reasoningEffort })` → `{ output, model, latencyMs, reasoning? }`，内部走原 `callAgentWithFallback`。`env` 只从参数进来，不读 `process.env`。
+Change：`mvp/server/src/lib/{providerRouter,agentProviders,anthropicParse,minimaxM3,availableModels,modelServiceHealth,visionIntake}.ts` 及其测试搬到 `packages/core/src/llm/`（`visionIntake` 只依赖 `agentProviders` / `anthropicParse`，归这里而不是 fetch/）；导出统一入口 `callJob({ job, systemPrompt, userContent, responseSchema, maxTokens, env, modelOverride, reasoningEffort })` → `{ output, model, latencyMs, reasoning? }`，内部走原 `callAgentWithFallback`。`env` 只从参数进来，不读 `process.env`。
 
 Not this：不改 fallback 顺序与鉴权逻辑；不新增厂商；不改 prompt。
 
@@ -90,9 +129,11 @@ Evidence：测试名；`git diff --stat` 显示搬迁文件只有 import 路径�
 
 依赖：T01。
 
-Change：`mvp/server/src/lib/{searchProviders,retrievalFilter,queryReuse,atomSearchQuery}.ts`、`mvp/server/src/lib/evidencePursuit/` 及测试搬到 `packages/core/src/search/`。新增 `toEvidence(raw, provenance): Evidence`：URL 规范化（去 utm / fragment / 尾斜杠、小写 host、`m.` 与 `www.` 折叠）、host 抽取、`retrievedAt`、`excerpt` 截断 320 字、`tier` 由 T06 的 `sourceTiers` 填（此处先留 `unknown`）。新增 `searchAll(env, query, onProgress): Evidence[]`（并行五源 → RRF → 过滤无 URL → 按 canonicalUrl 去重）。
+Change：`mvp/server/src/lib/{searchProviders,retrievalFilter,queryReuse,atomSearchQuery}.ts`、`mvp/server/src/lib/evidencePursuit/` 及测试（含 `searchProviders.progress.test.ts`、`atomSearchQuery.test.ts`、`queryReuse.test.ts`、`retrievalFilter.test.ts`、`evidencePursuit.test.ts`）搬到 `packages/core/src/search/`。它们依赖的 `httpUtils.ts`、`valueCoerce.ts` 原样复制到 `packages/core/src/util/`；`memoryCandidateTypes.ts` 原样复制到 `packages/core/src/text/`（T05 会用同一路径，内容必须逐字节相同，不得改）。新增 `toEvidence(raw, provenance): Evidence`：URL 规范化（去 utm / fragment / 尾斜杠、小写 host、`m.` 与 `www.` 折叠）、host 抽取、`retrievedAt`、`excerpt` 截断 320 字、`tier` 由 T06 的 `sourceTiers` 填（此处先留 `unknown`）。新增 `searchAll(env, query, onProgress): Evidence[]`（并行五源 → RRF → 过滤无 URL → 按 canonicalUrl 去重）。
 
-Not this：不改各厂商 API 调用；不做 fetch 页面；不做出处簇（T06）。
+`Evidence` / `Provenance` 类型按「共享形状」在 `search/types.ts` 里声明（T02 并行中，暂不从 `casefile/` 引）。
+
+Not this：不改各厂商 API 调用；不做 fetch 页面；不做出处簇（T06）；不 import `casefile/`。
 
 Evaluator：搬入测试全绿；`toEvidence.test.ts` 覆盖 8 种 URL 规范化用例；`searchAll.test.ts` 用假 provider 证明：一源失败不阻断、RRF 顺序、去重后无重复 canonicalUrl、progress 事件顺序。
 
@@ -100,9 +141,9 @@ Evidence：测试名；diff stat。
 
 ### T05 · 判决与文案模块（搬）
 
-依赖：T01。
+依赖：T01、T04（`reportReviewer` import `boundTinyRumorVerdict` 自 `search/atomSearchQuery.js`；`memoryCandidateTypes.ts` 已由 T04 放在 `text/`）。在 T04 合入 spine 后开始。
 
-Change：搬到 `packages/core/src/text/`：`mvp/server/src/lib/claimAtom/`（拆题规则、自证、forceCheckable、merge、text）、`publicCopy.ts`、`reportReviewer.ts`、`reportSanitizer.ts`、`citationBinding.ts`、`semanticRecall.ts`、`memoryCandidate{Generator,Store,Types}.ts`；搬到 `packages/core/src/rules/`：`credibilityScore.ts`、`formulaScore.ts`、`mvp/src/lib/sourceCredibility.ts`（客户端那份，含来源层级知识）。全部连测试。
+Change：搬到 `packages/core/src/text/`：`mvp/server/src/lib/claimAtom/`（拆题规则、自证、forceCheckable、merge、text）、`publicCopy.ts`、`reportReviewer.ts`、`reportSanitizer.ts`、`citationBinding.ts`、`semanticRecall.ts`、`memoryCandidate{Generator,Store}.ts`；搬到 `packages/core/src/rules/`：`credibilityScore.ts`、`formulaScore.ts`、`mvp/src/lib/sourceCredibility.ts`（客户端那份，含来源层级知识）。全部连测试。
 
 Not this：不改任何规则常量；不合并两份 credibility 实现（后续 T09 决定用哪个）；不删「暂时没人用」的导出。
 
@@ -120,10 +161,11 @@ Change：`packages/core/src/fetch/`：
 - `webFetch(url, { timeoutMs, maxBytes, signal }): { finalUrl, status, contentType, html?, text, title?, publishedAt?, links[], images[], reachable }`：跟随 ≤3 跳重定向且每跳过 SSRF 守卫；`text` 为块级标签换行的纯文本；`publishedAt` 从 `<meta>`（article:published_time、pubdate、datePublished JSON-LD）与正文首个中文日期取。
 - `extractPivots(evidence): Pivot[]`（确定性）：外链（同 host 剔除）、文号 `〔YYYY〕N号` / `(YYYY)N号`、日期、图片 URL、`据X（报道|消息|通报）`、`X（表示|称|回应）` 中的 X；每条带 `why` 与 `expectedValue`（外链到 gov/edu/官媒 = 3；被引机构 = 2；其余 = 1）。
 - `originCluster(evidence[]): Map<evidenceId, clusterId>`：同 host 同簇；跨 host 正文 5-gram Jaccard ≥ 0.6 同簇；簇内保留最早 `publishedAt` 为根。
-- `sourceTiers.ts`：host → `A | B | C`（A：`.gov.cn`、`.edu.cn`、官方辟谣平台、中央媒体名单；B：省级媒体、主流门户、维基；C：其余），名单是数据文件，可测。
-- `imageOrigin/`、`reverseImage/`、`visionIntake.ts` 搬入。
+- `packages/core/src/rules/sourceTiers.ts`：host → `A | B | C`（A：`.gov.cn`、`.edu.cn`、官方辟谣平台、中央媒体名单；B：省级媒体、主流门户、维基；C：其余），名单是数据文件，可测。
+- `imageOrigin/`、`reverseImage/` 搬入 `fetch/`；它们依赖的 `httpUtils.ts` 原样复制到 `packages/core/src/util/`（T04 会放同一路径，内容必须逐字节相同，不得改）。`visionIntake.ts` 归 T03。
+- `extractPivots` / `originCluster` 的输入输出类型按「共享形状」在 `fetch/types.ts` 里声明（T02 并行中，暂不从 `casefile/` 引）。
 
-Not this：不引 jsdom / readability / puppeteer；不用 LLM；不在此处决定追不追 pivot。
+Not this：不引 jsdom / readability / puppeteer；不用 LLM；不在此处决定追不追 pivot；不 import `casefile/`。
 
 Evaluator：仓库内放 6 个真实页面 HTML 快照（gov 通知、央媒报道、自媒体转载 ×2、辟谣平台、微博页）作为 fixtures；`webFetch.test.ts` 用本地 http server 回放 fixtures，覆盖重定向、超时、超大响应截断、非 HTML、SSRF 拦截；`extractPivots.test.ts` 对每个 fixture 断言期望 pivot 集合（含文号与被引机构）；`originCluster.test.ts` 证明两篇转载同一通稿被并簇、无关文章不并；`sourceTiers.test.ts` 抽 10 个 host。
 
