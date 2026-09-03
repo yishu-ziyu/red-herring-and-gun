@@ -1,4 +1,4 @@
-import type { Case, Report } from '@rhg/core/casefile';
+import type { Case, Pivot, Report } from '@rhg/core/casefile';
 import { useState } from "react";
 import { CHECKING, STANCE_TYPE, claimFace, expandCitations, faceTone, materialsLine } from "../lib/copy.js";
 import {
@@ -19,7 +19,7 @@ export function ReportCard(props: {
   historical?: string;
   pursuingId?: string | null;
   flashClaim?: string | null;
-  onPursue?: (pivotId: string) => void;
+  onPursue?: (pivot: Pivot) => void;
 }) {
   const { current, running } = props;
   const report = props.historical ? undefined : current.report;
