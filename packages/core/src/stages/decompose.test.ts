@@ -1,0 +1,202 @@
+import { describe, expect, it } from "vitest";
+import { createCase } from "../casefile/reduce.js";
+import { createFakeLlm, type FakeScript } from "../llm/fakes.js";
+import { createStageContext } from "./context.js";
+import { runDecompose } from "./decompose.js";
+
+const AT = "2026-09-03T00:00:00.000Z";
+const NOW = "2026-09-03T00:00:01.000Z";
+const FORBIDDEN = ["能信", "不能信", "可信", "不可信", "真", "假"] as const;
+
+function setup(script: FakeScript, text = "原句") {
+  const { case: c } = createCase({ id: "case1", text, at: AT });
+  const fake = createFakeLlm(script);
+  const ctx = createStageContext({ case: c, llm: fake, now: () => NOW });
+  return { ctx, fake };
+}
+
+function keepAll(): FakeScript[string] {
+  return { results: [] };
+}
+
+describe("runDecompose", () => {
+  it("system prompt 不含判断措辞", async () => {
+    const source = "药能治失眠";
+    const { ctx, fake } = setup({
+      decompose: { claims: [{ text: source, type: "fact", checkable: true }] },
+      "self-proof": keepAll(),
+    });
+    await runDecompose(ctx, { claimSource: source });
+    const prompt = fake.calls.find((call) => call.job === "decompose")?.systemPrompt ?? "";
+    expect(prompt.length).toBeGreaterThan(0);
+    for (const word of FORBIDDEN) {
+      expect(prompt).not.toContain(word);
+    }
+  });
+
+  it("复合句拆成不少于两条且顺序与原句一致", async () => {
+    const source = "药能治失眠，药已获批准。";
+    const { ctx } = setup({
+      decompose: {
+        claims: [
+          { text: "药能治失眠", type: "fact", checkable: true, span: { start: 0, end: 5 } },
+          { text: "药已获批准", type: "fact", checkable: true, span: { start: 6, end: 11 } },
+        ],
+      },
+      "self-proof": keepAll(),
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims.length).toBeGreaterThanOrEqual(2);
+    expect(claims.map((c) => c.text)).toEqual(["药能治失眠", "药已获批准"]);
+    expect(claims.map((c) => c.order)).toEqual([0, 1]);
+    expect(claims.map((c) => c.id)).toEqual(["c1", "c2"]);
+    expect(source.indexOf(claims[0]!.text)).toBeLessThan(source.indexOf(claims[1]!.text));
+  });
+
+  it("立场句 checkable=false", async () => {
+    const source = "文科教育正在失去意义";
+    const { ctx } = setup({
+      decompose: { claims: [{ text: source, type: "value", checkable: false }] },
+      "self-proof": keepAll(),
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({ text: source, type: "value", checkable: false });
+  });
+
+  it("自证丢掉原句没说的命题并发 claims.dropped", async () => {
+    const source = "药能治失眠";
+    const { ctx } = setup({
+      decompose: {
+        claims: [
+          { text: "药能治失眠", type: "fact", checkable: true },
+          { text: "地球绕太阳转", type: "fact", checkable: true },
+        ],
+      },
+      "self-proof": {
+        results: [
+          { atom: "药能治失眠", supported: true, reason: "原句有" },
+          { atom: "地球绕太阳转", supported: false, reason: "原句没说" },
+        ],
+      },
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims.map((c) => c.text)).toEqual(["药能治失眠"]);
+    const dropped = ctx.emitted.filter((e) => e.type === "claims.dropped");
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0]).toMatchObject({
+      type: "claims.dropped",
+      dropped: [{ text: "地球绕太阳转", reason: "原句没说" }],
+    });
+  });
+
+  it("导致与致癌类被 forceCheckable 拉回可核对", async () => {
+    const source = "隔夜菜会致癌，隔夜菜导致失眠。";
+    const { ctx } = setup({
+      decompose: {
+        claims: [
+          { text: "隔夜菜会致癌", type: "value", checkable: false },
+          { text: "隔夜菜导致失眠", type: "value", checkable: false },
+        ],
+      },
+      "self-proof": keepAll(),
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims).toEqual([
+      expect.objectContaining({ text: "隔夜菜会致癌", checkable: true, type: "fact" }),
+      expect.objectContaining({ text: "隔夜菜导致失眠", checkable: true, type: "causal" }),
+    ]);
+  });
+
+  it("工单抛错则整句一条命题且 outcome 为 failed-open", async () => {
+    const source = "药能治失眠，药已获批准。";
+    const { ctx } = setup({ decompose: new Error("llm down") });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims).toEqual([
+      { id: "c1", text: source, type: "fact", checkable: true, order: 0 },
+    ]);
+    const finished = ctx.emitted.filter((e) => e.type === "stage.finished");
+    expect(finished.at(-1)).toMatchObject({ stage: "decompose", outcome: "failed-open" });
+  });
+
+  it("模型输出不符 schema 则失败开放", async () => {
+    const source = "药能治失眠";
+    const { ctx } = setup({ decompose: { notClaims: true } });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims).toEqual([{ id: "c1", text: source, type: "fact", checkable: true, order: 0 }]);
+    expect(ctx.emitted.filter((e) => e.type === "stage.finished").at(-1)).toMatchObject({
+      stage: "decompose",
+      outcome: "failed-open",
+    });
+  });
+
+  it("自证把全部命题丢掉则失败开放", async () => {
+    const source = "药能治失眠，药已获批准。";
+    const { ctx } = setup({
+      decompose: {
+        claims: [
+          { text: "药能治失眠", type: "fact", checkable: true },
+          { text: "药已获批准", type: "fact", checkable: true },
+        ],
+      },
+      "self-proof": {
+        results: [
+          { atom: "药能治失眠", supported: false, reason: "不成立" },
+          { atom: "药已获批准", supported: false, reason: "不成立" },
+        ],
+      },
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    const dropped = ctx.emitted.filter((e) => e.type === "claims.dropped");
+    expect(dropped).toHaveLength(1);
+    expect(dropped[0]).toMatchObject({
+      dropped: [
+        { text: "药能治失眠", reason: "不成立" },
+        { text: "药已获批准", reason: "不成立" },
+      ],
+    });
+    expect(claims).toEqual([{ id: "c1", text: source, type: "fact", checkable: true, order: 0 }]);
+    expect(ctx.emitted.filter((e) => e.type === "claims.added")).toHaveLength(1);
+    expect(ctx.emitted.filter((e) => e.type === "stage.finished").at(-1)).toMatchObject({
+      stage: "decompose",
+      outcome: "failed-open",
+    });
+  });
+
+  it("非法 span 被丢掉且命题保留", async () => {
+    const source = "药能治失眠，药已获批准。";
+    const { ctx } = setup({
+      decompose: {
+        claims: [
+          { text: "药能治失眠", type: "fact", checkable: true, span: { start: -1, end: 5 } },
+          { text: "药已获批准", type: "fact", checkable: true, span: { start: 0, end: source.length + 1 } },
+          { text: "药能治失眠且已获批准", type: "fact", checkable: true, span: { start: 5, end: 2 } },
+        ],
+      },
+      "self-proof": keepAll(),
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims).toHaveLength(3);
+    expect(claims.map((c) => c.text)).toEqual(["药能治失眠", "药已获批准", "药能治失眠且已获批准"]);
+    for (const claim of claims) {
+      expect(claim.span).toBeUndefined();
+    }
+  });
+
+  it("自证抛错则命题仍产出且有 error 事件", async () => {
+    const source = "药能治失眠";
+    const { ctx } = setup({
+      decompose: { claims: [{ text: source, type: "fact", checkable: true }] },
+      "self-proof": new Error("self-proof down"),
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims).toEqual([{ id: "c1", text: source, type: "fact", checkable: true, order: 0 }]);
+    expect(ctx.emitted.filter((e) => e.type === "error")).toEqual([
+      expect.objectContaining({ type: "error", stage: "decompose", message: "self-proof down" }),
+    ]);
+    expect(ctx.emitted.filter((e) => e.type === "stage.finished").at(-1)).toMatchObject({
+      stage: "decompose",
+      outcome: "ok",
+    });
+  });
+});
