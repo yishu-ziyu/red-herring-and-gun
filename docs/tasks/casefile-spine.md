@@ -175,6 +175,14 @@ Evidence：fixtures 路径；测试名。
 
 ## Wave 2 · 阶段
 
+**共用接缝（已在 spine 上，T07–T12 都用，不各自发明）**：
+
+- `stages/context.ts`：`StageContext { current, emitted, emit, llm, now, signal }`，由 `createStageContext({ case, llm, now?, signal? })` 构造。`emit(event)` 填 `seq / at`、`validateEvent` 校验、`reduce` 折叠、返回新快照；`ctx.llm(params)` 每次调用自动发 `llm.called`（失败也记 `ok=false` 后原样抛）。阶段只通过 `ctx.emit` 写状态、只通过 `ctx.llm` 调模型，不直接 `reduce`、不直接 `callJob`。
+- `llm/fakes.ts`：`createFakeLlm(script)`，按 job 名给应答（对象 / 函数 / Error / 数组按次序），`fake.calls` 记全部参数。测试只用它，不 `vi.mock` LLM 层。
+- 阶段签名：`export async function runXxx(ctx: StageContext, input: XxxInput): Promise<XxxResult>`。工单 schema 用 typebox 放在阶段文件旁 `xxx.schema.ts`，模型输出用 `Value.Check` 校验，不通过按各契约走失败开放并发 `stage.finished(outcome: "failed-open")`。
+- 实体 id：命题 `c1, c2…`、证据 `e1, e2…`、立场 `s1, s2…`、pivot 由 `extractPivots` 给；编号从 `ctx.current` 对应数组长度 + 1 取，跨阶段不重号。
+- 不改 `stages/index.ts`、`rules/index.ts`、`packages/core/src/index.ts`（验收人合并时加导出，避免三方并行冲突）。
+
 ### T07 · Intake 与 Decompose 阶段
 
 依赖：T02、T03、T05、T06。
