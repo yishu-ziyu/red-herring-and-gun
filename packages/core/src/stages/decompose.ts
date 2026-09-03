@@ -46,6 +46,7 @@ export const DECOMPOSE_SYSTEM_PROMPT = [
   "对每个命题给出 checkable（是否可核对）与 type（类型）。",
   "硬不可核对（checkable=false，不进入后续核对）：",
   "- value 价值判断：对事物价值的评价（\"有意义/无意义\"\"好/坏\"\"应该/不应该\"）。示例如\"文科教育正在失去意义\"若指价值立场。",
+  "- 对群体品行的全称攻击与立场宣泄也算 value：「这届专家全被收买了」「都是骗子」「没一个好东西」不作事实核对，checkable=false。反例：『转基因食品就是毒药，这届专家全被收买了』→「转基因食品就是毒药」按 fact 可核（查毒性证据），「这届专家全被收买了」是 value，checkable=false。",
   "- normative 规范命题：主张某人/某机构应当如何（\"政府应该禁止 X\"）。",
   "可核对（checkable=true）：",
   "- fact 事实陈述、causal 因果推断、comparison 比较命题、concept 概念定义。",
