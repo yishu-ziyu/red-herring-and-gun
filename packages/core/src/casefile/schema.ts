@@ -48,6 +48,7 @@ export const ProvenanceSchema = Type.Union([
       kind: Type.Literal("search"),
       query: Type.String(),
       provider: Type.Optional(Type.String()),
+      claimId: Type.Optional(Type.String()),
     },
     closed,
   ),
@@ -539,6 +540,20 @@ export const LlmCalledSchema = event("llm.called", {
   ok: Type.Boolean(),
   /** ok=false 时的错误摘要（截断），供排障；不含密钥。 */
   error: Type.Optional(Type.String()),
+  attempts: Type.Optional(
+    Type.Array(
+      Type.Object(
+        {
+          provider: Type.String(),
+          model: Type.String(),
+          ok: Type.Boolean(),
+          latencyMs: Type.Number(),
+          error: Type.Optional(Type.String()),
+        },
+        closed,
+      ),
+    ),
+  ),
 });
 export const ReportFinalizedSchema = event("report.finalized", {
   report: ReportSchema,

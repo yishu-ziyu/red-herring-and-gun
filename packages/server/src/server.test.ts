@@ -325,11 +325,13 @@ describe("server", () => {
       latencyMs: 12,
       ok: false,
       error: "stepfun 500",
+      attempts: [{ provider: "minimax", model: "MiniMax-M3", ok: false, latencyMs: 12, error: "stepfun 500" }],
     };
     const cleaned = toPublicEvent(llm);
     expect(() => validateEvent(cleaned)).not.toThrow();
     expect(cleaned).toMatchObject({ type: "llm.called", model: "", job: "assess" });
     expect("error" in cleaned).toBe(false);
+    expect("attempts" in cleaned).toBe(false);
 
     const added = evidenceAdded();
     const publicAdded = toPublicEvent(added);
@@ -339,6 +341,42 @@ describe("server", () => {
       kind: "search",
       query: "津贴",
     });
+  });
+
+  it("开机修复未收口日志", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "rhg-t21-"));
+    const store = new FileCaseStore(dir);
+    await store.append("case-orphan", [
+      validateEvent({ type: "case.created", seq: 1, at: AT, id: "case-orphan", text: TEXT }),
+      validateEvent({ type: "turn.started", seq: 2, at: AT, turnId: "t1" }),
+      validateEvent({ type: "stage.started", seq: 3, at: AT, stage: "decompose" }),
+    ]);
+    await store.repairIncomplete();
+    const deps = makeDeps();
+    const turns = new TurnRunner(store, deps);
+    const app = createApp({ deps, store, turns, quota: createQuota({ limit: 0 }) });
+    const server = createServer(app);
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const { port } = server.address() as AddressInfo;
+    const close = async () => {
+      await turns.abortAll();
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+      await rm(dir, { recursive: true, force: true });
+    };
+    cleanups.push(close);
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases/case-orphan`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { running: boolean; events: CaseEvent[] };
+    expect(body.running).toBe(false);
+    const last = body.events[body.events.length - 1];
+    const prev = body.events[body.events.length - 2];
+    expect(last).toMatchObject({ type: "turn.finished", reason: "error" });
+    expect(prev?.type).toBe("error");
+    expect(String((prev as { message?: string }).message ?? "")).toContain("重启");
   });
 
   it("断连不中止轮次，日志以 turn.finished(done) 收口", async () => {

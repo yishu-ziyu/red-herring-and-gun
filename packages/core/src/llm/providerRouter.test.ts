@@ -340,7 +340,7 @@ describe("providerRouter modelOverride (BDD B2-B5)", () => {
       modelOverride: { provider: "minimax", model: "MiniMax-M3" },
     });
 
-    expect(result.output).toEqual({ max_tokens: 131072, thinking: "adaptive" });
+    expect(result.output).toEqual({ max_tokens: 800, thinking: "adaptive" });
     expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
   });
 

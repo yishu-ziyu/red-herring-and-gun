@@ -174,6 +174,30 @@ describe("runTurn", () => {
     assertReplay(created, events, c);
   });
 
+  it("clock 在 assess 结束后超过 totalMs，judge 仍 ok 且有 verdict.updated，reason=timeout", async () => {
+    const time = { ms: 0 };
+    const inner = createFakeLlm(script());
+    const llm: LlmJob = async (params) => {
+      const result = await inner(params);
+      if (params.job === "assess") time.ms = 120_000;
+      return result;
+    };
+    const { case: c } = createCase({ id: "case-judge-late", text: TEXT, at: AT });
+    const events = await collect(
+      runTurn(
+        input(c, {
+          deps: deps({ llm, clock: () => time.ms }),
+          budget: { totalMs: 120_000, composeReserveMs: 30_000 },
+        }),
+      ),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "stage.finished", stage: "judge", outcome: "ok" }),
+    );
+    expect(events.some((event) => event.type === "verdict.updated")).toBe(true);
+    expect(events.at(-1)).toMatchObject({ type: "turn.finished", reason: "timeout" });
+  });
+
   it("retrieve 前 abort 后最多再出现一个阶段，reason=aborted", async () => {
     const ac = new AbortController();
     const inner = createFakeLlm(script());
