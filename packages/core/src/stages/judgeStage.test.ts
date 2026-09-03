@@ -75,4 +75,51 @@ describe("runJudge", () => {
     const overalls = ctx.emitted.filter((event) => event.type === "overall.updated");
     expect(overalls.length).toBe(2);
   });
+
+  it("立场型命题不进 judge，A 级反驳后整句为 false 且分数 ≤ 10", async () => {
+    const { case: c } = createCase({ id: "case1", text: "转基因食品就是毒药，这届专家全被收买了", at: AT });
+    const seeded = createStageContext({
+      case: c,
+      llm: createFakeLlm({}),
+      now: () => AT,
+    });
+    seeded.emit({
+      type: "claims.added",
+      claims: [
+        { id: "c1", text: "这届专家全被收买了", type: "value", checkable: false, order: 0 },
+        { id: "c2", text: "转基因食品就是毒药", type: "fact", checkable: true, order: 1 },
+      ],
+    });
+    seeded.emit({
+      type: "verdict.updated",
+      verdict: { claimId: "c1", verdict: "unverified", basis: [], rule: "no-evidence", updatedAt: AT },
+    });
+    const ctx = createStageContext({
+      case: seeded.current,
+      llm: createFakeLlm({}),
+      now: () => AT,
+    });
+    ctx.emit({ type: "evidence.added", evidence: ev("e1", "A") });
+    ctx.emit({
+      type: "stance.added",
+      stance: {
+        id: "s1",
+        claimId: "c2",
+        evidenceId: "e1",
+        stance: "refutes",
+        quote: "官方确认属实",
+        confidence: 0.9,
+        quoteFidelity: true,
+        by: "main",
+      },
+    });
+    await runJudge(ctx, {});
+    const updates = ctx.emitted.filter((event) => event.type === "verdict.updated");
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      verdict: { claimId: "c2", verdict: "false" },
+    });
+    expect(ctx.current.overall?.verdictType).toBe("false");
+    expect(ctx.current.overall?.score).toBeLessThanOrEqual(10);
+  });
 });

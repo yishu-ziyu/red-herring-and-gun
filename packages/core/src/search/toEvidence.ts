@@ -32,6 +32,32 @@ function clipCodePoints(text: string, max: number): string {
   return points.slice(0, max).join("");
 }
 
+const NAMED_ENTITIES: Record<string, string> = {
+  lt: "<",
+  gt: ">",
+  amp: "&",
+  quot: '"',
+  apos: "'",
+  nbsp: "\u00A0",
+};
+
+/** 先解实体，再剥标签，避免搜索标题把 &lt;italic&gt; 原样露出来。 */
+function cleanHtmlText(s: string): string {
+  const decoded = s.replace(/&(#x[0-9a-fA-F]+|#\d+|lt|gt|amp|quot|apos|nbsp);/gi, (full, body: string) => {
+    const key = body.toLowerCase();
+    if (key.startsWith("#x")) {
+      const code = Number.parseInt(key.slice(2), 16);
+      return Number.isFinite(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : full;
+    }
+    if (key.startsWith("#")) {
+      const code = Number.parseInt(key.slice(1), 10);
+      return Number.isFinite(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : full;
+    }
+    return NAMED_ENTITIES[key] ?? full;
+  });
+  return decoded.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+}
+
 export function canonicalizeUrl(url: string): string | null {
   const trimmed = String(url).trim();
   if (!trimmed) return null;
@@ -76,12 +102,12 @@ export function toEvidence(
     url: raw.url,
     canonicalUrl,
     host: new URL(canonicalUrl).hostname,
-    excerpt: clipCodePoints(raw.snippet ?? "", EXCERPT_MAX_CODE_POINTS),
+    excerpt: clipCodePoints(cleanHtmlText(raw.snippet ?? ""), EXCERPT_MAX_CODE_POINTS),
     retrievedAt: (now ?? new Date()).toISOString(),
     tier: "unknown",
     provenance,
   };
-  if (raw.title !== undefined) evidence.title = raw.title;
+  if (raw.title !== undefined) evidence.title = cleanHtmlText(raw.title);
   if (raw.publishedAt !== undefined) evidence.publishedAt = raw.publishedAt;
   return evidence;
 }
