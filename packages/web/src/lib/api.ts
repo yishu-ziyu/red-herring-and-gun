@@ -64,11 +64,16 @@ async function readError(res: Response, fallback: string): Promise<string> {
   return fallback;
 }
 
-export async function createCase(text: string): Promise<{ caseId: string; turnId: string }> {
+export type Attachment = { kind: "url" | "image"; value: string };
+
+export async function createCase(
+  text: string,
+  attachments?: Attachment[],
+): Promise<{ caseId: string; turnId: string }> {
   const res = await fetch("/api/cases", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(attachments?.length ? { text, attachments } : { text }),
   });
   if (!res.ok) throw new Error(await readError(res, "立案失败"));
   return (await res.json()) as { caseId: string; turnId: string };

@@ -1,3 +1,4 @@
+import { faceWord } from '@rhg/core/publicCopy';
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { AppShell } from "./AppShell.js";
@@ -25,7 +26,7 @@ function renderShell(width: number) {
   return render(
     <AppShell
       cases={[{ caseId: "fx-done", text: "done", createdAt: "", updatedAt: "" }]}
-      summary={{ face: "不能信", score: 40, status: "已完成" }}
+      summary={{ face: faceWord("false"), score: 40, status: "已完成" }}
       panel={<p>面板</p>}
       onOpen={() => undefined}
       onHome={() => undefined}
@@ -62,5 +63,25 @@ describe("AppShell", () => {
     const buttons = [...document.querySelectorAll("button")];
     const bare = buttons.filter((button) => !button.textContent?.trim() && !button.getAttribute("aria-label"));
     expect(bare).toHaveLength(0);
+  });
+
+  it("摘要栏不含状态词，含 face 与分数", () => {
+    for (const width of [375, 900]) {
+      const { container, unmount } = renderShell(width);
+      const bar = container.querySelector(".shell-summary");
+      expect(bar?.textContent).toContain(faceWord("false"));
+      expect(bar?.textContent).toContain("40");
+      expect(bar?.textContent).not.toMatch(/已完成|正在/);
+      expect(screen.getByRole("button", { name: "打开案件列表" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "打开面板" })).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it("面板顶部无状态词", () => {
+    const { container } = renderShell(1280);
+    const aside = container.querySelector(".shell-aside");
+    expect(aside?.querySelector(".status-line")).toBeNull();
+    expect(aside?.textContent ?? "").not.toMatch(/已完成|正在/);
   });
 });

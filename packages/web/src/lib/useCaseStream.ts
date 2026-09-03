@@ -18,6 +18,7 @@ export function useCaseStream(caseId: string, api: StreamApi = defaultApi) {
   const [current, setCurrent] = useState<Case | null>(null);
   const [status, setStatus] = useState<StreamStatus>("loading");
   const [running, setRunning] = useState(false);
+  const [aborted, setAborted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const caseRef = useRef<Case | null>(null);
   const sourceRef = useRef<EventSource | null>(null);
@@ -59,6 +60,8 @@ export function useCaseStream(caseId: string, api: StreamApi = defaultApi) {
         }
         const next = reduce(snap, event);
         apply(next, event.type === "turn.started" ? true : event.type === "turn.finished" ? false : undefined);
+        if (event.type === "turn.started") setAborted(false);
+        if (event.type === "turn.finished" && event.reason === "aborted") setAborted(true);
         setStatus("live");
       };
       source.addEventListener("case.event", onFrame);
@@ -77,6 +80,8 @@ export function useCaseStream(caseId: string, api: StreamApi = defaultApi) {
       const loaded = await api.getCase(id);
       if (generation.current !== gen) return;
       apply(loaded.case, loaded.running);
+      const last = loaded.case.turns.at(-1);
+      setAborted(last?.reason === "aborted");
       setStatus("live");
       attach(id, loaded.case.seq, gen);
     },
@@ -95,6 +100,8 @@ export function useCaseStream(caseId: string, api: StreamApi = defaultApi) {
       .then((loaded) => {
         if (cancelled || generation.current !== gen) return;
         apply(loaded.case, loaded.running);
+        const last = loaded.case.turns.at(-1);
+        setAborted(last?.reason === "aborted");
         setStatus("live");
         attach(caseId, loaded.case.seq, gen);
       })
@@ -123,6 +130,7 @@ export function useCaseStream(caseId: string, api: StreamApi = defaultApi) {
         setError(result.error);
         return;
       }
+      setAborted(false);
       setRunning(true);
     },
     [api, caseId],
@@ -130,8 +138,10 @@ export function useCaseStream(caseId: string, api: StreamApi = defaultApi) {
 
   const abort = useCallback(async () => {
     if (!caseId) return;
+    setAborted(true);
+    setRunning(false);
     await api.abortTurn(caseId);
   }, [api, caseId]);
 
-  return { case: current, status, running, error, sendTurn, abort };
+  return { case: current, status, running, aborted, error, sendTurn, abort };
 }

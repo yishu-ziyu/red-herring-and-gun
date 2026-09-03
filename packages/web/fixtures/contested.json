@@ -104,7 +104,8 @@
         "provenance": {
           "kind": "search",
           "query": "人社部发文说生育津贴直接打到个人卡里了",
-          "provider": "fixtureSearch"
+          "provider": "fixtureSearch",
+          "claimId": "c1"
         },
         "title": "通报",
         "id": "e1"
@@ -124,7 +125,8 @@
         "provenance": {
           "kind": "search",
           "query": "人社部发文说生育津贴直接打到个人卡里了",
-          "provider": "fixtureSearch"
+          "provider": "fixtureSearch",
+          "claimId": "c1"
         },
         "title": "报道",
         "id": "e2"
@@ -225,37 +227,22 @@
       "overall": {
         "verdictType": "mixed_misleading",
         "contested": true,
-        "score": 75,
+        "score": 40,
         "breakdown": [
           {
-            "key": "base",
-            "label": "起点",
-            "value": 30
+            "key": "claim:c1",
+            "label": "命题 1",
+            "value": 25
           },
           {
-            "key": "coverage",
-            "label": "依据覆盖率",
-            "value": 30
-          },
-          {
-            "key": "clusters",
-            "label": "独立簇",
-            "value": 10
-          },
-          {
-            "key": "tierA",
-            "label": "A 级占比",
-            "value": 20
-          },
-          {
-            "key": "unverified",
-            "label": "未核占比",
-            "value": 0
+            "key": "weakest",
+            "label": "最弱一环",
+            "value": 25
           },
           {
             "key": "contested",
             "label": "争议",
-            "value": -15
+            "value": -10
           }
         ]
       },
@@ -391,37 +378,22 @@
       "overall": {
         "verdictType": "mixed_misleading",
         "contested": true,
-        "score": 75,
+        "score": 40,
         "breakdown": [
           {
-            "key": "base",
-            "label": "起点",
-            "value": 30
+            "key": "claim:c1",
+            "label": "命题 1",
+            "value": 25
           },
           {
-            "key": "coverage",
-            "label": "依据覆盖率",
-            "value": 30
-          },
-          {
-            "key": "clusters",
-            "label": "独立簇",
-            "value": 10
-          },
-          {
-            "key": "tierA",
-            "label": "A 级占比",
-            "value": 20
-          },
-          {
-            "key": "unverified",
-            "label": "未核占比",
-            "value": 0
+            "key": "weakest",
+            "label": "最弱一环",
+            "value": 25
           },
           {
             "key": "contested",
             "label": "争议",
-            "value": -15
+            "value": -10
           }
         ]
       },
@@ -466,7 +438,7 @@
     {
       "type": "report.finalized",
       "report": {
-        "conclusion": "生育津贴不会直接打到个人卡里，仍由单位申领。",
+        "conclusion": "生育津贴不会直接打到个人卡里，仍由单位申领。[1]",
         "claimItems": [
           {
             "claimId": "c1",
@@ -499,7 +471,7 @@
       "message": {
         "id": "m2",
         "role": "assistant",
-        "text": "生育津贴不会直接打到个人卡里，仍由单位申领。",
+        "text": "生育津贴不会直接打到个人卡里，仍由单位申领。[1]",
         "at": "2026-09-03T12:00:00.000Z"
       },
       "seq": 45,
