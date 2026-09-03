@@ -1,4 +1,5 @@
 export { callJob, type CallJobParams, type CallJobResult, type LlmEnv } from "./callJob.js";
+export { createFakeLlm, type FakeLlm, type FakeReply, type FakeScript } from "./fakes.js";
 export * from "./providerRouter.js";
 export * from "./agentProviders.js";
 export {
