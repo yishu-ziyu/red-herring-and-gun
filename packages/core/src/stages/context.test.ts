@@ -28,6 +28,8 @@ describe("createStageContext", () => {
     expect(ok.output).toEqual({ claims: [] });
     await expect(ctx.llm({ job: "decompose", systemPrompt: "s", userContent: "u" })).rejects.toThrow("boom");
     expect(ctx.current.llmCalls.map((r) => r.ok)).toEqual([true, false]);
+    const failed = ctx.emitted.find((e) => e.type === "llm.called" && !e.ok);
+    expect(failed && "error" in failed ? failed.error : undefined).toBe("boom");
     expect(fake.calls).toHaveLength(2);
   });
 });
