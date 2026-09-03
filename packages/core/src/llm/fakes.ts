@@ -25,7 +25,7 @@ export function createFakeLlm(script: FakeScript): FakeLlm {
     const reply = replies[Math.min(i, replies.length - 1)];
     if (reply instanceof Error) throw reply;
     const output = typeof reply === "function" ? (reply as (p: JobParams) => unknown)(params) : reply;
-    return { output, model: "fake", latencyMs: 0 };
+    return { output, model: "fake", latencyMs: 0, attempts: [] };
   }) as FakeLlm;
   fake.calls = [];
   return fake;

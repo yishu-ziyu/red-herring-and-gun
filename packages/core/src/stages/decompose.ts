@@ -38,6 +38,7 @@ export const DECOMPOSE_SYSTEM_PROMPT = [
   "4. 拆分完成后，把命题拼接回读一遍，确认每条都能回溯到原句——不能回溯的删掉。",
   "5. 拆解不得删除原句的限定条件（「某种情况下 X」不得拆成「X」）。",
   "6. 不得产出无独立含义的碎片；能合并进同一判断的不要拆成多条。",
+  "7. 转述结构「X 宣布 / 表示 / 称 / 发文说 Y」是一条命题，不拆成「X 宣布了某事」+「Y」；text 写成带来源的完整句（如「国家医保局宣布：2026 年起生育津贴直接发个人」），checkable 按 Y 判。命题文本里不得出现「该事项 / 该内容 / 上述 / 某事」这类指代或占位词，必须自足。",
   "",
   "【可否核对 / type 与 checkable — 强制】",
   "对每个命题给出 checkable（是否可核对）与 type（类型）。",
@@ -138,6 +139,25 @@ function toClaims(ctx: StageContext, drafts: DraftClaim[]): Claim[] {
   });
 }
 
+const FRAGMENT_TAIL = /(宣布|表示|称|指出|发布|说|透露|回应|通报|认为|强调)(了)?$/;
+const FRAGMENT_PLACEHOLDER = /某事|某些内容|某项|某种|该事项|该内容|该政策|上述|前述/;
+
+// ponytail: 正则启发，上限是误杀「X 已表示」类完整句；要改成句法分析再换实现。
+export function isFragmentClaim(text: string): boolean {
+  const compact = text.replace(/\s+/g, "");
+  return compact.length < 6 || FRAGMENT_TAIL.test(compact) || FRAGMENT_PLACEHOLDER.test(compact);
+}
+
+function splitFragments(drafts: DraftClaim[]): { kept: DraftClaim[]; fragments: DraftClaim[] } {
+  const kept: DraftClaim[] = [];
+  const fragments: DraftClaim[] = [];
+  for (const draft of drafts) {
+    if (isFragmentClaim(draft.text)) fragments.push(draft);
+    else kept.push(draft);
+  }
+  return { kept, fragments };
+}
+
 function failOpen(ctx: StageContext, claimSource: string): DecomposeResult {
   const claims = toClaims(ctx, [{ text: claimSource, type: "fact", checkable: true }]);
   ctx.emit({ type: "claims.added", claims });
@@ -154,7 +174,7 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
       systemPrompt: DECOMPOSE_SYSTEM_PROMPT,
       userContent: ["原句：", input.claimSource, "", "请拆成 claims 数组。"].join("\n"),
       responseSchema: DecomposeOutputSchema,
-      maxTokens: 1000,
+      maxTokens: 4096,
     });
     output = result.output;
   } catch {
@@ -211,8 +231,20 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
   }
 
   const forced = applyForceCheckable(keptDrafts);
-  if (forced.length === 0) return failOpen(ctx, input.claimSource);
-  const claims = toClaims(ctx, forced);
+  const { kept, fragments } = splitFragments(forced);
+  if (fragments.length > 0) {
+    const origin = ctx.current.droppedClaims.length;
+    ctx.emit({
+      type: "claims.dropped",
+      dropped: fragments.map((item, i) => ({
+        id: `d${origin + i + 1}`,
+        text: item.text,
+        reason: "fragment",
+      })),
+    });
+  }
+  if (kept.length === 0) return failOpen(ctx, input.claimSource);
+  const claims = toClaims(ctx, kept);
   ctx.emit({ type: "claims.added", claims });
   ctx.emit({ type: "stage.finished", stage: "decompose", outcome: "ok" });
   return { claims };

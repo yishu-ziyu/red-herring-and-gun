@@ -616,6 +616,7 @@ export async function dispatchSingleProvider({
   maxTokens,
   codexBin,
   reasoningEffort,
+  signal,
 }: {
   provider: AgentTextProviderId;
   model: string;
@@ -627,6 +628,7 @@ export async function dispatchSingleProvider({
   maxTokens: number;
   codexBin: string;
   reasoningEffort: "low" | "medium" | "high";
+  signal?: AbortSignal;
 }): Promise<{ text: string; model: string; reasoning?: string }> {
   if (provider === "deepseek") {
     const apiKey = envValue(env, "DEEPSEEK_API_KEY");
@@ -651,7 +653,8 @@ export async function dispatchSingleProvider({
       model,
       systemPrompt,
       userContent,
-      ...miniMaxCallOptions(env, model, maxTokens),
+      ...miniMaxCallOptions(env, model, maxTokens, reasoningEffort),
+      signal,
     });
   }
   if (provider === "stepfun") {
@@ -666,6 +669,7 @@ export async function dispatchSingleProvider({
       userContent,
       maxTokens: stepFunMaxTokensForModel(env, model, maxTokens),
       reasoningEffort: stepFunReasoningEffortForModel(env, model, reasoningEffort),
+      signal,
     });
   }
   if (provider === "360") {
