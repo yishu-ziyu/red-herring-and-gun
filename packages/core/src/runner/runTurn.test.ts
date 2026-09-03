@@ -4,8 +4,9 @@ import { createCase, reduce, replay } from "../casefile/reduce.js";
 import type { Case, CaseEvent } from "../casefile/schema.js";
 import { createFakeLlm } from "../llm/fakes.js";
 import type { SearchHit, SearchProviderFn } from "../search/searchAll.js";
-import type { LlmJob } from "../stages/context.js";
+import { createStageContext, type LlmJob } from "../stages/context.js";
 import type { InvestigatorTools } from "../stages/investigate.js";
+import { OFF_TOPIC_REPLY } from "../text/publicCopy.js";
 import { runTurn, type RunTurnDeps, type RunTurnInput } from "./runTurn.js";
 
 const AT = "2026-09-03T12:00:00.000Z";
@@ -268,11 +269,47 @@ describe("runTurn", () => {
     expect(threw).toBeUndefined();
   });
 
-  it("未实现路由发 error 并以 reason=error 收束", async () => {
-    const { case: c } = createCase({ id: "case-route", text: TEXT, at: AT });
-    const events = await collect(runTurn(input(c, { route: "ask_case" })));
-    expect(events.map((event) => event.type)).toEqual(["turn.started", "message.added", "error", "turn.finished"]);
-    expect(events[2]).toMatchObject({ type: "error", stage: "route", message: "该路由尚未实现" });
-    expect(events[3]).toMatchObject({ type: "turn.finished", reason: "error" });
+  it("缺省 route 时调用 routeMessage，显式传入时不调", async () => {
+    const { case: empty } = createCase({ id: "case-omit-empty", text: TEXT, at: AT });
+    const fakeEmpty = createFakeLlm(script());
+    const emptyEvents = await collect(
+      runTurn({ case: empty, message: { text: TEXT }, deps: deps({ llm: fakeEmpty }) }),
+    );
+    expect(fakeEmpty.calls.some((call) => call.job === "route")).toBe(false);
+    const emptyUser = emptyEvents.find((event) => event.type === "message.added");
+    expect(emptyUser?.type === "message.added" && emptyUser.message.route).toBe("new_claim");
+
+    const { case: raw } = createCase({ id: "case-omit-claims", text: TEXT, at: AT });
+    const prep = createStageContext({ case: raw, llm: createFakeLlm({}), now: () => AT });
+    prep.emit({
+      type: "claims.added",
+      claims: [{ id: "c1", text: TEXT, type: "fact", checkable: true, order: 0 }],
+    });
+    const fakeDefault = createFakeLlm({ route: { route: "off_topic" } });
+    const defaultEvents = await collect(
+      runTurn({
+        case: prep.current,
+        message: { text: "现在判得怎样" },
+        deps: deps({ llm: fakeDefault }),
+      }),
+    );
+    expect(fakeDefault.calls.some((call) => call.job === "route")).toBe(true);
+    const defaultUser = defaultEvents.find((event) => event.type === "message.added");
+    expect(defaultUser?.type === "message.added" && defaultUser.message.route).toBe("off_topic");
+    expect(defaultEvents.filter((event) => event.type === "message.added").at(-1)).toMatchObject({
+      message: { role: "assistant", text: OFF_TOPIC_REPLY },
+    });
+
+    const fakeExplicit = createFakeLlm({ route: { route: "off_topic" }, ...script() });
+    const { case: explicitCase } = createCase({ id: "case-explicit", text: TEXT, at: AT });
+    const explicitEvents = await collect(
+      runTurn(input(explicitCase, { deps: deps({ llm: fakeExplicit }), route: "new_claim" })),
+    );
+    expect(fakeExplicit.calls.some((call) => call.job === "route")).toBe(false);
+    const explicitUser = explicitEvents.find((event) => event.type === "message.added");
+    expect(explicitUser?.type === "message.added" && explicitUser.message.route).toBe("new_claim");
+    expect(explicitEvents.some((event) => event.type === "stage.started" && event.stage === "intake")).toBe(
+      true,
+    );
   });
 });
