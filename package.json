@@ -1,0 +1,20 @@
+{
+  "name": "rhg",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "build": "npm run build -w @rhg/core && npm run build -w @rhg/server && npm run build -w @rhg/web && npm run build -w @rhg/eval",
+    "dev:web": "npm run dev -w @rhg/web",
+    "dev:server": "npm run dev -w @rhg/server"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}
