@@ -143,7 +143,7 @@ Evidence：测试名；diff stat。
 
 依赖：T01、T04（`reportReviewer` import `boundTinyRumorVerdict` 自 `search/atomSearchQuery.js`；`memoryCandidateTypes.ts` 已由 T04 放在 `text/`）。在 T04 合入 spine 后开始。
 
-Change：搬到 `packages/core/src/text/`：`mvp/server/src/lib/claimAtom/`（拆题规则、自证、forceCheckable、merge、text）、`publicCopy.ts`、`reportReviewer.ts`、`reportSanitizer.ts`、`citationBinding.ts`、`semanticRecall.ts`、`memoryCandidate{Generator,Store}.ts`；搬到 `packages/core/src/rules/`：`credibilityScore.ts`、`formulaScore.ts`、`mvp/src/lib/sourceCredibility.ts`（客户端那份，含来源层级知识）。全部连测试。
+Change：搬到 `packages/core/src/text/`：`mvp/server/src/lib/claimAtom/`（拆题规则、自证、forceCheckable、merge、text）、`publicCopy.ts`、`reportReviewer.ts`、`reportSanitizer.ts`、`citationBinding.ts`、`semanticRecall.ts`、`memoryCandidate{Generator,Store}.ts`；搬到 `packages/core/src/rules/`：`credibilityScore.ts`、`formulaScore.ts`、`mvp/src/lib/sourceCredibility.ts`（客户端那份，含来源层级知识）。全部连测试。另：把 `mvp/server/src/lib/queryReuse.test.ts` 里 `searchAccepted → buildQueriesWithReuse` 这个 describe 复制回 `packages/core/src/search/queryReuse.test.ts`（T04 搬时因依赖 `memoryCandidateStore` 暂删），import 指向 `../text/memoryCandidateStore.js`。`packages/` 下任何文件不得 import `mvp/`。
 
 Not this：不改任何规则常量；不合并两份 credibility 实现（后续 T09 决定用哪个）；不删「暂时没人用」的导出。
 
