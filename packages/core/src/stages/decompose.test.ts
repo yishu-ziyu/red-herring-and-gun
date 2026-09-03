@@ -40,6 +40,30 @@ describe("runDecompose", () => {
     expect(prompt).toContain("电动车都被集中拉去国外销毁了，一批一批装船运走");
   });
 
+  it("system prompt 含证据缺失限定语规则与反例", async () => {
+    const source = "同事群里说我们公司下周一会被收购，没有公告也没有监管披露";
+    const { ctx, fake } = setup({
+      decompose: { claims: [{ text: "我们公司下周一会被收购", type: "fact", checkable: true }] },
+      "self-proof": keepAll(),
+    });
+    await runDecompose(ctx, { claimSource: source });
+    const prompt = fake.calls.find((call) => call.job === "decompose")?.systemPrompt ?? "";
+    expect(prompt).toContain("限定语");
+    expect(prompt).toContain("同事群里说我们公司下周一会被收购，没有公告也没有监管披露");
+    expect(prompt).toContain("我们公司下周一会被收购");
+  });
+
+  it("system prompt 含可公开核查前提单独成条的例外", async () => {
+    const { ctx, fake } = setup({
+      decompose: { claims: [{ text: "该保健品能防癌", type: "causal", checkable: true }] },
+      "self-proof": keepAll(),
+    });
+    await runDecompose(ctx, { claimSource: "某地推广某保健品后癌症死亡率下降，证明该保健品能防癌" });
+    const prompt = fake.calls.find((call) => call.job === "decompose")?.systemPrompt ?? "";
+    expect(prompt).toContain("可公开核查的事实主张");
+    expect(prompt).toContain("某地推广该保健品后癌症死亡率下降");
+  });
+
   it("复合句拆成不少于两条且顺序与原句一致", async () => {
     const source = "这种药能治失眠，这种药已获批准。";
     const { ctx } = setup({
