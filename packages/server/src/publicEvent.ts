@@ -2,7 +2,7 @@ import { scrubPublicText, validateEvent, type CaseEvent } from "@rhg/core";
 
 export function toPublicEvent(event: CaseEvent): CaseEvent {
   if (event.type === "llm.called") {
-    const { error: _error, ...rest } = event;
+    const { error: _error, attempts: _attempts, ...rest } = event;
     return validateEvent({ ...rest, model: "" });
   }
   if (event.type === "error") {
