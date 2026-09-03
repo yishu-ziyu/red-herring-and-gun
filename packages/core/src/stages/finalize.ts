@@ -8,9 +8,6 @@ import type { ComposeDraft } from "./compose.schema.js";
 export const FINALIZE_JOB = "finalize";
 
 const VENDOR_ASCII = [
-  "web_search",
-  "web_fetch",
-  "MiniMax",
   "Anthropic",
   "Claude",
   "OpenAI",
@@ -20,10 +17,8 @@ const VENDOR_ASCII = [
   "DeepSeek",
   "Gemini",
   "Grok",
-  "Tavily",
   "Bocha",
   "Serper",
-  "360",
 ] as const;
 
 export type FinalizeInput = {
@@ -172,7 +167,11 @@ function fallbackLine(ctx: StageContext, claim: Claim, table: CitationTable): st
 }
 
 function fallbackConclusion(ctx: StageContext): string {
-  return `${directAnswer(ctx.current.overall?.verdictType)}${ctx.current.text}`;
+  const lead = directAnswer(ctx.current.overall?.verdictType);
+  if (ctx.current.overall?.contested) {
+    return `${lead}来源之间相互矛盾，两边都有依据。`;
+  }
+  return lead;
 }
 
 function ensureNonEmpty(
