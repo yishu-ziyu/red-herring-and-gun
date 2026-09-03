@@ -1,25 +1,26 @@
 import type { Evidence, Pivot } from "../casefile/schema.js";
+import type { FetchedPage } from "../fetch/types.js";
 import { webFetch } from "../fetch/webFetch.js";
-import { buildVisionPrompt, type CaseIntakePayload } from "../llm/visionIntake.js";
 import { tierOf } from "../rules/sourceTiers.js";
 import { canonicalizeUrl } from "../search/toEvidence.js";
 import type { StageContext } from "./context.js";
 
 export type IntakeAttachment = { kind: "url" | "image"; value: string };
 
+export type IntakeTools = {
+  fetch?: (url: string) => Promise<FetchedPage>;
+  vision?: (images: string[], text: string) => Promise<{ ocrTexts: string[] }>;
+};
+
 export type IntakeInput = {
   text: string;
   attachments?: IntakeAttachment[];
+  tools?: IntakeTools;
 };
 
 export type IntakeResult = { claimSource: string };
 
 const EXCERPT_MAX = 320;
-
-const VISION_SYSTEM_PROMPT = [
-  "你是红鲱鱼与枪的视觉材料预处理。",
-  "只提取图中可见文字与来源线索。只返回 JSON。",
-].join("\n");
 
 function clipExcerpt(text: string): string {
   const points = [...text];
@@ -54,13 +55,6 @@ function nextEvidenceId(ctx: StageContext): string {
   return `e${ctx.current.evidence.length + 1}`;
 }
 
-function ocrTextsFrom(output: unknown): string[] {
-  if (typeof output !== "object" || output === null || !("ocrTexts" in output)) return [];
-  const texts = output.ocrTexts;
-  if (!Array.isArray(texts)) return [];
-  return texts.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
-}
-
 function evidenceFromFetch(ctx: StageContext, rawUrl: string, page: {
   finalUrl: string;
   text: string;
@@ -88,8 +82,13 @@ function evidenceFromFetch(ctx: StageContext, rawUrl: string, page: {
   return evidence;
 }
 
-async function ingestUrl(ctx: StageContext, url: string, claimSource: string): Promise<string> {
-  const page = await webFetch(url, { signal: ctx.signal });
+async function ingestUrl(
+  ctx: StageContext,
+  url: string,
+  claimSource: string,
+  fetchPage: (url: string) => Promise<FetchedPage>,
+): Promise<string> {
+  const page = await fetchPage(url);
   const evidence = evidenceFromFetch(ctx, url, page);
   ctx.emit({ type: "evidence.added", evidence });
   if (!page.reachable) return claimSource;
@@ -97,7 +96,13 @@ async function ingestUrl(ctx: StageContext, url: string, claimSource: string): P
   return appendSource(claimSource, lede);
 }
 
-async function ingestImages(ctx: StageContext, input: IntakeInput, images: string[], claimSource: string): Promise<string> {
+async function ingestImages(
+  ctx: StageContext,
+  text: string,
+  images: string[],
+  claimSource: string,
+  vision?: IntakeTools["vision"],
+): Promise<string> {
   const origin = ctx.current.frontier.length;
   const pivots: Pivot[] = images.map((value, i) => ({
     id: `p${origin + i + 1}`,
@@ -108,20 +113,10 @@ async function ingestImages(ctx: StageContext, input: IntakeInput, images: strin
     depth: 0,
   }));
   if (pivots.length > 0) ctx.emit({ type: "frontier.added", pivots });
-
-  // callStepFunVisionForIntake 直接打 StepFun、不走 callJob / ctx.llm；OCR 只经 ctx.llm 接入。
-  const intake: CaseIntakePayload = {
-    text: input.text,
-    links: [],
-    images: images.map((dataUrl) => ({ dataUrl })),
-  };
+  if (!vision) return claimSource;
   try {
-    const result = await ctx.llm({
-      job: "vision-intake",
-      systemPrompt: VISION_SYSTEM_PROMPT,
-      userContent: buildVisionPrompt(input.text, intake),
-    });
-    return appendSource(claimSource, ocrTextsFrom(result.output).join("\n"));
+    const result = await vision(images, text);
+    return appendSource(claimSource, result.ocrTexts.filter((item) => item.trim().length > 0).join("\n"));
   } catch {
     return claimSource;
   }
@@ -130,12 +125,15 @@ async function ingestImages(ctx: StageContext, input: IntakeInput, images: strin
 export async function runIntake(ctx: StageContext, input: IntakeInput): Promise<IntakeResult> {
   ctx.emit({ type: "stage.started", stage: "intake" });
   const attachments = input.attachments ?? [];
+  const fetchPage = input.tools?.fetch ?? ((url: string) => webFetch(url, { signal: ctx.signal }));
   let claimSource = input.text;
   for (const item of attachments) {
-    if (item.kind === "url") claimSource = await ingestUrl(ctx, item.value, claimSource);
+    if (item.kind === "url") claimSource = await ingestUrl(ctx, item.value, claimSource, fetchPage);
   }
   const images = attachments.filter((item) => item.kind === "image").map((item) => item.value);
-  if (images.length > 0) claimSource = await ingestImages(ctx, input, images, claimSource);
+  if (images.length > 0) {
+    claimSource = await ingestImages(ctx, input.text, images, claimSource, input.tools?.vision);
+  }
   ctx.emit({ type: "stage.finished", stage: "intake", outcome: "ok" });
   return { claimSource };
 }
