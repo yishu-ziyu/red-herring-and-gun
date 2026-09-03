@@ -87,6 +87,11 @@ export async function runRetrieve(ctx: StageContext, input: RetrieveInput): Prom
     }
   }
 
+  const emitOrder = selected.slice().sort((a, b) => a.order - b.order);
+  for (const claim of emitOrder) {
+    ctx.emit({ type: "stage.started", stage: "retrieve", claimId: claim.id });
+  }
+
   const settled = await Promise.all(
     tasks.map(async (task) => {
       const found = await searchAll({}, task.query, {
@@ -108,9 +113,7 @@ export async function runRetrieve(ctx: StageContext, input: RetrieveInput): Prom
     byClaim.set(row.task.claim.id, list);
   }
 
-  const emitOrder = selected.slice().sort((a, b) => a.order - b.order);
   for (const claim of emitOrder) {
-    ctx.emit({ type: "stage.started", stage: "retrieve", claimId: claim.id });
     const batches = byClaim.get(claim.id) ?? [];
     for (const batch of batches) {
       for (const item of batch.hits) {
