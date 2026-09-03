@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * eval/golden.ts — 生产评测基准数据。
  *
@@ -40,7 +39,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "finance",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 15],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["冒用央行名义", "伪造官方来源"],
   },
   {
@@ -51,7 +49,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "social",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 15],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["伪造官方小程序", "诈骗邮件"],
   },
   {
@@ -62,7 +59,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "policy",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 20],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["单次特例当普遍政策"],
   },
   {
@@ -73,7 +69,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "policy",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 15],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["拼接图片误导"],
   },
   {
@@ -84,7 +79,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "tech",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 10],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["陈年老谣", "恐惧话术"],
   },
   {
@@ -95,14 +89,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "health",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 15],
-    expectedAgentSequence: [
-      "rumor_detector",
-      "fact_checker",
-      "source_validator",
-      "alternative_explanation_searcher",
-      "counter_evidence_grader",
-      "report_composer",
-    ],
     traps: ["误引权威名义", "混淆黄曲霉毒素产生条件"],
   },
   {
@@ -113,7 +99,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "social",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 10],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["旧谣新传", "爱心话术"],
   },
   {
@@ -124,7 +109,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "social",
     expectedVerdictType: "mixed_misleading",
     expectedCredibilityRange: [10, 30],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["全队/个别层级混淆"],
   },
   {
@@ -135,7 +119,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "policy",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 15],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["第三方营销话术当官方规则"],
   },
   {
@@ -146,14 +129,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "health",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 15],
-    expectedAgentSequence: [
-      "rumor_detector",
-      "fact_checker",
-      "source_validator",
-      "alternative_explanation_searcher",
-      "counter_evidence_grader",
-      "report_composer",
-    ],
     traps: ["颜色与致癌挂钩"],
   },
   {
@@ -164,14 +139,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "health",
     expectedVerdictType: "mixed_misleading",
     expectedCredibilityRange: [10, 35],
-    expectedAgentSequence: [
-      "rumor_detector",
-      "fact_checker",
-      "source_validator",
-      "alternative_explanation_searcher",
-      "counter_evidence_grader",
-      "report_composer",
-    ],
     traps: ["相关≠因果", "混杂因素"],
     expectedAtoms: [
       { atom: "每天喝红酒可以预防心脏病", expectedVerdict: "false" },
@@ -186,14 +153,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "health",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 15],
-    expectedAgentSequence: [
-      "rumor_detector",
-      "fact_checker",
-      "source_validator",
-      "alternative_explanation_searcher",
-      "counter_evidence_grader",
-      "report_composer",
-    ],
     traps: ["时序当因果", "轶事当证据"],
   },
   {
@@ -204,14 +163,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "health",
     expectedVerdictType: "mixed_misleading",
     expectedCredibilityRange: [10, 35],
-    expectedAgentSequence: [
-      "rumor_detector",
-      "fact_checker",
-      "source_validator",
-      "alternative_explanation_searcher",
-      "counter_evidence_grader",
-      "report_composer",
-    ],
     traps: ["生态谬误", "时序当疗效"],
   },
   {
@@ -222,14 +173,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "health",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 15],
-    expectedAgentSequence: [
-      "rumor_detector",
-      "fact_checker",
-      "source_validator",
-      "alternative_explanation_searcher",
-      "counter_evidence_grader",
-      "report_composer",
-    ],
     traps: ["选择偏倚", "基率谬误"],
   },
   {
@@ -240,7 +183,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "social",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 25],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["旅行社营销当官方政策"],
   },
   {
@@ -251,7 +193,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "policy",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 25],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["将/要就跳过", "把规划改写成已经通车"],
   },
   {
@@ -262,7 +203,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "social",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 25],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["移花接木视频", "只查有没有人被罚"],
   },
   {
@@ -273,7 +213,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "social",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 25],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["历史素材嫁接", "合成视频当现场"],
   },
   {
@@ -284,7 +223,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "social",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 35],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["查判刑不查流传说法", "太琐碎丢掉"],
   },
   {
@@ -295,7 +233,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "social",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 35],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["把处罚新闻当成出轨属实"],
   },
   {
@@ -306,7 +243,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "social",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 25],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["P图当现场", "太琐碎丢掉"],
   },
   // ── evidenceLoop 翻案案例（ADR-004）：口语说法与官方口径词表错位，
@@ -319,7 +255,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "social",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 25],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["口语「拉去销毁」≠官方「回收处置/以旧换新」", "词表错位一轮未命中"],
     expectsEvidenceLoop: true,
   },
@@ -331,7 +266,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "social",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 25],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["合成公告", "「悬赏公告」口语检索未命中需换「警方通报」"],
     expectsEvidenceLoop: true,
   },
@@ -343,7 +277,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "policy",
     expectedVerdictType: "mixed_misleading",
     expectedCredibilityRange: [10, 35],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["部分地方试点当全国政策", "「打到卡里」口语需换「生育津贴 直发」官方口径"],
     expectsEvidenceLoop: true,
   },
@@ -355,7 +288,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "finance",
     expectedVerdictType: "unverified",
     expectedCredibilityRange: [10, 70],
-    expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["没搜到不等于假", "无公开出处却写成能信或不能信"],
   },
   {
@@ -366,14 +298,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     domain: "health",
     expectedVerdictType: "false",
     expectedCredibilityRange: [0, 25],
-    expectedAgentSequence: [
-      "rumor_detector",
-      "fact_checker",
-      "source_validator",
-      "alternative_explanation_searcher",
-      "counter_evidence_grader",
-      "report_composer",
-    ],
     traps: ["类型闸标成立场导致不检索"],
     mustSearch: ["隔夜菜会致癌"],
   },

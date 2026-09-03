@@ -3,25 +3,15 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   callJob,
-  callSearchProvider,
   createFakeLlm,
+  defaultSearchProviders,
   searchAll,
   webFetch,
   type FetchedPage,
   type LlmEnv,
   type RunTurnDeps,
-  type SearchHit,
   type SearchProviderFn,
-  type SearchProviderId,
 } from "@rhg/core";
-
-const SEARCH_IDS: readonly SearchProviderId[] = [
-  "360_search",
-  "any_search",
-  "metaso_search",
-  "tavily_search",
-  "exa_search",
-];
 
 export function loadLocalEnv(): void {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -94,7 +84,7 @@ export function fakeDeps(claim: string): RunTurnDeps {
 }
 
 export function liveDeps(env: LlmEnv): RunTurnDeps {
-  const providers = liveSearchProviders(env);
+  const providers = defaultSearchProviders(env);
   return {
     llm: (params) => callJob({ ...params, env }),
     searchProviders: providers,
@@ -103,42 +93,4 @@ export function liveDeps(env: LlmEnv): RunTurnDeps {
       fetch: (url) => webFetch(url),
     },
   };
-}
-
-function liveSearchProviders(env: LlmEnv): SearchProviderFn[] {
-  const bound = definedEnv(env);
-  return SEARCH_IDS.map((id) => {
-    const fn: SearchProviderFn = async (query) => {
-      const result: unknown = await callSearchProvider({ env: bound, provider: id, query });
-      return hitsFromProvider(result);
-    };
-    Object.defineProperty(fn, "name", { value: id });
-    return fn;
-  });
-}
-
-function definedEnv(env: LlmEnv): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (value !== undefined) out[key] = value;
-  }
-  return out;
-}
-
-function hitsFromProvider(result: unknown): SearchHit[] {
-  if (!result || typeof result !== "object" || !("sources" in result)) return [];
-  const sources = (result as { sources: unknown }).sources;
-  if (!Array.isArray(sources)) return [];
-  const hits: SearchHit[] = [];
-  for (const item of sources) {
-    if (!item || typeof item !== "object") continue;
-    const rec = item as { url?: unknown; title?: unknown; snippet?: unknown; publishedAt?: unknown };
-    if (typeof rec.url !== "string" || rec.url === "") continue;
-    const hit: SearchHit = { url: rec.url };
-    if (typeof rec.title === "string") hit.title = rec.title;
-    if (typeof rec.snippet === "string") hit.snippet = rec.snippet;
-    if (typeof rec.publishedAt === "string") hit.publishedAt = rec.publishedAt;
-    hits.push(hit);
-  }
-  return hits;
 }
