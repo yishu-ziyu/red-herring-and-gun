@@ -191,7 +191,7 @@ export async function callStepFunVisionForIntake({
     ),
   });
 
-  const data = await response.json().catch(() => null);
+    const data: any = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = data?.error?.message || data?.message || response.statusText;
     throw new Error(`StepFun 视觉模型调用失败：${detail}`);
