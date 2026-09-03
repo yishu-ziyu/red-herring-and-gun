@@ -537,6 +537,8 @@ export const LlmCalledSchema = event("llm.called", {
   model: Type.String(),
   latencyMs: Type.Number(),
   ok: Type.Boolean(),
+  /** ok=false 时的错误摘要（截断），供排障；不含密钥。 */
+  error: Type.Optional(Type.String()),
 });
 export const ReportFinalizedSchema = event("report.finalized", {
   report: ReportSchema,
