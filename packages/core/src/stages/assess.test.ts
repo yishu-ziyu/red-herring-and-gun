@@ -152,6 +152,22 @@ describe("runAssess", () => {
     expect(userContent).toContain("e1");
   });
 
+  it("同样证据第二次调用不产生 llm 调用", async () => {
+    const seeded = seedClaimAndEvidence([officialEvidence()]);
+    const fake = createFakeLlm({
+      assess: {
+        stances: [{ evidenceId: "e1", stance: "refutes", quote: "官方通报此事不实", confidence: 0.9 }],
+      },
+    });
+    const ctx = createStageContext({ case: seeded.current, llm: fake, now: () => AT });
+    await runAssess(ctx, {});
+    expect(fake.calls).toHaveLength(1);
+    expect(ctx.current.stances).toHaveLength(1);
+    await runAssess(ctx, {});
+    expect(fake.calls).toHaveLength(1);
+    expect(ctx.current.stances).toHaveLength(1);
+  });
+
   it("system prompt 只让模型判关系，不含命题级真假输出", async () => {
     const seeded = seedClaimAndEvidence([officialEvidence()]);
     const fake = createFakeLlm({ assess: { stances: [] } });
