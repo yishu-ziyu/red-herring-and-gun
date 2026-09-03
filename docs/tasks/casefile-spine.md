@@ -564,6 +564,64 @@ Evaluator：验收人用真实后端跑 3 个 golden 案例（含一个会触发
 
 Evidence：测试名；截图 / 录屏路径 `packages/web/output/acceptance/T18-*`。
 
+设计定案（2026-09-03 验收人；T17 骨架之上换皮，不重搭壳 / 路由 / 流）：
+
+- 第一屏回答三件事，按此顺序占视觉层级：**原句站不站得住**（结论段）→ **问题在哪**（命题逐条）→ **出处在哪**（引用）。过程（追索步骤、阶段进度）是次要信息，永远不抢这三件事的层级。
+- 线程（`<main>`）：
+  - 用户消息：被检原句是「证物」——衬线 600、17px、左侧 3px 墨线、`--paper-deep` 底，层级低于结论；追问消息同样式但更小（14px）。不做聊天气泡的圆角对话框。
+  - 助手回答 = 一张「报告卡」，只用 `case.report` 与 `case`：
+    1. 结论段：`report.conclusion`，衬线、`clamp(17px, 1.8vw, 19px)`、行高 1.7；首句加判决色 62% 高亮下划线（`background: linear-gradient(transparent 62%, color-mix(判决色 20%) 62%)`），判决色取 `overall.verdictType`（true→true、false→false、mixed_misleading / unverified→unclear）。`[n]` 渲染为内联可点引用（mono、12px、判决无关的 `--ink-muted` 细边圆角），hover / focus 出 popover：证据标题、host、层级字母、引文（`stance.quote`），点击在新标签打开 `evidence.url`。
+    2. 命题逐条：`report.claimItems` 顺序；每条 = 判决芯片（文字 + 判决色，芯片文案用 `publicCopy` 的 face 词表，不自造）+ `line` + 该条的 `[n]`。立场型命题（`claim.type` 不可核查者）芯片文案「立场型 · 不适用真/假判断」，中性色。
+    3. 出处列表：`report.citations` 顺序，每条 `[n]` 标题 · host · 层级徽标（A/B/C，`--ink` 描边小方块，A 实心）· 立场标记（支持 ＋ / 反驳 － / 部分 ±，文字不只靠符号）。默认展开前 5 条，其余「展开全部 N 条」。
+    4. frontier 芯片行：标题「还可以往哪查」，`case.frontier` 里未 consumed 的 pivot 按 `expectedValue` 降序取前 6，芯片文案 = pivot 标签（link → host + 路径截断、entity → 实体名、image → 「这张图的来源」）。点击 → `sendTurn("", pivotId)`，芯片进入「正在查」态并禁用。
+  - 运行中（`running === true`）的助手块是同一张卡的「未完成态」，不是另一个组件：顶部一行状态词（只准这些：正在拆题 / 正在找证据 / 正在核对 / 正在追索 / 正在复核 / 正在写结论 / 已完成 / 已中止），从最近一条 `stage.started` 映射；命题在 `claims.added` 后即出现（芯片「核对中」，中性色）；证据计数「已找到 N 条材料」随 `evidence.added` 跳动（数字 mono，变化时 160ms 淡入）；判决芯片随 `verdict.updated` 翻转（颜色与文字同时过渡，160ms）。追索步骤流（`investigator.step`）以「仪器条」呈现：细线卡、点阵标记、每步一行 `目标 · 动作 · 结果`，最多显示最近 3 步，结束后整条折叠成一行「追索了 N 步 · 停止原因」可展开。
+  - 输入框固定线程底部：textarea（自动增高到 6 行）+ 提交按钮；运行中提交按钮换成「中止」（`abort()`），输入框仍可编辑但不能提交；`Enter` 提交、`Shift+Enter` 换行；空串不能提交。
+- 案件面板（`<aside>`），从上到下：
+  1. 整句判决卡：face 词（衬线 24px）+ 分数（mono 32px）+ 分解条（`overall.breakdown` 每项一行：label + 细条 + 值，条长按 |value| 相对最大值，负值向左）。`overall.contested` 为真时卡下加一行「来源之间相互矛盾」。
+  2. 命题列表：`case.claims` 原句序；每条 = 判决芯片 + 命题文本 + `tally`（`＋sup －ref ±par`，mono 12px，muted）；立场型夹在中间标灰。判决更新时芯片过渡。点击命题 → 线程滚到对应 claimItem 并高亮 1s。
+  3. 证据板：按 `clusterId` 分组（无簇的单独成组），簇根（`evidence.cites` 中被引最多者，或无 cites 时 tier 最高者）在前；每条 = 层级徽标 + 标题 + host + 立场标记；点开显示 `excerpt` / `quote` 与「打开原文」。折叠时每簇只显示簇根 + 「还有 N 条同源」。
+  4. 出处图：`@xyflow/react`；节点 = 被 `report.citations` 引用的证据 + 它们 `cites` 到的证据；边 = `case.cites`（from → to，箭头指向被引者）；A 级节点 `--ink` 实心；簇用同色淡底分组；高度 240px，`fitView`，不可拖拽节点（`nodesDraggable={false}`），可缩放。**无边时整个区块不渲染**（连标题都不出）。
+  5. 追索时间线：默认折叠为一行「追索 N 步 · 复核 M 步」；展开后按 `investigator.step` 顺序，每步 `role` 徽标（主查 / 控方 / 辩方，不写 prosecutor/defender 英文）· 目标 · 动作 · 结果 · 增益（`gain` 字段有则显示「+N 条证据 / 判决变化」），`investigator.stopped.reason` 映射成可读词（预算用完 / 没有新收获 / 已经查清 / 时间到 / 工具故障）。
+- 桌面 ≥1024：三栏；面板内五个区块纵向排，各自可折叠（标题行是按钮，`aria-expanded`）。768–1023：面板是抽屉，顶部摘要栏显示 face 词 + 分数 + 「打开面板」。<768：单栏，面板抽屉从底部升起（高度 85vh），顶部摘要栏同上。
+- 文案硬约束：不出现 Agent / 智能体 / 工具名 / 模型名 / 厂商名；不出现「能信 / 不能信」四字章作为独立标题（face 词表里的词只在芯片与判决卡里用）；错误态一句话说清「哪一步没成」+ 「可以再试 / 换个说法」，不训人。
+- 组件与文件：`src/case/ThreadView.tsx`、`ReportCard.tsx`、`Citation.tsx`（含 popover）、`FrontierChips.tsx`、`Composer.tsx`、`InstrumentStrip.tsx`；`src/panel/VerdictCard.tsx`、`ClaimList.tsx`、`EvidenceBoard.tsx`、`ProvenanceGraph.tsx`、`Timeline.tsx`；`src/lib/copy.ts`（状态词表、停止原因词表、role 词表；只引 `@rhg/core/publicCopy` 的 face 词）；`src/lib/select.ts`（从 `Case` 派生视图数据的纯函数：簇分组、簇根、frontier 排序、引用解析、最近 stage）。所有派生逻辑在 `select.ts` 里可单测，组件只渲染。
+- 允许新增依赖：`@xyflow/react`（唯一）。
+
+验收清单（checker 在 `.worktrees/T18` 逐条执行；14 条起由带浏览器的 checker 做，截图存 `packages/web/output/acceptance/`；每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 1 | `npm test --workspace=@rhg/web` | 退出码 0；用例 ≥ T17 合入时 + 16 |
+| 2 | `npm run build --workspace=@rhg/web` | 退出码 0 |
+| 3 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动仅在 `packages/web/**`、`package-lock.json`；不含 core / server / mvp |
+| 4 | `rg "\"dependencies\"" -A 8 packages/web/package.json` | 相比 spine 只多 `@xyflow/react` |
+| 5 | `rg "#[0-9a-fA-F]{3,8}\b\|rgba\?(\|hsla\?(\|font-family" packages/web/src --glob '!tokens.css' --glob '!*.test.*'` | 0 命中 |
+| 6 | 读 `select.test.ts` | 覆盖：簇分组与簇根选取（有 cites / 无 cites 两例）；frontier 过滤 consumed + 按 expectedValue 排序取前 6；`[n]` 解析（含 `[1][2]` 连写、`[99]` 悬空 → 原文保留不成链接）；最近 stage → 状态词映射（含 `turn.finished` 后为「已完成」/「已中止」） |
+| 7 | 读 `ClaimList.test.tsx` | 四种判决 → 芯片文案来自 `publicCopy` face 词表 + 对应 CSS 类（true / false / unclear）；立场型命题文案含「立场型」且用中性类；`tally` 渲染 `＋n －n ±n` |
+| 8 | 读 `Citations.test.tsx` | `[n]` 渲染为按钮 / 链接且 `href === evidence.url`、`target="_blank"`、`rel` 含 `noopener`；hover / focus 出 popover 含标题、host、层级字母、引文 |
+| 9 | 读 `ProvenanceGraph.test.tsx` | `case.cites` 为空 → 组件返回 null（DOM 里没有该区块标题）；有边 → 渲染节点数 = 引用证据 ∪ 被引证据 数 |
+| 10 | 读 `copy.ts` | 状态词只有设计定案列的 8 个；停止原因 5 个；role 3 个中文词；`rg "prosecutor\|defender\|investigator" packages/web/src --glob '*.tsx'` 只出现在字段访问，不出现在 JSX 文本 |
+| 11 | `rg "能信\|不能信" packages/web/src --glob '*.tsx'` | 0 命中（face 词只从 publicCopy 来） |
+| 12 | `rg "智能体\|Agent\|工具名\|模型名\|minimax\|stepfun\|deepseek\|openai\|claude" packages/web/src --glob '*.tsx'` | 0 命中 |
+| 13 | 读 `ReportCard.tsx` / `ThreadView.tsx` | 运行中与完成态是同一组件的两个分支，不是两个组件；状态词来自 `copy.ts`；结论首句高亮用判决色 token 派生 |
+| 14 | 浏览器 fixture：`/cases/fx-done` 1280×800 | 截图 `T18-done-desktop.png`；线程里有结论段、≥1 个 `[n]`、命题逐条、出处列表、frontier 芯片；面板里五个区块中出处图按 fixture 有无边决定；`scrollWidth === innerWidth` |
+| 15 | 浏览器 fixture：`/cases/fx-done` 375×812 | 截图 `T18-done-mobile.png` + 打开面板抽屉后 `T18-done-mobile-panel.png`；抽屉内五个区块标题都能滚到；`scrollWidth === innerWidth` |
+| 16 | 浏览器 fixture：`/cases/fx-retrieving` 1280 | 打开后 3 秒内「已找到 N 条材料」的 N 至少变化一次；命题芯片为「核对中」；截图 `T18-retrieving-desktop.png` |
+| 17 | 浏览器 fixture：`/cases/fx-contested` 1280 | 判决卡下有「来源之间相互矛盾」；时间线展开后有「控方」与「辩方」徽标；出处图区块存在或不存在与 fixture 的 `cites` 是否为空一致；截图 `T18-contested-desktop.png` |
+| 18 | 浏览器 fixture：`/cases/fx-followup` 1280 | 线程里有两条用户消息、两张报告卡；第二条用户消息样式更小；截图 `T18-followup-desktop.png` |
+| 19 | 浏览器 fixture：`/cases/fx-done`，点第一个 `[n]` | 新标签 URL 等于该证据 `url`（用 `window.open` 拦截或读 `href`） |
+| 20 | 浏览器 fixture：`/cases/fx-done`，hover 第一个 `[n]` | popover 出现，含 host 与层级字母；`Tab` 聚焦到它也出现；截图 `T18-citation-popover.png` |
+| 21 | 浏览器 fixture：点面板里第二条命题 | 线程滚动，对应 claimItem 获得高亮类并在 ~1s 后移除 |
+| 22 | 浏览器真后端 A（会触发追索）：起 server + web，首页输入「人社部发文说生育津贴直接打到个人卡里了，不用再走单位」 | 从提交起计时：命题出现 ≤ 10s、首条证据计数 ≥1 ≤ 20s、`turn.finished` ≤ 130s；完成态结论段有 ≥1 个 `[n]`；仪器条在运行中出现过 `investigator.step` 行（截图 `T18-live-A-running.png`）；完成截图 `T18-live-A-done.png`；把结论段文本与命题 + 芯片文案贴进报告 |
+| 23 | 浏览器真后端 B（含立场句）：新案「转基因食品就是毒药，这届专家全被收买了」 | 命题列表里至少一条标「立场型」；可核查命题有判决芯片；截图 `T18-live-B-done.png`；贴命题 + 芯片文案 |
+| 24 | 浏览器真后端 C（图片输入）：首页粘贴或拖入一张含文字的图（用 `packages/core/src/fetch/__fixtures__` 或任意本地 png），提交 | 案件建立、线程里用户消息显示图片缩略；60s 内有命题或有「这张图的来源」frontier 芯片；截图 `T18-live-C.png`。若 T19 尚未合入导致首页无图片入口，此条改为 `POST /api/cases` 带 `attachments:[{kind:"image", value:<dataURL>}]` 后打开案件页验证，并在报告注明 |
+| 25 | 浏览器真后端 A 完成后点一个 frontier 芯片 | 同一 `/cases/<id>` 页面上出现新一条用户消息 + 新报告卡（未完成态），面板命题数不减少；芯片在点击后禁用；截图 `T18-live-A-followup.png` |
+| 26 | 浏览器真后端 A 运行中点「中止」 | ≤ 3s 内状态词变「已中止」，`GET /api/cases/<id>` 末事件 `turn.finished.reason === "aborted"`；输入框恢复可提交 |
+| 27 | 浏览器：任一完成页 `[...document.querySelectorAll("button,a")].filter(el => !el.textContent.trim() && !el.getAttribute("aria-label")).length` | 0 |
+| 28 | 浏览器：任一完成页 375 宽，把面板抽屉内五个区块全部展开 | `scrollWidth === innerWidth` 仍成立；截图 `T18-mobile-all-open.png` |
+| 29 | `rg ": any\b\|console\.log\|\.only\|\.skip" packages/web/src` | 0 命中 |
+| 30 | `wc -l packages/web/src/case/*.tsx packages/web/src/panel/*.tsx packages/web/src/lib/*.ts` | 报行数（仅报告） |
+
 ### T19 · 首页与摄入
 
 依赖：T17。
