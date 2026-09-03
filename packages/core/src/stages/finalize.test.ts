@@ -295,4 +295,88 @@ describe("runFinalize", () => {
     expect(report.claimItems[0]?.line).toBe("生育津贴直接打到个人卡：与现有依据相反。[1]");
     expect(report.claimItems[1]?.line).toBe("人社部发过这份文：没有找到足够依据。");
   });
+
+  it("该判断为 false 整句被剥掉", async () => {
+    const ctx = seed({
+      claims: [claim("c1", "转基因食品是有毒的食品", 0)],
+      verdicts: [{ claimId: "c1", verdict: "unverified", basis: [], rule: "no-evidence", updatedAt: AT }],
+      overall: overall("unverified"),
+    });
+    const { report } = await runFinalize(ctx, {
+      draft: {
+        conclusion: "没有查到足够依据。",
+        claimItems: [
+          {
+            claimId: "c1",
+            line: "转基因食品是有毒的食品。该判断为 false。依据：美国国家科学院…",
+          },
+        ],
+      },
+    });
+    expect(report.claimItems[0]?.line).toBe("转基因食品是有毒的食品。依据：美国国家科学院…");
+  });
+
+  it("裸词 unverified 被删", async () => {
+    const ctx = seed({
+      claims: [claim("c1", "转基因食品是有毒的食品", 0)],
+      verdicts: [{ claimId: "c1", verdict: "unverified", basis: [], rule: "no-evidence", updatedAt: AT }],
+      overall: overall("unverified"),
+    });
+    const { report } = await runFinalize(ctx, {
+      draft: {
+        conclusion: "没有查到足够依据。",
+        claimItems: [{ claimId: "c1", line: "结论 unverified，没有查到" }],
+      },
+    });
+    expect(report.claimItems[0]?.line).not.toContain("unverified");
+  });
+
+  it("checkable=false 无 claimItem 时兜底行是立场说明", async () => {
+    const ctx = seed({
+      claims: [{ id: "c1", text: "这届专家全被收买了", type: "value", checkable: false, order: 0 }],
+      verdicts: [],
+      overall: overall("unverified"),
+    });
+    const { report } = await runFinalize(ctx, {
+      draft: { conclusion: "这是评价，不是可核对的事实。", claimItems: [] },
+    });
+    expect(report.claimItems[0]?.line).toContain("这是评价或立场");
+  });
+
+  it("true 结论无 [n] 时在句号后补第一条引用", async () => {
+    const ctx = trueWithBasis();
+    const { report } = await runFinalize(ctx, {
+      draft: {
+        conclusion: "这一说法属实。",
+        claimItems: [{ claimId: "c1", line: "单位申领生育津贴成立。[1]" }],
+      },
+    });
+    expect(report.conclusion.endsWith("[1]")).toBe(true);
+  });
+
+  it("unverified 结论不追加 [n]", async () => {
+    const ctx = seed({
+      claims: [claim("c1", "单位申领生育津贴", 0)],
+      evidence: [ev("e1")],
+      stances: [st("s1", "c1", "e1", "supports")],
+      verdicts: [
+        {
+          claimId: "c1",
+          verdict: "unverified",
+          basis: ["s1"],
+          rule: "insufficient",
+          tally: { sup: 3, ref: 0, par: 0 },
+          updatedAt: AT,
+        },
+      ],
+      overall: overall("unverified"),
+    });
+    const { report } = await runFinalize(ctx, {
+      draft: {
+        conclusion: "这一说法还没有查清。",
+        claimItems: [{ claimId: "c1", line: "没有找到足够依据。[1]" }],
+      },
+    });
+    expect(report.conclusion).not.toMatch(/\[\d+\]/);
+  });
 });
