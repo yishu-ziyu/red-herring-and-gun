@@ -15,6 +15,15 @@ export {
 } from "./investigate.js";
 export { parseJobOutput, type ParseJobResult } from "./parseOutput.js";
 export {
+  runCrossExam,
+  withModelOverride,
+  PROSECUTOR_MANDATE,
+  DEFENDER_MANDATE,
+  type CrossExamInput,
+  type CrossExamResult,
+  type ModelChoice,
+} from "./crossExam.js";
+export {
   runCompose,
   buildCitationTable,
   COMPOSE_SYSTEM_PROMPT,
