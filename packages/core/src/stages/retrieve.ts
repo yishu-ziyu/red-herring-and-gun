@@ -1,12 +1,11 @@
-import type { Claim, Evidence, Provenance } from "../casefile/schema.js";
+import type { Claim, Evidence } from "../casefile/schema.js";
 import { originCluster } from "../fetch/originCluster.js";
-import { tierOf } from "../rules/sourceTiers.js";
+import { stripMobileOrWww, tierOf } from "../rules/sourceTiers.js";
 import {
   buildQueryPortfolio,
   selectPriorityQueries,
 } from "../search/evidencePursuit/evidencePursuit.js";
-import { searchAll, type SearchHit, type SearchProviderFn } from "../search/searchAll.js";
-import { toEvidence } from "../search/toEvidence.js";
+import { searchAll, type SearchProviderFn } from "../search/searchAll.js";
 import type { StageContext } from "./context.js";
 
 export type RetrieveInput = {
@@ -50,26 +49,27 @@ function nextEvidenceId(ctx: StageContext): string {
   return `e${ctx.current.evidence.length + 1}`;
 }
 
-function searchProvenance(query: string, provider: string | undefined): Provenance {
-  return provider ? { kind: "search", query, provider } : { kind: "search", query };
-}
-
-function providerOf(item: Evidence): string | undefined {
-  return item.provenance.kind === "search" ? item.provenance.provider : undefined;
-}
-
-function asHit(item: Evidence): SearchHit {
-  const hit: SearchHit = { url: item.url, snippet: item.excerpt };
-  if (item.title !== undefined) hit.title = item.title;
-  if (item.publishedAt !== undefined) hit.publishedAt = item.publishedAt;
-  const provider = providerOf(item);
-  if (provider !== undefined) hit.provider = provider;
-  return hit;
-}
-
-/** toEvidence 第二参是 Provenance，不是 `{ provenance }`。 */
-function evidenceFromHit(hit: SearchHit, query: string, now: Date): Omit<Evidence, "id"> | null {
-  return toEvidence(hit, searchProvenance(query, hit.provider), now);
+function emitClusterUpdates(ctx: StageContext): void {
+  const items = ctx.current.evidence;
+  const clusters = originCluster(
+    items.map((item) => ({
+      id: item.id,
+      // originCluster 按 host 全等；intake 可能留 www.，检索侧 toEvidence 已折叠。
+      host: stripMobileOrWww(item.host),
+      ...(item.text !== undefined ? { text: item.text } : {}),
+      ...(item.publishedAt !== undefined ? { publishedAt: item.publishedAt } : {}),
+    })),
+  );
+  const size = new Map<string, number>();
+  for (const clusterId of clusters.values()) {
+    size.set(clusterId, (size.get(clusterId) ?? 0) + 1);
+  }
+  for (const item of items) {
+    const clusterId = clusters.get(item.id);
+    if (clusterId === undefined || (size.get(clusterId) ?? 0) < 2) continue;
+    if (item.clusterId === clusterId) continue;
+    ctx.emit({ type: "evidence.updated", id: item.id, clusterId });
+  }
 }
 
 export async function runRetrieve(ctx: StageContext, input: RetrieveInput): Promise<RetrieveResult> {
@@ -77,47 +77,31 @@ export async function runRetrieve(ctx: StageContext, input: RetrieveInput): Prom
   const queriesPerClaim = input.queriesPerClaim ?? DEFAULT_QUERIES_PER_CLAIM;
   const { selected, skipped } = selectByLoad(ctx.current.claims, maxClaims);
   const seen = new Set(ctx.current.evidence.map((item) => item.canonicalUrl));
-  const addedIds: string[] = [];
 
   for (const claim of selected) {
     ctx.emit({ type: "stage.started", stage: "retrieve", claimId: claim.id });
     const queries = queriesFor(claim.text, ctx.current.text, queriesPerClaim);
     for (const query of queries) {
-      // searchAll(env, query, { providers })：单源失败已 allSettled，这里不再包一层。
       const found = await searchAll({}, query, {
         providers: input.providers,
         signal: ctx.signal,
       });
       for (const item of found) {
-        const drafted = evidenceFromHit(asHit(item), query, new Date(ctx.now()));
-        if (!drafted || seen.has(drafted.canonicalUrl)) continue;
-        seen.add(drafted.canonicalUrl);
+        if (seen.has(item.canonicalUrl)) continue;
+        seen.add(item.canonicalUrl);
         const evidence: Evidence = {
-          ...drafted,
+          ...item,
           id: nextEvidenceId(ctx),
-          tier: tierOf(drafted.host),
+          tier: tierOf(item.host),
+          retrievedAt: ctx.now(),
         };
         ctx.emit({ type: "evidence.added", evidence });
-        addedIds.push(evidence.id);
       }
     }
     ctx.emit({ type: "stage.finished", stage: "retrieve", claimId: claim.id, outcome: "ok" });
   }
 
-  const added = ctx.current.evidence.filter((item) => addedIds.includes(item.id));
-  const clusters = originCluster(
-    added.map((item) => ({
-      id: item.id,
-      host: item.host,
-      ...(item.text !== undefined ? { text: item.text } : {}),
-      ...(item.publishedAt !== undefined ? { publishedAt: item.publishedAt } : {}),
-    })),
-  );
-  for (const item of added) {
-    const clusterId = clusters.get(item.id);
-    if (clusterId === undefined) continue;
-    ctx.emit({ type: "evidence.updated", id: item.id, clusterId });
-  }
+  emitClusterUpdates(ctx);
 
   return {
     searched: selected.map((claim) => claim.id),
