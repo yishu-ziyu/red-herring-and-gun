@@ -46,6 +46,7 @@ export const SCORE_UNVERIFIED_PENALTY = 15;
 
 /** 整句 contested 时的固定扣分。两边都有据就不应还是高可信。 */
 export const SCORE_CONTESTED_PENALTY = 15;
+export const ASSESS_MAX_EVIDENCE = 12;
 
 export const defaultJudgeConfig = {
   TIER_WEIGHT,

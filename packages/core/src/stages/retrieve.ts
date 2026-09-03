@@ -78,22 +78,57 @@ export async function runRetrieve(ctx: StageContext, input: RetrieveInput): Prom
   const { selected, skipped } = selectByLoad(ctx.current.claims, maxClaims);
   const seen = new Set(ctx.current.evidence.map((item) => item.canonicalUrl));
 
-  for (const claim of selected) {
-    ctx.emit({ type: "stage.started", stage: "retrieve", claimId: claim.id });
+  type Task = { claim: Claim; query: string; claimIndex: number; queryIndex: number };
+  const tasks: Task[] = [];
+  for (const [claimIndex, claim] of selected.entries()) {
     const queries = queriesFor(claim.text, ctx.current.text, queriesPerClaim);
-    for (const query of queries) {
-      const found = await searchAll({}, query, {
+    for (const [queryIndex, query] of queries.entries()) {
+      tasks.push({ claim, query, claimIndex, queryIndex });
+    }
+  }
+
+  const emitOrder = selected.slice().sort((a, b) => a.order - b.order);
+  for (const claim of emitOrder) {
+    ctx.emit({ type: "stage.started", stage: "retrieve", claimId: claim.id });
+  }
+
+  const settled = await Promise.all(
+    tasks.map(async (task) => {
+      const found = await searchAll({}, task.query, {
         providers: input.providers,
         signal: ctx.signal,
       });
-      for (const item of found) {
+      return { task, found };
+    }),
+  );
+  settled.sort((a, b) => {
+    if (a.task.claim.order !== b.task.claim.order) return a.task.claim.order - b.task.claim.order;
+    return a.task.queryIndex - b.task.queryIndex;
+  });
+
+  const byClaim = new Map<string, Array<{ query: string; hits: Evidence[] }>>();
+  for (const row of settled) {
+    const list = byClaim.get(row.task.claim.id) ?? [];
+    list.push({ query: row.task.query, hits: row.found });
+    byClaim.set(row.task.claim.id, list);
+  }
+
+  for (const claim of emitOrder) {
+    const batches = byClaim.get(claim.id) ?? [];
+    for (const batch of batches) {
+      for (const item of batch.hits) {
         if (seen.has(item.canonicalUrl)) continue;
         seen.add(item.canonicalUrl);
+        const provenance =
+          item.provenance.kind === "search"
+            ? { ...item.provenance, claimId: claim.id }
+            : item.provenance;
         const evidence: Evidence = {
           ...item,
           id: nextEvidenceId(ctx),
           tier: tierOf(item.host),
           retrievedAt: ctx.now(),
+          provenance,
         };
         ctx.emit({ type: "evidence.added", evidence });
       }

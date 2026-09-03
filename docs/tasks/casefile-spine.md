@@ -522,7 +522,7 @@ Evidence：测试名；eval runId 与逐例表；两次真跑的 `.data/cases/*.
 - **LLM 层**（`packages/core/src/llm/`）：
   - 新增 `jobModels.ts`：`type JobCandidate = { provider: "minimax" | "stepfun" | "deepseek" | "mimo" | "360" | "anthropic"; model: string; effort: "low" | "medium" | "high"; timeoutMs: number }`；`candidatesFor(job, env): JobCandidate[]`。代码默认表：
     - `route`、`self-proof`、`assess`、`investigate`、`cites`、`ask_case`：`[minimax MiniMax-M3 low 30s, stepfun step-3.7-flash low 45s]`
-    - `decompose`：`[minimax MiniMax-M3 medium 40s, stepfun step-3.7-flash low 45s]`
+    - `decompose`：`[minimax MiniMax-M3 low 30s, stepfun step-3.7-flash low 45s]`（验收人直连实测：M3 low 2.8–4.3s；M3 medium 15–17s 且会只回 thinking；stepfun 18–26s 且有审查拦截。decompose prompt 同时加「X 宣布 Y 是一条命题，不拆、不带指代词」规则）
     - `compose`：`[minimax MiniMax-M3 medium 45s, stepfun step-3.7-flash low 60s]`
     - 未知 job：同 `assess`。
     - env 覆盖：`RHG_MODEL_<JOB 大写、连字符改下划线>=provider:model[:effort][,provider:model[:effort]]`（如 `RHG_MODEL_ASSESS=minimax:MiniMax-M3:low,stepfun:step-3.7-flash`）；解析失败忽略该条并走默认。`MINIMAX_MODEL / STEPFUN_MODEL` 等旧变量对新路径无效。

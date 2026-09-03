@@ -23,11 +23,14 @@ export function isMiniMaxM3(model: string): boolean {
 
 export function miniMaxM3ThinkingType(
   env: Record<string, string> | undefined,
-  model: string
+  model: string,
+  effort?: "low" | "medium" | "high",
 ): MiniMaxThinkingType | undefined {
   if (!isMiniMaxM3(model)) return undefined;
   const raw = envPick(env, "MINIMAX_M3_THINKING").toLowerCase();
   if (raw === "disabled" || raw === "off") return "disabled";
+  if (raw === "adaptive" || raw === "on") return "adaptive";
+  if (effort === "low") return "disabled";
   return "adaptive";
 }
 
@@ -43,22 +46,21 @@ export function miniMaxMaxTokensForModel(
   }
   if (!isMiniMaxM3(model)) return requested;
   const explicit = Number(envPick(env, "MINIMAX_M3_MAX_TOKENS"));
-  const floor = Number(envPick(env, "MINIMAX_M3_MIN_MAX_TOKENS"));
-  let budget =
-    Number.isFinite(explicit) && explicit > 0 ? explicit : MINIMAX_M3_RECOMMENDED_MAX_TOKENS;
-  if (Number.isFinite(floor) && floor > 0) budget = Math.max(budget, floor);
-  budget = Math.min(Math.floor(budget), MINIMAX_M3_ABSOLUTE_MAX_TOKENS);
-  return Math.max(requested, budget);
+  if (Number.isFinite(explicit) && explicit > 0) {
+    return Math.min(Math.floor(explicit), MINIMAX_M3_ABSOLUTE_MAX_TOKENS);
+  }
+  return requested;
 }
 
 export function miniMaxCallOptions(
   env: Record<string, string> | undefined,
   model: string,
-  requestedMaxTokens: number
+  requestedMaxTokens: number,
+  effort?: "low" | "medium" | "high",
 ): { maxTokens: number; thinking: MiniMaxThinkingType | undefined } {
   return {
     maxTokens: miniMaxMaxTokensForModel(env, model, requestedMaxTokens),
-    thinking: miniMaxM3ThinkingType(env, model),
+    thinking: miniMaxM3ThinkingType(env, model, effort),
   };
 }
 

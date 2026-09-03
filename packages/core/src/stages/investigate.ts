@@ -52,7 +52,7 @@ export const CITES_SYSTEM_PROMPT = `你在标注这一页的引用关系，不�
 export type InvestigatorStopReason = "budget" | "no-gain" | "resolved" | "time" | "tool-failed";
 
 export type InvestigatorTools = {
-  search: (query: string) => Promise<Evidence[]>;
+  search: (query: string, signal?: AbortSignal) => Promise<Evidence[]>;
   fetch: (url: string) => Promise<FetchedPage>;
   reverseImage?: (imageUrl: string) => Promise<Evidence[]>;
   recall?: (text: string) => Promise<Evidence[]>;
@@ -695,7 +695,7 @@ async function act(
   if (action.kind === "search") {
     const query = candidate?.target ?? action.target;
     searchedQueries.add(query);
-    const found = await tools.search(query);
+    const found = await tools.search(query, ctx.signal);
     const added = ingestMany(
       ctx,
       found,
