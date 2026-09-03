@@ -208,6 +208,9 @@ describe("runTurn", () => {
     expect(events.some((event) => event.type === "stage.started" && event.stage === "compose")).toBe(
       false,
     );
+    expect(events.some((event) => event.type === "stage.started" && event.stage === "finalize")).toBe(
+      false,
+    );
   });
 
   it("intake fetch 抛 TypeError 时 reason=error，仍产出报告", async () => {
@@ -247,7 +250,8 @@ describe("runTurn", () => {
     expect(second.some((event) => event.type === "turn.started" || event.type === "turn.finished")).toBe(
       false,
     );
-    await collect(first);
+    const firstEvents = await collect(first);
+    expect(firstEvents.at(-1)).toMatchObject({ type: "turn.finished", reason: "done" });
   });
 
   it("消费者 break 出 for-await 不抛", async () => {
