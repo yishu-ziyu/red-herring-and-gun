@@ -253,11 +253,11 @@ Evidence：测试名；probe 日志路径（不贴全文）。
 
 依赖：T09、T10。
 
-Change：`stages/crossExam.ts`：对 `contested` 命题，起 `runInvestigator(role=prosecutor)` 与 `runInvestigator(role=defender)`，任务书写进各自工单系统提示（控方：只找反证与原始来源；辩方：只找佐证与原语境）；模型选择：若有 ≥2 家厂商 key，两方用不同厂商；两方产出的 stance 标 `by`；结束后 `judge` 重判，仍 contested 则 `overall.contested=true`，score 扣分由 `score.ts` 处理。
+Change：`stages/crossExam.ts`：对 `contested` 命题，顺序起 `runInvestigator(role=prosecutor, forceGaps)` 与 `runInvestigator(role=defender, forceGaps)`，任务书写进各自 investigate 工单的系统提示后缀（控方：只找反证与原始来源；辩方：只找佐证与原语境；assess 工单不带任务书，两方读证据用同一中立 prompt）；`forceGaps` 让两方都跑满自己的预算，不因命题已被对方翻案而 0 步退场；模型选择：`providers` 由运行器传入（阶段不读 env），≥2 时两方用不同厂商（`withModelOverride(ctx, choice)` 包装 `ctx.llm`），否则同源并发 `error` 事件注明；两方产出的 stance 标 `by`；结束后 `judge` 重判，仍 contested 则 `overall.contested=true`，score 扣分由 `score.ts` 处理。judge 补「压制」规则：`CONTESTED_DOMINANCE = 2`，一方权重达另一方两倍即不再 contested，落到 false / true 规则——否则交叉复核永远翻不了案。
 
-Not this：不让两方互相对话；不做多轮辩论；不重写判词。
+Not this：不让两方互相对话；不做多轮辩论；不重写判词；无 contested 命题时不发任何事件。
 
-Evaluator：`crossExam.test.ts`：非 contested 命题不触发；两方各自预算独立；stance 带 `by`；控方找到 A 级反证后判决翻为 false；两方均无新增 → 保持 contested 且 `overall.contested`；单厂商 key 时两方同源但仍运行并在事件里注明。
+Evaluator：`crossExam.test.ts`：非 contested 命题不触发；两方各自预算独立；stance 带 `by`；控方找到 A 级反证后判决翻为 false（3 vs 6）；两方均无新增 → 保持 contested 且 `overall.contested`；单厂商 key 时两方同源但仍运行并在事件里注明；`providers` 两个时两方工单的 `modelOverride` 各不同；任务书无判真假措辞。`judge.test.ts` 加 3 行：3/6→false、6/3→true、3/5→contested。`investigate.test.ts` 加 `forceGaps` 一行。
 
 Evidence：测试名。
 
