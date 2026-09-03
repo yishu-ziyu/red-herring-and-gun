@@ -197,7 +197,7 @@ describe("runFinalize", () => {
     expect(report.claimItems.map((item) => item.claimId)).toEqual(["c1", "c2"]);
     expect(report.claimItems[0]?.line).toBe("生育津贴直接打到个人卡：与现有依据相反。[1]");
     expect(report.claimItems[1]?.line).toBe("人社部发过这份文：没有找到足够依据。");
-    expect(report.conclusion).toBe(directAnswer("false"));
+    expect(report.conclusion).toBe(`${directAnswer("false")}[1]`);
     expect(report.conclusion).not.toContain(ORIGINAL);
     expect(report.conclusion.trim().length).toBeGreaterThan(0);
     for (const item of report.claimItems) {
@@ -280,7 +280,7 @@ describe("runFinalize", () => {
       overall: { verdictType: "false", contested: true, score: 20, breakdown: [] },
     });
     const { report } = await runFinalize(ctx, { draft: null });
-    expect(report.conclusion).toBe(`${directAnswer("false")}来源之间相互矛盾，两边都有依据。`);
+    expect(report.conclusion).toBe(`${directAnswer("false")}来源之间相互矛盾，两边都有依据。[1]`);
     expect(report.conclusion).not.toContain(ORIGINAL);
   });
 
