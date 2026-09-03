@@ -838,6 +838,22 @@ Evidence：测试名；截图 / 录屏路径 `packages/web/output/acceptance/T18
 | 29 | `rg ": any\b\|console\.log\|\.only\|\.skip" packages/web/src` | 0 命中 |
 | 30 | `wc -l packages/web/src/case/*.tsx packages/web/src/panel/*.tsx packages/web/src/lib/*.ts` | 报行数（仅报告） |
 
+补丁（验收人看首轮截图 `T18-done-desktop.png`、`T18-done-mobile-panel.png`、`T18-live-A-followup.png` 后追加；合入前必须过）：
+
+- 导航头：产品名一行不折（`white-space: nowrap`，衬线 18px）；「收起 / 展开案件列表」从带边框大按钮改成 32×32 图标按钮（用一个 CSS 画的 `‹` / `›` 或两条短线即可，`aria-label` 沿用 `copy.ts` 现有词），与产品名同一行两端对齐。
+- 768–1023 与 <768 的顶部摘要栏：**一行**——左侧 face 词（衬线 16px）+ 分数（mono 16px），右侧两个 36×36 图标按钮（案件列表、面板），不再堆叠成两个文字大按钮；摘要栏不再显示状态词（状态词只在报告卡顶部）。
+- 面板顶部那行状态词「已完成 / 正在…」删掉（与报告卡重复）。
+- 出处列表每条一行：标题 `overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0`，host · 层级 · 立场保持在同一行右侧不被挤掉。
+- 用户消息标签：首条「原句」，追问「追问」；`route === "pursue_frontier"` 的消息标签用「追查」且正文去掉 `追查 · ` 前缀只显示芯片文案（避免「追问 · 追查 · …」两个「追」）。
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 31 | 浏览器 fixture `/cases/fx-done` 1280 | 导航头产品名单行；折叠控件 ≤ 40px 宽且有 `aria-label`；截图 `T18-nav-header.png` |
+| 32 | 浏览器 fixture `/cases/fx-done` 375 与 900 | 摘要栏单行，`getBoundingClientRect().height ≤ 56`；含 face 词与分数；不含「已完成 / 正在」字样；两个按钮均有 `aria-label`；截图 `T18-summary-bar-375.png`、`T18-summary-bar-900.png` |
+| 33 | 浏览器 fixture `/cases/fx-done` 1280，读面板 DOM | 面板第一个可见文本节点是「整句判决」，不是状态词 |
+| 34 | 浏览器 fixture `/cases/fx-followup` 1280，给 fixture 里第 2 条引用标题临时换成 80 字长串（或用 CDP 改 textContent）后测 | 该条 `scrollWidth ≤ clientWidth`（不横溢），host 与层级徽标仍可见 |
+| 35 | 浏览器 fixture `/cases/fx-followup` | 若 fixture 含 `route: "pursue_frontier"` 的用户消息，其标签为「追查」且正文不以「追查 ·」开头；fixture 没有则补一条到 `followup` fixture 再验 |
+
 ### T19 · 首页与摄入
 
 依赖：T17。
