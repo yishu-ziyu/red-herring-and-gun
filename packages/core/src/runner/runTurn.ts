@@ -171,6 +171,7 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
       finish,
       markError,
       reason: () => reason,
+      hardDeadline: start + totalMs,
     });
 
   if (route !== "new_claim") {
@@ -337,6 +338,7 @@ async function composeAndFinish(input: {
   finish: (reason: TurnReason) => void;
   markError: () => void;
   reason: () => TurnReason;
+  hardDeadline?: number;
 }): Promise<void> {
   const { ctx, aborted, finish, markError } = input;
   if (aborted()) {
@@ -345,7 +347,7 @@ async function composeAndFinish(input: {
   }
   let draft: ComposeDraft | null = null;
   try {
-    draft = (await runCompose(ctx, {})).draft;
+    draft = (await runCompose(ctx, input.hardDeadline !== undefined ? { deadline: input.hardDeadline } : {})).draft;
     assertInvariants(ctx.current);
   } catch (error) {
     if (aborted()) {

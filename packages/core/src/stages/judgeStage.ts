@@ -9,10 +9,10 @@ export type JudgeStageInput = {
 };
 
 export async function runJudge(ctx: StageContext, input: JudgeStageInput = {}): Promise<void> {
-  const selected =
-    input.claimIds === undefined
-      ? ctx.current.claims.slice()
-      : ctx.current.claims.filter((claim) => input.claimIds!.includes(claim.id));
+  const selected = ctx.current.claims.filter((claim) => {
+    if (!claim.checkable) return false;
+    return input.claimIds === undefined || input.claimIds.includes(claim.id);
+  });
 
   for (const claim of selected) {
     const next = judge({
@@ -26,7 +26,10 @@ export async function runJudge(ctx: StageContext, input: JudgeStageInput = {}): 
     ctx.emit({ type: "verdict.updated", verdict: next });
   }
 
-  const judged = overall(ctx.current.verdicts);
+  const checkableIds = new Set(
+    ctx.current.claims.filter((claim) => claim.checkable).map((claim) => claim.id),
+  );
+  const judged = overall(ctx.current.verdicts.filter((item) => checkableIds.has(item.claimId)));
   const scored = score({
     claims: ctx.current.claims,
     verdicts: ctx.current.verdicts,
