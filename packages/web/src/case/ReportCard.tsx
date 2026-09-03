@@ -140,12 +140,15 @@ function CitationList(props: { current: Case }) {
           const evidence = evidenceById(props.current, row.evidenceId);
           if (!evidence) return null;
           return (
-            <li key={row.n}>
+            <li key={row.n} className="cite-row">
               <a className="cite font-mono" href={evidence.url} target="_blank" rel="noopener noreferrer">
                 [{row.n}]
-              </a>{" "}
-              {evidence.title ?? evidence.host} · {evidence.host} <TierBadge tier={evidence.tier} />
-              <StanceMarks stances={stancesForEvidence(props.current, evidence.id)} />
+              </a>
+              <span className="cite-title">{evidence.title ?? evidence.host}</span>
+              <span className="cite-meta">
+                {evidence.host} <TierBadge tier={evidence.tier} />
+                <StanceMarks stances={stancesForEvidence(props.current, evidence.id)} />
+              </span>
             </li>
           );
         })}
