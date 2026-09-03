@@ -4,7 +4,7 @@
 
 | Task ID | 状态文件 | 状态 | 更新 | 下一步 |
 | --- | --- | --- | --- | --- |
-| 20260903-casefile-spine | tasks/20260903-casefile-spine.md | active | 2026-09-03 | T01–T04 已合入 spine；T05、T06 修正在 .worktrees/ 并行中。契约：docs/tasks/casefile-spine.md |
+| 20260903-casefile-spine | tasks/20260903-casefile-spine.md | active | 2026-09-03 | T01–T05 已合入 spine；T06 修正在 .worktrees/T06。契约：docs/tasks/casefile-spine.md |
 | 20260902-search-progress-ui | tasks/20260902-search-progress-ui.md | complete | 2026-09-02 | 无 |
 
 无活动任务时表体为空。不要把本表的任务行提交进产品 PR。
