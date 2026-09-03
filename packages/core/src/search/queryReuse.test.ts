@@ -1,20 +1,15 @@
+// searchAccepted 集成用例随 memoryCandidateStore 由 T05 搬回。
 /**
  * queryReuse: accepted 问法进首轮实搜；旧案 URL / 判词不得进种子或引用。
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { bindAtomEvidenceToVerdicts } from "../../../../mvp/server/src/lib/atomSearch";
+import { describe, expect, it } from "vitest";
 import { buildAtomSearchQueries } from "./atomSearchQuery";
-import { JsonlMemoryCandidateStore } from "../../../../mvp/server/src/lib/memoryCandidateStore";
 import type { MemoryCandidate, MemoryCandidateHit } from "../text/memoryCandidateTypes";
 import { buildQueriesWithReuse, extractReusableQueries, mergeReuseSeeds } from "./queryReuse";
 
 const HISTORICAL_QUERY = "电瓶车被偷至境外 非洲 P图 辟谣 警方通报";
 const OLD_CASE_URL = "https://old-case.example/africa-ev";
-const THIS_CASE_URL = "https://this-case.example/piyao";
 const SYNONYM_ATOM = "我说我的电动车叫谁偷走了，原来送到非洲去了";
 
 function makeHit(overrides: Partial<MemoryCandidate> = {}): MemoryCandidateHit {
@@ -135,67 +130,5 @@ describe("buildQueriesWithReuse", () => {
     expect(buildQueriesWithReuse(SYNONYM_ATOM, [makeHit({ status: "proposed" })])).toEqual(
       buildAtomSearchQueries(SYNONYM_ATOM)
     );
-  });
-});
-
-describe("searchAccepted → buildQueriesWithReuse", () => {
-  let dir: string;
-  let store: JsonlMemoryCandidateStore;
-
-  beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), "query-reuse-"));
-    store = new JsonlMemoryCandidateStore(join(dir, "candidates.jsonl"));
-  });
-
-  afterEach(async () => {
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it("accepted 同义改写命中后插入历史问法，长度 ≤ 3", async () => {
-    const candidate = makeHit().candidate;
-    await store.propose([candidate]);
-    await store.setStatus(candidate.id, "accepted");
-    const hits = await store.searchAccepted(SYNONYM_ATOM);
-    expect(hits.length).toBeGreaterThan(0);
-    expect(hits[0].candidate.status).toBe("accepted");
-
-    const reused = buildQueriesWithReuse(SYNONYM_ATOM, hits);
-    expect(reused).toContain(HISTORICAL_QUERY);
-    expect(reused.length).toBeLessThanOrEqual(3);
-  });
-
-  it("proposed 经 searchAccepted 后仍等于配方", async () => {
-    await store.propose([makeHit({ status: "proposed" }).candidate]);
-    const hits = await store.searchAccepted(SYNONYM_ATOM);
-    expect(hits).toHaveLength(0);
-    expect(buildQueriesWithReuse(SYNONYM_ATOM, hits)).toEqual(buildAtomSearchQueries(SYNONYM_ATOM));
-  });
-});
-
-describe("bind 后 supportingSources 只有本案 URL", () => {
-  it("旧案 URL 即使被模型写出也不会留下", () => {
-    const atom = "电动车被偷送到非洲";
-    const key = (s: string) => s;
-    const bound = bindAtomEvidenceToVerdicts(
-      [
-        {
-          claimAtom: atom,
-          verdict: "false",
-          evidence: "旧案[1] 本案[2]",
-          supportingSources: [
-            { url: OLD_CASE_URL, title: "旧案快照", snippet: "上次结案" },
-            { url: THIS_CASE_URL, title: "本案检索", snippet: "辟谣" },
-          ],
-        },
-      ],
-      {
-        [key(atom)]: [{ url: THIS_CASE_URL, title: "本案检索", snippet: "辟谣" }],
-      },
-      key
-    );
-
-    expect(extractReusableQueries([makeHit()])).not.toContain(OLD_CASE_URL);
-    expect(bound[0].supportingSources?.map((s) => s.url)).toEqual([THIS_CASE_URL]);
-    expect(bound[0].supportingSources?.some((s) => s.url === OLD_CASE_URL)).toBe(false);
   });
 });

@@ -505,7 +505,7 @@ async function callAnySearchSearch({
     }),
   }, getSearchFetchTimeoutMs(env), "AnySearch");
 
-  const data = await response.json().catch(() => null);
+  const data: any = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = data?.error?.message || data?.message || response.statusText;
     throw new Error(`AnySearch 调用失败：${detail}`);
@@ -545,7 +545,7 @@ async function callTavilySearch({
     }),
   }, getSearchFetchTimeoutMs(env), "Tavily Search");
 
-  const data = await response.json().catch(() => null);
+  const data: any = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = data?.error || data?.message || response.statusText;
     throw new Error(`Tavily Search 调用失败：${detail}`);
@@ -582,7 +582,7 @@ async function callMetasoSearch({
     }),
   }, getSearchFetchTimeoutMs(env), "Metaso Search");
 
-  const data = await response.json().catch(() => null);
+  const data: any = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = data?.error?.message || data?.error || data?.message || response.statusText;
     throw new Error(`Metaso Search 调用失败：${detail}`);
@@ -624,7 +624,7 @@ async function callExaSearch({
     }),
   }, getSearchFetchTimeoutMs(env), "Exa Search");
 
-  const data = await response.json().catch(() => null);
+  const data: any = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = data?.error?.message || data?.error || data?.message || response.statusText;
     throw new Error(`Exa Search 调用失败：${detail}`);
@@ -774,7 +774,7 @@ async function call360MWebSearch({
       "Content-Type": "application/json",
     },
   }, getSearchFetchTimeoutMs(env), `360 智搜 ${selectedRefProm}`);
-  const data = await response.json().catch(() => null);
+  const data: any = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = data?.error?.message || data?.message || response.statusText;
     throw new Error(`360 智搜 ${selectedRefProm} 调用失败：${detail}`);
