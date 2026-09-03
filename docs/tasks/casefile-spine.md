@@ -637,6 +637,8 @@ Change：
 
 4. **`search/toEvidence.ts` 清 HTML。** 新增 `cleanHtmlText(s)`：先解实体（`&lt; &gt; &amp; &quot; &#39; &apos; &nbsp;` 与 `&#NNN;` / `&#xHH;`），再删标签 `/<[^>]*>/g`，再折叠空白并 trim；对 `title` 与 `excerpt` 各用一次。不引依赖。
 
+5. **结论段带引用。** ADR-007 第 80 行：含真 / 假判断的句子必须带引用。T18 真跑（`T18-live-A-done.png` 第二版）结论「……这一说法属实。」无 `[n]`，只有命题行有。`finalize.ts` 新增 `ensureCitedConclusion`：当 `overall.verdictType ∈ {true, false, mixed_misleading}` 且结论里 `extractCiteNs` 为空时，取引用表里按命题 `order` 的第一条命题的第一个 `n`，追加 `[n]` 到结论末尾（在句号之后）；引用表为空则原样返回。在 `clampMarkersToSources` 之后、`repairLeadSentence` 之前做。
+
 Not this：不改 `judge()` 规则；不改 schema；不改 web / server / eval 源码（eval 的 `credibilityAccuracy` 不动，它就是评这个）；不把 face 词表引进 `rules/`。
 
 验收清单（checker 在 `.worktrees/T22` 逐条执行；每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
@@ -651,7 +653,7 @@ Not this：不改 `judge()` 规则；不改 schema；不改 web / server / eval 
 | 6 | 读 `judgeConfig.ts` | 八个新常量齐、值如上；文件头一句话说明「可信度不是证据质量」 |
 | 7 | 读 `judgeStage.ts` + 其测试 | 有一例：两命题，一 `checkable:false` 一 `checkable:true` 且被 A 级反驳 → 只有一条 `verdict.updated`，`overall.verdictType === "false"`，`overall.score ≤ 10` |
 | 8 | 读 `assess.test.ts` | 有一例：`checkable:false` 命题不产生 `llm.called`，也没有 `stance.added` |
-| 9 | 读 `finalize.test.ts` | 有一例：`line` 为「转基因食品是有毒的食品。该判断为 false。依据：美国国家科学院…」→ 输出等于「转基因食品是有毒的食品。依据：美国国家科学院…」；另一例裸词「结论 unverified，没有查到」→ 不含 `unverified`；另一例 `checkable:false` 命题无 claimItem 时兜底行含「这是评价或立场」 |
+| 9 | 读 `finalize.test.ts` | 有一例：`line` 为「转基因食品是有毒的食品。该判断为 false。依据：美国国家科学院…」→ 输出等于「转基因食品是有毒的食品。依据：美国国家科学院…」；另一例裸词「结论 unverified，没有查到」→ 不含 `unverified`；另一例 `checkable:false` 命题无 claimItem 时兜底行含「这是评价或立场」；另一例 overall `true`、draft 结论「这一说法属实。」无 `[n]` 而命题行有 `[1]` → 输出结论以 `[1]` 结尾；对照例 overall `unverified` 时结论不追加 |
 | 10 | 读 `compose.ts` | 提示词含 `checkable` 字段与两条新规则原文 |
 | 11 | 读 `toEvidence.test.ts` | 有一例：title `Insect-Resistant&lt;italic&gt;Bt&lt;/italic&gt; Plants &amp; Bees` → `Insect-ResistantBt Plants & Bees`；excerpt 含 `&#39;` / `&nbsp;` / `<b>` 的例子被清干净 |
 | 12 | `rg "toEvidence\|score\|overall" packages/core/src/index.ts packages/core/src/rules/index.ts` | 导出面不变（无新增无删减） |
@@ -826,7 +828,7 @@ Evidence：测试名；截图 / 录屏路径 `packages/web/output/acceptance/T18
 | 19 | 浏览器 fixture：`/cases/fx-done`，点第一个 `[n]` | 新标签 URL 等于该证据 `url`（用 `window.open` 拦截或读 `href`） |
 | 20 | 浏览器 fixture：`/cases/fx-done`，hover 第一个 `[n]` | popover 出现，含 host 与层级字母；`Tab` 聚焦到它也出现；截图 `T18-citation-popover.png` |
 | 21 | 浏览器 fixture：点面板里第二条命题 | 线程滚动，对应 claimItem 获得高亮类并在 ~1s 后移除 |
-| 22 | 浏览器真后端 A（会触发追索）：起 server + web，首页输入「人社部发文说生育津贴直接打到个人卡里了，不用再走单位」 | 从提交起计时：命题出现 ≤ 10s、首条证据计数 ≥1 ≤ 20s、`turn.finished` ≤ 130s；完成态结论段有 ≥1 个 `[n]`；仪器条在运行中出现过 `investigator.step` 行（截图 `T18-live-A-running.png`）；完成截图 `T18-live-A-done.png`；把结论段文本与命题 + 芯片文案贴进报告 |
+| 22 | 浏览器真后端 A：起 server + web，首页输入「人社部发文说生育津贴直接打到个人卡里了，不用再走单位」 | 从提交起计时：命题出现 ≤ 10s、首条证据计数 ≥1 ≤ 20s、`turn.finished` ≤ 130s；完成态结论段有 ≥1 个 `[n]`（core 侧由 T22 第 5 点保证；T22 未合入前此子项记 N/A 并注明）；若 `GET /api/cases/<id>` 里有 ≥1 条 `investigator.step`，则运行中截图 `T18-live-A-running.png` 里要有仪器条行，0 步则此子项 N/A；完成截图 `T18-live-A-done.png`；把结论段文本与命题 + 芯片文案贴进报告 |
 | 23 | 浏览器真后端 B（含立场句）：新案「转基因食品就是毒药，这届专家全被收买了」 | 命题列表里至少一条标「立场型」；可核查命题有判决芯片；截图 `T18-live-B-done.png`；贴命题 + 芯片文案 |
 | 24 | 浏览器真后端 C（图片输入）：首页粘贴或拖入一张含文字的图（用 `packages/core/src/fetch/__fixtures__` 或任意本地 png），提交 | 案件建立、线程里用户消息显示图片缩略；60s 内有命题或有「这张图的来源」frontier 芯片；截图 `T18-live-C.png`。若 T19 尚未合入导致首页无图片入口，此条改为 `POST /api/cases` 带 `attachments:[{kind:"image", value:<dataURL>}]` 后打开案件页验证，并在报告注明 |
 | 25 | 浏览器真后端 A 完成后点一个 frontier 芯片 | 同一 `/cases/<id>` 页面上出现新一条用户消息（正文 = `追查 · <芯片文案>`，不是「再查」）+ 新报告卡（未完成态），面板命题数不减少；芯片在点击后禁用；`GET /api/cases/<id>` 里该条 `message.added.message.route === "pursue_frontier"`；截图 `T18-live-A-followup.png`。若 A 完成后 `frontier` 为空，改用 `POST /api/cases` 新建「北京市 2026 年起小学放学时间统一延后到 18:00」再等其完成后点芯片，并在报告注明 |
