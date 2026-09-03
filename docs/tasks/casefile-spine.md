@@ -488,6 +488,121 @@ Evidence：测试名；eval run id；对比表（四项 + 新指标）。
 
 合入后由验收人另派一个 Grok 实例用 `mvp/.env.local` 真 key 跑 `npm run eval -- --repeats 1` 全量一次，记录 runId 与四项对旧基线差值到任务页；该实例只报数字，不下结论。
 
+- 真 key 全量结果（2026-09-03，runId `eval-1788437154410`，51 分钟）：verdictAccuracy 0.69→0.47、credibilityAccuracy 0.92→0.41、hallucinationRate 0.04→0、reportContractPassRate 0.96→0.31；latencyP50 127s / P95 176s；turnReason done=8 timeout=18；`verdictType=null` 10 例。门禁退出码 1。诊断见 T21。
+
+---
+
+## Wave 3b · 核心硬化（eval 暴露的时延与丢工作）
+
+### T21 · 核心时延与健壮性
+
+依赖：T16 合入（已）。与 T17 / T18 并行（它们只读 core 的两个子路径；本任务对 schema 只加可选字段）。
+
+Change：让一条典型谣言（1–2 条命题、不触发追索）在 60 秒内以 `done` 收口并给出判决；判决计算永不因时间被跳过；每次模型调用受轮次 deadline 与 abort 约束；模型选择按工单配表并对冲多厂商；eval 能把每例事件落盘供诊断。
+
+Not this：不加总预算（`DEFAULT_TOTAL_MS` 保持 120000）；不改 `judgeConfig` 常数、不改 golden 期望值去凑指标；不重写 `providerRouter.ts`（旧链留给 vision / 旧路径，T20 删）；不大改任何 prompt 的判读规则（只允许加输出形状 / 长度约束）；不引新依赖；不碰 `packages/web`。
+
+Evaluator：checker 按清单；验收人用真 key 跑全量 eval 对照下表目标；验收人另用 T15 服务端真跑「国家医保局宣布 2026 年起生育津贴直接发个人」一次。
+
+Evidence：测试名；eval runId 与逐例表；两次真跑的 `.data/cases/*.jsonl` 路径。
+
+诊断依据（验收人 2026-09-03，来自 `.worktrees/T15/.data/cases/` 两份真跑日志 + eval 逐例表 + 直连探针）：
+
+- `runTurn.ts` 第 117 行把 `judge` 与 `retrieve / assess` 同列做 `remaining() <= 0 → jump`；run2 在 138.6s 时 judge 被跳过，c1 已有 24 条 sup 立场全部作废，compose 无判决 → 结论兜底「没有查到此信息」。eval 里 `verdictType=null` 的 10 例同源。
+- 模型时延：直连探针（同一小 prompt，`reasoningEffort: low`）MiniMax-M3 3.7s、step-3.7-flash 6.5s、MiniMax-M2.7-highspeed 13–23s、MiniMax-M2.7 28s；deepseek 余额不足、mimo key 无效、360 余额不足、anthropic 无 key —— **当前只有 minimax 与 stepfun 两家可用**。assess 体量（12 条证据）M3 关思考 11.3s、M3 自适应 15.9s、M2.7-highspeed 22.6s、step-3.7-flash 因 thinking 吃满 max_tokens 返回空文本失败。`callAgentWithFallback` 默认 `reasoningEffort = "high"`，阶段层没传，所有工单都在跑高推理。
+- 提供商链是串行回退：minimax 90s 超时 → stepfun 135s 超时 → …，一个工单最坏 225s+，而轮次预算 120s；`llm.called` 只记最终一跳，看不到前面失败；`isProviderQuotaSkipped` 是进程级——一次 429 会让整个服务进程后续都跳过该厂商。
+- `callJob` 不接 `signal`：abort 后 HTTP 请求继续跑到超时。
+- `retrieve` 命题串行、查询串行（每次 searchAll 3–10s）：两命题 31s。`assess` 命题串行，且每命题喂**全案**证据（证据不知道自己来自哪条命题），30 条 × 1500 字；quote 无长度约束，输出 token 多。
+- decompose 拆出碎片命题「国家医保局宣布」（无宾语的转述动词短句）并进入检索与判读。
+- 进程被 kill（非 SIGTERM）后 jsonl 尾部没有 `turn.finished`，`GET` 永远 `running` 语义不明。
+- eval run JSON 不含事件，失败例无法诊断（本轮 4 例 20 秒 `done` 却 `unverified 15` 的原因至今不知）。
+
+设计定案（2026-09-03 验收人）：
+
+- **LLM 层**（`packages/core/src/llm/`）：
+  - 新增 `jobModels.ts`：`type JobCandidate = { provider: "minimax" | "stepfun" | "deepseek" | "mimo" | "360" | "anthropic"; model: string; effort: "low" | "medium" | "high"; timeoutMs: number }`；`candidatesFor(job, env): JobCandidate[]`。代码默认表：
+    - `route`、`self-proof`、`assess`、`investigate`、`cites`、`ask_case`：`[minimax MiniMax-M3 low 30s, stepfun step-3.7-flash low 45s]`
+    - `decompose`：`[minimax MiniMax-M3 medium 40s, stepfun step-3.7-flash low 45s]`
+    - `compose`：`[minimax MiniMax-M3 medium 45s, stepfun step-3.7-flash low 60s]`
+    - 未知 job：同 `assess`。
+    - env 覆盖：`RHG_MODEL_<JOB 大写、连字符改下划线>=provider:model[:effort][,provider:model[:effort]]`（如 `RHG_MODEL_ASSESS=minimax:MiniMax-M3:low,stepfun:step-3.7-flash`）；解析失败忽略该条并走默认。`MINIMAX_MODEL / STEPFUN_MODEL` 等旧变量对新路径无效。
+  - MiniMax 适配：`effort === "low"` → `thinking: { type: "disabled" }`，否则 `adaptive`；`MINIMAX_M3_THINKING` env 仍可强制。M3 `max_tokens` 用工单的 `maxTokens`（默认 4096），不再用 131072 推荐值（那是旧 Agent 全文长输出的设定）。
+  - `dispatchSingleProvider` 与 `callStepFunAgent` 增加 `signal?: AbortSignal` 透传到 `fetch`（`callMiniMaxAgent` 已有）。其它厂商适配不动。
+  - `callJob` 改为**对冲竞速**，不再经过 `callAgentWithFallback`：
+    - 入参加 `signal?: AbortSignal`、`deadlineMs?: number`（绝对时间戳）。
+    - 第 1 候选立即发；`hedgeAfterMs`（默认 8000，`compose` 15000）内没有完成则并行发第 2 候选（最多 2 路在飞）；任一成功即返回，其余用各自 `AbortController` 取消；候选失败立即补发下一候选。全部失败抛 `Error`，message 含每次尝试的 `provider:model → 原因`（≤ 300 字）。
+    - 每次尝试的超时 = `min(candidate.timeoutMs, deadlineMs − now − 500)`；若 `deadlineMs − now < 3000` 直接抛 `deadline exceeded`，不发请求。
+    - 文本→JSON 用现有 `parseAgentJson`；坏 JSON 算该次尝试失败（不做模型侧 repair 二次调用——那是又一次全量时延）。
+    - 429 / 余额 / key 错只算本次失败，**不写任何进程级跳过状态**。
+    - 返回 `{ output, model, latencyMs, attempts: { provider, model, ok, latencyMs, error? }[] }`。
+  - `LlmCalledSchema` 加可选 `attempts: Array<{ provider, model, ok, latencyMs, error? }>`；`createStageContext.llm` 写入；`toPublicEvent` 里连同 `model` 一起抹掉（`attempts` 删除）。
+  - `StageContext` 加可选 `deadline?: number`；`ctx.llm` 自动带 `signal: ctx.signal`、`deadlineMs: ctx.deadline`。`createStageContext` 入参加 `deadline?`。
+- **Runner**（`runner/runTurn.ts`）：
+  - `gate("judge")` 只看 abort，永不 `skip / jump`。
+  - `deadline`（= start + total − reserve）传进 `createStageContext`；`assess` 与 `retrieve` 也拿到它（见下）。
+  - 单测：`clock` 推到预算耗尽后仍出现 `stage.finished judge ok` 与 `verdict.updated`；`turn.finished.reason` 为 `timeout`（因 investigate 被 skip）。
+- **Retrieve**（`stages/retrieve.ts`）：所有入选命题 × 查询一次 `Promise.all`（provider 内已并行）；结果收齐后按（命题 order、查询序、hit 序）分配 `e{n}` 并发事件，保证两次运行编号一致（`retrieve.test.ts` 加一例：打乱 provider 返回顺序，事件序列不变）。`evidence.provenance` 写 `claimId`（schema：`search` 分支加 `claimId: Type.Optional(Type.String())`）。
+- **Assess**（`stages/assess.ts`）：
+  - 入参加 `deadline?: number`；命题间 `Promise.all`；发起前 `now >= deadline` 的命题直接 `stage.finished assess skipped`（无立场 → judge 得 unverified）。
+  - 证据选择：`provenance.claimId === claim.id` 的 + 无 `claimId` 的（user / pivot / recall / reverse-image 等），去掉已判读与 `reachable === false`，按 tier A→B→C 再按 id 序，截到 `ASSESS_MAX_EVIDENCE = 12`（常数放 `judgeConfig.ts` 旁边同风格文件或该文件顶部）。
+  - prompt 只加两句：「quote 不超过 60 字」「最多输出与输入证据数相同条数」。
+  - `parseJobOutput` 失败重试**一次**：同一工单再调一次，userContent 末尾追加「上一次输出不合规：<reason 前 200 字>。只输出规定 JSON。」；仍失败才 `failed-open`。重试也受 deadline。
+- **Decompose**（`stages/decompose.ts` 或 `text/claimAtom/forceCheckable.ts`，选一处）：丢弃碎片命题——文本去空白后 < 6 字，或以 `(宣布|表示|称|指出|发布|说|透露|回应|通报|认为|强调)` 结尾。丢弃发 `claims.dropped`（reason `fragment`）；若全被丢则走既有 fail-open（整句成一条 fact）。加 `ponytail:` 注释说明这是正则启发、上限是误杀「X 已表示」类完整句。
+- **Server**（`packages/server`）：
+  - 启动时扫 `.data/cases/*.jsonl`：末事件不是 `turn.finished` 的案子追加 `error{stage:"runner", message:"服务重启，本轮中断"}` + `turn.finished{reason:"error"}`（seq 续上），再进入服务。
+  - `deps.ts` 的 `tools.search` 透传 `signal`（T15 checker 备注）。
+- **Eval**（`packages/eval`）：
+  - `run.ts` 每例把事件写 `runs/<runId>/<caseId>.jsonl`（默认开，`--no-dump` 关）。
+  - `summary` 追加：`turnReasons: {done, timeout, aborted, error}`、`judgeRan`（有 `stage.finished judge ok` 的例数 / 总数）、`llmByJob: { [job]: { calls, failed, p50Ms } }`、`errorsByStage: { [stage]: n }`。逐例加 `judgeRan: boolean`、`llmCalls: number`。
+  - 不改门禁四项与 baseline 文件。
+
+目标（真 key 全量 26 例，验收人跑；对照 `eval-1788437154410`）：
+
+| 指标 | 现状 | 目标 |
+|---|---|---|
+| `turnReason=timeout` | 18/26 | ≤ 4/26 |
+| `verdictType=null` | 10/26 | 0 |
+| `judgeRan` | 未知（≤16） | 26/26 |
+| latencyP50 | 127s | ≤ 60s |
+| latencyP95 | 176s | ≤ 125s |
+| verdictAccuracy | 0.47 | ≥ 0.65 |
+| reportContractPassRate | 0.31 | ≥ 0.85 |
+| hallucinationRate | 0 | ≤ 0.04 |
+| 单条真跑「国家医保局…」 | 72s / 145s(timeout) | `done`，≤ 60s |
+
+验收清单（checker 在 `.worktrees/T21` 逐条执行；每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 1 | `npm run build --workspace=@rhg/core && npm test --workspace=@rhg/core` | 退出码 0；用例数 ≥ 405 + 14 = 419 |
+| 2 | `npm test --workspace=@rhg/server && npm test --workspace=@rhg/eval` | 都退出码 0；server 用例 ≥ 19；eval 用例 ≥ 22 |
+| 3 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动仅在 `packages/core/**`、`packages/server/**`、`packages/eval/**`、`package-lock.json`；不含 `packages/web/`、`mvp/`、`docs/` |
+| 4 | `rg "DEFAULT_TOTAL_MS\s*=" packages/core/src/runner/runTurn.ts` | 仍是 `120000` |
+| 5 | `git diff spine...HEAD -- packages/core/src/rules/judgeConfig.ts packages/eval/src/golden.ts` | 空（或 judgeConfig 只新增 `ASSESS_MAX_EVIDENCE` 一行） |
+| 6 | 读 `runTurn.ts` 的 `gate` | `judge` 不在任何 `skip` / `jump` 条件里；只有 abort 能拦它 |
+| 7 | 读 `runTurn.test.ts` | 有一例：clock 推到 `totalMs` 之后（assess 结束时已超预算），断言事件流含 `stage.finished judge ok`、`verdict.updated`，且 `turn.finished.reason === "timeout"` |
+| 8 | 读 `jobModels.ts` 与其测试 | 默认表覆盖 `route / self-proof / decompose / assess / investigate / cites / ask_case / compose`；未知 job 回落到 assess 表；`RHG_MODEL_ASSESS=stepfun:step-3.7-flash:low` 能覆盖且首位是 stepfun；坏格式忽略该条 |
+| 9 | 读 `callJob.ts` | 不再 import `callAgentWithFallback`；有 `hedgeAfterMs`；每次尝试 `AbortController`；成功后对其余在飞尝试调用 `abort()`；超时 = `min(candidate.timeoutMs, deadlineMs − now − 500)`；`deadlineMs − now < 3000` 时不发请求直接抛 |
+| 10 | 读 `callJob.test.ts`（用假 `dispatch` 注入，不出网） | 用例：① 首候选 20s 不回、次候选 1s 回 → 结果来自次候选、首候选 signal 已 aborted、总时长 ≈ hedgeAfterMs + 1s；② 首候选 429 → 立即发次候选（不等 hedge）；③ deadline 剩 2s → 不调 dispatch 直接抛；④ 外部 `signal.abort()` → 所有在飞尝试 aborted、抛 AbortError 类错误；⑤ 坏 JSON → 该次失败并进入下一候选；⑥ `attempts` 数组记录每次 provider/model/ok/latency |
+| 11 | `rg "isProviderQuotaSkipped\|noteProviderFailure\|timeoutStrikes" packages/core/src/llm/callJob.ts` | 0 命中 |
+| 12 | 读 `minimaxM3.ts` / `agentProviders.ts` diff | `effort low → thinking disabled`；M3 `max_tokens` 用工单值；`callStepFunAgent` 与 `dispatchSingleProvider` 接受并透传 `signal` |
+| 13 | 读 `casefile/schema.ts` diff | 只加了 `LlmCalled.attempts?`、`Provenance.search.claimId?`；`npm test --workspace=@rhg/core` 中 casefile 用例全过 |
+| 14 | 读 `publicEvent.ts`（server） | `llm.called` 公开版无 `attempts`、无 `error`、`model === ""`；有对应用例 |
+| 15 | 读 `context.ts` | `createStageContext` 接受 `deadline?`；`ctx.llm` 传 `signal` 与 `deadlineMs`；`llm.called` 写入 `attempts`；`context.test.ts` 有一例断言 FakeLlm 收到的参数含 `signal` 与 `deadlineMs` |
+| 16 | 读 `retrieve.ts` | 一次 `Promise.all` 覆盖所有命题 × 查询；事件在收齐后按（命题 order、查询序、hit 序）发；`provenance.claimId` 写入；`retrieve.test.ts` 有「provider 返回顺序打乱、事件序列逐字相同」一例 |
+| 17 | 读 `assess.ts` | 命题间 `Promise.all`；`deadline` 门控 → `stage.finished assess skipped`；证据选择按 `claimId` 归属 + 无归属，tier 排序，截 `ASSESS_MAX_EVIDENCE`（12）；解析失败重试一次且 userContent 含「上一次输出不合规」；`assess.test.ts` 新增用例：① 30 条证据只喂 12 条且 A 级优先；② 他命题的证据不喂；③ 首次输出 `{}` 第二次合规 → `stage.finished assess ok` 且 `llm.called` 两条；④ 过 deadline 的命题 `skipped` 无 llm 调用 |
+| 18 | `rg "60 字\|不超过 60" packages/core/src/stages/assess.ts` | ≥ 1 命中（prompt 里加了 quote 长度约束） |
+| 19 | 读碎片命题过滤实现与测试 | 「国家医保局宣布」被丢弃并发 `claims.dropped`（reason `fragment`）；「国家医保局宣布生育津贴直接发个人」保留；全丢时 fail-open 一条 fact；有 `ponytail:` 注释 |
+| 20 | 读 server 启动修复 | `store` 或 `index.ts` 有开机扫描；测试：预置一份末事件为 `stage.started` 的 jsonl → 启动后 `GET /api/cases/:id` 返回 `running: false`、末事件 `turn.finished reason error`、倒数第二条 `error` 含「重启」 |
+| 21 | 读 `deps.ts` | `tools.search` 把 `signal` 传给 `searchAll` |
+| 22 | `npx tsx packages/eval/src/run.ts --ids RUMOR-001 --fake && ls packages/eval/runs/*/` | 有 `RUMOR-001.jsonl`；每行 `JSON.parse` 后过 `validateEvent`；stdout JSON 的 `summary` 含 `turnReasons / judgeRan / llmByJob / errorsByStage`，`cases[0]` 含 `judgeRan / llmCalls` |
+| 23 | `rg ": any\b\|console\.log\|\.only\|\.skip" packages/core/src packages/server/src packages/eval/src --glob '!**/__manual__/**' --glob '!run.ts' --glob '!index.ts'` | 0 命中（`providerRouter.ts` 里既有的 `any` 不计：用 `git diff spine...HEAD` 确认本任务没新增） |
+| 24 | 真跑（工作树根有 `.env.local`）：`PORT=3121 npm run dev --workspace=@rhg/server`，POST「国家医保局宣布 2026 年起生育津贴直接发个人」，用 `GET` 轮询到 `running:false` | `turn.finished.reason === "done"`；从 `turn.started` 到 `turn.finished` ≤ 60s；有 `verdict.updated`；`report.conclusion` 不是「没有查到此信息」；`llm.called` 每条 `attempts.length ≥ 1` 且 `model` 以 `minimax:` 或 `stepfun:` 开头；贴时间线（每个 stage 的相对秒）进报告 |
+| 25 | 真跑：同上再 POST「常穿黑色内衣易患癌」 | `turn.finished.reason ∈ {done, timeout}`；`verdict.updated` 存在（judge 一定跑了）；贴时间线 |
+| 26 | 真跑后 `kill -9` server 进程，重启同一目录 | 若有未收口案子，`GET` 显示 `running:false` 且末事件 `turn.finished error`（没有则说明两案都已收口，记 N/A + 证据） |
+
+合入后验收人跑全量 eval（`npm run eval -- --repeats 1`，真 key，另派只报数的实例，加上新 summary 字段），对照上表目标；未达目标不算完成，回到本任务补一轮而不是开新任务。
+
 ---
 
 ## Wave 4 · 界面
