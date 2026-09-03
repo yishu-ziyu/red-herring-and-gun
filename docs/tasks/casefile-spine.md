@@ -323,6 +323,43 @@ Evaluator：`route.test.ts` 覆盖五类；`turns.test.ts`：`pursue_frontier` �
 
 Evidence：测试名。
 
+设计定案（builder 照此实现，checker 照此核验）：
+
+- `RunTurnInput.route` 改为可选；缺省时由 `routeMessage(case, message, llm)` 决定。`message` 增加 `pivotId?: string`。决定的 route 写进 `message.added(user).route`。
+- 路由优先级（确定性在前）：① `pivotId` 存在 → `pursue_frontier`（pivot 不在案内 frontier 或已 consumed → 发 `error` + `turn.finished(error)`，不跑任何阶段）；② 消息文本含 URL → `challenge`；③ 案内 `claims.length === 0` → `new_claim`，不调 LLM；④ 否则一张工单 `route` 归类 `new_claim | ask_case | off_topic`，用 `parseJobOutput` 校验，LLM 失败或校验失败 → `new_claim`。
+- `pursue_frontier`：`InvestigatorInput` 增加 `seedPivotId?: string`，第一步不问 LLM、直接对该 pivot 执行动作（link → fetch；entity/query → search；image → reverse image），之后按原逻辑跑完预算。然后 assess（只补新证据）→ judge → compose → finalize。
+- `challenge`：用 `deps.tools.fetch` 抓 URL（SSRF 在 webFetch 内）→ `evidence.added`，`provenance: "user"`，tier 用 `tierOf`；对每个可核查命题 `runAssess({ evidenceIds: [该证据] })` → judge → compose → finalize。抓不到（unreachable / 被拦 / 无正文）：不发 `evidence.added`，发 `message.added(assistant)` 固定文案 + `turn.finished(done)`。这不是系统错误。
+- `ask_case`：恰一张工单 `ask_case`，输入 = 命题 + 判决 + 证据（标题 / host / 层级 / 摘要 / URL）+ 报告；输出 `{ answer: string }`。代码校验：(a) 回答中的 URL ⊆ 案内证据 URL；(b) 回答中每个数字串（`\d+(\.\d+)?`，去千分位）出现在案内证据文本 ∪ 命题文本 ∪ 报告文本中。任一不满足 → 用固定兜底文案 + 最多 3 个 frontier pivot 标签替换回答。专名不校验，标 `ponytail:` 注释。零检索、零抓取。
+- `off_topic`：固定文案，路由之后零 LLM、零阶段。
+- 固定文案（challenge 抓不到、ask_case 兜底、off_topic）全部放 `text/publicCopy.ts`，runner 只引用。
+- 每个路由都产出 `turn.started` → `message.added(user)` → … → `message.added(assistant)` → `turn.finished`。
+
+验收清单（checker 在 `.worktrees/T14` 逐条执行，每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 1 | `npm test --workspace=@rhg/core` | 退出码 0；用例总数 ≥ T13 合入时总数 + 14 |
+| 2 | `npm run build --workspace=@rhg/core` | 退出码 0 |
+| 3 | `git status --short`；`git diff spine --stat` | 干净；改动仅在 `packages/core/src/runner/**`、`packages/core/src/stages/investigate.ts`、`packages/core/src/stages/investigate.test.ts`、`packages/core/src/text/publicCopy.ts`（及其测试）；不含 `mvp/`、`casefile/schema.ts`、`stages/index.ts`、`packages/core/src/index.ts` |
+| 4 | `git diff spine -- packages/core/src/stages/investigate.ts` | 只增加 `seedPivotId` 相关逻辑；现有五个停止条件、`decideAction`、`act` 的既有分支没有被改写 |
+| 5 | `rg "process\.env\|mvp/" packages/core/src/runner/` | 0 命中 |
+| 6 | 读 `route.ts` | 判断顺序与「设计定案」一致：pivotId → URL → 空案 → LLM；LLM 调用在三条确定性分支之后 |
+| 7 | 读 `route.test.ts` | 五类各 ≥1 例；pivotId 与 URL 同时存在 → `pursue_frontier`；空案无 URL → `new_claim` 且 FakeLlm 调用数为 0；LLM 返回非法 JSON → `new_claim` |
+| 8 | 读 `runTurn.ts` | `route` 缺省时调用 `routeMessage`；显式传入时不调；`message.added(user).route` 等于最终 route |
+| 9 | 读 pursue_frontier 用例 | 事件流含 `frontier.consumed(pivotId)`；第一条 `investigator.step` 的 `action.target` 等于该 pivot 的 value / label；在该 step 之前没有 `job === "investigate"` 的 `llm.called` |
+| 10 | 读 pursue_frontier 非法 pivot 用例 | pivotId 不在案内 → 只有 `turn.started`、`message.added(user)`、`error`、`turn.finished(error)`，没有 `stage.started` |
+| 11 | 读 challenge 用例 | 有且仅一条新 `evidence.added`，其 `provenance === "user"`；之后有 `stance.added` 引用该 evidenceId；之后有 `verdict.updated`；有 `report.finalized` |
+| 12 | 读 challenge 抓不到用例 | fake fetch 返回 `reachable:false`：无 `evidence.added`，有 `message.added(assistant)`，`turn.finished.reason === "done"`，无 `error` |
+| 13 | 读 ask_case 正常用例 | `llm.called` 恰一条且 `job === "ask_case"`；fake search / fetch 调用次数为 0；无 `stage.started` |
+| 14 | 读 ask_case 案外 URL 用例 | FakeLlm 回答含案外 URL → assistant 消息不含该 URL，含兜底文案，含 ≥1 个 frontier 标签 |
+| 15 | 读 ask_case 案外数字用例 | FakeLlm 回答含案内不存在的数字 → 被替换；对照组：数字存在于证据文本 → 原样保留 |
+| 16 | 读 off_topic 用例 | 路由之后 `llm.called` 为 0 条（或仅路由那 1 条）；无 `stage.started`；assistant 文案等于 `publicCopy` 中的常量 |
+| 17 | 读四个非 new_claim 路由的用例 | 每个都断言 `replay(events)` toEqual 最终快照且 `assertInvariants` 不抛 |
+| 18 | 读 `runTurn.ts` | 同案互斥锁在路由判定之前获取，五个路由共用 |
+| 19 | `rg "能信\|不能信\|可信\|不可信\|靠谱\|转发" packages/core/src/runner/` | 0 命中（文案在 publicCopy） |
+| 20 | 读 `publicCopy.ts` 新增文案 | 三段文案里没有「请勿」「不要相信」「谣言」「转发」字样；没有厂商 / 模型 / 工具名 |
+| 21 | 读 ask_case 数字校验实现 | 有 `ponytail:` 注释说明只校验数字不校验专名 |
+
 ### T15 · 服务端
 
 依赖：T13、T14。
@@ -346,6 +383,50 @@ Not this：不改 golden 的期望值；不把新指标进门禁（先观测）�
 Evaluator：`score.test.ts` 覆盖每个指标的正反例；用一份假 `Case` 走通 `run.ts --ids` 输出 JSON；验收人用真实 key 跑全量一次，记录 run id 与四项对旧基线的差值。
 
 Evidence：测试名；eval run id；对比表（四项 + 新指标）。
+
+设计定案：
+
+- 输入统一为 `{ case: Case, events: CaseEvent[], report: Report | null, elapsedMs: number }`（一个案子跑完 `runTurn` 后的产物）。所有指标是 `(golden, result) => number | null` 的纯函数，`null` 表示该例不适用（不进分母）。
+- 指标定义（每项一句话，checker 按这句核对实现与测试）：
+  - `verdictAccuracy`：`overall.verdictType === golden.expectedVerdictType`；`overall.contested === true` 时不算命中。
+  - `credibilityAccuracy`：`overall.score` 落在 `expectedCredibilityRange` 闭区间内。
+  - `hallucinationRate`：报告 `conclusion` / `claimItems[].line` 中出现的 `[n]` 在 `report.citations` 找不到、或 `citations[].evidenceId` 不在 `case.evidence`、或文本中出现的 URL 不在案内证据 URL 集合 → 该例记 1；否则 0。
+  - `reportContractPassRate`：同时满足 → 1：`conclusion` 非空；每个 `verifiable` 命题在 `claimItems` 里恰有一行；每行 `citations` 非空；`scrubPublicText(conclusion) === conclusion`（无术语泄漏）。
+  - `routingAccuracy`：**重定义**为「取路正确」：`golden.expectsEvidenceLoop === true` 时要求事件流里有 ≥1 条 `investigator.step`；未声明的例返回 `null`。只观测不门禁。
+  - `groundingRate`：`verifiable` 命题中，判决非 `unverified` 且 `tally.sup + tally.ref ≥ 1` 的比例。
+  - `quoteFidelity`：所有带 `quote` 的 stance 里，归一化（去空白、小写）后 `quote` 是对应证据 `text` 或 `snippet` 子串的比例；无 quote 的例返回 `null`。
+  - `provenanceDepth`：报告引用到的证据里 `tier === "A"` 的比例。
+  - `latencyP50 / latencyP95`：跨例 `elapsedMs` 分位数（在汇总层算，不是逐例）。
+- `--gate <baseline>`：接受旧格式 `mvp/server/eval/baseline.json` 与新格式；只比 `verdictAccuracy / credibilityAccuracy / hallucinationRate / reportContractPassRate` 四项；前三项与第四项方向分别为高好 / 高好 / 低好 / 高好；任何一项劣化超过 0.02 → 退出码 1，并打印四行 `name old new delta`。`routingAccuracy` 语义已变，不比。
+- `run.ts`：`--ids a,b`、`--domain x`、`--repeats n`、`--gate path`、`--fake`（用 `FakeLlm` + 空搜索走通流程，不出网）。输出 JSON 到 stdout：`{ runId, startedAt, cases: [{ id, verdictType, score, metrics, elapsedMs, turnReason }], summary: { 各指标 } }`；同时写 `packages/eval/runs/<runId>.json`（gitignore）。
+- golden：`packages/eval/src/golden.ts` 逐字搬 `mvp/server/eval/golden.ts`，唯一允许的改动是删掉 `expectedAgentSequence` 字段的类型与值（新架构无此概念）。其它字段与值一个字不改。
+
+验收清单（checker 在 `.worktrees/T16` 逐条执行，每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 1 | `npm test --workspace=@rhg/eval` | 退出码 0；用例总数 ≥ 22 |
+| 2 | `npx tsc --noEmit -p packages/eval` | 退出码 0 |
+| 3 | `npm test --workspace=@rhg/core` | 退出码 0，用例数不少于 spine 上的数字（core 未被改动） |
+| 4 | `git status --short`；`git diff spine --stat` | 干净；改动仅在 `packages/eval/**`、根 `package.json`、`package-lock.json`、`.gitignore`；不含 `mvp/`、`packages/core/` |
+| 5 | `sed '/expectedAgentSequence/d' mvp/server/eval/golden.ts \| diff - <(sed '/expectedAgentSequence/d' packages/eval/src/golden.ts)` | 差异为空，或只剩注释行 |
+| 6 | `rg "from \"[./]*mvp\|require\(.*mvp" packages/eval/src` | 0 命中（`mvp/server/eval/baseline.json` 只能作为 CLI 参数字串出现在文档 / 脚本里） |
+| 7 | `rg "process\.env" packages/eval/src` | 只出现在 `run.ts`（或单独 `env.ts`），`score.ts` 里 0 命中 |
+| 8 | 读 `score.ts` 导出 | 恰好导出上表 10 个指标名 + 一个 `summarize`（名称可异），没有别的指标 |
+| 9 | 读 `score.test.ts` | 10 个指标每个至少一个返回最好值、一个返回最坏值的用例；`routingAccuracy`、`quoteFidelity` 各有一个返回 `null` 的用例 |
+| 10 | 读 `verdictAccuracy` 实现与测试 | `contested === true` 时返回 0 的用例存在 |
+| 11 | 读 `hallucinationRate` 测试 | 三个触发条件（悬空 `[n]`、悬空 evidenceId、案外 URL）各一例 |
+| 12 | 读 `reportContractPassRate` 实现 | 四个条件都在；调用了 core 的 `scrubPublicText`（不是自己重写清洗） |
+| 13 | 读 `--gate` 实现与测试 | 只比四项；方向正确（hallucinationRate 升为劣化）；劣化 0.02 边界有测试：0.02 不退、0.021 退 |
+| 14 | `npx tsx packages/eval/src/run.ts --ids RUMOR-001,RUMOR-003 --fake` | 退出码 0；stdout 是合法 JSON；`cases.length === 2`；`summary` 含 10 个指标键 |
+| 15 | `npx tsx packages/eval/src/run.ts --ids RUMOR-001 --fake --gate mvp/server/eval/baseline.json` | 能读旧格式；输出四行 `name old new delta`；退出码 0 或 1 均可，但不是崩溃（无堆栈） |
+| 16 | `ls packages/eval/runs/` 且 `git check-ignore packages/eval/runs/x.json` | 第 14 条产生了文件；路径被 gitignore |
+| 17 | 读根 `package.json` | `scripts.eval` 与 `scripts.eval:gate` 存在并指向 `packages/eval`（`-w @rhg/eval`） |
+| 18 | 读 `run.ts` | 用的是 core 导出的 `runTurn`；没有复制任何阶段逻辑；没有自己构造 `Case` 之外的运行路径 |
+| 19 | 读 `run.ts` `--repeats` | 同一 id 跑 n 次产生 n 条 `cases` 记录，`summary` 按条算 |
+| 20 | `rg "console\.log" packages/eval/src/score.ts` | 0 命中 |
+
+合入后由验收人另派一个 Grok 实例用 `mvp/.env.local` 真 key 跑 `npm run eval -- --repeats 1` 全量一次，记录 runId 与四项对旧基线差值到任务页；该实例只报数字，不下结论。
 
 ---
 
