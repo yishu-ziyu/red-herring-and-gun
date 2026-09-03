@@ -177,6 +177,15 @@ export function leadWithFace(text: string, verdictType: unknown): string {
   return stripped;
 }
 
+/** challenge 抓不到链接时的助手回复。不训人、不写转不转。 */
+export const CHALLENGE_UNREACHABLE = "这条链接打不开，没法对照案内材料。";
+
+/** ask_case 回答超出案内时的兜底。后面由调用方附最多 3 个 frontier 标签。 */
+export const ASK_CASE_FALLBACK = "案内材料没有这一点，可以从这些方向再查。";
+
+/** off_topic 婉拒。只说明和本案无关，不展开闲聊。 */
+export const OFF_TOPIC_REPLY = "这句和当前案件无关，我只谈案内已经在核的内容。";
+
 export function constrainRecommendation(text: unknown, verdictType: unknown): string {
   const body = scrubPublicText(text);
   if (!body || FORWARD_RE.test(body)) return directAnswer(verdictType);
