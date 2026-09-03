@@ -392,7 +392,7 @@ Evidence：测试名；`curl` 一次真实 SSE 的前 5 行（不含密钥）。
   - 请求体非法 400；`text` 空或 > 4000 字 400。
 - SSE：`Content-Type: text/event-stream`、`Cache-Control: no-cache`、`X-Accel-Buffering: no`；每 15s 一帧注释 `: ping`；`res` 的 `close` → 解除总线订阅、清心跳；关闭后 `write` 有守卫。
 - 进程退出：`SIGTERM` / `SIGINT` → `TurnRunner.abortAll()`，等 `turn.finished` 落盘（上限 5s）再 `server.close()`。
-- `toPublicEvent(e)`（定点脱敏，不做全文正则，证据正文里合法出现的公司名不能被删）：`llm.called` → `model: ""`、删 `error`；`error.message` → `scrubPublicText`；`evidence.added` / `evidence.updated` 里 `provenance.kind === "search"` → 删 `provider`；其它事件原样。返回值必须仍通过 `validateEvent`。
+- `toPublicEvent(e)`（定点脱敏，不做全文正则，证据正文里合法出现的公司名不能被删）：`llm.called` → `model: ""`、删 `error`；`error.message` → `scrubPublicText`；`evidence.added` 里 `provenance.kind === "search"` → 删 `provider`（`evidence.updated` 的 schema 没有 provenance 字段，原样）；其它事件原样。返回值必须仍通过 `validateEvent`。
 - `index.ts`：读 `process.env` → `buildDeps` + `FileCaseStore` + `TurnRunner` → `createApp({ deps, store, turns, quota })` → listen + 信号处理。`createApp` 接受注入，测试全用假 deps / 临时目录。
 
 验收清单（checker 在 `.worktrees/T15` 逐条执行，每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
@@ -517,7 +517,7 @@ Evidence：测试名；截图路径 `packages/web/output/acceptance/T17-*.png`�
 - 其它 CSS 文件里不准出现十六进制色、`rgb(`、`hsl(`、`font-family:`；只能 `var(--…)`。
 - 布局壳 `AppShell`：语义元素 `<nav>`（案件列表）/ `<main>`（线程）/ `<aside>`（案件面板）。≥1024px：grid 三栏 `auto minmax(0,1fr) 360px`，nav 240px 可收起到 0（按钮 `aria-expanded`，状态存 localStorage）；768–1023px：两栏，aside 变右侧抽屉，顶部一条摘要栏（判决词 + 分数）带「打开面板」按钮；<768px：单栏，nav 与 aside 都是抽屉。抽屉 Escape 关闭、遮罩点击关闭。任何宽度不出现横向滚动。
 - 路由：`useRoute()` 读 `location.pathname`，`navigate(path)` 用 `history.pushState` + `popstate`。只有 `/` 与 `/cases/:id`。T17 在两页放最小占位（首页：一个输入框 + 提交 → `POST /api/cases` → 跳 `/cases/:id`；案件页：线程里按 `case.messages` 顺序渲染纯文本气泡，面板里按 `case.claims` 顺序渲染「命题文本 + 判决词（`publicCopy` 的 face 词）」纯文本列表）。这是 T18 / T19 要替换的骨架，不做样式修饰，但必须真的能从首页一句话跑到看见判决词。
-- `api.ts`：`createCase`、`postTurn`、`abortTurn`、`getCase`、`listCases`、`openStream(caseId, since): EventSource`。流用原生 `EventSource`（服务端每帧带 `id: <seq>`，浏览器断线自动重连并带 `Last-Event-ID`；服务端 T15 要接受该头作为 `since` 回退——已列入 T15 合入前修正）。`vite.config.ts` 里 `server.proxy['/api'] → http://127.0.0.1:3001`（端口从 `VITE_API_PORT` 读，缺省 3001）。
+- `api.ts`：`createCase`、`postTurn`、`abortTurn`、`getCase`、`listCases`、`openStream(caseId, since): EventSource`。流用原生 `EventSource`（服务端每帧带 `id: <seq>`，浏览器断线自动重连并带 `Last-Event-ID`；服务端 T15 要接受该头作为 `since` 回退——已列入 T15 合入前修正）。`vite.config.ts` 里 `server.proxy['/api'] → http://127.0.0.1:3100`（端口从 `VITE_API_PORT` 读，缺省 3100 = server 的 `DEFAULT_PORT`）。
 - `useCaseStream(caseId)`：挂载时 `getCase` → 状态 = 返回的 `case`，再 `openStream(caseId, case.seq)`；每帧 `JSON.parse` → 若 `seq <= current.seq` 丢弃（重复）；若 `seq > current.seq + 1` 关流、重新 `getCase`、重开流（补洞）；否则 `reduce`。暴露 `{ case, status: "loading" | "live" | "reconnecting" | "error", running, sendTurn(text, pivotId?), abort() }`。`sendTurn` 遇 409 设 `status: "error"` 与可读消息，不抛。不写手动重试循环（`EventSource` 自带）。
 - fixture 模式：路径 `/cases/fx-<name>` 时 `api.ts` 换成 fixture 源：`getCase` 返回该 fixture 的前 `k` 个事件折叠态（`k` 由 fixture 元数据指定「运行中」截断点），`openStream` 返回一个每 150ms 吐一个剩余事件的假 EventSource，`sendTurn` 空操作。这样「运行中」的界面状态能离线看到并截图。
 - `fixtures/`：5 份 `*.json`（`decomposing`、`retrieving`、`contested`、`done`、`followup`），每份 `{ name, cutAt: number, events: CaseEvent[] }`。由 `fixtures/build.ts`（node 脚本，用 `@rhg/core` 根导出的 `runTurn` + `createFakeLlm` + 假搜索 / 假抓取，注入固定 `now`）生成，两次运行字节相同。`followup` 含两轮（new_claim 后 pursue_frontier）。`contested` 的 verdict 有 `contested: true` 且事件里有 `investigator.step` 的 `role: "prosecutor"` 与 `"defender"`。
@@ -546,7 +546,7 @@ Evidence：测试名；截图路径 `packages/web/output/acceptance/T17-*.png`�
 | 17 | 浏览器：`/cases/fx-decomposing`、`/cases/fx-retrieving`、`/cases/fx-contested`、`/cases/fx-followup` 各 1280 + 375 | 8 张截图；每张 `scrollWidth === innerWidth`；`fx-retrieving` 打开 3 秒后 `aside` 里命题数量文本或证据计数发生过变化（假流在吐事件） |
 | 18 | 浏览器：1280 下点 nav 收起按钮 | `nav` 宽度变 0 或不可见，`aria-expanded="false"`；刷新页面后仍收起（localStorage） |
 | 19 | 浏览器：任一页执行 `[...document.querySelectorAll("button")].filter(b => !b.textContent.trim() && !b.getAttribute("aria-label")).length` | 为 0 |
-| 20 | 浏览器：真后端联调——起 `npm run dev --workspace=@rhg/server`（工作树根有 `.env.local`），开 `/`，输入「国家医保局宣布 2026 年起生育津贴直接发个人」提交 | 跳到 `/cases/<id>`；60 秒内线程里出现助手消息、面板里出现 ≥1 条命题带判决词；截图 `T17-live-desktop.png`；把面板里的命题 + 判决词文本贴进报告 |
+| 20 | 浏览器：真后端联调——起 `PORT=3100 npm run dev --workspace=@rhg/server`（工作树根有 `.env.local`），开 `/`，输入「国家医保局宣布 2026 年起生育津贴直接发个人」提交 | 跳到 `/cases/<id>`；面板里命题在 `claims.added` 后即出现（不等结束）；180 秒内 `turn.finished`（当前核心时延是 T21 的事，这里只验链路通），此时线程里有助手消息、面板里 ≥1 条命题带判决词（timeout 兜底的「没查到」类判决词也算）；截图 `T17-live-desktop.png`；把面板里的命题 + 判决词文本与 `turn.finished.reason` 贴进报告 |
 | 21 | `rg "智能体\|Agent\|工具名\|模型名\|minimax\|stepfun\|deepseek" packages/web/src --glob '*.tsx'` | 0 命中 |
 | 22 | `rg "prefers-reduced-motion" packages/web/src/styles/`；`rg ":focus-visible" packages/web/src/styles/` | 各 ≥ 1 命中 |
 | 23 | `rg ": any\b\|console\.log\|\.only\|\.skip" packages/web/src` | 0 命中（`fixtures/build.ts` 不在 src 下，允许 console） |
