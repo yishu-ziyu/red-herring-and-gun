@@ -1,6 +1,7 @@
 export { canonicalizeUrl, toEvidence, TRACKING_QUERY_PARAMS } from "./toEvidence.js";
 export {
   searchAll,
+  defaultSearchProviders,
   type SearchHit,
   type SearchProgress,
   type SearchProviderFn,
