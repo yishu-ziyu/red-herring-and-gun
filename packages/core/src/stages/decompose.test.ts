@@ -203,6 +203,28 @@ describe("runDecompose", () => {
     );
   });
 
+  it("碎片命题「国家医保局宣布该事项」被丢弃", async () => {
+    const source = "国家医保局宣布 2026 年起生育津贴直接发个人";
+    const { ctx } = setup({
+      decompose: {
+        claims: [
+          { text: "国家医保局宣布该事项", type: "fact", checkable: true },
+          { text: "国家医保局宣布：2026 年起生育津贴直接发个人", type: "fact", checkable: true },
+        ],
+      },
+      "self-proof": keepAll(),
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims.map((c) => c.text)).toEqual(["国家医保局宣布：2026 年起生育津贴直接发个人"]);
+    expect(
+      ctx.emitted.some(
+        (e) =>
+          e.type === "claims.dropped" &&
+          e.dropped.some((d) => d.text === "国家医保局宣布该事项" && d.reason === "fragment"),
+      ),
+    ).toBe(true);
+  });
+
   it("全是碎片时 fail-open 一条 fact", async () => {
     const source = "国家医保局宣布";
     const { ctx } = setup({
