@@ -196,7 +196,16 @@ export async function callStepFunAgent({
 }) {
   // Token Plan（Anthropic 协议）：/step_plan 前缀走 /v1/messages + Bearer，非流式。
   if (baseUrl.includes("/step_plan")) {
-    return callStepFunPlanAgent({ baseUrl, apiKey, model, systemPrompt, userContent, maxTokens, signal });
+    return callStepFunPlanAgent({
+      baseUrl,
+      apiKey,
+      model,
+      systemPrompt,
+      userContent,
+      maxTokens,
+      reasoningEffort,
+      signal,
+    });
   }
   // Reasoning 系列模型（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
   // 三者皆会触发 400 Invalid request。仅 chat 模型才发这些字段。
@@ -242,6 +251,35 @@ export async function callStepFunAgent({
   return { text, model: `stepfun:${model}`, ...(reasoning ? { reasoning } : {}) };
 }
 
+export function buildStepFunPlanBody({
+  model,
+  systemPrompt,
+  userContent,
+  maxTokens,
+  reasoningEffort,
+}: {
+  model: string;
+  systemPrompt: string;
+  userContent: string;
+  maxTokens: number;
+  reasoningEffort?: "low" | "medium" | "high";
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model,
+    max_tokens: maxTokens,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userContent }],
+  };
+  if (reasoningEffort === "low") {
+    body.thinking = { type: "enabled", budget_tokens: 1024 };
+    body.max_tokens = maxTokens + 1024;
+  } else if (reasoningEffort === "medium") {
+    body.thinking = { type: "enabled", budget_tokens: 4096 };
+    body.max_tokens = maxTokens + 4096;
+  }
+  return body;
+}
+
 /**
  * StepFun Token Plan — Anthropic 协议端点（https://api.stepfun.com/step_plan/v1/messages）。
  * Bearer 认证；content 块数组（thinking + text）；无 response_format，JSON 靠 prompt 约束 + 下游 parseAgentJson。
@@ -253,6 +291,7 @@ export async function callStepFunPlanAgent({
   systemPrompt,
   userContent,
   maxTokens,
+  reasoningEffort,
   signal,
 }: {
   baseUrl: string;
@@ -261,6 +300,7 @@ export async function callStepFunPlanAgent({
   systemPrompt: string;
   userContent: string;
   maxTokens: number;
+  reasoningEffort?: "low" | "medium" | "high";
   signal?: AbortSignal;
 }) {
   const url = `${baseUrl.replace(/\/$/, "")}/v1/messages`;
@@ -271,12 +311,9 @@ export async function callStepFunPlanAgent({
       "Content-Type": "application/json",
       "anthropic-version": "2023-06-01",
     },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userContent }],
-    }),
+    body: JSON.stringify(
+      buildStepFunPlanBody({ model, systemPrompt, userContent, maxTokens, reasoningEffort }),
+    ),
     signal,
   });
 
