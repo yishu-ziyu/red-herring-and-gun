@@ -14,10 +14,13 @@ function emptyCase(): Case {
     frontier: [],
     consumedPivotIds: [],
     investigatorSteps: [],
+    investigatorStops: [],
     llmCalls: [],
     stages: [],
+    turns: [],
     messages: [],
     errors: [],
+    droppedClaims: [],
   };
 }
 
@@ -48,9 +51,38 @@ export function reduce(c: Case, event: CaseEvent): Case {
     case "message.added":
       return { ...c, seq: event.seq, messages: [...c.messages, { ...event.message }] };
     case "turn.started":
-      return { ...c, seq: event.seq };
-    case "turn.finished":
-      return { ...c, seq: event.seq };
+      return {
+        ...c,
+        seq: event.seq,
+        turns: [...c.turns, { id: event.turnId, startedAt: event.at }],
+      };
+    case "turn.finished": {
+      let match = -1;
+      for (let i = c.turns.length - 1; i >= 0; i -= 1) {
+        const turn = c.turns[i]!;
+        if (turn.finishedAt !== undefined) continue;
+        if (turn.id !== event.turnId) continue;
+        match = i;
+        break;
+      }
+      const turns =
+        match === -1
+          ? [
+              ...c.turns,
+              {
+                id: event.turnId,
+                startedAt: event.at,
+                finishedAt: event.at,
+                reason: event.reason,
+              },
+            ]
+          : c.turns.map((turn, index) =>
+              index === match
+                ? { ...turn, finishedAt: event.at, reason: event.reason }
+                : turn,
+            );
+      return { ...c, seq: event.seq, turns };
+    }
     case "stage.started":
       return {
         ...c,
@@ -61,7 +93,6 @@ export function reduce(c: Case, event: CaseEvent): Case {
             stage: event.stage,
             ...(event.claimId !== undefined ? { claimId: event.claimId } : {}),
             startedAt: event.at,
-            ...(event.outcome !== undefined ? { outcome: event.outcome } : {}),
             seq: event.seq,
           },
         ],
@@ -104,8 +135,21 @@ export function reduce(c: Case, event: CaseEvent): Case {
     case "claims.added":
       return { ...c, seq: event.seq, claims: [...c.claims, ...event.claims.map((claim) => ({ ...claim }))] };
     case "claims.dropped": {
-      const dropped = new Set(event.claimIds);
-      return { ...c, seq: event.seq, claims: c.claims.filter((claim) => !dropped.has(claim.id)) };
+      const droppedIds = new Set(event.dropped.map((item) => item.id));
+      return {
+        ...c,
+        seq: event.seq,
+        claims: c.claims.filter((claim) => !droppedIds.has(claim.id)),
+        droppedClaims: [
+          ...c.droppedClaims,
+          ...event.dropped.map((item) => ({
+            id: item.id,
+            text: item.text,
+            reason: item.reason,
+            seq: event.seq,
+          })),
+        ],
+      };
     }
     case "evidence.added":
       return { ...c, seq: event.seq, evidence: [...c.evidence, { ...event.evidence }] };
@@ -157,7 +201,14 @@ export function reduce(c: Case, event: CaseEvent): Case {
         ],
       };
     case "investigator.stopped":
-      return { ...c, seq: event.seq };
+      return {
+        ...c,
+        seq: event.seq,
+        investigatorStops: [
+          ...c.investigatorStops,
+          { role: event.role, reason: event.reason, seq: event.seq, at: event.at },
+        ],
+      };
     case "llm.called":
       return {
         ...c,

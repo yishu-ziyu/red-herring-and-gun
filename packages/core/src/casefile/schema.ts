@@ -279,10 +279,25 @@ export const StageOutcomeSchema = Type.Union([
   Type.Literal("skipped"),
 ]);
 
+export const TurnReasonSchema = Type.Union([
+  Type.Literal("done"),
+  Type.Literal("timeout"),
+  Type.Literal("aborted"),
+  Type.Literal("error"),
+]);
+
 export const InvestigatorRoleSchema = Type.Union([
   Type.Literal("main"),
   Type.Literal("prosecutor"),
   Type.Literal("defender"),
+]);
+
+export const InvestigatorStopReasonSchema = Type.Union([
+  Type.Literal("budget"),
+  Type.Literal("no-gain"),
+  Type.Literal("resolved"),
+  Type.Literal("time"),
+  Type.Literal("tool-failed"),
 ]);
 
 const investigatorStepFields = {
@@ -351,6 +366,36 @@ export const ErrorRecordSchema = Type.Object(
   closed,
 );
 
+export const TurnRecordSchema = Type.Object(
+  {
+    id: Type.String(),
+    startedAt: Type.String(),
+    finishedAt: Type.Optional(Type.String()),
+    reason: Type.Optional(TurnReasonSchema),
+  },
+  closed,
+);
+
+export const InvestigatorStopRecordSchema = Type.Object(
+  {
+    role: InvestigatorRoleSchema,
+    reason: InvestigatorStopReasonSchema,
+    seq: Type.Integer({ minimum: 1 }),
+    at: Type.String(),
+  },
+  closed,
+);
+
+export const DroppedClaimRecordSchema = Type.Object(
+  {
+    id: Type.String(),
+    text: Type.String(),
+    reason: Type.String(),
+    seq: Type.Integer({ minimum: 1 }),
+  },
+  closed,
+);
+
 export const CiteSchema = Type.Object(
   {
     from: Type.String(),
@@ -373,10 +418,13 @@ export const CaseSchema = Type.Object(
     frontier: Type.Array(PivotSchema),
     consumedPivotIds: Type.Array(Type.String()),
     investigatorSteps: Type.Array(InvestigatorStepRecordSchema),
+    investigatorStops: Type.Array(InvestigatorStopRecordSchema),
     llmCalls: Type.Array(LlmCallRecordSchema),
     stages: Type.Array(StageRecordSchema),
+    turns: Type.Array(TurnRecordSchema),
     messages: Type.Array(MessageSchema),
     errors: Type.Array(ErrorRecordSchema),
+    droppedClaims: Type.Array(DroppedClaimRecordSchema),
     overall: Type.Optional(OverallSchema),
     report: Type.Optional(ReportSchema),
   },
@@ -391,19 +439,28 @@ export const CaseCreatedSchema = event("case.created", {
 export const MessageAddedSchema = event("message.added", {
   message: MessageSchema,
 });
-export const TurnStartedSchema = event("turn.started", {});
-export const TurnFinishedSchema = event("turn.finished", {
-  reason: Type.Union([
-    Type.Literal("done"),
-    Type.Literal("timeout"),
-    Type.Literal("aborted"),
-    Type.Literal("error"),
-  ]),
-});
+export const TurnStartedSchema = Type.Object(
+  {
+    type: Type.Literal("turn.started"),
+    seq: Type.Integer({ minimum: 1 }),
+    at: Type.String(),
+    turnId: Type.String(),
+  },
+  closed,
+);
+export const TurnFinishedSchema = Type.Object(
+  {
+    type: Type.Literal("turn.finished"),
+    seq: Type.Integer({ minimum: 1 }),
+    at: Type.String(),
+    turnId: Type.String(),
+    reason: TurnReasonSchema,
+  },
+  closed,
+);
 export const StageStartedSchema = event("stage.started", {
   stage: Type.String(),
   claimId: Type.Optional(Type.String()),
-  outcome: Type.Optional(StageOutcomeSchema),
 });
 export const StageFinishedSchema = event("stage.finished", {
   stage: Type.String(),
@@ -414,8 +471,16 @@ export const ClaimsAddedSchema = event("claims.added", {
   claims: Type.Array(ClaimSchema),
 });
 export const ClaimsDroppedSchema = event("claims.dropped", {
-  claimIds: Type.Array(Type.String()),
-  reason: Type.String(),
+  dropped: Type.Array(
+    Type.Object(
+      {
+        id: Type.String(),
+        text: Type.String(),
+        reason: Type.String(),
+      },
+      closed,
+    ),
+  ),
 });
 export const EvidenceAddedSchema = event("evidence.added", {
   evidence: EvidenceSchema,
@@ -453,8 +518,8 @@ export const FrontierConsumedSchema = event("frontier.consumed", {
 });
 export const InvestigatorStepSchema = event("investigator.step", investigatorStepFields);
 export const InvestigatorStoppedSchema = event("investigator.stopped", {
-  reason: Type.String(),
-  role: Type.Optional(InvestigatorRoleSchema),
+  role: InvestigatorRoleSchema,
+  reason: InvestigatorStopReasonSchema,
 });
 export const LlmCalledSchema = event("llm.called", {
   job: Type.String(),
