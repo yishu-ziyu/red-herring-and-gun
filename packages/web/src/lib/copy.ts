@@ -130,3 +130,7 @@ export function timelineTitle(chase: number, exam: number): string {
 export function gainLine(gain: number): string {
   return `+${gain} 条证据 / 判决变化`;
 }
+
+export function pursueText(label: string): string {
+  return `追查 · ${label}`;
+}

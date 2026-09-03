@@ -101,8 +101,7 @@ export async function postTurn(caseId: string, text: string, pivotId?: string): 
   const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/turns`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    // ponytail: server rejects empty text; pivotId still selects pursue_frontier. Placeholder is the user bubble.
-    body: JSON.stringify(pivotId ? { text: text.trim() === "" ? "再查" : text, pivotId } : { text }),
+    body: JSON.stringify(pivotId ? { text, pivotId } : { text }),
   });
   if (res.status === 409) {
     return { ok: false, status: 409, error: await readError(res, TURN_BUSY) };
