@@ -121,7 +121,6 @@ export async function probeInvestigator(env: NodeJS.ProcessEnv = process.env): P
     ctx.emit({ type: "error", message, stage: "investigate" });
     console.error(error);
   } finally {
-    reportLlmFailures(ctx.emitted);
     const dir = new URL("../../../output/probe/", import.meta.url);
     await mkdir(dir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -134,10 +133,23 @@ export async function probeInvestigator(env: NodeJS.ProcessEnv = process.env): P
       action: step.action,
       gain: step.gain,
     }));
+    const stances = ctx.current.stances.length;
+    const verdicts = ctx.current.verdicts.map((item) => `${item.claimId}:${item.verdict}/${item.rule}`).join(",") || "无";
+    const assessOk = ctx.emitted.filter(
+      (event) => event.type === "stage.finished" && event.stage === "assess" && event.outcome === "ok",
+    ).length;
+    const assessFail = ctx.emitted.filter(
+      (event) => event.type === "stage.finished" && event.stage === "assess" && event.outcome === "failed-open",
+    ).length;
+    console.log(
+      `probeInvestigator: stances=${stances} verdicts=${verdicts} assessOk=${assessOk} assessFail=${assessFail} stop=${result?.stopReason ?? "failed"} steps=${result?.steps ?? 0}`,
+    );
+    reportLlmFailures(ctx.emitted);
+    for (const event of ctx.emitted) {
+      if (event.type === "error") console.log(`probeInvestigator error: ${event.message}`);
+    }
     if (result) {
-      console.log(
-        `probeInvestigator: stop=${result.stopReason} steps=${result.steps} actions=${JSON.stringify(steps)} log=${logPath}`,
-      );
+      console.log(`probeInvestigator: actions=${JSON.stringify(steps)} log=${logPath}`);
     } else {
       console.log(`probeInvestigator: failed; log=${logPath}`);
     }

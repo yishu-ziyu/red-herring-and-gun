@@ -1,4 +1,3 @@
-import { Value } from "typebox/value";
 import type { Claim, ClaimVerdict, Evidence, Pivot, Provenance } from "../casefile/schema.js";
 import { extractPivots } from "../fetch/extractPivots.js";
 import type { FetchedPage } from "../fetch/types.js";
@@ -18,6 +17,7 @@ import {
   type InvestigateActionKind,
 } from "./investigate.schema.js";
 import { runJudge } from "./judgeStage.js";
+import { parseJobOutput } from "./parseOutput.js";
 
 export const INVESTIGATE_JOB = "investigate";
 export const CITES_JOB = "cites";
@@ -449,11 +449,13 @@ async function decideAction(
       userContent,
       responseSchema: InvestigateOutputSchema,
     });
-    if (!Value.Check(InvestigateOutputSchema, result.output)) {
+    const parsed = parseJobOutput(InvestigateOutputSchema, result.output);
+    if (!parsed.ok) {
+      ctx.emit({ type: "error", stage: INVESTIGATE_JOB, message: parsed.reason });
       const action = pickFallback(candidates, "fallback: ");
       return { action, candidate: matchCandidate(action, candidates) };
     }
-    const proposed = result.output.action;
+    const proposed = parsed.value.action;
     if (proposed.kind === "stop") {
       return { action: proposed, candidate: undefined };
     }
@@ -571,15 +573,19 @@ ${others.length > 0 ? JSON.stringify(others, null, 2) : "无"}`;
   } catch {
     return;
   }
-  if (!Value.Check(CitesOutputSchema, output)) return;
+  const parsed = parseJobOutput(CitesOutputSchema, output);
+  if (!parsed.ok) {
+    ctx.emit({ type: "error", stage: CITES_JOB, message: parsed.reason });
+    return;
+  }
 
   const knownIds = new Set(ctx.current.evidence.map((item) => item.id));
-  for (const to of output.citesEvidenceIds) {
+  for (const to of parsed.value.citesEvidenceIds) {
     if (!knownIds.has(to) || to === pageId) continue;
     emitCite(ctx, pageId, to);
   }
 
-  for (const link of output.primaryLinks) {
+  for (const link of parsed.value.primaryLinks) {
     if (!outbound.some((url) => sameUrl(url, link.url))) continue;
     for (const pivot of pivots) {
       if (pivot.kind === "link" && sameUrl(pivot.value, link.url)) {
@@ -648,6 +654,12 @@ function pivotDepthPlusOne(ctx: StageContext, candidate: Candidate | undefined):
   return (pivot?.depth ?? 0) + 1;
 }
 
+function fetchResultLabel(id: string, page: FetchedPage, verb: "updated" | "added"): string {
+  if (!page.reachable) return `unreachable ${id}`;
+  if (page.text.length === 0) return `empty ${id}`;
+  return `${verb} ${id}`;
+}
+
 async function act(
   ctx: StageContext,
   action: InvestigateAction,
@@ -655,6 +667,8 @@ async function act(
   tools: InvestigatorTools,
   searchedQueries: Set<string>,
   pending: PendingCite[],
+  role: InvestigatorInput["role"],
+  claimIds: string[],
 ): Promise<{ result: string; mutated: boolean }> {
   const nextDepth = pivotDepthPlusOne(ctx, candidate);
   consumePivot(ctx, candidate);
@@ -715,7 +729,10 @@ async function act(
         reachable: page.reachable,
       });
       await afterFetch(ctx, existing.id, page, nextDepth, pending);
-      return { result: `updated ${existing.id}`, mutated };
+      if (mutated) {
+        await runAssess(ctx, { claimIds, by: role, evidenceIds: [existing.id] });
+      }
+      return { result: fetchResultLabel(existing.id, page, "updated"), mutated };
     }
 
     const rawUrl = page.finalUrl || url;
@@ -739,7 +756,7 @@ async function act(
     ctx.emit({ type: "evidence.added", evidence });
     resolvePending(ctx, pending, evidence);
     await afterFetch(ctx, evidence.id, page, nextDepth, pending);
-    return { result: `added ${evidence.id}`, mutated };
+    return { result: fetchResultLabel(evidence.id, page, "added"), mutated };
   }
   return { result: "stop", mutated: false };
 }
@@ -789,7 +806,16 @@ export async function runInvestigator(
     let result: string;
     let mutated = false;
     try {
-      const acted = await act(ctx, action, candidate, input.tools, searchedQueries, pending);
+      const acted = await act(
+        ctx,
+        action,
+        candidate,
+        input.tools,
+        searchedQueries,
+        pending,
+        role,
+        gaps.map((claim) => claim.id),
+      );
       result = acted.result;
       mutated = acted.mutated;
       consecutiveToolFail = 0;
