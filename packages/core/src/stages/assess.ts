@@ -1,7 +1,7 @@
-import { Value } from "typebox/value";
 import type { Evidence, Stance } from "../casefile/schema.js";
 import type { StageContext } from "./context.js";
 import { AssessOutputSchema, type AssessOutput } from "./assess.schema.js";
+import { parseJobOutput } from "./parseOutput.js";
 
 const TEXT_SNIPPET_MAX = 1500;
 
@@ -23,10 +23,12 @@ export const ASSESS_SYSTEM_PROMPT = `你在做证据立场判读，不是在裁�
 - evidenceId 必须是输入里出现过的证据编号。
 - confidence 是 0 到 1 的小数，表示你对「这条关系判断」的把握，不是命题为真的概率。
 - 没有关系可判时返回空的 stances 数组。
-- 不要输出命题级真假、分数或建议。`;
+- 不要输出命题级真假、分数或建议。
+输出 JSON：{ "stances": [{ "evidenceId": "e1", "stance": "supports|refutes|partial|contextual", "quote": "证据原文连续片段", "confidence": 0.8 }] }。不要加其他键。`;
 
 export type AssessInput = {
   claimIds?: string[];
+  evidenceIds?: string[];
   by?: "main" | "prosecutor" | "defender";
   systemPromptSuffix?: string;
 };
@@ -49,12 +51,7 @@ export async function runAssess(ctx: StageContext, input: AssessInput = {}): Pro
   const assessed: string[] = [];
 
   for (const claim of selected) {
-    const given = ctx.current.evidence.filter((item) => {
-      if (item.reachable === false) return false;
-      return !ctx.current.stances.some(
-        (stance) => stance.claimId === claim.id && stance.evidenceId === item.id && stance.by === by,
-      );
-    });
+    const given = selectEvidence(ctx, claim.id, by, input.evidenceIds);
     if (given.length === 0) continue;
     ctx.emit({ type: "stage.started", stage: ASSESS_JOB, claimId: claim.id });
     const givenIds = new Set(given.map((item) => item.id));
@@ -75,18 +72,38 @@ export async function runAssess(ctx: StageContext, input: AssessInput = {}): Pro
       continue;
     }
 
-    if (!Value.Check(AssessOutputSchema, output)) {
+    const parsed = parseJobOutput(AssessOutputSchema, output);
+    if (!parsed.ok) {
+      ctx.emit({ type: "error", stage: ASSESS_JOB, message: parsed.reason });
       ctx.emit({ type: "stage.finished", stage: ASSESS_JOB, claimId: claim.id, outcome: "failed-open" });
       assessed.push(claim.id);
       continue;
     }
 
-    emitStances(ctx, claim.id, output, givenIds, given, by);
+    emitStances(ctx, claim.id, parsed.value, givenIds, given, by);
     ctx.emit({ type: "stage.finished", stage: ASSESS_JOB, claimId: claim.id, outcome: "ok" });
     assessed.push(claim.id);
   }
 
   return { assessed };
+}
+
+function selectEvidence(
+  ctx: StageContext,
+  claimId: string,
+  by: Stance["by"],
+  evidenceIds: string[] | undefined,
+): Evidence[] {
+  if (evidenceIds !== undefined) {
+    const allow = new Set(evidenceIds);
+    return ctx.current.evidence.filter((item) => item.reachable !== false && allow.has(item.id));
+  }
+  return ctx.current.evidence.filter((item) => {
+    if (item.reachable === false) return false;
+    return !ctx.current.stances.some(
+      (stance) => stance.claimId === claimId && stance.evidenceId === item.id && stance.by === by,
+    );
+  });
 }
 
 function selectClaims(ctx: StageContext, claimIds: string[] | undefined) {
