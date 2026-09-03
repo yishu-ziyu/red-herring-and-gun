@@ -79,6 +79,7 @@ skills-lock.json
 # CaseFile spine packages
 packages/*/dist
 packages/*/node_modules
+.data/
 packages/eval/baseline.json
 packages/eval/runs/
 packages/web/output/
