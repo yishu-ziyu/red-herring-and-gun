@@ -147,6 +147,17 @@ describe("score", () => {
       expected: 40,
     },
     {
+      name: "单 partial 低于一半",
+      input: {
+        claims: [claim("c1", 0)],
+        verdicts: [verdict("c1", "partial", ["s1"])],
+        stances: [stance("s1", "c1", "e1")],
+        evidence: [evidence("e1", "A")],
+        contested: false,
+      },
+      expected: 30,
+    },
+    {
       name: "[checkable=false, false(A 1 簇)]",
       input: {
         claims: [claim("c1", 0, false), claim("c2", 1)],
