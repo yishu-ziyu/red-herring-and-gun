@@ -67,6 +67,8 @@ export type InvestigatorInput = {
   claimIds?: string[];
   /** 交叉复核两方都要跑完预算：控方翻案后辩方仍视为缺口，不因 isResolved 提前停。 */
   forceGaps?: boolean;
+  /** 第一步不经工单，直接对该 pivot 执行动作。 */
+  seedPivotId?: string;
 };
 
 export type InvestigatorResult = {
@@ -332,6 +334,22 @@ function mapPivot(pivot: Pivot, tools: InvestigatorTools): Candidate | undefined
     return { kind: "search", ...base };
   }
   return undefined;
+}
+
+function actionFromSeed(
+  ctx: StageContext,
+  seedPivotId: string,
+  tools: InvestigatorTools,
+): { action: InvestigateAction; candidate: Candidate } | undefined {
+  if (ctx.current.consumedPivotIds.includes(seedPivotId)) return undefined;
+  const pivot = ctx.current.frontier.find((item) => item.id === seedPivotId);
+  if (!pivot) return undefined;
+  const candidate = mapPivot(pivot, tools);
+  if (!candidate) return undefined;
+  return {
+    action: { kind: candidate.kind, target: candidate.label, why: pivot.why },
+    candidate,
+  };
 }
 
 function describeGaps(ctx: StageContext, gaps: Claim[]): { goal: string; gap: string } {
@@ -779,6 +797,73 @@ export async function runInvestigator(
     ctx.emit({ type: "investigator.stopped", role, reason });
     return { stopReason: reason, steps };
   };
+
+  if (input.seedPivotId) {
+    const seeded = actionFromSeed(ctx, input.seedPivotId, input.tools);
+    if (seeded) {
+      const focused = focusedClaims(ctx, input.claimIds);
+      const seedGaps = input.forceGaps === true ? focused : focused.filter((claim) => isGap(ctx, claim));
+      const tracked = seedGaps.length > 0 ? seedGaps : focused;
+      const labeled = describeGaps(ctx, tracked);
+      const before = snapshotKeys(ctx, tracked);
+      steps += 1;
+      const { action, candidate } = seeded;
+      let result: string;
+      let mutated = false;
+      let toolFailed = false;
+      try {
+        const acted = await act(
+          ctx,
+          action,
+          candidate,
+          input.tools,
+          searchedQueries,
+          pending,
+          role,
+          tracked.map((claim) => claim.id),
+        );
+        result = acted.result;
+        mutated = acted.mutated;
+        consecutiveToolFail = 0;
+      } catch (error) {
+        result = `tool-failed: ${errorText(error)}`;
+        consecutiveToolFail += 1;
+        toolFailed = true;
+      }
+      if (toolFailed) {
+        ctx.emit({
+          type: "investigator.step",
+          n: steps,
+          role,
+          goal: labeled.goal,
+          gap: labeled.gap,
+          action: { kind: action.kind, target: action.target },
+          why: action.why,
+          result,
+          gain: 0,
+        });
+      } else {
+        if (mutated) {
+          await runAssess(ctx, { claimIds: tracked.map((claim) => claim.id), by: role });
+          await runJudge(ctx, { claimIds: tracked.map((claim) => claim.id) });
+        }
+        const gain = gainFromSnapshot(ctx, tracked, before);
+        if (gain === 1) consecutiveZeroGain = 0;
+        else consecutiveZeroGain += 1;
+        ctx.emit({
+          type: "investigator.step",
+          n: steps,
+          role,
+          goal: labeled.goal,
+          gap: labeled.gap,
+          action: { kind: action.kind, target: action.target },
+          why: action.why,
+          result,
+          gain,
+        });
+      }
+    }
+  }
 
   while (true) {
     if (input.deadline !== undefined && Date.now() >= input.deadline) return stop("time");

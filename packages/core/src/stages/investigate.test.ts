@@ -521,6 +521,70 @@ describe("runInvestigator", () => {
     assertInvariants(ctx.current);
   });
 
+  it("seedPivotId 第一步不调 investigate 工单，直接对该 pivot 行动", async () => {
+    const seeded = seedCase();
+    seeded.emit({ type: "evidence.added", evidence: reprintEvidence() });
+    seeded.emit({
+      type: "frontier.added",
+      pivots: [
+        {
+          id: "p-gov",
+          kind: "link",
+          value: GOV_URL,
+          why: "官方页",
+          expectedValue: 3,
+          fromEvidenceId: "e1",
+          depth: 1,
+        },
+      ],
+    });
+    seeded.emit({
+      type: "verdict.updated",
+      verdict: { claimId: "c1", verdict: "unverified", basis: [], rule: "no-evidence", updatedAt: AT },
+    });
+    const fake = createFakeLlm({
+      investigate: { action: { kind: "stop", target: "", why: "不应先问" } },
+      cites: { primaryLinks: [], citesEvidenceIds: [] },
+      assess: {
+        stances: [
+          {
+            evidenceId: "e2",
+            stance: "refutes",
+            quote: "人社部从未发文称生育津贴直接打到个人卡",
+            confidence: 0.9,
+          },
+        ],
+      },
+    });
+    const ctx = createStageContext({ case: seeded.current, llm: fake, now: () => AT });
+    await runInvestigator(ctx, {
+      role: "main",
+      budget: 1,
+      seedPivotId: "p-gov",
+      tools: {
+        search: async () => {
+          throw new Error("search should not run");
+        },
+        fetch: async (url) => {
+          if (url !== GOV_URL) throw new Error(`unexpected fetch ${url}`);
+          return page({ finalUrl: GOV_URL, text: GOV_TEXT, title: "人社部通知" });
+        },
+      },
+    });
+    const firstStep = ctx.emitted.find((event) => event.type === "investigator.step");
+    expect(firstStep?.type === "investigator.step" && firstStep.action.target).toBe(GOV_URL);
+    expect(ctx.emitted.some((event) => event.type === "frontier.consumed" && event.pivotId === "p-gov")).toBe(
+      true,
+    );
+    const firstStepAt = ctx.emitted.findIndex((event) => event.type === "investigator.step");
+    const investigateBefore = ctx.emitted
+      .slice(0, firstStepAt)
+      .some((event) => event.type === "llm.called" && event.job === "investigate");
+    expect(investigateBefore).toBe(false);
+    expect(fake.calls.filter((call) => call.job === "investigate")).toHaveLength(0);
+    assertInvariants(ctx.current);
+  });
+
   it("fetch 不可达时 result 写 unreachable", async () => {
     const seeded = seedCase();
     seeded.emit({ type: "evidence.added", evidence: reprintEvidence() });

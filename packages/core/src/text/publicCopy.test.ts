@@ -1,12 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
   applyPublicCopy,
+  ASK_CASE_FALLBACK,
+  CHALLENGE_UNREACHABLE,
   constrainRecommendation,
   leadWithFace,
   looksLikeResearchMemo,
+  OFF_TOPIC_REPLY,
   shapeConclusion,
   scrubPublicText,
 } from "./publicCopy";
+
+describe("追问固定文案", () => {
+  it("三段文案不含训诫与厂商名", () => {
+    const all = [CHALLENGE_UNREACHABLE, ASK_CASE_FALLBACK, OFF_TOPIC_REPLY].join("");
+    expect(all).not.toMatch(/请勿|不要相信|谣言|转发/);
+    expect(all).not.toMatch(/MiniMax|OpenAI|Claude|web_search|web_fetch|GPT/i);
+    expect(CHALLENGE_UNREACHABLE.length).toBeGreaterThan(0);
+    expect(ASK_CASE_FALLBACK.length).toBeGreaterThan(0);
+    expect(OFF_TOPIC_REPLY.length).toBeGreaterThan(0);
+  });
+});
 
 describe("scrubPublicText", () => {
   it("剥掉工具名、角色名、检索商标", () => {
