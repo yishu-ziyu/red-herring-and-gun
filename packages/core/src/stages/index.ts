@@ -4,3 +4,14 @@ export { runDecompose, DECOMPOSE_SYSTEM_PROMPT, type DecomposeInput, type Decomp
 export { runRetrieve, type RetrieveInput, type RetrieveResult } from "./retrieve.js";
 export { runAssess, ASSESS_SYSTEM_PROMPT, quoteIsFaithful, type AssessInput, type AssessResult } from "./assess.js";
 export { runJudge, type JudgeStageInput } from "./judgeStage.js";
+export {
+  runCompose,
+  buildCitationTable,
+  COMPOSE_SYSTEM_PROMPT,
+  type ComposeInput,
+  type ComposeResult,
+  type CitationRef,
+  type CitationTable,
+} from "./compose.js";
+export { type ComposeDraft } from "./compose.schema.js";
+export { runFinalize, type FinalizeInput, type FinalizeResult } from "./finalize.js";
