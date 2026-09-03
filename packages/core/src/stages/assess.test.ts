@@ -194,7 +194,42 @@ describe("runAssess", () => {
     expect(ids).not.toContain("e30");
   });
 
-  it("他命题的证据不喂", async () => {
+  it("c2 assess 可共享 c1 的 A 级证据且本命题证据排前", async () => {
+    const seeded = seedClaimAndEvidence([
+      officialEvidence({
+        id: "eA",
+        provenance: { kind: "search", query: "早安晚安", claimId: "c1" },
+      }),
+      officialEvidence({
+        id: "eC",
+        url: "https://blog.example.com/c2",
+        canonicalUrl: "https://blog.example.com/c2",
+        host: "blog.example.com",
+        excerpt: "c2 材料",
+        text: "c2 材料 官方通报此事不实",
+        tier: "C",
+        provenance: { kind: "search", query: "中毒", claimId: "c2" },
+      }),
+    ]);
+    const extra = createStageContext({ case: seeded.current, llm: createFakeLlm({}), now: () => AT });
+    extra.emit({
+      type: "claims.added",
+      claims: [
+        { id: "c1", text: "点早安晚安图片手机会中毒", type: "fact", checkable: true, order: 0 },
+        { id: "c2", text: "点早安晚安图片手机信息会被盗", type: "fact", checkable: true, order: 1 },
+      ],
+    });
+    const fake = createFakeLlm({ assess: { stances: [] } });
+    const ctx = createStageContext({ case: extra.current, llm: fake, now: () => AT });
+    await runAssess(ctx, { claimIds: ["c2"] });
+    const userContent = fake.calls[0]?.userContent ?? "";
+    expect(userContent).toContain("eA");
+    expect(userContent).toContain("eC");
+    const ids = [...userContent.matchAll(/"id": "(e\w+)"/g)].map((m) => m[1]);
+    expect(ids.indexOf("eC")).toBeLessThan(ids.indexOf("eA"));
+  });
+
+  it("evidenceIds 显式传入时仍排除未列出的证据", async () => {
     const seeded = seedClaimAndEvidence([
       officialEvidence({
         id: "e1",
@@ -216,7 +251,7 @@ describe("runAssess", () => {
     });
     const fake = createFakeLlm({ assess: { stances: [] } });
     const ctx = createStageContext({ case: extra.current, llm: fake, now: () => AT });
-    await runAssess(ctx, { claimIds: ["c1"] });
+    await runAssess(ctx, { claimIds: ["c1"], evidenceIds: ["e1"] });
     const userContent = fake.calls[0]?.userContent ?? "";
     expect(userContent).toContain("e1");
     expect(userContent).not.toContain("e2");
@@ -287,6 +322,7 @@ describe("runAssess", () => {
     await runAssess(ctx, { systemPromptSuffix: "控方：只找反证。" });
     expect(fake.calls[0]?.systemPrompt).toBe(`${ASSESS_SYSTEM_PROMPT}\n\n控方：只找反证。`);
     expect(fake.calls[0]?.systemPrompt).toContain("不是在裁定命题真假");
+    expect(fake.calls[0]?.systemPrompt).toContain("同一主体、同一事件");
     expect(fake.calls[0]?.job).toBe("assess");
   });
 });
