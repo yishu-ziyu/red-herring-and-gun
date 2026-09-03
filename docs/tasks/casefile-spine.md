@@ -295,7 +295,7 @@ Evidence：测试名。
 |---|---|---|
 | 1 | `npm test --workspace=@rhg/core` | 退出码 0；用例总数 ≥ 378 + 7 |
 | 2 | `npm run build --workspace=@rhg/core` | 退出码 0 |
-| 3 | `git status --short`；`git diff spine --stat` | 干净；改动只在 `packages/core/src/runner/`，不含 `stages/index.ts`、`packages/core/src/index.ts`、`mvp/` |
+| 3 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动只在 `packages/core/src/runner/`，不含 `stages/index.ts`、`packages/core/src/index.ts`、`mvp/` |
 | 4 | `rg "process\.env" packages/core/src/runner/` | 0 命中 |
 | 5 | `rg "from \"../../mvp\|from \"mvp" packages/core/src/runner/` | 0 命中 |
 | 6 | 读 `runTurn.ts`：找事件流的来源 | 事件来自 `createStageContext({ onEvent })`，没有自写的 emit 拦截或第二个 reducer |
@@ -340,8 +340,8 @@ Evidence：测试名。
 |---|---|---|
 | 1 | `npm test --workspace=@rhg/core` | 退出码 0；用例总数 ≥ T13 合入时总数 + 14 |
 | 2 | `npm run build --workspace=@rhg/core` | 退出码 0 |
-| 3 | `git status --short`；`git diff spine --stat` | 干净；改动仅在 `packages/core/src/runner/**`、`packages/core/src/stages/investigate.ts`、`packages/core/src/stages/investigate.test.ts`、`packages/core/src/text/publicCopy.ts`（及其测试）；不含 `mvp/`、`casefile/schema.ts`、`stages/index.ts`、`packages/core/src/index.ts` |
-| 4 | `git diff spine -- packages/core/src/stages/investigate.ts` | 只增加 `seedPivotId` 相关逻辑；现有五个停止条件、`decideAction`、`act` 的既有分支没有被改写 |
+| 3 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动仅在 `packages/core/src/runner/**`、`packages/core/src/stages/investigate.ts`、`packages/core/src/stages/investigate.test.ts`、`packages/core/src/text/publicCopy.ts`（及其测试）；不含 `mvp/`、`casefile/schema.ts`、`stages/index.ts`、`packages/core/src/index.ts` |
+| 4 | `git diff spine...HEAD -- packages/core/src/stages/investigate.ts` | 只增加 `seedPivotId` 相关逻辑；现有五个停止条件、`decideAction`、`act` 的既有分支没有被改写 |
 | 5 | `rg "process\.env\|mvp/" packages/core/src/runner/` | 0 命中 |
 | 6 | 读 `route.ts` | 判断顺序与「设计定案」一致：pivotId → URL → 空案 → LLM；LLM 调用在三条确定性分支之后 |
 | 7 | 读 `route.test.ts` | 五类各 ≥1 例；pivotId 与 URL 同时存在 → `pursue_frontier`；空案无 URL → `new_claim` 且 FakeLlm 调用数为 0；LLM 返回非法 JSON → `new_claim` |
@@ -408,7 +408,7 @@ Evidence：测试名；eval run id；对比表（四项 + 新指标）。
 | 1 | `npm test --workspace=@rhg/eval` | 退出码 0；用例总数 ≥ 22 |
 | 2 | `npx tsc --noEmit -p packages/eval` | 退出码 0 |
 | 3 | `npm test --workspace=@rhg/core` | 退出码 0，用例数不少于 spine 上的数字（core 未被改动） |
-| 4 | `git status --short`；`git diff spine --stat` | 干净；改动仅在 `packages/eval/**`、根 `package.json`、`package-lock.json`、`.gitignore`；不含 `mvp/`、`packages/core/` |
+| 4 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动仅在 `packages/eval/**`、根 `package.json`、`package-lock.json`、`.gitignore`；不含 `mvp/`、`packages/core/` |
 | 5 | `sed '/expectedAgentSequence/d' mvp/server/eval/golden.ts \| diff - <(sed '/expectedAgentSequence/d' packages/eval/src/golden.ts)` | 差异为空，或只剩注释行 |
 | 6 | `rg "from \"[./]*mvp\|require\(.*mvp" packages/eval/src` | 0 命中（`mvp/server/eval/baseline.json` 只能作为 CLI 参数字串出现在文档 / 脚本里） |
 | 7 | `rg "process\.env" packages/eval/src` | 只出现在 `run.ts`（或单独 `env.ts`），`score.ts` 里 0 命中 |
