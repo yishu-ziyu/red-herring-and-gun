@@ -637,7 +637,7 @@ Change：
 
 4. **`search/toEvidence.ts` 清 HTML。** 新增 `cleanHtmlText(s)`：先解实体（`&lt; &gt; &amp; &quot; &#39; &apos; &nbsp;` 与 `&#NNN;` / `&#xHH;`），再删标签 `/<[^>]*>/g`，再折叠空白并 trim；对 `title` 与 `excerpt` 各用一次。不引依赖。
 
-5. **结论段带引用。** ADR-007 第 80 行：含真 / 假判断的句子必须带引用。T18 真跑（`T18-live-A-done.png` 第二版）结论「……这一说法属实。」无 `[n]`，只有命题行有。`finalize.ts` 新增 `ensureCitedConclusion`：当 `overall.verdictType ∈ {true, false, mixed_misleading}` 且结论里 `extractCiteNs` 为空时，取引用表里按命题 `order` 的第一条命题的第一个 `n`，追加 `[n]` 到结论末尾（在句号之后）；引用表为空则原样返回。在 `clampMarkersToSources` 之后、`repairLeadSentence` 之前做。
+5. **结论段带引用。** ADR-007 第 80 行：含真 / 假判断的句子必须带引用。T18 真跑（`T18-live-A-done.png` 第二版）结论「……这一说法属实。」无 `[n]`，只有命题行有。`finalize.ts` 新增 `ensureCitedConclusion`：当 `overall.verdictType ∈ {true, false, mixed_misleading}` 且结论里 `extractCiteNs` 为空时，取引用表里按命题 `order` 的第一条命题的第一个 `n`，追加 `[n]` 到结论末尾（在句号之后）；引用表为空则原样返回。在 `repairLeadSentence` **之后**做（首句被整句换成兜底时补上的 `[n]` 才不会一起丢）；`draft === null` 的兜底结论也走它。
 
 Not this：不改 `judge()` 规则；不改 schema；不改 web / server / eval 源码（eval 的 `credibilityAccuracy` 不动，它就是评这个）；不把 face 词表引进 `rules/`。
 
@@ -653,7 +653,7 @@ Not this：不改 `judge()` 规则；不改 schema；不改 web / server / eval 
 | 6 | 读 `judgeConfig.ts` | 八个新常量齐、值如上；文件头一句话说明「可信度不是证据质量」 |
 | 7 | 读 `judgeStage.ts` + 其测试 | 有一例：两命题，一 `checkable:false` 一 `checkable:true` 且被 A 级反驳 → 只有一条 `verdict.updated`，`overall.verdictType === "false"`，`overall.score ≤ 10` |
 | 8 | 读 `assess.test.ts` | 有一例：`checkable:false` 命题不产生 `llm.called`，也没有 `stance.added` |
-| 9 | 读 `finalize.test.ts` | 有一例：`line` 为「转基因食品是有毒的食品。该判断为 false。依据：美国国家科学院…」→ 输出等于「转基因食品是有毒的食品。依据：美国国家科学院…」；另一例裸词「结论 unverified，没有查到」→ 不含 `unverified`；另一例 `checkable:false` 命题无 claimItem 时兜底行含「这是评价或立场」；另一例 overall `true`、draft 结论「这一说法属实。」无 `[n]` 而命题行有 `[1]` → 输出结论以 `[1]` 结尾；对照例 overall `unverified` 时结论不追加 |
+| 9 | 读 `finalize.test.ts` | 有一例：`line` 为「转基因食品是有毒的食品。该判断为 false。依据：美国国家科学院…」→ 输出等于「转基因食品是有毒的食品。依据：美国国家科学院…」；另一例裸词「结论 unverified，没有查到」→ 不含 `unverified`；另一例 `checkable:false` 命题无 claimItem 时兜底行含「这是评价或立场」；另一例 overall `true`、draft 结论「这一说法属实。」无 `[n]` 而命题行有 `[1]` → 输出结论以 `[1]` 结尾；对照例 overall `unverified` 时结论不追加；`draft: null` 且 overall `false` 有引用时兜底结论也以 `[1]` 结尾 |
 | 10 | 读 `compose.ts` | 提示词含 `checkable` 字段与两条新规则原文 |
 | 11 | 读 `toEvidence.test.ts` | 有一例：title `Insect-Resistant&lt;italic&gt;Bt&lt;/italic&gt; Plants &amp; Bees` → `Insect-ResistantBt Plants & Bees`；excerpt 含 `&#39;` / `&nbsp;` / `<b>` 的例子被清干净 |
 | 12 | `rg "toEvidence\|score\|overall" packages/core/src/index.ts packages/core/src/rules/index.ts` | 导出面不变（无新增无删减） |
@@ -856,15 +856,36 @@ Evidence：测试名；截图 / 录屏路径 `packages/web/output/acceptance/T18
 
 ### T19 · 首页与摄入
 
-依赖：T17。
+依赖：T17（T18 合入后在其上改，或基于 T17 分支、T18 合入后 rebase——验收人按合入顺序安排）。
 
-Change：首页：一句话定位 + 输入区（文本 / 粘贴链接自动识别 / 拖拽或粘贴图片，图片本地预览）、最近案件；提交后进入案件视图并立即显示「正在拆题」状态；空态与错误态文案由 `publicCopy` 风格约束（不训人、不写转不转）。
+Change：首页（`pages/HomePage.tsx`）：
 
-Not this：不做营销落地页；不展示「Powered by 厂商名」；不做账号（记任务页）。
+- 一句话定位（现有「贴一句要核的话。先给判断，再拆问题。」保留或微调，衬线）+ 输入区：
+  - 文本 textarea（现有）；粘贴内容含 `https?://` 时下方出一行小字「链接会一起核对」（`copy.ts`），不自动拆成附件；
+  - 拖拽图片到输入区或 `Cmd/Ctrl+V` 粘贴图片：本地 `FileReader` → dataURL 预览缩略（≤ 96px，可点 × 移除），最多 1 张；提交时 `createCase(text, [{ kind: "image", value: dataURL }])`（`api.ts` 的 `Attachment` 已在 T18 加好）；图片 > 2MB 时错误文案「图太大了，换一张小一点的」（`copy.ts`）；
+  - 提交后 `navigate(/cases/<id>)`，案件视图自己显示「正在拆题」（T18 已有），首页不做进度。
+- 最近案件：`listCases()`（api 已有）取前 5 条，每条一行：首条用户消息前 24 字 + 相对时间（「3 分钟前」）；点击进案件；空态「还没有案子，贴一句试试」（`copy.ts`）。
+- 错误态：429 → 「今天查得太多了，明天再来」；网络错误 → 「没连上，再试一次」；均 `copy.ts`。
 
-Evaluator：验收人真实浏览器：文本 / 链接 / 图片三种输入各走一次到案件视图；375px 截图。
+Not this：不做营销落地页；不展示「Powered by 厂商名」；不做账号（记任务页）；不改 server（attachments 与 listCases 都已存在）；不做多图。
 
-Evidence：截图路径。
+验收清单（checker 在 T18 合入后的 `spine` 上执行；每条只答 PASS / FAIL + 一行证据）：
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 1 | `npm test --workspace=@rhg/web` | 退出 0；用例数 ≥ T18 合入时 + 6 |
+| 2 | `npm run build --workspace=@rhg/web` | 退出 0 |
+| 3 | `git diff --stat spine...HEAD` | 仅 `packages/web/**` |
+| 4 | 读测试 | 有：粘贴含链接文本 → 提示行出现；粘贴图片 → 预览出现且 `createCase` 收到 `attachments[0].kind === "image"`；>2MB 图 → 错误文案、不提交；429 → 配额文案；空列表 → 空态文案；最近案件点击 → navigate |
+| 5 | 浏览器真后端：首页输入一句话提交 | 落到 `/cases/<id>` 且 3s 内出现「正在拆题」；截图 `T19-text.png` |
+| 6 | 浏览器真后端：粘贴一张含文字 png + 一句「这图说的是真的吗」提交 | 案件页用户消息有缩略图；60s 内有命题或「这张图的来源」芯片；截图 `T19-image.png` |
+| 7 | 浏览器 375×812：首页 + 提交后案件页 | 无横滚；截图 `T19-mobile.png` |
+| 8 | 浏览器：首页粘贴「看看这个 https://www.gov.cn/zhengce/ 说的对不对」 | 提示行出现；提交后案件正常建立 |
+| 9 | `rg "#[0-9a-fA-F]{3,8}\b\|rgba\?(\|hsla\?(\|font-family" packages/web/src --glob '!tokens.css' --glob '!*.test.*'`；`rg ": any\b\|console\.log" packages/web/src` | 均 0 命中 |
+
+Evaluator：验收人真实浏览器三种输入各走一次。
+
+Evidence：截图路径；commit。
 
 ---
 

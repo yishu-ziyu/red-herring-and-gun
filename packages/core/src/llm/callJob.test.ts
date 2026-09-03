@@ -136,4 +136,52 @@ describe("callJob hedge", () => {
     }
     expect(result.attempts[0]?.error).toMatch(/429/);
   });
+
+  it("fetch failed 同候选重试一次，attempts 两条同 provider/model", async () => {
+    vi.useFakeTimers();
+    let hits = 0;
+    const dispatch: JobDispatch = async ({ candidate }) => {
+      hits += 1;
+      if (hits === 1) throw new Error("fetch failed");
+      return { text: '{"ok":true}', model: `${candidate.provider}:${candidate.model}` };
+    };
+    const pending = callJob(
+      baseParams(dispatch, { env: { RHG_MODEL_ASSESS: "minimax:MiniMax-M3:low" } }),
+    );
+    await vi.advanceTimersByTimeAsync(400);
+    const result = await pending;
+    expect(result.output).toEqual({ ok: true });
+    expect(result.attempts).toHaveLength(2);
+    expect(result.attempts[0]).toMatchObject({ provider: "minimax", model: "MiniMax-M3", ok: false });
+    expect(result.attempts[1]).toMatchObject({ provider: "minimax", model: "MiniMax-M3", ok: true });
+  });
+
+  it("4xx 不重试：第二候选 provider 不同", async () => {
+    const dispatch: JobDispatch = async ({ candidate }) => {
+      if (candidate.provider === "minimax") throw new Error("StepFun API 调用失败：400 bad request");
+      return { text: '{"ok":true}', model: "stepfun:step-3.7-flash" };
+    };
+    const result = await callJob(baseParams(dispatch));
+    expect(result.attempts).toHaveLength(2);
+    expect(result.attempts[0]).toMatchObject({ provider: "minimax", ok: false });
+    expect(result.attempts[1]).toMatchObject({ provider: "stepfun", ok: true });
+    expect(result.attempts[0]?.provider).not.toBe(result.attempts[1]?.provider);
+  });
+
+  it("deadline 只剩 3s 时 fetch failed 不重试", async () => {
+    const dispatch = vi.fn<JobDispatch>(async () => {
+      throw new Error("fetch failed");
+    });
+    await expect(
+      callJob(
+        baseParams(dispatch, {
+          deadlineMs: Date.now() + 3_000,
+          env: { RHG_MODEL_ASSESS: "minimax:MiniMax-M3:low" },
+        }),
+      ),
+    ).rejects.toMatchObject({
+      attempts: [expect.objectContaining({ provider: "minimax", ok: false, error: expect.stringMatching(/fetch failed/) })],
+    });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
 });
