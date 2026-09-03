@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { retrieveAtomSources, type SearchProgressEvent } from "./searchProviders";
-import { toPublicStreamEvent } from "../handlers";
+import { toPublicStreamEvent } from "../text/toPublicStreamEvent";
 
 const ATOM = "甘南所有景点一律免费";
 

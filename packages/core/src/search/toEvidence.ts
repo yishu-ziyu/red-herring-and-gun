@@ -11,7 +11,6 @@ export const TRACKING_QUERY_PARAMS: readonly string[] = [
   "utm_content",
   "utm_id",
   "spm",
-  "from",
   "share_token",
 ];
 
