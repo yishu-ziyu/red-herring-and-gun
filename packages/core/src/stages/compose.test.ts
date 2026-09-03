@@ -187,4 +187,13 @@ describe("runCompose", () => {
       expect.objectContaining({ stage: COMPOSE_JOB, outcome: "failed-open" }),
     ]);
   });
+
+  it("system prompt 含 claimId 与不得改变", async () => {
+    const fake = createFakeLlm({ compose: okDraft });
+    const ctx = twoClaimCtx(fake);
+    await runCompose(ctx, {});
+    const prompt = fake.calls[0]?.systemPrompt ?? "";
+    expect(prompt).toContain("claimId");
+    expect(prompt).toContain("不得改变");
+  });
 });

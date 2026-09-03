@@ -1,5 +1,5 @@
 import { Value } from "typebox/value";
-import type { Case, ClaimVerdict, Pivot } from "../casefile/schema.js";
+import type { Case, ClaimVerdict, Evidence, Pivot, Stance } from "../casefile/schema.js";
 import type { StageContext } from "./context.js";
 import { ComposeOutputSchema, type ComposeDraft } from "./compose.schema.js";
 
@@ -9,7 +9,13 @@ export const COMPOSE_SYSTEM_PROMPT = `第一句必须直接回答原句，例如
 
 每条命题写成一行。判决为 true、false、partial 的行至少要有一个 [n] 引用；只能使用输入里给出的 [n]，不要自编编号，不要写 URL。
 
-不要写工具名、厂商名、模型名。不要写「建议」或「提示」段。不要用「大量」「很多」「不少」「许多」「众多」这类模糊量词。引用标记写在正文里，形如 [1]。`;
+不要写工具名、厂商名、模型名。不要写「建议」或「提示」段。不要用「大量」「很多」「不少」「许多」「众多」这类模糊量词。引用标记写在正文里，形如 [1]。
+
+你在把已经完成的核对结果写成给用户看的回答。每条命题的判决已经给定，你只负责把它说清楚，不得改变、弱化或质疑判决方向。
+
+true、false、partial 的行要说明依据是什么，并引 [n]。unverified 行只说没查到什么，不要猜测，不要替原句补理由。contested 行要把两边各说一句，各自带 [n]。
+
+输出 JSON：{ "conclusion": string, "claimItems": [{ "claimId": string, "line": string }] }。claimId 只能用输入里出现的，每条命题恰好一行。`;
 
 export type ComposeInput = {
   systemPromptSuffix?: string;
@@ -108,31 +114,51 @@ export async function runCompose(ctx: StageContext, input: ComposeInput = {}): P
   return { draft: output };
 }
 
+type CiteLookup = {
+  stanceById: Map<string, Stance>;
+  evidenceById: Map<string, Evidence>;
+};
+
 function buildUserContent(c: Case, table: CitationTable): string {
+  const lookup: CiteLookup = {
+    stanceById: new Map(c.stances.map((item) => [item.id, item])),
+    evidenceById: new Map(c.evidence.map((item) => [item.id, item])),
+  };
   const payload = {
     原句: c.text,
-    命题: c.claims.map((claim) => promptClaim(c, claim.id, claim.text, table)),
+    命题: c.claims.map((claim) => promptClaim(c, claim.id, claim.text, table, lookup)),
     frontier: frontierSummary(c),
   };
   return JSON.stringify(payload, null, 2);
 }
 
-function promptClaim(c: Case, claimId: string, text: string, table: CitationTable): PromptClaim {
+function promptClaim(
+  c: Case,
+  claimId: string,
+  text: string,
+  table: CitationTable,
+  lookup: CiteLookup,
+): PromptClaim {
   const verdict = c.verdicts.find((item) => item.claimId === claimId);
   const row: PromptClaim = {
     claimId,
     text,
     verdict: verdict?.verdict ?? "unverified",
     rule: verdict?.rule ?? "",
-    citations: promptCites(c, claimId, table.nsByClaim.get(claimId) ?? [], table),
+    citations: promptCites(c, claimId, table.nsByClaim.get(claimId) ?? [], table, lookup),
   };
   if (verdict?.tally) row.tally = { ...verdict.tally };
   return row;
 }
 
-function promptCites(c: Case, claimId: string, ns: number[], table: CitationTable): PromptCite[] {
-  const stanceById = new Map(c.stances.map((item) => [item.id, item]));
-  const evidenceById = new Map(c.evidence.map((item) => [item.id, item]));
+function promptCites(
+  c: Case,
+  claimId: string,
+  ns: number[],
+  table: CitationTable,
+  lookup: CiteLookup,
+): PromptCite[] {
+  const { stanceById, evidenceById } = lookup;
   const verdict = c.verdicts.find((item) => item.claimId === claimId);
   const out: PromptCite[] = [];
   for (const n of ns) {
