@@ -1,6 +1,6 @@
 {
   "name": "done",
-  "cutAt": 34,
+  "cutAt": 40,
   "events": [
     {
       "type": "case.created",
@@ -73,6 +73,13 @@
           "type": "fact",
           "checkable": true,
           "order": 0
+        },
+        {
+          "id": "c2",
+          "text": "这样才公平",
+          "type": "value",
+          "checkable": false,
+          "order": 1
         }
       ],
       "seq": 9,
@@ -324,7 +331,7 @@
     {
       "type": "report.finalized",
       "report": {
-        "conclusion": "生育津贴不会直接打到个人卡里，仍由单位申领。",
+        "conclusion": "生育津贴不会直接打到个人卡里，仍由单位申领。[1]",
         "claimItems": [
           {
             "claimId": "c1",
@@ -332,6 +339,11 @@
             "citations": [
               1
             ]
+          },
+          {
+            "claimId": "c2",
+            "line": "这样才公平：立场表述，不适用真/假判断。",
+            "citations": []
           }
         ],
         "citations": [
@@ -357,17 +369,83 @@
       "message": {
         "id": "m2",
         "role": "assistant",
-        "text": "生育津贴不会直接打到个人卡里，仍由单位申领。",
+        "text": "生育津贴不会直接打到个人卡里，仍由单位申领。[1]",
         "at": "2026-09-03T12:00:00.000Z"
       },
       "seq": 33,
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
+      "type": "evidence.cites",
+      "from": "e2",
+      "to": "e1",
+      "seq": 34,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "evidence.cites",
+      "from": "e3",
+      "to": "e1",
+      "seq": 35,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "evidence.updated",
+      "id": "e1",
+      "clusterId": "cl1",
+      "seq": 36,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "evidence.updated",
+      "id": "e2",
+      "clusterId": "cl1",
+      "seq": 37,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "evidence.updated",
+      "id": "e3",
+      "clusterId": "cl1",
+      "seq": 38,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "frontier.added",
+      "pivots": [
+        {
+          "id": "p-link",
+          "kind": "link",
+          "value": "https://www.gov.cn/zhengce/allowance",
+          "why": "原文页",
+          "expectedValue": 3,
+          "depth": 1
+        },
+        {
+          "id": "p-entity",
+          "kind": "entity",
+          "value": "人力资源社会保障部",
+          "why": "当事方",
+          "expectedValue": 2,
+          "depth": 1
+        },
+        {
+          "id": "p-image",
+          "kind": "image",
+          "value": "https://example.com/shot.png",
+          "why": "配图",
+          "expectedValue": 1,
+          "depth": 1
+        }
+      ],
+      "seq": 39,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
       "type": "turn.finished",
       "turnId": "t1",
       "reason": "done",
-      "seq": 34,
+      "seq": 40,
       "at": "2026-09-03T12:00:00.000Z"
     }
   ]
