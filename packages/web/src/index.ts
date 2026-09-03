@@ -1,1 +1,1 @@
-export const APP_TITLE = "红鲱鱼与枪";
+export { APP_TITLE } from "./lib/copy.js";

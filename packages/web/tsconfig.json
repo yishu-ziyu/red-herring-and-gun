@@ -3,9 +3,17 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "noEmit": true,
     "declaration": false,
-    "sourceMap": false
+    "sourceMap": false,
+    "resolveJsonModule": true,
+    "types": ["vite/client"],
+    "paths": {
+      "@rhg/core/casefile": ["../core/src/casefile/index.ts"],
+      "@rhg/core/publicCopy": ["../core/src/text/publicCopy.ts"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "fixtures/*.json"]
 }
