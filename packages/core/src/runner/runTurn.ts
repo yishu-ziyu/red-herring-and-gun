@@ -4,7 +4,7 @@ import type { SearchProviderFn } from "../search/searchAll.js";
 import { runAssess } from "../stages/assess.js";
 import { runCompose } from "../stages/compose.js";
 import type { ComposeDraft } from "../stages/compose.schema.js";
-import { createStageContext, type LlmJob } from "../stages/context.js";
+import { createStageContext, type LlmJob, type StageContext } from "../stages/context.js";
 import { runCrossExam, type ModelChoice } from "../stages/crossExam.js";
 import { runDecompose } from "../stages/decompose.js";
 import { runFinalize } from "../stages/finalize.js";
@@ -12,6 +12,8 @@ import { runIntake, type IntakeAttachment, type IntakeTools } from "../stages/in
 import { runInvestigator, type InvestigatorTools } from "../stages/investigate.js";
 import { runJudge } from "../stages/judgeStage.js";
 import { runRetrieve } from "../stages/retrieve.js";
+import { routeMessage, type RouteKind } from "./route.js";
+import { runAskCase, runChallenge, runOffTopic, runPursueFrontier } from "./turns.js";
 
 export type RunTurnDeps = {
   llm: LlmJob;
@@ -24,8 +26,8 @@ export type RunTurnDeps = {
 
 export type RunTurnInput = {
   case: Case;
-  message: { text: string; attachments?: IntakeAttachment[] };
-  route: "new_claim" | "pursue_frontier" | "ask_case" | "challenge" | "off_topic";
+  message: { text: string; attachments?: IntakeAttachment[]; pivotId?: string };
+  route?: RouteKind;
   deps: RunTurnDeps;
   budget?: { totalMs?: number; composeReserveMs?: number };
   signal?: AbortSignal;
@@ -98,7 +100,6 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
   const turnId = `t${ctx.current.turns.length + 1}`;
   let reason: TurnReason = "done";
   let finished = false;
-  let draft: ComposeDraft | null = null;
 
   const finish = (next: TurnReason): void => {
     if (finished) return;
@@ -128,6 +129,18 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
   };
 
   ctx.emit({ type: "turn.started", turnId });
+
+  const route =
+    input.route ??
+    (await routeMessage(
+      ctx.current,
+      {
+        text: input.message.text,
+        ...(input.message.pivotId ? { pivotId: input.message.pivotId } : {}),
+      },
+      ctx.llm,
+    ));
+
   ctx.emit({
     type: "message.added",
     message: {
@@ -135,59 +148,12 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
       role: "user",
       text: input.message.text,
       at: ctx.now(),
-      route: input.route,
+      route,
       ...(input.message.attachments && input.message.attachments.length > 0
         ? { attachments: input.message.attachments }
         : {}),
     },
   });
-
-  if (input.route !== "new_claim") {
-    ctx.emit({ type: "error", stage: "route", message: "该路由尚未实现" });
-    finish("error");
-    return;
-  }
-
-  const goCompose = async (): Promise<void> => {
-    if (aborted()) {
-      finish("aborted");
-      return;
-    }
-    try {
-      draft = (await runCompose(ctx, {})).draft;
-      assertInvariants(ctx.current);
-    } catch (error) {
-      if (aborted()) {
-        finish("aborted");
-        return;
-      }
-      ctx.emit({ type: "error", stage: "compose", message: errorMessage(error) });
-      markError();
-      draft = null;
-    }
-    if (aborted()) {
-      finish("aborted");
-      return;
-    }
-    try {
-      const { report } = await runFinalize(ctx, { draft });
-      assertInvariants(ctx.current);
-      ctx.emit({
-        type: "message.added",
-        message: {
-          id: `m${ctx.current.messages.length + 1}`,
-          role: "assistant",
-          text: report.conclusion,
-          at: ctx.now(),
-        },
-      });
-    } catch (error) {
-      ctx.emit({ type: "error", stage: "finalize", message: errorMessage(error) });
-      finish("error");
-      return;
-    }
-    finish(reason);
-  };
 
   const investigatorTools: InvestigatorTools = {
     search: deps.tools.search,
@@ -195,6 +161,58 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
     ...(deps.tools.reverseImage ? { reverseImage: deps.tools.reverseImage } : {}),
     ...(deps.tools.recall ? { recall: deps.tools.recall } : {}),
   };
+
+  const goCompose = (): Promise<void> =>
+    composeAndFinish({
+      ctx,
+      aborted,
+      finish,
+      markError,
+      reason: () => reason,
+    });
+
+  if (route !== "new_claim") {
+    try {
+      if (route === "pursue_frontier") {
+        const result = await runPursueFrontier(ctx, {
+          pivotId: input.message.pivotId,
+          tools: investigatorTools,
+          deadline,
+        });
+        if (result === "error") {
+          finish("error");
+          return;
+        }
+        await goCompose();
+        return;
+      }
+      if (route === "challenge") {
+        const result = await runChallenge(ctx, { text: input.message.text, fetch: deps.tools.fetch });
+        if (result === "replied") {
+          finish("done");
+          return;
+        }
+        await goCompose();
+        return;
+      }
+      if (route === "ask_case") {
+        await runAskCase(ctx, { text: input.message.text });
+        finish("done");
+        return;
+      }
+      runOffTopic(ctx);
+      finish("done");
+      return;
+    } catch (error) {
+      if (aborted()) {
+        finish("aborted");
+        return;
+      }
+      ctx.emit({ type: "error", stage: "runner", message: errorMessage(error) });
+      finish("error");
+      return;
+    }
+  }
 
   let claimSource = input.message.text;
   const steps: { stage: StageName; wrap: boolean; run: () => Promise<void> }[] = [
@@ -309,6 +327,55 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function composeAndFinish(input: {
+  ctx: StageContext;
+  aborted: () => boolean;
+  finish: (reason: TurnReason) => void;
+  markError: () => void;
+  reason: () => TurnReason;
+}): Promise<void> {
+  const { ctx, aborted, finish, markError } = input;
+  if (aborted()) {
+    finish("aborted");
+    return;
+  }
+  let draft: ComposeDraft | null = null;
+  try {
+    draft = (await runCompose(ctx, {})).draft;
+    assertInvariants(ctx.current);
+  } catch (error) {
+    if (aborted()) {
+      finish("aborted");
+      return;
+    }
+    ctx.emit({ type: "error", stage: "compose", message: errorMessage(error) });
+    markError();
+    draft = null;
+  }
+  if (aborted()) {
+    finish("aborted");
+    return;
+  }
+  try {
+    const { report } = await runFinalize(ctx, { draft });
+    assertInvariants(ctx.current);
+    ctx.emit({
+      type: "message.added",
+      message: {
+        id: `m${ctx.current.messages.length + 1}`,
+        role: "assistant",
+        text: report.conclusion,
+        at: ctx.now(),
+      },
+    });
+  } catch (error) {
+    ctx.emit({ type: "error", stage: "finalize", message: errorMessage(error) });
+    finish("error");
+    return;
+  }
+  finish(input.reason());
 }
 
 class EventStream implements AsyncIterable<CaseEvent> {
