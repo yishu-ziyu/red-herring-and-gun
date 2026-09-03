@@ -18,7 +18,8 @@ export type CallJobParams = {
 };
 
 export type CallJobResult = {
-  output: string;
+  /** 已 JSON.parse 的模型输出；调用方用 typebox 按工单 schema 校验后再用 */
+  output: unknown;
   model: string;
   latencyMs: number;
   reasoning?: string;
@@ -38,12 +39,6 @@ function appendSchema(systemPrompt: string, responseSchema: object | undefined):
   if (responseSchema === undefined) return systemPrompt;
   // 云厂商 HTTP 适配不消费 responseSchema，只能附到 prompt；Codex 仍走 --output-schema。
   return `${systemPrompt}\n\n# RESPONSE SCHEMA\n${JSON.stringify(responseSchema)}`;
-}
-
-function outputText(value: unknown): string {
-  if (typeof value === "string") return value;
-  const text = JSON.stringify(value);
-  return typeof text === "string" ? text : "";
 }
 
 export async function callJob({
@@ -70,7 +65,7 @@ export async function callJob({
       modelOverride,
     });
     return {
-      output: outputText(result.output),
+      output: result.output,
       model: result.model,
       latencyMs: result.latencyMs,
       ...(result.reasoning ? { reasoning: result.reasoning } : {}),
