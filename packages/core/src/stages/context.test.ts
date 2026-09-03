@@ -13,6 +13,15 @@ describe("createStageContext", () => {
     expect(ctx.emitted.map((e) => e.type)).toEqual(["stage.started"]);
   });
 
+  it("onEvent 按 emit 顺序同步收到已折叠事件", () => {
+    const { case: c } = createCase({ id: "c1", text: "原句" });
+    const seen: string[] = [];
+    const ctx = createStageContext({ case: c, llm: createFakeLlm({}), onEvent: (e) => seen.push(`${e.type}@${e.seq}`) });
+    ctx.emit({ type: "stage.started", stage: "decompose" });
+    ctx.emit({ type: "stage.finished", stage: "decompose", outcome: "ok" });
+    expect(seen).toEqual(["stage.started@2", "stage.finished@3"]);
+  });
+
   it("非法事件在 emit 处抛错，current 不变", () => {
     const { case: c } = createCase({ id: "c1", text: "原句" });
     const ctx = createStageContext({ case: c, llm: createFakeLlm({}) });
