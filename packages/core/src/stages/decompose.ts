@@ -39,6 +39,8 @@ export const DECOMPOSE_SYSTEM_PROMPT = [
   "5. 拆解不得删除原句的限定条件（「某种情况下 X」不得拆成「X」）。",
   "6. 不得产出无独立含义的碎片；能合并进同一判断的不要拆成多条。",
   "7. 转述结构「X 宣布 / 表示 / 称 / 发文说 Y」是一条命题，不拆成「X 宣布了某事」+「Y」；text 写成带来源的完整句（如「国家医保局宣布：2026 年起生育津贴直接发个人」），checkable 按 Y 判。命题文本里不得出现「该事项 / 该内容 / 上述 / 某事」这类指代或占位词，必须自足。",
+  "8. 只拆断言（说话人要你相信的、别人可能反对的事），不拆前提（断言成立所依赖的背景、条件、场景）。背景事实、时间条件、逾期/需在某时完成，都不要单独成条。若 B 以 A 为前提（A 不成立则 B 无意义），只出断言。反例：『孩子打疫苗后发烧，说明疫苗导致了自闭症』只出『疫苗导致自闭症』，不出『孩子打疫苗后发烧』；『群里那张P图配的侮辱性文字说的是真的』只出『那段侮辱性文字说的是真的』，不出『群里有一张P图』『P图配有文字』；『扫码可领补贴，逾期视为弃权』只出『扫码可领 2024 年个人劳动补贴』，不出『需在逾期前完成』。",
+  "9. 同一事件的多个描述侧面合成一条，不要把「被拉去销毁」和「装船运走」拆成两条。反例：『电动车都被集中拉去国外销毁了，一批一批装船运走』是一条：『电动车被集中装船运往国外销毁』。",
   "",
   "【可否核对 / type 与 checkable — 强制】",
   "对每个命题给出 checkable（是否可核对）与 type（类型）。",
@@ -141,6 +143,11 @@ function toClaims(ctx: StageContext, drafts: DraftClaim[]): Claim[] {
 
 const FRAGMENT_TAIL = /(宣布|表示|称|指出|发布|说|透露|回应|通报|认为|强调)(了)?$/;
 const FRAGMENT_PLACEHOLDER = /某事|某些内容|某项|某种|该事项|该内容|该政策|上述|前述/;
+const HEARSAY_PREFIX = /^(听说|据说|网传|有人说|朋友圈说|群里说|听人说|据传)[，,：:、\s]*/;
+
+function stripHearsayPrefix(text: string): string {
+  return text.replace(HEARSAY_PREFIX, "").trim();
+}
 
 // ponytail: 正则启发，上限是误杀「X 已表示」类完整句；要改成句法分析再换实现。
 export function isFragmentClaim(text: string): boolean {
@@ -186,14 +193,18 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
     return failOpen(ctx, input.claimSource);
   }
 
-  const drafts: DraftClaim[] = parsed.value.claims.map((item) => {
+  const drafts: DraftClaim[] = parsed.value.claims.flatMap((item) => {
+    const text = stripHearsayPrefix(item.text);
+    if (!text) return [];
     const span = keepSpan(item.span, input.claimSource);
-    return {
-      text: item.text,
-      type: item.type,
-      checkable: item.checkable,
-      ...(span ? { span } : {}),
-    };
+    return [
+      {
+        text,
+        type: item.type,
+        checkable: item.checkable,
+        ...(span ? { span } : {}),
+      },
+    ];
   });
   const rawTexts = drafts.map((draft) => draft.text);
 

@@ -55,6 +55,8 @@ const DEFAULT_HEDGE_MS = 8_000;
 const COMPOSE_HEDGE_MS = 15_000;
 const DEADLINE_ABORT_SLACK_MS = 500;
 const DEADLINE_TOO_CLOSE_MS = 3_000;
+const RETRY_BACKOFF_MS = 400;
+const NETWORK_ERROR_RE = /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|socket hang up|UND_ERR_/i;
 
 function toRouterEnv(env: LlmEnv): Record<string, string> {
   const out: Record<string, string> = {};
@@ -135,6 +137,7 @@ export async function callJob({
   };
 
   const flying: Slot[] = [];
+  const retried = new Set<number>();
   let nextIndex = 0;
   let winner: CallJobResult | undefined;
   let externalAbort = false;
@@ -206,6 +209,17 @@ export async function callJob({
           error: message.slice(0, 300),
         });
         if (externalAbort || signal?.aborted) return;
+        const roomForRetry =
+          deadlineMs === undefined || deadlineMs - Date.now() >= DEADLINE_TOO_CLOSE_MS + RETRY_BACKOFF_MS;
+        if (NETWORK_ERROR_RE.test(message) && !retried.has(index) && roomForRetry) {
+          retried.add(index);
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, RETRY_BACKOFF_MS);
+          });
+          if (externalAbort || signal?.aborted || winner) return;
+          launch(index);
+          return;
+        }
         if (!winner && nextIndex < candidates.length) {
           const follow = nextIndex;
           nextIndex += 1;
