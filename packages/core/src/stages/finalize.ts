@@ -44,12 +44,14 @@ function buildFallbackReport(ctx: StageContext, table: CitationTable): Report {
     claimId: claim.id,
     line: scrubJargon(fallbackLine(ctx, claim, table)),
   }));
-  return assembleReport(ctx, scrubJargon(fallbackConclusion(ctx)), items, table);
+  const conclusion = ensureCitedConclusion(ctx, fallbackConclusion(ctx), table);
+  return assembleReport(ctx, scrubJargon(conclusion), items, table);
 }
 
 function repairDraft(ctx: StageContext, draft: ComposeDraft, table: CitationTable): Report {
   const repaired = repairCitationMarkers(ctx, draft, table);
-  let conclusion = repairLeadSentence(repaired.conclusion, ctx);
+  // 先修首句再补引用：首句被整句替换成兜底时，补上的 [n] 才不会一起丢
+  let conclusion = ensureCitedConclusion(ctx, repairLeadSentence(repaired.conclusion, ctx), table);
   let items = repaired.items.map((item) => ({ ...item, line: scrubJargon(item.line) }));
   conclusion = scrubJargon(conclusion);
   emitFuzzyQuantifiers(ctx, conclusion, items);
@@ -95,7 +97,30 @@ function repairLeadSentence(conclusion: string, ctx: StageContext): string {
 
 /** 4. 工具名 / 厂商名 / 模型名 / 案外 URL */
 function scrubJargon(text: string): string {
-  return stripVendorTokens(scrubPublicText(stripHttpUrls(text)));
+  return stripVendorTokens(scrubPublicText(stripHttpUrls(stripVerdictEnums(text))));
+}
+
+function stripVerdictEnums(text: string): string {
+  const framed =
+    /(该|此|本|这个|这一|以上)?(判断|判决|结论|命题|说法)(为|是|：|:)\s*[“"'「]?(true|false|partial|unverified|contested|mixed_misleading)[”"'」]?\s*[。．.;；,，]?/gi;
+  const bare = /\b(true|false|partial|unverified|contested|mixed_misleading)\b/gi;
+  return collapseGaps(text.replace(framed, "").replace(bare, ""));
+}
+
+/** overall 已有真/假判断但结论漏了 [n] 时，按命题 order 补第一条引用。 */
+function ensureCitedConclusion(ctx: StageContext, conclusion: string, table: CitationTable): string {
+  const verdictType = ctx.current.overall?.verdictType;
+  if (verdictType !== "true" && verdictType !== "false" && verdictType !== "mixed_misleading") {
+    return conclusion;
+  }
+  if (extractCiteNs(conclusion).length > 0) return conclusion;
+  if (table.citations.length === 0) return conclusion;
+  const claims = ctx.current.claims.slice().sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+  for (const claim of claims) {
+    const first = (table.nsByClaim.get(claim.id) ?? [])[0];
+    if (first !== undefined) return `${conclusion}[${first}]`;
+  }
+  return conclusion;
 }
 
 function stripHttpUrls(text: string): string {
@@ -150,6 +175,7 @@ function fillMissingClaims(ctx: StageContext, items: ClaimLine[], table: Citatio
 
 /** 7. 确定性兜底句 */
 function fallbackLine(ctx: StageContext, claim: Claim, table: CitationTable): string {
+  if (!claim.checkable) return `${claim.text}：这是评价或立场，不做真假判断。`;
   const verdict = ctx.current.verdicts.find((item) => item.claimId === claim.id)?.verdict ?? "unverified";
   const marks = (table.nsByClaim.get(claim.id) ?? []).map((n) => `[${n}]`).join("");
   switch (verdict) {

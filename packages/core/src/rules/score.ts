@@ -11,70 +11,92 @@ export type ScoreInput = {
 
 export type ScoreResult = Pick<Overall, "score" | "breakdown">;
 
+type BreakdownRow = Overall["breakdown"][number];
+
 /**
- * 0–100 可加分。精神来自 T05 sourceCredibility（按来源层级给可读加分），
- * 不用 credibilityScore 的谣言关键词 / log₂ 黑盒。
- *
- * breakdown 各项之和恒等于 score。可以有一项 base。
+ * 分数是原句可信度 0–100，不是证据质量；一句话的可信度不高于它最弱的一环。
  */
 export function score(input: ScoreInput, config: JudgeConfig = defaultJudgeConfig): ScoreResult {
+  const checkable = input.claims.filter((claim) => claim.checkable);
+  if (checkable.length === 0) {
+    return {
+      score: 50,
+      breakdown: [{ key: "none", label: "没有可核对的命题", value: 50 }],
+    };
+  }
+
   const verdictByClaim = new Map(input.verdicts.map((item) => [item.claimId, item]));
   const stanceById = new Map(input.stances.map((item) => [item.id, item]));
   const evidenceById = new Map(input.evidence.map((item) => [item.id, item]));
+  const n = checkable.length;
+  const ranked = checkable.slice().sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 
-  const claimCount = input.claims.length;
-  let withBasis = 0;
-  let unverifiedCount = 0;
-  const clusterKeys = new Set<string>();
-  let basisEvidence = 0;
-  let tierA = 0;
-  const countedEvidence = new Set<string>();
-
-  for (const claim of input.claims) {
-    const verdict = verdictByClaim.get(claim.id);
-    if (!verdict || verdict.verdict === "unverified") unverifiedCount += 1;
-    if (!verdict || verdict.basis.length === 0) continue;
-    withBasis += 1;
-    for (const stanceId of verdict.basis) {
-      const stance = stanceById.get(stanceId);
-      if (!stance) continue;
-      const evidence = evidenceById.get(stance.evidenceId);
-      if (!evidence) continue;
-      clusterKeys.add(evidence.clusterId ?? evidence.id);
-      if (countedEvidence.has(evidence.id)) continue;
-      countedEvidence.add(evidence.id);
-      basisEvidence += 1;
-      if (evidence.tier === "A") tierA += 1;
-    }
+  const ptsList: number[] = [];
+  const breakdown: BreakdownRow[] = [];
+  for (const claim of ranked) {
+    const pts = claimPts(verdictByClaim.get(claim.id), stanceById, evidenceById, config);
+    ptsList.push(pts);
+    breakdown.push({
+      key: `claim:${claim.id}`,
+      label: `命题 ${claim.order + 1}`,
+      value: Math.round(pts / (2 * n)),
+    });
   }
 
-  const coverage =
-    claimCount === 0 ? 0 : Math.round((withBasis * config.SCORE_COVERAGE_MAX) / claimCount);
-  const clusterPts = Math.round(
-    (Math.min(clusterKeys.size, config.SCORE_CLUSTER_CAP) * config.SCORE_CLUSTER_MAX) /
-      config.SCORE_CLUSTER_CAP,
-  );
-  const tierAPts =
-    basisEvidence === 0 ? 0 : Math.round((tierA * config.SCORE_TIER_A_MAX) / basisEvidence);
-  const unverifiedPts =
-    claimCount === 0
-      ? 0
-      : -Math.round((unverifiedCount * config.SCORE_UNVERIFIED_PENALTY) / claimCount);
-  const contestedPts = input.contested ? -config.SCORE_CONTESTED_PENALTY : 0;
+  const minPts = Math.min(...ptsList);
+  breakdown.push({ key: "weakest", label: "最弱一环", value: Math.round(minPts / 2) });
+  if (input.contested) {
+    breakdown.push({ key: "contested", label: "争议", value: -config.SCORE_CONTESTED_PENALTY });
+  }
 
-  const breakdown = [
-    { key: "base", label: "起点", value: config.SCORE_BASE },
-    { key: "coverage", label: "依据覆盖率", value: coverage },
-    { key: "clusters", label: "独立簇", value: clusterPts },
-    { key: "tierA", label: "A 级占比", value: tierAPts },
-    { key: "unverified", label: "未核占比", value: unverifiedPts },
-    { key: "contested", label: "争议", value: contestedPts },
-  ];
   const raw = breakdown.reduce((sum, row) => sum + row.value, 0);
   const clamped = Math.max(0, Math.min(100, raw));
   if (clamped !== raw) {
     breakdown.push({ key: "clamp", label: "裁剪", value: clamped - raw });
   }
-
   return { score: clamped, breakdown };
+}
+
+function claimPts(
+  verdict: ClaimVerdict | undefined,
+  stanceById: Map<string, Stance>,
+  evidenceById: Map<string, Evidence>,
+  config: JudgeConfig,
+): number {
+  const kind = verdict?.verdict ?? "unverified";
+  let p: number;
+  if (kind === "true") {
+    p = config.SCORE_TRUE_BASE + config.SCORE_TRUE_SPAN * strength(verdict, stanceById, evidenceById, config);
+  } else if (kind === "partial" || kind === "contested") {
+    p = config.SCORE_MID;
+  } else if (kind === "false") {
+    const s = strength(verdict, stanceById, evidenceById, config);
+    p = config.SCORE_FALSE_BASE - config.SCORE_FALSE_BASE * s;
+  } else {
+    const supported = (verdict?.tally?.sup ?? 0) > 0 ? 1 : 0;
+    p = config.SCORE_UNVERIFIED_BASE + config.SCORE_UNVERIFIED_SUPPORTED * supported;
+  }
+  return Math.round(100 * p);
+}
+
+/** 簇键与旧实现相同：clusterId ?? id，同稿多条只算一簇。 */
+function strength(
+  verdict: ClaimVerdict | undefined,
+  stanceById: Map<string, Stance>,
+  evidenceById: Map<string, Evidence>,
+  config: JudgeConfig,
+): number {
+  if (!verdict) return 0;
+  const keys = new Set<string>();
+  let hasA = false;
+  for (const stanceId of verdict.basis) {
+    const stance = stanceById.get(stanceId);
+    if (!stance) continue;
+    const evidence = evidenceById.get(stance.evidenceId);
+    if (!evidence) continue;
+    keys.add(evidence.clusterId ?? evidence.id);
+    if (evidence.tier === "A") hasA = true;
+  }
+  const cap = config.SCORE_STRENGTH_CLUSTER_CAP;
+  return (0.5 * Math.min(keys.size, cap)) / cap + 0.5 * (hasA ? 1 : 0);
 }

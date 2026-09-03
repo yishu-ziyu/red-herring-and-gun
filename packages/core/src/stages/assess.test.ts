@@ -255,6 +255,31 @@ describe("runAssess", () => {
     ]);
   });
 
+  it("checkable=false 命题不产生 llm.called，也没有 stance.added", async () => {
+    const { case: c } = createCase({ id: "case1", text: "这届专家全被收买了", at: AT });
+    const seeded = createStageContext({
+      case: c,
+      llm: createFakeLlm({}),
+      now: () => AT,
+    });
+    seeded.emit({
+      type: "claims.added",
+      claims: [{ id: "c1", text: "这届专家全被收买了", type: "value", checkable: false, order: 0 }],
+    });
+    seeded.emit({ type: "evidence.added", evidence: officialEvidence() });
+    const fake = createFakeLlm({
+      assess: {
+        stances: [{ evidenceId: "e1", stance: "supports", quote: "官方通报此事不实", confidence: 0.9 }],
+      },
+    });
+    const ctx = createStageContext({ case: seeded.current, llm: fake, now: () => AT });
+    await runAssess(ctx, {});
+    expect(fake.calls).toHaveLength(0);
+    expect(ctx.emitted.filter((event) => event.type === "llm.called")).toHaveLength(0);
+    expect(ctx.emitted.filter((event) => event.type === "stance.added")).toHaveLength(0);
+    expect(ctx.current.stances).toEqual([]);
+  });
+
   it("system prompt 只让模型判关系，不含命题级真假输出", async () => {
     const seeded = seedClaimAndEvidence([officialEvidence()]);
     const fake = createFakeLlm({ assess: { stances: [] } });
