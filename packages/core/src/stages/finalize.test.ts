@@ -197,7 +197,8 @@ describe("runFinalize", () => {
     expect(report.claimItems.map((item) => item.claimId)).toEqual(["c1", "c2"]);
     expect(report.claimItems[0]?.line).toBe("生育津贴直接打到个人卡：与现有依据相反。[1]");
     expect(report.claimItems[1]?.line).toBe("人社部发过这份文：没有找到足够依据。");
-    expect(report.conclusion).toBe(`${directAnswer("false")}${ORIGINAL}`);
+    expect(report.conclusion).toBe(directAnswer("false"));
+    expect(report.conclusion).not.toContain(ORIGINAL);
     expect(report.conclusion.trim().length).toBeGreaterThan(0);
     for (const item of report.claimItems) {
       expect(item.claimId.length).toBeGreaterThan(0);
@@ -248,6 +249,39 @@ describe("runFinalize", () => {
     expect(report.conclusion).not.toMatch(/https?:\/\//i);
     expect(report.claimItems[0]?.line).not.toMatch(/https?:\/\//i);
     expect(report.claimItems[0]?.line).toMatch(/\[1\]/);
+  });
+
+  it("现场约 360 人经 finalize 后仍含 360", async () => {
+    const ctx = falseWithBasis();
+    const draft: ComposeDraft = {
+      conclusion: "现场约 360 人到场，津贴不会直接打卡。[1]",
+      claimItems: [{ claimId: "c1", line: "现场约 360 人说明由单位申领。[1]" }],
+    };
+    const { report } = await runFinalize(ctx, { draft });
+    expect(report.conclusion).toContain("360");
+    expect(report.claimItems[0]?.line).toContain("360");
+  });
+
+  it("overall.contested 时兜底首句接矛盾句、不拼原句", async () => {
+    const ctx = seed({
+      claims: [claim("c1", "生育津贴直接打到个人卡", 0)],
+      evidence: [ev("e1"), ev("e2")],
+      stances: [st("s1", "c1", "e1", "supports"), st("s2", "c1", "e2")],
+      verdicts: [
+        {
+          claimId: "c1",
+          verdict: "contested",
+          basis: ["s1", "s2"],
+          rule: "contested",
+          tally: { sup: 3, ref: 3, par: 0 },
+          updatedAt: AT,
+        },
+      ],
+      overall: { verdictType: "false", contested: true, score: 20, breakdown: [] },
+    });
+    const { report } = await runFinalize(ctx, { draft: null });
+    expect(report.conclusion).toBe(`${directAnswer("false")}来源之间相互矛盾，两边都有依据。`);
+    expect(report.conclusion).not.toContain(ORIGINAL);
   });
 
   it("案内缺失命题补兜底行，案外 claimId 丢弃", async () => {
