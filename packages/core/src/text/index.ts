@@ -1,3 +1,4 @@
+export * from "./claimAtom/index.js";
 export * from "./publicCopy.js";
 export * from "./reportReviewer.js";
 export * from "./reportSanitizer.js";

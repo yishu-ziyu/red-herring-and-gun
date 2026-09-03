@@ -20,15 +20,7 @@ export interface SubclaimVerdict {
   sourcesRelatedOnly?: boolean;
 }
 
-export type ClaimAtomType =
-  | "fact"
-  | "causal"
-  | "comparison"
-  | "concept"
-  | "value"
-  | "prediction"
-  | "normative"
-  | "personal";
+export type { ClaimAtomType } from "../../casefile/schema.js";
 
 export interface ClaimAtomDropped {
   text: string;
