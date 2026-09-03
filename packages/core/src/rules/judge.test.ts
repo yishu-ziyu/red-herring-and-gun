@@ -248,6 +248,39 @@ const ROWS: Row[] = [
     verdict: "true",
     rule: "true",
   },
+  {
+    name: "sup 3 / ref 6 → false",
+    evidence: [evidence("e1", { tier: "A" }), evidence("e2", { tier: "A" }), evidence("e3", { tier: "A" })],
+    stances: [
+      stance("s1", "e1", "supports"),
+      stance("s2", "e2", "refutes"),
+      stance("s3", "e3", "refutes"),
+    ],
+    verdict: "false",
+    rule: "false",
+  },
+  {
+    name: "sup 6 / ref 3 → true",
+    evidence: [evidence("e1", { tier: "A" }), evidence("e2", { tier: "A" }), evidence("e3", { tier: "A" })],
+    stances: [
+      stance("s1", "e1", "supports"),
+      stance("s2", "e2", "supports"),
+      stance("s3", "e3", "refutes"),
+    ],
+    verdict: "true",
+    rule: "true",
+  },
+  {
+    name: "sup 3 / ref 5 → contested",
+    evidence: [evidence("e1", { tier: "A" }), evidence("e2", { tier: "A" }), evidence("e3", { tier: "B" })],
+    stances: [
+      stance("s1", "e1", "supports"),
+      stance("s2", "e2", "refutes"),
+      stance("s3", "e3", "refutes"),
+    ],
+    verdict: "contested",
+    rule: "contested",
+  },
 ];
 
 describe("judge", () => {

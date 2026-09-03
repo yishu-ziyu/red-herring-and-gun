@@ -14,6 +14,9 @@ export const MIN_CONFIDENCE = 0.5;
 /** 两边都至少有一记 A 级分量（或等价 3）才叫争议，避免单条 C 反驳就撕成 contested。 */
 export const CONTESTED_MIN = 3;
 
+/** 一方权重达另一方两倍即压制，不再算争议。 */
+export const CONTESTED_DOMINANCE = 2;
+
 /** 坐实为真：两独立 B（2+2）或一 A 加一独立辅证（3+1）。单 A 仍可能是孤证。 */
 export const TRUE_MIN = 4;
 
@@ -48,6 +51,7 @@ export const defaultJudgeConfig = {
   TIER_WEIGHT,
   MIN_CONFIDENCE,
   CONTESTED_MIN,
+  CONTESTED_DOMINANCE,
   TRUE_MIN,
   FALSE_MIN,
   PARTIAL_MIN,
@@ -64,6 +68,7 @@ export type JudgeConfig = {
   TIER_WEIGHT: { A: number; B: number; C: number; unknown: number };
   MIN_CONFIDENCE: number;
   CONTESTED_MIN: number;
+  CONTESTED_DOMINANCE: number;
   TRUE_MIN: number;
   FALSE_MIN: number;
   PARTIAL_MIN: number;
