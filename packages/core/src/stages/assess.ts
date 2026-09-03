@@ -49,8 +49,14 @@ export async function runAssess(ctx: StageContext, input: AssessInput = {}): Pro
   const assessed: string[] = [];
 
   for (const claim of selected) {
+    const given = ctx.current.evidence.filter((item) => {
+      if (item.reachable === false) return false;
+      return !ctx.current.stances.some(
+        (stance) => stance.claimId === claim.id && stance.evidenceId === item.id && stance.by === by,
+      );
+    });
+    if (given.length === 0) continue;
     ctx.emit({ type: "stage.started", stage: ASSESS_JOB, claimId: claim.id });
-    const given = ctx.current.evidence.filter((item) => item.reachable !== false);
     const givenIds = new Set(given.map((item) => item.id));
     const userContent = buildUserContent(claim.text, given);
 

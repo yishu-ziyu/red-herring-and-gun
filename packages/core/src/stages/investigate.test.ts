@@ -289,4 +289,123 @@ describe("runInvestigator", () => {
     expect(fake.calls).toHaveLength(0);
     assertInvariants(ctx.current);
   });
+
+  it("搜索返回 A 级无正文命中 → frontier 出 link pivot，fetch 后有 text", async () => {
+    const hitUrl = "https://www.gov.cn/zhengce/unread-hit";
+    const seeded = seedCase();
+    const fetched: string[] = [];
+    const fake = createFakeLlm({
+      investigate: pickFirstCandidate,
+      assess: { stances: [] },
+    });
+    const ctx = createStageContext({ case: seeded.current, llm: fake, now: () => AT });
+    await runInvestigator(ctx, {
+      role: "main",
+      budget: 2,
+      tools: {
+        search: async () => [
+          {
+            id: "tmp",
+            url: hitUrl,
+            canonicalUrl: "https://gov.cn/zhengce/unread-hit",
+            host: "gov.cn",
+            excerpt: "只有摘要",
+            retrievedAt: AT,
+            tier: "unknown",
+            provenance: { kind: "search", query: "津贴" },
+          },
+        ],
+        fetch: async (url) => {
+          fetched.push(url);
+          return page({ finalUrl: url, text: GOV_TEXT, title: "人社部通知" });
+        },
+      },
+    });
+
+    const unread = ctx.emitted
+      .filter((event) => event.type === "frontier.added")
+      .flatMap((event) => event.pivots)
+      .find((pivot) => pivot.kind === "link" && pivot.value === hitUrl);
+    expect(unread).toMatchObject({
+      kind: "link",
+      why: "搜索命中 A 级页，只有摘要，未读全文",
+      expectedValue: 3,
+      fromEvidenceId: "e1",
+    });
+    expect(unread?.id.startsWith("e1:p")).toBe(true);
+    expect(fetched).toContain(hitUrl);
+    expect(ctx.current.evidence[0]?.text).toBe(GOV_TEXT);
+    const second = fake.calls.filter((call) => call.job === "investigate")[1];
+    expect(second?.userContent).toContain(hitUrl);
+    expect(second?.userContent).toContain('"kind":"fetch"');
+    assertInvariants(ctx.current);
+  });
+
+  it("模型写错 kind 但 target 对 → 按候选 kind 执行", async () => {
+    const seeded = seedCase();
+    const searched: string[] = [];
+    const fake = createFakeLlm({
+      investigate: (params) => {
+        const line = params.userContent.split("\n").find((row) => row.startsWith("1. "));
+        if (!line) throw new Error("no candidate line");
+        const parsed = JSON.parse(line.slice(3)) as { target: string };
+        return { action: { kind: "fetch", target: parsed.target, why: "kind 写错" } };
+      },
+    });
+    const ctx = createStageContext({ case: seeded.current, llm: fake, now: () => AT });
+    await runInvestigator(ctx, {
+      role: "main",
+      budget: 1,
+      tools: {
+        search: async (query) => {
+          searched.push(query);
+          return [];
+        },
+        fetch: async () => {
+          throw new Error("fetch should not run");
+        },
+      },
+    });
+    expect(searched.length).toBeGreaterThan(0);
+    const step = ctx.emitted.find((event) => event.type === "investigator.step");
+    expect(step?.type === "investigator.step" && step.action.kind).toBe("search");
+    assertInvariants(ctx.current);
+  });
+
+  it("图片候选用 pivot id 作 label，prompt 不含 data:", async () => {
+    const dataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const seeded = seedCase();
+    seeded.emit({
+      type: "frontier.added",
+      pivots: [
+        {
+          id: "p3",
+          kind: "image",
+          value: dataUrl,
+          why: "用户上传",
+          expectedValue: 1,
+          depth: 0,
+        },
+      ],
+    });
+    const fake = createFakeLlm({
+      investigate: { action: { kind: "stop", target: "", why: "先看候选" } },
+    });
+    const ctx = createStageContext({ case: seeded.current, llm: fake, now: () => AT });
+    await runInvestigator(ctx, {
+      role: "main",
+      tools: {
+        search: async () => [],
+        fetch: async () => {
+          throw new Error("fetch should not run");
+        },
+        reverseImage: async () => [],
+      },
+    });
+    const prompt = fake.calls[0]?.userContent ?? "";
+    expect(prompt).toContain("p3");
+    expect(prompt).not.toContain("data:");
+    expect(prompt).not.toContain(dataUrl);
+    assertInvariants(ctx.current);
+  });
 });
