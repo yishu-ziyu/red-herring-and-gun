@@ -1,0 +1,92 @@
+:root {
+  --paper: #fefcf6;
+  --paper-deep: #f5f1e6;
+  --ink: #151821;
+  --ink-muted: #5b6070;
+  --accent: #b91c3c;
+  --verdict-true: #16a34a;
+  --verdict-false: #e84a5f;
+  --verdict-unclear: #d97706;
+
+  --ink-wash-6: color-mix(in srgb, var(--ink) 6%, transparent);
+  --ink-wash-12: color-mix(in srgb, var(--ink) 12%, transparent);
+  --ink-wash-14: color-mix(in srgb, var(--ink) 14%, transparent);
+  --ink-line-20: color-mix(in srgb, var(--ink) 20%, transparent);
+  --accent-wash-6: color-mix(in srgb, var(--accent) 6%, transparent);
+  --true-wash-6: color-mix(in srgb, var(--verdict-true) 6%, transparent);
+  --false-wash-6: color-mix(in srgb, var(--verdict-false) 6%, transparent);
+  --unclear-wash-6: color-mix(in srgb, var(--verdict-unclear) 6%, transparent);
+  --true-line-20: color-mix(in srgb, var(--verdict-true) 20%, transparent);
+  --false-line-20: color-mix(in srgb, var(--verdict-false) 20%, transparent);
+  --unclear-line-20: color-mix(in srgb, var(--verdict-unclear) 20%, transparent);
+
+  --font-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", serif;
+  --font-sans: "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-48: 48px;
+  --radius-4: 4px;
+  --radius-8: 8px;
+  --radius-12: 12px;
+  --type-12: 12px;
+  --type-14: 14px;
+  --type-17: 17px;
+  --type-20: 20px;
+  --type-24: 24px;
+  --type-display: clamp(28px, 4vw, 40px);
+  --leading-body: 1.6;
+  --leading-title: 1.3;
+  --dur: 160ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0ms;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--type-17);
+  line-height: var(--leading-body);
+}
+
+#root {
+  height: 100%;
+  min-height: 100dvh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
