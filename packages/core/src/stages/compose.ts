@@ -19,6 +19,7 @@ true、false、partial 的行要说明依据是什么，并引 [n]。unverified 
 
 export type ComposeInput = {
   systemPromptSuffix?: string;
+  deadline?: number;
 };
 
 export type ComposeResult = { draft: ComposeDraft | null };
@@ -98,6 +99,7 @@ export async function runCompose(ctx: StageContext, input: ComposeInput = {}): P
       systemPrompt,
       userContent,
       responseSchema: ComposeOutputSchema,
+      ...(input.deadline !== undefined ? { deadlineMs: input.deadline } : {}),
     });
     output = result.output;
   } catch {

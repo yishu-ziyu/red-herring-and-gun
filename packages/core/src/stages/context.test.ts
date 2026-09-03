@@ -69,4 +69,20 @@ describe("createStageContext", () => {
       attempts: [{ provider: "minimax", model: "MiniMax-M3", ok: true, latencyMs: 1 }],
     });
   });
+
+  it("调用方 deadlineMs 优先于 context deadline", async () => {
+    const { case: c } = createCase({ id: "c1", text: "原句" });
+    const inner = createFakeLlm({ assess: { stances: [] } });
+    const ctx = createStageContext({ case: c, llm: inner, deadline: 100 });
+    await ctx.llm({ job: "assess", systemPrompt: "s", userContent: "u", deadlineMs: 900 });
+    expect(inner.calls[0]?.deadlineMs).toBe(900);
+  });
+
+  it("不传 deadlineMs 则用 context deadline", async () => {
+    const { case: c } = createCase({ id: "c1", text: "原句" });
+    const inner = createFakeLlm({ assess: { stances: [] } });
+    const ctx = createStageContext({ case: c, llm: inner, deadline: 100 });
+    await ctx.llm({ job: "assess", systemPrompt: "s", userContent: "u" });
+    expect(inner.calls[0]?.deadlineMs).toBe(100);
+  });
 });
