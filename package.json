@@ -10,7 +10,9 @@
     "test": "npm test --workspaces --if-present",
     "build": "npm run build -w @rhg/core && npm run build -w @rhg/server && npm run build -w @rhg/web && npm run build -w @rhg/eval",
     "dev:web": "npm run dev -w @rhg/web",
-    "dev:server": "npm run dev -w @rhg/server"
+    "dev:server": "npm run dev -w @rhg/server",
+    "eval": "npm run eval -w @rhg/eval --",
+    "eval:gate": "npm run eval:gate -w @rhg/eval --"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
