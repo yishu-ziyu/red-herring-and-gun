@@ -11,6 +11,14 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run",
+    "eval": "tsx src/run.ts",
+    "eval:gate": "tsx src/run.ts --gate ../../mvp/server/eval/baseline.json"
+  },
+  "dependencies": {
+    "@rhg/core": "*"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.13"
   }
 }
