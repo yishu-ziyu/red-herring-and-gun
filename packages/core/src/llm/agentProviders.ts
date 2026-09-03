@@ -89,7 +89,7 @@ export async function callDeepSeekAgent({
       max_tokens: maxTokens,
     }),
   });
-  const data = await response.json().catch(() => null);
+    const data: any = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = data?.error?.message || data?.message || response.statusText;
     throw new Error(`DeepSeek API 调用失败：${detail}`);
@@ -219,7 +219,7 @@ export async function callStepFunAgent({
     ),
   });
 
-  const data = await response.json().catch(() => null);
+    const data: any = await response.json().catch(() => null);
 
   if (!response.ok) {
     const detail = data?.error?.message || data?.message || response.statusText;
@@ -340,7 +340,7 @@ export async function call360ChatAgent({
       top_p: 0.8,
     }),
   });
-  const data = await response.json().catch(() => null);
+    const data: any = await response.json().catch(() => null);
   if (!response.ok) {
     const detail = data?.error?.message || data?.message || response.statusText;
     throw new Error(`360 智脑 API 调用失败：${detail}`);
