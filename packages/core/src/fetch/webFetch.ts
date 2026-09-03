@@ -24,8 +24,36 @@ function unreachable(finalUrl: string, error: string, status = 0): FetchedPage {
     links: [],
     images: [],
     reachable: false,
+    charset: "",
     error,
   };
+}
+
+function charsetFromContentType(contentType: string): string | undefined {
+  const match = contentType.match(/charset\s*=\s*["']?([\w-]+)/i);
+  return match?.[1]?.toLowerCase();
+}
+
+function charsetFromMeta(bytes: Uint8Array): string | undefined {
+  const head = new TextDecoder("latin1").decode(bytes.subarray(0, 2048));
+  const named = head.match(/<meta[^>]+charset=["']?([\w-]+)/i);
+  if (named?.[1]) return named[1].toLowerCase();
+  const httpEquiv = head.match(/content=["'][^"']*charset=([\w-]+)/i);
+  if (httpEquiv?.[1]) return httpEquiv[1].toLowerCase();
+  return undefined;
+}
+
+function decodeLabel(bytes: Uint8Array, label: string): { text: string; charset: string } {
+  try {
+    return { text: new TextDecoder(label).decode(bytes), charset: label.toLowerCase() };
+  } catch {
+    return { text: new TextDecoder("utf-8").decode(bytes), charset: "utf-8" };
+  }
+}
+
+function decodeBody(bytes: Uint8Array, contentType: string): { text: string; charset: string } {
+  const label = charsetFromContentType(contentType) ?? charsetFromMeta(bytes) ?? "utf-8";
+  return decodeLabel(bytes, label);
 }
 
 function isHtmlType(contentType: string): boolean {
@@ -212,10 +240,11 @@ export async function webFetch(url: string, opts: WebFetchOptions = {}): Promise
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
   try {
     const signal = mergeSignal(timeoutMs, opts.signal);
+    const guard = opts.guard ?? blockedFetchReason;
     let current = url;
     let lastStatus = 0;
     for (let hops = 0; hops <= MAX_REDIRECTS; hops++) {
-      const blocked = await blockedFetchReason(current);
+      const blocked = await guard(current);
       if (blocked) return unreachable(current, blocked);
       const res = await fetch(current, { redirect: "manual", signal });
       lastStatus = res.status;
@@ -231,7 +260,7 @@ export async function webFetch(url: string, opts: WebFetchOptions = {}): Promise
       }
       const contentType = res.headers.get("content-type") ?? "";
       const { bytes, truncated } = await readLimited(res, maxBytes);
-      const raw = new TextDecoder("utf-8").decode(bytes);
+      const { text: raw, charset } = decodeBody(bytes, contentType);
       if (!isHtmlType(contentType)) {
         return {
           finalUrl: current,
@@ -241,6 +270,7 @@ export async function webFetch(url: string, opts: WebFetchOptions = {}): Promise
           links: [],
           images: [],
           reachable: true,
+          charset,
           truncated: truncated || undefined,
         };
       }
@@ -256,6 +286,7 @@ export async function webFetch(url: string, opts: WebFetchOptions = {}): Promise
         links: extracted.links,
         images: extracted.images,
         reachable: true,
+        charset,
         truncated: truncated || undefined,
       };
     }

@@ -57,3 +57,13 @@ export const TIER_B_HOSTS = [
   "ifeng.com",
   "wikipedia.org",
 ] as const;
+
+/** 门户后缀下的自媒体子域，必须先于 B 级门户命中。 */
+export const TIER_C_OVERRIDES = [
+  "mp.weixin.qq.com",
+  "baijiahao.baidu.com",
+  "k.sina.com.cn",
+  "mp.sohu.com",
+  "dy.163.com",
+  "user.guancha.cn",
+] as const;
