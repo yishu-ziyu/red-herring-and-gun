@@ -1,0 +1,145 @@
+/**
+ * JsonlMemoryCandidateStore — server copy of src/lib/agentRuntime/memoryCandidateStore.ts
+ *
+ * Append-only JSONL under `.agent-memory/candidates.jsonl`.
+ * Same id may appear multiple times (propose / setStatus); readAll keeps latest by timestamp.
+ */
+
+import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import type {
+  MemoryCandidate,
+  MemoryCandidateHit,
+  MemoryCandidateKind,
+  MemoryCandidateStatus,
+} from "./memoryCandidateTypes.js";
+import { semanticClaimSimilarity } from "./semanticRecall.js";
+
+export interface MemoryCandidateStore {
+  propose(candidates: MemoryCandidate[]): Promise<void>;
+  list(filter?: { status?: MemoryCandidateStatus; kind?: MemoryCandidateKind }): Promise<MemoryCandidate[]>;
+  setStatus(id: string, status: MemoryCandidateStatus, reason?: string): Promise<MemoryCandidate | null>;
+  searchAccepted(claim: string, limit?: number): Promise<MemoryCandidateHit[]>;
+}
+
+export class JsonlMemoryCandidateStore implements MemoryCandidateStore {
+  constructor(private readonly filePath = join(process.cwd(), ".agent-memory", "candidates.jsonl")) {}
+
+  async propose(candidates: MemoryCandidate[]): Promise<void> {
+    if (candidates.length === 0) return;
+    await mkdir(dirname(this.filePath), { recursive: true });
+    const block = candidates.map((c) => JSON.stringify(c)).join("\n") + "\n";
+    await appendFile(this.filePath, block, "utf8");
+  }
+
+  async list(filter?: { status?: MemoryCandidateStatus; kind?: MemoryCandidateKind }): Promise<MemoryCandidate[]> {
+    const records = await this.readAll();
+    return records
+      .filter((candidate) => !filter?.status || candidate.status === filter.status)
+      .filter((candidate) => !filter?.kind || candidate.kind === filter.kind)
+      .sort((a, b) => b.provenance.createdAt - a.provenance.createdAt);
+  }
+
+  async setStatus(id: string, status: MemoryCandidateStatus, reason?: string): Promise<MemoryCandidate | null> {
+    const records = await this.readAll();
+    const original = records.find((candidate) => candidate.id === id);
+    if (!original) return null;
+    const updated: MemoryCandidate = {
+      ...original,
+      status,
+      statusReason: reason,
+      statusUpdatedAt: Date.now(),
+    };
+    await mkdir(dirname(this.filePath), { recursive: true });
+    await appendFile(this.filePath, `${JSON.stringify(updated)}\n`, "utf8");
+    return updated;
+  }
+
+  async searchAccepted(claim: string, limit = 5): Promise<MemoryCandidateHit[]> {
+    const records = await this.list({ status: "accepted" });
+    const queryTerms = tokenizeClaim(claim);
+    if (queryTerms.length === 0) return [];
+
+    return records
+      .map((candidate) => {
+        const payloadText = safeStringify(candidate.payload);
+        const candidateText = [
+          candidate.title,
+          candidate.summary,
+          candidate.provenance.claim,
+          candidate.tags.join(" "),
+          payloadText,
+        ].join(" ");
+        const candidateTerms = tokenizeClaim(candidateText);
+        const matchedTerms = queryTerms.filter((term) => candidateTerms.includes(term));
+        const lexicalScore = matchedTerms.length / Math.max(queryTerms.length, 1);
+        // G2 语义召回：同义词桥接 + 字符 Dice（synonym/dice 命中但词面未命中时兜底召回）
+        const semanticScore =
+          semanticClaimSimilarity(claim, candidate.provenance.claim) / 100 ||
+          semanticClaimSimilarity(claim, candidateText.slice(0, 400)) / 100;
+        const score = Math.max(lexicalScore, semanticScore * 0.85);
+        return { candidate, score, matchedTerms: Array.from(new Set(matchedTerms)) };
+      })
+      .filter((hit) => hit.score > 0)
+      .sort((a, b) => b.score - a.score || b.candidate.provenance.createdAt - a.candidate.provenance.createdAt)
+      .slice(0, limit);
+  }
+
+  private async readAll(): Promise<MemoryCandidate[]> {
+    try {
+      const raw = await readFile(this.filePath, "utf8");
+      const allRecords: MemoryCandidate[] = [];
+      const lines = raw
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      for (const line of lines) {
+        try {
+          allRecords.push(JSON.parse(line) as MemoryCandidate);
+        } catch {
+          console.warn(`[memoryCandidateStore] 跳过损坏的 JSONL 行: ${line.slice(0, 80)}`);
+        }
+      }
+      const byId = new Map<string, MemoryCandidate>();
+      for (const record of allRecords) {
+        const existing = byId.get(record.id);
+        const recordTs = record.statusUpdatedAt ?? record.provenance.createdAt;
+        const existingTs = existing?.statusUpdatedAt ?? existing?.provenance.createdAt ?? 0;
+        if (!existing || recordTs >= existingTs) {
+          byId.set(record.id, record);
+        }
+      }
+      return Array.from(byId.values());
+    } catch (error: unknown) {
+      if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+  }
+}
+
+function safeStringify(value: unknown) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+function normalizeClaim(value: string) {
+  return value.toLowerCase().replace(/\s+/g, "").replace(/[，。！？、,.!?;；:"“”'‘’()[\]【】]/g, "");
+}
+
+function tokenizeClaim(value: string) {
+  const normalized = normalizeClaim(value);
+  const latinTerms = normalized.match(/[a-z0-9]{2,}/g) ?? [];
+  const chineseTerms = Array.from(new Set(normalized.match(/[\u4e00-\u9fff]{2,}/g) ?? []));
+  const bigrams: string[] = [];
+  for (const segment of chineseTerms) {
+    for (let i = 0; i < segment.length - 1; i += 1) {
+      bigrams.push(segment.slice(i, i + 2));
+    }
+  }
+  return Array.from(new Set([...latinTerms, ...bigrams])).slice(0, 100);
+}
