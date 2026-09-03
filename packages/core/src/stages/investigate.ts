@@ -33,10 +33,11 @@ export const INVESTIGATE_SYSTEM_PROMPT = `你在决定下一步去哪里找证�
 
 规则：
 - 只能从给定候选里选一个动作，或输出 kind 为 stop。
-- target 必须与候选里的 target 原文完全一致，不准编造、改写、补全 URL 或查询。
+- target 必须与候选里的 target 原文完全一致，不准编造、改写、补全 URL 或查询。图片候选的 target 是编号，不是 data URL。
 - 不准判断命题真假，不准给分数，不准写证据正文，不准发明案内没有的来源。
 - why 只说明这条候选为什么对当前缺口有用。
-- 候选都无法缩小缺口时选 stop。`;
+- 候选都无法缩小缺口时选 stop。
+输出 JSON：{ "action": { "kind": "search|fetch|reverse_image|recall|stop", "target": "...", "why": "..." } }`;
 
 export const CITES_SYSTEM_PROMPT = `你在标注这一页的引用关系，不是在裁定命题真假。
 
@@ -74,6 +75,7 @@ export type InvestigatorResult = {
 type Candidate = {
   kind: Exclude<InvestigateActionKind, "stop">;
   target: string;
+  label: string;
   why: string;
   expectedValue: 1 | 2 | 3;
   pivotId?: string;
@@ -97,6 +99,50 @@ function clipExcerpt(text: string): string {
 
 function nextEvidenceId(ctx: StageContext): string {
   return `e${ctx.current.evidence.length + 1}`;
+}
+
+/** extractPivots 从 `${id}:p0` 递增；未读搜索命中从 p80 起，避免 fetch 后再抽外链撞号。 */
+const UNREAD_PIVOT_BASE = 80;
+
+function nextUnreadPivotId(ctx: StageContext, evidenceId: string): string {
+  const prefix = `${evidenceId}:p`;
+  let max = UNREAD_PIVOT_BASE - 1;
+  const ids = [
+    ...ctx.current.frontier.map((item) => item.id),
+    ...ctx.current.consumedPivotIds,
+  ];
+  for (const id of ids) {
+    if (!id.startsWith(prefix)) continue;
+    const n = Number(id.slice(prefix.length));
+    if (Number.isInteger(n)) max = Math.max(max, n);
+  }
+  return `${prefix}${max + 1}`;
+}
+
+function emitUnreadSearchHits(ctx: StageContext, addedIds: string[], depth: number): void {
+  const unread = addedIds
+    .map((id) => ctx.current.evidence.find((item) => item.id === id))
+    .filter((item): item is Evidence => {
+      if (!item) return false;
+      if (item.text) return false;
+      return item.tier === "A" || item.tier === "B";
+    })
+    .sort((a, b) => {
+      if (a.tier === b.tier) return 0;
+      return a.tier === "A" ? -1 : 1;
+    })
+    .slice(0, 3);
+  if (unread.length === 0) return;
+  const pivots: Pivot[] = unread.map((item) => ({
+    id: nextUnreadPivotId(ctx, item.id),
+    kind: "link",
+    value: item.url,
+    why: `搜索命中 ${item.tier} 级页，只有摘要，未读全文`,
+    expectedValue: item.tier === "A" ? 3 : 2,
+    fromEvidenceId: item.id,
+    depth,
+  }));
+  ctx.emit({ type: "frontier.added", pivots });
 }
 
 function sameUrl(a: string, b: string): boolean {
@@ -223,6 +269,16 @@ function buildCandidates(
     const verdict = verdictOf(ctx, claim.id);
     const expectedValue: 1 | 2 | 3 = verdict?.verdict === "contested" ? 3 : 2;
     // 契约写 assessEvidenceGap→queriesForGap；执行说明改为 portfolio 取 2 条。
+    const info = assessEvidenceGap({
+      atom: claim.text,
+      sources: ctx.current.evidence.map((item) => ({
+        url: item.url,
+        title: item.title,
+        snippet: item.excerpt,
+      })),
+      trigger: verdict?.verdict === "contested" ? "conflict" : "unverified",
+    });
+    const missing = info.missingEvidence.length > 0 ? info.missingEvidence.join("、") : "证据";
     const picked = selectPriorityQueries(buildQueryPortfolio(claim.text, ctx.current.text), {
       max: 2,
       exclude: searchedQueries,
@@ -231,7 +287,8 @@ function buildCandidates(
       addCandidate(out, {
         kind: "search",
         target: row.query,
-        why: `缺口 ${claim.id}`,
+        label: row.query,
+        why: `补 ${claim.id} 缺的${missing}`,
         expectedValue,
       });
     }
@@ -253,6 +310,7 @@ function buildCandidates(
 function mapPivot(pivot: Pivot, tools: InvestigatorTools): Candidate | undefined {
   const base = {
     target: pivot.value,
+    label: pivot.kind === "image" ? pivot.id : pivot.value,
     why: pivot.why,
     expectedValue: pivot.expectedValue,
     pivotId: pivot.id,
@@ -311,7 +369,7 @@ function formatCandidates(candidates: Candidate[]): string {
       (item, index) =>
         `${index + 1}. ${JSON.stringify({
           kind: item.kind,
-          target: item.target,
+          target: item.label,
           why: item.why,
           expectedValue: item.expectedValue,
         })}`,
@@ -353,15 +411,15 @@ function pickFallback(candidates: Candidate[], whyPrefix: string): InvestigateAc
   }
   return {
     kind: best.kind,
-    target: best.target,
+    target: best.label,
     why: `${whyPrefix}${best.why}`,
   };
 }
 
 function matchCandidate(action: InvestigateAction, candidates: Candidate[]): Candidate | undefined {
-  const both = candidates.find((item) => item.kind === action.kind && item.target === action.target);
+  const both = candidates.find((item) => item.kind === action.kind && item.label === action.target);
   if (both) return both;
-  return candidates.find((item) => item.target === action.target);
+  return candidates.find((item) => item.label === action.target);
 }
 
 async function decideAction(
@@ -408,7 +466,10 @@ async function decideAction(
       const action = pickFallback(candidates, "fallback: ");
       return { action, candidate: matchCandidate(action, candidates) };
     }
-    return { action: proposed, candidate };
+    return {
+      action: { ...proposed, kind: candidate.kind, target: candidate.label },
+      candidate,
+    };
   } catch {
     const action = pickFallback(candidates, "fallback: ");
     return { action, candidate: matchCandidate(action, candidates) };
@@ -486,6 +547,7 @@ async function annotateCites(
     .filter((item) => item.id !== pageId)
     .map((item) => ({ id: item.id, title: item.title, host: item.host }));
   const outbound = page.links.slice();
+  if (outbound.length === 0 && others.length === 0) return;
   const userContent = `本页 id：${pageId}
 标题：${page.title ?? ""}
 正文：
@@ -597,14 +659,16 @@ async function act(
   const nextDepth = pivotDepthPlusOne(ctx, candidate);
   consumePivot(ctx, candidate);
   if (action.kind === "search") {
-    searchedQueries.add(action.target);
-    const found = await tools.search(action.target);
+    const query = candidate?.target ?? action.target;
+    searchedQueries.add(query);
+    const found = await tools.search(query);
     const added = ingestMany(
       ctx,
       found,
       (item) => (candidate?.pivotId ? pivotProvenance(candidate) : item.provenance),
       pending,
     );
+    emitUnreadSearchHits(ctx, added, nextDepth);
     return {
       result: added.length > 0 ? `added ${added.join(", ")}` : "added 0",
       mutated: added.length > 0,
@@ -612,11 +676,12 @@ async function act(
   }
   if (action.kind === "reverse_image") {
     if (!tools.reverseImage) throw new Error("no reverseImage tool");
-    const found = await tools.reverseImage(action.target);
+    const imageUrl = candidate?.target ?? action.target;
+    const found = await tools.reverseImage(imageUrl);
     const added = ingestMany(
       ctx,
       found,
-      () => ({ kind: "reverse-image", imageUrl: action.target }),
+      () => ({ kind: "reverse-image", imageUrl }),
       pending,
     );
     return {
@@ -626,7 +691,7 @@ async function act(
   }
   if (action.kind === "recall") {
     if (!tools.recall) throw new Error("no recall tool");
-    const found = await tools.recall(action.target);
+    const found = await tools.recall(candidate?.target ?? action.target);
     const added = ingestMany(ctx, found, () => ({ kind: "memory" }), pending);
     return {
       result: added.length > 0 ? `added ${added.join(", ")}` : "added 0",
@@ -634,9 +699,11 @@ async function act(
     };
   }
   if (action.kind === "fetch") {
-    const page = await tools.fetch(action.target);
+    const url = candidate?.target ?? action.target;
+    const page = await tools.fetch(url);
     const existing =
-      findEvidenceByUrl(ctx, action.target) ?? (page.finalUrl ? findEvidenceByUrl(ctx, page.finalUrl) : undefined);
+      findEvidenceByUrl(ctx, url) ?? (page.finalUrl ? findEvidenceByUrl(ctx, page.finalUrl) : undefined);
+    const mutated = page.reachable && page.text.length > 0;
 
     if (existing) {
       ctx.emit({
@@ -648,11 +715,11 @@ async function act(
         reachable: page.reachable,
       });
       await afterFetch(ctx, existing.id, page, nextDepth, pending);
-      return { result: `updated ${existing.id}`, mutated: true };
+      return { result: `updated ${existing.id}`, mutated };
     }
 
-    const rawUrl = page.finalUrl || action.target;
-    const canon = canonicalizeUrl(rawUrl) ?? canonicalizeUrl(action.target);
+    const rawUrl = page.finalUrl || url;
+    const canon = canonicalizeUrl(rawUrl) ?? canonicalizeUrl(url);
     if (!canon) return { result: "bad-url", mutated: false };
     const host = new URL(canon).hostname;
     const evidence: Evidence = {
@@ -672,7 +739,7 @@ async function act(
     ctx.emit({ type: "evidence.added", evidence });
     resolvePending(ctx, pending, evidence);
     await afterFetch(ctx, evidence.id, page, nextDepth, pending);
-    return { result: `added ${evidence.id}`, mutated: true };
+    return { result: `added ${evidence.id}`, mutated };
   }
   return { result: "stop", mutated: false };
 }
