@@ -603,6 +603,63 @@ Evidence：测试名；eval runId 与逐例表；两次真跑的 `.data/cases/*.
 
 合入后验收人跑全量 eval（`npm run eval -- --repeats 1`，真 key，另派只报数的实例，加上新 summary 字段），对照上表目标；未达目标不算完成，回到本任务补一轮而不是开新任务。
 
+### T22 · 分数语义与报告卫生
+
+依赖：T21 合入（已）。只改 `packages/core`；与 T18 / T19 并行。分支 `spine-T22-score-semantics`，工作树 `.worktrees/T22`。
+
+起因（T18 真跑截图 `packages/web/output/acceptance/T18-live-B-done.png`、`T18-live-A-done.png`）：
+
+- 「转基因食品就是毒药，这届专家全被收买了」：命题 1 判 false（－12），命题 2 立场型；整句却显示「还查不清 · 62」。两处错：(a) T09 的 `score()` 量的是**证据质量**（覆盖率 / 簇 / A 级），反驳越充分分越高，与产品定义的「原句可信度」（golden `expectedCredibilityRange`：谣言 0–15、混杂 10–35、未核 10–70）方向相反；(b) 立场型命题被 judge 成 `unverified` 并进了 `overall()`，把「一半假一半立场」拉成「还查不清」。
+- 命题行出现「该判断为 false」「该判断为 unverified」——compose 把英文枚举写进中文正文，finalize 没拦。
+- 证据标题出现 `Resistant&lt;italic&gt;Bt&lt;/italic&gt;`——搜索结果的 HTML 实体与标签没清。
+- 立场型命题仍进 assess（浪费一张工单、拖时延）。
+
+Change：
+
+1. **`rules/score.ts` 重写为可信度分。** 只计 `checkable === true` 的命题；n = 其数量。每条命题算 `p ∈ [0,1]`：
+
+   | 判决 | p |
+   |---|---|
+   | true | `0.70 + 0.30 × strength` |
+   | partial / contested | `0.50` |
+   | unverified | `0.15 + 0.15 × (tally.sup > 0 ? 1 : 0)` |
+   | false | `0.15 − 0.15 × strength` |
+
+   `strength = 0.5 × min(basis 独立簇数, 3) / 3 + 0.5 × (basis 含 A 级证据 ? 1 : 0)`（簇键 `evidence.clusterId ?? evidence.id`，与旧实现同）。
+
+   先把每条 p 取整为百分点 `pts_i = Math.round(100 × p_i)`（避免 0.8999… 一类浮点误差），后续全用整数 pts：`score = Σ_i round(pts_i / (2n)) + round(min(pts) / 2) − (contested ? 10 : 0)`，裁到 0–100。`breakdown` 行：每条可核命题一行 `{ key: "claim:<id>", label: "命题 <k>", value: round(pts_i / (2n)) }`（k 为按 `order` 的原句序号，从 1 起）；一行 `{ key: "weakest", label: "最弱一环", value: round(min(pts) / 2) }`；contested 时一行 `{ key: "contested", label: "争议", value: -10 }`；裁剪时沿用现有 `{ key: "clamp", label: "裁剪" }`。**各行之和恒等于 score。** n = 0 → `score 50`，`breakdown = [{ key: "none", label: "没有可核对的命题", value: 50 }]`。
+
+   常量进 `judgeConfig.ts`：`SCORE_TRUE_BASE 0.70`、`SCORE_TRUE_SPAN 0.30`、`SCORE_MID 0.50`、`SCORE_UNVERIFIED_BASE 0.15`、`SCORE_UNVERIFIED_SUPPORTED 0.15`、`SCORE_FALSE_BASE 0.15`、`SCORE_STRENGTH_CLUSTER_CAP 3`、`SCORE_CONTESTED_PENALTY 10`；删掉 `SCORE_BASE / SCORE_COVERAGE_MAX / SCORE_CLUSTER_MAX / SCORE_CLUSTER_CAP / SCORE_TIER_A_MAX / SCORE_UNVERIFIED_PENALTY`。文件头注释改成一句：「分数是原句可信度 0–100，不是证据质量；一句话的可信度不高于它最弱的一环。」`ScoreInput` 签名不变。
+
+2. **立场型命题退出判决链。** `judgeStage.runJudge`：只 judge `checkable` 命题；`overall()` 只收 `checkable` 命题的 verdict（按 claimId 过滤，历史案子里若已有立场型 verdict 也一并排除）。`assess.selectClaims`：过滤 `checkable`。`investigate` 的缺口选取若尚未过滤 `checkable`，补上。
+
+3. **compose / finalize 卫生。** `compose.ts` 提示词命题行带 `checkable`；规则追加两条：「checkable=false 的命题只写一句『这是评价或立场，不做真假判断』类说明」「正文不得出现 true / false / partial / unverified / contested / mixed_misleading 这些英文判决词，也不得写『该判断为…』」。`finalize.ts`：`fallbackLine` 对 `!claim.checkable` 返回 `${claim.text}：这是评价或立场，不做真假判断。`；`scrubJargon` 里新增 `stripVerdictEnums(text)`：先删整句模式 `/(该|此|本|这个|这一|以上)?(判断|判决|结论|命题|说法)(为|是|：|:)\s*[“"'「]?(true|false|partial|unverified|contested|mixed_misleading)[”"'」]?\s*[。．.;；,，]?/gi`，再删裸词 `/\b(true|false|partial|unverified|contested|mixed_misleading)\b/gi`，然后 `collapseGaps`。
+
+4. **`search/toEvidence.ts` 清 HTML。** 新增 `cleanHtmlText(s)`：先解实体（`&lt; &gt; &amp; &quot; &#39; &apos; &nbsp;` 与 `&#NNN;` / `&#xHH;`），再删标签 `/<[^>]*>/g`，再折叠空白并 trim；对 `title` 与 `excerpt` 各用一次。不引依赖。
+
+Not this：不改 `judge()` 规则；不改 schema；不改 web / server / eval 源码（eval 的 `credibilityAccuracy` 不动，它就是评这个）；不把 face 词表引进 `rules/`。
+
+验收清单（checker 在 `.worktrees/T22` 逐条执行；每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 1 | `npm test --workspace=@rhg/core` | 退出码 0；用例数 ≥ 424 + 14 |
+| 2 | `npm run build --workspace=@rhg/core` | 退出码 0 |
+| 3 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动仅在 `packages/core/**`；不含 web / server / eval / mvp / schema.ts |
+| 4 | 读 `score.test.ts` | 表驱动 ≥ 9 行，至少覆盖并断言具体分值：单 false + A 级 1 簇 → 6；单 true + 两独立 B 簇 → 80；单 true + A 级 1 簇 → 90；true(A 1 簇) + false(A 1 簇) → 27；单 unverified 无支持 → 16；单 unverified `tally.sup > 0` → 30；单 contested → 40；`[checkable=false, false(A 1 簇)]` → 6 且 breakdown 无该立场型命题行；0 可核命题 → 50 一行 `none`；每行断言 `breakdown` 之和 === `score` |
+| 5 | `rg "SCORE_BASE\|SCORE_COVERAGE_MAX\|SCORE_CLUSTER_MAX\|SCORE_CLUSTER_CAP\|SCORE_TIER_A_MAX\|SCORE_UNVERIFIED_PENALTY" packages/core/src` | 0 命中 |
+| 6 | 读 `judgeConfig.ts` | 八个新常量齐、值如上；文件头一句话说明「可信度不是证据质量」 |
+| 7 | 读 `judgeStage.ts` + 其测试 | 有一例：两命题，一 `checkable:false` 一 `checkable:true` 且被 A 级反驳 → 只有一条 `verdict.updated`，`overall.verdictType === "false"`，`overall.score ≤ 10` |
+| 8 | 读 `assess.test.ts` | 有一例：`checkable:false` 命题不产生 `llm.called`，也没有 `stance.added` |
+| 9 | 读 `finalize.test.ts` | 有一例：`line` 为「转基因食品是有毒的食品。该判断为 false。依据：美国国家科学院…」→ 输出等于「转基因食品是有毒的食品。依据：美国国家科学院…」；另一例裸词「结论 unverified，没有查到」→ 不含 `unverified`；另一例 `checkable:false` 命题无 claimItem 时兜底行含「这是评价或立场」 |
+| 10 | 读 `compose.ts` | 提示词含 `checkable` 字段与两条新规则原文 |
+| 11 | 读 `toEvidence.test.ts` | 有一例：title `Insect-Resistant&lt;italic&gt;Bt&lt;/italic&gt; Plants &amp; Bees` → `Insect-ResistantBt Plants & Bees`；excerpt 含 `&#39;` / `&nbsp;` / `<b>` 的例子被清干净 |
+| 12 | `rg "toEvidence\|score\|overall" packages/core/src/index.ts packages/core/src/rules/index.ts` | 导出面不变（无新增无删减） |
+| 13 | `npx tsx packages/eval/src/run.ts --ids RUMOR-001,RUMOR-008,EVAL-UNVERIFIED-001 --fake` | 退出 0（只证明 core 改动没把 eval 跑崩；`--fake` 的分值不作数） |
+| 14 | `rg ": any\b\|console\.log\|\.only\|\.skip" packages/core/src --glob '!**/__manual__/**'` | `git diff spine...HEAD` 内 0 新增 |
+
+合入后由验收人跑真 key 全量 eval，只看 `credibilityAccuracy`（目标 ≥ 0.80）与 `verdictAccuracy` 不降。
+
 ---
 
 ## Wave 4 · 界面
