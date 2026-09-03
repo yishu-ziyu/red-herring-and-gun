@@ -64,7 +64,10 @@ export function App() {
       onHome={() => navigate("/")}
     >
       {route.page === "home" ? (
-        <HomePage onCreated={(id) => navigate(`/cases/${id}`)} />
+        <HomePage
+          onCreated={(id) => navigate(`/cases/${id}`)}
+          onOpenCase={(id) => navigate(`/cases/${id}`)}
+        />
       ) : current ? (
         <ThreadView
           current={current}

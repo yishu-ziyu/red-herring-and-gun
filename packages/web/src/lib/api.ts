@@ -1,6 +1,6 @@
 import { replay, type Case, type CaseEvent } from '@rhg/core/casefile';
 import { loadFixture } from "./catalog.js";
-import { TURN_BUSY } from "./copy.js";
+import { NETWORK_ERROR, TURN_BUSY } from "./copy.js";
 
 export type CaseSnapshot = {
   case: Case;
@@ -66,16 +66,31 @@ async function readError(res: Response, fallback: string): Promise<string> {
 
 export type Attachment = { kind: "url" | "image"; value: string };
 
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 export async function createCase(
   text: string,
   attachments?: Attachment[],
 ): Promise<{ caseId: string; turnId: string }> {
-  const res = await fetch("/api/cases", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(attachments?.length ? { text, attachments } : { text }),
-  });
-  if (!res.ok) throw new Error(await readError(res, "立案失败"));
+  let res: Response;
+  try {
+    res = await fetch("/api/cases", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(attachments?.length ? { text, attachments } : { text }),
+    });
+  } catch {
+    throw new TypeError(NETWORK_ERROR);
+  }
+  if (!res.ok) throw new ApiError(await readError(res, "立案失败"), res.status);
   return (await res.json()) as { caseId: string; turnId: string };
 }
 
