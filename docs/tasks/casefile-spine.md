@@ -660,6 +660,48 @@ Not this：不改 `judge()` 规则；不改 schema；不改 web / server / eval 
 
 合入后由验收人跑真 key 全量 eval，只看 `credibilityAccuracy`（目标 ≥ 0.80）与 `verdictAccuracy` 不降。
 
+### T23 · 核心硬化二：预留时间、网络抖动、思考预算、拆题前提
+
+依赖：T21 合入（已）。只改 `packages/core`；与 T22 并行（T22 改 `compose.ts` 的提示词，本任务改 `compose.ts` 的入参，合入时由验收人解冲突）。分支 `spine-T23-core-hardening-2`，工作树 `.worktrees/T23`。
+
+起因（T21 后全量 eval `eval-1788441317204`，26 例）：timeout 5/26（目标 ≤ 4）、reportContractPassRate 0.77（目标 ≥ 0.85）、verdictAccuracy 0.65（刚过线）。逐例 jsonl 显示三个机械原因和一个拆题原因：
+
+- **compose 的 30 秒预留其实用不上。** `createStageContext.llm` 把 `init.deadline`（= start + total − reserve）绑给**每一次**模型调用，compose 在预留窗口里起跑时 `callJob` 直接抛 `deadline exceeded` 或立刻被 abort → `finalize failed-open` → 报告契约不过。5 个 timeout 例全部如此，`EVAL-UNVERIFIED-001` 在 89.5s 收口但 compose 被砍。
+- **`fetch failed` 同时打掉两家。** assess 81 次调用 17 次失败，多为 undici `fetch failed`（本机网络抖动）；对冲只在慢时有用，两家同时断没有第二次机会。
+- **StepFun step_plan 思考吃光 max_tokens。** `StepFun API 没有返回可解析文本（content_blocks=thinking）`：step-3.7-flash 在 4096 tokens 内只输出思考块。已实测该端点接受 Anthropic 协议的 `thinking: { type: "enabled", budget_tokens }`（200，思考显著变短）。
+- **拆题把前提拆成命题。** `RUMOR-002`「扫码可领补贴，逾期视为弃权」→ 命题 2「扫码领补贴需在逾期前完成」（以命题 1 为前提，判 true）；`RUMOR-012`「孩子打疫苗后发烧，说明疫苗导致了自闭症」→「孩子打疫苗后发烧」（背景事实，true）；`TINY-005` →「群里有一张P图」「该P图配有侮辱性文字」；`LOOP-001` 把同一事件的两个侧面「被拉去销毁」「装船运走」拆成两条。前提为真 + 断言为假 → 整句 `mixed_misleading`，而这些句子就是整句假。5 条 false→mixed 的误判里 4 条是这个原因。
+
+Change：
+
+1. **compose / finalize 用硬截止。** `createStageContext.llm` 的绑定改为 `{ signal, deadlineMs: init.deadline, ...params }`——调用方显式传的 `deadlineMs` 优先。`ComposeInput` 加 `deadline?: number`，`runCompose` 把它作为 `deadlineMs` 传给 `ctx.llm`。`runTurn.composeAndFinish` 收 `hardDeadline = start + totalMs` 并传给 `runCompose`；`turns.ts` 里走同一 helper 的追问路径自然继承。`callJob` 对 compose 的 `hedgeAfterMs` 不变。
+2. **网络类错误同候选重试一次。** `callJob.launch` 的 catch 里：错误信息匹配 `/fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|socket hang up|UND_ERR_/i`、且未外部 abort、且 `deadlineMs - Date.now() ≥ DEADLINE_TOO_CLOSE_MS + RETRY_BACKOFF_MS`（`RETRY_BACKOFF_MS = 400`）时，等 400ms 后用同一候选再 launch 一次（每个候选最多重试 1 次）。`attempts` 里两条记录都保留（不改 schema）。非网络错误（4xx、解析失败、`deadline exceeded`、abort）不重试。
+3. **StepFun step_plan 发思考预算。** 抽纯函数 `buildStepFunPlanBody({ model, systemPrompt, userContent, maxTokens, reasoningEffort })`：low → `thinking: { type: "enabled", budget_tokens: 1024 }`，medium → `budget_tokens: 4096`，high → 不发 `thinking`；发 `thinking` 时 `max_tokens = maxTokens + budget_tokens`。`callStepFunPlanAgent` 用它，并从 `callStepFunAgent` 接收 `reasoningEffort`（沿既有参数，别再造一个）。确认 `providerRouter` → `callStepFunAgent` 这条链把 candidate 的 `effort` 传到了 plan 路径；没传就补。
+4. **拆题不出前提、不拆侧面、去掉传闻引语。** `DECOMPOSE_SYSTEM_PROMPT` 加规则（原文放进提示词，措辞可微调但每条要在）：
+   - 「只拆**断言**（说话人要你相信的、别人可能反对的事），不拆**前提**（断言成立所依赖的背景、条件、场景）。若 B 以 A 为前提（A 不成立则 B 无意义），只出 A。反例：『孩子打疫苗后发烧，说明疫苗导致了自闭症』只出『疫苗导致自闭症』，不出『孩子打疫苗后发烧』；『群里那张P图配的侮辱性文字说的是真的』只出『那段侮辱性文字说的是真的』，不出『群里有一张P图』『P图配有文字』；『扫码可领补贴，逾期视为弃权』只出『扫码可领 2024 年个人劳动补贴』，不出『需在逾期前完成』。」
+   - 「同一事件的多个描述侧面合成一条。反例：『电动车都被集中拉去国外销毁了，一批一批装船运走』是一条：『电动车被集中装船运往国外销毁』。」
+   - 代码层：`decompose.ts` 后处理对每条命题文本剥掉句首传闻引语 `/^(听说|据说|网传|有人说|朋友圈说|群里说|听人说|据传)[，,：:、\s]*/`（剥完为空则丢弃该条）。
+
+Not this：不改 schema；不改 `judge()` / `overall()` / `score()`（T22 在改）；不改 `DEFAULT_TOTAL_MS` / `DEFAULT_COMPOSE_RESERVE_MS`；不加依赖；不改 server / eval / web 源码。
+
+验收清单（checker 在 `.worktrees/T23` 逐条执行；每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 1 | `npm test --workspace=@rhg/core` | 退出码 0；用例数 ≥ 424 + 8 |
+| 2 | `npm run build --workspace=@rhg/core` | 退出码 0 |
+| 3 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动仅在 `packages/core/**`；不含 `schema.ts`、`judge.ts`、`overall.ts`、`score.ts` |
+| 4 | 读 `context.test.ts` | 有一例：`createStageContext({ deadline: 100 })`，`ctx.llm({ ..., deadlineMs: 900 })` → 底层 `llm` 收到的 `deadlineMs === 900`；另一例不传则 `=== 100` |
+| 5 | 读 `runTurn.test.ts` | 有一例：假时钟，让 investigate 跑到 stage deadline 之后、hard deadline 之前进入 compose；FakeLlm 记录 compose 那次收到的 `deadlineMs === start + totalMs`；`turn.finished.reason` 不是 `error`；`report` 存在且 `compose` 的 `stage.finished.outcome === "ok"` |
+| 6 | 读 `callJob.test.ts` | 有一例：`dispatch` 第一次抛 `Error("fetch failed")` 第二次成功 → 返回 ok，`attempts.length === 2`，两条 `provider/model` 相同；一例：抛 `Error("StepFun API 调用失败：400 ...")` → 不重试，`attempts.length === 1`（若还有第二候选则总数为 2 且 provider 不同）；一例：deadline 只剩 3s → `fetch failed` 后不重试 |
+| 7 | 读 `agentProviders.test.ts` | `buildStepFunPlanBody` 三档：low → `thinking.budget_tokens === 1024` 且 `max_tokens === maxTokens + 1024`；medium → 4096 / `+4096`；high → body 无 `thinking` 键且 `max_tokens === maxTokens` |
+| 8 | `rg -n "reasoningEffort" packages/core/src/llm/agentProviders.ts packages/core/src/llm/providerRouter.ts` | `callStepFunPlanAgent` 的调用处把 `reasoningEffort` 传进去；`providerRouter` 对 stepfun 把 candidate `effort` 传给 `callStepFunAgent` |
+| 9 | 读 `decompose.ts` | 提示词含「前提」「侧面」两条规则及三组反例原文；有 `/^(听说\|据说\|网传\|有人说\|朋友圈说\|群里说\|听人说\|据传)/` 剥除；`decompose.test.ts` 有一例 FakeLlm 返回「听说电动车被集中装船运往国外销毁」→ 命题文本为「电动车被集中装船运往国外销毁」 |
+| 10 | 真跑（工作树根有 `.env.local`）：`npm run eval -- --ids RUMOR-002,RUMOR-012,LOOP-001,TINY-005` 连跑 2 次 | 8 个 `runs/<runId>/<id>.jsonl` 里每例 `claims.added` 的可核命题 ≤ 2；不出现独立命题「孩子打疫苗后发烧」「群里有一张P图」「该P图配有侮辱性文字」，也不出现以「需在」「之前完成」为谓语的条件句；`LOOP-001` 两次都只有 1 条命题；把 8 例的命题文本原样贴进报告 |
+| 11 | 同上两次运行的 stdout JSON | 8 例 `turnReason` 无 `error`；`llm.called` 里 `compose` 没有 `deadline exceeded`；贴每例 `elapsedMs` 与 `verdictType` |
+| 12 | `rg ": any\b\|console\.log\|\.only\|\.skip" packages/core/src --glob '!**/__manual__/**'` | `git diff spine...HEAD` 内 0 新增 |
+
+合入后验收人跑真 key 全量 eval 对照 T21 目标表：timeout ≤ 4、reportContractPassRate ≥ 0.85、verdictAccuracy ≥ 0.75（本任务把 4 条 false→mixed 收回来后的合理线）。
+
 ---
 
 ## Wave 4 · 界面
