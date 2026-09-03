@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createCase } from "../casefile/reduce.js";
 import { createFakeLlm } from "../llm/fakes.js";
-import { createStageContext } from "./context.js";
+import { createStageContext, type LlmJob } from "./context.js";
 
 describe("createStageContext", () => {
   it("emit 填 seq/at，校验后折叠进 current，并记录到 emitted", () => {
@@ -40,5 +40,33 @@ describe("createStageContext", () => {
     const failed = ctx.emitted.find((e) => e.type === "llm.called" && !e.ok);
     expect(failed && "error" in failed ? failed.error : undefined).toBe("boom");
     expect(fake.calls).toHaveLength(2);
+  });
+
+  it("llm 把 signal 与 deadlineMs 传给 FakeLlm，并写入 attempts", async () => {
+    const { case: c } = createCase({ id: "c1", text: "原句" });
+    const ac = new AbortController();
+    const inner = createFakeLlm({
+      assess: { stances: [] },
+    });
+    const llm: LlmJob = async (params) => {
+      const result = await inner(params);
+      return {
+        ...result,
+        attempts: [{ provider: "minimax", model: "MiniMax-M3", ok: true, latencyMs: 1 }],
+      };
+    };
+    const ctx = createStageContext({
+      case: c,
+      llm,
+      signal: ac.signal,
+      deadline: 1_700_000_000_000,
+    });
+    const result = await ctx.llm({ job: "assess", systemPrompt: "s", userContent: "u" });
+    expect(inner.calls[0]?.signal).toBe(ac.signal);
+    expect(inner.calls[0]?.deadlineMs).toBe(1_700_000_000_000);
+    expect(result.attempts).toEqual([{ provider: "minimax", model: "MiniMax-M3", ok: true, latencyMs: 1 }]);
+    expect(ctx.emitted.find((event) => event.type === "llm.called")).toMatchObject({
+      attempts: [{ provider: "minimax", model: "MiniMax-M3", ok: true, latencyMs: 1 }],
+    });
   });
 });
