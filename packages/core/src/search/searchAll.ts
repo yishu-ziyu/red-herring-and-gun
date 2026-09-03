@@ -118,8 +118,16 @@ async function runProvider(
   name: string,
   opts?: { signal?: AbortSignal; timeoutMs?: number }
 ): Promise<readonly SearchHit[]> {
-  if (opts?.signal?.aborted) throw new Error("aborted");
-  const work = Promise.resolve(fn(query));
+  const signal = opts?.signal;
+  if (signal?.aborted) throw new Error("aborted");
+  let work: Promise<readonly SearchHit[]> = Promise.resolve(fn(query));
+  if (signal) {
+    // ponytail: 提供商 fetch 不收 signal，用 race 让调用方在 abort 时立即解脱；底层只读请求在后台自生自灭。要真正断连得把 signal 穿进每个 provider 的 fetch。
+    const onAbort = new Promise<never>((_, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+    });
+    work = Promise.race([work, onAbort]);
+  }
   if (opts?.timeoutMs != null && opts.timeoutMs > 0) {
     return withTimeout(work, opts.timeoutMs, name);
   }
