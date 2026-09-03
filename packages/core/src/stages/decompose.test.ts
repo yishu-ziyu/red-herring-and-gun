@@ -6,7 +6,7 @@ import { runDecompose } from "./decompose.js";
 
 const AT = "2026-09-03T00:00:00.000Z";
 const NOW = "2026-09-03T00:00:01.000Z";
-const FORBIDDEN = ["能信", "不能信", "可信", "不可信", "真", "假"] as const;
+const FORBIDDEN = ["能信", "不能信", "可信", "不可信"] as const;
 
 function setup(script: FakeScript, text = "原句") {
   const { case: c } = createCase({ id: "case1", text, at: AT });
@@ -32,6 +32,12 @@ describe("runDecompose", () => {
     for (const word of FORBIDDEN) {
       expect(prompt).not.toContain(word);
     }
+    expect(prompt).toContain("前提");
+    expect(prompt).toContain("侧面");
+    expect(prompt).toContain("孩子打疫苗后发烧，说明疫苗导致了自闭症");
+    expect(prompt).toContain("群里那张P图配的侮辱性文字说的是真的");
+    expect(prompt).toContain("扫码可领补贴，逾期视为弃权");
+    expect(prompt).toContain("电动车都被集中拉去国外销毁了，一批一批装船运走");
   });
 
   it("复合句拆成不少于两条且顺序与原句一致", async () => {
@@ -242,6 +248,21 @@ describe("runDecompose", () => {
         (e) => e.type === "claims.dropped" && e.dropped.some((d) => d.reason === "fragment"),
       ),
     ).toBe(true);
+  });
+
+  it("剥掉句首传闻引语", async () => {
+    const source = "听说电动车被集中装船运往国外销毁";
+    const { ctx } = setup(
+      {
+        decompose: {
+          claims: [{ text: "听说电动车被集中装船运往国外销毁", type: "fact", checkable: true }],
+        },
+        "self-proof": keepAll(),
+      },
+      source,
+    );
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims.map((c) => c.text)).toEqual(["电动车被集中装船运往国外销毁"]);
   });
 
   it("自证抛错则命题仍产出且有 error 事件", async () => {
