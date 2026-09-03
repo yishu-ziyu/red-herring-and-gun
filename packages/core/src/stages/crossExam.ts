@@ -33,8 +33,12 @@ export function withModelOverride(ctx: StageContext, choice: ModelChoice): Stage
     },
     emit: (event) => ctx.emit(event),
     now: () => ctx.now(),
+    clock: () => ctx.clock(),
     get signal() {
       return ctx.signal;
+    },
+    get deadline() {
+      return ctx.deadline;
     },
     llm: async (params) =>
       ctx.llm(params.modelOverride === undefined ? { ...params, modelOverride: choice } : params),

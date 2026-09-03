@@ -51,7 +51,7 @@ export function buildDeps(env: LlmEnv): RunTurnDeps {
   const searchProviders = defaultSearchProviders(env);
   const bound = definedEnv(env);
   const tools: RunTurnDeps["tools"] = {
-    search: (q) => searchAll({}, q, { providers: searchProviders }),
+    search: (q, signal) => searchAll({}, q, { providers: searchProviders, signal }),
     fetch: (url) => webFetch(url),
   };
 

@@ -183,6 +183,7 @@ export async function callStepFunAgent({
   userContent,
   maxTokens,
   reasoningEffort = "high",
+  signal,
 }: {
   baseUrl: string;
   apiKey: string;
@@ -191,10 +192,11 @@ export async function callStepFunAgent({
   userContent: string;
   maxTokens: number;
   reasoningEffort?: "low" | "medium" | "high";
+  signal?: AbortSignal;
 }) {
   // Token Plan（Anthropic 协议）：/step_plan 前缀走 /v1/messages + Bearer，非流式。
   if (baseUrl.includes("/step_plan")) {
-    return callStepFunPlanAgent({ baseUrl, apiKey, model, systemPrompt, userContent, maxTokens });
+    return callStepFunPlanAgent({ baseUrl, apiKey, model, systemPrompt, userContent, maxTokens, signal });
   }
   // Reasoning 系列模型（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
   // 三者皆会触发 400 Invalid request。仅 chat 模型才发这些字段。
@@ -217,6 +219,7 @@ export async function callStepFunAgent({
         reasoningEffort,
       })
     ),
+    signal,
   });
 
     const data: any = await response.json().catch(() => null);
@@ -250,6 +253,7 @@ export async function callStepFunPlanAgent({
   systemPrompt,
   userContent,
   maxTokens,
+  signal,
 }: {
   baseUrl: string;
   apiKey: string;
@@ -257,6 +261,7 @@ export async function callStepFunPlanAgent({
   systemPrompt: string;
   userContent: string;
   maxTokens: number;
+  signal?: AbortSignal;
 }) {
   const url = `${baseUrl.replace(/\/$/, "")}/v1/messages`;
   const response = await fetch(url, {
@@ -272,6 +277,7 @@ export async function callStepFunPlanAgent({
       system: systemPrompt,
       messages: [{ role: "user", content: userContent }],
     }),
+    signal,
   });
 
   const raw = await response.text();
