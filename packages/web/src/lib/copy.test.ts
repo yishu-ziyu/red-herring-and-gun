@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { faceWord } from '@rhg/core/publicCopy';
-import { ROLES, STATUS, STOP_REASONS, claimFace, faceTone, pursueText } from "./copy.js";
+import { MEMO_FOLLOW, MEMO_PURSUE, MEMO_USER, ROLES, STATUS, STOP_REASONS, claimFace, faceTone, memoBody, memoLabel, pursueText } from "./copy.js";
 
 describe("copy", () => {
   it("状态词只有规定的八个", () => {
@@ -38,5 +38,19 @@ describe("copy", () => {
 
   it("pursueText 生成追查正文", () => {
     expect(pursueText("gov.cn/zhengce")).toBe("追查 · gov.cn/zhengce");
+  });
+
+  it("用户消息标签：原句 / 追问 / 追查", () => {
+    expect(memoLabel(undefined, false)).toBe(MEMO_USER);
+    expect(memoLabel("new_claim", false)).toBe(MEMO_USER);
+    expect(memoLabel("ask_case", true)).toBe(MEMO_FOLLOW);
+    expect(memoLabel("pursue_frontier", true)).toBe(MEMO_PURSUE);
+    expect(memoLabel("pursue_frontier", false)).toBe(MEMO_PURSUE);
+  });
+
+  it("追查正文去掉前缀只留芯片文案", () => {
+    expect(memoBody(pursueText("gov.cn/zhengce"), "pursue_frontier")).toBe("gov.cn/zhengce");
+    expect(memoBody("顺着这条出处再查", "pursue_frontier")).toBe("顺着这条出处再查");
+    expect(memoBody(pursueText("gov.cn/zhengce"), "ask_case")).toBe("追查 · gov.cn/zhengce");
   });
 });

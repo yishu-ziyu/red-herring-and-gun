@@ -1,6 +1,6 @@
 import type { Case, Message, Pivot } from '@rhg/core/casefile';
 import { useEffect, useState } from "react";
-import { ATTACH_ALT, MEMO_FOLLOW, MEMO_USER, errorLine, pursueText } from "../lib/copy.js";
+import { ATTACH_ALT, errorLine, memoBody, memoLabel, pursueText } from "../lib/copy.js";
 import { pivotLabel, userMessageIndex } from "../lib/select.js";
 import type { StreamStatus } from "../lib/useCaseStream.js";
 import { Composer } from "./Composer.js";
@@ -73,10 +73,11 @@ export function ThreadView(props: {
 
 function UserMemo(props: { message: Message; followup: boolean }) {
   const images = props.message.attachments?.filter((item) => item.kind === "image") ?? [];
+  const body = memoBody(props.message.text, props.message.route);
   return (
     <article className={props.followup ? "memo-user follow font-serif" : "memo-user font-serif"}>
-      <p className="bubble-meta">{props.followup ? MEMO_FOLLOW : MEMO_USER}</p>
-      {props.message.text ? <p>{props.message.text}</p> : null}
+      <p className="bubble-meta">{memoLabel(props.message.route, props.followup)}</p>
+      {body ? <p>{body}</p> : null}
       {images.map((item) => (
         <img key={item.value} src={item.value} alt={ATTACH_ALT} className="memo-thumb" />
       ))}

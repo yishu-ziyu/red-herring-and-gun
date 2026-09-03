@@ -31,6 +31,7 @@ export const OPEN_ORIGINAL = "打开原文";
 export const ASK_AGAIN = "可以再试，或换个说法。";
 export const MEMO_USER = "原句";
 export const MEMO_FOLLOW = "追问";
+export const MEMO_PURSUE = "追查";
 export const COMPOSER_LABEL = "追问";
 export const ATTACH_ALT = "附图";
 export const CLUSTER_SOLO = "单独来源";
@@ -132,5 +133,16 @@ export function gainLine(gain: number): string {
 }
 
 export function pursueText(label: string): string {
-  return `追查 · ${label}`;
+  return `${MEMO_PURSUE} · ${label}`;
+}
+
+export function memoLabel(route: string | undefined, followup: boolean): string {
+  if (route === "pursue_frontier") return MEMO_PURSUE;
+  return followup ? MEMO_FOLLOW : MEMO_USER;
+}
+
+export function memoBody(text: string, route?: string): string {
+  if (route !== "pursue_frontier") return text;
+  const prefix = pursueText("");
+  return text.startsWith(prefix) ? text.slice(prefix.length) : text;
 }
