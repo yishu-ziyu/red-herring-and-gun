@@ -140,4 +140,47 @@ describe("runRetrieve", () => {
     expect(updates).toHaveLength(2);
     expect(new Set(updates.map((event) => event.clusterId))).toEqual(new Set([a?.clusterId]));
   });
+
+  it("预置 www.gov.cn 证据与本轮同 host 并簇，预置条也收到 evidence.updated", async () => {
+    const { ctx } = setup([claim({ id: "c1", text: "官方发了通知", type: "fact", order: 0 })]);
+    ctx.emit({
+      type: "evidence.added",
+      evidence: {
+        id: "e1",
+        url: "https://www.gov.cn/old",
+        canonicalUrl: "https://www.gov.cn/old",
+        host: "www.gov.cn",
+        excerpt: "旧通知",
+        retrievedAt: AT,
+        tier: "A",
+        provenance: { kind: "user" },
+      },
+    });
+
+    await runRetrieve(ctx, {
+      providers: [hits([{ url: "https://www.gov.cn/new", snippet: "新检索" }])],
+      queriesPerClaim: 1,
+    });
+
+    expect(ctx.current.evidence).toHaveLength(2);
+    const [preset, found] = ctx.current.evidence;
+    expect(preset?.clusterId).toBeDefined();
+    expect(preset?.clusterId).toBe(found?.clusterId);
+    const updates = ctx.emitted.filter((event) => event.type === "evidence.updated");
+    expect(updates.some((event) => event.id === "e1" && event.clusterId === preset?.clusterId)).toBe(true);
+    expect(updates.some((event) => event.id === found?.id && event.clusterId === found?.clusterId)).toBe(true);
+  });
+
+  it("只有一条证据的 host → 没有 evidence.updated", async () => {
+    const { ctx } = setup([claim({ id: "c1", text: "只有一篇来源", type: "fact", order: 0 })]);
+
+    await runRetrieve(ctx, {
+      providers: [hits([{ url: "https://example.org/alone", snippet: "孤证" }])],
+      queriesPerClaim: 1,
+    });
+
+    expect(ctx.current.evidence).toHaveLength(1);
+    expect(ctx.current.evidence[0]?.clusterId).toBeUndefined();
+    expect(ctx.emitted.filter((event) => event.type === "evidence.updated")).toHaveLength(0);
+  });
 });
