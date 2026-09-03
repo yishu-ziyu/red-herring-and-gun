@@ -19,6 +19,7 @@ body,
   display: none;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: nowrap;
   gap: var(--space-12);
   padding: var(--space-8) var(--space-16);
   background: var(--paper-deep);
@@ -27,12 +28,31 @@ body,
 }
 
 .shell-summary-text {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
   min-width: 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+.shell-summary-face,
+.shell-summary-score {
+  font-size: var(--type-16);
+  line-height: var(--leading-title);
+  white-space: nowrap;
+}
+
+.shell-summary-face {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--type-14);
-  line-height: var(--leading-title);
+}
+
+.shell-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-shrink: 0;
 }
 
 .shell-nav,
@@ -65,10 +85,11 @@ body,
 }
 
 .shell-brand {
-  font-size: var(--type-20);
+  font-size: var(--type-18);
   font-weight: 600;
   line-height: var(--leading-title);
-  margin: 0 0 var(--space-16);
+  margin: 0;
+  white-space: nowrap;
 }
 
 .shell-brand button {
@@ -134,6 +155,56 @@ body,
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.icon-btn {
+  appearance: none;
+  box-sizing: border-box;
+  width: var(--space-32);
+  height: var(--space-32);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.icon-btn-lg {
+  width: var(--space-36);
+  height: var(--space-36);
+}
+
+.icon-chevron {
+  display: block;
+  width: 0.45em;
+  height: 0.45em;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.icon-chevron[data-dir="next"] {
+  transform: rotate(-135deg);
+}
+
+.icon-lines {
+  display: block;
+  width: 14px;
+  height: 10px;
+  border-top: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+}
+
+.icon-panel {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  box-shadow: inset -4px 0 0 currentColor;
 }
 
 .overlay {
@@ -204,6 +275,7 @@ body,
   gap: var(--space-16);
   padding: var(--space-24) 0 var(--space-8);
   border-top: 1px solid var(--ink-wash-12);
+  min-width: 0;
 }
 
 [data-claim-item] {
@@ -354,11 +426,36 @@ body,
 
 .cite-list {
   font-size: var(--type-14);
+  min-width: 0;
 }
 
-.cite-list li {
+.cite-list ol {
+  min-width: 0;
+}
+
+.cite-list li,
+.cite-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
   padding: var(--space-8) 0;
   color: var(--ink-muted);
+}
+
+.cite-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.cite-meta {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .tier-badge {

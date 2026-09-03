@@ -41,6 +41,18 @@ function useMinWidth(px: number): boolean {
   return ok;
 }
 
+function IconChevron(props: { dir: "prev" | "next" }) {
+  return <span className="icon-chevron" data-dir={props.dir} aria-hidden="true" />;
+}
+
+function IconLines() {
+  return <span className="icon-lines" aria-hidden="true" />;
+}
+
+function IconPanel() {
+  return <span className="icon-panel" aria-hidden="true" />;
+}
+
 export function AppShell(props: Props) {
   const desktop = useMinWidth(1024);
   const tablet = useMinWidth(768);
@@ -76,33 +88,43 @@ export function AppShell(props: Props) {
       data-panel-open={panelOpen ? "true" : "false"}
     >
       <div className="shell-summary">
-        <p className="shell-summary-text font-serif">
-          {props.summary.face}
-          {props.summary.score !== undefined ? ` · ${props.summary.score}` : ""}
-          {` · ${props.summary.status}`}
-        </p>
-        <div>
-          {navDrawer ? (
-            <button type="button" className="btn" onClick={() => setNavOpen(true)} aria-expanded={navOpen}>
-              {OPEN_NAV}
-            </button>
-          ) : null}{" "}
-          {panelDrawer ? (
-            <button type="button" className="btn" onClick={() => setPanelOpen(true)} aria-expanded={panelOpen}>
-              {OPEN_PANEL}
-            </button>
+        <p className="shell-summary-text">
+          <span className="shell-summary-face font-serif">{props.summary.face}</span>
+          {props.summary.score !== undefined ? (
+            <span className="shell-summary-score font-mono">{props.summary.score}</span>
           ) : null}
+        </p>
+        <div className="shell-summary-actions">
+          <button
+            type="button"
+            className="icon-btn icon-btn-lg"
+            aria-label={OPEN_NAV}
+            aria-expanded={navOpen}
+            onClick={() => setNavOpen(true)}
+          >
+            <IconLines />
+          </button>
+          <button
+            type="button"
+            className="icon-btn icon-btn-lg"
+            aria-label={OPEN_PANEL}
+            aria-expanded={panelOpen}
+            onClick={() => setPanelOpen(true)}
+          >
+            <IconPanel />
+          </button>
         </div>
       </div>
 
       {desktop && navCollapsed ? (
         <button
           type="button"
-          className="btn nav-expand"
+          className="icon-btn nav-expand"
+          aria-label={EXPAND_NAV}
           aria-expanded={false}
           onClick={() => setNavCollapsed(false)}
         >
-          {EXPAND_NAV}
+          <IconChevron dir="next" />
         </button>
       ) : null}
 
@@ -122,15 +144,16 @@ export function AppShell(props: Props) {
             {desktop ? (
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="icon-btn"
+                aria-label={COLLAPSE_NAV}
                 aria-expanded={!navCollapsed}
                 onClick={() => setNavCollapsed(true)}
               >
-                {COLLAPSE_NAV}
+                <IconChevron dir="prev" />
               </button>
             ) : navDrawer ? (
-              <button type="button" className="btn btn-ghost" onClick={() => setNavOpen(false)}>
-                {CLOSE_NAV}
+              <button type="button" className="icon-btn" aria-label={CLOSE_NAV} onClick={() => setNavOpen(false)}>
+                <IconChevron dir="prev" />
               </button>
             ) : null}
           </div>
@@ -163,19 +186,19 @@ export function AppShell(props: Props) {
         aria-expanded={panelVisible}
       >
         <div className="shell-aside-inner">
-          <div className="shell-aside-head">
-            <p className="status-line">{props.summary.status}</p>
-            {panelDrawer ? (
+          {panelDrawer ? (
+            <div className="shell-aside-head">
               <button
                 type="button"
-                className="btn btn-ghost"
+                className="icon-btn"
+                aria-label={CLOSE_PANEL}
                 aria-expanded={panelOpen}
                 onClick={() => setPanelOpen(false)}
               >
-                {CLOSE_PANEL}
+                <IconChevron dir="next" />
               </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
           {props.panel}
         </div>
       </aside>

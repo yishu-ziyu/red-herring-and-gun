@@ -64,4 +64,24 @@ describe("AppShell", () => {
     const bare = buttons.filter((button) => !button.textContent?.trim() && !button.getAttribute("aria-label"));
     expect(bare).toHaveLength(0);
   });
+
+  it("摘要栏不含状态词，含 face 与分数", () => {
+    for (const width of [375, 900]) {
+      const { container, unmount } = renderShell(width);
+      const bar = container.querySelector(".shell-summary");
+      expect(bar?.textContent).toContain(faceWord("false"));
+      expect(bar?.textContent).toContain("40");
+      expect(bar?.textContent).not.toMatch(/已完成|正在/);
+      expect(screen.getByRole("button", { name: "打开案件列表" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "打开面板" })).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it("面板顶部无状态词", () => {
+    const { container } = renderShell(1280);
+    const aside = container.querySelector(".shell-aside");
+    expect(aside?.querySelector(".status-line")).toBeNull();
+    expect(aside?.textContent ?? "").not.toMatch(/已完成|正在/);
+  });
 });
