@@ -547,7 +547,7 @@ Evidence：测试名；eval runId 与逐例表；两次真跑的 `.data/cases/*.
   - 证据选择：`provenance.claimId === claim.id` 的 + 无 `claimId` 的（user / pivot / recall / reverse-image 等），去掉已判读与 `reachable === false`，按 tier A→B→C 再按 id 序，截到 `ASSESS_MAX_EVIDENCE = 12`（常数放 `judgeConfig.ts` 旁边同风格文件或该文件顶部）。
   - prompt 只加两句：「quote 不超过 60 字」「最多输出与输入证据数相同条数」。
   - `parseJobOutput` 失败重试**一次**：同一工单再调一次，userContent 末尾追加「上一次输出不合规：<reason 前 200 字>。只输出规定 JSON。」；仍失败才 `failed-open`。重试也受 deadline。
-- **Decompose**（`stages/decompose.ts` 或 `text/claimAtom/forceCheckable.ts`，选一处）：丢弃碎片命题——文本去空白后 < 6 字，或以 `(宣布|表示|称|指出|发布|说|透露|回应|通报|认为|强调)` 结尾。丢弃发 `claims.dropped`（reason `fragment`）；若全被丢则走既有 fail-open（整句成一条 fact）。加 `ponytail:` 注释说明这是正则启发、上限是误杀「X 已表示」类完整句。
+- **Decompose**（`stages/decompose.ts` 或 `text/claimAtom/forceCheckable.ts`，选一处）：丢弃碎片命题——文本去空白后 < 6 字，或以 `(宣布|表示|称|指出|发布|说|透露|回应|通报|认为|强调)(了)?` 结尾，或含占位词 `(某事|某些内容|某项|某种)`（T17 真跑里 decompose 拆出「国家医保局宣布了某事」）。丢弃发 `claims.dropped`（reason `fragment`）；若全被丢则走既有 fail-open（整句成一条 fact）。加 `ponytail:` 注释说明这是正则启发、上限是误杀「X 已表示」类完整句。
 - **Server**（`packages/server`）：
   - 启动时扫 `.data/cases/*.jsonl`：末事件不是 `turn.finished` 的案子追加 `error{stage:"runner", message:"服务重启，本轮中断"}` + `turn.finished{reason:"error"}`（seq 续上），再进入服务。
   - `deps.ts` 的 `tools.search` 透传 `signal`（T15 checker 备注）。
@@ -592,7 +592,7 @@ Evidence：测试名；eval runId 与逐例表；两次真跑的 `.data/cases/*.
 | 16 | 读 `retrieve.ts` | 一次 `Promise.all` 覆盖所有命题 × 查询；事件在收齐后按（命题 order、查询序、hit 序）发；`provenance.claimId` 写入；`retrieve.test.ts` 有「provider 返回顺序打乱、事件序列逐字相同」一例 |
 | 17 | 读 `assess.ts` | 命题间 `Promise.all`；`deadline` 门控 → `stage.finished assess skipped`；证据选择按 `claimId` 归属 + 无归属，tier 排序，截 `ASSESS_MAX_EVIDENCE`（12）；解析失败重试一次且 userContent 含「上一次输出不合规」；`assess.test.ts` 新增用例：① 30 条证据只喂 12 条且 A 级优先；② 他命题的证据不喂；③ 首次输出 `{}` 第二次合规 → `stage.finished assess ok` 且 `llm.called` 两条；④ 过 deadline 的命题 `skipped` 无 llm 调用 |
 | 18 | `rg "60 字\|不超过 60" packages/core/src/stages/assess.ts` | ≥ 1 命中（prompt 里加了 quote 长度约束） |
-| 19 | 读碎片命题过滤实现与测试 | 「国家医保局宣布」被丢弃并发 `claims.dropped`（reason `fragment`）；「国家医保局宣布生育津贴直接发个人」保留；全丢时 fail-open 一条 fact；有 `ponytail:` 注释 |
+| 19 | 读碎片命题过滤实现与测试 | 「国家医保局宣布」「国家医保局宣布了某事」都被丢弃并发 `claims.dropped`（reason `fragment`）；「国家医保局宣布生育津贴直接发个人」保留；全丢时 fail-open 一条 fact；有 `ponytail:` 注释 |
 | 20 | 读 server 启动修复 | `store` 或 `index.ts` 有开机扫描；测试：预置一份末事件为 `stage.started` 的 jsonl → 启动后 `GET /api/cases/:id` 返回 `running: false`、末事件 `turn.finished reason error`、倒数第二条 `error` 含「重启」 |
 | 21 | 读 `deps.ts` | `tools.search` 把 `signal` 传给 `searchAll` |
 | 22 | `npx tsx packages/eval/src/run.ts --ids RUMOR-001 --fake && ls packages/eval/runs/*/` | 有 `RUMOR-001.jsonl`；每行 `JSON.parse` 后过 `validateEvent`；stdout JSON 的 `summary` 含 `turnReasons / judgeRan / llmByJob / errorsByStage`，`cases[0]` 含 `judgeRan / llmCalls` |
