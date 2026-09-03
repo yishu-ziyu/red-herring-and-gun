@@ -21,7 +21,8 @@ describe("candidatesFor", () => {
       expect(rows[0]?.provider).toBe("minimax");
       expect(rows[0]?.model).toBe("MiniMax-M3");
     }
-    expect(candidatesFor("decompose", env)[0]?.effort).toBe("medium");
+    expect(candidatesFor("decompose", env)[0]?.effort).toBe("low");
+    expect(candidatesFor("decompose", env)[0]?.timeoutMs).toBe(30_000);
     expect(candidatesFor("compose", env)[0]?.timeoutMs).toBe(45_000);
     expect(candidatesFor("no-such-job", env)).toEqual(candidatesFor("assess", env));
   });

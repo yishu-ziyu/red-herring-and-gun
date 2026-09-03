@@ -21,11 +21,6 @@ const FAST: JobCandidate[] = [
   { provider: "stepfun", model: "step-3.7-flash", effort: "low", timeoutMs: 45_000 },
 ];
 
-const DECOMPOSE: JobCandidate[] = [
-  { provider: "minimax", model: "MiniMax-M3", effort: "medium", timeoutMs: 40_000 },
-  { provider: "stepfun", model: "step-3.7-flash", effort: "low", timeoutMs: 45_000 },
-];
-
 const COMPOSE: JobCandidate[] = [
   { provider: "minimax", model: "MiniMax-M3", effort: "medium", timeoutMs: 45_000 },
   { provider: "stepfun", model: "step-3.7-flash", effort: "low", timeoutMs: 60_000 },
@@ -38,7 +33,7 @@ const DEFAULTS: Record<string, JobCandidate[]> = {
   investigate: FAST,
   cites: FAST,
   ask_case: FAST,
-  decompose: DECOMPOSE,
+  decompose: FAST,
   compose: COMPOSE,
 };
 
