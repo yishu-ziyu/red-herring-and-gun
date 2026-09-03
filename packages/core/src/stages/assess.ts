@@ -21,6 +21,7 @@ export const ASSESS_SYSTEM_PROMPT = `你在做证据立场判读，不是在裁�
 
 规则：
 - 只根据给定证据原文判断，不要用你自己的世界知识补证据里没有的事实。
+- 证据必须与命题指向同一主体、同一事件。关于别的公司、别的人、别的事件的辟谣或规则介绍，即使主题相似，也不是对这条命题的支持或反驳，标 contextual。反例：命题「我们公司下周一会被收购」，证据是「造谣蔚来被收购被查处」的通报——主体不同，只能标 contextual。
 - 每条输出必须引用该证据原文中的连续片段作为 quote，不要改写、不要省略号拼接。
 - quote 不超过 60 字。
 - 最多输出与输入证据数相同条数。
@@ -122,6 +123,18 @@ export async function runAssess(ctx: StageContext, input: AssessInput = {}): Pro
   return { assessed };
 }
 
+function evidenceTierSort(a: Evidence, b: Evidence): number {
+  const tier = TIER_RANK[a.tier] - TIER_RANK[b.tier];
+  if (tier !== 0) return tier;
+  return a.id.localeCompare(b.id, undefined, { numeric: true });
+}
+
+function isOwnClaimEvidence(item: Evidence, claimId: string): boolean {
+  const provenance = item.provenance;
+  if (provenance.kind !== "search" || provenance.claimId === undefined) return true;
+  return provenance.claimId === claimId;
+}
+
 function selectEvidence(
   ctx: StageContext,
   claimId: string,
@@ -134,24 +147,26 @@ function selectEvidence(
       .filter((stance) => stance.claimId === claimId && stance.by === by)
       .map((stance) => stance.evidenceId),
   );
-  const pool = ctx.current.evidence.filter((item) => {
+  const eligible = ctx.current.evidence.filter((item) => {
     if (item.reachable === false) return false;
     if (allow && !allow.has(item.id)) return false;
     if (judged.has(item.id)) return false;
-    if (!allow) {
-      const provenance = item.provenance;
-      if (provenance.kind === "search" && provenance.claimId !== undefined && provenance.claimId !== claimId) {
-        return false;
-      }
-    }
     return true;
   });
-  pool.sort((a, b) => {
-    const tier = TIER_RANK[a.tier] - TIER_RANK[b.tier];
-    if (tier !== 0) return tier;
-    return a.id.localeCompare(b.id, undefined, { numeric: true });
-  });
-  return pool.slice(0, ASSESS_MAX_EVIDENCE);
+  if (allow) {
+    const pool = [...eligible];
+    pool.sort(evidenceTierSort);
+    return pool.slice(0, ASSESS_MAX_EVIDENCE);
+  }
+  const own: Evidence[] = [];
+  const cross: Evidence[] = [];
+  for (const item of eligible) {
+    if (isOwnClaimEvidence(item, claimId)) own.push(item);
+    else cross.push(item);
+  }
+  own.sort(evidenceTierSort);
+  cross.sort(evidenceTierSort);
+  return [...own, ...cross].slice(0, ASSESS_MAX_EVIDENCE);
 }
 
 function selectClaims(ctx: StageContext, claimIds: string[] | undefined) {
