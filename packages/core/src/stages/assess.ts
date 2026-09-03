@@ -122,6 +122,18 @@ export async function runAssess(ctx: StageContext, input: AssessInput = {}): Pro
   return { assessed };
 }
 
+function evidenceTierSort(a: Evidence, b: Evidence): number {
+  const tier = TIER_RANK[a.tier] - TIER_RANK[b.tier];
+  if (tier !== 0) return tier;
+  return a.id.localeCompare(b.id, undefined, { numeric: true });
+}
+
+function isOwnClaimEvidence(item: Evidence, claimId: string): boolean {
+  const provenance = item.provenance;
+  if (provenance.kind !== "search" || provenance.claimId === undefined) return true;
+  return provenance.claimId === claimId;
+}
+
 function selectEvidence(
   ctx: StageContext,
   claimId: string,
@@ -134,24 +146,26 @@ function selectEvidence(
       .filter((stance) => stance.claimId === claimId && stance.by === by)
       .map((stance) => stance.evidenceId),
   );
-  const pool = ctx.current.evidence.filter((item) => {
+  const eligible = ctx.current.evidence.filter((item) => {
     if (item.reachable === false) return false;
     if (allow && !allow.has(item.id)) return false;
     if (judged.has(item.id)) return false;
-    if (!allow) {
-      const provenance = item.provenance;
-      if (provenance.kind === "search" && provenance.claimId !== undefined && provenance.claimId !== claimId) {
-        return false;
-      }
-    }
     return true;
   });
-  pool.sort((a, b) => {
-    const tier = TIER_RANK[a.tier] - TIER_RANK[b.tier];
-    if (tier !== 0) return tier;
-    return a.id.localeCompare(b.id, undefined, { numeric: true });
-  });
-  return pool.slice(0, ASSESS_MAX_EVIDENCE);
+  if (allow) {
+    const pool = [...eligible];
+    pool.sort(evidenceTierSort);
+    return pool.slice(0, ASSESS_MAX_EVIDENCE);
+  }
+  const own: Evidence[] = [];
+  const cross: Evidence[] = [];
+  for (const item of eligible) {
+    if (isOwnClaimEvidence(item, claimId)) own.push(item);
+    else cross.push(item);
+  }
+  own.sort(evidenceTierSort);
+  cross.sort(evidenceTierSort);
+  return [...own, ...cross].slice(0, ASSESS_MAX_EVIDENCE);
 }
 
 function selectClaims(ctx: StageContext, claimIds: string[] | undefined) {
