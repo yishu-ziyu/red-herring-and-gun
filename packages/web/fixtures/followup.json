@@ -1,6 +1,6 @@
 {
   "name": "followup",
-  "cutAt": 65,
+  "cutAt": 60,
   "events": [
     {
       "type": "case.created",
@@ -104,7 +104,8 @@
         "provenance": {
           "kind": "search",
           "query": "人社部发文说生育津贴直接打到个人卡里了",
-          "provider": "fixtureSearch"
+          "provider": "fixtureSearch",
+          "claimId": "c1"
         },
         "title": "转发",
         "id": "e1"
@@ -187,37 +188,17 @@
       "overall": {
         "verdictType": "unverified",
         "contested": false,
-        "score": 15,
+        "score": 16,
         "breakdown": [
           {
-            "key": "base",
-            "label": "起点",
-            "value": 30
+            "key": "claim:c1",
+            "label": "命题 1",
+            "value": 8
           },
           {
-            "key": "coverage",
-            "label": "依据覆盖率",
-            "value": 0
-          },
-          {
-            "key": "clusters",
-            "label": "独立簇",
-            "value": 0
-          },
-          {
-            "key": "tierA",
-            "label": "A 级占比",
-            "value": 0
-          },
-          {
-            "key": "unverified",
-            "label": "未核占比",
-            "value": -15
-          },
-          {
-            "key": "contested",
-            "label": "争议",
-            "value": 0
+            "key": "weakest",
+            "label": "最弱一环",
+            "value": 8
           }
         ]
       },
@@ -344,37 +325,17 @@
       "overall": {
         "verdictType": "false",
         "contested": false,
-        "score": 85,
+        "score": 6,
         "breakdown": [
           {
-            "key": "base",
-            "label": "起点",
-            "value": 30
+            "key": "claim:c1",
+            "label": "命题 1",
+            "value": 3
           },
           {
-            "key": "coverage",
-            "label": "依据覆盖率",
-            "value": 30
-          },
-          {
-            "key": "clusters",
-            "label": "独立簇",
-            "value": 5
-          },
-          {
-            "key": "tierA",
-            "label": "A 级占比",
-            "value": 20
-          },
-          {
-            "key": "unverified",
-            "label": "未核占比",
-            "value": 0
-          },
-          {
-            "key": "contested",
-            "label": "争议",
-            "value": 0
+            "key": "weakest",
+            "label": "最弱一环",
+            "value": 3
           }
         ]
       },
@@ -442,7 +403,7 @@
     {
       "type": "report.finalized",
       "report": {
-        "conclusion": "生育津贴不会直接打到个人卡里，仍由单位申领。",
+        "conclusion": "生育津贴不会直接打到个人卡里，仍由单位申领。[1]",
         "claimItems": [
           {
             "claimId": "c1",
@@ -475,7 +436,7 @@
       "message": {
         "id": "m2",
         "role": "assistant",
-        "text": "生育津贴不会直接打到个人卡里，仍由单位申领。",
+        "text": "生育津贴不会直接打到个人卡里，仍由单位申领。[1]",
         "at": "2026-09-03T12:00:00.000Z"
       },
       "seq": 41,
@@ -547,103 +508,25 @@
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
-      "type": "stage.started",
-      "stage": "assess",
-      "claimId": "c1",
-      "seq": 49,
-      "at": "2026-09-03T12:00:00.000Z"
-    },
-    {
-      "type": "llm.called",
-      "job": "assess",
-      "model": "fake",
-      "latencyMs": 0,
-      "ok": true,
-      "seq": 50,
-      "at": "2026-09-03T12:00:00.000Z"
-    },
-    {
-      "type": "stance.added",
-      "stance": {
-        "id": "s3",
-        "claimId": "c1",
-        "evidenceId": "e2",
-        "stance": "refutes",
-        "quote": "人社部从未发文称生育津贴直接打到个人卡",
-        "confidence": 0.9,
-        "quoteFidelity": true,
-        "by": "main"
-      },
-      "seq": 51,
-      "at": "2026-09-03T12:00:00.000Z"
-    },
-    {
-      "type": "stage.finished",
-      "stage": "assess",
-      "claimId": "c1",
-      "outcome": "ok",
-      "seq": 52,
-      "at": "2026-09-03T12:00:00.000Z"
-    },
-    {
-      "type": "verdict.updated",
-      "verdict": {
-        "claimId": "c1",
-        "verdict": "false",
-        "basis": [
-          "s3"
-        ],
-        "rule": "false",
-        "tally": {
-          "sup": 0,
-          "ref": 3,
-          "par": 0
-        },
-        "updatedAt": "2026-09-03T12:00:00.000Z"
-      },
-      "seq": 53,
-      "at": "2026-09-03T12:00:00.000Z"
-    },
-    {
       "type": "overall.updated",
       "overall": {
         "verdictType": "false",
         "contested": false,
-        "score": 85,
+        "score": 6,
         "breakdown": [
           {
-            "key": "base",
-            "label": "起点",
-            "value": 30
+            "key": "claim:c1",
+            "label": "命题 1",
+            "value": 3
           },
           {
-            "key": "coverage",
-            "label": "依据覆盖率",
-            "value": 30
-          },
-          {
-            "key": "clusters",
-            "label": "独立簇",
-            "value": 5
-          },
-          {
-            "key": "tierA",
-            "label": "A 级占比",
-            "value": 20
-          },
-          {
-            "key": "unverified",
-            "label": "未核占比",
-            "value": 0
-          },
-          {
-            "key": "contested",
-            "label": "争议",
-            "value": 0
+            "key": "weakest",
+            "label": "最弱一环",
+            "value": 3
           }
         ]
       },
-      "seq": 54,
+      "seq": 49,
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
@@ -659,14 +542,14 @@
       "why": "搜索命中 A 级页，只有摘要，未读全文",
       "result": "updated e2",
       "gain": 0,
-      "seq": 55,
+      "seq": 50,
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
       "type": "investigator.stopped",
       "role": "main",
       "reason": "resolved",
-      "seq": 56,
+      "seq": 51,
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
@@ -674,47 +557,27 @@
       "overall": {
         "verdictType": "false",
         "contested": false,
-        "score": 85,
+        "score": 6,
         "breakdown": [
           {
-            "key": "base",
-            "label": "起点",
-            "value": 30
+            "key": "claim:c1",
+            "label": "命题 1",
+            "value": 3
           },
           {
-            "key": "coverage",
-            "label": "依据覆盖率",
-            "value": 30
-          },
-          {
-            "key": "clusters",
-            "label": "独立簇",
-            "value": 5
-          },
-          {
-            "key": "tierA",
-            "label": "A 级占比",
-            "value": 20
-          },
-          {
-            "key": "unverified",
-            "label": "未核占比",
-            "value": 0
-          },
-          {
-            "key": "contested",
-            "label": "争议",
-            "value": 0
+            "key": "weakest",
+            "label": "最弱一环",
+            "value": 3
           }
         ]
       },
-      "seq": 57,
+      "seq": 52,
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
       "type": "stage.started",
       "stage": "compose",
-      "seq": 58,
+      "seq": 53,
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
@@ -723,26 +586,26 @@
       "model": "fake",
       "latencyMs": 0,
       "ok": true,
-      "seq": 59,
+      "seq": 54,
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
       "type": "stage.finished",
       "stage": "compose",
       "outcome": "ok",
-      "seq": 60,
+      "seq": 55,
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
       "type": "stage.started",
       "stage": "finalize",
-      "seq": 61,
+      "seq": 56,
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
       "type": "report.finalized",
       "report": {
-        "conclusion": "生育津贴不会直接打到个人卡里，仍由单位申领。",
+        "conclusion": "生育津贴不会直接打到个人卡里，仍由单位申领。[1]",
         "claimItems": [
           {
             "claimId": "c1",
@@ -760,14 +623,14 @@
         ],
         "finalizedAt": "2026-09-03T12:00:00.000Z"
       },
-      "seq": 62,
+      "seq": 57,
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
       "type": "stage.finished",
       "stage": "finalize",
       "outcome": "ok",
-      "seq": 63,
+      "seq": 58,
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
@@ -775,17 +638,17 @@
       "message": {
         "id": "m4",
         "role": "assistant",
-        "text": "生育津贴不会直接打到个人卡里，仍由单位申领。",
+        "text": "生育津贴不会直接打到个人卡里，仍由单位申领。[1]",
         "at": "2026-09-03T12:00:00.000Z"
       },
-      "seq": 64,
+      "seq": 59,
       "at": "2026-09-03T12:00:00.000Z"
     },
     {
       "type": "turn.finished",
       "turnId": "t2",
       "reason": "done",
-      "seq": 65,
+      "seq": 60,
       "at": "2026-09-03T12:00:00.000Z"
     }
   ]
