@@ -152,6 +152,67 @@ export function scoreCase(golden: ScoreCaseGolden, result: ScoreInput): CaseMetr
   };
 }
 
+export type LlmJobStat = { calls: number; failed: number; p50Ms: number | null };
+
+export type TurnReasonCounts = { done: number; timeout: number; aborted: number; error: number };
+
+export type RunSummary = CaseMetrics & {
+  turnReasons: TurnReasonCounts;
+  judgeRan: { ok: number; total: number };
+  llmByJob: Record<string, LlmJobStat>;
+  errorsByStage: Record<string, number>;
+};
+
+export function judgeRanOf(events: CaseEvent[]): boolean {
+  return events.some(
+    (event) => event.type === "stage.finished" && event.stage === "judge" && event.outcome === "ok",
+  );
+}
+
+export function summarizeRun(
+  cases: ReadonlyArray<{ metrics: CaseMetrics; elapsedMs: number; turnReason: string | null; judgeRan: boolean }>,
+  eventLists: CaseEvent[][],
+): RunSummary {
+  const turnReasons: TurnReasonCounts = { done: 0, timeout: 0, aborted: 0, error: 0 };
+  for (const row of cases) {
+    const reason = row.turnReason;
+    if (reason === "done" || reason === "timeout" || reason === "aborted" || reason === "error") {
+      turnReasons[reason] += 1;
+    }
+  }
+  const latencies = new Map<string, number[]>();
+  const llmByJob: Record<string, LlmJobStat> = {};
+  const errorsByStage: Record<string, number> = {};
+  for (const events of eventLists) {
+    for (const event of events) {
+      if (event.type === "llm.called") {
+        const cur = llmByJob[event.job] ?? { calls: 0, failed: 0, p50Ms: null };
+        cur.calls += 1;
+        if (!event.ok) cur.failed += 1;
+        llmByJob[event.job] = cur;
+        const list = latencies.get(event.job) ?? [];
+        list.push(event.latencyMs);
+        latencies.set(event.job, list);
+      }
+      if (event.type === "error") {
+        const stage = event.stage ?? "unknown";
+        errorsByStage[stage] = (errorsByStage[stage] ?? 0) + 1;
+      }
+    }
+  }
+  for (const [job, stat] of Object.entries(llmByJob)) {
+    const nums = (latencies.get(job) ?? []).slice().sort((a, b) => a - b);
+    stat.p50Ms = nums.length === 0 ? null : nums[Math.floor((nums.length - 1) * 0.5)] ?? null;
+  }
+  return {
+    ...summarize(cases),
+    turnReasons,
+    judgeRan: { ok: cases.filter((row) => row.judgeRan).length, total: cases.length },
+    llmByJob,
+    errorsByStage,
+  };
+}
+
 export function summarize(rows: ReadonlyArray<{ metrics: CaseMetrics; elapsedMs: number }>): CaseMetrics {
   return {
     verdictAccuracy: average(rows.map((row) => row.metrics.verdictAccuracy)),
