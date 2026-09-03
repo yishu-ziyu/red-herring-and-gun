@@ -688,7 +688,7 @@ Evidence：测试名；截图 / 录屏路径 `packages/web/output/acceptance/T18
     1. 结论段：`report.conclusion`，衬线、`clamp(17px, 1.8vw, 19px)`、行高 1.7；首句加判决色 62% 高亮下划线（`background: linear-gradient(transparent 62%, color-mix(判决色 20%) 62%)`），判决色取 `overall.verdictType`（true→true、false→false、mixed_misleading / unverified→unclear）。`[n]` 渲染为内联可点引用（mono、12px、判决无关的 `--ink-muted` 细边圆角），hover / focus 出 popover：证据标题、host、层级字母、引文（`stance.quote`），点击在新标签打开 `evidence.url`。
     2. 命题逐条：`report.claimItems` 顺序；每条 = 判决芯片（文字 + 判决色，芯片文案用 `publicCopy` 的 face 词表，不自造）+ `line` + 该条的 `[n]`。立场型命题（`claim.type` 不可核查者）芯片文案「立场型 · 不适用真/假判断」，中性色。
     3. 出处列表：`report.citations` 顺序，每条 `[n]` 标题 · host · 层级徽标（A/B/C，`--ink` 描边小方块，A 实心）· 立场标记（支持 ＋ / 反驳 － / 部分 ±，文字不只靠符号）。默认展开前 5 条，其余「展开全部 N 条」。
-    4. frontier 芯片行：标题「还可以往哪查」，`case.frontier` 里未 consumed 的 pivot 按 `expectedValue` 降序取前 6，芯片文案 = pivot 标签（link → host + 路径截断、entity → 实体名、image → 「这张图的来源」）。点击 → `sendTurn("", pivotId)`，芯片进入「正在查」态并禁用。
+    4. frontier 芯片行：标题「还可以往哪查」，`case.frontier` 里未 consumed 的 pivot 按 `expectedValue` 降序取前 6，芯片文案 = pivot 标签（link → host + 路径截断、entity → 实体名、image → 「这张图的来源」）。点击 → `sendTurn(pursueText(pivot), pivotId)`，其中 `pursueText` 在 `copy.ts`：`追查 · ${pivotLabel(pivot)}`——这就是线程里那条用户消息的正文（server 拒空 `text`，路由仍由 `pivotId` 决定为 `pursue_frontier`）；`api.ts` 不做任何占位替换。芯片进入「正在查」态并禁用。
   - 运行中（`running === true`）的助手块是同一张卡的「未完成态」，不是另一个组件：顶部一行状态词（只准这些：正在拆题 / 正在找证据 / 正在核对 / 正在追索 / 正在复核 / 正在写结论 / 已完成 / 已中止），从最近一条 `stage.started` 映射；命题在 `claims.added` 后即出现（芯片「核对中」，中性色）；证据计数「已找到 N 条材料」随 `evidence.added` 跳动（数字 mono，变化时 160ms 淡入）；判决芯片随 `verdict.updated` 翻转（颜色与文字同时过渡，160ms）。追索步骤流（`investigator.step`）以「仪器条」呈现：细线卡、点阵标记、每步一行 `目标 · 动作 · 结果`，最多显示最近 3 步，结束后整条折叠成一行「追索了 N 步 · 停止原因」可展开。
   - 输入框固定线程底部：textarea（自动增高到 6 行）+ 提交按钮；运行中提交按钮换成「中止」（`abort()`），输入框仍可编辑但不能提交；`Enter` 提交、`Shift+Enter` 换行；空串不能提交。
 - 案件面板（`<aside>`），从上到下：
@@ -730,8 +730,8 @@ Evidence：测试名；截图 / 录屏路径 `packages/web/output/acceptance/T18
 | 22 | 浏览器真后端 A（会触发追索）：起 server + web，首页输入「人社部发文说生育津贴直接打到个人卡里了，不用再走单位」 | 从提交起计时：命题出现 ≤ 10s、首条证据计数 ≥1 ≤ 20s、`turn.finished` ≤ 130s；完成态结论段有 ≥1 个 `[n]`；仪器条在运行中出现过 `investigator.step` 行（截图 `T18-live-A-running.png`）；完成截图 `T18-live-A-done.png`；把结论段文本与命题 + 芯片文案贴进报告 |
 | 23 | 浏览器真后端 B（含立场句）：新案「转基因食品就是毒药，这届专家全被收买了」 | 命题列表里至少一条标「立场型」；可核查命题有判决芯片；截图 `T18-live-B-done.png`；贴命题 + 芯片文案 |
 | 24 | 浏览器真后端 C（图片输入）：首页粘贴或拖入一张含文字的图（用 `packages/core/src/fetch/__fixtures__` 或任意本地 png），提交 | 案件建立、线程里用户消息显示图片缩略；60s 内有命题或有「这张图的来源」frontier 芯片；截图 `T18-live-C.png`。若 T19 尚未合入导致首页无图片入口，此条改为 `POST /api/cases` 带 `attachments:[{kind:"image", value:<dataURL>}]` 后打开案件页验证，并在报告注明 |
-| 25 | 浏览器真后端 A 完成后点一个 frontier 芯片 | 同一 `/cases/<id>` 页面上出现新一条用户消息 + 新报告卡（未完成态），面板命题数不减少；芯片在点击后禁用；截图 `T18-live-A-followup.png` |
-| 26 | 浏览器真后端 A 运行中点「中止」 | ≤ 3s 内状态词变「已中止」，`GET /api/cases/<id>` 末事件 `turn.finished.reason === "aborted"`；输入框恢复可提交 |
+| 25 | 浏览器真后端 A 完成后点一个 frontier 芯片 | 同一 `/cases/<id>` 页面上出现新一条用户消息（正文 = `追查 · <芯片文案>`，不是「再查」）+ 新报告卡（未完成态），面板命题数不减少；芯片在点击后禁用；`GET /api/cases/<id>` 里该条 `message.added.message.route === "pursue_frontier"`；截图 `T18-live-A-followup.png`。若 A 完成后 `frontier` 为空，改用 `POST /api/cases` 新建「北京市 2026 年起小学放学时间统一延后到 18:00」再等其完成后点芯片，并在报告注明 |
+| 26 | 浏览器真后端 A 运行中点「中止」 | ≤ 3s 内状态词变「已中止」，`GET /api/cases/<id>` 末事件 `turn.finished.reason === "aborted"`；输入框恢复可提交；另用 `curl -s -o /dev/null -w '%{http_code} %{time_total}\n' -X POST .../abort` 在另一条运行中的轮次上实测，报 http_code 与秒数（仅报告） |
 | 27 | 浏览器：任一完成页 `[...document.querySelectorAll("button,a")].filter(el => !el.textContent.trim() && !el.getAttribute("aria-label")).length` | 0 |
 | 28 | 浏览器：任一完成页 375 宽，把面板抽屉内五个区块全部展开 | `scrollWidth === innerWidth` 仍成立；截图 `T18-mobile-all-open.png` |
 | 29 | `rg ": any\b\|console\.log\|\.only\|\.skip" packages/web/src` | 0 命中 |
