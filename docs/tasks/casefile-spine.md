@@ -454,7 +454,7 @@ Evidence：测试名；eval run id；对比表（四项 + 新指标）。
 | 2 | `npx tsc --noEmit -p packages/eval` | 退出码 0 |
 | 3 | `npm test --workspace=@rhg/core` | 退出码 0，用例数不少于 spine 上的数字（core 未被改动） |
 | 4 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动仅在 `packages/eval/**`、根 `package.json`、`package-lock.json`、`.gitignore`；不含 `mvp/`、`packages/core/` |
-| 5 | `sed '/expectedAgentSequence/d' mvp/server/eval/golden.ts \| diff - <(sed '/expectedAgentSequence/d' packages/eval/src/golden.ts)` | 差异为空，或只剩注释行 |
+| 5 | `diff <(perl -0pe 's/\s*expectedAgentSequence:\s*\[[^\]]*\],?//g' mvp/server/eval/golden.ts) <(perl -0pe 's/\s*expectedAgentSequence:\s*\[[^\]]*\],?//g' packages/eval/src/golden.ts)` | 差异为空，或只剩注释行；`rg -c expectedAgentSequence packages/eval/src/golden.ts` 为 0；文件里没有 `@ts-nocheck` / `@ts-ignore` |
 | 6 | `rg "from \"[./]*mvp\|require\(.*mvp" packages/eval/src` | 0 命中（`mvp/server/eval/baseline.json` 只能作为 CLI 参数字串出现在文档 / 脚本里） |
 | 7 | `rg "process\.env" packages/eval/src` | 只出现在 `run.ts`（或单独 `env.ts`），`score.ts` 里 0 命中 |
 | 8 | 读 `score.ts` 导出 | 恰好导出上表 10 个指标名 + 一个 `summarize`（名称可异），没有别的指标 |
