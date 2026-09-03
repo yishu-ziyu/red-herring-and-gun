@@ -386,7 +386,7 @@ Evidence：测试名；`curl` 一次真实 SSE 的前 5 行（不含密钥）。
   - `POST /api/cases` body `{ text, attachments? }` → 202 `{ caseId, turnId }`。`createCase` 的事件先落日志，再启动首轮（detached）。
   - `POST /api/cases/:id/turns` body `{ text, pivotId?, attachments? }` → 202 `{ turnId }`；案件不存在 404；该案有轮次在跑 409 `{ error }`。
   - `POST /api/cases/:id/abort` → 204；没有在跑的轮次也 204。
-  - `GET /api/cases/:id/stream?since=<seq>` → 200 SSE。先把日志里 `seq > since` 的事件按序发出（补齐），再接总线直播；`since` 缺省为 0。每帧 `event: case.event`，`id: <seq>`，`data: <公开事件 JSON>`。流不主动结束（客户端看到 `turn.finished` 自己决定留或走）；客户端断开只是解除订阅，**不 abort 轮次**。补齐与直播衔接不得丢事件、不得重复（订阅总线在读日志之前，缓冲期间到达的事件按 seq 去重）。
+  - `GET /api/cases/:id/stream?since=<seq>` → 200 SSE。先把日志里 `seq > since` 的事件按序发出（补齐），再接总线直播；`since` 缺省取请求头 `Last-Event-ID`（浏览器 `EventSource` 自动重连时带），再缺省为 0。每帧 `event: case.event`，`id: <seq>`，`data: <公开事件 JSON>`。流不主动结束（客户端看到 `turn.finished` 自己决定留或走）；客户端断开只是解除订阅，**不 abort 轮次**。补齐与直播衔接不得丢事件、不得重复（订阅总线在读日志之前，缓冲期间到达的事件按 seq 去重）。
   - `GET /api/cases/:id` → `{ case, events, running: boolean }`，`case` 与 `events` 都是公开形态，且 `case === replay(events)`。不存在 404。
   - `GET /api/cases` → `list()` 结果，按 `updatedAt` 降序。
   - 请求体非法 400；`text` 空或 > 4000 字 400。
@@ -414,7 +414,7 @@ Evidence：测试名；`curl` 一次真实 SSE 的前 5 行（不含密钥）。
 | 12 | 读 `publicEvent.ts` 用例 | `toPublicEvent` 输出再过 `validateEvent` 不抛；含 "OpenAI" 字样的证据 `text` 原样保留 |
 | 13a | 读「断连不中止」用例 | 客户端在轮次中途关掉 stream 连接后，轮次继续跑完，日志末尾是 `turn.finished(done)`，不是 `aborted` |
 | 13b | 读「显式 abort」用例 | `POST /api/cases/:id/abort` 后假 deps 观察到 `signal.aborted === true`，日志末尾 `turn.finished(aborted)`；再 abort 一次仍 204 |
-| 13c | 读「重连补齐」用例 | 轮次跑到中途，新开 `stream?since=<已收到的最大 seq>`，收到的第一条事件 `seq === since + 1`，且到 `turn.finished` 为止 seq 连续无重复 |
+| 13c | 读「重连补齐」用例 | 轮次跑到中途，新开 `stream?since=<已收到的最大 seq>`，收到的第一条事件 `seq === since + 1`，且到 `turn.finished` 为止 seq 连续无重复；另一例：不带 `since` 但带请求头 `Last-Event-ID: <n>`，效果同 `since=n` |
 | 13d | 读「409」用例 | 同案第二个 `POST turns` 在第一轮跑完前返回 409；跑完后再 POST 返回 202 |
 | 14 | 读心跳用例 | 假 clock / 缩短心跳间隔后，SSE 文本里出现 `: ping` |
 | 15 | 读 SSE 帧格式用例 | 每帧 `event: case.event`、`id: <seq>`、`data:` 能 `JSON.parse` 并过 `validateEvent`；`since` 缺省时从 `case.created` 开始 |
@@ -503,6 +503,54 @@ Not this：不引 UI 组件库（antd 一类）；不复制任何 `mvp/src` 组�
 Evaluator：`useCaseStream.test.ts`：事件应用顺序与 reducer 一致；断流后补齐状态相等。验收人在浏览器打开 5 个 fixture，桌面 + 375px 各截图，检查三栏折叠行为与无横向滚动（`document.documentElement.scrollWidth === innerWidth`）。
 
 Evidence：测试名；截图路径 `packages/web/output/acceptance/T17-*.png`。
+
+设计定案（2026-09-03 验收人）：
+
+- 视觉语言沿用 `mvp/DESIGN.md` 的原则（暖纸、墨、克制；衬线只给品牌与判定句；判决三色只做文字 / 细线 / 淡底，不做大色块；不用颜色单独表示判断），**实现从零写**，不复制 `mvp/src/styles.css` 任何一行（那份 17.8K 行是要删的）。
+- 依赖：允许新增 devDependencies `jsdom`、`@testing-library/react`（只用于测试）。不引 UI 组件库、不引 Tailwind、不引路由库、不引状态库。
+- `@rhg/core` 只能引 `@rhg/core/casefile` 与 `@rhg/core/publicCopy` 两个子路径（core 根会拖进 node 模块）。`vite.config.ts` 用 `resolve.alias` 把这两个子路径指到 `../core/src/...` 源码（dev / build / vitest 同用），`tsconfig` 加对应 `paths`；web 开发不再依赖先 build core。
+- `src/styles/tokens.css`（≤ 120 行）是唯一写死颜色 / 字体栈 / 尺度的地方：
+  - 色：`--paper #fefcf6`、`--paper-deep #f5f1e6`、`--ink #151821`、`--ink-muted #5b6070`、`--accent #b91c3c`、`--verdict-true #16a34a`、`--verdict-false #e84a5f`、`--verdict-unclear #d97706`；线与淡底一律 `color-mix(in srgb, var(--x) N%, transparent)` 派生，N ∈ {6, 12, 14, 20}。
+  - 字：`--font-serif`（Noto Serif SC → Source Han Serif SC → Songti SC → serif）、`--font-sans`（Noto Sans SC → PingFang SC → Hiragino Sans GB → Microsoft YaHei → system-ui）、`--font-mono`。T17 不加载 web 字体（自托管字体是 T20 运维事）。
+  - 尺度：间距 4 / 8 / 12 / 16 / 24 / 32 / 48；圆角 4 / 8 / 12；字号 12 / 14 / 17 / 20 / 24 + `--type-display: clamp(28px, 4vw, 40px)`；行高正文 1.6、标题 1.3；动效 `--dur 160ms`、`--ease cubic-bezier(.2,.7,.2,1)`，`prefers-reduced-motion: reduce` 下 `--dur: 0ms`。
+  - `:focus-visible` 统一 `outline: 2px solid var(--accent); outline-offset: 2px`。
+- 其它 CSS 文件里不准出现十六进制色、`rgb(`、`hsl(`、`font-family:`；只能 `var(--…)`。
+- 布局壳 `AppShell`：语义元素 `<nav>`（案件列表）/ `<main>`（线程）/ `<aside>`（案件面板）。≥1024px：grid 三栏 `auto minmax(0,1fr) 360px`，nav 240px 可收起到 0（按钮 `aria-expanded`，状态存 localStorage）；768–1023px：两栏，aside 变右侧抽屉，顶部一条摘要栏（判决词 + 分数）带「打开面板」按钮；<768px：单栏，nav 与 aside 都是抽屉。抽屉 Escape 关闭、遮罩点击关闭。任何宽度不出现横向滚动。
+- 路由：`useRoute()` 读 `location.pathname`，`navigate(path)` 用 `history.pushState` + `popstate`。只有 `/` 与 `/cases/:id`。T17 在两页放最小占位（首页：一个输入框 + 提交 → `POST /api/cases` → 跳 `/cases/:id`；案件页：线程里按 `case.messages` 顺序渲染纯文本气泡，面板里按 `case.claims` 顺序渲染「命题文本 + 判决词（`publicCopy` 的 face 词）」纯文本列表）。这是 T18 / T19 要替换的骨架，不做样式修饰，但必须真的能从首页一句话跑到看见判决词。
+- `api.ts`：`createCase`、`postTurn`、`abortTurn`、`getCase`、`listCases`、`openStream(caseId, since): EventSource`。流用原生 `EventSource`（服务端每帧带 `id: <seq>`，浏览器断线自动重连并带 `Last-Event-ID`；服务端 T15 要接受该头作为 `since` 回退——已列入 T15 合入前修正）。`vite.config.ts` 里 `server.proxy['/api'] → http://127.0.0.1:3001`（端口从 `VITE_API_PORT` 读，缺省 3001）。
+- `useCaseStream(caseId)`：挂载时 `getCase` → 状态 = 返回的 `case`，再 `openStream(caseId, case.seq)`；每帧 `JSON.parse` → 若 `seq <= current.seq` 丢弃（重复）；若 `seq > current.seq + 1` 关流、重新 `getCase`、重开流（补洞）；否则 `reduce`。暴露 `{ case, status: "loading" | "live" | "reconnecting" | "error", running, sendTurn(text, pivotId?), abort() }`。`sendTurn` 遇 409 设 `status: "error"` 与可读消息，不抛。不写手动重试循环（`EventSource` 自带）。
+- fixture 模式：路径 `/cases/fx-<name>` 时 `api.ts` 换成 fixture 源：`getCase` 返回该 fixture 的前 `k` 个事件折叠态（`k` 由 fixture 元数据指定「运行中」截断点），`openStream` 返回一个每 150ms 吐一个剩余事件的假 EventSource，`sendTurn` 空操作。这样「运行中」的界面状态能离线看到并截图。
+- `fixtures/`：5 份 `*.json`（`decomposing`、`retrieving`、`contested`、`done`、`followup`），每份 `{ name, cutAt: number, events: CaseEvent[] }`。由 `fixtures/build.ts`（node 脚本，用 `@rhg/core` 根导出的 `runTurn` + `createFakeLlm` + 假搜索 / 假抓取，注入固定 `now`）生成，两次运行字节相同。`followup` 含两轮（new_claim 后 pursue_frontier）。`contested` 的 verdict 有 `contested: true` 且事件里有 `investigator.step` 的 `role: "prosecutor"` 与 `"defender"`。
+- 界面文本里不出现「Agent / 智能体 / 工具 / 模型 / 厂商名」；状态词只用「正在拆题 / 正在找证据 / 正在核对 / 已完成 / 已中止」这一类。
+
+验收清单（checker 在 `.worktrees/T17` 逐条执行；第 14–20 条由带浏览器的 checker 做，截图存 `packages/web/output/acceptance/`；每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 1 | `npm test --workspace=@rhg/web` | 退出码 0；用例 ≥ 10 |
+| 2 | `npm run build --workspace=@rhg/web` | 退出码 0（tsc + vite build） |
+| 3 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动仅在 `packages/web/**`、`package-lock.json`；不含 `packages/core/`、`packages/server/`、`mvp/` |
+| 4 | `rg "from \"@rhg/core\"" packages/web/src packages/web/fixtures --glob '!build.ts'` | 0 命中（只允许 `@rhg/core/casefile`、`@rhg/core/publicCopy`；`fixtures/build.ts` 是 node 脚本可引根） |
+| 5 | `rg "mvp/" packages/web`；`rg "antd\|@mui\|chakra\|tailwind\|react-router\|zustand\|redux" packages/web/package.json` | 都 0 命中 |
+| 6 | `wc -l packages/web/src/styles/tokens.css`；`rg -c "verdict-(true\|false\|unclear):" packages/web/src/styles/tokens.css` | ≤ 120 行；恰 3 个判决色定义 |
+| 7 | `rg "#[0-9a-fA-F]{3,8}\b\|rgba\?(\|hsla\?(" packages/web/src --glob '!tokens.css' --glob '!*.test.*'` | 0 命中 |
+| 8 | `rg "font-family" packages/web/src --glob '!tokens.css'` | 0 命中 |
+| 9 | 读 `useCaseStream.test.ts` | 四个用例都在：顺序应用后状态 toEqual `replay(全部事件)`；收到 `seq` 跳号 → 重新 `getCase` 并重开流，最终状态 toEqual `replay`；重复 `seq` 被丢弃；`sendTurn` 遇 409 → `status === "error"` 且不抛 |
+| 10 | 读 `useCaseStream.ts` | 用 `EventSource`；`since` 取 `case.seq`；没有手写重试 `setTimeout` 循环 |
+| 11 | 读 fixture 测试 | 5 份 fixture 每个事件过 `validateEvent`；`replay(events)` 过 `assertInvariants`；`contested` 的某 verdict `contested === true` 且有 prosecutor 与 defender 的 `investigator.step`；`followup` 有两条 `turn.started` 且第二条消息 `route === "pursue_frontier"` |
+| 12 | `npx tsx packages/web/fixtures/build.ts && git status --short packages/web/fixtures` | 重跑后无变更（确定性） |
+| 13 | 读 `vite.config.ts` 与 `tsconfig.json` | alias / paths 把 `@rhg/core/casefile`、`@rhg/core/publicCopy` 指到 core 源码；`/api` 代理存在 |
+| 14 | 浏览器：`npm run dev --workspace=@rhg/web`，开 `/cases/fx-done`，1280×800 | 截图 `T17-done-desktop.png`；`nav`、`main`、`aside` 三个元素的 `getBoundingClientRect().width` 都 > 0 且 x 坐标左 < 中 < 右；`document.documentElement.scrollWidth === window.innerWidth`；面板里能看到判决词文本；控制台无报错；Network 里没有对 `/api` 的请求 |
+| 15 | 浏览器：同页 375×812 | 截图 `T17-done-mobile.png`；`scrollWidth === innerWidth`；`nav` 与 `aside` 不可见（`offsetParent === null` 或 `display: none` 或在视口外）；`main` 可见 |
+| 16 | 浏览器：375 下点「打开面板」按钮 | `aside` 可见且 `aria-expanded="true"`；按 Escape 后不可见；截图 `T17-done-mobile-drawer.png` |
+| 17 | 浏览器：`/cases/fx-decomposing`、`/cases/fx-retrieving`、`/cases/fx-contested`、`/cases/fx-followup` 各 1280 + 375 | 8 张截图；每张 `scrollWidth === innerWidth`；`fx-retrieving` 打开 3 秒后 `aside` 里命题数量文本或证据计数发生过变化（假流在吐事件） |
+| 18 | 浏览器：1280 下点 nav 收起按钮 | `nav` 宽度变 0 或不可见，`aria-expanded="false"`；刷新页面后仍收起（localStorage） |
+| 19 | 浏览器：任一页执行 `[...document.querySelectorAll("button")].filter(b => !b.textContent.trim() && !b.getAttribute("aria-label")).length` | 为 0 |
+| 20 | 浏览器：真后端联调——起 `npm run dev --workspace=@rhg/server`（工作树根有 `.env.local`），开 `/`，输入「国家医保局宣布 2026 年起生育津贴直接发个人」提交 | 跳到 `/cases/<id>`；60 秒内线程里出现助手消息、面板里出现 ≥1 条命题带判决词；截图 `T17-live-desktop.png`；把面板里的命题 + 判决词文本贴进报告 |
+| 21 | `rg "智能体\|Agent\|工具名\|模型名\|minimax\|stepfun\|deepseek" packages/web/src --glob '*.tsx'` | 0 命中 |
+| 22 | `rg "prefers-reduced-motion" packages/web/src/styles/`；`rg ":focus-visible" packages/web/src/styles/` | 各 ≥ 1 命中 |
+| 23 | `rg ": any\b\|console\.log\|\.only\|\.skip" packages/web/src` | 0 命中（`fixtures/build.ts` 不在 src 下，允许 console） |
+| 24 | `wc -l packages/web/src/**/*.{ts,tsx,css}` | 报行数（仅报告） |
 
 ### T18 · 案件视图 ★
 
