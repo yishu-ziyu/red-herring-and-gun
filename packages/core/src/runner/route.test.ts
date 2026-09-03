@@ -59,6 +59,17 @@ describe("routeMessage", () => {
     expect(fake.calls).toHaveLength(0);
   });
 
+  it("空案含 URL → new_claim，且不调 LLM", async () => {
+    const fake = createFakeLlm({ route: { route: "challenge" } });
+    const route = await routeMessage(
+      emptyCase(),
+      { text: "对照 https://www.gov.cn/zhengce/x" },
+      fake,
+    );
+    expect(route).toBe("new_claim");
+    expect(fake.calls).toHaveLength(0);
+  });
+
   it("LLM 归类 ask_case", async () => {
     const fake = createFakeLlm({ route: { route: "ask_case" } });
     const route = await routeMessage(caseWithClaims(), { text: "现在判得怎样" }, fake);
