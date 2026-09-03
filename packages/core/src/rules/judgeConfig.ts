@@ -33,8 +33,11 @@ export const SCORE_TRUE_BASE = 0.70;
 /** true 随 strength 从 BASE 走到 1.0 的幅度。 */
 export const SCORE_TRUE_SPAN = 0.30;
 
-/** partial / contested 的固定可信度。 */
+/** contested 的固定可信度：两边都有据、无法判定，是不确定的中间态。 */
 export const SCORE_MID = 0.50;
+
+/** partial 的固定可信度：部分属实即误导，可信度必须低于一半。 */
+export const SCORE_PARTIAL = 0.30;
 
 /** unverified 且 tally.sup 为 0 时的可信度。 */
 export const SCORE_UNVERIFIED_BASE = 0.15;
@@ -63,6 +66,7 @@ export const defaultJudgeConfig = {
   SCORE_TRUE_BASE,
   SCORE_TRUE_SPAN,
   SCORE_MID,
+  SCORE_PARTIAL,
   SCORE_UNVERIFIED_BASE,
   SCORE_UNVERIFIED_SUPPORTED,
   SCORE_FALSE_BASE,
@@ -81,6 +85,7 @@ export type JudgeConfig = {
   SCORE_TRUE_BASE: number;
   SCORE_TRUE_SPAN: number;
   SCORE_MID: number;
+  SCORE_PARTIAL: number;
   SCORE_UNVERIFIED_BASE: number;
   SCORE_UNVERIFIED_SUPPORTED: number;
   SCORE_FALSE_BASE: number;

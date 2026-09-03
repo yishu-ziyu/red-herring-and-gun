@@ -67,7 +67,9 @@ function claimPts(
   let p: number;
   if (kind === "true") {
     p = config.SCORE_TRUE_BASE + config.SCORE_TRUE_SPAN * strength(verdict, stanceById, evidenceById, config);
-  } else if (kind === "partial" || kind === "contested") {
+  } else if (kind === "partial") {
+    p = config.SCORE_PARTIAL;
+  } else if (kind === "contested") {
     p = config.SCORE_MID;
   } else if (kind === "false") {
     const s = strength(verdict, stanceById, evidenceById, config);

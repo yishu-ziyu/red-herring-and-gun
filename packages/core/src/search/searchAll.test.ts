@@ -92,4 +92,19 @@ describe("searchAll", () => {
     const result = await searchAll({}, "查询", { providers: [two] });
     expect(result.map((e) => e.id)).toEqual(["e1", "e2"]);
   });
+
+  it("abort 后不等在飞 provider 返回即收口", async () => {
+    const controller = new AbortController();
+    async function slow() {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+      return [{ url: ONLY_A, snippet: "late" }];
+    }
+
+    const started = Date.now();
+    const pending = searchAll({}, "查询", { providers: [slow], signal: controller.signal });
+    setTimeout(() => controller.abort(), 20);
+    const result = await pending;
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(result).toEqual([]);
+  });
 });

@@ -33,13 +33,9 @@ export const ROUTE_SYSTEM_PROMPT = `把用户这句话归类为三种之一：
 - off_topic：与本案无关
 只输出 JSON：{"route":"new_claim"|"ask_case"|"off_topic"}。不要判断真假。`;
 
-export function urlsInText(text: string): string[] {
-  return [...(text.match(/https?:\/\/[^\s<>"']+/gi) ?? [])].map((url) => url.replace(/[.,;:!?)]+$/, ""));
-}
+import { firstUrlInText, urlsInText } from "../util/urls.js";
 
-export function firstUrlInText(text: string): string | undefined {
-  return urlsInText(text)[0];
-}
+export { firstUrlInText, urlsInText };
 
 export async function routeMessage(current: Case, message: RouteMessage, llm: LlmJob): Promise<RouteKind> {
   if (message.pivotId) return "pursue_frontier";

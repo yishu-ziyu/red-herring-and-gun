@@ -63,6 +63,25 @@ describe("runIntake", () => {
     expect(ctx.emitted.some((e) => e.type === "evidence.added")).toBe(true);
   });
 
+  it("正文里的链接不用 attachments 也会抓取，且与 attachments 去重", async () => {
+    const { ctx } = setup({}, "看看这个 https://example.com/notice 说的对不对");
+    const fetched: string[] = [];
+    const result = await runIntake(ctx, {
+      text: "看看这个 https://example.com/notice 说的对不对",
+      attachments: [{ kind: "url", value: "https://example.com/notice" }],
+      tools: {
+        fetch: async (url) => {
+          fetched.push(url);
+          return page();
+        },
+      },
+    });
+
+    expect(fetched).toEqual(["https://example.com/notice"]);
+    expect(ctx.current.evidence).toHaveLength(1);
+    expect(result.claimSource).toContain("人社部通知");
+  });
+
   it("抓取失败仍发 evidence.added 且 reachable false，claimSource 退回原文", async () => {
     const { ctx } = setup({}, "原文留下");
     const result = await runIntake(ctx, {
