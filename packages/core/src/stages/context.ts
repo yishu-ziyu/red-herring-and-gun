@@ -47,7 +47,15 @@ export function createStageContext(init: {
       emit({ type: "llm.called", job: params.job, model: result.model, latencyMs: result.latencyMs, ok: true });
       return result;
     } catch (error) {
-      emit({ type: "llm.called", job: params.job, model: "", latencyMs: Date.now() - started, ok: false });
+      const message = error instanceof Error ? error.message : String(error);
+      emit({
+        type: "llm.called",
+        job: params.job,
+        model: "",
+        latencyMs: Date.now() - started,
+        ok: false,
+        error: message.slice(0, 300),
+      });
       throw error;
     }
   };
