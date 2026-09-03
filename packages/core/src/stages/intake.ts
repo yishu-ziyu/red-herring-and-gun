@@ -3,6 +3,7 @@ import type { FetchedPage } from "../fetch/types.js";
 import { webFetch } from "../fetch/webFetch.js";
 import { tierOf } from "../rules/sourceTiers.js";
 import { canonicalizeUrl } from "../search/toEvidence.js";
+import { urlsInText } from "../util/urls.js";
 import type { StageContext } from "./context.js";
 
 export type IntakeAttachment = { kind: "url" | "image"; value: string };
@@ -126,9 +127,14 @@ export async function runIntake(ctx: StageContext, input: IntakeInput): Promise<
   ctx.emit({ type: "stage.started", stage: "intake" });
   const attachments = input.attachments ?? [];
   const fetchPage = input.tools?.fetch ?? ((url: string) => webFetch(url, { signal: ctx.signal }));
-  let claimSource = input.text;
+  const urls = new Set<string>();
   for (const item of attachments) {
-    if (item.kind === "url") claimSource = await ingestUrl(ctx, item.value, claimSource, fetchPage);
+    if (item.kind === "url") urls.add(item.value);
+  }
+  for (const url of urlsInText(input.text)) urls.add(url);
+  let claimSource = input.text;
+  for (const url of urls) {
+    claimSource = await ingestUrl(ctx, url, claimSource, fetchPage);
   }
   const images = attachments.filter((item) => item.kind === "image").map((item) => item.value);
   if (images.length > 0) {
