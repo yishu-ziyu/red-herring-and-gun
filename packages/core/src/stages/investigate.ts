@@ -65,6 +65,8 @@ export type InvestigatorInput = {
   tools: InvestigatorTools;
   systemPromptSuffix?: string;
   claimIds?: string[];
+  /** 交叉复核两方都要跑完预算：控方翻案后辩方仍视为缺口，不因 isResolved 提前停。 */
+  forceGaps?: boolean;
 };
 
 export type InvestigatorResult = {
@@ -785,9 +787,10 @@ export async function runInvestigator(
     if (consecutiveToolFail >= TOOL_FAIL_STOP) return stop("tool-failed");
 
     const focused = focusedClaims(ctx, input.claimIds);
-    if (isResolved(ctx, focused)) return stop("resolved");
+    const forceGaps = input.forceGaps === true;
+    if (!forceGaps && isResolved(ctx, focused)) return stop("resolved");
 
-    const gaps = focused.filter((claim) => isGap(ctx, claim));
+    const gaps = forceGaps ? focused : focused.filter((claim) => isGap(ctx, claim));
     if (gaps.length === 0) return stop("resolved");
 
     const candidates = buildCandidates(ctx, gaps, searchedQueries, input.tools);
@@ -796,6 +799,7 @@ export async function runInvestigator(
     const remaining = Math.max(0, budget - steps);
     const { action, candidate } = await decideAction(ctx, input, focused, gaps, candidates, remaining);
     if (action.kind === "stop") {
+      if (forceGaps) return stop("no-gain");
       return stop(gaps.some((claim) => isGap(ctx, claim)) ? "no-gain" : "resolved");
     }
 
