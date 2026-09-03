@@ -64,11 +64,16 @@ async function readError(res: Response, fallback: string): Promise<string> {
   return fallback;
 }
 
-export async function createCase(text: string): Promise<{ caseId: string; turnId: string }> {
+export type Attachment = { kind: "url" | "image"; value: string };
+
+export async function createCase(
+  text: string,
+  attachments?: Attachment[],
+): Promise<{ caseId: string; turnId: string }> {
   const res = await fetch("/api/cases", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(attachments?.length ? { text, attachments } : { text }),
   });
   if (!res.ok) throw new Error(await readError(res, "立案失败"));
   return (await res.json()) as { caseId: string; turnId: string };
@@ -96,7 +101,8 @@ export async function postTurn(caseId: string, text: string, pivotId?: string): 
   const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/turns`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(pivotId ? { text, pivotId } : { text }),
+    // ponytail: server rejects empty text; pivotId still selects pursue_frontier. Placeholder is the user bubble.
+    body: JSON.stringify(pivotId ? { text: text.trim() === "" ? "再查" : text, pivotId } : { text }),
   });
   if (res.status === 409) {
     return { ok: false, status: 409, error: await readError(res, TURN_BUSY) };
