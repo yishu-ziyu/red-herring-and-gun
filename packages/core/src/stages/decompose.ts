@@ -1,4 +1,3 @@
-import { Value } from "typebox/value";
 import type { Claim, ClaimAtomType } from "../casefile/schema.js";
 import {
   claimAtomKey,
@@ -7,7 +6,8 @@ import {
   type SelfProofModelCall,
 } from "../text/claimAtom/index.js";
 import type { StageContext } from "./context.js";
-import { DecomposeOutputSchema, type DecomposeOutput } from "./decompose.schema.js";
+import { DecomposeOutputSchema } from "./decompose.schema.js";
+import { parseJobOutput } from "./parseOutput.js";
 
 export type DecomposeInput = { claimSource: string };
 export type DecomposeResult = { claims: Claim[] };
@@ -160,10 +160,13 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
   } catch {
     return failOpen(ctx, input.claimSource);
   }
-  if (!Value.Check(DecomposeOutputSchema, output)) return failOpen(ctx, input.claimSource);
+  const parsed = parseJobOutput(DecomposeOutputSchema, output);
+  if (!parsed.ok) {
+    ctx.emit({ type: "error", stage: "decompose", message: parsed.reason });
+    return failOpen(ctx, input.claimSource);
+  }
 
-  const parsed: DecomposeOutput = output;
-  const drafts: DraftClaim[] = parsed.claims.map((item) => {
+  const drafts: DraftClaim[] = parsed.value.claims.map((item) => {
     const span = keepSpan(item.span, input.claimSource);
     return {
       text: item.text,
