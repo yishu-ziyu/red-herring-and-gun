@@ -90,4 +90,15 @@ describe("extractPivots", () => {
     expect(images.every((p) => p.expectedValue === 1)).toBe(true);
     expect(images.length).toBeLessThanOrEqual(10);
   });
+
+  it("对此人社部表示抽出人社部而不是对此人社部", () => {
+    const pivots = extractPivots(
+      { id: "e-said", host: "example.com", text: "对此人社部表示不属实", links: [], images: [] },
+      0
+    );
+    const entities = byKind(pivots, "entity").map((p) => p.value);
+    expect(entities).toContain("人社部");
+    expect(entities).not.toContain("对此人社部");
+  });
 });
+

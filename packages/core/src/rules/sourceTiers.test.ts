@@ -20,4 +20,10 @@ describe("sourceTiers", () => {
     expect(tierOf("weibo.com")).toBe("C");
     expect(tierOf("example.org")).toBe("C");
   });
+
+  it("自媒体子域覆盖为 C，门户本身仍为 B", () => {
+    expect(tierOf("mp.weixin.qq.com")).toBe("C");
+    expect(tierOf("news.qq.com")).toBe("B");
+    expect(tierOf("baijiahao.baidu.com")).toBe("C");
+  });
 });
