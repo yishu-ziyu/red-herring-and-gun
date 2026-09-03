@@ -322,6 +322,7 @@ describe("runAssess", () => {
     await runAssess(ctx, { systemPromptSuffix: "控方：只找反证。" });
     expect(fake.calls[0]?.systemPrompt).toBe(`${ASSESS_SYSTEM_PROMPT}\n\n控方：只找反证。`);
     expect(fake.calls[0]?.systemPrompt).toContain("不是在裁定命题真假");
+    expect(fake.calls[0]?.systemPrompt).toContain("同一主体、同一事件");
     expect(fake.calls[0]?.job).toBe("assess");
   });
 });
