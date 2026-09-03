@@ -251,6 +251,27 @@ describe("reportContractPassRate", () => {
       reportContractPassRate(golden(), input({ case: c, report: report({ conclusion: "web_search 查过了。" }) })),
     ).toBe(0);
   });
+
+  it("unverified 命题行无引用不扣分", () => {
+    const c = emptyCase({
+      claims: [claim()],
+      verdicts: [verdict({ verdict: "unverified", rule: "no-evidence" })],
+    });
+    const r = report({ claimItems: [{ claimId: "c1", line: "没找到可以直接证实的依据。", citations: [] }] });
+    expect(reportContractPassRate(golden(), input({ case: c, report: r }))).toBe(1);
+  });
+
+  it("立场型命题行无引用不扣分", () => {
+    const c = emptyCase({ claims: [claim({ checkable: false, type: "value" })] });
+    const r = report({ claimItems: [{ claimId: "c1", line: "这是评价或立场，不做真假判断。", citations: [] }] });
+    expect(reportContractPassRate(golden(), input({ case: c, report: r }))).toBe(1);
+  });
+
+  it("下了判断的命题行无引用仍不通过", () => {
+    const c = emptyCase({ claims: [claim()], verdicts: [verdict()] });
+    const r = report({ claimItems: [{ claimId: "c1", line: "与依据相反。", citations: [] }] });
+    expect(reportContractPassRate(golden(), input({ case: c, report: r }))).toBe(0);
+  });
 });
 
 describe("routingAccuracy", () => {
