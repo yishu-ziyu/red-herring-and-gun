@@ -326,7 +326,8 @@ Evidence：测试名。
 设计定案（builder 照此实现，checker 照此核验）：
 
 - `RunTurnInput.route` 改为可选；缺省时由 `routeMessage(case, message, llm)` 决定。`message` 增加 `pivotId?: string`。决定的 route 写进 `message.added(user).route`。
-- 路由优先级（确定性在前）：① `pivotId` 存在 → `pursue_frontier`（pivot 不在案内 frontier 或已 consumed → 发 `error` + `turn.finished(error)`，不跑任何阶段）；② 消息文本含 URL → `challenge`；③ 案内 `claims.length === 0` → `new_claim`，不调 LLM；④ 否则一张工单 `route` 归类 `new_claim | ask_case | off_topic`，用 `parseJobOutput` 校验，LLM 失败或校验失败 → `new_claim`。
+- 路由优先级（确定性在前）：① `pivotId` 存在 → `pursue_frontier`（pivot 不在案内 frontier 或已 consumed → 发 `error` + `turn.finished(error)`，不跑任何阶段）；② 案内 `claims.length === 0` → `new_claim`，不调 LLM（首轮永远是立案，带 URL 的首句由 intake 当附件抓，不是 challenge）；③ 消息文本含 URL → `challenge`；④ 否则一张工单 `route` 归类 `new_claim | ask_case | off_topic`，用 `parseJobOutput` 校验，LLM 失败或校验失败 → `new_claim`。（2026-09-03 修订：原稿 URL 在空案之前，会让首句带链接的案子进 challenge 面对 0 条命题。）
+- 追问路径的 compose + finalize 必须复用 `runTurn` 里带 abort / 时间预算 / markError 的那段（抽成 runner 内部 helper 两处调用），不准在 `turns.ts` 再写一份。
 - `pursue_frontier`：`InvestigatorInput` 增加 `seedPivotId?: string`，第一步不问 LLM、直接对该 pivot 执行动作（link → fetch；entity/query → search；image → reverse image），之后按原逻辑跑完预算。然后 assess（只补新证据）→ judge → compose → finalize。
 - `challenge`：用 `deps.tools.fetch` 抓 URL（SSRF 在 webFetch 内）→ `evidence.added`，`provenance: "user"`，tier 用 `tierOf`；对每个可核查命题 `runAssess({ evidenceIds: [该证据] })` → judge → compose → finalize。抓不到（unreachable / 被拦 / 无正文）：不发 `evidence.added`，发 `message.added(assistant)` 固定文案 + `turn.finished(done)`。这不是系统错误。
 - `ask_case`：恰一张工单 `ask_case`，输入 = 命题 + 判决 + 证据（标题 / host / 层级 / 摘要 / URL）+ 报告；输出 `{ answer: string }`。代码校验：(a) 回答中的 URL ⊆ 案内证据 URL；(b) 回答中每个数字串（`\d+(\.\d+)?`，去千分位）出现在案内证据文本 ∪ 命题文本 ∪ 报告文本中。任一不满足 → 用固定兜底文案 + 最多 3 个 frontier pivot 标签替换回答。专名不校验，标 `ponytail:` 注释。零检索、零抓取。
@@ -343,8 +344,10 @@ Evidence：测试名。
 | 3 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动仅在 `packages/core/src/runner/**`、`packages/core/src/stages/investigate.ts`、`packages/core/src/stages/investigate.test.ts`、`packages/core/src/text/publicCopy.ts`（及其测试）；不含 `mvp/`、`casefile/schema.ts`、`stages/index.ts`、`packages/core/src/index.ts` |
 | 4 | `git diff spine...HEAD -- packages/core/src/stages/investigate.ts` | 只增加 `seedPivotId` 相关逻辑；现有五个停止条件、`decideAction`、`act` 的既有分支没有被改写 |
 | 5 | `rg "process\.env\|mvp/" packages/core/src/runner/` | 0 命中 |
-| 6 | 读 `route.ts` | 判断顺序与「设计定案」一致：pivotId → URL → 空案 → LLM；LLM 调用在三条确定性分支之后 |
-| 7 | 读 `route.test.ts` | 五类各 ≥1 例；pivotId 与 URL 同时存在 → `pursue_frontier`；空案无 URL → `new_claim` 且 FakeLlm 调用数为 0；LLM 返回非法 JSON → `new_claim` |
+| 6 | 读 `route.ts` | 判断顺序与「设计定案」一致：pivotId → 空案 → URL → LLM；LLM 调用在三条确定性分支之后 |
+| 7 | 读 `route.test.ts` | 五类各 ≥1 例；pivotId 与 URL 同时存在 → `pursue_frontier`；空案无 URL → `new_claim` 且 FakeLlm 调用数为 0；**空案含 URL → `new_claim`**；LLM 返回非法 JSON → `new_claim` |
+| 7b | 读 `turns.ts` 与 `runTurn.ts` | compose + finalize 只有一处实现（同一个函数），new_claim 与 challenge / pursue_frontier 都调它；`rg -n "runCompose\|runFinalize" packages/core/src/runner/` 各只命中 1 处调用 |
+| 7c | 读 challenge / pursue_frontier 路径 | `signal` 传进了 investigator / assess 用的 ctx；有一条用例：challenge 路径在 fetch 之后 abort，`turn.finished.reason === "aborted"` 且无 `report.finalized` |
 | 8 | 读 `runTurn.ts` | `route` 缺省时调用 `routeMessage`；显式传入时不调；`message.added(user).route` 等于最终 route |
 | 9 | 读 pursue_frontier 用例 | 事件流含 `frontier.consumed(pivotId)`；第一条 `investigator.step` 的 `action.target` 等于该 pivot 的 value / label；在该 step 之前没有 `job === "investigate"` 的 `llm.called` |
 | 10 | 读 pursue_frontier 非法 pivot 用例 | pivotId 不在案内 → 只有 `turn.started`、`message.added(user)`、`error`、`turn.finished(error)`，没有 `stage.started` |
