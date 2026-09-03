@@ -3,6 +3,7 @@
 // 三者皆会触发 400 Invalid request。这是用户遇到 6+ 次的根因。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildStepFunPlanBody,
   buildStepFunRequestBody,
   callMiniMaxAgent,
   callStepFunAgent,
@@ -89,6 +90,33 @@ describe("buildStepFunRequestBody", () => {
       expect(body).not.toHaveProperty("temperature");
       expect(body).not.toHaveProperty("reasoning_effort");
     }
+  });
+});
+
+describe("buildStepFunPlanBody", () => {
+  const base = {
+    model: "step-3.7-flash",
+    systemPrompt: "sys",
+    userContent: "user",
+    maxTokens: 4096,
+  };
+
+  it("low → thinking budget 1024 且 max_tokens 加上预算", () => {
+    const body = buildStepFunPlanBody({ ...base, reasoningEffort: "low" });
+    expect(body.thinking).toEqual({ type: "enabled", budget_tokens: 1024 });
+    expect(body.max_tokens).toBe(4096 + 1024);
+  });
+
+  it("medium → thinking budget 4096 且 max_tokens 加上预算", () => {
+    const body = buildStepFunPlanBody({ ...base, reasoningEffort: "medium" });
+    expect(body.thinking).toEqual({ type: "enabled", budget_tokens: 4096 });
+    expect(body.max_tokens).toBe(4096 + 4096);
+  });
+
+  it("high → 不发 thinking 且 max_tokens 原值", () => {
+    const body = buildStepFunPlanBody({ ...base, reasoningEffort: "high" });
+    expect(body).not.toHaveProperty("thinking");
+    expect(body.max_tokens).toBe(4096);
   });
 });
 
@@ -212,6 +240,26 @@ describe("StepFun token plan（Anthropic 协议 /step_plan）", () => {
     expect(body.system).toBe("你是复核员");
     expect(body.messages).toEqual([{ role: "user", content: "判断" }]);
     expect(body.max_tokens).toBe(512);
+  });
+
+  it("callStepFunAgent 把 reasoningEffort 传进 plan 路径", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ content: [{ type: "text", text: '{"ok":true}' }] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await callStepFunAgent({
+      baseUrl: "https://api.stepfun.com/step_plan",
+      apiKey: "sk-sf",
+      model: "step-3.7-flash",
+      systemPrompt: "s",
+      userContent: "u",
+      maxTokens: 4096,
+      reasoningEffort: "low",
+    });
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as { body: string }).body);
+    expect(body.thinking).toEqual({ type: "enabled", budget_tokens: 1024 });
+    expect(body.max_tokens).toBe(4096 + 1024);
   });
 
   it("callStepFunAgent 按 baseUrl 分流：含 /step_plan 走 plan 路径，否则 OpenAI 路径", async () => {
