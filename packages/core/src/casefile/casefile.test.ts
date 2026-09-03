@@ -98,7 +98,13 @@ function fullCoverageSequence(): CaseEvent[] {
     { type: "turn.started", seq: 3, at: AT, turnId: "t1" },
     { type: "stage.started", seq: 4, at: AT, turnId: "t1", stage: "decompose" },
     { type: "claims.added", seq: 5, at: AT, turnId: "t1", claims: [claim1, claim2] },
-    { type: "claims.dropped", seq: 6, at: AT, turnId: "t1", claimIds: ["c2"], reason: "self-proof" },
+    {
+      type: "claims.dropped",
+      seq: 6,
+      at: AT,
+      turnId: "t1",
+      dropped: [{ id: "c2", text: "这太离谱", reason: "self-proof" }],
+    },
     { type: "stage.finished", seq: 7, at: AT, turnId: "t1", stage: "decompose", outcome: "ok" },
     { type: "llm.called", seq: 8, at: AT, turnId: "t1", job: "decompose", model: "fake", latencyMs: 12, ok: true },
     { type: "evidence.added", seq: 9, at: AT, turnId: "t1", evidence: ev1 },
@@ -205,8 +211,8 @@ function generateSequence(rng: () => number, length: number): CaseEvent[] {
       "investigator.stopped",
       "llm.called",
       "error",
+      "claims.dropped",
     ];
-    if (droppable().length > 0) list.push("claims.dropped");
     if (claims.length > 0) list.push("verdict.updated", "report.finalized");
     if (evidence.length > 0) list.push("evidence.updated");
     if (evidence.length >= 2) list.push("evidence.cites");
@@ -278,9 +284,23 @@ function generateSequence(rng: () => number, length: number): CaseEvent[] {
         break;
       }
       case "claims.dropped": {
-        const claim = pick(rng, droppable());
-        claims.splice(claims.indexOf(claim), 1);
-        events.push({ type, ...meta, claimIds: [claim.id], reason: "self-proof" });
+        const existing = droppable();
+        if (existing.length > 0 && rng() < 0.5) {
+          const claim = pick(rng, existing);
+          claims.splice(claims.indexOf(claim), 1);
+          events.push({
+            type,
+            ...meta,
+            dropped: [{ id: claim.id, text: claim.text, reason: "self-proof" }],
+          });
+        } else {
+          nClaim += 1;
+          events.push({
+            type,
+            ...meta,
+            dropped: [{ id: `d${nClaim}`, text: "原句没说过", reason: "self-proof" }],
+          });
+        }
         break;
       }
       case "evidence.added": {
@@ -425,7 +445,7 @@ function generateSequence(rng: () => number, length: number): CaseEvent[] {
         events.push({
           type,
           ...meta,
-          reason: pick(rng, ["resolved", "budget", "no-gain", "time", "tool-failed"]),
+          reason: pick(rng, ["resolved", "budget", "no-gain", "time", "tool-failed"] as const),
           role: pick(rng, ["main", "prosecutor", "defender"] as const),
         });
         break;
@@ -575,6 +595,44 @@ describe("casefile", () => {
       to: "e1",
     });
     expect(() => assertInvariants(folded)).toThrow(/self-loop/);
+  });
+
+  it("turn.started and turn.finished fold startedAt finishedAt reason", () => {
+    const finishedAt = "2026-09-03T07:00:05.000Z";
+    const folded = replay([
+      { type: "case.created", seq: 1, at: AT, id: "case1", text: "原句" },
+      { type: "turn.started", seq: 2, at: AT, turnId: "t1" },
+      { type: "turn.finished", seq: 3, at: finishedAt, turnId: "t1", reason: "timeout" },
+    ]);
+    expect(folded.turns).toEqual([
+      { id: "t1", startedAt: AT, finishedAt, reason: "timeout" },
+    ]);
+  });
+
+  it("claims.dropped keeps text in droppedClaims", () => {
+    const folded = reduce(replay(createCase({ id: "case1", text: "原句", at: AT }).events), {
+      type: "claims.dropped",
+      seq: 2,
+      at: AT,
+      dropped: [{ id: "c-ghost", text: "原句没说过", reason: "self-proof" }],
+    });
+    expect(folded.claims).toEqual([]);
+    expect(folded.droppedClaims).toEqual([
+      { id: "c-ghost", text: "原句没说过", reason: "self-proof", seq: 2 },
+    ]);
+  });
+
+  it("investigator.stopped folds into investigatorStops", () => {
+    const folded = reduce(replay(createCase({ id: "case1", text: "原句", at: AT }).events), {
+      type: "investigator.stopped",
+      seq: 2,
+      at: AT,
+      role: "prosecutor",
+      reason: "budget",
+    });
+    expect(folded.investigatorStops).toEqual([
+      { role: "prosecutor", reason: "budget", seq: 2, at: AT },
+    ]);
   });
 
   it("serialize then deserialize roundtrips", () => {
