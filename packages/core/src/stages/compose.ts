@@ -1,7 +1,7 @@
-import { Value } from "typebox/value";
 import type { Case, ClaimVerdict, Evidence, Pivot, Stance } from "../casefile/schema.js";
 import type { StageContext } from "./context.js";
 import { ComposeOutputSchema, type ComposeDraft } from "./compose.schema.js";
+import { parseJobOutput } from "./parseOutput.js";
 
 export const COMPOSE_JOB = "compose";
 
@@ -105,13 +105,15 @@ export async function runCompose(ctx: StageContext, input: ComposeInput = {}): P
     return { draft: null };
   }
 
-  if (!Value.Check(ComposeOutputSchema, output)) {
+  const parsed = parseJobOutput(ComposeOutputSchema, output);
+  if (!parsed.ok) {
+    ctx.emit({ type: "error", stage: COMPOSE_JOB, message: parsed.reason });
     ctx.emit({ type: "stage.finished", stage: COMPOSE_JOB, outcome: "failed-open" });
     return { draft: null };
   }
 
   ctx.emit({ type: "stage.finished", stage: COMPOSE_JOB, outcome: "ok" });
-  return { draft: output };
+  return { draft: parsed.value };
 }
 
 type CiteLookup = {

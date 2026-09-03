@@ -166,16 +166,15 @@ describe("runCompose", () => {
 
   it("工单不过 schema → draft: null", async () => {
     const fake = createFakeLlm({
-      compose: {
-        conclusion: "x",
-        claimItems: [{ claimId: "c1", line: "y", citations: [1] }],
-      },
+      compose: { conclusion: "x", claimItems: [{ claimId: "c1" }] },
     });
     const ctx = twoClaimCtx(fake);
     const result = await runCompose(ctx, {});
     expect(result.draft).toBeNull();
     const finished = ctx.emitted.filter((event) => event.type === "stage.finished");
     expect(finished).toEqual([expect.objectContaining({ stage: COMPOSE_JOB, outcome: "failed-open" })]);
+    const error = ctx.emitted.find((event) => event.type === "error");
+    expect(error && "message" in error ? error.message : "").toContain("/claimItems/0");
   });
 
   it("工单抛错 → draft: null", async () => {
