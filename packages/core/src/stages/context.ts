@@ -28,6 +28,8 @@ export function createStageContext(init: {
   llm: LlmJob;
   now?: () => string;
   signal?: AbortSignal;
+  /** 每个已折叠事件同步回调一次；运行器用它把事件流给 SSE / 存储。 */
+  onEvent?: (event: CaseEvent) => void;
 }): StageContext {
   let current = init.case;
   const emitted: CaseEvent[] = [];
@@ -37,6 +39,7 @@ export function createStageContext(init: {
     const full = validateEvent({ ...event, seq: current.seq + 1, at: now() });
     current = reduce(current, full);
     emitted.push(full);
+    init.onEvent?.(full);
     return current;
   };
 
