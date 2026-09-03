@@ -1,0 +1,516 @@
+{
+  "name": "contested",
+  "cutAt": 21,
+  "events": [
+    {
+      "type": "case.created",
+      "seq": 1,
+      "at": "2026-09-03T12:00:00.000Z",
+      "id": "fx-contested",
+      "text": "人社部发文说生育津贴直接打到个人卡里了"
+    },
+    {
+      "type": "turn.started",
+      "turnId": "t1",
+      "seq": 2,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "message.added",
+      "message": {
+        "id": "m1",
+        "role": "user",
+        "text": "人社部发文说生育津贴直接打到个人卡里了",
+        "at": "2026-09-03T12:00:00.000Z",
+        "route": "new_claim"
+      },
+      "seq": 3,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.started",
+      "stage": "intake",
+      "seq": 4,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.finished",
+      "stage": "intake",
+      "outcome": "ok",
+      "seq": 5,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.started",
+      "stage": "decompose",
+      "seq": 6,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "llm.called",
+      "job": "decompose",
+      "model": "fake",
+      "latencyMs": 0,
+      "ok": true,
+      "seq": 7,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "llm.called",
+      "job": "self-proof",
+      "model": "fake",
+      "latencyMs": 0,
+      "ok": true,
+      "seq": 8,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "claims.added",
+      "claims": [
+        {
+          "id": "c1",
+          "text": "人社部发文说生育津贴直接打到个人卡里了",
+          "type": "fact",
+          "checkable": true,
+          "order": 0
+        }
+      ],
+      "seq": 9,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.finished",
+      "stage": "decompose",
+      "outcome": "ok",
+      "seq": 10,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.started",
+      "stage": "retrieve",
+      "claimId": "c1",
+      "seq": 11,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "evidence.added",
+      "evidence": {
+        "url": "https://www.gov.cn/zhengce/allowance",
+        "canonicalUrl": "https://gov.cn/zhengce/allowance",
+        "host": "gov.cn",
+        "excerpt": "官方通报此事不实，津贴由单位申领。",
+        "retrievedAt": "2026-09-03T12:00:00.000Z",
+        "tier": "A",
+        "provenance": {
+          "kind": "search",
+          "query": "人社部发文说生育津贴直接打到个人卡里了",
+          "provider": "fixtureSearch"
+        },
+        "title": "通报",
+        "id": "e1"
+      },
+      "seq": 12,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "evidence.added",
+      "evidence": {
+        "url": "https://www.news.cn/fortune/allowance",
+        "canonicalUrl": "https://news.cn/fortune/allowance",
+        "host": "news.cn",
+        "excerpt": "生育津贴将直接发放至个人账户。",
+        "retrievedAt": "2026-09-03T12:00:00.000Z",
+        "tier": "A",
+        "provenance": {
+          "kind": "search",
+          "query": "人社部发文说生育津贴直接打到个人卡里了",
+          "provider": "fixtureSearch"
+        },
+        "title": "报道",
+        "id": "e2"
+      },
+      "seq": 13,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.finished",
+      "stage": "retrieve",
+      "claimId": "c1",
+      "outcome": "ok",
+      "seq": 14,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.started",
+      "stage": "assess",
+      "claimId": "c1",
+      "seq": 15,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "llm.called",
+      "job": "assess",
+      "model": "fake",
+      "latencyMs": 0,
+      "ok": true,
+      "seq": 16,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stance.added",
+      "stance": {
+        "id": "s1",
+        "claimId": "c1",
+        "evidenceId": "e1",
+        "stance": "refutes",
+        "quote": "官方通报此事不实",
+        "confidence": 0.9,
+        "quoteFidelity": true,
+        "by": "main"
+      },
+      "seq": 17,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stance.added",
+      "stance": {
+        "id": "s2",
+        "claimId": "c1",
+        "evidenceId": "e2",
+        "stance": "supports",
+        "quote": "生育津贴将直接发放至个人账户",
+        "confidence": 0.9,
+        "quoteFidelity": true,
+        "by": "main"
+      },
+      "seq": 18,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.finished",
+      "stage": "assess",
+      "claimId": "c1",
+      "outcome": "ok",
+      "seq": 19,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.started",
+      "stage": "judge",
+      "seq": 20,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "verdict.updated",
+      "verdict": {
+        "claimId": "c1",
+        "verdict": "contested",
+        "basis": [
+          "s1",
+          "s2"
+        ],
+        "rule": "contested",
+        "tally": {
+          "sup": 3,
+          "ref": 3,
+          "par": 0
+        },
+        "updatedAt": "2026-09-03T12:00:00.000Z"
+      },
+      "seq": 21,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "overall.updated",
+      "overall": {
+        "verdictType": "mixed_misleading",
+        "contested": true,
+        "score": 75,
+        "breakdown": [
+          {
+            "key": "base",
+            "label": "起点",
+            "value": 30
+          },
+          {
+            "key": "coverage",
+            "label": "依据覆盖率",
+            "value": 30
+          },
+          {
+            "key": "clusters",
+            "label": "独立簇",
+            "value": 10
+          },
+          {
+            "key": "tierA",
+            "label": "A 级占比",
+            "value": 20
+          },
+          {
+            "key": "unverified",
+            "label": "未核占比",
+            "value": 0
+          },
+          {
+            "key": "contested",
+            "label": "争议",
+            "value": -15
+          }
+        ]
+      },
+      "seq": 22,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.finished",
+      "stage": "judge",
+      "outcome": "ok",
+      "seq": 23,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.started",
+      "stage": "investigate",
+      "seq": 24,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "llm.called",
+      "job": "investigate",
+      "model": "fake",
+      "latencyMs": 0,
+      "ok": true,
+      "seq": 25,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "investigator.stopped",
+      "role": "main",
+      "reason": "no-gain",
+      "seq": 26,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.finished",
+      "stage": "investigate",
+      "outcome": "ok",
+      "seq": 27,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.started",
+      "stage": "crossExam",
+      "seq": 28,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "llm.called",
+      "job": "investigate",
+      "model": "fake",
+      "latencyMs": 0,
+      "ok": true,
+      "seq": 29,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "investigator.step",
+      "n": 1,
+      "role": "prosecutor",
+      "goal": "换一个解释框架",
+      "gap": "c1 contested 缺独立来源、时间、地点",
+      "action": {
+        "kind": "search",
+        "target": "人社部发文说生育津贴直接打到个人卡里了"
+      },
+      "why": "fallback: 补 c1 缺的独立来源、时间、地点",
+      "result": "added 0",
+      "gain": 0,
+      "seq": 30,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "llm.called",
+      "job": "investigate",
+      "model": "fake",
+      "latencyMs": 0,
+      "ok": true,
+      "seq": 31,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "investigator.stopped",
+      "role": "prosecutor",
+      "reason": "no-gain",
+      "seq": 32,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "llm.called",
+      "job": "investigate",
+      "model": "fake",
+      "latencyMs": 0,
+      "ok": true,
+      "seq": 33,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "investigator.step",
+      "n": 1,
+      "role": "defender",
+      "goal": "换一个解释框架",
+      "gap": "c1 contested 缺独立来源、时间、地点",
+      "action": {
+        "kind": "search",
+        "target": "人社部发文说生育津贴直接打到个人卡里了"
+      },
+      "why": "fallback: 补 c1 缺的独立来源、时间、地点",
+      "result": "added 0",
+      "gain": 0,
+      "seq": 34,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "llm.called",
+      "job": "investigate",
+      "model": "fake",
+      "latencyMs": 0,
+      "ok": true,
+      "seq": 35,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "investigator.stopped",
+      "role": "defender",
+      "reason": "no-gain",
+      "seq": 36,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "overall.updated",
+      "overall": {
+        "verdictType": "mixed_misleading",
+        "contested": true,
+        "score": 75,
+        "breakdown": [
+          {
+            "key": "base",
+            "label": "起点",
+            "value": 30
+          },
+          {
+            "key": "coverage",
+            "label": "依据覆盖率",
+            "value": 30
+          },
+          {
+            "key": "clusters",
+            "label": "独立簇",
+            "value": 10
+          },
+          {
+            "key": "tierA",
+            "label": "A 级占比",
+            "value": 20
+          },
+          {
+            "key": "unverified",
+            "label": "未核占比",
+            "value": 0
+          },
+          {
+            "key": "contested",
+            "label": "争议",
+            "value": -15
+          }
+        ]
+      },
+      "seq": 37,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.finished",
+      "stage": "crossExam",
+      "outcome": "ok",
+      "seq": 38,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.started",
+      "stage": "compose",
+      "seq": 39,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "llm.called",
+      "job": "compose",
+      "model": "fake",
+      "latencyMs": 0,
+      "ok": true,
+      "seq": 40,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.finished",
+      "stage": "compose",
+      "outcome": "ok",
+      "seq": 41,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.started",
+      "stage": "finalize",
+      "seq": 42,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "report.finalized",
+      "report": {
+        "conclusion": "生育津贴不会直接打到个人卡里，仍由单位申领。",
+        "claimItems": [
+          {
+            "claimId": "c1",
+            "line": "生育津贴直接打到个人卡：与现有依据相反。[1]",
+            "citations": [
+              1
+            ]
+          }
+        ],
+        "citations": [
+          {
+            "n": 1,
+            "evidenceId": "e1"
+          }
+        ],
+        "finalizedAt": "2026-09-03T12:00:00.000Z"
+      },
+      "seq": 43,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "stage.finished",
+      "stage": "finalize",
+      "outcome": "ok",
+      "seq": 44,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "message.added",
+      "message": {
+        "id": "m2",
+        "role": "assistant",
+        "text": "生育津贴不会直接打到个人卡里，仍由单位申领。",
+        "at": "2026-09-03T12:00:00.000Z"
+      },
+      "seq": 45,
+      "at": "2026-09-03T12:00:00.000Z"
+    },
+    {
+      "type": "turn.finished",
+      "turnId": "t1",
+      "reason": "done",
+      "seq": 46,
+      "at": "2026-09-03T12:00:00.000Z"
+    }
+  ]
+}
