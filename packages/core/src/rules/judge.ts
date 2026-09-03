@@ -79,17 +79,18 @@ export function judge(input: JudgeInput, config: JudgeConfig = defaultJudgeConfi
     });
   }
 
+  const tally = { sup, ref, par };
   if (sup >= config.CONTESTED_MIN && ref >= config.CONTESTED_MIN) {
-    return { claimId: input.claimId, verdict: "contested", basis, rule: "contested", updatedAt };
+    return { claimId: input.claimId, verdict: "contested", basis, rule: "contested", tally, updatedAt };
   }
   if (ref >= config.FALSE_MIN && ref > sup) {
-    return { claimId: input.claimId, verdict: "false", basis, rule: "false", updatedAt };
+    return { claimId: input.claimId, verdict: "false", basis, rule: "false", tally, updatedAt };
   }
   if (sup >= config.TRUE_MIN && sup > ref) {
-    return { claimId: input.claimId, verdict: "true", basis, rule: "true", updatedAt };
+    return { claimId: input.claimId, verdict: "true", basis, rule: "true", tally, updatedAt };
   }
   if (par >= config.PARTIAL_MIN && par >= sup && par >= ref) {
-    return { claimId: input.claimId, verdict: "partial", basis, rule: "partial", updatedAt };
+    return { claimId: input.claimId, verdict: "partial", basis, rule: "partial", tally, updatedAt };
   }
-  return { claimId: input.claimId, verdict: "unverified", basis, rule: "insufficient", updatedAt };
+  return { claimId: input.claimId, verdict: "unverified", basis, rule: "insufficient", tally, updatedAt };
 }

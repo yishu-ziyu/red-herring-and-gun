@@ -183,6 +183,17 @@ export const ClaimVerdictSchema = Type.Object(
     ]),
     basis: Type.Array(Type.String()),
     rule: Type.String(),
+    /** 各方向的簇权重和，judge 的中间量；界面解释「为什么」时不用重跑规则。 */
+    tally: Type.Optional(
+      Type.Object(
+        {
+          sup: Type.Number(),
+          ref: Type.Number(),
+          par: Type.Number(),
+        },
+        closed,
+      ),
+    ),
     updatedAt: Type.String(),
   },
   closed,

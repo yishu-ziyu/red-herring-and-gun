@@ -279,4 +279,19 @@ describe("judge", () => {
     });
     expect(got.basis).toEqual(["s1"]);
   });
+
+  it("tally 记各方向簇权重和；无有效立场时不带 tally", () => {
+    const got = judge({
+      claimId: "c1",
+      stances: [stance("s1", "e1", "supports"), stance("s2", "e2", "supports"), stance("s3", "e3", "refutes")],
+      evidence: [
+        evidence("e1", { tier: "B" }),
+        evidence("e2", { tier: "B" }),
+        evidence("e3", { tier: "C" }),
+      ],
+      updatedAt: AT,
+    });
+    expect(got.tally).toEqual({ sup: 4, ref: 1, par: 0 });
+    expect(judge({ claimId: "c1", stances: [], evidence: [], updatedAt: AT }).tally).toBeUndefined();
+  });
 });
