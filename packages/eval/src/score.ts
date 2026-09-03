@@ -67,10 +67,19 @@ export function reportContractPassRate(_golden: ScoreCaseGolden, result: ScoreIn
   if (!report) return null;
   if (report.conclusion.trim() === "") return 0;
   if (scrubPublicText(report.conclusion) !== report.conclusion) return 0;
+  const claimById = new Map(result.case.claims.map((claim) => [claim.id, claim]));
+  const verdictById = new Map(result.case.verdicts.map((row) => [row.claimId, row]));
+  // 引用要求只约束「下了判断的命题行」：unverified（查无依据，本无可引）与立场型（不做真假判断）豁免。
+  const needsCitation = (claimId: string): boolean => {
+    const claim = claimById.get(claimId);
+    if (!claim?.checkable) return false;
+    const verdict = verdictById.get(claimId)?.verdict;
+    return verdict !== undefined && verdict !== "unverified";
+  };
   const verifiable = result.case.claims.filter((claim) => claim.checkable);
   const counts = new Map<string, number>();
   for (const item of report.claimItems) {
-    if (item.citations.length === 0) return 0;
+    if (needsCitation(item.claimId) && item.citations.length === 0) return 0;
     counts.set(item.claimId, (counts.get(item.claimId) ?? 0) + 1);
   }
   for (const claim of verifiable) {
