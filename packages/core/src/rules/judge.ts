@@ -28,12 +28,18 @@ export function judge(input: JudgeInput, config: JudgeConfig = defaultJudgeConfi
     valid.push(stance);
   }
 
-  if (valid.length === 0) {
+  const latest = new Map<string, Stance>();
+  for (const stance of valid) {
+    latest.set(`${stance.claimId}\0${stance.evidenceId}\0${stance.by}`, stance);
+  }
+  const unique = [...latest.values()];
+
+  if (unique.length === 0) {
     return { claimId: input.claimId, verdict: "unverified", basis: [], rule: "no-evidence", updatedAt };
   }
 
   const clusters = new Map<string, Stance[]>();
-  for (const stance of valid) {
+  for (const stance of unique) {
     const evidence = evidenceById.get(stance.evidenceId)!;
     const key = evidence.clusterId ?? evidence.id;
     const group = clusters.get(key);

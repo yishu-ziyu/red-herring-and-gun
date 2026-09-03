@@ -408,4 +408,85 @@ describe("runInvestigator", () => {
     expect(prompt).not.toContain(dataUrl);
     assertInvariants(ctx.current);
   });
+
+  it("fetch 更新正文后该证据被重判", async () => {
+    const seeded = seedCase();
+    seeded.emit({
+      type: "evidence.added",
+      evidence: {
+        id: "e1",
+        url: GOV_URL,
+        canonicalUrl: "https://gov.cn/zhengce/202409/allowance",
+        host: "gov.cn",
+        excerpt: "摘要而已",
+        retrievedAt: AT,
+        tier: "A",
+        provenance: { kind: "search", query: "津贴" },
+      },
+    });
+    seeded.emit({
+      type: "frontier.added",
+      pivots: [
+        {
+          id: "seed-gov",
+          kind: "link",
+          value: GOV_URL,
+          why: "搜索命中 A 级页，只有摘要，未读全文",
+          expectedValue: 3,
+          fromEvidenceId: "e1",
+          depth: 1,
+        },
+      ],
+    });
+    const fake = createFakeLlm({
+      investigate: { action: { kind: "fetch", target: GOV_URL, why: "读全文" } },
+      assess: {
+        stances: [
+          {
+            evidenceId: "e1",
+            stance: "refutes",
+            quote: "人社部从未发文称生育津贴直接打到个人卡",
+            confidence: 0.9,
+          },
+        ],
+      },
+    });
+    const ctx = createStageContext({ case: seeded.current, llm: fake, now: () => AT });
+    await runInvestigator(ctx, {
+      role: "main",
+      budget: 1,
+      tools: {
+        search: async () => [],
+        fetch: async () => page({ finalUrl: GOV_URL, text: GOV_TEXT, title: "人社部通知" }),
+      },
+    });
+    expect(ctx.current.evidence[0]?.text).toBe(GOV_TEXT);
+    expect(ctx.current.stances.length).toBeGreaterThanOrEqual(1);
+    expect(ctx.current.stances.some((item) => item.stance === "refutes" && item.evidenceId === "e1")).toBe(true);
+    expect(ctx.current.verdicts.find((item) => item.claimId === "c1")?.rule).not.toBe("no-evidence");
+    expect(ctx.current.verdicts.find((item) => item.claimId === "c1")?.verdict).toBe("false");
+    assertInvariants(ctx.current);
+  });
+
+  it("fetch 不可达时 result 写 unreachable", async () => {
+    const seeded = seedCase();
+    seeded.emit({ type: "evidence.added", evidence: reprintEvidence() });
+    seeded.emit({ type: "frontier.added", pivots: [reprintPivot()] });
+    const fake = createFakeLlm({
+      investigate: { action: { kind: "fetch", target: REPRINT_URL, why: "打开转载页" } },
+    });
+    const ctx = createStageContext({ case: seeded.current, llm: fake, now: () => AT });
+    await runInvestigator(ctx, {
+      role: "main",
+      budget: 1,
+      tools: {
+        search: async () => [],
+        fetch: async () => page({ finalUrl: REPRINT_URL, text: "", reachable: false }),
+      },
+    });
+    const step = ctx.emitted.find((event) => event.type === "investigator.step");
+    expect(step?.type === "investigator.step" && step.result).toBe("unreachable e1");
+    expect(ctx.emitted.some((event) => event.type === "stage.started" && event.stage === "assess")).toBe(false);
+    assertInvariants(ctx.current);
+  });
 });
