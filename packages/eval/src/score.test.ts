@@ -5,6 +5,7 @@ import {
   credibilityAccuracy,
   groundingRate,
   hallucinationRate,
+  judgeRanOf,
   latencyP50,
   latencyP95,
   provenanceDepth,
@@ -12,6 +13,7 @@ import {
   reportContractPassRate,
   routingAccuracy,
   summarize,
+  summarizeRun,
   verdictAccuracy,
   type ScoreInput,
 } from "./score.js";
@@ -385,6 +387,51 @@ describe("latencyP50 / latencyP95", () => {
       { metrics: blankMetrics(), elapsedMs: 1000 },
     ]);
     expect(summary.latencyP95).toBe(1000);
+  });
+});
+
+describe("summarizeRun", () => {
+  it("counts turnReasons, judgeRan, llmByJob, errorsByStage", () => {
+    const events: CaseEvent[] = [
+      {
+        type: "stage.finished",
+        seq: 1,
+        at: AT,
+        stage: "judge",
+        outcome: "ok",
+      },
+      {
+        type: "llm.called",
+        seq: 2,
+        at: AT,
+        job: "assess",
+        model: "fake",
+        latencyMs: 10,
+        ok: true,
+      },
+      {
+        type: "llm.called",
+        seq: 3,
+        at: AT,
+        job: "assess",
+        model: "fake",
+        latencyMs: 30,
+        ok: false,
+      },
+      { type: "error", seq: 4, at: AT, stage: "compose", message: "x" },
+    ];
+    expect(judgeRanOf(events)).toBe(true);
+    const summary = summarizeRun(
+      [
+        { metrics: blankMetrics(), elapsedMs: 100, turnReason: "done", judgeRan: true },
+        { metrics: blankMetrics(), elapsedMs: 200, turnReason: "timeout", judgeRan: false },
+      ],
+      [events, []],
+    );
+    expect(summary.turnReasons).toEqual({ done: 1, timeout: 1, aborted: 0, error: 0 });
+    expect(summary.judgeRan).toEqual({ ok: 1, total: 2 });
+    expect(summary.llmByJob.assess).toEqual({ calls: 2, failed: 1, p50Ms: 10 });
+    expect(summary.errorsByStage).toEqual({ compose: 1 });
   });
 });
 
