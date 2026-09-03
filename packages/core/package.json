@@ -7,6 +7,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./casefile": {
+      "types": "./dist/casefile/index.d.ts",
+      "import": "./dist/casefile/index.js"
+    },
+    "./publicCopy": {
+      "types": "./dist/text/publicCopy.d.ts",
+      "import": "./dist/text/publicCopy.js"
     }
   },
   "scripts": {
