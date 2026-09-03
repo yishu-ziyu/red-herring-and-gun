@@ -603,6 +603,107 @@ Evidence：测试名；eval runId 与逐例表；两次真跑的 `.data/cases/*.
 
 合入后验收人跑全量 eval（`npm run eval -- --repeats 1`，真 key，另派只报数的实例，加上新 summary 字段），对照上表目标；未达目标不算完成，回到本任务补一轮而不是开新任务。
 
+### T22 · 分数语义与报告卫生
+
+依赖：T21 合入（已）。只改 `packages/core`；与 T18 / T19 并行。分支 `spine-T22-score-semantics`，工作树 `.worktrees/T22`。
+
+起因（T18 真跑截图 `packages/web/output/acceptance/T18-live-B-done.png`、`T18-live-A-done.png`）：
+
+- 「转基因食品就是毒药，这届专家全被收买了」：命题 1 判 false（－12），命题 2 立场型；整句却显示「还查不清 · 62」。两处错：(a) T09 的 `score()` 量的是**证据质量**（覆盖率 / 簇 / A 级），反驳越充分分越高，与产品定义的「原句可信度」（golden `expectedCredibilityRange`：谣言 0–15、混杂 10–35、未核 10–70）方向相反；(b) 立场型命题被 judge 成 `unverified` 并进了 `overall()`，把「一半假一半立场」拉成「还查不清」。
+- 命题行出现「该判断为 false」「该判断为 unverified」——compose 把英文枚举写进中文正文，finalize 没拦。
+- 证据标题出现 `Resistant&lt;italic&gt;Bt&lt;/italic&gt;`——搜索结果的 HTML 实体与标签没清。
+- 立场型命题仍进 assess（浪费一张工单、拖时延）。
+
+Change：
+
+1. **`rules/score.ts` 重写为可信度分。** 只计 `checkable === true` 的命题；n = 其数量。每条命题算 `p ∈ [0,1]`：
+
+   | 判决 | p |
+   |---|---|
+   | true | `0.70 + 0.30 × strength` |
+   | partial / contested | `0.50` |
+   | unverified | `0.15 + 0.15 × (tally.sup > 0 ? 1 : 0)` |
+   | false | `0.15 − 0.15 × strength` |
+
+   `strength = 0.5 × min(basis 独立簇数, 3) / 3 + 0.5 × (basis 含 A 级证据 ? 1 : 0)`（簇键 `evidence.clusterId ?? evidence.id`，与旧实现同）。
+
+   先把每条 p 取整为百分点 `pts_i = Math.round(100 × p_i)`（避免 0.8999… 一类浮点误差），后续全用整数 pts：`score = Σ_i round(pts_i / (2n)) + round(min(pts) / 2) − (contested ? 10 : 0)`，裁到 0–100。`breakdown` 行：每条可核命题一行 `{ key: "claim:<id>", label: "命题 <k>", value: round(pts_i / (2n)) }`（k 为按 `order` 的原句序号，从 1 起）；一行 `{ key: "weakest", label: "最弱一环", value: round(min(pts) / 2) }`；contested 时一行 `{ key: "contested", label: "争议", value: -10 }`；裁剪时沿用现有 `{ key: "clamp", label: "裁剪" }`。**各行之和恒等于 score。** n = 0 → `score 50`，`breakdown = [{ key: "none", label: "没有可核对的命题", value: 50 }]`。
+
+   常量进 `judgeConfig.ts`：`SCORE_TRUE_BASE 0.70`、`SCORE_TRUE_SPAN 0.30`、`SCORE_MID 0.50`、`SCORE_UNVERIFIED_BASE 0.15`、`SCORE_UNVERIFIED_SUPPORTED 0.15`、`SCORE_FALSE_BASE 0.15`、`SCORE_STRENGTH_CLUSTER_CAP 3`、`SCORE_CONTESTED_PENALTY 10`；删掉 `SCORE_BASE / SCORE_COVERAGE_MAX / SCORE_CLUSTER_MAX / SCORE_CLUSTER_CAP / SCORE_TIER_A_MAX / SCORE_UNVERIFIED_PENALTY`。文件头注释改成一句：「分数是原句可信度 0–100，不是证据质量；一句话的可信度不高于它最弱的一环。」`ScoreInput` 签名不变。
+
+2. **立场型命题退出判决链。** `judgeStage.runJudge`：只 judge `checkable` 命题；`overall()` 只收 `checkable` 命题的 verdict（按 claimId 过滤，历史案子里若已有立场型 verdict 也一并排除）。`assess.selectClaims`：过滤 `checkable`。`investigate` 的缺口选取若尚未过滤 `checkable`，补上。
+
+3. **compose / finalize 卫生。** `compose.ts` 提示词命题行带 `checkable`；规则追加两条：「checkable=false 的命题只写一句『这是评价或立场，不做真假判断』类说明」「正文不得出现 true / false / partial / unverified / contested / mixed_misleading 这些英文判决词，也不得写『该判断为…』」。`finalize.ts`：`fallbackLine` 对 `!claim.checkable` 返回 `${claim.text}：这是评价或立场，不做真假判断。`；`scrubJargon` 里新增 `stripVerdictEnums(text)`：先删整句模式 `/(该|此|本|这个|这一|以上)?(判断|判决|结论|命题|说法)(为|是|：|:)\s*[“"'「]?(true|false|partial|unverified|contested|mixed_misleading)[”"'」]?\s*[。．.;；,，]?/gi`，再删裸词 `/\b(true|false|partial|unverified|contested|mixed_misleading)\b/gi`，然后 `collapseGaps`。
+
+4. **`search/toEvidence.ts` 清 HTML。** 新增 `cleanHtmlText(s)`：先解实体（`&lt; &gt; &amp; &quot; &#39; &apos; &nbsp;` 与 `&#NNN;` / `&#xHH;`），再删标签 `/<[^>]*>/g`，再折叠空白并 trim；对 `title` 与 `excerpt` 各用一次。不引依赖。
+
+5. **结论段带引用。** ADR-007 第 80 行：含真 / 假判断的句子必须带引用。T18 真跑（`T18-live-A-done.png` 第二版）结论「……这一说法属实。」无 `[n]`，只有命题行有。`finalize.ts` 新增 `ensureCitedConclusion`：当 `overall.verdictType ∈ {true, false, mixed_misleading}` 且结论里 `extractCiteNs` 为空时，取引用表里按命题 `order` 的第一条命题的第一个 `n`，追加 `[n]` 到结论末尾（在句号之后）；引用表为空则原样返回。在 `clampMarkersToSources` 之后、`repairLeadSentence` 之前做。
+
+Not this：不改 `judge()` 规则；不改 schema；不改 web / server / eval 源码（eval 的 `credibilityAccuracy` 不动，它就是评这个）；不把 face 词表引进 `rules/`。
+
+验收清单（checker 在 `.worktrees/T22` 逐条执行；每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 1 | `npm test --workspace=@rhg/core` | 退出码 0；用例数 ≥ 424 + 14 |
+| 2 | `npm run build --workspace=@rhg/core` | 退出码 0 |
+| 3 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动仅在 `packages/core/**`；不含 web / server / eval / mvp / schema.ts |
+| 4 | 读 `score.test.ts` | 表驱动 ≥ 9 行，至少覆盖并断言具体分值：单 false + A 级 1 簇 → 6；单 true + 两独立 B 簇 → 80；单 true + A 级 1 簇 → 90；true(A 1 簇) + false(A 1 簇) → 27；单 unverified 无支持 → 16；单 unverified `tally.sup > 0` → 30；单 contested → 40；`[checkable=false, false(A 1 簇)]` → 6 且 breakdown 无该立场型命题行；0 可核命题 → 50 一行 `none`；每行断言 `breakdown` 之和 === `score` |
+| 5 | `rg "SCORE_BASE\|SCORE_COVERAGE_MAX\|SCORE_CLUSTER_MAX\|SCORE_CLUSTER_CAP\|SCORE_TIER_A_MAX\|SCORE_UNVERIFIED_PENALTY" packages/core/src` | 0 命中 |
+| 6 | 读 `judgeConfig.ts` | 八个新常量齐、值如上；文件头一句话说明「可信度不是证据质量」 |
+| 7 | 读 `judgeStage.ts` + 其测试 | 有一例：两命题，一 `checkable:false` 一 `checkable:true` 且被 A 级反驳 → 只有一条 `verdict.updated`，`overall.verdictType === "false"`，`overall.score ≤ 10` |
+| 8 | 读 `assess.test.ts` | 有一例：`checkable:false` 命题不产生 `llm.called`，也没有 `stance.added` |
+| 9 | 读 `finalize.test.ts` | 有一例：`line` 为「转基因食品是有毒的食品。该判断为 false。依据：美国国家科学院…」→ 输出等于「转基因食品是有毒的食品。依据：美国国家科学院…」；另一例裸词「结论 unverified，没有查到」→ 不含 `unverified`；另一例 `checkable:false` 命题无 claimItem 时兜底行含「这是评价或立场」；另一例 overall `true`、draft 结论「这一说法属实。」无 `[n]` 而命题行有 `[1]` → 输出结论以 `[1]` 结尾；对照例 overall `unverified` 时结论不追加 |
+| 10 | 读 `compose.ts` | 提示词含 `checkable` 字段与两条新规则原文 |
+| 11 | 读 `toEvidence.test.ts` | 有一例：title `Insect-Resistant&lt;italic&gt;Bt&lt;/italic&gt; Plants &amp; Bees` → `Insect-ResistantBt Plants & Bees`；excerpt 含 `&#39;` / `&nbsp;` / `<b>` 的例子被清干净 |
+| 12 | `rg "toEvidence\|score\|overall" packages/core/src/index.ts packages/core/src/rules/index.ts` | 导出面不变（无新增无删减） |
+| 13 | `npx tsx packages/eval/src/run.ts --ids RUMOR-001,RUMOR-008,EVAL-UNVERIFIED-001 --fake` | 退出 0（只证明 core 改动没把 eval 跑崩；`--fake` 的分值不作数） |
+| 14 | `rg ": any\b\|console\.log\|\.only\|\.skip" packages/core/src --glob '!**/__manual__/**'` | `git diff spine...HEAD` 内 0 新增 |
+
+合入后由验收人跑真 key 全量 eval，只看 `credibilityAccuracy`（目标 ≥ 0.80）与 `verdictAccuracy` 不降。
+
+### T23 · 核心硬化二：预留时间、网络抖动、思考预算、拆题前提
+
+依赖：T21 合入（已）。只改 `packages/core`；与 T22 并行（T22 改 `compose.ts` 的提示词，本任务改 `compose.ts` 的入参，合入时由验收人解冲突）。分支 `spine-T23-core-hardening-2`，工作树 `.worktrees/T23`。
+
+起因（T21 后全量 eval `eval-1788441317204`，26 例）：timeout 5/26（目标 ≤ 4）、reportContractPassRate 0.77（目标 ≥ 0.85）、verdictAccuracy 0.65（刚过线）。逐例 jsonl 显示三个机械原因和一个拆题原因：
+
+- **compose 的 30 秒预留其实用不上。** `createStageContext.llm` 把 `init.deadline`（= start + total − reserve）绑给**每一次**模型调用，compose 在预留窗口里起跑时 `callJob` 直接抛 `deadline exceeded` 或立刻被 abort → `finalize failed-open` → 报告契约不过。5 个 timeout 例全部如此，`EVAL-UNVERIFIED-001` 在 89.5s 收口但 compose 被砍。
+- **`fetch failed` 同时打掉两家。** assess 81 次调用 17 次失败，多为 undici `fetch failed`（本机网络抖动）；对冲只在慢时有用，两家同时断没有第二次机会。
+- **StepFun step_plan 思考吃光 max_tokens。** `StepFun API 没有返回可解析文本（content_blocks=thinking）`：step-3.7-flash 在 4096 tokens 内只输出思考块。已实测该端点接受 Anthropic 协议的 `thinking: { type: "enabled", budget_tokens }`（200，思考显著变短）。
+- **拆题把前提拆成命题。** `RUMOR-002`「扫码可领补贴，逾期视为弃权」→ 命题 2「扫码领补贴需在逾期前完成」（以命题 1 为前提，判 true）；`RUMOR-012`「孩子打疫苗后发烧，说明疫苗导致了自闭症」→「孩子打疫苗后发烧」（背景事实，true）；`TINY-005` →「群里有一张P图」「该P图配有侮辱性文字」；`LOOP-001` 把同一事件的两个侧面「被拉去销毁」「装船运走」拆成两条。前提为真 + 断言为假 → 整句 `mixed_misleading`，而这些句子就是整句假。5 条 false→mixed 的误判里 4 条是这个原因。
+
+Change：
+
+1. **compose / finalize 用硬截止。** `createStageContext.llm` 的绑定改为 `{ signal, deadlineMs: init.deadline, ...params }`——调用方显式传的 `deadlineMs` 优先。`ComposeInput` 加 `deadline?: number`，`runCompose` 把它作为 `deadlineMs` 传给 `ctx.llm`。`runTurn.composeAndFinish` 收 `hardDeadline = start + totalMs` 并传给 `runCompose`；`turns.ts` 里走同一 helper 的追问路径自然继承。`callJob` 对 compose 的 `hedgeAfterMs` 不变。
+2. **网络类错误同候选重试一次。** `callJob.launch` 的 catch 里：错误信息匹配 `/fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|socket hang up|UND_ERR_/i`、且未外部 abort、且 `deadlineMs - Date.now() ≥ DEADLINE_TOO_CLOSE_MS + RETRY_BACKOFF_MS`（`RETRY_BACKOFF_MS = 400`）时，等 400ms 后用同一候选再 launch 一次（每个候选最多重试 1 次）。`attempts` 里两条记录都保留（不改 schema）。非网络错误（4xx、解析失败、`deadline exceeded`、abort）不重试。
+3. **StepFun step_plan 发思考预算。** 抽纯函数 `buildStepFunPlanBody({ model, systemPrompt, userContent, maxTokens, reasoningEffort })`：low → `thinking: { type: "enabled", budget_tokens: 1024 }`，medium → `budget_tokens: 4096`，high → 不发 `thinking`；发 `thinking` 时 `max_tokens = maxTokens + budget_tokens`。`callStepFunPlanAgent` 用它，并从 `callStepFunAgent` 接收 `reasoningEffort`（沿既有参数，别再造一个）。确认 `providerRouter` → `callStepFunAgent` 这条链把 candidate 的 `effort` 传到了 plan 路径；没传就补。
+4. **拆题不出前提、不拆侧面、去掉传闻引语。** `DECOMPOSE_SYSTEM_PROMPT` 加规则（原文放进提示词，措辞可微调但每条要在）：
+   - 「只拆**断言**（说话人要你相信的、别人可能反对的事），不拆**前提**（断言成立所依赖的背景、条件、场景）。若 B 以 A 为前提（A 不成立则 B 无意义），只出 A。反例：『孩子打疫苗后发烧，说明疫苗导致了自闭症』只出『疫苗导致自闭症』，不出『孩子打疫苗后发烧』；『群里那张P图配的侮辱性文字说的是真的』只出『那段侮辱性文字说的是真的』，不出『群里有一张P图』『P图配有文字』；『扫码可领补贴，逾期视为弃权』只出『扫码可领 2024 年个人劳动补贴』，不出『需在逾期前完成』。」
+   - 「同一事件的多个描述侧面合成一条。反例：『电动车都被集中拉去国外销毁了，一批一批装船运走』是一条：『电动车被集中装船运往国外销毁』。」
+   - 代码层：`decompose.ts` 后处理对每条命题文本剥掉句首传闻引语 `/^(听说|据说|网传|有人说|朋友圈说|群里说|听人说|据传)[，,：:、\s]*/`（剥完为空则丢弃该条）。
+
+Not this：不改 schema；不改 `judge()` / `overall()` / `score()`（T22 在改）；不改 `DEFAULT_TOTAL_MS` / `DEFAULT_COMPOSE_RESERVE_MS`；不加依赖；不改 server / eval / web 源码。
+
+验收清单（checker 在 `.worktrees/T23` 逐条执行；每条只答 PASS / FAIL + 一行证据；任何一条 FAIL 即打回）：
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 1 | `npm test --workspace=@rhg/core` | 退出码 0；用例数 ≥ 424 + 8 |
+| 2 | `npm run build --workspace=@rhg/core` | 退出码 0 |
+| 3 | `git status --short`；`git diff --stat spine...HEAD` | 干净；改动仅在 `packages/core/**`；不含 `schema.ts`、`judge.ts`、`overall.ts`、`score.ts` |
+| 4 | 读 `context.test.ts` | 有一例：`createStageContext({ deadline: 100 })`，`ctx.llm({ ..., deadlineMs: 900 })` → 底层 `llm` 收到的 `deadlineMs === 900`；另一例不传则 `=== 100` |
+| 5 | 读 `runTurn.test.ts` | 有一例：假时钟，让 investigate 跑到 stage deadline 之后、hard deadline 之前进入 compose；FakeLlm 记录 compose 那次收到的 `deadlineMs === start + totalMs`；`turn.finished.reason` 不是 `error`；`report` 存在且 `compose` 的 `stage.finished.outcome === "ok"` |
+| 6 | 读 `callJob.test.ts` | 有一例：`dispatch` 第一次抛 `Error("fetch failed")` 第二次成功 → 返回 ok，`attempts.length === 2`，两条 `provider/model` 相同；一例：抛 `Error("StepFun API 调用失败：400 ...")` → 不重试，`attempts.length === 1`（若还有第二候选则总数为 2 且 provider 不同）；一例：deadline 只剩 3s → `fetch failed` 后不重试 |
+| 7 | 读 `agentProviders.test.ts` | `buildStepFunPlanBody` 三档：low → `thinking.budget_tokens === 1024` 且 `max_tokens === maxTokens + 1024`；medium → 4096 / `+4096`；high → body 无 `thinking` 键且 `max_tokens === maxTokens` |
+| 8 | `rg -n "reasoningEffort" packages/core/src/llm/agentProviders.ts packages/core/src/llm/providerRouter.ts` | `callStepFunPlanAgent` 的调用处把 `reasoningEffort` 传进去；`providerRouter` 对 stepfun 把 candidate `effort` 传给 `callStepFunAgent` |
+| 9 | 读 `decompose.ts` | 提示词含「前提」「侧面」两条规则及三组反例原文；有 `/^(听说\|据说\|网传\|有人说\|朋友圈说\|群里说\|听人说\|据传)/` 剥除；`decompose.test.ts` 有一例 FakeLlm 返回「听说电动车被集中装船运往国外销毁」→ 命题文本为「电动车被集中装船运往国外销毁」 |
+| 10 | 真跑（工作树根有 `.env.local`）：`npm run eval -- --ids RUMOR-002,RUMOR-012,LOOP-001,TINY-005` 连跑 2 次 | 8 个 `runs/<runId>/<id>.jsonl` 里每例 `claims.added` 的可核命题 ≤ 2；不出现独立命题「孩子打疫苗后发烧」「群里有一张P图」「该P图配有侮辱性文字」，也不出现以「需在」「之前完成」为谓语的条件句；`LOOP-001` 两次都只有 1 条命题；把 8 例的命题文本原样贴进报告 |
+| 11 | 同上两次运行的 stdout JSON | 8 例 `turnReason` 无 `error`；`llm.called` 里 `compose` 没有 `deadline exceeded`；贴每例 `elapsedMs` 与 `verdictType` |
+| 12 | `rg ": any\b\|console\.log\|\.only\|\.skip" packages/core/src --glob '!**/__manual__/**'` | `git diff spine...HEAD` 内 0 新增 |
+
+合入后验收人跑真 key 全量 eval 对照 T21 目标表：timeout ≤ 4、reportContractPassRate ≥ 0.85、verdictAccuracy ≥ 0.75（本任务把 4 条 false→mixed 收回来后的合理线）。
+
 ---
 
 ## Wave 4 · 界面
@@ -727,7 +828,7 @@ Evidence：测试名；截图 / 录屏路径 `packages/web/output/acceptance/T18
 | 19 | 浏览器 fixture：`/cases/fx-done`，点第一个 `[n]` | 新标签 URL 等于该证据 `url`（用 `window.open` 拦截或读 `href`） |
 | 20 | 浏览器 fixture：`/cases/fx-done`，hover 第一个 `[n]` | popover 出现，含 host 与层级字母；`Tab` 聚焦到它也出现；截图 `T18-citation-popover.png` |
 | 21 | 浏览器 fixture：点面板里第二条命题 | 线程滚动，对应 claimItem 获得高亮类并在 ~1s 后移除 |
-| 22 | 浏览器真后端 A（会触发追索）：起 server + web，首页输入「人社部发文说生育津贴直接打到个人卡里了，不用再走单位」 | 从提交起计时：命题出现 ≤ 10s、首条证据计数 ≥1 ≤ 20s、`turn.finished` ≤ 130s；完成态结论段有 ≥1 个 `[n]`；仪器条在运行中出现过 `investigator.step` 行（截图 `T18-live-A-running.png`）；完成截图 `T18-live-A-done.png`；把结论段文本与命题 + 芯片文案贴进报告 |
+| 22 | 浏览器真后端 A：起 server + web，首页输入「人社部发文说生育津贴直接打到个人卡里了，不用再走单位」 | 从提交起计时：命题出现 ≤ 10s、首条证据计数 ≥1 ≤ 20s、`turn.finished` ≤ 130s；完成态结论段有 ≥1 个 `[n]`（core 侧由 T22 第 5 点保证；T22 未合入前此子项记 N/A 并注明）；若 `GET /api/cases/<id>` 里有 ≥1 条 `investigator.step`，则运行中截图 `T18-live-A-running.png` 里要有仪器条行，0 步则此子项 N/A；完成截图 `T18-live-A-done.png`；把结论段文本与命题 + 芯片文案贴进报告 |
 | 23 | 浏览器真后端 B（含立场句）：新案「转基因食品就是毒药，这届专家全被收买了」 | 命题列表里至少一条标「立场型」；可核查命题有判决芯片；截图 `T18-live-B-done.png`；贴命题 + 芯片文案 |
 | 24 | 浏览器真后端 C（图片输入）：首页粘贴或拖入一张含文字的图（用 `packages/core/src/fetch/__fixtures__` 或任意本地 png），提交 | 案件建立、线程里用户消息显示图片缩略；60s 内有命题或有「这张图的来源」frontier 芯片；截图 `T18-live-C.png`。若 T19 尚未合入导致首页无图片入口，此条改为 `POST /api/cases` 带 `attachments:[{kind:"image", value:<dataURL>}]` 后打开案件页验证，并在报告注明 |
 | 25 | 浏览器真后端 A 完成后点一个 frontier 芯片 | 同一 `/cases/<id>` 页面上出现新一条用户消息（正文 = `追查 · <芯片文案>`，不是「再查」）+ 新报告卡（未完成态），面板命题数不减少；芯片在点击后禁用；`GET /api/cases/<id>` 里该条 `message.added.message.route === "pursue_frontier"`；截图 `T18-live-A-followup.png`。若 A 完成后 `frontier` 为空，改用 `POST /api/cases` 新建「北京市 2026 年起小学放学时间统一延后到 18:00」再等其完成后点芯片，并在报告注明 |
@@ -736,6 +837,22 @@ Evidence：测试名；截图 / 录屏路径 `packages/web/output/acceptance/T18
 | 28 | 浏览器：任一完成页 375 宽，把面板抽屉内五个区块全部展开 | `scrollWidth === innerWidth` 仍成立；截图 `T18-mobile-all-open.png` |
 | 29 | `rg ": any\b\|console\.log\|\.only\|\.skip" packages/web/src` | 0 命中 |
 | 30 | `wc -l packages/web/src/case/*.tsx packages/web/src/panel/*.tsx packages/web/src/lib/*.ts` | 报行数（仅报告） |
+
+补丁（验收人看首轮截图 `T18-done-desktop.png`、`T18-done-mobile-panel.png`、`T18-live-A-followup.png` 后追加；合入前必须过）：
+
+- 导航头：产品名一行不折（`white-space: nowrap`，衬线 18px）；「收起 / 展开案件列表」从带边框大按钮改成 32×32 图标按钮（用一个 CSS 画的 `‹` / `›` 或两条短线即可，`aria-label` 沿用 `copy.ts` 现有词），与产品名同一行两端对齐。
+- 768–1023 与 <768 的顶部摘要栏：**一行**——左侧 face 词（衬线 16px）+ 分数（mono 16px），右侧两个 36×36 图标按钮（案件列表、面板），不再堆叠成两个文字大按钮；摘要栏不再显示状态词（状态词只在报告卡顶部）。
+- 面板顶部那行状态词「已完成 / 正在…」删掉（与报告卡重复）。
+- 出处列表每条一行：标题 `overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0`，host · 层级 · 立场保持在同一行右侧不被挤掉。
+- 用户消息标签：首条「原句」，追问「追问」；`route === "pursue_frontier"` 的消息标签用「追查」且正文去掉 `追查 · ` 前缀只显示芯片文案（避免「追问 · 追查 · …」两个「追」）。
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 31 | 浏览器 fixture `/cases/fx-done` 1280 | 导航头产品名单行；折叠控件 ≤ 40px 宽且有 `aria-label`；截图 `T18-nav-header.png` |
+| 32 | 浏览器 fixture `/cases/fx-done` 375 与 900 | 摘要栏单行，`getBoundingClientRect().height ≤ 56`；含 face 词与分数；不含「已完成 / 正在」字样；两个按钮均有 `aria-label`；截图 `T18-summary-bar-375.png`、`T18-summary-bar-900.png` |
+| 33 | 浏览器 fixture `/cases/fx-done` 1280，读面板 DOM | 面板第一个可见文本节点是「整句判决」，不是状态词 |
+| 34 | 浏览器 fixture `/cases/fx-followup` 1280，给 fixture 里第 2 条引用标题临时换成 80 字长串（或用 CDP 改 textContent）后测 | 该条 `scrollWidth ≤ clientWidth`（不横溢），host 与层级徽标仍可见 |
+| 35 | 浏览器 fixture `/cases/fx-followup` | 若 fixture 含 `route: "pursue_frontier"` 的用户消息，其标签为「追查」且正文不以「追查 ·」开头；fixture 没有则补一条到 `followup` fixture 再验 |
 
 ### T19 · 首页与摄入
 
