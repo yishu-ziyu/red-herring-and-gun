@@ -171,6 +171,27 @@ describe("runRetrieve", () => {
     expect(updates.some((event) => event.id === found?.id && event.clusterId === found?.clusterId)).toBe(true);
   });
 
+  it("provider 返回顺序打乱、事件序列逐字相同", async () => {
+    const claims = [
+      claim({ id: "c1", text: "甘南免票", type: "fact", order: 0 }),
+      claim({ id: "c2", text: "景点免费开放", type: "fact", order: 1 }),
+    ];
+    async function run(delayMs: (query: string) => number) {
+      const { ctx } = setup(claims);
+      const provider: SearchProviderFn = async (query) => {
+        await new Promise((resolve) => setTimeout(resolve, delayMs(query)));
+        const tag = query.includes("甘南") || query.includes("免票") ? "a" : "b";
+        return [{ url: `https://news.cn/${tag}`, snippet: "通报" }];
+      };
+      await runRetrieve(ctx, { providers: [provider], queriesPerClaim: 1 });
+      return ctx.emitted.map((event) => JSON.stringify(event));
+    }
+    const a = await run((q) => (q.includes("甘南") || q.includes("免票") ? 20 : 1));
+    const b = await run((q) => (q.includes("甘南") || q.includes("免票") ? 1 : 20));
+    expect(a).toEqual(b);
+    expect(a.some((line) => line.includes("evidence.added") && line.includes("claimId"))).toBe(true);
+  });
+
   it("只有一条证据的 host → 没有 evidence.updated", async () => {
     const { ctx } = setup([claim({ id: "c1", text: "只有一篇来源", type: "fact", order: 0 })]);
 
