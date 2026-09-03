@@ -43,8 +43,8 @@ export function firstUrlInText(text: string): string | undefined {
 
 export async function routeMessage(current: Case, message: RouteMessage, llm: LlmJob): Promise<RouteKind> {
   if (message.pivotId) return "pursue_frontier";
-  if (firstUrlInText(message.text)) return "challenge";
   if (current.claims.length === 0) return "new_claim";
+  if (firstUrlInText(message.text)) return "challenge";
   try {
     const result = await llm({
       job: ROUTE_JOB,

@@ -277,6 +277,34 @@ describe("turns", () => {
     assertReplay(prelude, events, start);
   });
 
+  it("challenge 在 fetch 之后 abort → reason=aborted，无报告", async () => {
+    const { start } = seedCase({ id: "case-challenge-abort", verdict: true });
+    const ac = new AbortController();
+    const fake = createFakeLlm({
+      assess: assessRefute("e1"),
+      compose: composeScript(),
+    });
+    const events: CaseEvent[] = [];
+    for await (const event of runTurn({
+      case: start,
+      message: { text: `对照 ${GOV_URL}` },
+      route: "challenge",
+      signal: ac.signal,
+      deps: deps({
+        llm: fake,
+        tools: {
+          search: async () => [],
+          fetch: async () => page({ finalUrl: GOV_URL, text: GOV_TEXT, title: "人社部通知" }),
+        },
+      }),
+    })) {
+      events.push(event);
+      if (event.type === "evidence.added") ac.abort();
+    }
+    expect(events.at(-1)).toMatchObject({ type: "turn.finished", reason: "aborted" });
+    expect(events.some((event) => event.type === "report.finalized")).toBe(false);
+  });
+
   it("challenge 抓不到：无 evidence.added，reason=done，无 error", async () => {
     const { start, prelude } = seedCase({ id: "case-unreach", verdict: true });
     const events = await collect(
