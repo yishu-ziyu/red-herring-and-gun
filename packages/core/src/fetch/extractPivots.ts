@@ -1,4 +1,4 @@
-import { tierOf } from "../rules/sourceTiers.js";
+import { stripMobileOrWww, tierOf } from "../rules/sourceTiers.js";
 import type { Pivot } from "./types.js";
 
 const GENERIC_ENTITIES = new Set([
@@ -25,13 +25,15 @@ const GENERIC_ENTITIES = new Set([
 const LINK_CAP = 20;
 const ENTITY_CAP = 10;
 const IMAGE_CAP = 10;
+const DOC_CAP = 10;
+const DATE_CAP = 10;
 
 const DOC_NUMBER_RE =
   /(?:[\u4e00-\u9fff]{1,12})?〔\d{4}〕\d+号|(?:[\u4e00-\u9fff]{1,12})?[(（]\d{4}[)）]\d+号/g;
 const ZH_DATE_RE = /(\d{4})年(\d{1,2})月(\d{1,2})日/g;
 const ISO_DATE_RE = /(\d{4})-(\d{2})-(\d{2})/g;
-const CITED_ORG_RE = /据([\u4e00-\u9fff]{2,12})(?:报道|消息|通报)/g;
-const SAID_ORG_RE = /([\u4e00-\u9fff]{2,12})(?:表示|称|回应)/g;
+const CITED_ORG_RE = /(?:^|[，。；：、！？\s（(「“])据([\u4e00-\u9fff]{2,12})(?:报道|消息|通报)/gm;
+const SAID_ORG_RE = /(?:^|[，。；：、！？\s（(「“])([\u4e00-\u9fff]{2,12})(?:表示|称|回应)/gm;
 
 export type PivotPage = {
   id: string;
@@ -108,20 +110,25 @@ export function extractPivots(page: PivotPage, depth: number): Pivot[] {
   for (const url of page.links) {
     if (links >= LINK_CAP) break;
     const host = hostOf(url);
-    if (!host || host === page.host.toLowerCase()) continue;
+    if (!host || stripMobileOrWww(host) === stripMobileOrWww(page.host)) continue;
     if (add("link", url, "外链", linkExpectedValue(url))) links += 1;
   }
 
+  let docs = 0;
   for (const doc of collectMatches(DOC_NUMBER_RE, page.text)) {
-    add("doc_number", doc, "文号", 1);
+    if (docs >= DOC_CAP) break;
+    if (add("doc_number", doc, "文号", 1)) docs += 1;
   }
 
+  let dates = 0;
   for (const match of page.text.matchAll(ZH_DATE_RE)) {
+    if (dates >= DATE_CAP) break;
     const iso = padIso(match[1], match[2], match[3]);
-    if (iso) add("date", iso, "日期", 1);
+    if (iso && add("date", iso, "日期", 1)) dates += 1;
   }
   for (const match of page.text.matchAll(ISO_DATE_RE)) {
-    add("date", `${match[1]}-${match[2]}-${match[3]}`, "日期", 1);
+    if (dates >= DATE_CAP) break;
+    if (add("date", `${match[1]}-${match[2]}-${match[3]}`, "日期", 1)) dates += 1;
   }
 
   let images = 0;
@@ -131,7 +138,12 @@ export function extractPivots(page: PivotPage, depth: number): Pivot[] {
   }
 
   let entities = 0;
-  const names = [...collectGroups(CITED_ORG_RE, page.text), ...collectGroups(SAID_ORG_RE, page.text)];
+  const names = [
+    ...collectGroups(CITED_ORG_RE, page.text),
+    ...collectGroups(SAID_ORG_RE, page.text).map((name) =>
+      /^(?:对此|就此)([\u4e00-\u9fff]{2,12})$/.exec(name)?.[1] ?? name
+    ),
+  ];
   for (const name of names) {
     if (entities >= ENTITY_CAP) break;
     if (GENERIC_ENTITIES.has(name)) continue;

@@ -21,6 +21,7 @@ export type FetchedPage = {
   links: string[];
   images: string[];
   reachable: boolean;
+  charset: string;
   truncated?: boolean;
   error?: string;
 };
@@ -36,4 +37,5 @@ export type WebFetchOptions = {
   timeoutMs?: number;
   maxBytes?: number;
   signal?: AbortSignal;
+  guard?: (url: string) => Promise<string | undefined>;
 };

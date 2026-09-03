@@ -1,7 +1,7 @@
 import type { Tier } from "../fetch/types.js";
-import { TIER_A_HOSTS, TIER_A_SUFFIXES, TIER_B_HOSTS } from "./sourceTiers.data.js";
+import { TIER_A_HOSTS, TIER_A_SUFFIXES, TIER_B_HOSTS, TIER_C_OVERRIDES } from "./sourceTiers.data.js";
 
-function stripMobileOrWww(host: string): string {
+export function stripMobileOrWww(host: string): string {
   let h = host.toLowerCase();
   for (;;) {
     if (h.startsWith("www.")) {
@@ -23,6 +23,9 @@ function hostEqualsOrSuffix(host: string, pattern: string): boolean {
 }
 
 export function tierOf(host: string): Tier {
+  for (const pattern of TIER_C_OVERRIDES) {
+    if (hostEqualsOrSuffix(host, pattern)) return "C";
+  }
   const h = stripMobileOrWww(host);
   for (const suffix of TIER_A_SUFFIXES) {
     const bare = suffix.slice(1);
