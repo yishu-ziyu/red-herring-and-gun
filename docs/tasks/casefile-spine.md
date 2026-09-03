@@ -637,7 +637,7 @@ Change：
 
 4. **`search/toEvidence.ts` 清 HTML。** 新增 `cleanHtmlText(s)`：先解实体（`&lt; &gt; &amp; &quot; &#39; &apos; &nbsp;` 与 `&#NNN;` / `&#xHH;`），再删标签 `/<[^>]*>/g`，再折叠空白并 trim；对 `title` 与 `excerpt` 各用一次。不引依赖。
 
-5. **结论段带引用。** ADR-007 第 80 行：含真 / 假判断的句子必须带引用。T18 真跑（`T18-live-A-done.png` 第二版）结论「……这一说法属实。」无 `[n]`，只有命题行有。`finalize.ts` 新增 `ensureCitedConclusion`：当 `overall.verdictType ∈ {true, false, mixed_misleading}` 且结论里 `extractCiteNs` 为空时，取引用表里按命题 `order` 的第一条命题的第一个 `n`，追加 `[n]` 到结论末尾（在句号之后）；引用表为空则原样返回。在 `clampMarkersToSources` 之后、`repairLeadSentence` 之前做。
+5. **结论段带引用。** ADR-007 第 80 行：含真 / 假判断的句子必须带引用。T18 真跑（`T18-live-A-done.png` 第二版）结论「……这一说法属实。」无 `[n]`，只有命题行有。`finalize.ts` 新增 `ensureCitedConclusion`：当 `overall.verdictType ∈ {true, false, mixed_misleading}` 且结论里 `extractCiteNs` 为空时，取引用表里按命题 `order` 的第一条命题的第一个 `n`，追加 `[n]` 到结论末尾（在句号之后）；引用表为空则原样返回。在 `repairLeadSentence` **之后**做（首句被整句换成兜底时补上的 `[n]` 才不会一起丢）；`draft === null` 的兜底结论也走它。
 
 Not this：不改 `judge()` 规则；不改 schema；不改 web / server / eval 源码（eval 的 `credibilityAccuracy` 不动，它就是评这个）；不把 face 词表引进 `rules/`。
 
@@ -653,7 +653,7 @@ Not this：不改 `judge()` 规则；不改 schema；不改 web / server / eval 
 | 6 | 读 `judgeConfig.ts` | 八个新常量齐、值如上；文件头一句话说明「可信度不是证据质量」 |
 | 7 | 读 `judgeStage.ts` + 其测试 | 有一例：两命题，一 `checkable:false` 一 `checkable:true` 且被 A 级反驳 → 只有一条 `verdict.updated`，`overall.verdictType === "false"`，`overall.score ≤ 10` |
 | 8 | 读 `assess.test.ts` | 有一例：`checkable:false` 命题不产生 `llm.called`，也没有 `stance.added` |
-| 9 | 读 `finalize.test.ts` | 有一例：`line` 为「转基因食品是有毒的食品。该判断为 false。依据：美国国家科学院…」→ 输出等于「转基因食品是有毒的食品。依据：美国国家科学院…」；另一例裸词「结论 unverified，没有查到」→ 不含 `unverified`；另一例 `checkable:false` 命题无 claimItem 时兜底行含「这是评价或立场」；另一例 overall `true`、draft 结论「这一说法属实。」无 `[n]` 而命题行有 `[1]` → 输出结论以 `[1]` 结尾；对照例 overall `unverified` 时结论不追加 |
+| 9 | 读 `finalize.test.ts` | 有一例：`line` 为「转基因食品是有毒的食品。该判断为 false。依据：美国国家科学院…」→ 输出等于「转基因食品是有毒的食品。依据：美国国家科学院…」；另一例裸词「结论 unverified，没有查到」→ 不含 `unverified`；另一例 `checkable:false` 命题无 claimItem 时兜底行含「这是评价或立场」；另一例 overall `true`、draft 结论「这一说法属实。」无 `[n]` 而命题行有 `[1]` → 输出结论以 `[1]` 结尾；对照例 overall `unverified` 时结论不追加；`draft: null` 且 overall `false` 有引用时兜底结论也以 `[1]` 结尾 |
 | 10 | 读 `compose.ts` | 提示词含 `checkable` 字段与两条新规则原文 |
 | 11 | 读 `toEvidence.test.ts` | 有一例：title `Insect-Resistant&lt;italic&gt;Bt&lt;/italic&gt; Plants &amp; Bees` → `Insect-ResistantBt Plants & Bees`；excerpt 含 `&#39;` / `&nbsp;` / `<b>` 的例子被清干净 |
 | 12 | `rg "toEvidence\|score\|overall" packages/core/src/index.ts packages/core/src/rules/index.ts` | 导出面不变（无新增无删减） |
@@ -837,6 +837,22 @@ Evidence：测试名；截图 / 录屏路径 `packages/web/output/acceptance/T18
 | 28 | 浏览器：任一完成页 375 宽，把面板抽屉内五个区块全部展开 | `scrollWidth === innerWidth` 仍成立；截图 `T18-mobile-all-open.png` |
 | 29 | `rg ": any\b\|console\.log\|\.only\|\.skip" packages/web/src` | 0 命中 |
 | 30 | `wc -l packages/web/src/case/*.tsx packages/web/src/panel/*.tsx packages/web/src/lib/*.ts` | 报行数（仅报告） |
+
+补丁（验收人看首轮截图 `T18-done-desktop.png`、`T18-done-mobile-panel.png`、`T18-live-A-followup.png` 后追加；合入前必须过）：
+
+- 导航头：产品名一行不折（`white-space: nowrap`，衬线 18px）；「收起 / 展开案件列表」从带边框大按钮改成 32×32 图标按钮（用一个 CSS 画的 `‹` / `›` 或两条短线即可，`aria-label` 沿用 `copy.ts` 现有词），与产品名同一行两端对齐。
+- 768–1023 与 <768 的顶部摘要栏：**一行**——左侧 face 词（衬线 16px）+ 分数（mono 16px），右侧两个 36×36 图标按钮（案件列表、面板），不再堆叠成两个文字大按钮；摘要栏不再显示状态词（状态词只在报告卡顶部）。
+- 面板顶部那行状态词「已完成 / 正在…」删掉（与报告卡重复）。
+- 出处列表每条一行：标题 `overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0`，host · 层级 · 立场保持在同一行右侧不被挤掉。
+- 用户消息标签：首条「原句」，追问「追问」；`route === "pursue_frontier"` 的消息标签用「追查」且正文去掉 `追查 · ` 前缀只显示芯片文案（避免「追问 · 追查 · …」两个「追」）。
+
+| # | 动作 | 通过条件 |
+|---|---|---|
+| 31 | 浏览器 fixture `/cases/fx-done` 1280 | 导航头产品名单行；折叠控件 ≤ 40px 宽且有 `aria-label`；截图 `T18-nav-header.png` |
+| 32 | 浏览器 fixture `/cases/fx-done` 375 与 900 | 摘要栏单行，`getBoundingClientRect().height ≤ 56`；含 face 词与分数；不含「已完成 / 正在」字样；两个按钮均有 `aria-label`；截图 `T18-summary-bar-375.png`、`T18-summary-bar-900.png` |
+| 33 | 浏览器 fixture `/cases/fx-done` 1280，读面板 DOM | 面板第一个可见文本节点是「整句判决」，不是状态词 |
+| 34 | 浏览器 fixture `/cases/fx-followup` 1280，给 fixture 里第 2 条引用标题临时换成 80 字长串（或用 CDP 改 textContent）后测 | 该条 `scrollWidth ≤ clientWidth`（不横溢），host 与层级徽标仍可见 |
+| 35 | 浏览器 fixture `/cases/fx-followup` | 若 fixture 含 `route: "pursue_frontier"` 的用户消息，其标签为「追查」且正文不以「追查 ·」开头；fixture 没有则补一条到 `followup` fixture 再验 |
 
 ### T19 · 首页与摄入
 
