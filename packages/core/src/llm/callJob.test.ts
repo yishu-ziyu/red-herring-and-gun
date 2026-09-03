@@ -46,7 +46,7 @@ describe("callJob", () => {
     });
 
     expect(result.model).toBe("stepfun:step-2-mini");
-    expect(JSON.parse(result.output)).toEqual({ ok: true });
+    expect(result.output).toEqual({ ok: true });
     expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("deepseek"))).toBe(true);
     expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("stepfun"))).toBe(true);
   });
