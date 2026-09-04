@@ -24,12 +24,24 @@ const AGENT_PROVIDERS = new Set<string>([
   "codex",
 ]);
 
-function definedEnv(env: LlmEnv): Record<string, string> {
+export function definedEnv(env: LlmEnv): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     if (value !== undefined) out[key] = value;
   }
   return out;
+}
+
+export function overlaySearchDeps(base: RunTurnDeps, env: LlmEnv): RunTurnDeps {
+  const searchProviders = defaultSearchProviders(env);
+  return {
+    ...base,
+    searchProviders,
+    tools: {
+      ...base.tools,
+      search: (q, signal) => searchAll({}, q, { providers: searchProviders, signal }),
+    },
+  };
 }
 
 function isAgentProvider(value: string): value is AgentTextProviderId {

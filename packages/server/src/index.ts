@@ -2,7 +2,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config } from "dotenv";
 import { createApp, DEFAULT_PORT } from "./app.js";
-import { buildDeps } from "./deps.js";
+import { buildDeps, definedEnv, overlaySearchDeps } from "./deps.js";
 import { createQuota } from "./quota.js";
 import { FileCaseStore } from "./store.js";
 import { TurnRunner } from "./turns.js";
@@ -16,12 +16,20 @@ const port = Number(env.PORT) || DEFAULT_PORT;
 const casesDir = env.CASES_DIR || resolve(repoRoot, ".data/cases");
 const quotaLimit = env.DAILY_CHECKS_PER_IP === undefined ? 20 : Number(env.DAILY_CHECKS_PER_IP);
 
+const operatorEnv = definedEnv(env);
 const deps = buildDeps(env);
 const store = new FileCaseStore(casesDir);
 await store.repairIncomplete();
 const turns = new TurnRunner(store, deps);
 const quota = createQuota({ limit: Number.isFinite(quotaLimit) ? quotaLimit : 20 });
-const app = createApp({ deps, store, turns, quota });
+const app = createApp({
+  deps,
+  store,
+  turns,
+  quota,
+  operatorEnv,
+  withSearchEnv: (merged) => overlaySearchDeps(deps, merged),
+});
 
 const server = app.listen(port, () => {
   console.log(`http://127.0.0.1:${port}`);

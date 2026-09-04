@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import cors from "cors";
 import express, { type ErrorRequestHandler, type Request, type Response } from "express";
-import { createCase, replay, type RunTurnDeps } from "@rhg/core";
+import {
+  createCase,
+  listSearchProviders,
+  parseUserSearchKeys,
+  replay,
+  type RunTurnDeps,
+} from "@rhg/core";
 import { QUOTA_EXCEEDED, TURN_IN_PROGRESS } from "./copy.js";
 import { toPublicEvent } from "./publicEvent.js";
 import type { Quota } from "./quota.js";
@@ -18,6 +24,8 @@ export type CreateAppOptions = {
   turns: TurnRunner;
   quota: Quota;
   heartbeatMs?: number;
+  operatorEnv?: Record<string, string>;
+  withSearchEnv?: (overlay: Record<string, string>) => RunTurnDeps;
 };
 
 type ParsedBody =
@@ -89,6 +97,18 @@ async function requireCase(store: CaseStore, id: string, res: Response): Promise
   return false;
 }
 
+function searchKeysOf(body: unknown): Record<string, string> {
+  if (!isRecord(body)) return {};
+  return parseUserSearchKeys(body.searchKeys);
+}
+
+function depsForRequest(opts: CreateAppOptions, body: unknown): RunTurnDeps | undefined {
+  const overlay = searchKeysOf(body);
+  if (Object.keys(overlay).length === 0 || !opts.withSearchEnv) return undefined;
+  const merged = { ...(opts.operatorEnv ?? {}), ...overlay };
+  return opts.withSearchEnv(merged);
+}
+
 export function createApp(opts: CreateAppOptions) {
   const { store, turns, quota } = opts;
   const app = express();
@@ -97,6 +117,10 @@ export function createApp(opts: CreateAppOptions) {
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true });
+  });
+
+  app.get("/api/search-providers", (_req, res) => {
+    res.json({ providers: listSearchProviders(opts.operatorEnv ?? {}) });
   });
 
   app.post("/api/cases", async (req, res) => {
@@ -112,7 +136,7 @@ export function createApp(opts: CreateAppOptions) {
     const caseId = randomUUID();
     const created = createCase({ id: caseId, text: parsed.message.text });
     await store.append(caseId, created.events);
-    const { turnId } = await turns.start(caseId, parsed.message);
+    const { turnId } = await turns.start(caseId, parsed.message, depsForRequest(opts, req.body));
     res.status(202).json({ caseId, turnId });
   });
 
@@ -129,7 +153,7 @@ export function createApp(opts: CreateAppOptions) {
       return;
     }
     try {
-      const { turnId } = await turns.start(id, parsed.message);
+      const { turnId } = await turns.start(id, parsed.message, depsForRequest(opts, req.body));
       res.status(202).json({ turnId });
     } catch (error) {
       if (error instanceof ConflictError) {

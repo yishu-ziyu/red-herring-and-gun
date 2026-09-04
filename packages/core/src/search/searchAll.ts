@@ -1,16 +1,9 @@
 import { fuseByRrf, type RankedDoc } from "./evidencePursuit/index.js";
-import { callSearchProvider, type SearchProviderId } from "./searchProviders.js";
+import { isSearchSourceConfigured, SEARCH_CATALOG } from "./searchCatalog.js";
+import { callSearchProvider } from "./searchProviders.js";
 import { toEvidence } from "./toEvidence.js";
 import type { Evidence, Provenance } from "./types.js";
 import { withTimeout } from "../util/httpUtils.js";
-
-const DEFAULT_PROVIDER_IDS: readonly SearchProviderId[] = [
-  "360_search",
-  "any_search",
-  "metaso_search",
-  "tavily_search",
-  "exa_search",
-];
 
 export type SearchHit = {
   url: string;
@@ -98,10 +91,12 @@ export async function searchAll(
 export function defaultSearchProviders(
   env: Readonly<{ [key: string]: string | undefined }>
 ): SearchProviderFn[] {
-  return DEFAULT_PROVIDER_IDS.map((id) => {
+  const bound = stringEnv(env);
+  return SEARCH_CATALOG.filter((meta) => isSearchSourceConfigured(env, meta)).map((meta) => {
+    const id = meta.id;
     const fn: SearchProviderFn = async (query) => {
       const result: unknown = await callSearchProvider({
-        env: stringEnv(env),
+        env: bound,
         provider: id,
         query,
       });

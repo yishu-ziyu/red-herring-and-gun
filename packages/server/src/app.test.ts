@@ -28,6 +28,45 @@ describe("server smoke", () => {
     expect(DEFAULT_PORT).toBe(3100);
   });
 
+  it("GET /api/search-providers 区分预置与收费源", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "rhg-search-cat-"));
+    const store = new FileCaseStore(dir);
+    const deps = smokeDeps();
+    const turns = new TurnRunner(store, deps);
+    const server = createServer(
+      createApp({
+        deps,
+        store,
+        turns,
+        quota: createQuota({ limit: 0 }),
+        operatorEnv: { TAVILY_API_KEY: "secret-should-not-leak" },
+      }),
+    );
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    try {
+      const { port } = server.address() as AddressInfo;
+      const res = await fetch(`http://127.0.0.1:${port}/api/search-providers`);
+      expect(res.ok).toBe(true);
+      const body = (await res.json()) as {
+        providers: Array<{ id: string; billing: string; configured: boolean }>;
+      };
+      const any = body.providers.find((p) => p.id === "any_search");
+      const tavily = body.providers.find((p) => p.id === "tavily_search");
+      expect(any?.billing).toBe("included");
+      expect(any?.configured).toBe(true);
+      expect(tavily?.billing).toBe("byo");
+      expect(tavily?.configured).toBe(true);
+      expect(JSON.stringify(body)).not.toMatch(/secret-should-not-leak/);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("GET /health returns { ok: true }", async () => {
     const dir = await mkdtemp(join(tmpdir(), "rhg-health-"));
     const store = new FileCaseStore(dir);
