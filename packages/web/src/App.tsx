@@ -55,13 +55,11 @@ export function App() {
 
   if (route.page === "home") {
     return (
-      <div className="home-page">
-        <HomePage
-          onCreated={(id) => navigate(`/cases/${id}`)}
-          onOpenCase={(id) => navigate(`/cases/${id}`)}
-          onSettings={() => navigate("/settings")}
-        />
-      </div>
+      <HomePage
+        onCreated={(id) => navigate(`/cases/${id}`)}
+        onOpenCase={(id) => navigate(`/cases/${id}`)}
+        onSettings={() => navigate("/settings")}
+      />
     );
   }
 

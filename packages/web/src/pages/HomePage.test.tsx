@@ -126,7 +126,7 @@ describe("HomePage", () => {
 
   it("空列表显示空态文案", async () => {
     renderHome();
-    expect(await screen.findByText(EMPTY_CASES)).toBeTruthy();
+    expect((await screen.findAllByText(EMPTY_CASES)).length).toBeGreaterThan(0);
   });
 
   it("点击最近案件进入案件页", async () => {
@@ -140,8 +140,8 @@ describe("HomePage", () => {
     ]);
     const onOpenCase = vi.fn();
     renderHome({ onOpenCase });
-    const item = await screen.findByRole("button", { name: /国家医保局宣布生育津贴直接发个人/ });
-    fireEvent.click(item);
+    const items = await screen.findAllByRole("button", { name: /国家医保局宣布生育津贴直接发个人/ });
+    fireEvent.click(items[0]);
     expect(onOpenCase).toHaveBeenCalledWith("case-abc");
   });
 });

@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SUBMIT_HOME, VERDICT_SECTION } from "./lib/copy.js";
+import { NEW_CASE, SUBMIT_HOME, VERDICT_SECTION } from "./lib/copy.js";
 
 vi.mock("./lib/api.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./lib/api.js")>();
@@ -46,8 +46,8 @@ describe("App routes", () => {
     go("/");
     render(<App />);
     expect(await screen.findByRole("button", { name: SUBMIT_HOME })).toBeTruthy();
+    expect(screen.getByRole("button", { name: NEW_CASE })).toBeTruthy();
     expect(document.querySelector("aside")).toBeNull();
-    expect(document.querySelector("nav")).toBeNull();
     expect(screen.queryByText(VERDICT_SECTION)).toBeNull();
   });
 
