@@ -5,7 +5,11 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { retrieveAtomSources, type SearchProgressEvent } from "./searchProviders";
+import {
+  resetSearchQuotaSkipForTests,
+  retrieveAtomSources,
+  type SearchProgressEvent,
+} from "./searchProviders";
 import { toPublicStreamEvent } from "../text/toPublicStreamEvent";
 
 const ATOM = "甘南所有景点一律免费";
@@ -115,6 +119,7 @@ const statusOf = (event: SearchProgressEvent, provider: string) =>
   event.providers.find((p) => p.id === provider)?.status;
 
 afterEach(() => {
+  resetSearchQuotaSkipForTests();
   vi.unstubAllGlobals();
 });
 

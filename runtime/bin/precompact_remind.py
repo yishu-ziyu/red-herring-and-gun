@@ -10,14 +10,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lib import (
-    active_task_files,
     file_updated_since,
     git_porcelain,
+    notes_path,
     product_changed_since,
     read_session_stamp,
     read_stdin_json,
     workspace_root,
-    write_state_md,
 )
 
 
@@ -26,22 +25,18 @@ def main() -> int:
     if payload.get("subagentType"):
         return 0
     root = workspace_root()
-    write_state_md(root)
-    active = active_task_files(root)
-    if not active:
-        return 0
     session_id = str(payload.get("sessionId") or "")
     stamp = read_session_stamp(root, session_id)
     started = float(stamp.get("startedAtUnix") or 0)
-    if started and all(file_updated_since(path, started) for path in active):
-        return 0
     start_porc = str(stamp.get("porcelain") or "")
     changed = product_changed_since(start_porc, git_porcelain(root))
-    if not changed and started:
+    if not changed:
         return 0
-    ids = ", ".join(path.stem for path in active)
+    notes = notes_path(root)
+    if started and file_updated_since(notes, started):
+        return 0
     print(
-        f"[runtime] 即将压缩。活动任务 {ids} 本会话尚未写回。先更新任务页再继续。",
+        "[runtime] 即将压缩。本会话改了产品文件，docs/NOTES.md 尚未写回当前状态。",
         file=sys.stderr,
     )
     return 0
