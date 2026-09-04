@@ -3,12 +3,23 @@ import { faceWord } from '@rhg/core/publicCopy';
 export const APP_TITLE = "红鲱鱼与枪";
 export const TURN_BUSY = "这一案还在查，等这轮结束再问。";
 export const SUBMIT_HOME = "开始核对";
+export const NEW_CASE = "新查一条";
+export const HOME_MISSION = "把你想核查的句子、链接或截图放进来";
+export const HOME_OUTCOME = "告诉你这条说法是否可靠，问题在哪里，来源能点开。";
+export const HOME_PLACEHOLDER = "一句话、一条链接，或一张截图";
+export const HOME_EXAMPLES = "试试一个未经证实的说法 →";
+export const ADD_IMAGE = "添加图片";
+export const HOME_DEMOS = [
+  "隔夜菜会致癌，等于吃毒药",
+  "5G信号塔辐射导致周边居民头晕失眠",
+  "人民币即将大幅贬值，赶紧换美元",
+] as const;
 export const LINK_HINT = "链接会一起核对";
 export const IMAGE_TOO_LARGE = "图太大了，换一张小一点的";
 export const QUOTA_EXCEEDED = "今天查得太多了，明天再来";
 export const NETWORK_ERROR = "没连上，再试一次";
-export const EMPTY_CASES = "还没有案子，贴一句试试";
-export const RECENT_CASES = "最近案件";
+export const EMPTY_CASES = "还没有查过";
+export const RECENT_CASES = "最近核查";
 export const REMOVE_IMAGE = "移除图片";
 export const SUBMIT_TURN = "再问一句";
 export const ABORT = "中止";
