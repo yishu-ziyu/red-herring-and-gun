@@ -9,11 +9,18 @@ import {
 } from "react";
 import { ApiError, createCase, listCases, type Attachment, type CaseListItem } from "../lib/api.js";
 import {
+  ADD_IMAGE,
   APP_TITLE,
   EMPTY_CASES,
+  HOME_DEMOS,
+  HOME_EXAMPLES,
+  HOME_MISSION,
+  HOME_OUTCOME,
+  HOME_PLACEHOLDER,
   IMAGE_TOO_LARGE,
   LINK_HINT,
   NETWORK_ERROR,
+  NEW_CASE,
   QUOTA_EXCEEDED,
   RECENT_CASES,
   REMOVE_IMAGE,
@@ -54,6 +61,23 @@ function pickImageFile(files: FileList | DataTransferItemList | null | undefined
   return null;
 }
 
+function IconPlus() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden>
+      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconSend() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" aria-hidden>
+      <path d="M12 19V5" />
+      <path d="m5 12 7-7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function HomePage(props: Props) {
   const [text, setText] = useState("");
   const [image, setImage] = useState<Attachment | null>(null);
@@ -61,6 +85,8 @@ export function HomePage(props: Props) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [recent, setRecent] = useState<CaseListItem[]>([]);
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -70,6 +96,7 @@ export function HomePage(props: Props) {
   }, []);
 
   const showLinkHint = URL_PATTERN.test(text);
+  const canSend = text.trim().length > 0 && !pending;
 
   const attachImage = useCallback(async (file: File) => {
     if (file.size > MAX_IMAGE_BYTES) {
@@ -130,75 +157,117 @@ export function HomePage(props: Props) {
     }
   }
 
+  const recentList =
+    recent.length === 0 ? (
+      <p className="muted home-rail-empty">{EMPTY_CASES}</p>
+    ) : (
+      <ul className="home-rail-list">
+        {recent.map((item) => (
+          <li key={item.caseId}>
+            <button type="button" className="home-rail-item" onClick={() => props.onOpenCase(item.caseId)}>
+              <span>{previewText(item.text)}</span>
+              <span className="muted">{formatRelativeTime(item.updatedAt)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    );
+
   return (
-    <div className="home">
-      <h1 className="font-serif">{APP_TITLE}</h1>
-      <p className="home-tagline font-serif">贴一句要核的话。先给判断，再拆问题。</p>
-      <form onSubmit={onSubmit}>
-        <label>
-          <span className="muted">要核的句子</span>
-          <div
-            ref={dropRef}
-            className="home-input-wrap"
-            onDragOver={onDragOver}
-            onDrop={onDrop}
-          >
+    <div className="home-desk">
+      <nav className="home-rail" aria-label={RECENT_CASES}>
+        <div className="home-rail-brand">
+          <img src="/logo.png" alt="" width="28" height="28" />
+          <span className="font-serif">{APP_TITLE}</span>
+        </div>
+        <button type="button" className="home-new" onClick={() => fieldRef.current?.focus()}>
+          {NEW_CASE}
+        </button>
+        <p className="home-rail-label">{RECENT_CASES}</p>
+        {recentList}
+        <div className="home-rail-foot">
+          <button type="button" className="home-rail-link" onClick={props.onSettings}>
+            {SEARCH_SETTINGS}
+          </button>
+        </div>
+      </nav>
+
+      <main className="home-stage">
+        <header className="home-hero">
+          <h1 className="home-title font-serif">
+            <span>红鲱鱼</span>
+            <span className="home-title-accent">与</span>
+            <span>枪</span>
+          </h1>
+          <p className="home-mission font-serif">{HOME_MISSION}</p>
+          <p className="home-outcome">{HOME_OUTCOME}</p>
+        </header>
+
+        <form className="home-card" onSubmit={onSubmit}>
+          <label className="visually-hidden" htmlFor="home-claim">
+            {HOME_PLACEHOLDER}
+          </label>
+          <div ref={dropRef} className="home-card-field" onDragOver={onDragOver} onDrop={onDrop}>
             <textarea
+              id="home-claim"
+              ref={fieldRef}
               value={text}
               onChange={(event) => setText(event.target.value)}
               onPaste={onPaste}
               maxLength={4000}
+              placeholder={HOME_PLACEHOLDER}
               required
             />
             {previewUrl ? (
               <div className="home-preview">
                 <img src={previewUrl} alt="" className="home-preview-img" />
-                <button
-                  type="button"
-                  className="home-preview-remove"
-                  aria-label={REMOVE_IMAGE}
-                  onClick={clearImage}
-                >
+                <button type="button" className="home-preview-remove" aria-label={REMOVE_IMAGE} onClick={clearImage}>
                   ×
                 </button>
               </div>
             ) : null}
           </div>
-        </label>
+          <div className="home-card-row">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void attachImage(file);
+              }}
+            />
+            <button type="button" className="home-icon-btn" aria-label={ADD_IMAGE} onClick={() => fileRef.current?.click()}>
+              <IconPlus />
+            </button>
+            <button type="submit" className="home-send" aria-label={SUBMIT_HOME} disabled={!canSend}>
+              <IconSend />
+            </button>
+          </div>
+        </form>
         {showLinkHint ? <p className="home-hint muted">{LINK_HINT}</p> : null}
-        <div className="home-actions">
-          <button type="submit" className="btn btn-primary" disabled={pending}>
-            {SUBMIT_HOME}
-          </button>
-        </div>
         {error ? <p className="err">{error}</p> : null}
-      </form>
-      <section className="home-recent" aria-label={RECENT_CASES}>
-        <h2 className="home-recent-title">{RECENT_CASES}</h2>
-        {recent.length === 0 ? (
-          <p className="muted">{EMPTY_CASES}</p>
-        ) : (
-          <ul className="home-recent-list">
-            {recent.map((item) => (
-              <li key={item.caseId}>
-                <button
-                  type="button"
-                  className="home-recent-item"
-                  onClick={() => props.onOpenCase(item.caseId)}
-                >
-                  <span className="home-recent-text">{previewText(item.text)}</span>
-                  <span className="home-recent-time">{formatRelativeTime(item.updatedAt)}</span>
+
+        <section className="home-examples" aria-label={HOME_EXAMPLES}>
+          <p className="home-examples-label">{HOME_EXAMPLES}</p>
+          <ul>
+            {HOME_DEMOS.map((claim) => (
+              <li key={claim}>
+                <button type="button" className="home-example" onClick={() => setText(claim)}>
+                  {claim}
                 </button>
               </li>
             ))}
           </ul>
-        )}
-      </section>
-      <p className="home-settings">
-        <button type="button" className="text-link" onClick={props.onSettings}>
-          {SEARCH_SETTINGS}
-        </button>
-      </p>
+        </section>
+
+        <section className="home-recent-mobile" aria-label={RECENT_CASES}>
+          <p className="home-rail-label">{RECENT_CASES}</p>
+          {recentList}
+        </section>
+      </main>
     </div>
   );
 }
