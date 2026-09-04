@@ -4,7 +4,7 @@
 
 ## 默认
 
-1. 动手前把「什么现象算成功」写成 `docs/evals/YYYY-MM-DD-slug.md`：Change / Not this / Evaluator。没有 evaluator 的句子不算标准。能拆成命令的拆成命令；拆不动的标「人评」。
+1. 动手前写下验收标准，存 `docs/evals/YYYY-MM-DD-slug.md`：Change / Not this / Evaluator。这是独立于实现的完成尺度，用来判断做没做完、做到哪。没有 evaluator 的句子不算标准。能拆成命令的拆成命令；拆不动的标「人评」。
 2. 用户说「太慢」「不好用」时不准直接改。先追问成数值、行为、截图、复现路径，再翻译成测试。
 3. 压缩后先读 `docs/NOTES.md`。每个子任务刚做完就改 NOTES 头部「当前状态」。等压缩再写等于没写。
 4. 方向改变写 `docs/devlog/`，不是 commit 复述。

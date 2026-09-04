@@ -2,7 +2,7 @@
 
 复制为 `runtime/tasks/YYYYMMDD-short-slug.md`。只保留恢复下一步所需的当前工作集；每次更新直接改字段。
 
-动手前先写 `docs/evals/YYYY-MM-DD-slug.md`。每个子任务刚做完改 `docs/NOTES.md` 头部「当前状态」。本页是可选细节，不是压缩后的记忆源。
+动手前先写验收标准 `docs/evals/YYYY-MM-DD-slug.md`。每个子任务刚做完改 `docs/NOTES.md` 头部「当前状态」。本页是可选细节，不是压缩后的记忆源。
 
 - Task ID:
 - Status: active / blocked / complete

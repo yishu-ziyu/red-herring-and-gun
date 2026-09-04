@@ -3,7 +3,7 @@
 ## 改了什么
 
 - 工作记忆从 hook 生成的 `runtime/STATE.md` 换成手写 `docs/NOTES.md`。
-- 协议收到短 `AGENTS.md`。验收卡开始进 `docs/evals/`。
+- 协议收到短 `AGENTS.md`。验收标准开始进 `docs/evals/`。
 - 搜索源额度错误后进程内跳过。
 
 ## 为什么
@@ -14,6 +14,6 @@
 
 ## 结果
 
-- SCLN 四层（协议 / 卡 / NOTES / 开发日志）就位。wiki/skill 本轮不建。
+- SCLN 四层（协议 / 验收标准 / NOTES / 开发日志）就位。wiki/skill 本轮不建。
 - 死源 skip 有单测：第二次 `searchAll` 只打 AnySearch。
 - 被推翻的路：把 `runtime/STATE.md` 当记忆源；把「搜索全死」当成事实直接等充值。
