@@ -8,6 +8,7 @@ import { useCaseStream } from "./lib/useCaseStream.js";
 import { useRoute } from "./lib/useRoute.js";
 import { CasePanel } from "./pages/CasePage.js";
 import { HomePage } from "./pages/HomePage.js";
+import { SearchSettings } from "./pages/SearchSettings.js";
 import { AppShell, fixtureNavItems } from "./shell/AppShell.js";
 
 export function App() {
@@ -48,6 +49,10 @@ export function App() {
     setFlashClaim(claimId);
   }
 
+  if (route.page === "settings") {
+    return <SearchSettings onBack={() => navigate("/")} />;
+  }
+
   return (
     <AppShell
       activeId={caseId || undefined}
@@ -67,6 +72,7 @@ export function App() {
         <HomePage
           onCreated={(id) => navigate(`/cases/${id}`)}
           onOpenCase={(id) => navigate(`/cases/${id}`)}
+          onSettings={() => navigate("/settings")}
         />
       ) : current ? (
         <ThreadView

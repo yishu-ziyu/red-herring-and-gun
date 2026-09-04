@@ -5,6 +5,7 @@ import {
   IMAGE_TOO_LARGE,
   LINK_HINT,
   QUOTA_EXCEEDED,
+  SEARCH_SETTINGS,
 } from "../lib/copy.js";
 import { HomePage } from "./HomePage.js";
 
@@ -31,11 +32,14 @@ beforeEach(() => {
   listCases.mockResolvedValue([]);
 });
 
-function renderHome(over: Partial<{ onCreated: (id: string) => void; onOpenCase: (id: string) => void }> = {}) {
+function renderHome(
+  over: Partial<{ onCreated: (id: string) => void; onOpenCase: (id: string) => void; onSettings: () => void }> = {}
+) {
   const onCreated = over.onCreated ?? vi.fn();
   const onOpenCase = over.onOpenCase ?? vi.fn();
-  render(<HomePage onCreated={onCreated} onOpenCase={onOpenCase} />);
-  return { onCreated, onOpenCase };
+  const onSettings = over.onSettings ?? vi.fn();
+  render(<HomePage onCreated={onCreated} onOpenCase={onOpenCase} onSettings={onSettings} />);
+  return { onCreated, onOpenCase, onSettings };
 }
 
 function pasteImage(textarea: HTMLElement, file: File) {
@@ -68,6 +72,12 @@ function mockFileReader(result: string) {
 }
 
 describe("HomePage", () => {
+  it("首页能进检索设置", () => {
+    const { onSettings } = renderHome();
+    fireEvent.click(screen.getByRole("button", { name: SEARCH_SETTINGS }));
+    expect(onSettings).toHaveBeenCalledTimes(1);
+  });
+
   it("粘贴含链接文本时出现提示行", async () => {
     renderHome();
     const textarea = screen.getByRole("textbox");
