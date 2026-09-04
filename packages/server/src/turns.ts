@@ -56,7 +56,11 @@ export class TurnRunner {
     };
   }
 
-  async start(caseId: string, message: TurnMessage): Promise<{ turnId: string }> {
+  async start(
+    caseId: string,
+    message: TurnMessage,
+    depsOverride?: RunTurnDeps
+  ): Promise<{ turnId: string }> {
     if (this.isRunning(caseId)) throw new ConflictError();
     this.starting.add(caseId);
     try {
@@ -66,7 +70,7 @@ export class TurnRunner {
       const turnId = `t${current.turns.length + 1}`;
       const ac = new AbortController();
       this.controllers.set(caseId, ac);
-      const job = this.consume(caseId, current, message, ac.signal);
+      const job = this.consume(caseId, current, message, ac.signal, depsOverride ?? this.deps);
       this.jobs.set(caseId, job);
       void job.finally(() => {
         this.jobs.delete(caseId);
@@ -109,6 +113,7 @@ export class TurnRunner {
     current: Case,
     message: TurnMessage,
     signal: AbortSignal,
+    deps: RunTurnDeps,
   ): Promise<void> {
     const stream = runTurn({
       case: current,
@@ -117,7 +122,7 @@ export class TurnRunner {
         ...(message.attachments ? { attachments: message.attachments } : {}),
         ...(message.pivotId ? { pivotId: message.pivotId } : {}),
       },
-      deps: this.deps,
+      deps,
       signal,
     });
     for await (const event of stream) {

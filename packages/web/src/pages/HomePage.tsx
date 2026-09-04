@@ -17,6 +17,7 @@ import {
   QUOTA_EXCEEDED,
   RECENT_CASES,
   REMOVE_IMAGE,
+  SEARCH_SETTINGS,
   SUBMIT_HOME,
 } from "../lib/copy.js";
 import { formatRelativeTime, previewText } from "../lib/time.js";
@@ -28,6 +29,7 @@ const RECENT_LIMIT = 5;
 type Props = {
   onCreated: (caseId: string) => void;
   onOpenCase: (caseId: string) => void;
+  onSettings: () => void;
 };
 
 function readImageFile(file: File): Promise<string> {
@@ -171,6 +173,11 @@ export function HomePage(props: Props) {
         </div>
         {error ? <p className="err">{error}</p> : null}
       </form>
+      <p className="home-settings">
+        <button type="button" className="text-link" onClick={props.onSettings}>
+          {SEARCH_SETTINGS}
+        </button>
+      </p>
       <section className="home-recent" aria-label={RECENT_CASES}>
         <h2 className="home-recent-title">{RECENT_CASES}</h2>
         {recent.length === 0 ? (
