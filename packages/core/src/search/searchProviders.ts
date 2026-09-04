@@ -41,6 +41,55 @@ function getSearchFetchTimeoutMs(env: Record<string, string>) {
   return getTimeoutMs(env, "SEARCH_FETCH_TIMEOUT_MS", 10000);
 }
 
+const SEARCH_QUOTA_SKIP_MS = 10 * 60 * 1000;
+const searchQuotaExhaustedUntil = new Map<string, number>();
+
+export function resetSearchQuotaSkipForTests(): void {
+  searchQuotaExhaustedUntil.clear();
+}
+
+export function isHardSearchQuotaError(message: string): boolean {
+  return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded|limit)|billing hard limit|over_quota|无可用额度|please top up|usage limit|exceeds your plan|HTTP 402\b|HTTP 432\b/i.test(
+    message
+  );
+}
+
+export function isSearchQuotaSkipped(provider: string): boolean {
+  const until = searchQuotaExhaustedUntil.get(provider);
+  return typeof until === "number" && until > Date.now();
+}
+
+function noteSearchFailure(provider: string, message: string): void {
+  if (isHardSearchQuotaError(message)) {
+    searchQuotaExhaustedUntil.set(provider, Date.now() + SEARCH_QUOTA_SKIP_MS);
+  }
+}
+
+function httpFailMessage(name: string, response: Response, data: unknown): string {
+  const rec = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  const error = rec.error;
+  const detailField = rec.detail;
+  const errorMessage =
+    error && typeof error === "object" && error !== null && "message" in error
+      ? String((error as { message: unknown }).message ?? "")
+      : typeof error === "string"
+        ? error
+        : "";
+  const detailMessage =
+    detailField && typeof detailField === "object" && detailField !== null && "error" in detailField
+      ? String((detailField as { error: unknown }).error ?? "")
+      : typeof detailField === "string"
+        ? detailField
+        : "";
+  const detail =
+    errorMessage ||
+    detailMessage ||
+    (typeof rec.message === "string" ? rec.message : "") ||
+    response.statusText ||
+    "";
+  return `${name} 调用失败：HTTP ${response.status}${detail ? ` ${detail}` : ""}`;
+}
+
 export function getSearchToolName(result: { _source?: string } | undefined) {
   if (result?._source === "parallel-search") return "Parallel Search";
   if (result?._source === "anysearch-search") return "AnySearch";
@@ -197,19 +246,28 @@ export async function callSearchProvider({
   model?: string;
   refProm?: string;
 }) {
-  switch (provider) {
-    case "360_search":
-      return await call360AiSearch({ env, query, model, refProm });
-    case "any_search":
-      return await callAnySearchSearch({ env, query });
-    case "metaso_search":
-      return await callMetasoSearch({ env, query });
-    case "tavily_search":
-      return await callTavilySearch({ env, query });
-    case "exa_search":
-      return await callExaSearch({ env, query });
-    default:
-      throw new Error(`未知搜索 Provider：${provider}`);
+  if (isSearchQuotaSkipped(provider)) {
+    throw new Error(`${getProviderLabel(provider)} 额度耗尽，本进程已跳过`);
+  }
+  try {
+    switch (provider) {
+      case "360_search":
+        return await call360AiSearch({ env, query, model, refProm });
+      case "any_search":
+        return await callAnySearchSearch({ env, query });
+      case "metaso_search":
+        return await callMetasoSearch({ env, query });
+      case "tavily_search":
+        return await callTavilySearch({ env, query });
+      case "exa_search":
+        return await callExaSearch({ env, query });
+      default:
+        throw new Error(`未知搜索 Provider：${provider}`);
+    }
+  } catch (reason) {
+    const message = reason instanceof Error ? reason.message : String(reason);
+    noteSearchFailure(provider, message);
+    throw reason;
   }
 }
 
@@ -507,8 +565,7 @@ async function callAnySearchSearch({
 
   const data: any = await response.json().catch(() => null);
   if (!response.ok) {
-    const detail = data?.error?.message || data?.message || response.statusText;
-    throw new Error(`AnySearch 调用失败：${detail}`);
+    throw new Error(httpFailMessage("AnySearch", response, data));
   }
   if (data?.error) {
     const detail = data.error?.message || JSON.stringify(data.error);
@@ -547,8 +604,7 @@ async function callTavilySearch({
 
   const data: any = await response.json().catch(() => null);
   if (!response.ok) {
-    const detail = data?.error || data?.message || response.statusText;
-    throw new Error(`Tavily Search 调用失败：${detail}`);
+    throw new Error(httpFailMessage("Tavily Search", response, data));
   }
 
   return normalizeTavilySearchResponse(data, query);
@@ -584,8 +640,7 @@ async function callMetasoSearch({
 
   const data: any = await response.json().catch(() => null);
   if (!response.ok) {
-    const detail = data?.error?.message || data?.error || data?.message || response.statusText;
-    throw new Error(`Metaso Search 调用失败：${detail}`);
+    throw new Error(httpFailMessage("Metaso Search", response, data));
   }
   if (data?.errCode || data?.code) {
     const detail = data?.errMsg || data?.message || data?.error || `错误码 ${data.errCode || data.code}`;
@@ -626,8 +681,7 @@ async function callExaSearch({
 
   const data: any = await response.json().catch(() => null);
   if (!response.ok) {
-    const detail = data?.error?.message || data?.error || data?.message || response.statusText;
-    throw new Error(`Exa Search 调用失败：${detail}`);
+    throw new Error(httpFailMessage("Exa Search", response, data));
   }
 
   return normalizeExaSearchResponse(data, query, type);
@@ -776,8 +830,7 @@ async function call360MWebSearch({
   }, getSearchFetchTimeoutMs(env), `360 智搜 ${selectedRefProm}`);
   const data: any = await response.json().catch(() => null);
   if (!response.ok) {
-    const detail = data?.error?.message || data?.message || response.statusText;
-    throw new Error(`360 智搜 ${selectedRefProm} 调用失败：${detail}`);
+    throw new Error(httpFailMessage(`360 智搜 ${selectedRefProm}`, response, data));
   }
   if (data?.errno != null && Number(data.errno) !== 0) {
     throw new Error(`360 智搜 ${selectedRefProm} 调用失败：${data?.message || `errno ${data.errno}`}`);
