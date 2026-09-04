@@ -2,7 +2,7 @@
 
 脊柱 T01–T19、T21–T24 已在 `main` / `dev` / `spine`。只剩 T20（上线切换）。生产仍走 `mvp/`，`ops.sh` 未改。
 
-检索：AnySearch 预置（匿名也能搜，6 条）。收费源（360 / 秘塔 / Tavily / Exa / 博查 / Brave / Jina）走 `/settings` 让用户自己开通、充值、贴密钥。SearXNG 配 `SEARXNG_URL` 才启用。空密钥活测只打 AnySearch，仍命中。全量 eval 未跑。
+检索：AnySearch 预置。收费源走 `/settings`。首页已从案件三栏壳拆出（T17 骨架误用，不是原来 mvp 脸）。全量 eval 未跑。
 
 本会话把 SCLN 协作层写进仓库：协议 `AGENTS.md`，验收标准 `docs/evals/`，记忆本页，转向 `docs/devlog/`，可迁走包 `docs/METHODOLOGY.md`。不叫「验收卡」：那是独立于实现的完成尺度，不是一张要填的表。`runtime/STATE.md` 不再当工作记忆，hook 不再覆盖它。
 
