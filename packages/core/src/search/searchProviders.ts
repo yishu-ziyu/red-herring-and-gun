@@ -204,7 +204,16 @@ async function call360AiSearch({
   return await call360MWebSearch({ env, apiKey, query, refProm });
 }
 
-export type SearchProviderId = "360_search" | "any_search" | "metaso_search" | "tavily_search" | "exa_search";
+export type SearchProviderId =
+  | "360_search"
+  | "any_search"
+  | "metaso_search"
+  | "tavily_search"
+  | "exa_search"
+  | "bocha_search"
+  | "brave_search"
+  | "jina_search"
+  | "searxng_search";
 
 /** 单 Provider 在产品侧的进度态（SSE search_progress 用，不含任何诊断/密钥/请求 ID）。 */
 export type SearchProviderProgress = {
@@ -261,6 +270,14 @@ export async function callSearchProvider({
         return await callTavilySearch({ env, query });
       case "exa_search":
         return await callExaSearch({ env, query });
+      case "bocha_search":
+        return await callBochaSearch({ env, query });
+      case "brave_search":
+        return await callBraveSearch({ env, query });
+      case "jina_search":
+        return await callJinaSearch({ env, query });
+      case "searxng_search":
+        return await callSearxngSearch({ env, query });
       default:
         throw new Error(`未知搜索 Provider：${provider}`);
     }
@@ -530,6 +547,10 @@ export function getProviderLabel(provider: SearchProviderId | string) {
     metaso_search: "Metaso Search",
     tavily_search: "Tavily Search",
     exa_search: "Exa Search",
+    bocha_search: "Bocha Search",
+    brave_search: "Brave Search",
+    jina_search: "Jina Search",
+    searxng_search: "SearXNG",
   };
   return labels[provider] ?? provider;
 }
@@ -685,6 +706,180 @@ async function callExaSearch({
   }
 
   return normalizeExaSearchResponse(data, query, type);
+}
+
+function getBochaApiKey(env: Record<string, string>) {
+  return env.BOCHA_API_KEY || process.env.BOCHA_API_KEY || "";
+}
+
+function getBraveApiKey(env: Record<string, string>) {
+  return env.BRAVE_SEARCH_API_KEY || process.env.BRAVE_SEARCH_API_KEY || "";
+}
+
+function getJinaApiKey(env: Record<string, string>) {
+  return env.JINA_API_KEY || process.env.JINA_API_KEY || "";
+}
+
+function getSearxngUrl(env: Record<string, string>) {
+  return (env.SEARXNG_URL || process.env.SEARXNG_URL || "").replace(/\/+$/, "");
+}
+
+async function callBochaSearch({ env, query }: { env: Record<string, string>; query: string }) {
+  const apiKey = getBochaApiKey(env);
+  if (!apiKey) throw new Error("未配置博查 API key");
+  const response = await fetchWithTimeout(
+    "https://api.bocha.cn/v1/web-search",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query,
+        summary: true,
+        freshness: "noLimit",
+        count: Number(env.BOCHA_SEARCH_SIZE || process.env.BOCHA_SEARCH_SIZE || 8),
+      }),
+    },
+    getSearchFetchTimeoutMs(env),
+    "Bocha Search"
+  );
+  const data: any = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(httpFailMessage("Bocha Search", response, data));
+  const pages =
+    data?.data?.webPages?.value ??
+    data?.webPages?.value ??
+    data?.data?.webPages ??
+    [];
+  const items = Array.isArray(pages)
+    ? pages.map((s: any) => ({
+        title: s?.name || s?.title,
+        url: s?.url,
+        snippet: s?.summary || s?.snippet,
+        publishedAt: s?.datePublished,
+      }))
+    : [];
+  const sources = mapProviderSources(items, (i) => `博查来源 ${i}`);
+  return {
+    answer: sources.map((s) => `【${s.title}】${s.snippet}`).join("\n"),
+    sources,
+    relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`],
+    model: "bocha-web-search",
+    traceText: `博查返回 ${sources.length} 条可追溯来源。`,
+    _source: "bocha-search",
+  };
+}
+
+async function callBraveSearch({ env, query }: { env: Record<string, string>; query: string }) {
+  const apiKey = getBraveApiKey(env);
+  if (!apiKey) throw new Error("未配置 Brave API key");
+  const url = new URL("https://api.search.brave.com/res/v1/web/search");
+  url.searchParams.set("q", query);
+  url.searchParams.set("count", String(Number(env.BRAVE_MAX_RESULTS || process.env.BRAVE_MAX_RESULTS || 8)));
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "X-Subscription-Token": apiKey,
+      },
+    },
+    getSearchFetchTimeoutMs(env),
+    "Brave Search"
+  );
+  const data: any = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(httpFailMessage("Brave Search", response, data));
+  const raw = Array.isArray(data?.web?.results) ? data.web.results : [];
+  const items = raw.map((s: any) => ({
+    title: s?.title,
+    url: s?.url,
+    snippet: s?.description,
+  }));
+  const sources = mapProviderSources(items, (i) => `Brave 来源 ${i}`);
+  return {
+    answer: sources.map((s) => `【${s.title}】${s.snippet}`).join("\n"),
+    sources,
+    relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`],
+    model: "brave-web-search",
+    traceText: `Brave 返回 ${sources.length} 条可追溯来源。`,
+    _source: "brave-search",
+  };
+}
+
+async function callJinaSearch({ env, query }: { env: Record<string, string>; query: string }) {
+  const apiKey = getJinaApiKey(env);
+  if (!apiKey) throw new Error("未配置 Jina API key");
+  const response = await fetchWithTimeout(
+    `https://s.jina.ai/${encodeURIComponent(query)}`,
+    {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+    },
+    getSearchFetchTimeoutMs(env),
+    "Jina Search"
+  );
+  const data: any = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(httpFailMessage("Jina Search", response, data));
+  const raw = Array.isArray(data?.data) ? data.data : [];
+  const items = raw.map((s: any) => ({
+    title: s?.title,
+    url: s?.url,
+    snippet: s?.description || s?.content,
+  }));
+  const sources = mapProviderSources(items, (i) => `Jina 来源 ${i}`);
+  return {
+    answer: sources.map((s) => `【${s.title}】${s.snippet}`).join("\n"),
+    sources,
+    relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`],
+    model: "jina-s",
+    traceText: `Jina 返回 ${sources.length} 条可追溯来源。`,
+    _source: "jina-search",
+  };
+}
+
+async function callSearxngSearch({ env, query }: { env: Record<string, string>; query: string }) {
+  const base = getSearxngUrl(env);
+  if (!base) throw new Error("未配置 SearXNG 地址");
+  let parsed: URL;
+  try {
+    parsed = new URL(base);
+  } catch {
+    throw new Error("SearXNG 地址无效");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("SearXNG 地址无效");
+  }
+  const url = new URL("/search", parsed);
+  url.searchParams.set("q", query);
+  url.searchParams.set("format", "json");
+  const response = await fetchWithTimeout(
+    url,
+    { method: "GET", headers: { Accept: "application/json" } },
+    getSearchFetchTimeoutMs(env),
+    "SearXNG"
+  );
+  const data: any = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(httpFailMessage("SearXNG", response, data));
+  const raw = Array.isArray(data?.results) ? data.results : [];
+  const items = raw.map((s: any) => ({
+    title: s?.title,
+    url: s?.url,
+    snippet: s?.content,
+  }));
+  const sources = mapProviderSources(items, (i) => `SearXNG 来源 ${i}`);
+  return {
+    answer: sources.map((s) => `【${s.title}】${s.snippet}`).join("\n"),
+    sources,
+    relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`],
+    model: "searxng",
+    traceText: `SearXNG 返回 ${sources.length} 条可追溯来源。`,
+    _source: "searxng-search",
+  };
 }
 
 function normalizeTavilySearchResponse(data: any, query: string) {

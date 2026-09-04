@@ -1,6 +1,7 @@
 import { replay, type Case, type CaseEvent } from '@rhg/core/casefile';
 import { loadFixture } from "./catalog.js";
 import { NETWORK_ERROR, TURN_BUSY } from "./copy.js";
+import { searchKeysPayload } from "./searchKeys.js";
 
 export type CaseSnapshot = {
   case: Case;
@@ -76,16 +77,39 @@ export class ApiError extends Error {
   }
 }
 
+function withSearchKeys<T extends Record<string, unknown>>(body: T): T & { searchKeys?: Record<string, string> } {
+  const searchKeys = searchKeysPayload();
+  return searchKeys ? { ...body, searchKeys } : body;
+}
+
+export type SearchProviderRow = {
+  id: string;
+  label: string;
+  billing: "included" | "byo";
+  configured: boolean;
+  hint: string;
+  signupUrl?: string;
+  rechargeUrl?: string;
+};
+
+export async function listSearchProviders(): Promise<SearchProviderRow[]> {
+  const res = await fetch("/api/search-providers");
+  if (!res.ok) throw new Error(await readError(res, "读不到检索源"));
+  const body = (await res.json()) as { providers?: SearchProviderRow[] };
+  return Array.isArray(body.providers) ? body.providers : [];
+}
+
 export async function createCase(
   text: string,
   attachments?: Attachment[],
 ): Promise<{ caseId: string; turnId: string }> {
   let res: Response;
   try {
+    const body = withSearchKeys(attachments?.length ? { text, attachments } : { text });
     res = await fetch("/api/cases", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(attachments?.length ? { text, attachments } : { text }),
+      body: JSON.stringify(body),
     });
   } catch {
     throw new TypeError(NETWORK_ERROR);
@@ -116,7 +140,7 @@ export async function postTurn(caseId: string, text: string, pivotId?: string): 
   const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}/turns`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(pivotId ? { text, pivotId } : { text }),
+    body: JSON.stringify(withSearchKeys(pivotId ? { text, pivotId } : { text })),
   });
   if (res.status === 409) {
     return { ok: false, status: 409, error: await readError(res, TURN_BUSY) };

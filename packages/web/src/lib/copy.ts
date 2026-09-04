@@ -42,6 +42,19 @@ export const MEMO_PURSUE = "追查";
 export const COMPOSER_LABEL = "追问";
 export const ATTACH_ALT = "附图";
 export const CLUSTER_SOLO = "单独来源";
+export const SEARCH_SETTINGS = "检索密钥";
+export const SEARCH_SETTINGS_TITLE = "检索";
+export const SEARCH_BACK = "回首页";
+export const SEARCH_INCLUDED = "已预置";
+export const SEARCH_BYO = "需要你的密钥";
+export const SEARCH_INCLUDED_HINT = "这些源已经配好，查的时候会用。";
+export const SEARCH_BYO_HINT = "收费源用完额度后，到对应平台充值，把密钥贴进来。只存在这台浏览器里。";
+export const SEARCH_SAVE = "保存";
+export const SEARCH_SAVED = "已保存";
+export const SEARCH_OPEN = "去开通";
+export const SEARCH_RECHARGE = "去充值";
+export const SEARCH_PLACEHOLDER = "把密钥贴在这里";
+export const SEARCH_KEY_SAVED = "已保存密钥";
 
 export const STATUS = {
   decomposing: "正在拆题",

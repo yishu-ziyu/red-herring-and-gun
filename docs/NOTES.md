@@ -1,8 +1,8 @@
 # 当前状态
 
-脊柱 T01–T19、T21–T24 已在 `main` / `dev` / `spine`（`5e3aa69`）。只剩 T20（上线切换）。生产仍走 `mvp/`，`ops.sh` 未改。
+脊柱 T01–T19、T21–T24 已在 `main` / `dev` / `spine`。只剩 T20（上线切换）。生产仍走 `mvp/`，`ops.sh` 未改。
 
-搜索不是全死。2026-09-04 实测：AnySearch 6 条命中（`nhsa.gov.cn`）；360 / Metaso 余额不足；Tavily HTTP 432 超套餐；Exa credits 耗尽。同进程额度跳过已落地：第一次 `searchAll` 打五家，第二次只打 `api.anysearch.com`，仍 6 条。全量 eval 未跑。
+检索：AnySearch 预置（匿名也能搜，6 条）。收费源（360 / 秘塔 / Tavily / Exa / 博查 / Brave / Jina）走 `/settings` 让用户自己开通、充值、贴密钥。SearXNG 配 `SEARXNG_URL` 才启用。空密钥活测只打 AnySearch，仍命中。全量 eval 未跑。
 
 本会话把 SCLN 协作层写进仓库：协议 `AGENTS.md`，验收标准 `docs/evals/`，记忆本页，转向 `docs/devlog/`，可迁走包 `docs/METHODOLOGY.md`。不叫「验收卡」：那是独立于实现的完成尺度，不是一张要填的表。`runtime/STATE.md` 不再当工作记忆，hook 不再覆盖它。
 
@@ -29,4 +29,4 @@
 
 ## 下一步
 
-人评：充值四家死源，或用 AnySearch 单源跑 eval 写 baseline，或两者都暂缓。T20 在门禁过之前不动。
+人评：设置页好不好用。T20 仍等 eval 门禁。可用 AnySearch 单源跑全量 eval，会烧额度。

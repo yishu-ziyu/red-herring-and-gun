@@ -7,6 +7,15 @@ export {
   type SearchProviderFn,
 } from "./searchAll.js";
 export * from "./searchProviders.js";
+export {
+  SEARCH_CATALOG,
+  listSearchProviders,
+  parseUserSearchKeys,
+  isSearchSourceConfigured,
+  type SearchProviderMeta,
+  type SearchProviderPublic,
+  type SearchBilling,
+} from "./searchCatalog.js";
 export * from "./queryReuse.js";
 export * from "./atomSearchQuery.js";
 export * from "./evidencePursuit/index.js";
