@@ -583,10 +583,15 @@ body,
   margin-top: var(--space-12);
 }
 
+.home-page {
+  min-height: 100dvh;
+  background: var(--paper);
+}
+
 .home {
   max-width: 36rem;
-  margin: var(--space-48) auto 0;
-  padding: 0 var(--space-16) var(--space-48);
+  margin: 0 auto;
+  padding: var(--space-48) var(--space-16) var(--space-48);
 }
 
 .home-tagline {
@@ -1202,5 +1207,5 @@ body,
 }
 
 .home-settings {
-  margin: var(--space-24) 0 0;
+  margin: var(--space-32) 0 0;
 }

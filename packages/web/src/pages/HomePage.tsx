@@ -173,11 +173,6 @@ export function HomePage(props: Props) {
         </div>
         {error ? <p className="err">{error}</p> : null}
       </form>
-      <p className="home-settings">
-        <button type="button" className="text-link" onClick={props.onSettings}>
-          {SEARCH_SETTINGS}
-        </button>
-      </p>
       <section className="home-recent" aria-label={RECENT_CASES}>
         <h2 className="home-recent-title">{RECENT_CASES}</h2>
         {recent.length === 0 ? (
@@ -199,6 +194,11 @@ export function HomePage(props: Props) {
           </ul>
         )}
       </section>
+      <p className="home-settings">
+        <button type="button" className="text-link" onClick={props.onSettings}>
+          {SEARCH_SETTINGS}
+        </button>
+      </p>
     </div>
   );
 }

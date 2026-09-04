@@ -53,6 +53,18 @@ export function App() {
     return <SearchSettings onBack={() => navigate("/")} />;
   }
 
+  if (route.page === "home") {
+    return (
+      <div className="home-page">
+        <HomePage
+          onCreated={(id) => navigate(`/cases/${id}`)}
+          onOpenCase={(id) => navigate(`/cases/${id}`)}
+          onSettings={() => navigate("/settings")}
+        />
+      </div>
+    );
+  }
+
   return (
     <AppShell
       activeId={caseId || undefined}
@@ -68,13 +80,7 @@ export function App() {
       onOpen={(id) => navigate(`/cases/${id}`)}
       onHome={() => navigate("/")}
     >
-      {route.page === "home" ? (
-        <HomePage
-          onCreated={(id) => navigate(`/cases/${id}`)}
-          onOpenCase={(id) => navigate(`/cases/${id}`)}
-          onSettings={() => navigate("/settings")}
-        />
-      ) : current ? (
+      {current ? (
         <ThreadView
           current={current}
           running={stream.running}
