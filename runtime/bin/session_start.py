@@ -14,7 +14,6 @@ from lib import (
     read_stdin_json,
     workspace_root,
     write_session_stamp,
-    write_state_md,
 )
 
 
@@ -22,7 +21,6 @@ def main() -> int:
     payload = read_stdin_json()
     root = workspace_root()
     session_id = str(payload.get("sessionId") or "unknown")
-    write_state_md(root)
     write_session_stamp(root, session_id, git_porcelain(root))
     return 0
 
