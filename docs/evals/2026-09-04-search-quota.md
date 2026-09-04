@@ -25,7 +25,7 @@ cd packages/core && npx vitest run src/search/searchQuota.test.ts src/search/sea
 - `Tavily 432 的 detail.error 写进错误并触发跳过` 过
 - 根目录 `npx vitest run --workspace packages/core` 中 search 相关不过红
 
-活探测（本卡证据，2026-09-04）：
+活探测（本标准的证据，2026-09-04）：
 
 | 源 | 现象 |
 | --- | --- |
