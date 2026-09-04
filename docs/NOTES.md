@@ -4,7 +4,7 @@
 
 搜索不是全死。2026-09-04 实测：AnySearch 6 条命中（`nhsa.gov.cn`）；360 / Metaso 余额不足；Tavily HTTP 432 超套餐；Exa credits 耗尽。同进程额度跳过已落地：第一次 `searchAll` 打五家，第二次只打 `api.anysearch.com`，仍 6 条。全量 eval 未跑。
 
-本会话把 SCLN 协作层写进仓库：协议 `AGENTS.md`，卡 `docs/evals/`，记忆本页，转向 `docs/devlog/`，可迁走包 `docs/METHODOLOGY.md`。`runtime/STATE.md` 不再当工作记忆，hook 不再覆盖它。
+本会话把 SCLN 协作层写进仓库：协议 `AGENTS.md`，验收标准 `docs/evals/`，记忆本页，转向 `docs/devlog/`，可迁走包 `docs/METHODOLOGY.md`。不叫「验收卡」：那是独立于实现的完成尺度，不是一张要填的表。`runtime/STATE.md` 不再当工作记忆，hook 不再覆盖它。
 
 ## 活动
 
