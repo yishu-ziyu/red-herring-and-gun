@@ -279,7 +279,7 @@ describe("最终报告按稳定 ID 关联逐条判定", () => {
     expect(model.report).toBeDefined();
     expect(model.claimMap?.atoms.map((a) => a.verdictLabel)).toEqual([
       "不能信",
-      "只能信一部分",
+      "部分成立",
       undefined,
     ]);
   });

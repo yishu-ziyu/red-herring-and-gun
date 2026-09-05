@@ -40,7 +40,7 @@ function makeCandidate(partial: {
 }
 
 async function seedMemoryCandidates(candidates: MemoryCandidate[]) {
-  const knowledgeBase = createKnowledgeBase();
+  const knowledgeBase = createKnowledgeBase(null);
   for (const candidate of candidates) {
     await knowledgeBase.saveMemoryCandidate(candidate);
   }
@@ -53,7 +53,7 @@ function stubSetStatusApi() {
       id?: string;
       status?: MemoryCandidate["status"];
     };
-    const listed = await createKnowledgeBase().listMemoryCandidates();
+    const listed = await createKnowledgeBase(null).listMemoryCandidates();
     const current = listed.find((candidate) => candidate.id === body.id);
     const updated: MemoryCandidate = {
       ...(current ?? makeCandidate({ id: body.id ?? "unknown", claim: THIS_CLAIM })),
@@ -122,6 +122,68 @@ describe("ResultView", () => {
     expect(report).toHaveTextContent(/该说法没有可靠证据支持/);
     expect(report).toHaveTextContent(/不能信|谣言|92/);
     expect(screen.getByLabelText("能不能信")).toHaveTextContent("不能信。");
+  });
+
+  it("旧 mixed 报告刷新后胶囊是有真有假，不改库存 faceVerdict", () => {
+    const finalReport: Record<string, unknown> = {
+      verdictType: "mixed_misleading",
+      faceVerdict: "只能信一部分",
+      conclusion: "前半有出处，后半没有依据。",
+    };
+    const before = JSON.stringify(finalReport);
+    render(
+      <ResultView
+        claim="某药能治失眠，而且已经获批。"
+        finalReport={finalReport}
+        onBack={() => {}}
+        onReverify={() => {}}
+      />,
+    );
+    const capsule = screen.getByLabelText("最终核查判断").querySelector(".mission-final-report-head strong");
+    expect(capsule).toHaveTextContent("有真有假");
+    expect(capsule).not.toHaveTextContent("只能信一部分");
+    expect(screen.queryByText("只能信一部分")).not.toBeInTheDocument();
+    expect(JSON.stringify(finalReport)).toBe(before);
+    expect(finalReport.faceVerdict).toBe("只能信一部分");
+  });
+
+  it("旧 recommendation 以只能信一部分开头时，分享区改写句首、不改库存", () => {
+    const finalReport: Record<string, unknown> = {
+      verdictType: "mixed_misleading",
+      faceVerdict: "有真有假",
+      conclusion: "前半有出处，后半没有依据。",
+      recommendation: "只能信一部分。加热不当有风险，不能等同致癌。",
+    };
+    const before = JSON.stringify(finalReport);
+    render(
+      <ResultView
+        claim="隔夜菜加热会致癌吗"
+        finalReport={finalReport}
+        onBack={() => {}}
+        onReverify={() => {}}
+      />,
+    );
+    const share = screen.getByLabelText("能不能信");
+    expect(share).toHaveTextContent("有真有假。加热不当有风险，不能等同致癌。");
+    expect(share).not.toHaveTextContent("只能信一部分");
+    expect(JSON.stringify(finalReport)).toBe(before);
+  });
+
+  it("旧报告里非胶囊的自然语言判词原样留下", () => {
+    render(
+      <ResultView
+        claim="文科教育正在失去意义"
+        finalReport={{
+          verdictType: "unverified",
+          faceVerdict: "立场型 / 不适用真/假判断",
+          conclusion: "这是立场，不是可核对的事实。",
+        }}
+        onBack={() => {}}
+        onReverify={() => {}}
+      />,
+    );
+    const capsule = screen.getByLabelText("最终核查判断").querySelector(".mission-final-report-head strong");
+    expect(capsule).toHaveTextContent("立场型 / 不适用真/假判断");
   });
 
   it("shows reverify button and invokes callback", () => {
@@ -515,7 +577,7 @@ describe("ResultView", () => {
     });
 
     await waitFor(async () => {
-      const accepted = await createKnowledgeBase().listMemoryCandidates({ status: "accepted" });
+      const accepted = await createKnowledgeBase(null).listMemoryCandidates({ status: "accepted" });
       expect(accepted.some((candidate) => candidate.id === "cand-accept")).toBe(true);
     });
     expect(await screen.findByText("已确认复用")).toBeInTheDocument();
@@ -548,7 +610,7 @@ describe("ResultView", () => {
     });
 
     await waitFor(async () => {
-      const accepted = await createKnowledgeBase().listMemoryCandidates({ status: "accepted" });
+      const accepted = await createKnowledgeBase(null).listMemoryCandidates({ status: "accepted" });
       expect(accepted.some((candidate) => candidate.id === "cand-ignore")).toBe(false);
     });
     expect(await screen.findByText("已忽略")).toBeInTheDocument();
@@ -569,7 +631,7 @@ describe("ResultView", () => {
     );
 
     expect(await screen.findByRole("button", { name: "写入知识库" })).toBeInTheDocument();
-    const accepted = await createKnowledgeBase().listMemoryCandidates({ status: "accepted" });
+    const accepted = await createKnowledgeBase(null).listMemoryCandidates({ status: "accepted" });
     expect(accepted.some((candidate) => candidate.id === "cand-proposed")).toBe(false);
   });
 

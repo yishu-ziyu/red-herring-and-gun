@@ -7,18 +7,30 @@ import {
   leadWithFace,
   looksLikeResearchMemo,
   OFF_TOPIC_REPLY,
+  QUALIFY_FALLBACK,
   shapeConclusion,
   scrubPublicText,
 } from "./publicCopy";
 
 describe("追问固定文案", () => {
-  it("三段文案不含训诫与厂商名", () => {
-    const all = [CHALLENGE_UNREACHABLE, ASK_CASE_FALLBACK, OFF_TOPIC_REPLY].join("");
+  it("固定回复不含训诫与厂商名", () => {
+    const all = [
+      CHALLENGE_UNREACHABLE,
+      ASK_CASE_FALLBACK,
+      OFF_TOPIC_REPLY,
+      ...Object.values(QUALIFY_FALLBACK),
+    ].join("");
     expect(all).not.toMatch(/请勿|不要相信|谣言|转发/);
     expect(all).not.toMatch(/MiniMax|OpenAI|Claude|web_search|web_fetch|GPT/i);
     expect(CHALLENGE_UNREACHABLE.length).toBeGreaterThan(0);
     expect(ASK_CASE_FALLBACK.length).toBeGreaterThan(0);
     expect(OFF_TOPIC_REPLY.length).toBeGreaterThan(0);
+    for (const line of Object.values(QUALIFY_FALLBACK)) {
+      expect(line.length).toBeGreaterThan(0);
+      expect(line).toMatch(/？$/);
+      expect(line).not.toMatch(/进入检索|检索|系统|模型|工单|出处|文件名|发布场合/);
+    }
+    expect(QUALIFY_FALLBACK.unavailable).not.toBe(QUALIFY_FALLBACK.no_claim);
   });
 });
 

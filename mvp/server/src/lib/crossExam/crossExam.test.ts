@@ -35,17 +35,17 @@ const atom = "某说法既有支撑也有反证";
 
 describe("findCrossExamTargets", () => {
   it("支撑与反证同时非空才触发，上限 2", () => {
-    const bundle = mkBundle(["原子一", "原子二", "原子三"], {});
+    const bundle = mkBundle(["原子一", "原子二", "原子三"], Object.fromEntries(["原子一", "原子二", "原子三"].map(a => [claimAtomKey(a), [{ url: "https://a.test", title: "a", snippet: "a" }, { url: "https://b.test", title: "b", snippet: "b" }]])));
     const verdicts = [
-      { claimAtom: "原子一", verdict: "true", supportingSources: [{ url: "a" }], contradictingSources: [{ url: "b" }] },
-      { claimAtom: "原子二", verdict: "true", supportingSources: [{ url: "a" }] },
-      { claimAtom: "原子三", verdict: "partial", supportingSources: [{ url: "a" }], contradictingSources: [{ url: "b" }] },
+      { claimAtom: "原子一", verdict: "true", supportingSources: [{ url: "https://a.test" }], contradictingSources: [{ url: "https://b.test" }] },
+      { claimAtom: "原子二", verdict: "true", supportingSources: [{ url: "https://a.test" }] },
+      { claimAtom: "原子三", verdict: "partial", supportingSources: [{ url: "https://a.test" }], contradictingSources: [{ url: "https://b.test" }] },
     ];
     const targets = findCrossExamTargets({ verdicts, bundle, claimAtomKeyFn: claimAtomKey });
     expect(targets.map((t) => t.atom)).toEqual(["原子一", "原子三"]);
   });
 
-  it("判词带证据但 bundle 无该原子 → 仍触发（证据列表留空）", () => {
+  it("判词带未知证据但 bundle 无该原子 → 不伪造冲突", () => {
     const bundle = mkBundle([atom], {});
     const targets = findCrossExamTargets({
       verdicts: [
@@ -54,8 +54,7 @@ describe("findCrossExamTargets", () => {
       bundle,
       claimAtomKeyFn: claimAtomKey,
     });
-    expect(targets).toHaveLength(1);
-    expect(targets[0].primaryVerdict).toBe("false");
+    expect(targets).toHaveLength(0);
   });
 });
 

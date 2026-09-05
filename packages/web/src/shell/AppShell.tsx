@@ -17,7 +17,7 @@ const NAV_KEY = "rhg.navCollapsed";
 type Props = {
   activeId?: string;
   cases: CaseListItem[];
-  summary: { face: string; score?: number; status: string };
+  summary: { line: string };
   panel: ReactNode;
   onOpen: (id: string) => void;
   onHome: () => void;
@@ -89,10 +89,7 @@ export function AppShell(props: Props) {
     >
       <div className="shell-summary">
         <p className="shell-summary-text">
-          <span className="shell-summary-face font-serif">{props.summary.face}</span>
-          {props.summary.score !== undefined ? (
-            <span className="shell-summary-score font-mono">{props.summary.score}</span>
-          ) : null}
+          <span className="shell-summary-face font-serif">{props.summary.line}</span>
         </p>
         <div className="shell-summary-actions">
           <button

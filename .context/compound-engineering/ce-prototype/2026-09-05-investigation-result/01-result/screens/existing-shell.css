@@ -1,0 +1,550 @@
+/* Copied from the current mvp AppShell CSS for this isolated prototype. */
+.app-shell {
+  height: 100dvh;
+  background: var(--paper, #fefcf6);
+  color: var(--ink, #151821);
+}
+
+.app-shell-group {
+  height: 100%;
+  width: 100%;
+}
+
+.app-shell-panel {
+  height: 100%;
+  min-width: 0;
+}
+
+.app-shell-separator {
+  width: 1px;
+  background: rgba(21, 24, 33, 0.08);
+}
+
+.app-shell-separator:hover,
+.app-shell-separator:focus-visible {
+  background: rgba(21, 24, 33, 0.28);
+}
+
+.app-shell-rail,
+.app-shell-center,
+.app-shell-dossier {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+
+.app-shell-rail {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px 12px;
+  background: #F3EFE7;
+  border-right: 0;
+}
+
+.app-shell-rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 16px;
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.01em;
+}
+
+/* 品牌字标与主标题同一身份：衬线 */
+.app-shell-rail-brand span {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.app-shell-logo {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.app-shell-new {
+  width: 100%;
+  min-height: 36px;
+  margin-bottom: 18px;
+  border: 1px solid rgba(21, 24, 33, 0.12);
+  border-radius: 8px;
+  background: #fffdf8;
+  color: var(--ink, #151821);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.app-shell-new:hover {
+  border-color: rgba(21, 24, 33, 0.28);
+}
+
+.app-shell-new:active {
+  transform: scale(0.98);
+}
+
+.app-shell-rail-label {
+  margin: 0 8px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--zt-text-muted, #888);
+}
+
+.app-shell-rail-empty {
+  margin: 0 8px;
+  font-size: 13px;
+  color: var(--zt-text-muted, #888);
+}
+
+.app-shell-case-list {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: auto;
+}
+
+.app-shell-case {
+  width: 100%;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+}
+
+.app-shell-case strong {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.35;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.app-shell-case em {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--zt-text-muted, #888);
+}
+
+.app-shell-case:hover,
+.app-shell-case.is-active {
+  background: rgba(255, 253, 248, 0.9);
+}
+
+.app-shell-rail-foot {
+  flex: none;
+  margin-top: auto;
+  padding: 10px 0 0;
+}
+
+.app-shell-rail-dock {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 0;
+}
+
+.app-shell-account-mark {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: #151821;
+  box-shadow: 0 0 0 3px rgba(21, 24, 33, 0.06);
+}
+
+.app-shell-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #151821;
+  color: #fefcf6;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.app-shell-account-wrap {
+  position: relative;
+}
+
+.app-shell-login,
+.app-shell-account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink, #151821);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-shell-login {
+  transition: background-color 160ms ease, transform 120ms ease;
+}
+
+.app-shell-login:hover,
+.app-shell-account:hover,
+.app-shell-account[aria-expanded="true"] {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.app-shell-login:active,
+.app-shell-account:active {
+  transform: scale(0.98);
+}
+
+.app-shell-account-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.app-shell-account-copy strong,
+.app-shell-account-copy em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell-account-copy strong {
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.app-shell-account-copy em {
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 550;
+  color: var(--zt-text-muted, #888);
+}
+
+.app-shell-account-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 8;
+  display: grid;
+  padding: 6px;
+  border: 1px solid rgba(21, 24, 33, 0.1);
+  border-radius: 12px;
+  background: var(--paper, #fefcf6);
+  box-shadow: 0 10px 28px rgba(21, 24, 33, 0.12);
+}
+
+.app-shell-account-menu button,
+.app-shell-account-menu-link {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink, #151821);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.app-shell-account-menu button:hover,
+.app-shell-account-menu-link:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.app-shell-rail-meta {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  color: var(--ink, #151821);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-decoration: none;
+  transition: background-color 160ms ease;
+}
+
+.app-shell-rail-dock > * + .app-shell-rail-meta {
+  margin-top: 0;
+  border-top: 0;
+}
+
+.app-shell-rail-meta:hover {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.app-login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(21, 24, 33, 0.28);
+}
+
+.app-login-panel {
+  width: min(420px, 100%);
+  padding: 24px;
+  border: 1px solid rgba(21, 24, 33, 0.1);
+  border-radius: 12px;
+  background: var(--paper, #fefcf6);
+  color: var(--ink, #151821);
+  box-shadow: 0 16px 40px rgba(21, 24, 33, 0.12);
+}
+
+.app-login-panel h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 750;
+}
+
+.app-login-panel header p,
+.app-login-panel label {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--zt-text-secondary, #4a4a5a);
+}
+
+.app-login-panel form {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.app-login-panel input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid rgba(21, 24, 33, 0.16);
+  border-radius: 8px;
+  background: #fffdf8;
+  color: inherit;
+  font: inherit;
+}
+
+.app-login-code {
+  letter-spacing: 0.4em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.35rem;
+  text-align: center;
+}
+
+.app-login-dev-code {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(21, 24, 33, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, 0.9);
+}
+
+.app-login-dev-code span {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  color: var(--zt-text-muted, #888);
+}
+
+.app-login-dev-code strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.5rem;
+  font-weight: 750;
+  letter-spacing: 0.28em;
+}
+
+.app-login-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.app-login-panel button[type="submit"] {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(21, 24, 33, 0.16);
+  border-radius: 8px;
+  background: #151821;
+  color: #fefcf6;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.app-login-secondary {
+  border: 0;
+  background: transparent;
+  color: var(--zt-text-secondary, #4a4a5a);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.app-login-error {
+  margin: 0;
+  color: var(--cannot, #E84A5F);
+  font-size: 13px;
+}
+
+.app-login-ok {
+  margin: 16px 0 0;
+  color: var(--can, #16a34a);
+  font-size: 14px;
+}
+
+.app-account-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-account-head .app-shell-avatar {
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
+}
+
+.app-account-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.app-account-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--zt-text-secondary, #4a4a5a);
+}
+
+.app-account-panel .app-login-ok {
+  margin: 0;
+}
+
+.app-account-facts {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid rgba(21, 24, 33, 0.08);
+}
+
+.app-account-facts div {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.app-account-facts dt {
+  color: var(--zt-text-muted, #888);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.app-account-facts dd {
+  margin: 0;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-account-data {
+  display: flex;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.app-account-danger {
+  color: var(--cannot, #E84A5F);
+}
+
+.app-shell-center {
+  background: #FAF9F6;
+}
+
+.app-shell-dossier {
+  display: flex;
+  flex-direction: column;
+  background: #efeae0;
+}
+
+.app-shell-dossier-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(21, 24, 33, 0.06);
+}
+
+.app-shell-dossier-head strong {
+  overflow: hidden;
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-shell-dossier-close {
+  flex: none;
+  border: 0;
+  background: transparent;
+  color: var(--zt-text-secondary, #4a4a5a);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.app-shell-dossier-stage {
+  flex: 1;
+  min-height: 0;
+  padding: 18px 16px 24px;
+  overflow: auto;
+}
+
+.app-shell-paper {
+  min-height: calc(100% - 8px);
+  padding: 28px 24px;
+  border-radius: 2px;
+  background: #fffdf8;
+  box-shadow: 0 10px 40px rgba(30, 26, 22, 0.08);
+}
+
+.app-shell-paper-empty {
+  margin: 0;
+  color: var(--zt-text-muted, #888);
+  font-size: 14px;
+  line-height: 1.6;
+}

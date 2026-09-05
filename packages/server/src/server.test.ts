@@ -33,8 +33,22 @@ afterEach(async () => {
   for (const fn of pending) await fn();
 });
 
+function readyQualify(source: string) {
+  const cut = Math.min(4, Math.max(2, source.length - 2));
+  return {
+    ready: true as const,
+    reason: "ready" as const,
+    subjectText: source.slice(0, cut),
+    claimText: source,
+    gap: "",
+    antecedentText: "",
+  };
+}
+
 function script() {
   return {
+    qualify: readyQualify(TEXT),
+    qualify_review: { subjectLanded: true },
     decompose: { claims: [{ text: TEXT, type: "fact" as const, checkable: true }] },
     "self-proof": { results: [] },
     assess: {
@@ -619,5 +633,65 @@ describe("server", () => {
     const list = (await (await fetch(`${base}/api/cases`)).json()) as Array<{ caseId: string }>;
     expect(list[0]?.caseId).toBe(b);
     expect(list.map((item) => item.caseId)).toContain(a);
+  });
+
+  it("立案材料不够核时不检索，补充后同一案继续且原文仍在", async () => {
+    let searches = 0;
+    const search: SearchProviderFn = async () => {
+      searches += 1;
+      return [{ url: "https://www.gov.cn/zhengce/allowance", title: "通报", snippet: SNIPPET }];
+    };
+    const llm = createFakeLlm({
+      ...script(),
+      qualify: [
+        { ready: false, reason: "no_claim", gap: "" },
+        readyQualify(TEXT),
+      ],
+    });
+    const { base, turns } = await listen({
+      llm,
+      searchProviders: [search],
+      tools: { search: async () => [], fetch: idleFetch() },
+      now: () => AT,
+    });
+    const firstText = "帮我看一下";
+    const created = await postCase(base, firstText);
+    const { caseId } = (await created.json()) as { caseId: string };
+    await turns.wait(caseId);
+    expect(searches).toBe(0);
+    const first = (await (await fetch(`${base}/api/cases/${caseId}`)).json()) as {
+      case: {
+        text: string;
+        claims: unknown[];
+        report?: unknown;
+        messages: Array<{ role: string; text: string }>;
+      };
+      events: CaseEvent[];
+    };
+    expect(first.case.claims).toEqual([]);
+    expect(first.case.report).toBeUndefined();
+    expect(first.case.messages.some((message) => message.role === "assistant" && message.text.length > 0)).toBe(
+      true,
+    );
+    expect(first.events.some((event) => event.type === "stage.started" && event.stage === "retrieve")).toBe(
+      false,
+    );
+
+    const follow = await fetch(`${base}/api/cases/${caseId}/turns`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: TEXT }),
+    });
+    expect(follow.status).toBe(202);
+    await turns.wait(caseId);
+    expect(searches).toBeGreaterThan(0);
+    const second = (await (await fetch(`${base}/api/cases/${caseId}`)).json()) as {
+      case: { id: string; text: string; messages: Array<{ role: string; text: string }> };
+    };
+    expect(second.case.id).toBe(caseId);
+    expect(second.case.text).toBe(firstText);
+    expect(second.case.messages.filter((message) => message.role === "user").map((message) => message.text)).toEqual(
+      [firstText, TEXT],
+    );
   });
 });

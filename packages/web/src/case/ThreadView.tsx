@@ -47,7 +47,7 @@ export function ThreadView(props: {
               current={props.current}
               running={message.id === lastAssistant?.id && props.running}
               aborted={message.id === lastAssistant?.id ? props.aborted : false}
-              historical={message.id === lastAssistant?.id ? undefined : message.text}
+              historical={message.id === lastAssistant?.id && props.current.report ? undefined : message.text}
               pursuingId={message.id === lastAssistant?.id ? pursuingId : null}
               flashClaim={message.id === lastAssistant?.id ? props.flashClaim : null}
               onPursue={message.id === lastAssistant?.id ? onPursue : undefined}

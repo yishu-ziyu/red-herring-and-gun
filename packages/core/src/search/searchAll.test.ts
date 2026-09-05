@@ -5,6 +5,17 @@ const SHARED = "https://shared.example/doc";
 const ONLY_A = "https://a.example/only";
 const ONLY_B = "https://b.example/only";
 
+function hangUntil(signal: AbortSignal): Promise<never> {
+  return new Promise((_, reject) => {
+    const fail = (): void => reject(new Error("aborted"));
+    if (signal.aborted) {
+      fail();
+      return;
+    }
+    signal.addEventListener("abort", fail, { once: true });
+  });
+}
+
 describe("searchAll", () => {
   it("一源抛错不阻断且其余结果保留", async () => {
     async function keep() {
@@ -77,8 +88,46 @@ describe("searchAll", () => {
       true
     );
     expect(kinds.at(-1)).toBe("merged");
-    expect(events.some((e) => e.kind === "provider.failed" && e.error === "provider down")).toBe(true);
+    expect(events.some((e) => e.kind === "provider.failed" && e.errorCategory === "unknown")).toBe(true);
     expect(events.some((e) => e.kind === "provider.finished" && e.count === 1)).toBe(true);
+    expect(JSON.stringify(events).includes("provider down")).toBe(false);
+  });
+
+  it("每个实际调用的源按 query 发出 started 与带耗时/结果数的终态", async () => {
+    async function keep() {
+      return [{ url: ONLY_A, snippet: "ok" }];
+    }
+    const events: SearchProgress[] = [];
+    await searchAll({}, "甘南免票", {
+      providers: [keep],
+      claimId: "c1",
+      onProgress: (p) => events.push(p),
+    });
+    const started = events.filter((e) => e.kind === "provider.started");
+    const finished = events.filter((e) => e.kind === "provider.finished");
+    expect(started).toHaveLength(1);
+    expect(started[0]).toMatchObject({ query: "甘南免票", claimId: "c1", provider: "keep" });
+    expect(finished).toHaveLength(1);
+    expect(finished[0]?.count).toBe(1);
+    expect(finished[0]?.latencyMs).toBeGreaterThanOrEqual(0);
+    expect(finished[0]?.outcome).toBe("ok");
+  });
+
+  it("abort 终态是 cancelled 而不是 failed", async () => {
+    const controller = new AbortController();
+    const events: SearchProgress[] = [];
+    const pending = searchAll({}, "查询", {
+      providers: [() => hangUntil(controller.signal)],
+      signal: controller.signal,
+      onProgress: (p) => events.push(p),
+    });
+    await Promise.resolve();
+    controller.abort();
+    await pending;
+    expect(events.some((e) => e.kind === "provider.cancelled" && e.outcome === "cancelled")).toBe(true);
+    expect(events.some((e) => e.kind === "provider.failed")).toBe(false);
+    expect(events.some((e) => e.errorCategory === "aborted")).toBe(true);
+    expect(JSON.stringify(events)).not.toMatch(/This operation was aborted|provider down/);
   });
 
   it("id 为 e1..eN 连续", async () => {
@@ -95,14 +144,13 @@ describe("searchAll", () => {
 
   it("abort 后不等在飞 provider 返回即收口", async () => {
     const controller = new AbortController();
-    async function slow() {
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-      return [{ url: ONLY_A, snippet: "late" }];
-    }
-
+    const pending = searchAll({}, "查询", {
+      providers: [() => hangUntil(controller.signal)],
+      signal: controller.signal,
+    });
+    await Promise.resolve();
     const started = Date.now();
-    const pending = searchAll({}, "查询", { providers: [slow], signal: controller.signal });
-    setTimeout(() => controller.abort(), 20);
+    controller.abort();
     const result = await pending;
     expect(Date.now() - started).toBeLessThan(1000);
     expect(result).toEqual([]);

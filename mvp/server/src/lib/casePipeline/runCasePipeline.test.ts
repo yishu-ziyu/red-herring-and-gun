@@ -684,8 +684,8 @@ describe("runCasePipeline", () => {
 
     // 整句救回 mixed：真的部分（法国人喝红酒）不被一起否掉
     expect(result.finalReport.verdictType).toBe("mixed_misleading");
-    expect(String(result.finalReport.conclusion)).not.toMatch(/^(能信|不能信|只能信一部分|还查不清)/);
-    expect(result.finalReport.faceVerdict).toBe("只能信一部分");
+    expect(String(result.finalReport.conclusion)).not.toMatch(/^(能信|不能信|只能信一部分|有真有假|部分成立|还查不清)/);
+    expect(result.finalReport.faceVerdict).toBe("有真有假");
     expect(result.finalReport._mixedGuard).toBeTruthy();
     // 公式输入也被纠正为 partial（false → cap 15 不再触发）
     expect((result.factStep.output as Record<string, unknown>).factCheckResult).toBe("partial");
@@ -752,7 +752,7 @@ describe("runCasePipeline", () => {
     expect((result.factStep.output as Record<string, unknown>).factCheckResult).toBe("false");
   });
 
-  it("cross exam：证据冲突触发第二模型复核，分歧降分不重写判词（G3）", async () => {
+  it("cross exam：独立意见没有具体质询时不追加回应、不按分歧降分", async () => {
     const conflictAtom = "某地明天下雪";
     const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
@@ -814,11 +814,11 @@ describe("runCasePipeline", () => {
     // 触发：判词支撑反证同时非空
     expect(result.crossExam?.ran).toBe(true);
     expect(result.crossExam?.atoms[0]?.relation).toBe("disagree");
-    // 确定性处置：-10 降分、cross_examiner 进 steps、报告可审计
-    expect(result.crossExam?.confidenceAdjustment).toBe(-10);
+    // 独立复核进 steps，分歧不机械降分。
+    expect(result.crossExam?.confidenceAdjustment).toBe(0);
     expect(result.steps.some((s) => s.agent === "cross_examiner")).toBe(true);
-    expect(result.finalReport.crossExam).toMatchObject({ adjustment: -10, model: "MiniMax-M3" });
-    expect(result.finalReport.credibilityScore).toBe(62);
+    expect(result.finalReport.crossExam).toMatchObject({ adjustment: 0, model: "MiniMax-M3" });
+    expect(result.finalReport.credibilityScore).toBe(72);
     // 判词不被重写
     expect(result.factStep.output.factCheckResult).toBe("true");
   });

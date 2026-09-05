@@ -1,7 +1,7 @@
-import type { Case, Claim, ClaimVerdict, Evidence, Pivot, Stance } from "../casefile/schema.js";
+import type { Case } from "../casefile/schema.js";
 import type { StageContext } from "./context.js";
-import { ComposeOutputSchema, type ComposeDraft } from "./compose.schema.js";
-import { parseJobOutput } from "./parseOutput.js";
+import type { ComposeDraft } from "./compose.schema.js";
+import { constrainComposeDraft } from "./safeVerdictLine.js";
 
 export const COMPOSE_JOB = "compose";
 
@@ -34,32 +34,6 @@ export type CitationTable = {
   nsByClaim: Map<string, number[]>;
 };
 
-type PromptCite = {
-  n: number;
-  host: string;
-  title?: string;
-  quote: string;
-};
-
-type PromptClaim = {
-  claimId: string;
-  text: string;
-  checkable: boolean;
-  verdict: ClaimVerdict["verdict"];
-  rule: string;
-  tally?: { sup: number; ref: number; par: number };
-  citations: PromptCite[];
-};
-
-type FrontierKind = Pivot["kind"];
-
-type FrontierSummary = {
-  unconsumed: number;
-  byKind: { kind: FrontierKind; count: number }[];
-};
-
-const PIVOT_KINDS: FrontierKind[] = ["link", "doc_number", "date", "image", "entity", "query"];
-
 /** 按 verdicts → basis 首次出现的 evidence 编号 [1]、[2]…；没有 basis 的命题不分配。 */
 export function buildCitationTable(c: Case): CitationTable {
   const stanceById = new Map(c.stances.map((item) => [item.id, item]));
@@ -88,122 +62,16 @@ export function buildCitationTable(c: Case): CitationTable {
   return { citations, nsByClaim };
 }
 
-export async function runCompose(ctx: StageContext, input: ComposeInput = {}): Promise<ComposeResult> {
+export async function runCompose(ctx: StageContext, _input: ComposeInput = {}): Promise<ComposeResult> {
   ctx.emit({ type: "stage.started", stage: COMPOSE_JOB });
   const table = buildCitationTable(ctx.current);
-  const systemPrompt = input.systemPromptSuffix
-    ? `${COMPOSE_SYSTEM_PROMPT}\n\n${input.systemPromptSuffix}`
-    : COMPOSE_SYSTEM_PROMPT;
-  const userContent = buildUserContent(ctx.current, table);
-
-  let output: unknown;
-  try {
-    const result = await ctx.llm({
-      job: COMPOSE_JOB,
-      systemPrompt,
-      userContent,
-      responseSchema: ComposeOutputSchema,
-      ...(input.deadline !== undefined ? { deadlineMs: input.deadline } : {}),
-    });
-    output = result.output;
-  } catch {
-    ctx.emit({ type: "stage.finished", stage: COMPOSE_JOB, outcome: "failed-open" });
-    return { draft: null };
-  }
-
-  const parsed = parseJobOutput(ComposeOutputSchema, output);
-  if (!parsed.ok) {
-    ctx.emit({ type: "error", stage: COMPOSE_JOB, message: parsed.reason });
-    ctx.emit({ type: "stage.finished", stage: COMPOSE_JOB, outcome: "failed-open" });
-    return { draft: null };
-  }
-
+  const draft = constrainComposeDraft({
+    sourceText: ctx.current.text,
+    claims: ctx.current.claims,
+    verdicts: ctx.current.verdicts,
+    overall: ctx.current.overall,
+    table,
+  });
   ctx.emit({ type: "stage.finished", stage: COMPOSE_JOB, outcome: "ok" });
-  return { draft: parsed.value };
-}
-
-type CiteLookup = {
-  stanceById: Map<string, Stance>;
-  evidenceById: Map<string, Evidence>;
-};
-
-function buildUserContent(c: Case, table: CitationTable): string {
-  const lookup: CiteLookup = {
-    stanceById: new Map(c.stances.map((item) => [item.id, item])),
-    evidenceById: new Map(c.evidence.map((item) => [item.id, item])),
-  };
-  const payload = {
-    原句: c.text,
-    命题: c.claims.map((claim) => promptClaim(c, claim, table, lookup)),
-    frontier: frontierSummary(c),
-  };
-  return JSON.stringify(payload, null, 2);
-}
-
-function promptClaim(
-  c: Case,
-  claim: Claim,
-  table: CitationTable,
-  lookup: CiteLookup,
-): PromptClaim {
-  const claimId = claim.id;
-  const verdict = c.verdicts.find((item) => item.claimId === claimId);
-  const row: PromptClaim = {
-    claimId,
-    text: claim.text,
-    checkable: claim.checkable,
-    verdict: verdict?.verdict ?? "unverified",
-    rule: verdict?.rule ?? "",
-    citations: promptCites(c, claimId, table.nsByClaim.get(claimId) ?? [], table, lookup),
-  };
-  if (verdict?.tally) row.tally = { ...verdict.tally };
-  return row;
-}
-
-function promptCites(
-  c: Case,
-  claimId: string,
-  ns: number[],
-  table: CitationTable,
-  lookup: CiteLookup,
-): PromptCite[] {
-  const { stanceById, evidenceById } = lookup;
-  const verdict = c.verdicts.find((item) => item.claimId === claimId);
-  const out: PromptCite[] = [];
-  for (const n of ns) {
-    const ref = table.citations.find((item) => item.n === n);
-    if (!ref) continue;
-    const evidence = evidenceById.get(ref.evidenceId);
-    if (!evidence) continue;
-    let quote = "";
-    if (verdict) {
-      for (const stanceId of verdict.basis) {
-        const stance = stanceById.get(stanceId);
-        if (stance?.evidenceId === ref.evidenceId) {
-          quote = stance.quote;
-          break;
-        }
-      }
-    }
-    const cite: PromptCite = { n, host: evidence.host, quote };
-    if (evidence.title !== undefined) cite.title = evidence.title;
-    out.push(cite);
-  }
-  return out;
-}
-
-function frontierSummary(c: Case): FrontierSummary {
-  const consumed = new Set(c.consumedPivotIds);
-  const open = c.frontier.filter((pivot) => !consumed.has(pivot.id));
-  const counts = new Map<FrontierKind, number>();
-  for (const pivot of open) {
-    counts.set(pivot.kind, (counts.get(pivot.kind) ?? 0) + 1);
-  }
-  return {
-    unconsumed: open.length,
-    byKind: PIVOT_KINDS.filter((kind) => (counts.get(kind) ?? 0) > 0).map((kind) => ({
-      kind,
-      count: counts.get(kind) ?? 0,
-    })),
-  };
+  return { draft };
 }

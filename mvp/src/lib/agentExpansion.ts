@@ -94,7 +94,9 @@ export type SearchProgressProviderId =
   | "any_search"
   | "metaso_search"
   | "tavily_search"
-  | "exa_search";
+  | "exa_search"
+  | "minimax_search"
+  | "stepfun_search";
 
 export type SearchProgressProviderStatus = "pending" | "running" | "completed" | "partial" | "failed";
 

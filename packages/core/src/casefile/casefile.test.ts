@@ -266,7 +266,7 @@ function generateSequence(rng: () => number, length: number): CaseEvent[] {
           type,
           ...meta,
           stage: pick(rng, ["decompose", "retrieve", "assess"]),
-          outcome: pick(rng, ["ok", "failed-open", "skipped"] as const),
+          outcome: pick(rng, ["ok", "failed-open", "failed-closed", "skipped"] as const),
         });
         break;
       case "claims.added": {
@@ -638,6 +638,34 @@ describe("casefile", () => {
   it("serialize then deserialize roundtrips", () => {
     const folded = replay(fullCoverageSequence());
     expect(deserialize(serialize(folded))).toEqual(folded);
+  });
+
+  it("search.source events validate and do not add case snapshot fields", () => {
+    const { case: start } = createCase({ id: "case1", text: "原句", at: AT });
+    const started = validateEvent({
+      type: "search.source.started",
+      seq: 2,
+      at: AT,
+      provider: "keep",
+      query: "官方通报",
+      claimId: "c1",
+    });
+    const finished = validateEvent({
+      type: "search.source.finished",
+      seq: 3,
+      at: AT,
+      provider: "keep",
+      query: "官方通报",
+      claimId: "c1",
+      outcome: "ok",
+      hitCount: 1,
+      latencyMs: 8,
+    });
+    const after = reduce(reduce(start, started), finished);
+    expect(after.seq).toBe(3);
+    expect(after.claims).toEqual(start.claims);
+    expect(after.evidence).toEqual(start.evidence);
+    expect("searchSourceCalls" in after).toBe(false);
   });
 
   it("validateEvent throws with instance path", () => {

@@ -34,8 +34,48 @@ const DEFAULTS: Record<string, JobCandidate[]> = {
   cites: FAST,
   ask_case: FAST,
   decompose: FAST,
+  qualify: FAST,
+  qualify_review: FAST,
   compose: COMPOSE,
 };
+
+const ENV_FALLBACK: readonly {
+  provider: JobProviderId;
+  key: string;
+  modelEnv: string;
+  defaultModel: string;
+}[] = [
+  { provider: "minimax", key: "MINIMAX_API_KEY", modelEnv: "MINIMAX_MODEL", defaultModel: "MiniMax-M3" },
+  { provider: "stepfun", key: "STEPFUN_API_KEY", modelEnv: "STEPFUN_MODEL", defaultModel: "step-3.7-flash" },
+  { provider: "deepseek", key: "DEEPSEEK_API_KEY", modelEnv: "DEEPSEEK_MODEL", defaultModel: "deepseek-v4-pro" },
+  { provider: "mimo", key: "MIMO_API_KEY", modelEnv: "MIMO_MODEL", defaultModel: "mimo-v2.5-pro" },
+];
+
+function envPresent(env: Readonly<Record<string, string | undefined>>, key: string): boolean {
+  const value = env[key];
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function candidatesFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  defaults: readonly JobCandidate[],
+): JobCandidate[] {
+  const last = defaults[defaults.length - 1] ?? defaults[0];
+  const out: JobCandidate[] = [];
+  for (const spec of ENV_FALLBACK) {
+    if (!envPresent(env, spec.key)) continue;
+    const template = defaults.find((row) => row.provider === spec.provider) ?? last;
+    const named = env[spec.modelEnv];
+    const model = typeof named === "string" && named.trim().length > 0 ? named.trim() : spec.defaultModel;
+    out.push({
+      provider: spec.provider,
+      model,
+      effort: template?.effort ?? "low",
+      timeoutMs: template?.timeoutMs ?? 30_000,
+    });
+  }
+  return out;
+}
 
 function jobEnvKey(job: string): string {
   return `RHG_MODEL_${job.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").toUpperCase()}`;
@@ -77,5 +117,7 @@ export function candidatesFor(
     const parsed = parseOverride(raw, defaults[0]?.timeoutMs ?? 30_000);
     if (parsed.length > 0) return parsed;
   }
+  const discovered = candidatesFromEnv(env, defaults);
+  if (discovered.length > 0) return discovered;
   return defaults.map((row) => ({ ...row }));
 }

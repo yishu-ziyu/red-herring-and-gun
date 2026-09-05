@@ -188,7 +188,8 @@ describe("runRetrieve", () => {
     }
     const a = await run((q) => (q.includes("甘南") || q.includes("免票") ? 20 : 1));
     const b = await run((q) => (q.includes("甘南") || q.includes("免票") ? 1 : 20));
-    expect(a).toEqual(b);
+    const canon = (line: string): string => line.replace(/"latencyMs":\d+(?:\.\d+)?/g, '"latencyMs":0');
+    expect(a.map(canon)).toEqual(b.map(canon));
     expect(a.some((line) => line.includes("evidence.added") && line.includes("claimId"))).toBe(true);
   });
 
@@ -216,5 +217,60 @@ describe("runRetrieve", () => {
     expect(ctx.current.evidence).toHaveLength(1);
     expect(ctx.current.evidence[0]?.clusterId).toBeUndefined();
     expect(ctx.emitted.filter((event) => event.type === "evidence.updated")).toHaveLength(0);
+  });
+
+  it("每个实际调用的搜索源按 query/claim 发出 started 和终态，失败与成功并存", async () => {
+    async function boom(): Promise<SearchHit[]> {
+      throw new Error("provider down");
+    }
+    async function keep(): Promise<SearchHit[]> {
+      return [{ url: "https://news.cn/ok", snippet: "还在" }];
+    }
+    const { ctx } = setup([claim({ id: "c1", text: "官方通报了此事", type: "fact", order: 0 })]);
+
+    await runRetrieve(ctx, { providers: [boom, keep], queriesPerClaim: 1 });
+
+    const started = ctx.emitted.filter((event) => event.type === "search.source.started");
+    const finished = ctx.emitted.filter((event) => event.type === "search.source.finished");
+    expect(started.length).toBeGreaterThanOrEqual(2);
+    expect(finished.some((event) => event.outcome === "failed" && event.errorCategory === "unknown")).toBe(true);
+    expect(finished.some((event) => event.outcome === "ok" && event.hitCount >= 1)).toBe(true);
+    expect(started.every((event) => event.claimId === "c1" && event.query.length > 0)).toBe(true);
+    expect(finished.every((event) => typeof event.latencyMs === "number")).toBe(true);
+    expect(JSON.stringify(finished).includes("provider down")).toBe(false);
+    expect(ctx.current.evidence).toHaveLength(1);
+    expect("searchSourceCalls" in ctx.current).toBe(false);
+  });
+
+  it("取消与失败是不同终态", async () => {
+    const ac = new AbortController();
+    const { case: c } = createCase({ id: "case1", text: "原句", at: AT });
+    const ctx = createStageContext({
+      case: c,
+      llm: createFakeLlm({}),
+      now: () => AT,
+      signal: ac.signal,
+    });
+    ctx.emit({ type: "claims.added", claims: [claim({ id: "c1", text: "官方通报了此事", type: "fact", order: 0 })] });
+    const pending = runRetrieve(ctx, {
+      providers: [
+        () =>
+          new Promise((_, reject) => {
+            const fail = (): void => reject(new Error("aborted"));
+            if (ac.signal.aborted) {
+              fail();
+              return;
+            }
+            ac.signal.addEventListener("abort", fail, { once: true });
+          }),
+      ],
+      queriesPerClaim: 1,
+    });
+    await Promise.resolve();
+    ac.abort();
+    await pending;
+    const finished = ctx.emitted.filter((event) => event.type === "search.source.finished");
+    expect(finished.some((event) => event.outcome === "cancelled")).toBe(true);
+    expect(finished.some((event) => event.outcome === "failed")).toBe(false);
   });
 });

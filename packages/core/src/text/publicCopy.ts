@@ -186,6 +186,15 @@ export const ASK_CASE_FALLBACK = "案内材料没有这一点，可以从这些�
 /** off_topic 婉拒。只说明和本案无关，不展开闲聊。 */
 export const OFF_TOPIC_REPLY = "这句和当前案件无关，我只谈案内已经在核的内容。";
 
+/** 立案材料不够核时的稳定问句。一条问真正缺的信息，不写过程词、不举例。 */
+export const QUALIFY_FALLBACK = {
+  missing_object: "要核的是谁、哪件事？",
+  missing_context: "你说的是哪一件具体的事？",
+  no_claim: "要核的原话是什么？",
+  stance_only: "有哪件具体的事要核？",
+  unavailable: "这次还没能确认材料够不够核，要核的说法是什么？",
+} as const;
+
 export function constrainRecommendation(text: unknown, verdictType: unknown): string {
   const body = scrubPublicText(text);
   if (!body || FORWARD_RE.test(body)) return directAnswer(verdictType);

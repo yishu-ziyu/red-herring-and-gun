@@ -202,6 +202,10 @@ export function buildQueryPortfolio(atom: string, claim = ""): PortfolioQuery[] 
   }));
 }
 
+function normalizeQueryText(query: string): string {
+  return query.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 export function selectPriorityQueries(
   portfolio: PortfolioQuery[],
   options?: { max?: number; exclude?: Set<string>; minScore?: number }
@@ -214,9 +218,13 @@ export function selectPriorityQueries(
     .sort((a, b) => b.score - a.score);
   const out: PortfolioQuery[] = [];
   const seenPurpose = new Set<QueryPurpose>();
+  const seenQuery = new Set<string>();
   for (const item of ranked) {
     if (seenPurpose.has(item.purpose)) continue;
+    const key = normalizeQueryText(item.query);
+    if (!key || seenQuery.has(key)) continue;
     seenPurpose.add(item.purpose);
+    seenQuery.add(key);
     out.push(item);
     if (out.length >= max) break;
   }

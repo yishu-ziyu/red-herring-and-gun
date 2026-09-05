@@ -61,4 +61,23 @@ describe("ThreadView 用户消息标签", () => {
     expect(bodies[2]).toBe(chip);
     expect(bodies[2]?.startsWith("追查 ·")).toBe(false);
   });
+
+  it("没有报告时仍显示助手回复", () => {
+    const reply = "还没有具体要核的说法。把那句话发过来。";
+    render(
+      <ThreadView
+        current={current([
+          message({ id: "m1", role: "user", text: "帮我看一下", route: "new_claim" }),
+          message({ id: "m2", role: "assistant", text: reply }),
+        ])}
+        running={false}
+        status="live"
+        error={null}
+        onSend={async () => undefined}
+        onAbort={async () => undefined}
+      />,
+    );
+    expect(document.querySelector(".conclusion")?.textContent).toContain(reply);
+    expect(document.querySelector(".instrument")).toBeNull();
+  });
 });

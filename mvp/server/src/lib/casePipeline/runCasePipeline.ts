@@ -14,6 +14,8 @@ import {
 } from "../claimAtom/index.js";
 import {
   retrieveForAtoms,
+  buildAtomSearchBundle,
+  bindAtomEvidenceToVerdicts,
   type AtomSearchBundle,
   type SearchOneAtom,
 } from "../atomSearch.js";
@@ -38,6 +40,7 @@ import {
   type EvidenceLoopHooks,
   type RewriteQueryModelCall,
 } from "../evidenceLoop/index.js";
+import { mergeSourcesIntoBundle } from "../evidenceLoop/evidenceLoop.js";
 import { compactPursuitHops, type PursuitHop } from "../evidencePursuit/index.js";
 import {
   applyImageOriginToReport,
@@ -451,7 +454,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     }
   }
 
-  // Phase 2b: Cross exam — G3/P1（证据冲突 → 第二模型独立复核，分歧降分不重写判词）
+  // Phase 2b: 最多两条命题，各一次独立质询、定向补查、主调查回应。
   let crossExam: CrossExamOutcome | undefined;
   if (
     input.crossExam?.enabled !== false &&
@@ -466,12 +469,49 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       bundle: atomSearchBundle,
       claimAtomKeyFn: claimAtomKey,
     });
-    if (crossTargets.length > 0) {
+    {
       throwIfAborted();
       crossExam = await runCrossExam({
         claim,
         targets: crossTargets,
         callSecondOpinion: makeSecondOpinionCall(input.crossExam.callRaw),
+        signal: input.signal,
+        deadline: input.deadline,
+        shouldStop: () => timeLeftMs() < COMPOSER_RESERVE_MS,
+        search: async (target, query) => {
+          const result = await searchOne(query);
+          if ((result as { _source?: string } | null)?._source === "tool-error") throw new Error("定向补查失败");
+          const found = buildAtomSearchBundle([{ atom: target.atom, result }], claimAtomKey);
+          const incoming = found.byAtomKey[target.atomKey] ?? [];
+          mergeSourcesIntoBundle(atomSearchBundle, target.atomKey, incoming, claimAtomKey);
+          return incoming.filter(s => (atomSearchBundle.byAtomKey[target.atomKey] ?? []).some(known => known.url === s.url));
+        },
+        respond: async (target, challenge) => {
+          steps.push({ agent: "cross_examiner", output: { kind: "cross_exam", atoms: [challenge] }, timestamp: Date.now() });
+          const rechecked = await runAgent("fact_checker", steps, search360Result, atomSearchBundle);
+          if (rechecked.error || rechecked.status === "failed") throw new Error("回应未完成");
+          const verdicts = Array.isArray(rechecked.output?.subclaimVerdicts) ? rechecked.output.subclaimVerdicts as Array<{ claimAtom: string; [key: string]: unknown }> : [];
+          // 不让一次不完整的回应替换整份调查，也不接受没有回应说明的暗中改判。
+          const previousVerdicts = Array.isArray(factStep?.output?.subclaimVerdicts)
+            ? factStep.output.subclaimVerdicts as Array<{ claimAtom: string }> : [];
+          const expectedKeys = new Set(previousVerdicts.map(v => claimAtomKey(v.claimAtom)));
+          const returnedKeys = new Set(verdicts.filter(v => v && typeof v.claimAtom === "string").map(v => claimAtomKey(v.claimAtom)));
+          const reply = verdicts.find(v => v && typeof v.claimAtom === "string" && claimAtomKey(v.claimAtom) === target.atomKey);
+          if (returnedKeys.size !== verdicts.length || returnedKeys.size !== expectedKeys.size ||
+              [...expectedKeys].some(key => !returnedKeys.has(key)) ||
+              typeof reply?.crossExamResponse !== "string" || !reply.crossExamResponse.trim()) {
+            throw new Error("主调查回应不完整，保留先前调查");
+          }
+          rechecked.output.subclaimVerdicts = bindAtomEvidenceToVerdicts(verdicts, atomSearchBundle.byAtomKey, claimAtomKey);
+          steps.push(rechecked);
+          factStep = rechecked;
+          const verdict = (rechecked.output.subclaimVerdicts as typeof verdicts).find(v => claimAtomKey(v.claimAtom) === target.atomKey);
+          return {
+            response: typeof verdict?.crossExamResponse === "string" ? verdict.crossExamResponse : "",
+            finalVerdict: typeof verdict?.verdict === "string" ? verdict.verdict : undefined,
+            sources: [...(Array.isArray(verdict?.supportingSources) ? verdict.supportingSources : []), ...(Array.isArray(verdict?.contradictingSources) ? verdict.contradictingSources : [])],
+          };
+        },
       });
       steps.push({
         agent: "cross_examiner",
@@ -487,6 +527,8 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
         timestamp: Date.now(),
       });
     }
+  } else {
+    crossExam = { ran: false, atoms: [], confidenceAdjustment: 0, model: "", skippedReason: input.crossExam?.enabled === false ? "质询已关闭" : !input.crossExam?.callRaw ? "未接入独立复核" : "质询时间预算不足" };
   }
 
   if (hooks?.afterFactSource) {
@@ -582,21 +624,15 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     search360Result,
   });
 
-  // Cross exam 分歧处置（在 finalizeReport 之后，公式分不被覆盖；确定性代码）：
-  // 不重写判词，降可信度并标注 contested，报告可审计。
-  if (crossExam && crossExam.confidenceAdjustment !== 0) {
-    const base =
-      typeof finalReport.credibilityScore === "number" ? finalReport.credibilityScore : 50;
-    finalReport.credibilityScore = Math.max(
-      0,
-      Math.min(100, Math.round(base + crossExam.confidenceAdjustment))
-    );
-  }
-  if (crossExam?.ran) {
+  // 保存实际质询记录；意见是否一致不改变报告分数。
+  if (crossExam) {
     finalReport.crossExam = {
+      ran: crossExam.ran,
+      skippedReason: crossExam.skippedReason,
       model: crossExam.model,
       adjustment: crossExam.confidenceAdjustment,
       atoms: crossExam.atoms.map((a) => ({
+        ...a,
         atom: a.atom,
         primaryVerdict: a.primaryVerdict,
         secondVerdict: a.secondVerdict,

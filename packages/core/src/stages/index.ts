@@ -1,6 +1,31 @@
 export { createStageContext, type EventInput, type LlmJob, type StageContext } from "./context.js";
 export { runIntake, type IntakeAttachment, type IntakeInput, type IntakeResult, type IntakeTools } from "./intake.js";
-export { runDecompose, DECOMPOSE_SYSTEM_PROMPT, type DecomposeInput, type DecomposeResult } from "./decompose.js";
+export {
+  runQualify,
+  combineClaimSource,
+  claimSourceParts,
+  composeQualifyReply,
+  hasCheckableClaim,
+  qualifyFallback,
+  QUALIFY_JOB,
+  QUALIFY_REVIEW_JOB,
+  QUALIFY_SYSTEM_PROMPT,
+  searchTargetOk,
+  locateUnique,
+  readQualifyFields,
+  type QualifyInput,
+  type QualifyResult,
+  type QualifyStopReason,
+} from "./qualify.js";
+export {
+  runDecompose,
+  claimGroundedInCompleteParts,
+  claimIsHistoryOnly,
+  DECOMPOSE_SYSTEM_PROMPT,
+  type DecomposeInput,
+  type DecomposeOrigin,
+  type DecomposeResult,
+} from "./decompose.js";
 export { runRetrieve, type RetrieveInput, type RetrieveResult } from "./retrieve.js";
 export { runAssess, ASSESS_SYSTEM_PROMPT, quoteIsFaithful, type AssessInput, type AssessResult } from "./assess.js";
 export { runJudge, type JudgeStageInput } from "./judgeStage.js";

@@ -6,7 +6,7 @@
  */
 
 import { useMemo, useState, useCallback, useEffect } from "react";
-import { humanizeVerdictType } from "../../../lib/missionShell";
+import { displayFaceVerdict, displayShareAdvice, humanizeVerdictType } from "../../../lib/missionShell";
 import { InlineCitations } from "../InlineCitations";
 import { ReportFooter } from "../ReportFooter";
 import {
@@ -22,6 +22,7 @@ import { updateMemoryCandidateStatus } from "../../../lib/agentExpansion";
 import type { MemoryCandidate, MemoryCandidateStatus } from "../../../lib/memoryCandidateTypes";
 
 export interface ResultViewProps {
+  accountEmail?: string | null;
   claim: string;
   finalReport: Record<string, unknown>;
   onBack: () => void;
@@ -238,6 +239,7 @@ function interruptedSourceLinks(report: Record<string, unknown>): Array<{ title:
 }
 
 export function ResultView({
+  accountEmail = null,
   claim,
   finalReport,
   onBack,
@@ -248,19 +250,19 @@ export function ResultView({
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
   const [layer, setLayer] = useState<"judgment" | "trace">("judgment");
   const [memoryCandidates, setMemoryCandidates] = useState<MemoryCandidate[]>([]);
-  const knowledgeBase = useMemo(() => createKnowledgeBase(), []);
+  const knowledgeBase = useMemo(() => createKnowledgeBase(accountEmail), [accountEmail]);
   const interrupted = isInterruptedReport(finalReport);
   const embedded = variant === "dossier";
 
   const verdictType = asString(finalReport.verdictType);
-  const verdictLabel = asString(finalReport.faceVerdict) || humanizeVerdictType(verdictType);
+  const verdictLabel = displayFaceVerdict(asString(finalReport.faceVerdict), verdictType);
   const score = asNumber(finalReport.credibilityScore);
   const credibilityLabel = asString(finalReport.credibilityLabel);
   const conclusion =
     safePublicText(finalReport.conclusion) ||
     safePublicText(finalReport.summaryForPublic) ||
     "有结论了，但还没有适合展示的结论文本。";
-  const recommendation = safePublicText(finalReport.recommendation);
+  const recommendation = displayShareAdvice(safePublicText(finalReport.recommendation), verdictType);
   const claimItems = useMemo(() => readClaimList(finalReport), [finalReport]);
   const evidenceChain = useMemo(() => readEvidenceChain(finalReport), [finalReport]);
   /**

@@ -288,6 +288,7 @@ export type Message = Static<typeof MessageSchema>;
 export const StageOutcomeSchema = Type.Union([
   Type.Literal("ok"),
   Type.Literal("failed-open"),
+  Type.Literal("failed-closed"),
   Type.Literal("skipped"),
 ]);
 
@@ -562,6 +563,28 @@ export const ErrorEventSchema = event("error", {
   message: Type.String(),
   stage: Type.Optional(Type.String()),
 });
+export const SearchErrorCategorySchema = Type.Union([
+  Type.Literal("timeout"),
+  Type.Literal("aborted"),
+  Type.Literal("network"),
+  Type.Literal("auth"),
+  Type.Literal("quota"),
+  Type.Literal("unknown"),
+]);
+export const SearchSourceStartedSchema = event("search.source.started", {
+  provider: Type.String(),
+  query: Type.String(),
+  claimId: Type.Optional(Type.String()),
+});
+export const SearchSourceFinishedSchema = event("search.source.finished", {
+  provider: Type.String(),
+  query: Type.String(),
+  claimId: Type.Optional(Type.String()),
+  outcome: Type.Union([Type.Literal("ok"), Type.Literal("failed"), Type.Literal("cancelled")]),
+  hitCount: Type.Integer({ minimum: 0 }),
+  latencyMs: Type.Number(),
+  errorCategory: Type.Optional(SearchErrorCategorySchema),
+});
 
 export const CaseEventSchema = Type.Union([
   CaseCreatedSchema,
@@ -585,6 +608,8 @@ export const CaseEventSchema = Type.Union([
   LlmCalledSchema,
   ReportFinalizedSchema,
   ErrorEventSchema,
+  SearchSourceStartedSchema,
+  SearchSourceFinishedSchema,
 ]);
 export type CaseEvent = Static<typeof CaseEventSchema>;
 
@@ -610,6 +635,8 @@ const EVENT_BY_TYPE = {
   "llm.called": LlmCalledSchema,
   "report.finalized": ReportFinalizedSchema,
   error: ErrorEventSchema,
+  "search.source.started": SearchSourceStartedSchema,
+  "search.source.finished": SearchSourceFinishedSchema,
 } as const;
 
 export function validateEvent(input: unknown): CaseEvent {

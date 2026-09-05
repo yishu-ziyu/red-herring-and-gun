@@ -7,6 +7,7 @@ import {
   QUOTA_EXCEEDED,
   SEARCH_SETTINGS,
 } from "../lib/copy.js";
+import { clearOpening, readOpening } from "../lib/opening.js";
 import { HomePage } from "./HomePage.js";
 
 const createCase = vi.fn();
@@ -25,6 +26,7 @@ const { ApiError } = await import("../lib/api.js");
 
 afterEach(() => {
   cleanup();
+  clearOpening();
   vi.clearAllMocks();
 });
 
@@ -103,6 +105,7 @@ describe("HomePage", () => {
         { kind: "image", value: "data:image/png;base64,abc" },
       ]);
     });
+    expect(readOpening("c1")).toBe("这图说的是真的吗");
   });
 
   it("超过 2MB 的图片显示错误且不附带", async () => {

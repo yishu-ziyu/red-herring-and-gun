@@ -77,7 +77,7 @@ function stripDrama(text: string, notes: string[], label: string): string {
 }
 
 function hasFaceVerdict(text: string): boolean {
-  return /能信|不能信|只能信一部分|还查不清/.test(text);
+  return /能信|不能信|只能信一部分|有真有假|部分成立|还查不清/.test(text);
 }
 
 function hasUncertainty(text: string): boolean {

@@ -85,3 +85,8 @@ packages/eval/runs/
 packages/web/output/
 packages/core/output/
 
+# Local prototype scratch (selected review sources are explicitly tracked)
+.context/compound-engineering/
+
+# Generated local design catalog and cleanup receipts
+.context/design-overview/*.json

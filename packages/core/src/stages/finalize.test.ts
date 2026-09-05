@@ -3,7 +3,7 @@ import { assertInvariants } from "../casefile/invariants.js";
 import { createCase } from "../casefile/reduce.js";
 import type { Claim, ClaimVerdict, Evidence, Overall, Stance } from "../casefile/schema.js";
 import { createFakeLlm } from "../llm/fakes.js";
-import { directAnswer, startsWithFace } from "../text/publicCopy.js";
+import { startsWithFace } from "../text/publicCopy.js";
 import { createStageContext, type StageContext } from "./context.js";
 import type { ComposeDraft } from "./compose.schema.js";
 import { FINALIZE_JOB, runFinalize } from "./finalize.js";
@@ -48,13 +48,14 @@ function overall(verdictType: Overall["verdictType"]): Overall {
 }
 
 function seed(opts: {
+  text?: string;
   claims: Claim[];
   evidence?: Evidence[];
   stances?: Stance[];
   verdicts: ClaimVerdict[];
   overall?: Overall;
 }): StageContext {
-  const { case: c } = createCase({ id: "case1", text: ORIGINAL, at: AT });
+  const { case: c } = createCase({ id: "case1", text: opts.text ?? ORIGINAL, at: AT });
   const ctx = createStageContext({ case: c, llm: createFakeLlm({}), now: () => AT });
   ctx.emit({ type: "claims.added", claims: opts.claims });
   for (const item of opts.evidence ?? []) ctx.emit({ type: "evidence.added", evidence: item });
@@ -139,9 +140,10 @@ describe("runFinalize", () => {
       claimItems: [{ claimId: "c1", line: "单位申领生育津贴成立[9]。" }],
     };
     const { report } = await runFinalize(ctx, { draft });
+    expect(report.conclusion).toBe(`${ORIGINAL}：有依据。[1]`);
     expect(report.conclusion).not.toMatch(/\[9\]/);
+    expect(report.claimItems[0]?.line).toBe("单位申领生育津贴：有依据。[1]");
     expect(report.claimItems[0]?.line).not.toMatch(/\[9\]/);
-    expect(report.claimItems[0]?.line).toMatch(/\[1\]/);
     expect(report.claimItems[0]?.citations).toEqual([1]);
     expect(report.citations).toEqual([{ n: 1, evidenceId: "e1" }]);
     expectCiteBijection(ctx);
@@ -174,8 +176,8 @@ describe("runFinalize", () => {
     const { report } = await runFinalize(ctx, { draft });
     expect(report.conclusion).not.toMatch(/MiniMax|web_search|Claude|\bGPT\b/i);
     expect(report.claimItems[0]?.line).not.toMatch(/MiniMax|web_search|Claude|\bGPT\b/i);
-    expect(report.conclusion).toContain("津贴不会直接打卡");
-    expect(report.claimItems[0]?.line).toMatch(/\[1\]/);
+    expect(report.conclusion).toBe(`${ORIGINAL}：与现有依据相反。[1]`);
+    expect(report.claimItems[0]?.line).toBe("生育津贴直接打到个人卡：与现有依据相反。[1]");
   });
 
   it("首句「不能信。……」→ 剥章印", async () => {
@@ -187,7 +189,7 @@ describe("runFinalize", () => {
     const { report } = await runFinalize(ctx, { draft });
     expect(startsWithFace(report.conclusion)).toBe(false);
     expect(report.conclusion.startsWith("不能信")).toBe(false);
-    expect(report.conclusion).toContain("生育津贴不会直接打到个人卡里");
+    expect(report.conclusion).toBe(`${ORIGINAL}：与现有依据相反。[1]`);
   });
 
   it("draft: null → 兜底报告每条命题一行、无空字段、outcome: failed-open", async () => {
@@ -197,8 +199,8 @@ describe("runFinalize", () => {
     expect(report.claimItems.map((item) => item.claimId)).toEqual(["c1", "c2"]);
     expect(report.claimItems[0]?.line).toBe("生育津贴直接打到个人卡：与现有依据相反。[1]");
     expect(report.claimItems[1]?.line).toBe("人社部发过这份文：没有找到足够依据。");
-    expect(report.conclusion).toBe(`${directAnswer("false")}[1]`);
-    expect(report.conclusion).not.toContain(ORIGINAL);
+    expect(report.conclusion).toBe(`${ORIGINAL}：与现有依据相反。[1]`);
+    expect(report.conclusion).toContain(ORIGINAL);
     expect(report.conclusion.trim().length).toBeGreaterThan(0);
     for (const item of report.claimItems) {
       expect(item.claimId.length).toBeGreaterThan(0);
@@ -231,11 +233,10 @@ describe("runFinalize", () => {
       claimItems: [{ claimId: "c1", line: "大量材料说明由单位申领。[1]" }],
     };
     const { report } = await runFinalize(ctx, { draft });
-    expect(report.claimItems[0]?.line).toContain("大量材料说明由单位申领");
+    expect(report.claimItems[0]?.line).toBe("生育津贴直接打到个人卡：与现有依据相反。[1]");
+    expect(report.claimItems[0]?.line).not.toContain("大量");
     const errors = ctx.emitted.filter((event) => event.type === "error");
-    expect(errors).toEqual([
-      expect.objectContaining({ stage: FINALIZE_JOB, message: expect.stringContaining("大量") }),
-    ]);
+    expect(errors).toEqual([]);
     assertInvariants(ctx.current);
   });
 
@@ -258,8 +259,8 @@ describe("runFinalize", () => {
       claimItems: [{ claimId: "c1", line: "现场约 360 人说明由单位申领。[1]" }],
     };
     const { report } = await runFinalize(ctx, { draft });
-    expect(report.conclusion).toContain("360");
-    expect(report.claimItems[0]?.line).toContain("360");
+    expect(report.conclusion).toBe(`${ORIGINAL}：与现有依据相反。[1]`);
+    expect(report.claimItems[0]?.line).toBe("生育津贴直接打到个人卡：与现有依据相反。[1]");
   });
 
   it("overall.contested 时兜底首句接矛盾句、不拼原句", async () => {
@@ -280,8 +281,8 @@ describe("runFinalize", () => {
       overall: { verdictType: "false", contested: true, score: 20, breakdown: [] },
     });
     const { report } = await runFinalize(ctx, { draft: null });
-    expect(report.conclusion).toBe(`${directAnswer("false")}来源之间相互矛盾，两边都有依据。[1]`);
-    expect(report.conclusion).not.toContain(ORIGINAL);
+    expect(report.conclusion).toBe(`${ORIGINAL}：与现有依据相反。来源之间相互矛盾，两边都有依据。[1][2]`);
+    expect(report.conclusion).toContain(ORIGINAL);
   });
 
   it("案内缺失命题补兜底行，案外 claimId 丢弃", async () => {
@@ -313,7 +314,7 @@ describe("runFinalize", () => {
         ],
       },
     });
-    expect(report.claimItems[0]?.line).toBe("转基因食品是有毒的食品。依据：美国国家科学院…");
+    expect(report.claimItems[0]?.line).toBe("转基因食品是有毒的食品：没有找到足够依据。");
   });
 
   it("裸词 unverified 被删", async () => {
@@ -351,7 +352,8 @@ describe("runFinalize", () => {
         claimItems: [{ claimId: "c1", line: "单位申领生育津贴成立。[1]" }],
       },
     });
-    expect(report.conclusion.endsWith("[1]")).toBe(true);
+    expect(report.conclusion).toBe(`${ORIGINAL}：有依据。[1]`);
+    expect(report.claimItems[0]?.line).toBe("单位申领生育津贴：有依据。[1]");
   });
 
   it("unverified 结论不追加 [n]", async () => {
@@ -377,6 +379,82 @@ describe("runFinalize", () => {
         claimItems: [{ claimId: "c1", line: "没有找到足够依据。[1]" }],
       },
     });
+    expect(report.conclusion).toBe(`${ORIGINAL}：没有找到足够依据。`);
     expect(report.conclusion).not.toMatch(/\[\d+\]/);
+  });
+
+  it("平台条件扩写被收成原命题 + 判词 + 合法引用", async () => {
+    const ctx = seed({
+      claims: [claim("c1", "点早安晚安图片个人信息会被盗", 0)],
+      evidence: [ev("e1")],
+      stances: [st("s1", "c1", "e1")],
+      verdicts: [
+        { claimId: "c1", verdict: "false", basis: ["s1"], rule: "false", tally: { sup: 0, ref: 3, par: 0 }, updatedAt: AT },
+      ],
+      overall: overall("false"),
+    });
+    const { report } = await runFinalize(ctx, {
+      draft: {
+        conclusion: "图片和视频本身不含恶意代码。[1]",
+        claimItems: [{ claimId: "c1", line: "图片和视频本身不含恶意代码，微信正常显示时也不会中毒。[1]" }],
+      },
+    });
+    expect(report.claimItems[0]?.line).toBe("点早安晚安图片个人信息会被盗：与现有依据相反。[1]");
+    expect(report.conclusion).toBe(`${ORIGINAL}：与现有依据相反。[1]`);
+    expect(report.conclusion).not.toContain("这条说法");
+    expect(JSON.stringify(report)).not.toContain("图片和视频本身");
+  });
+
+  it("原句 OpenAI 发布 GPT-6 保持逐字存在", async () => {
+    const text = "OpenAI 发布 GPT-6";
+    const ctx = seed({
+      text,
+      claims: [claim("c1", text, 0)],
+      evidence: [ev("e1")],
+      stances: [st("s1", "c1", "e1")],
+      verdicts: [
+        { claimId: "c1", verdict: "false", basis: ["s1"], rule: "false", tally: { sup: 0, ref: 1, par: 0 }, updatedAt: AT },
+      ],
+      overall: overall("false"),
+    });
+    const { report } = await runFinalize(ctx, { draft: { conclusion: "x", claimItems: [] } });
+    expect(report.conclusion).toBe("OpenAI 发布 GPT-6：与现有依据相反。[1]");
+    expect(report.claimItems[0]?.line).toBe("OpenAI 发布 GPT-6：与现有依据相反。[1]");
+    expect(report.conclusion).toContain("OpenAI");
+    expect(report.conclusion).toContain("GPT-6");
+  });
+
+  it("用户原句含 URL 也不被删除", async () => {
+    const text = "详见 https://example.com/notice 的通报属实";
+    const ctx = seed({
+      text,
+      claims: [claim("c1", text, 0)],
+      evidence: [ev("e1")],
+      stances: [st("s1", "c1", "e1", "supports")],
+      verdicts: [
+        { claimId: "c1", verdict: "true", basis: ["s1"], rule: "true", tally: { sup: 1, ref: 0, par: 0 }, updatedAt: AT },
+      ],
+      overall: overall("true"),
+    });
+    const { report } = await runFinalize(ctx, { draft: { conclusion: "x", claimItems: [] } });
+    expect(report.conclusion).toContain("https://example.com/notice");
+    expect(report.claimItems[0]?.line).toContain("https://example.com/notice");
+  });
+
+  it("原句里的「大量」不触发模糊量词 error", async () => {
+    const text = "现场有大量人员领取津贴";
+    const ctx = seed({
+      text,
+      claims: [claim("c1", text, 0)],
+      evidence: [ev("e1")],
+      stances: [st("s1", "c1", "e1")],
+      verdicts: [
+        { claimId: "c1", verdict: "false", basis: ["s1"], rule: "false", tally: { sup: 0, ref: 1, par: 0 }, updatedAt: AT },
+      ],
+      overall: overall("false"),
+    });
+    const { report } = await runFinalize(ctx, { draft: { conclusion: "x", claimItems: [] } });
+    expect(report.conclusion).toContain("大量");
+    expect(ctx.emitted.filter((event) => event.type === "error")).toEqual([]);
   });
 });

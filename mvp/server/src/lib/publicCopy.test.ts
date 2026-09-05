@@ -51,6 +51,8 @@ describe("constrainRecommendation", () => {
     expect(constrainRecommendation("只能信一部分。前半有出处。", "mixed_misleading")).toBe(
       "前半有出处。"
     );
+    expect(constrainRecommendation("有真有假。前半有出处。", "mixed_misleading")).toBe("前半有出处。");
+    expect(constrainRecommendation("部分成立。只在加热不当时。", "partial")).toBe("只在加热不当时。");
   });
 });
 

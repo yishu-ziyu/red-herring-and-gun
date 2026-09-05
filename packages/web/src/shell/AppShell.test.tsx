@@ -1,4 +1,3 @@
-import { faceWord } from '@rhg/core/publicCopy';
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { AppShell } from "./AppShell.js";
@@ -26,7 +25,7 @@ function renderShell(width: number) {
   return render(
     <AppShell
       cases={[{ caseId: "fx-done", text: "done", createdAt: "", updatedAt: "" }]}
-      summary={{ face: faceWord("false"), score: 40, status: "已完成" }}
+      summary={{ line: "生育津贴不会直接打到个人卡里。" }}
       panel={<p>面板</p>}
       onOpen={() => undefined}
       onHome={() => undefined}
@@ -65,13 +64,13 @@ describe("AppShell", () => {
     expect(bare).toHaveLength(0);
   });
 
-  it("摘要栏不含状态词，含 face 与分数", () => {
+  it("摘要栏是结论短句，不是四字章或分数", () => {
     for (const width of [375, 900]) {
       const { container, unmount } = renderShell(width);
       const bar = container.querySelector(".shell-summary");
-      expect(bar?.textContent).toContain(faceWord("false"));
-      expect(bar?.textContent).toContain("40");
-      expect(bar?.textContent).not.toMatch(/已完成|正在/);
+      expect(bar?.textContent).toContain("生育津贴不会直接打到个人卡里。");
+      expect(bar?.textContent).not.toMatch(/能信|不能信|还查不清|已完成|正在/);
+      expect(bar?.textContent).not.toMatch(/\b40\b/);
       expect(screen.getByRole("button", { name: "打开案件列表" })).toBeTruthy();
       expect(screen.getByRole("button", { name: "打开面板" })).toBeTruthy();
       unmount();

@@ -168,6 +168,36 @@ describe("callJob hedge", () => {
     expect(result.attempts[0]?.provider).not.toBe(result.attempts[1]?.provider);
   });
 
+  it("无 RHG_MODEL 时前两个失败后继续试 env 里已配置的 DeepSeek", async () => {
+    const started: string[] = [];
+    const dispatch: JobDispatch = async ({ candidate }) => {
+      started.push(candidate.provider);
+      if (candidate.provider === "minimax" || candidate.provider === "stepfun") {
+        throw new Error(`${candidate.provider} down`);
+      }
+      return { text: '{"ok":true}', model: `${candidate.provider}:${candidate.model}` };
+    };
+    const result = await callJob(
+      baseParams(dispatch, {
+        env: {
+          MINIMAX_API_KEY: "sk-mm-test",
+          MINIMAX_MODEL: "MiniMax-M3",
+          STEPFUN_API_KEY: "sk-sf-test",
+          STEPFUN_MODEL: "step-3.7-flash",
+          DEEPSEEK_API_KEY: "sk-ds-test",
+          DEEPSEEK_MODEL: "deepseek-v4-flash",
+          MIMO_API_KEY: "sk-mimo-test",
+          MIMO_MODEL: "mimo-v2.5-pro",
+        },
+      }),
+    );
+    expect(started).toEqual(["minimax", "stepfun", "deepseek"]);
+    expect(result.model).toBe("deepseek:deepseek-v4-flash");
+    expect(result.attempts).toHaveLength(3);
+    expect(result.attempts[2]).toMatchObject({ provider: "deepseek", model: "deepseek-v4-flash", ok: true });
+    expect(JSON.stringify(result.attempts)).not.toMatch(/sk-mm-test|sk-sf-test|sk-ds-test|sk-mimo-test/);
+  });
+
   it("deadline 只剩 3s 时 fetch failed 不重试", async () => {
     const dispatch = vi.fn<JobDispatch>(async () => {
       throw new Error("fetch failed");
