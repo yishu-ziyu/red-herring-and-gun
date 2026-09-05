@@ -5,6 +5,11 @@ export type JobCandidate = {
   model: string;
   effort: "low" | "medium" | "high";
   timeoutMs: number;
+  /**
+   * 填表类 lane 传 0，要稳定的输出；写文章 lane 不传，用服务商默认。
+   * 推理模型开 thinking 时不许带 temperature，由调用方丢掉。
+   */
+  temperature?: number;
 };
 
 const PROVIDERS = new Set<JobProviderId>([
@@ -17,7 +22,7 @@ const PROVIDERS = new Set<JobProviderId>([
 ]);
 
 const FAST: JobCandidate[] = [
-  { provider: "minimax", model: "MiniMax-M3", effort: "low", timeoutMs: 30_000 },
+  { provider: "minimax", model: "MiniMax-M3", effort: "low", timeoutMs: 30_000, temperature: 0 },
   { provider: "stepfun", model: "step-3.7-flash", effort: "low", timeoutMs: 45_000 },
 ];
 
@@ -72,6 +77,7 @@ function candidatesFromEnv(
       model,
       effort: template?.effort ?? "low",
       timeoutMs: template?.timeoutMs ?? 30_000,
+      ...(template?.temperature !== undefined ? { temperature: template.temperature } : {}),
     });
   }
   return out;
