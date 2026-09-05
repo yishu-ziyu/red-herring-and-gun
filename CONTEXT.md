@@ -1,7 +1,7 @@
 # Domain context (claim verification)
 
-Lazy glossary for agents. Product truth remains `docs/PRODUCT_SPEC.md`.  
-用户看见的是对原句的直接回答。能信 / 不能信 是内部类型（`verdictType` / `faceVerdict`），不是结论第一句。下表是管线术语。
+Lazy glossary for agents. Product truth — definition, constitution (Evidence Auditability > Agent Observability, white-box three layers, single Golden Path) — remains `docs/PRODUCT_SPEC.md`.  
+用户看见的是对原句的直接回答。能信 / 不能信 是内部类型（`verdictType` / `faceVerdict`），不是结论第一句。下表全部是**实现层**词汇（Agent、provider、工具、管线），不是产品核心概念，默认不出现在用户界面（见 PRODUCT_SPEC 第二节「默认隐藏」）。
 
 ## Terms
 
