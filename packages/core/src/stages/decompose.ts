@@ -1,10 +1,6 @@
+import { Type } from "typebox";
 import type { Claim, ClaimAtomType } from "../casefile/schema.js";
-import {
-  claimAtomKey,
-  forceCheckableAtomTypes,
-  runClaimAtomSelfProof,
-  type SelfProofModelCall,
-} from "../text/claimAtom/index.js";
+import { claimAtomKey, runClaimAtomSelfProof, type SelfProofModelCall } from "../text/claimAtom/index.js";
 import type { StageContext } from "./context.js";
 import { DecomposeOutputSchema } from "./decompose.schema.js";
 import { parseJobOutput } from "./parseOutput.js";
@@ -30,46 +26,39 @@ const CLAIM_ATOM_TYPES: readonly ClaimAtomType[] = [
 ];
 
 export const DECOMPOSE_SYSTEM_PROMPT = [
-  "你是红鲱鱼与枪的拆题工单填写器。",
-  "你的任务是把用户原句拆成原子命题，标出类型、可否核对、以及该命题在原句中的 span。只填写工单，不要作核对结论，不要给命题打分。",
+  "你是拆题填写。任务：把用户原句拆成能独立核对的判断，填 type、checkable、原句位置。不判对错，不打分。",
   "",
-  "【流传短句 — 强制】",
-  "网传一句、群聊转述、截图配文、谁给谁打电话、某地免票、某地要建地铁、打架、P图、偷车至境外——只要原句作出了可核对的判断，就是可核对命题。",
-  "不得因「太琐碎」「像八卦」「像个人纠纷」「没有大政策」把 checkable 标 false，也不得整句丢掉。",
+  "只要原句作出了可核对的判断就是可核对命题，不因太琐碎、像八卦、像个人纠纷、没有大政策标 false，也不得整句丢掉。",
   "",
-  "原子命题的判定标准（拆分时严格遵循）：",
-  "1. 每个原子命题必须是一个独立、可单独核对的判断——要么是某个个体/对象的性质，要么是两个个体/对象之间的关系。",
-  "2. 每个命题必须能回溯到原句，只能由用户提供的原句直接支持，不得引入原句未声称的信息、补全上下文或加入你自己的常识。",
-  "3. 若原句含独立判断（如「药能治失眠」「药已获批准」），必须拆成多个原子命题，不得合并成一条。",
-  "4. 拆分完成后，把命题拼接回读一遍，确认每条都能回溯到原句——不能回溯的删掉。",
-  "5. 拆解不得删除原句的限定条件（「某种情况下 X」不得拆成「X」）。",
-  "6. 不得产出无独立含义的碎片；能合并进同一判断的不要拆成多条。",
-  "7. 转述结构「X 宣布 / 表示 / 称 / 发文说 Y」是一条命题，不拆成「X 宣布了某事」+「Y」；text 写成带来源的完整句（如「国家医保局宣布：2026 年起生育津贴直接发个人」），checkable 按 Y 判。命题文本里不得出现「该事项 / 该内容 / 上述 / 某事」这类指代或占位词，必须自足。",
-  "8. 只拆断言（说话人要你相信的、别人可能反对的事），不拆前提（断言成立所依赖的背景、条件、场景）。背景事实、时间条件、逾期/需在某时完成，都不要单独成条。若 B 以 A 为前提（A 不成立则 B 无意义），只出断言。反例：『孩子打疫苗后发烧，说明疫苗导致了自闭症』只出『疫苗导致自闭症』，不出『孩子打疫苗后发烧』；『群里那张P图配的侮辱性文字说的是真的』只出『那段侮辱性文字说的是真的』，不出『群里有一张P图』『P图配有文字』；『扫码可领补贴，逾期视为弃权』只出『扫码可领 2024 年个人劳动补贴』，不出『需在逾期前完成』。例外：前提本身是可公开核查的事实主张（统计数据、政策文件、公开事件）时，前提要单独成条——『某地推广某保健品后癌症死亡率下降，证明该保健品能防癌』出两条：『某地推广该保健品后癌症死亡率下降』和『该保健品能防癌』。",
-  "9. 「没有公告 / 没有披露 / 暂无消息 / 未得到证实」这类证据缺失表述是主命题的限定语，不单独成条。反例：『同事群里说我们公司下周一会被收购，没有公告也没有监管披露』只出『我们公司下周一会被收购』一条，不出『没有公告』『没有监管披露』。",
-  "10. 同一事件的多个描述侧面合成一条，不要把「被拉去销毁」和「装船运走」拆成两条。反例：『电动车都被集中拉去国外销毁了，一批一批装船运走』是一条：『电动车被集中装船运往国外销毁』。",
-  "11. 材料可能分多条先后补充。本轮只拆立案材料里的当前说法。先前未获资格的条目只作上下文，禁止再立成命题，禁止产出被当前说法取代的重复命题。当前说法已自足时，不要把上下文写进命题；只有当前说法必须靠上下文才能完整时，才用上下文补全所指，且只产出解析后的当前说法。",
+  "硬要求：",
+  "1. 每条必须是原句真实说的一个判断，不加字，不补常识，指代词必须写成完整所指。",
+  "2. 并列名词拆开；限定语、前提背景、证据缺失表述不单列。例外：前提本身是可公开核查的事实主张（统计数据、政策文件、公开事件）就单列。",
+  "3. 能力与风险断言（会中毒、会致癌）按事实或因果标可查；纯未来无抓手才不可查。价值、规范、无关谩骂标不可查。",
+  "4. 转述结构是一条，带来源写完整句。材料分多条先后补充时，本轮只拆当前说法，先前条目只作上下文。",
+  "5. 事实因果比较概念的 checkable 必须为 true；价值规范必须为 false；预测个人按第 3 条，不得一律标 false。",
   "",
-  "【可否核对 / type 与 checkable — 强制】",
-  "对每个命题给出 checkable（是否可核对）与 type（类型）。",
-  "硬不可核对（checkable=false，不进入后续核对）：",
-  "- value 价值判断：对事物价值的评价（\"有意义/无意义\"\"好/坏\"\"应该/不应该\"）。示例如\"文科教育正在失去意义\"若指价值立场。",
-  "- 对群体品行的全称攻击与立场宣泄也算 value：「这届专家全被收买了」「都是骗子」「没一个好东西」不作事实核对，checkable=false。反例：『转基因食品就是毒药，这届专家全被收买了』→「转基因食品就是毒药」按 fact 可核（查毒性证据），「这届专家全被收买了」是 value，checkable=false。",
-  "- normative 规范命题：主张某人/某机构应当如何（\"政府应该禁止 X\"）。",
-  "可核对（checkable=true）：",
-  "- fact 事实陈述、causal 因果推断、comparison 比较命题、concept 概念定义。",
+  "例子（输入 → 输出）：",
+  "输入：中国体育代表团出征奥运会自带300多个空调和床垫",
+  "输出：[{\"text\":\"中国体育代表团自带300多个空调\",\"type\":\"fact\",\"checkable\":true},{\"text\":\"中国体育代表团自带床垫\",\"type\":\"fact\",\"checkable\":true}]",
+  "输入：扫码可领补贴，逾期视为弃权",
+  "输出：[{\"text\":\"扫码可领2024年个人劳动补贴\",\"type\":\"fact\",\"checkable\":true}]（逾期是限定语，不单列）",
+  "输入：孩子打疫苗后发烧，说明疫苗导致了自闭症",
+  "输出：[{\"text\":\"疫苗导致自闭症\",\"type\":\"causal\",\"checkable\":true}]（发烧是前提，不单列；前提不拆，只拆断言）",
+  "输入：点早安晚安图片手机会中毒，个人信息会被盗",
+  "输出：[{\"text\":\"点早安晚安图片会导致手机中毒\",\"type\":\"causal\",\"checkable\":true},{\"text\":\"点早安晚安图片会导致个人信息被盗\",\"type\":\"causal\",\"checkable\":true}]",
+  "输入：电动车都被集中拉去国外销毁了，一批一批装船运走",
+  "输出：[{\"text\":\"电动车被集中装船运往国外销毁\",\"type\":\"fact\",\"checkable\":true}]（同一事件多个描述侧面合成一条）",
+  "输入：群里那张P图配的侮辱性文字说的是真的",
+  "输出：[{\"text\":\"那段侮辱性文字说的是真的\",\"type\":\"fact\",\"checkable\":true}]（P图和配文是背景，不单列）",
+  "输入：同事群里说我们公司下周一会被收购，没有公告也没有监管披露",
+  "输出：[{\"text\":\"我们公司下周一会被收购\",\"type\":\"fact\",\"checkable\":true}]（没有公告是限定语，不单列）",
+  "输入：某地推广该保健品后癌症死亡率下降，证明该保健品能防癌",
+  "输出：[{\"text\":\"某地推广该保健品后癌症死亡率下降\",\"type\":\"fact\",\"checkable\":true},{\"text\":\"该保健品能防癌\",\"type\":\"causal\",\"checkable\":true}]",
   "",
-  "灰度区判定规则（按断言形态，不硬性归集）：",
-  "- 个人经验 personal：凡断言形态是\"某人/某群体 报告/声称 某种经验或反应\"，可核对（去查是否有这些报告），checkable=true；凡属说话者第一人称主观体验或未经证实的普遍化主观判断，不可核对，checkable=false。示例：\"大量患者报告服用 X 后出现失眠\"→可核对（查是否有这些报告）；\"这药对我失眠很有效\"→不可核对。注意：即使机制未知（可能是安慰剂效应），只要形态是\"患者报告了反应\"就可核对\"是否有报告\"，但绝不能把该反应核对成药理作用（那是 causal，另标）。",
-  "- 概念定义 concept：凡断言是\"某个概念定义是什么、出自哪里、不同语境如何被使用\"，可核对（查定义出处、语境、不同解释），checkable=true；凡断言是\"这个概念（根本）没有意义/不应该存在\"这类立场宣泄或规范判断，不可核对，checkable=false。",
-  "- 预测 prediction：先找现在能点开的出处，再标明出处撑不到哪。凡有公开承诺、正式文件、已发布预测、已经作出的决定、规划/批复/立项等现在时抓手，checkable=true（去查抓手在不在；不能把未来写成已经发生）。示例：\"某公司未来三年营收将增长十倍\"→可核对（追有没有公开承诺）；\"某项政策已经正式确定并将立即实施\"→可核对（追有没有正式文件）；\"某地要建地铁\"→可核对（追有没有规划/批复，不要因为动词是「将/要」就跳过）。凡无现在时抓手、只是对世界的裸预测（\"未来三年就业会恶化\"），checkable=false。不得把原子改写成「作出过承诺」等原句未声称的命题。",
-  "",
-  "span：用原句中的字符下标 { start, end }，end 为开区间，指向该命题对应的原句子串。若无法对齐可省略 span。",
+  "位置：用原句中的字符下标 { start, end }，end 为开区间，指向该命题对应的原句子串。若无法对齐可省略。",
   "",
   "输出严格 JSON（不要 Markdown，不要代码块）：",
-  "{\n  \"claims\": [\n    {\"text\": \"原子命题1\", \"type\": \"fact\", \"checkable\": true, \"span\": {\"start\": 0, \"end\": 5}},\n    {\"text\": \"原子命题2\", \"type\": \"value\", \"checkable\": false}\n  ]\n}",
-  "",
-  "value/normative 的 checkable 必须为 false；fact/causal/comparison/concept 的 checkable 必须为 true；prediction/personal 按上方灰度规则，不得一律标 false。",
+  "{\"claims\": [{\"text\": \"判断1\", \"type\": \"fact\", \"checkable\": true, \"span\": {\"start\": 0, \"end\": 5}}]}",
   "只许填 claims。不要写核对结论，不要写分数，不要发明原句没有的命题。",
 ].join("\n");
 
@@ -78,12 +67,6 @@ type DraftClaim = {
   type: ClaimAtomType;
   checkable: boolean;
   span?: { start: number; end: number };
-};
-
-type ForceRow = {
-  text: string;
-  type: ClaimAtomType;
-  verifiable: boolean;
 };
 
 function isClaimAtomType(value: unknown): value is ClaimAtomType {
@@ -112,27 +95,69 @@ function indexDrafts(drafts: DraftClaim[]): Map<string, DraftClaim> {
   return map;
 }
 
-function applyForceCheckable(drafts: DraftClaim[]): DraftClaim[] {
-  const rows: ForceRow[] = drafts.map((draft) => ({
-    text: draft.text,
-    type: draft.type,
-    verifiable: draft.checkable,
-  }));
-  const rewritten = forceCheckableAtomTypes(rows);
-  if (!Array.isArray(rewritten)) return drafts;
-  return drafts.map((draft, i) => {
-    const item = rewritten[i];
-    if (!item || typeof item !== "object") return draft;
-    const verifiable = "verifiable" in item && typeof item.verifiable === "boolean" ? item.verifiable : draft.checkable;
-    const type = "type" in item && isClaimAtomType(item.type) ? item.type : draft.type;
-    return { ...draft, checkable: verifiable, type };
-  });
-}
-
 function keepSpan(span: { start: number; end: number } | undefined, source: string): { start: number; end: number } | undefined {
   if (!span) return undefined;
   if (span.start < 0 || span.end > source.length || span.end <= span.start) return undefined;
   return span;
+}
+
+/**
+ * 位置校准：模型给的位置只验算不盲信。
+ * 先看模型位置盖住的原句和命题有没有一半以上重合，有就用模型的；
+ * 没有就拿命题里两两相邻的字去原句里找，用盖住所有命中的最小区间；
+ * 命题里一半字都找不到就不要位置，命题留下。
+ */
+/**
+ * 命题里一半以上的字能在原句里找到才算落地，找不到就是加戏，当场删掉，命题不留。
+ * resolveSpan 只管位置对不对，这里管命题本身留不留。
+ */
+export function claimGroundedInSource(text: string, source: string): boolean {
+  const chars = [...text.replace(/\s+/g, "")];
+  if (chars.length === 0 || !source) return false;
+  const found = new Set<number>();
+  for (let i = 0; i < chars.length - 1; i += 1) {
+    const pair = chars[i]! + chars[i + 1]!;
+    if (/\s/.test(pair)) continue;
+    if (source.indexOf(pair) >= 0) {
+      found.add(i);
+      found.add(i + 1);
+    }
+  }
+  return found.size >= 4 && found.size / chars.length >= 0.5;
+}
+
+export function resolveSpan(
+  text: string,
+  span: { start: number; end: number } | undefined,
+  source: string,
+): { start: number; end: number } | undefined {
+  const chars = [...text.replace(/\s+/g, "")];
+  const overlap = (a: string, b: string): number => {
+    if (!a || !b) return 0;
+    const longer = a.length >= b.length ? a : b;
+    const shorter = a.length >= b.length ? b : a;
+    return longer.includes(shorter) ? shorter.length / longer.length : 0;
+  };
+  if (span) {
+    const covered = source.slice(span.start, span.end).replace(/\s+/g, "");
+    const needle = chars.join("");
+    if (covered && needle && overlap(covered, needle) >= 0.5) return span;
+  }
+  if (chars.length === 0 || !source) return undefined;
+  const found = new Set<number>();
+  const hits: Array<{ start: number; end: number }> = [];
+  for (let i = 0; i < chars.length - 1; i += 1) {
+    const pair = chars[i]! + chars[i + 1]!;
+    if (/\s/.test(pair)) continue;
+    const at = source.indexOf(pair);
+    if (at >= 0) {
+      hits.push({ start: at, end: at + pair.length });
+      found.add(i);
+      found.add(i + 1);
+    }
+  }
+  if (hits.length === 0 || found.size < 4 || found.size / chars.length < 0.5) return undefined;
+  return { start: Math.min(...hits.map((h) => h.start)), end: Math.max(...hits.map((h) => h.end)) };
 }
 
 function nextClaimNumber(ctx: StageContext): number {
@@ -171,10 +196,10 @@ function stripHearsayPrefix(text: string): string {
   return text.replace(HEARSAY_PREFIX, "").trim();
 }
 
-// ponytail: 正则启发，上限是误杀「X 已表示」类完整句；要改成句法分析再换实现。
+// 长度只用来去掉一到三个字的残渣：4 个字装得下完整意思（自带床垫）。是不是完整意思，由第二遍检查和原文对照来定，不由长度定。
 export function isFragmentClaim(text: string): boolean {
   const compact = text.replace(/\s+/g, "");
-  return compact.length < 6 || FRAGMENT_TAIL.test(compact) || FRAGMENT_PLACEHOLDER.test(compact);
+  return [...compact].length < 4 || FRAGMENT_TAIL.test(compact) || FRAGMENT_PLACEHOLDER.test(compact);
 }
 
 function splitFragments(drafts: DraftClaim[]): { kept: DraftClaim[]; fragments: DraftClaim[] } {
@@ -232,7 +257,10 @@ function sourceForFailOpen(input: DecomposeInput): string {
 }
 
 function failOpen(ctx: StageContext, input: DecomposeInput): DecomposeResult {
-  const claims = toClaims(ctx, [{ text: sourceForFailOpen(input), type: "fact", checkable: true }]);
+  const text = sourceForFailOpen(input);
+  const claims = toClaims(ctx, [
+    { text, type: "fact", checkable: true, span: { start: 0, end: text.length } },
+  ]);
   ctx.emit({ type: "claims.added", claims });
   ctx.emit({ type: "stage.finished", stage: "decompose", outcome: "failed-open" });
   return { claims, origin: "fail-open" };
@@ -276,6 +304,47 @@ function buildDecomposeUserContent(input: DecomposeInput): string {
   return lines.join("\n");
 }
 
+const SPLIT_CHECK_SCHEMA = Type.Object(
+  { split: Type.Array(Type.String()) },
+  { additionalProperties: false },
+);
+
+/** 并列标记：命题里有这些字才值得多花一次调用去查有没有合并。 */
+const SPLIT_MARKER = /[和与、跟]/u;
+
+const SPLIT_CHECK_PROMPT = [
+  "你是拆题复核，只干一件事：看这条命题里有没有两个以上能独立核对的判断。",
+  "并列的名词必须拆开：自带空调和床垫拆成自带空调、自带床垫；免票和补贴拆成免票、补贴。",
+  "每条是原句里真实存在的一个判断，不改字、不加戏、不判真假。",
+  "没有并列就原样返回一条。只输出 JSON：{\"split\":[\"第一条\",\"第二条\"]}。",
+].join("\n");
+
+async function splitCheck(
+  ctx: StageContext,
+  source: string,
+  draft: DraftClaim,
+): Promise<DraftClaim[] | null> {
+  if (!SPLIT_MARKER.test(draft.text)) return null;
+  let output: unknown;
+  try {
+    const result = await ctx.llm({
+      job: "split-check",
+      systemPrompt: SPLIT_CHECK_PROMPT,
+      userContent: `原句：${source}\n命题：${draft.text}`,
+      responseSchema: SPLIT_CHECK_SCHEMA,
+      maxTokens: 1024,
+    });
+    output = result.output;
+  } catch {
+    return null;
+  }
+  const parsed = parseJobOutput(SPLIT_CHECK_SCHEMA, output);
+  if (!parsed.ok) return null;
+  const parts = parsed.value.split.map((s) => stripHearsayPrefix(s.trim())).filter(Boolean);
+  if (parts.length < 2) return null;
+  return parts.map((text) => ({ text, type: draft.type, checkable: draft.checkable }));
+}
+
 export async function runDecompose(ctx: StageContext, input: DecomposeInput): Promise<DecomposeResult> {
   ctx.emit({ type: "stage.started", stage: "decompose" });
   let output: unknown;
@@ -300,7 +369,7 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
   const drafts: DraftClaim[] = parsed.value.claims.flatMap((item) => {
     const text = stripHearsayPrefix(item.text);
     if (!text) return [];
-    const span = keepSpan(item.span, input.claimSource);
+    const span = resolveSpan(text, keepSpan(item.span, input.claimSource), input.claimSource);
     return [
       {
         text,
@@ -364,8 +433,31 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
     ctx.emit({ type: "error", message: selfProofError, stage: "decompose" });
   }
 
-  const forced = applyForceCheckable(keptDrafts);
-  const { kept, fragments } = splitFragments(forced);
+  // 并列复核：含和/与/顿号的命题多花一次调用查有没有合并，拆出来的每条必须在原句落地
+  const checkedDrafts: DraftClaim[] = [];
+  for (const draft of keptDrafts) {
+    const split = await splitCheck(ctx, proofSource, draft);
+    if (!split) {
+      checkedDrafts.push(draft);
+      continue;
+    }
+    for (const part of split) {
+      if (!claimGroundedInSource(part.text, proofSource)) {
+        const origin = ctx.current.droppedClaims.length;
+        ctx.emit({
+          type: "claims.dropped",
+          dropped: [{ id: `d${origin + 1}`, text: part.text, reason: "原句没说" }],
+        });
+        continue;
+      }
+      checkedDrafts.push({
+        ...part,
+        span: resolveSpan(part.text, undefined, proofSource),
+      });
+    }
+  }
+
+  const { kept, fragments } = splitFragments(checkedDrafts);
   if (fragments.length > 0) {
     const origin = ctx.current.droppedClaims.length;
     ctx.emit({

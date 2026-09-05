@@ -617,6 +617,7 @@ export async function dispatchSingleProvider({
   codexBin,
   reasoningEffort,
   signal,
+  temperature,
 }: {
   provider: AgentTextProviderId;
   model: string;
@@ -629,6 +630,7 @@ export async function dispatchSingleProvider({
   codexBin: string;
   reasoningEffort: "low" | "medium" | "high";
   signal?: AbortSignal;
+  temperature?: number;
 }): Promise<{ text: string; model: string; reasoning?: string }> {
   if (provider === "deepseek") {
     const apiKey = envValue(env, "DEEPSEEK_API_KEY");
@@ -655,6 +657,7 @@ export async function dispatchSingleProvider({
       userContent,
       ...miniMaxCallOptions(env, model, maxTokens, reasoningEffort),
       signal,
+      ...(temperature !== undefined ? { temperature } : {}),
     });
   }
   if (provider === "stepfun") {

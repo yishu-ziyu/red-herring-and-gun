@@ -450,6 +450,7 @@ export async function callMiniMaxAgent({
   thinking,
   signal,
   onThinking,
+  temperature,
 }: {
   baseUrl: string;
   apiKey: string;
@@ -461,6 +462,7 @@ export async function callMiniMaxAgent({
   thinking?: MiniMaxThinkingType;
   signal?: AbortSignal;
   onThinking?: (accumulated: string) => void;
+  temperature?: number;
 }) {
   const url = miniMaxMessagesUrl(baseUrl);
   const headers: Record<string, string> = {
@@ -486,6 +488,7 @@ export async function callMiniMaxAgent({
         maxTokens,
         thinking: thinkingMode,
         stream: true,
+        ...(temperature !== undefined ? { temperature } : {}),
       })
     ),
     signal,
