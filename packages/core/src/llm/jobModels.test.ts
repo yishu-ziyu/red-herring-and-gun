@@ -25,6 +25,8 @@ describe("candidatesFor", () => {
     }
     expect(candidatesFor("decompose", env)[0]?.effort).toBe("low");
     expect(candidatesFor("decompose", env)[0]?.timeoutMs).toBe(30_000);
+    expect(candidatesFor("decompose", env)[0]?.temperature).toBe(0);
+    expect(candidatesFor("compose", env)[0]?.temperature).toBeUndefined();
     expect(candidatesFor("compose", env)[0]?.timeoutMs).toBe(45_000);
     expect(candidatesFor("no-such-job", env)).toEqual(candidatesFor("assess", env));
   });

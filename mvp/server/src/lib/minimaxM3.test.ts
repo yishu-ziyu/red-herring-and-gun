@@ -33,6 +33,24 @@ describe("minimaxM3", () => {
     })).not.toHaveProperty("thinking");
   });
 
+  it("填表类带 temperature 0，开 thinking 时不带", () => {
+    expect(buildMiniMaxMessagesBody({
+      model: "MiniMax-M2.7-highspeed",
+      systemPrompt: "sys",
+      userContent: "user",
+      maxTokens: 800,
+      temperature: 0,
+    })).toMatchObject({ temperature: 0 });
+    expect(buildMiniMaxMessagesBody({
+      model: "MiniMax-M3",
+      systemPrompt: "sys",
+      userContent: "user",
+      maxTokens: 800,
+      thinking: "adaptive",
+      temperature: 0,
+    })).not.toHaveProperty("temperature");
+  });
+
   it("reserves enough output budget for M2.7 highspeed reasoning plus JSON", () => {
     expect(miniMaxMaxTokensForModel({}, "MiniMax-M2.7-highspeed", 1200)).toBe(4096);
     expect(

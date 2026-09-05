@@ -121,13 +121,13 @@ describe("runDecompose", () => {
     });
   });
 
-  it("导致与致癌类被 forceCheckable 拉回可核对", async () => {
+  it("导致与致癌类由工单一次写对，不再靠补丁拉回", async () => {
     const source = "隔夜菜会致癌，隔夜菜导致失眠。";
     const { ctx } = setup({
       decompose: {
         claims: [
-          { text: "隔夜菜会致癌", type: "value", checkable: false },
-          { text: "隔夜菜导致失眠", type: "value", checkable: false },
+          { text: "隔夜菜会致癌", type: "fact", checkable: true },
+          { text: "隔夜菜导致失眠", type: "causal", checkable: true },
         ],
       },
       "self-proof": keepAll(),
@@ -139,12 +139,97 @@ describe("runDecompose", () => {
     ]);
   });
 
+  it("位置标偏会被校准到床垫二字", async () => {
+    const source = "中国体育代表团出征奥运会自带300多个空调和床垫";
+    const { ctx } = setup({
+      decompose: {
+        claims: [
+          { text: "中国体育代表团自带床垫", type: "fact", checkable: true, span: { start: 0, end: 13 } },
+        ],
+      },
+      "self-proof": keepAll(),
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims).toHaveLength(1);
+    const span = claims[0]?.span;
+    expect(span).toBeDefined();
+    expect(source.slice(span!.start, span!.end)).toContain("床垫");
+  });
+
+  it("原句里找不到依据的位置会被拿掉，命题留下", async () => {
+    const source = "中国体育代表团自带300多个空调";
+    const { ctx } = setup({
+      decompose: {
+        claims: [{ text: "代表团经费很充足", type: "fact", checkable: true, span: { start: 0, end: 5 } }],
+      },
+      "self-proof": keepAll(),
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims).toHaveLength(1);
+    expect(claims[0]?.span).toBeUndefined();
+  });
+
+  it("合并的空调和床垫被并列复核拆开", async () => {
+    const source = "中国体育代表团出征奥运会自带300多个空调和床垫";
+    const { ctx, fake } = setup({
+      decompose: {
+        claims: [{ text: "中国体育代表团自带300多个空调和床垫", type: "fact", checkable: true }],
+      },
+      "self-proof": keepAll(),
+      "split-check": { split: ["中国体育代表团自带300多个空调", "中国体育代表团自带床垫"] },
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims.map((c) => c.text)).toEqual(["中国体育代表团自带300多个空调", "中国体育代表团自带床垫"]);
+    expect(fake.calls.some((c) => c.job === "split-check")).toBe(true);
+  });
+
+  it("并列复核拆出来的加戏会被删掉", async () => {
+    const source = "中国体育代表团自带300多个空调";
+    const { ctx } = setup({
+      decompose: {
+        claims: [{ text: "中国体育代表团自带300多个空调和床垫", type: "fact", checkable: true }],
+      },
+      "self-proof": keepAll(),
+      "split-check": { split: ["中国体育代表团自带300多个空调", "代表团经费很充足"] },
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims.map((c) => c.text)).toEqual(["中国体育代表团自带300多个空调"]);
+    expect(ctx.emitted.filter((e) => e.type === "claims.dropped")).not.toHaveLength(0);
+  });
+
+  it("没有并列标记不花并列复核调用", async () => {
+    const source = "这种药能治失眠";
+    const { ctx, fake } = setup({
+      decompose: { claims: [{ text: source, type: "fact", checkable: true }] },
+      "self-proof": keepAll(),
+    });
+    await runDecompose(ctx, { claimSource: source });
+    expect(fake.calls.some((c) => c.job === "split-check")).toBe(false);
+  });
+
+  it("RUMOR-008 并列不断成一条：空调和床垫各一条", async () => {
+    const source = "中国体育代表团出征奥运会自带300多个空调和床垫";
+    const { ctx } = setup({
+      decompose: {
+        claims: [
+          { text: "中国体育代表团自带300多个空调", type: "fact", checkable: true },
+          { text: "中国体育代表团自带床垫", type: "fact", checkable: true },
+        ],
+      },
+      "self-proof": keepAll(),
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims.length).toBeGreaterThanOrEqual(2);
+    expect(claims.map((c) => c.text).join("|")).toContain("空调");
+    expect(claims.map((c) => c.text).join("|")).toContain("床垫");
+  });
+
   it("工单抛错则整句一条命题且 outcome 为 failed-open", async () => {
     const source = "药能治失眠，药已获批准。";
     const { ctx } = setup({ decompose: new Error("llm down") });
     const { claims } = await runDecompose(ctx, { claimSource: source });
     expect(claims).toEqual([
-      { id: "c1", text: source, type: "fact", checkable: true, order: 0 },
+      { id: "c1", text: source, type: "fact", checkable: true, order: 0, span: { start: 0, end: source.length } },
     ]);
     const finished = ctx.emitted.filter((e) => e.type === "stage.finished");
     expect(finished.at(-1)).toMatchObject({ stage: "decompose", outcome: "failed-open" });
@@ -154,7 +239,9 @@ describe("runDecompose", () => {
     const source = "药能治失眠";
     const { ctx } = setup({ decompose: { notClaims: true } });
     const { claims } = await runDecompose(ctx, { claimSource: source });
-    expect(claims).toEqual([{ id: "c1", text: source, type: "fact", checkable: true, order: 0 }]);
+    expect(claims).toEqual([
+      { id: "c1", text: source, type: "fact", checkable: true, order: 0, span: { start: 0, end: source.length } },
+    ]);
     expect(ctx.emitted.filter((e) => e.type === "stage.finished").at(-1)).toMatchObject({
       stage: "decompose",
       outcome: "failed-open",
@@ -210,9 +297,28 @@ describe("runDecompose", () => {
     const { claims } = await runDecompose(ctx, { claimSource: source });
     expect(claims).toHaveLength(3);
     expect(claims.map((c) => c.text)).toEqual(["这种药能治失眠", "这种药已获批准", "这种药能治失眠且已获批准"]);
+    // 非法位置不再盲信：能对上的校准回正确区间，对不上才拿掉
     for (const claim of claims) {
-      expect(claim.span).toBeUndefined();
+      expect(claim.span).toBeDefined();
+      expect(source.slice(claim.span!.start, claim.span!.end).length).toBeGreaterThan(0);
     }
+    expect(source.slice(claims[0]!.span!.start, claims[0]!.span!.end)).toContain("治失眠");
+    expect(source.slice(claims[1]!.span!.start, claims[1]!.span!.end)).toContain("已获批准");
+  });
+
+  it("「自带床垫」四个字是完整判断，不许当碎片扔", async () => {
+    const source = "中国体育代表团自带300多个空调和床垫";
+    const { ctx } = setup({
+      decompose: {
+        claims: [
+          { text: "自带300多个空调", type: "fact", checkable: true },
+          { text: "自带床垫", type: "fact", checkable: true },
+        ],
+      },
+      "self-proof": keepAll(),
+    });
+    const { claims } = await runDecompose(ctx, { claimSource: source });
+    expect(claims.map((c) => c.text)).toEqual(["自带300多个空调", "自带床垫"]);
   });
 
   it("碎片命题「国家医保局宣布」被丢弃，完整句保留", async () => {
@@ -383,7 +489,9 @@ describe("runDecompose", () => {
       "self-proof": new Error("self-proof down"),
     });
     const { claims } = await runDecompose(ctx, { claimSource: source });
-    expect(claims).toEqual([{ id: "c1", text: source, type: "fact", checkable: true, order: 0 }]);
+    expect(claims).toEqual([
+      { id: "c1", text: source, type: "fact", checkable: true, order: 0, span: { start: 0, end: source.length } },
+    ]);
     expect(ctx.emitted.filter((e) => e.type === "error")).toEqual([
       expect.objectContaining({ type: "error", stage: "decompose", message: "self-proof down" }),
     ]);
