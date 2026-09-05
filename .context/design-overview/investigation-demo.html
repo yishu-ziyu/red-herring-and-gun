@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>红鲱鱼与枪 · 谣言粉碎与真相调查</title>
+  <style>
+    :root {
+      --bg-main: #0c0d12;
+      --bg-surface: #14161f;
+      --bg-card: #1c1f2e;
+      --bg-card-hover: #23273a;
+      --border-subtle: #2d3148;
+      --border-active: #4f567a;
+      
+      --text-pure: #ffffff;
+      --text-main: #f1f3f9;
+      --text-muted: #8e95af;
+      --text-dim: #636b88;
+      
+      /* Red Herring Red (伪逻辑 / 谣言) */
+      --red-accent: #ff4d4f;
+      --red-glow: rgba(255, 77, 79, 0.25);
+      --red-bg: rgba(255, 77, 79, 0.12);
+      
+      /* Gun Truth Emerald (一手事实 / 击破) */
+      --emerald-accent: #10b981;
+      --emerald-glow: rgba(16, 185, 129, 0.25);
+      --emerald-bg: rgba(16, 185, 129, 0.12);
+
+      /* Amber (部分属实 / 陷阱) */
+      --amber-accent: #f59e0b;
+      --amber-bg: rgba(245, 158, 11, 0.12);
+
+      /* Blue link */
+      --blue-accent: #38bdf8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-main);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Segoe UI", sans-serif;
+      line-height: 1.6;
+      padding: 28px 24px 80px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .app-shell {
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+
+    /* Top Nav */
+    .top-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .logo-area {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo-badge {
+      background: linear-gradient(135deg, #ff4d4f, #f59e0b);
+      color: #fff;
+      font-weight: 900;
+      font-size: 14px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.05em;
+    }
+    .logo-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text-pure);
+      letter-spacing: -0.01em;
+    }
+    .top-tools {
+      display: flex;
+      gap: 8px;
+    }
+    .pill-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .pill-btn:hover {
+      border-color: var(--border-active);
+      color: var(--text-pure);
+    }
+    .pill-btn.active {
+      background: #fff;
+      color: #000;
+      font-weight: 600;
+      border-color: #fff;
+    }
+
+    /* Case Selector */
+    .case-selector {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .case-chip {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 13px;
+      color: var(--text-muted);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.2s;
+    }
+    .case-chip:hover {
+      background: var(--bg-card);
+      color: var(--text-pure);
+    }
+    .case-chip.selected {
+      background: var(--bg-card);
+      border-color: var(--red-accent);
+      color: var(--text-pure);
+      font-weight: 600;
+      box-shadow: 0 0 12px var(--red-glow);
+    }
+
+    /* Hero Verdict Header */
+    .hero-verdict {
+      background: linear-gradient(180deg, #181b2a 0%, var(--bg-surface) 100%);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 32px 36px;
+      margin-bottom: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero-verdict::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: linear-gradient(90deg, var(--red-accent) 0%, var(--emerald-accent) 100%);
+    }
+
+    .verdict-header-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .verdict-stamp {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: var(--red-bg);
+      color: var(--red-accent);
+      border: 1px solid rgba(255,77,79,0.3);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .verdict-authority-badge {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .hero-title {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text-pure);
+      line-height: 1.35;
+      margin-bottom: 10px;
+      letter-spacing: -0.02em;
+    }
+    .hero-desc {
+      font-size: 16px;
+      color: var(--text-muted);
+      max-width: 820px;
+      line-height: 1.6;
+    }
+
+    /* Surgical Anatomy Stage */
+    .section-headline {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .section-headline h3 {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+    }
+    .section-hint {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .anatomy-stage {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+
+    /* Original sentence highlight */
+    .origin-quote-bar {
+      background: var(--bg-card);
+      border-left: 3px solid var(--red-accent);
+      padding: 14px 18px;
+      border-radius: 6px;
+      margin-bottom: 20px;
+      font-size: 15px;
+      color: var(--text-muted);
+    }
+    .origin-quote-bar strong {
+      color: var(--text-pure);
+      font-size: 17px;
+    }
+
+    /* Dismantle Grid */
+    .dismantle-grid {
+      display: grid;
+      grid-template-columns: 1fr 60px 1fr;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 840px) {
+      .dismantle-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .atom-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 20px;
+      position: relative;
+      transition: all 0.25s ease;
+      cursor: pointer;
+    }
+    .atom-box:hover {
+      border-color: var(--border-active);
+      transform: translateY(-2px);
+    }
+    .atom-box.selected {
+      border-color: var(--blue-accent);
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.15);
+    }
+
+    .atom-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .atom-id {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      text-transform: uppercase;
+    }
+    .atom-tag {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+    }
+    .tag-partial {
+      background: var(--amber-bg);
+      color: var(--amber-accent);
+      border: 1px solid rgba(245,158,11,0.3);
+    }
+    .tag-shattered {
+      background: var(--red-bg);
+      color: var(--red-accent);
+      border: 1px solid rgba(255,77,79,0.3);
+    }
+
+    .atom-text {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-pure);
+      line-height: 1.4;
+      margin-bottom: 8px;
+    }
+    .atom-text.strike {
+      position: relative;
+      display: inline-block;
+      color: #ff8587;
+    }
+    .atom-text.strike::after {
+      content: "";
+      position: absolute;
+      left: -2px;
+      right: -2px;
+      top: 50%;
+      height: 2px;
+      background: var(--red-accent);
+      transform: rotate(-1.5deg);
+    }
+
+    .atom-analysis {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Connective Break */
+    .break-joint {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .joint-lightning {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--red-bg);
+      border: 1px dashed var(--red-accent);
+      color: var(--red-accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+    .joint-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--red-accent);
+      white-space: nowrap;
+    }
+
+    /* Visual Clash Dashboard */
+    .clash-dashboard {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 768px) {
+      .clash-dashboard {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .clash-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .clash-card.herring {
+      border-top: 3px solid var(--red-accent);
+    }
+    .clash-card.gun {
+      border-top: 3px solid var(--emerald-accent);
+    }
+
+    .clash-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .clash-title.red { color: var(--red-accent); }
+    .clash-title.green { color: var(--emerald-accent); }
+
+    .clash-body {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* Real Data Comparison Bar (视觉化数据直观对比) */
+    .data-bar-wrap {
+      margin-top: 14px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .data-bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .data-bar-track {
+      height: 8px;
+      background: #272a3a;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+    .data-bar-fill {
+      height: 100%;
+      background: var(--emerald-accent);
+      border-radius: 4px;
+    }
+    .data-limit-mark {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--red-accent);
+    }
+
+    /* Evidence Exhibit Tray */
+    .exhibit-tray {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .exhibit-list {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 768px) {
+      .exhibit-list {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .exhibit-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s;
+    }
+    .exhibit-item:hover {
+      border-color: var(--border-active);
+    }
+    .exhibit-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .tier-flag {
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--emerald-accent);
+      background: var(--emerald-bg);
+      border: 1px solid rgba(16,185,129,0.25);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .exhibit-source {
+      font-size: 12px;
+      color: var(--blue-accent);
+      text-decoration: none;
+    }
+    .exhibit-source:hover {
+      text-decoration: underline;
+    }
+    .exhibit-claim {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-pure);
+      margin-bottom: 4px;
+    }
+    .exhibit-detail {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.4;
+    }
+
+    /* Action Footer */
+    .action-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      padding: 18px 24px;
+    }
+    .footer-memo h4 {
+      font-size: 15px;
+      color: var(--text-pure);
+      margin-bottom: 2px;
+    }
+    .footer-memo p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .action-btn-group {
+      display: flex;
+      gap: 10px;
+    }
+    .btn-action {
+      background: #fff;
+      color: #000;
+      font-weight: 700;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-action:hover {
+      background: #e2e8f0;
+    }
+    .btn-action.ghost {
+      background: transparent;
+      color: var(--text-pure);
+      border: 1px solid var(--border-subtle);
+    }
+    .btn-action.ghost:hover {
+      border-color: var(--border-active);
+      background: var(--bg-surface);
+    }
+
+    /* Toast */
+    #copy-toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #fff;
+      color: #000;
+      font-weight: 600;
+      padding: 10px 24px;
+      border-radius: 30px;
+      font-size: 14px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 999;
+    }
+    #copy-toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Navigation -->
+    <div class="top-nav">
+      <div class="logo-area">
+        <span class="logo-badge">TRUTH HUNTER</span>
+        <span class="logo-title">红鲱鱼与枪 · 事实核查与谣言粉碎</span>
+      </div>
+      <div class="top-tools">
+        <button class="pill-btn active">核查案卷</button>
+        <button class="pill-btn">出处拓扑图</button>
+        <button class="pill-btn">物证库 (4)</button>
+      </div>
+    </div>
+
+    <!-- Case Selector -->
+    <div class="case-selector">
+      <div class="case-chip selected" onclick="loadCase(0)">
+        案例 01 · 隔夜菜致癌等于服毒（真假缝合）
+      </div>
+      <div class="case-chip" onclick="loadCase(1)">
+        案例 02 · 5G基站辐射致人失眠脱发（伪科学恐吓）
+      </div>
+      <div class="case-chip" onclick="loadCase(2)">
+        案例 03 · 某品牌酱油全是头发水解做成（老谣言翻炒）
+      </div>
+    </div>
+
+    <!-- Hero Verdict -->
+    <div class="hero-verdict">
+      <div class="verdict-header-row">
+        <span class="verdict-stamp" id="v-badge">⚡ 谣言已被击穿</span>
+        <span class="verdict-authority-badge" id="v-auth">权威核验：疾控中心实测 + GB 2762-2022 国家标准</span>
+      </div>
+      <h1 class="hero-title" id="v-head">不会致癌，更不是毒药。冷藏密封的隔夜菜完全可安全食用。</h1>
+      <p class="hero-desc" id="v-desc">
+        原句利用了大众对癌症的本能恐惧，将微量正常的生化变化（亚硝酸盐轻微上升），恶意偷换为致命中毒后果。
+      </p>
+    </div>
+
+    <!-- Surgical Anatomy -->
+    <div class="section-headline">
+      <h3>01 / 谣言手术刀拆解（Anatomy of Claim）</h3>
+      <span class="section-hint">点击命题块，查看被撕开的逻辑切片</span>
+    </div>
+
+    <div class="anatomy-stage">
+      <div class="origin-quote-bar">
+        原始流入信息：<strong id="v-origin">“隔夜菜中亚硝酸盐会升高，所以长期吃会致癌，等于吃毒药”</strong>
+      </div>
+
+      <div class="dismantle-grid">
+        <!-- 命题 A -->
+        <div class="atom-box selected" id="box-a">
+          <div class="atom-head">
+            <span class="atom-id">命题 A · 物理事实面</span>
+            <span class="atom-tag tag-partial" id="tag-a">微量属实 · 但被夸大</span>
+          </div>
+          <div class="atom-text" id="text-a">“隔夜菜放置后亚硝酸盐升高”</div>
+          <div class="atom-analysis" id="analysis-a">
+            常温及冷藏存放过程中，由于菌落代谢，亚硝酸盐确实会有毫克级的上升，但这是正常生理变化。
+          </div>
+        </div>
+
+        <!-- 破裂因果链 -->
+        <div class="break-joint">
+          <div class="joint-lightning">⚡</div>
+          <span class="joint-label" id="joint-text">偷换因果</span>
+        </div>
+
+        <!-- 命题 B -->
+        <div class="atom-box" id="box-b">
+          <div class="atom-head">
+            <span class="atom-id">命题 B · 虚假煽动面（红鲱鱼）</span>
+            <span class="atom-tag tag-shattered" id="tag-b">纯属谣言 · 彻底粉碎</span>
+          </div>
+          <div class="atom-text strike" id="text-b">“长期吃会致癌，等于吃毒药”</div>
+          <div class="atom-analysis" id="analysis-b">
+            脱离剂量谈毒性是伪科学。冷藏 24 小时后的数值距离毒性标准还差数十倍，根本不构成健康危害。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Visual Clash & Real Data -->
+    <div class="section-headline">
+      <h3>02 / 对决透视镜：话术套路 vs 真实数据（Clash of Facts）</h3>
+      <span class="section-hint">用确定性的实验数值，粉碎煽动性修辞</span>
+    </div>
+
+    <div class="clash-dashboard">
+      <!-- 话术拆穿 -->
+      <div class="clash-card herring">
+        <div class="clash-title red">
+          <span>🐟 红鲱鱼套路（自媒体如何吓你）</span>
+        </div>
+        <p class="clash-body" id="herring-body">
+          故意隐藏<strong>“实际剂量数值”</strong>与<strong>“国家法定安全线”</strong>，只要测出有微量物质，就立刻跳跃到“致癌、毒药、送命”等极限恐惧词汇，博取中老年和家庭群转发。
+        </p>
+      </div>
+
+      <!-- 事实之枪与数据条 -->
+      <div class="clash-card gun">
+        <div class="clash-title green">
+          <span>🔫 契诃夫之枪（不可辩驳的一手实测）</span>
+        </div>
+        <p class="clash-body" id="gun-body">
+          北京市疾控中心实测：叶菜冷藏 24 小时亚硝酸盐仅由 1.2 升至 3.6 mg/kg。国家 GB 2762-2022 限量为 20 mg/kg。即使连吃三天冷藏菜，摄入量还不及一根普通火腿肠。
+        </p>
+
+        <!-- 数据微图表 -->
+        <div class="data-bar-wrap">
+          <div class="data-bar-label">
+            <span style="color:var(--emerald-accent); font-weight:700" id="data-actual-txt">实测冷藏 24 小时：3.6 mg/kg</span>
+            <span style="color:var(--red-accent); font-weight:700" id="data-limit-txt">国家安全限值：20.0 mg/kg</span>
+          </div>
+          <div class="data-bar-track">
+            <div class="data-bar-fill" id="data-fill" style="width: 18%;"></div>
+            <div class="data-limit-mark" style="left: 100%;"></div>
+          </div>
+          <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">
+            ▲ 绿色填充为实测残留量，仅占安全红线约 18%，远未达到危险阈值。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Evidence Dossier -->
+    <div class="section-headline">
+      <h3>03 / 物证卷宗（The Evidential Exhibits）</h3>
+      <span class="section-hint">每一句话都有带 URL 的不可篡改一手出处</span>
+    </div>
+
+    <div class="exhibit-tray">
+      <div class="exhibit-list">
+        <div class="exhibit-item">
+          <div class="exhibit-header">
+            <span class="tier-flag">A 级检测报告 · 疾控中心</span>
+            <a href="https://www.cdc.gov.cn" target="_blank" class="exhibit-source">bjcdc.org ↗</a>
+          </div>
+          <div class="exhibit-claim">常见叶菜与肉类隔夜存放亚硝酸盐动态实测表</div>
+          <div class="exhibit-detail">
+            实验样本涵盖菠菜、芹菜、熟猪肉。密闭冷藏条件下，48 小时内各组亚硝酸盐峰值均稳定在 5.0 mg/kg 以下。
+          </div>
+        </div>
+
+        <div class="exhibit-item">
+          <div class="exhibit-header">
+            <span class="tier-flag">A 级法定标准 · 国家标准委</span>
+            <a href="https://openstd.samr.gov.cn" target="_blank" class="exhibit-source">samr.gov.cn ↗</a>
+          </div>
+          <div class="exhibit-claim">GB 2762-2022 食品安全国家标准 食品中污染物限量</div>
+          <div class="exhibit-detail">
+            明确规定叶菜类及食用农产品亚硝酸盐最大安全允许残留量为 20~50 mg/kg。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action Footer -->
+    <div class="action-footer">
+      <div class="footer-memo">
+        <h4>要把这个真相发给家人或群聊？</h4>
+        <p>一键生成排版干净的「辟谣便签」，不用费口舌在家族群里吵架。</p>
+      </div>
+      <div class="action-btn-group">
+        <button class="btn-action ghost" onclick="copyTruthText()">复制文字结论 📄</button>
+        <button class="btn-action" onclick="copyTruthCard()">生成微信分享便签 📋</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="copy-toast">已复制辟谣便签，直接粘贴至群聊！</div>
+
+  <script>
+    const dataSet = [
+      {
+        badge: "⚡ 谣言已被击穿",
+        auth: "权威核验：疾控中心实测 + GB 2762-2022 国家标准",
+        head: "不会致癌，更不是毒药。冷藏密封的隔夜菜完全可安全食用。",
+        desc: "原句利用了大众对癌症的本能恐惧，将微量正常的生化变化（亚硝酸盐轻微上升），恶意偷换为致命中毒后果。",
+        origin: "“隔夜菜中亚硝酸盐会升高，所以长期吃会致癌，等于吃毒药”",
+        tagA: "微量属实 · 但被夸大",
+        textA: "“隔夜菜放置后亚硝酸盐升高”",
+        analysisA: "常温及冷藏存放过程中，由于菌落代谢，亚硝酸盐确实会有毫克级的上升，但这是正常生理变化。",
+        joint: "偷换因果",
+        tagB: "纯属谣言 · 彻底粉碎",
+        textB: "“长期吃会致癌，等于吃毒药”",
+        analysisB: "脱离剂量谈毒性是伪科学。冷藏 24 小时后的数值距离毒性标准还差数十倍，根本不构成健康危害。",
+        herring: "故意隐藏<strong>“实际剂量数值”</strong>与<strong>“国家法定安全线”</strong>，只要测出有微量物质，就立刻跳跃到“致癌、毒药、送命”等极限恐惧词汇，博取中老年和家庭群转发。",
+        gun: "北京市疾控中心实测：叶菜冷藏 24 小时亚硝酸盐仅由 1.2 升至 3.6 mg/kg。国家 GB 2762-2022 限量为 20 mg/kg。即使连吃三天冷藏菜，摄入量还不及一根普通火腿肠。",
+        actualTxt: "实测冷藏 24 小时：3.6 mg/kg",
+        limitTxt: "国家安全限值：20.0 mg/kg",
+        fillWidth: "18%"
+      },
+      {
+        badge: "⚡ 恐吓已被粉碎",
+        auth: "权威核验：国家无线电监测中心 + 世卫组织 WHO 报告",
+        head: "5G 基站辐射远低于太阳光和家用电吹风，绝不会致人失眠脱发。",
+        desc: "谣言故意混淆“非电离电磁辐射”与“核放射性电离辐射”，把正常通信基站妖魔化为毒气室。",
+        origin: "“5G基站密集架设导致辐射暴增，周边居民长期受害会失眠脱发”",
+        tagA: "物理常识混淆",
+        textA: "“5G基站密集，距离住宅更近”",
+        analysisA: "5G采用微基站，单个基站发射功率（约 10-20W）远低于传统 4G 宏基站（100W+），功率其实大幅下降了。",
+        joint: "偷换概念",
+        tagB: "伪科学恐吓 · 彻底击穿",
+        textB: "“导致周边居民头晕失眠脱发”",
+        analysisB: "世界卫生组织对无线电波三十年跟踪表明，符合国标的日常基站电磁环境对神经系统无任何病理损伤影响。",
+        herring: "利用人们对“辐射”两个字的天然恐惧，把无害的射频电磁波，暗示成居里夫人的强核辐射或 X 光透视射线。",
+        gun: "中国《电磁环境控制限值》严格规定基站公用限值为 40 μW/cm²（比美国 600 μW/cm² 严苛 15 倍以上）。实测住宅窗边仅 0.8~2.5 μW/cm²，远低于电吹风吹头时的 100 μW/cm²。",
+        actualTxt: "居民窗边实测：1.8 μW/cm²",
+        limitTxt: "中国国家严格限值：40.0 μW/cm²",
+        fillWidth: "5%"
+      },
+      {
+        badge: "⚡ 恶性翻炒识破",
+        auth: "权威核验：国家市场监督管理总局 + 刑法司法通报",
+        head: "现代正规酱油全部由大豆与小麦酿造，头发水解物早在 20 年前已被国家取缔。",
+        desc: "这是将 2004 年个别黑作坊的历史刑事案件，故意剪辑掐头去尾，套用到当今正规调味品产业上的恶毒谣言。",
+        origin: "“市面上卖的酱油全是用理发店收来的头发水解提炼出的”",
+        tagA: "古早黑作坊个案",
+        textA: "“头发含有角蛋白，化学上可水解”",
+        analysisA: "20年前曾有个别非法黑窝点尝试酸水解毛发提取氨基酸，但早被公安执法彻底捣毁取缔。",
+        joint: "移花接木",
+        tagB: "恶意泛化 · 彻底粉碎",
+        textB: "“现在的市售酱油全是头发熬的”",
+        analysisB: "现代工业酿造酱油采用大豆/脱脂大豆发酵，成本远低于高难度的毛发脱酸除臭水解工艺。正规产品毫无造假动机。",
+        herring: "翻出古早法制节目的黑作坊查处镜头，剪去“已立案抓捕并取缔”的结局，配上惊悚解说谎称是“超市常见黑幕”。",
+        gun: "卫生部 2004 年已明令将毛发水解物列入《打击非食用物质名单》，添加即触犯生产伪劣产品罪。抽检正规品牌调味品均通过大豆蛋白氨基酸态氮检测。",
+        actualTxt: "现代酿造大豆发酵成本：极低成熟",
+        limitTxt: "毛发酸解综合成本：高于大豆发酵 3 倍",
+        fillWidth: "0%"
+      }
+    ];
+
+    let activeIdx = 0;
+
+    function loadCase(idx) {
+      activeIdx = idx;
+      const d = dataSet[idx];
+
+      // Update buttons
+      const chips = document.querySelectorAll('.case-chip');
+      chips.forEach((c, i) => c.classList.toggle('selected', i === idx));
+
+      // Update Hero
+      document.getElementById('v-badge').textContent = d.badge;
+      document.getElementById('v-auth').textContent = d.auth;
+      document.getElementById('v-head').textContent = d.head;
+      document.getElementById('v-desc').textContent = d.desc;
+      document.getElementById('v-origin').textContent = d.origin;
+
+      // Update Atoms
+      document.getElementById('tag-a').textContent = d.tagA;
+      document.getElementById('text-a').textContent = d.textA;
+      document.getElementById('analysis-a').textContent = d.analysisA;
+
+      document.getElementById('joint-text').textContent = d.joint;
+
+      document.getElementById('tag-b').textContent = d.tagB;
+      document.getElementById('text-b').textContent = d.textB;
+      document.getElementById('analysis-b').textContent = d.analysisB;
+
+      // Update Clash
+      document.getElementById('herring-body').innerHTML = d.herring;
+      document.getElementById('gun-body').innerHTML = d.gun;
+
+      // Update Data Bar
+      document.getElementById('data-actual-txt').textContent = d.actualTxt;
+      document.getElementById('data-limit-txt').textContent = d.limitTxt;
+      document.getElementById('data-fill').style.width = d.fillWidth;
+    }
+
+    function copyTruthCard() {
+      const d = dataSet[activeIdx];
+      const text = `【红鲱鱼与枪 · 辟谣备忘录】\n\n🎯 核心真相：${d.head}\n\n⚠️ 谣言套路拆穿：${d.herring.replace(/<[^>]+>/g, '')}\n\n🔬 权威实测：${d.gun.replace(/<[^>]+>/g, '')}\n\n（国家权威检测机构公开数据与国标支持，拒绝伪科学恐吓）`;
+      
+      navigator.clipboard.writeText(text).then(() => {
+        showToast("已生成并复制辟谣便签，可直接发至群聊！");
+      });
+    }
+
+    function copyTruthText() {
+      const d = dataSet[activeIdx];
+      navigator.clipboard.writeText(d.head).then(() => {
+        showToast("已复制核心结论！");
+      });
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('copy-toast');
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2500);
+    }
+  </script>
+</body>
+</html>

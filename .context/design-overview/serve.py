@@ -8,6 +8,7 @@ class H(BaseHTTPRequestHandler):
  def do_GET(self):
   route=unquote(urlsplit(self.path).path)
   if route in {'/','/index.html'}:p=OUT/'index.html'
+  elif (OUT/route.lstrip('/')).is_file():p=OUT/route.lstrip('/')
   elif route=='/manifest.json':p=OUT/'manifest.json'
   elif route.startswith('/files/') and route[7:] in allowed:p=ROOT/route[7:]
   else:self.send_error(404);return

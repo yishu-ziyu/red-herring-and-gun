@@ -4,6 +4,7 @@ import { callSearchProvider } from "./searchProviders.js";
 import { toEvidence } from "./toEvidence.js";
 import type { Evidence, Provenance } from "./types.js";
 import { withTimeout } from "../util/httpUtils.js";
+import { pickAuditionChunk, sanitizeSearchError } from "./semanticRecall.js";
 
 export type SearchHit = {
   url: string;
@@ -169,6 +170,62 @@ export function classifySearchFailure(reason: unknown): {
     return { outcome: "failed", category: "network" };
   }
   return { outcome: "failed", category: "unknown" };
+}
+
+/** 单页全文抓取硬超时：一期 2.5 秒，超时丢弃并记 degraded，不阻断整次。 */
+export const PAGE_FETCH_TIMEOUT_MS = 2500;
+
+export type PageFetchOk = {
+  url: string;
+  text: string;
+  chunk: string;
+};
+
+export type PageFetchOutcome = {
+  ok: PageFetchOk[];
+  dropped: Array<{ url: string; reason: string }>;
+  degraded: boolean;
+};
+
+/**
+ * 单页抓取扇出：每页独立硬超时，慢页丢弃、整次记 degraded、有出处照常返回。
+ * reason 只放脱敏后的超时/失败分类，不泄漏密钥与原始错误。
+ */
+export async function fetchPagesWithHardTimeout(
+  urls: string[],
+  fetcher: (url: string) => Promise<{ title?: string; text: string }>,
+  opts?: { timeoutMs?: number; queryForChunk?: string },
+): Promise<PageFetchOutcome> {
+  const timeoutMs = opts?.timeoutMs ?? PAGE_FETCH_TIMEOUT_MS;
+  const queryForChunk = opts?.queryForChunk ?? "";
+  const settled = await Promise.allSettled(
+    urls.map(async (url) => {
+      const fetched = await withTimeout(Promise.resolve(fetcher(url)), timeoutMs, `抓取 ${url}`);
+      return { url, fetched };
+    }),
+  );
+  const ok: PageFetchOk[] = [];
+  const dropped: Array<{ url: string; reason: string }> = [];
+  settled.forEach((item, index) => {
+    const url = urls[index];
+    if (item.status === "fulfilled") {
+      const text = String(item.value.fetched?.text || "").slice(0, 4000);
+      if (!text.trim()) {
+        dropped.push({ url, reason: "空页" });
+        return;
+      }
+      ok.push({
+        url,
+        text,
+        chunk: pickAuditionChunk(queryForChunk, String(item.value.fetched?.title || ""), text),
+      });
+      return;
+    }
+    const raw = item.reason instanceof Error ? item.reason.message : String(item.reason);
+    const reason = /超时 \d+ms/.test(raw) ? "单页超时已丢弃" : sanitizeSearchError(raw);
+    dropped.push({ url, reason });
+  });
+  return { ok, dropped, degraded: dropped.length > 0 };
 }
 
 async function runProvider(
