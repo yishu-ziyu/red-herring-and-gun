@@ -156,3 +156,36 @@ describe("searchAll", () => {
     expect(result).toEqual([]);
   });
 });
+
+describe("一期单页硬超时", () => {
+  it("慢页被丢弃且整次仍为 degraded、有出处返回", async () => {
+    const { fetchPagesWithHardTimeout, PAGE_FETCH_TIMEOUT_MS } = await import("./searchAll.js");
+    expect(PAGE_FETCH_TIMEOUT_MS).toBeLessThanOrEqual(3000);
+    const out = await fetchPagesWithHardTimeout(
+      ["https://fast.example/a", "https://slow.example/b"],
+      async (url) => {
+        if (url.includes("slow")) await new Promise((r) => setTimeout(r, 5000));
+        return { title: "官方辟谣", text: "甘南免票说法不实，文旅局声明从未发布" };
+      },
+      { timeoutMs: 50, queryForChunk: "甘南免票" }
+    );
+    expect(out.ok).toHaveLength(1);
+    expect(out.ok[0].url).toBe("https://fast.example/a");
+    expect(out.ok[0].chunk.length).toBeGreaterThan(0);
+    expect(out.dropped.map((d) => d.url)).toEqual(["https://slow.example/b"]);
+    expect(out.degraded).toBe(true);
+  });
+
+  it("trace 与公开流不泄漏密钥与原始错误", async () => {
+    const { fetchPagesWithHardTimeout } = await import("./searchAll.js");
+    const out = await fetchPagesWithHardTimeout(
+      ["https://boom.example/x"],
+      async () => {
+        throw new Error("401 invalid api key sk-abc123XYZ");
+      },
+      { timeoutMs: 500 }
+    );
+    expect(out.degraded).toBe(true);
+    expect(JSON.stringify(out)).not.toMatch(/sk-abc123XYZ/);
+  });
+});

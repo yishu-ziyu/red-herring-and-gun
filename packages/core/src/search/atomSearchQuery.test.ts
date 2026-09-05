@@ -189,3 +189,40 @@ describe("英文谣言分语言策略", () => {
     expect(zh.some((q) => /^Drinking milk causes cancer study debunked/i.test(q))).toBe(false);
   });
 });
+
+describe("一期双路查询", () => {
+  it("每条原子产出短关键词 + 语义两路且不相同", async () => {
+    const { buildDualTrackQueries } = await import("./atomSearchQuery");
+    for (const atom of ["甘南所有景点一律免费", "新疆喀什要建地铁", "常喝牛奶会致癌"]) {
+      const { keyword, semantic } = buildDualTrackQueries(atom);
+      expect(keyword.trim().length).toBeGreaterThan(0);
+      expect(semantic.trim().length).toBeGreaterThan(0);
+      expect(semantic).not.toBe(keyword);
+    }
+  });
+
+  it("口语改写零词面交集仍可召回（电瓶车→电动车）", async () => {
+    const { isSemanticRecall, semanticScore } = await import("./semanticRecall");
+    const doc = "合肥警方：P图编造电动车被偷至非洲 不实 辟谣";
+    expect(semanticScore("电瓶车被偷送到非洲", doc)).toBeGreaterThanOrEqual(0.25);
+    expect(isSemanticRecall("电瓶车被偷送到非洲", doc)).toBe(true);
+    expect(isSemanticRecall("电瓶车被偷送到非洲", "今日天气晴转多云，微风")).toBe(false);
+  });
+
+  it("合并排序把语义对题的辟谣排在无关合集前面", async () => {
+    const { mergeParallelSearchPayloads } = await import("./atomSearchQuery");
+    const merged = mergeParallelSearchPayloads("电瓶车被偷送到非洲", [
+      {
+        sources: [
+          { url: "https://news.example/roundup", title: "本周谣言盘点合集", snippet: "各类传言汇总大全" },
+          { url: "https://www.piyao.org.cn/dj", title: "P图编造电动车被偷至非洲", snippet: "警方通报 不实 辟谣" },
+        ],
+      },
+    ]);
+    const urls = (merged.sources as Array<{ url: string }>).map((s) => s.url);
+    expect(urls[0]).toBe("https://www.piyao.org.cn/dj");
+    const rec = (merged.sources as Array<{ auditionChunk: string }>)[0];
+    expect(typeof rec.auditionChunk === "string" && rec.auditionChunk.length > 0).toBe(true);
+    expect(Array.isArray((merged as Record<string, unknown>).issuedQueries)).toBe(true);
+  });
+});

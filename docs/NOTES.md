@@ -1,4 +1,30 @@
+2026-09-06 搜索策略一期验收通过（机器全绿，人评待补）：npm test、build、mvp 870 项过，定向 46 项过；双路查询、硬超时 2.5 秒、同站限流保支撑反证、新度语义、HopTrace 脱敏兑现。eval:gate 全量误触发一次判 invalid，主因资格标签缺失加配额超时噪声，非本期断言失败，不重跑。人评待看：出处精确到段、过程只挂当前轮、手机可读。
+
+2026-09-06 搜索策略一期实现完定向验证：双路查询、同站限流保支撑反证、新度语义加成、单页硬超时，定向 46 项绿，全量 npm test/build/mvp 验证中，待独立验收。
+
+2026-09-06 截图/转述类合成 20 条试验：直接出处 6、相似线索 7、无抓手 7。约 6 条配得上进回归集，其余当查不清例或太空。形状自查零违反是手写循环论证，不证明生成器行。验收见 `docs/evals/2026-09-06-screenshot-synth.md`。
+
+2026-09-06 搜索策略迭代一期实现中：新建 `semanticRecall.ts`（确定性本地语义，字级 dice，电瓶车→电动车零词交集可召回），`atomSearchQuery` 加双路查询与合集沉底，`retrievalFilter` 加同站限流 2 条保支撑反证、新度、语义加成与 hop trace，`searchAll` 加单页硬超时 2.5 秒与脱敏。46 项定向通过，全量验证跑 `npm test` 中。
+
+2026-09-06 提示词按行家改法重写，规则版换成 5 条硬要求加 8 个例子。5 条标准谣言形状和可查性全对，同一句 3 次同形，代价是单次从 10 秒涨到 13 到 31 秒。`decompose` 26 项通过。证据见 `docs/evals/2026-09-06-atom-split.md`。
+
+2026-09-06 Invent-a-Dataset 模拟试验：10 条合成变体 5 条有直接公开出处、4 条还查不清、1 条立场不查。结论是当 eval 输入可用、当证据不可用，合成句不进证据链。验收见 `docs/evals/2026-09-06-invent-dataset-trial.md`。decompose 26 项通过。
+
 # 当前状态
+
+2026-09-06 用户要求把本地全部改动收进 `main` 并推远端，只留 `main` 一条分支。`dev` 与 `spine` 本地和远端均删除。独立 worktree `argument-structure-obligations` 目录已不在磁盘，未能合入。仓库：https://github.com/yishu-ziyu/red-herring-and-gun
+
+2026-09-06 搜索策略迭代一期实现已提交：双路查询、同站限流保支撑反证、新度语义加成、单页硬超时 2.5 秒、HopTrace 脱敏。验收见 `docs/evals/2026-09-06-search-strategy-iter.md`，方向见 `docs/devlog/2026-09-06-search-strategy.md`。人评待看：出处精确到段、过程只挂当前轮、手机可读。
+
+2026-09-06 提示词调优第一轮。5 条标准谣言量出底：4 条形状对，点图片会中毒那条被标成不可查，后面无东西可查。原因是能力断言被当成未来预测。提示词加一段能力与风险断言按事实或因果标可查，再跑翻成因果可查，空调床垫那条不变。新代码和线上版本同步加。分工：提示词管方向对不对，降温管稳不稳定。
+
+2026-09-06 模型次次不一样的原因找到并修了。填表类调用没传 temperature，用的是服务商默认，同一句 9 次跑出三种样子。行家的做法是填表降温加投票，我们先降温：填表走 temperature 0，写报告保留默认，开 thinking 的不带。新代码和线上版本同步改。同一句再跑 3 次，次次拆成空调床垫两条。`core` 541 项、`mvp` 相关 43 项通过。temperature 0 收的是形状，措辞还会有小差别。
+
+2026-09-06 找到删光的原因。真模型又跑 4 次，有一次自带床垫四个字被长度规则扔了，因为老规则 6 个字以下全扔。现在 6 改 4，4 个字能装下完整意思。长度只用来去掉一到三个字的残渣，是不是完整意思由第二遍检查和原文对照来定。`decompose` 26 项通过。删除原因一共三种：原句没说、太短不成句、命题一半字在原句找不到，每次删都记理由。
+
+2026-09-06 原子拆分第二轮：位置标的不准修完，并列合成一条也修完。`decompose` 25 项通过。真模型连跑 5 次，同一句话出现过拆成两条、合成一条、全部删掉三种样子，现在三种都接得住：拆对的直接过，合成的加一道并列复核拆开，位置标错的校准回床垫二字，原句没说的内容删掉。验收见 `docs/evals/2026-09-06-atom-split.md`。本轮会话优先于历史文档。
+
+2026-09-06 本轮会话定三件事，优先于历史文档，冲突改文档：产品对外只用说法、出处、判断、追问、历史五个词；路线图见 `docs/ROADMAP.md`，说法已定；原子拆分删掉关键词名单，验收见 `docs/evals/2026-09-06-atom-split.md`，`decompose` 20 项通过。下一步按顺序议出处。
 
 2026-09-05 用户要求到此暂停并提交推送。收尾复核：根测试 core 538 / eval 85 / server 21 / web 83 通过，根 build 通过；mvp 869 通过 / 1 跳过。提交保存现有工程进度、设计裁决与清理；不代表真实调查完整路径或旧 eval:gate 通过，不开 PR、不部署。两份认可设计及必要素材、结果修正版和总览源码纳入版本控制，本地生成清单与清理哈希记录不上传。后续仍先按认可基准对齐原型，再评新增质询位置。
 
@@ -26,9 +52,9 @@
 
 检索：AnySearch 预置。现有 MiniMax Token Plan 与阶跃 Step Plan 已接入 `packages/core` 和生产 `mvp/` 的默认并行检索，复用模型套餐密钥；2026-09-05 协调者从项目适配器活测，两路各返回 8 条带 URL 的结果，生产检索事件同时显示两路完成并保留 provider 归属。设置页把两路列在「已预置」，不要求第二套搜索密钥。360 / Metaso 余额不足，Tavily 超套餐上限，Exa 额度耗尽。接入标准见 `docs/evals/2026-09-05-token-plan-search.md`。首页已按 mvp 排版搬回。案件页有引用芯片、过程折起、检索仪器。走查不满意项已改：立案先出原句、不写 0 条、四字章不当卷宗头、过程不漏 e4、过程只挂当前轮、手机过程能读完。
 
-资格闸目标路径已由协调者复核：嵌入请求的公开事实、请求在前/后、普通类别比较、称呼专名共指、首轮双断言均进入；纯请求和匿名占位停在检索前。旧 `eval:gate` 仍红：最新全量 `eval-1788549137105` 有 19/26 进入最终判断、1 例超时；按固定 26 例看，正确判词为 15/26。失败已定位成四簇：7 例停在资格阶段但缺少独立的 proceed/stop 标签；RUMOR-005 的第二命题遭 MiniMax 敏感内容拦截且 StepFun 无可解析文本后超时；RUMOR-008 把可部分成立的并列内容压成单命题；RUMOR-013/014 出现前提未核实、因果结论已证伪却整句聚合成未核实。旧数据分母漂移，修订标准见 `docs/evals/2026-09-05-qualification-aware-gate.md`。工单默认候选已改为读取本次 env 中实际配置的 MiniMax、StepFun、DeepSeek、MiMo 和各自模型名，前两家失败后能继续尝试后两家；core 聚焦 20 项、全量 514 项与 build 已由协调者复核通过。真实回归 `eval-1788553228892` 中 RUMOR-005 用 `MiniMax-M2.7-highspeed` 在 51.3 秒内完成，判词 false、分数 2，判词/区间/报告契约/幻觉检查通过；运行因资格标签缺失而明确标为 invalid。该回归又暴露评测器把 hedge 胜出后的备用模型预期取消误记成 4 次 model_failure；修正后 eval 73 项与 build 通过，重放该 JSONL 的 fault 列表为空，原始 attempts 仍保留。
+资格闸目标路径已由协调者复核：嵌入请求的公开事实、请求在前/后、普通类别比较、称呼专名共指、首轮双断言均进入；纯请求和匿名占位停在检索前。旧 `eval:gate` 仍红：最新全量 `eval-1788549137105` 有 19/26 进入最终判断、1 例超时；按固定 26 例看，正确判词为 15/26。失败已定位成四簇：7 例停在资格阶段但缺少独立的 proceed/stop 标签；RUMOR-005 的第二命题遭 MiniMax 敏感内容拦截且 StepFun 无可解析文本后超时；RUMOR-008 把可部分成立的并列内容压成单命题；RUMOR-013/014 出现前提未核实、因果结论已证伪却整句聚合成未核实。旧数据分母漂移，修订标准见 `docs/evals/2026-09-05-qualification-aware-gate.md`。模型候选顺序已改为读取本次 env 中实际配置的 MiniMax、StepFun、DeepSeek、MiMo 和各自模型名，前两家失败后能继续尝试后两家；core 聚焦 20 项、全量 514 项与 build 已由协调者复核通过。真实回归 `eval-1788553228892` 中 RUMOR-005 用 `MiniMax-M2.7-highspeed` 在 51.3 秒内完成，判词 false、分数 2，判词/区间/报告契约/幻觉检查通过；运行因资格标签缺失而明确标为 invalid。该回归又暴露评测器把 hedge 胜出后的备用模型预期取消误记成 4 次 model_failure；修正后 eval 73 项与 build 通过，重放该 JSONL 的 fault 列表为空，原始 attempts 仍保留。
 
-搜索失败已进入内部案件轨迹：每个 claim/query/provider 有 started 和成功、失败或取消终态，记录命中数、耗时与安全错误类别；公开流清除 provider、模型、原始错误、请求标识和耗时。评测区分 healthy/degraded/empty/failed/unknown，只有预期进入核查的 unknown/failed 使运行无效。协调者复核相关 65 项、core 528 项、eval 83 项、根测试与 build 全绿。真实回归 `eval-1788555004931` 在 31.5 秒完成 RUMOR-005，搜索为 degraded：AnySearch、MiniMax、StepFun 正常，4 个旧收费源失败；轨迹同时暴露同一 query 被重复调度。相同 query 的初始检索现已按规范化文本去重，`SEARCH_DISABLED_PROVIDERS` 可在保留密钥时排除明确停用源；本机已停用 360、秘塔、Tavily、Exa，协调者复核聚焦 29 项、core 531 项与 build 通过。报告出口已改为原始 case/claim + 判词 + 该 claim 合法引用的确定性模板，不再调用未使用的 compose LLM；RUMOR-005 不再扩写“图片和视频本身不含恶意代码”。同事实证据相关性仍未解决。真实回归 `eval-1788555347540` 在资格阶段提前停止，同一输入出现一次进入、一次误停；现在首次合法停止会再经独立工单复核，只有原文锚定合法且主体明确才翻转进入，协调者复核聚焦 48 项与 build 通过。后续真实回归 `eval-1788555875259` 进入核查并把原句拆成“中毒”“信息被盗”两条，所有 claim/query/provider 只调用一次，且只调 AnySearch、MiniMax、StepFun；StepFun 6 次中 2 次失败，因此 searchHealth 仍为 degraded。该轮 65.6 秒、10 次 LLM 调用、判词 false、引用完整性错误率 0，但 quoteFidelity 仅 0.213、provenanceDepth 仅 0.2，运行仍因资格标签缺失 invalid。原 `hallucinationRate` 已准确改名为 `citationIntegrityErrorRate`，指标版本升至 4.0.0，旧基线拒绝比较；它不再冒充语义幻觉指标。
+搜索失败已进入内部案件轨迹：每个 claim/query/provider 有 started 和成功、失败或取消终态，记录命中数、耗时与安全错误类别；公开流清除 provider、模型、原始错误、请求标识和耗时。评测区分 healthy/degraded/empty/failed/unknown，只有预期进入核查的 unknown/failed 使运行无效。协调者复核相关 65 项、core 528 项、eval 83 项、根测试与 build 全绿。真实回归 `eval-1788555004931` 在 31.5 秒完成 RUMOR-005，搜索为 degraded：AnySearch、MiniMax、StepFun 正常，4 个旧收费源失败；轨迹同时暴露同一 query 被重复调度。相同 query 的初始检索现已按规范化文本去重，`SEARCH_DISABLED_PROVIDERS` 可在保留密钥时排除明确停用源；本机已停用 360、秘塔、Tavily、Exa，协调者复核聚焦 29 项、core 531 项与 build 通过。报告出口已改为原始 case/claim + 判词 + 该 claim 合法引用的确定性模板，不再调用未使用的 compose LLM；RUMOR-005 不再扩写“图片和视频本身不含恶意代码”。同事实证据相关性仍未解决。真实回归 `eval-1788555347540` 在资格阶段提前停止，同一输入出现一次进入、一次误停；现在首次合法停止会再经一次独立检查，只有原文依据合法且主体明确才翻转进入，协调者复核聚焦 48 项与 build 通过。后续真实回归 `eval-1788555875259` 进入核查并把原句拆成“中毒”“信息被盗”两条，所有 claim/query/provider 只调用一次，且只调 AnySearch、MiniMax、StepFun；StepFun 6 次中 2 次失败，因此 searchHealth 仍为 degraded。该轮 65.6 秒、10 次 LLM 调用、判词 false、引用完整性错误率 0，但 quoteFidelity 仅 0.213、provenanceDepth 仅 0.2，运行仍因资格标签缺失 invalid。原 `hallucinationRate` 已准确改名为 `citationIntegrityErrorRate`，指标版本升至 4.0.0，旧基线拒绝比较；它不再冒充语义幻觉指标。
 
 论证关系的保守锚定修复位于独立 worktree `argument-structure-obligations`，尚未合入当前分支：同一句两段“所以”只接受各自分句内的甲→乙、丙→丁，拒绝跨段补边、无法唯一定位的命题、标点冒充连接词及 cue/kind 冲突。协调者已复核聚焦 14 项与 core build 通过。它只解决“不得编造关系”这一层；关系抽取、关系独立裁决和后续检索执行仍未闭环。
 

@@ -5,6 +5,7 @@
  */
 
 import { buildQueryPortfolio, fuseByRrf, type RankedDoc } from "./evidencePursuit/index.js";
+import { buildSemanticQuery, pickAuditionChunk, semanticScore } from "./semanticRecall.js";
 
 const FILLER = /我说|原来|叫谁|这是|那个|一下|真的吗|是不是/g;
 const STOP = new Set([
@@ -26,6 +27,19 @@ export function compactAtomForSearch(atom: string): string {
     .map((w) => w.trim())
     .filter((w) => w.length >= 2 && !STOP.has(w));
   return [...new Set(parts)].slice(0, 6).join(" ");
+}
+
+/**
+ * 双路查询（一期）：短关键词一路 + 语义改写一路，确定性生成，不新增模型调用。
+ * 两路结果做 RRF 融合（见 mergeParallelSearchPayloads）。
+ */
+export function buildDualTrackQueries(atom: string): { keyword: string; semantic: string } {
+  const clean = String(atom || "").replace(/\s+/g, " ").trim();
+  const keyword = compactAtomForSearch(clean) || clean.slice(0, 20);
+  let semantic = buildSemanticQuery(clean);
+  if (!semantic) semantic = keyword;
+  if (semantic === keyword) semantic = `${keyword} 核实`;
+  return { keyword, semantic };
 }
 
 /** Generic insult/affair captions need a public-bulletin query, not the empty “是不是真的”. */
@@ -187,20 +201,31 @@ export function mergeParallelSearchPayloads(
     sources.splice(0, sources.length, ...fused.map((d) => byUrl.get(d.url)!));
   }
 
+  const dual = buildDualTrackQueries(atom);
+  const docText = (rec: Record<string, unknown>) => `${rec.title || ""} ${rec.snippet || rec.summary || ""}`;
   sources.sort((a, b) => {
     const rank = (rec: Record<string, unknown>) => {
       const overlap = topicOverlap(atom, rec);
-      const debunk = overlap > 0 ? debunkHint(rec) : 0;
-      const official = overlap > 0 ? officialHint(rec) : 0;
-      return debunk * 10 + official * 5 + overlap * 3 + patternBoost(atom, rec);
+      const sem = semanticScore(atom, docText(rec));
+      const onTopic = overlap > 0 || sem >= 0.25;
+      const debunk = onTopic ? debunkHint(rec) : 0;
+      const official = onTopic ? officialHint(rec) : 0;
+      // ponytail: 合集页一刀沉底，不写站点名单，只认合集词形。
+      const collection = isCollectionPage(rec) ? -6 : 0;
+      return debunk * 10 + official * 5 + overlap * 3 + sem * 4 + patternBoost(atom, rec) + collection;
     };
     return rank(b) - rank(a);
   });
+  for (const rec of sources) {
+    rec.auditionChunk = pickAuditionChunk(atom, String(rec.title || ""), String(rec.snippet || rec.summary || ""));
+  }
 
   const queries = buildAtomSearchQueries(atom);
+  const issuedQueries = uniqueKeep([dual.keyword, dual.semantic, ...queries], 8);
   return {
     answer: answers.join("\n\n").slice(0, 2400),
     sources: sources.slice(0, 24),
+    issuedQueries,
     unresolvedEvidenceGaps: uniqueKeep(gaps, 8),
     relatedQuestions: uniqueKeep(related, 8),
     model: uniqueKeep(models, 6).join(" + ") || "parallel-search",
@@ -257,6 +282,12 @@ function patternBoost(atom: string, rec: Record<string, unknown>): number {
   if (/出轨/.test(atom) && /出轨|不实言论|典型案例/.test(text)) return 6;
   if (/电瓶车/.test(atom) && /电瓶车|非洲|境外|典型案例/.test(text)) return 6;
   return 0;
+}
+
+/** 合集页只认词形（合集/汇总/盘点/大全/一览/榜单/TopN），不写站点名单。 */
+export function isCollectionPage(rec: Record<string, unknown>): boolean {
+  const text = `${rec.title || ""} ${rec.snippet || rec.summary || ""}`;
+  return /(合集|汇总|盘点|大全|一览|榜单|\bTop\s*\d+)/.test(text);
 }
 
 function topicTokens(atom: string): string[] {

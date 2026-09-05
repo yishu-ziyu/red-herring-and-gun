@@ -163,3 +163,59 @@ describe("filterAtomSources pipeline", () => {
     expect(hi).toBeGreaterThan(lo);
   });
 });
+
+describe("一期反垃圾排序", () => {
+  it("合集页沉底、一手出处浮上", async () => {
+    const { filterAtomSources } = await import("./retrievalFilter");
+    const { sources } = filterAtomSources(
+      [
+        { url: "https://news.example/roundup", title: "本周谣言盘点合集", snippet: "各类传言汇总大全", credibility: "中", providerRank: 0 },
+        { url: "https://www.piyao.org.cn/x", title: "官方辟谣：该说法不实", snippet: "文旅局声明从未发布", credibility: "高", providerRank: 2 },
+      ],
+      { topK: 5 }
+    );
+    expect(sources[0].url).toContain("piyao.org.cn");
+  });
+
+  it("同站只留 1-2 条且支撑/反证各至少留一条", async () => {
+    const { filterAtomSources } = await import("./retrievalFilter");
+    const { sources, meta } = filterAtomSources(
+      [
+        { url: "https://same.example/a", title: "景点推荐", snippet: "好玩", credibility: "中", providerRank: 0 },
+        { url: "https://same.example/b", title: "游玩攻略", snippet: "推荐", credibility: "中", providerRank: 1 },
+        { url: "https://same.example/c", title: "官方辟谣不实", snippet: "系编造", credibility: "中", providerRank: 2 },
+        { url: "https://other.example/d", title: "官方辟谣：该说法不实", snippet: "声明从未发布", credibility: "高", providerRank: 3 },
+      ],
+      { topK: 5, perHostCap: 2 }
+    );
+    const same = sources.filter((s) => s.url.includes("same.example"));
+    expect(same.length).toBeLessThanOrEqual(2);
+    const stances = new Set(
+      same.map((s) => (/辟谣|不实|假消息|谣言|官方声明|从未发布|系编造/.test(`${s.title} ${s.snippet}`) ? "refute" : "support"))
+    );
+    expect(stances.has("refute")).toBe(true);
+    expect(stances.has("support")).toBe(true);
+    expect(meta.afterHostCap).toBeLessThanOrEqual(meta.afterDedupe);
+  });
+
+  it("时间敏感加新度：其余相同更新的排前", async () => {
+    const { scoreSource } = await import("./retrievalFilter");
+    const base = { url: "https://a.example/x", title: "官方通报", snippet: "事件进展详情说明内容补足长度让摘要达标", credibility: "中", providerRank: 1 };
+    const fresh = scoreSource({ ...base, publishedAt: new Date(Date.now() - 86400000).toISOString() });
+    const stale = scoreSource({ ...base, publishedAt: "2020-01-01T00:00:00Z" });
+    expect(fresh).toBeGreaterThan(stale);
+  });
+
+  it("过程可回看：hop trace 带四数 + 命中段", async () => {
+    const { filterAtomSources, buildHopTrace } = await import("./retrievalFilter");
+    const { sources, meta } = filterAtomSources(
+      [{ url: "https://a.example/1", title: "官方辟谣", snippet: "甘南免票说法不实", credibility: "高", providerRank: 0 }],
+      { topK: 5 }
+    );
+    const trace = buildHopTrace({ atom: "甘南免票", issuedQueries: ["甘南免票", "甘南免票 辟谣 核实"], meta, sources });
+    expect(trace.before).toBe(1);
+    expect(trace.afterTopK).toBe(sources.length);
+    expect(trace.issuedQueries).toHaveLength(2);
+    expect(trace.chunks[0].chunk.length).toBeGreaterThan(0);
+  });
+});

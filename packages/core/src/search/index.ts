@@ -17,6 +17,7 @@ export {
   type SearchBilling,
 } from "./searchCatalog.js";
 export * from "./queryReuse.js";
+export * from "./semanticRecall.js";
 export * from "./atomSearchQuery.js";
 export * from "./evidencePursuit/index.js";
 export {
@@ -27,6 +28,13 @@ export {
   hardFilterSources,
   scoreSource,
   topKSources,
+  limitPerHost,
+  buildHopTrace,
+  isCollectionPageSource,
+  sourceStance,
+  freshnessBoost,
+  PER_HOST_CAP,
+  type HopTrace,
   type FilterableSource,
   type FilterAtomSourcesResult,
   type FilterMeta,
