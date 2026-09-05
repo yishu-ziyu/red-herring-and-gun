@@ -53,6 +53,11 @@ import {
   type CrossExamOutcome,
   type CrossExamRawModelCall,
 } from "../crossExam/index.js";
+import {
+  buildInvestigationSnapshot,
+  type InvestigationBuildInput,
+  type InvestigationSnapshotV1,
+} from "../investigation/index.js";
 
 export type PipelineStep = {
   agent: string;
@@ -114,6 +119,13 @@ export type CasePipelineHooks = {
     query: string;
     proposedCandidateCount: number;
   }) => void;
+  /**
+   * Investigation Snapshot 语义里程碑（SSE investigation_snapshot）：
+   * 每次回调携带完整 InvestigationSnapshotV1，前端只取最新版。
+   * 里程碑：received → decomposed → investigating（检索开始/返回）→ judging
+   * （核查绑定 / 补查 / 质询）→ complete。中断帧由 handlers 补发。
+   */
+  onInvestigationSnapshot?: (snapshot: InvestigationSnapshotV1) => void;
 };
 
 export type CasePipelineInput = {
@@ -287,6 +299,23 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const throwIfAborted = () => input.signal?.throwIfAborted();
   throwIfAborted();
 
+  // Investigation Snapshot（Issue #51）：语义里程碑发完整快照；构建失败不阻断管线。
+  let investigationBase: InvestigationBuildInput | undefined;
+  const searchedAtoms: string[] = [];
+  const emitInvestigation = (patch: Partial<InvestigationBuildInput> & { phase: InvestigationBuildInput["phase"] }): InvestigationSnapshotV1 | null => {
+    if (!hooks?.onInvestigationSnapshot) return null;
+    try {
+      investigationBase = { ...(investigationBase ?? {}), ...patch, originalClaim: patch.originalClaim ?? claim } as InvestigationBuildInput;
+      const snapshot = buildInvestigationSnapshot(investigationBase, { claimAtomKeyFn: claimAtomKey });
+      hooks.onInvestigationSnapshot(snapshot);
+      return snapshot;
+    } catch (error) {
+      console.warn(`[casePipeline] investigation snapshot 构建失败: ${String(error)}`);
+      return null;
+    }
+  };
+  emitInvestigation({ phase: "received" });
+
   // 时间预算：证据补查/交叉复核/因果增强是「锦上添花」，报告写作是「必须发生」。
   // 剩余时间不足时提前收敛补查类阶段，把时间让给 ReportComposer。
   const COMPOSER_RESERVE_MS = 90_000;
@@ -324,6 +353,12 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   };
   rumorStep.output.claimAtomTypes = forceCheckableAtomTypes(rumorStep.output.claimAtomTypes);
   hooks?.onSelfProof?.(selfProof);
+  // 里程碑：拆题完成（self-proof 后保留的原子才是用户主张；dropped 不进 claims）。
+  emitInvestigation({
+    phase: "decomposed",
+    claimAtoms: rumorStep.output.claimAtoms,
+    claimAtomTypes: rumorStep.output.claimAtomTypes,
+  });
 
   throwIfAborted();
   // Phase 1b: per-atom retrieval (+ screenshot reverse-image beside searchOne)
@@ -335,11 +370,28 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     lookupImageOrigin: input.lookupImageOrigin,
     hooks: {
       mode: hooks?.searchMode ?? "parallel",
-      onAtomStart: hooks?.onAtomSearchStart,
+      onAtomStart: (atom) => {
+        // 里程碑：单个原子检索开始（声明该命题进入 searching；来源未返回不预填）。
+        searchedAtoms.push(atom);
+        emitInvestigation({
+          phase: "investigating",
+          claimAtoms: rumorStep.output.claimAtoms,
+          claimAtomTypes: rumorStep.output.claimAtomTypes,
+          atomSearchBundle: { atomsSearched: [...searchedAtoms], byAtomKey: {} },
+        });
+        hooks?.onAtomSearchStart?.(atom);
+      },
       onAtomResult: hooks?.onAtomSearchResult,
     },
   });
   const imageOrigin = atomSearchBundle.imageOrigin;
+  // 里程碑：检索返回——来源此时只能是 unassessed（尚未核查）。
+  emitInvestigation({
+    phase: "investigating",
+    claimAtoms: rumorStep.output.claimAtoms,
+    claimAtomTypes: rumorStep.output.claimAtomTypes,
+    atomSearchBundle,
+  });
 
   throwIfAborted();
   // Phase 2: FactChecker // SourceValidator — fail-open so检索到的 URL 仍能进报告
@@ -358,6 +410,14 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   steps.push(factStep, sourceStep);
 
   throwIfAborted();
+  // 里程碑：核查绑定开始（判词与证据关系出现；来源不再是 unassessed）。
+  emitInvestigation({
+    phase: "judging",
+    claimAtoms: rumorStep.output.claimAtoms,
+    claimAtomTypes: rumorStep.output.claimAtomTypes,
+    atomSearchBundle,
+    subclaimVerdicts: factStep?.output?.subclaimVerdicts,
+  });
   // Phase 2a: Evidence sufficiency loop — ADR-004 + 翻案续期
   // 提问 → 重判 → 判词仍翻转中且问题仍产证据 → 换策略再问（pass 2+）→ 再重判。
   // 好问题续命（翻转判词的提问 earns another pass），坏问题判停（整 pass 零新增）。
@@ -442,6 +502,15 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       // 仍有未解决原子且上一 pass 问题还在产证据 → 翻案续期（下一 pass 换策略）
     }
 
+    // 里程碑：证据补查收束（判词可能翻转；缺口与追索目标入快照）。
+    emitInvestigation({
+      phase: "judging",
+      claimAtoms: rumorStep.output.claimAtoms,
+      claimAtomTypes: rumorStep.output.claimAtomTypes,
+      atomSearchBundle,
+      subclaimVerdicts: factStep?.output?.subclaimVerdicts,
+      pursuitHops,
+    });
     if (atomOutcomes.size > 0) {
       evidenceLoop = {
         ran: true,
@@ -530,6 +599,17 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   } else {
     crossExam = { ran: false, atoms: [], confidenceAdjustment: 0, model: "", skippedReason: input.crossExam?.enabled === false ? "质询已关闭" : !input.crossExam?.callRaw ? "未接入独立复核" : "质询时间预算不足" };
   }
+
+  // 里程碑：质询收束（冲突 reason 已知/未知如实标注；质询未运行不影响冲突存在性）。
+  emitInvestigation({
+    phase: "judging",
+    claimAtoms: rumorStep.output.claimAtoms,
+    claimAtomTypes: rumorStep.output.claimAtomTypes,
+    atomSearchBundle,
+    subclaimVerdicts: factStep?.output?.subclaimVerdicts,
+    crossExam,
+    pursuitHops: evidenceLoop?.pursuitHops,
+  });
 
   if (hooks?.afterFactSource) {
     await hooks.afterFactSource({
@@ -662,17 +742,36 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
   // 「来源能点开」门：发布前对全局引用真实探活，死链剔除并重绑 [n] 标记。
   // 探活通道自身故障不阻断主流程——宁可用未剪枝的报告，也不丢结论。
+  let deadCitationUrls: string[] = [];
   try {
-    await pruneDeadCitations(
+    const pruneResult = await pruneDeadCitations(
       finalReport,
       input.citationLiveness === false ? { liveness: new Map() } : input.citationLiveness
     );
+    deadCitationUrls = pruneResult.deadUrls;
   } catch (pruneError) {
     console.warn(`[casePipeline] 引用探活失败，跳过死链剔除: ${String(pruneError)}`);
   }
   finalReport.faceVerdict = faceVerdictFor(finalReport.verdictType);
   // 结论文本会写「按当前信息」，这里打上实际核查时间；结论时效随来源窗口走。
   finalReport.checkedAt = new Date().toISOString();
+  // 里程碑（完成）：finalReport.investigation = 稳定快照；报告 + 复核 + 探活后构建。
+  const finalInvestigation = emitInvestigation({
+    phase: "complete",
+    claimAtoms: rumorStep.output.claimAtoms,
+    claimAtomTypes: rumorStep.output.claimAtomTypes,
+    atomSearchBundle,
+    subclaimVerdicts: finalReport.subclaimVerdicts,
+    nonVerifiableAtoms: finalReport.nonVerifiableAtoms,
+    crossExam: finalReport.crossExam,
+    pursuitHops: evidenceLoop?.pursuitHops,
+    report: finalReport,
+    reachability: { deadUrls: deadCitationUrls },
+    checkedAt: typeof finalReport.checkedAt === "string" ? finalReport.checkedAt : undefined,
+  });
+  if (finalInvestigation) {
+    finalReport.investigation = finalInvestigation;
+  }
   reportStep.output = finalReport;
   hooks?.onReportReviewResult?.({
     toolName: REPORT_REVIEWER_TOOL,
