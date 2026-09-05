@@ -7,9 +7,14 @@
  * GET  /api/cases     → 当前登录账号的最近核查；未登录返回 []
  */
 
-import { getCase, listCases, putCase } from "./caseStore.js";
+import { getCase, listCases, putCase, type CaseEntry } from "./caseStore.js";
 import type { FinalReport } from "./schemas.js";
 import { buildClaimReviewJsonLd } from "./claimReview.js";
+import {
+  rebuildInvestigationFromReport,
+  validateInvestigationSnapshot,
+  type InvestigationSnapshotV1,
+} from "./investigation/index.js";
 import { readEmailAccountOptional } from "./emailSession.js";
 
 interface PostCaseBody {
@@ -77,10 +82,33 @@ function toListItem(entry: ReturnType<typeof getCase>) {
   };
 }
 
+/**
+ * 打开旧历史调查（Issue #51）：优先用落库时的 investigation；
+ * 旧数据没有就确定性重建（claimItems / subclaimVerdicts / crossExam / 结论字段），
+ * 不启动模型或搜索；重建失败返回 undefined，不伪造。
+ */
+export function investigationForEntry(entry: CaseEntry): InvestigationSnapshotV1 | undefined {
+  const report = entry.report ? (entry.report as unknown as Record<string, unknown>) : null;
+  if (!report || typeof report !== "object") return undefined;
+  if (report.investigation) {
+    try {
+      return validateInvestigationSnapshot(report.investigation);
+    } catch {
+      // 落库数据不完整：走确定性重建，不再使用损坏对象
+    }
+  }
+  try {
+    return rebuildInvestigationFromReport({ report, claim: entry.claim });
+  } catch {
+    return undefined;
+  }
+}
+
 function toPublicCase(entry: NonNullable<ReturnType<typeof getCase>>) {
   const { ownerHash: _ownerHash, ...rest } = entry;
   void _ownerHash;
-  return rest;
+  const investigation = investigationForEntry(entry);
+  return investigation ? { ...rest, investigation } : rest;
 }
 
 /**
