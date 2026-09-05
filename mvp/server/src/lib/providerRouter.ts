@@ -949,6 +949,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         if (onMissing === "error") errors.push(`[minimax:${model}] 未配置 MINIMAX_API_KEY`);
         continue;
       }
+      // 填表类调用降温到 0，要稳定的输出；写报告那步保留服务商默认。
+      const minimaxTemperature = agentId === "report_composer" ? undefined : 0;
       const out = await runOne("minimax", model, (sys, user) =>
         callMiniMaxAgent({
           baseUrl,
@@ -958,6 +960,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           systemPrompt: sys,
           userContent: user,
           ...miniMaxCallOptions(env, model, maxTokens),
+          ...(minimaxTemperature !== undefined ? { temperature: minimaxTemperature } : {}),
         })
       );
       if (out.ok) {

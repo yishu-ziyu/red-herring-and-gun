@@ -71,6 +71,7 @@ export function buildMiniMaxMessagesBody({
   maxTokens,
   thinking,
   stream,
+  temperature,
 }: {
   model: string;
   systemPrompt: string;
@@ -78,6 +79,7 @@ export function buildMiniMaxMessagesBody({
   maxTokens: number;
   thinking?: MiniMaxThinkingType;
   stream?: boolean;
+  temperature?: number;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {
     model,
@@ -85,6 +87,7 @@ export function buildMiniMaxMessagesBody({
     system: systemPrompt,
     messages: [{ role: "user", content: userContent }],
   };
+  if (temperature !== undefined && thinking === undefined) body.temperature = temperature;
   if (thinking === "adaptive" || thinking === "disabled") {
     body.thinking = { type: thinking };
   }

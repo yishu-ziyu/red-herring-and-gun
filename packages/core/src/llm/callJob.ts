@@ -24,6 +24,7 @@ export type JobDispatch = (args: {
   env: Record<string, string>;
   signal: AbortSignal;
   timeoutMs: number;
+  temperature?: number;
 }) => Promise<{ text: string; model: string; reasoning?: string }>;
 
 export type CallJobParams = {
@@ -90,6 +91,7 @@ export async function defaultDispatch(args: Parameters<JobDispatch>[0]): ReturnT
     codexBin: args.env.CODEX_BIN || "",
     reasoningEffort: args.candidate.effort,
     signal: args.signal,
+    ...(args.candidate.temperature !== undefined ? { temperature: args.candidate.temperature } : {}),
   });
 }
 
