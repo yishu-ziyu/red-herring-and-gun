@@ -1,17 +1,19 @@
-import type { Case } from '@rhg/core/casefile';
-import { CONTESTED_LINE, VERDICT_SECTION, claimFace } from "../lib/copy.js";
-import { latestStatus, overallTone } from "../lib/select.js";
+import type { Case } from "@rhg/core/casefile";
+import { CONTESTED_LINE, VERDICT_SECTION } from "../lib/copy.js";
+import { firstSentence, summaryLine } from "../lib/select.js";
 import { PanelFold } from "./PanelFold.js";
 
 export function VerdictCard(props: { current: Case; running: boolean; aborted?: boolean }) {
   const overall = props.current.overall;
-  const face = overall ? claimFace(overall.verdictType) : latestStatus(props.current, props.running, props.aborted);
-  const tone = overall ? overallTone(overall.verdictType) : "plain";
+  const head = props.current.report?.conclusion
+    ? firstSentence(props.current.report.conclusion).head
+    : summaryLine(props.current, props.running, props.aborted);
   const max = Math.max(1, ...(overall?.breakdown.map((row) => Math.abs(row.value)) ?? [1]));
   return (
     <PanelFold title={VERDICT_SECTION}>
-      <p className={overall ? `verdict-face font-serif ${tone}` : "verdict-face plain"}>{face}</p>
-      {overall ? <p className="verdict-score font-mono">{overall.score}</p> : null}
+      {head ? (
+        <p className="verdict-lede font-serif">{head}</p>
+      ) : null}
       {overall?.breakdown.map((row) => (
         <div key={row.key} className="bar-row">
           <span className="bar-label">{row.label}</span>

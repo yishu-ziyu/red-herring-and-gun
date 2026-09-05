@@ -25,6 +25,8 @@ import type { CaseIntake } from "../../../lib/caseIntake";
 import { getAgentRegistry } from "../../../lib/agentConfigs";
 
 interface MissionControlViewProps {
+  accountEmail?: string | null;
+  caseId?: string | null;
   claim: string;
   intake?: CaseIntake | null;
   onCancel: () => void;
@@ -764,6 +766,8 @@ function inferVerificationResult(score: number): VerificationResult {
  * 用 staggered fade-in 让多个子段依次出现,而不是一次性堆出来。
  */
 export function MissionControlView({
+  accountEmail = null,
+  caseId,
   claim,
   intake,
   onCancel,
@@ -773,7 +777,8 @@ export function MissionControlView({
   initialFinalReport = null,
 }: MissionControlViewProps) {
   const { state, dispatch } = useReasoning();
-  const knowledgeBase = useMemo(() => createKnowledgeBase(), []);
+  const knowledgeBase = useMemo(() => createKnowledgeBase(accountEmail), [accountEmail]);
+  const [saveError, setSaveError] = useState("");
   const [steps, setSteps] = useState<HandoffStep[]>([]);
   const [finalReport, setFinalReport] = useState<Record<string, unknown> | null>(initialFinalReport);
   const [startedAt, setStartedAt] = useState<number | null>(null);
@@ -789,8 +794,13 @@ export function MissionControlView({
   const [streamKey, setStreamKey] = useState(0);
   const streamJobRef = useRef<string | CaseIntake>(intake ?? claim);
   const missionShellModel = useMemo(
-    () => adaptOrchestrateStreamToShell(sseEvents, { claim: displayClaim }),
-    [sseEvents, displayClaim]
+    () => adaptOrchestrateStreamToShell(
+      initialFinalReport && streamKey === 0 && sseEvents.length === 0
+        ? [{ type: "complete", steps: [], totalLatencyMs: 0, finalReport: initialFinalReport }]
+        : sseEvents,
+      { claim: displayClaim }
+    ),
+    [sseEvents, displayClaim, initialFinalReport, streamKey]
   );
   const apodexRun = useMemo(() => mapShellToApodexRun(missionShellModel), [missionShellModel]);
   /** Avoid double-firing onComplete if parent re-renders with same report */
@@ -822,10 +832,11 @@ export function MissionControlView({
 
   /** finalReport ready → notify parent (parent no longer switches phase; we stay mounted) */
   useEffect(() => {
+    if (initialFinalReport === finalReport && streamKey === 0) return;
     if (!finalReport || !onComplete || onCompleteFiredRef.current) return;
     onCompleteFiredRef.current = true;
     onComplete(finalReport);
-  }, [finalReport, onComplete]);
+  }, [finalReport, onComplete, initialFinalReport, streamKey]);
 
   useEffect(() => {
     if (!claim.trim()) return;
@@ -1074,7 +1085,7 @@ export function MissionControlView({
                     credibilityLabel
                   ) ?? 50;
                   const entry: KnowledgeBaseEntry = {
-                    id: `case-${claim.replace(/\s+/g, "-").slice(0, 48)}-deep`,
+                    id: caseId ?? `case-${Date.now()}`,
                     claim,
                     rumorType: state.diagnosis?.risk?.includes("政治")
                       ? "政治"
@@ -1093,13 +1104,16 @@ export function MissionControlView({
                       typeof finalReport?.credibilityLabel === "string" ? finalReport.credibilityLabel : "",
                     ],
                   };
-                  void knowledgeBase.saveCase(entry);
+                  void knowledgeBase.saveCase(entry).catch(() => {
+                    setSaveError("调查自动保存失败，刷新后可能无法找回。请先保留当前报告。");
+                  });
                   proposedMemoryCandidates.forEach((candidate) => {
-                    void knowledgeBase.saveMemoryCandidate(candidate);
+                    void knowledgeBase.saveMemoryCandidate(candidate).catch(() => {});
                   });
                 } catch (error) {
                   // 本地持久化失败不影响结果首屏，但要留现场（F2）
                   console.error("[mission] 案例写入本地知识库失败", error);
+                  setSaveError("调查自动保存失败，刷新后可能无法找回。请先保留当前报告。");
                 }
                 break;
               }
@@ -1210,6 +1224,7 @@ export function MissionControlView({
       } mission-thread-view`}
     >
       <div className="mission-thread mission-thread--desk">
+        {saveError && <p role="alert">{saveError}</p>}
         <ApodexRunView
           model={apodexRun}
           elapsedMs={elapsedMs}

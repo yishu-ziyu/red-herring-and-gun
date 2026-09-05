@@ -96,11 +96,11 @@ describe("mapShellToApodexRun", () => {
   it("FIXTURE_COMPLETE: 核心结论 answers the claim, not a four-word stamp", () => {
     const run = mapShellToApodexRun(adaptOrchestrateStreamToShell(FIXTURE_COMPLETE));
     expect(run.live).toBe(false);
-    expect(run.report?.verdictLabel).toBe("只能信一部分");
+    expect(run.report?.verdictLabel).toBe("有真有假");
     expect(run.report?.conclusion).toContain("致癌");
     expect(run.report?.memo).toContain("## 核心结论");
     expect(run.report?.memo).toContain("说法存在夸大");
-    expect(run.report?.memo).not.toMatch(/## 核心结论\s+\*\*只能信一部分/);
+    expect(run.report?.memo).not.toMatch(/## 核心结论\s+\*\*有真有假/);
     expect(run.report?.memo).toContain("REFERENCES");
     expect(run.report?.sources.some((s) => s.url?.includes("example.com"))).toBe(true);
     expect(run.board.every((t) => t.status === "done")).toBe(true);

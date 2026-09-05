@@ -20,6 +20,10 @@ export interface ScoreCaseGolden {
   expectedAtoms?: ExpectedAtom[];
   /** 必须出现在 atomSearchBundle.atomsSearched；不读拆题 verifiable */
   mustSearch?: string[];
+  /** 期望资格闸提前停止、不进入检索判决。与 expectsEnterCheck 都未填写时为 unlabeled，不得默认进入核查。 */
+  expectsEarlyStop?: boolean;
+  /** 期望进入检索并给出判断。与 expectsEarlyStop 都未填写时为 unlabeled，不得默认进入核查。 */
+  expectsEnterCheck?: boolean;
 }
 
 export type ExpectedAtomVerdict = "true" | "false" | "partial" | "unverified" | "exaggerated";

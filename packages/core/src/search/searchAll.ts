@@ -1,5 +1,5 @@
 import { fuseByRrf, type RankedDoc } from "./evidencePursuit/index.js";
-import { isSearchSourceConfigured, SEARCH_CATALOG } from "./searchCatalog.js";
+import { isSearchSourceConfigured, parseDisabledSearchProviderIds, SEARCH_CATALOG } from "./searchCatalog.js";
 import { callSearchProvider } from "./searchProviders.js";
 import { toEvidence } from "./toEvidence.js";
 import type { Evidence, Provenance } from "./types.js";
@@ -15,11 +15,18 @@ export type SearchHit = {
 
 export type SearchProviderFn = (query: string) => Promise<readonly SearchHit[]>;
 
+export type SearchErrorCategory = "timeout" | "aborted" | "network" | "auth" | "quota" | "unknown";
+export type SearchSourceOutcome = "ok" | "failed" | "cancelled";
+
 export type SearchProgress = {
-  kind: "provider.started" | "provider.finished" | "provider.failed" | "merged";
+  kind: "provider.started" | "provider.finished" | "provider.failed" | "provider.cancelled" | "merged";
   provider?: string;
+  query?: string;
+  claimId?: string;
   count?: number;
-  error?: string;
+  latencyMs?: number;
+  outcome?: SearchSourceOutcome;
+  errorCategory?: SearchErrorCategory;
 };
 
 export async function searchAll(
@@ -30,29 +37,56 @@ export async function searchAll(
     providers?: SearchProviderFn[];
     signal?: AbortSignal;
     timeoutMs?: number;
-  }
+    claimId?: string;
+    clock?: () => number;
+  },
 ): Promise<Evidence[]> {
   const providers = opts?.providers ?? defaultSearchProviders(env);
   const onProgress = opts?.onProgress;
+  const now = opts?.clock ?? Date.now;
   const names = providers.map((fn, index) => providerName(fn, index));
+  const claimId = opts?.claimId;
 
   for (const name of names) {
-    onProgress?.({ kind: "provider.started", provider: name });
+    onProgress?.({
+      kind: "provider.started",
+      provider: name,
+      query,
+      ...(claimId !== undefined ? { claimId } : {}),
+    });
   }
 
   const settled = await Promise.allSettled(
     providers.map(async (fn, index) => {
       const name = names[index] ?? `p${index + 1}`;
+      const started = now();
       try {
         const hits = await runProvider(fn, query, name, opts);
-        onProgress?.({ kind: "provider.finished", provider: name, count: hits.length });
+        onProgress?.({
+          kind: "provider.finished",
+          provider: name,
+          query,
+          ...(claimId !== undefined ? { claimId } : {}),
+          count: hits.length,
+          latencyMs: Math.max(0, now() - started),
+          outcome: "ok",
+        });
         return hits;
       } catch (reason) {
-        const error = reason instanceof Error ? reason.message : String(reason);
-        onProgress?.({ kind: "provider.failed", provider: name, error });
+        const classified = classifySearchFailure(reason);
+        onProgress?.({
+          kind: classified.outcome === "cancelled" ? "provider.cancelled" : "provider.failed",
+          provider: name,
+          query,
+          ...(claimId !== undefined ? { claimId } : {}),
+          count: 0,
+          latencyMs: Math.max(0, now() - started),
+          outcome: classified.outcome,
+          errorCategory: classified.category,
+        });
         throw reason;
       }
-    })
+    }),
   );
 
   const rankedLists: RankedDoc[][] = [];
@@ -63,7 +97,7 @@ export async function searchAll(
       item.value.map((hit) => ({
         url: hit.url,
         rec: hitToRec(hit, hit.provider ?? fallbackName),
-      }))
+      })),
     );
   });
 
@@ -89,10 +123,11 @@ export async function searchAll(
 }
 
 export function defaultSearchProviders(
-  env: Readonly<{ [key: string]: string | undefined }>
+  env: Readonly<{ [key: string]: string | undefined }>,
 ): SearchProviderFn[] {
   const bound = stringEnv(env);
-  return SEARCH_CATALOG.filter((meta) => isSearchSourceConfigured(env, meta)).map((meta) => {
+  const disabled = parseDisabledSearchProviderIds(env);
+  return SEARCH_CATALOG.filter((meta) => isSearchSourceConfigured(env, meta) && !disabled.has(meta.id)).map((meta) => {
     const id = meta.id;
     const fn: SearchProviderFn = async (query) => {
       const result: unknown = await callSearchProvider({
@@ -107,11 +142,40 @@ export function defaultSearchProviders(
   });
 }
 
+export function classifySearchFailure(reason: unknown): {
+  outcome: Exclude<SearchSourceOutcome, "ok">;
+  category: SearchErrorCategory;
+} {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  const name = reason instanceof Error ? reason.name : "";
+  if (
+    name === "AbortError" ||
+    message === "aborted" ||
+    message === "This operation was aborted" ||
+    message === "The operation was aborted"
+  ) {
+    return { outcome: "cancelled", category: "aborted" };
+  }
+  if (/超时 \d+ms/.test(message) || /\btimeout\b/i.test(message)) {
+    return { outcome: "failed", category: "timeout" };
+  }
+  if (/unauthorized|invalid api key|incorrect api key|401\b/i.test(message)) {
+    return { outcome: "failed", category: "auth" };
+  }
+  if (/quota|429\b|余额不足|额度不足/i.test(message)) {
+    return { outcome: "failed", category: "quota" };
+  }
+  if (/fetch failed|ECONNRESET|ENOTFOUND|network/i.test(message)) {
+    return { outcome: "failed", category: "network" };
+  }
+  return { outcome: "failed", category: "unknown" };
+}
+
 async function runProvider(
   fn: SearchProviderFn,
   query: string,
   name: string,
-  opts?: { signal?: AbortSignal; timeoutMs?: number }
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<readonly SearchHit[]> {
   const signal = opts?.signal;
   if (signal?.aborted) throw new Error("aborted");

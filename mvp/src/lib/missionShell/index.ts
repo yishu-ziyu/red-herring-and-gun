@@ -13,6 +13,8 @@ export {
   humanizeConfidenceLevel,
   humanizeFactCheckResult,
   humanizeVerdictType,
+  displayFaceVerdict,
+  displayShareAdvice,
 } from "./labels";
 export {
   buildVisibleProcessRows,

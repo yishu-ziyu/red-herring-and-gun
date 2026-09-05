@@ -3,7 +3,7 @@ export { goldenDataset, type ExpectedAtom, type ExpectedAtomVerdict, type ScoreC
 export {
   credibilityAccuracy,
   groundingRate,
-  hallucinationRate,
+  citationIntegrityErrorRate,
   latencyP50,
   latencyP95,
   provenanceDepth,

@@ -55,7 +55,7 @@ export async function runReportComposerWithFallback({
 
 export function buildDeterministicFinalReport(claim: string, steps: any[], searchResult: any, reason: string) {
   const rumorStep = steps.find((step) => step.agent === "rumor_detector");
-  const factStep = steps.find((step) => step.agent === "fact_checker");
+  const factStep = [...steps].reverse().find((step) => step.agent === "fact_checker");
   const sourceStep = steps.find((step) => step.agent === "source_validator");
   const factResult = String(factStep?.output?.factCheckResult || "unverified");
   const sourceReliability = String(sourceStep?.output?.sourceReliability || "unverified");

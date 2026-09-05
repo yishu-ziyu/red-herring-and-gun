@@ -1,4 +1,4 @@
-import { scrubPublicText, type Case, type CaseEvent, type Report } from "@rhg/core";
+import { isEmptyProviderResponse, scrubPublicText, type Case, type CaseEvent, type Report } from "@rhg/core";
 import type { ScoreCaseGolden } from "./golden.js";
 
 export type ScoreInput = {
@@ -11,7 +11,7 @@ export type ScoreInput = {
 export type CaseMetrics = {
   verdictAccuracy: number | null;
   credibilityAccuracy: number | null;
-  hallucinationRate: number | null;
+  citationIntegrityErrorRate: number | null;
   reportContractPassRate: number | null;
   routingAccuracy: number | null;
   groundingRate: number | null;
@@ -19,29 +19,64 @@ export type CaseMetrics = {
   provenanceDepth: number | null;
   latencyP50: number | null;
   latencyP95: number | null;
+  entryAccuracy: number | null;
 };
+
+export type CaseProgress = "early_stop" | "entered_no_final" | "checked";
+
+export type QualificationExpectation = "enter_check" | "early_stop" | "unlabeled";
+
+export type SearchHealth = "healthy" | "degraded" | "empty" | "failed" | "unknown";
+
+export type SearchHealthReport = {
+  health: SearchHealth;
+  failedSources: string[];
+};
+
+export type RunFault = {
+  kind: string;
+  job?: string;
+  error?: string;
+};
+
+const PROGRESS: readonly CaseProgress[] = ["early_stop", "entered_no_final", "checked"];
 
 const CITE_RE = /\[(\d+)\]/g;
 const URL_RE = /https?:\/\/[^\s<>"'）)\]]+/gi;
 const TRAIL_PUNCT_RE = /[.,;:!?。，、；：！？]+$/;
 
+export function qualificationOf(golden: ScoreCaseGolden): QualificationExpectation {
+  const stop = golden.expectsEarlyStop === true;
+  const enter = golden.expectsEnterCheck === true;
+  if (stop === enter) return "unlabeled";
+  return stop ? "early_stop" : "enter_check";
+}
+
+function expectsCheck(golden: ScoreCaseGolden): boolean {
+  return qualificationOf(golden) === "enter_check";
+}
+
+function missingCheckScore(golden: ScoreCaseGolden): number | null {
+  return expectsCheck(golden) ? 0 : null;
+}
+
 export function verdictAccuracy(golden: ScoreCaseGolden, result: ScoreInput): number | null {
   const overall = result.case.overall;
-  if (!overall) return null;
+  if (!overall) return missingCheckScore(golden);
   if (overall.contested === true) return 0;
   return overall.verdictType === golden.expectedVerdictType ? 1 : 0;
 }
 
 export function credibilityAccuracy(golden: ScoreCaseGolden, result: ScoreInput): number | null {
   const overall = result.case.overall;
-  if (!overall) return null;
+  if (!overall) return missingCheckScore(golden);
   const [lo, hi] = golden.expectedCredibilityRange;
   return overall.score >= lo && overall.score <= hi ? 1 : 0;
 }
 
-export function hallucinationRate(_golden: ScoreCaseGolden, result: ScoreInput): number | null {
+export function citationIntegrityErrorRate(golden: ScoreCaseGolden, result: ScoreInput): number | null {
   const report = result.report;
-  if (!report) return null;
+  if (!report) return expectsCheck(golden) ? 1 : null;
   const citeByN = new Map(report.citations.map((row) => [row.n, row.evidenceId]));
   const evidenceIds = new Set(result.case.evidence.map((item) => item.id));
   const knownUrls = evidenceUrlSet(result.case);
@@ -62,9 +97,9 @@ export function hallucinationRate(_golden: ScoreCaseGolden, result: ScoreInput):
   return 0;
 }
 
-export function reportContractPassRate(_golden: ScoreCaseGolden, result: ScoreInput): number | null {
+export function reportContractPassRate(golden: ScoreCaseGolden, result: ScoreInput): number | null {
   const report = result.report;
-  if (!report) return null;
+  if (!report) return missingCheckScore(golden);
   if (report.conclusion.trim() === "") return 0;
   if (scrubPublicText(report.conclusion) !== report.conclusion) return 0;
   const claimById = new Map(result.case.claims.map((claim) => [claim.id, claim]));
@@ -146,11 +181,137 @@ export function latencyP95(_golden: ScoreCaseGolden, _result: ScoreInput): numbe
   return null;
 }
 
-export function scoreCase(golden: ScoreCaseGolden, result: ScoreInput): CaseMetrics {
+export function classifyCaseProgress(
+  events: readonly CaseEvent[],
+  _turnReason: string | null,
+  finals?: { hasOverall?: boolean; hasReport?: boolean },
+): CaseProgress {
+  const reported =
+    finals?.hasReport === true || events.some((event) => event.type === "report.finalized");
+  const judged = finals?.hasOverall === true;
+  if (reported || judged) return "checked";
+  const entered = events.some(
+    (event) =>
+      (event.type === "stage.started" && event.stage === "retrieve") ||
+      (event.type === "stage.finished" && event.stage === "judge" && event.outcome === "ok"),
+  );
+  if (entered) return "entered_no_final";
+  return "early_stop";
+}
+
+/** AbortController / fetch 取消的原文。只用来分类这次 attempt，不单独决定是否丢弃。 */
+function isAttemptAbortCancel(error: string): boolean {
+  const trimmed = error.trim();
+  return (
+    trimmed === "aborted" ||
+    trimmed === "This operation was aborted" ||
+    trimmed === "The operation was aborted" ||
+    trimmed === "AbortError" ||
+    /^AbortError:\s*(This|The) operation was aborted\.?$/i.test(trimmed)
+  );
+}
+
+export function classifyAttemptKind(error: string): string {
+  if (/内容审查|content.?filter|content.?moderation|\bsensitive\b|moderation|risk.?control/i.test(error)) {
+    return "content_review";
+  }
+  if (isEmptyProviderResponse(error) || /无正文/.test(error)) {
+    return "empty_body";
+  }
+  if (isAttemptAbortCancel(error)) return "aborted";
+  return "model_failure";
+}
+
+export function collectRunFaults(events: readonly CaseEvent[], turnReason: string | null): RunFault[] {
+  const faults: RunFault[] = [];
+  if (turnReason === "timeout") faults.push({ kind: "timeout" });
+  if (turnReason === "aborted") faults.push({ kind: "aborted" });
+  for (const event of events) {
+    if (event.type === "llm.called") {
+      const attempts = event.attempts ?? [];
+      if (attempts.length > 0) {
+        const callSucceeded = event.ok === true && attempts.some((attempt) => attempt.ok);
+        for (const attempt of attempts) {
+          if (attempt.ok) continue;
+          const error = attempt.error ?? event.error ?? "failed";
+          if (callSucceeded && isAttemptAbortCancel(error)) continue;
+          faults.push({ kind: classifyAttemptKind(error), job: event.job, error });
+        }
+        continue;
+      }
+      if (!event.ok) {
+        const error = event.error ?? "failed";
+        faults.push({ kind: classifyAttemptKind(error), job: event.job, error });
+      }
+    }
+    if (event.type === "error" && event.stage === "retrieve") {
+      faults.push({ kind: "search_failure", error: event.message });
+    }
+  }
+  return faults;
+}
+
+function searchSourceKey(event: Extract<CaseEvent, { type: "search.source.started" | "search.source.finished" }>): string {
+  return `${event.provider}\0${event.query}\0${event.claimId ?? ""}`;
+}
+
+export function searchHealthReport(events: readonly CaseEvent[]): SearchHealthReport {
+  const started = events.filter((event) => event.type === "search.source.started");
+  const finished = events.filter((event) => event.type === "search.source.finished");
+  const finishedKeys = new Set(finished.map(searchSourceKey));
+  if (started.some((event) => !finishedKeys.has(searchSourceKey(event)))) {
+    return { health: "unknown", failedSources: [] };
+  }
+  if (finished.length === 0) return { health: "unknown", failedSources: [] };
+  const ok = finished.filter((event) => event.outcome === "ok");
+  const notOk = finished.filter((event) => event.outcome === "failed" || event.outcome === "cancelled");
+  const failedSources = [...new Set(notOk.map((event) => event.provider))];
+  if (ok.length > 0 && notOk.length > 0) return { health: "degraded", failedSources };
+  if (ok.length === 0) return { health: "failed", failedSources };
+  const hitCount = ok.reduce((sum, event) => sum + event.hitCount, 0);
+  if (hitCount === 0) return { health: "empty", failedSources: [] };
+  return { health: "healthy", failedSources: [] };
+}
+
+export function searchHealthOf(events: readonly CaseEvent[]): SearchHealth {
+  return searchHealthReport(events).health;
+}
+
+export function entryAccuracy(golden: ScoreCaseGolden, progress: CaseProgress): number | null {
+  const want = qualificationOf(golden);
+  if (want === "unlabeled") return null;
+  if (want === "early_stop") return progress === "early_stop" ? 1 : 0;
+  return progress === "early_stop" ? 0 : 1;
+}
+
+export function failureReasonOf(
+  golden: ScoreCaseGolden,
+  progress: CaseProgress,
+  metrics: CaseMetrics,
+  opts: { hasOverall: boolean },
+): string | null {
+  if (qualificationOf(golden) === "unlabeled") return "unlabeled_qualification";
+  if (progress === "early_stop") {
+    return golden.expectsEarlyStop === true ? null : "unexpected_early_stop";
+  }
+  if (golden.expectsEarlyStop === true) return "unexpected_enter";
+  if (!opts.hasOverall) return "missing_verdict";
+  if (metrics.verdictAccuracy === 0) return "verdict_mismatch";
+  if (metrics.entryAccuracy === 0) return "entry_mismatch";
+  return null;
+}
+
+export function scoreCase(golden: ScoreCaseGolden, result: ScoreInput, progress?: CaseProgress): CaseMetrics {
+  const resolved =
+    progress ??
+    classifyCaseProgress(result.events, null, {
+      hasOverall: result.case.overall !== undefined,
+      hasReport: result.report !== null,
+    });
   return {
     verdictAccuracy: verdictAccuracy(golden, result),
     credibilityAccuracy: credibilityAccuracy(golden, result),
-    hallucinationRate: hallucinationRate(golden, result),
+    citationIntegrityErrorRate: citationIntegrityErrorRate(golden, result),
     reportContractPassRate: reportContractPassRate(golden, result),
     routingAccuracy: routingAccuracy(golden, result),
     groundingRate: groundingRate(golden, result),
@@ -158,6 +319,40 @@ export function scoreCase(golden: ScoreCaseGolden, result: ScoreInput): CaseMetr
     provenanceDepth: provenanceDepth(golden, result),
     latencyP50: latencyP50(golden, result),
     latencyP95: latencyP95(golden, result),
+    entryAccuracy: entryAccuracy(golden, resolved),
+  };
+}
+
+export type ScoredCase = {
+  metrics: CaseMetrics;
+  progress: CaseProgress;
+  faults: RunFault[];
+  failureReason: string | null;
+  qualification: QualificationExpectation;
+  searchHealth: SearchHealth;
+  failedSearchSources: string[];
+};
+
+export function scoreCaseWithOutcome(
+  golden: ScoreCaseGolden,
+  result: ScoreInput,
+  turnReason: string | null,
+): ScoredCase {
+  const progress = classifyCaseProgress(result.events, turnReason, {
+    hasOverall: result.case.overall !== undefined,
+    hasReport: result.report !== null,
+  });
+  const metrics = scoreCase(golden, result, progress);
+  const qualification = qualificationOf(golden);
+  const health = searchHealthReport(result.events);
+  return {
+    metrics,
+    progress,
+    faults: collectRunFaults(result.events, turnReason),
+    failureReason: failureReasonOf(golden, progress, metrics, { hasOverall: result.case.overall !== undefined }),
+    qualification,
+    searchHealth: health.health,
+    failedSearchSources: health.failedSources,
   };
 }
 
@@ -165,8 +360,17 @@ export type LlmJobStat = { calls: number; failed: number; p50Ms: number | null }
 
 export type TurnReasonCounts = { done: number; timeout: number; aborted: number; error: number };
 
+const SEARCH_HEALTH: readonly SearchHealth[] = ["healthy", "degraded", "empty", "failed", "unknown"];
+
 export type RunSummary = CaseMetrics & {
   turnReasons: TurnReasonCounts;
+  progress: Record<CaseProgress, number>;
+  faultCounts: Record<string, number>;
+  searchHealth: Record<SearchHealth, number>;
+  failedSearchSources: string[];
+  unlabeled: number;
+  valid: boolean;
+  invalidReason?: string;
   judgeRan: { ok: number; total: number };
   llmByJob: Record<string, LlmJobStat>;
   errorsByStage: Record<string, number>;
@@ -179,16 +383,54 @@ export function judgeRanOf(events: CaseEvent[]): boolean {
 }
 
 export function summarizeRun(
-  cases: ReadonlyArray<{ metrics: CaseMetrics; elapsedMs: number; turnReason: string | null; judgeRan: boolean }>,
+  cases: ReadonlyArray<{
+    metrics: CaseMetrics;
+    elapsedMs: number;
+    turnReason: string | null;
+    judgeRan: boolean;
+    progress?: CaseProgress;
+    faults?: RunFault[];
+    qualification?: QualificationExpectation;
+    searchHealth?: SearchHealth;
+    failedSearchSources?: string[];
+  }>,
   eventLists: CaseEvent[][],
 ): RunSummary {
   const turnReasons: TurnReasonCounts = { done: 0, timeout: 0, aborted: 0, error: 0 };
-  for (const row of cases) {
+  const progress = Object.fromEntries(PROGRESS.map((name) => [name, 0])) as Record<CaseProgress, number>;
+  const faultCounts: Record<string, number> = {};
+  const searchHealth = Object.fromEntries(SEARCH_HEALTH.map((name) => [name, 0])) as Record<SearchHealth, number>;
+  const failedSearchSources: string[] = [];
+  const seenFailed = new Set<string>();
+  let unlabeled = 0;
+  let enterCheckUnknown = 0;
+  let enterCheckFailed = 0;
+  cases.forEach((row, index) => {
     const reason = row.turnReason;
     if (reason === "done" || reason === "timeout" || reason === "aborted" || reason === "error") {
       turnReasons[reason] += 1;
     }
-  }
+    const events = eventLists[index] ?? [];
+    const caseProgress = row.progress ?? classifyCaseProgress(events, row.turnReason);
+    progress[caseProgress] += 1;
+    const faults = row.faults ?? collectRunFaults(events, row.turnReason);
+    for (const fault of faults) {
+      faultCounts[fault.kind] = (faultCounts[fault.kind] ?? 0) + 1;
+    }
+    const healthReport = row.searchHealth !== undefined
+      ? { health: row.searchHealth, failedSources: row.failedSearchSources ?? [] }
+      : searchHealthReport(events);
+    searchHealth[healthReport.health] += 1;
+    for (const source of healthReport.failedSources) {
+      if (seenFailed.has(source)) continue;
+      seenFailed.add(source);
+      failedSearchSources.push(source);
+    }
+    const qualification = row.qualification ?? "unlabeled";
+    if (qualification === "unlabeled") unlabeled += 1;
+    if (qualification === "enter_check" && healthReport.health === "unknown") enterCheckUnknown += 1;
+    if (qualification === "enter_check" && healthReport.health === "failed") enterCheckFailed += 1;
+  });
   const latencies = new Map<string, number[]>();
   const llmByJob: Record<string, LlmJobStat> = {};
   const errorsByStage: Record<string, number> = {};
@@ -216,6 +458,19 @@ export function summarizeRun(
   return {
     ...summarize(cases),
     turnReasons,
+    progress,
+    faultCounts,
+    searchHealth,
+    failedSearchSources,
+    unlabeled,
+    valid: unlabeled === 0 && enterCheckUnknown === 0 && enterCheckFailed === 0,
+    ...(unlabeled > 0
+      ? { invalidReason: "unlabeled qualification" }
+      : enterCheckUnknown > 0
+        ? { invalidReason: "search health unknown" }
+        : enterCheckFailed > 0
+          ? { invalidReason: "search health failed" }
+          : {}),
     judgeRan: { ok: cases.filter((row) => row.judgeRan).length, total: cases.length },
     llmByJob,
     errorsByStage,
@@ -226,7 +481,7 @@ export function summarize(rows: ReadonlyArray<{ metrics: CaseMetrics; elapsedMs:
   return {
     verdictAccuracy: average(rows.map((row) => row.metrics.verdictAccuracy)),
     credibilityAccuracy: average(rows.map((row) => row.metrics.credibilityAccuracy)),
-    hallucinationRate: average(rows.map((row) => row.metrics.hallucinationRate)),
+    citationIntegrityErrorRate: average(rows.map((row) => row.metrics.citationIntegrityErrorRate)),
     reportContractPassRate: average(rows.map((row) => row.metrics.reportContractPassRate)),
     routingAccuracy: average(rows.map((row) => row.metrics.routingAccuracy)),
     groundingRate: average(rows.map((row) => row.metrics.groundingRate)),
@@ -240,6 +495,7 @@ export function summarize(rows: ReadonlyArray<{ metrics: CaseMetrics; elapsedMs:
       rows.map((row) => row.elapsedMs),
       0.95,
     ),
+    entryAccuracy: average(rows.map((row) => row.metrics.entryAccuracy)),
   };
 }
 
