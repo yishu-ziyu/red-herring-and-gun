@@ -529,6 +529,83 @@ describe("命题透明", () => {
     expect(snapshot.claims[1]!.originalSpan).toBeUndefined();
   });
 
+  it("超 180 字命题：text 不截断，内部关系经内部 key 正常 join", () => {
+    const tail = "并且主管部门将在验收通过后统一公布改造车辆清单与补贴发放进度。";
+    const atom = "某市宣布全市出租车将在今年内完成智能终端升级改造，" + tail.repeat(6);
+    expect(atom.length).toBeGreaterThan(180);
+    const supportUrl = "https://gov.example/taxi-upgrade";
+    // 生产 byAtomKey 的键是 claimAtomKey 产物（180 截断 + 省略号），这里按生产形状写。
+    const truncatedKey = `${atom.slice(0, 180)}…`;
+    // 不传 claimAtomKeyFn：走内置 defaultClaimAtomKey（全角空格规范化 + 180 截断）。
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: `据通报，${atom}`,
+      phase: "complete",
+      claimAtoms: [atom],
+      claimAtomTypes: [{ text: atom, verifiable: true, type: "fact" }],
+      atomSearchBundle: {
+        atomsSearched: [atom],
+        byAtomKey: { [truncatedKey]: [src(supportUrl, "升级改造通知", "年内完成改造")] },
+      },
+      subclaimVerdicts: [
+        {
+          claimAtom: atom,
+          verdict: "true",
+          evidence: "官方通报确认年内完成改造[1]。",
+          boundary: "",
+          supportingSources: [src(supportUrl, "升级改造通知", "年内完成改造")],
+          contradictingSources: [],
+          evidenceGaps: [],
+        },
+      ],
+      report: {
+        conclusion: "该说法属实，年内完成智能终端升级改造。",
+        verdictType: "true",
+        citationSources: [{ url: supportUrl, title: "升级改造通知", snippet: "" }],
+      },
+    });
+    const claim = snapshot.claims[0]!;
+    expect(claim.text).toBe(atom);
+    expect(claim.text).not.toContain("…");
+    expect(claim.judgment).toBe("supported");
+    expect(claim.evidence.map((l) => l.role)).toContain("support");
+    expect(claim.originalSpan).toEqual({ start: 4, end: 4 + atom.length });
+    expect(snapshot.conclusion?.claimIds).toEqual([claim.id]);
+    expectCleanContract(snapshot);
+  });
+
+  it("全角空格：key 规范化但展示文本保留原样，span 按真实文本定位", () => {
+    const atom = "空气中\u3000氧气约占两成";
+    const supportUrl = "https://www.gov.cn/air";
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: `有人说，${atom}。`,
+      phase: "complete",
+      claimAtoms: [atom],
+      claimAtomTypes: [{ text: atom, verifiable: true, type: "fact" }],
+      atomSearchBundle: {
+        atomsSearched: [atom],
+        byAtomKey: { "空气中 氧气约占两成": [src(supportUrl, "大气成分", "氧气约占两成")] },
+      },
+      subclaimVerdicts: [
+        {
+          claimAtom: atom,
+          verdict: "true",
+          evidence: "标准大气成分显示氧气约占两成[1]。",
+          boundary: "",
+          supportingSources: [src(supportUrl, "大气成分", "氧气约占两成")],
+          contradictingSources: [],
+          evidenceGaps: [],
+        },
+      ],
+    });
+    const claim = snapshot.claims[0]!;
+    expect(claim.text).toBe(atom);
+    expect(claim.text).toContain("\u3000");
+    expect(claim.judgment).toBe("supported");
+    expect(claim.evidence.some((l) => l.role === "support")).toBe(true);
+    expect(claim.originalSpan).toEqual({ start: 4, end: 4 + atom.length });
+    expectCleanContract(snapshot);
+  });
+
   it("立场条 checkability=not-applicable，judgment=not-applicable", () => {
     const claim = "我觉得这部电影拍得很难看。";
     const atom = "我觉得这部电影拍得很难看";

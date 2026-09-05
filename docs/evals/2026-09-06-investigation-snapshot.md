@@ -81,3 +81,25 @@
 - [ ] H2 中断时保留数据的展示口径。
 
 eval:gate：未跑。理由：本期不改判词/检索/评分逻辑，只新增只读快照事件与 finalReport 字段；旧 gate 基线仍因资格标签缺失被判 invalid（与本改动无关）。如需全量真实回归，等人裁后单独跑。
+
+## 复审 blocker 修复（2026-09-06）
+
+PR #56 人工复审唯一 blocker：`claim.text` 不能使用 `claimAtomKey` 的结果作为展示文本——键函数会规范化全角空格并在 180 字截断后追加省略号，把键当展示文本会静默改写用户可见命题，且省略号会让 `originalSpan` 无法回到原句，违反 #50 命题透明。
+
+Change：`buildInvestigationSnapshot` 改为 `{ key, text }` 分离——`key`（`claimAtomKey` 产物）只做 identity join（去重 / verdict / bundle / types / crossExam / pursuit），`text` 用 self-proof 后 kept atom 的真实文本（仅 trim）；`originalSpan` 按真实展示文本对原句计算。冲突循环原先用 `verdicts.get(claim.text)` 反查（在 text=键 时碰巧成立），随本修复改为按 assembly 携带的内部 key join，不受展示文本影响。
+
+Evaluator：
+
+- [ ] R1 超 180 字命题：`claim.text` 与原子原文逐字相等、不含省略号；判词与证据经内部 key 正常 join（supported + support link）；`originalSpan` 按真实文本定位回原句。
+- [ ] R2 全角空格命题：键被规范化为半角空格，但 `claim.text` 保留全角空格原样；join 与 span 均正常。
+- [ ] R3 既有 5 类 golden case 与全部边界案例不回归（同一测试文件全绿）。
+- [ ] R4 镜像守卫：`build.ts` 两侧字节一致，core + mvp 双向守卫全过。
+- [ ] R5 全量门禁：根 `npm test` / `npm run build`；mvp `npm test` / `npm run build` / `mvp/server` tsc。
+
+结果（2026-09-06 回填，全绿）：
+
+- [x] R1 `investigation.test.ts`「超 180 字命题」：text=原文 211 字无截断、judgment=supported、support link 存在、span={start:4,end:4+211}（fixture 按生产形状：byAtomKey 用截断键，判词用原文）。
+- [x] R2「全角空格」：key=`"空气中 氧气约占两成"`（半角）正常 join 判词与检索集，text 保留 `\u3000`，span 按全角文本命中。
+- [x] R3 investigation 测试 24 项（原 22 + 新 2）全过；镜像守卫 4×2 全过。
+- [x] R4 build.ts 两侧 `cmp` 一致。
+- [x] R5 根测试 core 578 / eval 85 / server 21 / web 83 全绿，根 build 绿；mvp 885 过 / 1 跳过，mvp build 与 server tsc 绿。

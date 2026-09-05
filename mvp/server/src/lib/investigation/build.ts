@@ -51,6 +51,7 @@ export type InvestigationBuildOptions = {
   /**
    * 生产传 mvp `claimAtomKey`，保证与 merge/claimItems 同键；
    * 缺省用内置同规则规范化（全角空格 → 空格，超长 180 截断）。
+   * 键只用于 identity join，绝不进入 claim.text——展示文本用 kept atom 原文。
    */
   claimAtomKeyFn?: (value: string) => string;
 };
@@ -279,14 +280,18 @@ export function buildInvestigationSnapshot(
   const phase = input.phase;
   const originalClaim = input.originalClaim;
 
-  const atoms: string[] = [];
+  // key 与展示文本分离（#51 复审 blocker）：key 只做 identity join
+  // （dedupe / verdict / bundle / type / crossExam / pursuit），会规范化全角空格
+  // 并超长截断；text 是 self-proof 后 kept atom 的真实展示文本，不因内部键改写。
+  const keptAtoms: Array<{ key: string; text: string }> = [];
   const seenAtom = new Set<string>();
   for (const item of asArray(input.claimAtoms)) {
     if (typeof item !== "string") continue;
-    const key = keyFn(item.trim());
+    const text = item.trim();
+    const key = keyFn(text);
     if (!key || seenAtom.has(key)) continue;
     seenAtom.add(key);
-    atoms.push(key);
+    keptAtoms.push({ key, text });
   }
 
   const types = readAtomTypes(input.claimAtomTypes, input.nonVerifiableAtoms, keyFn);
@@ -310,7 +315,7 @@ export function buildInvestigationSnapshot(
     verdict: VerdictLike | undefined;
   };
 
-  const assemblies: ClaimAssembly[] = atoms.map((key, index) => {
+  const assemblies: ClaimAssembly[] = keptAtoms.map(({ key, text }, index) => {
     const verdict = verdicts.get(key);
     const info = types.get(key);
     const checkability: InvestigationCheckability =
@@ -332,7 +337,7 @@ export function buildInvestigationSnapshot(
     const contradict = verdict ? inBundle(verdict.contradictingSources) : [];
     return {
       key,
-      text: key,
+      text,
       order: index,
       checkability,
       support,
@@ -474,13 +479,15 @@ export function buildInvestigationSnapshot(
   });
 
   // 冲突：只来自真实证据层（同命题支持与反驳来源并存）；crossExam 只补原因线索。
+  // assemblies 与 claims 同序同长；判词与质询都按内部 key join，不经过展示文本。
   const conflicts: InvestigationConflict[] = [];
-  for (const claim of claims) {
+  for (let i = 0; i < keptAtoms.length; i++) {
+    const assembly = assemblies[i]!;
+    const claim = claims[i]!;
     const supportIds = claim.evidence.filter((l) => l.role === "support").map((l) => l.sourceId);
     const contradictIds = claim.evidence.filter((l) => l.role === "contradict").map((l) => l.sourceId);
     if (supportIds.length === 0 || contradictIds.length === 0) continue;
-    const verdict = verdicts.get(claim.text);
-    const cross = verdict ? crossExamAtoms.get(verdict.claimAtom) : undefined;
+    const cross = assembly.verdict ? crossExamAtoms.get(assembly.verdict.claimAtom) : undefined;
     const knownReason = cross && cross.status === "answered" && cross.response ? cross.response : "";
     conflicts.push({
       id: `conflict-${claim.order + 1}`,
