@@ -268,7 +268,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
             type: "agent_error",
             agent: "cross_examiner",
             agentName: "CrossExaminer",
-            error: error instanceof Error ? error.message : "cross examiner failed",
+            error: "独立复核未完成",
             timestamp: Date.now(),
           });
           throw error;

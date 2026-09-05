@@ -1,5 +1,5 @@
 /**
- * searchProviders.ts — 并行搜索矩阵（360 智搜 / AnySearch / Metaso / Tavily / Exa）
+ * searchProviders.ts — 并行搜索矩阵（360 智搜 / AnySearch / Metaso / Tavily / Exa / MiniMax 套餐 / 阶跃 Step Plan）
  * 与 per-atom 检索入口 retrieveAtomSources。失败不阻断整次核查。
  */
 
@@ -37,6 +37,60 @@ function getAnySearchApiKey(env: Record<string, string>) {
   return env.ANYSEARCH_API_KEY || process.env.ANYSEARCH_API_KEY || "";
 }
 
+function getMiniMaxSearchApiKey(env: Record<string, string>) {
+  return env.MINIMAX_API_KEY || process.env.MINIMAX_API_KEY || "";
+}
+
+function getStepFunSearchApiKey(env: Record<string, string>) {
+  return env.STEPFUN_API_KEY || process.env.STEPFUN_API_KEY || "";
+}
+
+function envFieldPresent(env: Record<string, string>, key: string): boolean {
+  const value = env[key];
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+const SEARCH_QUOTA_SKIP_MS = 10 * 60 * 1000;
+const searchQuotaExhaustedUntil = new Map<string, number>();
+
+export function resetSearchQuotaSkipForTests(): void {
+  searchQuotaExhaustedUntil.clear();
+}
+
+export function isHardSearchQuotaError(message: string): boolean {
+  return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded|limit)|billing hard limit|over_quota|无可用额度|please top up|usage limit|exceeds your plan|HTTP 402\b|HTTP 432\b/i.test(
+    message
+  );
+}
+
+function noteSearchFailure(provider: string, message: string): void {
+  if (isHardSearchQuotaError(message)) {
+    searchQuotaExhaustedUntil.set(provider, Date.now() + SEARCH_QUOTA_SKIP_MS);
+  }
+}
+
+function isSearchQuotaSkipped(provider: string): boolean {
+  const until = searchQuotaExhaustedUntil.get(provider);
+  return typeof until === "number" && until > Date.now();
+}
+
+function httpFailMessage(name: string, response: Response, data: unknown): string {
+  const rec = data && typeof data === "object" ? (data as Record<string, unknown>) : {};
+  const error = rec.error;
+  const errorMessage =
+    error && typeof error === "object" && error !== null && "message" in error
+      ? String((error as { message: unknown }).message ?? "")
+      : typeof error === "string"
+        ? error
+        : "";
+  const detail =
+    errorMessage ||
+    (typeof rec.message === "string" ? rec.message : "") ||
+    response.statusText ||
+    "";
+  return `${name} 调用失败：HTTP ${response.status}${detail ? ` ${detail}` : ""}`;
+}
+
 function getSearchFetchTimeoutMs(env: Record<string, string>) {
   return getTimeoutMs(env, "SEARCH_FETCH_TIMEOUT_MS", 10000);
 }
@@ -48,6 +102,8 @@ export function getSearchToolName(result: { _source?: string } | undefined) {
   if (result?._source === "tavily-search") return "Tavily Search";
   if (result?._source === "exa-search") return "Exa Search";
   if (result?._source === "360-mwebsearch") return "360 智搜";
+  if (result?._source === "minimax-coding-plan") return "MiniMax Token Plan";
+  if (result?._source === "stepfun-step-plan") return "阶跃 Step Plan";
   if (result?._source === "tool-error") return "Search Tool";
   return "Search";
 }
@@ -67,7 +123,7 @@ export function build360SearchFailure(query: string, message: string) {
 }
 
 export function buildReportEvidenceInputs(steps: any[], searchResult?: any) {
-  const factStep = steps.find((step) => step.agent === "fact_checker");
+  const factStep = [...steps].reverse().find((step) => step.agent === "fact_checker");
   const sourceStep = steps.find((step) => step.agent === "source_validator");
   const sources = Array.isArray(searchResult?.sources)
     ? searchResult.sources.slice(0, 8).map((source: any, index: number) => ({
@@ -155,7 +211,14 @@ async function call360AiSearch({
   return await call360MWebSearch({ env, apiKey, query, refProm });
 }
 
-export type SearchProviderId = "360_search" | "any_search" | "metaso_search" | "tavily_search" | "exa_search";
+export type SearchProviderId =
+  | "360_search"
+  | "any_search"
+  | "metaso_search"
+  | "tavily_search"
+  | "exa_search"
+  | "minimax_search"
+  | "stepfun_search";
 
 /** 单 Provider 在产品侧的进度态（SSE search_progress 用，不含任何诊断/密钥/请求 ID）。 */
 export type SearchProviderProgress = {
@@ -182,7 +245,23 @@ export type SearchProgressEvent = {
   timestamp: number;
 };
 
-const SEARCH_PROVIDERS: SearchProviderId[] = ["360_search", "any_search", "metaso_search", "tavily_search", "exa_search"];
+const SEARCH_PROVIDERS: SearchProviderId[] = [
+  "360_search",
+  "any_search",
+  "metaso_search",
+  "tavily_search",
+  "exa_search",
+  "minimax_search",
+  "stepfun_search",
+];
+
+function parallelSearchProviders(env: Record<string, string>): SearchProviderId[] {
+  return SEARCH_PROVIDERS.filter((id) => {
+    if (id === "minimax_search") return envFieldPresent(env, "MINIMAX_API_KEY");
+    if (id === "stepfun_search") return envFieldPresent(env, "STEPFUN_API_KEY");
+    return true;
+  });
+}
 
 export async function callSearchProvider({
   env,
@@ -197,19 +276,32 @@ export async function callSearchProvider({
   model?: string;
   refProm?: string;
 }) {
-  switch (provider) {
-    case "360_search":
-      return await call360AiSearch({ env, query, model, refProm });
-    case "any_search":
-      return await callAnySearchSearch({ env, query });
-    case "metaso_search":
-      return await callMetasoSearch({ env, query });
-    case "tavily_search":
-      return await callTavilySearch({ env, query });
-    case "exa_search":
-      return await callExaSearch({ env, query });
-    default:
-      throw new Error(`未知搜索 Provider：${provider}`);
+  if (isSearchQuotaSkipped(provider)) {
+    throw new Error(`${getProviderLabel(provider)} 额度耗尽，本进程已跳过`);
+  }
+  try {
+    switch (provider) {
+      case "360_search":
+        return await call360AiSearch({ env, query, model, refProm });
+      case "any_search":
+        return await callAnySearchSearch({ env, query });
+      case "metaso_search":
+        return await callMetasoSearch({ env, query });
+      case "tavily_search":
+        return await callTavilySearch({ env, query });
+      case "exa_search":
+        return await callExaSearch({ env, query });
+      case "minimax_search":
+        return await callMiniMaxCodingPlanSearch({ env, query });
+      case "stepfun_search":
+        return await callStepFunPlanMcpSearch({ env, query });
+      default:
+        throw new Error(`未知搜索 Provider：${provider}`);
+    }
+  } catch (reason) {
+    const message = reason instanceof Error ? reason.message : String(reason);
+    noteSearchFailure(provider, message);
+    throw reason;
   }
 }
 
@@ -254,7 +346,7 @@ export async function callParallelSearchProviders({
   /** 每个 Provider 的 start/success/failure 实时上报（SSE search_progress 数据源）。 */
   onProviderEvent?: (event: ProviderCallEvent) => void;
 }) {
-  const providers: SearchProviderId[] = SEARCH_PROVIDERS;
+  const providers: SearchProviderId[] = parallelSearchProviders(env);
   const settled = await Promise.allSettled(
     providers.map(async (provider) => {
       onProviderEvent?.({ provider, status: "running", resultCount: 0 });
@@ -366,6 +458,7 @@ export async function retrieveAtomSources(
 ) {
   const queries = buildQueriesWithReuse(atom, reuseHits ?? []);
   const queryCount = queries.length;
+  const providers = parallelSearchProviders(env);
 
   // 跨 query 聚合的 provider 状态：running 计数 + 成功/失败调用数 + 累计返回条数。
   const inFlight = new Map<SearchProviderId, number>();
@@ -391,7 +484,7 @@ export async function retrieveAtomSources(
       atom,
       phase,
       queryCount,
-      providers: SEARCH_PROVIDERS.map((provider) => ({
+      providers: providers.map((provider) => ({
         id: provider,
         label: getProviderLabel(provider),
         status: statusOf(provider),
@@ -432,7 +525,7 @@ export async function retrieveAtomSources(
     const message = item.reason instanceof Error ? item.reason.message : String(item.reason);
     failures.push(`${queries[index]}：${message}`);
   });
-  const rawResultCount = SEARCH_PROVIDERS.reduce((n, p) => n + (resultTotals.get(p) ?? 0), 0);
+  const rawResultCount = providers.reduce((n, p) => n + (resultTotals.get(p) ?? 0), 0);
 
   if (ok.length === 0) {
     // 全失败：completed 帧给出可解释的全 failed 状态（无来源、统计归零），兜底行为不变。
@@ -472,8 +565,200 @@ export function getProviderLabel(provider: SearchProviderId | string) {
     metaso_search: "Metaso Search",
     tavily_search: "Tavily Search",
     exa_search: "Exa Search",
+    minimax_search: "MiniMax Token Plan",
+    stepfun_search: "阶跃 Step Plan",
   };
   return labels[provider] ?? provider;
+}
+
+function minimaxCodingPlanSearchUrl(env: Record<string, string>): string {
+  const raw = (env.MINIMAX_BASE_URL || env.MINIMAX_API_HOST || "https://api.minimaxi.com").trim();
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const host = new URL(withScheme).hostname.toLowerCase();
+    if (host === "api.minimax.io" || host.endsWith(".minimax.io")) {
+      return "https://api.minimax.io/v1/coding_plan/search";
+    }
+    if (host === "api.minimax.cn" || host.endsWith(".minimax.cn")) {
+      return "https://api.minimax.cn/v1/coding_plan/search";
+    }
+  } catch {
+    // 无法解析时走国内默认 host
+  }
+  return "https://api.minimaxi.com/v1/coding_plan/search";
+}
+
+function stepPlanMcpSearchUrl(env: Record<string, string>): string {
+  const raw = (env.STEPFUN_BASE_URL || "https://api.stepfun.com/step_plan").replace(/\/+$/, "");
+  if (raw.includes("/step_plan")) {
+    const base = raw.replace(/\/v1$/, "");
+    return `${base}/v1/mcp/web_search/mcp`;
+  }
+  return "https://api.stepfun.com/step_plan/v1/mcp/web_search/mcp";
+}
+
+function parseJsonOrSse(raw: string): unknown {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      // 可能是 SSE 夹了 JSON
+    }
+  }
+  let last: unknown = null;
+  for (const line of trimmed.split(/\r?\n/)) {
+    const match = line.match(/^data:\s*(.+)$/);
+    if (!match) continue;
+    const payload = match[1].trim();
+    if (!payload || payload === "[DONE]") continue;
+    try {
+      last = JSON.parse(payload);
+    } catch {
+      // 跳过非 JSON 行
+    }
+  }
+  return last;
+}
+
+function throwIfMiniMaxSearchFailed(data: unknown): void {
+  if (!data || typeof data !== "object") return;
+  const base = (data as { base_resp?: { status_code?: unknown; status_msg?: unknown } }).base_resp;
+  if (!base || typeof base !== "object") return;
+  const code = Number(base.status_code);
+  if (!Number.isFinite(code) || code === 0) return;
+  const msg = String(base.status_msg ?? `status_code ${code}`);
+  throw new Error(`MiniMax 调用失败：${msg}`);
+}
+
+function mcpSearchRows(data: unknown): unknown[] {
+  if (!data || typeof data !== "object") return [];
+  const rec = data as Record<string, unknown>;
+  if (rec.error && typeof rec.error === "object") {
+    const message = String((rec.error as { message?: unknown }).message ?? "MCP error");
+    throw new Error(`阶跃 Step Plan 调用失败：${message}`);
+  }
+  const result =
+    rec.result && typeof rec.result === "object" ? (rec.result as Record<string, unknown>) : rec;
+  if (result.isError === true) {
+    const content = result.content;
+    const text =
+      Array.isArray(content) && content[0] && typeof content[0] === "object" && "text" in content[0]
+        ? String((content[0] as { text: unknown }).text ?? "")
+        : "MCP error";
+    throw new Error(`阶跃 Step Plan 调用失败：${text.slice(0, 300)}`);
+  }
+  const structured = result.structuredContent;
+  if (structured && typeof structured === "object") {
+    const rows = (structured as { results?: unknown }).results;
+    if (Array.isArray(rows)) return rows;
+  }
+  const content = result.content;
+  if (!Array.isArray(content)) return [];
+  for (const block of content) {
+    if (!block || typeof block !== "object") continue;
+    const text = "text" in block ? String((block as { text: unknown }).text ?? "") : "";
+    if (!text.trim()) continue;
+    try {
+      const parsed = JSON.parse(text) as { results?: unknown };
+      if (Array.isArray(parsed?.results)) return parsed.results;
+    } catch {
+      // 非 JSON 文本块
+    }
+  }
+  return [];
+}
+
+async function callMiniMaxCodingPlanSearch({
+  env,
+  query,
+}: {
+  env: Record<string, string>;
+  query: string;
+}) {
+  const apiKey = getMiniMaxSearchApiKey(env);
+  if (!apiKey) throw new Error("未配置 MiniMax API key");
+  const response = await fetchWithTimeout(
+    minimaxCodingPlanSearchUrl(env),
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ q: query }),
+    },
+    getSearchFetchTimeoutMs(env),
+    "MiniMax"
+  );
+  const data: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(httpFailMessage("MiniMax", response, data));
+  throwIfMiniMaxSearchFailed(data);
+  const organic =
+    data && typeof data === "object" && Array.isArray((data as { organic?: unknown }).organic)
+      ? (data as { organic: unknown[] }).organic
+      : [];
+  const sources = mapProviderSources(organic, (i) => `MiniMax 来源 ${i}`);
+  return {
+    answer: sources.map((source) => `【${source.title}】${source.snippet}`).join("\n"),
+    sources,
+    unresolvedEvidenceGaps: sources.length > 0 ? [] : ["MiniMax 未返回可引用来源。"],
+    relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`],
+    model: "coding-plan-web-search",
+    traceText: `MiniMax 返回 ${sources.length} 条可追溯来源。`,
+    _source: "minimax-coding-plan",
+  };
+}
+
+async function callStepFunPlanMcpSearch({
+  env,
+  query,
+}: {
+  env: Record<string, string>;
+  query: string;
+}) {
+  const apiKey = getStepFunSearchApiKey(env);
+  if (!apiKey) throw new Error("未配置阶跃 API key");
+  const response = await fetchWithTimeout(
+    stepPlanMcpSearchUrl(env),
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "web_search",
+          arguments: {
+            query,
+            n: Number(env.STEPFUN_SEARCH_SIZE || process.env.STEPFUN_SEARCH_SIZE || 8),
+          },
+        },
+      }),
+    },
+    getSearchFetchTimeoutMs(env),
+    "阶跃 Step Plan"
+  );
+  const raw = await response.text().catch(() => "");
+  const data = parseJsonOrSse(raw);
+  if (!response.ok) throw new Error(httpFailMessage("阶跃 Step Plan", response, data));
+  const rows = mcpSearchRows(data);
+  const sources = mapProviderSources(rows, (i) => `阶跃来源 ${i}`);
+  return {
+    answer: sources.map((source) => `【${source.title}】${source.snippet}`).join("\n"),
+    sources,
+    unresolvedEvidenceGaps: sources.length > 0 ? [] : ["阶跃 Step Plan 未返回可引用来源。"],
+    relatedQuestions: [`${query} 官方回应`, `${query} 辟谣`],
+    model: "step-plan-mcp-web-search",
+    traceText: `阶跃 Step Plan 返回 ${sources.length} 条可追溯来源。`,
+    _source: "stepfun-step-plan",
+  };
 }
 
 async function callAnySearchSearch({
@@ -817,14 +1102,15 @@ function estimateSourceCredibility(url: string): string {
 function mapProviderSources(
   items: any[],
   titleFallback: (index: number) => string
-): Array<{ title: string; url: string; snippet: string; credibility: string }> {
-  const out: Array<{ title: string; url: string; snippet: string; credibility: string }> = [];
+): Array<{ title: string; url: string; snippet: string; credibility: string; publishedAt?: string }> {
+  const out: Array<{ title: string; url: string; snippet: string; credibility: string; publishedAt?: string }> = [];
   for (let index = 0; index < items.length && out.length < 8; index += 1) {
     const source = items[index];
     if (!source || typeof source !== "object") continue;
     const url = String(source?.url || source?.link || source?.href || source?.web_url || source?.display_url || "").trim();
     if (!url || !/^https?:\/\//i.test(url)) continue; // 无有效 URL = 不可追溯，直接丢
-    out.push({
+    const publishedAt = String(source?.publishedAt || source?.date || source?.time || "").trim();
+    const row: { title: string; url: string; snippet: string; credibility: string; publishedAt?: string } = {
       title: String(source?.title || source?.name || source?.site_name || titleFallback(out.length + 1)).slice(0, 200),
       url,
       snippet: String(
@@ -838,7 +1124,9 @@ function mapProviderSources(
           ""
       ).slice(0, 500),
       credibility: estimateSourceCredibility(url),
-    });
+    };
+    if (publishedAt) row.publishedAt = publishedAt;
+    out.push(row);
   }
   return out;
 }

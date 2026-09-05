@@ -277,7 +277,7 @@ function isIncompleteReport(model: MissionShellModel): boolean {
 
 function stripLeadingVerdictEcho(text: string | undefined, label: string): string | undefined {
   if (!text) return undefined;
-  const labels = [label, "不能信", "能信", "只能信一部分", "还查不清"].filter(Boolean);
+  const labels = [label, "不能信", "能信", "有真有假", "部分成立", "只能信一部分", "还查不清"].filter(Boolean);
   let t = text.trim();
   for (const p of labels) {
     t = t.replace(new RegExp(`^(?:${p}[。．\\.\\s]*)+`), "");
@@ -405,7 +405,7 @@ function finalVerdictByAtom(model: MissionShellModel): Map<string, string> {
   return out;
 }
 
-/** exaggerated（被夸大）没有独立人话档，就近并入「只能信一部分」。 */
+/** exaggerated（被夸大）没有独立人话档，就近并入「部分成立」。 */
 function humanizeAtomVerdict(value: string): string {
   return humanizeVerdictType(value === "exaggerated" ? "partial" : value);
 }

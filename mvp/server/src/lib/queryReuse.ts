@@ -9,7 +9,7 @@ import type { MemoryCandidate, MemoryCandidateHit, SearchStrategyMemoryPayload }
 export const REUSE_QUERY_CAP = 3;
 
 const VERDICT_ONLY =
-  /^(true|false|unverified|mixed_misleading|mixed|exaggerated|能信|不能信|还查不清|部分可信|可信|不可信)$/i;
+  /^(true|false|unverified|mixed_misleading|mixed|exaggerated|能信|不能信|还查不清|有真有假|部分成立|只能信一部分|部分可信|可信|不可信)$/i;
 
 export function extractReusableQueries(hits: MemoryCandidateHit[] = []): string[] {
   const out: string[] = [];

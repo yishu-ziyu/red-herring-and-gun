@@ -5,21 +5,28 @@ import {
   humanizeConfidenceLevel,
   humanizeFactCheckResult,
   humanizeVerdictType,
+  displayFaceVerdict,
+  displayShareAdvice,
+  shareAdviceFromVerdict,
 } from "./labels";
 
 describe("humanizeVerdictType", () => {
   it("maps known verdictType enums to Chinese labels", () => {
     expect(humanizeVerdictType("true")).toBe("能信");
     expect(humanizeVerdictType("false")).toBe("不能信");
-    expect(humanizeVerdictType("mixed_misleading")).toBe("只能信一部分");
+    expect(humanizeVerdictType("mixed_misleading")).toBe("有真有假");
     expect(humanizeVerdictType("unverified")).toBe("还查不清");
   });
 
   it("maps common aliases without leaking English", () => {
     expect(humanizeVerdictType("uncertain")).toBe("还查不清");
     expect(humanizeVerdictType("maybe")).toBe("还查不清");
-    expect(humanizeVerdictType("partial")).toBe("只能信一部分");
-    expect(humanizeVerdictType("mixed")).toBe("只能信一部分");
+    expect(humanizeVerdictType("partial")).toBe("部分成立");
+    expect(humanizeVerdictType("mixed")).toBe("有真有假");
+  });
+
+  it("does not collapse mixed and partial into one slogan", () => {
+    expect(humanizeVerdictType("mixed_misleading")).not.toBe(humanizeVerdictType("partial"));
   });
 
   it("falls back to em dash for empty values", () => {
@@ -39,11 +46,49 @@ describe("humanizeVerdictType", () => {
   });
 });
 
+describe("displayFaceVerdict", () => {
+  it("rewrites the old mixed stamp using verdictType, without treating other Chinese as that stamp", () => {
+    expect(displayFaceVerdict("只能信一部分", "mixed_misleading")).toBe("有真有假");
+    expect(displayFaceVerdict("只能信一部分。", "mixed")).toBe("有真有假");
+    expect(displayFaceVerdict("只能信一部分", "partial")).toBe("部分成立");
+    expect(displayFaceVerdict("只能信一部分", undefined)).toBe("有真有假");
+    expect(displayFaceVerdict("立场型 / 不适用真/假判断", "mixed_misleading")).toBe(
+      "立场型 / 不适用真/假判断",
+    );
+    expect(displayFaceVerdict("证据不足，暂不下定论", "unverified")).toBe("证据不足，暂不下定论");
+    expect(displayFaceVerdict("有真有假", "mixed_misleading")).toBe("有真有假");
+    expect(displayFaceVerdict("", "mixed_misleading")).toBe("有真有假");
+  });
+});
+
+describe("shareAdviceFromVerdict", () => {
+  it("falls back to distinct copy for mixed, partial, and unverified", () => {
+    expect(shareAdviceFromVerdict("", "mixed_misleading")).toMatch(/^有真有假/);
+    expect(shareAdviceFromVerdict("", "partial")).toMatch(/^部分成立/);
+    expect(shareAdviceFromVerdict("", "unverified")).toMatch(/^还查不清/);
+    expect(shareAdviceFromVerdict("", "mixed_misleading")).not.toBe(shareAdviceFromVerdict("", "partial"));
+  });
+});
+
+describe("displayShareAdvice", () => {
+  it("rewrites a stored recommendation that starts with the old mixed stamp", () => {
+    expect(displayShareAdvice("只能信一部分。加热不当有风险，不能等同致癌。", "mixed_misleading")).toBe(
+      "有真有假。加热不当有风险，不能等同致癌。",
+    );
+    expect(displayShareAdvice("只能信一部分", "mixed_misleading")).toMatch(/^有真有假。/);
+    expect(displayShareAdvice("哪一截成立、哪一截没有依据，看下面。", "mixed_misleading")).toBe(
+      "哪一截成立、哪一截没有依据，看下面。",
+    );
+    expect(displayShareAdvice("", "mixed_misleading")).toBe("");
+  });
+});
+
 describe("humanizeFactCheckResult", () => {
   it("maps factCheckResult enums to Chinese", () => {
     expect(humanizeFactCheckResult("true")).toBe("能信");
     expect(humanizeFactCheckResult("false")).toBe("不能信");
-    expect(humanizeFactCheckResult("partial")).toBe("只能信一部分");
+    expect(humanizeFactCheckResult("partial")).toBe("部分成立");
+    expect(humanizeFactCheckResult("mixed_misleading")).toBe("有真有假");
     expect(humanizeFactCheckResult("unverified")).toBe("还查不清");
   });
 });

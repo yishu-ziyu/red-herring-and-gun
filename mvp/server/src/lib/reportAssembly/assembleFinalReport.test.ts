@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assembleFinalReport, buildClaimItems, deriveOverallVerdict } from "./assembleFinalReport";
+import { assembleFinalReport, buildClaimItems, deriveOverallVerdict, faceVerdictFor } from "./assembleFinalReport";
 import { resolveImageOrigin } from "../imageOrigin/imageOrigin";
 
 describe("assembleFinalReport", () => {
@@ -44,6 +44,14 @@ describe("assembleFinalReport", () => {
       verdicts: [{ claimAtom: "A", verdict: "false", evidence: "e", boundary: "b" }],
     });
     expect(finalReport.faceVerdict).toBe("不能信");
+  });
+
+  it("总判词 mixed 写有真有假，单项 partial 写部分成立", () => {
+    expect(faceVerdictFor("mixed_misleading")).toBe("有真有假");
+    expect(faceVerdictFor("mixed")).toBe("有真有假");
+    expect(faceVerdictFor("partial")).toBe("部分成立");
+    expect(faceVerdictFor("unverified")).toBe("还查不清");
+    expect(faceVerdictFor("mixed_misleading")).not.toBe(faceVerdictFor("partial"));
   });
 
   it("截图 origin 只来自 imageOrigin，文字检索 URL 不当成这张图的来源", () => {

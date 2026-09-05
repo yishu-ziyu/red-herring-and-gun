@@ -1,8 +1,10 @@
 # 红鲱鱼与枪 · 动效与零件索引
 
+2026-09-05 用户看过界面总览后，明确认可 `packages/web/output/show-me-parts/index.html`（既有零件展示：要 / 不要）和 `packages/web/output/show-me-walk/index.html`（既有用户路径走查：桌面与手机）的设计。后续原型以这两份为具体视觉与交互基准：前者参考零件呈现，后者参考整体界面及桌面/手机路径。此次认可不等于逐项选中了零件页的所有候选，也不等于认可本轮新增质询的 A/B 位置；原稿内的旧开发状态不因此恢复为当前事实。
+
 按**产品场景**选库，不是按画廊热度堆特效。视觉约束仍以 [DESIGN.md](./DESIGN.md) 和 `mvp/src/styles.css` 为准：暖纸、墨色、克制；第一屏是判断和问题点；过程可回看、不抢主秀。
 
-改样式先改 CSS token（`--paper` / `--ink` / `--accent`、`--t-*` / `--motion-*`、已有 `cinema-shimmer`），再抄外部节奏。尊重 `prefers-reduced-motion`。不要发明用户人格，不要写成转发顾问、论证课或 Agent 指挥台。
+改样式先改 CSS token（`--paper` / `--ink` / `--accent`、`--t-*` / `--motion-*`、已有 `cinema-shimmer`），再抄外部节奏。尊重 `prefers-reduced-motion`。不要发明用户人格，不要写成转发顾问、论证课或多 Agent 运维界面。
 
 设计某一屏之前，仍可走 `mvp/.codex/skills/product-interface-brief`。本文件只回答：这个场景该打开哪些库。
 
@@ -16,7 +18,7 @@
 | 2 | [elements.ai-sdk.dev](https://elements.ai-sdk.dev) | 推理 / 来源 / 输入整套零件。Shimmer、Reasoning、Sources、Prompt Input 能对上等待态、过程回看、贴材料；Conversation 不要当产品壳。 |
 | 3 | [prompt-kit.com](https://www.prompt-kit.com) | 比 ChatGPT 式线程轻。输入框和消息流接近首页「丢进一句话 / 截图 / 链接」，不是聊天产品。 |
 | 4 | [cult-ui.com](https://www.cult-ui.com) | 写明了 agent thought / streaming text。给过程回看抄流式与折起节奏，thought 本身不做第一屏。 |
-| 5 | [magicui.design](https://magicui.design) | 只取 Shimmer / Text Animate 这类克制文字动效。Marquee、粒子、落地页块不进核查桌。 |
+| 5 | [magicui.design](https://magicui.design) | 只取 Shimmer / Text Animate 这类克制文字动效。Marquee、粒子、落地页块不进产品界面。 |
 | 6 | [21st.dev](https://21st.dev) | 一次刷 Origin / Cult / Magic / Aceternity。找不到零件时来这检索，不要当设计方向。 |
 
 改 **API Key / 设置行**时，这六个不够：直接开 [Origin UI](https://originui.com)（表单、输入组、设置行）。
@@ -57,15 +59,15 @@
 | [SyntaxUI](https://syntaxui.com) | 小而干净的结论/徽章块 |
 | [Eldora UI](https://www.eldoraui.site) | 文字 pull-up / blur-in，只用一次、幅度小 |
 
-**不要抄：** Tremor KPI 墙把分数做成仪表盘英雄；Tailark / Shadcnblocks 营销首屏；「先别转发」CTA；彩虹状态条；8bitcn / Neobrutalism 把核查桌做成主题皮肤。
+**不要抄：** Tremor KPI 墙把分数做成仪表盘英雄；Tailark / Shadcnblocks 营销首屏；「先别转发」CTA；彩虹状态条；8bitcn / Neobrutalism 把界面做成主题皮肤。
 
 ---
 
-## 场景 3 · 过程回看（推理 / 来源 / 引用）
+## 场景 3 · 关键质询与过程回看（回应 / 来源 / 引用）
 
-**这是什么：** 过程默认可折起，评委或较真用户再展开。对应 `ApodexRunView`、`InlineCitations`、`WebSearch`。来源能点开。
+**这是什么：** 关键质询、回应和相关出处帮助用户理解判断，完整过程默认折起。对应 `ApodexRunView` 的结果正文、历史 `ResultView`、`InlineCitations`。2026-09-05 新质询记录尚未接线，先由临时 HTML 确认呈现方式。
 
-**视觉约束：** 不和判断抢第一屏。推理用时、工具调用、模型名放在展开层。引用是脚注节奏（`[n]` → 来源行），不是聊天气泡墙。
+**视觉约束：** 不和判断抢第一屏。质询完成、未完成、未发生和旧记录缺失必须如实区分；工具细节保持次要。引用是脚注节奏（`[n]` → 来源行），不是聊天气泡墙。
 
 | 打开 | 抄什么 |
 |------|--------|
@@ -137,10 +139,10 @@
 这些可以出现在速查里，但默认**不要**往产品里搬：
 
 - [Aceternity UI](https://ui.aceternity.com)、[React Bits](https://reactbits.dev) — 3D 卡、光柱、粒子、光标特效；落地页最满。
-- [Kibo UI](https://www.kibo-ui.com) — 看板、甘特；我们不是指挥台。
-- [CopilotKit](https://docs.copilotkit.ai) — Agent 直接出组件；脸必须简单。
+- [Kibo UI](https://www.kibo-ui.com) — 看板、甘特；我们不是多 Agent 运维界面。
+- [CopilotKit](https://docs.copilotkit.ai) — Agent 直接出组件；界面必须简单。
 - [Tailark](https://tailark.com)、[Shadcnblocks](https://www.shadcnblocks.com)、[Shadcnspace](https://shadcnspace.com) — 整页营销区块。
-- [8bitcn](https://www.8bitcn.com)、[Neobrutalism](https://www.neobrutalism.dev) — 换皮，不是核查桌。
+- [8bitcn](https://www.8bitcn.com)、[Neobrutalism](https://www.neobrutalism.dev) — 换皮，不是核查产品该有的样子。
 - [Novel](https://novel.sh) — Notion 式编辑器；本产品不是写作台。
 - [Skiper UI](https://skiper-ui.com) — 偏怪交互，除非有明确产品理由。
 

@@ -4,6 +4,7 @@
  * 与主流程互不干扰：批量结果就地展示，不进 MissionControlView。
  */
 import { useState } from "react";
+import { displayFaceVerdict } from "../../lib/missionShell";
 
 interface BatchRow {
   claim: string;
@@ -57,7 +58,7 @@ export function BatchChecker({ initialText }: { initialText: string }) {
         <ul className="batch-checker__list">
           {rows.map((row, index) => (
             <li key={index} className="batch-checker__row">
-              <strong>{(row.faceVerdict || row.verdictType || "unverified").replace("_", " ")}</strong>
+              <strong>{displayFaceVerdict(row.faceVerdict, row.verdictType)}</strong>
               <span>{row.claim}</span>
               {row.conclusion ? <small>{row.conclusion.slice(0, 140)}</small> : null}
             </li>

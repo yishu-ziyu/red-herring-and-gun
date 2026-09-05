@@ -22,6 +22,20 @@ export const SEARCH_CATALOG: readonly SearchProviderMeta[] = [
     hint: "已预置。没有密钥也能搜，有密钥额度更高。",
   },
   {
+    id: "minimax_search",
+    label: "MiniMax Token Plan",
+    billing: "included",
+    envKey: "MINIMAX_API_KEY",
+    hint: "已配置 MiniMax Token Plan 时可用。沿用现有模型密钥，不需要单独的搜索密钥。",
+  },
+  {
+    id: "stepfun_search",
+    label: "阶跃 Step Plan",
+    billing: "included",
+    envKey: "STEPFUN_API_KEY",
+    hint: "已配置阶跃 Step Plan 时可用。沿用现有模型密钥，不需要单独的搜索密钥。",
+  },
+  {
     id: "searxng_search",
     label: "SearXNG",
     billing: "included",
@@ -106,6 +120,22 @@ export function isSearchSourceConfigured(
   if (meta.urlEnv) return envHas(env, meta.urlEnv);
   if (meta.envKey) return envHas(env, meta.envKey);
   return false;
+}
+
+/** 逗号分隔的 catalog id。未知 id 忽略。不删除密钥，只决定是否调用。 */
+export function parseDisabledSearchProviderIds(
+  env: Readonly<{ [key: string]: string | undefined }>,
+): Set<string> {
+  const raw = env.SEARCH_DISABLED_PROVIDERS;
+  if (typeof raw !== "string" || !raw.trim()) return new Set();
+  const known = new Set<string>(SEARCH_CATALOG.map((meta) => meta.id));
+  const out = new Set<string>();
+  for (const part of raw.split(",")) {
+    const id = part.trim();
+    if (!id || !known.has(id)) continue;
+    out.add(id);
+  }
+  return out;
 }
 
 export type SearchProviderPublic = {

@@ -548,7 +548,7 @@ export interface ClaimDecompositionResult {
 }
 
 export interface SearchTask {
-  provider: "360_search" | "any_search" | "metaso_search" | "tavily_search" | "exa_search";
+  provider: "360_search" | "any_search" | "metaso_search" | "tavily_search" | "exa_search" | "minimax_search" | "stepfun_search";
   query: string;
   status: "pending" | "running" | "completed" | "failed";
   result?: SearchProviderResult;

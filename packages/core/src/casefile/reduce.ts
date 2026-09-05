@@ -249,6 +249,9 @@ export function reduce(c: Case, event: CaseEvent): Case {
           },
         ],
       };
+    case "search.source.started":
+    case "search.source.finished":
+      return { ...c, seq: event.seq };
     default: {
       const _exhaustive: never = event;
       throw new Error(`unhandled event ${JSON.stringify(_exhaustive)}`);

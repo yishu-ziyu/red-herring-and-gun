@@ -70,7 +70,7 @@ describe("postProcessHandoffFinalReport (Prompt A+F)", () => {
       },
       "甘南所有景点一律免费",
     );
-    expect(String(result!.report.conclusion)).not.toMatch(/^(能信|不能信|只能信一部分|还查不清)/);
+    expect(String(result!.report.conclusion)).not.toMatch(/^(能信|不能信|只能信一部分|有真有假|部分成立|还查不清)/);
     expect(String(result!.report.conclusion)).toContain("甘南州文旅局声明从未发布全州免票");
     expect(String(result!.report.conclusion)).not.toMatch(/仍不足以按原强度确认/);
     expect(result!.report.faceVerdict).toBe("不能信");

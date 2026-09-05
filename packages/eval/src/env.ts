@@ -55,6 +55,18 @@ export function fakeDeps(claim: string): RunTurnDeps {
   Object.defineProperty(empty, "name", { value: "fake" });
   return {
     llm: createFakeLlm({
+      qualify: (() => {
+        const cut = Math.min(4, Math.max(2, claim.length - 2));
+        return {
+          ready: true as const,
+          reason: "ready" as const,
+          subjectText: claim.slice(0, cut),
+          claimText: claim,
+          gap: "",
+          antecedentText: "",
+        };
+      })(),
+      qualify_review: { subjectLanded: true },
       decompose: { claims: [{ text: claim, type: "fact", checkable: true }] },
       "self-proof": { results: [] },
       assess: { stances: [] },

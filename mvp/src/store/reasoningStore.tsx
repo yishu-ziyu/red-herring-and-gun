@@ -8,7 +8,7 @@
  * - 评论和追加输入历史持久化到 LocalStorage
  */
 
-import { createContext, useContext, useReducer, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useReducer, useCallback, useRef, useState, type ReactNode } from "react";
 import type {
   ClaimDiagnosis,
   FinalReport,
@@ -248,8 +248,13 @@ export type ReasoningAction =
 // Reducer
 // ───────────────────────────────────────────────────────────────
 
-function reducer(state: ReasoningState, action: ReasoningAction): ReasoningState {
+type PrivateMemory = Pick<ReasoningState, "comments" | "followUps">;
+type MemoryAction = { type: "REPLACE_MEMORY"; payload: PrivateMemory };
+
+function reducer(state: ReasoningState, action: ReasoningAction | MemoryAction): ReasoningState {
   switch (action.type) {
+    case "REPLACE_MEMORY":
+      return { ...state, ...action.payload };
     case "INIT_CASE": {
       const { caseData, report, nodes, edges, steps } = action.payload;
       return {
@@ -634,6 +639,8 @@ function reducer(state: ReasoningState, action: ReasoningAction): ReasoningState
 interface ReasoningContextValue {
   state: ReasoningState;
   dispatch: React.Dispatch<ReasoningAction>;
+  setMemoryScope: (email: string | null | undefined) => void;
+  memoryNotice: string;
 }
 
 const ReasoningContext = createContext<ReasoningContextValue | null>(null);
@@ -646,37 +653,52 @@ const STORAGE_KEY = "reasoning-v3-comments";
 const FOLLOW_UP_KEY = "reasoning-v3-followups";
 
 export function ReasoningProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, initialState);
+  const [state, rawDispatch] = useReducer(reducer, initialState);
+  const [memoryNotice, setMemoryNotice] = useState("");
+  const scope = useRef<string | null | undefined>(undefined);
+  const memory = useRef<PrivateMemory>({ comments: [], followUps: [] });
+  const setMemoryScope = useCallback((email: string | null | undefined) => {
+    if (scope.current === email) return;
+    scope.current = email;
+    const next: PrivateMemory = { comments: [], followUps: [] };
+    setMemoryNotice("");
+    if (email !== undefined) {
+      const suffix = `:v2:${email === null ? "anonymous" : `account:${encodeURIComponent(email)}`}`;
+      try {
+        const comments: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY + suffix) ?? "[]");
+        const followUps: unknown = JSON.parse(localStorage.getItem(FOLLOW_UP_KEY + suffix) ?? "[]");
+        if (!Array.isArray(comments) || !Array.isArray(followUps)) throw new Error("Invalid memory");
+        next.comments = comments.filter((c): c is NodeComment => c && typeof c.id === "string" && typeof c.nodeId === "string" && typeof c.text === "string" && typeof c.createdAt === "number");
+        next.followUps = followUps.filter((f): f is FollowUpEntry => f && typeof f.id === "string" && typeof f.nodeId === "string" && typeof f.text === "string" && typeof f.timestamp === "number");
+      } catch {
+        setMemoryNotice("评论和追加输入历史读取失败，暂时无法恢复本机记录。");
+      }
+    }
+    memory.current = next;
+    rawDispatch({ type: "REPLACE_MEMORY", payload: next });
+  }, []);
 
-  // 从 LocalStorage 恢复评论和追加输入
-  useEffect(() => {
+  const dispatch = useCallback((action: ReasoningAction) => {
+    if (action.type !== "ADD_COMMENT" && action.type !== "DELETE_COMMENT" && action.type !== "ADD_FOLLOW_UP") {
+      rawDispatch(action);
+      return;
+    }
+    const email = scope.current;
+    if (email === undefined) return;
+    const next = reducer({ ...initialState, ...memory.current }, action);
+    memory.current = { comments: next.comments, followUps: next.followUps };
+    rawDispatch({ type: "REPLACE_MEMORY", payload: memory.current });
+    const suffix = `:v2:${email === null ? "anonymous" : `account:${encodeURIComponent(email)}`}`;
     try {
-      const rawComments = localStorage.getItem(STORAGE_KEY);
-      const rawFollowUps = localStorage.getItem(FOLLOW_UP_KEY);
-      if (rawComments) {
-        const parsed: NodeComment[] = JSON.parse(rawComments);
-        parsed.forEach((c) => dispatch({ type: "ADD_COMMENT", payload: c }));
-      }
-      if (rawFollowUps) {
-        const parsed: FollowUpEntry[] = JSON.parse(rawFollowUps);
-        parsed.forEach((f) => dispatch({ type: "ADD_FOLLOW_UP", payload: f }));
-      }
+      const key = action.type === "ADD_FOLLOW_UP" ? FOLLOW_UP_KEY : STORAGE_KEY;
+      localStorage.setItem(key + suffix, JSON.stringify(action.type === "ADD_FOLLOW_UP" ? next.followUps : next.comments));
     } catch {
-      // 忽略解析错误
+      setMemoryNotice("评论或追加输入保存失败，刷新或切换账户后可能丢失。");
     }
   }, []);
 
-  // 持久化评论和追加输入
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.comments));
-  }, [state.comments]);
-
-  useEffect(() => {
-    localStorage.setItem(FOLLOW_UP_KEY, JSON.stringify(state.followUps));
-  }, [state.followUps]);
-
   return (
-    <ReasoningContext.Provider value={{ state, dispatch }}>
+    <ReasoningContext.Provider value={{ state, dispatch, setMemoryScope, memoryNotice }}>
       {children}
     </ReasoningContext.Provider>
   );
