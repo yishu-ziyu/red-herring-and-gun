@@ -27,6 +27,7 @@ import {
   SEARCH_SETTINGS,
   SUBMIT_HOME,
 } from "../lib/copy.js";
+import { saveOpening } from "../lib/opening.js";
 import { formatRelativeTime, previewText } from "../lib/time.js";
 
 const URL_PATTERN = /https?:\/\//i;
@@ -144,6 +145,7 @@ export function HomePage(props: Props) {
     try {
       const attachments = image ? [image] : undefined;
       const created = await createCase(next, attachments);
+      saveOpening(created.caseId, next);
       props.onCreated(created.caseId);
     } catch (err) {
       if (err instanceof ApiError && err.status === 429) {

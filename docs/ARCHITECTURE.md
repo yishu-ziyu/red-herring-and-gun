@@ -5,17 +5,27 @@
 本文件只回答：**代码实际怎么跑、哪一层是真的、哪一层是残骸、下一步往哪收。**
 
 公网 `https://gun.yishuziyu.cn`：Nginx 静态 + `/api` 反代 Express。  
-本地 `npm run dev`：Express 管 API，Vite 只代理 `/api`（不再复制编排）。
+生产壳本地在 `mvp/` 执行 `npm run dev`：Express 管 API，Vite 只代理 `/api`。根目录的 `dev:web` / `dev:server` 启动 `packages/` 脊柱，尚未执行 T20 上线切换。
+
+## 本轮接线状态（2026-09-05）
+
+生产仍走 `mvp/`。默认 `runCasePipeline` 已包含有界质询：真实证据 → 独立意见 → 可选补查 → 主调查回应 → 最新完整调查进入报告；最多两个争点各一轮，真实记录写入 `finalReport.crossExam`。分歧本身不扣分。
+
+主线程结果在 `ApodexRunView` 的 `ResearchMemo` 中，历史卷宗走 `ResultView` 的 `dossier` 形态；两处尚未消费新质询记录。`App.tsx` 与 `reasoningStore` 已接自动留存、账号/访客作用域和显式同句复用，完整浏览器路径仍未验收。
+
+停止检查发生在步骤边界。`providerRouter` 的 Promise.race 超时不会取消在途模型请求，不保证硬截止时间。
+
+当前先制作独立 HTML 原型，用户认可后接上述真实报告出口；随后验证真实调查、五次留存、刷新重开零新增调用和窄屏体验。旧 eval 门禁修订、T20 与默认引擎切换不在本轮。完整状态见 `docs/evals/2026-09-05-investigation-continuity.md`。
 
 ## 仓库
 
 ```text
+packages/                 脊柱 core / server / web / eval，尚未切生产
 mvp/src/                  脸（React）
 mvp/server/src/           生产 HTTP + 判决 + 编排
 mvp/vite.config.ts        前端 dev server；`/api` 代理到 Express
 docs/adr/                 运行时决策（尤其 ADR-003）
-tmp-apodex-study/         对照用克隆，不进 git
-mvp/apodex-replica/       外观草稿，不进 git
+tmp-apodex-study/         研究代码克隆；旧界面截图已清理，不进 git
 ```
 
 入口：`mvp/src/main.tsx` → `App.tsx`。  
@@ -39,7 +49,7 @@ mvp/apodex-replica/       外观草稿，不进 git
       → ApodexRunView（thinking / Search / 任务板 / 核心结论）
 ```
 
-用户看见的是判断。过程可回看。默认内核仍是**固定管线**。循环是并列执行引擎：开 flag 时过程是真工具事件；关着时过程仍是管线映射。
+用户看见的是判断。过程可回看。默认内核是含证据循环与有界质询的 `casePipeline`。pi 循环是并列执行引擎：开 flag 时过程是真工具事件；关着时过程仍是管线映射。
 
 默认壳：`resolveShellMode` 开着。历史卷宗走 `ResultView`（右侧 dossier）。`App.tsx` 不做 404，未匹配路径（包括已删除的演示与预览路径）会落入首页 `Dashboard`，不再作为独立产品页渲染。
 
@@ -73,7 +83,7 @@ HTTP 只该是薄 adapter。`handlers.ts`（2026-08-30 清理后约 900 行）�
 
 客户端 `mvp/src/lib` 与服务端 `mvp/server/src/lib` 还有约 10 个同名文件（部分是有意再导出，部分是历史拷贝）。不要在两边各写一套判决。
 
-## 目标形状（执行引擎已并列，默认未切）
+## 并列引擎的既有目标（未切默认，不是本轮下一步）
 
 换执行引擎，不换产品：
 
@@ -91,15 +101,15 @@ claim
 
 | 路径 | 是什么 |
 |------|--------|
-| `tmp-apodex-study/` | 本地对照（FrontierAgent 克隆、截图）。不进 git |
-| `mvp/apodex-replica/` | 外观 1:1 草稿。不进 git |
+| `tmp-apodex-study/` | 本地研究代码克隆；旧界面截图已于 2026-09-05 清理。不进 git |
+| 旧外观复刻及 HTML 探索 | 2026-09-05 按用户要求删除；设计基准见 `docs/design/2026-09-05-interface-index.md` |
 | `mvp/src/lib/pipeline.ts` + `data/rumorCases/` | 早期静态 demo（连同整条 demo 报告管线，2026-08-30 已删） |
 | 已删除的演示/预览组件 | 不属于运行时；对应路径访问时落入首页 |
 | 2026-08-30 删除的死功能 | 13 个死组件、~40 个死 lib、12 条前端不可达路由、`llmGateway`、非 pi 旧循环引擎、aiping config/apikeys 端点 |
 | `docs/reviews/agentic-patterns/` | 读书笔记，不是运行时 |
 | `vendor/`、`Chinese_Rumor_Dataset/` | 本地资料，已 gitignore |
 
-## 下一刀（按这个顺序）
+## 历史收敛记录（已完成项，不是当前任务顺序）
 
 1. ~~开发 HTTP 只代理 Express~~（已做）。AgentRuntime 已不在本地 HTTP 上，客户端 eval 已迁到 `mvp/server/eval`，剩余类型抽取后即可删。
 2. ~~过程只留 `ApodexRunView`，从 live 路径拿掉 legacy 过程轨~~（已做）。`?shell=legacy` 不是产品路径。  

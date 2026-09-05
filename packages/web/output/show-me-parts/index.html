@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>零件从哪来 · 要 / 不要</title>
+  <style>
+    :root {
+      --paper: #fefcf6;
+      --paper-deep: #f5f1e6;
+      --ink: #151821;
+      --muted: #5b6070;
+      --accent: #b91c3c;
+      --keep: #16a34a;
+      --adapt: #d97706;
+      --drop: #e84a5f;
+      --line: color-mix(in srgb, var(--ink) 12%, transparent);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 16px/1.55 "PingFang SC", "Noto Sans SC", sans-serif;
+      padding-bottom: 140px;
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 36px 20px 40px; }
+    h1 { font-family: "Noto Serif SC", "Songti SC", serif; font-size: 30px; font-weight: 700; margin: 0 0 8px; }
+    .lede { color: var(--muted); margin: 0 0 22px; max-width: 46em; }
+    .lede a { color: var(--ink); }
+    .map {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr;
+      gap: 12px;
+      margin: 0 0 28px;
+    }
+    @media (max-width: 800px) { .map { grid-template-columns: 1fr; } }
+    figure { margin: 0; background: var(--paper-deep); border-radius: 8px; overflow: hidden; }
+    figcaption { padding: 10px 12px; font-size: 13px; color: var(--muted); }
+    img { display: block; width: 100%; background: #fff; }
+    h2 { font-size: 18px; margin: 36px 0 6px; }
+    .hint { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+    .tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-right: 6px; }
+    .keep { background: color-mix(in srgb, var(--keep) 14%, white); color: #146c36; }
+    .adapt { background: color-mix(in srgb, var(--adapt) 16%, white); color: #9a5b00; }
+    .drop { background: color-mix(in srgb, var(--drop) 14%, white); color: #9f1239; }
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 800px) { .cards { grid-template-columns: 1fr; } }
+    .card {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .card.want { outline: 2px solid color-mix(in srgb, var(--keep) 55%, transparent); }
+    .card.skip { outline: 2px solid color-mix(in srgb, var(--drop) 45%, transparent); opacity: 0.78; }
+    .card .shot { background: var(--paper-deep); max-height: 220px; overflow: hidden; }
+    .card .shot img { width: 100%; height: 220px; object-fit: cover; object-position: top; }
+    .body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+    .body h3 { margin: 0; font-size: 16px; }
+    .meta { font-size: 12px; color: var(--muted); }
+    .meta a { color: var(--muted); }
+    .why { margin: 0; font-size: 14px; color: var(--muted); }
+    .row { display: flex; gap: 8px; margin-top: auto; padding-top: 8px; }
+    button {
+      font: inherit;
+      cursor: pointer;
+      border-radius: 8px;
+      padding: 7px 12px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      color: var(--ink);
+    }
+    button.yes { border-color: color-mix(in srgb, var(--keep) 40%, transparent); }
+    button.no { border-color: color-mix(in srgb, var(--drop) 40%, transparent); }
+    .card.want button.yes { background: var(--keep); color: #fff; border-color: var(--keep); }
+    .card.skip button.no { background: var(--drop); color: #fff; border-color: var(--drop); }
+    .dock {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      background: color-mix(in srgb, var(--paper) 92%, white);
+      border-top: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+    .dock-inner { max-width: 1120px; margin: 0 auto; padding: 12px 20px 16px; display: grid; gap: 8px; }
+    .dock p { margin: 0; font-size: 14px; }
+    .dock code { font-size: 13px; }
+    .dock .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .skip-list { margin-top: 8px; }
+    .skip-list li { color: var(--muted); font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>对。零件去 X 和开源里捞，不自己发明。</h1>
+    <p class="lede">
+      你有 X 会员，背后能搜到正在用的库；开源社区把可复制的代码贴出来。
+      方法不是「刷热度画廊」，是按产品缺口去捞：<strong>结论和问题点是主秀</strong>，过程、引用、检索仪器先弱化再放进去。
+      Will's S：<em>想突出重点，先弱化次要</em>；动效要有目的、且不能当唯一信息。
+      首页已经搬完。下面只选<strong>案件页还缺的零件</strong>。点「要 / 不要」，底部复制结果发回。
+    </p>
+
+    <div class="map">
+      <figure>
+        <img src="../acceptance/home-mvp-port-desktop.png" alt="脊柱首页已经搬回 mvp 排版" />
+        <figcaption>首页 · 已搬完 · 左栏 + 红「与」+ 输入卡</figcaption>
+      </figure>
+      <div class="card" style="padding:16px">
+        <p class="tag keep">已搬</p>
+        <h3 style="margin:8px 0">首页</h3>
+        <p class="why">品牌、一句说明、灰底输入、加号、圆发送、最近核查。不再从零发明。</p>
+        <p class="why" style="margin-top:10px"><span class="tag adapt">还缺</span>案件页三件：过程折起、句中 [n] 引用、检索时的安静仪器。</p>
+      </div>
+    </div>
+
+    <h2>1. 引用 · 句中能点开，不是聊天气泡墙</h2>
+    <p class="hint">产品要的是脚注节奏：<code>[n]</code> 悬停看出处。字重和颜色分层，不要做成大徽章。</p>
+    <div class="cards">
+      <article class="card want" data-id="aie-inline" data-label="AI Elements Inline Citation">
+        <div class="shot"><img src="aie-inline.png" alt="句中 example.com +5 引用胶囊" /></div>
+        <div class="body">
+          <div><span class="tag keep">建议要</span><h3>AI Elements · Inline Citation</h3></div>
+          <p class="meta">开源 · <a href="https://ai-sdk.dev/elements/components/inline-citation">ai-sdk.dev/elements/…/inline-citation</a> · 复制进仓库再染纸墨</p>
+          <p class="why">句子里的来源胶囊，悬停出详情。最接近「对原句的回答 + 出处能点开」。</p>
+          <div class="row">
+            <button class="yes" type="button">要</button>
+            <button class="no" type="button">不要</button>
+          </div>
+        </div>
+      </article>
+      <article class="card want" data-id="pk-source" data-label="prompt-kit Source 脚注条">
+        <div class="shot"><img src="pk-source.png" alt="prompt-kit 来源 favicon 条" /></div>
+        <div class="body">
+          <div><span class="tag keep">建议要</span><h3>prompt-kit · Source</h3></div>
+          <p class="meta">开源 · <a href="https://www.prompt-kit.com/docs/source">prompt-kit.com/docs/source</a> · X 上 @Sikandar_Bhide 也在抄它的折起节奏</p>
+          <p class="why">结论底下一条 favicon 来源。当脚注行，不进主秀。悬停出标题和摘要。</p>
+          <div class="row">
+            <button class="yes" type="button">要</button>
+            <button class="no" type="button">不要</button>
+          </div>
+        </div>
+      </article>
+      <article class="card" data-id="tool-citation" data-label="Tool UI stacked citations">
+        <div class="shot"><img src="tool-citation.png" alt="叠起来的来源 favicon" /></div>
+        <div class="body">
+          <div><span class="tag adapt">可选密度</span><h3>Tool UI · Citation</h3></div>
+          <p class="meta">开源 · assistant-ui 团队 · <a href="https://www.tool-ui.com/docs/citation">tool-ui.com/docs/citation</a></p>
+          <p class="why">叠 favicon +「6 sources」。密度高，适合来源很多时。不当主按钮，也不要整张引用卡盖住判断。</p>
+          <div class="row">
+            <button class="yes" type="button">要</button>
+            <button class="no" type="button">不要</button>
+          </div>
+        </div>
+      </article>
+      <article class="card skip" data-id="aui-sources-shell" data-label="assistant-ui 对话壳里的 Sources">
+        <div class="shot"><img src="aui-sources.png" alt="assistant-ui Sources 芯片" /></div>
+        <div class="body">
+          <div><span class="tag drop">建议不要当脸</span><h3>assistant-ui · Sources 芯片</h3></div>
+          <p class="meta">开源 · X @pivi___ 推荐过 Elements 整套 · 零件可用，壳不要</p>
+          <p class="why">芯片本身安静。但库的产品脸是 ChatGPT 线程。搬芯片可以，搬「New chat / 左栏线程」不行。</p>
+          <div class="row">
+            <button class="yes" type="button">要</button>
+            <button class="no" type="button">不要</button>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <h2>2. 过程 · 默认可折，流完能收</h2>
+    <p class="hint">评委或较真用户再展开。推理用时、工具名退后。不要 Agent 指挥台。</p>
+    <div class="cards">
+      <article class="card want" data-id="pk-steps" data-label="prompt-kit Steps">
+        <div class="shot"><img src="pk-steps.png" alt="可折起的步骤列表" /></div>
+        <div class="body">
+          <div><span class="tag keep">建议要</span><h3>prompt-kit · Steps</h3></div>
+          <p class="meta">开源 · <a href="https://www.prompt-kit.com/docs/steps">prompt-kit.com/docs/steps</a></p>
+          <p class="why">一条竖线 + 可折步骤。正好对上「正在查哪些原子 / 哪路检索」。默认收起。</p>
+          <div class="row">
+            <button class="yes" type="button">要</button>
+            <button class="no" type="button">不要</button>
+          </div>
+        </div>
+      </article>
+      <article class="card want" data-id="pk-reasoning" data-label="prompt-kit Reasoning 自动收">
+        <div class="shot"><img src="pk-reasoning.png" alt="Show reasoning 折叠" /></div>
+        <div class="body">
+          <div><span class="tag keep">建议要</span><h3>prompt-kit · Reasoning</h3></div>
+          <p class="meta">开源 · <a href="https://www.prompt-kit.com/docs/reasoning">prompt-kit.com/docs/reasoning</a> · 流完自动关</p>
+          <p class="why">「Show reasoning ▾」。过程不是主秀：流的时候开，结束就收。符合动效要可选、不能当唯一信息。</p>
+          <div class="row">
+            <button class="yes" type="button">要</button>
+            <button class="no" type="button">不要</button>
+          </div>
+        </div>
+      </article>
+      <article class="card" data-id="aie-cot" data-label="AI Elements Chain of Thought">
+        <div class="shot"><img src="aie-cot.png" alt="检索步骤里带着来源徽章" /></div>
+        <div class="body">
+          <div><span class="tag adapt">改接线再要</span><h3>AI Elements · Chain of Thought</h3></div>
+          <p class="meta">开源 · <a href="https://ai-sdk.dev/elements/components/chain-of-thought">…/chain-of-thought</a></p>
+          <p class="why">步骤里能挂搜索结果徽章。对检索过程有用。头像卡、个人档案示例不要搬；不要做成第一屏英雄。</p>
+          <div class="row">
+            <button class="yes" type="button">要</button>
+            <button class="no" type="button">不要</button>
+          </div>
+        </div>
+      </article>
+      <article class="card" data-id="beautiful-thinking" data-label="Beautiful UI Thinking 折起节奏">
+        <div class="shot"><img src="beautiful.png" alt="Beautiful UI 暗色 Thinking 折起" /></div>
+        <div class="body">
+          <div><span class="tag adapt">抄节奏，不抄皮肤</span><h3>Beautiful UI · Thinking</h3></div>
+          <p class="meta">X · <a href="https://x.com/Hartdrawss/status/2093300397859332380">@Hartdrawss</a>（约 4k 收藏量级帖）· <a href="https://www.beautifului.dev/">beautifului.dev</a></p>
+          <p class="why">X 上这周在传：thinking traces、句中来源、approval。折起节奏可抄。暗色玻璃、Churning 人格文案不要进产品界面。</p>
+          <div class="row">
+            <button class="yes" type="button">要</button>
+            <button class="no" type="button">不要</button>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <h2>3. 检索仪器 · 有目的的动，不是落地页特效</h2>
+    <p class="hint">Apple Motion：为改善体验而动，不要为了动而动；动效应是可选的。雷达告诉你「几路检索在跑」，结论出来就停。</p>
+    <div class="cards">
+      <article class="card want" data-id="magic-beam" data-label="Magic UI Animated Beam">
+        <div class="shot"><img src="magic-beam.png" alt="Magic UI 光沿路径走的 beam" /></div>
+        <div class="body">
+          <div><span class="tag keep">建议要 · 仪器</span><h3>Magic UI · Animated Beam</h3></div>
+          <p class="meta">开源 MIT · <a href="https://magicui.design/docs/components/animated-beam">magicui.design/…/animated-beam</a> · mvp <code>SearchRadar</code> 已经 port 过</p>
+          <p class="why">脊柱案件页还空着。搬 mvp 那版，染成墨/纸，查的时候亮，出结论就停。不进首页，不当品牌。</p>
+          <div class="row">
+            <button class="yes" type="button">要</button>
+            <button class="no" type="button">不要</button>
+          </div>
+        </div>
+      </article>
+      <article class="card want" data-id="loading-ring" data-label="Loading UI 安静 ring">
+        <div class="shot"><img src="loading.png" alt="单色 ring 和 spokes spinner" /></div>
+        <div class="body">
+          <div><span class="tag keep">建议要 · 等待</span><h3>Loading UI · ring / spokes</h3></div>
+          <p class="meta">开源 · <a href="https://loading-ui.com/">loading-ui.com</a> · 产品画廊里已点名</p>
+          <p class="why">查证中要安静的圈，不是彩虹 conic。单色化成墨。不确定完成度时用它，不要假进度条。</p>
+          <div class="row">
+            <button class="yes" type="button">要</button>
+            <button class="no" type="button">不要</button>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <h2>明确不搬当产品脸</h2>
+    <ul class="skip-list">
+      <li>assistant-ui / CopilotKit 的聊天壳、Agent 网格、①–⑤ 流水线。</li>
+      <li>Aceternity、React Bits 的粒子、光柱、3D 环。X @tranmautritam 那条大收藏帖当目录用，不当方向。</li>
+      <li>21st.dev 只检索，不把整站皮肤搬进来。</li>
+      <li>Beautiful UI / aicss 的暗色「AI native」皮。纸还是纸。</li>
+    </ul>
+  </div>
+
+  <div class="dock">
+    <div class="dock-inner">
+      <p><strong>当前选择</strong></p>
+      <p>要：<code id="yes-list"></code></p>
+      <p>不要：<code id="no-list"></code></p>
+      <div class="actions">
+        <button type="button" id="copy">复制这段发回对话</button>
+        <button type="button" id="reset">回到建议默认</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const defaults = {
+      "aie-inline": "want",
+      "pk-source": "want",
+      "tool-citation": "",
+      "aui-sources-shell": "skip",
+      "pk-steps": "want",
+      "pk-reasoning": "want",
+      "aie-cot": "",
+      "beautiful-thinking": "",
+      "magic-beam": "want",
+      "loading-ring": "want"
+    };
+
+    function apply(id, state) {
+      const card = document.querySelector('[data-id="' + id + '"]');
+      if (!card) return;
+      card.classList.remove("want", "skip");
+      if (state) card.classList.add(state);
+      card.dataset.state = state;
+    }
+
+    function summarize() {
+      const yes = [];
+      const no = [];
+      document.querySelectorAll(".card[data-id]").forEach((card) => {
+        const label = card.dataset.label;
+        if (card.classList.contains("want")) yes.push(label);
+        if (card.classList.contains("skip")) no.push(label);
+      });
+      document.getElementById("yes-list").textContent = yes.join(" · ") || "（还没选）";
+      document.getElementById("no-list").textContent = no.join(" · ") || "（还没选）";
+      return { yes, no };
+    }
+
+    function reset() {
+      Object.entries(defaults).forEach(([id, state]) => apply(id, state));
+      summarize();
+    }
+
+    document.querySelectorAll(".card[data-id]").forEach((card) => {
+      card.querySelector(".yes")?.addEventListener("click", () => {
+        apply(card.dataset.id, "want");
+        summarize();
+      });
+      card.querySelector(".no")?.addEventListener("click", () => {
+        apply(card.dataset.id, "skip");
+        summarize();
+      });
+    });
+
+    document.getElementById("reset").addEventListener("click", reset);
+    document.getElementById("copy").addEventListener("click", async () => {
+      const { yes, no } = summarize();
+      const text = [
+        "零件选择（案件页，不发明）",
+        "要：" + (yes.join("；") || "无"),
+        "不要：" + (no.join("；") || "无"),
+        "未表态的当「先别搬」。首页已搬完，不要再动。"
+      ].join("\n");
+      try {
+        await navigator.clipboard.writeText(text);
+        document.getElementById("copy").textContent = "已复制";
+        setTimeout(() => { document.getElementById("copy").textContent = "复制这段发回对话"; }, 1500);
+      } catch {
+        prompt("复制失败，请手动拷：", text);
+      }
+    });
+
+    reset();
+  </script>
+</body>
+</html>

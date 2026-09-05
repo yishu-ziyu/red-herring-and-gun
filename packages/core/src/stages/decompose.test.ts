@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createCase } from "../casefile/reduce.js";
 import { createFakeLlm, type FakeScript } from "../llm/fakes.js";
 import { createStageContext } from "./context.js";
-import { runDecompose } from "./decompose.js";
+import { claimGroundedInCompleteParts, runDecompose } from "./decompose.js";
 
 const AT = "2026-09-03T00:00:00.000Z";
 const NOW = "2026-09-03T00:00:01.000Z";
@@ -33,6 +33,7 @@ describe("runDecompose", () => {
       expect(prompt).not.toContain(word);
     }
     expect(prompt).toContain("前提");
+    expect(prompt).toContain("只作上下文");
     expect(prompt).toContain("侧面");
     expect(prompt).toContain("孩子打疫苗后发烧，说明疫苗导致了自闭症");
     expect(prompt).toContain("群里那张P图配的侮辱性文字说的是真的");
@@ -160,7 +161,7 @@ describe("runDecompose", () => {
     });
   });
 
-  it("自证把全部命题丢掉则失败开放", async () => {
+  it("自证把全部命题丢掉则空结果，不整段放行", async () => {
     const source = "药能治失眠，药已获批准。";
     const { ctx } = setup({
       decompose: {
@@ -176,7 +177,7 @@ describe("runDecompose", () => {
         ],
       },
     });
-    const { claims } = await runDecompose(ctx, { claimSource: source });
+    const { claims, origin } = await runDecompose(ctx, { claimSource: source });
     const dropped = ctx.emitted.filter((e) => e.type === "claims.dropped");
     expect(dropped).toHaveLength(1);
     expect(dropped[0]).toMatchObject({
@@ -185,11 +186,12 @@ describe("runDecompose", () => {
         { text: "药已获批准", reason: "不成立" },
       ],
     });
-    expect(claims).toEqual([{ id: "c1", text: source, type: "fact", checkable: true, order: 0 }]);
-    expect(ctx.emitted.filter((e) => e.type === "claims.added")).toHaveLength(1);
+    expect(origin).toBe("empty");
+    expect(claims).toEqual([]);
+    expect(ctx.emitted.filter((e) => e.type === "claims.added")).toHaveLength(0);
     expect(ctx.emitted.filter((e) => e.type === "stage.finished").at(-1)).toMatchObject({
       stage: "decompose",
-      outcome: "failed-open",
+      outcome: "ok",
     });
   });
 
@@ -255,23 +257,108 @@ describe("runDecompose", () => {
     ).toBe(true);
   });
 
-  it("全是碎片时 fail-open 一条 fact", async () => {
+  it("全是碎片时空结果，不整段放行", async () => {
     const source = "国家医保局宣布";
     const { ctx } = setup({
       decompose: { claims: [{ text: "国家医保局宣布", type: "fact", checkable: true }] },
       "self-proof": keepAll(),
     });
-    const { claims } = await runDecompose(ctx, { claimSource: source });
-    expect(claims).toEqual([{ id: "c1", text: source, type: "fact", checkable: true, order: 0 }]);
+    const { claims, origin } = await runDecompose(ctx, { claimSource: source });
+    expect(origin).toBe("empty");
+    expect(claims).toEqual([]);
     expect(ctx.emitted.filter((e) => e.type === "stage.finished").at(-1)).toMatchObject({
       stage: "decompose",
-      outcome: "failed-open",
+      outcome: "ok",
     });
     expect(
       ctx.emitted.some(
         (e) => e.type === "claims.dropped" && e.dropped.some((d) => d.reason === "fragment"),
       ),
     ).toBe(true);
+  });
+
+  it("未补全条目不能成为可核命题，完整条目保留", async () => {
+    const incomplete = "对象还没说清是哪件";
+    const complete = "人社部发文说津贴打到个人卡";
+    const source = `${incomplete}\n${complete}`;
+    const { ctx, fake } = setup({
+      decompose: {
+        claims: [
+          { text: incomplete, type: "fact", checkable: true },
+          { text: complete, type: "fact", checkable: true },
+        ],
+      },
+      "self-proof": keepAll(),
+    });
+    const { claims, origin } = await runDecompose(ctx, {
+      claimSource: source,
+      parts: [incomplete, complete],
+      completeParts: [2],
+    });
+    expect(origin).toBe("model");
+    expect(claims.map((c) => c.text)).toEqual([complete]);
+    expect(
+      ctx.emitted.some(
+        (e) =>
+          e.type === "claims.dropped" &&
+          e.dropped.some((d) => d.text === incomplete && d.reason === "unresolved-context"),
+      ),
+    ).toBe(true);
+    const userContent = fake.calls.find((call) => call.job === "decompose")?.userContent ?? "";
+    expect(userContent).toContain("【1】");
+    expect(userContent).toContain("不得单独立案");
+    expect(userContent).toContain("本轮立案材料");
+  });
+
+  it("忠实拆题不因冒号或转述格式差异被标成 unresolved-context", async () => {
+    const complete = "某大学研究发现：隔夜面包会发霉";
+    expect(claimGroundedInCompleteParts("隔夜面包会发霉", [complete], [1])).toBe(true);
+    expect(claimGroundedInCompleteParts("某大学研究发现隔夜面包会发霉", [complete], [1])).toBe(true);
+    const { ctx } = setup({
+      decompose: {
+        claims: [{ text: "某大学研究发现隔夜面包会发霉", type: "fact", checkable: true }],
+      },
+      "self-proof": keepAll(),
+    });
+    const { claims, origin } = await runDecompose(ctx, {
+      claimSource: complete,
+      parts: [complete],
+      completeParts: [1],
+    });
+    expect(origin).toBe("model");
+    expect(claims.map((c) => c.text)).toEqual(["某大学研究发现隔夜面包会发霉"]);
+    expect(
+      ctx.emitted.some(
+        (e) => e.type === "claims.dropped" && e.dropped.some((d) => d.reason === "unresolved-context"),
+      ),
+    ).toBe(false);
+  });
+
+  it("首轮单条材料时不把跨句归属拆题标成 unresolved-context", async () => {
+    const source = "某大学研究发现：面包不能吃，放两天会发霉";
+    const later = "某大学研究发现面包放两天会发霉";
+    expect(claimGroundedInCompleteParts(later, [source], [1])).toBe(false);
+    const { ctx } = setup({
+      decompose: {
+        claims: [
+          { text: "某大学研究发现面包不能吃", type: "fact", checkable: true },
+          { text: later, type: "fact", checkable: true },
+        ],
+      },
+      "self-proof": keepAll(),
+    });
+    const { claims, origin } = await runDecompose(ctx, {
+      claimSource: source,
+      parts: [source],
+      completeParts: [1],
+    });
+    expect(origin).toBe("model");
+    expect(claims.map((c) => c.text)).toEqual(["某大学研究发现面包不能吃", later]);
+    expect(
+      ctx.emitted.some(
+        (e) => e.type === "claims.dropped" && e.dropped.some((d) => d.reason === "unresolved-context"),
+      ),
+    ).toBe(false);
   });
 
   it("剥掉句首传闻引语", async () => {

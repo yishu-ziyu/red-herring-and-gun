@@ -21,6 +21,17 @@ export function toFriendlyError(error: unknown, fallback: string): FriendlyError
 // latencyMs 整个删除；普通正文不匹配模型引用形状，不受影响。服务端 logger 保留全量诊断。
 const PROVIDER_NAME_RE = /minimax|stepfun|deepseek|360gpt|ai360|mimo|anthropic|openai|moonshot|kimi/i;
 const MODEL_REF_RE = /^[a-z0-9_-]+:[A-Za-z0-9._-]+$/;
+const STRIP_KEYS = new Set([
+  "provider",
+  "model",
+  "error",
+  "requestId",
+  "request_id",
+  "latency",
+  "latencyMs",
+  "systemPrompt",
+  "userContent",
+]);
 
 function scrubProviderDiagnostics(value: unknown, depth = 0): unknown {
   if (depth > 8) return value;
@@ -28,9 +39,7 @@ function scrubProviderDiagnostics(value: unknown, depth = 0): unknown {
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      // systemPrompt / userContent 是内部工程文本（含 provider 名与规则清单），
-      // 前端过程层不读取，剥离后顺带大幅减小公开载荷。
-      if (key === "latencyMs" || key === "systemPrompt" || key === "userContent") continue;
+      if (STRIP_KEYS.has(key)) continue;
       if (
         typeof item === "string" &&
         PROVIDER_NAME_RE.test(item) &&

@@ -49,7 +49,7 @@ describe("adaptOrchestrateStreamToShell", () => {
 
     // Agent summaries must not leak raw English enums into the process UI.
     const fact = model.agents.find((a) => a.agentId === "fact_checker");
-    expect(fact?.summary).toBe("事实判定：只能信一部分");
+    expect(fact?.summary).toBe("事实判定：部分成立");
     expect(fact?.summary).not.toMatch(/\bpartial\b/i);
 
     const source = model.agents.find((a) => a.agentId === "source_validator");

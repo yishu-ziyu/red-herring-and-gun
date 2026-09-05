@@ -47,7 +47,7 @@ describe("finalizeLoopReport", () => {
     });
     expect(report.verdictType).toBe("unverified");
     expect(String(report.conclusion)).toMatch(/没有收成判断/);
-    expect(String(report.conclusion)).not.toMatch(/^(能信|不能信|只能信一部分|还查不清)/);
+    expect(String(report.conclusion)).not.toMatch(/^(能信|不能信|只能信一部分|有真有假|部分成立|还查不清)/);
     expect(report._incomplete).toBe(true);
   });
 
@@ -67,10 +67,10 @@ describe("finalizeLoopReport", () => {
     expect(String(report.conclusion)).not.toMatch(/FactChecker|MiniMax|Agent/);
     expect(String(report.recommendation)).not.toMatch(/先别转发/);
     expect(String(report.recommendation)).not.toMatch(/先别转发/);
-    expect(String(report.recommendation)).not.toMatch(/^(能信|不能信|只能信一部分|还查不清)/);
+    expect(String(report.recommendation)).not.toMatch(/^(能信|不能信|只能信一部分|有真有假|部分成立|还查不清)/);
   });
 
-  it("mixed sourced true+false becomes 只能信一部分", async () => {
+  it("mixed sourced true+false becomes 有真有假", async () => {
     const urlTrue = "https://a.example/true";
     const urlFalse = "https://b.example/false";
     const report = await finalizeLoopReport({
@@ -114,7 +114,7 @@ describe("finalizeLoopReport", () => {
       }),
     });
     expect(report.verdictType).toBe("mixed_misleading");
-    expect(String(report.faceVerdict)).toBe("只能信一部分");
+    expect(String(report.faceVerdict)).toBe("有真有假");
   });
 
   it("keeps a research memo instead of clipping it to five sentences", async () => {
@@ -125,7 +125,7 @@ describe("finalizeLoopReport", () => {
       "**还查不清。** 这一判断分两层：",
       "",
       "1. **字面致癌：还查不清。** 未见国家级通报 [who.int](" + url + ")。",
-      "2. **加热风险：只能信一部分。**",
+      "2. **加热风险：部分成立。**",
       "",
       "## 一、已核对",
       "",

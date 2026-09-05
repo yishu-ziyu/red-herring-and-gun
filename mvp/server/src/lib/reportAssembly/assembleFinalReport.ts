@@ -23,7 +23,9 @@ import { applyImageOriginToReport, type ImageOriginResult } from "../imageOrigin
 export const FACE_VERDICT: Record<string, string> = {
   true: "能信",
   false: "不能信",
-  mixed_misleading: "只能信一部分",
+  mixed_misleading: "有真有假",
+  mixed: "有真有假",
+  partial: "部分成立",
   unverified: "还查不清",
 };
 

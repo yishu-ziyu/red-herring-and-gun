@@ -61,5 +61,29 @@ describe("App routes", () => {
       expect(document.querySelector("aside")).toBeTruthy();
     });
     expect(screen.getByText(VERDICT_SECTION)).toBeTruthy();
+    expect(document.querySelector(".source-chip")).toBeTruthy();
+    const fold = document.querySelector(".instrument-fold");
+    if (fold) expect(fold.getAttribute("aria-expanded")).toBe("false");
+    expect(document.querySelector(".verdict-lede")?.textContent).toMatch(/生育津贴/);
+    expect(document.querySelector(".verdict-score")).toBeNull();
+    expect(document.querySelector(".verdict-face")).toBeNull();
+  });
+
+  it("追问案件过程条只出现一次", async () => {
+    stubViewport(1280);
+    go("/cases/fx-followup");
+    render(<App />);
+    await waitFor(() => {
+      expect(document.querySelectorAll(".instrument").length).toBe(1);
+    });
+  });
+
+  it("检索中案件有等待圈或检索仪器", async () => {
+    stubViewport(1280);
+    go("/cases/fx-retrieving");
+    render(<App />);
+    await waitFor(() => {
+      expect(document.querySelector(".wait-ring, [data-testid='search-radar']")).toBeTruthy();
+    });
   });
 });

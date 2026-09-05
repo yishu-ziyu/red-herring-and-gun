@@ -5,13 +5,14 @@ import {
   buildQueryPortfolio,
   selectPriorityQueries,
 } from "../search/evidencePursuit/evidencePursuit.js";
-import { searchAll, type SearchProviderFn } from "../search/searchAll.js";
+import { searchAll, type SearchProgress, type SearchProviderFn } from "../search/searchAll.js";
 import type { StageContext } from "./context.js";
 
 export type RetrieveInput = {
   providers: SearchProviderFn[];
   maxClaims?: number;
   queriesPerClaim?: number;
+  sourceText?: string;
 };
 
 export type RetrieveResult = {
@@ -49,6 +50,55 @@ function nextEvidenceId(ctx: StageContext): string {
   return `e${ctx.current.evidence.length + 1}`;
 }
 
+function emitSourceTraces(
+  ctx: StageContext,
+  claimId: string,
+  query: string,
+  traces: readonly SearchProgress[],
+): void {
+  const started: string[] = [];
+  for (const progress of traces) {
+    if (progress.kind !== "provider.started" || progress.provider === undefined) continue;
+    if (started.includes(progress.provider)) continue;
+    started.push(progress.provider);
+    ctx.emit({
+      type: "search.source.started",
+      provider: progress.provider,
+      query,
+      claimId,
+    });
+  }
+  const seen = new Set<string>();
+  for (const progress of traces) {
+    if (
+      progress.kind !== "provider.finished" &&
+      progress.kind !== "provider.failed" &&
+      progress.kind !== "provider.cancelled"
+    ) {
+      continue;
+    }
+    const provider = progress.provider ?? "unknown";
+    if (seen.has(provider)) continue;
+    seen.add(provider);
+    const outcome =
+      progress.kind === "provider.finished" || progress.outcome === "ok"
+        ? "ok"
+        : progress.kind === "provider.cancelled" || progress.outcome === "cancelled"
+          ? "cancelled"
+          : "failed";
+    ctx.emit({
+      type: "search.source.finished",
+      provider,
+      query,
+      claimId,
+      outcome,
+      hitCount: progress.count ?? 0,
+      latencyMs: progress.latencyMs ?? 0,
+      ...(progress.errorCategory !== undefined ? { errorCategory: progress.errorCategory } : {}),
+    });
+  }
+}
+
 function emitClusterUpdates(ctx: StageContext): void {
   const items = ctx.current.evidence;
   const clusters = originCluster(
@@ -75,13 +125,14 @@ function emitClusterUpdates(ctx: StageContext): void {
 export async function runRetrieve(ctx: StageContext, input: RetrieveInput): Promise<RetrieveResult> {
   const maxClaims = input.maxClaims ?? DEFAULT_MAX_CLAIMS;
   const queriesPerClaim = input.queriesPerClaim ?? DEFAULT_QUERIES_PER_CLAIM;
+  const sourceText = input.sourceText ?? ctx.current.text;
   const { selected, skipped } = selectByLoad(ctx.current.claims, maxClaims);
   const seen = new Set(ctx.current.evidence.map((item) => item.canonicalUrl));
 
   type Task = { claim: Claim; query: string; claimIndex: number; queryIndex: number };
   const tasks: Task[] = [];
   for (const [claimIndex, claim] of selected.entries()) {
-    const queries = queriesFor(claim.text, ctx.current.text, queriesPerClaim);
+    const queries = queriesFor(claim.text, sourceText, queriesPerClaim);
     for (const [queryIndex, query] of queries.entries()) {
       tasks.push({ claim, query, claimIndex, queryIndex });
     }
@@ -94,11 +145,15 @@ export async function runRetrieve(ctx: StageContext, input: RetrieveInput): Prom
 
   const settled = await Promise.all(
     tasks.map(async (task) => {
+      const traces: SearchProgress[] = [];
       const found = await searchAll({}, task.query, {
         providers: input.providers,
         signal: ctx.signal,
+        claimId: task.claim.id,
+        clock: () => ctx.clock(),
+        onProgress: (progress) => traces.push(progress),
       });
-      return { task, found };
+      return { task, found, traces };
     }),
   );
   settled.sort((a, b) => {
@@ -106,16 +161,17 @@ export async function runRetrieve(ctx: StageContext, input: RetrieveInput): Prom
     return a.task.queryIndex - b.task.queryIndex;
   });
 
-  const byClaim = new Map<string, Array<{ query: string; hits: Evidence[] }>>();
+  const byClaim = new Map<string, Array<{ query: string; hits: Evidence[]; traces: SearchProgress[] }>>();
   for (const row of settled) {
     const list = byClaim.get(row.task.claim.id) ?? [];
-    list.push({ query: row.task.query, hits: row.found });
+    list.push({ query: row.task.query, hits: row.found, traces: row.traces });
     byClaim.set(row.task.claim.id, list);
   }
 
   for (const claim of emitOrder) {
     const batches = byClaim.get(claim.id) ?? [];
     for (const batch of batches) {
+      emitSourceTraces(ctx, claim.id, batch.query, batch.traces);
       for (const item of batch.hits) {
         if (seen.has(item.canonicalUrl)) continue;
         seen.add(item.canonicalUrl);

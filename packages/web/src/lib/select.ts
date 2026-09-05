@@ -14,6 +14,7 @@ const TIER_RANK: Record<string, number> = { A: 3, B: 2, C: 1, unknown: 0 };
 
 const STAGE_STATUS: Record<string, string> = {
   intake: STATUS.decomposing,
+  qualify: STATUS.decomposing,
   decompose: STATUS.decomposing,
   retrieve: STATUS.retrieving,
   assess: STATUS.assessing,
@@ -25,6 +26,14 @@ const STAGE_STATUS: Record<string, string> = {
 };
 
 const CITE_MARK = /\[(\d+)\]/g;
+
+export function summaryLine(current: Case | null, running: boolean, aborted = false, openingText?: string): string {
+  if (!current) return openingText?.trim() || STATUS.decomposing;
+  if (current.report?.conclusion) return firstSentence(current.report.conclusion).head;
+  const lastAssistant = current.messages.filter((message) => message.role === "assistant").at(-1)?.text;
+  if (lastAssistant?.trim()) return firstSentence(lastAssistant).head;
+  return latestStatus(current, running, aborted);
+}
 
 export function latestStatus(current: Case, running: boolean, aborted = false): string {
   const lastTurn = current.turns.at(-1);

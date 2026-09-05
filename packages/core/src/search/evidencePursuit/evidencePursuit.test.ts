@@ -62,6 +62,34 @@ describe("buildQueryPortfolio", () => {
     const purposes = new Set(picked.map((p) => p.purpose));
     expect(purposes.size).toBe(picked.length);
   });
+
+  it("selectPriorityQueries drops a later purpose whose normalized query matches an earlier pick", () => {
+    const atom = "甘南所有景点一律免费";
+    const portfolio = buildQueryPortfolio(atom);
+    const exact = portfolio.find((row) => row.purpose === "exact");
+    const entity = portfolio.find((row) => row.purpose === "entity");
+    expect(exact?.query).toBe(entity?.query);
+    const picked = selectPriorityQueries(portfolio, { max: 3 });
+    const queries = picked.map((row) => row.query);
+    expect(new Set(queries).size).toBe(queries.length);
+    expect(picked.filter((row) => row.query === exact?.query)).toHaveLength(1);
+    expect(picked.some((row) => row.purpose === "entity")).toBe(false);
+    expect(picked.some((row) => row.purpose !== "exact" && row.purpose !== "entity")).toBe(true);
+  });
+
+  it("selectPriorityQueries treats collapsed whitespace and case as the same query", () => {
+    const picked = selectPriorityQueries(
+      [
+        { purpose: "exact", query: "Foo  Bar", score: 0.9 },
+        { purpose: "entity", query: "foo bar", score: 0.9 },
+        { purpose: "primary", query: "foo bar 官方通报", score: 0.5 },
+        { purpose: "alternative", query: "另一路", score: 0.4 },
+      ],
+      { max: 3 },
+    );
+    expect(picked.map((row) => row.purpose)).toEqual(["exact", "primary", "alternative"]);
+    expect(new Set(picked.map((row) => row.query.replace(/\s+/g, " ").trim().toLowerCase())).size).toBe(3);
+  });
 });
 
 describe("assessEvidenceGap → next query", () => {

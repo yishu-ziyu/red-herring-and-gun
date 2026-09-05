@@ -41,6 +41,8 @@ export const MATERIALS = "已找到";
 export const MATERIALS_UNIT = "条材料";
 export const VERDICT_SECTION = "整句判决";
 export const CLAIM_SECTION = "命题";
+export const ORIGIN_SECTION = "原句";
+export const SYSTEM_PENDING = "系统还要核 · 不是原话";
 export const EVIDENCE_SECTION = "材料";
 export const GRAPH_SECTION = "出处图";
 export const MORE_SAME_ORIGIN = "还有";
@@ -66,6 +68,14 @@ export const SEARCH_OPEN = "去开通";
 export const SEARCH_RECHARGE = "去充值";
 export const SEARCH_PLACEHOLDER = "把密钥贴在这里";
 export const SEARCH_KEY_SAVED = "已保存密钥";
+export const SEARCH_LABEL = "检索";
+export const SEARCH_WAIT = "等待中";
+export const SEARCH_RUNNING = "检索中";
+export const SEARCH_DONE = "检索完成";
+export const SEARCH_FAIL = "失败";
+export const SEARCH_PARTIAL = "部分返回";
+export const MATERIALS_SHORT = "材料";
+export const PROCESS_FOLD = "过程";
 
 export const STATUS = {
   decomposing: "正在拆题",
@@ -153,6 +163,12 @@ export function moreInCluster(n: number): string {
 export function chaseLine(n: number, reason?: string): string {
   const base = `追索了 ${n} 步`;
   return reason ? `${base} · ${reason}` : base;
+}
+
+export function stepResultWord(result: string): string {
+  const t = result.trim();
+  if (/^(added|got)\s+e\d+$/i.test(t)) return "记下一条材料";
+  return t.replace(/\be\d+\b/g, "一条材料");
 }
 
 export function timelineTitle(chase: number, exam: number): string {

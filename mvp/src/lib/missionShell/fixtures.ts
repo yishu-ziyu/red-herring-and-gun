@@ -201,7 +201,7 @@ export const FIXTURE_COMPLETE: OrchestrateStreamEvent[] = [
       verdictType: "mixed_misleading",
       conclusion: "说法存在夸大，加热不当有风险但不宜直接等同致癌。",
       credibilityScore: 42,
-      recommendation: "只能信一部分。加热不当有风险，不能等同致癌。",
+      recommendation: "有真有假。加热不当有风险，不能等同致癌。",
       keyFindings: ["加热不当可能产生有害物，但不等于必然致癌"],
       evidenceChain: [
         {

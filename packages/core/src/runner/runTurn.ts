@@ -11,6 +11,14 @@ import { runFinalize } from "../stages/finalize.js";
 import { runIntake, type IntakeAttachment, type IntakeTools } from "../stages/intake.js";
 import { runInvestigator, type InvestigatorTools } from "../stages/investigate.js";
 import { runJudge } from "../stages/judgeStage.js";
+import {
+  claimSourceParts,
+  dropUnqualifiedClaims,
+  hasCheckableClaim,
+  qualifyFallback,
+  replyToUser,
+  runQualify,
+} from "../stages/qualify.js";
 import { runRetrieve } from "../stages/retrieve.js";
 import { routeMessage, type RouteKind } from "./route.js";
 import { runAskCase, runChallenge, runOffTopic, runPursueFrontier } from "./turns.js";
@@ -38,6 +46,7 @@ const DEFAULT_COMPOSE_RESERVE_MS = 30_000;
 
 type StageName =
   | "intake"
+  | "qualify"
   | "decompose"
   | "retrieve"
   | "assess"
@@ -218,6 +227,11 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
   }
 
   let claimSource = input.message.text;
+  let qualifyParts: string[] = [];
+  let completeParts: number[] = [];
+  let needsContext = false;
+  let halt: "reply" | null = null;
+  const filing = ctx.current.claims.length === 0;
   const steps: { stage: StageName; wrap: boolean; run: () => Promise<void> }[] = [
     {
       stage: "intake",
@@ -229,20 +243,64 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
           tools: { fetch: deps.tools.fetch, vision: deps.tools.vision },
         });
         claimSource = result.claimSource;
+        if (filing) {
+          qualifyParts = claimSourceParts(ctx.current, claimSource);
+          claimSource = qualifyParts.join("\n");
+        }
+      },
+    },
+    {
+      stage: "qualify",
+      wrap: false,
+      run: async () => {
+        if (!filing) return;
+        const result = await runQualify(ctx, {
+          claimSource,
+          parts: qualifyParts,
+        });
+        if (result.ready) {
+          completeParts = result.completeParts;
+          needsContext = result.needsContext;
+          const bearing = completeParts
+            .map((n) => qualifyParts[n - 1])
+            .filter((part): part is string => Boolean(part?.trim()))
+            .join("\n");
+          if (bearing) claimSource = bearing;
+          return;
+        }
+        replyToUser(ctx, result.reply);
+        halt = "reply";
       },
     },
     {
       stage: "decompose",
       wrap: false,
       run: async () => {
-        await runDecompose(ctx, { claimSource });
+        const result = await runDecompose(ctx, {
+          claimSource,
+          ...(qualifyParts.length > 0 ? { parts: qualifyParts } : {}),
+          ...(completeParts.length > 0 ? { completeParts } : {}),
+          ...(needsContext ? { needsContext: true } : {}),
+        });
+        const realCheckable = result.origin === "model" && result.claims.some((claim) => claim.checkable);
+        if (realCheckable) return;
+        if (!filing && hasCheckableClaim(ctx.current)) return;
+        dropUnqualifiedClaims(ctx);
+        const reply =
+          result.origin === "fail-open"
+            ? qualifyFallback("unavailable")
+            : result.origin === "empty"
+              ? qualifyFallback("no_claim")
+              : qualifyFallback("stance_only");
+        replyToUser(ctx, reply);
+        halt = "reply";
       },
     },
     {
       stage: "retrieve",
       wrap: false,
       run: async () => {
-        await runRetrieve(ctx, { providers: deps.searchProviders });
+        await runRetrieve(ctx, { providers: deps.searchProviders, sourceText: claimSource });
       },
     },
     {
@@ -285,6 +343,7 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
 
   try {
     for (const step of steps) {
+      if (halt) break;
       const decision = gate(step.stage);
       if (decision === "abort") {
         finish("aborted");
@@ -315,6 +374,10 @@ async function runPipeline(input: RunTurnInput, stream: EventStream): Promise<vo
         await goCompose();
         return;
       }
+    }
+    if (halt === "reply") {
+      finish("done");
+      return;
     }
     await goCompose();
   } catch (error) {

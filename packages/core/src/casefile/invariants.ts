@@ -6,7 +6,17 @@ function isHttpUrl(url: string): boolean {
 
 export function assertInvariants(c: Case): void {
   const violations: string[] = [];
-  const claimIds = new Set(c.claims.map((claim) => claim.id));
+  const claimIds = new Set<string>();
+  const seenClaimIds = new Set<string>();
+  for (const claim of c.claims) {
+    if (seenClaimIds.has(claim.id)) violations.push(`duplicate claim id ${claim.id}`);
+    seenClaimIds.add(claim.id);
+    claimIds.add(claim.id);
+  }
+  for (const dropped of c.droppedClaims) {
+    if (seenClaimIds.has(dropped.id)) violations.push(`duplicate claim id ${dropped.id} in droppedClaims`);
+    seenClaimIds.add(dropped.id);
+  }
   const evidenceById = new Map(c.evidence.map((item) => [item.id, item]));
   const stanceById = new Map(c.stances.map((item) => [item.id, item]));
 

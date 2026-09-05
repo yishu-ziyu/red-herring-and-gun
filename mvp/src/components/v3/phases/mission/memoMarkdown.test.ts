@@ -13,7 +13,7 @@ describe("looksLikeResearchMemo", () => {
 describe("composeResearchMemo", () => {
   it("wraps a short verdict into 核心结论 + REFERENCES, not a slogan card", () => {
     const md = composeResearchMemo({
-      verdictLabel: "只能信一部分",
+      verdictLabel: "有真有假",
       conclusion: "说法存在夸大，加热不当有风险但不宜直接等同致癌。",
       findings: ["加热不当可能产生有害物，但不等于必然致癌"],
       sources: [{ title: "食品安全科普", url: "https://example.com/food-safety" }],
@@ -22,7 +22,7 @@ describe("composeResearchMemo", () => {
     expect(md).not.toContain("# 隔夜菜加热会致癌吗");
     expect(md).not.toMatch(/^# /m);
     expect(md.startsWith("## 核心结论")).toBe(true);
-    expect(md).not.toContain("**只能信一部分。**");
+    expect(md).not.toContain("**有真有假。**");
     expect(md).toContain("说法存在夸大");
     expect(md).toContain("REFERENCES");
     expect(md).toContain("https://example.com/food-safety");
@@ -71,7 +71,7 @@ describe("parseResearchMemo", () => {
       "**不能信。** 这一判断分两层：",
       "",
       "1. **字面致癌：没有依据。** 未见国家级通报 [who.int](https://www.who.int/food) +2。",
-      "2. **加热不当有害：只能信一部分。**",
+      "2. **加热不当有害：部分成立。**",
       "",
       "## 一、已核对的事实",
       "",

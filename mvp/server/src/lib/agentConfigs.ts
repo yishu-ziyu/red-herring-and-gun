@@ -203,6 +203,7 @@ const subclaimVerdictsSchema = {
           "Evidence prose for this atom. When supportingSources is non-empty, insert [n] after the claim it supports; n is 1-based and matches this item's supportingSources order (first source → [1]). No [n] when supportingSources is empty. Do not invent numbers outside that array.",
       },
       boundary: { type: "string" },
+      crossExamResponse: { type: "string", description: "收到 crossExam 时，直接回应该命题的具体质询；未收到时省略。" },
       // 判定可追溯：三个新字段不强制（兜底可为空数组），但结构明确
       supportingSources: {
         type: "array",
@@ -508,6 +509,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "2. 每条 claimAtom 必须能回溯到原句，只能取输入 claimAtoms 中真实存在的原子，不得引入原句未声称的信息或编造不存在的原子。",
       "3. verdict 五值：true（证据支持）、false（证据否定）、partial（部分成立）、exaggerated（夸大/断章取义）、unverified（无法判定，待补证）。",
       "4. 每条必须写 evidence（证据）与 boundary（边界/不能推出的部分）。",
+      "若输入含 crossExam，针对其中具体 challenge 在相应 subclaimVerdicts.crossExamResponse 中回应一次。使用本轮实际材料，可保留或修改原判词；必须仍输出所有命题。补查未运行或无新增时不得声称已补查成功，不按第二意见票数改结论。",
       "5. verdict 为 true / partial / exaggerated 时，supportingSources 必须给出真实 URL（来自该原子检索结果）；",
       "   给不出 URL 的不得判肯定值，改判 unverified 并在 evidenceGaps 写明待补证。",
       "",
@@ -730,9 +732,11 @@ export function buildAgentInput(
 
     case "fact_checker": {
       const prev = previousSteps.find((s) => s.agent === "rumor_detector");
+      const crossExam = [...previousSteps].reverse().find((s) => s.agent === "cross_examiner");
       return {
         claim,
         task: "对该 claim 进行事实核查",
+        ...(crossExam ? { crossExam: crossExam.output, previousFactCheck: [...previousSteps].reverse().find(s => s.agent === "fact_checker")?.output } : {}),
         claimAtoms: prev?.output?.claimAtoms ?? [],
         rumorTypes: prev?.output?.rumorTypes ?? [],
         rumorIndicators: prev?.output?.rumorIndicators ?? [],
@@ -756,7 +760,7 @@ export function buildAgentInput(
     // Causal enrichment agents (input builders ready; configs may land later on server)
     case "alternative_explanation_searcher": {
       const rumorStep = previousSteps.find((s) => s.agent === "rumor_detector");
-      const factStep = previousSteps.find((s) => s.agent === "fact_checker");
+      const factStep = [...previousSteps].reverse().find((s) => s.agent === "fact_checker");
       return {
         claim,
         task: "为当前因果断言生成替代解释",
@@ -768,7 +772,7 @@ export function buildAgentInput(
     }
 
     case "counter_evidence_grader": {
-      const factStep = previousSteps.find((s) => s.agent === "fact_checker");
+      const factStep = [...previousSteps].reverse().find((s) => s.agent === "fact_checker");
       return {
         claim,
         task: "评估反证和证据缺口对结论的影响",
@@ -782,13 +786,14 @@ export function buildAgentInput(
 
     case "report_composer": {
       const rumorStep = previousSteps.find((s) => s.agent === "rumor_detector");
-      const factStep = previousSteps.find((s) => s.agent === "fact_checker");
+      const factStep = [...previousSteps].reverse().find((s) => s.agent === "fact_checker");
       const sourceStep = previousSteps.find((s) => s.agent === "source_validator");
       const altStep = previousSteps.find((s) => s.agent === "alternative_explanation_searcher");
       const graderStep = previousSteps.find((s) => s.agent === "counter_evidence_grader");
       return {
         claim,
         task: "生成综合核查报告",
+        crossExam: [...previousSteps].reverse().find(s => s.agent === "cross_examiner")?.output,
         rumorAnalysis: {
           claimAtoms: compactStrings(rumorStep?.output?.claimAtoms, 12, 180),
           rumorTypes: compactStrings(rumorStep?.output?.rumorTypes, 4, 80),

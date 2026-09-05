@@ -29,7 +29,7 @@ export function looksLikeResearchMemo(text: string): boolean {
   return paras >= 3 && t.length > 280;
 }
 
-const FACE_ALT = "只能信一部分|还查不清|不能信|这次没查完|能信";
+const FACE_ALT = "只能信一部分|有真有假|部分成立|还查不清|不能信|这次没查完|能信";
 const FACE_TOKEN = `(?:\\*\\*)?(?:${FACE_ALT})[。．.]?(?:\\*\\*)?[。．.]?[ \\t]*`;
 
 export function stripFaceStamp(text: string): string {
@@ -55,7 +55,7 @@ function emphasizeFirstSentence(text: string): string {
 
 export function stripLeadingVerdictEcho(text: string | undefined, label: string): string {
   if (!text) return "";
-  const labels = [label, "不能信", "能信", "只能信一部分", "还查不清", "这次没查完"].filter(Boolean);
+  const labels = [label, "不能信", "能信", "有真有假", "部分成立", "只能信一部分", "还查不清", "这次没查完"].filter(Boolean);
   let t = stripFaceStamp(text);
   t = t.replace(/^\*\*/, "").replace(/\*\*$/, "");
   for (const p of labels) {

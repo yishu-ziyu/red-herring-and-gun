@@ -9,8 +9,14 @@ import type { StageContext } from "./context.js";
 import { DecomposeOutputSchema } from "./decompose.schema.js";
 import { parseJobOutput } from "./parseOutput.js";
 
-export type DecomposeInput = { claimSource: string };
-export type DecomposeResult = { claims: Claim[] };
+export type DecomposeInput = {
+  claimSource: string;
+  parts?: readonly string[];
+  completeParts?: readonly number[];
+  needsContext?: boolean;
+};
+export type DecomposeOrigin = "model" | "fail-open" | "empty";
+export type DecomposeResult = { claims: Claim[]; origin: DecomposeOrigin };
 
 const CLAIM_ATOM_TYPES: readonly ClaimAtomType[] = [
   "fact",
@@ -42,6 +48,7 @@ export const DECOMPOSE_SYSTEM_PROMPT = [
   "8. 只拆断言（说话人要你相信的、别人可能反对的事），不拆前提（断言成立所依赖的背景、条件、场景）。背景事实、时间条件、逾期/需在某时完成，都不要单独成条。若 B 以 A 为前提（A 不成立则 B 无意义），只出断言。反例：『孩子打疫苗后发烧，说明疫苗导致了自闭症』只出『疫苗导致自闭症』，不出『孩子打疫苗后发烧』；『群里那张P图配的侮辱性文字说的是真的』只出『那段侮辱性文字说的是真的』，不出『群里有一张P图』『P图配有文字』；『扫码可领补贴，逾期视为弃权』只出『扫码可领 2024 年个人劳动补贴』，不出『需在逾期前完成』。例外：前提本身是可公开核查的事实主张（统计数据、政策文件、公开事件）时，前提要单独成条——『某地推广某保健品后癌症死亡率下降，证明该保健品能防癌』出两条：『某地推广该保健品后癌症死亡率下降』和『该保健品能防癌』。",
   "9. 「没有公告 / 没有披露 / 暂无消息 / 未得到证实」这类证据缺失表述是主命题的限定语，不单独成条。反例：『同事群里说我们公司下周一会被收购，没有公告也没有监管披露』只出『我们公司下周一会被收购』一条，不出『没有公告』『没有监管披露』。",
   "10. 同一事件的多个描述侧面合成一条，不要把「被拉去销毁」和「装船运走」拆成两条。反例：『电动车都被集中拉去国外销毁了，一批一批装船运走』是一条：『电动车被集中装船运往国外销毁』。",
+  "11. 材料可能分多条先后补充。本轮只拆立案材料里的当前说法。先前未获资格的条目只作上下文，禁止再立成命题，禁止产出被当前说法取代的重复命题。当前说法已自足时，不要把上下文写进命题；只有当前说法必须靠上下文才能完整时，才用上下文补全所指，且只产出解析后的当前说法。",
   "",
   "【可否核对 / type 与 checkable — 强制】",
   "对每个命题给出 checkable（是否可核对）与 type（类型）。",
@@ -128,11 +135,24 @@ function keepSpan(span: { start: number; end: number } | undefined, source: stri
   return span;
 }
 
+function nextClaimNumber(ctx: StageContext): number {
+  let max = 0;
+  const consider = (id: string) => {
+    const match = /^c(\d+)$/.exec(id);
+    if (!match) return;
+    const n = Number(match[1]);
+    if (n > max) max = n;
+  };
+  for (const claim of ctx.current.claims) consider(claim.id);
+  for (const dropped of ctx.current.droppedClaims) consider(dropped.id);
+  return max + 1;
+}
+
 function toClaims(ctx: StageContext, drafts: DraftClaim[]): Claim[] {
-  const start = ctx.current.claims.length;
+  const start = nextClaimNumber(ctx);
   return drafts.map((draft, i) => {
     const claim: Claim = {
-      id: `c${start + i + 1}`,
+      id: `c${start + i}`,
       text: draft.text,
       type: draft.type,
       checkable: draft.checkable,
@@ -167,11 +187,93 @@ function splitFragments(drafts: DraftClaim[]): { kept: DraftClaim[]; fragments: 
   return { kept, fragments };
 }
 
-function failOpen(ctx: StageContext, claimSource: string): DecomposeResult {
-  const claims = toClaims(ctx, [{ text: claimSource, type: "fact", checkable: true }]);
+function compactGround(text: string): string {
+  return stripHearsayPrefix(text)
+    .replace(/\s+/g, "")
+    .replace(/\p{P}+/gu, "")
+    .replace(/\p{S}+/gu, "");
+}
+
+export function claimGroundedInCompleteParts(
+  claimText: string,
+  parts: readonly string[],
+  completeParts: readonly number[],
+): boolean {
+  const needle = compactGround(claimText);
+  if (!needle) return false;
+  for (const n of completeParts) {
+    const part = parts[n - 1];
+    if (!part) continue;
+    const hay = compactGround(part);
+    if (!hay) continue;
+    if (hay.includes(needle) || needle.includes(hay)) return true;
+  }
+  return false;
+}
+
+export function claimIsHistoryOnly(
+  claimText: string,
+  parts: readonly string[],
+  completeParts: readonly number[],
+): boolean {
+  if (claimGroundedInCompleteParts(claimText, parts, completeParts)) return false;
+  const history = parts.map((_, i) => i + 1).filter((n) => !completeParts.includes(n));
+  return history.length > 0 && claimGroundedInCompleteParts(claimText, parts, history);
+}
+
+function sourceForFailOpen(input: DecomposeInput): string {
+  if (input.parts && input.completeParts && input.completeParts.length > 0) {
+    const chunks = input.completeParts
+      .map((n) => input.parts![n - 1])
+      .filter((part): part is string => Boolean(part?.trim()));
+    if (chunks.length > 0) return chunks.join("\n");
+  }
+  return input.claimSource;
+}
+
+function failOpen(ctx: StageContext, input: DecomposeInput): DecomposeResult {
+  const claims = toClaims(ctx, [{ text: sourceForFailOpen(input), type: "fact", checkable: true }]);
   ctx.emit({ type: "claims.added", claims });
   ctx.emit({ type: "stage.finished", stage: "decompose", outcome: "failed-open" });
-  return { claims };
+  return { claims, origin: "fail-open" };
+}
+
+function dropUnresolved(ctx: StageContext, drafts: DraftClaim[]): void {
+  if (drafts.length === 0) return;
+  const origin = ctx.current.droppedClaims.length;
+  ctx.emit({
+    type: "claims.dropped",
+    dropped: drafts.map((item, i) => ({
+      id: `d${origin + i + 1}`,
+      text: item.text,
+      reason: "unresolved-context",
+    })),
+  });
+}
+
+function buildDecomposeUserContent(input: DecomposeInput): string {
+  const parts = input.parts ?? [];
+  const completeParts = input.completeParts ?? [];
+  if (parts.length === 0) {
+    return ["原句：", input.claimSource, "", "请拆成 claims 数组。"].join("\n");
+  }
+  const contextIdx = parts.map((_, i) => i + 1).filter((n) => !completeParts.includes(n));
+  const lines: string[] = [];
+  if (contextIdx.length > 0) {
+    lines.push("上下文（先前未获资格，不得单独立案，不得产出被本轮说法取代的重复命题）：");
+    for (const n of contextIdx) lines.push(`【${n}】${parts[n - 1]}`);
+  }
+  if (completeParts.length > 0) {
+    lines.push("本轮立案材料：");
+    for (const n of completeParts) lines.push(`【${n}】${parts[n - 1]}`);
+    if (input.needsContext) {
+      lines.push("当前说法要靠上下文补全所指。只产出解析后的当前说法，不要把上下文条目各自再立命题。");
+    } else {
+      lines.push("当前说法已自足。不要把上下文写进命题。");
+    }
+  }
+  lines.push("", "原句：", input.claimSource, "", "请拆成 claims 数组。");
+  return lines.join("\n");
 }
 
 export async function runDecompose(ctx: StageContext, input: DecomposeInput): Promise<DecomposeResult> {
@@ -181,18 +283,18 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
     const result = await ctx.llm({
       job: "decompose",
       systemPrompt: DECOMPOSE_SYSTEM_PROMPT,
-      userContent: ["原句：", input.claimSource, "", "请拆成 claims 数组。"].join("\n"),
+      userContent: buildDecomposeUserContent(input),
       responseSchema: DecomposeOutputSchema,
       maxTokens: 4096,
     });
     output = result.output;
   } catch {
-    return failOpen(ctx, input.claimSource);
+    return failOpen(ctx, input);
   }
   const parsed = parseJobOutput(DecomposeOutputSchema, output);
   if (!parsed.ok) {
     ctx.emit({ type: "error", stage: "decompose", message: parsed.reason });
-    return failOpen(ctx, input.claimSource);
+    return failOpen(ctx, input);
   }
 
   const drafts: DraftClaim[] = parsed.value.claims.flatMap((item) => {
@@ -208,7 +310,26 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
       },
     ];
   });
-  const rawTexts = drafts.map((draft) => draft.text);
+  const historyParts =
+    input.parts && input.completeParts
+      ? input.parts.map((_, i) => i + 1).filter((n) => !input.completeParts!.includes(n))
+      : [];
+  let grounded = drafts;
+  if (historyParts.length > 0 && input.parts && input.completeParts && input.completeParts.length > 0) {
+    const unresolved: DraftClaim[] = [];
+    grounded = [];
+    for (const draft of drafts) {
+      const keep = input.needsContext
+        ? !claimIsHistoryOnly(draft.text, input.parts, input.completeParts)
+        : claimGroundedInCompleteParts(draft.text, input.parts, input.completeParts);
+      if (keep) grounded.push(draft);
+      else unresolved.push(draft);
+    }
+    dropUnresolved(ctx, unresolved);
+  }
+  const proofSource =
+    input.needsContext && input.parts && input.parts.length > 0 ? input.parts.join("\n") : input.claimSource;
+  const rawTexts = grounded.map((draft) => draft.text);
 
   let selfProofError: string | undefined;
   const callModel: SelfProofModelCall = async (params) => {
@@ -220,8 +341,8 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
     }
   };
   // runClaimAtomSelfProof 吞掉 callModel 抛错并保留原子；抛错时发 error，不整段失败开放。
-  const proof = await runClaimAtomSelfProof(input.claimSource, rawTexts, callModel);
-  const byKey = indexDrafts(drafts);
+  const proof = await runClaimAtomSelfProof(proofSource, rawTexts, callModel);
+  const byKey = indexDrafts(grounded);
   const keptDrafts: DraftClaim[] = [];
   for (const key of proof.kept) {
     const draft = byKey.get(key);
@@ -256,9 +377,12 @@ export async function runDecompose(ctx: StageContext, input: DecomposeInput): Pr
       })),
     });
   }
-  if (kept.length === 0) return failOpen(ctx, input.claimSource);
+  if (kept.length === 0) {
+    ctx.emit({ type: "stage.finished", stage: "decompose", outcome: "ok" });
+    return { claims: [], origin: "empty" };
+  }
   const claims = toClaims(ctx, kept);
   ctx.emit({ type: "claims.added", claims });
   ctx.emit({ type: "stage.finished", stage: "decompose", outcome: "ok" });
-  return { claims };
+  return { claims, origin: "model" };
 }

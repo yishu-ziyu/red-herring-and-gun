@@ -4,13 +4,14 @@
  * No tool names, no agent names, no forwarding advice.
  */
 
-export const FACE_WORDS = ["能信", "不能信", "只能信一部分", "还查不清"] as const;
+export const FACE_WORDS = ["能信", "不能信", "有真有假", "部分成立", "还查不清"] as const;
 
 const FACE_BY_TYPE: Record<string, (typeof FACE_WORDS)[number]> = {
   true: "能信",
   false: "不能信",
-  mixed_misleading: "只能信一部分",
-  partial: "只能信一部分",
+  mixed_misleading: "有真有假",
+  mixed: "有真有假",
+  partial: "部分成立",
   unverified: "还查不清",
 };
 
@@ -45,7 +46,7 @@ export function looksLikeResearchMemo(text: string): boolean {
   return paras >= 3 && t.length > 280;
 }
 
-const FACE_ALT = "只能信一部分|还查不清|不能信|这次没查完|能信";
+const FACE_ALT = "只能信一部分|有真有假|部分成立|还查不清|不能信|这次没查完|能信";
 const FACE_TOKEN = `(?:\\*\\*)?(?:${FACE_ALT})[。．.]?(?:\\*\\*)?[。．.]?[ \\t]*`;
 const FACE_LEAD_RE = new RegExp(`^${FACE_TOKEN}`);
 const FACE_AFTER_CORE_RE = new RegExp(`(##\\s*核心结论\\s*\\n+)${FACE_TOKEN}`);
@@ -54,12 +55,14 @@ export function startsWithFace(text: string): boolean {
   return Boolean(leadingFaceWord(text));
 }
 
-export function leadingFaceWord(text: string): (typeof FACE_WORDS)[number] | undefined {
+const STAMP_WORDS = ["只能信一部分", "有真有假", "部分成立", "还查不清", "不能信", "能信"] as const;
+
+export function leadingFaceWord(text: string): (typeof STAMP_WORDS)[number] | undefined {
   let t = (text ?? "").trim();
   const core = t.match(/##\s*核心结论\s*\n+([\s\S]*)/);
   if (core) t = core[1].trim();
   t = t.replace(/^\*\*/, "");
-  for (const word of ["只能信一部分", "还查不清", "不能信", "能信"] as const) {
+  for (const word of STAMP_WORDS) {
     if (t.startsWith(word)) return word;
   }
   return undefined;
@@ -75,7 +78,7 @@ export function stripFaceStamp(text: string): string {
 
 function isFaceOnly(text: string): boolean {
   const t = text.trim().replace(/^\*\*/, "").replace(/\*\*$/, "").replace(/[。．.]$/, "");
-  return (FACE_WORDS as readonly string[]).includes(t) || t === "这次没查完";
+  return (FACE_WORDS as readonly string[]).includes(t) || t === "这次没查完" || t === "只能信一部分";
 }
 
 /** User-facing fallback when the model left no real answer. Not the four-word stamp. */
@@ -85,8 +88,10 @@ export function directAnswer(verdictType: unknown): string {
       return "公开材料撑得住这条说法。";
     case "不能信":
       return "公开材料不支持这条说法。";
-    case "只能信一部分":
-      return "这条说法要拆开看，不能整句当真。";
+    case "有真有假":
+      return "这句话里有站住的部分，也有没站住的部分。";
+    case "部分成立":
+      return "这句话只在有限范围内成立。";
     default:
       return "公开材料还撑不住判断。";
   }

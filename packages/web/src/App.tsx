@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { ThreadView } from "./case/ThreadView.js";
 import { listCases, type CaseListItem } from "./lib/api.js";
 import { fixtureNameOf } from "./lib/catalog.js";
-import { latestStatus } from "./lib/select.js";
-import { faceWord } from '@rhg/core/publicCopy';
+import { MEMO_USER, STATUS } from "./lib/copy.js";
+import { clearOpening, readOpening } from "./lib/opening.js";
+import { summaryLine } from "./lib/select.js";
 import { useCaseStream } from "./lib/useCaseStream.js";
 import { useRoute } from "./lib/useRoute.js";
 import { CasePanel } from "./pages/CasePage.js";
@@ -31,11 +32,14 @@ export function App() {
   }, [caseId]);
 
   const current = stream.case;
+  const openingText = current ? null : readOpening(caseId);
   const summary = {
-    face: current?.overall ? faceWord(current.overall.verdictType) : "—",
-    score: current?.overall?.score,
-    status: current ? latestStatus(current, stream.running, stream.aborted) : "—",
+    line: summaryLine(current, stream.running, stream.aborted, openingText ?? undefined),
   };
+
+  useEffect(() => {
+    if (current) clearOpening();
+  }, [current]);
 
   useEffect(() => {
     if (!flashClaim) return;
@@ -72,7 +76,7 @@ export function App() {
         current ? (
           <CasePanel current={current} running={stream.running} aborted={stream.aborted} onFocusClaim={onFocusClaim} />
         ) : (
-          <p className="muted">还没有案件</p>
+          <p className="muted">{STATUS.decomposing}</p>
         )
       }
       onOpen={(id) => navigate(`/cases/${id}`)}
@@ -90,7 +94,20 @@ export function App() {
           onAbort={stream.abort}
         />
       ) : (
-        <p className="muted">{stream.error ?? "正在打开案件"}</p>
+        <div className="thread">
+          <div className="thread-body">
+            {openingText ? (
+              <article className="memo-user font-serif">
+                <p className="bubble-meta">{MEMO_USER}</p>
+                <p>{openingText}</p>
+              </article>
+            ) : null}
+            <p className="status-line">
+              <span className="wait-ring" aria-hidden />
+              {stream.error ?? STATUS.decomposing}
+            </p>
+          </div>
+        </div>
       )}
     </AppShell>
   );

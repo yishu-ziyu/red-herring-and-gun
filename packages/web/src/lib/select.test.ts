@@ -8,6 +8,7 @@ import {
   openFrontier,
   parseCiteMarks,
   pivotLabel,
+  summaryLine,
 } from "./select.js";
 
 const AT = "2026-09-03T12:00:00.000Z";
@@ -175,5 +176,34 @@ describe("graphElements", () => {
     const graph = graphElements(current);
     expect(graph?.nodeIds.sort()).toEqual(["e1", "e2"]);
     expect(graph?.edges).toEqual([{ from: "e1", to: "e2" }]);
+  });
+});
+
+describe("summaryLine", () => {
+  it("有结论时用第一句，不用四字章", () => {
+    const current = blank({
+      report: {
+        conclusion: "生育津贴不会直接打到个人卡里。仍由单位申领。",
+        claimItems: [],
+        citations: [],
+        finalizedAt: AT,
+      },
+    });
+    expect(summaryLine(current, false)).toBe("生育津贴不会直接打到个人卡里。");
+  });
+
+  it("尚未读到案件时用带进来的原句", () => {
+    expect(summaryLine(null, true, false, "隔夜菜会致癌，等于吃毒药")).toBe("隔夜菜会致癌，等于吃毒药");
+  });
+
+  it("没有报告时用助手最近一句，不写成已完成", () => {
+    const current = blank({
+      messages: [
+        { id: "m1", role: "user", text: "帮我看一下", at: AT },
+        { id: "m2", role: "assistant", text: "还没有具体要核的说法。把那句话发过来。", at: AT },
+      ],
+      turns: [{ id: "t1", startedAt: AT, finishedAt: AT, reason: "done" }],
+    });
+    expect(summaryLine(current, false)).toBe("还没有具体要核的说法。");
   });
 });

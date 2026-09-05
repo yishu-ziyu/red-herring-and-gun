@@ -3,9 +3,25 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCase, reduce, runTurn, type CaseEvent } from "@rhg/core";
 import { fakeDeps, hasLlmKey, liveDeps, loadLocalEnv, readProcessEnv } from "./env.js";
-import { compareGate, formatGateLine, parseBaseline, snapshotFromSummary } from "./gate.js";
+import {
+  compareGate,
+  formatGateLine,
+  METRIC_SEMVER,
+  parseBaseline,
+  snapshotFromSummary,
+} from "./gate.js";
 import { goldenDataset, type ScoreCaseGolden } from "./golden.js";
-import { judgeRanOf, scoreCase, summarizeRun, type CaseMetrics, type RunSummary } from "./score.js";
+import {
+  judgeRanOf,
+  scoreCaseWithOutcome,
+  summarizeRun,
+  type CaseMetrics,
+  type CaseProgress,
+  type QualificationExpectation,
+  type RunFault,
+  type RunSummary,
+  type SearchHealth,
+} from "./score.js";
 
 type CliArgs = {
   ids?: string[];
@@ -25,6 +41,12 @@ export type CaseRecord = {
   turnReason: string | null;
   judgeRan: boolean;
   llmCalls: number;
+  progress: CaseProgress;
+  faults: RunFault[];
+  failureReason: string | null;
+  qualification: QualificationExpectation;
+  searchHealth: SearchHealth;
+  failedSearchSources: string[];
 };
 
 export type { RunSummary } from "./score.js";
@@ -32,6 +54,11 @@ export type { RunSummary } from "./score.js";
 export type EvalOutput = {
   runId: string;
   startedAt: string;
+  metricSemver: string;
+  caseIds: string[];
+  qualificationFingerprint: string;
+  valid: boolean;
+  invalidReason?: string;
   cases: CaseRecord[];
   summary: RunSummary;
 };
@@ -105,24 +132,31 @@ async function runOne(golden: ScoreCaseGolden, fake: boolean, repeat: number): P
   const finished = events.reduce(reduce, start);
   const elapsedMs = Date.now() - started;
   const report = finished.report ?? null;
-  const metrics = scoreCase(golden, { case: finished, events, report, elapsedMs });
   const turn = [...finished.turns].reverse().find((item) => item.reason !== undefined);
+  const turnReason = turn?.reason ?? null;
+  const scored = scoreCaseWithOutcome(golden, { case: finished, events, report, elapsedMs }, turnReason);
   return {
     record: {
       id: golden.id,
       verdictType: finished.overall?.verdictType ?? null,
       score: finished.overall?.score ?? null,
-      metrics,
+      metrics: scored.metrics,
       elapsedMs,
-      turnReason: turn?.reason ?? null,
+      turnReason,
       judgeRan: judgeRanOf(events),
       llmCalls: events.filter((event) => event.type === "llm.called").length,
+      progress: scored.progress,
+      faults: scored.faults,
+      failureReason: scored.failureReason,
+      qualification: scored.qualification,
+      searchHealth: scored.searchHealth,
+      failedSearchSources: scored.failedSearchSources,
     },
     events,
   };
 }
 
-function applyGate(path: string, summary: CaseMetrics): boolean {
+function applyGate(path: string, output: EvalOutput): boolean {
   if (!existsSync(path)) {
     console.error(`基线文件不存在：${path}`);
     return false;
@@ -143,7 +177,21 @@ function applyGate(path: string, summary: CaseMetrics): boolean {
     console.error(message);
     return false;
   }
-  const { passed, rows } = compareGate(old, snapshotFromSummary(summary));
+  if (!output.valid) {
+    console.error(output.invalidReason ?? "eval run invalid");
+    return false;
+  }
+  const { passed, rows, rejectReason } = compareGate(
+    old,
+    snapshotFromSummary(
+      output.summary,
+      output.cases.map((row) => ({ id: row.id, qualification: row.qualification })),
+    ),
+  );
+  if (rejectReason) {
+    console.error(rejectReason);
+    return false;
+  }
   for (const row of rows) {
     console.log(formatGateLine(row));
   }
@@ -178,11 +226,18 @@ async function main(): Promise<void> {
     }
   }
 
+  const summary = summarizeRun(cases, eventLists);
+  const identities = cases.map((row) => ({ id: row.id, qualification: row.qualification }));
   const output: EvalOutput = {
     runId,
     startedAt,
+    metricSemver: METRIC_SEMVER,
+    caseIds: [...new Set(cases.map((row) => row.id))],
+    qualificationFingerprint: snapshotFromSummary(summary, identities).qualificationFingerprint,
+    valid: summary.valid,
+    ...(summary.invalidReason !== undefined ? { invalidReason: summary.invalidReason } : {}),
     cases,
-    summary: summarizeRun(cases, eventLists),
+    summary,
   };
 
   mkdirSync(RUNS_DIR, { recursive: true });
@@ -190,9 +245,10 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(output));
 
   if (args.gate) {
-    const passed = applyGate(args.gate, output.summary);
+    const passed = applyGate(args.gate, output);
     if (!passed) process.exit(1);
   }
+  if (!output.valid) process.exit(1);
 }
 
 main().catch((error) => {

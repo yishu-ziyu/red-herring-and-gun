@@ -23,16 +23,16 @@ export interface KnowledgeBase {
   getStats(): Promise<KnowledgeBaseStats>;
 }
 
-const CASES_KEY = "red-herring-knowledge-cases";
-const EVIDENCE_KEY = "red-herring-evidence-library";
-const STRATEGY_KEY = "red-herring-search-strategies";
-const MEMORY_CANDIDATES_KEY = "red-herring-memory-candidates";
 const MAX_CASES = 80;
 const MAX_EVIDENCE = 240;
 const MAX_MEMORY_CANDIDATES = 240;
 
 function canUseStorage() {
-  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  try {
+    return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+  } catch {
+    return false;
+  }
 }
 
 function readList<T>(key: string): T[] {
@@ -48,7 +48,7 @@ function readList<T>(key: string): T[] {
 }
 
 function writeList<T>(key: string, value: T[]) {
-  if (!canUseStorage()) return;
+  if (!canUseStorage()) throw new Error("本地存储不可用");
   try {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch (error) {
@@ -66,7 +66,12 @@ function writeList<T>(key: string, value: T[]) {
       }
     }
     console.error(`[knowledgeBase] ${key} 裁剪后仍无法写入，本地知识库降级为只读`);
+    throw error;
   }
+}
+
+export function normalizeHistoryClaim(claim: string): string {
+  return claim.trim().replace(/\s+/g, " ");
 }
 
 function tokenize(text: string): Set<string> {
@@ -101,7 +106,13 @@ function inferCredibilityFromScore(score?: number): ScoreLevel {
   return "低";
 }
 
-export function createKnowledgeBase(): KnowledgeBase {
+export function createKnowledgeBase(accountEmail?: string | null): KnowledgeBase {
+  // 未传参数仅供旧数据的显式恢复；生产调用必须传账户或 null。
+  const suffix = accountEmail === undefined ? "" : `:v2:${accountEmail === null ? "anonymous" : `account:${encodeURIComponent(accountEmail)}`}`;
+  const CASES_KEY = `red-herring-knowledge-cases${suffix}`;
+  const EVIDENCE_KEY = `red-herring-evidence-library${suffix}`;
+  const STRATEGY_KEY = `red-herring-search-strategies${suffix}`;
+  const MEMORY_CANDIDATES_KEY = `red-herring-memory-candidates${suffix}`;
   return {
     async saveCase(entry) {
       const entries = readList<KnowledgeBaseEntry>(CASES_KEY);

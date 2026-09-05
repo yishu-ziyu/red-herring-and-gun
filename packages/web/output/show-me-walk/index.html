@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>用户路径走查</title>
+  <style>
+    :root {
+      --paper: #fefcf6;
+      --paper-deep: #f5f1e6;
+      --ink: #151821;
+      --muted: #5b6070;
+      --accent: #b91c3c;
+      --keep: #16a34a;
+      --drop: #e84a5f;
+      --line: color-mix(in srgb, var(--ink) 12%, transparent);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font: 16px/1.55 "PingFang SC", "Noto Sans SC", sans-serif;
+      padding-bottom: 150px;
+    }
+    .wrap { max-width: 980px; margin: 0 auto; padding: 36px 20px; }
+    h1 { font-family: "Noto Serif SC", "Songti SC", serif; font-size: 28px; margin: 0 0 8px; }
+    .lede { color: var(--muted); max-width: 46em; margin: 0 0 28px; }
+    .step {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      margin: 0 0 16px;
+      overflow: hidden;
+    }
+    .step.ok { outline: 2px solid color-mix(in srgb, var(--keep) 45%, transparent); }
+    .step.bad { outline: 2px solid color-mix(in srgb, var(--drop) 40%, transparent); }
+    .step img, .step video {
+      display: block;
+      width: 100%;
+      background: var(--paper-deep);
+    }
+    .body { padding: 14px 16px 16px; }
+    .body h2 { font-size: 16px; margin: 0 0 6px; }
+    .mine { font-size: 14px; color: var(--muted); margin: 0 0 10px; }
+    .tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; margin-right: 6px; }
+    .keep { background: color-mix(in srgb, var(--keep) 14%, white); color: #146c36; }
+    .drop { background: color-mix(in srgb, var(--drop) 14%, white); color: #9f1239; }
+    .row { display: flex; gap: 8px; }
+    button {
+      font: inherit;
+      cursor: pointer;
+      border-radius: 8px;
+      padding: 7px 12px;
+      border: 1px solid var(--line);
+      background: var(--paper);
+    }
+    .step.ok button.yes { background: var(--keep); color: #fff; border-color: var(--keep); }
+    .step.bad button.no { background: var(--drop); color: #fff; border-color: var(--drop); }
+    .dock {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      background: color-mix(in srgb, var(--paper) 92%, white);
+      border-top: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+    .dock-inner { max-width: 980px; margin: 0 auto; padding: 12px 20px 16px; }
+    .dock p { margin: 0 0 6px; font-size: 14px; }
+    .clips { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 0 0 24px; }
+    @media (max-width: 800px) { .clips { grid-template-columns: 1fr; } }
+    .clips figure { margin: 0; background: #fff; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    figcaption { padding: 8px 10px; font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>我装用户走了一遍</h1>
+    <p class="lede">
+      真点了首页示例「隔夜菜会致癌，等于吃毒药」，真立案并等到结论。
+      过程态另外用设计 fixture 把检索仪器、引用、展开过程走完。
+      短动图三截：填入、检索中、悬停引用再展开过程。
+      下面每一步有我的判断。你点「满意 / 不满意」，底部复制发回。
+    </p>
+
+    <div class="clips">
+      <figure>
+        <img src="clip-home-fill.gif" alt="点示例填入输入卡" />
+        <figcaption>动图 · 点第一条示例，填进输入卡</figcaption>
+      </figure>
+      <figure>
+        <img src="clip-retrieving.gif" alt="检索中过程仪器" />
+        <figcaption>动图 · 查证中：ring + 检索仪器</figcaption>
+      </figure>
+      <figure>
+        <img src="clip-cite-process.gif" alt="悬停引用并展开过程" />
+        <figcaption>动图 · 悬停 [n]，再点开过程</figcaption>
+      </figure>
+    </div>
+
+    <article class="step" data-id="home" data-mine="ok">
+      <img src="01-home.png" alt="首页" />
+      <div class="body">
+        <h2>1. 打开首页</h2>
+        <p class="mine"><span class="tag keep">我满意</span>左栏历史、红「与」、灰底输入卡、示例。是输入入口，不是空的案件页。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="fill" data-mine="ok">
+      <img src="03-example-filled.png" alt="点了示例之后" />
+      <div class="body">
+        <h2>2. 点示例，句子进输入卡</h2>
+        <p class="mine"><span class="tag keep">我满意</span>一击填入，发送钮可用。用户不用自己打字。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="blank-flash" data-mine="bad">
+      <img src="04-live-opened.png" alt="立案后空白三栏" />
+      <div class="body">
+        <h2>3. 点发送之后的第一帧</h2>
+        <p class="mine"><span class="tag drop">我不满意</span>真立案后先闪一屏「正在打开案件 / 还没有案件」。空壳，原句都还没出现。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="live-running" data-mine="bad">
+      <img src="05-live-running.png" alt="正在拆题，零条材料" />
+      <div class="body">
+        <h2>4. 真查：正在拆题</h2>
+        <p class="mine"><span class="tag drop">我不满意</span>ring 有了，但写着「已找到 0 条材料」——我们说过不发明 0 占位。右侧「整句判决」还是空的。中间大块空白。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="live-done" data-mine="bad">
+      <img src="06-live-conclusion.png" alt="真查结论" />
+      <div class="body">
+        <h2>5. 真查：出结论</h2>
+        <p class="mine"><span class="tag drop">我不满意（结论句本身过关）</span>第一句确实在回答原句，[n] 也在正文里。但右侧「不能信 / 0」抢主秀，说明书不许四字章当脸；分数 0 也像坏了。正文夹了繁体。来源芯片被结论挤到屏外。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="retrieving" data-mine="ok">
+      <img src="08-retrieving.png" alt="检索仪器展开" />
+      <div class="body">
+        <h2>6. 查证中（设计态）</h2>
+        <p class="mine"><span class="tag keep">我基本满意</span>ring、过程展开、检索 → 材料，没有 0 条。过程不是英雄。右侧「还查不清」和中间芯片在查的时候就盖章，这一点我不喜欢，但仪器本身安静。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="done" data-mine="ok">
+      <img src="09-done.png" alt="查完结论和来源" />
+      <div class="body">
+        <h2>7. 查完：回答 + 问题 + 来源</h2>
+        <p class="mine"><span class="tag keep">我基本满意</span>原句回答在先，[1]、来源芯片、过程默认收起。芯片和 [1] 报道行有点重复。右侧「不能信 6」仍太大。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="hover" data-mine="ok">
+      <img src="10-cite-hover.png" alt="悬停引用弹出卡片" />
+      <div class="body">
+        <h2>8. 悬停 [n]</h2>
+        <p class="mine"><span class="tag keep">我满意</span>标题、host、层级、引文都在。能点开原文。卡片稍微挡住下一行，可接受。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="chip" data-mine="ok">
+      <img src="11-source-chip-hover.png" alt="悬停来源芯片" />
+      <div class="body">
+        <h2>9. 悬停来源芯片</h2>
+        <p class="mine"><span class="tag keep">我满意</span>和 [n] 同一套卡片。脚注节奏对。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="process" data-mine="bad">
+      <img src="12-process-open.png" alt="展开过程看到内部编号" />
+      <div class="body">
+        <h2>10. 点开过程</h2>
+        <p class="mine"><span class="tag drop">我不满意</span>仪器和竖线步骤在。但步骤写成「added e4」，内部 id 漏到脸上了。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="followup" data-mine="bad">
+      <img src="13-followup.png" alt="追问后同一条里两段结论" />
+      <div class="body">
+        <h2>11. 追问留在同一条</h2>
+        <p class="mine"><span class="tag drop">我不满意</span>追查留在同一案，这点对。但过程条挂在旧结论下面，新结论和旧结论叠在一起，像两封信订错了。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="settings" data-mine="ok">
+      <img src="14-settings.png" alt="检索密钥页" />
+      <div class="body">
+        <h2>12. 检索密钥</h2>
+        <p class="mine"><span class="tag keep">我满意</span>预置 / 自己贴密钥分开，有充值入口。不是这一次的主秀，但路过是干净的。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="home-m" data-mine="ok">
+      <img src="15-home-mobile.png" alt="手机首页" />
+      <div class="body">
+        <h2>13. 手机首页</h2>
+        <p class="mine"><span class="tag keep">我满意</span>品牌、输入卡、示例、最近核查都在。空输入时发送钮看起来仍像能点，小问题。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="done-m" data-mine="bad">
+      <img src="16-done-mobile.png" alt="手机案件页过程字被切掉" />
+      <div class="body">
+        <h2>14. 手机案件</h2>
+        <p class="mine"><span class="tag drop">我不满意</span>结论和芯片还在。过程那一行字被切碎。顶栏「不能信 6」继续当章。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+
+    <article class="step" data-id="panel-m" data-mine="bad">
+      <img src="17-done-mobile-panel.png" alt="手机打开右侧卷宗" />
+      <div class="body">
+        <h2>15. 手机打开卷宗</h2>
+        <p class="mine"><span class="tag drop">我不满意</span>材料列表能用。整屏最大的字是「不能信 6」，不是对原句的回答。</p>
+        <div class="row"><button class="yes" type="button">满意</button><button class="no" type="button">不满意</button></div>
+      </div>
+    </article>
+  </div>
+
+  <div class="dock">
+    <div class="dock-inner">
+      <p><strong>你的选择</strong>（未点的按我的判断）</p>
+      <p>满意：<code id="yes-list"></code></p>
+      <p>不满意：<code id="no-list"></code></p>
+      <button type="button" id="copy">复制这段发回对话</button>
+    </div>
+  </div>
+  <script>
+    function apply(card, state) {
+      card.classList.remove("ok", "bad");
+      if (state) card.classList.add(state);
+      card.dataset.state = state;
+    }
+    function summarize() {
+      const yes = [], no = [];
+      document.querySelectorAll(".step").forEach((card) => {
+        const title = card.querySelector("h2").textContent;
+        const state = card.dataset.state || (card.dataset.mine === "ok" ? "ok" : "bad");
+        if (state === "ok") yes.push(title);
+        else no.push(title);
+      });
+      document.getElementById("yes-list").textContent = yes.join(" · ") || "（无）";
+      document.getElementById("no-list").textContent = no.join(" · ") || "（无）";
+      return { yes, no };
+    }
+    document.querySelectorAll(".step").forEach((card) => {
+      apply(card, card.dataset.mine === "ok" ? "ok" : "bad");
+      card.querySelector(".yes")?.addEventListener("click", () => { apply(card, "ok"); summarize(); });
+      card.querySelector(".no")?.addEventListener("click", () => { apply(card, "bad"); summarize(); });
+    });
+    document.getElementById("copy").addEventListener("click", async () => {
+      const { yes, no } = summarize();
+      const text = ["用户路径走查", "满意：" + yes.join("；"), "不满意：" + no.join("；")].join("\n");
+      try {
+        await navigator.clipboard.writeText(text);
+        document.getElementById("copy").textContent = "已复制";
+      } catch {
+        prompt("请手动拷：", text);
+      }
+    });
+    summarize();
+  </script>
+</body>
+</html>

@@ -82,6 +82,7 @@ describe("Citations", () => {
     expect(pop.textContent).toContain("gov.cn");
     expect(pop.textContent).toContain("A");
     expect(pop.textContent).toContain("官方通报此事不实");
+    expect(pop.textContent).toContain("G");
     fireEvent.mouseLeave(link);
     expect(screen.queryByRole("tooltip")).toBeNull();
     fireEvent.focus(link);
