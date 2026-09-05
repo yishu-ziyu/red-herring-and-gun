@@ -14,6 +14,11 @@ import { type AtomSearchBundle } from "./lib/atomSearch.js";
 
 import { runCasePipeline, type PipelineStep, type RunAgentFn } from "./lib/casePipeline/index.js";
 
+import {
+  validateInvestigationSnapshot,
+  type InvestigationSnapshotV1,
+} from "./lib/investigation/index.js";
+
 import { createLoopLlm, modelFromChoice, wantsAgentLoop } from "./lib/agentLoop/index.js";
 import { runClaimLoopPi } from "./lib/agentLoop/runClaimLoopPi.js";
 
@@ -93,6 +98,37 @@ export function toFriendlyError(error: unknown, fallback: string): FriendlyError
 // model 字段与「provider:model」形状的字符串值（_scoreSource 等）一并清空，
 // latencyMs 整个删除；普通正文不匹配模型引用形状，不受影响。服务端 logger 保留全量诊断。
 const PROVIDER_NAME_RE = /minimax|stepfun|deepseek|360gpt|ai360|mimo|anthropic|openai|moonshot|kimi/i;
+
+/**
+ * 中断帧（Issue #51）：phase=interrupted，保留已真实获得的 claims/sources/gaps/conflicts，
+ * 不补造 conclusion；进行中的命题标 interrupted。没有历史快照时给最小诚实空帧。
+ */
+export function interruptedInvestigationSnapshot(
+  last: InvestigationSnapshotV1 | undefined,
+  claim: string
+): InvestigationSnapshotV1 {
+  if (!last) {
+    return {
+      schemaVersion: 1,
+      originalClaim: claim,
+      phase: "interrupted",
+      claims: [],
+      sources: [],
+      conflicts: [],
+    };
+  }
+  return validateInvestigationSnapshot({
+    ...last,
+    phase: "interrupted",
+    conclusion: undefined,
+    checkedAt: undefined,
+    claims: last.claims.map((claimRow) =>
+      claimRow.progress === "complete"
+        ? claimRow
+        : { ...claimRow, progress: "interrupted" as const }
+    ),
+  });
+}
 const MODEL_REF_RE = /^[a-z0-9_-]+:[A-Za-z0-9._-]+$/;
 
 function scrubProviderDiagnostics(value: unknown, depth = 0): unknown {
@@ -383,6 +419,9 @@ export function createHandlers(env: Record<string, string>) {
       }
     }, 15_000);
 
+    // Investigation Snapshot 最新帧：中断/超时时补发 interrupted 帧（保留已真实获得的数据）。
+    let lastInvestigation: InvestigationSnapshotV1 | undefined;
+
     try {
       if (intake?.images.length) {
         sendEvent({
@@ -524,6 +563,14 @@ export function createHandlers(env: Record<string, string>) {
           }),
         hooks: {
           searchMode: "sequential",
+          onInvestigationSnapshot: (snapshot) => {
+            lastInvestigation = snapshot;
+            sendEvent({
+              type: "investigation_snapshot",
+              investigation: snapshot,
+              timestamp: Date.now(),
+            });
+          },
           onSelfProof: (info) => {
             console.log(
               `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${info.kept.length} dropped=${info.dropped.length}`
@@ -729,7 +776,14 @@ export function createHandlers(env: Record<string, string>) {
       }
       // 整体超时 → 给「还没查完」的中间结论，不发 error
       if (error instanceof Error && error.message.includes("整体核查")) {
+        const interrupted = interruptedInvestigationSnapshot(lastInvestigation, claim);
+        sendEvent({
+          type: "investigation_snapshot",
+          investigation: interrupted,
+          timestamp: Date.now(),
+        });
         const timedOut = buildTimedOutReport(claim);
+        timedOut.investigation = interrupted;
         applyContextCrossCheckToReport(timedOut, { claim, visualExtraction });
         // B2：先计费再收尾（原先 release 在前把 settled 置真，这里的 commit 变空操作 → 超时=白嫖）
         commitFreeCheck(res, ticket);
@@ -752,6 +806,12 @@ export function createHandlers(env: Record<string, string>) {
         releaseFreeCheck(ticket);
       }
       const { message } = toFriendlyError(error, "这次核查没能完成，请稍后重试");
+      // 中断帧先行：前端拿到 phase=interrupted 的真实部分数据，再收 error 提示。
+      sendEvent({
+        type: "investigation_snapshot",
+        investigation: interruptedInvestigationSnapshot(lastInvestigation, claim),
+        timestamp: Date.now(),
+      });
       sendEvent({
         type: "error",
         message,

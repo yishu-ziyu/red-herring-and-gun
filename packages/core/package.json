@@ -12,6 +12,10 @@
       "types": "./dist/casefile/index.d.ts",
       "import": "./dist/casefile/index.js"
     },
+    "./investigation": {
+      "types": "./dist/investigation/index.d.ts",
+      "import": "./dist/investigation/index.js"
+    },
     "./publicCopy": {
       "types": "./dist/text/publicCopy.d.ts",
       "import": "./dist/text/publicCopy.js"
