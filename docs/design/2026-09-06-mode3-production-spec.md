@@ -192,7 +192,7 @@ font-variant-numeric: tabular-nums;
 
 - **正文内容层（Content Layer）**：`box-shadow: none;`（零投影，零悬浮卡片感）；
 - **输入外壳（Input Surface）**：
-  `--gp-elevation-input: 0 1px 3px rgba(15, 23, 42, 0.04), 0 6px 16px rgba(15, 23, 42, 0.03);`
+  `--gp-elevation-input: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.03);`
 - **悬浮下拉菜单（Menu / Popover）**：
   `--gp-elevation-menu: 0 4px 16px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);`
 - **侧滑抽屉（Drawer / Sheet）**：
@@ -233,7 +233,9 @@ font-variant-numeric: tabular-nums;
 
 ```css
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  .gp-shell *,
+  .gp-shell *::before,
+  .gp-shell *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -241,6 +243,8 @@ font-variant-numeric: tabular-nums;
   }
 }
 ```
+
+规则只作用于 `.gp-shell` 内。Golden Path 的 focus ring 同样只写 `.gp-shell :focus-visible`，不得用全局 `:focus-visible` 或全局 `*` 减弱动画去影响 auth modal、settings、legacy 与 portal。
 
 - **语义完整性**：动效移除后，所有文字、状态标记、焦点位置必须 100% 完整呈现在正确位置，绝不依赖动画帧触发数据显示。
 

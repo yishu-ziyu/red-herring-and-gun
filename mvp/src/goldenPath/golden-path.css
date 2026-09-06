@@ -76,13 +76,16 @@
   --gp-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* ---------- 基础与通用重置 ---------- */
+/* ---------- 基础与通用重置（仅 Golden Path 壳内，不污染 auth/settings/legacy） ---------- */
 
-*, *::before, *::after {
+.gp-shell,
+.gp-shell *,
+.gp-shell *::before,
+.gp-shell *::after {
   box-sizing: border-box;
 }
 
-:focus-visible {
+.gp-shell :focus-visible {
   outline: none;
   box-shadow: var(--gp-focus-ring);
 }
@@ -425,10 +428,16 @@
   white-space: pre-line;
 }
 
-/* 单一功能 Surface：消除 Card-on-card 嵌套 */
+/* 单一功能 Surface：PromptInput 通过 CSS 自定义属性消费嵌入契约 */
 .gp-input-card {
   --paper: transparent;
   --border-subtle: transparent;
+  --prompt-frame-background: transparent;
+  --prompt-frame-border: 0 solid transparent;
+  --prompt-frame-shadow: none;
+  --prompt-frame-padding: 6px 4px 4px;
+  --prompt-frame-padding-top: 6px;
+  --prompt-frame-radius: 0;
   width: 100%;
   background: var(--gp-surface);
   border: 1px solid var(--gp-hairline);
@@ -442,14 +451,6 @@
 .gp-input-card:focus-within {
   border-color: var(--gp-accent);
   box-shadow: 0 0 0 1px var(--gp-accent), var(--gp-elevation-input);
-}
-
-/* 消除 PromptInput 内部实体卡片嵌套边框与阴影 */
-.gp-input-card [class*="frame"] {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  padding: 6px 4px 4px !important;
 }
 
 .gp-link-row {
@@ -1112,17 +1113,18 @@
   line-height: 1.6;
 }
 
-/* 争点（Quiet Editorial Conflict） */
+/* 争点（Editorial annotation：透明底 + 留白 + 2px 语义左边线，不是卡片） */
 .gp-conflict {
-  background: var(--gp-surface-inset);
-  border: 1px solid var(--gp-hairline);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   border-left: 2px solid var(--gp-semantic-conflict);
-  border-radius: var(--gp-radius-sm);
-  padding: 10px 14px;
-  margin: 6px 0;
+  padding: 2px 0 8px 12px;
+  margin: 16px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 
 .gp-conflict-head {
@@ -1191,17 +1193,19 @@
   font-style: italic;
 }
 
-/* 证据缺口（Quiet Editorial Gaps） */
+/* 证据缺口（Editorial annotation：发丝顶线 + 2px 语义左边线，不是卡片） */
 .gp-gaps {
-  background: var(--gp-surface-inset);
-  border: 1px solid var(--gp-hairline);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  border-top: 1px solid var(--gp-hairline);
   border-left: 2px solid var(--gp-semantic-gap);
-  border-radius: var(--gp-radius-sm);
-  padding: 10px 14px;
-  margin: 6px 0;
+  padding: 16px 0 4px 12px;
+  margin: 12px 0 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .gp-gaps-head {
@@ -1278,17 +1282,23 @@
   font-size: 12px;
 }
 
-/* 原图出处（imageOrigin side-channel） */
+/* 原图出处（Content Layer annotation，不是独立卡片） */
 .gp-image-origin {
-  background: var(--gp-surface-inset);
-  border: 1px solid var(--gp-hairline);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  border-top: 1px solid var(--gp-hairline);
   border-left: 2px solid var(--gp-ink-3);
-  border-radius: var(--gp-radius-sm);
-  padding: 10px 14px;
-  margin-top: 24px;
+  padding: 16px 0 4px 12px;
+  margin-top: 32px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+}
+
+.gp-image-origin.is-missing {
+  border-left-color: var(--gp-semantic-gap);
 }
 
 .gp-image-origin h4 {
@@ -1469,7 +1479,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  .gp-shell *,
+  .gp-shell *::before,
+  .gp-shell *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

@@ -102,3 +102,55 @@
 - [ ] **H3（响应式与触控布局 Responsive Gate）**：
   - 1440px / 768px / 390px 无横向滚动溢出；
   - 移动端输入区域与按钮触控目标符合易用性要求（≥44px）。
+
+---
+
+## 复审（PR #67 人工 Review：真实性与稳定性）
+
+日期：2026-09-06。输入：PR #67 人工 Review（Mode 3 / Hybrid + Quiet Editorial 方向通过；本轮只修 #61 基础真实性）。未开 #62–#66。未改 Investigation Snapshot / backend / SSE。零新 UI/animation 依赖。
+
+### Change
+
+用户必须能观察到：
+
+1. **Mobile 390**：输入态加号与发送按钮的真实可点区域 ≥44×44px；视觉圆形 glyph 仍是 28×28，不是把圆放大到 44。
+2. **Content Layer**：争点、尚缺、原图出处不再是「浅底 + 全边框 + 圆角」小卡片，而是 editorial annotation（透明底、留白、中性发丝线、1–2px 语义左边线、排版层级）。Interrupted 仍可保留功能性 surface。
+3. **Token 事实源唯一**：PR 描述 / NOTES / 本验收文档中的精确 token 名与数值，与生产 `golden-path.css` 和 `docs/design/2026-09-06-mode3-production-spec.md` 是同一套。
+4. **Golden Path CSS 不污染全应用**：`:focus-visible` 与 `prefers-reduced-motion` 只作用于 `.gp-shell` 内。
+5. **PromptInput 嵌入**靠明确 CSS 自定义属性契约，不再用 `[class*="frame"]` + `!important`。
+6. **E3** 是真实浏览器 computed-style：外层 `.gp-input-card` 一层实体边框/elevation；内层 `[data-prompt-frame]` `border-width=0`、`box-shadow=none`。
+7. **768**：真实浏览器 `scrollWidth <= clientWidth`，顶栏/输入/示例外不溢出。
+8. **截图**含 `desktop-investigating-conflict-gap.png`，标注为 production Golden Path + deterministic fixture，不是真实 SSE。
+
+### Not this
+
+- 把视觉圆放大到 44px；重新设计第四套方案；改产品信息架构；开始 #62–#66；改 Investigation Snapshot；改 backend / SSE；引入新 UI / animation 依赖；用 grep 冒充 E3；为了迎合旧 PR 描述去改 CSS token。
+
+### Evaluator
+
+机器项（全绿才交付）：
+
+- [x] **E3′（真实 computed-style，取代旧 grep）**：Playwright 在 Desktop 1440 测量 `.gp-input-card` 四边 1px + `--gp-elevation-input`；`[data-prompt-frame]` `border-width=0`、`box-shadow=none`、背景 `rgba(0,0,0,0)`。命令：`python3 scripts/capture_mode3_production.py`
+- [x] **E10（Mobile 44px hit target）**：390 视口 add/send `boundingBox` 均为 44×44；`::before` 视觉圆 28×28；`scrollWidth=clientWidth=390`。
+- [x] **E11（768 overflow）**：768 视口 `scrollWidth=clientWidth=768`；topbar / input / examples 右缘 ≤ 768；add/send 在视口内且可点。
+- [x] **E12（reduced-motion 作用域）**：选择器均为 `.gp-shell :focus-visible` 与 `.gp-shell *`；Playwright `prefers-reduced-motion: reduce` 下壳外探测节点 transition 仍为 1s，`.gp-input-card` 为 `1e-05s`。
+- [x] **E13（无脆弱 frame 劫持 / 无 Content Layer 卡片回潮）**：`cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx` 23 通过。conflict/gaps computed：透明底、radius 0、shadow none、无全边框；Interrupted 仍用 `--gp-surface-inset`。
+- [x] **E5′（截图）**：原 5 张保留；新增 `desktop-investigating-conflict-gap.png`（277,469 字节）。desktop-input.png / grayscale 哈希未变（视觉圆未放大）。该 conflict/gap 图是 production Golden Path + `/?fixture=conflict` 确定性 fixture，不是真实 SSE。
+- [x] **E6–E9 重跑**：
+  - `npm test`：core 578 / eval 85 / server 21 / web 83 = 767 通过
+  - `npm run build`：通过
+  - `cd mvp && npm test`：914 通过 / 1 跳过
+  - `cd mvp && npm run build`：通过
+
+人评项：H1 / H2 / H3 仍待人工最终验收。Conflict / Gap 截图必须由人确认没有变回浅灰 Card 堆。
+
+### Evidence
+
+- Playwright：`python3 scripts/capture_mode3_production.py` → `GATE PASS`
+- vitest：`cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx` 23 通过
+- 根 `npm test` 767 通过；根 `npm run build` 通过
+- `cd mvp && npm test` 914 通过 / 1 跳过；`cd mvp && npm run build` 通过
+- 截图目录 `docs/design/2026-09-06-mode3-production/`，其中 `desktop-investigating-conflict-gap.png` 标明为 production Golden Path + deterministic fixture
+- Token 表以 `mvp/src/goldenPath/golden-path.css` `:root` 与 Production Spec 为准，旧 PR 描述中的 `--gp-canvas #fcfbf9` / `--gp-surface-elevated` / `--gp-ink-quaternary` / `--gp-elevation-card` / 120/180/240ms 作废
+
+人评项 H1 / H2 / H3 仍待人工最终验收。不 merge。不开始 #62–#66。

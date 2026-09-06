@@ -269,12 +269,74 @@ describe("Issue #61 [Reset 4A] 生产视觉基础断言", () => {
     expect(css).not.toMatch(/transition:\s*all\b/);
   });
 
+  it("focus-visible 与 reduced-motion 只作用于 .gp-shell，不污染全应用", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const css = readFileSync(join(process.cwd(), "src", "goldenPath", "golden-path.css"), "utf8");
+    expect(css).toMatch(/\.gp-shell\s+:focus-visible/);
+    expect(css).not.toMatch(/(^|\n):focus-visible\s*\{/);
+    const reduced = css.match(/@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/);
+    expect(reduced).toBeTruthy();
+    expect(reduced![1]).toContain(".gp-shell *");
+    expect(reduced![1]).not.toMatch(/(^|\n)\s*\*\s*,\s*\*::before/);
+  });
+
+  it("PromptInput 嵌入走 CSS 自定义属性，不再劫持 [class*=frame]", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const gp = readFileSync(join(process.cwd(), "src", "goldenPath", "golden-path.css"), "utf8");
+    const prompt = readFileSync(join(process.cwd(), "src", "components/v3/promptInput/PromptInput.module.css"), "utf8");
+    const promptTsx = readFileSync(join(process.cwd(), "src", "components/v3/promptInput/PromptInput.tsx"), "utf8");
+    expect(gp).not.toMatch(/\[class\*=["']frame["']\]/);
+    expect(gp).toContain("--prompt-frame-background");
+    expect(gp).toContain("--prompt-frame-border");
+    expect(gp).toContain("--prompt-frame-shadow");
+    expect(prompt).toContain("--prompt-frame-background");
+    expect(promptTsx).toContain("data-prompt-frame");
+    expect(promptTsx).toContain("data-prompt-add");
+    expect(promptTsx).toContain("data-prompt-send");
+  });
+
+  it("Content Layer 的争点 / 尚缺 / 原图出处不是 inset 圆角卡片", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const css = readFileSync(join(process.cwd(), "src", "goldenPath", "golden-path.css"), "utf8");
+    const block = (name: string) => {
+      const match = css.match(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`));
+      expect(match, `missing .${name}`).toBeTruthy();
+      return match![1];
+    };
+    for (const name of ["gp-conflict", "gp-gaps", "gp-image-origin"]) {
+      const body = block(name);
+      expect(body).toMatch(/background:\s*transparent/);
+      expect(body).toMatch(/border-radius:\s*0/);
+      expect(body).toMatch(/box-shadow:\s*none/);
+      expect(body).not.toMatch(/--gp-surface-inset/);
+      expect(body).not.toMatch(/border:\s*1px solid/);
+    }
+    const interrupted = block("gp-interrupted");
+    expect(interrupted).toContain("--gp-surface-inset");
+  });
+
+  it("移动端 iconBtn 是 44×44 hit box，视觉圆仍由 ::before 缩到 28", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const css = readFileSync(join(process.cwd(), "src", "components/v3/promptInput/PromptInput.module.css"), "utf8");
+    expect(css).toMatch(/@media\s*\(max-width:\s*768px\)[\s\S]*\.iconBtn\s*\{[\s\S]*width:\s*44px/);
+    expect(css).toMatch(/@media\s*\(max-width:\s*768px\)[\s\S]*\.iconBtn::before\s*\{[\s\S]*inset:\s*8px/);
+    const base = css.match(/\.iconBtn\s*\{([^}]*)\}/);
+    expect(base![1]).toMatch(/width:\s*28px/);
+  });
+
   it("InputStage 正确渲染单层功能 Surface、提示语与示例", async () => {
     const { InputStage } = await import("./InputStage");
     const onSubmit = vi.fn();
     render(<InputStage onSubmit={onSubmit} />);
     expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
     expect(document.querySelector(".gp-input-card")).toBeTruthy();
+    expect(document.querySelector(".gp-input-card [data-prompt-frame]")).toBeTruthy();
+    expect(document.querySelector("[data-prompt-add]")).toBeTruthy();
+    expect(document.querySelector("[data-prompt-send]")).toBeTruthy();
     expect(document.querySelector(".gp-examples")).toBeTruthy();
 
     const examples = document.querySelectorAll(".gp-example");
