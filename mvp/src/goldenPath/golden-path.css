@@ -713,6 +713,33 @@
   color: var(--gp-ink-primary);
 }
 
+/* Claim Trace：可回指短语。idle 已占 underline 槽，激活只改颜色与极浅底，避免挤行。 */
+.gp-original-text .gp-trace-mark {
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  box-shadow: none;
+  transition:
+    background-color var(--gp-motion-fast) var(--gp-ease-out),
+    text-decoration-color var(--gp-motion-fast) var(--gp-ease-out);
+}
+
+.gp-original-text .gp-trace-mark.is-active {
+  background-color: var(--gp-accent-subtle);
+  text-decoration-color: var(--gp-accent);
+}
+
 /* 完成态结论首层（Conclusion Hero / Lede） */
 .gp-hero {
   background: transparent;

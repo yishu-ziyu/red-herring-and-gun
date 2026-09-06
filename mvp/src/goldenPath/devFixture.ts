@@ -5,6 +5,7 @@
  */
 import { buildInvestigationSnapshot } from "@rhg/core/investigation";
 import type { OrchestrateStreamEvent } from "../lib/agentExpansion";
+import { mixedComplete, mixedWithoutSpans } from "./fixtures";
 
 const src = (url: string, title: string, snippet: string) => ({ url, title, snippet });
 const noopKey = (s: string) => s.replace(/\u3000/g, " ").trim();
@@ -129,7 +130,9 @@ export type FixtureName =
   | "interrupted"
   | "conflict"
   | "image-found"
-  | "image-missing";
+  | "image-missing"
+  | "mixed"
+  | "nospan";
 
 export function getDevFixture(
   name: FixtureName
@@ -142,7 +145,15 @@ export function getDevFixture(
     const emitSnapshot = (phase: "investigating" | "judging" | "complete") =>
       emit({ type: "investigation_snapshot", investigation: staged(phase), timestamp: Date.now() });
 
-    if (name === "investigating") {
+    if (name === "mixed") {
+      const snap = mixedComplete();
+      at(60, () => emit({ type: "investigation_snapshot", investigation: snap, timestamp: Date.now() }));
+      return () => timers.forEach(clearTimeout);
+    } else if (name === "nospan") {
+      const snap = mixedWithoutSpans();
+      at(60, () => emit({ type: "investigation_snapshot", investigation: snap, timestamp: Date.now() }));
+      return () => timers.forEach(clearTimeout);
+    } else if (name === "investigating") {
       at(60, () => emitSnapshot("investigating"));
     } else if (name === "judging") {
       at(60, () => emitSnapshot("investigating"));

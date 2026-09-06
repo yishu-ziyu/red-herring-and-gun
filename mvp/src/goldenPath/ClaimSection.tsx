@@ -29,9 +29,26 @@ type ClaimSectionProps = {
   conflicts: InvestigationConflict[];
   defaultExpanded: boolean;
   onSelectSource: (link: InvestigationEvidenceLink, source: InvestigationSource, claimId: string) => void;
+  onHeaderHover?: (claimId: string | null) => void;
+  onHeaderFocus?: (claimId: string | null) => void;
+  onExpandedTrace?: (claimId: string | null) => void;
 };
 
-export function ClaimSection({ claim, index, sources, conflicts, defaultExpanded, onSelectSource }: ClaimSectionProps) {
+function usesExpandedTrace(): boolean {
+  return typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches === true;
+}
+
+export function ClaimSection({
+  claim,
+  index,
+  sources,
+  conflicts,
+  defaultExpanded,
+  onSelectSource,
+  onHeaderHover,
+  onHeaderFocus,
+  onExpandedTrace,
+}: ClaimSectionProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -48,7 +65,17 @@ export function ClaimSection({ claim, index, sources, conflicts, defaultExpanded
         type="button"
         className="gp-claim-head"
         aria-expanded={expanded}
-        onClick={() => setExpanded((open) => !open)}
+        onMouseEnter={() => onHeaderHover?.(claim.id)}
+        onMouseLeave={() => onHeaderHover?.(null)}
+        onFocus={() => onHeaderFocus?.(claim.id)}
+        onBlur={() => onHeaderFocus?.(null)}
+        onClick={() => {
+          setExpanded((open) => {
+            const next = !open;
+            if (usesExpandedTrace()) onExpandedTrace?.(next ? claim.id : null);
+            return next;
+          });
+        }}
       >
         <span className="gp-claim-num" aria-hidden="true">{num}</span>
         <span className="gp-claim-body">
