@@ -48,6 +48,22 @@ Evaluator：
 - [x] D4 `mergeSubclaimVerdicts`、`bindAtomEvidenceToVerdicts`、`normalizeReportCitations` 共用 `bindDualBucketCitations`
 - [x] D5 根 tests：core 589 / eval 85 / server 21 / web 83 = 778 通过；mvp 992 通过 / 1 跳过；`npm run build` 与 `cd mvp && npm run build` 通过
 
+## Stance-preservation binder（PR #75 Review `5125346321`）
+
+Change：同一条 evidence 的 supporting / contradicting 各自独立 filter、按 URL dedupe、最多 5 条；过滤后再拼成连续局部编号：supporting → `[1..S]`，contradicting → `[S+1..S+C]`。同 URL 同时出现在两桶时，两条 relation 都保留，`[1]` 与 `[2]` 都在。5 条 support + 1 条 contradict 时，C1 不得因合计超过 5 被丢掉。
+
+Not this：把 `[...supporting, ...contradicting]` 整体交给 `filterSourcesWithRemap`（全局 URL dedupe + 合计 cap 5）；用 finding 文本或否定词猜 stance；改 Snapshot schema / EvidenceBoard / Drawer。
+
+Evaluator：
+
+- [x] S1 same URL across buckets：support=[X] contradict=[X]，两桶都保留 X；evidence `[1]` 与 `[2]` 都在；不得合成一条 relation
+- [x] S2 同一 sourceId 经 `buildInvestigationSnapshot` 同时产出 support link 与 contradict link
+- [x] S3 cap：support=S1..S5 + contradict=C1，6 条都保留，C1 对应 marker 仍在
+- [x] S4 同 bucket duplicate URL 仍按旧逻辑 dedupe
+- [x] S5 上一轮 D1–D4、only-support、only-contradict、#74 false misbucket、related-only 不回归；core 与 mvp/server citationBinding 同步
+- [x] S6 `git merge-base HEAD origin/main` = `d40470100821d21848a51430fbcf218fc36adcd7`（#73）；`docs/NOTES.md` 保留 #73 current truth
+- [x] S7 根 tests：core 594 / eval 85 / server 21 / web 83 = 783 通过；mvp 1000 通过 / 1 跳过；`npm run build` 与 `cd mvp && npm run build` 通过
+
 ## 根因（实现前判定）
 
 `buildInvestigationSnapshot` 对 `supportingSources → support`、`contradictingSources → contradict` 的映射是确定性的，没有猜错。

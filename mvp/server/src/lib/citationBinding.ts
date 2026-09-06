@@ -142,8 +142,10 @@ function asSourceList(value: unknown): unknown[] {
 
 /**
  * Local [n] across both stance buckets.
- * Filter / dedupe / remap on [...supporting, ...contradicting] original order,
- * then split survivors back into the two buckets. Do not bind one bucket and drop the other.
+ * Filter / dedupe / cap independently per bucket (each bucket keeps at most 5).
+ * Combined numbering is filtered supporting then filtered contradicting:
+ * supporting → [1..S], contradicting → [S+1..S+C].
+ * Same URL in both buckets is two relations, not one.
  */
 export function bindDualBucketCitations(
   evidence: unknown,
@@ -153,36 +155,26 @@ export function bindDualBucketCitations(
 ): BoundDualCitation {
   const supportingRaw = asSourceList(supportingSources);
   const contradictingRaw = asSourceList(contradictingSources);
-  const combined = [...supportingRaw, ...contradictingRaw];
-  const { sources, remap } = filterSourcesWithRemap(combined, allowedUrls);
+  const supportingBound = filterSourcesWithRemap(supportingRaw, allowedUrls);
+  const contradictingBound = filterSourcesWithRemap(contradictingRaw, allowedUrls);
+
+  const remap = new Map<number, number>();
+  for (const [oldN, newN] of supportingBound.remap) {
+    remap.set(oldN, newN);
+  }
+  const supportCount = supportingBound.sources.length;
+  for (const [oldN, newN] of contradictingBound.remap) {
+    remap.set(supportingRaw.length + oldN, supportCount + newN);
+  }
+
+  const total = supportingBound.sources.length + contradictingBound.sources.length;
   const textIn = typeof evidence === "string" ? evidence : "";
-  const text = clampMarkersToSources(remapCitationMarkers(textIn, remap), sources.length);
-
-  const taken = new Set<number>();
-  const take = (oldN: number): CiteSource | undefined => {
-    const newN = remap.get(oldN);
-    if (newN == null || taken.has(newN)) return undefined;
-    const src = sources[newN - 1];
-    if (!src) return undefined;
-    taken.add(newN);
-    return src;
-  };
-
-  const supportingOut: CiteSource[] = [];
-  for (let i = 0; i < supportingRaw.length; i += 1) {
-    const src = take(i + 1);
-    if (src) supportingOut.push(src);
-  }
-  const contradictingOut: CiteSource[] = [];
-  for (let i = 0; i < contradictingRaw.length; i += 1) {
-    const src = take(supportingRaw.length + i + 1);
-    if (src) contradictingOut.push(src);
-  }
+  const text = clampMarkersToSources(remapCitationMarkers(textIn, remap), total);
 
   return {
     text,
-    supportingSources: supportingOut,
-    contradictingSources: contradictingOut,
+    supportingSources: supportingBound.sources,
+    contradictingSources: contradictingBound.sources,
     remap,
   };
 }

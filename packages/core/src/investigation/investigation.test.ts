@@ -297,6 +297,33 @@ describe("Issue #74：false 的证伪材料被写成 supportingSources 时不得
     expect(snapshot.claims[0]!.judgment).toBe("supported");
   });
 
+  it("同一 URL 跨桶：同一 sourceId 同时产出 support 与 contradict", () => {
+    const url = "https://same.example/x";
+    const shared = src(url, "同一来源", "既支持一部分也反驳另一部分");
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: "某说法。",
+      phase: "complete",
+      claimAtoms: ["某说法"],
+      subclaimVerdicts: [
+        {
+          claimAtom: "某说法",
+          verdict: "partial",
+          evidence: "同一来源支持一部分[1]，也反驳另一部分[2]。",
+          boundary: "",
+          supportingSources: [shared],
+          contradictingSources: [shared],
+          evidenceGaps: [],
+        },
+      ],
+    }, { claimAtomKeyFn: keyFn });
+    const links = snapshot.claims[0]!.evidence;
+    expect(links.map((l) => l.role)).toEqual(["support", "contradict"]);
+    expect(links[0]!.sourceId).toBe(links[1]!.sourceId);
+    expect(snapshot.sources).toHaveLength(1);
+    expect(snapshot.sources[0]!.url).toBe(url);
+    expectCleanContract(snapshot);
+  });
+
   it("related-only 检索垫不得被改成 contradict", () => {
     const fill = src("https://search.example/cold-iv", "检索垫", "提到输液");
     const snapshot = buildInvestigationSnapshot({

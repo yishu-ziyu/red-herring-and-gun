@@ -113,6 +113,55 @@ describe("bindDualBucketCitations", () => {
     expect(bound.contradictingSources.map((s) => s.url)).toEqual(["https://b.example"]);
     expect(bound.text).toBe("反驳[1]。");
   });
+
+  it("同 URL 跨桶：两条 relation 都保留，[1] 与 [2] 都在", () => {
+    const x = { url: "https://x.example", title: "X", snippet: "both" };
+    const bound = bindDualBucketCitations(
+      "同一来源支持一部分[1]，也反驳另一部分[2]。",
+      [x],
+      [x]
+    );
+    expect(bound.supportingSources.map((s) => s.url)).toEqual(["https://x.example"]);
+    expect(bound.contradictingSources.map((s) => s.url)).toEqual(["https://x.example"]);
+    expect(bound.remap.get(1)).toBe(1);
+    expect(bound.remap.get(2)).toBe(2);
+    expect(bound.text).toBe("同一来源支持一部分[1]，也反驳另一部分[2]。");
+  });
+
+  it("每桶独立 cap：5 条 support + 1 条 contradict，C1 不得因合计超过 5 被丢掉", () => {
+    const supporting = [1, 2, 3, 4, 5].map((n) => ({
+      url: `https://s.example/${n}`,
+      title: `S${n}`,
+      snippet: "",
+    }));
+    const contradicting = [{ url: "https://c.example/1", title: "C1", snippet: "" }];
+    const bound = bindDualBucketCitations(
+      "S1[1] S2[2] S3[3] S4[4] S5[5] C1[6]。",
+      supporting,
+      contradicting
+    );
+    expect(bound.supportingSources.map((s) => s.url)).toEqual(supporting.map((s) => s.url));
+    expect(bound.contradictingSources.map((s) => s.url)).toEqual(["https://c.example/1"]);
+    expect(bound.remap.get(6)).toBe(6);
+    expect(bound.text).toBe("S1[1] S2[2] S3[3] S4[4] S5[5] C1[6]。");
+  });
+
+  it("同 bucket 重复 URL 仍按旧逻辑 dedupe", () => {
+    const bound = bindDualBucketCitations(
+      "先[1] 再[2]。",
+      [
+        { url: "https://x.example", title: "X1", snippet: "" },
+        { url: "https://x.example", title: "X2", snippet: "" },
+      ],
+      []
+    );
+    expect(bound.supportingSources).toHaveLength(1);
+    expect(bound.supportingSources[0]?.url).toBe("https://x.example");
+    expect(bound.contradictingSources).toEqual([]);
+    expect(bound.remap.get(1)).toBe(1);
+    expect(bound.remap.get(2)).toBe(1);
+    expect(bound.text).toBe("先[1] 再[1]。");
+  });
 });
 
 describe("bindRelatedSourcesOnly", () => {
@@ -177,6 +226,34 @@ describe("bindGlobalConclusion", () => {
 });
 
 describe("normalizeReportCitations", () => {
+  it("同 URL 跨桶：两桶都保留，全局 citationSources 仍按 URL 去重", () => {
+    const x = { url: "https://x.example", title: "X", snippet: "both" };
+    const report: Record<string, unknown> = {
+      conclusion: "综合[1]。",
+      subclaimVerdicts: [
+        {
+          claimAtom: "原子A",
+          verdict: "partial",
+          evidence: "同一来源支持一部分[1]，也反驳另一部分[2]。",
+          supportingSources: [x],
+          contradictingSources: [x],
+        },
+      ],
+    };
+    normalizeReportCitations(report);
+    const v = (report.subclaimVerdicts as Array<{
+      evidence: string;
+      supportingSources: Array<{ url: string }>;
+      contradictingSources: Array<{ url: string }>;
+    }>)[0];
+    expect(v.supportingSources.map((s) => s.url)).toEqual(["https://x.example"]);
+    expect(v.contradictingSources.map((s) => s.url)).toEqual(["https://x.example"]);
+    expect(v.evidence).toBe("同一来源支持一部分[1]，也反驳另一部分[2]。");
+    expect((report.citationSources as Array<{ url: string }>).map((s) => s.url)).toEqual([
+      "https://x.example",
+    ]);
+  });
+
   it("dual-bucket：supporting + contradicting 的 [1][2] 都保留", () => {
     const report: Record<string, unknown> = {
       conclusion: "综合[1][2]。",
