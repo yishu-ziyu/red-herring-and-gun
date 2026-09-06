@@ -22,7 +22,7 @@
 
 # 当前状态
 
-2026-09-06 PR #71 rebase 到 main `d6507de`（#63 Evidence Settling 已合入）。完整保留 Claim Trace 与 EvidenceBoard persistent identity（`identifyEvidenceLinks` / stable-relation-ephemeral）。Source Drawer 建在 `motion.button` Evidence 行上：点击打开、关闭后焦点回原节点 `before === after`；Drawer 开着时 unique source settling 不关不抢不 remount dialog；duplicate 无法唯一 resolve 时 held 上一帧，不猜 relation。fixture ≠ 真实 SSE。不 merge，不开 #64/#66。
+2026-09-06 PR #71 rebase 到 main `d6507de`（#63 Evidence Settling 已合入）。完整保留 Claim Trace 与 EvidenceBoard persistent identity（`identifyEvidenceLinks` / stable-relation-ephemeral）。Source Drawer 建在 `motion.button` Evidence 行上：点击打开、关闭后焦点回原节点 `before === after`；Drawer 开着时 unique source settling 不关不抢不 remount dialog；duplicate 无法唯一 resolve 时 held 上一帧，不猜 relation。goldenPath 70；根 767；mvp build 绿；capture_source_drawer GATE PASS（5183，fixture 非真实 SSE）。不 merge，不开 #64/#66。
 
 2026-09-06 Issue #65 Source Drawer / Bottom Sheet 生产化独立 PR 待人工验收（`feat/reset-4e-source-drawer`）：DrawerState 为 `claimId + sourceId + role`，打开时从最新 snapshot 重取 Claim / EvidenceLink / Source，snapshot 更新不关抽屉、不抢焦点；finding / limitation / excerpt 有才显示，不编文案；Desktop 440px 右侧 Drawer，Mobile 390 Bottom Sheet；手写 modal（dialog 名、Tab / Shift+Tab 闭环、Escape、scrim、焦点回原 Evidence 行），未引入 UI 库。截图 `docs/design/2026-09-06-source-drawer/` 来自 DEV fixture，不是真实 SSE。验收见 `docs/evals/2026-09-06-source-drawer.md`。
 

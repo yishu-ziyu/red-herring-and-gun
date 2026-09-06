@@ -83,7 +83,7 @@ python3 scripts/capture_source_drawer.py
 
 ### Evidence
 
-- 行为测试：`mvp/src/goldenPath/goldenPath.test.tsx` Issue #65 段 15 项均为真实 focus / keydown / click；Issue #62 Claim Trace 段仍在。rebase 后 `cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`：**53 通过**
+- 行为测试：`mvp/src/goldenPath/goldenPath.test.tsx` Issue #65 段为真实 focus / keydown / click；Issue #62 Claim Trace 与 Issue #63 Evidence Settling 段仍在。rebase 到 `d6507de` 后 `cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`：**70 通过**（含 Drawer×Settling 交叉与 duplicate fail-safe）
 - 截图：`docs/design/2026-09-06-source-drawer/`
   - Desktop 1440：`source-drawer.png`、`source-drawer-no-limitation.png`、`source-drawer-unreachable.png`、`source-drawer-grayscale.png`
   - Mobile 390：`source-sheet.png`、`source-sheet-grayscale.png`
@@ -91,5 +91,5 @@ python3 scripts/capture_source_drawer.py
 - 截图来源是生产 Golden Path + DEV fixture `/?fixture=source-audit`，**不是**真实 SSE（真实 SSE 属 #66）
 - `npm test`：core 578 / eval 85 / server 21 / web 83 = **767 通过**
 - `npm run build`：通过
-- `cd mvp && npm test`：**944 通过 / 1 跳过**（含 Claim Trace）
+- `cd mvp && npm test`：goldenPath 70 全绿；全量 940 通过 / 1 跳过（worktree 里 4 个未改的 server 套件因 symlink 解析 `@earendil-works/pi-coding-agent` 失败，不在本 PR diff）
 - `cd mvp && npm run build`：通过
