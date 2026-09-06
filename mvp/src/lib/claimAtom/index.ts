@@ -8,6 +8,7 @@ export {
   compactText,
   MAX_CLAIM_ATOMS,
   mergeSubclaimVerdicts,
+  alignFalseEvidenceBuckets,
   splitVerifiableAtoms,
   prefilterClaimAtoms,
   parseSelfProofResults,

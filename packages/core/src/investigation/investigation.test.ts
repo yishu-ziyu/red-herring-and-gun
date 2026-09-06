@@ -184,6 +184,171 @@ describe("golden case 3：半真半假", () => {
   });
 });
 
+describe("Issue #74：false 的证伪材料被写成 supportingSources 时不得输出 support", () => {
+  const claim = "维生素C能治感冒，而且每次感冒都应当输液。";
+  const atom = "每次感冒都应当输液";
+  const refute = [
+    src(
+      "https://www.bohe.cn/k/chglpv2qk0zycm1_2",
+      "输液",
+      "感冒通常不需要输液治疗，多数情况下通过休息和对症用药即可缓解"
+    ),
+    src(
+      "https://m.familydoctor.com.cn/201711/2436185.html",
+      "合作医生",
+      "按照我个人的用药经验，只有10～20%的感冒儿童需要输液"
+    ),
+    src(
+      "https://www.yantai.gov.cn/art/2025/3/27/art_81036_3255894.html",
+      "【健康科普】\"感冒发烧\"一定要输液吗？",
+      "九成的感冒病人完全没必要输液"
+    ),
+    src(
+      "https://new.qq.com/omn/20180326/20180326G03AHR.html",
+      "感冒了输点液好得快，这个说法从医学角度来说基本是错误的",
+      "对于普通感冒，输液治疗没有必要，没有效果，反而增加风险"
+    ),
+  ];
+  const evidence =
+    "博禾医药明确「感冒通常不需要输液治疗，多数情况下通过休息和对症用药即可缓解」[1]；临床医生经验数据「只有10～20%的感冒儿童需要输液」[2]；烟台市政府科普指出「九成感冒不必输液」[3]；医学院教科书规定普通感冒不允许输液，欧美日输液指征要求更严格[4]。";
+
+  it("最小化 producer 输入：反向材料不得输出为 support，判断为 refuted", () => {
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: claim,
+      phase: "complete",
+      claimAtoms: [atom],
+      claimAtomTypes: [{ text: atom, verifiable: true, type: "fact" }],
+      atomSearchBundle: {
+        atomsSearched: [atom],
+        byAtomKey: { [atom]: refute },
+      },
+      subclaimVerdicts: [
+        {
+          claimAtom: atom,
+          verdict: "false",
+          evidence,
+          boundary: "输液仅适用于严重脱水、高热不退或口服药物无法吸收等特定临床情况",
+          supportingSources: refute,
+          contradictingSources: [],
+          evidenceGaps: [],
+        },
+      ],
+      report: {
+        conclusion: "「每次感冒都应当输液」缺乏医学依据。",
+        verdictType: "false",
+        citationSources: refute,
+      },
+    }, { claimAtomKeyFn: keyFn });
+
+    const claim2 = snapshot.claims.find((c) => c.text === atom);
+    expect(claim2).toBeDefined();
+    expect(claim2!.judgment).toBe("refuted");
+    expect(claim2!.evidence.map((l) => l.role)).toEqual([
+      "contradict",
+      "contradict",
+      "contradict",
+      "contradict",
+    ]);
+    expect(claim2!.evidence.some((l) => l.role === "support")).toBe(false);
+    expect(claim2!.evidence.every((l) => l.finding?.includes("通常不需要输液"))).toBe(true);
+    expectCleanContract(snapshot);
+  });
+
+  it("已正确放入 contradictingSources 的路径不回归", () => {
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: claim,
+      phase: "complete",
+      claimAtoms: [atom],
+      subclaimVerdicts: [
+        {
+          claimAtom: atom,
+          verdict: "false",
+          evidence: "临床指征说明普通感冒不应输液[1]。",
+          boundary: "",
+          supportingSources: [],
+          contradictingSources: [refute[0]],
+          evidenceGaps: [],
+        },
+      ],
+    }, { claimAtomKeyFn: keyFn });
+    expect(snapshot.claims[0]!.evidence.map((l) => l.role)).toEqual(["contradict"]);
+    expect(snapshot.claims[0]!.judgment).toBe("refuted");
+  });
+
+  it("正常 support 不改桶", () => {
+    const supportUrl = "https://www.gov.cn/air-composition";
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: "空气中氧气约占体积的两成。",
+      phase: "complete",
+      claimAtoms: ["空气中氧气约占体积的两成"],
+      subclaimVerdicts: [
+        {
+          claimAtom: "空气中氧气约占体积的两成",
+          verdict: "true",
+          evidence: "标准大气成分表显示氧气占 20.9%[1]。",
+          boundary: "",
+          supportingSources: [src(supportUrl, "标准大气成分", "氧气 20.9%")],
+          contradictingSources: [],
+          evidenceGaps: [],
+        },
+      ],
+    }, { claimAtomKeyFn: keyFn });
+    expect(snapshot.claims[0]!.evidence.map((l) => l.role)).toEqual(["support"]);
+    expect(snapshot.claims[0]!.judgment).toBe("supported");
+  });
+
+  it("同一 URL 跨桶：同一 sourceId 同时产出 support 与 contradict", () => {
+    const url = "https://same.example/x";
+    const shared = src(url, "同一来源", "既支持一部分也反驳另一部分");
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: "某说法。",
+      phase: "complete",
+      claimAtoms: ["某说法"],
+      subclaimVerdicts: [
+        {
+          claimAtom: "某说法",
+          verdict: "partial",
+          evidence: "同一来源支持一部分[1]，也反驳另一部分[2]。",
+          boundary: "",
+          supportingSources: [shared],
+          contradictingSources: [shared],
+          evidenceGaps: [],
+        },
+      ],
+    }, { claimAtomKeyFn: keyFn });
+    const links = snapshot.claims[0]!.evidence;
+    expect(links.map((l) => l.role)).toEqual(["support", "contradict"]);
+    expect(links[0]!.sourceId).toBe(links[1]!.sourceId);
+    expect(snapshot.sources).toHaveLength(1);
+    expect(snapshot.sources[0]!.url).toBe(url);
+    expectCleanContract(snapshot);
+  });
+
+  it("related-only 检索垫不得被改成 contradict", () => {
+    const fill = src("https://search.example/cold-iv", "检索垫", "提到输液");
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: claim,
+      phase: "complete",
+      claimAtoms: [atom],
+      atomSearchBundle: { atomsSearched: [atom], byAtomKey: { [atom]: [fill] } },
+      subclaimVerdicts: [
+        {
+          claimAtom: atom,
+          verdict: "false",
+          evidence: "检索到相关页，但未引用。",
+          boundary: "",
+          supportingSources: [fill],
+          contradictingSources: [],
+          evidenceGaps: ["待补证"],
+          sourcesRelatedOnly: true,
+        },
+      ],
+    }, { claimAtomKeyFn: keyFn });
+    expect(snapshot.claims[0]!.evidence.map((l) => l.role)).toEqual(["context-only"]);
+    expect(snapshot.claims[0]!.evidence.some((l) => l.role === "contradict")).toBe(false);
+  });
+});
+
 describe("golden case 4：证据不足", () => {
   const claim = "某小区本月的自来水异味来自新增消毒工艺。";
   const atom = "某小区本月的自来水异味来自新增消毒工艺";
