@@ -22,6 +22,8 @@
 
 # 当前状态
 
+2026-09-06 PR #60 人工 Review 第三轮最终 Evidence Honesty 收口完成（独立分支 `design/reference-exploration`，严格采用 Review 推荐的方案 B）：①区分实测与推论：将未真正由代码在运行时执行并测量的部分从 Actual Runtime Evidence 降级为 Structural inference 与 Risk analysis；②Case 5 实测仅保留原生 textWrap 读取、拆行与初始行宽记录，跨元素重排破坏归入 DOM 封装结构推论（Structural inference，未执行 resize 实测）；③Case 6 实测仅保留 document.fonts.ready 就绪等待与就绪后几何测量，font swap 溢出归入时序时机风险分析（Risk analysis，未执行真实字体替换前后测量）；④屏幕阅读器无障碍诚实维持 Not tested，kugiri 动效维持 Not applicable；⑤同步修正 5 处文件（kugiri-spike-test.html、kugiri-spike-evaluation.md、2026-09-06-design-reference-exploration.md、reference-pack/index.html、PR #60 description）。自动化回归 verify_reference_exploration.py 10/10 PASS，根 npm test（767 绿）、npm run build、cd mvp && npm test（908 绿 / 1 跳过）全绿。零生产代码触碰，停止等待人工最终验收。
+
 2026-09-06 PR #59 复审意见处理完成（只改契约文档，未动代码，改完停止等复审）：按人工 review 逐条修正 3 个阻塞项与 1 个文档准确性项：①`docs/PRODUCT_SPEC.md` 第八节如实基于 GitHub main、已合并 PR 与 Issue 状态重写，严格区分“计划依赖关系”与“当前工程事实”，明确标注 #51 与 #52 均已合并至 main，避免后续重复执行；②删除将“五词”升级为产品宪法的硬性约束，明确其为历史探索用语/非约束性现状，避免反向约束 #52 信息架构，证据语义（支持/反驳/仅相关/尚缺/争议）直接可见；③`docs/PRODUCT_SPEC.md` 文件头收敛为唯一真相源，明确区分当前产品规则、当前工程事实、设计背景与历史决策，devlog 明确标注为历史参考而非并列权威；④明确说明 `README.md` 与 `CONTEXT.md` 经检查后确认与宪法一致，因此零修改，消除产生未存在 diff 的暗示。验收见 `docs/evals/2026-09-06-product-constitution-contract.md`。npm test、npm run build、cd mvp && npm test 全绿，未动生产代码，等待人工 review。
 
 2026-09-06 用户要求把本地全部改动收进 `main` 并推远端，只留 `main` 一条分支。`dev` 与 `spine` 本地和远端均删除。独立 worktree `argument-structure-obligations` 目录已不在磁盘，未能合入。仓库：https://github.com/yishu-ziyu/red-herring-and-gun

@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>kugiri (0.4.0) 真实孤立运行时 Spike · 红鲱鱼与枪</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      --font-mono: "SF Mono", Monaco, Menlo, Consolas, monospace;
+      --bg: #f8fafc;
+      --fg: #0f172a;
+      --fg-muted: #475569;
+      --border: #e2e8f0;
+      --accent: #2563eb;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+      padding: 32px 20px;
+    }
+    .container {
+      max-width: 1040px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 36px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .runtime-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .runtime-badge .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+    p.intro {
+      color: var(--fg-muted);
+      font-size: 14px;
+      margin-bottom: 28px;
+      line-height: 1.6;
+    }
+    .case-block {
+      border-top: 1px solid var(--border);
+      padding: 24px 0;
+    }
+    .case-title {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .case-desc {
+      font-size: 13px;
+      color: var(--fg-muted);
+      margin-bottom: 14px;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 768px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: #fafafa;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .panel-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #64748b;
+      margin-bottom: 8px;
+    }
+    .text-target {
+      font-size: 16px;
+      line-height: 1.7;
+      word-break: break-word;
+      background: #fff;
+      padding: 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+    .log-box {
+      margin-top: 12px;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 12px;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .btn-bar {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    button.op-btn {
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button.op-btn:hover {
+      background: #f1f5f9;
+    }
+    button.op-btn.primary {
+      background: #0f172a;
+      color: #fff;
+      border-color: #0f172a;
+    }
+    .table-spec {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 24px;
+      font-size: 13px;
+    }
+    .table-spec th, .table-spec td {
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      text-align: left;
+    }
+    .table-spec th {
+      background: #f8fafc;
+      font-weight: 600;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-tested { background: #dbeafe; color: #1e40af; }
+    .badge-not-tested { background: #f1f5f9; color: #64748b; }
+    .badge-native-win { background: #dcfce7; color: #15803d; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="runtime-badge">
+      <span class="dot"></span>
+      <span id="runtime-status">正在加载 kugiri@0.4.0 运行时...</span>
+    </div>
+
+    <h1>kugiri (0.4.0) 真实孤立运行时 Spike</h1>
+    <p class="intro">
+      本页面直接在浏览器运行时加载 <code>docs/design/reference-pack/kugiri-spike/kugiri.js</code> (v0.4.0)，
+      真实调用公开 API <code>splitText()</code> 与 <code>revert()</code>，记录实际生成的 DOM 结构、分词断行结果、以及对 CJK 排版、内联标签、Resize 和无障碍结构的真实影响。
+    </p>
+
+    <!-- Case 1: 中文长句与标点 -->
+    <div class="case-block">
+      <div class="case-title">1. 中文长句分词与标点悬挂 (Intl.Segmenter)</div>
+      <div class="case-desc">维 C 调查案例真实原句与全角标点：“……”，——</div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-title">kugiri 真实运行目标</div>
+          <div class="text-target" id="target-cjk-1">“维生素 C 能治感冒，而且每次感冒都应该输液。”——这是社交网络长期流传的典型复合谣言，包含因果与事实两个判断。</div>
+          <div class="btn-bar">
+            <button type="button" class="op-btn primary" id="btn-split-cjk-1">执行 splitText()</button>
+            <button type="button" class="op-btn" id="btn-revert-cjk-1">执行 revert()</button>
+          </div>
+          <div class="log-box" id="log-cjk-1">等待执行...</div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">现代原生 CSS 方案 (带语义 mark)</div>
+          <div class="text-target">
+            “<mark style="background: rgba(37,99,235,0.12); border-bottom: 1.5px solid #2563eb; color: inherit;">维生素 C 能治感冒</mark>，而且<mark style="background: rgba(37,99,235,0.12); border-bottom: 1.5px solid #2563eb; color: inherit;">每次感冒都应该输液</mark>。”——这是社交网络长期流传的典型复合谣言，包含因果与事实两个判断。
+          </div>
+          <div class="case-desc" style="margin-top: 14px;">
+            原生方案不拆分 DOM，浏览器原生完整渲染 CJK 字间距与标点避头尾禁则。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Case 2: 中英混排与 inline 标签 -->
+    <div class="case-block">
+      <div class="case-title">2. 中英混排 + 嵌套 <code>&lt;a&gt;</code> / <code>&lt;strong&gt;</code></div>
+      <div class="case-desc">验证折行时内联标签是否被克隆或破坏</div>
+      <div class="panel">
+        <div class="panel-title">kugiri 真实运行目标</div>
+        <div class="text-target" id="target-inline-2" style="max-width: 480px;">根据 <a href="https://example.com" id="who-link" style="color:var(--accent);">WHO 世界卫生组织</a> 与 <strong>FDA 官方标准</strong>，常规补充剂对普通 cold 没有临床治愈依据。</div>
+        <div class="btn-bar">
+          <button type="button" class="op-btn primary" id="btn-split-inline-2">执行 splitText()</button>
+          <button type="button" class="op-btn" id="btn-revert-inline-2">执行 revert()</button>
+        </div>
+        <div class="log-box" id="log-inline-2">等待执行...</div>
+      </div>
+    </div>
+
+    <!-- Case 3: 动态 Resize 与 Repeated split/revert -->
+    <div class="case-block">
+      <div class="case-title">3. 动态视口 Resize 与 Repeated split/revert 稳定性</div>
+      <div class="case-desc">调整容器宽度观察折行改变；连续 5 次 split/revert 测试 DOM 幂等性</div>
+      <div class="panel">
+        <div class="btn-bar" style="margin-bottom: 10px;">
+          <button type="button" class="op-btn" onclick="resizeBox(800)">800px (Desktop)</button>
+          <button type="button" class="op-btn" onclick="resizeBox(480)">480px (Tablet)</button>
+          <button type="button" class="op-btn" onclick="resizeBox(320)">320px (Mobile)</button>
+          <button type="button" class="op-btn primary" id="btn-test-repeat">连续 5 次 split/revert 测试</button>
+        </div>
+        <div class="text-target" id="target-resize-3" style="width: 800px; transition: width 0.2s ease;">
+          只有前半截有依据且被夸大；后半截站不住。现代临床指征明确表明普通感冒无须常规输液。
+        </div>
+        <div class="log-box" id="log-resize-3">等待执行...</div>
+      </div>
+    </div>
+
+    <!-- Case 4: 无障碍结构与关键排版维度检查 -->
+    <div class="case-block">
+      <div class="case-title">4. 无障碍结构与关键排版维度检查 (实测与推论严格区分矩阵)</div>
+      <div class="case-desc">严格区分真实运行执行 (Actual Runtime Evidence)、结构推论 (Structural inference)、风险分析 (Risk analysis) 与未测项 (Not tested)</div>
+      <table class="table-spec">
+        <thead>
+          <tr>
+            <th>检查项</th>
+            <th>证据类型</th>
+            <th>kugiri 观察与推论</th>
+            <th>技术裁决</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>DOM 文本连续性</td>
+            <td><span class="status-badge badge-tested">Actual Runtime</span></td>
+            <td>实测观察：文本被切分为数十个离散的行框与词框 span 节点</td>
+            <td><span class="status-badge badge-native-win">原生文本树更佳</span></td>
+          </tr>
+          <tr>
+            <td>Aria Exposure 标记</td>
+            <td><span class="status-badge badge-tested">Actual Runtime</span></td>
+            <td>实测观察：kugiri 默认在 units 上打 data-line/data-word，未自动为目标添加 aria-label 与 aria-hidden</td>
+            <td><span class="status-badge badge-native-win">原生免配置</span></td>
+          </tr>
+          <tr>
+            <td>text-wrap: balance 交互</td>
+            <td><span class="status-badge badge-tested">Actual Runtime</span> + <span class="status-badge badge-not-tested">Structural Inference</span></td>
+            <td><strong>实测</strong>：成功切出行数并记录行宽；<br><strong>结构推论</strong>：将文本硬封装为独立 div 块后，浏览器原生 balance 算法无法跨已切碎元素动态重排（本 Case 未在运行时触发容器 resize）</td>
+            <td><span class="status-badge badge-native-win">原生 CSS 胜出</span></td>
+          </tr>
+          <tr>
+            <td>字体就绪 (document.fonts.ready)</td>
+            <td><span class="status-badge badge-tested">Actual Runtime</span> + <span class="status-badge badge-not-tested">Risk Analysis</span></td>
+            <td><strong>实测</strong>：成功等待 document.fonts.ready 解析并完成就绪后切分与尺寸测量；<br><strong>风险分析</strong>：强依赖物理像素测量，若在 WebFont 未就绪前提前切行存在后续 font swap 错位风险（未做实际 font swap 实测）</td>
+            <td><span class="status-badge badge-native-win">原生零风险</span></td>
+          </tr>
+          <tr>
+            <td>VoiceOver / NVDA 朗读 (TTS 引擎)</td>
+            <td><span class="status-badge badge-not-tested">Not tested</span></td>
+            <td>未跑系统级 TTS 语音合成引擎；根据 Accessibility 树审查，数十个离散 span 存在断读与拼读风险（属于结构审查，非真实语音实测）</td>
+            <td><span class="status-badge badge-not-tested">结构风险高</span></td>
+          </tr>
+          <tr>
+            <td>kugiri 自身 reduced-motion</td>
+            <td><span class="status-badge badge-not-tested">Not applicable</span></td>
+            <td>kugiri 仅为 DOM 节点拆分工具，自身不包含动效引擎（主原型动效已单独通过 prefers-reduced-motion: 0s 验证）</td>
+            <td><span class="status-badge badge-native-win">原生 CSS 控制</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Case 5: text-wrap: balance 运行时测量与结构推论 -->
+    <div class="case-block">
+      <div class="case-title">5. 现代 CSS <code>text-wrap: balance</code> 运行时测量与结构推论</div>
+      <div class="case-desc">运行时测量初始平衡切分行宽，并从 DOM 封装结构推论原生平衡换行引擎的受限风险</div>
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-title">kugiri 运行目标 (text-wrap: balance; max-width: 320px)</div>
+          <div class="text-target" id="target-balance-5" style="text-wrap: balance; max-width: 320px; font-size: 15.5px; line-height: 1.6;">
+            “维生素 C 能治感冒，而且每次感冒都应该输液。”——这是社交网络长期流传的典型复合谣言。
+          </div>
+          <div class="btn-bar">
+            <button type="button" class="op-btn primary" id="btn-split-balance-5">执行 splitText() 测量</button>
+            <button type="button" class="op-btn" id="btn-revert-balance-5">执行 revert()</button>
+          </div>
+          <div class="log-box" id="log-balance-5">等待执行...</div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">现代原生 CSS (text-wrap: balance 原生保留)</div>
+          <div class="text-target" style="text-wrap: balance; max-width: 320px; font-size: 15.5px; line-height: 1.6;">
+            “维生素 C 能治感冒，而且每次感冒都应该输液。”——这是社交网络长期流传的典型复合谣言。
+          </div>
+          <div class="case-desc" style="margin-top: 14px;">
+            原生方案由浏览器在布局阶段动态计算每行文本宽度使各行长度基本均衡（避免孤字/短行），且在容器尺寸变化时一次性自动平衡。
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Case 6: 字体加载 document.fonts.ready 运行时测量与风险分析 -->
+    <div class="case-block">
+      <div class="case-title">6. 字体加载 <code>document.fonts.ready</code> 运行时测量与风险分析</div>
+      <div class="case-desc">实测在 document.fonts.ready 就绪状态下执行切分并记录尺寸，分析字体替换（font swap）时序风险</div>
+      <div class="panel">
+        <div class="text-target" id="target-font-6" style="max-width: 420px; font-size: 16px; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;">
+          维生素 C 仅在极少数试验中表现出对普通感冒病程轻微缩短约 8% 的辅助效果，不具备治疗或阻断感冒的作用。
+        </div>
+        <div class="btn-bar">
+          <button type="button" class="op-btn primary" id="btn-test-font-6">等待 document.fonts.ready 并执行测量</button>
+        </div>
+        <div class="log-box" id="log-font-6">等待执行...</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { splitText } from './kugiri-spike/kugiri.js';
+
+    window.splitText = splitText;
+    document.getElementById('runtime-status').textContent = 'kugiri@0.4.0 运行时已成功加载并在内存就绪！';
+
+    // 自动挂载测试行为并支持对外暴露状态
+    window.spikeResults = {
+      loaded: true,
+      version: "0.4.0",
+      cases: {}
+    };
+
+    // Case 1 逻辑
+    const cjkTarget = document.getElementById('target-cjk-1');
+    const cjkLog = document.getElementById('log-cjk-1');
+    let cjkSplit = null;
+
+    document.getElementById('btn-split-cjk-1').onclick = () => {
+      if (cjkSplit) cjkSplit.revert();
+      const beforeHtml = cjkTarget.innerHTML;
+      cjkSplit = splitText(cjkTarget, { type: ["lines", "words"] });
+      const afterHtml = cjkTarget.innerHTML;
+      
+      const wordsList = cjkSplit.words.map(w => w.textContent).slice(0, 10).join(' | ');
+      const info = `[kugiri splitText 成功调用]\n- lines count: ${cjkSplit.lines.length}\n- words count: ${cjkSplit.words.length}\n- 前 10 个词元: [ ${wordsList} ... ]\n- split 后 DOM 片段: ${afterHtml.slice(0, 140)}...`;
+      cjkLog.textContent = info;
+      window.spikeResults.cases.cjk1 = { lines: cjkSplit.lines.length, words: cjkSplit.words.length };
+    };
+
+    document.getElementById('btn-revert-cjk-1').onclick = () => {
+      if (cjkSplit) {
+        cjkSplit.revert();
+        cjkSplit = null;
+        cjkLog.textContent = `[kugiri revert 成功调用]\n- DOM 已恢复为原始内容。\n- 当前 innerHTML: ${cjkTarget.innerHTML}`;
+      }
+    };
+
+    // Case 2 逻辑
+    const inlineTarget = document.getElementById('target-inline-2');
+    const inlineLog = document.getElementById('log-inline-2');
+    let inlineSplit = null;
+
+    document.getElementById('btn-split-inline-2').onclick = () => {
+      if (inlineSplit) inlineSplit.revert();
+      const initialLinks = inlineTarget.querySelectorAll('a').length;
+      inlineSplit = splitText(inlineTarget, { type: ["lines", "words"] });
+      const afterLinks = inlineTarget.querySelectorAll('a').length;
+      
+      inlineLog.textContent = `[kugiri inline 测试]\n- 拆分前 <a> 数量: ${initialLinks}\n- 拆分后 <a> 数量: ${afterLinks}\n- lines: ${inlineSplit.lines.length}, words: ${inlineSplit.words.length}\n- innerHTML 片段: ${inlineTarget.innerHTML.slice(0, 160)}...`;
+      window.spikeResults.cases.inline2 = { beforeLinks: initialLinks, afterLinks: afterLinks };
+    };
+
+    document.getElementById('btn-revert-inline-2').onclick = () => {
+      if (inlineSplit) {
+        inlineSplit.revert();
+        inlineSplit = null;
+        inlineLog.textContent = `[kugiri revert 成功调用]\n- DOM 已还原。`;
+      }
+    };
+
+    // Case 3 连续测试
+    window.resizeBox = (w) => {
+      document.getElementById('target-resize-3').style.width = w + 'px';
+    };
+
+    document.getElementById('btn-test-repeat').onclick = () => {
+      const target = document.getElementById('target-resize-3');
+      const origHtml = target.innerHTML;
+      const log = document.getElementById('log-resize-3');
+      let passed = true;
+
+      for (let i = 0; i < 5; i++) {
+        const split = splitText(target, { type: ["lines", "words"] });
+        split.revert();
+        if (target.innerHTML !== origHtml) {
+          passed = false;
+          break;
+        }
+      }
+
+      log.textContent = `[连续 5 次 split/revert 幂等性测试]\n- 状态: ${passed ? "PASS (每次 revert 后 DOM 均 100% 还原)" : "FAIL"}\n- 还原后长度匹配: ${target.innerHTML.length === origHtml.length}`;
+      window.spikeResults.cases.repeatTest = { passed };
+    };
+
+    // Case 5 逻辑: text-wrap: balance
+    const balanceTarget = document.getElementById('target-balance-5');
+    const balanceLog = document.getElementById('log-balance-5');
+    let balanceSplit = null;
+
+    document.getElementById('btn-split-balance-5').onclick = () => {
+      if (balanceSplit) balanceSplit.revert();
+      const computedBefore = window.getComputedStyle(balanceTarget).textWrap;
+      balanceSplit = splitText(balanceTarget, { type: ["lines", "words"] });
+      const linesCount = balanceSplit.lines.length;
+      const lineWidths = balanceSplit.lines.map(l => Math.round(l.getBoundingClientRect().width));
+      
+      const info = `[Case 5: text-wrap: balance 运行时测量与结构推论]\n- 运行时实测 (Actual Runtime): 读取原生 text-wrap 为 ${computedBefore}，kugiri 成功切分出 ${linesCount} 行，初始行宽记录为 [${lineWidths.join('px, ')}px]。\n- 结构推论 (Structural inference): kugiri 将各行封装为独立 div 块（带有 text-wrap: nowrap），原生平衡换行引擎无法跨已切碎元素动态分配行长；若容器宽度发生变化需由外层重新调用 split（本测试未执行动态 resize 观察）。`;
+      balanceLog.textContent = info;
+      window.spikeResults.cases.textWrapBalance = {
+        computedWrap: computedBefore,
+        linesCount,
+        lineWidths,
+        tested: true
+      };
+    };
+
+    document.getElementById('btn-revert-balance-5').onclick = () => {
+      if (balanceSplit) {
+        balanceSplit.revert();
+        balanceSplit = null;
+        balanceLog.textContent = `[kugiri revert 成功调用]\n- DOM 已还原，text-wrap: balance 原生平衡恢复生效。`;
+      }
+    };
+
+    // Case 6 逻辑: document.fonts.ready
+    const fontTarget = document.getElementById('target-font-6');
+    const fontLog = document.getElementById('log-font-6');
+
+    document.getElementById('btn-test-font-6').onclick = async () => {
+      const fontStatusBefore = document.fonts ? document.fonts.status : 'unknown';
+      if (document.fonts) {
+        await document.fonts.ready;
+      }
+      const fontStatusAfter = document.fonts ? document.fonts.status : 'unknown';
+      const split = splitText(fontTarget, { type: ["lines", "words"] });
+      const linesCount = split.lines.length;
+      const lineHeights = split.lines.map(l => Math.round(l.getBoundingClientRect().height));
+      
+      const info = `[Case 6: document.fonts.ready 运行时测量与风险分析]\n- 运行时实测 (Actual Runtime): document.fonts 初始状态为 ${fontStatusBefore}，成功等待 ready 解析（状态变为 ${fontStatusAfter}），字体就绪后 splitText 切出 ${linesCount} 行，测量各行高为 [${lineHeights.join('px, ')}px]。\n- 风险分析 (Risk analysis): kugiri 切行依赖物理像素测量；若在 WebFont 未就绪前提前切行，后续字体替换（font swap）会导致字符度量变化产生换行错位风险（本测试未执行真实 font swap 前后对比）。`;
+      fontLog.textContent = info;
+      window.spikeResults.cases.fontReady = {
+        statusBefore: fontStatusBefore,
+        statusAfter: fontStatusAfter,
+        linesCount,
+        tested: true
+      };
+      split.revert();
+    };
+
+    // 页面载入自动执行 Case 1, 2, 3, 5, 6
+    document.getElementById('btn-split-cjk-1').click();
+    document.getElementById('btn-split-inline-2').click();
+    document.getElementById('btn-test-repeat').click();
+    document.getElementById('btn-split-balance-5').click();
+    document.getElementById('btn-test-font-6').click();
+  </script>
+</body>
+</html>
+
