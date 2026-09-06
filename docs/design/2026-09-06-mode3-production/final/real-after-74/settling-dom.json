@@ -1,0 +1,23 @@
+{
+  "transition": {
+    "claimId": "claim-1",
+    "url": "https://ltxc.cqnu.edu.cn/info/1140/7130.htm",
+    "fromId": "src-3",
+    "toId": "src-1",
+    "from": "unassessed",
+    "to": "support"
+  },
+  "pin": {
+    "role": "unassessed",
+    "identity": "stable",
+    "key": "claim-1:src-3",
+    "sourceId": "src-3"
+  },
+  "after": {
+    "same": false,
+    "role": "support",
+    "identity": "stable",
+    "sourceId": "src-1"
+  },
+  "sourceIdsStable": false
+}

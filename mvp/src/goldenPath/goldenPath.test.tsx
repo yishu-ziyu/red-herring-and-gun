@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildInvestigationSnapshot, type InvestigationSnapshotV1 } from "@rhg/core/investigation";
+import { buildInvestigationSnapshot, sourceIdsStableAcross, type InvestigationSnapshotV1 } from "@rhg/core/investigation";
 import { InvestigationCanvas } from "./InvestigationCanvas";
 import { buildClaimTraceSegments } from "./claimTrace";
 import {
@@ -1945,6 +1945,172 @@ describe("Issue #76 source identity × #63 Evidence Settling", () => {
     expect(after?.getAttribute("data-gp-role")).toBe("support");
     expect(after?.getAttribute("data-gp-identity")).toBe("stable");
     expect(after?.getAttribute("data-gp-evidence-key")).toBe(`claim-1:${sourceId}`);
+  });
+});
+
+describe("Issue #66 real SSE artifacts (not golden fixtures)", () => {
+  function loadReal(name: string): InvestigationSnapshotV1 {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const { resolve } = require("node:path") as typeof import("node:path");
+    const path = resolve(
+      process.cwd(),
+      "..",
+      "docs/design/2026-09-06-mode3-production/final/real/snapshots",
+      name,
+    );
+    return JSON.parse(readFileSync(path, "utf8")) as InvestigationSnapshotV1;
+  }
+
+  it("REAL investigating → judging：src-1 unassessed→support 且 DOM before === after", () => {
+    const investigating = loadReal("05-investigating-5.json");
+    const judging = loadReal("06-judging.json");
+    const view = renderCanvas(investigating);
+    const before = document.querySelector('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]');
+    const region = document.querySelector("[data-gp-conclusion-region]");
+    const original = document.querySelector(".gp-original");
+    const board = document.querySelector('[data-gp-claim-id="claim-1"] .gp-evidence-board');
+    expect(before).toBeInstanceOf(HTMLElement);
+    expect(before?.getAttribute("data-gp-role")).toBe("unassessed");
+    expect(before?.getAttribute("data-gp-identity")).toBe("stable");
+    expect(region?.getAttribute("data-gp-conclusion-state")).toBe("pending");
+    expect(region?.querySelector("[data-gp-direct-answer]")).toBeNull();
+
+    view.rerender(
+      <InvestigationCanvas snapshot={judging} live onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    const after = document.querySelector('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]');
+    expect(after).toBe(before);
+    expect(after?.getAttribute("data-gp-role")).toBe("support");
+    expect(after?.getAttribute("data-gp-identity")).toBe("stable");
+    expect(document.querySelector("[data-gp-conclusion-region]")).toBe(region);
+    expect(document.querySelector(".gp-original")).toBe(original);
+    expect(document.querySelector('[data-gp-claim-id="claim-1"] .gp-evidence-board')).toBe(board);
+    expect(document.querySelector("[data-gp-direct-answer]")).toBeNull();
+  });
+
+  it("REAL originalSpan 精确切片，禁止 fuzzy", () => {
+    const complete = loadReal("complete.json");
+    for (const claim of complete.claims) {
+      const span = claim.originalSpan;
+      expect(span).toBeTruthy();
+      const sliced = complete.originalClaim.slice(span!.start, span!.end);
+      expect(sliced).toBe(claim.text);
+    }
+    const segs = buildClaimTraceSegments(complete.originalClaim, complete.claims);
+    const traced = segs.filter((s) => s.traceable).map((s) => s.text);
+    expect(traced).toEqual(["维生素C能治感冒", "每次感冒都应当输液"]);
+  });
+});
+
+describe("Issue #66 post-#74 real SSE artifacts", () => {
+  function loadAfter74(name: string): InvestigationSnapshotV1 {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const { resolve } = require("node:path") as typeof import("node:path");
+    const path = resolve(
+      process.cwd(),
+      "..",
+      "docs/design/2026-09-06-mode3-production/final/real-after-74/snapshots",
+      name,
+    );
+    return JSON.parse(readFileSync(path, "utf8")) as InvestigationSnapshotV1;
+  }
+
+  it("claim-2 反向证据不得再是 support，judgment=refuted", () => {
+    const complete = loadAfter74("complete.json");
+    const claim2 = complete.claims.find((c) => c.text.includes("每次感冒都应当输液"));
+    expect(claim2).toBeTruthy();
+    expect(claim2!.judgment).toBe("refuted");
+    const cited = claim2!.evidence.filter((l) => l.role === "support" || l.role === "contradict");
+    expect(cited.length).toBeGreaterThan(0);
+    expect(cited.every((l) => l.role === "contradict")).toBe(true);
+    expect(cited.some((l) => l.role === "support")).toBe(false);
+    const reverse = /不需要输液|无需输液|没必要输液|不必输液|输液没有必要|输液治疗没有必要/;
+    const reverseCited = cited.filter((l) => reverse.test(l.finding || ""));
+    expect(reverseCited.length).toBeGreaterThan(0);
+    expect(reverseCited.every((l) => l.role === "contradict")).toBe(true);
+    for (const claim of complete.claims) {
+      const span = claim.originalSpan;
+      expect(span).toBeTruthy();
+      expect(complete.originalClaim.slice(span!.start, span!.end)).toBe(claim.text);
+    }
+  });
+
+  it("claim-1 同时有 support 与 contradict 两条 relation，[n] 仍在 finding 里", () => {
+    const complete = loadAfter74("complete.json");
+    const claim1 = complete.claims.find((c) => c.text.includes("维生素C能治感冒"));
+    expect(claim1).toBeTruthy();
+    const roles = claim1!.evidence.map((l) => l.role);
+    expect(roles).toContain("support");
+    expect(roles).toContain("contradict");
+    const cited = claim1!.evidence.filter((l) => l.role === "support" || l.role === "contradict");
+    expect(cited.every((l) => /\[\d+\]/.test(l.finding || ""))).toBe(true);
+    const sourceIds = new Set(cited.map((l) => l.sourceId));
+    expect(sourceIds.size).toBe(cited.length);
+  });
+});
+
+describe("Issue #66 post-#76 real SSE artifacts", () => {
+  function loadAfter76(name: string): InvestigationSnapshotV1 {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const { resolve } = require("node:path") as typeof import("node:path");
+    const path = resolve(
+      process.cwd(),
+      "..",
+      "docs/design/2026-09-06-mode3-production/final/real-after-76/snapshots",
+      name,
+    );
+    return JSON.parse(readFileSync(path, "utf8")) as InvestigationSnapshotV1;
+  }
+
+  it("same Claim + same URL + same hashed sourceId：unassessed→support 且 DOM before === after", () => {
+    const investigating = loadAfter76("04-investigating-4.json");
+    const judging = loadAfter76("05-judging.json");
+    const url = "https://ltxc.cqnu.edu.cn/info/1140/7130.htm";
+    const sourceId = investigating.sources.find((s) => s.url === url)!.id;
+    expect(sourceId).toMatch(/^src-[0-9a-f]{16}$/);
+    expect(sourceId).toBe(judging.sources.find((s) => s.url === url)!.id);
+    expect(sourceIdsStableAcross([investigating, judging]).stable).toBe(true);
+
+    const beforeLink = investigating.claims[0].evidence.find((l) => l.sourceId === sourceId);
+    const afterLink = judging.claims[0].evidence.find((l) => l.sourceId === sourceId);
+    expect(beforeLink?.role).toBe("unassessed");
+    expect(afterLink?.role).toBe("support");
+
+    const view = renderCanvas(investigating);
+    const before = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    const region = document.querySelector("[data-gp-conclusion-region]");
+    const original = document.querySelector(".gp-original");
+    const board = document.querySelector('[data-gp-claim-id="claim-1"] .gp-evidence-board');
+    expect(before).toBeInstanceOf(HTMLElement);
+    expect(before?.getAttribute("data-gp-role")).toBe("unassessed");
+    expect(before?.getAttribute("data-gp-identity")).toBe("stable");
+
+    view.rerender(
+      <InvestigationCanvas snapshot={judging} live onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    const after = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    expect(after).toBe(before);
+    expect(after?.getAttribute("data-gp-role")).toBe("support");
+    expect(after?.getAttribute("data-gp-identity")).toBe("stable");
+    expect(document.querySelector("[data-gp-conclusion-region]")).toBe(region);
+    expect(document.querySelector(".gp-original")).toBe(original);
+    expect(document.querySelector('[data-gp-claim-id="claim-1"] .gp-evidence-board')).toBe(board);
+  });
+
+  it("claim-2 没有把反向材料标成 support；originalSpan exact", () => {
+    const complete = loadAfter76("complete.json");
+    const claim2 = complete.claims.find((c) => c.text.includes("每次感冒都应当输液"));
+    expect(claim2).toBeTruthy();
+    const reverse = /不需要输液|无需输液|没必要输液|不必输液|输液没有必要|输液治疗没有必要/;
+    const reverseSupport = (claim2!.evidence || []).filter(
+      (l) => l.role === "support" && reverse.test(l.finding || ""),
+    );
+    expect(reverseSupport).toEqual([]);
+    for (const claim of complete.claims) {
+      const span = claim.originalSpan;
+      expect(span).toBeTruthy();
+      expect(complete.originalClaim.slice(span!.start, span!.end)).toBe(claim.text);
+    }
   });
 });
 
