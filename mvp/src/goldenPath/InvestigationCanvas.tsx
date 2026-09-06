@@ -16,7 +16,13 @@ import { phaseHeadline, readImageOrigin, type ImageOriginView } from "./snapshot
 import { buildClaimTraceSegments } from "./claimTrace";
 import { ClaimSection } from "./ClaimSection";
 import { ConclusionHero } from "./ConclusionHero";
-import { SourceDrawer, resolveSourceDrawerView } from "./SourceDrawer";
+import {
+  SourceDrawer,
+  buildSourceDrawerViewFromClick,
+  resolveSourceDrawerView,
+  sourceDrawerSessionIdentity,
+  type SourceDrawerView,
+} from "./SourceDrawer";
 
 type InvestigationCanvasProps = {
   snapshot: InvestigationSnapshotV1;
@@ -29,7 +35,13 @@ type InvestigationCanvasProps = {
   onBackHome: () => void;
 };
 
-type DrawerState = { claimId: string; sourceId: string; role: InvestigationEvidenceLink["role"] } | null;
+type DrawerSession = {
+  identity: string;
+  claimId: string;
+  sourceId: string;
+  role: InvestigationEvidenceLink["role"];
+  initialView: SourceDrawerView;
+} | null;
 
 export function InvestigationCanvas({
   snapshot,
@@ -41,7 +53,7 @@ export function InvestigationCanvas({
 }: InvestigationCanvasProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
-  const [drawer, setDrawer] = useState<DrawerState>(null);
+  const [drawer, setDrawer] = useState<DrawerSession>(null);
   const [announce, setAnnounce] = useState("");
   const [hoverClaimId, setHoverClaimId] = useState<string | null>(null);
   const [focusClaimId, setFocusClaimId] = useState<string | null>(null);
@@ -49,7 +61,7 @@ export function InvestigationCanvas({
   // Pointer hover wins. Keyboard focus clears stale hover so a parked pointer cannot hijack Tab. Touch uses expanded-active.
   const tracedClaimId = hoverClaimId ?? focusClaimId ?? expandedTraceClaimId;
   const triggerRef = useRef<HTMLElement | null>(null);
-  const lastViewRef = useRef<ReturnType<typeof resolveSourceDrawerView>>(null);
+  const lastConfirmedRef = useRef<{ identity: string; view: SourceDrawerView } | null>(null);
 
   const handleHeaderHover = (claimId: string | null) => {
     setHoverClaimId(claimId);
@@ -82,11 +94,17 @@ export function InvestigationCanvas({
     claimId: string,
     trigger: HTMLElement,
   ) => {
+    const claim = snapshot.claims.find((item) => item.id === claimId);
+    const initialView = buildSourceDrawerViewFromClick(snapshot.claims, claimId, source, link);
+    if (!initialView) return;
+    const identity = sourceDrawerSessionIdentity(claimId, claim?.evidence ?? [], link);
     triggerRef.current = trigger;
-    setDrawer({ claimId, sourceId: source.id, role: link.role });
+    lastConfirmedRef.current = { identity, view: initialView };
+    setDrawer({ identity, claimId, sourceId: source.id, role: link.role, initialView });
   };
   const closeDrawer = useCallback(() => {
     const trigger = triggerRef.current;
+    lastConfirmedRef.current = null;
     setDrawer(null);
     window.setTimeout(() => trigger?.focus(), 0);
   }, []);
@@ -94,8 +112,14 @@ export function InvestigationCanvas({
   const liveView = drawer
     ? resolveSourceDrawerView(snapshot.claims, snapshot.sources, drawer.claimId, drawer.sourceId, drawer.role)
     : null;
-  if (liveView) lastViewRef.current = liveView;
-  const drawerView = liveView ?? (drawer ? lastViewRef.current : null);
+  if (drawer && liveView) {
+    lastConfirmedRef.current = { identity: drawer.identity, view: liveView };
+  }
+  const heldView =
+    drawer && lastConfirmedRef.current?.identity === drawer.identity
+      ? lastConfirmedRef.current.view
+      : drawer?.initialView ?? null;
+  const drawerView = liveView ?? heldView;
 
   return (
     <div className="gp-canvas" data-gp-phase={snapshot.phase}>
@@ -218,7 +242,7 @@ export function InvestigationCanvas({
 
       {drawer && drawerView ? (
         <SourceDrawer
-          key={`${drawer.claimId}:${drawer.sourceId}:${drawer.role}`}
+          key={drawer.identity}
           view={drawerView}
           resolveState={liveView ? "live" : "held"}
           onClose={closeDrawer}

@@ -83,7 +83,7 @@ python3 scripts/capture_source_drawer.py
 
 ### Evidence
 
-- 行为测试：`mvp/src/goldenPath/goldenPath.test.tsx` Issue #65 段为真实 focus / keydown / click；Issue #62 Claim Trace 与 Issue #63 Evidence Settling 段仍在。rebase 到 `d6507de` 后 `cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`：**70 通过**（含 Drawer×Settling 交叉与 duplicate fail-safe）
+- 行为测试：`mvp/src/goldenPath/goldenPath.test.tsx` Issue #65 段为真实 focus / keydown / click；Issue #62 Claim Trace 与 Issue #63 Evidence Settling 段仍在。rebase 到 `d6507de` 后含 Drawer×Settling 交叉、duplicate fail-safe，以及 held-view identity 三条（A 首次点击 duplicate、B 跨 Drawer 不串数据、C 本 Drawer held）
 - 截图：`docs/design/2026-09-06-source-drawer/`
   - Desktop 1440：`source-drawer.png`、`source-drawer-no-limitation.png`、`source-drawer-unreachable.png`、`source-drawer-grayscale.png`
   - Mobile 390：`source-sheet.png`、`source-sheet-grayscale.png`
@@ -91,5 +91,14 @@ python3 scripts/capture_source_drawer.py
 - 截图来源是生产 Golden Path + DEV fixture `/?fixture=source-audit`，**不是**真实 SSE（真实 SSE 属 #66）
 - `npm test`：core 578 / eval 85 / server 21 / web 83 = **767 通过**
 - `npm run build`：通过
-- `cd mvp && npm test`：goldenPath 70 全绿；全量 940 通过 / 1 跳过（worktree 里 4 个未改的 server 套件因 symlink 解析 `@earendil-works/pi-coding-agent` 失败，不在本 PR diff）
+- `cd mvp && npm test`：goldenPath **73** 全绿；全量 **943 通过 / 1 跳过**（worktree 里 4 个未改的 server 套件因 symlink 解析 `@earendil-works/pi-coding-agent` 失败，不在本 PR diff）
 - `cd mvp && npm run build`：通过
+
+### 复审（held-view identity）
+
+人工 Review：held fallback 未绑定当前 Drawer identity。已做最小修复：打开时用 exact 点击的 EvidenceLink 建该 Drawer 自己的 `initialView`；`lastConfirmedView` 按 session identity 校验；新打开覆盖 held cache。不扩 Snapshot / backend / SSE / link id。
+
+- [x] A. 首次直接点击 duplicate relation → Drawer 打开且展示被点中那条
+- [x] B. 打开 A → 关闭 → 点击 ambiguous duplicate B → 不含 A 的 title / claim / finding / limitation / excerpt
+- [x] C. B 可解析打开后 snapshot 无法唯一 resolve → dialog 不 remount、held、B 自己最后确认 view
+- [x] D. unique settling live update、1×→2× held、focus return、a11y 继续通过

@@ -581,6 +581,92 @@ function withRoles(snapshot: InvestigationSnapshotV1, roles: Record<string, Evid
   };
 }
 
+function duplicateSameRoleBoard(): InvestigationSnapshotV1 {
+  const base = settlingBoard();
+  const source = { ...base.sources[0]!, title: "重复来源标题", excerpt: "重复来源摘录" };
+  return {
+    ...base,
+    sources: [source, ...base.sources.slice(1)],
+    claims: base.claims.map((claim, index) =>
+      index === 0
+        ? {
+            ...claim,
+            evidence: [
+              { sourceId: source.id, role: "support", finding: "关系A的发现", limitation: "关系A的边界" },
+              { sourceId: source.id, role: "support", finding: "关系B的发现", limitation: "关系B的边界" },
+            ],
+          }
+        : claim,
+    ),
+  };
+}
+
+function heldIdentityBoard(): InvestigationSnapshotV1 {
+  const base = settlingBoard();
+  const sourceA = { ...base.sources[0]!, title: "甲来源独有标题", excerpt: "甲来源独有摘录" };
+  const sourceB = { ...base.sources[1]!, title: "乙来源共用标题", excerpt: "乙来源共用摘录" };
+  const claimA = {
+    ...base.claims[0]!,
+    id: "claim-a",
+    text: "甲命题独有文本",
+    evidence: [
+      { sourceId: sourceA.id, role: "support" as const, finding: "甲独有发现", limitation: "甲独有边界" },
+    ],
+  };
+  const claimB = {
+    ...base.claims[0]!,
+    id: "claim-b",
+    text: "乙命题独有文本",
+    evidence: [
+      { sourceId: sourceB.id, role: "support" as const, finding: "乙关系A发现", limitation: "乙关系A边界" },
+      { sourceId: sourceB.id, role: "support" as const, finding: "乙关系B发现", limitation: "乙关系B边界" },
+    ],
+  };
+  return {
+    ...base,
+    claims: [claimA, claimB],
+    sources: [sourceA, sourceB, ...base.sources.slice(2)],
+  };
+}
+
+function uniqueBThenAmbiguous() {
+  const board = heldIdentityBoard();
+  const sourceB = board.sources[1]!;
+  const unique = {
+    ...board,
+    claims: board.claims.map((claim) =>
+      claim.id === "claim-b"
+        ? {
+            ...claim,
+            evidence: [
+              { sourceId: sourceB.id, role: "support" as const, finding: "乙已确认发现", limitation: "乙已确认边界" },
+            ],
+          }
+        : claim,
+    ),
+  };
+  const ambiguous = {
+    ...board,
+    claims: board.claims.map((claim) =>
+      claim.id === "claim-b"
+        ? {
+            ...claim,
+            evidence: [
+              { sourceId: sourceB.id, role: "support" as const, finding: "乙已确认发现", limitation: "乙已确认边界" },
+              {
+                sourceId: sourceB.id,
+                role: "support" as const,
+                finding: "不该被猜进来的乙重复发现",
+                limitation: "不该被猜进来的乙重复边界",
+              },
+            ],
+          }
+        : claim,
+    ),
+  };
+  return { unique, ambiguous, sourceA: board.sources[0]!, sourceB };
+}
+
 function mockReducedMotion(reduce: boolean) {
   window.matchMedia = (query: string) =>
     ({
@@ -1286,5 +1372,83 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     expect(still.textContent).not.toContain("不该被猜进来的支持说明");
     expect(still.textContent).not.toContain("也不该被猜进来的反驳说明");
     expect(within(still).getByText(/对这条命题：待核对/)).toBeTruthy();
+  });
+
+  it("A. 首次直接点击 duplicate relation 打开被点中的那条，不展示另一条", async () => {
+    const snap = duplicateSameRoleBoard();
+    const sourceId = snap.claims[0]!.evidence[0]!.sourceId;
+    renderCanvas(snap);
+    const rows = document.querySelectorAll(`[data-source-id="${sourceId}"]`);
+    expect(rows).toHaveLength(2);
+    fireEvent.click(rows[1]!);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(drawer.getAttribute("data-gp-source-resolve")).toBe("held");
+    expect(within(drawer).getByText("关系B的发现")).toBeTruthy();
+    expect(within(drawer).getByText("关系B的边界")).toBeTruthy();
+    expect(drawer.textContent).not.toContain("关系A的发现");
+    expect(drawer.textContent).not.toContain("关系A的边界");
+  });
+
+  it("B. 打开 A 关闭后再点 ambiguous duplicate B，不得串入 A 的内容", async () => {
+    const snap = heldIdentityBoard();
+    const sourceA = snap.sources[0]!;
+    const sourceB = snap.sources[1]!;
+    renderCanvas(snap);
+    const rowA = document.querySelector(`[data-gp-claim-id="claim-a"] [data-source-id="${sourceA.id}"]`) as HTMLButtonElement;
+    fireEvent.click(rowA);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    expect(document.querySelector(".gp-drawer--source")?.textContent).toContain("甲来源独有标题");
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
+
+    const rowsB = document.querySelectorAll(`[data-gp-claim-id="claim-b"] [data-source-id="${sourceB.id}"]`);
+    expect(rowsB).toHaveLength(2);
+    fireEvent.click(rowsB[1]!);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(within(drawer).getByText("乙关系B发现")).toBeTruthy();
+    expect(within(drawer).getByText("乙关系B边界")).toBeTruthy();
+    expect(within(drawer).getByText("乙命题独有文本")).toBeTruthy();
+    expect(within(drawer).getByText("乙来源共用标题")).toBeTruthy();
+    expect(drawer.textContent).not.toContain("甲来源独有标题");
+    expect(drawer.textContent).not.toContain("甲命题独有文本");
+    expect(drawer.textContent).not.toContain("甲独有发现");
+    expect(drawer.textContent).not.toContain("甲独有边界");
+    expect(drawer.textContent).not.toContain("甲来源独有摘录");
+  });
+
+  it("C. B 自己从可解析进入 held 时保留 B 最后确认 view，不回退 A，dialog 不 remount", async () => {
+    const { unique, ambiguous, sourceA, sourceB } = uniqueBThenAmbiguous();
+    const view = renderCanvas(unique);
+    const rowA = document.querySelector(`[data-gp-claim-id="claim-a"] [data-source-id="${sourceA.id}"]`) as HTMLButtonElement;
+    fireEvent.click(rowA);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
+
+    const rowB = document.querySelector(`[data-gp-claim-id="claim-b"] [data-source-id="${sourceB.id}"]`) as HTMLButtonElement;
+    fireEvent.click(rowB);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(dialog.getAttribute("data-gp-source-resolve")).toBe("live");
+    expect(within(dialog).getByText("乙已确认发现")).toBeTruthy();
+    expect(within(dialog).getByText("乙已确认边界")).toBeTruthy();
+
+    view.rerender(
+      <InvestigationCanvas snapshot={ambiguous} live={false} finalReport={null} onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    const still = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(still).toBe(dialog);
+    expect(still.getAttribute("data-gp-source-resolve")).toBe("held");
+    expect(within(still).getByText("乙已确认发现")).toBeTruthy();
+    expect(within(still).getByText("乙已确认边界")).toBeTruthy();
+    expect(still.textContent).not.toContain("不该被猜进来的乙重复发现");
+    expect(still.textContent).not.toContain("不该被猜进来的乙重复边界");
+    expect(still.textContent).not.toContain("甲来源独有标题");
+    expect(still.textContent).not.toContain("甲命题独有文本");
+    expect(still.textContent).not.toContain("甲独有发现");
+    expect(still.textContent).not.toContain("甲独有边界");
+    expect(still.textContent).not.toContain("甲来源独有摘录");
   });
 });

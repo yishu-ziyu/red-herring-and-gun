@@ -22,7 +22,7 @@
 
 # 当前状态
 
-2026-09-06 PR #71 rebase 到 main `d6507de`（#63 Evidence Settling 已合入）。完整保留 Claim Trace 与 EvidenceBoard persistent identity（`identifyEvidenceLinks` / stable-relation-ephemeral）。Source Drawer 建在 `motion.button` Evidence 行上：点击打开、关闭后焦点回原节点 `before === after`；Drawer 开着时 unique source settling 不关不抢不 remount dialog；duplicate 无法唯一 resolve 时 held 上一帧，不猜 relation。goldenPath 70；根 767；mvp build 绿；capture_source_drawer GATE PASS（5183，fixture 非真实 SSE）。不 merge，不开 #64/#66。
+2026-09-06 PR #71 Review blocker 已修（推同一 PR，不 merge）：held view 绑定当前 DrawerSession identity。打开时用 exact 点击的 EvidenceLink + claim + source 建该 Drawer 自己的 initialView；能唯一 resolve 则走 live 并更新本 session 的 lastConfirmedView；不能则 held 本 session，绝不复用上一 Drawer 的 lastView。新打开覆盖 held cache。不扩 Snapshot / backend / SSE / link id。goldenPath 73（含 A/B/C）；根 767；mvp 943/1 skipped（4 个未改 server 套件仍是 worktree symlink）；三处 build 绿；capture GATE PASS。不开 #66。
 
 2026-09-06 Issue #65 Source Drawer / Bottom Sheet 生产化独立 PR 待人工验收（`feat/reset-4e-source-drawer`）：DrawerState 为 `claimId + sourceId + role`，打开时从最新 snapshot 重取 Claim / EvidenceLink / Source，snapshot 更新不关抽屉、不抢焦点；finding / limitation / excerpt 有才显示，不编文案；Desktop 440px 右侧 Drawer，Mobile 390 Bottom Sheet；手写 modal（dialog 名、Tab / Shift+Tab 闭环、Escape、scrim、焦点回原 Evidence 行），未引入 UI 库。截图 `docs/design/2026-09-06-source-drawer/` 来自 DEV fixture，不是真实 SSE。验收见 `docs/evals/2026-09-06-source-drawer.md`。
 

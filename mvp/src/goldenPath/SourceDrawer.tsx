@@ -6,7 +6,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
-import { ROLE_LABEL, domainOf } from "./snapshotUi";
+import { ROLE_LABEL, domainOf, identifyEvidenceLinks } from "./snapshotUi";
 import type { InvestigationEvidenceLink, InvestigationSource } from "@rhg/core/investigation";
 
 const FOCUSABLE =
@@ -259,4 +259,42 @@ export function resolveSourceDrawerView(
     source,
     link,
   };
+}
+
+/** 用户刚点中的 exact EvidenceLink，不做 unique resolve，也不丢进全局 lastView。 */
+export function buildSourceDrawerViewFromClick(
+  claims: Array<{ id: string; text: string; evidence: InvestigationEvidenceLink[] }>,
+  claimId: string,
+  source: InvestigationSource,
+  link: InvestigationEvidenceLink,
+): SourceDrawerView | null {
+  const claimIndex = claims.findIndex((c) => c.id === claimId);
+  const claim = claimIndex >= 0 ? claims[claimIndex] : undefined;
+  if (!claim) return null;
+  return {
+    claimId: claim.id,
+    claimIndex,
+    claimText: claim.text,
+    source,
+    link,
+  };
+}
+
+/** 当前 Drawer 自己的 session identity：能对齐 view-layer evidence key 就用它，否则退回打开参数。 */
+export function sourceDrawerSessionIdentity(
+  claimId: string,
+  evidence: InvestigationEvidenceLink[],
+  link: InvestigationEvidenceLink,
+): string {
+  const identified = identifyEvidenceLinks(claimId, evidence);
+  const row =
+    identified.find((item) => item.link === link) ??
+    identified.find(
+      (item) =>
+        item.link.sourceId === link.sourceId &&
+        item.link.role === link.role &&
+        item.link.finding === link.finding &&
+        item.link.limitation === link.limitation,
+    );
+  return row?.key ?? `${claimId}:${link.sourceId}:${link.role}`;
 }
