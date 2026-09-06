@@ -7,6 +7,7 @@ import {
   checksExhaustedMessage,
   isChecksExhaustedMessage,
 } from "./checkQuota";
+import type { InvestigationSnapshotV1 } from "@rhg/core/investigation";
 import type {
   ConsensusDebateUpdate,
   ExecutionDagPlan,
@@ -125,6 +126,7 @@ export interface SearchProgressSource {
 
 export interface OrchestrateStreamEvent {
   type:
+    | "investigation_snapshot"
     | "search_progress"
     | "planner_update"
     | "speculative_update"
@@ -139,6 +141,11 @@ export interface OrchestrateStreamEvent {
     | "tool_error"
     | "complete"
     | "error";
+  /**
+   * investigation_snapshot：完整 InvestigationSnapshotV1（Issue #51 契约）。
+   * 生产 Golden Path 的唯一调查语义来源；其余 raw 事件仅供 legacy/debug。
+   */
+  investigation?: InvestigationSnapshotV1;
   agent?: string;
   agentName?: string;
   agentIcon?: string;
