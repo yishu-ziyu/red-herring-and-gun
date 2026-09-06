@@ -1,11 +1,12 @@
 /**
- * ConclusionHero — 完成态第一视觉层级（Issue #52 第五节）。
- * 第一句是 conclusion.directAnswer（对原句的直接回答），
- * 不是 0–100 分、不是内部 verdict 四字章；判词只作次级信号。
+ * ConclusionHero — 完成态文稿 lede（Issue #64）。
+ * 第一视觉层级是 conclusion.directAnswer；kicker / judgment / 计数 / 时间降为弱 metadata。
+ * 动效由外层 persistent region 的 emergence 承担，这里不抢焦点、不滚动。
  */
+import { motion, useReducedMotion } from "framer-motion";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
-import { JUDGMENT_LABEL, JUDGMENT_TONE } from "./snapshotUi";
+import { JUDGMENT_LABEL } from "./snapshotUi";
 
 type ConclusionHeroProps = {
   directAnswer: string;
@@ -16,44 +17,60 @@ type ConclusionHeroProps = {
   checkedAt?: string;
 };
 
-const HERO_LEAD: Record<ConclusionHeroProps["judgment"], string> = {
-  supported: "调查完成",
-  refuted: "调查完成",
-  mixed: "调查完成",
-  unresolved: "调查完成，证据还不够下强结论",
-  "not-applicable": "调查完成",
-};
+/** 320ms，落在 Issue #64 的 260–420ms，对应 --gp-motion-emerge。 */
+const EMERGE_S = 0.32;
+const EMERGE_EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+const ANSWER_Y = 8;
 
 export function ConclusionHero({ directAnswer, judgment, boundaries, claimCount, sourceCount, checkedAt }: ConclusionHeroProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
+  const reduce = Boolean(useReducedMotion());
+
   return (
-    <header className="gp-hero" aria-label="调查结论" data-gp-conclusion-judgment={judgment}>
-      <div className="gp-hero-kicker">
-        <span className="gp-hero-kicker-label">调查结论</span>
-        <span className="gp-hero-kicker-sep" aria-hidden="true">·</span>
-        <span className="gp-hero-lead">{HERO_LEAD[judgment]}</span>
-      </div>
-      <h2 className="gp-hero-answer" data-gp-direct-answer>{directAnswer}</h2>
-      <div className="gp-hero-meta">
-        <span className={`gp-chip gp-chip--${JUDGMENT_TONE[judgment]}`} data-gp-judgment={judgment}>
-          {JUDGMENT_LABEL[judgment]}
-        </span>
-        <span className="gp-hero-meta-item">{copy.claimCount(claimCount)}</span>
-        <span className="gp-hero-meta-item">{copy.sourceCount(sourceCount)}</span>
-        {checkedAt ? <span className="gp-hero-meta-item">{copy.checkedAt(formatTime(checkedAt))}</span> : null}
-      </div>
-      {boundaries.length > 0 ? (
-        <div className="gp-hero-boundaries">
-          <span className="gp-hero-boundary-title">{copy.boundaryLabel}</span>
-          <ul className="gp-hero-boundary-list">
-            {boundaries.map((b) => (
-              <li key={b}>{b}</li>
-            ))}
-          </ul>
+    <motion.header
+      className="gp-hero"
+      aria-label="调查结论"
+      data-gp-conclusion-judgment={judgment}
+      initial={reduce ? false : { height: 0, opacity: 0 }}
+      animate={{ height: "auto", opacity: 1 }}
+      transition={{ duration: reduce ? 0 : EMERGE_S, ease: EMERGE_EASE }}
+    >
+      <div className="gp-hero-inner">
+        <motion.p
+          className="gp-hero-answer"
+          data-gp-direct-answer
+          initial={reduce ? false : { y: ANSWER_Y, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: reduce ? 0 : EMERGE_S, ease: EMERGE_EASE }}
+        >
+          {directAnswer}
+        </motion.p>
+        {judgment === "unresolved" ? (
+          <p className="gp-hero-uncertainty" data-gp-uncertainty>
+            {copy.uncertaintyLine}
+          </p>
+        ) : null}
+        <div className="gp-hero-meta">
+          <span className="gp-hero-judgment" data-gp-judgment={judgment}>
+            {JUDGMENT_LABEL[judgment]}
+          </span>
+          <span className="gp-hero-meta-item">{copy.claimCount(claimCount)}</span>
+          <span className="gp-hero-meta-item">{copy.sourceCount(sourceCount)}</span>
+          {checkedAt ? <span className="gp-hero-meta-item">{copy.checkedAt(formatTime(checkedAt))}</span> : null}
         </div>
-      ) : null}
-    </header>
+        {boundaries.length > 0 ? (
+          <div className="gp-hero-boundaries" data-gp-boundaries>
+            <span className="gp-hero-boundary-title">{copy.boundaryLabel}</span>
+            <ul className="gp-hero-boundary-list">
+              {boundaries.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </motion.header>
   );
 }
 
