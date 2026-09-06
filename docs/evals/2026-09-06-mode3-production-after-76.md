@@ -88,5 +88,5 @@
 - [x] Q9 两段 originalSpan exact。Drawer live + Tab/Shift+Tab/Escape/focus return。#63 hashed unique source 为 stable。
 - [x] Q10 Desktop 1440 / Mobile 390 / grayscale / reduced-motion / keyboard / motion 在 `final/real-after-76/`。SOURCE.md 写清三次真实运行。
 - [x] Q11 goldenPath 93；根 core 605 / eval 85 / server 21 / web 83 = 794；mvp 1008 通过 / 1 跳过；根 build 与 mvp build 绿。
-- [ ] Q12 未改 vercel.json。push 后核对 Preview Ready。
+- [x] Q12 未改 vercel.json。Vercel Preview Ready（deployment `FytEMjdrx8W3GCf5bQ2PXpzQcki5`，status success）。
 - [x] Q13 不 merge #72，不关 #53，不启 #54。
