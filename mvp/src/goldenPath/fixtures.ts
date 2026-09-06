@@ -83,10 +83,12 @@ export function supportedComplete(): InvestigationSnapshotV1 {
 }
 
 export const MIXED_CLAIM = "维生素C能治感冒，而且每次感冒都应当输液。";
+export const MIXED_ATOM_A = "维生素C能治感冒";
+export const MIXED_ATOM_B = "每次感冒都应当输液";
 
 export function mixedComplete(): InvestigationSnapshotV1 {
-  const atomA = "维生素C能治感冒";
-  const atomB = "每次感冒都应当输液";
+  const atomA = MIXED_ATOM_A;
+  const atomB = MIXED_ATOM_B;
   const aUrl = "https://journal.example/vc-cold";
   const bRefute = "https://health.gov.cn/iv-fact";
   return buildInvestigationSnapshot(
@@ -136,6 +138,18 @@ export function mixedComplete(): InvestigationSnapshotV1 {
     },
     { claimAtomKeyFn: noopKey }
   );
+}
+
+export function mixedWithoutSpans(): InvestigationSnapshotV1 {
+  const snapshot = mixedComplete();
+  return {
+    ...snapshot,
+    claims: snapshot.claims.map((claim) => {
+      const next = { ...claim };
+      delete next.originalSpan;
+      return next;
+    }),
+  };
 }
 
 export const UNRESOLVED_CLAIM = "某小区本月的自来水异味来自新增消毒工艺。";

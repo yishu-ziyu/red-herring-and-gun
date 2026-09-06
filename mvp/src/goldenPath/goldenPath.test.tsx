@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InvestigationCanvas } from "./InvestigationCanvas";
+import { buildClaimTraceSegments } from "./claimTrace";
 import {
   conflictKnownReason,
   conflictUnknownReason,
@@ -8,7 +9,11 @@ import {
   investigatingUnassessed,
   LONG_CLAIM_PREFIX,
   longClaimComplete,
+  MIXED_ATOM_A,
+  MIXED_ATOM_B,
+  MIXED_CLAIM,
   mixedComplete,
+  mixedWithoutSpans,
   refutedComplete,
   supportedComplete,
   unresolvedComplete,
@@ -346,6 +351,184 @@ describe("Issue #61 [Reset 4A] 生产视觉基础断言", () => {
 
     const input = document.querySelector("#claim-input") as HTMLElement;
     expect(input).toBeTruthy();
+  });
+});
+
+describe("Issue #62 Claim Trace", () => {
+  const mixed = mixedComplete();
+  const claimA = mixed.claims[0]!;
+  const claimB = mixed.claims[1]!;
+
+  it("1 valid span → originalClaim.slice(start, end) 精确等于短语", () => {
+    expect(claimA.originalSpan).toEqual({ start: 0, end: MIXED_ATOM_A.length });
+    expect(MIXED_CLAIM.slice(claimA.originalSpan!.start, claimA.originalSpan!.end)).toBe(MIXED_ATOM_A);
+    expect(MIXED_CLAIM.slice(claimB.originalSpan!.start, claimB.originalSpan!.end)).toBe(MIXED_ATOM_B);
+    const segments = buildClaimTraceSegments(MIXED_CLAIM, mixed.claims);
+    expect(segments.filter((s) => s.traceable).map((s) => s.text)).toEqual([MIXED_ATOM_A, MIXED_ATOM_B]);
+    expect(segments.map((s) => s.text).join("")).toBe(MIXED_CLAIM);
+  });
+
+  it("2 missing span → no trace", () => {
+    const segments = buildClaimTraceSegments(MIXED_CLAIM, mixedWithoutSpans().claims);
+    expect(segments.every((s) => s.traceable === false && s.claimId === null)).toBe(true);
+    expect(segments.map((s) => s.text).join("")).toBe(MIXED_CLAIM);
+    renderCanvas(mixedWithoutSpans());
+    expect(document.querySelectorAll("mark.gp-trace-mark").length).toBe(0);
+    expect(document.querySelector(".gp-original-text")!.textContent).toBe(MIXED_CLAIM);
+  });
+
+  it("3 out-of-range → no trace", () => {
+    const claims = mixed.claims.map((c, i) =>
+      i === 0 ? { ...c, originalSpan: { start: 0, end: MIXED_CLAIM.length + 8 } } : c,
+    );
+    const segments = buildClaimTraceSegments(MIXED_CLAIM, claims);
+    expect(segments.find((s) => s.claimId === "claim-1")).toBeUndefined();
+    expect(segments.filter((s) => s.traceable).map((s) => s.claimId)).toEqual(["claim-2"]);
+  });
+
+  it("4 invalid start/end → no trace", () => {
+    const emptySlice = buildClaimTraceSegments(MIXED_CLAIM, [
+      { ...claimA, originalSpan: { start: 4, end: 4 } },
+      { ...claimB, originalSpan: { start: 12, end: 3 } },
+    ]);
+    expect(emptySlice.every((s) => !s.traceable)).toBe(true);
+    expect(emptySlice.map((s) => s.text).join("")).toBe(MIXED_CLAIM);
+  });
+
+  it("5 mismatch 与无法解释的重叠 → fail-safe，不模糊猜测", () => {
+    const mismatch = buildClaimTraceSegments(MIXED_CLAIM, [
+      { ...claimA, originalSpan: { start: 0, end: 2 } },
+      claimB,
+    ]);
+    expect(mismatch.find((s) => s.claimId === "claim-1")).toBeUndefined();
+    expect(mismatch.find((s) => s.claimId === "claim-2" && s.traceable)?.text).toBe(MIXED_ATOM_B);
+    expect(MIXED_CLAIM.slice(0, 2)).not.toBe(claimA.text);
+
+    const overlap = buildClaimTraceSegments("abcdefghij", [
+      { id: "claim-1", text: "abcde", originalSpan: { start: 0, end: 5 } },
+      { id: "claim-2", text: "cdefg", originalSpan: { start: 2, end: 7 } },
+    ]);
+    expect(overlap.every((s) => s.traceable === false)).toBe(true);
+    expect(overlap.map((s) => s.text).join("")).toBe("abcdefghij");
+  });
+
+  it("6 真实中文 fixture 短语精确一致", () => {
+    renderCanvas(mixed);
+    const original = document.querySelector(".gp-original-text")!;
+    expect(original.textContent).toBe(MIXED_CLAIM);
+    const markA = original.querySelector('mark[data-gp-trace-claim="claim-1"]')!;
+    const markB = original.querySelector('mark[data-gp-trace-claim="claim-2"]')!;
+    expect(markA.textContent).toBe(MIXED_ATOM_A);
+    expect(markB.textContent).toBe(MIXED_ATOM_B);
+    expect(MIXED_CLAIM.slice(claimA.originalSpan!.start, claimA.originalSpan!.end)).toBe(markA.textContent);
+    expect(MIXED_CLAIM.slice(claimB.originalSpan!.start, claimB.originalSpan!.end)).toBe(markB.textContent);
+    expect(markA.getAttribute("data-gp-trace-active")).toBe("false");
+    expect(original.querySelectorAll("mark:empty").length).toBe(0);
+  });
+
+  it("7 hover Claim 01 → 只激活 Claim 01 短语", () => {
+    renderCanvas(mixed);
+    const head = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
+    fireEvent.mouseEnter(head);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.classList.contains("is-active")).toBe(true);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("false");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.classList.contains("is-active")).toBe(false);
+  });
+
+  it("8 keyboard focus → 同样激活", () => {
+    renderCanvas(mixed);
+    const head = document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!;
+    fireEvent.focus(head);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("false");
+  });
+
+  it("9 blur / mouseleave → 恢复", () => {
+    renderCanvas(mixed);
+    const head = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
+    fireEvent.mouseEnter(head);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    fireEvent.mouseLeave(head);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("false");
+    fireEvent.focus(head);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    fireEvent.blur(head);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("false");
+  });
+
+  it("click/focus Claim 01 → mouseEnter Claim 02 → 只激活 Claim 02", () => {
+    renderCanvas(mixed);
+    const head1 = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
+    const head2 = document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!;
+    fireEvent.click(head1);
+    fireEvent.focus(head1);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    fireEvent.mouseEnter(head2);
+    expect(document.querySelector(".gp-original-text")!.getAttribute("data-gp-traced-claim")).toBe("claim-2");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("false");
+  });
+
+  it("mouseLeave Claim 02 → Claim 01 仍 focus → 恢复 Claim 01", () => {
+    renderCanvas(mixed);
+    const head1 = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
+    const head2 = document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!;
+    fireEvent.focus(head1);
+    fireEvent.mouseEnter(head2);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    fireEvent.mouseLeave(head2);
+    expect(document.querySelector(".gp-original-text")!.getAttribute("data-gp-traced-claim")).toBe("claim-1");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("false");
+  });
+
+  it("先前 hover Claim 02 → keyboard focus Claim 01 → 激活 Claim 01", () => {
+    renderCanvas(mixed);
+    const head1 = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
+    const head2 = document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!;
+    fireEvent.mouseEnter(head2);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    fireEvent.focus(head1);
+    expect(document.querySelector(".gp-original-text")!.getAttribute("data-gp-traced-claim")).toBe("claim-1");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("false");
+  });
+
+  it("10 expand/collapse 不回归", () => {
+    renderCanvas(mixed);
+    const claim = document.querySelector('[data-gp-claim-id="claim-1"]')!;
+    const head = claim.querySelector(".gp-claim-head")!;
+    expect(head.getAttribute("aria-expanded")).toBe("true");
+    expect(claim.querySelector(".gp-claim-detail")).toBeTruthy();
+    expect(within(claim as HTMLElement).getByText("有对有错")).toBeTruthy();
+    fireEvent.click(head);
+    expect(head.getAttribute("aria-expanded")).toBe("false");
+    expect(claim.querySelector(".gp-claim-detail")).toBeNull();
+    fireEvent.click(head);
+    expect(head.getAttribute("aria-expanded")).toBe("true");
+    expect(claim.querySelector('[data-gp-role="support"]')).toBeTruthy();
+    fireEvent.click(document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!);
+    const claimBNode = document.querySelector('[data-gp-claim-id="claim-2"]')!;
+    expect(claimBNode.querySelector(".gp-claim-head")!.getAttribute("aria-expanded")).toBe("true");
+    expect(within(claimBNode as HTMLElement).getByText("证据反驳")).toBeTruthy();
+  });
+
+  it("生产源码没有第二套 token / phrase map", async () => {
+    const { readFileSync, readdirSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const dir = join(process.cwd(), "src", "goldenPath");
+    const files = readdirSync(dir).filter((f) => (f.endsWith(".tsx") || f.endsWith(".ts")) && !f.includes(".test."));
+    const banned = /quoteTokens|phraseMap|phrase map/i;
+    const violations: string[] = [];
+    for (const file of files) {
+      const text = readFileSync(join(dir, file), "utf8");
+      if (banned.test(text)) violations.push(file);
+    }
+    expect(violations).toEqual([]);
+    const helper = readFileSync(join(dir, "claimTrace.ts"), "utf8");
+    expect(helper).toContain("originalSpan");
+    expect(helper).not.toMatch(/indexOf\(claim\.text\)/);
   });
 });
 
