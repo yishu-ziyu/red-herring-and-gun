@@ -108,8 +108,10 @@ describe("调查态与完成态（同画布）", () => {
     fireEvent.input(editor);
     fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
 
-    // 调查态：原始说法在场 + 命题出现
-    expect(await screen.findByText(REFUTED_CLAIM)).toBeInTheDocument();
+    // 调查态：原始说法在场 + 命题出现（原句可能被 Claim Trace 分段，按整段 textContent 认）
+    await waitFor(() => {
+      expect(document.querySelector(".gp-original-text")?.textContent).toBe(REFUTED_CLAIM);
+    });
     await waitFor(() => {
       expect(document.querySelector('[data-gp-phase="complete"]')).toBeTruthy();
     });
@@ -117,7 +119,7 @@ describe("调查态与完成态（同画布）", () => {
     const hero = screen.getByLabelText("调查结论");
     expect(hero.textContent).toContain("原句站不住");
     // 仍在同一画布（没换壳）：原始说法卡还在
-    expect(screen.getByText(REFUTED_CLAIM)).toBeInTheDocument();
+    expect(document.querySelector(".gp-original-text")?.textContent).toBe(REFUTED_CLAIM);
     expect(requestOrchestrateStream).toHaveBeenCalledTimes(1);
   });
 
@@ -156,7 +158,7 @@ describe("历史打开（不重新核查）", () => {
     fireEvent.click(await screen.findByText(REFUTED_CLAIM));
 
     expect(await screen.findByLabelText("调查结论")).toBeTruthy();
-    expect(screen.getByText(REFUTED_CLAIM)).toBeInTheDocument();
+    expect(document.querySelector(".gp-original-text")?.textContent).toBe(REFUTED_CLAIM);
     expect(screen.getByText(/原调查时间/)).toBeInTheDocument();
     // 历史打开绝不重新核查
     expect(requestOrchestrateStream).not.toHaveBeenCalled();

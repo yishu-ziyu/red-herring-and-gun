@@ -22,6 +22,8 @@
 
 # 当前状态
 
+2026-09-06 PR #68 Review blocker 已修（推同一 PR，不 merge，等复审）：pointer hover 优先于残留 click-focus；keyboard focus 开始时清陈旧 hover；touch 仍走 expanded-active。jsdom 三条新路径 + 原有 hover/focus/blur/mouseleave/expand/mobile/no-span 全绿。Playwright 真实浏览器覆盖 click Claim 01 → hover Claim 02 只 Trace 02（focus 仍在 01），以及 leave 恢复与 keyboard 清 stale hover。goldenPath 37；mvp 928/1 skipped；根 767（一次 callJob 时序 flake 单跑绿）；三处 build 绿；capture GATE PASS。不改 producer，不扩 #62，不开 #63–#66。
+
 2026-09-06 PR #67 第三轮：生产代码与浏览器门禁已通过，本轮只收口文档真相源，未改 `mvp/` / CSS / 截图。Production Spec 把字阶/行高/间距标为 spec-only（不是 `--gp-type-*` / `--gp-lh-*` / `--gp-space-*` 变量）；`--gp-surface-inset` 不再写成 Original Claim 默认背景；Topbar 记为内联实现值，没有 `--gp-chrome-*`；墨色对比按 primary/secondary 与 tertiary/muted 分层，不再全局声称 WCAG AAA。Evaluator 合并为一套当前机器门禁（E3 为 Playwright computed-style；goldenPath 23；mvp 914/1 skipped）。等待最终验收，不 merge，不开 #62–#66。
 
 2026-09-06 PR #60 人工 Review 第三轮最终 Evidence Honesty 收口完成（独立分支 `design/reference-exploration`，严格采用 Review 推荐的方案 B）：①区分实测与推论：将未真正由代码在运行时执行并测量的部分从 Actual Runtime Evidence 降级为 Structural inference 与 Risk analysis；②Case 5 实测仅保留原生 textWrap 读取、拆行与初始行宽记录，跨元素重排破坏归入 DOM 封装结构推论（Structural inference，未执行 resize 实测）；③Case 6 实测仅保留 document.fonts.ready 就绪等待与就绪后几何测量，font swap 溢出归入时序时机风险分析（Risk analysis，未执行真实字体替换前后测量）；④屏幕阅读器无障碍诚实维持 Not tested，kugiri 动效维持 Not applicable；⑤同步修正 5 处文件（kugiri-spike-test.html、kugiri-spike-evaluation.md、2026-09-06-design-reference-exploration.md、reference-pack/index.html、PR #60 description）。自动化回归 verify_reference_exploration.py 10/10 PASS，根 npm test（767 绿）、npm run build、cd mvp && npm test（908 绿 / 1 跳过）全绿。零生产代码触碰，停止等待人工最终验收。
