@@ -1,12 +1,19 @@
 # 《红鲱鱼与枪》生产设计规范：Mode 3 / Hybrid (Quiet Editorial Evidence)
 
-- **版本**：1.0.0 (Production Final)
+- **版本**：1.0.1（文档真相源与生产 CSS 对齐；未改生产代码）
 - **生效日期**：2026-09-06
 - **对应 Issue**：[#61 [Reset 4A] 生产视觉基础](https://github.com/yishu-ziyu/red-herring-and-gun/issues/61)
 - **前置裁决**：PR #60 (已合并至 `main`，确立 Mode 3 / Hybrid 与 Quiet Editorial 准则)
 - **核心哲学**：
   > **Paper-first. Semantics by structure, not by paint.**  
   > 复杂的调查，简单地被理解。
+
+### 怎么读这份规范
+
+文中出现的名称分两类，不要混读：
+
+1. **Production CSS custom property**：写成 `--gp-…`，且必须能在 `mvp/src/goldenPath/golden-path.css` 的 `:root` 里找到。这是运行时变量。
+2. **Design scale label / spec-only value**：字阶、行高、间距档位，以及 Topbar 的毛玻璃实现值。生产 CSS **按这些数值内联**，当前 **不是** `:root` custom property。本文用普通名称（如 `display`、`tight`、`space-4`），不给它们 `--gp-*` 名字。
 
 ---
 
@@ -28,18 +35,20 @@
 
 ## 1. Type Scale（字阶规范）
 
-采用模块化字阶（Modular Type Scale），针对中文（PingFang SC / 思源黑体）与英文（SF Pro / Inter）混排严格校准：
+采用模块化字阶（Modular Type Scale），针对中文（PingFang SC / 思源黑体）与英文（SF Pro / Inter）混排严格校准。
 
-| Token 名称 | 桌面端字号 | 移动端字号 | 对应生产应用场景 |
+下表是 **Design scale labels / spec-only values**。当前生产 CSS 按这些像素值内联，`:root` **没有** `--gp-type-*` 变量。
+
+| Scale label（spec-only） | 桌面端字号 | 移动端字号 | 对应生产应用场景 |
 | :--- | :--- | :--- | :--- |
-| `--gp-type-display` | 32px | 26px | 首页输入态主标题（Headline） |
-| `--gp-type-title` | 24px | 20px | 调查直接回答（Direct Answer lede） |
-| `--gp-type-h1` | 18px | 17px | 命题章节标题（Claim Section Title, Section 01） |
-| `--gp-type-h2` | 16px | 15px | 证据分组标题、抽屉主标题 |
-| `--gp-type-body` | 15px | 15px | 调查文稿正文、输入框正文、原始说法正文 |
-| `--gp-type-sub` | 13.5px | 13px | 证据行引用文本、来源副标题、次要阐述 |
-| `--gp-type-caption` | 12px | 12px | Kicker 顶眉标签、微元数据、时间戳、域名 |
-| `--gp-type-micro` | 11px | 11px | 序号标记、快捷键提示（`<kbd>`）、状态微标 |
+| display | 32px | 26px | 首页输入态主标题（Headline） |
+| title | 24px | 20px | 调查直接回答（Direct Answer lede） |
+| h1 | 18px | 17px | 命题章节标题（Claim Section Title, Section 01） |
+| h2 | 16px | 15px | 证据分组标题、抽屉主标题 |
+| body | 15px | 15px | 调查文稿正文、输入框正文、原始说法正文 |
+| sub | 13.5px | 13px | 证据行引用文本、来源副标题、次要阐述 |
+| caption | 12px | 12px | Kicker 顶眉标签、微元数据、时间戳、域名 |
+| micro | 11px | 11px | 序号标记、快捷键提示（`<kbd>`）、状态微标 |
 
 所有数字、计时、案号必须显式设置：
 ```css
@@ -61,39 +70,43 @@ font-variant-numeric: tabular-nums;
 
 ## 3. Line Height（行高节奏）
 
-- `--gp-lh-tight`: `1.22` —— 用于 Display 与 Title 大标题，防止多行时版面散碎；
-- `--gp-lh-snug`: `1.4` —— 用于命题标题、操作按钮、输入卡片头部；
-- `--gp-lh-editorial`: `1.65` —— 用于文稿正文、原始说法、证据行引用文本，确保长文本阅读呼吸感；
-- `--gp-lh-relaxed`: `1.75` —— 用于学术限制说明（Limitations）、边注解析。
+下表是 **Design scale labels / spec-only values**。当前生产 CSS 按这些倍数内联，`:root` **没有** `--gp-lh-*` 变量。
+
+- tight `1.22` —— Display 与 Title 大标题，防止多行时版面散碎；
+- snug `1.4` —— 命题标题、操作按钮、输入外壳头部；
+- editorial `1.65` —— 文稿正文、原始说法、证据行引用文本；
+- relaxed `1.75` —— 学术限制说明（Limitations）、边注解析。
 
 ---
 
 ## 4. Spacing Scale（间距尺度）
 
-基于 4px 基准网格的等比尺度：
+基于 4px 基准网格的等比尺度。下表是 **Design scale labels / spec-only values**。当前生产 CSS 按这些像素值内联，`:root` **没有** `--gp-space-*` 变量。
 
-- `--gp-space-1`: `4px`（微对齐、图标文字间隙）
-- `--gp-space-2`: `8px`（组件内紧凑间隙、标签间距）
-- `--gp-space-3`: `12px`（卡片内垂直堆叠、输入项间距）
-- `--gp-space-4`: `16px`（移动端页边距、标准容器内衬）
-- `--gp-space-5`: `20px`（桌面端标准段落间隙）
-- `--gp-space-6`: `24px`（命题内章节间隙）
-- `--gp-space-8`: `32px`（章节间主呼吸间隙）
-- `--gp-space-10`: `40px`（输入态示例区与主输入框间隙）
-- `--gp-space-12`: `48px`（调查正文大区块分割）
-- `--gp-space-16`: `64px`（桌面端首屏垂直下沉量）
+- space-1 `4px`（微对齐、图标文字间隙）
+- space-2 `8px`（组件内紧凑间隙、标签间距）
+- space-3 `12px`（控件内垂直堆叠、输入项间距）
+- space-4 `16px`（移动端页边距、标准容器内衬）
+- space-5 `20px`（桌面端标准段落间隙）
+- space-6 `24px`（命题内章节间隙）
+- space-8 `32px`（章节间主呼吸间隙）
+- space-10 `40px`（输入态示例区与主输入框间隙）
+- space-12 `48px`（调查正文大区块分割）
+- space-16 `64px`（桌面端首屏垂直下沉量）
 
 ---
 
 ## 5. Content Width（正文宽度）
 
-- **Desktop 调查文稿中轴（Editorial Spine）**：
-  `--gp-content-width: 780px;`（居中对齐，符合 65–75 中文字符每行的舒适阅读线宽）
-- **Shell / Topbar 最大宽度**：
-  `--gp-shell-width: 1080px;`
-- **Source Drawer 宽度**：
-  - 桌面端：固定 `440px`（右侧滑出，保持底层正文 60% 以上视野）
-  - 移动端：宽度 `100%`（贴底 Bottom Sheet，最大高度 `85vh`）
+生产 CSS custom properties（存在于 `:root`）：
+
+- `--gp-content-width: 780px;` —— Desktop 调查文稿中轴（Editorial Spine），居中对齐
+- `--gp-shell-width: 1080px;` —— Shell / Topbar 最大宽度
+
+Source Drawer 尺寸是 **spec-only 内联值**，当前不是 CSS 变量：
+
+- 桌面端固定 `440px`（右侧滑出）
+- 移动端宽度 `100%`，贴底 Bottom Sheet，最大高度 `85vh`
 
 ---
 
@@ -106,29 +119,47 @@ font-variant-numeric: tabular-nums;
 
 ## 7. Content Surface（文稿层表面）
 
-- `--gp-surface-paper`: `#ffffff`
-- `--gp-surface-inset`: `#f7f7f5`（仅用于原始说法引用块、代码/引文微背景，温润纸浆感）
-- **规则**：正文区域不叠加阴影，不叠加彩色背景。
+生产 CSS custom properties：
+
+- `--gp-surface-paper`: `#ffffff` —— 输入外壳等 UI 白底；正文内容层本身是透明叠在 `--gp-canvas` 上
+- `--gp-surface-inset`: `#f7f7f5` —— **不是** Original Claim / Conflict / Gap 的默认背景
+
+`--gp-surface-inset` 当前允许场景（UI / 系统状态，不是 Content Layer 卡片）：
+
+- 功能控件 hover / active 浅底（品牌按钮、菜单项、历史项、示例标签）
+- Interrupted 系统运行状态（功能性 surface）
+- Source Drawer 里 exact excerpt / 不可达提示的可选中性 inset（功能层，不是调查正文语义卡片）
+
+明确 **不以 inset card 表达**：Original Claim（`.gp-original` 当前是 `background: transparent` + 2px 中性左边线）、Conflict、Gap、Conclusion。
+
+**规则**：调查正文不叠加阴影，不叠加彩色背景，不把每种语义装进浅底圆角盒。
 
 ---
 
 ## 8. Chrome Surface（功能控制层表面）
 
-- `--gp-chrome-bg`: `rgba(255, 255, 255, 0.86)`
-- `--gp-chrome-blur`: `blur(12px)`
-- `--gp-chrome-border`: `1px solid var(--gp-hairline)`
-- **定义**：用于 Topbar、下拉菜单、Modal 遮罩层。视觉完全退到正文之后。
+当前 **没有** `--gp-chrome-bg` / `--gp-chrome-blur` / `--gp-chrome-border` 这些 production CSS custom properties。不要把它们当成 token 名引用。
+
+Topbar 当前实现值（内联，不是变量）：
+
+- `background: rgba(255, 255, 255, 0.88)`
+- `backdrop-filter: blur(12px)`（及 `-webkit-backdrop-filter`）
+- `border-bottom: 1px solid var(--gp-hairline)` —— 这里的发丝线用的是真实变量 `--gp-hairline`
+
+菜单 / Drawer 的白底与投影走真实变量 `--gp-surface`、`--gp-elevation-menu`、`--gp-elevation-drawer`。Chrome 视觉退到正文之后。本轮不抽新 token。
 
 ---
 
 ## 9. Primary / Secondary Ink（墨水色系）
 
-保证 WCAG AAA (≥ 7:1) 的极佳对比度与阅读舒适感：
+对比度按用途分层，相对画布 `--gp-canvas: #fcfcfd`。**不**把整套墨色都说成 WCAG AAA。
 
-- `--gp-ink-primary`: `#18181b`（深黑灰，主排版墨水）
-- `--gp-ink-secondary`: `#52525b`（次要文字、说明、出处域名，对比度 5.5:1）
-- `--gp-ink-tertiary`: `#71717a`（微元数据、时间戳、辅助占位）
-- `--gp-ink-muted`: `#a1a1aa`（不可用状态、输入框禁用图标）
+生产 CSS custom properties：
+
+- `--gp-ink-primary`: `#18181b` —— 正文与标题。对比足够高，按正文尺寸满足 WCAG AAA（≥ 7:1）。
+- `--gp-ink-secondary`: `#52525b` —— 次要说明、出处域名。约 7.5:1，按正文尺寸满足 AAA。
+- `--gp-ink-tertiary`: `#71717a` —— 时间戳、占位、辅助元数据。约 4.7:1，只用于非关键元信息；**不**声称 AAA。
+- `--gp-ink-muted`: `#a1a1aa` —— 禁用态与不可用图标。对比更低，只用于非必要 / disabled，不承担可读正文。
 
 ---
 
@@ -143,7 +174,7 @@ font-variant-numeric: tabular-nums;
 ## 11. Focus Ring（键盘无障碍焦点环）
 
 - `--gp-focus-ring`: `0 0 0 2px #ffffff, 0 0 0 4px #2563eb;`
-- **规则**：所有键盘可聚焦元素（`:focus-visible`）必须呈现清晰双层焦点环，禁止使用 `outline: none` 而不提供替代。鼠标点击态禁止焦点环闪烁。
+- **规则**：Golden Path 内键盘可聚焦元素使用 `.gp-shell :focus-visible` 呈现该双层焦点环，禁止 `outline: none` 而不提供替代。该规则不得写成全局 `:focus-visible`。鼠标点击态禁止焦点环闪烁。
 
 ---
 
@@ -202,8 +233,9 @@ font-variant-numeric: tabular-nums;
 
 ## 16. Feedback Motion（即时反馈动效）
 
-- **持续时长**：`120ms – 160ms`
-- **缓动曲线**：`--gp-ease-out: cubic-bezier(0.16, 1, 0.3, 1)`
+- **Spec-only 时长范围**：`120ms – 160ms`
+- **生产 CSS custom property**：`--gp-motion-fast: 140ms`（落在上述范围内）
+- **缓动**：`--gp-ease-out: cubic-bezier(0.16, 1, 0.3, 1)`（生产 CSS custom property）
 - **适用场景**：按钮 Hover/Active、链接点击、示例标签点击、微符号状态切换。
 - **准则**：瞬间响应，绝无任何滞后或阻碍用户点击。
 
@@ -211,8 +243,9 @@ font-variant-numeric: tabular-nums;
 
 ## 17. UI Motion（界面启闭动效）
 
-- **持续时长**：`220ms – 260ms`
-- **缓动曲线**：`cubic-bezier(0.16, 1, 0.3, 1)`
+- **Spec-only 时长范围**：`220ms – 260ms`
+- **生产 CSS custom property**：`--gp-motion-ui: 240ms`（落在上述范围内）
+- **缓动**：`--gp-ease-out`
 - **适用场景**：Drawer 侧滑展开/关闭、历史下拉菜单渐显、Bottom Sheet 弹出。
 - **准则**：可随时被用户操作（如再次点击、按 Escape 键）立即中断。
 
@@ -220,10 +253,11 @@ font-variant-numeric: tabular-nums;
 
 ## 18. Layout Motion（布局位移动效）
 
-- **持续时长**：`260ms – 320ms`
-- **缓动曲线**：`cubic-bezier(0.16, 1, 0.3, 1)`
-- **适用场景**（在后续 Issue #63/#64 实现）：Evidence Settling（从待核对平滑位移至支持/反驳组）、Conclusion Emergence 顶部留白让渡。
-- **基础准备**：本 Issue 建立标准 CSS 变量与结构类名，严禁使用 `transition: all`。
+- **Spec-only 时长范围**：`260ms – 320ms`
+- **生产 CSS custom property**：`--gp-motion-layout: 280ms`（落在上述范围内）
+- **缓动**：`--gp-ease-out`
+- **适用场景**（在后续 Issue #63/#64 实现，本 Issue 不实现）：Evidence Settling、Conclusion Emergence。
+- **基础准备**：本 Issue 建立上述生产 motion 变量与结构类名，严禁使用 `transition: all`。
 
 ---
 
@@ -274,7 +308,7 @@ font-variant-numeric: tabular-nums;
 
 在开发与代码审查中，一旦发现以下视觉模式，必须无条件主动删除：
 
-1. **Exact excerpt = 蓝色块**（严禁将原文摘录包裹在浅蓝底容器中；必须使用 1.5px 中性边线与温润纸白底）；
+1. **Exact excerpt = 蓝色块**（严禁将原文摘录包裹在浅蓝底容器中。Original Claim 当前是 transparent + 2px 中性左边线；Drawer 摘录若需要区分，只用中性 inset，不用蓝色块）；
 2. **Boundary / Gap = 黄色块 / 警告图标 ⚠️**（证据局限与缺口是学术诚实，必须用平实中性或深琥珀文字表达，严禁刷黄底加警告标）；
 3. **Support = 绿色背景 / Contradict = 红色背景**（严禁整块证据行刷大红大绿）；
 4. **Pastel cards everywhere**（严禁到处是五颜六色的马卡龙/莫兰迪浅色卡片）；
