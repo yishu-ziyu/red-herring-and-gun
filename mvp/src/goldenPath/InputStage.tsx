@@ -226,7 +226,7 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
           value={inputValue}
           onChange={(next) => {
             setInputValue(next);
-            setHighlightedDemo(null);
+            setHighlightedDemo((current) => (next === current ? current : null));
             if (inputError) setInputError("");
           }}
           onSubmit={handleSubmit}
@@ -243,14 +243,16 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
           <div className="gp-link-row" aria-label={legacy.linksDetected}>
             {detectedLinks.map((link) => (
               <a key={link.id} className="gp-link-chip" href={link.url} target="_blank" rel="noreferrer">
-                {link.hostname}
+                <span>{link.hostname}</span>
+                <span className="gp-ext-arrow" aria-hidden="true">↗</span>
               </a>
             ))}
           </div>
         ) : null}
         {userHint ? (
           <p className={`gp-hint gp-hint--${userHint.tone}`} role={userHint.tone === "warning" ? "alert" : "status"}>
-            {userHint.text}
+            <span className="gp-hint-badge" aria-hidden="true">{userHint.tone === "warning" ? "!" : "•"}</span>
+            <span className="gp-hint-text">{userHint.text}</span>
             {userHint.tone === "warning" && quotaExhausted && checkQuota?.kind === "guest" && onNeedLogin ? (
               <>
                 {" "}
