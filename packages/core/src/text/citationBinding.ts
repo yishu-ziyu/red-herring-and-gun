@@ -129,6 +129,56 @@ export function bindLocalCitations(
   };
 }
 
+export type BoundDualCitation = {
+  text: string;
+  supportingSources: CiteSource[];
+  contradictingSources: CiteSource[];
+  remap: Map<number, number>;
+};
+
+function asSourceList(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+/**
+ * Local [n] across both stance buckets.
+ * Filter / dedupe / cap independently per bucket (each bucket keeps at most 5).
+ * Combined numbering is filtered supporting then filtered contradicting:
+ * supporting → [1..S], contradicting → [S+1..S+C].
+ * Same URL in both buckets is two relations, not one.
+ */
+export function bindDualBucketCitations(
+  evidence: unknown,
+  supportingSources: unknown,
+  contradictingSources: unknown,
+  allowedUrls: Set<string> | null = null
+): BoundDualCitation {
+  const supportingRaw = asSourceList(supportingSources);
+  const contradictingRaw = asSourceList(contradictingSources);
+  const supportingBound = filterSourcesWithRemap(supportingRaw, allowedUrls);
+  const contradictingBound = filterSourcesWithRemap(contradictingRaw, allowedUrls);
+
+  const remap = new Map<number, number>();
+  for (const [oldN, newN] of supportingBound.remap) {
+    remap.set(oldN, newN);
+  }
+  const supportCount = supportingBound.sources.length;
+  for (const [oldN, newN] of contradictingBound.remap) {
+    remap.set(supportingRaw.length + oldN, supportCount + newN);
+  }
+
+  const total = supportingBound.sources.length + contradictingBound.sources.length;
+  const textIn = typeof evidence === "string" ? evidence : "";
+  const text = clampMarkersToSources(remapCitationMarkers(textIn, remap), total);
+
+  return {
+    text,
+    supportingSources: supportingBound.sources,
+    contradictingSources: contradictingBound.sources,
+    remap,
+  };
+}
+
 /**
  * When model left supporting empty and we inject retrieval hits:
  * show sources as related search, never invent citation alignment.
@@ -149,7 +199,11 @@ export function bindRelatedSourcesOnly(
 
 /** Global first-seen unique sources across verdicts (claim order). */
 export function buildGlobalCiteSources(
-  verdicts: Array<{ supportingSources?: CiteSource[] | null | undefined; sourcesRelatedOnly?: unknown }>
+  verdicts: Array<{
+    supportingSources?: CiteSource[] | null | undefined;
+    contradictingSources?: CiteSource[] | null | undefined;
+    sourcesRelatedOnly?: unknown;
+  }>
 ): CiteSource[] {
   const out: CiteSource[] = [];
   const seen = new Set<string>();
@@ -157,7 +211,9 @@ export function buildGlobalCiteSources(
     // relatedOnly（检索填充）源从未被模型引用：出处只是关键词检索命中，可能完全不相关。
     // 混进全局「参考资料」会让用户点开无关页面，打破「来源能点开」的承诺。
     if (v.sourcesRelatedOnly === true) continue;
-    const list = Array.isArray(v.supportingSources) ? v.supportingSources : [];
+    const supporting = Array.isArray(v.supportingSources) ? v.supportingSources : [];
+    const contradicting = Array.isArray(v.contradictingSources) ? v.contradictingSources : [];
+    const list = [...supporting, ...contradicting];
     for (const s of list) {
       const url = normalizeUrl(s?.url ?? "");
       if (!url || seen.has(url)) continue;
@@ -178,7 +234,11 @@ export function buildGlobalCiteSources(
  */
 export function bindGlobalConclusion(
   conclusion: unknown,
-  verdicts: Array<{ supportingSources?: CiteSource[] | null | undefined; sourcesRelatedOnly?: unknown }>
+  verdicts: Array<{
+    supportingSources?: CiteSource[] | null | undefined;
+    contradictingSources?: CiteSource[] | null | undefined;
+    sourcesRelatedOnly?: unknown;
+  }>
 ): { text: string; sources: CiteSource[] } {
   const sources = buildGlobalCiteSources(verdicts);
   const textIn = typeof conclusion === "string" ? conclusion : "";
@@ -243,18 +303,22 @@ export function normalizeReportCitations(report: Record<string, unknown>): void 
         supportingSources: sources,
       };
     }
-    const bound = bindLocalCitations(v.evidence, v.supportingSources, null);
+    const bound = bindDualBucketCitations(v.evidence, v.supportingSources, v.contradictingSources, null);
     return {
       ...v,
       evidence: bound.text,
-      supportingSources: bound.sources,
+      supportingSources: bound.supportingSources,
+      contradictingSources: bound.contradictingSources,
     };
   });
   report.subclaimVerdicts = normalizedVerdicts;
 
   const globalBound = bindGlobalConclusion(
     report.conclusion,
-    normalizedVerdicts as Array<{ supportingSources?: CiteSource[] }>
+    normalizedVerdicts as Array<{
+      supportingSources?: CiteSource[];
+      contradictingSources?: CiteSource[];
+    }>
   );
   if (typeof report.conclusion === "string") {
     report.conclusion = globalBound.text;

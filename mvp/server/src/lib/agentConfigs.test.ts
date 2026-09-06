@@ -372,6 +372,8 @@ describe("判定可追溯 · per-verdict 结构化来源", () => {
     const fcEvidence = (fc.responseSchema as any).properties.subclaimVerdicts.items.properties.evidence;
     expect(fcEvidence.description).toMatch(/\[n\]/);
     expect(fcEvidence.description).toMatch(/supportingSources/);
+    expect(fc.systemPrompt).not.toContain("contradictingSources 不参与");
+    expect(fc.systemPrompt).toContain("不得为了句内 [n] 把反驳材料写入 supportingSources");
 
     const rcConclusion = (rc.responseSchema as any).properties.conclusion;
     expect(rcConclusion.description).toMatch(/\[n\]/);
@@ -471,6 +473,143 @@ describe("判定可追溯 · per-verdict 结构化来源", () => {
     expect(result[0].contradictingSources).toEqual([]);
     expect(result[0].verdict).toBe("unverified");
     expect(result[0].evidenceGaps.some((g) => g.includes("待补证"))).toBe(true);
+  });
+
+  it("mergeSubclaimVerdicts：false 且证伪 URL 误写入 supportingSources 时改到 contradictingSources", () => {
+    const urls = [
+      "https://www.bohe.cn/k/chglpv2qk0zycm1_2",
+      "https://m.familydoctor.com.cn/201711/2436185.html",
+      "https://www.yantai.gov.cn/art/2025/3/27/art_81036_3255894.html",
+      "https://new.qq.com/omn/20180326/20180326G03AHR.html",
+    ];
+    const sources = urls.map((url) => ({ url, title: "反驳", snippet: "感冒通常不需要输液" }));
+    const result = mergeSubclaimVerdicts(
+      ["每次感冒都应当输液"],
+      [
+        {
+          claimAtom: "每次感冒都应当输液",
+          verdict: "false",
+          evidence:
+            "博禾医药明确「感冒通常不需要输液治疗」[1]；只有少部分患者需要输液[2]；九成感冒没必要输液[3]；输液好得快基本错误[4]。",
+          boundary: "不能推出所有感冒患者均需输液",
+          supportingSources: sources,
+          contradictingSources: [],
+          evidenceGaps: [],
+        },
+      ]
+    );
+    expect(result[0].verdict).toBe("false");
+    expect(result[0].supportingSources).toEqual([]);
+    expect(result[0].contradictingSources.map((s) => s.url)).toEqual(urls);
+    expect(result[0].evidence).toMatch(/\[1\]/);
+  });
+
+  it("mergeSubclaimVerdicts：双桶 [1] 与 [2] 都保留并指向 A/B", () => {
+    const result = mergeSubclaimVerdicts(
+      ["原子A"],
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "partial",
+          evidence: "A 支持一部分[1]；B 反驳核心[2]。",
+          supportingSources: [{ url: "https://a.example", title: "A", snippet: "sa" }],
+          contradictingSources: [{ url: "https://b.example", title: "B", snippet: "sb" }],
+        },
+      ]
+    );
+    expect(result[0].supportingSources.map((s) => s.url)).toEqual(["https://a.example"]);
+    expect(result[0].contradictingSources.map((s) => s.url)).toEqual(["https://b.example"]);
+    expect(result[0].evidence).toBe("A 支持一部分[1]；B 反驳核心[2]。");
+  });
+
+  it("mergeSubclaimVerdicts：whitelist 删掉 supporting 第一项后跨桶重排 [2]→[1]、[3]→[2]", () => {
+    const result = mergeSubclaimVerdicts(
+      ["原子A"],
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "partial",
+          evidence: "坏[1] 好[2] 反[3]。",
+          supportingSources: [
+            { url: "https://bad.example", title: "bad", snippet: "" },
+            { url: "https://a.example", title: "A", snippet: "" },
+          ],
+          contradictingSources: [{ url: "https://b.example", title: "B", snippet: "" }],
+        },
+      ],
+      [{ url: "https://a.example" }, { url: "https://b.example" }]
+    );
+    expect(result[0].supportingSources.map((s) => s.url)).toEqual(["https://a.example"]);
+    expect(result[0].contradictingSources.map((s) => s.url)).toEqual(["https://b.example"]);
+    expect(result[0].evidence).toBe("坏 好[1] 反[2]。");
+  });
+
+  it("mergeSubclaimVerdicts：同 URL 跨桶时两条 relation 都保留", () => {
+    const x = { url: "https://x.example", title: "X", snippet: "both" };
+    const result = mergeSubclaimVerdicts(
+      ["原子A"],
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "partial",
+          evidence: "同一来源支持一部分[1]，也反驳另一部分[2]。",
+          supportingSources: [x],
+          contradictingSources: [x],
+        },
+      ]
+    );
+    expect(result[0].supportingSources.map((s) => s.url)).toEqual(["https://x.example"]);
+    expect(result[0].contradictingSources.map((s) => s.url)).toEqual(["https://x.example"]);
+    expect(result[0].evidence).toBe("同一来源支持一部分[1]，也反驳另一部分[2]。");
+  });
+
+  it("mergeSubclaimVerdicts：5 条 support + 1 条 contradict，C1 不被全局 cap 丢掉", () => {
+    const supporting = [1, 2, 3, 4, 5].map((n) => ({
+      url: `https://s.example/${n}`,
+      title: `S${n}`,
+      snippet: "",
+    }));
+    const result = mergeSubclaimVerdicts(
+      ["原子A"],
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "partial",
+          evidence: "S1[1] S2[2] S3[3] S4[4] S5[5] C1[6]。",
+          supportingSources: supporting,
+          contradictingSources: [{ url: "https://c.example/1", title: "C1", snippet: "" }],
+        },
+      ]
+    );
+    expect(result[0].supportingSources.map((s) => s.url)).toEqual(supporting.map((s) => s.url));
+    expect(result[0].contradictingSources.map((s) => s.url)).toEqual(["https://c.example/1"]);
+    expect(result[0].evidence).toBe("S1[1] S2[2] S3[3] S4[4] S5[5] C1[6]。");
+  });
+
+  it("mergeSubclaimVerdicts：true 的 supportingSources 不改桶；false 且两桶都有时不搬移", () => {
+    const support = { url: "https://gov.cn/yes", title: "支持", snippet: "属实" };
+    const contra = { url: "https://gov.cn/no", title: "反驳", snippet: "不实" };
+    const keptTrue = mergeSubclaimVerdicts(
+      ["原子A"],
+      [{ claimAtom: "原子A", verdict: "true", evidence: "e[1]", supportingSources: [support], contradictingSources: [] }]
+    );
+    expect(keptTrue[0].supportingSources.map((s) => s.url)).toEqual([support.url]);
+    expect(keptTrue[0].contradictingSources).toEqual([]);
+
+    const keptBoth = mergeSubclaimVerdicts(
+      ["原子B"],
+      [
+        {
+          claimAtom: "原子B",
+          verdict: "false",
+          evidence: "e",
+          supportingSources: [support],
+          contradictingSources: [contra],
+        },
+      ]
+    );
+    expect(keptBoth[0].supportingSources.map((s) => s.url)).toEqual([support.url]);
+    expect(keptBoth[0].contradictingSources.map((s) => s.url)).toEqual([contra.url]);
   });
 
   it("mergeSubclaimVerdicts：false 留下反证 http(s) 时不改判词", () => {
