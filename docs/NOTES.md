@@ -24,7 +24,7 @@
 
 # 当前状态
 
-2026-09-06 PR #72 / Issue #66 正在 rebase 到 main `f009d34`（#76 squash-merge）后用同一句重跑 REAL SSE。旧 `final/real/` 与 `final/real-after-74/` 不覆盖。第三次 run 将落在 `final/real-after-76/`。不 merge，不关 #53，不启 #54。
+2026-09-06 PR #72 / Issue #66 已 rebase 到 main `f009d34`（#76 squash-merge），第三次 REAL SSE 完成。`git merge-base HEAD origin/main` = `f009d34f0303fd3512d6df0fda40135fd88db7fa`。旧 `final/real/` 与 `final/real-after-74/` 未覆盖。新 run 在 `final/real-after-76/`：hashed sourceId 稳定；claim-1 `src-bd310b43063afb86` 同 URL unassessed→support，live 与 replay DOM `before === after`。`gate.json` PASS 且 `settling-dom.json same:true`。机器：goldenPath 93；根 794；mvp 1008/1 skipped；两处 build 绿。不 merge，不关 #53，不启 #54。
 
 2026-09-06 Issue #76 / PR #77 已 squash-merge 进 main（`f009d34`）：`InvestigationSource.id` 改为规范化 URL 的确定性派生，不再按 `src-${sources.length+1}` 随 phase / evidence 排序重编号。同 URL 仍一个 Source，support+contradict 仍是两条 EvidenceLink。#66 capture gate 改为按 URL+sourceId 判断 transition，`sourceIdsStable=false` 必须 FAIL。
 

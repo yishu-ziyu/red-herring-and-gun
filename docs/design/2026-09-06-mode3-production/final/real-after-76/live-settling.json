@@ -1,0 +1,37 @@
+[
+  {
+    "key": "claim-1:src-a6b628e01561c1d7",
+    "from": "unassessed",
+    "to": "support",
+    "same": true,
+    "identity": "stable"
+  },
+  {
+    "key": "claim-1:src-03f2d5b9ab7b24f9",
+    "from": "unassessed",
+    "to": "context-only",
+    "same": true,
+    "identity": "stable"
+  },
+  {
+    "key": "claim-1:src-bd310b43063afb86",
+    "from": "unassessed",
+    "to": "support",
+    "same": true,
+    "identity": "stable"
+  },
+  {
+    "key": "claim-1:src-007784cceb6b2bbc",
+    "from": "unassessed",
+    "to": "context-only",
+    "same": true,
+    "identity": "stable"
+  },
+  {
+    "key": "claim-1:src-008d5789ae968459",
+    "from": "unassessed",
+    "to": "context-only",
+    "same": true,
+    "identity": "stable"
+  }
+]

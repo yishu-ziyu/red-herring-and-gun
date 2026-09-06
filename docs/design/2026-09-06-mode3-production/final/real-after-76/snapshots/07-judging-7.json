@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "originalClaim": "维生素C能治感冒，而且每次感冒都应当输液。",
+  "phase": "judging",
+  "claims": [
+    {
+      "id": "claim-1",
+      "text": "维生素C能治感冒",
+      "order": 0,
+      "originalSpan": {
+        "start": 0,
+        "end": 8
+      },
+      "checkability": "checkable",
+      "progress": "searching",
+      "judgment": "mixed",
+      "boundary": "维生素C不能直接治愈感冒，仅可能有辅助缓解作用；效果极小且主要体现在缩短病程和减轻症状方面；没有证据支持其能预防感冒；普通人无需额外补充[1]",
+      "evidence": [
+        {
+          "sourceId": "src-bd310b43063afb86",
+          "role": "support",
+          "finding": "现有证据表明维生素C对感冒的作用有限：可略微缩短病程或减轻症状，但效果极小，不能预防感冒[1][2]。新华网和Mayo Clinic均指出补充维生素C的益处被高估[1][2]。"
+        },
+        {
+          "sourceId": "src-a6b628e01561c1d7",
+          "role": "support",
+          "finding": "现有证据表明维生素C对感冒的作用有限：可略微缩短病程或减轻症状，但效果极小，不能预防感冒[1][2]。新华网和Mayo Clinic均指出补充维生素C的益处被高估[1][2]。"
+        },
+        {
+          "sourceId": "src-03f2d5b9ab7b24f9",
+          "role": "context-only"
+        },
+        {
+          "sourceId": "src-007784cceb6b2bbc",
+          "role": "context-only"
+        },
+        {
+          "sourceId": "src-008d5789ae968459",
+          "role": "context-only"
+        }
+      ],
+      "gaps": []
+    },
+    {
+      "id": "claim-2",
+      "text": "每次感冒都应当输液",
+      "order": 1,
+      "originalSpan": {
+        "start": 11,
+        "end": 20
+      },
+      "checkability": "not-applicable",
+      "progress": "pending",
+      "judgment": "not-applicable",
+      "boundary": "该说法完全错误。医学界明确反对对普通感冒进行静脉输液，这属于过度医疗，可能带来不必要的风险（如感染、血管损伤等）。",
+      "evidence": [
+        {
+          "sourceId": "src-03f2d5b9ab7b24f9",
+          "role": "contradict",
+          "finding": "没有任何可靠医学证据支持普通感冒需要静脉输液。静脉输液是医学干预手段，适用于严重脱水、无法进食或需要静脉用药的情况。普通感冒是自限性疾病，无需输液治疗[3]。"
+        }
+      ],
+      "gaps": []
+    }
+  ],
+  "sources": [
+    {
+      "id": "src-bd310b43063afb86",
+      "url": "https://ltxc.cqnu.edu.cn/info/1140/7130.htm",
+      "title": "维生素C能治感冒吗？",
+      "excerpt": "最新的科学证据表明，感冒后短期（3-5天）使用维生素C1-2克/天可以缓解症状，防止病情加重，但没有证据表明大剂量补充维生素C可以预防感冒"
+    },
+    {
+      "id": "src-a6b628e01561c1d7",
+      "url": "http://www.news.cn/local/20241231/528e6d4d13de43c0b57b151ea3a2283f/c.html",
+      "title": "维生素C能防治感冒……是真是假？｜谣言终结站 - 新华网",
+      "excerpt": "普通人群平时可以多吃一些水果和蔬菜来获得充足的维生素C，不需要额外补充"
+    },
+    {
+      "id": "src-03f2d5b9ab7b24f9",
+      "url": "http://news.cnr.cn/native/gd/20241231/t20241231_527027090.shtml",
+      "title": "维生素C能防治感冒……是真是假？｜谣言终结站",
+      "excerpt": "辟谣硬核打假，普通人群平时可以多吃水果和蔬菜来获得充足的维生素C，不需要额外补充"
+    },
+    {
+      "id": "src-007784cceb6b2bbc",
+      "url": "https://news.sina.com.cn/gov/2024-12-31/doc-inecitzt3703433.shtml",
+      "title": "维生素C能防治感冒……是真是假？｜谣言终结站|水果|蔬菜 - 新浪新闻",
+      "excerpt": "维生素C能防治感冒......是真是假? 辟谣硬核打假用♥ … 多学一个知识点——补充维生素C有讲究维生素C主要存在于新鲜的蔬菜和水果中。 烹饪方法的变化而有所变化。 date: Dec 31, 2024"
+    },
+    {
+      "id": "src-008d5789ae968459",
+      "url": "https://www.sohu.com/a/843885553_362042",
+      "title": "维生素C能防治感冒……是真是假？｜谣言终结站 - 搜狐",
+      "excerpt": "普通人群平时可以多吃一些水果和蔬菜来获得充足的维生素C，不需要额外补充。特殊人群，如妊娠和哺乳期的妇女、生长发育期的儿童、疾病恢复期的病人，可以 ... date: Dec 31, 2024"
+    }
+  ],
+  "conflicts": []
+}

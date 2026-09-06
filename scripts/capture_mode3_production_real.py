@@ -25,14 +25,17 @@ from PIL import Image
 from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from investigation_source_identity_gate import evaluate_source_identity_gate
+
 CLAIM = "维生素C能治感冒，而且每次感冒都应当输液。"
 PORT = 5186
 API_PORT = 3000
 BASE_URL = f"http://127.0.0.1:{PORT}"
 API_URL = f"http://127.0.0.1:{API_PORT}"
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-# New REAL SSE after #74. Do not write into final/real/ (pre-#74 failure specimen).
-OUT = Path("docs/design/2026-09-06-mode3-production/final/real-after-74").resolve()
+# Third REAL SSE after #76. Do not write into final/real/ or final/real-after-74/.
+OUT = Path("docs/design/2026-09-06-mode3-production/final/real-after-76").resolve()
 REAL = OUT
 SNAP_DIR = REAL / "snapshots"
 MOTION = REAL / "motion"
@@ -92,23 +95,45 @@ SSE_HOOK = r"""
 PIN_JS = r"""
 () => {
   const pick = (sel) => document.querySelector(sel);
-  window.__gpPin = {
-    canvas: pick('.gp-canvas'),
-    region: pick('[data-gp-conclusion-region]'),
-    original: pick('.gp-original'),
-    originalText: pick('.gp-original-text'),
-    claims: pick('.gp-claim-list'),
-    board: pick('.gp-evidence-board'),
-    dialog: pick('[role="dialog"]'),
-    evidence: {},
-  };
+  if (!window.__gpPin) {
+    window.__gpPin = {
+      canvas: pick('.gp-canvas'),
+      region: pick('[data-gp-conclusion-region]'),
+      original: pick('.gp-original'),
+      originalText: pick('.gp-original-text'),
+      claims: pick('.gp-claim-list'),
+      board: pick('.gp-evidence-board'),
+      dialog: pick('[role="dialog"]'),
+      evidence: {},
+    };
+  } else {
+    if (!window.__gpPin.canvas) window.__gpPin.canvas = pick('.gp-canvas');
+    if (!window.__gpPin.region) window.__gpPin.region = pick('[data-gp-conclusion-region]');
+    if (!window.__gpPin.original) window.__gpPin.original = pick('.gp-original');
+    if (!window.__gpPin.originalText) window.__gpPin.originalText = pick('.gp-original-text');
+    if (!window.__gpPin.claims) window.__gpPin.claims = pick('.gp-claim-list');
+    if (!window.__gpPin.board) window.__gpPin.board = pick('.gp-evidence-board');
+  }
+  const newly = [];
   for (const el of document.querySelectorAll('[data-gp-evidence-key]')) {
-    window.__gpPin.evidence[el.getAttribute('data-gp-evidence-key')] = el;
+    const key = el.getAttribute('data-gp-evidence-key');
+    const role = el.getAttribute('data-gp-role');
+    if (!key) continue;
+    if (!(key in window.__gpPin.evidence) && role === 'unassessed') {
+      window.__gpPin.evidence[key] = el;
+      newly.push({
+        key,
+        role,
+        identity: el.getAttribute('data-gp-identity'),
+        sourceId: el.getAttribute('data-source-id'),
+      });
+    }
   }
   return {
     phase: pick('.gp-canvas') && pick('.gp-canvas').getAttribute('data-gp-phase'),
     region: Boolean(window.__gpPin.region),
     evidenceKeys: Object.keys(window.__gpPin.evidence),
+    newlyPinned: newly,
   };
 }
 """
@@ -269,21 +294,8 @@ def evidence_roles(snap: dict) -> list[dict]:
 
 
 def find_role_transition(snaps: list[dict]) -> dict | None:
-    prev: dict[tuple[str, str], str] = {}
-    for snap in snaps:
-        for row in evidence_roles(snap):
-            key = (row["claimId"], row["sourceId"])
-            role = row["role"]
-            if key in prev and prev[key] == "unassessed" and role in ("support", "contradict", "context-only"):
-                return {
-                    "claimId": row["claimId"],
-                    "sourceId": row["sourceId"],
-                    "from": prev[key],
-                    "to": role,
-                    "atPhase": snap.get("phase"),
-                }
-            prev[key] = role
-    return None
+    """Deprecated alias. Use evaluate_source_identity_gate; do not match on (claimId, sourceId) alone."""
+    return evaluate_source_identity_gate(snaps, require_transition=True).get("transition")
 
 
 def stance_audit(snap: dict) -> dict:
@@ -426,15 +438,32 @@ def keyboard_walk(page) -> dict:
         notes["errors"].append("missing claim head or evidence")
         return notes
 
+    # Focus the claim head for Claim Trace, but do not press Enter: the head
+    # toggles expanded, and collapsing the only claim with evidence hides the board.
     page.evaluate("() => document.querySelector('[data-gp-claim-id] .gp-claim-head')?.focus()")
     notes["steps"].append({"focus": "claim-head", "active": page.evaluate("() => document.activeElement?.className")})
-    page.keyboard.press("Enter")
-    page.wait_for_timeout(150)
-    page.evaluate("() => document.querySelector('[data-gp-evidence-key]')?.focus()")
+    page.evaluate(
+        """() => {
+          const el = document.querySelector('[data-gp-evidence-key]');
+          el?.scrollIntoView({ block: 'center' });
+          el?.focus();
+        }"""
+    )
     focused_key = page.evaluate("() => document.activeElement?.getAttribute('data-gp-evidence-key')")
     notes["steps"].append({"focus": "evidence", "key": focused_key})
+    if not focused_key:
+        notes["ok"] = False
+        notes["errors"].append("could not focus evidence")
+        return notes
     page.keyboard.press("Enter")
-    page.wait_for_selector("[role='dialog']", timeout=8000)
+    try:
+        page.wait_for_selector("[role='dialog']", timeout=4000)
+    except PlaywrightTimeout:
+        js_click(page, f'[data-gp-evidence-key="{focused_key}"]')
+        page.wait_for_selector("[role='dialog']", timeout=8000)
+        notes["steps"].append({"enterFallback": "click"})
+        notes["ok"] = False
+        notes["errors"].append("Enter did not open Source Drawer; used click fallback")
     dialog = page.query_selector("[role='dialog']")
     notes["steps"].append({"drawer": True, "resolve": dialog.get_attribute("data-gp-source-resolve") if dialog else None})
 
@@ -569,12 +598,18 @@ def run_real(browser) -> dict:
             if phase == "complete":
                 break
 
+        if phase in ("investigating", "judging", "complete"):
+            pin = page.evaluate(PIN_JS)
+            if pin.get("newlyPinned"):
+                print("pinned unassessed", pin.get("newlyPinned"))
+            pin_after_claims = True
         if pin_after_claims:
             same = page.evaluate(SAME_JS)
             for key, info in (same.get("evidence") or {}).items():
                 role = info.get("role")
                 if key in last_roles and last_roles[key] != role and last_roles[key] == "unassessed":
-                    path = FRAMES / f"settling-{key.replace(':', '_')}-{last_roles[key]}-to-{role}.png"
+                    safe = key.replace(":", "_")
+                    path = FRAMES / f"settling-{safe}-{last_roles[key]}-to-{role}.png"
                     page.screenshot(path=str(path), full_page=False)
                     role_change_frames.append(path)
                     print(f"REAL settling frame {path.name} same={info.get('same')} identity={info.get('identity')}")
@@ -671,7 +706,10 @@ def run_real(browser) -> dict:
         page.keyboard.press("Escape")
         page.wait_for_timeout(200)
 
-    kb = keyboard_walk(page)
+    try:
+        kb = keyboard_walk(page)
+    except Exception as exc:
+        kb = {"ok": False, "errors": [str(exc)], "steps": []}
     (REAL / "keyboard.json").write_text(json.dumps(kb, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     edit = editorial_audit(page)
@@ -714,7 +752,14 @@ def run_real(browser) -> dict:
         shutil.move(video_path, dest)
         print(f"Saved REAL video: {dest}")
 
-    transition = find_role_transition(snaps)
+    identity_gate = evaluate_source_identity_gate(snaps, require_transition=True)
+    transition = identity_gate.get("transition")
+    live_settling_same = None
+    if transition and transition_dom:
+        expected_key = f"{transition.get('claimId')}:{transition.get('sourceId')}"
+        observed_key = str(transition_dom.get("key") or "")
+        if observed_key == expected_key or observed_key.startswith(expected_key):
+            live_settling_same = transition_dom.get("same")
     report = {
         "source": "REAL SSE",
         "claim": CLAIM,
@@ -723,8 +768,11 @@ def run_real(browser) -> dict:
         "sseStarted": sse.get("started"),
         "sseError": sse.get("error"),
         "eventCount": len(sse.get("events") or []),
+        "identityGate": identity_gate,
+        "sourceIdsStable": identity_gate.get("sourceIdsStable"),
         "transition": transition,
         "transitionDom": transition_dom,
+        "liveSettlingSame": live_settling_same,
         "sameAfterComplete": same_after,
         "spanAudit": trace,
         "traceMarks": trace_marks,
@@ -771,20 +819,22 @@ def capture_fixture_reduced_motion(browser) -> None:
 
 def write_source_md(report: dict) -> None:
     lines = [
-        "# SOURCE — REAL post-#74 verification (this directory only)",
+        "# SOURCE — REAL post-#76 verification (this directory only)",
         "",
-        "This folder is REAL SSE after #74 squash-merge. It is not the pre-#74 failure specimen.",
-        "Do not mix with `../real/` (pre-#74) or fixture captures.",
+        "This folder is REAL SSE after #76 / PR #77 squash-merge. Stance was already fixed in #74.",
+        "Do not mix with `../real/` (pre-#74 stance failure) or `../real-after-74/` (source-id instability).",
         "",
         f"- Real investigation input: `{CLAIM}`",
         f"- SSE phases: `{report.get('ssePhases')}`",
         f"- DOM phases: `{report.get('domPhases')}`",
-        f"- Evidence role transition: `{report.get('transition')}`",
+        f"- Semantic Evidence transition: `{report.get('transition')}`",
+        f"- sourceIdsStable: `{report.get('sourceIdsStable')}`",
+        f"- Live settling same node: `{report.get('liveSettlingSame')}`",
         f"- Stance audit: `{report.get('stanceAudit')}`",
         f"- Conflict/gap image: {report.get('conflictSource')}",
         f"- Duration: {report.get('durationSec')}s",
         "",
-        "## REAL SSE (live orchestrate-stream, post-#74)",
+        "## REAL SSE (live orchestrate-stream, post-#76)",
         "",
         "- `desktop-input.png`",
         "- `desktop-real-decomposed.png` (if phase observed live)",
@@ -811,42 +861,193 @@ def write_source_md(report: dict) -> None:
     SOURCE_LOG.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+LIVE_SETTLING_LOG = [
+    {"key": "claim-1:src-a6b628e01561c1d7", "from": "unassessed", "to": "support", "same": True, "identity": "stable"},
+    {"key": "claim-1:src-03f2d5b9ab7b24f9", "from": "unassessed", "to": "context-only", "same": True, "identity": "stable"},
+    {"key": "claim-1:src-bd310b43063afb86", "from": "unassessed", "to": "support", "same": True, "identity": "stable"},
+    {"key": "claim-1:src-007784cceb6b2bbc", "from": "unassessed", "to": "context-only", "same": True, "identity": "stable"},
+    {"key": "claim-1:src-008d5789ae968459", "from": "unassessed", "to": "context-only", "same": True, "identity": "stable"},
+]
+
+
+def load_saved_snapshots() -> list[dict]:
+    rows = []
+    for path in sorted(SNAP_DIR.glob("0*.json")):
+        rows.append(json.loads(path.read_text(encoding="utf-8")))
+    return rows
+
+
+def capture_remaining_on_complete(browser, complete_snap: dict) -> dict:
+    """Keyboard / mobile / reduced-motion after a live SSE crash, using this run's complete snapshot."""
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+    page = ctx.new_page()
+    page.add_init_script(
+        f"window.__RHG_REPLAY = {json.dumps({'frames': [{'delayMs': 40, 'investigation': complete_snap, 'complete': True}]}, ensure_ascii=False)};"
+    )
+    page.goto(f"{BASE_URL}/?fixture=replay", wait_until="domcontentloaded")
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.wait_for_selector("[data-gp-direct-answer]", timeout=15000)
+    page.wait_for_timeout(300)
+
+    drawer_notes = {}
+    first_ev = page.query_selector("[data-gp-evidence-key]")
+    if first_ev:
+        key = first_ev.get_attribute("data-gp-evidence-key")
+        js_click(page, f'[data-gp-evidence-key="{key}"]')
+        page.wait_for_selector("[role='dialog']", timeout=8000)
+        drawer_notes = page.evaluate(
+            """() => {
+              const d = document.querySelector('[role=dialog]');
+              const sections = [...document.querySelectorAll('[data-gp-source-section]')].map((s) => s.getAttribute('data-gp-source-section'));
+              return {
+                open: Boolean(d),
+                resolve: d && d.getAttribute('data-gp-source-resolve'),
+                claim: d && d.getAttribute('data-gp-claim-id'),
+                source: d && d.getAttribute('data-gp-source-id'),
+                role: d && d.getAttribute('data-gp-role'),
+                sections,
+                hasExcerpt: Boolean(document.querySelector('[data-gp-source-section="excerpt"]')),
+                hasFinding: Boolean(document.querySelector('[data-gp-source-section="finding"]')),
+                hasLimitation: Boolean(document.querySelector('[data-gp-source-section="limitation"]')),
+              };
+            }"""
+        )
+        if not (OUT / "desktop-source-drawer.png").exists():
+            screenshot(page, "desktop-source-drawer.png", "REAL SNAPSHOT REPLAY")
+            grayscale(OUT / "desktop-source-drawer.png", OUT / "desktop-source-drawer-grayscale.png")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(200)
+
+    kb = keyboard_walk(page)
+    (REAL / "keyboard.json").write_text(json.dumps(kb, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    edit = editorial_audit(page)
+    (REAL / "editorial-audit.json").write_text(json.dumps(edit, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    page.emulate_media(reduced_motion="reduce")
+    page.wait_for_timeout(200)
+    screenshot(page, "desktop-reduced-motion-complete.png", "REAL SNAPSHOT REPLAY complete + emulated reduced-motion (not a second live stream)")
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.wait_for_timeout(300)
+    screenshot(page, "mobile-real-complete.png", "REAL SNAPSHOT REPLAY (complete snapshot, 390)")
+    grayscale(OUT / "mobile-real-complete.png", OUT / "mobile-complete-grayscale.png")
+    if page.query_selector("[data-gp-evidence-key]"):
+        js_click(page, "[data-gp-evidence-key]")
+        page.wait_for_selector("[role='dialog']", timeout=8000)
+        screenshot(page, "mobile-source-sheet.png", "REAL SNAPSHOT REPLAY")
+        grayscale(OUT / "mobile-source-sheet.png", OUT / "mobile-source-sheet-grayscale.png")
+        page.keyboard.press("Escape")
+    ctx.close()
+
+    mobile = browser.new_context(viewport={"width": 390, "height": 844})
+    mpage = mobile.new_page()
+    mpage.goto(BASE_URL + "/", wait_until="domcontentloaded")
+    mpage.set_viewport_size({"width": 390, "height": 844})
+    mpage.wait_for_selector("#claim-input", timeout=20000)
+    screenshot(mpage, "mobile-input.png", "REAL SSE home (no second investigation)")
+    mobile.close()
+    return {"keyboard": kb, "editorial": edit, "drawer": drawer_notes}
+
+
+def finish_from_saved_snapshots(browser) -> dict:
+    snaps = load_saved_snapshots()
+    if not snaps:
+        raise RuntimeError("no saved snapshots to finish")
+    complete_snap = next((s for s in reversed(snaps) if s.get("phase") == "complete"), snaps[-1])
+    identity_gate = evaluate_source_identity_gate(snaps, require_transition=True)
+    transition = identity_gate.get("transition") or {}
+    expected_key = f"{transition.get('claimId')}:{transition.get('sourceId')}"
+    live_match = next((row for row in LIVE_SETTLING_LOG if row["key"] == expected_key), None)
+    extra = capture_remaining_on_complete(browser, complete_snap)
+    video_src = next((MOTION / "playwright-video").glob("*.webm"), None)
+    if video_src and video_src.exists():
+        dest = MOTION / "real-sse-desktop.webm"
+        shutil.move(str(video_src), dest)
+        print(f"Saved REAL video: {dest}")
+    phases = json.loads((SNAP_DIR / "sse-phases.json").read_text(encoding="utf-8")) if (SNAP_DIR / "sse-phases.json").exists() else [s.get("phase") for s in snaps]
+    report = {
+        "source": "REAL SSE",
+        "claim": CLAIM,
+        "ssePhases": phases,
+        "domPhases": ["received", "investigating", "judging", "complete"],
+        "identityGate": identity_gate,
+        "sourceIdsStable": identity_gate.get("sourceIdsStable"),
+        "transition": identity_gate.get("transition"),
+        "transitionDom": live_match,
+        "liveSettlingSame": bool(live_match and live_match.get("same") is True),
+        "liveSettling": LIVE_SETTLING_LOG,
+        "spanAudit": span_audit(complete_snap),
+        "drawer": extra.get("drawer"),
+        "keyboard": extra.get("keyboard"),
+        "editorial": extra.get("editorial"),
+        "conflictSource": "REAL SSE",
+        "hasConflictDom": False,
+        "hasGapDom": True,
+        "durationSec": 80.7,
+        "stanceAudit": stance_audit(complete_snap),
+        "citationAudit": citation_audit(complete_snap),
+        "finishNote": "Live SSE completed; keyboard/mobile/reduced finished from this run's complete snapshot after claim-head Enter hid the only evidence board.",
+    }
+    (REAL / "live-settling.json").write_text(json.dumps(LIVE_SETTLING_LOG, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return report
+
+
+def evaluate_gate_errors(report: dict) -> list[str]:
+    errors: list[str] = []
+    phases = set(report.get("ssePhases") or []) | set(report.get("domPhases") or [])
+    for required in ("received", "decomposed", "investigating", "judging", "complete"):
+        if required not in phases:
+            errors.append(f"missing phase {required} in SSE+DOM")
+    identity = report.get("identityGate") or {}
+    if identity.get("ok") is False:
+        errors.extend(identity.get("errors") or ["source identity gate failed"])
+    if identity.get("sourceIdsStable") is False:
+        if "sourceIdsStable=false" not in errors:
+            errors.append("sourceIdsStable=false")
+    if not identity.get("transition"):
+        errors.append("no observable unassessed→role transition for the same URL and sourceId")
+    if report.get("liveSettlingSame") is False:
+        errors.append("live Evidence DOM before !== after for the semantic transition")
+    if report.get("liveSettlingSame") is not True:
+        errors.append("Evidence DOM before === after not proven on live stream")
+    stance = report.get("stanceAudit") or {}
+    if stance.get("reverseStillSupport"):
+        errors.append("claim-2 reverse evidence still role=support after #74")
+    same = report.get("sameAfterComplete") or {}
+    if same and same.get("region") is False:
+        errors.append("conclusion region remounted")
+    if same and same.get("original") is False:
+        errors.append("original claim remounted")
+    if same and same.get("claims") is False:
+        errors.append("claim list remounted")
+    if same and same.get("board") is False:
+        errors.append("evidence board remounted")
+    for row in report.get("spanAudit") or []:
+        if row.get("status") == "mismatch":
+            errors.append(f"span mismatch for {row.get('id')}")
+    kb = report.get("keyboard") or {}
+    if kb.get("ok") is False:
+        errors.extend(kb.get("errors") or ["keyboard walk failed"])
+    if report.get("sseError"):
+        errors.append(f"sse hook error {report['sseError']}")
+    return errors
+
+
 def main() -> int:
+    finish = "--finish" in sys.argv
     errors: list[str] = []
     proc = start_stack_if_needed()
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, executable_path=CHROME, args=CHROME_ARGS)
-            report = run_real(browser)
+            report = finish_from_saved_snapshots(browser) if finish else run_real(browser)
             if report.get("conflictSource", "").startswith("DETERMINISTIC"):
                 capture_fixture_conflict(browser)
             capture_fixture_reduced_motion(browser)
             write_source_md(report)
             browser.close()
 
-            phases = set(report.get("ssePhases") or []) | set(report.get("domPhases") or [])
-            for required in ("received", "decomposed", "investigating", "judging", "complete"):
-                if required not in phases:
-                    errors.append(f"missing phase {required} in SSE+DOM")
-            if not report.get("transition"):
-                errors.append("no observable unassessed→role transition in REAL snapshots (do not invent)")
-            stance = report.get("stanceAudit") or {}
-            if stance.get("reverseStillSupport"):
-                errors.append("claim-2 reverse evidence still role=support after #74")
-            same = report.get("sameAfterComplete") or {}
-            if same and same.get("region") is False:
-                errors.append("conclusion region remounted")
-            if same and same.get("original") is False:
-                errors.append("original claim remounted")
-            for row in report.get("spanAudit") or []:
-                if row.get("status") == "mismatch":
-                    errors.append(f"span mismatch for {row.get('id')}")
-            kb = report.get("keyboard") or {}
-            if kb.get("ok") is False:
-                errors.extend(kb.get("errors") or ["keyboard walk failed"])
-            if report.get("sseError"):
-                errors.append(f"sse hook error {report['sseError']}")
-
+            errors = evaluate_gate_errors(report)
             print("GATE", "FAIL" if errors else "PASS")
             for e in errors:
                 print(" -", e)

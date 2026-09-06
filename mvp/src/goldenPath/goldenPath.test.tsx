@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildInvestigationSnapshot, type InvestigationSnapshotV1 } from "@rhg/core/investigation";
+import { buildInvestigationSnapshot, sourceIdsStableAcross, type InvestigationSnapshotV1 } from "@rhg/core/investigation";
 import { InvestigationCanvas } from "./InvestigationCanvas";
 import { buildClaimTraceSegments } from "./claimTrace";
 import {
@@ -2046,6 +2046,71 @@ describe("Issue #66 post-#74 real SSE artifacts", () => {
     expect(cited.every((l) => /\[\d+\]/.test(l.finding || ""))).toBe(true);
     const sourceIds = new Set(cited.map((l) => l.sourceId));
     expect(sourceIds.size).toBe(cited.length);
+  });
+});
+
+describe("Issue #66 post-#76 real SSE artifacts", () => {
+  function loadAfter76(name: string): InvestigationSnapshotV1 {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const { resolve } = require("node:path") as typeof import("node:path");
+    const path = resolve(
+      process.cwd(),
+      "..",
+      "docs/design/2026-09-06-mode3-production/final/real-after-76/snapshots",
+      name,
+    );
+    return JSON.parse(readFileSync(path, "utf8")) as InvestigationSnapshotV1;
+  }
+
+  it("same Claim + same URL + same hashed sourceId：unassessed→support 且 DOM before === after", () => {
+    const investigating = loadAfter76("04-investigating-4.json");
+    const judging = loadAfter76("05-judging.json");
+    const url = "https://ltxc.cqnu.edu.cn/info/1140/7130.htm";
+    const sourceId = investigating.sources.find((s) => s.url === url)!.id;
+    expect(sourceId).toMatch(/^src-[0-9a-f]{16}$/);
+    expect(sourceId).toBe(judging.sources.find((s) => s.url === url)!.id);
+    expect(sourceIdsStableAcross([investigating, judging]).stable).toBe(true);
+
+    const beforeLink = investigating.claims[0].evidence.find((l) => l.sourceId === sourceId);
+    const afterLink = judging.claims[0].evidence.find((l) => l.sourceId === sourceId);
+    expect(beforeLink?.role).toBe("unassessed");
+    expect(afterLink?.role).toBe("support");
+
+    const view = renderCanvas(investigating);
+    const before = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    const region = document.querySelector("[data-gp-conclusion-region]");
+    const original = document.querySelector(".gp-original");
+    const board = document.querySelector('[data-gp-claim-id="claim-1"] .gp-evidence-board');
+    expect(before).toBeInstanceOf(HTMLElement);
+    expect(before?.getAttribute("data-gp-role")).toBe("unassessed");
+    expect(before?.getAttribute("data-gp-identity")).toBe("stable");
+
+    view.rerender(
+      <InvestigationCanvas snapshot={judging} live onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    const after = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    expect(after).toBe(before);
+    expect(after?.getAttribute("data-gp-role")).toBe("support");
+    expect(after?.getAttribute("data-gp-identity")).toBe("stable");
+    expect(document.querySelector("[data-gp-conclusion-region]")).toBe(region);
+    expect(document.querySelector(".gp-original")).toBe(original);
+    expect(document.querySelector('[data-gp-claim-id="claim-1"] .gp-evidence-board')).toBe(board);
+  });
+
+  it("claim-2 没有把反向材料标成 support；originalSpan exact", () => {
+    const complete = loadAfter76("complete.json");
+    const claim2 = complete.claims.find((c) => c.text.includes("每次感冒都应当输液"));
+    expect(claim2).toBeTruthy();
+    const reverse = /不需要输液|无需输液|没必要输液|不必输液|输液没有必要|输液治疗没有必要/;
+    const reverseSupport = (claim2!.evidence || []).filter(
+      (l) => l.role === "support" && reverse.test(l.finding || ""),
+    );
+    expect(reverseSupport).toEqual([]);
+    for (const claim of complete.claims) {
+      const span = claim.originalSpan;
+      expect(span).toBeTruthy();
+      expect(complete.originalClaim.slice(span!.start, span!.end)).toBe(claim.text);
+    }
   });
 });
 
