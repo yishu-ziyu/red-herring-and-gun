@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "errors": [],
+  "settlingDomSame": true,
+  "sourceIdsStable": true,
+  "transition": {
+    "claimId": "claim-1",
+    "sourceId": "src-bd310b43063afb86",
+    "url": "https://ltxc.cqnu.edu.cn/info/1140/7130.htm",
+    "fromId": "src-bd310b43063afb86",
+    "toId": "src-bd310b43063afb86",
+    "from": "unassessed",
+    "to": "support",
+    "atPhase": "judging"
+  }
+}

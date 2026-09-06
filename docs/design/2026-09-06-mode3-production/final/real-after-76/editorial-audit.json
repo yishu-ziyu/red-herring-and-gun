@@ -1,0 +1,10 @@
+{
+  "hasAnswer": true,
+  "answerSize": 24,
+  "heroBg": "rgba(0, 0, 0, 0)",
+  "heroShadow": "none",
+  "heroRadius": "0px",
+  "canvasBg": "rgba(0, 0, 0, 0)",
+  "rainbowRows": [],
+  "rowCount": 5
+}

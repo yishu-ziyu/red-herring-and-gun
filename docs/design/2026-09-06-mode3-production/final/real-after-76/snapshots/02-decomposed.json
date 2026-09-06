@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "originalClaim": "维生素C能治感冒，而且每次感冒都应当输液。",
+  "phase": "decomposed",
+  "claims": [
+    {
+      "id": "claim-1",
+      "text": "维生素C能治感冒",
+      "order": 0,
+      "originalSpan": {
+        "start": 0,
+        "end": 8
+      },
+      "checkability": "checkable",
+      "progress": "pending",
+      "judgment": null,
+      "evidence": [],
+      "gaps": []
+    },
+    {
+      "id": "claim-2",
+      "text": "每次感冒都应当输液",
+      "order": 1,
+      "originalSpan": {
+        "start": 11,
+        "end": 20
+      },
+      "checkability": "not-applicable",
+      "progress": "pending",
+      "judgment": "not-applicable",
+      "evidence": [],
+      "gaps": []
+    }
+  ],
+  "sources": [],
+  "conflicts": []
+}

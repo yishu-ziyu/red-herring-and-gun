@@ -147,7 +147,8 @@ export type FixtureName =
   | "mixed"
   | "nospan"
   | "settling"
-  | "source-audit";
+  | "source-audit"
+  | "replay";
 
 /** Issue #63 取证：三条材料从待核对归到支持 / 反驳 / 相关材料。确定性 fixture，不是真实 SSE。 */
 function settlingBefore() {
@@ -205,7 +206,27 @@ export function getDevFixture(
     const emitSnapshot = (phase: "investigating" | "judging" | "complete") =>
       emit({ type: "investigation_snapshot", investigation: staged(phase), timestamp: Date.now() });
 
-    if (name === "mixed") {
+    if (name === "replay") {
+      const pack = (window as unknown as { __RHG_REPLAY?: { frames?: Array<{ delayMs?: number; investigation: unknown; complete?: boolean }> } }).__RHG_REPLAY;
+      const frames = pack?.frames ?? [];
+      for (const frame of frames) {
+        at(frame.delayMs ?? 60, () => {
+          emit({
+            type: "investigation_snapshot",
+            investigation: frame.investigation as never,
+            timestamp: Date.now(),
+          });
+          if (frame.complete) {
+            emit({
+              type: "complete",
+              finalReport: { investigation: frame.investigation } as Record<string, unknown>,
+              timestamp: Date.now(),
+            });
+          }
+        });
+      }
+      return () => timers.forEach(clearTimeout);
+    } else if (name === "mixed") {
       const snap = mixedComplete();
       at(60, () => emit({ type: "investigation_snapshot", investigation: snap, timestamp: Date.now() }));
       return () => timers.forEach(clearTimeout);

@@ -1,0 +1,42 @@
+[
+  {
+    "phase": "received",
+    "claims": 0,
+    "sources": 0
+  },
+  {
+    "phase": "decomposed",
+    "claims": 2,
+    "sources": 0
+  },
+  {
+    "phase": "investigating",
+    "claims": 2,
+    "sources": 0
+  },
+  {
+    "phase": "investigating",
+    "claims": 2,
+    "sources": 5
+  },
+  {
+    "phase": "judging",
+    "claims": 2,
+    "sources": 5
+  },
+  {
+    "phase": "judging",
+    "claims": 2,
+    "sources": 5
+  },
+  {
+    "phase": "judging",
+    "claims": 2,
+    "sources": 5
+  },
+  {
+    "phase": "complete",
+    "claims": 2,
+    "sources": 5
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "pin": {
+    "role": "unassessed",
+    "identity": "stable",
+    "key": "claim-1:src-1"
+  },
+  "after": {
+    "same": true,
+    "role": "support",
+    "identity": "stable"
+  }
+}
