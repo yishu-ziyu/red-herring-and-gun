@@ -4,11 +4,25 @@
  * builder 输出与生产接线都应通过；测试与 GET 重建路径用它做守门。
  */
 import type { InvestigationSnapshotV1 } from "./schema.js";
+import { normalizeInvestigationSourceUrl } from "./sourceIdentity.js";
 
 export function assertInvestigationInvariants(snapshot: InvestigationSnapshotV1): void {
   const violations: string[] = [];
   const claimIds = new Set(snapshot.claims.map((c) => c.id));
   const sourceIds = new Set(snapshot.sources.map((s) => s.id));
+  const seenSourceIds = new Set<string>();
+  const seenSourceUrls = new Set<string>();
+  for (const source of snapshot.sources) {
+    if (seenSourceIds.has(source.id)) {
+      violations.push(`duplicate source id ${source.id}`);
+    }
+    seenSourceIds.add(source.id);
+    const url = normalizeInvestigationSourceUrl(source.url);
+    if (url && seenSourceUrls.has(url)) {
+      violations.push(`duplicate source url ${url}`);
+    }
+    if (url) seenSourceUrls.add(url);
+  }
 
   for (const claim of snapshot.claims) {
     const linkSourceIds = new Set<string>();

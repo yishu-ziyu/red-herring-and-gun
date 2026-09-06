@@ -24,6 +24,7 @@ import type {
   InvestigationSource,
 } from "./schema.js";
 import { validateInvestigationSnapshot } from "./schema.js";
+import { investigationSourceId, normalizeInvestigationSourceUrl } from "./sourceIdentity.js";
 
 export type InvestigationBuildInput = {
   originalClaim: string;
@@ -379,20 +380,22 @@ export function buildInvestigationSnapshot(
     };
   });
 
-  // 来源登记：证据位来源先注册（按 claim 序），检索垫其余来源随后。
+  // 来源登记：id 由规范化 URL 确定性派生（#76），与 phase / role / 注册顺序无关。
+  // 数组顺序仍是证据位先、检索垫后——只影响 catalog 排列，不决定 identity。
   const sources: InvestigationSource[] = [];
   const sourceIdByUrl = new Map<string, string>();
   const registerSource = (s: { url: string; title: string; snippet: string }): string => {
-    const existing = sourceIdByUrl.get(s.url);
+    const key = normalizeInvestigationSourceUrl(s.url);
+    const existing = sourceIdByUrl.get(key);
     if (existing) return existing;
-    const id = `src-${sources.length + 1}`;
-    sourceIdByUrl.set(s.url, id);
+    const id = investigationSourceId(key);
+    sourceIdByUrl.set(key, id);
     sources.push({
       id,
-      url: s.url,
+      url: key,
       title: s.title,
       ...(s.snippet ? { excerpt: s.snippet } : {}),
-      ...(deadUrls.has(s.url) ? { reachable: false } : {}),
+      ...(deadUrls.has(key) ? { reachable: false } : {}),
     });
     return id;
   };
