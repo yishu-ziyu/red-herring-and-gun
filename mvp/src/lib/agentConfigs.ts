@@ -411,16 +411,21 @@ const factCheckerSchema = {
           evidence: {
             type: "string",
             description:
-              "Evidence prose for this atom. When supportingSources is non-empty, insert [n] after the claim it supports; n is 1-based and matches this item's supportingSources order (first source → [1]). No [n] when supportingSources is empty. Do not invent numbers outside that array.",
+              "Evidence prose for this atom. [n] is 1-based over supportingSources then contradictingSources. If supportingSources is empty and contradictingSources is not, [1] is the first contradicting source. Do not invent numbers.",
           },
           boundary: { type: "string" },
           supportingSources: {
             type: "array",
             items: verdictSourceSchema,
             description:
-              "Sources that support this atom, in citation order. evidence [n] maps to the n-th entry (1-based).",
+              "Sources that support this claim atom (the atom is true according to this source). Do not put sources that refute the atom here.",
           },
-          contradictingSources: { type: "array", items: verdictSourceSchema },
+          contradictingSources: {
+            type: "array",
+            items: verdictSourceSchema,
+            description:
+              "Sources that refute this claim atom (the atom is false according to this source). When verdict=false, cited sources belong here.",
+          },
           evidenceGaps: { type: "array", items: { type: "string" } },
         },
         required: ["claimAtom", "verdict", "evidence", "boundary"],
@@ -451,7 +456,7 @@ const reportComposerSchema = {
     conclusion: {
       type: "string",
       description:
-        "Verdict prose. When the report has supporting web sources, insert [n] markers for claims that rely on them. n is 1-based global order: unique URLs from subclaimVerdicts.supportingSources in claim order (first-seen). No [n] without a matching source.",
+        "Verdict prose. When the report has cited web sources, insert [n] markers. n is 1-based global order: unique URLs from subclaimVerdicts.supportingSources then contradictingSources in claim order (first-seen). No [n] without a matching source.",
     },
     credibilityScore: { type: "number" },
     credibilityLabel: { type: "string" },
@@ -469,16 +474,21 @@ const reportComposerSchema = {
           evidence: {
             type: "string",
             description:
-              "Evidence prose for this atom. When supportingSources is non-empty, insert [n] after the claim it supports; n is 1-based and matches this item's supportingSources order. No [n] when empty.",
+              "Evidence prose for this atom. [n] is 1-based over supportingSources then contradictingSources. If supportingSources is empty and contradictingSources is not, [1] is the first contradicting source. Do not invent numbers.",
           },
           boundary: { type: "string" },
           supportingSources: {
             type: "array",
             items: verdictSourceSchema,
             description:
-              "Sources for this atom in citation order. evidence [n] maps to the n-th entry (1-based).",
+              "Sources that support this claim atom (the atom is true according to this source). Do not put sources that refute the atom here.",
           },
-          contradictingSources: { type: "array", items: verdictSourceSchema },
+          contradictingSources: {
+            type: "array",
+            items: verdictSourceSchema,
+            description:
+              "Sources that refute this claim atom (the atom is false according to this source). When verdict=false, cited sources belong here.",
+          },
           evidenceGaps: { type: "array", items: { type: "string" } },
         },
         required: ["claimAtom", "verdict", "evidence", "boundary"],
@@ -689,7 +699,8 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "subclaimVerdicts 必须覆盖输入 claimAtoms 中的每个原子命题，且每条 claimAtom 必须能回溯到原句；不得引入原句未声称的信息。",
       "verdict 取值：true=该原子命题成立；false=该原子命题不成立；partial=有真实片段但夸大/偷换；exaggerated=被夸大；unverified=证据不足。",
       "每条 subclaimVerdicts 可含 supportingSources / contradictingSources / evidenceGaps（url/title/snippet 必须来自输入真实来源）。",
-      "【句内引用编号】supportingSources 非空时，evidence 必须在对应论断后写 [n]（1-based，对本条 supportingSources 顺序）；为空则不得写 [n]；禁止编造编号。",
+      "supportingSources 只放支持该原子命题的来源；contradictingSources 只放反驳该原子命题的来源。verdict=false 时引用必须写入 contradictingSources，不得为了 [n] 把反驳材料写入 supportingSources。",
+      "【句内引用编号】[n] 按 supportingSources 再 contradictingSources 的合并顺序；supporting 为空时 [1] 对应 contradictingSources 第 1 条；两桶都空不得写 [n]；禁止编造编号。",
     ].join("\n")),
     responseSchema: factCheckerSchema,
   },
@@ -775,11 +786,11 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "3. causalBoundary：明确说明是否存在因果证据，不能把相关性、机制 plausibility、观察性研究直接写成健康收益。",
       "4. closureActions：给出可执行下一步：核查摘要、存疑归档、继续追证。证据不足的动作 status 必须是 needs_review 或 blocked。",
       "5. conclusion 必须是可审计结论，不得只写“缺乏科学依据”这类空泛话；要点明哪部分能信、哪部分不能信。",
-      "6. 逐条判定清单：把 subclaimVerdicts 作为报告的一部分渲染，逐条列出每个 claimAtom 的判定（verdict）、证据与边界，不得遗漏、不得编造输入中不存在的原子；保留 supportingSources 与 evidence 中的 [n] 对应关系。",
+      "6. 逐条判定清单：把 subclaimVerdicts 作为报告的一部分渲染，逐条列出每个 claimAtom 的判定（verdict）、证据与边界，不得遗漏、不得编造输入中不存在的原子；保留 supportingSources / contradictingSources 与 evidence 中的 [n] 对应关系。",
       "",
       "【句内引用编号 / Inline citations — 强制】",
-      "1. conclusion：全局编号 = subclaimVerdicts 顺序中 supportingSources URL 去重后的首次出现 [1][2]…；有来源支撑的论断后写 [n]。",
-      "2. 逐条 evidence：本条 supportingSources 非空时用本条局部 [1]…[k]；为空不得写 [n]。",
+      "1. conclusion：全局编号 = subclaimVerdicts 顺序中 supportingSources 再 contradictingSources 的 URL 去重后首次出现 [1][2]…；有来源支撑的论断后写 [n]。",
+      "2. 逐条 evidence：[n] 按 supportingSources 再 contradictingSources 的局部合并顺序；两桶都空不得写 [n]。",
       "3. evidenceChain 每层：evidence 中的 [n] 与本层 sourceRefs 顺序一一对应。",
       "4. 禁止编造 URL/编号；禁止用 Markdown 链接替代 [n]。",
       "",

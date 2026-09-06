@@ -1,19 +1,12 @@
 import type { SubclaimVerdict, VerdictSource } from "./types.js";
 import { claimAtomKey, compactStrings, compactText, MAX_CLAIM_ATOMS } from "./text.js";
-import { bindLocalCitations, filterSourcesWithRemap } from "../citationBinding.js";
+import { bindDualBucketCitations } from "../citationBinding.js";
 
 const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated"];
 
 function allowedUrlSet(searchSources?: Array<{ url?: unknown }>): Set<string> | null {
   if (!searchSources) return null;
   return new Set(searchSources.map((s) => String(s?.url ?? "").trim()).filter(Boolean));
-}
-
-function sanitizeVerdictSources(
-  value: unknown,
-  searchSources?: Array<{ url?: unknown }>
-): VerdictSource[] {
-  return filterSourcesWithRemap(value, allowedUrlSet(searchSources)).sources;
 }
 
 function sanitizeEvidenceGaps(value: unknown): string[] {
@@ -43,8 +36,32 @@ function demoteUnsourcedTrueFalse(
 }
 
 /**
+ * 原子命题立场分桶。supportingSources = 支持该原子命题；contradictingSources = 反驳该原子命题。
+ * 结构化输出曾把 [n] 只绑在 supportingSources 上，模型会把证伪材料塞进 supporting。
+ * verdict=false、反证桶为空、且不是 related-only 检索垫时，按判词改桶。
+ * 不用 finding 文本或否定词猜语义。
+ */
+export function alignFalseEvidenceBuckets<T>(input: {
+  verdict: string;
+  supporting: T[];
+  contradicting: T[];
+  sourcesRelatedOnly?: boolean;
+}): { supporting: T[]; contradicting: T[] } {
+  const verdict = String(input.verdict ?? "").trim().toLowerCase();
+  if (
+    verdict === "false" &&
+    input.sourcesRelatedOnly !== true &&
+    input.supporting.length > 0 &&
+    input.contradicting.length === 0
+  ) {
+    return { supporting: [], contradicting: input.supporting };
+  }
+  return { supporting: input.supporting, contradicting: input.contradicting };
+}
+
+/**
  * 锚原子 merge：幻觉拦截 + 未覆盖补 unverified + 可选 URL 交叉校验。
- * supportingSources 过滤后会按旧序号重写 evidence 中的 [n]，保证编号仍指向存活来源。
+ * evidence [n] 按 supportingSources 再 contradictingSources 的合并顺序重写。
  * 无 http(s) 的 true/false 收成 unverified（related-only 由 bind/derive/reviewer 处理）。
  * 调用方应对「可核查原子」调用（排除层之后），不要把立场原子塞进来。
  */
@@ -66,13 +83,24 @@ export function mergeSubclaimVerdicts(
     const atomKey = claimAtomKey(atom);
     if (!atoms.includes(atomKey)) continue;
     covered.add(atomKey);
-    const bound = bindLocalCitations(rec.evidence, rec.supportingSources, allowed);
-    const supportingSources = bound.sources;
-    const contradictingSources = sanitizeVerdictSources(rec.contradictingSources, searchSources);
+    const verdict = (SUBCLAIM_VERDICTS.includes(String(rec.verdict))
+      ? String(rec.verdict)
+      : "unverified") as SubclaimVerdict["verdict"];
+    const aligned = alignFalseEvidenceBuckets({
+      verdict,
+      supporting: Array.isArray(rec.supportingSources) ? rec.supportingSources : [],
+      contradicting: Array.isArray(rec.contradictingSources) ? rec.contradictingSources : [],
+    });
+    const bound = bindDualBucketCitations(
+      rec.evidence,
+      aligned.supporting,
+      aligned.contradicting,
+      allowed
+    );
+    const supportingSources = bound.supportingSources;
+    const contradictingSources = bound.contradictingSources;
     const guarded = demoteUnsourcedTrueFalse(
-      (SUBCLAIM_VERDICTS.includes(String(rec.verdict))
-        ? String(rec.verdict)
-        : "unverified") as SubclaimVerdict["verdict"],
+      verdict,
       supportingSources,
       contradictingSources,
       sanitizeEvidenceGaps(rec.evidenceGaps)
