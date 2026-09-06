@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { buildInvestigationSnapshot, type InvestigationSnapshotV1 } from "@rhg/core/investigation";
 import { InvestigationCanvas } from "./InvestigationCanvas";
 import { buildClaimTraceSegments } from "./claimTrace";
 import {
@@ -20,6 +21,7 @@ import {
 } from "./fixtures";
 import { applyRunEvent, type RunState } from "./useInvestigationRun";
 import type { OrchestrateStreamEvent } from "../lib/agentExpansion";
+import { identifyEvidenceLinks, type EvidenceRole } from "./snapshotUi";
 
 vi.mock("../lib/agentExpansion", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/agentExpansion")>();
@@ -112,9 +114,9 @@ describe("调查态（investigating）", () => {
   it("unassessed 显示中性「待核对」，绝不染成支持/反驳", () => {
     renderCanvas(investigatingUnassessed());
     const claim = document.querySelector('[data-gp-claim-id="claim-1"]')!;
-    const group = claim.querySelector('[data-gp-role="unassessed"]')!;
-    expect(within(group as HTMLElement).getByText("待核对")).toBeTruthy();
-    expect(group.querySelector('[data-gp-role="support"]')).toBeNull();
+    const heading = claim.querySelector('[data-gp-group-role="unassessed"]')!;
+    expect(within(heading as HTMLElement).getByText("待核对")).toBeTruthy();
+    expect(claim.querySelector('[data-gp-role="unassessed"]')).toBeTruthy();
     expect(claim.querySelector('[data-gp-role="support"]')).toBeNull();
     expect(claim.querySelector('[data-gp-role="contradict"]')).toBeNull();
     expect(within(claim as HTMLElement).getByText("正在追查")).toBeTruthy();
@@ -529,6 +531,410 @@ describe("Issue #62 Claim Trace", () => {
     const helper = readFileSync(join(dir, "claimTrace.ts"), "utf8");
     expect(helper).toContain("originalSpan");
     expect(helper).not.toMatch(/indexOf\(claim\.text\)/);
+  });
+});
+
+const src = (url: string, title: string, snippet: string) => ({ url, title, snippet });
+
+function settlingBoard(): InvestigationSnapshotV1 {
+  const atom = "三条材料分别待核";
+  return buildInvestigationSnapshot(
+    {
+      originalClaim: "三条材料分别待核。",
+      phase: "investigating",
+      claimAtoms: [atom],
+      atomSearchBundle: {
+        atomsSearched: [atom],
+        byAtomKey: {
+          [atom]: [
+            src("https://a.example/support", "来源甲", "甲摘录仍在"),
+            src("https://b.example/contradict", "来源乙", "乙摘录仍在"),
+            src("https://c.example/context", "来源丙", "丙摘录仍在"),
+          ],
+        },
+      },
+    },
+    { claimAtomKeyFn: (s) => s.trim() }
+  );
+}
+
+function withClaimEvidence(
+  snapshot: InvestigationSnapshotV1,
+  evidence: InvestigationSnapshotV1["claims"][number]["evidence"],
+): InvestigationSnapshotV1 {
+  return {
+    ...snapshot,
+    claims: snapshot.claims.map((claim, index) => (index === 0 ? { ...claim, evidence } : claim)),
+  };
+}
+
+function withRoles(snapshot: InvestigationSnapshotV1, roles: Record<string, EvidenceRole>): InvestigationSnapshotV1 {
+  return {
+    ...snapshot,
+    claims: snapshot.claims.map((claim) => ({
+      ...claim,
+      evidence: claim.evidence.map((link) => ({
+        ...link,
+        role: roles[link.sourceId] ?? link.role,
+      })),
+    })),
+  };
+}
+
+function mockReducedMotion(reduce: boolean) {
+  window.matchMedia = (query: string) =>
+    ({
+      matches: reduce && /prefers-reduced-motion:\s*reduce/.test(query),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+      onchange: null,
+    }) as MediaQueryList;
+}
+
+describe("Issue #63 Evidence Settling：同一证据节点身份", () => {
+  const originalMatchMedia = window.matchMedia;
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it("稳定键用 claimId:sourceId；同源重复不用出现序号当长期身份", () => {
+    const unique = identifyEvidenceLinks("c1", [{ sourceId: "s1", role: "support" }]);
+    expect(unique).toEqual([{ link: { sourceId: "s1", role: "support" }, key: "c1:s1", identity: "stable" }]);
+
+    const mixed = identifyEvidenceLinks("c1", [
+      { sourceId: "s1", role: "unassessed" },
+      { sourceId: "s2", role: "unassessed" },
+      { sourceId: "s1", role: "context-only" },
+    ]);
+    expect(mixed.map((row) => row.key)).toEqual(["c1:s1::unassessed", "c1:s2", "c1:s1::context-only"]);
+    expect(mixed.map((row) => row.identity)).toEqual(["relation", "stable", "relation"]);
+    expect(mixed.every((row) => !row.key.includes("#"))).toBe(true);
+
+    const one = identifyEvidenceLinks("c1", [{ sourceId: "s1", role: "unassessed" }]);
+    const two = identifyEvidenceLinks("c1", [
+      { sourceId: "s1", role: "support" },
+      { sourceId: "s1", role: "contradict" },
+    ]);
+    expect(one[0]!.key).toBe("c1:s1");
+    expect(two.map((row) => row.key)).toEqual(["c1:s1::support", "c1:s1::contradict"]);
+    expect(two.every((row) => row.key !== one[0]!.key)).toBe(true);
+
+    const sameRole = identifyEvidenceLinks("c1", [
+      { sourceId: "s1", role: "support", finding: "甲" },
+      { sourceId: "s1", role: "support", finding: "乙" },
+    ]);
+    expect(sameRole.map((row) => row.identity)).toEqual(["relation", "relation"]);
+    expect(new Set(sameRole.map((row) => row.key)).size).toBe(2);
+
+    const identical = identifyEvidenceLinks("c1", [
+      { sourceId: "s1", role: "support" },
+      { sourceId: "s1", role: "support" },
+    ]);
+    expect(identical.map((row) => row.identity)).toEqual(["ephemeral", "ephemeral"]);
+    expect(identical[0]!.key).not.toBe(identical[1]!.key);
+  });
+
+  it("生产源码不以 sourceId-index 或出现序号 #n 作为 Evidence key", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const claim = readFileSync(join(process.cwd(), "src", "goldenPath", "ClaimSection.tsx"), "utf8");
+    const board = readFileSync(join(process.cwd(), "src", "goldenPath", "EvidenceBoard.tsx"), "utf8");
+    const ui = readFileSync(join(process.cwd(), "src", "goldenPath", "snapshotUi.ts"), "utf8");
+    expect(claim).not.toMatch(/sourceId\}-\$\{i\}/);
+    expect(board).toContain("identifyEvidenceLinks");
+    expect(board).not.toMatch(/layoutId/);
+    expect(ui).not.toMatch(/#\$\{seen\}/);
+    expect(ui).not.toMatch(/sourceId}#\$\{/);
+  });
+
+  it("unassessed → support：DOM 节点 before === after", () => {
+    const beforeSnap = settlingBoard();
+    const sourceId = beforeSnap.claims[0]!.evidence[0]!.sourceId;
+    const view = renderCanvas(beforeSnap);
+    const before = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    expect(before).toBeInstanceOf(HTMLElement);
+    view.rerender(
+      <InvestigationCanvas
+        snapshot={withRoles(beforeSnap, { [sourceId]: "support" })}
+        live={false}
+        finalReport={null}
+        onReverify={() => {}}
+        onBackHome={() => {}}
+      />
+    );
+    const after = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    expect(after).toBe(before);
+    expect(after?.getAttribute("data-gp-role")).toBe("support");
+    expect(after?.getAttribute("data-gp-identity")).toBe("stable");
+    expect(after?.getAttribute("data-gp-evidence-key")).toBe(`claim-1:${sourceId}`);
+  });
+
+  it("unassessed → contradict：DOM 节点 before === after", () => {
+    const beforeSnap = settlingBoard();
+    const sourceId = beforeSnap.claims[0]!.evidence[1]!.sourceId;
+    const view = renderCanvas(beforeSnap);
+    const before = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    view.rerender(
+      <InvestigationCanvas
+        snapshot={withRoles(beforeSnap, { [sourceId]: "contradict" })}
+        live={false}
+        finalReport={null}
+        onReverify={() => {}}
+        onBackHome={() => {}}
+      />
+    );
+    const after = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    expect(after).toBe(before);
+    expect(after?.getAttribute("data-gp-role")).toBe("contradict");
+  });
+
+  it("unassessed → context-only：DOM 节点 before === after", () => {
+    const beforeSnap = settlingBoard();
+    const sourceId = beforeSnap.claims[0]!.evidence[2]!.sourceId;
+    const view = renderCanvas(beforeSnap);
+    const before = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    view.rerender(
+      <InvestigationCanvas
+        snapshot={withRoles(beforeSnap, { [sourceId]: "context-only" })}
+        live={false}
+        finalReport={null}
+        onReverify={() => {}}
+        onBackHome={() => {}}
+      />
+    );
+    const after = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    expect(after).toBe(before);
+    expect(after?.getAttribute("data-gp-role")).toBe("context-only");
+  });
+
+  it("role 标签与 data 属性更新；context-only 不被映射成 support", () => {
+    const beforeSnap = settlingBoard();
+    const [a, b, c] = beforeSnap.claims[0]!.evidence.map((l) => l.sourceId);
+    const view = renderCanvas(beforeSnap);
+    expect(document.querySelector('[data-gp-group-role="unassessed"]')?.textContent).toContain("待核对");
+    view.rerender(
+      <InvestigationCanvas
+        snapshot={withRoles(beforeSnap, { [a!]: "support", [b!]: "contradict", [c!]: "context-only" })}
+        live={false}
+        finalReport={null}
+        onReverify={() => {}}
+        onBackHome={() => {}}
+      />
+    );
+    const support = document.querySelector(`[data-source-id="${a}"]`)!;
+    const contradict = document.querySelector(`[data-source-id="${b}"]`)!;
+    const context = document.querySelector(`[data-source-id="${c}"]`)!;
+    expect(support.getAttribute("data-gp-role")).toBe("support");
+    expect(contradict.getAttribute("data-gp-role")).toBe("contradict");
+    expect(context.getAttribute("data-gp-role")).toBe("context-only");
+    expect(context.getAttribute("data-gp-role")).not.toBe("support");
+    expect(document.querySelector('[data-gp-group-role="support"]')?.textContent).toContain("支持");
+    expect(document.querySelector('[data-gp-group-role="contradict"]')?.textContent).toContain("反驳");
+    expect(document.querySelector('[data-gp-group-role="context-only"]')?.textContent).toContain("相关材料");
+    expect(document.querySelector('[data-gp-group-role="unassessed"]')).toBeNull();
+  });
+
+  it("group count 正确，empty group 不在 DOM", () => {
+    const beforeSnap = settlingBoard();
+    const [a, b, c] = beforeSnap.claims[0]!.evidence.map((l) => l.sourceId);
+    renderCanvas(withRoles(beforeSnap, { [a!]: "support", [b!]: "support", [c!]: "context-only" }));
+    expect(document.querySelector('[data-gp-group-role="support"]')?.textContent).toMatch(/·\s*2/);
+    expect(document.querySelector('[data-gp-group-role="context-only"]')?.textContent).toMatch(/·\s*1/);
+    expect(document.querySelector('[data-gp-group-role="contradict"]')).toBeNull();
+    expect(document.querySelector('[data-gp-group-role="unassessed"]')).toBeNull();
+    expect(document.querySelectorAll('[data-gp-role="support"]').length).toBe(2);
+    expect(document.querySelectorAll('[data-gp-role="unassessed"]').length).toBe(0);
+  });
+
+  it("Evidence 点击仍打开 Source Drawer", () => {
+    renderCanvas(settlingBoard());
+    fireEvent.click(document.querySelector('[data-source-id="src-1"]')!);
+    const drawer = document.querySelector(".gp-drawer--source")!;
+    expect(drawer).toBeTruthy();
+    expect(within(drawer as HTMLElement).getByText("来源甲")).toBeTruthy();
+  });
+
+  it("focused Evidence rerender 后节点仍在且保持焦点", () => {
+    const beforeSnap = settlingBoard();
+    const sourceId = beforeSnap.claims[0]!.evidence[0]!.sourceId;
+    const view = renderCanvas(beforeSnap);
+    const before = document.querySelector(`[data-source-id="${sourceId}"]`) as HTMLButtonElement;
+    before.focus();
+    expect(document.activeElement).toBe(before);
+    view.rerender(
+      <InvestigationCanvas
+        snapshot={withRoles(beforeSnap, { [sourceId]: "contradict" })}
+        live={false}
+        finalReport={null}
+        onReverify={() => {}}
+        onBackHome={() => {}}
+      />
+    );
+    const after = document.querySelector(`[data-source-id="${sourceId}"]`) as HTMLButtonElement;
+    expect(after).toBe(before);
+    expect(document.activeElement).toBe(after);
+    expect(after.getAttribute("data-gp-role")).toBe("contradict");
+    expect(after.textContent).toContain("来源甲");
+    expect(after.textContent).toContain("甲摘录仍在");
+  });
+
+  it("reduced-motion 下立即归位、关闭 layout 运动", () => {
+    mockReducedMotion(true);
+    const beforeSnap = settlingBoard();
+    const [a, b, c] = beforeSnap.claims[0]!.evidence.map((l) => l.sourceId);
+    const view = renderCanvas(beforeSnap);
+    const before = document.querySelector(`[data-source-id="${a}"]`);
+    view.rerender(
+      <InvestigationCanvas
+        snapshot={withRoles(beforeSnap, { [a!]: "support", [b!]: "contradict", [c!]: "context-only" })}
+        live={false}
+        finalReport={null}
+        onReverify={() => {}}
+        onBackHome={() => {}}
+      />
+    );
+    const after = document.querySelector(`[data-source-id="${a}"]`);
+    expect(after).toBe(before);
+    expect(document.querySelector(".gp-evidence-board")?.getAttribute("data-gp-layout-motion")).toBe("off");
+    expect(after?.getAttribute("data-gp-role")).toBe("support");
+    expect((after as HTMLElement).style.transform).toBe("");
+    expect(document.querySelector('[data-gp-group-role="support"]')).toBeTruthy();
+    expect(document.querySelector('[data-gp-group-role="unassessed"]')).toBeNull();
+  });
+
+  it("1× s1 → 2× s1：不能把旧节点续到任一新节点上", () => {
+    const base = settlingBoard();
+    const one = withClaimEvidence(base, [{ sourceId: "src-1", role: "unassessed" }]);
+    const two = withClaimEvidence(base, [
+      { sourceId: "src-1", role: "support" },
+      { sourceId: "src-1", role: "contradict" },
+    ]);
+    const view = renderCanvas(one);
+    const before = document.querySelector('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]');
+    expect(before).toBeInstanceOf(HTMLElement);
+    expect(before?.getAttribute("data-gp-identity")).toBe("stable");
+    expect(before?.getAttribute("data-gp-evidence-key")).toBe("claim-1:src-1");
+    view.rerender(
+      <InvestigationCanvas snapshot={two} live={false} finalReport={null} onReverify={() => {}} onBackHome={() => {}} />
+    );
+    const afterNodes = [
+      ...document.querySelectorAll('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]'),
+    ];
+    expect(afterNodes).toHaveLength(2);
+    expect(afterNodes[0]).not.toBe(before);
+    expect(afterNodes[1]).not.toBe(before);
+    expect(document.contains(before)).toBe(false);
+    expect(afterNodes.map((node) => node.getAttribute("data-gp-identity"))).toEqual(["relation", "relation"]);
+    expect(afterNodes.every((node) => node.getAttribute("data-gp-evidence-key") !== "claim-1:src-1")).toBe(true);
+    expect(afterNodes.every((node) => !node.getAttribute("data-gp-evidence-key")?.includes("#"))).toBe(true);
+    expect(afterNodes.every((node) => node.getAttribute("data-gp-settling") == null)).toBe(true);
+  });
+
+  it("2× s1 → 1× s1：剩下那一行不得错误复用原先任一条", () => {
+    const base = settlingBoard();
+    const two = withClaimEvidence(base, [
+      { sourceId: "src-1", role: "support" },
+      { sourceId: "src-1", role: "contradict" },
+    ]);
+    const one = withClaimEvidence(base, [{ sourceId: "src-1", role: "support" }]);
+    const view = renderCanvas(two);
+    const beforeNodes = [
+      ...document.querySelectorAll('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]'),
+    ];
+    expect(beforeNodes).toHaveLength(2);
+    const beforeSupport = document.querySelector(
+      '[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="support"]'
+    );
+    const beforeContradict = document.querySelector(
+      '[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="contradict"]'
+    );
+    expect(beforeSupport).toBeInstanceOf(HTMLElement);
+    expect(beforeContradict).toBeInstanceOf(HTMLElement);
+    view.rerender(
+      <InvestigationCanvas snapshot={one} live={false} finalReport={null} onReverify={() => {}} onBackHome={() => {}} />
+    );
+    const after = document.querySelector('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]');
+    expect(after).toBeInstanceOf(HTMLElement);
+    expect(after).not.toBe(beforeSupport);
+    expect(after).not.toBe(beforeContradict);
+    expect(document.contains(beforeSupport)).toBe(false);
+    expect(document.contains(beforeContradict)).toBe(false);
+    expect(after?.getAttribute("data-gp-identity")).toBe("stable");
+    expect(after?.getAttribute("data-gp-evidence-key")).toBe("claim-1:src-1");
+    expect(after?.getAttribute("data-gp-role")).toBe("support");
+  });
+
+  it("duplicate reorder：可区分的两条 s1 不得因数组顺序互换身份", () => {
+    const base = settlingBoard();
+    const ordered = withClaimEvidence(base, [
+      { sourceId: "src-1", role: "support", finding: "支持摘录" },
+      { sourceId: "src-1", role: "contradict", finding: "反驳摘录" },
+    ]);
+    const reversed = withClaimEvidence(base, [
+      { sourceId: "src-1", role: "contradict", finding: "反驳摘录" },
+      { sourceId: "src-1", role: "support", finding: "支持摘录" },
+    ]);
+    const view = renderCanvas(ordered);
+    const beforeSupport = document.querySelector(
+      '[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="support"]'
+    );
+    const beforeContradict = document.querySelector(
+      '[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="contradict"]'
+    );
+    expect(beforeSupport).toBeInstanceOf(HTMLElement);
+    expect(beforeContradict).toBeInstanceOf(HTMLElement);
+    expect(beforeSupport).not.toBe(beforeContradict);
+    view.rerender(
+      <InvestigationCanvas
+        snapshot={reversed}
+        live={false}
+        finalReport={null}
+        onReverify={() => {}}
+        onBackHome={() => {}}
+      />
+    );
+    const afterSupport = document.querySelector(
+      '[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="support"]'
+    );
+    const afterContradict = document.querySelector(
+      '[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="contradict"]'
+    );
+    expect(afterSupport).toBe(beforeSupport);
+    expect(afterContradict).toBe(beforeContradict);
+    expect(afterSupport?.getAttribute("data-gp-evidence-key")).toBe("claim-1:src-1::support");
+    expect(afterContradict?.getAttribute("data-gp-evidence-key")).toBe("claim-1:src-1::contradict");
+  });
+
+  it("interrupted snapshot 保留已存在 Evidence，不做伪最终归类", () => {
+    const live = settlingBoard();
+    const sourceId = live.claims[0]!.evidence[0]!.sourceId;
+    const view = renderCanvas(live);
+    const before = document.querySelector(`[data-source-id="${sourceId}"]`);
+    const interrupted: InvestigationSnapshotV1 = {
+      ...live,
+      phase: "interrupted",
+      claims: live.claims.map((claim) => ({
+        ...claim,
+        progress: "interrupted",
+        judgment: null,
+        evidence: claim.evidence.map((link) => ({ ...link, role: "unassessed" as const })),
+      })),
+    };
+    view.rerender(
+      <InvestigationCanvas snapshot={interrupted} live={false} finalReport={null} onReverify={() => {}} onBackHome={() => {}} />
+    );
+    const after = document.querySelector(`[data-source-id="${sourceId}"]`);
+    expect(after).toBe(before);
+    expect(after?.getAttribute("data-gp-role")).toBe("unassessed");
+    expect(document.querySelector('[data-gp-group-role="support"]')).toBeNull();
+    expect(document.querySelector('[data-gp-group-role="contradict"]')).toBeNull();
+    expect(document.querySelector("[data-gp-interrupted]")).toBeTruthy();
+    expect(screen.queryByLabelText("调查结论")).toBeNull();
   });
 });
 
