@@ -58,6 +58,16 @@ import {
   type InvestigationBuildInput,
   type InvestigationSnapshotV1,
 } from "../investigation/index.js";
+import {
+  applyCheckabilityRevisions,
+  applyConclusionGate,
+  resolveQuestionAtomKey,
+  runWholeClaimEvaluation,
+  runWholeClaimPlanning,
+  type WholeClaimAuditModelCall,
+  type WholeClaimAuditQuestion,
+  type WholeClaimAuditRun,
+} from "../wholeClaimAudit/index.js";
 
 export type PipelineStep = {
   agent: string;
@@ -191,6 +201,14 @@ export type CasePipelineInput = {
    */
   memoryCandidateStore?: MemoryCandidateStore;
   /**
+   * Whole-Claim Audit（Issue #78）：整句在拆题后继续作为被审计对象。
+   * Planning（检索前，可核查性语义修订）→ Evaluation（初轮后，≤1 次 audit 补查）。
+   * 未注入 callModel 时保持 legacy 行为（fail-open）。
+   */
+  wholeClaimAudit?: {
+    callModel?: WholeClaimAuditModelCall;
+  };
+  /**
    * Screenshot reverse-image lookup (P2 origin gate). Beside searchOne.
    * OCR/text hits must not become image origin.
    */
@@ -217,6 +235,8 @@ export type CasePipelineResult = {
   evidenceLoop?: EvidenceLoopOutcome;
   /** cross exam outcome — G3/P1（未开启 / 无冲突 / 无注入时为 undefined） */
   crossExam?: CrossExamOutcome;
+  /** Whole-Claim Audit outcome — Issue #78（未注入模型时 plan/evaluation 为 null） */
+  wholeClaimAudit: WholeClaimAuditRun;
   runId: string;
   /** Screenshot origin from reverse-image; absent when the case has no image. */
   imageOrigin?: ImageOriginResult;
@@ -321,6 +341,10 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const COMPOSER_RESERVE_MS = 90_000;
   const CROSS_EXAM_MIN_MS = 45_000;
   const EVIDENCE_PASS_MIN_MS = 100_000;
+  /** Whole-Claim Audit（Issue #78）：Planning / Evaluation 各自的最低启动余量。 */
+  const AUDIT_MIN_MS = 45_000;
+  /** 每次 Audit 最多提出的高价值问题数（Issue #78 §8）。 */
+  const MAX_AUDIT_QUESTIONS = 3;
   const timeLeftMs = () =>
     input.deadline == null ? Number.POSITIVE_INFINITY : input.deadline - Date.now();
 
@@ -353,6 +377,41 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   };
   rumorStep.output.claimAtomTypes = forceCheckableAtomTypes(rumorStep.output.claimAtomTypes);
   hooks?.onSelfProof?.(selfProof);
+
+  // Whole-Claim Planning（Issue #78 §4）：self-proof 后、retrieval 决策前。
+  // LM 做可核查性语义判断（normative 是否有外部可核查标准），确定性代码只守不变量：
+  // 只应用 false→true 提升、必须命中真实 kept atom、type 不改写、不创建新原子。
+  // 未注入 / 超预算 / 模型失败 → fail-open，保持 forceCheckable 后的 legacy 行为。
+  const wholeClaimAudit: WholeClaimAuditRun = { plan: null, evaluation: null, extraPass: null, model: "" };
+  const auditCallModel = input.wholeClaimAudit?.callModel;
+  if (auditCallModel && timeLeftMs() > AUDIT_MIN_MS) {
+    const planning = await runWholeClaimPlanning({
+      claim,
+      keptAtoms: Array.isArray(rumorStep.output.claimAtoms) ? (rumorStep.output.claimAtoms as string[]) : [],
+      claimAtomTypes: rumorStep.output.claimAtomTypes,
+      stanceClaimType: rumorStep.output.stanceClaimType,
+      callModel: auditCallModel,
+    });
+    if (planning) {
+      const revised = applyCheckabilityRevisions(
+        rumorStep.output.claimAtomTypes,
+        Array.isArray(rumorStep.output.claimAtoms) ? (rumorStep.output.claimAtoms as string[]) : [],
+        planning.plan.checkabilityRevisions
+      );
+      rumorStep.output.claimAtomTypes = revised.claimAtomTypes;
+      wholeClaimAudit.plan = planning.plan;
+      wholeClaimAudit.model = planning.model;
+      rumorStep.output.wholeClaimAuditPlan = {
+        overallQuestion: planning.plan.overallQuestion,
+        checkabilityRevisions: planning.plan.checkabilityRevisions,
+        appliedRevisions: revised.applied,
+        ignoredRevisions: revised.ignored,
+        missingJustifications: planning.plan.missingJustifications,
+        model: planning.model,
+      };
+    }
+  }
+
   // 里程碑：拆题完成（self-proof 后保留的原子才是用户主张；dropped 不进 claims）。
   emitInvestigation({
     phase: "decomposed",
@@ -636,6 +695,103 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   }
 
   throwIfAborted();
+  // Whole-Claim Evaluation（Issue #78 §7）：初轮核查完成后、报告前。
+  // 回答「原句现在成立到哪里 / 最大缺口 / 下一步查什么」；LM 先验只能生成问题，
+  // 不得成为 Evidence。最多 1 次 audit-driven 补查：只有能映射到真实 kept atom
+  // 的问题才补查（复用 searchOne + bundle 合并 + fact_checker 重判）；纯桥接缺口只记录。
+  let auditUnresolvedGaps: string[] = [];
+  if (auditCallModel && timeLeftMs() > COMPOSER_RESERVE_MS) {
+    const keptAuditAtoms = Array.isArray(rumorStep.output.claimAtoms)
+      ? (rumorStep.output.claimAtoms as string[])
+      : [];
+    const evaluation = await runWholeClaimEvaluation({
+      claim,
+      keptAtoms: keptAuditAtoms,
+      claimAtomTypes: rumorStep.output.claimAtomTypes,
+      subclaimVerdicts: factStep?.output?.subclaimVerdicts,
+      missingJustificationsFromPlan: wholeClaimAudit.plan?.missingJustifications,
+      callModel: auditCallModel,
+    });
+    if (evaluation) {
+      wholeClaimAudit.evaluation = evaluation.evaluation;
+      wholeClaimAudit.model = wholeClaimAudit.model || evaluation.model;
+      const keptKeys = new Set(keptAuditAtoms.map((a) => claimAtomKey(a)));
+      const searchables = evaluation.evaluation.nextQuestions
+        .map((q) => ({ question: q, atomKey: resolveQuestionAtomKey(q, keptAuditAtoms) }))
+        .filter((row): row is { question: WholeClaimAuditQuestion; atomKey: string } =>
+          Boolean(row.atomKey && keptKeys.has(row.atomKey))
+        )
+        .slice(0, MAX_AUDIT_QUESTIONS);
+      const newSourcesByAtomKey: Record<string, number> = {};
+      if (searchables.length > 0 && timeLeftMs() > COMPOSER_RESERVE_MS) {
+        for (const { question, atomKey } of searchables) {
+          if (timeLeftMs() <= COMPOSER_RESERVE_MS) break;
+          const query = (question.suggestedQuery || question.question).trim().slice(0, 160);
+          let result: unknown;
+          try {
+            result = await searchOne(query);
+          } catch {
+            continue;
+          }
+          if ((result as { _source?: string } | null)?._source === "tool-error") continue;
+          const found = buildAtomSearchBundle([{ atom: atomKey, result }], claimAtomKey);
+          const before = (atomSearchBundle.byAtomKey[atomKey] ?? []).length;
+          mergeSourcesIntoBundle(atomSearchBundle, atomKey, found.byAtomKey[atomKey] ?? [], claimAtomKey);
+          const gained = Math.max(0, (atomSearchBundle.byAtomKey[atomKey] ?? []).length - before);
+          if (gained > 0) newSourcesByAtomKey[atomKey] = (newSourcesByAtomKey[atomKey] ?? 0) + gained;
+        }
+        // 拿到有效新证据才重判（同 evidence loop 纪律）；重判失败保留原判词。
+        if (Object.keys(newSourcesByAtomKey).length > 0) {
+          try {
+            const rechecked = await runAgent("fact_checker", steps, search360Result, atomSearchBundle);
+            const recheckedVerdicts = rechecked?.output?.subclaimVerdicts;
+            if (!rechecked.error && rechecked.status !== "failed" && Array.isArray(recheckedVerdicts) && recheckedVerdicts.length > 0) {
+              rechecked.output.subclaimVerdicts = bindAtomEvidenceToVerdicts(
+                recheckedVerdicts as Array<{ claimAtom: string; [key: string]: unknown }>,
+                atomSearchBundle.byAtomKey,
+                claimAtomKey
+              );
+              steps.push(rechecked);
+              factStep = rechecked;
+            }
+          } catch {
+            // 补查证据已入 bundle，报告 / 溯源仍可见。
+          }
+        }
+      }
+      // 结算：无 target 的桥接问题 + 补查没取得新来源的问题 + eval 缺口 → 未解决，
+      // 交给收权门限制整句结论强度（§11）。
+      const resolvedKeys = new Set(Object.keys(newSourcesByAtomKey));
+      const unresolved = new Set<string>();
+      for (const q of evaluation.evaluation.nextQuestions) {
+        const atomKey = resolveQuestionAtomKey(q, keptAuditAtoms);
+        if (!atomKey || !keptKeys.has(atomKey) || !resolvedKeys.has(atomKey)) unresolved.add(q.question);
+      }
+      for (const gap of evaluation.evaluation.missingJustifications) unresolved.add(gap);
+      auditUnresolvedGaps = [...unresolved];
+      wholeClaimAudit.extraPass = {
+        ran: searchables.length > 0,
+        questionsSearched: searchables.length,
+        newSourcesByAtomKey,
+        unresolvedQuestions: auditUnresolvedGaps,
+      };
+      rumorStep.output.wholeClaimAudit = {
+        supportedWhere: evaluation.evaluation.supportedWhere,
+        biggestGap: evaluation.evaluation.biggestGap,
+        missingJustifications: auditUnresolvedGaps,
+        model: evaluation.model,
+      };
+      // 里程碑：audit 补查可能新增来源 / 翻转判词，快照同步一次。
+      emitInvestigation({
+        phase: "judging",
+        claimAtoms: rumorStep.output.claimAtoms,
+        claimAtomTypes: rumorStep.output.claimAtomTypes,
+        atomSearchBundle,
+        subclaimVerdicts: factStep?.output?.subclaimVerdicts,
+      });
+    }
+  }
+
   // Phase 3: ReportComposer (+ fallback owned by adapter)
   const reportStep = await runReport({
     claim,
@@ -683,6 +839,17 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       finalReport._mixedGuard = "有据之真 + 假原子 → mixed（原子级守门）";
     }
   }
+
+  // Whole-Claim 收权门（Issue #78 §11 绝对硬门）：Summary 不得比 Claim / Evidence 层
+  // 更「知道答案」。not-applicable / 无据原子不得支撑整句 hard verdict；audit 未解决的
+  // 桥接缺口把硬 true/false 收成 unverified。结构化状态判定，不读结论文本。
+  // 放置点在 boundTinyRumorVerdict 之前：短谣确定性 force-false 通道不受影响。
+  applyConclusionGate(finalReport, {
+    claimAtoms: rumorStep.output.claimAtoms,
+    claimAtomTypes: rumorStep.output.claimAtomTypes,
+    subclaimVerdicts: atomVerdicts,
+    auditUnresolvedGaps,
+  });
 
   const searchSources = Array.isArray((search360Result as { sources?: unknown[] } | undefined)?.sources)
     ? ((search360Result as { sources: Array<Record<string, unknown>> }).sources)
@@ -816,6 +983,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     memoryCandidates,
     evidenceLoop,
     crossExam,
+    wholeClaimAudit,
     runId,
     imageOrigin,
   };
