@@ -685,7 +685,7 @@ export function PromptInput({
         }}
       />
 
-      <div ref={frameRef} className={styles.frame}>
+      <div ref={frameRef} className={styles.frame} data-prompt-frame>
         {attachments.length > 0 && (
           <div className={styles.chips}>
             {attachments.map((att) => (
@@ -775,6 +775,7 @@ export function PromptInput({
             <button
               type="button"
               className={[styles.iconBtn, styles.plus].join(" ")}
+              data-prompt-add
               data-open={menuOpen || undefined}
               aria-label={uiCopy.addMaterialOrSkill}
               aria-expanded={menuOpen}
@@ -900,6 +901,7 @@ export function PromptInput({
               className={[styles.iconBtn, styles.send, sendActive && styles.sendActive]
                 .filter(Boolean)
                 .join(" ")}
+              data-prompt-send
               aria-label={submitLabel}
               disabled={!sendActive}
               onClick={send}
