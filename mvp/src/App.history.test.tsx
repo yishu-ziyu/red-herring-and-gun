@@ -1,170 +1,232 @@
+/**
+ * App.history.test — 生产 Golden Path 的历史/留存行为（Issue #52 第七节）。
+ * 旧三栏壳的同类测试在 legacy/LegacyDesk.test.tsx；本文件驱动真实 ProductShell / InputStage / 画布。
+ */
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import App from "./App";
 import { requestOrchestrateStream } from "./lib/agentExpansion";
 import { createKnowledgeBase } from "./lib/knowledgeBase";
-import { useReasoning } from "./store/reasoningStore";
+import type { OrchestrateStreamEvent } from "./lib/agentExpansion";
 
-function MemoryProbe() {
-  const { state } = useReasoning();
-  return <output data-testid="private-memory">{[...state.comments, ...state.followUps].map((entry) => entry.text).join(" / ")}</output>;
+vi.mock("./lib/agentExpansion", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./lib/agentExpansion")>(),
+  requestOrchestrateStream: vi.fn(async function* (): AsyncGenerator<OrchestrateStreamEvent> {}),
+}));
+
+const report = { conclusion: "原调查的直接回答", verdictType: "uncertain", credibilityScore: 50, evidenceChain: [] };
+
+let fetcher: ReturnType<typeof vi.fn>;
+let logoutAttempt = 0;
+
+function stubFetch(overrides: {
+  authenticated?: boolean;
+  cases?: unknown[];
+  /** GET /api/case/:id 的响应体；传函数可自定义（含挂起）。 */
+  caseDetail?: unknown | (() => Response);
+  logout?: (attempt: number) => Response | Promise<Response>;
+} = {}) {
+  logoutAttempt = 0;
+  fetcher = vi.fn(async (url: unknown) => {
+    const u = String(url);
+    if (u === "/api/models/health") {
+      return new Response(JSON.stringify({ status: "available", message: "" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (u === "/api/models/list") {
+      return new Response(JSON.stringify({ models: [{ provider: "deepseek", model: "deepseek-v4-pro" }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (u === "/api/auth/email/me") {
+      return new Response(JSON.stringify(overrides.authenticated ? { authenticated: true, email: "alice@example.com" } : { authenticated: false }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (u === "/api/auth/email/logout") {
+      logoutAttempt += 1;
+      const out = overrides.logout?.(logoutAttempt);
+      if (out) return out;
+      return new Response("{}", { status: 200 });
+    }
+    if (u === "/api/cases") {
+      return new Response(JSON.stringify({ cases: overrides.cases ?? [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (/^\/api\/case\/[^/]+$/.test(u)) {
+      if (typeof overrides.caseDetail === "function") return (overrides.caseDetail as () => Response)();
+      if (overrides.caseDetail !== undefined) return new Response(JSON.stringify(overrides.caseDetail), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response("not-found", { status: 404 });
+    }
+    return new Response(JSON.stringify({ remaining: 3, total: 3, used: 0, kind: "guest" }), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  return fetcher;
 }
 
-vi.mock("./components/v3/Dashboard", () => ({ Dashboard: ({ onStartAnalysis }: any) => <><button onClick={() => onStartAnalysis({ text: "同一句原话", links: [], images: [], createdAt: 1 }, {})}>提交原句</button>{["links", "images"].map((kind) => <button key={kind} onClick={() => onStartAnalysis({ text: "同一句原话", links: [], images: [], createdAt: 1, [kind]: [{ id: "new", url: "https://example.com/new", dataUrl: "data:image/png;base64,AA" }] }, {})}>附加{kind}</button>)}</> }));
-vi.mock("./components/v3/AppShell", () => ({ AppShell: ({ cases, account, onSelectCase, onLogout, children }: any) => <div><MemoryProbe /><span>{account?.email ?? "匿名用户"}</span>{cases.map((item: any) => <button key={item.id} onClick={() => onSelectCase(item.id)}>历史：{item.claim}</button>)}<button onClick={onLogout}>退出账户</button>{children}</div> }));
-vi.mock("./lib/agentExpansion", async (original) => ({ ...await original<typeof import("./lib/agentExpansion")>(), requestOrchestrateStream: vi.fn() }));
-const report = { conclusion: "原调查的直接回答", verdictType: "uncertain", credibilityScore: 50, evidenceChain: [] };
+async function submitClaim(text: string) {
+  const editor = await screen.findByRole("textbox", { name: "要调查的说法" });
+  await waitFor(() => expect(editor).toBeEnabled());
+  editor.textContent = text;
+  fireEvent.input(editor);
+  fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
+}
+
+async function completeFirstRun() {
+  await submitClaim("同一句原话");
+  await waitFor(() => expect(requestOrchestrateStream).toHaveBeenCalledTimes(1), { timeout: 5000 });
+  await waitFor(() => expect(localStorage.getItem("red-herring-knowledge-cases:v2:anonymous") ?? "").toContain("原调查的直接回答"));
+}
+
 beforeEach(() => {
   localStorage.clear();
   vi.clearAllMocks();
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ authenticated: false }), { status: 200 })));
-  vi.mocked(requestOrchestrateStream).mockImplementation(async function* () { yield { type: "complete", totalLatencyMs: 1, steps: [], finalReport: report }; });
+  window.history.pushState({}, "", "/");
+  vi.mocked(requestOrchestrateStream).mockImplementation(async function* () {
+    yield { type: "complete", totalLatencyMs: 1, steps: [], finalReport: report } as OrchestrateStreamEvent;
+  });
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-async function complete() {
-  await waitFor(() => expect(screen.getByText("提交原句")).toBeEnabled());
-  fireEvent.click(await screen.findByText("提交原句"));
-  await waitFor(() => expect(requestOrchestrateStream).toHaveBeenCalledTimes(1), { timeout: 5000 });
-  await waitFor(() => expect(localStorage.getItem("red-herring-knowledge-cases:v2:anonymous")).toContain("原调查的直接回答"));
-}
-it("automatically retains anonymous results across remount and reopens without a new run", async () => {
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+it("匿名结果自动留存；重新打开不重新核查", async () => {
+  stubFetch();
   const view = render(<App />);
-  await complete();
+  await completeFirstRun();
+
   view.unmount();
+  stubFetch();
   render(<App />);
-  fireEvent.click(await screen.findByText("历史：同一句原话"));
-  expect(await screen.findByText(/本次未重新核查/)).toHaveTextContent("原调查时间");
-  expect((await screen.findAllByText(/原调查的直接回答/)).length).toBeGreaterThan(0);
+  fireEvent.click(await screen.findByRole("button", { name: /历史记录/ }));
+  fireEvent.click(await screen.findByText("同一句原话"));
+  const hero = await screen.findByLabelText("调查结论");
+  expect(hero.textContent).toContain("原调查的直接回答");
+  expect(screen.getByText(/原调查时间/)).toBeInTheDocument();
   expect(requestOrchestrateStream).toHaveBeenCalledTimes(1);
 });
-it("offers an explicit old investigation or new check choice for identical text", async () => {
+
+it("同一句原话：先问打开旧调查还是重新核查", async () => {
+  stubFetch();
   const view = render(<App />);
-  await complete();
+  await completeFirstRun();
+
   view.unmount();
+  stubFetch();
   render(<App />);
-  await waitFor(() => expect(screen.getByText("提交原句")).toBeEnabled());
-  fireEvent.click(await screen.findByText("提交原句"));
-  expect(screen.getByRole("button", { name: "打开旧调查" })).toBeInTheDocument();
+  await submitClaim("同一句原话");
+  expect(await screen.findByRole("button", { name: "打开旧调查" })).toBeInTheDocument();
   expect(requestOrchestrateStream).toHaveBeenCalledTimes(1);
   fireEvent.click(screen.getByRole("button", { name: "重新核查" }));
   await waitFor(() => expect(requestOrchestrateStream).toHaveBeenCalledTimes(2));
 });
-it("shows persistence failure in the actual completed workspace", async () => {
+
+it("本地留存失败必须可见，不静默", async () => {
   const setItem = Storage.prototype.setItem;
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
     if (key.startsWith("red-herring-knowledge-cases")) throw new Error("quota");
     setItem.call(this, key, value);
   });
   vi.spyOn(console, "error").mockImplementation(() => {});
+  stubFetch();
   render(<App />);
-  await waitFor(() => expect(screen.getByText("提交原句")).toBeEnabled());
-  fireEvent.click(await screen.findByText("提交原句"));
+  await submitClaim("同一句原话");
   expect(await screen.findByRole("alert")).toHaveTextContent("调查自动保存失败");
-  vi.restoreAllMocks();
 });
 
-it("removes account history on logout and ignores a late report response", async () => {
+it("退出后移除账户历史；迟到的旧报告响应不渲染", async () => {
   let resolveReport!: (value: Response) => void;
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-    if (url === "/api/auth/email/me") return new Response(JSON.stringify({ authenticated: true, email: "alice@example.com" }));
-    if (url === "/api/cases") return new Response(JSON.stringify({ cases: [{ caseId: "alice", claim: "账户私有原句", createdAt: 100 }] }));
-    if (url === "/api/case/alice") return new Promise<Response>((resolve) => { resolveReport = resolve; });
-    return new Response("{}");
-  }));
+  stubFetch({
+    authenticated: true,
+    cases: [{ caseId: "alice", claim: "账户私有原句", createdAt: 100 }],
+    caseDetail: () => new Promise<Response>((resolve) => { resolveReport = resolve; }),
+  });
   render(<App />);
-  fireEvent.click(await screen.findByText("历史：账户私有原句"));
-  fireEvent.click(screen.getByText("退出账户"));
-  await screen.findByText("提交原句");
-  resolveReport(new Response(JSON.stringify({ report: { conclusion: "账户私有回答" } })));
-  await waitFor(() => expect(screen.queryByText("历史：账户私有原句")).not.toBeInTheDocument());
+  fireEvent.click(await screen.findByRole("button", { name: /历史记录/ }));
+  fireEvent.click(await screen.findByText("账户私有原句"));
+  // /api/case/alice 仍在途时退出账户
+  fireEvent.click(await screen.findByRole("button", { name: "我的" }));
+  fireEvent.click(await screen.findByText("退出"));
+  await screen.findByText("登录");
+  await act(async () => {
+    resolveReport(new Response(JSON.stringify({ report: { conclusion: "账户私有回答" } }), { status: 200, headers: { "Content-Type": "application/json" } }));
+  });
+  await waitFor(() => expect(screen.queryByText("账户私有原句")).not.toBeInTheDocument());
   expect(screen.queryByText(/账户私有回答/)).not.toBeInTheDocument();
   expect(requestOrchestrateStream).not.toHaveBeenCalled();
 });
 
-it("reopening saved account history does not post a fresh investigation", async () => {
-  await createKnowledgeBase("alice@example.com").saveCase({ id: "saved", claim: "账户历史", rumorType: "健康", diagnosis: { mixedJudgments: [], ambiguousTerms: [], risk: "", whyNotDirectFactCheck: "" }, finalReport: report, handoffSteps: [], credibilityScore: 50, timestamp: 1000, tags: [] });
-  const fetcher = vi.fn(async (url: string) => new Response(JSON.stringify(url === "/api/auth/email/me" ? { authenticated: true, email: "alice@example.com" } : { cases: [] })));
-  vi.stubGlobal("fetch", fetcher);
+it("打开已留存的账户历史不发起新调查、不重复落库", async () => {
+  await createKnowledgeBase("alice@example.com").saveCase({
+    id: "saved",
+    claim: "账户历史",
+    rumorType: "健康",
+    diagnosis: { mixedJudgments: [], ambiguousTerms: [], risk: "", whyNotDirectFactCheck: "" },
+    finalReport: report,
+    handoffSteps: [],
+    credibilityScore: 50,
+    timestamp: 1000,
+    tags: [],
+  });
+  stubFetch({ authenticated: true, cases: [] });
   render(<App />);
-  fireEvent.click(await screen.findByText("历史：账户历史"));
-  await screen.findByLabelText("核心结论");
-  expect(fetcher.mock.calls.some(([url]) => url === "/api/case")).toBe(false);
+  fireEvent.click(await screen.findByRole("button", { name: /历史记录/ }));
+  fireEvent.click(await screen.findByText("账户历史"));
+  const hero = await screen.findByLabelText("调查结论");
+  expect(hero.textContent).toContain("原调查的直接回答");
+  expect(fetcher.mock.calls.some(([url]) => String(url) === "/api/case")).toBe(false);
   expect(requestOrchestrateStream).not.toHaveBeenCalled();
 });
 
-it.each(["links", "images"])("checks new %s instead of offering an old text match", async (kind) => {
+it("带新链接的提交不做同句继承，直接开始新调查", async () => {
+  stubFetch();
   const view = render(<App />);
-  await complete();
+  await completeFirstRun();
+
   view.unmount();
+  stubFetch();
   render(<App />);
-  await waitFor(() => expect(screen.getByText(`附加${kind}`)).toBeEnabled());
-  fireEvent.click(screen.getByText(`附加${kind}`));
-  expect(screen.queryByText("打开旧调查")).not.toBeInTheDocument();
-  await waitFor(() => expect(requestOrchestrateStream).toHaveBeenCalledTimes(2));
+  await submitClaim("同一句原话 https://example.com/new");
+  await waitFor(() => expect(requestOrchestrateStream).toHaveBeenCalledTimes(2), { timeout: 5000 });
+  expect(screen.queryByRole("button", { name: "打开旧调查" })).not.toBeInTheDocument();
 });
 
-it.each(["http", "network"])("keeps the confirmed account when logout fails with %s, and allows retry", async (failure) => {
-  let attempts = 0;
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-    if (url === "/api/auth/email/me") return new Response(JSON.stringify({ authenticated: true, email: "alice@example.com" }));
-    if (url === "/api/auth/email/logout" && attempts++ === 0) {
-      if (failure === "network") throw new Error("offline");
-      return new Response("failed", { status: 500 });
-    }
-    return new Response(JSON.stringify({ cases: [] }));
-  }));
+it.each(["http", "network"] as const)("退出失败（%s）保留账户并允许重试", async (failure) => {
+  stubFetch({
+    authenticated: true,
+    logout: (attempt) => {
+      if (attempt === 1) {
+        if (failure === "network") return Promise.reject(new Error("offline"));
+        return new Response("failed", { status: 500 });
+      }
+      return new Response("{}", { status: 200 });
+    },
+  });
   render(<App />);
-  await screen.findByText("alice@example.com");
-  fireEvent.click(screen.getByText("退出账户"));
+  fireEvent.click(await screen.findByRole("button", { name: "我的" }));
+  fireEvent.click(await screen.findByText("退出"));
   expect(await screen.findByRole("alert")).toHaveTextContent("退出失败");
-  expect(screen.getByText("alice@example.com")).toBeInTheDocument();
-  expect(screen.queryByText("匿名用户")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByText("退出账户"));
-  expect(await screen.findByText("匿名用户")).toBeInTheDocument();
+  expect(screen.getByText("alice")).toBeInTheDocument();
+  fireEvent.click(screen.getByText("退出"));
+  await screen.findByText("登录");
 });
 
-it("ignores an older logout success after a newer account operation", async () => {
+it("迟到的旧退出成功不覆盖更新的账户操作", async () => {
   let resolveOldLogout!: (value: Response) => void;
-  let attempts = 0;
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-    if (url === "/api/auth/email/me") return new Response(JSON.stringify({ authenticated: true, email: "alice@example.com" }));
-    if (url === "/api/auth/email/logout") {
-      if (attempts++ === 0) return new Promise<Response>((resolve) => { resolveOldLogout = resolve; });
+  stubFetch({
+    authenticated: true,
+    logout: (attempt) => {
+      if (attempt === 1) return new Promise<Response>((resolve) => { resolveOldLogout = resolve; });
       return new Response("failed", { status: 500 });
-    }
-    return new Response(JSON.stringify({ cases: [] }));
-  }));
+    },
+  });
   render(<App />);
-  await screen.findByText("alice@example.com");
-  fireEvent.click(screen.getByText("退出账户"));
-  fireEvent.click(screen.getByText("退出账户"));
+  fireEvent.click(await screen.findByRole("button", { name: "我的" }));
+  await act(async () => {
+    fireEvent.click(await screen.findByText("退出"));
+  });
+  fireEvent.click(await screen.findByText("退出"));
   await screen.findByRole("alert");
-  await act(async () => { resolveOldLogout(new Response("{}")); });
-  await waitFor(() => expect(screen.getByText("alice@example.com")).toBeInTheDocument());
-  expect(screen.queryByText("匿名用户")).not.toBeInTheDocument();
-});
-
-it("hides private memory until identity resolves and restores the right scope after failed and successful logout", async () => {
-  localStorage.setItem("reasoning-v3-comments:v2:account:alice%40example.com", JSON.stringify([{ id: "c", nodeId: "n", text: "Alice 私人评论", createdAt: 1 }]));
-  localStorage.setItem("reasoning-v3-followups:v2:anonymous", JSON.stringify([{ id: "f", nodeId: "n", text: "访客追加", timestamp: 1 }]));
-  let resolveMe!: (response: Response) => void;
-  let resolveLogout!: (response: Response) => void;
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
-    if (url === "/api/auth/email/me") return new Promise<Response>((resolve) => { resolveMe = resolve; });
-    if (url === "/api/auth/email/logout") return new Promise<Response>((resolve) => { resolveLogout = resolve; });
-    return new Response(JSON.stringify({ cases: [] }));
-  }));
-  render(<App />);
-  expect(screen.getByTestId("private-memory")).toBeEmptyDOMElement();
-  await act(async () => { resolveMe(new Response(JSON.stringify({ authenticated: true, email: "alice@example.com" }))); });
-  expect(screen.getByTestId("private-memory")).toHaveTextContent("Alice 私人评论");
-  fireEvent.click(screen.getByText("退出账户"));
-  expect(screen.getByTestId("private-memory")).toBeEmptyDOMElement();
-  await act(async () => { resolveLogout(new Response("failed", { status: 500 })); });
-  expect(screen.getByTestId("private-memory")).toHaveTextContent("Alice 私人评论");
-  fireEvent.click(screen.getByText("退出账户"));
-  await act(async () => { resolveLogout(new Response("{}")); });
-  expect(screen.getByTestId("private-memory")).toHaveTextContent("访客追加");
-  expect(screen.getByTestId("private-memory")).not.toHaveTextContent("Alice");
+  await act(async () => {
+    resolveOldLogout(new Response("{}", { status: 200 }));
+  });
+  await waitFor(() => expect(screen.getByText("alice")).toBeInTheDocument());
+  expect(screen.queryByText("登录")).not.toBeInTheDocument();
 });
