@@ -1168,8 +1168,10 @@ describe("Issue #63 Evidence Settling：同一证据节点身份", () => {
   });
 
   it("Evidence 点击仍打开 Source Drawer", () => {
-    renderCanvas(settlingBoard());
-    fireEvent.click(document.querySelector('[data-source-id="src-1"]')!);
+    const board = settlingBoard();
+    const sourceId = board.sources[0]!.id;
+    renderCanvas(board);
+    fireEvent.click(document.querySelector(`[data-source-id="${sourceId}"]`)!);
     const drawer = document.querySelector(".gp-drawer--source")!;
     expect(drawer).toBeTruthy();
     expect(within(drawer as HTMLElement).getByText("来源甲")).toBeTruthy();
@@ -1225,82 +1227,85 @@ describe("Issue #63 Evidence Settling：同一证据节点身份", () => {
 
   it("1× s1 → 2× s1：不能把旧节点续到任一新节点上", () => {
     const base = settlingBoard();
-    const one = withClaimEvidence(base, [{ sourceId: "src-1", role: "unassessed" }]);
+    const s1 = base.sources[0]!.id;
+    const one = withClaimEvidence(base, [{ sourceId: s1, role: "unassessed" }]);
     const two = withClaimEvidence(base, [
-      { sourceId: "src-1", role: "support" },
-      { sourceId: "src-1", role: "contradict" },
+      { sourceId: s1, role: "support" },
+      { sourceId: s1, role: "contradict" },
     ]);
     const view = renderCanvas(one);
-    const before = document.querySelector('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]');
+    const before = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${s1}"]`);
     expect(before).toBeInstanceOf(HTMLElement);
     expect(before?.getAttribute("data-gp-identity")).toBe("stable");
-    expect(before?.getAttribute("data-gp-evidence-key")).toBe("claim-1:src-1");
+    expect(before?.getAttribute("data-gp-evidence-key")).toBe(`claim-1:${s1}`);
     view.rerender(
       <InvestigationCanvas snapshot={two} live={false} finalReport={null} onReverify={() => {}} onBackHome={() => {}} />
     );
     const afterNodes = [
-      ...document.querySelectorAll('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]'),
+      ...document.querySelectorAll(`[data-gp-claim-id="claim-1"] [data-source-id="${s1}"]`),
     ];
     expect(afterNodes).toHaveLength(2);
     expect(afterNodes[0]).not.toBe(before);
     expect(afterNodes[1]).not.toBe(before);
     expect(document.contains(before)).toBe(false);
     expect(afterNodes.map((node) => node.getAttribute("data-gp-identity"))).toEqual(["relation", "relation"]);
-    expect(afterNodes.every((node) => node.getAttribute("data-gp-evidence-key") !== "claim-1:src-1")).toBe(true);
+    expect(afterNodes.every((node) => node.getAttribute("data-gp-evidence-key") !== `claim-1:${s1}`)).toBe(true);
     expect(afterNodes.every((node) => !node.getAttribute("data-gp-evidence-key")?.includes("#"))).toBe(true);
     expect(afterNodes.every((node) => node.getAttribute("data-gp-settling") == null)).toBe(true);
   });
 
   it("2× s1 → 1× s1：剩下那一行不得错误复用原先任一条", () => {
     const base = settlingBoard();
+    const s1 = base.sources[0]!.id;
     const two = withClaimEvidence(base, [
-      { sourceId: "src-1", role: "support" },
-      { sourceId: "src-1", role: "contradict" },
+      { sourceId: s1, role: "support" },
+      { sourceId: s1, role: "contradict" },
     ]);
-    const one = withClaimEvidence(base, [{ sourceId: "src-1", role: "support" }]);
+    const one = withClaimEvidence(base, [{ sourceId: s1, role: "support" }]);
     const view = renderCanvas(two);
     const beforeNodes = [
-      ...document.querySelectorAll('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]'),
+      ...document.querySelectorAll(`[data-gp-claim-id="claim-1"] [data-source-id="${s1}"]`),
     ];
     expect(beforeNodes).toHaveLength(2);
     const beforeSupport = document.querySelector(
-      '[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="support"]'
+      `[data-gp-claim-id="claim-1"] [data-source-id="${s1}"][data-gp-role="support"]`
     );
     const beforeContradict = document.querySelector(
-      '[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="contradict"]'
+      `[data-gp-claim-id="claim-1"] [data-source-id="${s1}"][data-gp-role="contradict"]`
     );
     expect(beforeSupport).toBeInstanceOf(HTMLElement);
     expect(beforeContradict).toBeInstanceOf(HTMLElement);
     view.rerender(
       <InvestigationCanvas snapshot={one} live={false} finalReport={null} onReverify={() => {}} onBackHome={() => {}} />
     );
-    const after = document.querySelector('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]');
+    const after = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${s1}"]`);
     expect(after).toBeInstanceOf(HTMLElement);
     expect(after).not.toBe(beforeSupport);
     expect(after).not.toBe(beforeContradict);
     expect(document.contains(beforeSupport)).toBe(false);
     expect(document.contains(beforeContradict)).toBe(false);
     expect(after?.getAttribute("data-gp-identity")).toBe("stable");
-    expect(after?.getAttribute("data-gp-evidence-key")).toBe("claim-1:src-1");
+    expect(after?.getAttribute("data-gp-evidence-key")).toBe(`claim-1:${s1}`);
     expect(after?.getAttribute("data-gp-role")).toBe("support");
   });
 
   it("duplicate reorder：可区分的两条 s1 不得因数组顺序互换身份", () => {
     const base = settlingBoard();
+    const s1 = base.sources[0]!.id;
     const ordered = withClaimEvidence(base, [
-      { sourceId: "src-1", role: "support", finding: "支持摘录" },
-      { sourceId: "src-1", role: "contradict", finding: "反驳摘录" },
+      { sourceId: s1, role: "support", finding: "支持摘录" },
+      { sourceId: s1, role: "contradict", finding: "反驳摘录" },
     ]);
     const reversed = withClaimEvidence(base, [
-      { sourceId: "src-1", role: "contradict", finding: "反驳摘录" },
-      { sourceId: "src-1", role: "support", finding: "支持摘录" },
+      { sourceId: s1, role: "contradict", finding: "反驳摘录" },
+      { sourceId: s1, role: "support", finding: "支持摘录" },
     ]);
     const view = renderCanvas(ordered);
     const beforeSupport = document.querySelector(
-      '[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="support"]'
+      `[data-gp-claim-id="claim-1"] [data-source-id="${s1}"][data-gp-role="support"]`
     );
     const beforeContradict = document.querySelector(
-      '[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="contradict"]'
+      `[data-gp-claim-id="claim-1"] [data-source-id="${s1}"][data-gp-role="contradict"]`
     );
     expect(beforeSupport).toBeInstanceOf(HTMLElement);
     expect(beforeContradict).toBeInstanceOf(HTMLElement);
@@ -1315,15 +1320,15 @@ describe("Issue #63 Evidence Settling：同一证据节点身份", () => {
       />
     );
     const afterSupport = document.querySelector(
-      '[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="support"]'
+      `[data-gp-claim-id="claim-1"] [data-source-id="${s1}"][data-gp-role="support"]`
     );
     const afterContradict = document.querySelector(
-      '[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="contradict"]'
+      `[data-gp-claim-id="claim-1"] [data-source-id="${s1}"][data-gp-role="contradict"]`
     );
     expect(afterSupport).toBe(beforeSupport);
     expect(afterContradict).toBe(beforeContradict);
-    expect(afterSupport?.getAttribute("data-gp-evidence-key")).toBe("claim-1:src-1::support");
-    expect(afterContradict?.getAttribute("data-gp-evidence-key")).toBe("claim-1:src-1::contradict");
+    expect(afterSupport?.getAttribute("data-gp-evidence-key")).toBe(`claim-1:${s1}::support`);
+    expect(afterContradict?.getAttribute("data-gp-evidence-key")).toBe(`claim-1:${s1}::contradict`);
   });
 
   it("interrupted snapshot 保留已存在 Evidence，不做伪最终归类", () => {
@@ -1681,13 +1686,14 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
 
   it("duplicate source 无法唯一 resolve 时不猜 relation、不编 finding", async () => {
     const beforeSnap = settlingBoard();
-    const one = withClaimEvidence(beforeSnap, [{ sourceId: "src-1", role: "unassessed" }]);
+    const s1 = beforeSnap.sources[0]!.id;
+    const one = withClaimEvidence(beforeSnap, [{ sourceId: s1, role: "unassessed" }]);
     const two = withClaimEvidence(beforeSnap, [
-      { sourceId: "src-1", role: "support", finding: "不该被猜进来的支持说明" },
-      { sourceId: "src-1", role: "contradict", finding: "也不该被猜进来的反驳说明" },
+      { sourceId: s1, role: "support", finding: "不该被猜进来的支持说明" },
+      { sourceId: s1, role: "contradict", finding: "也不该被猜进来的反驳说明" },
     ]);
     const view = renderCanvas(one);
-    const row = document.querySelector('[data-source-id="src-1"]') as HTMLButtonElement;
+    const row = document.querySelector(`[data-source-id="${s1}"]`) as HTMLButtonElement;
     fireEvent.click(row);
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
     const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
@@ -1878,3 +1884,67 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     expect(still.textContent).not.toContain("反驳关系仍在");
   });
 });
+
+describe("Issue #76 source identity × #63 Evidence Settling", () => {
+  it("同 Claim + 同 URL：investigating unassessed → judging support，sourceId 不变且 DOM before === after", () => {
+    const atom = "维生素C能治感冒";
+    const urlX = "https://ltxc.cqnu.edu.cn/info/1140/7130.htm";
+    const urlY = "https://other.example/earlier";
+    const urlZ = "https://other.example/later";
+    const pack = [
+      src(urlY, "先出现的检索", "y"),
+      src(urlZ, "后出现的检索", "z"),
+      src(urlX, "重庆师大维生素C", "该页把维生素C写成支持材料"),
+    ];
+    const investigating = buildInvestigationSnapshot(
+      {
+        originalClaim: `${atom}。`,
+        phase: "investigating",
+        claimAtoms: [atom],
+        atomSearchBundle: { atomsSearched: [atom], byAtomKey: { [atom]: pack } },
+      },
+      { claimAtomKeyFn: (s) => s.trim() }
+    );
+    const judging = buildInvestigationSnapshot(
+      {
+        originalClaim: `${atom}。`,
+        phase: "judging",
+        claimAtoms: [atom],
+        atomSearchBundle: { atomsSearched: [atom], byAtomKey: { [atom]: pack } },
+        subclaimVerdicts: [
+          {
+            claimAtom: atom,
+            verdict: "true",
+            evidence: "该页把维生素C写成支持材料[1]。",
+            supportingSources: [src(urlX, "重庆师大维生素C", "该页把维生素C写成支持材料")],
+            contradictingSources: [],
+            evidenceGaps: [],
+          },
+        ],
+      },
+      { claimAtomKeyFn: (s) => s.trim() }
+    );
+    const sourceId = investigating.sources.find((s) => s.url === urlX)!.id;
+    expect(sourceId).toBe(judging.sources.find((s) => s.url === urlX)!.id);
+    expect(investigating.sources.find((s) => s.url === urlY)!.id).toBe(
+      judging.sources.find((s) => s.url === urlY)!.id
+    );
+
+    const view = renderCanvas(investigating);
+    const before = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    expect(before).toBeInstanceOf(HTMLElement);
+    expect(before?.getAttribute("data-gp-role")).toBe("unassessed");
+    expect(before?.getAttribute("data-gp-identity")).toBe("stable");
+    expect(before?.getAttribute("data-gp-evidence-key")).toBe(`claim-1:${sourceId}`);
+
+    view.rerender(
+      <InvestigationCanvas snapshot={judging} live={false} finalReport={null} onReverify={() => {}} onBackHome={() => {}} />
+    );
+    const after = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    expect(after).toBe(before);
+    expect(after?.getAttribute("data-gp-role")).toBe("support");
+    expect(after?.getAttribute("data-gp-identity")).toBe("stable");
+    expect(after?.getAttribute("data-gp-evidence-key")).toBe(`claim-1:${sourceId}`);
+  });
+});
+

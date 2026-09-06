@@ -10,9 +10,9 @@
  * casefile Stance.stance（support/refute/context-only）；judgment ↔ ClaimVerdict.verdict。
  * CaseFile 未覆盖的语义（Evidence Gap / Conflict / phase / conclusion）为本契约一等对象。
  *
- * 镜像约束：本目录（schema.ts / build.ts / invariants.ts / index.ts）被整份镜像到
- * 生产 `mvp/server/src/lib/investigation/`（部署只打包 mvp/，server 不能运行时依赖
- * 工作区包）。两侧由 drift-guard 测试做字节级一致校验；改动必须两侧同步。
+ * 镜像约束：本目录（schema.ts / build.ts / invariants.ts / sourceIdentity.ts / index.ts）
+ * 被整份镜像到生产 `mvp/server/src/lib/investigation/`（部署只打包 mvp/，server 不能
+ * 运行时依赖工作区包）。两侧由 drift-guard 测试做字节级一致校验；改动必须两侧同步。
  */
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
@@ -63,6 +63,7 @@ export type InvestigationEvidenceRole = Static<typeof InvestigationEvidenceRoleS
 
 export const InvestigationSourceSchema = Type.Object(
   {
+    /** 由规范化 URL 确定性派生；跨 Snapshot 稳定，不是注册序号。 */
     id: Type.String(),
     url: Type.String(),
     title: Type.String(),
