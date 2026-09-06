@@ -253,3 +253,37 @@ describe("E3 负向扫描：生产 Golden Path 源码无实现层语义", () => 
     expect(legacy).toContain("Dashboard");
   });
 });
+
+describe("Issue #61 [Reset 4A] 生产视觉基础断言", () => {
+  it("golden-path.css 包含 Quiet Editorial tokens，废止大面积语义背景", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const css = readFileSync(join(process.cwd(), "src", "goldenPath", "golden-path.css"), "utf8");
+    expect(css).toContain("--gp-canvas");
+    expect(css).toContain("--gp-hairline");
+    expect(css).toContain("--gp-semantic-support");
+    expect(css).toContain("--gp-semantic-contradict");
+    expect(css).toContain("--gp-focus-ring");
+    expect(css).toContain("prefers-reduced-motion");
+    expect(css).not.toMatch(/--gp-positive-bg|--gp-negative-bg|--gp-mixed-bg/);
+    expect(css).not.toMatch(/transition:\s*all\b/);
+  });
+
+  it("InputStage 正确渲染单层功能 Surface、提示语与示例", async () => {
+    const { InputStage } = await import("./InputStage");
+    const onSubmit = vi.fn();
+    render(<InputStage onSubmit={onSubmit} />);
+    expect(screen.getByRole("heading", { level: 1 })).toBeTruthy();
+    expect(document.querySelector(".gp-input-card")).toBeTruthy();
+    expect(document.querySelector(".gp-examples")).toBeTruthy();
+
+    const examples = document.querySelectorAll(".gp-example");
+    expect(examples.length).toBeGreaterThan(0);
+    fireEvent.click(examples[0]);
+    expect(examples[0].classList.contains("is-active")).toBe(true);
+
+    const input = document.querySelector("#claim-input") as HTMLElement;
+    expect(input).toBeTruthy();
+  });
+});
+
