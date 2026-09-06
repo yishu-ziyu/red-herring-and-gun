@@ -4,7 +4,7 @@
  * 完成时 ConclusionHero 出现在最上层，下面仍是刚才那套命题与证据。
  * interrupted：保留已获真实数据、无伪结论、可重试。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   InvestigationEvidenceLink,
   InvestigationSnapshotV1,
@@ -16,7 +16,7 @@ import { phaseHeadline, readImageOrigin, type ImageOriginView } from "./snapshot
 import { buildClaimTraceSegments } from "./claimTrace";
 import { ClaimSection } from "./ClaimSection";
 import { ConclusionHero } from "./ConclusionHero";
-import { SourceDrawer } from "./SourceDrawer";
+import { SourceDrawer, resolveSourceDrawerView } from "./SourceDrawer";
 
 type InvestigationCanvasProps = {
   snapshot: InvestigationSnapshotV1;
@@ -29,7 +29,7 @@ type InvestigationCanvasProps = {
   onBackHome: () => void;
 };
 
-type DrawerState = { source: InvestigationSource; relation: string } | null;
+type DrawerState = { claimId: string; sourceId: string; role: InvestigationEvidenceLink["role"] } | null;
 
 export function InvestigationCanvas({
   snapshot,
@@ -48,6 +48,8 @@ export function InvestigationCanvas({
   const [expandedTraceClaimId, setExpandedTraceClaimId] = useState<string | null>(null);
   // Pointer hover wins. Keyboard focus clears stale hover so a parked pointer cannot hijack Tab. Touch uses expanded-active.
   const tracedClaimId = hoverClaimId ?? focusClaimId ?? expandedTraceClaimId;
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const lastViewRef = useRef<ReturnType<typeof resolveSourceDrawerView>>(null);
 
   const handleHeaderHover = (claimId: string | null) => {
     setHoverClaimId(claimId);
@@ -74,12 +76,26 @@ export function InvestigationCanvas({
   const conclusion = snapshot.conclusion;
   const complete = snapshot.phase === "complete" && Boolean(conclusion);
   const interrupted = snapshot.phase === "interrupted";
-  const openSource = (link: InvestigationEvidenceLink, source: InvestigationSource, claimId: string) => {
-    const claim = snapshot.claims.find((c) => c.id === claimId);
-    const relation = relationWord(link.role);
-    void claim;
-    setDrawer({ source, relation });
+  const openSource = (
+    link: InvestigationEvidenceLink,
+    source: InvestigationSource,
+    claimId: string,
+    trigger: HTMLElement,
+  ) => {
+    triggerRef.current = trigger;
+    setDrawer({ claimId, sourceId: source.id, role: link.role });
   };
+  const closeDrawer = useCallback(() => {
+    const trigger = triggerRef.current;
+    setDrawer(null);
+    window.setTimeout(() => trigger?.focus(), 0);
+  }, []);
+
+  const liveView = drawer
+    ? resolveSourceDrawerView(snapshot.claims, snapshot.sources, drawer.claimId, drawer.sourceId, drawer.role)
+    : null;
+  if (liveView) lastViewRef.current = liveView;
+  const drawerView = liveView ?? (drawer ? lastViewRef.current : null);
 
   return (
     <div className="gp-canvas" data-gp-phase={snapshot.phase}>
@@ -200,24 +216,16 @@ export function InvestigationCanvas({
         {announce}
       </p>
 
-      {drawer ? (
-        <SourceDrawer source={drawer.source} relationLabel={drawer.relation} onClose={() => setDrawer(null)} />
+      {drawer && drawerView ? (
+        <SourceDrawer
+          key={`${drawer.claimId}:${drawer.sourceId}:${drawer.role}`}
+          view={drawerView}
+          resolveState={liveView ? "live" : "held"}
+          onClose={closeDrawer}
+        />
       ) : null}
     </div>
   );
-}
-
-function relationWord(role: InvestigationEvidenceLink["role"]): string {
-  switch (role) {
-    case "support":
-      return "支持";
-    case "contradict":
-      return "反驳";
-    case "unassessed":
-      return "待核对";
-    default:
-      return "相关材料";
-  }
 }
 
 function renderOriginalClaim(snapshot: InvestigationSnapshotV1, tracedClaimId: string | null) {

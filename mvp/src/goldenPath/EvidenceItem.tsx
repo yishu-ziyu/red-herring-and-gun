@@ -14,6 +14,7 @@ const SETTLE_TRANSITION = {
 };
 
 type EvidenceItemProps = {
+  claimId: string;
   link: InvestigationEvidenceLink;
   source: InvestigationSource | undefined;
   evidenceKey: string;
@@ -21,10 +22,11 @@ type EvidenceItemProps = {
   order: number;
   layoutEnabled: boolean;
   groupLabelId: string;
-  onSelect: (link: InvestigationEvidenceLink, source: InvestigationSource) => void;
+  onSelect: (link: InvestigationEvidenceLink, source: InvestigationSource, trigger: HTMLElement) => void;
 };
 
 export function EvidenceItem({
+  claimId,
   link,
   source,
   evidenceKey,
@@ -43,6 +45,7 @@ export function EvidenceItem({
     <motion.button
       type="button"
       className={`gp-evidence-item is-${link.role}`}
+      id={`gp-ev-${evidenceKey}`}
       style={{ order }}
       layout={layoutEnabled ? "position" : false}
       layoutDependency={link.role}
@@ -53,14 +56,16 @@ export function EvidenceItem({
       data-gp-unreachable={unreachable || undefined}
       data-gp-role={link.role}
       data-source-id={link.sourceId}
+      data-gp-source-id={link.sourceId}
+      data-gp-evidence-claim={claimId}
       data-gp-evidence-key={evidenceKey}
       data-gp-identity={identity}
       data-gp-settling={settling ? "1" : undefined}
       aria-describedby={groupLabelId}
       aria-label={`${roleLabel}：${title}`}
-      onClick={() => {
+      onClick={(event) => {
         if (!source) return;
-        onSelect(link, source);
+        onSelect(link, source, event.currentTarget);
       }}
     >
       <span className={`gp-evidence-dot is-${link.role}`} aria-hidden="true">

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildInvestigationSnapshot, type InvestigationSnapshotV1 } from "@rhg/core/investigation";
 import { InvestigationCanvas } from "./InvestigationCanvas";
@@ -938,3 +938,353 @@ describe("Issue #63 Evidence Settling：同一证据节点身份", () => {
   });
 });
 
+function stubMatchMedia(opts: { mobile?: boolean; reduced?: boolean }) {
+  const native = window.matchMedia.bind(window);
+  window.matchMedia = ((query: string) => {
+    const matches = query.includes("max-width: 768px")
+      ? Boolean(opts.mobile)
+      : query.includes("prefers-reduced-motion")
+        ? Boolean(opts.reduced)
+        : native(query).matches;
+    return {
+      matches,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    };
+  }) as typeof window.matchMedia;
+}
+
+async function openFirstEvidence(role?: string) {
+  const selector = role ? `.gp-evidence-item[data-gp-role="${role}"]` : ".gp-evidence-item";
+  const row = document.querySelector(selector) as HTMLButtonElement;
+  expect(row).toBeTruthy();
+  row.focus();
+  fireEvent.click(row);
+  const sourceId = row.getAttribute("data-gp-source-id");
+  const claimId = row.getAttribute("data-gp-evidence-claim");
+  await waitFor(() => {
+    const drawer = document.querySelector(".gp-drawer--source");
+    expect(drawer?.getAttribute("data-gp-source-id")).toBe(sourceId);
+    expect(drawer?.getAttribute("data-gp-claim-id")).toBe(claimId);
+  });
+  await waitFor(() => {
+    expect(document.querySelector(".gp-drawer--source")?.contains(document.activeElement)).toBe(true);
+  });
+  return row;
+}
+
+describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
+  const nativeMatchMedia = window.matchMedia;
+  afterEach(() => {
+    window.matchMedia = nativeMatchMedia;
+  });
+
+  it("1. 点击 Evidence 打开对应该 Claim / Link / Source 的 Drawer", async () => {
+    renderCanvas(refutedComplete());
+    const row = await openFirstEvidence("contradict");
+    const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(drawer.getAttribute("data-gp-claim-id")).toBe(row.getAttribute("data-gp-evidence-claim"));
+    expect(drawer.getAttribute("data-gp-source-id")).toBe(row.getAttribute("data-gp-source-id"));
+    expect(within(drawer).getByText("世卫组织辟谣平台：无此结论")).toBeTruthy();
+    expect(within(drawer).getByText("喝隔夜水会致癌")).toBeTruthy();
+    expect(within(drawer).getByText(/对这条命题：反驳/)).toBeTruthy();
+    expect(drawer.querySelector('a[href="https://piyao.org.cn/overnight-water"]')).toBeTruthy();
+  });
+
+  it("2. support / contradict / context-only 关系绑在当前命题，不是来源全局 verdict", async () => {
+    const mixed = mixedComplete();
+    const extra = {
+      id: "src-context",
+      url: "https://context.example/note",
+      title: "背景材料",
+      excerpt: "只提供背景，不单独支撑或反驳。",
+    };
+    mixed.sources = [...mixed.sources, extra];
+    mixed.claims[0]!.evidence.push({ sourceId: extra.id, role: "context-only" });
+    renderCanvas(mixed);
+
+    await openFirstEvidence("support");
+    expect(document.querySelector(".gp-drawer--source")!.getAttribute("data-gp-role")).toBe("support");
+    expect(within(document.querySelector(".gp-drawer--source") as HTMLElement).getByText(/对这条命题：支持/)).toBeTruthy();
+    fireEvent.click(document.querySelector("[data-gp-source-close]")!);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
+
+    const claimB = document.querySelector('[data-gp-claim-id="claim-2"]') as HTMLElement;
+    fireEvent.click(within(claimB).getByRole("button"));
+    await openFirstEvidence("contradict");
+    expect(within(document.querySelector(".gp-drawer--source") as HTMLElement).getByText(/对这条命题：反驳/)).toBeTruthy();
+    fireEvent.click(document.querySelector("[data-gp-source-close]")!);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
+
+    await openFirstEvidence("context-only");
+    const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(drawer.getAttribute("data-gp-role")).toBe("context-only");
+    expect(within(drawer).getByText(/对这条命题：相关材料/)).toBeTruthy();
+    expect(drawer.textContent).not.toMatch(/来源总体|全局/);
+  });
+
+  it("3. finding 有值才显示「为什么这条证据重要」", async () => {
+    const withFinding = supportedComplete();
+    expect(withFinding.claims[0]!.evidence[0]!.finding).toBeTruthy();
+    renderCanvas(withFinding);
+    await openFirstEvidence("support");
+    const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(drawer.querySelector('[data-gp-source-section="finding"]')).toBeTruthy();
+    expect(within(drawer).getByText("为什么这条证据重要")).toBeTruthy();
+    expect(within(drawer).getByText(/氧气占 20.9%/)).toBeTruthy();
+  });
+
+  it("4. limitation 有值才显示；无值时整节不渲染", async () => {
+    const none = supportedComplete();
+    renderCanvas(none);
+    await openFirstEvidence("support");
+    expect(document.querySelector('[data-gp-source-section="limitation"]')).toBeNull();
+    expect(document.querySelector(".gp-drawer--source")!.textContent).not.toContain("它不能证明什么");
+    cleanup();
+
+    const withLimit = supportedComplete();
+    withLimit.claims[0]!.evidence[0]!.limitation = "不能推出室内空气比例。";
+    renderCanvas(withLimit);
+    await openFirstEvidence("support");
+    const section = document.querySelector('[data-gp-source-section="limitation"]') as HTMLElement;
+    expect(section).toBeTruthy();
+    expect(within(section).getByText("它不能证明什么")).toBeTruthy();
+    expect(within(section).getByText("不能推出室内空气比例。")).toBeTruthy();
+  });
+
+  it("5. 没有 excerpt 时不出现空摘录容器", async () => {
+    const base = supportedComplete();
+    const snap = {
+      ...base,
+      sources: base.sources.map(({ excerpt: _excerpt, ...source }) => source),
+    };
+    renderCanvas(snap);
+    await openFirstEvidence();
+    const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(drawer.querySelector('[data-gp-source-section="excerpt"]')).toBeNull();
+    expect(drawer.querySelector(".gp-source-excerpt")).toBeNull();
+    expect(drawer.textContent).not.toContain("原文摘录");
+  });
+
+  it("6. reachable=false 说明原链接打不开，不伪造来源结论", async () => {
+    const snapshot = investigatingUnassessed();
+    const withDead = {
+      ...snapshot,
+      sources: snapshot.sources.map((s) => ({ ...s, reachable: false as const })),
+    };
+    renderCanvas(withDead);
+    await openFirstEvidence();
+    const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(within(drawer).getByText(/原始链接目前打不开/)).toBeTruthy();
+    expect(drawer.textContent).not.toContain("已经核实");
+    expect(drawer.querySelector(".gp-source-unreachable")?.getAttribute("role")).toBe("status");
+  });
+
+  it("7. 打开后焦点进入 dialog", async () => {
+    renderCanvas(refutedComplete());
+    await openFirstEvidence();
+    const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(dialog.getAttribute("role")).toBe("dialog");
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(dialog.getAttribute("aria-labelledby")).toBeTruthy();
+  });
+
+  it("8. Tab 在 dialog 内闭环", async () => {
+    renderCanvas(refutedComplete());
+    await openFirstEvidence();
+    const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
+    const closeBtn = dialog.querySelector("[data-gp-source-close]") as HTMLElement;
+    const link = dialog.querySelector("a") as HTMLElement;
+    expect(document.activeElement).toBe(closeBtn);
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(document.activeElement).toBe(link);
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(document.activeElement).toBe(closeBtn);
+    expect(document.querySelector(".gp-canvas-inner")?.hasAttribute("inert")).toBe(true);
+  });
+
+  it("9. Shift+Tab 在 dialog 内闭环", async () => {
+    renderCanvas(refutedComplete());
+    await openFirstEvidence();
+    const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
+    const closeBtn = dialog.querySelector("[data-gp-source-close]") as HTMLElement;
+    const link = dialog.querySelector("a") as HTMLElement;
+    expect(document.activeElement).toBe(closeBtn);
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(link);
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(closeBtn);
+  });
+
+  it("10. Escape 关闭 Drawer", async () => {
+    renderCanvas(refutedComplete());
+    await openFirstEvidence();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
+  });
+
+  it("11. 点击 scrim 关闭 Drawer", async () => {
+    renderCanvas(refutedComplete());
+    await openFirstEvidence();
+    fireEvent.click(document.querySelector('[data-gp-scrim="source"]')!);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
+  });
+
+  it("12. 关闭后焦点回到原触发 Evidence 行", async () => {
+    renderCanvas(refutedComplete());
+    const row = await openFirstEvidence();
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(row));
+  });
+
+  it("13. snapshot 更新时 Drawer 不自动关闭、不抢焦点", async () => {
+    const first = refutedComplete();
+    const view = render(
+      <InvestigationCanvas
+        snapshot={first}
+        live={false}
+        finalReport={null}
+        onReverify={() => {}}
+        onBackHome={() => {}}
+      />,
+    );
+    await openFirstEvidence();
+    const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
+    const closeBtn = dialog.querySelector("[data-gp-source-close]") as HTMLElement;
+    expect(document.activeElement).toBe(closeBtn);
+
+    const next = {
+      ...first,
+      sources: first.sources.map((source) => ({ ...source, title: `${source.title}（更新）` })),
+    };
+    view.rerender(
+      <InvestigationCanvas
+        snapshot={next}
+        live={false}
+        finalReport={null}
+        onReverify={() => {}}
+        onBackHome={() => {}}
+      />,
+    );
+    const still = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(still).toBeTruthy();
+    expect(within(still).getByText(/更新/)).toBeTruthy();
+    expect(still.contains(document.activeElement)).toBe(true);
+  });
+
+  it("14. 窄屏 matchMedia 下是 Bottom Sheet 结构，且 CSS 有贴底约束", async () => {
+    stubMatchMedia({ mobile: true });
+    renderCanvas(refutedComplete());
+    await openFirstEvidence();
+    const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(drawer.getAttribute("data-gp-placement")).toBe("sheet");
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const css = readFileSync(join(process.cwd(), "src", "goldenPath", "golden-path.css"), "utf8");
+    expect(css).toMatch(/@media\s*\(max-width:\s*768px\)[\s\S]*\.gp-drawer--source[\s\S]*max-height:\s*85vh/);
+    expect(css).toMatch(/@media\s*\(max-width:\s*768px\)[\s\S]*\.gp-drawer--source[\s\S]*translateY\(100%\)/);
+  });
+
+  it("15. reduced-motion 下仍可打开、关闭，焦点行为不变", async () => {
+    stubMatchMedia({ reduced: true });
+    renderCanvas(refutedComplete());
+    const row = await openFirstEvidence();
+    const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(drawer.getAttribute("data-gp-reduced-motion")).toBe("true");
+    expect(drawer.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(row));
+  });
+
+  it("外链带安全 rel，且无全大写模板标签 / 编造字段", async () => {
+    renderCanvas(refutedComplete());
+    await openFirstEvidence();
+    const link = document.querySelector(".gp-drawer--source a") as HTMLAnchorElement;
+    expect(link.target).toBe("_blank");
+    expect(link.rel).toMatch(/noopener/);
+    expect(link.rel).toMatch(/noreferrer/);
+    const text = document.querySelector(".gp-drawer--source")!.textContent ?? "";
+    expect(text).not.toMatch(/EXACT EXCERPT|RELEVANCE|BOUNDARY/);
+    expect(text).not.toContain("relevanceReason");
+  });
+
+  it("12b. 关闭后焦点回到原来那颗 Evidence DOM 节点（before === after）", async () => {
+    renderCanvas(refutedComplete());
+    const before = document.querySelector(".gp-evidence-item") as HTMLButtonElement;
+    expect(before).toBeInstanceOf(HTMLButtonElement);
+    before.focus();
+    fireEvent.click(before);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
+    const after = document.querySelector(".gp-evidence-item") as HTMLButtonElement;
+    expect(after).toBe(before);
+    await waitFor(() => expect(document.activeElement).toBe(before));
+  });
+
+  it("Drawer 开着时 unique source settling：dialog 不 remount，正文来自最新 snapshot，底层节点仍是同一颗", async () => {
+    const beforeSnap = settlingBoard();
+    const sourceId = beforeSnap.claims[0]!.evidence[0]!.sourceId;
+    const view = renderCanvas(beforeSnap);
+    const row = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`) as HTMLButtonElement;
+    expect(row.getAttribute("data-gp-identity")).toBe("stable");
+    row.focus();
+    fireEvent.click(row);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(dialog.getAttribute("data-gp-role")).toBe("unassessed");
+    expect(dialog.getAttribute("data-gp-source-resolve")).toBe("live");
+    const focused = document.activeElement;
+
+    const next = withRoles(beforeSnap, { [sourceId]: "support" });
+    next.claims[0]!.evidence = next.claims[0]!.evidence.map((link) =>
+      link.sourceId === sourceId ? { ...link, finding: "归位后的支持说明" } : link
+    );
+    view.rerender(
+      <InvestigationCanvas snapshot={next} live={false} finalReport={null} onReverify={() => {}} onBackHome={() => {}} />
+    );
+    const still = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(still).toBe(dialog);
+    expect(still.getAttribute("data-gp-role")).toBe("support");
+    expect(still.getAttribute("data-gp-source-resolve")).toBe("live");
+    expect(within(still).getByText(/对这条命题：支持/)).toBeTruthy();
+    expect(within(still).getByText("归位后的支持说明")).toBeTruthy();
+    expect(still.contains(document.activeElement) || document.activeElement === focused).toBe(true);
+    const afterRow = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`);
+    expect(afterRow).toBe(row);
+    expect(afterRow?.getAttribute("data-gp-role")).toBe("support");
+  });
+
+  it("duplicate source 无法唯一 resolve 时不猜 relation、不编 finding", async () => {
+    const beforeSnap = settlingBoard();
+    const one = withClaimEvidence(beforeSnap, [{ sourceId: "src-1", role: "unassessed" }]);
+    const two = withClaimEvidence(beforeSnap, [
+      { sourceId: "src-1", role: "support", finding: "不该被猜进来的支持说明" },
+      { sourceId: "src-1", role: "contradict", finding: "也不该被猜进来的反驳说明" },
+    ]);
+    const view = renderCanvas(one);
+    const row = document.querySelector('[data-source-id="src-1"]') as HTMLButtonElement;
+    fireEvent.click(row);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(dialog.getAttribute("data-gp-role")).toBe("unassessed");
+    view.rerender(
+      <InvestigationCanvas snapshot={two} live={false} finalReport={null} onReverify={() => {}} onBackHome={() => {}} />
+    );
+    const still = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(still).toBe(dialog);
+    expect(still.getAttribute("data-gp-source-resolve")).toBe("held");
+    expect(still.getAttribute("data-gp-role")).toBe("unassessed");
+    expect(still.textContent).not.toContain("不该被猜进来的支持说明");
+    expect(still.textContent).not.toContain("也不该被猜进来的反驳说明");
+    expect(within(still).getByText(/对这条命题：待核对/)).toBeTruthy();
+  });
+});
