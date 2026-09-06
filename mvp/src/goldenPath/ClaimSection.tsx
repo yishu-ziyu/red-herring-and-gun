@@ -18,9 +18,8 @@ import {
   JUDGMENT_TONE,
   PROGRESS_LABEL,
   conflictSidesLabel,
-  groupEvidence,
 } from "./snapshotUi";
-import { EvidenceItem } from "./EvidenceItem";
+import { EvidenceBoard } from "./EvidenceBoard";
 
 type ClaimSectionProps = {
   claim: InvestigationClaim;
@@ -52,11 +51,9 @@ export function ClaimSection({
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const groups = groupEvidence(claim.evidence);
   const claimConflicts = conflicts.filter((c) => c.claimId === claim.id);
   const judgment = claim.judgment;
   const showStatusChip = claim.progress === "searching" || claim.progress === "interrupted" || judgment !== null;
-  const sourceFor = (link: InvestigationEvidenceLink) => sources.find((s) => s.id === link.sourceId);
   const num = String(index + 1).padStart(2, "0");
 
   return (
@@ -105,32 +102,13 @@ export function ClaimSection({
 
       {expanded ? (
         <div className="gp-claim-detail">
-          {groups.length > 0 ? (
+          {claim.evidence.length > 0 ? (
             <div className="gp-evidence-space">
-              {groups.map((group) => (
-                <section key={group.role} className={`gp-evidence-group is-${group.role}`} data-gp-role={group.role}>
-                  <div className="gp-evidence-group-head">
-                    <span className={`gp-role-glyph is-${group.role}`} aria-hidden="true">
-                      {roleGlyph(group.role)}
-                    </span>
-                    <h4 className="gp-evidence-group-label">{group.label}</h4>
-                    <span className="gp-evidence-group-count">· {group.links.length}</span>
-                  </div>
-                  <div className="gp-evidence-list">
-                    {group.links.map((link, i) => (
-                      <EvidenceItem
-                        key={`${link.sourceId}-${i}`}
-                        link={link}
-                        source={sourceFor(link)}
-                        onSelect={(l, s) => onSelectSource(l, s, claim.id)}
-                      />
-                    ))}
-                  </div>
-                  {group.role === "support" && group.links.some((l) => l.finding) ? (
-                    <p className="gp-finding">{group.links.find((l) => l.finding)?.finding}</p>
-                  ) : null}
-                </section>
-              ))}
+              <EvidenceBoard
+                claim={claim}
+                sources={sources}
+                onSelect={(l, s) => onSelectSource(l, s, claim.id)}
+              />
             </div>
           ) : (
             <p className="gp-claim-empty" role="status">
@@ -197,19 +175,4 @@ export function ClaimSection({
       ) : null}
     </article>
   );
-}
-
-function roleGlyph(role: InvestigationEvidenceLink["role"]): string {
-  switch (role) {
-    case "support":
-      return "●";
-    case "contradict":
-      return "●";
-    case "context-only":
-      return "○";
-    case "unassessed":
-      return "◌";
-    default:
-      return "●";
-  }
 }

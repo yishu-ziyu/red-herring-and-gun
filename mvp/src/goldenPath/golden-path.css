@@ -989,6 +989,15 @@
   gap: 16px;
 }
 
+.gp-evidence-board {
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .gp-evidence-group {
   background: transparent;
   border: none;
@@ -1005,7 +1014,12 @@
   align-items: center;
   gap: 6px;
   font-size: 12.5px;
-  padding-bottom: 2px;
+  padding: 12px 0 2px;
+  background: transparent;
+}
+
+.gp-evidence-board > .gp-evidence-group-head:first-child {
+  padding-top: 0;
 }
 
 .gp-role-glyph {
@@ -1025,10 +1039,14 @@
   letter-spacing: 0.02em;
 }
 
-.gp-evidence-group.is-support .gp-evidence-group-label { color: var(--gp-semantic-support); }
-.gp-evidence-group.is-contradict .gp-evidence-group-label { color: var(--gp-semantic-contradict); }
-.gp-evidence-group.is-context-only .gp-evidence-group-label { color: var(--gp-semantic-context); }
-.gp-evidence-group.is-unassessed .gp-evidence-group-label { color: var(--gp-ink-2); }
+.gp-evidence-group.is-support .gp-evidence-group-label,
+.gp-evidence-group-head.is-support .gp-evidence-group-label { color: var(--gp-semantic-support); }
+.gp-evidence-group.is-contradict .gp-evidence-group-label,
+.gp-evidence-group-head.is-contradict .gp-evidence-group-label { color: var(--gp-semantic-contradict); }
+.gp-evidence-group.is-context-only .gp-evidence-group-label,
+.gp-evidence-group-head.is-context-only .gp-evidence-group-label { color: var(--gp-semantic-context); }
+.gp-evidence-group.is-unassessed .gp-evidence-group-label,
+.gp-evidence-group-head.is-unassessed .gp-evidence-group-label { color: var(--gp-ink-2); }
 
 .gp-evidence-group-count {
   font-size: 11.5px;
@@ -1050,7 +1068,7 @@
   border: 0;
   border-bottom: 1px solid var(--gp-line-subtle);
   background: transparent;
-  border-radius: 4px;
+  border-radius: 0;
   padding: 9px 8px;
   margin: 0 -8px;
   font-family: inherit;
@@ -1058,11 +1076,16 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
+  position: relative;
   transition: background-color var(--gp-motion-fast) var(--gp-ease-out);
 }
 
 .gp-evidence-item:hover {
   background: rgba(15, 23, 42, 0.03);
+}
+
+.gp-evidence-item[data-gp-settling="1"] {
+  z-index: 2;
 }
 
 .gp-evidence-dot {
