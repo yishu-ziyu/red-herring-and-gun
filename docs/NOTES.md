@@ -24,9 +24,11 @@
 
 # 当前状态
 
-2026-09-06 PR #72 / Issue #66 正在 rebase 到 main `f009d34`（#76 squash-merge）后用同一句重跑 REAL SSE。不 merge，不关 #53，不启 #54。产物 `docs/design/2026-09-06-mode3-production/final/`。旧 `final/real/` 与 `final/real-after-74/` 不覆盖。
+2026-09-06 PR #72 / Issue #66 正在 rebase 到 main `f009d34`（#76 squash-merge）后用同一句重跑 REAL SSE。旧 `final/real/` 与 `final/real-after-74/` 不覆盖。第三次 run 将落在 `final/real-after-76/`。不 merge，不关 #53，不启 #54。
 
 2026-09-06 Issue #76 / PR #77 已 squash-merge 进 main（`f009d34`）：`InvestigationSource.id` 改为规范化 URL 的确定性派生，不再按 `src-${sources.length+1}` 随 phase / evidence 排序重编号。同 URL 仍一个 Source，support+contradict 仍是两条 EvidenceLink。#66 capture gate 改为按 URL+sourceId 判断 transition，`sourceIdsStable=false` 必须 FAIL。
+
+2026-09-06 PR #72 / Issue #66 曾 rebase 到 main `7ad8103`（#74 squash-merge），同一句 REAL SSE 复验完成。旧 `final/real/` 保留为 pre-#74 failure specimen。那次 run 在 `final/real-after-74/`（184.8s，MiniMax-M2.7-highspeed，cross_examiner step-3.7-flash 无 fallback）。claim-2 反向证据现为 contradict，judgment=refuted。source-id 在 investigating `src-3` → judging `src-1` 不稳定，已如实记录。
 
 2026-09-06 PR #75 / Issue #74 已 squash-merge 进 main（`7ad8103`）：证伪材料不得被标成 support；dual-bucket citation 分桶独立 filter/dedupe/cap，再按 supporting → `[1..S]`、contradicting → `[S+1..S+C]` remap。同 URL 跨桶两条 relation 都保留。不用 finding 文本猜 stance。
 

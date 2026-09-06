@@ -2002,3 +2002,50 @@ describe("Issue #66 real SSE artifacts (not golden fixtures)", () => {
   });
 });
 
+describe("Issue #66 post-#74 real SSE artifacts", () => {
+  function loadAfter74(name: string): InvestigationSnapshotV1 {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const { resolve } = require("node:path") as typeof import("node:path");
+    const path = resolve(
+      process.cwd(),
+      "..",
+      "docs/design/2026-09-06-mode3-production/final/real-after-74/snapshots",
+      name,
+    );
+    return JSON.parse(readFileSync(path, "utf8")) as InvestigationSnapshotV1;
+  }
+
+  it("claim-2 反向证据不得再是 support，judgment=refuted", () => {
+    const complete = loadAfter74("complete.json");
+    const claim2 = complete.claims.find((c) => c.text.includes("每次感冒都应当输液"));
+    expect(claim2).toBeTruthy();
+    expect(claim2!.judgment).toBe("refuted");
+    const cited = claim2!.evidence.filter((l) => l.role === "support" || l.role === "contradict");
+    expect(cited.length).toBeGreaterThan(0);
+    expect(cited.every((l) => l.role === "contradict")).toBe(true);
+    expect(cited.some((l) => l.role === "support")).toBe(false);
+    const reverse = /不需要输液|无需输液|没必要输液|不必输液|输液没有必要|输液治疗没有必要/;
+    const reverseCited = cited.filter((l) => reverse.test(l.finding || ""));
+    expect(reverseCited.length).toBeGreaterThan(0);
+    expect(reverseCited.every((l) => l.role === "contradict")).toBe(true);
+    for (const claim of complete.claims) {
+      const span = claim.originalSpan;
+      expect(span).toBeTruthy();
+      expect(complete.originalClaim.slice(span!.start, span!.end)).toBe(claim.text);
+    }
+  });
+
+  it("claim-1 同时有 support 与 contradict 两条 relation，[n] 仍在 finding 里", () => {
+    const complete = loadAfter74("complete.json");
+    const claim1 = complete.claims.find((c) => c.text.includes("维生素C能治感冒"));
+    expect(claim1).toBeTruthy();
+    const roles = claim1!.evidence.map((l) => l.role);
+    expect(roles).toContain("support");
+    expect(roles).toContain("contradict");
+    const cited = claim1!.evidence.filter((l) => l.role === "support" || l.role === "contradict");
+    expect(cited.every((l) => /\[\d+\]/.test(l.finding || ""))).toBe(true);
+    const sourceIds = new Set(cited.map((l) => l.sourceId));
+    expect(sourceIds.size).toBe(cited.length);
+  });
+});
+

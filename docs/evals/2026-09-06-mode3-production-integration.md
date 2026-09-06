@@ -115,3 +115,24 @@ Vercel #58（独立，不作为 #66 产品完成条件，但最终 PR 必须说�
 发现但未在本 PR 改 producer：claim-2 的 finding 明文否定「每次感冒都应当输液」，Snapshot 仍标 `role: support`，judgment=`unresolved`。这是 builder/pipeline 映射问题，不是 UI 撒谎。禁止手改真实调查数据。记为独立 contract gap，不在 #66 做 backend 重映射。
 
 人评项 H1–H6 附截图，等人裁。Vercel #58 独立 PR，不混进本分支产品代码。
+
+---
+
+## Post-#74 真实复验（PR #72 comment `5559431338`）
+
+Change：#74 已 squash-merge 进 main `7ad8103`。同一句真实输入再跑一次 REAL SSE。旧 `final/real/` 保留为 pre-#74 production failure specimen，不覆盖。新 run 单独落在 `final/real-after-74/`。Claim「每次感冒都应当输液」的反向材料不得再是 `role=support`；若反证充分，预期 `contradict` 且 `judgment=refuted`。finding / excerpt / role / judgment 方向一致。若本次产生双桶，citation `[n]` 不丢，relation 不因同 URL 被吞。#62–#65 在同一条流里继续成立。
+
+Not this：覆盖旧 `final/real/`；用手改 Snapshot / fixture / 旧 JSON 回放代替新模型运行；前端或截图脚本猜 stance；改 vercel.json / Root Directory / Build / Output；merge #72；关 #53；启 #54。
+
+Evaluator：
+
+- [x] P1 `git fetch origin && git rebase origin/main`；`git merge-base HEAD origin/main` = `7ad8103d3a3a29c482c79a59e4697cfdc2c42417`。冲突只在 `docs/NOTES.md`；保留 #62–#65、#74、#58 current truth，不重实现。
+- [x] P2 旧 `docs/design/2026-09-06-mode3-production/final/real/` 仍在，complete.json 与新 run 字节不同，未被覆盖。
+- [x] P3 同一句真实 production SSE。产物在 `final/real-after-74/`。184.8s。
+- [x] P4 SOURCE.md 分清四类：REAL pre-#74 failure / REAL post-#74 verification / REAL SNAPSHOT REPLAY / FIXTURE。
+- [x] P5 Claim「每次感冒都应当输液」：反向 excerpt（感冒通常不需要输液 / 九成没必要输液）现为 `role=contradict`，judgment=`refuted`。finding / excerpt / role / judgment 方向一致。无 support 的证伪材料。
+- [x] P6 本次 claim-1 同时有 support + contradict（不同 sourceId）；finding 保留 `[1][2][3]`。同 URL 跨桶未出现。未手改、未用 UI heuristic。
+- [x] P7 #62 两段 originalSpan exact。#63 快照层 URL `unassessed→support`；直播 investigating 时证据行尚未入 DOM；JSON 回放因 judging 重排 sourceId（src-3→src-1）节点不连续，已如实记录。#65 Drawer live + keyboard 闭环。#64 region/original/claims/board same node，scrollY=0，无 auto-focus。
+- [x] P8 goldenPath 90；根 core 594 / eval 85 / server 21 / web 83 = 783；mvp 1004 / 1 skipped；两处 build 绿。新目录截图/视频/keyboard/motion/snapshot 齐全。
+- [x] P9 未改 vercel.json / Root Directory / Build / Output。Preview 状态见 PR Description（push 后核对 Ready）。
+- [x] P10 PR Description 已按 12 项更新。完成后停止，不 merge。

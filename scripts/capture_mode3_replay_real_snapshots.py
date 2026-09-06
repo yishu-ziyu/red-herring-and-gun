@@ -18,9 +18,9 @@ from playwright.sync_api import sync_playwright
 PORT = 5186
 BASE = f"http://127.0.0.1:{PORT}"
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-OUT = Path("docs/design/2026-09-06-mode3-production/final").resolve()
-SNAP = OUT / "real/snapshots"
-MOTION = OUT / "real/motion"
+OUT = Path("docs/design/2026-09-06-mode3-production/final/real-after-74").resolve()
+SNAP = OUT / "snapshots"
+MOTION = OUT / "motion"
 FRAMES = MOTION / "frames"
 
 
@@ -51,6 +51,47 @@ def main() -> int:
     FRAMES.mkdir(parents=True, exist_ok=True)
     errors: list[str] = []
 
+    def url_of(snap: dict, source_id: str) -> str:
+        for src in snap.get("sources") or []:
+            if src.get("id") == source_id:
+                return str(src.get("url") or "")
+        return ""
+
+    def id_of(snap: dict, url: str) -> str | None:
+        for src in snap.get("sources") or []:
+            if src.get("url") == url:
+                return str(src.get("id"))
+        return None
+
+    transition = None
+    inv_roles: dict[tuple[str, str], str] = {}
+    inv_ids: dict[str, dict[str, str]] = {}
+    for claim in investigating.get("claims") or []:
+        cid = str(claim.get("id") or "")
+        for link in claim.get("evidence") or []:
+            sid = str(link.get("sourceId") or "")
+            inv_roles[(cid, url_of(investigating, sid))] = str(link.get("role") or "")
+            inv_ids.setdefault(cid, {})[url_of(investigating, sid)] = sid
+    for claim in judging.get("claims") or []:
+        cid = str(claim.get("id") or "")
+        for link in claim.get("evidence") or []:
+            sid = str(link.get("sourceId") or "")
+            url = url_of(judging, sid)
+            prev = inv_roles.get((cid, url))
+            if prev == "unassessed" and link.get("role") == "support":
+                transition = {
+                    "claimId": cid,
+                    "url": url,
+                    "fromId": inv_ids.get(cid, {}).get(url),
+                    "toId": sid,
+                    "from": prev,
+                    "to": link.get("role"),
+                }
+                break
+        if transition:
+            break
+    print("URL transition", transition)
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True, executable_path=CHROME, args=["--disable-dev-shm-usage"])
 
@@ -73,42 +114,59 @@ def main() -> int:
         )
         page.wait_for_selector('[data-gp-role="unassessed"]', timeout=10000)
         page.wait_for_timeout(200)
+        from_id = (transition or {}).get("fromId") or "src-1"
+        to_id = (transition or {}).get("toId") or "src-1"
+        claim_id = (transition or {}).get("claimId") or "claim-1"
         pin = page.evaluate(
-            """() => {
-              const el = document.querySelector('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]');
-              window.__src1 = el;
+            """({ claimId, fromId }) => {
+              const el = document.querySelector('[data-gp-claim-id="' + claimId + '"] [data-source-id="' + fromId + '"]');
+              window.__settled = el;
               return {
                 role: el && el.getAttribute('data-gp-role'),
                 identity: el && el.getAttribute('data-gp-identity'),
                 key: el && el.getAttribute('data-gp-evidence-key'),
+                sourceId: fromId,
               };
-            }"""
+            }""",
+            {"claimId": claim_id, "fromId": from_id},
         )
-        print("pin src-1", pin)
+        print("pin", pin)
         shot(page, "desktop-real-investigating-unassessed.png")
         for i in range(18):
             page.screenshot(path=str(FRAMES / f"real-settling-{i:02d}.png"), full_page=False)
             page.wait_for_timeout(90)
         page.wait_for_function(
-            """() => document.querySelector('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]')?.getAttribute('data-gp-role') === 'support'""",
+            """({ claimId, toId }) => document.querySelector('[data-gp-claim-id="' + claimId + '"] [data-source-id="' + toId + '"]')?.getAttribute('data-gp-role') === 'support'""",
+            arg={"claimId": claim_id, "toId": to_id},
             timeout=8000,
         )
         same = page.evaluate(
-            """() => {
-              const el = document.querySelector('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]');
+            """({ claimId, toId }) => {
+              const el = document.querySelector('[data-gp-claim-id="' + claimId + '"] [data-source-id="' + toId + '"]');
               return {
-                same: el === window.__src1,
+                same: el === window.__settled,
                 role: el && el.getAttribute('data-gp-role'),
                 identity: el && el.getAttribute('data-gp-identity'),
+                sourceId: toId,
               };
-            }"""
+            }""",
+            {"claimId": claim_id, "toId": to_id},
         )
-        print("after src-1", same)
-        (OUT / "real/settling-dom.json").write_text(json.dumps({"pin": pin, "after": same}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        if same.get("same") is not True:
-            errors.append("src-1 remounted during REAL snapshot replay")
+        print("after", same)
+        ids_stable = from_id == to_id
+        (OUT / "settling-dom.json").write_text(
+            json.dumps(
+                {"transition": transition, "pin": pin, "after": same, "sourceIdsStable": ids_stable},
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        if ids_stable and same.get("same") is not True:
+            errors.append("stable sourceId remounted during REAL snapshot replay")
         if same.get("role") != "support":
-            errors.append(f"src-1 role {same.get('role')}")
+            errors.append(f"settled role {same.get('role')}")
         shot(page, "desktop-real-judging-settled.png")
         ctx.close()
 

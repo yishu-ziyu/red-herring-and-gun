@@ -1,0 +1,265 @@
+{
+  "source": "REAL SSE",
+  "claim": "维生素C能治感冒，而且每次感冒都应当输液。",
+  "ssePhases": [
+    "received",
+    "decomposed",
+    "investigating",
+    "investigating",
+    "investigating",
+    "judging",
+    "judging",
+    "judging",
+    "complete"
+  ],
+  "domPhases": [
+    "received",
+    "investigating",
+    "judging",
+    "complete"
+  ],
+  "sseStarted": true,
+  "sseError": null,
+  "eventCount": 306,
+  "transition": {
+    "claimId": "claim-1",
+    "sourceId": "src-1",
+    "from": "unassessed",
+    "to": "support",
+    "atPhase": "judging"
+  },
+  "transitionDom": null,
+  "sameAfterComplete": {
+    "canvas": true,
+    "region": true,
+    "original": true,
+    "originalText": true,
+    "claims": true,
+    "board": true,
+    "dialog": true,
+    "evidence": {},
+    "phase": "complete",
+    "conclusionState": "complete",
+    "hasDirectAnswer": true,
+    "activeTag": "BODY",
+    "activeRole": null,
+    "activeKey": null,
+    "scrollY": 0
+  },
+  "spanAudit": [
+    {
+      "id": "claim-1",
+      "text": "维生素C能治感冒",
+      "span": {
+        "start": 0,
+        "end": 8
+      },
+      "status": "exact",
+      "slice": "维生素C能治感冒"
+    },
+    {
+      "id": "claim-2",
+      "text": "每次感冒都应当输液",
+      "span": {
+        "start": 11,
+        "end": 20
+      },
+      "status": "exact",
+      "slice": "每次感冒都应当输液"
+    }
+  ],
+  "traceMarks": [
+    {
+      "text": "维生素C能治感冒",
+      "claim": null
+    },
+    {
+      "text": "每次感冒都应当输液",
+      "claim": null
+    }
+  ],
+  "hoverTrace": {
+    "traced": "claim-1",
+    "markCount": 2,
+    "markText": [
+      "维生素C能治感冒",
+      "每次感冒都应当输液"
+    ]
+  },
+  "drawer": {
+    "open": true,
+    "resolve": "live",
+    "claim": "claim-1",
+    "source": "src-1",
+    "role": "support",
+    "sections": [
+      "claim",
+      "excerpt",
+      "finding"
+    ],
+    "hasExcerpt": true,
+    "hasFinding": true,
+    "hasLimitation": false
+  },
+  "keyboard": {
+    "steps": [
+      {
+        "focus": "claim-head",
+        "active": "gp-claim-head"
+      },
+      {
+        "focus": "evidence",
+        "key": "claim-2:src-4"
+      },
+      {
+        "drawer": true,
+        "resolve": "live"
+      },
+      {
+        "tabTrap": {
+          "afterTab": true,
+          "afterShiftTab": true
+        }
+      },
+      {
+        "escapeClosed": true,
+        "focusReturnKey": "claim-2:src-4"
+      }
+    ],
+    "ok": true,
+    "errors": []
+  },
+  "editorial": {
+    "hasAnswer": true,
+    "answerSize": 24,
+    "heroBg": "rgba(0, 0, 0, 0)",
+    "heroShadow": "none",
+    "heroRadius": "0px",
+    "canvasBg": "rgba(0, 0, 0, 0)",
+    "rainbowRows": [
+      {
+        "role": "context-only",
+        "bg": "rgba(15, 23, 42, 0.03)",
+        "radius": "0px",
+        "shadow": "none"
+      }
+    ],
+    "rowCount": 5
+  },
+  "conflictSource": "REAL SSE",
+  "hasConflictDom": true,
+  "hasGapDom": true,
+  "scrollBeforeComplete": 0,
+  "durationSec": 184.8,
+  "stanceAudit": {
+    "found": true,
+    "claimId": "claim-2",
+    "judgment": "refuted",
+    "roles": [
+      "contradict",
+      "contradict",
+      "contradict",
+      "context-only",
+      "context-only"
+    ],
+    "supportCount": 0,
+    "contradictCount": 3,
+    "reverseEvidence": [],
+    "reverseStillSupport": false
+  },
+  "citationAudit": {
+    "dualSourceRelations": false,
+    "rows": [
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-1",
+        "role": "support",
+        "markers": [
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-2",
+        "role": "contradict",
+        "markers": [
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-3",
+        "role": "contradict",
+        "markers": [
+          1,
+          2,
+          3
+        ]
+      },
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-7",
+        "role": "context-only",
+        "markers": []
+      },
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-8",
+        "role": "context-only",
+        "markers": []
+      },
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-9",
+        "role": "context-only",
+        "markers": []
+      },
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-10",
+        "role": "context-only",
+        "markers": []
+      },
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-11",
+        "role": "context-only",
+        "markers": []
+      },
+      {
+        "claimId": "claim-2",
+        "sourceId": "src-4",
+        "role": "contradict",
+        "markers": []
+      },
+      {
+        "claimId": "claim-2",
+        "sourceId": "src-5",
+        "role": "contradict",
+        "markers": []
+      },
+      {
+        "claimId": "claim-2",
+        "sourceId": "src-6",
+        "role": "contradict",
+        "markers": []
+      },
+      {
+        "claimId": "claim-2",
+        "sourceId": "src-12",
+        "role": "context-only",
+        "markers": []
+      },
+      {
+        "claimId": "claim-2",
+        "sourceId": "src-13",
+        "role": "context-only",
+        "markers": []
+      }
+    ]
+  }
+}

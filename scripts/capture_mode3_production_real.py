@@ -31,16 +31,18 @@ API_PORT = 3000
 BASE_URL = f"http://127.0.0.1:{PORT}"
 API_URL = f"http://127.0.0.1:{API_PORT}"
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-OUT = Path("docs/design/2026-09-06-mode3-production/final").resolve()
-REAL = OUT / "real"
+# New REAL SSE after #74. Do not write into final/real/ (pre-#74 failure specimen).
+OUT = Path("docs/design/2026-09-06-mode3-production/final/real-after-74").resolve()
+REAL = OUT
 SNAP_DIR = REAL / "snapshots"
 MOTION = REAL / "motion"
 FRAMES = MOTION / "frames"
 REDUCED_FRAMES = MOTION / "frames-reduced"
+LIVE_KEYS = MOTION / "live-keyframes"
 SOURCE_LOG = OUT / "SOURCE.md"
 REPORT = REAL / "run-report.json"
 CHROME_ARGS = ["--disable-dev-shm-usage"]
-SSE_WAIT_MS = 210_000
+SSE_WAIT_MS = 270_000
 
 SSE_HOOK = r"""
 (() => {
@@ -284,6 +286,58 @@ def find_role_transition(snaps: list[dict]) -> dict | None:
     return None
 
 
+def stance_audit(snap: dict) -> dict:
+    """Claim 2 reverse-evidence must not be role=support after #74."""
+    claim = next((c for c in (snap.get("claims") or []) if "每次感冒都应当输液" in (c.get("text") or "")), None)
+    if not claim:
+        return {"found": False}
+    links = claim.get("evidence") or []
+    reverse_re = re.compile(r"不需要输液|没必要输液|不必输液|不允许输液|输液没有必要|输液治疗没有必要")
+    reverse = []
+    for link in links:
+        finding = str(link.get("finding") or "")
+        excerpt = str(link.get("excerpt") or "")
+        blob = finding + excerpt
+        if reverse_re.search(blob):
+            reverse.append(
+                {
+                    "sourceId": link.get("sourceId"),
+                    "role": link.get("role"),
+                    "findingHasReverse": bool(reverse_re.search(finding)),
+                }
+            )
+    roles = [l.get("role") for l in links]
+    return {
+        "found": True,
+        "claimId": claim.get("id"),
+        "judgment": claim.get("judgment"),
+        "roles": roles,
+        "supportCount": roles.count("support"),
+        "contradictCount": roles.count("contradict"),
+        "reverseEvidence": reverse,
+        "reverseStillSupport": any(r.get("role") == "support" for r in reverse),
+    }
+
+
+def citation_audit(snap: dict) -> dict:
+    """Relation-level dual-bucket: same sourceId may have support + contradict."""
+    rows = []
+    dual = False
+    for claim in snap.get("claims") or []:
+        by_src: dict[str, list[str]] = {}
+        for link in claim.get("evidence") or []:
+            sid = str(link.get("sourceId") or "")
+            role = str(link.get("role") or "")
+            by_src.setdefault(sid, []).append(role)
+            finding = str(link.get("finding") or "")
+            markers = sorted({int(n) for n in re.findall(r"\[(\d+)\]", finding)})
+            rows.append({"claimId": claim.get("id"), "sourceId": sid, "role": role, "markers": markers})
+        for sid, roles in by_src.items():
+            if "support" in roles and "contradict" in roles:
+                dual = True
+    return {"dualSourceRelations": dual, "rows": rows}
+
+
 def span_audit(snap: dict) -> list[dict]:
     original = snap.get("originalClaim") or ""
     rows = []
@@ -452,6 +506,7 @@ def run_real(browser) -> dict:
     SNAP_DIR.mkdir(parents=True, exist_ok=True)
     MOTION.mkdir(parents=True, exist_ok=True)
     FRAMES.mkdir(parents=True, exist_ok=True)
+    LIVE_KEYS.mkdir(parents=True, exist_ok=True)
 
     video_dir = MOTION / "playwright-video"
     if video_dir.exists():
@@ -498,6 +553,7 @@ def run_real(browser) -> dict:
                 page.wait_for_selector("[data-gp-claim-id]", timeout=20000)
                 page.wait_for_timeout(250)
                 screenshot(page, "desktop-real-investigating.png", "REAL SSE")
+                page.screenshot(path=str(LIVE_KEYS / "live-investigating.png"), full_page=False)
                 page.set_viewport_size({"width": 390, "height": 844})
                 page.wait_for_timeout(200)
                 screenshot(page, "mobile-real-investigating.png", "REAL SSE")
@@ -509,6 +565,7 @@ def run_real(browser) -> dict:
                 scroll_before_complete = page.evaluate("() => window.scrollY")
             if phase == "judging":
                 screenshot(page, "desktop-real-judging.png", "REAL SSE")
+                page.screenshot(path=str(LIVE_KEYS / "live-judging.png"), full_page=False)
             if phase == "complete":
                 break
 
@@ -548,6 +605,7 @@ def run_real(browser) -> dict:
     page.wait_for_timeout(500)
     same_after = page.evaluate(SAME_JS) if pin_after_claims else {}
     screenshot(page, "desktop-real-complete.png", "REAL SSE")
+    page.screenshot(path=str(LIVE_KEYS / "live-complete.png"), full_page=False)
     grayscale(OUT / "desktop-real-complete.png", OUT / "desktop-complete-grayscale.png")
 
     has_conflict = bool(page.query_selector("[data-gp-conflict-id], .gp-conflict"))
@@ -679,6 +737,8 @@ def run_real(browser) -> dict:
         "hasGapDom": has_gap,
         "scrollBeforeComplete": scroll_before_complete,
         "durationSec": round(time.time() - start, 1),
+        "stanceAudit": stance_audit(complete_snap or {}),
+        "citationAudit": citation_audit(complete_snap or {}),
     }
     REPORT.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({k: report[k] for k in ("ssePhases", "domPhases", "transition", "conflictSource", "durationSec")}, ensure_ascii=False, indent=2))
@@ -711,36 +771,38 @@ def capture_fixture_reduced_motion(browser) -> None:
 
 def write_source_md(report: dict) -> None:
     lines = [
-        "# SOURCE — Issue #66 production integration artifacts",
+        "# SOURCE — REAL post-#74 verification (this directory only)",
         "",
-        "Every file in this directory is tagged. Fixture is never a substitute for the live stream.",
+        "This folder is REAL SSE after #74 squash-merge. It is not the pre-#74 failure specimen.",
+        "Do not mix with `../real/` (pre-#74) or fixture captures.",
         "",
         f"- Real investigation input: `{CLAIM}`",
         f"- SSE phases: `{report.get('ssePhases')}`",
         f"- DOM phases: `{report.get('domPhases')}`",
         f"- Evidence role transition: `{report.get('transition')}`",
+        f"- Stance audit: `{report.get('stanceAudit')}`",
         f"- Conflict/gap image: {report.get('conflictSource')}",
         f"- Duration: {report.get('durationSec')}s",
         "",
-        "## REAL SSE",
+        "## REAL SSE (live orchestrate-stream, post-#74)",
         "",
         "- `desktop-input.png`",
-        "- `desktop-real-decomposed.png` (if phase observed)",
+        "- `desktop-real-decomposed.png` (if phase observed live)",
         "- `desktop-real-investigating.png`",
         "- `desktop-real-complete.png`",
-        "- `desktop-complete-grayscale.png` (derived from real complete)",
+        "- `desktop-complete-grayscale.png`",
         "- `desktop-source-drawer.png`",
         "- `mobile-input.png`",
         "- `mobile-real-complete.png`",
         "- `mobile-source-sheet.png`",
-        "- `desktop-reduced-motion-complete.png` (real complete + emulated reduced-motion)",
-        "- `real/snapshots/*.json`",
-        "- `real/motion/real-sse-desktop.webm`",
+        "- `desktop-reduced-motion-complete.png` (same complete + emulated reduced-motion)",
+        "- `snapshots/*.json`",
+        "- `motion/real-sse-desktop.webm`",
         "",
-        "## DETERMINISTIC FIXTURE",
+        "## DETERMINISTIC FIXTURE (captured here, not the live investigation)",
         "",
-        "- `real/motion/frames-reduced/fixture-settling-*.png` and `fixture-settling-reduced.gif`",
-        "- `real/motion/fixture-conclusion-reduced-complete.png`",
+        "- `motion/frames-reduced/fixture-settling-*.png` and `fixture-settling-reduced.gif`",
+        "- `motion/fixture-conclusion-reduced-complete.png`",
     ]
     if report.get("conflictSource", "").startswith("DETERMINISTIC"):
         lines.append("- `desktop-conflict-gap.png` — FIXTURE because the real run had no conflict/gap")
@@ -768,6 +830,9 @@ def main() -> int:
                     errors.append(f"missing phase {required} in SSE+DOM")
             if not report.get("transition"):
                 errors.append("no observable unassessed→role transition in REAL snapshots (do not invent)")
+            stance = report.get("stanceAudit") or {}
+            if stance.get("reverseStillSupport"):
+                errors.append("claim-2 reverse evidence still role=support after #74")
             same = report.get("sameAfterComplete") or {}
             if same and same.get("region") is False:
                 errors.append("conclusion region remounted")
