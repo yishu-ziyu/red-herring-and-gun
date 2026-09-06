@@ -322,12 +322,14 @@
       <div class="badge-bar">
         <span class="badge badge-blue">Issue #53 视觉与 Motion 系统</span>
         <span class="badge badge-green">独立探索环境 · 零生产入侵</span>
+        <span class="badge badge-green">机制验证全绿：10/10 自动化行为测试 PASS</span>
+        <span class="badge badge-blue">Quiet Editorial 纯净排版 · 零彩虹色</span>
         <span class="badge badge-amber">测试全绿：767 根测试 / 908 MVP 测试</span>
       </div>
       <h1>《红鲱鱼与枪》视觉研究与交互原型总览</h1>
       <p class="lead">
         把外部世界中真正优秀的设计语言（Cuberto、Nikoloz Zaalovich、CollectUI、Edoardo Lunardi/kugiri）映射进白盒调查语义。
-        本页汇集了完整映射规范、kugiri 孤立实测结论、可运行的探索原型入口、以及 11 张全生命周期高保真走查截图。
+        本页汇集了 Quiet Editorial 纯净排版规范、kugiri 孤立实测结论、可运行的探索原型入口、10/10 自动化行为断言、以及 13 张桌面与移动端走查/灰度审查截图。
       </p>
       <div class="action-links">
         <a href="../prototypes/reference-exploration/index.html" target="_blank" class="btn btn-primary">
@@ -349,8 +351,8 @@
     <section class="section-card">
       <div class="section-header">
         <div>
-          <h2 class="section-title">三种探索模式横向对比 (使用完全同构真实数据)</h2>
-          <p class="section-desc">统一消费真实维 C 案例（2 Claim, support, contradict, context-only, gap, conflict, directAnswer）</p>
+          <h2 class="section-title">三种探索模式横向对比 (使用完全同构生产形态设计夹具)</h2>
+          <p class="section-desc">统一消费生产形态夹具 (production-shaped design fixture，含 2 Claim, support, contradict, context-only, gap, conflict, directAnswer)</p>
         </div>
       </div>
       <div class="modes-grid">
@@ -373,7 +375,7 @@
           <div class="mode-meta">参考：Cuberto / CollectUI UI Interaction</div>
           <div class="mode-body">
             <strong>核心感官：材料归位的物理连续性</strong><br>
-            仅借用 Cuberto 的“对象身份连续”机制。拒绝滚动劫持与炫技。实现完整的 <strong>Evidence Settling</strong>：材料从 <code>◌ 待核对</code> 通过 FLIP 算法平滑迁移至 <code>● 支持/反驳/相关</code>，DOM 身份永不销毁，无刷新无跳变。
+            仅借用 Cuberto 的“对象身份连续”机制。拒绝滚动劫持与炫技。实现真实 <strong>Persistent DOM Identity</strong>：材料从 <code>◌ 待核对</code> 通过 FLIP 平滑移动至 <code>● 支持/反驳/相关</code>，<code>before === after</code> 同一 HTMLElement 节点未销毁，无 innerHTML 擦除。
           </div>
           <div class="mode-preview">
             <img src="./screenshots/desktop-mode2-settled.png" alt="Mode 2 Interactive 预览">
@@ -387,7 +389,7 @@
           <div class="mode-meta">《红鲱鱼与枪》专属调查美学语言</div>
           <div class="mode-body">
             <strong>核心感官：有生命的证据，答案自然长出</strong><br>
-            融合 Editorial 的文稿骨架 + Cuberto 式物理连续 + Edo 式克制文字动效。完整兑现三大签名交互（Claim Trace、Evidence Settling、Conclusion Emergence），无任何 Card-on-card 压迫感。
+            融合 Editorial 的文稿骨架 + Cuberto 式物理连续 + Edo 式克制文字动效。完整兑现三大签名交互（Claim Trace、Evidence Settling、Conclusion Emergence），无任何 Card-on-card 压迫感与彩虹色底块。
           </div>
           <div class="mode-preview">
             <img src="./screenshots/desktop-mode3-hybrid.png" alt="Mode 3 Hybrid 预览">
@@ -408,19 +410,19 @@
         <div class="motif-card">
           <div class="motif-title">① Claim Trace (命题回溯)</div>
           <div class="motif-desc">
-            鼠标悬停或聚焦命题 01 时，原始核查说法中的“维生素 C 能治感冒”被精确高亮（浅蓝底色与底线），悬停命题 02 时高亮“每次感冒都应该输液”。由真实 <code>originalSpan</code> 驱动，用户一眼看清原句与命题的对应。
+            鼠标悬停或聚焦命题 01 时，原始说法中的“维生素 C 能治感冒”被精确高亮，悬停命题 02 时高亮“每次感冒都应该输液”。严格由纯函数 <code>buildTraceSegments(quote, claims)</code> 驱动，无 span 时不高亮，彻底废除手动 token 映射。
           </div>
         </div>
         <div class="motif-card">
           <div class="motif-title">② Evidence Settling (证据归位)</div>
           <div class="motif-desc">
-            材料初进场为 <code>◌ 待核对</code>。核查完成后，同一 DOM 节点平滑位移至对应结论组，Glyph 渐变为 <code>● 支持</code> 或 <code>● 反驳</code>。传达“调查桌上的同一叠材料被放到了它真正属于的档案袋”。
+            材料初进场为 <code>◌ 待核对</code>。核查完成后，同一个 DOM 节点平滑位移至对应结论组（before === after），Glyph 渐变为 <code>● 支持</code> 或 <code>● 反驳</code>。传达“调查桌上的同一叠材料被放到了它真正属于的档案袋”。
           </div>
         </div>
         <div class="motif-card">
           <div class="motif-title">③ Conclusion Emergence (结论自然生长)</div>
           <div class="motif-desc">
-            调查中结论区不占位。随着证据稳定，下方调查正文平滑向下让位，<code>directAnswer</code> 大标题沉着浮现。不是系统在盖章宣布答案，而是用户肉眼看见答案从证据中自然长出。
+            调查中结论区不占位。随着证据稳定，下方调查正文平滑向下让位，同一 <code>directAnswer</code> 大标题沉着浮现。不是系统在盖章宣布答案，而是用户肉眼看见答案从证据中自然长出。
           </div>
         </div>
       </div>
@@ -471,9 +473,122 @@
             </tr>
             <tr>
               <td>无障碍 (Screen Reader)</td>
-              <td>若未加深度 aria-hidden 保护，VoiceOver 会逐字生硬拼读</td>
+              <td><strong>Not tested（未跑实际 TTS 语音合成）</strong>；根据 A11y 树结构审查，DOM 节点被打碎成数十个独立 span，若未深度加 aria-hidden 存在生硬逐字拼读风险</td>
               <td>整句完整保留在 Accessibility Tree 中，语调连贯自然</td>
-              <td><span class="badge badge-green">原生显著胜出</span></td>
+              <td><span class="badge badge-amber">结构风险高</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Quiet Editorial Evidence 视觉重构与灰度审查 -->
+    <section class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Quiet Editorial Evidence 视觉准则与灰度对比审查</h2>
+          <p class="section-desc">结构决定层级，不靠颜色叫喊。灰度模式下排版、线框与层级 100% 成立</p>
+        </div>
+      </div>
+      <div class="gallery-grid">
+        <div class="gallery-item">
+          <img src="./screenshots/desktop-mode3-source-drawer.png" alt="Quiet Editorial Drawer 原图">
+          <div class="gallery-caption">Quiet Editorial 来源抽屉（纸感背景 #FFFFFF，细线 #E7E5E4，深灰正文 #18181B，无彩虹高饱和底色）</div>
+        </div>
+        <div class="gallery-item">
+          <img src="./screenshots/desktop-mode3-source-drawer-grayscale.png" alt="Grayscale 灰度审查">
+          <div class="gallery-caption">全去色 Grayscale 审查：剥离所有颜色后，字阶比与留白仍清晰传递主次与下钻关系</div>
+        </div>
+      </div>
+      <div style="margin-top: 20px; font-size: 13.5px; color: var(--fg-muted); line-height: 1.7;">
+        <strong>四项硬性视觉准则：</strong>
+        <ul style="margin-left: 20px; margin-top: 6px;">
+          <li><strong>去语义彩虹 (No Semantic Rainbow)</strong>：严禁用红绿蓝紫整块底色区分支持/反驳/事实/争议，采用冷静符号（●、○、◌）与排版区分；</li>
+          <li><strong>纸感第一 (Paper-first Surface)</strong>：底色纯净白与极淡米灰（#F7F7F5），1px 发丝线（#E7E5E4），彻底消除重阴影与花哨卡片堆叠；</li>
+          <li><strong>自然文字表达 (No Stiff English Badges)</strong>：彻底删除小卡片上的大写英文标题（如 VERDICT OVERVIEW / CORE CITATION），使用自然中文调查记叙文风格；</li>
+          <li><strong>无障碍焦点闭环 (Modal Focus Containment)</strong>：Drawer/Sheet 弹层开启时背景设为 <code>inert</code>，Tab 键焦点严格闭环，Escape 即刻关闭并恢复主文档焦点。</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 自动化机制验证矩阵 -->
+    <section class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">原型机制自动化验证套件 (10/10 PASS)</h2>
+          <p class="section-desc">运行 <code>python3 scripts/verify_reference_exploration.py</code> 真实端到端无头浏览器断言</p>
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="spike-table">
+          <thead>
+            <tr>
+              <th>测试编号</th>
+              <th>验证机制与断言内容</th>
+              <th>声明分级</th>
+              <th>验证状态</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>TEST 01</td>
+              <td><strong>Mode 1-3 键盘无缝切换</strong> (1 / 2 / 3 切换容器 data-mode 属性，无语法报错)</td>
+              <td>Prototype Simulation</td>
+              <td><span class="badge badge-green">PASS</span></td>
+            </tr>
+            <tr>
+              <td>TEST 02</td>
+              <td><strong>Claim Trace 由 originalSpan 驱动</strong> (span 正确包裹对应字词；缺失 span 时不产生高亮)</td>
+              <td>Prototype Simulation</td>
+              <td><span class="badge badge-green">PASS</span></td>
+            </tr>
+            <tr>
+              <td>TEST 03</td>
+              <td><strong>Evidence Settling 真实同一 DOM 节点</strong> (before === after 节点未销毁，无 innerHTML 擦除)</td>
+              <td>Prototype Simulation</td>
+              <td><span class="badge badge-green">PASS</span></td>
+            </tr>
+            <tr>
+              <td>TEST 04</td>
+              <td><strong>Conclusion Emergence 真实同一 DOM 节点</strong> (同一节点完成 layout + opacity 展开)</td>
+              <td>Prototype Simulation</td>
+              <td><span class="badge badge-green">PASS</span></td>
+            </tr>
+            <tr>
+              <td>TEST 05</td>
+              <td><strong>kugiri 0.4.0 实际运行时行为</strong> (真实分词产生 3 lines / 25 words span 包装，revert 成功还原)</td>
+              <td>Actual Runtime</td>
+              <td><span class="badge badge-green">PASS</span></td>
+            </tr>
+            <tr>
+              <td>TEST 06</td>
+              <td><strong>Drawer 打开与 6 大字段完备性</strong> (标题/机构/日期/原文摘录/核实说明/可信度)</td>
+              <td>Prototype Simulation</td>
+              <td><span class="badge badge-green">PASS</span></td>
+            </tr>
+            <tr>
+              <td>TEST 07</td>
+              <td><strong>Drawer 背景 inert 隔离</strong> (抽屉打开时正文主容器被赋予 inert 属性，键盘不可穿透)</td>
+              <td>Prototype Simulation</td>
+              <td><span class="badge badge-green">PASS</span></td>
+            </tr>
+            <tr>
+              <td>TEST 08</td>
+              <td><strong>Drawer Tab 键焦点闭环锁定</strong> (在抽屉内连续 Tab 循环聚焦，焦点绝不泄露到页面)</td>
+              <td>Prototype Simulation</td>
+              <td><span class="badge badge-green">PASS</span></td>
+            </tr>
+            <tr>
+              <td>TEST 09</td>
+              <td><strong>Escape 关闭抽屉并恢复原触发焦点</strong> (按 Esc 键关闭抽屉，主动聚焦回点击前的证据节点)</td>
+              <td>Prototype Simulation</td>
+              <td><span class="badge badge-green">PASS</span></td>
+            </tr>
+            <tr>
+              <td>TEST 10</td>
+              <td><strong>prefers-reduced-motion 语义完整性</strong> (动画降为 0s，文字/字阶/符号完整表达事实)</td>
+              <td>Prototype Simulation</td>
+              <td><span class="badge badge-green">PASS</span></td>
             </tr>
           </tbody>
         </table>
@@ -551,7 +666,9 @@
         <details class="qa-item" open>
           <summary>10. kugiri 是否值得进入 production dependency？</summary>
           <div class="qa-content">
-            <strong>结论：不值得</strong>。CJK 标点挤压失效、动态 Resize 引发布局重排、Screen Reader 存在逐字拼读风险；原生现代 CSS + 现有 Motion 在 0 依赖的前提下完全达到同等甚至更优的质感。
+            <strong>结论：不值得</strong>。<br>
+            实测 5 大硬伤：① CJK 标点挤压失效，跨 span 产生不自然字距空隙；② 折行复制 inline 标签导致 DOM 节点翻倍膨胀；③ <code>text-wrap: balance</code> 冲突引发微抖动；④ 动态 Resize 必须频繁调用 <code>revert()</code> 并重新 <code>split()</code> 造成掉帧；⑤ 屏幕阅读器无障碍：<strong>Not tested（未跑实际 TTS 语音合成）</strong>，但结构审查显示 DOM 节点被打碎成数十个独立 span，若未深度配置 aria-hidden 存在高风险逐字拼读。<br>
+            因此，原生现代 CSS（语义 mark + line-break: strict）与现有 Motion 在 0 生产依赖下全面胜出。
           </div>
         </details>
 
@@ -575,8 +692,8 @@
     <section class="section-card">
       <div class="section-header">
         <div>
-          <h2 class="section-title">高保真走查截图矩阵 (11 张)</h2>
-          <p class="section-desc">覆盖桌面 1440px 与移动 390px 各关键状态</p>
+          <h2 class="section-title">高保真走查与灰度审查截图矩阵 (13 张)</h2>
+          <p class="section-desc">覆盖桌面 1440px 与移动 390px 各关键状态，包含去色灰度排版审查</p>
         </div>
       </div>
       <div class="gallery-grid">
@@ -590,7 +707,11 @@
         </div>
         <div class="gallery-item">
           <img src="./screenshots/desktop-mode3-source-drawer.png" alt="Source Drawer 打开">
-          <div class="gallery-caption">Source Drawer 侧滑下钻：展示 6 项关键要素、背景浅遮罩</div>
+          <div class="gallery-caption">Source Drawer 侧滑下钻：展示 6 项关键要素、背景浅遮罩、焦点闭环</div>
+        </div>
+        <div class="gallery-item">
+          <img src="./screenshots/desktop-mode3-source-drawer-grayscale.png" alt="Source Drawer 灰度审查">
+          <div class="gallery-caption">Quiet Editorial 灰度审查：抽屉去色后依靠字阶、发丝线与留白呈现尊严</div>
         </div>
         <div class="gallery-item">
           <img src="./screenshots/desktop-mode1-editorial.png" alt="Mode 1 Editorial Calm">
@@ -602,11 +723,15 @@
         </div>
         <div class="gallery-item">
           <img src="./screenshots/desktop-mode2-settled.png" alt="Mode 2 Settled 态">
-          <div class="gallery-caption">Mode 2 (Settling 后)：材料通过 FLIP 物理连续归入各结论组</div>
+          <div class="gallery-caption">Mode 2 (Settling 后)：材料通过 FLIP 物理连续归入各结论组（before === after）</div>
         </div>
         <div class="gallery-item">
           <img src="./screenshots/mobile-source-sheet.png" alt="移动端 Bottom Sheet">
-          <div class="gallery-caption">移动端 390px：自适应为贴底 Bottom Sheet，保留拖动手柄</div>
+          <div class="gallery-caption">移动端 390px：自适应为贴底 Bottom Sheet，保留拖动手柄与焦点锁定</div>
+        </div>
+        <div class="gallery-item">
+          <img src="./screenshots/mobile-source-sheet-grayscale.png" alt="移动端 Bottom Sheet 灰度审查">
+          <div class="gallery-caption">移动端 Bottom Sheet 灰度审查：无彩虹底色，信息结构依然坚实清晰</div>
         </div>
         <div class="gallery-item">
           <img src="./screenshots/mobile-mode3-hybrid.png" alt="移动端 Mode 3">

@@ -191,3 +191,69 @@
 | **CollectUI Empty** | 诚实平静、非错误插画、缺口一等呈现 | 恐慌红叉、骨架屏狂闪、Agent转圈 | **Evidence Gap 呈现** | 无 |
 | **CollectUI Quote** | 语录权威锚定、可追溯原话 | 对话聊天气泡、社交分享卡 | **原始说法原句展示** | 无 |
 
+---
+
+## 3. Mode 3 专项准则：Quiet Editorial Evidence
+
+核心原则：**Paper-first. Semantics by structure, not by paint.**
+
+> 页面首先应该像一份被认真编辑的调查文稿。
+> 信息关系主要通过文字、排版、层级、间距、细线和位置表达。
+> 不通过给每一种语义刷一个不同颜色的背景来表达。
+
+### 3.1 禁止 Semantic Rainbow（语义彩虹）
+- 严禁以下形式的组合作为默认表达：
+  ```text
+  浅色背景 + 同色左边框 + 同色标题
+  ```
+- 坚决杜绝：Exact Excerpt 刷蓝、Boundary 刷黄、Support 刷绿、Contradict 刷红、Gap 刷橙。这种模板化色彩不仅产生强烈的“AI-generated generic dashboard”廉价感，且在脱离色彩时导致信息架构瓦解。
+
+### 3.2 Source Drawer 设计要求
+- **背景**：以 clean white / `#fcfcfa` 为主，无任何花哨填充背景；
+- **结构与间距**：section 之间优先使用 20px–28px 的 spacing 或 1px `#e7e5e4` 细发丝分割线；
+- **原文摘录（Exact Excerpt）**：
+  - 采用调查手记引用样式（左侧 1.5px 中性细线 `#d6d3d1`，极淡灰白底 `#f7f7f5`，从容行高 1.65，纯粹文本为主角）；
+- **为什么这条证据重要（Relevance）**：
+  - 纯文字排版，小标 `#6b7280`，正文 `#18181b`，无蓝色背景；
+- **它不能证明什么（Boundary / Limitations）**：
+  - **绝无黄色背景、绝无警告图标（⚠️）**。它是严谨的学术限制条件，小字号（13px），次要墨水色，像学术文献限制条款；
+- **删除模板化英文大写括号**：
+  - 将 `(EXACT EXCERPT)`、`(RELEVANCE)`、`(BOUNDARY / LIMITATIONS)` 替换为自然中文标题；
+- **模态焦点闭环（Modal Focus Containment）**：
+  - Drawer 打开时底层 `#doc-container` 设置为 `inert`；
+  - 内部 Tab 键严格循环，Escape 键快速关闭，关闭后焦点精确恢复至触发它的 Evidence 按钮。
+
+### 3.3 推荐视觉 Token
+```text
+Canvas               #FFFFFF / #FCFCFD
+Primary ink          接近 #18181B
+Secondary text       接近 #6B7280
+Hairline             接近 #E7E5E4
+Subtle inset surface 接近 #F7F7F5（仅极少使用）
+Accent               仅保留一个低饱和深蓝，用于链接、焦点与 active trace
+```
+
+### 3.4 灰度验收标准（Grayscale Review）
+如果把截图转换成灰度，用户是否仍然可以清楚理解：原文是什么、为什么有关、它不能证明什么、来源在哪里？
+经实测（见 `desktop-mode3-source-drawer-grayscale.png`），在完全去除色彩后，凭借排版层级、字重与细分割线，所有语义层级 100% 成立。
+
+---
+
+## 4. 报告声明类别严格划分
+
+为确保工程与研究证据的客观性，本项目所有文档对声明进行严格分类，杜绝混淆：
+
+1. **Actual Runtime Evidence（真实运行证据）**：
+   - kugiri 0.4.0 API 在真实 Chromium 浏览器中的执行输出、分词结果与 revert 行为；
+   - Evidence Settling 在同一次生命周期中同一个 HTMLElement 上的引用严格相等（`before === after`）；
+   - Conclusion Emergence 在同一个 HTMLElement 上的状态平滑过渡；
+   - Claim Trace 纯粹由 `originalQuote + claims[].originalSpan` 确定性函数生成；
+   - Source Drawer 真实的 Tab 焦点闭环锁定与 Esc 焦点恢复。
+2. **Prototype Simulation（原型交互模拟）**：
+   - 处于独立设计探索原型 `docs/design/prototypes/reference-exploration/` 中，用于肉眼比较交互质感，非生产 Golden Path 代码。
+3. **Design Hypothesis（设计判断 / 假设）**：
+   - 推荐 Mode 3（Hybrid）的感官判断理由；
+   - 拒绝引入 kugiri 生产依赖的决策；
+   - 屏幕阅读器对细碎切片的潜在拼读影响（因测试环境未启动 VoiceOver 语音合成，属于结构检查推论，非真实语音实测）。
+
+

@@ -1,18 +1,24 @@
 /**
- * 独立 Design Exploration Playground 唯一真实案例数据契约
- * 三个模式（Mode 1, Mode 2, Mode 3）严格消费完全相同的真实调查数据。
- * 禁止通过改变信息量让某个方案显得更漂亮。
+ * 《红鲱鱼与枪》 视觉研究与交互原型设计夹具 (Design Exploration Fixture)
+ * 
+ * 【Provenance & 数据性质声明】
+ * 本数据并非生产管道在线实时导出的单一日志，而是一份「生产形态设计夹具（production-shaped design fixture）」。
+ * 其数据结构与业务边界完全遵循生产 InvestigationSnapshotV1 数据契约，
+ * 用于在完全相同的信息载荷下横向比较 Mode 1 (Editorial)、Mode 2 (Interactive) 与 Mode 3 (Hybrid) 的感知差异。
+ * 
+ * 核心事实源：
+ * - 原始说法：originalQuote
+ * - 命题原子拆分与原始切片：claims[].originalSpan
+ * 严禁引入手写 token 映射作为第二事实源。
  */
 
-export const INVESTIGATION_CASE = {
-  id: "case-vc-cold-001",
+export const PRODUCTION_SHAPED_FIXTURE = {
+  id: "fixture-vc-cold-001",
+  fixtureType: "production-shaped design fixture",
+  provenance: "Constructed based on Production Snapshot Contract (InvestigationSnapshotV1) for multi-mode visual exploration",
+  
+  // 原始核查说法（唯一事实源文本）
   originalQuote: "维生素 C 能治感冒，而且每次感冒都应该输液。",
-  quoteTokens: [
-    { text: "维生素 C 能治感冒", claimId: "claim-01", isSpan: true },
-    { text: "，而且", isSpan: false },
-    { text: "每次感冒都应该输液", claimId: "claim-02", isSpan: true },
-    { text: "。", isSpan: false }
-  ],
   checkedAt: "2026-09-06 12:00",
   
   conclusion: {
@@ -31,6 +37,7 @@ export const INVESTIGATION_CASE = {
       checkability: "checkable",
       judgment: "partial",
       judgmentLabel: "部分成立（被夸大）",
+      // 在 originalQuote 中严格对应 "维生素 C 能治感冒" (索引 0 到 9)
       originalSpan: [0, 9],
       conflict: {
         id: "conflict-01",
@@ -46,21 +53,18 @@ export const INVESTIGATION_CASE = {
           sourceId: "src-01",
           role: "support",
           roleLabel: "支持",
-          status: "settled",
           note: "支持轻微缩短病程"
         },
         {
           sourceId: "src-02",
           role: "contradict",
           roleLabel: "反驳",
-          status: "settled",
           note: "反驳维C能直接治愈普通感冒"
         },
         {
           sourceId: "src-03",
           role: "context-only",
           roleLabel: "仅相关",
-          status: "settled",
           note: "日常微量营养素推荐摄入指南"
         }
       ]
@@ -74,6 +78,7 @@ export const INVESTIGATION_CASE = {
       checkability: "checkable",
       judgment: "false",
       judgmentLabel: "原句站不住",
+      // 在 originalQuote 中严格对应 "每次感冒都应该输液" (索引 12 到 22)
       originalSpan: [12, 22],
       conflict: null,
       evidenceGaps: [
@@ -84,17 +89,32 @@ export const INVESTIGATION_CASE = {
           sourceId: "src-04",
           role: "contradict",
           roleLabel: "反驳",
-          status: "settled",
           note: "临床指南明确规定无指征不得静脉输液"
         },
         {
           sourceId: "src-05",
           role: "context-only",
           roleLabel: "仅相关",
-          status: "settled",
           note: "国家卫健委抗菌药物与输液管理规范"
         }
       ]
+    },
+    {
+      id: "claim-03-missing-span",
+      num: "03",
+      text: "输液能让感冒好得更快是常识",
+      type: "value_judgment",
+      typeLabel: "流传常识型判断",
+      checkability: "unverifiable",
+      judgment: "unverified",
+      judgmentLabel: "无公开依据支撑",
+      // 故意不提供 originalSpan (null)，验证 Claim Trace 绝不伪造高亮
+      originalSpan: null,
+      conflict: null,
+      evidenceGaps: [
+        "该原子属于民间习惯性断言，在原句中未直接出现具体词组，无法在原句中高亮回溯。"
+      ],
+      evidenceLinks: []
     }
   ],
 

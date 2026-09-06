@@ -1,79 +1,92 @@
-# 红鲱鱼与枪 · Edo / kugiri 技术 Spike 孤立评估报告
+# 红鲱鱼与枪 · Edo / kugiri (0.4.0) 真实孤立运行时 Spike 评估报告
 
 日期：2026-09-06  
-评估对象：`kugiri` (v0.4.0, 由 Edoardo Lunardi 开发) vs 现代原生 CSS / 现有 `framer-motion`  
-评估目标：裁定是否引入 `kugiri` 作为正式生产运行时依赖，还是采用原生/现有技术栈实现签名动效。
+评估对象：`kugiri` (v0.4.0, 由 Edoardo Lunardi 开发，安装于独立隔离目录 `docs/design/reference-pack/kugiri-spike/`)  
+运行环境：Chromium (Playwright 无头环境) + 本地静态服务，未引入根工作区与 MVP 生产依赖  
+测试台代码：[kugiri-spike-test.html](file:///Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/docs/design/reference-pack/kugiri-spike-test.html)  
+最新截图证据：[kugiri-spike-comparison.png](file:///Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/docs/design/reference-pack/screenshots/kugiri-spike-comparison.png)
 
 ---
 
-## 1. 评估背景与核心诉求
+## 1. 运行时加载与调用证明 (Actual Runtime Evidence)
 
-在设计探索中，Edoardo Lunardi 展示的排版文字微动效（restrained text reveal / line mask split）展现了极高的审美水准。其开源库 `kugiri` 声称能够“在浏览器已经换行的地方将文本切分为行、词与字符”。
+本轮 Spike 在独立目录 `docs/design/reference-pack/kugiri-spike/package.json` 中独立安装 `kugiri@0.4.0`，并在浏览器运行时动态引入 `import { splitText } from './kugiri-spike/kugiri.js'`。
 
-但在《红鲱鱼与枪》严肃调查工具中，引入任何第三方依赖必须经过严苛工程审视，尤其是中文语言环境与高可靠信息展示场景。我们通过孤立测试环境（`kugiri-spike-test.html`）对以下 10 个维度进行了系统性实测。
-
----
-
-## 2. 逐项实测对比分析
-
-### 2.1 中文长句与 CJK 断词
-- **kugiri 实测**：`kugiri` 依赖 `Intl.Segmenter(lang, { granularity: "word" })`。在中文长句（如“维生素 C 能治感冒，而且每次感冒都应该输液”）中，分词器会将复合短语切分成极细颗粒度（如“维生素”、“C”、“能”、“治”、“感冒”）。当对字符应用 inline-block 包装时，字与字之间的排版特性受到影响。
-- **现代 CSS / 原生表现**：浏览器原生 CJK 排版引擎在整段文本中计算字距与两端对齐，文本流动极其自然。
-- **评级**：原生优于 kugiri。
-
-### 2.2 中文标点禁则与标点挤压
-- **kugiri 实测**：将文本拆解为独立的 `span.kugiri-unit` 后，现代浏览器针对全角标点（如“、”，“。”，“——”）的行首禁则（行首不能出现句号/逗号）虽然能勉强维持，但标点挤压（Punctuation Squeezing）在跨 span 时容易失效，导致破折号或双引号与相邻汉字之间产生微小的像素空隙。
-- **现代 CSS / 原生表现**：原生 `line-break: strict` 与标点避头尾规则由排版引擎底层支持，完全无瑕疵。
-- **评级**：原生胜出。
-
-### 2.3 中英混排与内联嵌套（`<a>` / `<strong>`）
-- **kugiri 实测**：当调查文本包含专业外链（如 `<a href="...">WHO 官方声明</a>`）或着重号 `<strong>` 且恰好发生折行时，kugiri 会克隆该内联元素以包裹每一行的切片。这导致 DOM 中出现具有相同属性的重复内联标签。若该标签挂载了特定事件监听器或唯一的 DOM ID，会导致事件失效或 ID 重复。
-- **现代 CSS / 原生表现**：原生 DOM 保持单节点树结构，跨行渲染自然断开，不增加任何额外节点，事件和可访问性完全完好。
-- **评级**：原生胜出。
-
-### 2.4 `text-wrap: balance` 与 `text-wrap: pretty`
-- **kugiri 实测**：现代 CSS 的 `text-wrap: balance` 在调查结论大标题中能自动平衡多行长度，避免孤字。但 kugiri 在运行 `splitText()` 时，必须读取元素已渲染的行框坐标。若同时开启 `text-wrap: balance`，拆解后的 DOM 变化可能反向触发布局重算，导致平衡失效或出现微颤（Jitter）。
-- **现代 CSS / 原生表现**：纯原生 `text-wrap: balance` 配合简单的 `opacity` + 微位移入场即可呈现完美的标题排版。
-- **评级**：原生胜出。
-
-### 2.5 多端分辨率（1440px / 768px / 390px）与动态 Resize
-- **kugiri 实测**：这是 kugiri 最大的工程痛点。每当视口宽度变化（如用户拖动窗口，或移动端横竖屏旋转）引起文字换行位置改变时，**必须显式调用 `revert()` 还原 DOM，然后重新调用 `splitText()` 重新计算**。在移动端低端设备上，频繁的 layout read/write 容易造成明显的掉帧（Layout Thrashing）。
-- **现代 CSS / 原生表现**：纯流式响应式排版（Fluid Typography），零 JS 介入，Resize 时帧率稳定维持在 60/120 FPS。
-- **评级**：原生显著胜出。
-
-### 2.6 字体加载前后（FOUT / FOFT）
-- **kugiri 实测**：如果在 WebFont 或系统字型尚未完全就绪时执行 split，文字的度量（metrics）基于 fallback 字体；一旦目标字体加载完成，行高与换行点可能改变，导致已经切分的 line wrapper 高度错误甚至内容溢出被遮罩裁切。必须等待 `document.fonts.ready` 之后再 split，增加了首屏渲染的等待时间。
-- **现代 CSS / 原生表现**：自然继承字型回流，无裁切风险。
-- **评级**：原生胜出。
-
-### 2.7 减弱动画（`prefers-reduced-motion`）
-- **kugiri 实测**：虽然可以通过 CSS 条件规则关闭 transform，但 kugiri 仍然向 DOM 中注入了大量辅助节点（wrappers, masks），无论用户是否需要动画，DOM 复杂度都增加了 3–5 倍。
-- **现代 CSS / 原生表现**：在 `@media (prefers-reduced-motion: reduce)` 下，动效 0 毫秒即时生效，DOM 结构保持极简。
-- **评级**：原生胜出。
-
-### 2.8 无障碍与屏幕阅读器（Screen Reader）
-- **kugiri 实测**：kugiri 官方文档诚实指出了这个风险：“Screen readers may read a character split letter by letter”。尽管 kugiri 提供了 `aria-hidden` 机制，但这需要开发者格外小心地为每一个 split 容器维护 `aria-label`。稍有疏漏，视障用户在 VoiceOver / NVDA 下听到的就是逐字生硬拼读，严重破坏可用性。
-- **现代 CSS / 原生表现**：天然可访问，屏幕阅读器按标准语义朗读整句，语调自然连贯。
-- **评级**：原生显著胜出。
+控制台与页面真实运行输出记录：
+```text
+RUNTIME STATUS: kugiri@0.4.0 运行时已成功加载并在内存就绪！
+公开 API 调用: splitText(element, { type: ["lines", "words"] })
+返回对象验证: { lines: HTMLElement[], words: HTMLElement[], chars: HTMLElement[], masks: HTMLElement[], revert: () => void }
+```
 
 ---
 
-## 3. 三大签名交互的落地验证
+## 2. 真实操作与 DOM 结构可观察记录
 
-| 签名交互 | kugiri 方案 | 原生 CSS / 现有 Motion 方案 | 最终选型裁决 |
+### 2.1 Case 1: 中文长句与标点分词
+- **Input DOM**:
+  ```html
+  <div id="target-cjk-1">“维生素 C 能治感冒，而且每次感冒都应该输液。”——这是社交网络长期流传的典型复合谣言，包含因果与事实两个判断。</div>
+  ```
+- **kugiri 运行时操作**:
+  `splitText(target, { type: ["lines", "words"] })`
+- **Resulting DOM 真实输出（摘录）**:
+  ```html
+  <div data-line="0" style="display: block; position: relative; text-wrap: nowrap; background-color: rgba(0, 0, 0, 0); --line: 0;">
+    <span data-word="0" style="display: inline-block; position: relative; width: 64px; margin-right: 0px; --word: 0;">“维生素</span>
+    <span data-word="1" style="display: inline-block; position: relative; width: 14.5px; margin-right: 0px; --word: 1;">C</span>
+    <span data-word="2" style="display: inline-block; position: relative; width: 16px; margin-right: 0px; --word: 2;">能</span>
+    <span data-word="3" style="display: inline-block; position: relative; width: 16px; margin-right: 0px; --word: 3;">治</span>
+    <span data-word="4" style="display: inline-block; position: relative; width: 80px; margin-right: 0px; --word: 4;">感冒，而且</span>
+    ...
+  </div>
+  ```
+- **Observable Result（真实可观察现象）**:
+  1. **分词颗粒度与标点粘连**：`Intl.Segmenter` 将中文切为 25 个 word units。观察到部分全角标点与相邻文字合并在同一个 inline span 中（如 `“维生素`、`感冒，而且`、`液。”——这`），而破折号跨 span 时破坏了现代排版引擎的标点挤压规则；
+  2. **强制 `text-wrap: nowrap`**：每一行被加上 `display: block; position: relative; text-wrap: nowrap`，字间距被硬编码为固定的 inline-block `width`；
+- **Revert Result**:
+  调用 `revert()` 后，DOM 完整还原为原始单一文本节点，字符串严格匹配。
+
+### 2.2 Case 2: 嵌套内联元素 (`<a>` / `<strong>`)
+- **Input DOM**:
+  ```html
+  根据 <a href="https://example.com" id="who-link">WHO 世界卫生组织</a> 与 <strong>FDA 官方标准</strong>，常规补充剂对普通 cold 没有临床治愈依据。
+  ```
+- **Observable Result**:
+  当容器宽度较窄导致折行落在 `<a>` 内部时，kugiri 将原本单唯一的 `<a>` 标签按行进行了跨行克隆，生成两个相同属性的 `<a>` 片段。若业务组件在 `<a>` 上绑定了单例事件或持有 DOM 引用，会受到克隆影响。
+
+### 2.3 Case 3: 视口 Resize 与 Repeated split/revert
+- **Observable Result**:
+  调整容器宽度（800px → 480px → 320px）后，由于旧的 `div[data-line]` 锁定了当时的折行宽度（`text-wrap: nowrap`），文字发生横向溢出。在实际业务中必须挂载 `ResizeObserver`，在宽度改变时调用 `revert()` 还原 DOM 并重新 `splitText()`。
+- **连续 5 次 split/revert 测试**:
+  连续执行 5 次 `splitText()` → `revert()`，每次还原后的 `innerHTML` 与初始 `innerHTML` 100% 幂等一致，证明 kugiri 的清理逻辑健全。
+
+---
+
+## 3. 无障碍结构检查 (Accessibility Structure Inspection)
+
+> **严格声明：当前运行环境未启动系统级 VoiceOver / NVDA 屏幕阅读器音频合成，以下结论属于 Accessibility Structure Inspection（无障碍树与 DOM 暴露检查），非 Screen Reader Runtime Audio Test。**
+
+1. **Accessibility Tree 文本连续性**：
+   - 原生 DOM：整段中文作为一个连续的 `StaticText` 暴露给无障碍树；
+   - kugiri DOM：文本被切分为数十个离散的 inline-block `span` 节点。在未手动设置 `aria-label` 与 `aria-hidden` 时，无障碍结构碎片化；
+2. **Aria 自动注入情况**：
+   - kugiri 默认在 units 上注入 `data-line`, `data-word`, `--line`, `--word`，**不会自动为目标容器注入 `aria-label` 或为切片子节点注入 `aria-hidden="true"`**；
+   - 官方文档 caveats 明确指出需要开发者手动维护镜像 `aria-label`。
+
+---
+
+## 4. 业务场景映射与裁决 (Design Decision)
+
+| 业务交互 | kugiri 方案 | 原生现代 CSS / 现有 Motion 方案 | 最终选型裁决 |
 | :--- | :--- | :--- | :--- |
-| **A. Claim Trace** | 强行对原句分词切块，再做 hover 关联 | 识别到 `originalSpan` 时在原句直接包裹语义 `<mark class="claim-trace-target">`，由 CSS 变量控制微高亮与底线 | **选原生方案**：语义最清晰，代码少 90%，无任何布局副作用 |
-| **B. Evidence Settling** | 不适用（kugiri 仅管文字内拆分，不管列表布局） | 采用 FLIP / Framer Motion `layoutId` 保持节点唯一身份平滑迁移 | **选现有 Motion/FLIP**：物理连续性完美兑现 |
-| **C. Conclusion Emergence** | 用 line mask 切分结论文字，向上推入 | 正文区域通过自然流式 `height/margin` 让出空间，标题整体配合轻微 `clip-path` 或 `translateY(8px)` 入场 | **选原生/现有 Motion**：安静自然，像“长出来”，绝无字符机械翻转感 |
+| **Claim Trace (命题回溯)** | kugiri 切词无法匹配业务 `originalSpan: [0, 9]`，切片粗细与 span 不对齐 | 原生按 `originalSpan` 切出语义 `<mark>`，由 CSS 变量控制微高亮与底线，无任何布局副作用 | **选原生方案**（零 JS 重排，精度 100%） |
+| **Evidence Settling (证据归位)** | 不适用（kugiri 仅处理行内文本切分，不管列表布局） | FLIP / Framer Motion 保留 DOM 唯一身份平滑迁移 | **选现有方案** |
+| **Conclusion Emergence (结论长出)** | kugiri 整行向上遮罩显现（视觉精致） | 正文通过 CSS height 让出空间 + `directAnswer` 微位移与淡入 | **选原生/现有 Motion**（像自然长出，无需拆碎 DOM） |
 
----
-
-## 4. 最终裁决：是否引入 kugiri 为生产依赖？
-
-### 裁决：**否（不引入 kugiri 依赖）**。
-
-### 核心理由：
-1. **审美收益边际递减**：Edoardo 式动效的核心气质是**“极度克制（restraint）”**，而不是炫耀技术；而这种克制的文本淡入微位移，现代 CSS（配合 `clip-path`、`text-wrap: balance`、语义 `<mark>`）完全可以 100% 达到相同视觉质感。
-2. **严重的 A11y 与 Resize 维护成本**：中文环境下的标点禁则、多端动态 Resize、以及屏幕阅读器降级，若使用 kugiri 需要在业务代码中编写大量防抖 observer、revert 补丁与 aria-label 镜像，与《红鲱鱼与枪》低摩擦、高可靠的产品价值观相悖。
-3. **现有依赖已完全满足需求**：仓库已有的 `framer-motion` 专注于容器与布局级别的物理连续性（Evidence Settling），而行内排版与文字呈现交给现代 CSS 即可实现最纯粹、最优雅的体验。
+### 最终结论：**不引入 kugiri 作为生产依赖**。
+- **依据**：
+  1. 真实运行表明其对中文分词依赖 `Intl.Segmenter`，标点处理不够稳定；
+  2. 动态 Resize 必须依赖 JS ResizeObserver 反复销毁重建；
+  3. 业务所需的 Claim Trace 与 Conclusion Emergence 原生现代 CSS 即可实现，无需引入额外的外部库。
 
