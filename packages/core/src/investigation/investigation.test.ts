@@ -6,6 +6,10 @@ import {
   assertInvestigationInvariants,
   validateInvestigationSnapshot,
   InvestigationSnapshotSchema,
+  investigationSourceId,
+  findSemanticRoleTransition,
+  evaluateSourceIdentityGate,
+  sourceIdsStableAcross,
   type InvestigationSnapshotV1,
 } from "./index.js";
 
@@ -867,3 +871,292 @@ describe("schema 与不变量", () => {
     expect(InvestigationSnapshotSchema.properties).toHaveProperty("schemaVersion");
   });
 });
+
+describe("Issue #76 source identity 跨 Snapshot 稳定", () => {
+  const claim = "维生素C能治感冒";
+  const urlX = "https://ltxc.cqnu.edu.cn/info/1140/7130.htm";
+  const urlY = "https://other.example/earlier";
+  const urlZ = "https://other.example/later";
+  const urlNew = "https://new.example/added";
+
+  function idOf(snapshot: InvestigationSnapshotV1, url: string): string {
+    const found = snapshot.sources.find((s) => s.url === url);
+    if (!found) throw new Error(`missing ${url}`);
+    return found.id;
+  }
+
+  function investigatingOf(urls: string[]) {
+    return buildInvestigationSnapshot(
+      {
+        originalClaim: claim,
+        phase: "investigating",
+        claimAtoms: [claim],
+        atomSearchBundle: {
+          atomsSearched: [claim],
+          byAtomKey: { [claim]: urls.map((url, i) => src(url, `来源${i + 1}`, "摘录")) },
+        },
+      },
+      { claimAtomKeyFn: keyFn }
+    );
+  }
+
+  function judgingOf(input: {
+    bundle: string[];
+    support?: string[];
+    contradict?: string[];
+    relatedOnly?: boolean;
+  }) {
+    return buildInvestigationSnapshot(
+      {
+        originalClaim: claim,
+        phase: "judging",
+        claimAtoms: [claim],
+        atomSearchBundle: {
+          atomsSearched: [claim],
+          byAtomKey: { [claim]: input.bundle.map((url, i) => src(url, `来源${i + 1}`, "摘录")) },
+        },
+        subclaimVerdicts: [
+          {
+            claimAtom: claim,
+            verdict: input.contradict?.length && !input.support?.length ? "false" : "true",
+            evidence: "核查摘录[1]。",
+            boundary: "",
+            supportingSources: (input.support ?? []).map((url) => src(url, "支持页", "支持摘录")),
+            contradictingSources: (input.contradict ?? []).map((url) => src(url, "反驳页", "反驳摘录")),
+            evidenceGaps: [],
+            ...(input.relatedOnly ? { sourcesRelatedOnly: true } : {}),
+          },
+        ],
+      },
+      { claimAtomKeyFn: keyFn }
+    );
+  }
+
+  it("A. 同 URL 跨 phase：investigating unassessed 与 judging support 的 sourceId 相等", () => {
+    const before = investigatingOf([urlY, urlZ, urlX]);
+    const after = judgingOf({ bundle: [urlY, urlZ, urlX], support: [urlX] });
+    expect(before.claims[0]!.evidence.find((l) => idOf(before, urlX) === l.sourceId)?.role).toBe("unassessed");
+    expect(after.claims[0]!.evidence.find((l) => l.role === "support")?.sourceId).toBe(idOf(after, urlX));
+    expect(idOf(before, urlX)).toBe(idOf(after, urlX));
+    expect(idOf(before, urlX)).toBe(investigationSourceId(urlX));
+    expect(idOf(before, urlX)).not.toBe(idOf(before, urlY));
+  });
+
+  it("B. evidence bucket 重排后已有 URL 的 id 全不变", () => {
+    const investigating = investigatingOf([urlY, urlZ, urlX]);
+    const judging = judgingOf({ bundle: [urlX, urlY, urlZ], support: [urlX], contradict: [urlY] });
+    expect(idOf(investigating, urlX)).toBe(idOf(judging, urlX));
+    expect(idOf(investigating, urlY)).toBe(idOf(judging, urlY));
+    expect(idOf(investigating, urlZ)).toBe(idOf(judging, urlZ));
+  });
+
+  it("C. 新增来源不改变已有 URL 的 id", () => {
+    const first = investigatingOf([urlX, urlY]);
+    const second = investigatingOf([urlX, urlY, urlNew]);
+    expect(idOf(first, urlX)).toBe(idOf(second, urlX));
+    expect(idOf(first, urlY)).toBe(idOf(second, urlY));
+    expect(idOf(second, urlNew)).toBe(investigationSourceId(urlNew));
+    expect(idOf(second, urlNew)).not.toBe(idOf(second, urlX));
+  });
+
+  it("D. role 变化不改变 sourceId", () => {
+    const unassessed = investigatingOf([urlX]);
+    const support = judgingOf({ bundle: [urlX], support: [urlX] });
+    const contradict = judgingOf({ bundle: [urlX], contradict: [urlX] });
+    const context = judgingOf({ bundle: [urlX], support: [urlX], relatedOnly: true });
+    const expected = investigationSourceId(urlX);
+    expect(idOf(unassessed, urlX)).toBe(expected);
+    expect(idOf(support, urlX)).toBe(expected);
+    expect(idOf(contradict, urlX)).toBe(expected);
+    expect(idOf(context, urlX)).toBe(expected);
+    expect(support.claims[0]!.evidence.map((l) => l.role)).toEqual(["support"]);
+    expect(contradict.claims[0]!.evidence.map((l) => l.role)).toEqual(["contradict"]);
+    expect(context.claims[0]!.evidence.map((l) => l.role)).toEqual(["context-only"]);
+  });
+
+  it("E. 同 URL dual relation：一个 Source，两条 EvidenceLink，不合成 source-level verdict", () => {
+    const snapshot = judgingOf({ bundle: [urlX], support: [urlX], contradict: [urlX] });
+    expect(snapshot.sources.filter((s) => s.url === urlX)).toHaveLength(1);
+    expect(snapshot.sources).toHaveLength(1);
+    expect(snapshot.claims[0]!.evidence.map((l) => l.role)).toEqual(["support", "contradict"]);
+    expect(snapshot.claims[0]!.evidence[0]!.sourceId).toBe(snapshot.claims[0]!.evidence[1]!.sourceId);
+    expect(snapshot.sources[0]!).not.toHaveProperty("verdict");
+    expect(snapshot.sources[0]!).not.toHaveProperty("role");
+  });
+
+  it("历史 rebuild 与 complete 实时帧对同一 URL 给出同一 sourceId", () => {
+    const live = buildInvestigationSnapshot(
+      {
+        originalClaim: claim,
+        phase: "complete",
+        claimAtoms: [claim],
+        atomSearchBundle: {
+          atomsSearched: [claim],
+          byAtomKey: { [claim]: [src(urlY, "先检索", ""), src(urlX, "后检索", "")] },
+        },
+        subclaimVerdicts: [
+          {
+            claimAtom: claim,
+            verdict: "true",
+            evidence: "该页支持[1]。",
+            supportingSources: [src(urlX, "后检索", "")],
+            contradictingSources: [],
+            evidenceGaps: [],
+          },
+        ],
+        report: {
+          conclusion: "该说法有出处。",
+          verdictType: "true",
+          citationSources: [{ url: urlX, title: "后检索", snippet: "" }],
+        },
+      },
+      { claimAtomKeyFn: keyFn }
+    );
+    const rebuilt = rebuildInvestigationFromReport({
+      report: {
+        claimItems: [{ text: claim, verifiable: true, type: "fact" }],
+        subclaimVerdicts: [
+          {
+            claimAtom: claim,
+            verdict: "true",
+            evidence: "该页支持[1]。",
+            supportingSources: [src(urlX, "后检索", "")],
+            contradictingSources: [],
+            evidenceGaps: [],
+          },
+        ],
+        conclusion: "该说法有出处。",
+        verdictType: "true",
+        citationSources: [{ url: urlX, title: "后检索", snippet: "" }],
+      },
+      claim,
+      options: { claimAtomKeyFn: keyFn },
+    });
+    expect(idOf(rebuilt, urlX)).toBe(idOf(live, urlX));
+    expect(idOf(live, urlX)).toBe(investigationSourceId(urlX));
+  });
+
+  it("id 是 URL 的纯函数，trim 后相同即同一 id，格式 CSS-safe", () => {
+    const a = investigationSourceId("https://example.com/a");
+    const b = investigationSourceId("  https://example.com/a  ");
+    const c = investigationSourceId("https://example.com/b");
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+    expect(a).toMatch(/^src-[0-9a-f]{16}$/);
+  });
+});
+
+describe("Issue #76 capture gate：semantic source identity", () => {
+  function snap(input: {
+    phase: "investigating" | "judging";
+    sources: Array<{ id: string; url: string; title?: string }>;
+    evidence: Array<{ sourceId: string; role: "unassessed" | "support" | "contradict" | "context-only" }>;
+  }): InvestigationSnapshotV1 {
+    return validateInvestigationSnapshot({
+      schemaVersion: 1,
+      originalClaim: "维生素C能治感冒",
+      phase: input.phase,
+      claims: [
+        {
+          id: "claim-1",
+          text: "维生素C能治感冒",
+          order: 0,
+          checkability: "checkable",
+          progress: input.phase === "investigating" ? "searching" : "complete",
+          judgment: input.phase === "judging" ? "supported" : null,
+          evidence: input.evidence,
+          gaps: [],
+        },
+      ],
+      sources: input.sources.map((s) => ({ id: s.id, url: s.url, title: s.title ?? "来源" })),
+      conflicts: [],
+    });
+  }
+
+  it("同号 src-N 指向不同 URL 时不得报 unassessed → support", () => {
+    const investigating = snap({
+      phase: "investigating",
+      sources: [
+        { id: "src-1", url: "https://other.example/not-x" },
+        { id: "src-3", url: "https://ltxc.cqnu.edu.cn/info/1140/7130.htm" },
+      ],
+      evidence: [
+        { sourceId: "src-1", role: "unassessed" },
+        { sourceId: "src-3", role: "unassessed" },
+      ],
+    });
+    const judging = snap({
+      phase: "judging",
+      sources: [
+        { id: "src-1", url: "https://ltxc.cqnu.edu.cn/info/1140/7130.htm" },
+        { id: "src-2", url: "https://other.example/not-x" },
+      ],
+      evidence: [{ sourceId: "src-1", role: "support" }],
+    });
+
+    expect(findSemanticRoleTransition([investigating, judging])).toBeNull();
+    const stability = sourceIdsStableAcross([investigating, judging]);
+    expect(stability.stable).toBe(false);
+    const gate = evaluateSourceIdentityGate({
+      snapshots: [investigating, judging],
+      sourceIdsStable: false,
+      requireTransition: true,
+    });
+    expect(gate.ok).toBe(false);
+    expect(gate.errors.some((e) => e.includes("sourceIdsStable=false"))).toBe(true);
+    expect(gate.errors.some((e) => e.includes("src-1"))).toBe(true);
+    expect(gate.transition).toBeNull();
+  });
+
+  it("同 URL 且同 sourceId 的 unassessed → support 才是真实 transition", () => {
+    const url = "https://ltxc.cqnu.edu.cn/info/1140/7130.htm";
+    const id = investigationSourceId(url);
+    const investigating = snap({
+      phase: "investigating",
+      sources: [{ id, url }],
+      evidence: [{ sourceId: id, role: "unassessed" }],
+    });
+    const judging = snap({
+      phase: "judging",
+      sources: [{ id, url }],
+      evidence: [{ sourceId: id, role: "support" }],
+    });
+    const transition = findSemanticRoleTransition([investigating, judging]);
+    expect(transition).toEqual({
+      claimId: "claim-1",
+      sourceId: id,
+      url,
+      from: "unassessed",
+      to: "support",
+      atPhase: "judging",
+    });
+    const gate = evaluateSourceIdentityGate({
+      snapshots: [investigating, judging],
+      requireTransition: true,
+    });
+    expect(gate.ok).toBe(true);
+    expect(gate.sourceIdsStable).toBe(true);
+  });
+
+  it("sourceIdsStable=false 即使没有再算出冲突也必须 FAIL", () => {
+    const url = "https://stable.example/x";
+    const id = investigationSourceId(url);
+    const investigating = snap({
+      phase: "investigating",
+      sources: [{ id, url }],
+      evidence: [{ sourceId: id, role: "unassessed" }],
+    });
+    const judging = snap({
+      phase: "judging",
+      sources: [{ id, url }],
+      evidence: [{ sourceId: id, role: "support" }],
+    });
+    const gate = evaluateSourceIdentityGate({
+      snapshots: [investigating, judging],
+      sourceIdsStable: false,
+    });
+    expect(gate.ok).toBe(false);
+    expect(gate.errors).toContain("sourceIdsStable=false");
+  });
+});
+

@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
  * 生产 mvp/server/src/lib/investigation 是同内容镜像（部署只打包 mvp/，
  * server 不能运行时依赖工作区包）。任何单侧改动必须两侧同步，否则此测试红。
  */
-const FILES = ["schema.ts", "build.ts", "invariants.ts", "index.ts"] as const;
+const FILES = ["schema.ts", "build.ts", "invariants.ts", "sourceIdentity.ts", "index.ts"] as const;
 
 function repoRoot(): string {
   for (const root of [process.cwd(), join(process.cwd(), ".."), join(process.cwd(), "..", "..")]) {
