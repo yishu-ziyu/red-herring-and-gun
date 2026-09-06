@@ -1948,3 +1948,57 @@ describe("Issue #76 source identity × #63 Evidence Settling", () => {
   });
 });
 
+describe("Issue #66 real SSE artifacts (not golden fixtures)", () => {
+  function loadReal(name: string): InvestigationSnapshotV1 {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const { resolve } = require("node:path") as typeof import("node:path");
+    const path = resolve(
+      process.cwd(),
+      "..",
+      "docs/design/2026-09-06-mode3-production/final/real/snapshots",
+      name,
+    );
+    return JSON.parse(readFileSync(path, "utf8")) as InvestigationSnapshotV1;
+  }
+
+  it("REAL investigating → judging：src-1 unassessed→support 且 DOM before === after", () => {
+    const investigating = loadReal("05-investigating-5.json");
+    const judging = loadReal("06-judging.json");
+    const view = renderCanvas(investigating);
+    const before = document.querySelector('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]');
+    const region = document.querySelector("[data-gp-conclusion-region]");
+    const original = document.querySelector(".gp-original");
+    const board = document.querySelector('[data-gp-claim-id="claim-1"] .gp-evidence-board');
+    expect(before).toBeInstanceOf(HTMLElement);
+    expect(before?.getAttribute("data-gp-role")).toBe("unassessed");
+    expect(before?.getAttribute("data-gp-identity")).toBe("stable");
+    expect(region?.getAttribute("data-gp-conclusion-state")).toBe("pending");
+    expect(region?.querySelector("[data-gp-direct-answer]")).toBeNull();
+
+    view.rerender(
+      <InvestigationCanvas snapshot={judging} live onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    const after = document.querySelector('[data-gp-claim-id="claim-1"] [data-source-id="src-1"]');
+    expect(after).toBe(before);
+    expect(after?.getAttribute("data-gp-role")).toBe("support");
+    expect(after?.getAttribute("data-gp-identity")).toBe("stable");
+    expect(document.querySelector("[data-gp-conclusion-region]")).toBe(region);
+    expect(document.querySelector(".gp-original")).toBe(original);
+    expect(document.querySelector('[data-gp-claim-id="claim-1"] .gp-evidence-board')).toBe(board);
+    expect(document.querySelector("[data-gp-direct-answer]")).toBeNull();
+  });
+
+  it("REAL originalSpan 精确切片，禁止 fuzzy", () => {
+    const complete = loadReal("complete.json");
+    for (const claim of complete.claims) {
+      const span = claim.originalSpan;
+      expect(span).toBeTruthy();
+      const sliced = complete.originalClaim.slice(span!.start, span!.end);
+      expect(sliced).toBe(claim.text);
+    }
+    const segs = buildClaimTraceSegments(complete.originalClaim, complete.claims);
+    const traced = segs.filter((s) => s.traceable).map((s) => s.text);
+    expect(traced).toEqual(["维生素C能治感冒", "每次感冒都应当输液"]);
+  });
+});
+
