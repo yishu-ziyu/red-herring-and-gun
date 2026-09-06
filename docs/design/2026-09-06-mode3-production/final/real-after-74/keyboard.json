@@ -1,0 +1,28 @@
+{
+  "steps": [
+    {
+      "focus": "claim-head",
+      "active": "gp-claim-head"
+    },
+    {
+      "focus": "evidence",
+      "key": "claim-2:src-4"
+    },
+    {
+      "drawer": true,
+      "resolve": "live"
+    },
+    {
+      "tabTrap": {
+        "afterTab": true,
+        "afterShiftTab": true
+      }
+    },
+    {
+      "escapeClosed": true,
+      "focusReturnKey": "claim-2:src-4"
+    }
+  ],
+  "ok": true,
+  "errors": []
+}

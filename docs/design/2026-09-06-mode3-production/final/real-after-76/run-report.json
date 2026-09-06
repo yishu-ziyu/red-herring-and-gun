@@ -1,0 +1,214 @@
+{
+  "source": "REAL SSE",
+  "claim": "维生素C能治感冒，而且每次感冒都应当输液。",
+  "ssePhases": [
+    "received",
+    "decomposed",
+    "investigating",
+    "investigating",
+    "judging",
+    "judging",
+    "judging",
+    "complete"
+  ],
+  "domPhases": [
+    "received",
+    "investigating",
+    "judging",
+    "complete"
+  ],
+  "identityGate": {
+    "ok": true,
+    "errors": [],
+    "transition": {
+      "claimId": "claim-1",
+      "sourceId": "src-bd310b43063afb86",
+      "url": "https://ltxc.cqnu.edu.cn/info/1140/7130.htm",
+      "from": "unassessed",
+      "to": "support",
+      "atPhase": "judging"
+    },
+    "sourceIdsStable": true
+  },
+  "sourceIdsStable": true,
+  "transition": {
+    "claimId": "claim-1",
+    "sourceId": "src-bd310b43063afb86",
+    "url": "https://ltxc.cqnu.edu.cn/info/1140/7130.htm",
+    "from": "unassessed",
+    "to": "support",
+    "atPhase": "judging"
+  },
+  "transitionDom": {
+    "key": "claim-1:src-bd310b43063afb86",
+    "from": "unassessed",
+    "to": "support",
+    "same": true,
+    "identity": "stable"
+  },
+  "liveSettlingSame": true,
+  "liveSettling": [
+    {
+      "key": "claim-1:src-a6b628e01561c1d7",
+      "from": "unassessed",
+      "to": "support",
+      "same": true,
+      "identity": "stable"
+    },
+    {
+      "key": "claim-1:src-03f2d5b9ab7b24f9",
+      "from": "unassessed",
+      "to": "context-only",
+      "same": true,
+      "identity": "stable"
+    },
+    {
+      "key": "claim-1:src-bd310b43063afb86",
+      "from": "unassessed",
+      "to": "support",
+      "same": true,
+      "identity": "stable"
+    },
+    {
+      "key": "claim-1:src-007784cceb6b2bbc",
+      "from": "unassessed",
+      "to": "context-only",
+      "same": true,
+      "identity": "stable"
+    },
+    {
+      "key": "claim-1:src-008d5789ae968459",
+      "from": "unassessed",
+      "to": "context-only",
+      "same": true,
+      "identity": "stable"
+    }
+  ],
+  "spanAudit": [
+    {
+      "id": "claim-1",
+      "text": "维生素C能治感冒",
+      "span": {
+        "start": 0,
+        "end": 8
+      },
+      "status": "exact",
+      "slice": "维生素C能治感冒"
+    },
+    {
+      "id": "claim-2",
+      "text": "每次感冒都应当输液",
+      "span": {
+        "start": 11,
+        "end": 20
+      },
+      "status": "exact",
+      "slice": "每次感冒都应当输液"
+    }
+  ],
+  "drawer": {
+    "open": true,
+    "resolve": "live",
+    "claim": "claim-1",
+    "source": "src-a6b628e01561c1d7",
+    "role": "support",
+    "sections": [
+      "claim",
+      "excerpt",
+      "finding"
+    ],
+    "hasExcerpt": true,
+    "hasFinding": true,
+    "hasLimitation": false
+  },
+  "keyboard": {
+    "steps": [
+      {
+        "focus": "claim-head",
+        "active": "gp-claim-head"
+      },
+      {
+        "focus": "evidence",
+        "key": "claim-1:src-a6b628e01561c1d7"
+      },
+      {
+        "drawer": true,
+        "resolve": "live"
+      },
+      {
+        "tabTrap": {
+          "afterTab": true,
+          "afterShiftTab": true
+        }
+      },
+      {
+        "escapeClosed": true,
+        "focusReturnKey": "claim-1:src-a6b628e01561c1d7"
+      }
+    ],
+    "ok": true,
+    "errors": []
+  },
+  "editorial": {
+    "hasAnswer": true,
+    "answerSize": 24,
+    "heroBg": "rgba(0, 0, 0, 0)",
+    "heroShadow": "none",
+    "heroRadius": "0px",
+    "canvasBg": "rgba(0, 0, 0, 0)",
+    "rainbowRows": [],
+    "rowCount": 5
+  },
+  "conflictSource": "REAL SSE",
+  "hasConflictDom": false,
+  "hasGapDom": true,
+  "durationSec": 80.7,
+  "stanceAudit": {
+    "found": true,
+    "claimId": "claim-2",
+    "judgment": "not-applicable",
+    "roles": [],
+    "supportCount": 0,
+    "contradictCount": 0,
+    "reverseEvidence": [],
+    "reverseStillSupport": false
+  },
+  "citationAudit": {
+    "dualSourceRelations": false,
+    "rows": [
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-a6b628e01561c1d7",
+        "role": "support",
+        "markers": [
+          1
+        ]
+      },
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-03f2d5b9ab7b24f9",
+        "role": "context-only",
+        "markers": []
+      },
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-bd310b43063afb86",
+        "role": "context-only",
+        "markers": []
+      },
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-007784cceb6b2bbc",
+        "role": "context-only",
+        "markers": []
+      },
+      {
+        "claimId": "claim-1",
+        "sourceId": "src-008d5789ae968459",
+        "role": "context-only",
+        "markers": []
+      }
+    ]
+  },
+  "finishNote": "Live SSE completed; keyboard/mobile/reduced finished from this run's complete snapshot after claim-head Enter hid the only evidence board."
+}

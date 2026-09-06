@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "originalClaim": "维生素C能治感冒，而且每次感冒都应当输液。",
+  "phase": "investigating",
+  "claims": [
+    {
+      "id": "claim-1",
+      "text": "维生素C能治感冒",
+      "order": 0,
+      "originalSpan": {
+        "start": 0,
+        "end": 8
+      },
+      "checkability": "checkable",
+      "progress": "searching",
+      "judgment": null,
+      "evidence": [
+        {
+          "sourceId": "src-a6b628e01561c1d7",
+          "role": "unassessed"
+        },
+        {
+          "sourceId": "src-03f2d5b9ab7b24f9",
+          "role": "unassessed"
+        },
+        {
+          "sourceId": "src-bd310b43063afb86",
+          "role": "unassessed"
+        },
+        {
+          "sourceId": "src-007784cceb6b2bbc",
+          "role": "unassessed"
+        },
+        {
+          "sourceId": "src-008d5789ae968459",
+          "role": "unassessed"
+        }
+      ],
+      "gaps": []
+    },
+    {
+      "id": "claim-2",
+      "text": "每次感冒都应当输液",
+      "order": 1,
+      "originalSpan": {
+        "start": 11,
+        "end": 20
+      },
+      "checkability": "not-applicable",
+      "progress": "pending",
+      "judgment": "not-applicable",
+      "evidence": [],
+      "gaps": []
+    }
+  ],
+  "sources": [
+    {
+      "id": "src-a6b628e01561c1d7",
+      "url": "http://www.news.cn/local/20241231/528e6d4d13de43c0b57b151ea3a2283f/c.html",
+      "title": "维生素C能防治感冒……是真是假？｜谣言终结站 - 新华网",
+      "excerpt": "维生素C能防治感冒……是真是假？｜谣言终结站-\"普通人群平时可以多吃一些水果和蔬菜来获得充足的维生素C，不需要额外补充。\" date: Dec 31, 2024"
+    },
+    {
+      "id": "src-03f2d5b9ab7b24f9",
+      "url": "http://news.cnr.cn/native/gd/20241231/t20241231_527027090.shtml",
+      "title": "维生素C能防治感冒……是真是假？｜谣言终结站",
+      "excerpt": "是真是假弄不清？辟谣 硬核打假 用心辟谣 不听 不信 不传谣 关注合集【谣言终结站】 多学一个知识点 补充维生素C有讲究 维生素C主要存在于新鲜的蔬菜和水果中。蔬菜中的柿子椒、番茄、菜花及各种深色叶类菜，水果中的柑橘、柠檬、青枣、山楂、猕猴桃等，维生素C含量十分丰富。普通人群平时可以多吃一些水果和蔬菜来获得充足的维生素C，不需要额外补充。特殊人群，如妊娠和哺乳期的妇女、生长发育期的儿童、疾病恢复期的病人，可以适当补充一些维生素C。维生素C具有水溶性和抗氧化性，食物中的维生素C含量会随着储存时间和烹饪方法的变化而有所变化。因此，为了防止维生素C流失，建议水果和蔬菜最好选择生吃，或是采用焯水凉拌、急火快炒等烹调方法。在一般情况下，维生素"
+    },
+    {
+      "id": "src-bd310b43063afb86",
+      "url": "https://ltxc.cqnu.edu.cn/info/1140/7130.htm",
+      "title": "维生素C能治感冒吗？",
+      "excerpt": "最新的科学证据表明，感冒后短期（3-5天）使用维生素C1-2克/天可以缓解症状，防止病情加重，但没有证据表明大剂量补充维生素C可以预防感冒。⑴维生素C为什么有效 维生素C又名抗坏血酸，维生素C是一种极易溶于水的维生素，是13中维生素中分子结构最简单的一种。维生素C能促进免疫蛋白合成，提高机体功能酶的活性。增加淋巴细胞数量及提高中性粒细胞的吞噬活力。对于感冒而言，维生素C主要通过以下几个方面发挥治疗作用。①促进免疫防御：维生素C能够为各种免疫细胞提供支持。它能够加强皮肤、呼吸道黏膜等生理屏障对机体的保护功能。被人体吸收的维生素C能够累积在免疫细胞（如中性粒细胞、巨噬细胞）中，在人体受到微生物侵扰时，有了维生素C的加持，中性粒细胞能快速"
+    },
+    {
+      "id": "src-007784cceb6b2bbc",
+      "url": "https://news.sina.com.cn/gov/2024-12-31/doc-inecitzt3703433.shtml",
+      "title": "维生素C能防治感冒……是真是假？｜谣言终结站|水果|蔬菜 - 新浪新闻",
+      "excerpt": "维生素C能防治感冒......是真是假? 辟谣硬核打假用♥ … 多学一个知识点——补充维生素C有讲究维生素C主要存在于新鲜的蔬菜和水果中。 烹饪方法的变化而有所变化。 date: Dec 31, 2024"
+    },
+    {
+      "id": "src-008d5789ae968459",
+      "url": "https://www.sohu.com/a/843885553_362042",
+      "title": "维生素C能防治感冒……是真是假？｜谣言终结站 - 搜狐",
+      "excerpt": "普通人群平时可以多吃一些水果和蔬菜来获得充足的维生素C，不需要额外补充。特殊人群，如妊娠和哺乳期的妇女、生长发育期的儿童、疾病恢复期的病人，可以 ... date: Dec 31, 2024"
+    }
+  ],
+  "conflicts": []
+}

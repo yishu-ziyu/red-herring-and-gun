@@ -1,0 +1,17 @@
+{
+  "hasAnswer": true,
+  "answerSize": 24,
+  "heroBg": "rgba(0, 0, 0, 0)",
+  "heroShadow": "none",
+  "heroRadius": "0px",
+  "canvasBg": "rgba(0, 0, 0, 0)",
+  "rainbowRows": [
+    {
+      "role": "support",
+      "bg": "rgba(15, 23, 42, 0.03)",
+      "radius": "0px",
+      "shadow": "none"
+    }
+  ],
+  "rowCount": 5
+}

@@ -1,0 +1,39 @@
+{
+  "transition": {
+    "claimId": "claim-1",
+    "sourceId": "src-bd310b43063afb86",
+    "url": "https://ltxc.cqnu.edu.cn/info/1140/7130.htm",
+    "fromId": "src-bd310b43063afb86",
+    "toId": "src-bd310b43063afb86",
+    "from": "unassessed",
+    "to": "support",
+    "atPhase": "judging"
+  },
+  "pin": {
+    "role": "unassessed",
+    "identity": "stable",
+    "key": "claim-1:src-bd310b43063afb86",
+    "sourceId": "src-bd310b43063afb86"
+  },
+  "after": {
+    "same": true,
+    "role": "support",
+    "identity": "stable",
+    "sourceId": "src-bd310b43063afb86",
+    "key": "claim-1:src-bd310b43063afb86"
+  },
+  "sourceIdsStable": true,
+  "identityGate": {
+    "ok": true,
+    "errors": [],
+    "transition": {
+      "claimId": "claim-1",
+      "sourceId": "src-bd310b43063afb86",
+      "url": "https://ltxc.cqnu.edu.cn/info/1140/7130.htm",
+      "from": "unassessed",
+      "to": "support",
+      "atPhase": "judging"
+    },
+    "sourceIdsStable": true
+  }
+}
