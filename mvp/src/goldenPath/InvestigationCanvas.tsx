@@ -13,6 +13,7 @@ import type {
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import { phaseHeadline, readImageOrigin, type ImageOriginView } from "./snapshotUi";
+import { buildClaimTraceSegments } from "./claimTrace";
 import { ClaimSection } from "./ClaimSection";
 import { ConclusionHero } from "./ConclusionHero";
 import { SourceDrawer } from "./SourceDrawer";
@@ -42,6 +43,10 @@ export function InvestigationCanvas({
   const copy = gpCopyFor(lang);
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [announce, setAnnounce] = useState("");
+  const [hoverClaimId, setHoverClaimId] = useState<string | null>(null);
+  const [focusClaimId, setFocusClaimId] = useState<string | null>(null);
+  const [expandedTraceClaimId, setExpandedTraceClaimId] = useState<string | null>(null);
+  const tracedClaimId = focusClaimId ?? hoverClaimId ?? expandedTraceClaimId;
 
   // 状态变化用一句轻量播报解释发生了什么（渐进呈现，不是 Agent 日志）。
   useEffect(() => {
@@ -121,7 +126,7 @@ export function InvestigationCanvas({
           </div>
           <blockquote className="gp-original-quote">
             <span className="gp-quote-open" aria-hidden="true">“</span>
-            <span className="gp-original-text">{markOriginal(snapshot)}</span>
+            <span className="gp-original-text">{renderOriginalClaim(snapshot, tracedClaimId)}</span>
             <span className="gp-quote-close" aria-hidden="true">”</span>
           </blockquote>
         </section>
@@ -145,6 +150,9 @@ export function InvestigationCanvas({
                   conflicts={snapshot.conflicts}
                   defaultExpanded={complete ? index === 0 : true}
                   onSelectSource={openSource}
+                  onHeaderHover={setHoverClaimId}
+                  onHeaderFocus={setFocusClaimId}
+                  onExpandedTrace={setExpandedTraceClaimId}
                 />
               ))}
             </div>
@@ -200,9 +208,24 @@ function relationWord(role: InvestigationEvidenceLink["role"]): string {
   }
 }
 
-function markOriginal(snapshot: InvestigationSnapshotV1): string {
-  // originalSpan 的高亮留给 #53 打磨；本期保证命题可对照原句（命题文本直接来自原句切片）。
-  return snapshot.originalClaim;
+function renderOriginalClaim(snapshot: InvestigationSnapshotV1, tracedClaimId: string | null) {
+  const segments = buildClaimTraceSegments(snapshot.originalClaim, snapshot.claims);
+  return segments.map((segment, index) => {
+    if (!segment.traceable || !segment.claimId || segment.text.length === 0) {
+      return <span key={`plain-${index}`}>{segment.text}</span>;
+    }
+    const active = tracedClaimId === segment.claimId;
+    return (
+      <mark
+        key={`trace-${segment.claimId}-${index}`}
+        className={`gp-trace-mark${active ? " is-active" : ""}`}
+        data-gp-trace-claim={segment.claimId}
+        data-gp-trace-active={active ? "true" : "false"}
+      >
+        {segment.text}
+      </mark>
+    );
+  });
 }
 
 function formatDate(ts: number): string {
