@@ -377,8 +377,140 @@ describe("Issue #64 [Reset 4D] Conclusion Emergence", () => {
     expect(document.querySelector('[data-gp-claim-id="claim-1"]')).toBe(claim);
     expect(document.querySelector(".gp-evidence-board")).toBe(board);
     expect(document.activeElement).toBe(evidence);
+    expect(evidence.getAttribute("data-gp-identity")).toBe("stable");
     expect(document.activeElement?.closest("[data-gp-direct-answer]")).toBeNull();
     expect(document.activeElement?.closest("[data-gp-conclusion-region]")).toBeNull();
+  });
+
+  it("Drawer live 打开时 investigating → complete：dialog 同节点、仍 live、焦点不被结论抢走", async () => {
+    const { investigating, complete } = completeFromInvestigating();
+    const view = render(
+      <InvestigationCanvas snapshot={investigating} live onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    const row = document.querySelector(".gp-evidence-item") as HTMLButtonElement;
+    fireEvent.click(row);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(dialog.getAttribute("data-gp-source-resolve")).toBe("live");
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    const canvas = document.querySelector(".gp-canvas");
+    const original = document.querySelector(".gp-original");
+    const board = document.querySelector(".gp-evidence-board");
+    const region = document.querySelector("[data-gp-conclusion-region]");
+
+    const focusSpy = vi.spyOn(HTMLElement.prototype, "focus");
+    if (!("scrollIntoView" in HTMLElement.prototype)) {
+      Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+        configurable: true,
+        writable: true,
+        value: () => {},
+      });
+    }
+    const scrollSpy = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
+
+    view.rerender(
+      <InvestigationCanvas snapshot={complete} live={false} onReverify={() => {}} onBackHome={() => {}} />,
+    );
+
+    const still = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(still).toBe(dialog);
+    expect(still.getAttribute("data-gp-source-resolve")).toBe("live");
+    expect(still.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement?.closest("[data-gp-conclusion-region]")).toBeNull();
+    expect(document.querySelector(".gp-canvas")).toBe(canvas);
+    expect(document.querySelector(".gp-original")).toBe(original);
+    expect(document.querySelector(".gp-evidence-board")).toBe(board);
+    expect(document.querySelector("[data-gp-conclusion-region]")).toBe(region);
+    expect(focusSpy).not.toHaveBeenCalled();
+    expect(scrollSpy).not.toHaveBeenCalled();
+    focusSpy.mockRestore();
+    scrollSpy.mockRestore();
+  });
+
+  it("Drawer held 时 investigating → complete：仍 held，内容不被替换，不误变 live", async () => {
+    const base = settlingBoard();
+    const sourceId = base.claims[0]!.evidence[0]!.sourceId;
+    const unique = withClaimEvidence(base, [
+      { sourceId, role: "support", finding: "完成前已确认的支持", limitation: "完成前已确认的边界" },
+    ]);
+    const duplicated = withClaimEvidence(base, [
+      { sourceId, role: "support", finding: "不该因结论出现的新支持" },
+      { sourceId, role: "contradict", finding: "不该因结论出现的反驳" },
+    ]);
+    const completeHeld = {
+      ...duplicated,
+      phase: "complete" as const,
+      conclusion: {
+        directAnswer: FUTURE_ANSWER,
+        judgment: "unresolved" as const,
+        boundaries: ["现有公开材料不能推出异味来自新增消毒工艺"],
+        sourceIds: duplicated.sources.map((s) => s.id),
+        claimIds: duplicated.claims.map((c) => c.id),
+      },
+      checkedAt: "2026-09-06T08:00:00.000Z",
+    };
+    const view = render(
+      <InvestigationCanvas snapshot={unique} live onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    fireEvent.click(document.querySelector(`[data-source-id="${sourceId}"]`)!);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    expect(document.querySelector(".gp-drawer--source")?.getAttribute("data-gp-source-resolve")).toBe("live");
+    expect(document.querySelector(".gp-drawer--source")?.textContent).toContain("完成前已确认的支持");
+
+    view.rerender(
+      <InvestigationCanvas snapshot={duplicated} live onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(dialog.getAttribute("data-gp-source-resolve")).toBe("held");
+    expect(within(dialog).getByText("完成前已确认的支持")).toBeTruthy();
+
+    const focusSpy = vi.spyOn(HTMLElement.prototype, "focus");
+    view.rerender(
+      <InvestigationCanvas snapshot={completeHeld} live={false} onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    const still = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(still).toBe(dialog);
+    expect(still.getAttribute("data-gp-source-resolve")).toBe("held");
+    expect(within(still).getByText("完成前已确认的支持")).toBeTruthy();
+    expect(within(still).getByText("完成前已确认的边界")).toBeTruthy();
+    expect(still.textContent).not.toContain("不该因结论出现的新支持");
+    expect(still.textContent).not.toContain("不该因结论出现的反驳");
+    expect(document.querySelector("[data-gp-direct-answer]")?.textContent).toContain(FUTURE_ANSWER);
+    expect(document.activeElement?.closest("[data-gp-conclusion-region]")).toBeNull();
+    expect(focusSpy).not.toHaveBeenCalled();
+    focusSpy.mockRestore();
+  });
+
+  it("Claim Trace 在 complete 前后仍工作，hover/focus 仲裁不被结论展开破坏", () => {
+    const complete = mixedComplete();
+    const investigating = { ...complete, phase: "investigating" as const, conclusion: undefined };
+    const view = render(
+      <InvestigationCanvas snapshot={investigating} live onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    const original = document.querySelector(".gp-original") as HTMLElement;
+    const originalText = document.querySelector(".gp-original-text") as HTMLElement;
+    expect(originalText.textContent).toBe(MIXED_CLAIM);
+    expect(originalText.querySelector('mark[data-gp-trace-claim="claim-1"]')?.textContent).toBe(MIXED_ATOM_A);
+    fireEvent.mouseEnter(document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')?.getAttribute("data-gp-trace-active")).toBe("true");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')?.getAttribute("data-gp-trace-active")).toBe("false");
+
+    view.rerender(
+      <InvestigationCanvas snapshot={complete} live={false} onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    expect(document.querySelector(".gp-original")).toBe(original);
+    expect(document.querySelector(".gp-original-text")!.textContent).toBe(MIXED_CLAIM);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')?.textContent).toBe(MIXED_ATOM_A);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')?.textContent).toBe(MIXED_ATOM_B);
+
+    fireEvent.mouseLeave(document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!);
+    fireEvent.mouseEnter(document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')?.getAttribute("data-gp-trace-active")).toBe("true");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')?.getAttribute("data-gp-trace-active")).toBe("false");
+
+    fireEvent.focus(document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')?.getAttribute("data-gp-trace-active")).toBe("true");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')?.getAttribute("data-gp-trace-active")).toBe("false");
   });
 
   it("3：directAnswer 是结论区第一可见正文，judgment/meta 在其后", () => {
