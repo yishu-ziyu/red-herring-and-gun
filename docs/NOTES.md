@@ -22,9 +22,11 @@
 
 # 当前状态
 
-2026-09-06 PR #71 Review blocker 已修（推同一 PR，不 merge）：live resolve 服从 #63 `identifyEvidenceLinks`。只有当前 snapshot 存在且唯一的 `row.key === drawer.identity` 才允许 live。unique role change 继续 live；1×→2× 旧 key 消失则 held 本 session lastConfirmedView，不得因「还剩一条 support」读入新 relation；relation reorder 同一 key 仍 live。不扩 Snapshot / backend / SSE / link id。goldenPath 76（含 A/B/C + E1/E2/E3）；根 767；mvp 946/1 skipped（4 个未改 server 套件仍是 worktree symlink）；三处 build 绿；capture GATE PASS。不开 #66。
+2026-09-06 PR #69 rebase 到 main `2cdba77`（#65 Source Drawer 已合入）。完整保留 Claim Trace、EvidenceBoard identity、DrawerSession identity-bound live/held。Conclusion Emergence 不 remount `.gp-canvas` / Original Claim / ClaimSection / EvidenceBoard，不抢走已 focus 的 Evidence，不自动关 Drawer / scroll / focus 结论。held Drawer 在 complete 后仍 held。fixture ≠ 真实 SSE。不 merge，不开 #66。
 
-2026-09-06 Issue #65 Source Drawer / Bottom Sheet 生产化独立 PR 待人工验收（`feat/reset-4e-source-drawer`）：DrawerState 为 `claimId + sourceId + role`，打开时从最新 snapshot 重取 Claim / EvidenceLink / Source，snapshot 更新不关抽屉、不抢焦点；finding / limitation / excerpt 有才显示，不编文案；Desktop 440px 右侧 Drawer，Mobile 390 Bottom Sheet；手写 modal（dialog 名、Tab / Shift+Tab 闭环、Escape、scrim、焦点回原 Evidence 行），未引入 UI 库。截图 `docs/design/2026-09-06-source-drawer/` 来自 DEV fixture，不是真实 SSE。验收见 `docs/evals/2026-09-06-source-drawer.md`。
+2026-09-06 Issue #64 Conclusion Emergence 生产化（独立 PR 待人工验收）：investigating→complete 共用 `[data-gp-conclusion-region]` 同一 DOM 节点（`before === after`）；调查中容器高度为 0 且不预渲染答案；完成后同一容器显现 `directAnswer` lede（24px/700），judgment/计数/时间降为 12px 弱 metadata，unresolved 用句子写「现有证据还不够」。Emergence 320ms quick-out、directAnswer 最多 8px；不 focus / 不 scrollIntoView / 不关 Drawer。Boundary 中性 inset + hairline，无 warning role。取证在 `docs/design/2026-09-06-conclusion-emergence/`（fixture，真实 SSE 留给 #66）。
+
+2026-09-06 PR #71 / Issue #65 已 squash-merge 进 main（`2cdba77`）：DrawerSession identity、exact-click initialView、live 服从 `identifyEvidenceLinks`。
 
 2026-09-06 PR #70 / Issue #63 已 squash-merge 进 main（`d6507de`）：EvidenceBoard 稳定父容器、`identifyEvidenceLinks`、unique source `before === after`。
 
