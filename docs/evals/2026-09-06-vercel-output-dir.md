@@ -34,16 +34,16 @@ Git 集成的 Vercel 项目 `red-herring-and-gun` 部署成功，不再报 `No O
 
 ## Evaluator
 
-- [ ] V1 项目设置 Root Directory=`mvp`，Output Directory=`dist`。
-- [ ] V2 一次 **main** deployment 不再 `STATIC_BUILD_NO_OUT_DIR`。
-- [ ] V3 一次 **PR Preview** 同样成功。
-- [ ] V4 `mvp` Vite 输出仍是 `dist/`，没有为了变绿改 Mode 3 `outDir`。
+- [x] V1 项目设置 Root Directory 空，Output Directory=`mvp/dist`（不是把 Root 设成 `mvp` 后只找 `dist`）。
+- [x] V2 一次 **main** deployment 不再 `STATIC_BUILD_NO_OUT_DIR`。
+- [x] V3 一次 **PR Preview** 同样成功。
+- [x] V4 `mvp` Vite 输出仍是 `dist/`，没有为了变绿改 Mode 3 `outDir`。
 
 ## 结果
 
 - [x] V1 项目设置：Root Directory 空；Build 先 `@rhg/core` 再 `mvp`；Output=`mvp/dist`。仓库根 `vercel.json` 与此一致。
 - [x] V2 main/production deployment Ready：https://red-herring-and-gun.vercel.app （`dpl_F8CukBW9edFaJGffiMi8VWBNdCzo`，title 为生产 Golden Path「红鲱鱼与枪｜查出处，判断原句哪里站得住」）。
-- [ ] V3 PR Preview：本 PR 推送后由 Git 集成生成，回填 URL。
+- [x] V3 PR Preview Ready：https://red-herring-and-gun-git-feat-f3db42-sheldons-projects-6ef373e4.vercel.app （deployment `Gfd1E1rW4the8Z6pVQptvBULdNGC`，GitHub Vercel check `success` / “Deployment has completed”，Vercel Preview Comments check `success`，2026-09-06T11:16:53Z）。SSO 保护，不要求匿名打开页面。
 - [x] V4 `mvp` Vite 仍输出 `dist/`，未改 Mode 3 `outDir`。
 
 第一次误把 Root Directory 设成 `mvp`：tsc 找不到 `@rhg/core/investigation`。已改回仓库根。
