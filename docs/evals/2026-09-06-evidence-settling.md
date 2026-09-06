@@ -43,7 +43,7 @@
 - [x] **E1（验收文档先于实现）**：本文件含 Change / Not this / Evaluator；断言真实节点引用。
   - 验证：本文件存在且含 `before === after`。
 - [x] **E2（DOM 身份：unassessed → support）**：rerender 后 `querySelector('[data-gp-claim-id] [data-source-id]')` 的节点引用严格相等。
-  - 验证：`cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`（48 通过：#62 Claim Trace + #63 Settling）
+  - 验证：`cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`（51 通过：#62 Claim Trace + #63 Settling + duplicate identity）
 - [x] **E3（DOM 身份：unassessed → contradict）**：同上，`before === after`。
 - [x] **E4（DOM 身份：unassessed → context-only）**：同上，`before === after`。
 - [x] **E5（role 标签与 data 属性）**：`data-gp-role` 与可见文字（支持 / 反驳 / 待核对 / 相关材料）随 snapshot 更新。
@@ -54,14 +54,55 @@
 - [x] **E10（焦点连续）**：focus 中的证据按钮在 role 更新后仍是同一节点且 `document.activeElement` 仍是它。
 - [x] **E11（reduced-motion）**：`useReducedMotion` / `prefers-reduced-motion` 下角色立刻更新，`data-gp-layout-motion="off"`，不做大幅 translate。
 - [x] **E12（打断的 snapshot）**：interrupted 帧保留已存在证据，不把它伪造成最终支持/反驳。
-- [x] **E13（身份 key）**：生产源码不以 `` `${sourceId}-${i}` `` 作为 Evidence 的 React key；稳定键为 `${claimId}:${sourceId}`（同源重复时 `${claimId}:${sourceId}#n`）。
+- [x] **E13（身份 key）**：生产源码不以 `` `${sourceId}-${i}` `` 作为 Evidence 的 React key。同一 claim 下 `sourceId` 只出现一次时，稳定键为 `${claimId}:${sourceId}`。同源重复不得用出现序号 `#n` 冒充长期身份；见下方复审 E16–E19。
 - [x] **E14（测试与构建）**：
   - `npm test`：core 578 / eval 85 / server 21 / web 83 = 767 通过
   - `npm run build`：通过
-  - `cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`：48 通过
-  - `cd mvp && npm test`：939 通过 / 1 跳过
+  - `cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`：51 通过
+  - `cd mvp && npm test`：942 通过 / 1 跳过（全量并行时 LegacyDesk 有既有 waitFor 抖动，单跑通过）
   - `cd mvp && npm run build`：通过
 - [x] **E15（取证脚本）**：`python3 scripts/capture_evidence_settling.py` 在端口 **5182** 跑生产 Golden Path；写出 before/after 与 motion 证据；脚本与 README 写明 **fixture ≠ 真实 SSE**。真实浏览器 `before === after`；非 reduce 采样到 layout translate，reduce 下 moving=0。
+
+### 复审（PR #70 Review：duplicate source 跨 snapshot 身份）
+
+人工 Review 指出：`${claimId}:${sourceId}#n` 是当前 membership/order 派生的 occurrence ordinal，不是长期稳定业务身份。1× `s1` → 2× `s1` 时 key 从 `c1:s1` 变成 `c1:s1#1/#2`，真实节点必然 remount。
+
+#### 语义裁决（本轮必须先写明，再实现）
+
+`InvestigationEvidenceLink` 没有 link id。builder 分别 push supporting / contradicting，schema/invariants 不禁止同一 `sourceId` 在同一 claim 重复。view layer 裁决：
+
+1. **不 canonicalize 成一行。** 同一 source 的多条 link 在当前契约里是多条独立 relation（可同时进「支持」和「反驳」）。合成一行会藏掉其中一条关系，且一个 DOM 节点不能同时出现在两个 CSS `order` 分组里，除非 clone——那正好违反 Object Continuity。
+2. **也不扩 Snapshot contract / backend。** 本轮不发明 link id。
+3. **身份分三档，不能保证的不得假装 continuity：**
+   - `stable`：该 `sourceId` 在本 snapshot 只出现一次。key = `${claimId}:${sourceId}`。跨 role 变化可 `before === after`，允许 layout 归位。
+   - `relation`：同一 `sourceId` 出现多次，但能用现有字段唯一区分（先 `role`，不够再用 `finding`/`limitation`）。key 与 `stable` 键族不相交（`::` 分隔），所以 1×↔2× membership 变化会 remount，不把「第一条」续到「新的第一条」。同一 relation 只改数组顺序时，必须真实 `before === after`。
+   - `ephemeral`：连 `role+finding+limitation` 也撞车。只为 React 提供本帧唯一 key，**不声称 object continuity**，关掉 layout，避免错误动画。
+
+Will's S / Object Continuity：Transformation 只适用于「能确认是同一对象」的情况。无法确认时不做 Cloning 伪装。
+
+#### 本轮 Change
+
+- 1× `s1` → 2× `s1`：不得把旧节点续到任一新节点上；`before === after` 必须为假。
+- 2× `s1` → 1× `s1`：剩下那一行也不得错误复用原先两条中的任一条。
+- duplicate reorder（可区分的两条，例如 support / contradict）：两条各自 `before === after`，不得因数组顺序互换身份。
+- 普通 unique source：`unassessed → support / contradict / context-only` 的 strict equality、focus、reduced-motion、Motion capture 继续通过。
+- 不重做 Motion，不改 Quiet Editorial，不动 Claim Trace，不开 #64/#65/#66。
+
+#### 本轮 Not this
+
+- 把 `#n` 改个名字仍当长期身份。
+- 用数组下标或出现序号把 1× 的那条续成 2× 里的第一条。
+- 为 duplicate 扩 schema / 加 link id。
+- 把两条独立 relation 合成一行来回避身份问题。
+
+#### 本轮 Evaluator
+
+- [x] **E16（1× s1 → 2× s1）**：真实 DOM，旧节点 `before` 与两条新节点都不是同一引用；新行 `data-gp-identity` 不是 `stable`；新行不做 layout 归位。
+  - 验证：`cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`（51 通过）
+- [x] **E17（2× s1 → 1× s1）**：剩下那一行与原先两条都不是同一引用。
+- [x] **E18（duplicate reorder）**：support / contradict 两条 `s1` 对调数组顺序后，各自节点 `before === after`。
+- [x] **E19（unique 回归）**：E2–E4、E10、E11 继续绿；生产源码不再出现 `${claimId}:${sourceId}#n` occurrence ordinal。
+- [x] **E14 / E15**：goldenPath 51；根 `npm test` 767；两处 `npm run build` 绿；`python3 scripts/capture_evidence_settling.py` GATE PASS（unique `same: true`，reduce moving=0）。mvp 全量 942/1 skipped；并行争用下 LegacyDesk 有既有 waitFor 抖动，隔离单跑通过。
 
 ### 人评项
 

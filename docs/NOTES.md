@@ -22,6 +22,8 @@
 
 # 当前状态
 
+2026-09-06 PR #70 Review blocker 已修（推同一 PR，不 merge）：duplicate source 不再用 `#n` 出现序号冒充长期身份。view layer 裁决：不 canonicalize 成一行（多条 link 是独立 relation）；不扩 Snapshot contract。unique source 仍 `${claimId}:${sourceId}` 且 `before === after`；同源重复能用 role/finding 区分的用不相交的 `::` 键，1×↔2× remount、reorder 保持节点；完全撞车则 ephemeral、关 layout。新增 1×→2× / 2×→1× / duplicate reorder 真实节点测试。不重做 Motion，不改 Quiet Editorial，不动 Claim Trace，不开 #64–#66。
+
 2026-09-06 PR #70 rebase 到 main `347266b`（#62 Claim Trace 已合入）：冲突保留 Claim Trace hover/focus 仲裁与 originalSpan mark，同时保留 Evidence Settling 的 EvidenceBoard 与 DOM `before === after`。不 merge，不开 #64–#66。
 
 2026-09-06 Issue #63 Evidence Settling 生产化（独立 PR 待人工验收）：同一命题下证据行改为 `EvidenceBoard` 单一稳定父容器的 keyed children，key 为 `${claimId}:${sourceId}`（同源重复用 `#n`，不用数组下标）。角色变化时真实 DOM `before === after`；分组标题用文字 + CSS `order` 穿插，不把行搬到新父节点。layout 归位 280ms / `--gp-ease-out`，无 opacity 消失再出现；reduced-motion 立刻更新语义、无大幅 translate。取证在 `docs/design/2026-09-06-evidence-settling/`，脚本端口 5182，`/?fixture=settling` **不是真实 SSE**（留给 #66）。未做 #64/#65。不 merge。

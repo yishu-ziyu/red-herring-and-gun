@@ -10,8 +10,8 @@ import {
   ROLE_LABEL,
   ROLE_LAYOUT_ORDER,
   ROLE_ORDER,
-  evidenceLinkKey,
   groupEvidence,
+  identifyEvidenceLinks,
   roleGlyph,
   type EvidenceRole,
 } from "./snapshotUi";
@@ -33,10 +33,7 @@ type EvidenceBoardProps = {
 export function EvidenceBoard({ claim, sources, onSelect }: EvidenceBoardProps) {
   const reduce = useReducedMotion() === true || prefersReducedMotion();
   const groups = groupEvidence(claim.evidence);
-  const identified = claim.evidence.map((link, index) => ({
-    link,
-    key: evidenceLinkKey(claim.id, claim.evidence, index),
-  }));
+  const identified = identifyEvidenceLinks(claim.id, claim.evidence);
   const prevRoles = useRef<Map<string, EvidenceRole>>(new Map());
   const roleChanges = identified.filter((row) => {
     const previous = prevRoles.current.get(row.key);
@@ -78,14 +75,15 @@ export function EvidenceBoard({ claim, sources, onSelect }: EvidenceBoardProps) 
             </div>
           );
         })}
-        {identified.map(({ link, key }) => (
+        {identified.map(({ link, key, identity }) => (
           <EvidenceItem
             key={key}
             evidenceKey={key}
+            identity={identity}
             link={link}
             source={sourceFor(link)}
             order={ROLE_LAYOUT_ORDER[link.role] + 1}
-            layoutEnabled={layoutEnabled}
+            layoutEnabled={layoutEnabled && identity === "stable"}
             groupLabelId={`gp-eg-${claim.id}-${link.role}`}
             onSelect={onSelect}
           />

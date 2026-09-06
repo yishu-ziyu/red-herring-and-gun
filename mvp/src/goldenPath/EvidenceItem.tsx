@@ -5,7 +5,7 @@
  */
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { domainOf, ROLE_LABEL, roleGlyph } from "./snapshotUi";
+import { domainOf, ROLE_LABEL, roleGlyph, type EvidenceIdentityKind } from "./snapshotUi";
 import type { InvestigationEvidenceLink, InvestigationSource } from "@rhg/core/investigation";
 
 /** 与 `--gp-motion-layout: 280ms` / `--gp-ease-out` 对齐（260–360ms 窗）。 */
@@ -17,6 +17,7 @@ type EvidenceItemProps = {
   link: InvestigationEvidenceLink;
   source: InvestigationSource | undefined;
   evidenceKey: string;
+  identity: EvidenceIdentityKind;
   order: number;
   layoutEnabled: boolean;
   groupLabelId: string;
@@ -27,6 +28,7 @@ export function EvidenceItem({
   link,
   source,
   evidenceKey,
+  identity,
   order,
   layoutEnabled,
   groupLabelId,
@@ -52,6 +54,7 @@ export function EvidenceItem({
       data-gp-role={link.role}
       data-source-id={link.sourceId}
       data-gp-evidence-key={evidenceKey}
+      data-gp-identity={identity}
       data-gp-settling={settling ? "1" : undefined}
       aria-describedby={groupLabelId}
       aria-label={`${roleLabel}：${title}`}

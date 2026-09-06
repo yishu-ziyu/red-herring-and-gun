@@ -104,21 +104,81 @@ export function groupEvidence(links: InvestigationEvidenceLink[]): EvidenceGroup
 }
 
 /**
- * 同一命题下一条证据的稳定业务身份。
- * 默认 `${claimId}:${sourceId}`；同一 source 在同一 claim 出现多次时用出现序号，不用总数组下标当身份。
+ * 证据行身份（view layer，不扩 Snapshot contract）。
+ *
+ * InvestigationEvidenceLink 没有 link id。builder 可对同一 sourceId 分别 push
+ * supporting / contradicting，所以重复出现是多条独立 relation，不能合成一行。
+ *
+ * 能确认同一对象才给稳定 key；确认不了就 fail-safe，不用出现序号假装 continuity。
+ *
+ * - stable：该 sourceId 本帧只出现一次。key = `${claimId}:${sourceId}`，可跨 role 保持节点。
+ * - relation：同源重复，但 role（不够再用 finding/limitation）能唯一区分。
+ *   key 与 stable 键族不相交，故 1×↔2× 会 remount；同一 relation 只改顺序则保持节点。
+ * - ephemeral：现有字段仍撞车。只保证本帧 React key 唯一，不声称 object continuity。
  */
-export function evidenceLinkKey(claimId: string, links: InvestigationEvidenceLink[], index: number): string {
-  const sourceId = links[index]?.sourceId ?? "";
-  let seen = 0;
-  for (let i = 0; i <= index; i++) {
-    if (links[i]?.sourceId === sourceId) seen += 1;
-  }
-  let total = 0;
+export type EvidenceIdentityKind = "stable" | "relation" | "ephemeral";
+
+export type IdentifiedEvidenceLink = {
+  link: InvestigationEvidenceLink;
+  key: string;
+  identity: EvidenceIdentityKind;
+};
+
+function contentToken(link: InvestigationEvidenceLink): string {
+  return `${encodeURIComponent(link.finding ?? "")}:${encodeURIComponent(link.limitation ?? "")}`;
+}
+
+export function identifyEvidenceLinks(
+  claimId: string,
+  links: InvestigationEvidenceLink[],
+): IdentifiedEvidenceLink[] {
+  const sourceCounts = new Map<string, number>();
+  const roleCounts = new Map<string, number>();
+  const contentCounts = new Map<string, number>();
+
   for (const link of links) {
-    if (link.sourceId === sourceId) total += 1;
+    sourceCounts.set(link.sourceId, (sourceCounts.get(link.sourceId) ?? 0) + 1);
+    const roleKey = `${link.sourceId}\0${link.role}`;
+    roleCounts.set(roleKey, (roleCounts.get(roleKey) ?? 0) + 1);
+    const contentKey = `${roleKey}\0${contentToken(link)}`;
+    contentCounts.set(contentKey, (contentCounts.get(contentKey) ?? 0) + 1);
   }
-  if (total <= 1) return `${claimId}:${sourceId}`;
-  return `${claimId}:${sourceId}#${seen}`;
+
+  const contentSeen = new Map<string, number>();
+
+  return links.map((link) => {
+    const sourceId = link.sourceId;
+    if ((sourceCounts.get(sourceId) ?? 0) <= 1) {
+      return { link, key: `${claimId}:${sourceId}`, identity: "stable" as const };
+    }
+
+    const roleKey = `${sourceId}\0${link.role}`;
+    if ((roleCounts.get(roleKey) ?? 0) <= 1) {
+      return { link, key: `${claimId}:${sourceId}::${link.role}`, identity: "relation" as const };
+    }
+
+    const token = contentToken(link);
+    const contentKey = `${roleKey}\0${token}`;
+    if ((contentCounts.get(contentKey) ?? 0) <= 1) {
+      return {
+        link,
+        key: `${claimId}:${sourceId}::${link.role}:${token}`,
+        identity: "relation" as const,
+      };
+    }
+
+    const seen = (contentSeen.get(contentKey) ?? 0) + 1;
+    contentSeen.set(contentKey, seen);
+    return {
+      link,
+      key: `${claimId}:${sourceId}::${link.role}:${token}::~${seen}`,
+      identity: "ephemeral" as const,
+    };
+  });
+}
+
+export function evidenceLinkKey(claimId: string, links: InvestigationEvidenceLink[], index: number): string {
+  return identifyEvidenceLinks(claimId, links)[index]?.key ?? `${claimId}:`;
 }
 
 export const ROLE_LAYOUT_ORDER: Record<EvidenceRole, number> = {
