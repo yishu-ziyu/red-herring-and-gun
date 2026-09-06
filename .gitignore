@@ -11,6 +11,8 @@ mvp/server/.data/
 .superpowers/
 .claude/
 .ship/
+.video_agent/
+.playwright-mcp/
 
 # Evaluation baseline (env-dependent, regenerated per run)
 mvp/server/eval/baseline.json
