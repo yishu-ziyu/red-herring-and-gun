@@ -43,7 +43,7 @@
 - [x] **E1（验收文档先于实现）**：本文件含 Change / Not this / Evaluator；断言真实节点引用。
   - 验证：本文件存在且含 `before === after`。
 - [x] **E2（DOM 身份：unassessed → support）**：rerender 后 `querySelector('[data-gp-claim-id] [data-source-id]')` 的节点引用严格相等。
-  - 验证：`cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`（34 通过）
+  - 验证：`cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`（48 通过：#62 Claim Trace + #63 Settling）
 - [x] **E3（DOM 身份：unassessed → contradict）**：同上，`before === after`。
 - [x] **E4（DOM 身份：unassessed → context-only）**：同上，`before === after`。
 - [x] **E5（role 标签与 data 属性）**：`data-gp-role` 与可见文字（支持 / 反驳 / 待核对 / 相关材料）随 snapshot 更新。
@@ -58,8 +58,8 @@
 - [x] **E14（测试与构建）**：
   - `npm test`：core 578 / eval 85 / server 21 / web 83 = 767 通过
   - `npm run build`：通过
-  - `cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`：34 通过
-  - `cd mvp && npm test`：925 通过 / 1 跳过
+  - `cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`：48 通过
+  - `cd mvp && npm test`：939 通过 / 1 跳过
   - `cd mvp && npm run build`：通过
 - [x] **E15（取证脚本）**：`python3 scripts/capture_evidence_settling.py` 在端口 **5182** 跑生产 Golden Path；写出 before/after 与 motion 证据；脚本与 README 写明 **fixture ≠ 真实 SSE**。真实浏览器 `before === after`；非 reduce 采样到 layout translate，reduce 下 moving=0。
 
