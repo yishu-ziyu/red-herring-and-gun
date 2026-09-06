@@ -24,6 +24,8 @@
 
 # 当前状态
 
+2026-09-07 分支收拢完成（用户裁决：以 GitHub PR 记录为准，过审内容全部进 main，未过审内容不推）：PR #72 已 squash-merge 进 main（`695bd8e`），Issue #66 随之关闭。13 个已合并分支（Reset 2/3、4A–4E、infra #58、fix #74/#76、design #60、docs #55/#59）的本地与远程副本已删除，5 个辅助 worktree 已移除，仓库只剩 main 一条分支、一个主 worktree，本地与 origin/main 同步。未过 PR 的内容没有推主线：`feat/reset-3-golden-path` 分支尖的 #53 Phase A 设计规格与交互原型（约 2400 行，从未经过任何 PR；生产实现已由 4A–4E 交付，设计稿已由 PR #60 的 reference-exploration 覆盖）、`fix/76-source-identity-stability` 分支尖的一行 NOTES 改动。这两处对象约 30 天内仍可从本地 reflog 找回。
+
 2026-09-06 PR #72 / Issue #66 已 rebase 到 main `f009d34`（#76 squash-merge），第三次 REAL SSE 完成。`git merge-base HEAD origin/main` = `f009d34f0303fd3512d6df0fda40135fd88db7fa`。旧 `final/real/` 与 `final/real-after-74/` 未覆盖。新 run 在 `final/real-after-76/`：hashed sourceId 稳定；claim-1 `src-bd310b43063afb86` 同 URL unassessed→support，live 与 replay DOM `before === after`。`gate.json` PASS 且 `settling-dom.json same:true`。机器：goldenPath 93；根 794；mvp 1008/1 skipped；两处 build 绿。不 merge，不关 #53，不启 #54。
 
 2026-09-06 Issue #76 / PR #77 已 squash-merge 进 main（`f009d34`）：`InvestigationSource.id` 改为规范化 URL 的确定性派生，不再按 `src-${sources.length+1}` 随 phase / evidence 排序重编号。同 URL 仍一个 Source，support+contradict 仍是两条 EvidenceLink。#66 capture gate 改为按 URL+sourceId 判断 transition，`sourceIdsStable=false` 必须 FAIL。
