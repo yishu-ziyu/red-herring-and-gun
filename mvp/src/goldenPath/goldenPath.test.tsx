@@ -457,6 +457,44 @@ describe("Issue #62 Claim Trace", () => {
     expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("false");
   });
 
+  it("click/focus Claim 01 → mouseEnter Claim 02 → 只激活 Claim 02", () => {
+    renderCanvas(mixed);
+    const head1 = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
+    const head2 = document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!;
+    fireEvent.click(head1);
+    fireEvent.focus(head1);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    fireEvent.mouseEnter(head2);
+    expect(document.querySelector(".gp-original-text")!.getAttribute("data-gp-traced-claim")).toBe("claim-2");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("false");
+  });
+
+  it("mouseLeave Claim 02 → Claim 01 仍 focus → 恢复 Claim 01", () => {
+    renderCanvas(mixed);
+    const head1 = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
+    const head2 = document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!;
+    fireEvent.focus(head1);
+    fireEvent.mouseEnter(head2);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    fireEvent.mouseLeave(head2);
+    expect(document.querySelector(".gp-original-text")!.getAttribute("data-gp-traced-claim")).toBe("claim-1");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("false");
+  });
+
+  it("先前 hover Claim 02 → keyboard focus Claim 01 → 激活 Claim 01", () => {
+    renderCanvas(mixed);
+    const head1 = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
+    const head2 = document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!;
+    fireEvent.mouseEnter(head2);
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    fireEvent.focus(head1);
+    expect(document.querySelector(".gp-original-text")!.getAttribute("data-gp-traced-claim")).toBe("claim-1");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("true");
+    expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("false");
+  });
+
   it("10 expand/collapse 不回归", () => {
     renderCanvas(mixed);
     const claim = document.querySelector('[data-gp-claim-id="claim-1"]')!;

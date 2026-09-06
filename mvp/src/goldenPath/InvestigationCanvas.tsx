@@ -46,7 +46,17 @@ export function InvestigationCanvas({
   const [hoverClaimId, setHoverClaimId] = useState<string | null>(null);
   const [focusClaimId, setFocusClaimId] = useState<string | null>(null);
   const [expandedTraceClaimId, setExpandedTraceClaimId] = useState<string | null>(null);
-  const tracedClaimId = focusClaimId ?? hoverClaimId ?? expandedTraceClaimId;
+  // Pointer hover wins. Keyboard focus clears stale hover so a parked pointer cannot hijack Tab. Touch uses expanded-active.
+  const tracedClaimId = hoverClaimId ?? focusClaimId ?? expandedTraceClaimId;
+
+  const handleHeaderHover = (claimId: string | null) => {
+    setHoverClaimId(claimId);
+  };
+
+  const handleHeaderFocus = (claimId: string | null) => {
+    setFocusClaimId(claimId);
+    if (claimId) setHoverClaimId(null);
+  };
 
   // 状态变化用一句轻量播报解释发生了什么（渐进呈现，不是 Agent 日志）。
   useEffect(() => {
@@ -126,7 +136,9 @@ export function InvestigationCanvas({
           </div>
           <blockquote className="gp-original-quote">
             <span className="gp-quote-open" aria-hidden="true">“</span>
-            <span className="gp-original-text">{renderOriginalClaim(snapshot, tracedClaimId)}</span>
+            <span className="gp-original-text" data-gp-traced-claim={tracedClaimId ?? ""}>
+              {renderOriginalClaim(snapshot, tracedClaimId)}
+            </span>
             <span className="gp-quote-close" aria-hidden="true">”</span>
           </blockquote>
         </section>
@@ -150,8 +162,8 @@ export function InvestigationCanvas({
                   conflicts={snapshot.conflicts}
                   defaultExpanded={complete ? index === 0 : true}
                   onSelectSource={openSource}
-                  onHeaderHover={setHoverClaimId}
-                  onHeaderFocus={setFocusClaimId}
+                  onHeaderHover={handleHeaderHover}
+                  onHeaderFocus={handleHeaderFocus}
                   onExpandedTrace={setExpandedTraceClaimId}
                 />
               ))}

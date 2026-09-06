@@ -22,7 +22,7 @@
 
 # 当前状态
 
-2026-09-06 Issue #62 Claim Trace 生产化（独立分支 `feat/reset-4b-claim-trace`，待人工 Review，不 merge）：生产 Golden Path 用 `buildClaimTraceSegments(originalClaim, claims)` 只消费 `originalSpan`；Hover / keyboard focus / 移动端 focus 回指原句短语；无合法 span 不高亮。验收 `docs/evals/2026-09-06-claim-trace.md`。截图 `docs/design/2026-09-06-claim-trace/`（fixture，不是真实 SSE）。goldenPath 34；mvp 925 过 / 1 跳过；根 767；三处 build 绿；capture GATE PASS，hover 原句宽高位移 0px。不实现 #63/#64/#65/#66。
+2026-09-06 PR #68 Review blocker 已修（推同一 PR，不 merge，等复审）：pointer hover 优先于残留 click-focus；keyboard focus 开始时清陈旧 hover；touch 仍走 expanded-active。jsdom 三条新路径 + 原有 hover/focus/blur/mouseleave/expand/mobile/no-span 全绿。Playwright 真实浏览器覆盖 click Claim 01 → hover Claim 02 只 Trace 02（focus 仍在 01），以及 leave 恢复与 keyboard 清 stale hover。goldenPath 37；mvp 928/1 skipped；根 767（一次 callJob 时序 flake 单跑绿）；三处 build 绿；capture GATE PASS。不改 producer，不扩 #62，不开 #63–#66。
 
 2026-09-06 PR #67 第三轮：生产代码与浏览器门禁已通过，本轮只收口文档真相源，未改 `mvp/` / CSS / 截图。Production Spec 把字阶/行高/间距标为 spec-only（不是 `--gp-type-*` / `--gp-lh-*` / `--gp-space-*` 变量）；`--gp-surface-inset` 不再写成 Original Claim 默认背景；Topbar 记为内联实现值，没有 `--gp-chrome-*`；墨色对比按 primary/secondary 与 tertiary/muted 分层，不再全局声称 WCAG AAA。Evaluator 合并为一套当前机器门禁（E3 为 Playwright computed-style；goldenPath 23；mvp 914/1 skipped）。等待最终验收，不 merge，不开 #62–#66。
 

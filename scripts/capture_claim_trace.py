@@ -168,6 +168,48 @@ def capture(browser) -> list[str]:
     except Exception as exc:
         print(f"GIF optional skipped: {exc}")
 
+    # Review blocker: live pointer object wins over leftover click-focus.
+    page.goto(f"{BASE_URL}/?fixture=mixed", wait_until="domcontentloaded")
+    wait_mixed(page)
+    time.sleep(0.2)
+    head1 = page.locator('[data-gp-claim-id="claim-1"] .gp-claim-head')
+    head2 = page.locator('[data-gp-claim-id="claim-2"] .gp-claim-head')
+    head1.click()
+    focused = page.evaluate(
+        "() => document.activeElement?.closest('[data-gp-claim-id]')?.getAttribute('data-gp-claim-id')"
+    )
+    if focused != "claim-1":
+        fail(errors, f"click Claim 01 must keep focus on claim-1, got {focused}")
+    head2.hover()
+    page.wait_for_selector('mark[data-gp-trace-claim="claim-2"].is-active', timeout=5000)
+    mixed_hover = quote_metrics(page)
+    print("click-then-hover-02 metrics:", json.dumps(mixed_hover, ensure_ascii=False))
+    if not mixed_hover or [a["claim"] for a in mixed_hover["active"]] != ["claim-2"]:
+        fail(errors, f"click Claim 01 then hover Claim 02 must trace only claim-2, got {mixed_hover}")
+    still_focused = page.evaluate(
+        "() => document.activeElement?.closest('[data-gp-claim-id]')?.getAttribute('data-gp-claim-id')"
+    )
+    if still_focused != "claim-1":
+        fail(errors, f"hover Claim 02 must not steal focus from Claim 01, got {still_focused}")
+
+    page.locator(".gp-original-label").hover()
+    time.sleep(0.2)
+    restored_focus = quote_metrics(page)
+    print("leave-02 restore-01 metrics:", json.dumps(restored_focus, ensure_ascii=False))
+    if not restored_focus or [a["claim"] for a in restored_focus["active"]] != ["claim-1"]:
+        fail(errors, f"mouseLeave Claim 02 with Claim 01 focused must restore claim-1, got {restored_focus}")
+
+    head1.evaluate("el => el.blur()")
+    time.sleep(0.1)
+    head2.hover()
+    page.wait_for_selector('mark[data-gp-trace-claim="claim-2"].is-active', timeout=5000)
+    head1.focus()
+    page.wait_for_selector('mark[data-gp-trace-claim="claim-1"].is-active', timeout=5000)
+    kb_after_hover = quote_metrics(page)
+    print("hover-02 then focus-01 metrics:", json.dumps(kb_after_hover, ensure_ascii=False))
+    if not kb_after_hover or [a["claim"] for a in kb_after_hover["active"]] != ["claim-1"]:
+        fail(errors, f"keyboard focus Claim 01 after hover Claim 02 must trace claim-1, got {kb_after_hover}")
+
     page.goto(f"{BASE_URL}/?fixture=nospan", wait_until="domcontentloaded")
     page.wait_for_selector('[data-gp-claim-id="claim-1"] .gp-claim-head', timeout=15000)
     time.sleep(0.3)

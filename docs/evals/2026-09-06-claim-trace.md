@@ -42,11 +42,17 @@
 
 - [x] **E1（单一事实源与 fail-safe）**：`buildClaimTraceSegments` 只读 `originalClaim + originalSpan`。valid span 精确切出短语；missing / OOR / invalid / mismatch / 无法解释的 overlap → `traceable=false` 且不出现对应 `<mark>`。
   - 验证命令：`cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`
-  - 结果：34 通过
+  - 结果：37 通过
 - [x] **E2（真实中文 fixture 逐字相等）**：生产形态 Snapshot（`mixedComplete()`）上 `originalClaim.slice(start, end)` 与预期短语精确一致；连接全部 segment 文本后等于整句 `originalClaim`。
   - 验证命令：同上
 - [x] **E3（Hover / Focus / 恢复 / 展开）**：Hover Claim 01 只激活 Claim 01 短语；keyboard focus 同样激活；blur / mouseleave 恢复；expand/collapse 不回归。不是 grep。
   - 验证命令：同上（Testing Library 真实事件）
+- [x] **E3b（pointer / keyboard 仲裁，PR #68 Review blocker）**：当前真实交互对象决定 Trace。`hoverClaimId ?? focusClaimId ?? expandedTraceClaimId`；keyboard focus 开始时清掉陈旧 hover。
+  1. click/focus Claim 01 → mouseEnter Claim 02 → 只激活 Claim 02（Claim 01 仍保持 focus）
+  2. mouseLeave Claim 02 → Claim 01 仍 focus → 恢复 Claim 01
+  3. 先前 hover Claim 02 → keyboard focus Claim 01 → 激活 Claim 01
+  - jsdom：`cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx` → **37 通过**
+  - 浏览器（第 1 条为硬门，2/3 同脚本）：`python3 scripts/capture_claim_trace.py` → **GATE PASS**；click 后 hover Claim 02 只激活 claim-2，且 focus 仍在 claim-1
 - [x] **E4（无第二套映射）**：`mvp/src/goldenPath/` 生产源码（测试除外）不出现 `quoteTokens`、phrase map、按命题文本正则改写原句。
   - 验证命令：`cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx`（源码合同测试）
 - [x] **E5（生产截图与 0px 位移）**：`python3 scripts/capture_claim_trace.py` 从生产 Golden Path 捕获 Desktop 1440 / Mobile 390，并测量 hover 前后 `.gp-original-quote` 宽高变化为 0px。
@@ -54,7 +60,7 @@
   - 结果：GATE PASS；hover 原句宽高 724×27.21875 → 724×27.21875（0px）
 - [x] **E6（根测试）**：`npm test` core 578 / eval 85 / server 21 / web 83 = 767 通过
 - [x] **E7（根构建）**：`npm run build` 通过
-- [x] **E8（生产壳测试与构建）**：`cd mvp && npm test` 925 通过 / 1 跳过；`cd mvp && npm run build` 通过
+- [x] **E8（生产壳测试与构建）**：`cd mvp && npm test` 928 通过 / 1 跳过；`cd mvp && npm run build` 通过
 
 ### 人评项
 
