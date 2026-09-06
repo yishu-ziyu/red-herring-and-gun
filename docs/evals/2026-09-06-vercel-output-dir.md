@@ -41,4 +41,9 @@ Git 集成的 Vercel 项目 `red-herring-and-gun` 部署成功，不再报 `No O
 
 ## 结果
 
-（部署后回填 URL 与状态。）
+- [x] V1 项目设置：Root Directory 空；Build 先 `@rhg/core` 再 `mvp`；Output=`mvp/dist`。仓库根 `vercel.json` 与此一致。
+- [x] V2 main/production deployment Ready：https://red-herring-and-gun.vercel.app （`dpl_F8CukBW9edFaJGffiMi8VWBNdCzo`，title 为生产 Golden Path「红鲱鱼与枪｜查出处，判断原句哪里站得住」）。
+- [ ] V3 PR Preview：本 PR 推送后由 Git 集成生成，回填 URL。
+- [x] V4 `mvp` Vite 仍输出 `dist/`，未改 Mode 3 `outDir`。
+
+第一次误把 Root Directory 设成 `mvp`：tsc 找不到 `@rhg/core/investigation`。已改回仓库根。
