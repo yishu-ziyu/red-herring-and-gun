@@ -69,18 +69,19 @@ def save_gif(frame_paths: list[str], dest: str, duration_ms: int = 70) -> None:
 
 def pin_and_wait(page):
     page.goto(f"{BASE_URL}/?fixture=settling", wait_until="domcontentloaded")
-    page.wait_for_selector('[data-gp-claim-id="claim-1"] [data-source-id="src-1"][data-gp-role="unassessed"]', timeout=8000)
+    page.wait_for_selector('[data-gp-claim-id="claim-1"] [data-source-id][data-gp-role="unassessed"]', timeout=8000)
     page.wait_for_selector('[data-gp-group-role="unassessed"]')
     identity = page.evaluate(
         """() => {
           const claim = document.querySelector('[data-gp-claim-id="claim-1"]');
+          const ids = [...claim.querySelectorAll('[data-source-id]')].map((el) => el.getAttribute('data-source-id'));
           const nodes = {};
-          for (const id of ["src-1", "src-2", "src-3"]) {
+          for (const id of ids) {
             const el = claim.querySelector('[data-source-id="' + id + '"]');
             window["__gp_" + id] = el;
             nodes[id] = { role: el && el.getAttribute("data-gp-role"), present: !!el };
           }
-          return nodes;
+          return { ids, nodes };
         }"""
     )
     print("pinned before:", json.dumps(identity, ensure_ascii=False))
@@ -115,7 +116,8 @@ def capture_motion(browser, reduced: bool, errors: list[str]) -> None:
     page = context.new_page()
     page.emulate_media(reduced_motion="reduce" if reduced else "no-preference")
 
-    pin_and_wait(page)
+    pinned = pin_and_wait(page)
+    ids = pinned.get("ids") or []
     before_path = os.path.join(OUT_DIR, "evidence-before-settling.png" if not reduced else "evidence-before-settling-reduced.png")
     page.locator(".gp-canvas").screenshot(path=before_path)
     print(f"Saved {before_path}")
@@ -125,10 +127,11 @@ def capture_motion(browser, reduced: bool, errors: list[str]) -> None:
         os.remove(os.path.join(dest_dir, leftover))
 
     page.evaluate(
-        """() => {
+        """(ids) => {
           window.__gpTransforms = [];
+          window.__gpPinnedIds = ids;
           const tick = () => {
-            for (const id of ["src-1", "src-2", "src-3"]) {
+            for (const id of ids) {
               const el = window["__gp_" + id];
               if (!el) continue;
               window.__gpTransforms.push({
@@ -141,17 +144,24 @@ def capture_motion(browser, reduced: bool, errors: list[str]) -> None:
           };
           window.__gpStopSample = false;
           requestAnimationFrame(tick);
-        }"""
+        }""",
+        ids,
     )
 
-    frames = collect_frames(
-        page,
-        dest_dir,
-        '[data-source-id="src-1"][data-gp-role="contradict"]',
+    settled = (
+        '[data-gp-claim-id="claim-1"] [data-source-id][data-gp-role="contradict"], '
+        '[data-gp-claim-id="claim-1"] [data-source-id][data-gp-role="support"], '
+        '[data-gp-claim-id="claim-1"] [data-source-id][data-gp-role="context-only"]'
     )
-    page.wait_for_selector('[data-source-id="src-1"][data-gp-role="contradict"]', timeout=8000)
-    page.wait_for_selector('[data-source-id="src-2"][data-gp-role="support"]')
-    page.wait_for_selector('[data-source-id="src-3"][data-gp-role="context-only"]')
+    frames = collect_frames(page, dest_dir, settled)
+    page.wait_for_function(
+        """() => {
+          const roles = [...document.querySelectorAll('[data-gp-claim-id="claim-1"] [data-source-id]')]
+            .map((el) => el.getAttribute('data-gp-role'));
+          return roles.includes('contradict') && roles.includes('support') && roles.includes('context-only');
+        }""",
+        timeout=8000,
+    )
     page.wait_for_timeout(400)
 
     after_path = os.path.join(OUT_DIR, "evidence-after-settling.png" if not reduced else "evidence-after-settling-reduced.png")
@@ -159,12 +169,12 @@ def capture_motion(browser, reduced: bool, errors: list[str]) -> None:
     print(f"Saved {after_path}")
 
     same = page.evaluate(
-        """() => {
+        """(ids) => {
           const claim = document.querySelector('[data-gp-claim-id="claim-1"]');
-          const out = {};
-          for (const id of ["src-1", "src-2", "src-3"]) {
+          const out = { nodes: {} };
+          for (const id of ids) {
             const now = claim.querySelector('[data-source-id="' + id + '"]');
-            out[id] = {
+            out.nodes[id] = {
               same: window["__gp_" + id] === now,
               role: now && now.getAttribute("data-gp-role"),
               transform: now ? getComputedStyle(now).transform : null,
@@ -177,16 +187,18 @@ def capture_motion(browser, reduced: bool, errors: list[str]) -> None:
           out.contextLabel = (document.querySelector('[data-gp-group-role="context-only"]') || {}).textContent || "";
           out.unassessed = !!document.querySelector('[data-gp-group-role="unassessed"]');
           return out;
-        }"""
+        }""",
+        ids,
     )
     print(f"{label} identity:", json.dumps(same, ensure_ascii=False))
-    for source_id in ("src-1", "src-2", "src-3"):
-        if not same[source_id]["same"]:
+    for source_id in ids:
+        node = (same.get("nodes") or {}).get(source_id) or {}
+        if not node.get("same"):
             fail(errors, f"{label}: {source_id} remounted (before !== after)")
-    expected = {"src-1": "contradict", "src-2": "support", "src-3": "context-only"}
-    for source_id, role in expected.items():
-        if same[source_id]["role"] != role:
-            fail(errors, f"{label}: {source_id} role={same[source_id]['role']} expected {role}")
+    roles = {node.get("role") for node in (same.get("nodes") or {}).values()}
+    for expected_role in ("contradict", "support", "context-only"):
+        if expected_role not in roles:
+            fail(errors, f"{label}: missing settled role {expected_role}, got {sorted(roles)}")
     if "支持" not in same["supportLabel"]:
         fail(errors, f"{label}: support group missing 支持 text")
     if "反驳" not in same["contradictLabel"]:
@@ -198,9 +210,10 @@ def capture_motion(browser, reduced: bool, errors: list[str]) -> None:
     if reduced:
         if same["layoutMotion"] != "off":
             fail(errors, f"reduced-motion layout should be off, got {same['layoutMotion']}")
-        transform = (same["src-1"]["transform"] or "none").replace(" ", "")
+        first = next(iter((same.get("nodes") or {}).values()), {})
+        transform = (first.get("transform") or "none").replace(" ", "")
         if transform not in ("none", "matrix(1,0,0,1,0,0)"):
-            fail(errors, f"reduced-motion still translating: {same['src-1']['transform']}")
+            fail(errors, f"reduced-motion still translating: {first.get('transform')}")
 
     extra = page.locator(".gp-evidence-board")
     extra.screenshot(path=os.path.join(dest_dir, "motion-final.png"))

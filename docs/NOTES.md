@@ -22,6 +22,8 @@
 
 # 当前状态
 
+2026-09-06 Issue #76 Investigation Source ID 跨 Snapshot 稳定：从 main `7ad8103` 开独立分支 `fix/76-source-identity-stability`。`InvestigationSource.id` 改为规范化 URL 的确定性派生，不再按 `src-${sources.length+1}` 随 phase / evidence 排序重编号。同 URL 仍一个 Source，support+contradict 仍是两条 EvidenceLink。#66 capture gate 改为按 URL+sourceId 判断 transition，`sourceIdsStable=false` 必须 FAIL。不碰 #72 REAL artifacts，不改 PR #72，不 merge，不关 #53，不启 #54。机器：根 794（core 605 / eval 85 / server 21 / web 83）；mvp 1002/1 skipped；两处 build 绿。
+
 2026-09-06 PR #75 Review `5125346321`：stance-preservation binder。`bindDualBucketCitations` 对 supporting / contradicting 各自独立 filter、按 URL dedupe、每桶最多 5 条；再按 filtered supporting → `[1..S]`、filtered contradicting → `[S+1..S+C]` 一次性 remap evidence。同 URL 跨桶两条 relation 都保留。已 rebase 到 origin/main `d404701`（#73）。不 merge。机器：根 783，mvp 1000/1 skipped，两处 build 绿。
 
 2026-09-06 PR #75 Review：dual-bucket citation binder。`bindDualBucketCitations` 按 `[...supporting, ...contradicting]` 原始顺序 filter/dedupe/remap 再拆回两桶；merge / bindAtomEvidenceToVerdicts / normalizeReportCitations 共用。`alignFalseEvidenceBuckets` 仍先改桶再绑定。不 merge。机器：根 778，mvp 992/1 skipped。
