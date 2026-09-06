@@ -2,7 +2,7 @@
 
 背景：GitHub Issue #49（Product Reset）及 Issue #50（[Reset 1] 写入产品宪法与 Golden Path 契约）。
 日期：2026-09-06。
-定位：本任务是整个 Product Reset 的阻塞前置门禁，目标是将已确定的产品原则写回仓库唯一真相源（`docs/PRODUCT_SPEC.md`），并同步 `README.md` 与 `CONTEXT.md`。严格禁止修改生产前端、后端或交互代码。
+定位：本任务是整个 Product Reset 的阻塞前置门禁，目标是将已确定的产品原则写回仓库唯一真相源（`docs/PRODUCT_SPEC.md`）；`README.md` 与 `CONTEXT.md` 经检查后确认一致，因此零修改。严格禁止修改生产前端、后端或交互代码。
 
 ## Change
 
@@ -20,9 +20,9 @@
 5. **唯一 Golden Path**：
    `输入（一句话 / 截图 / 链接） → 命题拆解 → 证据汇入 → 冲突/缺口 → 判断 → 来源下钻`。调查逻辑默认可见并渐进呈现；执行过程默认隐藏。
    - *Evaluator*: `grep -n "唯一 Golden Path" docs/PRODUCT_SPEC.md` 命中；`grep -n "命题拆解\|证据汇入\|来源下钻" docs/PRODUCT_SPEC.md README.md` 命中；无第二条并列主路径。
-6. **实现层默认隐藏**：Agent 名、provider、tool call、token、RRF、pipeline、内部 verdict enum（`verdictType` / `faceVerdict`）、调试信息定义为实现层概念，不是产品核心概念，默认隐藏。五词（说法、出处、判断、追问、历史）为顶层产品语言与导航骨架，不是封闭词表，证据语义（支持、反驳、仅相关、尚缺、争议）直接可见。
+6. **实现层默认隐藏**：Agent 名、provider、tool call、token、RRF、pipeline、内部 verdict enum（`verdictType` / `faceVerdict`）、调试信息定义为实现层概念，不是产品核心概念，默认隐藏。调查必需的证据语义（支持、反驳、仅相关、尚缺、争议）直接可见并向用户呈现。历史五词属于设计探索用语，不作为产品宪法或信息架构约束。
    - *Evaluator*: `grep -n "默认隐藏（实现层）" docs/PRODUCT_SPEC.md` 命中；`grep -n "实现层" CONTEXT.md` 命中。
-7. **真相源一致性与路线图收敛**：`README.md`、`CONTEXT.md`、`docs/ROADMAP.md` 与 `docs/PRODUCT_SPEC.md` 无互相矛盾的现行描述。`PRODUCT_SPEC.md` 第八节将 Product Reset 设为唯一执行主线，消除与历史阶段计划的冲突。
+7. **真相源一致性与工程事实明确**：`README.md` 与 `CONTEXT.md` 经检查后确认与宪法一致，因此零修改。`docs/PRODUCT_SPEC.md` 文件头明确为唯一真相源（devlog 仅供历史背景参考）；第八节基于 GitHub `main`、已合并 PR 及 Issue 真实状态，区分设计依赖关系与当前工程事实（如实记录 #51/#52 已合并入 `main`），不把已完成工程写成未来待执行序列。
    - *Evaluator*: `grep -n "能信还是不能信" README.md` 零命中；`grep -n "Product Reset（Issue #49）" docs/PRODUCT_SPEC.md` 命中第八节。
 
 ## Not this

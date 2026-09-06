@@ -22,7 +22,7 @@
 
 # 当前状态
 
-2026-09-06 Issue #50 产品宪法与 Golden Path 契约独立复核并建立独立 PR（改完停止，等人工复审）：严格执行纯文档修改（`mvp/` 与 `packages/` 零修改），将 Product Reset 原则（Evidence Auditability > Agent Observability、白盒三层、唯一 Golden Path、实现层默认隐藏、视觉体验属产品门禁）确立为不可篡改的唯一真相源；更新 `docs/PRODUCT_SPEC.md` 文件头与第八节将 Product Reset（Issue #49）明确为唯一在行产品主线，消除与历史阶段计划冲突；同步 `README.md` 与 `CONTEXT.md`；建立验收规范 `docs/evals/2026-09-06-product-constitution-contract.md`。机器检查全绿，不继续推进 #51–#54。
+2026-09-06 PR #59 复审意见处理完成（只改契约文档，未动代码，改完停止等复审）：按人工 review 逐条修正 3 个阻塞项与 1 个文档准确性项：①`docs/PRODUCT_SPEC.md` 第八节如实基于 GitHub main、已合并 PR 与 Issue 状态重写，严格区分“计划依赖关系”与“当前工程事实”，明确标注 #51 与 #52 均已合并至 main，避免后续重复执行；②删除将“五词”升级为产品宪法的硬性约束，明确其为历史探索用语/非约束性现状，避免反向约束 #52 信息架构，证据语义（支持/反驳/仅相关/尚缺/争议）直接可见；③`docs/PRODUCT_SPEC.md` 文件头收敛为唯一真相源，明确区分当前产品规则、当前工程事实、设计背景与历史决策，devlog 明确标注为历史参考而非并列权威；④明确说明 `README.md` 与 `CONTEXT.md` 经检查后确认与宪法一致，因此零修改，消除产生未存在 diff 的暗示。验收见 `docs/evals/2026-09-06-product-constitution-contract.md`。npm test、npm run build、cd mvp && npm test 全绿，未动生产代码，等待人工 review。
 
 2026-09-06 用户要求把本地全部改动收进 `main` 并推远端，只留 `main` 一条分支。`dev` 与 `spine` 本地和远端均删除。独立 worktree `argument-structure-obligations` 目录已不在磁盘，未能合入。仓库：https://github.com/yishu-ziyu/red-herring-and-gun
 
