@@ -1,54 +1,299 @@
 /**
- * SourceDrawer — 来源下钻（Issue #52 第五节第三层）。
- * 展示 title / excerpt / URL domain / 与命题的关系 / reachable=false 警示。
+ * SourceDrawer — 来源下钻（Issue #65）。
+ * 消费 Claim + EvidenceLink + Source：关系永远绑在当前命题上。
+ * finding / limitation / excerpt 有才显示，不编解释。
  */
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
-import { domainOf } from "./snapshotUi";
-import type { InvestigationSource } from "@rhg/core/investigation";
+import { ROLE_LABEL, domainOf, identifyEvidenceLinks } from "./snapshotUi";
+import type { InvestigationEvidenceLink, InvestigationSource } from "@rhg/core/investigation";
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
+export type SourceDrawerView = {
+  claimId: string;
+  claimIndex: number;
+  claimText: string;
+  source: InvestigationSource;
+  link: InvestigationEvidenceLink;
+};
 
 type SourceDrawerProps = {
-  source: InvestigationSource;
-  relationLabel: string;
+  view: SourceDrawerView;
+  resolveState?: "live" | "held";
   onClose: () => void;
 };
 
-export function SourceDrawer({ source, relationLabel, onClose }: SourceDrawerProps) {
+function isSheetPlacement(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(max-width: 768px)").matches;
+}
+
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function focusableIn(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => {
+    if (el.getAttribute("aria-hidden") === "true") return false;
+    if (el.hasAttribute("disabled")) return false;
+    if (el.tabIndex < 0) return false;
+    return true;
+  });
+}
+
+export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDrawerProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
+  const titleId = useId();
+  const panelRef = useRef<HTMLElement>(null);
+  const reduced = prefersReducedMotion();
+  const [openClass, setOpenClass] = useState(reduced);
+  const [placement] = useState<"sheet" | "drawer">(isSheetPlacement() ? "sheet" : "drawer");
+  const { source, link, claimText, claimIndex } = view;
+  const num = String(claimIndex + 1).padStart(2, "0");
+  const relation = ROLE_LABEL[link.role];
+  const excerpt = source.excerpt?.trim();
+  const finding = link.finding?.trim();
+  const limitation = link.limitation?.trim();
+  const unreachable = source.reachable === false;
+  const published = source.publishedAt?.trim();
+  const retrieved = source.retrievedAt?.trim();
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setOpenClass(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const topbar = document.querySelector<HTMLElement>(".gp-topbar");
+    const canvasInner = document.querySelector<HTMLElement>(".gp-canvas-inner");
+    const inertTargets = [topbar, canvasInner].filter((el): el is HTMLElement => Boolean(el));
+    for (const el of inertTargets) {
+      el.setAttribute("inert", "");
+    }
+
+    const closeBtn = panel?.querySelector<HTMLElement>("[data-gp-source-close]");
+    closeBtn?.focus();
+    if (panel && document.activeElement !== closeBtn) {
+      panel.focus();
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab" || !panel) return;
+      event.preventDefault();
+      const items = focusableIn(panel);
+      if (items.length === 0) {
+        panel.focus();
+        return;
+      }
+      const active = document.activeElement;
+      const idx = items.indexOf(active as HTMLElement);
+      if (event.shiftKey) {
+        const next = idx <= 0 ? items[items.length - 1] : items[idx - 1];
+        next?.focus();
+      } else {
+        const next = idx === -1 || idx >= items.length - 1 ? items[0] : items[idx + 1];
+        next?.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      for (const el of inertTargets) {
+        el.removeAttribute("inert");
+        try {
+          el.inert = false;
+        } catch {
+          /* jsdom may not implement the inert setter */
+        }
+      }
+    };
+  }, [onClose]);
+
   return (
-    <>
-      <button type="button" className="gp-scrim" aria-label={copy.sourceClose} onClick={onClose} />
-      <aside className="gp-drawer gp-drawer--source" role="dialog" aria-label={source.title || source.url}>
+    <div className="gp-source-layer" data-gp-source-layer>
+      <button
+        type="button"
+        className={`gp-scrim${openClass ? " is-open" : ""}`}
+        aria-label={copy.sourceClose}
+        tabIndex={-1}
+        data-gp-scrim="source"
+        onClick={onClose}
+      />
+      <aside
+        ref={panelRef}
+        className={`gp-drawer gp-drawer--source${openClass ? " is-open" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        data-gp-placement={placement}
+        data-gp-reduced-motion={reduced || undefined}
+        data-gp-claim-id={view.claimId}
+        data-gp-source-id={source.id}
+        data-gp-role={link.role}
+        data-gp-source-resolve={resolveState}
+      >
         <header className="gp-drawer-head">
-          <strong className="gp-source-title">{source.title || domainOf(source.url)}</strong>
-          <button type="button" className="gp-icon-btn" onClick={onClose} aria-label={copy.sourceClose}>
+          <div className="gp-source-head-text">
+            <strong className="gp-source-title" id={titleId}>
+              {source.title || domainOf(source.url)}
+            </strong>
+            <p className="gp-source-kicker">
+              <span className={`gp-role-glyph is-${link.role}`} aria-hidden="true">
+                {link.role === "support" || link.role === "contradict" ? "●" : link.role === "context-only" ? "○" : "◌"}
+              </span>
+              <span>
+                {copy.sourceRelation}：{relation}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span className="gp-source-domain">{domainOf(source.url)}</span>
+            </p>
+          </div>
+          <button type="button" className="gp-icon-btn" autoFocus onClick={onClose} aria-label={copy.sourceClose} data-gp-source-close>
             ✕
           </button>
         </header>
-        {source.excerpt ? <p className="gp-source-excerpt">{source.excerpt}</p> : null}
-        <dl className="gp-source-meta">
-          <div>
-            <dt>{copy.sourceRelation}</dt>
-            <dd>{relationLabel}</dd>
-          </div>
-          <div>
-            <dt>URL</dt>
-            <dd className="gp-source-domain">{domainOf(source.url)}</dd>
-          </div>
-        </dl>
-        {source.reachable === false ? (
-          <p className="gp-source-unreachable" role="alert">
-            {copy.sourceUnreachable}
-          </p>
-        ) : null}
-        <a className="gp-primary-btn gp-source-open" href={source.url} target="_blank" rel="noreferrer">
+
+        <div className="gp-source-body">
+          <section className="gp-source-block" data-gp-source-section="claim">
+            <h3 className="gp-source-label">{copy.sourceAgainstClaim}</h3>
+            <p className="gp-source-claim">
+              <span className="gp-source-claim-num" aria-hidden="true">
+                {num}
+              </span>
+              <span>{claimText}</span>
+            </p>
+          </section>
+
+          {excerpt ? (
+            <section className="gp-source-block" data-gp-source-section="excerpt">
+              <h3 className="gp-source-label">{copy.sourceExcerpt}</h3>
+              <blockquote className="gp-source-excerpt">{excerpt}</blockquote>
+            </section>
+          ) : null}
+
+          {finding ? (
+            <section className="gp-source-block" data-gp-source-section="finding">
+              <h3 className="gp-source-label">{copy.sourceFinding}</h3>
+              <p className="gp-source-prose">{finding}</p>
+            </section>
+          ) : null}
+
+          {limitation ? (
+            <section className="gp-source-block" data-gp-source-section="limitation">
+              <h3 className="gp-source-label">{copy.sourceLimitation}</h3>
+              <p className="gp-source-prose">{limitation}</p>
+            </section>
+          ) : null}
+
+          {(published || retrieved || unreachable) ? (
+            <section className="gp-source-block" data-gp-source-section="status">
+              {published ? (
+                <p className="gp-source-time">
+                  {copy.sourcePublished} {published}
+                </p>
+              ) : null}
+              {retrieved ? (
+                <p className="gp-source-time">
+                  {copy.sourceRetrieved} {retrieved}
+                </p>
+              ) : null}
+              {unreachable ? (
+                <p className="gp-source-unreachable" role="status">
+                  {copy.sourceUnreachable}
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+        </div>
+
+        <a
+          className="gp-source-open"
+          href={source.url}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
           {copy.viewSource}
           <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6">
             <path d="M4 12 12 4M6 4h6v6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </a>
       </aside>
-    </>
+    </div>
   );
+}
+
+/** 只有当前 snapshot 存在且唯一的 `identifyEvidenceLinks` key === identity 才返回 live view。 */
+export function resolveSourceDrawerView(
+  claims: Array<{ id: string; text: string; evidence: InvestigationEvidenceLink[] }>,
+  sources: InvestigationSource[],
+  claimId: string,
+  identity: string,
+): SourceDrawerView | null {
+  const claimIndex = claims.findIndex((c) => c.id === claimId);
+  const claim = claimIndex >= 0 ? claims[claimIndex] : undefined;
+  if (!claim || !identity) return null;
+  const identified = identifyEvidenceLinks(claim.id, claim.evidence);
+  const matches = identified.filter((row) => row.key === identity);
+  if (matches.length !== 1) return null;
+  const link = matches[0]!.link;
+  const source = sources.find((s) => s.id === link.sourceId);
+  if (!source) return null;
+  return {
+    claimId: claim.id,
+    claimIndex,
+    claimText: claim.text,
+    source,
+    link,
+  };
+}
+
+/** 用户刚点中的 exact EvidenceLink，不做 unique resolve，也不丢进全局 lastView。 */
+export function buildSourceDrawerViewFromClick(
+  claims: Array<{ id: string; text: string; evidence: InvestigationEvidenceLink[] }>,
+  claimId: string,
+  source: InvestigationSource,
+  link: InvestigationEvidenceLink,
+): SourceDrawerView | null {
+  const claimIndex = claims.findIndex((c) => c.id === claimId);
+  const claim = claimIndex >= 0 ? claims[claimIndex] : undefined;
+  if (!claim) return null;
+  return {
+    claimId: claim.id,
+    claimIndex,
+    claimText: claim.text,
+    source,
+    link,
+  };
+}
+
+/** 当前 Drawer 自己的 session identity：能对齐 view-layer evidence key 就用它，否则退回打开参数。 */
+export function sourceDrawerSessionIdentity(
+  claimId: string,
+  evidence: InvestigationEvidenceLink[],
+  link: InvestigationEvidenceLink,
+): string {
+  const identified = identifyEvidenceLinks(claimId, evidence);
+  const row =
+    identified.find((item) => item.link === link) ??
+    identified.find(
+      (item) =>
+        item.link.sourceId === link.sourceId &&
+        item.link.role === link.role &&
+        item.link.finding === link.finding &&
+        item.link.limitation === link.limitation,
+    );
+  return row?.key ?? `${claimId}:${link.sourceId}:${link.role}`;
 }

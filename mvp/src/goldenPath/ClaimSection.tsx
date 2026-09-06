@@ -27,7 +27,12 @@ type ClaimSectionProps = {
   sources: InvestigationSource[];
   conflicts: InvestigationConflict[];
   defaultExpanded: boolean;
-  onSelectSource: (link: InvestigationEvidenceLink, source: InvestigationSource, claimId: string) => void;
+  onSelectSource: (
+    link: InvestigationEvidenceLink,
+    source: InvestigationSource,
+    claimId: string,
+    trigger: HTMLElement,
+  ) => void;
   onHeaderHover?: (claimId: string | null) => void;
   onHeaderFocus?: (claimId: string | null) => void;
   onExpandedTrace?: (claimId: string | null) => void;
@@ -107,7 +112,7 @@ export function ClaimSection({
               <EvidenceBoard
                 claim={claim}
                 sources={sources}
-                onSelect={(l, s) => onSelectSource(l, s, claim.id)}
+                onSelect={(l, s, trigger) => onSelectSource(l, s, claim.id, trigger)}
               />
             </div>
           ) : (
@@ -127,10 +132,10 @@ export function ClaimSection({
                 <button
                   type="button"
                   className="gp-conflict-side"
-                  onClick={() => {
+                  onClick={(event) => {
                     const first = conflict.sides[0]?.sourceIds[0];
                     const source = first ? sources.find((s) => s.id === first) : undefined;
-                    if (source) onSelectSource({ sourceId: first!, role: "context-only" }, source, claim.id);
+                    if (source) onSelectSource({ sourceId: first!, role: "context-only" }, source, claim.id, event.currentTarget);
                   }}
                 >
                   {conflictSidesLabel(conflict.sides)}

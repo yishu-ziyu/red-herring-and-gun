@@ -27,7 +27,7 @@ function prefersReducedMotion(): boolean {
 type EvidenceBoardProps = {
   claim: InvestigationClaim;
   sources: InvestigationSource[];
-  onSelect: (link: InvestigationEvidenceLink, source: InvestigationSource) => void;
+  onSelect: (link: InvestigationEvidenceLink, source: InvestigationSource, trigger: HTMLElement) => void;
 };
 
 export function EvidenceBoard({ claim, sources, onSelect }: EvidenceBoardProps) {
@@ -78,6 +78,7 @@ export function EvidenceBoard({ claim, sources, onSelect }: EvidenceBoardProps) 
         {identified.map(({ link, key, identity }) => (
           <EvidenceItem
             key={key}
+            claimId={claim.id}
             evidenceKey={key}
             identity={identity}
             link={link}
