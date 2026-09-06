@@ -123,6 +123,19 @@ function interruptedSnapshot() {
   return { ...base, phase: "interrupted" as const };
 }
 
+function sourceAuditSnapshot() {
+  const snap = staged("complete");
+  const supportClaim = snap.claims.find((claim) => claim.evidence.some((item) => item.role === "support"));
+  const support = supportClaim?.evidence.find((item) => item.role === "support");
+  if (support) {
+    support.limitation = "不能由「不当储存可能有害」推出「吃了等于吃毒药」。";
+  }
+  const deadId = snap.claims[0]?.evidence[0]?.sourceId;
+  const dead = deadId ? snap.sources.find((source) => source.id === deadId) : undefined;
+  if (dead) dead.reachable = false;
+  return snap;
+}
+
 export type FixtureName =
   | "investigating"
   | "judging"
@@ -133,7 +146,8 @@ export type FixtureName =
   | "image-missing"
   | "mixed"
   | "nospan"
-  | "settling";
+  | "settling"
+  | "source-audit";
 
 /** Issue #63 取证：三条材料从待核对归到支持 / 反驳 / 相关材料。确定性 fixture，不是真实 SSE。 */
 function settlingBefore() {
@@ -202,6 +216,21 @@ export function getDevFixture(
     } else if (name === "settling") {
       at(80, () => emit({ type: "investigation_snapshot", investigation: settlingBefore(), timestamp: Date.now() }));
       at(1400, () => emit({ type: "investigation_snapshot", investigation: settlingAfter(), timestamp: Date.now() }));
+    } else if (name === "source-audit") {
+      const audit = sourceAuditSnapshot();
+      at(60, () => emit({ type: "investigation_snapshot", investigation: staged("investigating"), timestamp: Date.now() }));
+      at(360, () => emit({ type: "investigation_snapshot", investigation: staged("judging"), timestamp: Date.now() }));
+      at(900, () => {
+        emit({ type: "investigation_snapshot", investigation: audit, timestamp: Date.now() });
+        at(120, () =>
+          emit({
+            type: "complete",
+            finalReport: { conclusion: "见调查结论。", investigation: audit } as Record<string, unknown>,
+            timestamp: Date.now(),
+          })
+        );
+      });
+      return () => timers.forEach(clearTimeout);
     } else if (name === "investigating") {
       at(60, () => emitSnapshot("investigating"));
     } else if (name === "judging") {
