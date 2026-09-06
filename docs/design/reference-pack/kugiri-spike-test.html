@@ -243,46 +243,46 @@
 
     <!-- Case 4: 无障碍结构与关键排版维度检查 -->
     <div class="case-block">
-      <div class="case-title">4. 无障碍结构与关键排版维度检查 (实测与未测声明矩阵)</div>
-      <div class="case-desc">严格区分真实运行断言 (Actual Runtime Evidence)、未测项 (Not tested) 与不适用项</div>
+      <div class="case-title">4. 无障碍结构与关键排版维度检查 (实测与推论严格区分矩阵)</div>
+      <div class="case-desc">严格区分真实运行执行 (Actual Runtime Evidence)、结构推论 (Structural inference)、风险分析 (Risk analysis) 与未测项 (Not tested)</div>
       <table class="table-spec">
         <thead>
           <tr>
             <th>检查项</th>
-            <th>测试方式</th>
-            <th>kugiri 运行时观察结果</th>
+            <th>证据类型</th>
+            <th>kugiri 观察与推论</th>
             <th>技术裁决</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td>DOM 文本连续性</td>
-            <td><span class="status-badge badge-tested">Actual Runtime Evidence</span></td>
-            <td>拆解为若干独立行框 span，文本被切分为离散节点</td>
+            <td><span class="status-badge badge-tested">Actual Runtime</span></td>
+            <td>实测观察：文本被切分为数十个离散的行框与词框 span 节点</td>
             <td><span class="status-badge badge-native-win">原生文本树更佳</span></td>
           </tr>
           <tr>
             <td>Aria Exposure 标记</td>
-            <td><span class="status-badge badge-tested">Actual Runtime Evidence</span></td>
-            <td>kugiri 默认在 units 上打 data-line/data-word，未自动为目标添加 aria-label 与 aria-hidden</td>
+            <td><span class="status-badge badge-tested">Actual Runtime</span></td>
+            <td>实测观察：kugiri 默认在 units 上打 data-line/data-word，未自动为目标添加 aria-label 与 aria-hidden</td>
             <td><span class="status-badge badge-native-win">原生免配置</span></td>
           </tr>
           <tr>
             <td>text-wrap: balance 交互</td>
-            <td><span class="status-badge badge-tested">Actual Runtime Evidence</span></td>
-            <td>Case 5 实测：拆行硬插入 span 破坏原生平衡引擎；视口微调时原生 balance 无法在硬 span 间重新平衡</td>
+            <td><span class="status-badge badge-tested">Actual Runtime</span> + <span class="status-badge badge-not-tested">Structural Inference</span></td>
+            <td><strong>实测</strong>：成功切出行数并记录行宽；<br><strong>结构推论</strong>：将文本硬封装为独立 div 块后，浏览器原生 balance 算法无法跨已切碎元素动态重排（本 Case 未在运行时触发容器 resize）</td>
             <td><span class="status-badge badge-native-win">原生 CSS 胜出</span></td>
           </tr>
           <tr>
             <td>字体就绪 (document.fonts.ready)</td>
-            <td><span class="status-badge badge-tested">Actual Runtime Evidence</span></td>
-            <td>Case 6 实测：kugiri 严格依赖就绪后的字形测量；若在 WebFont 加载前切行，后续字形替换会导致换行错位溢出</td>
+            <td><span class="status-badge badge-tested">Actual Runtime</span> + <span class="status-badge badge-not-tested">Risk Analysis</span></td>
+            <td><strong>实测</strong>：成功等待 document.fonts.ready 解析并完成就绪后切分与尺寸测量；<br><strong>风险分析</strong>：强依赖物理像素测量，若在 WebFont 未就绪前提前切行存在后续 font swap 错位风险（未做实际 font swap 实测）</td>
             <td><span class="status-badge badge-native-win">原生零风险</span></td>
           </tr>
           <tr>
             <td>VoiceOver / NVDA 朗读 (TTS 引擎)</td>
             <td><span class="status-badge badge-not-tested">Not tested</span></td>
-            <td>未跑系统级 TTS 语音合成引擎；根据 Accessibility 树审查，数十个离散 span 存在断读与拼读风险</td>
+            <td>未跑系统级 TTS 语音合成引擎；根据 Accessibility 树审查，数十个离散 span 存在断读与拼读风险（属于结构审查，非真实语音实测）</td>
             <td><span class="status-badge badge-not-tested">结构风险高</span></td>
           </tr>
           <tr>
@@ -295,10 +295,10 @@
       </table>
     </div>
 
-    <!-- Case 5: text-wrap: balance 与 kugiri 真实交互实测 -->
+    <!-- Case 5: text-wrap: balance 运行时测量与结构推论 -->
     <div class="case-block">
-      <div class="case-title">5. 现代 CSS <code>text-wrap: balance</code> 与 kugiri 真实交互实测</div>
-      <div class="case-desc">实测观察：浏览器排版引擎原生平衡折行 vs kugiri 分词切行后的实际渲染与行宽分配</div>
+      <div class="case-title">5. 现代 CSS <code>text-wrap: balance</code> 运行时测量与结构推论</div>
+      <div class="case-desc">运行时测量初始平衡切分行宽，并从 DOM 封装结构推论原生平衡换行引擎的受限风险</div>
       <div class="grid-2">
         <div class="panel">
           <div class="panel-title">kugiri 运行目标 (text-wrap: balance; max-width: 320px)</div>
@@ -306,7 +306,7 @@
             “维生素 C 能治感冒，而且每次感冒都应该输液。”——这是社交网络长期流传的典型复合谣言。
           </div>
           <div class="btn-bar">
-            <button type="button" class="op-btn primary" id="btn-split-balance-5">执行 splitText()</button>
+            <button type="button" class="op-btn primary" id="btn-split-balance-5">执行 splitText() 测量</button>
             <button type="button" class="op-btn" id="btn-revert-balance-5">执行 revert()</button>
           </div>
           <div class="log-box" id="log-balance-5">等待执行...</div>
@@ -323,16 +323,16 @@
       </div>
     </div>
 
-    <!-- Case 6: 字体加载 document.fonts.ready 测量准确性实测 -->
+    <!-- Case 6: 字体加载 document.fonts.ready 运行时测量与风险分析 -->
     <div class="case-block">
-      <div class="case-title">6. 字体加载 <code>document.fonts.ready</code> 测量准确性实测</div>
-      <div class="case-desc">实测在字体就绪状态下与字体替换场景下，kugiri 依赖的 DOM 尺寸测量行为</div>
+      <div class="case-title">6. 字体加载 <code>document.fonts.ready</code> 运行时测量与风险分析</div>
+      <div class="case-desc">实测在 document.fonts.ready 就绪状态下执行切分并记录尺寸，分析字体替换（font swap）时序风险</div>
       <div class="panel">
         <div class="text-target" id="target-font-6" style="max-width: 420px; font-size: 16px; font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', sans-serif;">
           维生素 C 仅在极少数试验中表现出对普通感冒病程轻微缩短约 8% 的辅助效果，不具备治疗或阻断感冒的作用。
         </div>
         <div class="btn-bar">
-          <button type="button" class="op-btn primary" id="btn-test-font-6">检测 document.fonts.ready 并执行测量</button>
+          <button type="button" class="op-btn primary" id="btn-test-font-6">等待 document.fonts.ready 并执行测量</button>
         </div>
         <div class="log-box" id="log-font-6">等待执行...</div>
       </div>
@@ -436,7 +436,7 @@
       const linesCount = balanceSplit.lines.length;
       const lineWidths = balanceSplit.lines.map(l => Math.round(l.getBoundingClientRect().width));
       
-      const info = `[kugiri text-wrap: balance 实测]\n- 原生样式 text-wrap: ${computedBefore}\n- 拆分后行数: ${linesCount}\n- 各行宽度: ${lineWidths.join('px, ')}px\n- 观察事实: kugiri 将各行封装为独立元素块，原生平衡换行引擎不再作用于各内部元素之间；改变容器宽度时必须手动频繁 revert/split，否则各行仍按旧宽度断行产生溢出。`;
+      const info = `[Case 5: text-wrap: balance 运行时测量与结构推论]\n- 运行时实测 (Actual Runtime): 读取原生 text-wrap 为 ${computedBefore}，kugiri 成功切分出 ${linesCount} 行，初始行宽记录为 [${lineWidths.join('px, ')}px]。\n- 结构推论 (Structural inference): kugiri 将各行封装为独立 div 块（带有 text-wrap: nowrap），原生平衡换行引擎无法跨已切碎元素动态分配行长；若容器宽度发生变化需由外层重新调用 split（本测试未执行动态 resize 观察）。`;
       balanceLog.textContent = info;
       window.spikeResults.cases.textWrapBalance = {
         computedWrap: computedBefore,
@@ -468,7 +468,7 @@
       const linesCount = split.lines.length;
       const lineHeights = split.lines.map(l => Math.round(l.getBoundingClientRect().height));
       
-      const info = `[document.fonts.ready 字体加载实测]\n- 初始字体状态: ${fontStatusBefore}\n- 就绪后状态: ${fontStatusAfter}\n- 测量行数: ${linesCount}\n- 各行高度: ${lineHeights.join('px, ')}px\n- 观察事实: kugiri 依赖 JS getBoundingClientRect() 计算断行；如果在 WebFont 字体完全加载前调用，后续字体替换（font swap）会导致字符宽度剧变，已拆分的行产生文字重叠或非预期折行，必须重新 split()；原生 CSS 零运行时开销，天然支持 font-display: swap。`;
+      const info = `[Case 6: document.fonts.ready 运行时测量与风险分析]\n- 运行时实测 (Actual Runtime): document.fonts 初始状态为 ${fontStatusBefore}，成功等待 ready 解析（状态变为 ${fontStatusAfter}），字体就绪后 splitText 切出 ${linesCount} 行，测量各行高为 [${lineHeights.join('px, ')}px]。\n- 风险分析 (Risk analysis): kugiri 切行依赖物理像素测量；若在 WebFont 未就绪前提前切行，后续字体替换（font swap）会导致字符度量变化产生换行错位风险（本测试未执行真实 font swap 前后对比）。`;
       fontLog.textContent = info;
       window.spikeResults.cases.fontReady = {
         statusBefore: fontStatusBefore,

@@ -64,23 +64,29 @@ RUNTIME STATUS: kugiri@0.4.0 运行时已成功加载并在内存就绪！
 ### 2.4 Case 5: 现代 CSS `text-wrap: balance` 交互
 - **Input DOM**:
   容器设置 `style="text-wrap: balance; max-width: 320px;"`，内容为复合谣言原句。
-- **Observable Result（实测可观察现象）**:
-  1. 拆分前：浏览器排版引擎在布局计算阶段通过原生 balance 算法自动均衡各行宽度，避免孤字落行；
-  2. 拆分后：kugiri 将各行硬封装为 `div[data-line]`（带有 `text-wrap: nowrap`），原生 `text-wrap: balance` 无法穿透作用于已切碎的行内 DOM；
-  3. 容器宽度微调时，原生 balance 天然能在几毫秒内重排平衡，而 kugiri 锁定的各行完全失去自适应能力，产生严重的溢出与行长失衡，必须重新执行 JS 拆行。
+- **Actual Runtime Evidence（真实运行执行与测量）**:
+  1. 读取目标元素原生计算样式 `getComputedStyle(target).textWrap === "balance"`；
+  2. 调用 `splitText()` 成功切出指定行数，并测量记录各行物理宽度（`[286px, 290px, ...]`）。
+- **Structural Inference（DOM 结构与排版推论，非本 Case 运行时 resize 测量）**:
+  1. 拆分后 kugiri 将各行硬封装为 `div[data-line]`（带有 `text-wrap: nowrap`），原生 `text-wrap: balance` 无法穿透作用于已切碎的行内 DOM；
+  2. 浏览器原生 balance 算法在无硬封装时能根据容器宽度动态平衡折行；而 kugiri 锁定的各行失去跨元素自适应能力。若容器宽度改变必须依赖外层重新 split（注：本 Case 未在运行时触发宽度改变与 overflow 测量，属 DOM 结构与排版引擎特性推论）。
 
 ### 2.5 Case 6: 字体加载 `document.fonts.ready` 时序影响
-- **Observable Result（实测可观察现象）**:
-  1. kugiri 的切行基于 `getBoundingClientRect()` 测量的物理像素坐标；
+- **Actual Runtime Evidence（真实运行执行与测量）**:
+  1. 成功读取 `document.fonts.status` 初始状态（`loaded` 或 `loading`）；
+  2. 成功执行 `await document.fonts.ready` 等待字体就绪解析；
+  3. 在字体就绪后执行 `splitText()`，成功记录行数与各行几何高度。
+- **Risk Analysis（时序风险推论，非本 Case 真实 font swap 实测）**:
+  1. kugiri 的切行强依赖 `getBoundingClientRect()` 测量的物理像素坐标；
   2. 若在外部 WebFont（网络字体）加载就绪前执行 `splitText()`，断行点基于回退字体计算；
-  3. 当 WebFont 加载完成触发字体替换（Font Swap）时，各字形 advance width 改变，已拆分行内的固定宽度 span 产生重叠或换行错位；
-  4. 结论：kugiri 必须严格等待 `document.fonts.ready` 后调用，并监听字体更新；现代原生 CSS 则天然支持 `font-display: swap` 流式重排。
+  3. 当 WebFont 加载完成触发字体替换（Font Swap）时，各字形 advance width 改变，已拆分行内的固定宽度 span 存在重叠或换行错位风险；
+  4. 结论：kugiri 存在必须严格等待 `document.fonts.ready` 的时序依赖风险；现代原生 CSS 则天然支持 `font-display: swap` 流式重排（注：本测试未执行真实 font swap 前后几何对比与 overflow 捕获，属架构时序风险推论）。
 
 ---
 
 ## 3. 无障碍结构检查 (Accessibility Structure Inspection)
 
-> **严格声明：当前运行环境未启动系统级 VoiceOver / NVDA 屏幕阅读器音频合成，以下结论属于 Accessibility Structure Inspection（无障碍树与 DOM 暴露检查），非 Screen Reader Runtime Audio Test，标记为 Not tested。kugiri 自身不带动画引擎，reduced-motion 属于主原型消费层的处理，非 kugiri 自身能力。**
+> **严格声明：当前运行环境未启动系统级 VoiceOver / NVDA 屏幕阅读器音频合成，以下结论属于 Accessibility Structure Inspection（无障碍树与 DOM 暴露检查），非 Screen Reader Runtime Audio Test，标记为 Not tested。kugiri 自身不带动画引擎，reduced-motion 属于主原型消费层的处理，非 kugiri 自身能力（标为 Not applicable）。**
 
 1. **Accessibility Tree 文本连续性**：
    - 原生 DOM：整段中文作为一个连续的 `StaticText` 暴露给无障碍树；
@@ -101,8 +107,10 @@ RUNTIME STATUS: kugiri@0.4.0 运行时已成功加载并在内存就绪！
 
 ### 最终结论：**不引入 kugiri 作为生产依赖**。
 - **依据**：
-  1. 真实运行表明其对中文分词依赖 `Intl.Segmenter`，标点处理不够稳定；
-  2. 动态 Resize 与 `text-wrap: balance` 发生冲突，必须依赖 JS 反复销毁重建；
-  3. 严格依赖 `document.fonts.ready`，字体替换时容易错位；
-  4. 业务所需的 Claim Trace 与 Conclusion Emergence 原生现代 CSS 即可实现，无需引入额外的外部库。
+  1. 真实运行表明其对中文分词依赖 `Intl.Segmenter`，标点处理不够稳定（Case 1 实测）；
+  2. 内联标签跨行克隆破坏单例引用（Case 2 实测）；
+  3. 动态 Resize 必须依赖 JS ResizeObserver 反复销毁重建（Case 3 实测）；
+  4. 文本硬封装与原生 `text-wrap: balance` 存在结构冲突（Case 5 结构推论）；
+  5. 强依赖 DOM 像素测量，存在 `document.fonts.ready` 字体替换时序风险（Case 6 风险推论）；
+  6. 业务所需的 Claim Trace 与 Conclusion Emergence 原生现代 CSS 即可实现，无需引入额外的外部库。
 

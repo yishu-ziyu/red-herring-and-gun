@@ -461,7 +461,7 @@
             </tr>
             <tr>
               <td>text-wrap: balance 原生交互</td>
-              <td><strong>Actual Runtime Evidence (Case 5 实测)</strong>：拆行硬插入 span 破坏原生平衡引擎；容器尺寸变化时原生 balance 无法在硬 span 间自适应重平衡</td>
+              <td><strong>Actual Runtime (初始切分测量) + Structural Inference (动态重平衡受限推论)</strong>：Case 5 运行时实测读取 textWrap 并切出行数与行宽；结构推论表明硬拆分后原生 balance 算法无法跨独立 div 块动态重排（本测试未执行动态 resize 观察）</td>
               <td>浏览器排版引擎在布局阶段一次性原生动态平衡</td>
               <td><span class="badge badge-green">原生显著胜出</span></td>
             </tr>
@@ -473,13 +473,13 @@
             </tr>
             <tr>
               <td>字体加载时序 (document.fonts.ready)</td>
-              <td><strong>Actual Runtime Evidence (Case 6 实测)</strong>：严格依赖物理像素测量；在 WebFont 就绪前拆行会导致后续字体替换（font swap）时字形溢出和断行错位</td>
+              <td><strong>Actual Runtime (就绪状态测量) + Risk Analysis (font swap 风险分析)</strong>：Case 6 运行时实测等待 document.fonts.ready 解析并完成切分与测量；风险分析表明若在 WebFont 未就绪前提前切行存在后续 font swap 错位风险（未做真实字体替换前后对比实测）</td>
               <td>原生 CSS 天然支持 <code>font-display: swap</code> 流式重排</td>
               <td><span class="badge badge-green">原生显著胜出</span></td>
             </tr>
             <tr>
               <td>无障碍 (Screen Reader 语音朗读)</td>
-              <td><strong>Not tested（未跑实际系统级 TTS 语音合成）</strong>；根据 A11y 树结构审查，DOM 节点被打碎成数十个独立 span，若未深度加 aria-hidden 存在生硬逐字拼读风险</td>
+              <td><strong>Not tested（未跑实际系统级 TTS 语音合成）</strong>；根据 A11y 树结构审查，DOM 节点被打碎成数十个独立 span，若未深度加 aria-hidden 存在生硬逐字拼读风险（属于结构审查，非真实语音实测）</td>
               <td>整句完整保留在 Accessibility Tree 中，语调连贯自然</td>
               <td><span class="badge badge-amber">结构风险高</span></td>
             </tr>
@@ -568,8 +568,8 @@
             </tr>
             <tr>
               <td>TEST 05</td>
-              <td><strong>kugiri 0.4.0 实际运行时与实测矩阵</strong> (3 lines / 25 words 真实包装、revert 还原、Case 5 text-wrap: balance 交互实测、Case 6 字体就绪实测；TTS 明确标注 Not tested)</td>
-              <td>Actual Runtime</td>
+              <td><strong>kugiri 0.4.0 实际运行时测量与推论矩阵</strong> (3 lines / 25 words 真实包装、revert 还原、Case 5 初始切分测量、Case 6 字体就绪测量；TTS 明确标注 Not tested，动态重平衡与 font swap 明确标注 Structural inference / Risk analysis)</td>
+              <td>Actual Runtime + Structural Inference</td>
               <td><span class="badge badge-green">PASS</span></td>
             </tr>
             <tr>
@@ -679,7 +679,7 @@
           <summary>10. kugiri 是否值得进入 production dependency？</summary>
           <div class="qa-content">
             <strong>结论：不值得</strong>。<br>
-            实测 5 大硬伤：① CJK 标点挤压失效，跨 span 产生不自然字距空隙；② 折行复制 inline 标签导致 DOM 节点翻倍膨胀；③ <code>text-wrap: balance</code> 冲突引发微抖动；④ 动态 Resize 必须频繁调用 <code>revert()</code> 并重新 <code>split()</code> 造成掉帧；⑤ 屏幕阅读器无障碍：<strong>Not tested（未跑实际 TTS 语音合成）</strong>，但结构审查显示 DOM 节点被打碎成数十个独立 span，若未深度配置 aria-hidden 存在高风险逐字拼读。<br>
+            技术缺陷评估（含实测与推论严格区分）：① CJK 标点挤压失效，跨 span 产生不自然字距空隙（实测）；② 折行复制 inline 标签导致 DOM 节点翻倍膨胀（实测）；③ <code>text-wrap: balance</code> 拆行硬封装为独立 div 块，破坏原生动态平衡引擎（初始切分实测 + 结构推论）；④ 动态 Resize 需频繁调用 <code>revert()</code> 并重新 <code>split()</code> 造成潜在掉帧（推论）；⑤ 屏幕阅读器无障碍：<strong>Not tested（未跑实际 TTS 语音合成）</strong>，但结构审查显示 DOM 节点被打碎成数十个独立 span 存在断读风险；⑥ 字体加载时序：虽然支持就绪后测量（实测），但在 WebFont 未就绪前提前切行存在 font swap 错位风险（风险分析）。<br>
             因此，原生现代 CSS（语义 mark + line-break: strict）与现有 Motion 在 0 生产依赖下全面胜出。
           </div>
         </details>

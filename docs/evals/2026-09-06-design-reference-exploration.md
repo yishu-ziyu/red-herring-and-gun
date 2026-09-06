@@ -22,7 +22,9 @@
    - 三模式均支持 Source Drawer（桌面右侧 Drawer，移动 390px 下为 Bottom Sheet，Esc 关闭，focus 恢复，背景 `inert`，Tab 键焦点严格闭环）。
 3. **Edo / kugiri 技术 Spike**：
    - 在隔离环境（`docs/design/reference-pack/kugiri-spike/`）真实安装并运行 `kugiri@0.4.0`；
-   - 针对中文长句、标点、中英混排、inline `<a>`/`<strong>`、动态 resize、`text-wrap: balance`（Case 5）、字体加载 `document.fonts.ready`（Case 6）进行真实运行实测；
+   - 针对中文长句、标点、中英混排、inline `<a>`/`<strong>`、动态 resize 进行真实运行实测；
+   - Case 5 运行时实测测量初始 `text-wrap: balance` 行宽分配，并基于 DOM 结构进行跨元素动态重平衡受限推论（Structural inference）；
+   - Case 6 运行时实测 `document.fonts.ready` 等待与就绪后几何测量，并分析在 WebFont 未就绪前提前拆行导致的字体替换（font swap）错位风险（Risk analysis）；
    - 屏幕阅读器 TTS 语音朗读明确标注为 **`Not tested（未跑实际系统级 TTS 语音合成，根据 A11y 树离散 span 结构审查评估）`**；kugiri 自身动画标注为 **`Not applicable（自身无动效引擎，主原型独立测试 prefers-reduced-motion）`**；
    - 对比 kugiri vs 现代 CSS / Motion，产出坚决不引入生产依赖的技术裁决。
 4. **无视觉禁区违规与 Quiet Editorial**：
@@ -40,14 +42,14 @@
 - 不引入未经评审确认的生产 npm 依赖；
 - 不改动 `ops.sh`，不删除 `mvp/`；
 - 不通过修改数据内容来让某个模式看起来更漂亮（三模式严格数据同构）；
-- 不作未经实际验证的技术声明（Screen Reader 必须诚实标明 `Not tested`；kugiri 动效标明 `Not applicable`）。
+- 不作未经实际验证的技术声明（Screen Reader 必须诚实标明 `Not tested`；kugiri 动效标明 `Not applicable`；未实际执行的重排与字体替换降级为推论与风险分析）。
 
 ## Evaluator
 
 机器项（全绿才交付）：
 
 - [x] M1: 映射文档 `docs/design/reference-pack/design-reference-mapping.md` 存在且包含 Cuberto、Nikoloz Zaalovich、CollectUI 关键类目及 kugiri 的完整 Borrow/Reject/Map 结构，包含 Quiet Editorial 准则与声称分级。
-- [x] M2: kugiri isolated spike 分析文档 `docs/design/reference-pack/kugiri-spike-evaluation.md` 存在，包含实测对比矩阵与引入结论，Case 5/6 真实实测，无障碍标注 `Not tested`。
+- [x] M2: kugiri isolated spike 分析文档 `docs/design/reference-pack/kugiri-spike-evaluation.md` 存在，包含实测与推论严格区分的对比矩阵与引入结论（Case 5 初始切分测量+结构推论、Case 6 字体就绪测量+风险分析、无障碍标注 `Not tested`）。
 - [x] M3: 独立原型目录 `docs/design/prototypes/reference-exploration/` 包含可运行的 Playground（`index.html` 及配套资源），无运行时语法报错。
 - [x] M4: 键盘 `1 / 2 / 3` 在浏览器中可切换 Mode 1, Mode 2, Mode 3，且三者共享同一套生产形态设计夹具。
 - [x] M5: 原型中完整覆盖 2 个 Claim、support、contradict、context-only、gap、conflict、directAnswer 及 Source Drawer / Sheet。
@@ -57,7 +59,7 @@
 - [x] M9: TEST 02 PASS - Claim Trace 严格等于真实 Phrase（claim-01 === '维生素 C 能治感冒', claim-02 === '每次感冒都应该输液'；主设计夹具严格 2 Claim，test-only 缺失 span 隔离不入主 DOM）。
 - [x] M10: TEST 03 PASS - Evidence Settling 真实 Persistent DOM Identity（`before === after` 同一 HTMLElement 节点未销毁）。
 - [x] M11: TEST 04 PASS - Conclusion Emergence 真实 Persistent DOM Identity（同一节点平滑浮现）。
-- [x] M12: TEST 05 PASS - kugiri 0.4.0 实际运行时与实测矩阵（3 lines / 25 words 真实包装、revert 还原、Case 5 text-wrap: balance 交互实测、Case 6 字体就绪实测；TTS 明确标注 Not tested）。
+- [x] M12: TEST 05 PASS - kugiri 0.4.0 实际运行时测量与推论矩阵（3 lines / 25 words 真实包装、revert 还原、Case 5 初始切分测量、Case 6 字体就绪测量；TTS 明确标注 Not tested，动态重平衡与 font swap 明确标注 Structural inference / Risk analysis）。
 - [x] M13: TEST 06 PASS - Drawer 6 大核心字段完备性呈现。
 - [x] M14: TEST 07 PASS - Drawer 打开时背景容器赋予 `inert` 属性。
 - [x] M15: TEST 08 PASS - Drawer Tab 键焦点闭环锁定（ActiveElement 始终留在 Drawer 内）。
