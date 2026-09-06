@@ -9,15 +9,15 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 14px 14px 12px;
-  background: var(--paper, #ffffff);
-  border: 1px solid var(--border-subtle, #e8e4d9);
-  border-radius: 4px;
-  box-shadow: none;
+  padding: var(--prompt-frame-padding, 14px 14px 12px);
+  background: var(--prompt-frame-background, var(--paper, #ffffff));
+  border: var(--prompt-frame-border, 1px solid var(--border-subtle, #e8e4d9));
+  border-radius: var(--prompt-frame-radius, 4px);
+  box-shadow: var(--prompt-frame-shadow, none);
 }
 /* with chips present, match the 10px side padding on top */
 .frame:has(.chips) {
-  padding-top: 10px;
+  padding-top: var(--prompt-frame-padding-top, 10px);
 }
 
 
@@ -237,7 +237,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  /* Match reference: soft round disc, + and ↑ same size */
+  /* Visual disc stays 28px (::before). Mobile hit target expands to 44×44. */
   width: 28px;
   height: 28px;
   flex: none;
@@ -292,8 +292,6 @@
  * Active: solid ink disc, white arrow — never a solid color blob with no glyph.
  */
 .send {
-  width: 28px;
-  height: 28px;
   color: #6b6b6b;
 }
 .send::before {
@@ -496,4 +494,15 @@
   .iconBtn::before, .menuItem, .chipRemove, .plusIcon { transition: none; }
   .chip, .chip[data-exit], .skillPill[data-exit], .menu, .menuFlyout, .menuPopover, .slashMenu { animation: none; }
   .spinner { animation-duration: 1.4s; }
+}
+
+/* Mobile: 44×44 hit box, 28×28 visual disc centered inside. Desktop stays 28. */
+@media (max-width: 768px) {
+  .iconBtn {
+    width: 44px;
+    height: 44px;
+  }
+  .iconBtn::before {
+    inset: 8px;
+  }
 }
