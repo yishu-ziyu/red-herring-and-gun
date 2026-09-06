@@ -1,7 +1,7 @@
 /**
- * InvestigationCanvas — 唯一调查画布（Issue #52 第一节「同画布原则」）。
- * investigating → complete 不换壳：原始说法持续在场，命题保持原位；
- * 完成时 ConclusionHero 出现在最上层，下面仍是刚才那套命题与证据。
+ * InvestigationCanvas — 唯一调查画布（Issue #52 同画布 + Issue #64 persistent conclusion）。
+ * investigating → complete 不换壳：结论区从调查中就存在，完成时同一节点显现 directAnswer。
+ * 原始说法与命题保持原位。不抢焦点、不滚动、不关闭已打开的 Drawer。
  * interrupted：保留已获真实数据、无伪结论、可重试。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -124,16 +124,23 @@ export function InvestigationCanvas({
   return (
     <div className="gp-canvas" data-gp-phase={snapshot.phase}>
       <div className="gp-canvas-inner">
-        {complete ? (
-          <ConclusionHero
-            directAnswer={conclusion!.directAnswer}
-            judgment={conclusion!.judgment}
-            boundaries={conclusion!.boundaries}
-            claimCount={snapshot.claims.length}
-            sourceCount={snapshot.sources.length}
-            checkedAt={snapshot.checkedAt}
-          />
-        ) : null}
+        <section
+          className={complete ? "gp-conclusion-region is-complete" : "gp-conclusion-region is-pending"}
+          data-gp-conclusion-region
+          data-gp-conclusion-state={complete ? "complete" : "pending"}
+          aria-hidden={complete ? undefined : true}
+        >
+          {complete && conclusion ? (
+            <ConclusionHero
+              directAnswer={conclusion.directAnswer}
+              judgment={conclusion.judgment}
+              boundaries={conclusion.boundaries}
+              claimCount={snapshot.claims.length}
+              sourceCount={snapshot.sources.length}
+              checkedAt={snapshot.checkedAt}
+            />
+          ) : null}
+        </section>
 
         {interrupted ? (
           <section className="gp-interrupted" role="alert" data-gp-interrupted>
