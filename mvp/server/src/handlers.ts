@@ -180,7 +180,7 @@ export function createHandlers(env: Record<string, string>) {
   const codexModel = env.CODEX_LOCAL_MODEL || process.env.CODEX_LOCAL_MODEL || "gpt-5.5";
 
   // 多 Agent Orchestrate 编排（组装/状态栏/Skills/自证/改写/交叉二审）收在 lib/orchestrate。
-  const { makeRunAgent, makeSelfProofCaller, makeRewriteCaller, makeCrossExamCaller } =
+  const { makeRunAgent, makeSelfProofCaller, makeRewriteCaller, makeCrossExamCaller, makeWholeClaimAuditCaller } =
     createOrchestrateAdapter({ env, codexBin });
 
   async function modelsListHandler(req: any, res: any, next: any) {
@@ -545,6 +545,7 @@ export function createHandlers(env: Record<string, string>) {
         callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
         evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteCaller(modelChoice)) },
         crossExam: { callRaw: makeCrossExamCaller(modelChoice, (data) => sendEvent(data)) },
+        wholeClaimAudit: { callModel: makeWholeClaimAuditCaller(modelChoice) },
         runReport: (args) =>
           makeReportRunner(runAgent)({
             ...args,
