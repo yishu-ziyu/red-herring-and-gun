@@ -276,5 +276,27 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
     };
   }
 
-  return { makeRunAgent, makeSelfProofCaller, makeRewriteCaller, makeCrossExamCaller };
+  /** Whole-Claim Audit（Issue #78）：整句审计规划/评估的裸模型调用。实现层静默，不进 SSE Agent 日志。 */
+  function makeWholeClaimAuditCaller(modelChoice: any) {
+    return (input: {
+      systemPrompt: string;
+      userContent: string;
+      responseSchema: object;
+      maxTokens: number;
+    }) =>
+      callAgentWithFallback({
+        agentId: "whole_claim_auditor",
+        systemPrompt: input.systemPrompt,
+        userContent: input.userContent,
+        responseSchema: input.responseSchema,
+        maxTokens: input.maxTokens,
+        env,
+        codexBin,
+        reasoningEffort: "low",
+        modelOverride: modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
+        options: { logger: console },
+      }).then((r) => ({ output: r.output, model: r.model }));
+  }
+
+  return { makeRunAgent, makeSelfProofCaller, makeRewriteCaller, makeCrossExamCaller, makeWholeClaimAuditCaller };
 }
