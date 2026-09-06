@@ -22,8 +22,13 @@
 
 # 当前状态
 
-2026-09-06 Issue #58：Git 集成 Vercel 项目应对准 `mvp/dist`（生产壳仍是 mvp），仓库根 Install + 先 build `@rhg/core` 再 `mvp` Vite。不能把 Root Directory 设成 mvp 后丢掉 `@rhg/core`。不改 Mode 3 输出结构。独立 PR，不与 #66 混。
+2026-09-06 PR #75 Review `5125346321`：stance-preservation binder。`bindDualBucketCitations` 对 supporting / contradicting 各自独立 filter、按 URL dedupe、每桶最多 5 条；再按 filtered supporting → `[1..S]`、filtered contradicting → `[S+1..S+C]` 一次性 remap evidence。同 URL 跨桶两条 relation 都保留。已 rebase 到 origin/main `d404701`（#73）。不 merge。机器：根 783，mvp 1000/1 skipped，两处 build 绿。
 
+2026-09-06 PR #75 Review：dual-bucket citation binder。`bindDualBucketCitations` 按 `[...supporting, ...contradicting]` 原始顺序 filter/dedupe/remap 再拆回两桶；merge / bindAtomEvidenceToVerdicts / normalizeReportCitations 共用。`alignFalseEvidenceBuckets` 仍先改桶再绑定。不 merge。机器：根 778，mvp 992/1 skipped。
+
+2026-09-06 Issue #74 Evidence role 正确性修复：producer 合同把证伪材料塞进 `supportingSources`（`[n]` 曾不绑 contradictingSources），Snapshot 忠实映射成 `support`。已在 merge/bind 按 `verdict=false` 改桶，prompt/schema 禁止为了 `[n]` 把反驳写入 supporting；Snapshot 只做同向读取兜底，不用 finding NLP。独立 PR 待人工 Review。不 merge，不关 #66/#53，不启 #54，不碰 #72 artifact。机器：根 773，mvp 983/1 skipped，两处 build 绿。
+
+2026-09-06 Issue #58：Git 集成 Vercel 项目应对准 `mvp/dist`（生产壳仍是 mvp），仓库根 Install + 先 build `@rhg/core` 再 `mvp` Vite。不能把 Root Directory 设成 mvp 后丢掉 `@rhg/core`。不改 Mode 3 输出结构。独立 PR，不与 #66 混。
 
 2026-09-06 PR #69 rebase 到 main `2cdba77`（#65 Source Drawer 已合入）。完整保留 Claim Trace、EvidenceBoard identity、DrawerSession identity-bound live/held。Conclusion Emergence 不 remount `.gp-canvas` / Original Claim / ClaimSection / EvidenceBoard，不抢走已 focus 的 Evidence，不自动关 Drawer / scroll / focus 结论。held Drawer 在 complete 后仍 held。goldenPath 86；根 767；mvp 956/1 skipped（4 个未改 server 套件仍是 worktree symlink）；三处 build 绿；capture_conclusion_emergence CAPTURE PASS（5184，fixture 非真实 SSE）。不 merge，不开 #66。
 

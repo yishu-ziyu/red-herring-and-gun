@@ -275,6 +275,148 @@ describe("bindAtomEvidenceToVerdicts", () => {
     expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://a.example"]);
   });
 
+  it("双桶 supporting=[A] contradicting=[B]，[1] 与 [2] 都保留", () => {
+    const byBoth = {
+      [key("原子A")]: [
+        { url: "https://a.example", title: "A", snippet: "sa" },
+        { url: "https://b.example", title: "B", snippet: "sb" },
+      ],
+    };
+    const out = bindAtomEvidenceToVerdicts(
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "partial",
+          evidence: "A 支持一部分[1]；B 反驳核心[2]。",
+          supportingSources: [{ url: "https://a.example", title: "A", snippet: "sa" }],
+          contradictingSources: [{ url: "https://b.example", title: "B", snippet: "sb" }],
+        },
+      ],
+      byBoth,
+      key
+    );
+    expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://a.example"]);
+    expect(out[0].contradictingSources?.map((s) => s.url)).toEqual(["https://b.example"]);
+    expect(out[0].evidence).toBe("A 支持一部分[1]；B 反驳核心[2]。");
+    expect(out[0].sourcesRelatedOnly).toBe(false);
+  });
+
+  it("whitelist 删掉 supporting 第一项后跨桶重排 [2]→[1]、[3]→[2]", () => {
+    const byBoth = {
+      [key("原子A")]: [
+        { url: "https://a.example", title: "A", snippet: "" },
+        { url: "https://b.example", title: "B", snippet: "" },
+      ],
+    };
+    const out = bindAtomEvidenceToVerdicts(
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "partial",
+          evidence: "坏[1] 好[2] 反[3]。",
+          supportingSources: [
+            { url: "https://bad.example", title: "bad", snippet: "" },
+            { url: "https://a.example", title: "A", snippet: "" },
+          ],
+          contradictingSources: [{ url: "https://b.example", title: "B", snippet: "" }],
+        },
+      ],
+      byBoth,
+      key
+    );
+    expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://a.example"]);
+    expect(out[0].contradictingSources?.map((s) => s.url)).toEqual(["https://b.example"]);
+    expect(out[0].evidence).toBe("坏 好[1] 反[2]。");
+  });
+
+  it("同 URL 跨桶：两条 relation 都保留，[1] 与 [2] 都在", () => {
+    const x = { url: "https://x.example", title: "X", snippet: "both" };
+    const byX = { [key("原子A")]: [x] };
+    const out = bindAtomEvidenceToVerdicts(
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "partial",
+          evidence: "同一来源支持一部分[1]，也反驳另一部分[2]。",
+          supportingSources: [x],
+          contradictingSources: [x],
+        },
+      ],
+      byX,
+      key
+    );
+    expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://x.example"]);
+    expect(out[0].contradictingSources?.map((s) => s.url)).toEqual(["https://x.example"]);
+    expect(out[0].evidence).toBe("同一来源支持一部分[1]，也反驳另一部分[2]。");
+  });
+
+  it("每桶独立 cap：5 条 support + 1 条 contradict，C1 不被丢掉", () => {
+    const supporting = [1, 2, 3, 4, 5].map((n) => ({
+      url: `https://s.example/${n}`,
+      title: `S${n}`,
+      snippet: "",
+    }));
+    const contradicting = [{ url: "https://c.example/1", title: "C1", snippet: "" }];
+    const byCap = { [key("原子A")]: [...supporting, ...contradicting] };
+    const out = bindAtomEvidenceToVerdicts(
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "partial",
+          evidence: "S1[1] S2[2] S3[3] S4[4] S5[5] C1[6]。",
+          supportingSources: supporting,
+          contradictingSources: contradicting,
+        },
+      ],
+      byCap,
+      key
+    );
+    expect(out[0].supportingSources?.map((s) => s.url)).toEqual(supporting.map((s) => s.url));
+    expect(out[0].contradictingSources?.map((s) => s.url)).toEqual(["https://c.example/1"]);
+    expect(out[0].evidence).toBe("S1[1] S2[2] S3[3] S4[4] S5[5] C1[6]。");
+  });
+
+  it("false + 证伪 URL 误写入 supportingSources → 改到 contradictingSources", () => {
+    const url = "https://a.example";
+    const out = bindAtomEvidenceToVerdicts(
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "false",
+          evidence: "感冒通常不需要输液[1]。",
+          supportingSources: [{ url, title: "ok", snippet: "通常不需要输液" }],
+          contradictingSources: [],
+        },
+      ],
+      byAtom,
+      key
+    );
+    expect(out[0].verdict).toBe("false");
+    expect(out[0].sourcesRelatedOnly).toBe(false);
+    expect(out[0].supportingSources).toEqual([]);
+    expect(out[0].contradictingSources?.map((s) => s.url)).toEqual([url]);
+    expect(out[0].evidence).toContain("[1]");
+  });
+
+  it("false + related-only 检索垫不改桶", () => {
+    const out = bindAtomEvidenceToVerdicts(
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "false",
+          supportingSources: [],
+          contradictingSources: [],
+          evidenceGaps: [],
+        },
+      ],
+      byAtom,
+      key
+    );
+    expect(out[0].sourcesRelatedOnly).toBe(true);
+    expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://a.example"]);
+    expect(out[0].contradictingSources).toEqual([]);
+  });
+
   it("false + 检索里真实反证 URL → 仍 false", () => {
     const out = bindAtomEvidenceToVerdicts(
       [

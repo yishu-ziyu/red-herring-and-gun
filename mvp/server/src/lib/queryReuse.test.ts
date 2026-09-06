@@ -195,7 +195,8 @@ describe("bind 后 supportingSources 只有本案 URL", () => {
     );
 
     expect(extractReusableQueries([makeHit()])).not.toContain(OLD_CASE_URL);
-    expect(bound[0].supportingSources?.map((s) => s.url)).toEqual([THIS_CASE_URL]);
-    expect(bound[0].supportingSources?.some((s) => s.url === OLD_CASE_URL)).toBe(false);
+    expect(bound[0].supportingSources).toEqual([]);
+    expect(bound[0].contradictingSources?.map((s) => s.url)).toEqual([THIS_CASE_URL]);
+    expect(bound[0].contradictingSources?.some((s) => s.url === OLD_CASE_URL)).toBe(false);
   });
 });
