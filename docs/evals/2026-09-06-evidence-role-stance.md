@@ -34,6 +34,20 @@
 
 人评：独立 #74 PR，root cause 写进描述，等人工 Review。
 
+## Dual-bucket citation（PR #75 Review）
+
+Change：本条 evidence 的 `[n]` 按 `[...supportingSources, ...contradictingSources]` 的原始合并顺序绑定。两桶都有时 `[1]` 与 `[2]` 都保留并指向正确来源。
+
+Not this：继续 `support.length ? support : contradict`；用 finding 文本或否定词猜 stance。
+
+Evaluator：
+
+- [x] D1 Case A：support=[A] contradict=[B]，evidence `[1]`+`[2]` 都保留
+- [x] D2 Case B：原 support=[bad,A] contradict=[B]，whitelist 删 bad 后原 `[2]`→`[1]`、原 `[3]`→`[2]`
+- [x] D3 only-support / only-contradict / #74 false misbucket / related-only 不回归
+- [x] D4 `mergeSubclaimVerdicts`、`bindAtomEvidenceToVerdicts`、`normalizeReportCitations` 共用 `bindDualBucketCitations`
+- [x] D5 根 tests：core 589 / eval 85 / server 21 / web 83 = 778 通过；mvp 992 通过 / 1 跳过；`npm run build` 与 `cd mvp && npm run build` 通过
+
 ## 根因（实现前判定）
 
 `buildInvestigationSnapshot` 对 `supportingSources → support`、`contradictingSources → contradict` 的映射是确定性的，没有猜错。

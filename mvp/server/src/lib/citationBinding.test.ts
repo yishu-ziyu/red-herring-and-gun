@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   bindLocalCitations,
+  bindDualBucketCitations,
   bindRelatedSourcesOnly,
   bindGlobalConclusion,
   normalizeReportCitations,
@@ -58,6 +59,59 @@ describe("bindLocalCitations", () => {
     );
     expect(bound.sources.map((s) => s.url)).toEqual(["https://a.example", "https://b.example"]);
     expect(bound.text).toBe("支持该点[1]，另一点见，第三点[2]。");
+  });
+});
+
+describe("bindDualBucketCitations", () => {
+  it("Case A：supporting=[A] contradicting=[B]，[1] 与 [2] 都保留并指向正确来源", () => {
+    const bound = bindDualBucketCitations(
+      "A 支持一部分[1]；B 反驳核心[2]。",
+      [{ url: "https://a.example", title: "A", snippet: "sa" }],
+      [{ url: "https://b.example", title: "B", snippet: "sb" }]
+    );
+    expect(bound.supportingSources.map((s) => s.url)).toEqual(["https://a.example"]);
+    expect(bound.contradictingSources.map((s) => s.url)).toEqual(["https://b.example"]);
+    expect(bound.text).toBe("A 支持一部分[1]；B 反驳核心[2]。");
+  });
+
+  it("Case B：whitelist 删掉前桶某一来源后，跨桶 [2]→[1]、[3]→[2]", () => {
+    const bound = bindDualBucketCitations(
+      "坏[1] 好[2] 反[3]。",
+      [
+        { url: "https://bad.example", title: "bad", snippet: "" },
+        { url: "https://a.example", title: "A", snippet: "" },
+      ],
+      [{ url: "https://b.example", title: "B", snippet: "" }],
+      new Set(["https://a.example", "https://b.example"])
+    );
+    expect(bound.supportingSources.map((s) => s.url)).toEqual(["https://a.example"]);
+    expect(bound.contradictingSources.map((s) => s.url)).toEqual(["https://b.example"]);
+    expect(bound.remap.get(2)).toBe(1);
+    expect(bound.remap.get(3)).toBe(2);
+    expect(bound.remap.get(1)).toBeUndefined();
+    expect(bound.text).toBe("坏 好[1] 反[2]。");
+  });
+
+  it("only support 不丢编号", () => {
+    const bound = bindDualBucketCitations(
+      "支持[1]。",
+      [{ url: "https://a.example", title: "A", snippet: "" }],
+      []
+    );
+    expect(bound.supportingSources.map((s) => s.url)).toEqual(["https://a.example"]);
+    expect(bound.contradictingSources).toEqual([]);
+    expect(bound.text).toBe("支持[1]。");
+  });
+
+  it("only contradict 从 [1] 起编", () => {
+    const bound = bindDualBucketCitations(
+      "反驳[1]。",
+      [],
+      [{ url: "https://b.example", title: "B", snippet: "" }]
+    );
+    expect(bound.supportingSources).toEqual([]);
+    expect(bound.contradictingSources.map((s) => s.url)).toEqual(["https://b.example"]);
+    expect(bound.text).toBe("反驳[1]。");
   });
 });
 
@@ -123,6 +177,29 @@ describe("bindGlobalConclusion", () => {
 });
 
 describe("normalizeReportCitations", () => {
+  it("dual-bucket：supporting + contradicting 的 [1][2] 都保留", () => {
+    const report: Record<string, unknown> = {
+      conclusion: "综合[1][2]。",
+      subclaimVerdicts: [
+        {
+          claimAtom: "原子A",
+          verdict: "partial",
+          evidence: "A 支持一部分[1]；B 反驳核心[2]。",
+          supportingSources: [{ url: "https://a.example", title: "A", snippet: "sa" }],
+          contradictingSources: [{ url: "https://b.example", title: "B", snippet: "sb" }],
+        },
+      ],
+    };
+    normalizeReportCitations(report);
+    expect((report.subclaimVerdicts as Array<{ evidence: string }>)[0].evidence).toBe(
+      "A 支持一部分[1]；B 反驳核心[2]。"
+    );
+    expect((report.citationSources as Array<{ url: string }>).map((s) => s.url)).toEqual([
+      "https://a.example",
+      "https://b.example",
+    ]);
+  });
+
   it("keeps [n] when only contradictingSources are cited", () => {
     const report: Record<string, unknown> = {
       conclusion: "该说法不成立[1]。",

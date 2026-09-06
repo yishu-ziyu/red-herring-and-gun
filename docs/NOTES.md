@@ -22,6 +22,8 @@
 
 # 当前状态
 
+2026-09-06 PR #75 Review：dual-bucket citation binder。`bindDualBucketCitations` 按 `[...supporting, ...contradicting]` 原始顺序 filter/dedupe/remap 再拆回两桶；merge / bindAtomEvidenceToVerdicts / normalizeReportCitations 共用。`alignFalseEvidenceBuckets` 仍先改桶再绑定。不 merge。机器：根 778，mvp 992/1 skipped。
+
 2026-09-06 Issue #74 Evidence role 正确性修复：producer 合同把证伪材料塞进 `supportingSources`（`[n]` 曾不绑 contradictingSources），Snapshot 忠实映射成 `support`。已在 merge/bind 按 `verdict=false` 改桶，prompt/schema 禁止为了 `[n]` 把反驳写入 supporting；Snapshot 只做同向读取兜底，不用 finding NLP。独立 PR 待人工 Review。不 merge，不关 #66/#53，不启 #54，不碰 #72 artifact。机器：根 773，mvp 983/1 skipped，两处 build 绿。
 
 2026-09-06 Issue #58：Git 集成 Vercel 项目应对准 `mvp/dist`（生产壳仍是 mvp），仓库根 Install + 先 build `@rhg/core` 再 `mvp` Vite。不能把 Root Directory 设成 mvp 后丢掉 `@rhg/core`。不改 Mode 3 输出结构。独立 PR，不与 #66 混。

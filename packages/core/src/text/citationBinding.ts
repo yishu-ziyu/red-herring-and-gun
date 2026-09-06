@@ -129,6 +129,64 @@ export function bindLocalCitations(
   };
 }
 
+export type BoundDualCitation = {
+  text: string;
+  supportingSources: CiteSource[];
+  contradictingSources: CiteSource[];
+  remap: Map<number, number>;
+};
+
+function asSourceList(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+/**
+ * Local [n] across both stance buckets.
+ * Filter / dedupe / remap on [...supporting, ...contradicting] original order,
+ * then split survivors back into the two buckets. Do not bind one bucket and drop the other.
+ */
+export function bindDualBucketCitations(
+  evidence: unknown,
+  supportingSources: unknown,
+  contradictingSources: unknown,
+  allowedUrls: Set<string> | null = null
+): BoundDualCitation {
+  const supportingRaw = asSourceList(supportingSources);
+  const contradictingRaw = asSourceList(contradictingSources);
+  const combined = [...supportingRaw, ...contradictingRaw];
+  const { sources, remap } = filterSourcesWithRemap(combined, allowedUrls);
+  const textIn = typeof evidence === "string" ? evidence : "";
+  const text = clampMarkersToSources(remapCitationMarkers(textIn, remap), sources.length);
+
+  const taken = new Set<number>();
+  const take = (oldN: number): CiteSource | undefined => {
+    const newN = remap.get(oldN);
+    if (newN == null || taken.has(newN)) return undefined;
+    const src = sources[newN - 1];
+    if (!src) return undefined;
+    taken.add(newN);
+    return src;
+  };
+
+  const supportingOut: CiteSource[] = [];
+  for (let i = 0; i < supportingRaw.length; i += 1) {
+    const src = take(i + 1);
+    if (src) supportingOut.push(src);
+  }
+  const contradictingOut: CiteSource[] = [];
+  for (let i = 0; i < contradictingRaw.length; i += 1) {
+    const src = take(supportingRaw.length + i + 1);
+    if (src) contradictingOut.push(src);
+  }
+
+  return {
+    text,
+    supportingSources: supportingOut,
+    contradictingSources: contradictingOut,
+    remap,
+  };
+}
+
 /**
  * When model left supporting empty and we inject retrieval hits:
  * show sources as related search, never invent citation alignment.
@@ -253,27 +311,12 @@ export function normalizeReportCitations(report: Record<string, unknown>): void 
         supportingSources: sources,
       };
     }
-    const supporting = Array.isArray(v.supportingSources) ? v.supportingSources : [];
-    const contradicting = Array.isArray(v.contradictingSources) ? v.contradictingSources : [];
-    if (supporting.length > 0) {
-      const bound = bindLocalCitations(v.evidence, supporting, null);
-      return {
-        ...v,
-        evidence: bound.text,
-        supportingSources: bound.sources,
-      };
-    }
-    if (contradicting.length > 0) {
-      const bound = bindLocalCitations(v.evidence, contradicting, null);
-      return {
-        ...v,
-        evidence: bound.text,
-        contradictingSources: bound.sources,
-      };
-    }
+    const bound = bindDualBucketCitations(v.evidence, v.supportingSources, v.contradictingSources, null);
     return {
       ...v,
-      evidence: stripCitationMarkers(typeof v.evidence === "string" ? v.evidence : ""),
+      evidence: bound.text,
+      supportingSources: bound.supportingSources,
+      contradictingSources: bound.contradictingSources,
     };
   });
   report.subclaimVerdicts = normalizedVerdicts;

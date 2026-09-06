@@ -275,6 +275,60 @@ describe("bindAtomEvidenceToVerdicts", () => {
     expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://a.example"]);
   });
 
+  it("双桶 supporting=[A] contradicting=[B]，[1] 与 [2] 都保留", () => {
+    const byBoth = {
+      [key("原子A")]: [
+        { url: "https://a.example", title: "A", snippet: "sa" },
+        { url: "https://b.example", title: "B", snippet: "sb" },
+      ],
+    };
+    const out = bindAtomEvidenceToVerdicts(
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "partial",
+          evidence: "A 支持一部分[1]；B 反驳核心[2]。",
+          supportingSources: [{ url: "https://a.example", title: "A", snippet: "sa" }],
+          contradictingSources: [{ url: "https://b.example", title: "B", snippet: "sb" }],
+        },
+      ],
+      byBoth,
+      key
+    );
+    expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://a.example"]);
+    expect(out[0].contradictingSources?.map((s) => s.url)).toEqual(["https://b.example"]);
+    expect(out[0].evidence).toBe("A 支持一部分[1]；B 反驳核心[2]。");
+    expect(out[0].sourcesRelatedOnly).toBe(false);
+  });
+
+  it("whitelist 删掉 supporting 第一项后跨桶重排 [2]→[1]、[3]→[2]", () => {
+    const byBoth = {
+      [key("原子A")]: [
+        { url: "https://a.example", title: "A", snippet: "" },
+        { url: "https://b.example", title: "B", snippet: "" },
+      ],
+    };
+    const out = bindAtomEvidenceToVerdicts(
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "partial",
+          evidence: "坏[1] 好[2] 反[3]。",
+          supportingSources: [
+            { url: "https://bad.example", title: "bad", snippet: "" },
+            { url: "https://a.example", title: "A", snippet: "" },
+          ],
+          contradictingSources: [{ url: "https://b.example", title: "B", snippet: "" }],
+        },
+      ],
+      byBoth,
+      key
+    );
+    expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://a.example"]);
+    expect(out[0].contradictingSources?.map((s) => s.url)).toEqual(["https://b.example"]);
+    expect(out[0].evidence).toBe("坏 好[1] 反[2]。");
+  });
+
   it("false + 证伪 URL 误写入 supportingSources → 改到 contradictingSources", () => {
     const url = "https://a.example";
     const out = bindAtomEvidenceToVerdicts(

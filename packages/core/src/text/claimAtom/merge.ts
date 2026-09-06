@@ -1,19 +1,12 @@
 import type { SubclaimVerdict, VerdictSource } from "./types.js";
 import { claimAtomKey, compactStrings, compactText, MAX_CLAIM_ATOMS } from "./text.js";
-import { bindLocalCitations, filterSourcesWithRemap } from "../citationBinding.js";
+import { bindDualBucketCitations } from "../citationBinding.js";
 
 const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated"];
 
 function allowedUrlSet(searchSources?: Array<{ url?: unknown }>): Set<string> | null {
   if (!searchSources) return null;
   return new Set(searchSources.map((s) => String(s?.url ?? "").trim()).filter(Boolean));
-}
-
-function sanitizeVerdictSources(
-  value: unknown,
-  searchSources?: Array<{ url?: unknown }>
-): VerdictSource[] {
-  return filterSourcesWithRemap(value, allowedUrlSet(searchSources)).sources;
 }
 
 function sanitizeEvidenceGaps(value: unknown): string[] {
@@ -68,7 +61,7 @@ export function alignFalseEvidenceBuckets<T>(input: {
 
 /**
  * 锚原子 merge：幻觉拦截 + 未覆盖补 unverified + 可选 URL 交叉校验。
- * supportingSources 过滤后会按旧序号重写 evidence 中的 [n]，保证编号仍指向存活来源。
+ * evidence [n] 按 supportingSources 再 contradictingSources 的合并顺序重写。
  * 无 http(s) 的 true/false 收成 unverified（related-only 由 bind/derive/reviewer 处理）。
  * 调用方应对「可核查原子」调用（排除层之后），不要把立场原子塞进来。
  */
@@ -93,19 +86,19 @@ export function mergeSubclaimVerdicts(
     const verdict = (SUBCLAIM_VERDICTS.includes(String(rec.verdict))
       ? String(rec.verdict)
       : "unverified") as SubclaimVerdict["verdict"];
-    let supportingSources = sanitizeVerdictSources(rec.supportingSources, searchSources);
-    let contradictingSources = sanitizeVerdictSources(rec.contradictingSources, searchSources);
     const aligned = alignFalseEvidenceBuckets({
       verdict,
-      supporting: supportingSources,
-      contradicting: contradictingSources,
+      supporting: Array.isArray(rec.supportingSources) ? rec.supportingSources : [],
+      contradicting: Array.isArray(rec.contradictingSources) ? rec.contradictingSources : [],
     });
-    supportingSources = aligned.supporting;
-    contradictingSources = aligned.contradicting;
-    const citationSources = supportingSources.length > 0 ? supportingSources : contradictingSources;
-    const bound = bindLocalCitations(rec.evidence, citationSources, allowed);
-    if (supportingSources.length > 0) supportingSources = bound.sources;
-    else contradictingSources = bound.sources;
+    const bound = bindDualBucketCitations(
+      rec.evidence,
+      aligned.supporting,
+      aligned.contradicting,
+      allowed
+    );
+    const supportingSources = bound.supportingSources;
+    const contradictingSources = bound.contradictingSources;
     const guarded = demoteUnsourcedTrueFalse(
       verdict,
       supportingSources,

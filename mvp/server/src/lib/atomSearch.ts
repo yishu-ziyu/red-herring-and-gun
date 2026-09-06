@@ -15,7 +15,7 @@ import {
 } from "./claimAtom/index.js";
 import { filterAtomSources, type FilterMeta, type FilterableSource } from "./retrievalFilter.js";
 import {
-  bindLocalCitations,
+  bindDualBucketCitations,
   bindRelatedSourcesOnly,
   stripCitationMarkers,
 } from "./citationBinding.js";
@@ -315,7 +315,8 @@ export type BindableVerdict = {
 
 /**
  * 报告按条绑证据：
- * - 模型写出的 URL 仅保留「该原子本轮检索」里出现过的，并按过滤结果重写 evidence [n]；
+ * - 模型写出的 URL 仅保留「该原子本轮检索」里出现过的；
+ *   evidence [n] 按 supportingSources 再 contradictingSources 的合并顺序重写；
  *   始终传入该原子 known 集合，空集合不是 null，以免幻觉 URL 留下；
  * - 若支撑/反证都空且检索有结果 → 填入 supportingSources 作「相关检索」，并剥离 [n]
  *   （禁止把检索填充误绑成句内引用）；
@@ -332,18 +333,19 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
     const retrieved = byAtomKey[key] ?? [];
     const known = new Set(retrieved.map((s) => s.url));
 
-    const modelSupportingRaw = v.supportingSources;
-    const hadModelSupporting =
-      Array.isArray(modelSupportingRaw) &&
-      modelSupportingRaw.some((s) => s && typeof s === "object" && String((s as AtomSearchSource).url || "").trim());
-
-    const boundSupport = bindLocalCitations(v.evidence, modelSupportingRaw, known);
-    let supporting = boundSupport.sources;
-    let evidence = boundSupport.text;
+    const verdictNorm = typeof v.verdict === "string" ? v.verdict.trim().toLowerCase() : "";
+    const supportingRaw = Array.isArray(v.supportingSources) ? v.supportingSources : [];
+    const contradictingRaw = Array.isArray(v.contradictingSources) ? v.contradictingSources : [];
+    const aligned = alignFalseEvidenceBuckets({
+      verdict: verdictNorm,
+      supporting: supportingRaw,
+      contradicting: contradictingRaw,
+    });
+    const bound = bindDualBucketCitations(v.evidence, aligned.supporting, aligned.contradicting, known);
+    let supporting = bound.supportingSources;
+    let contradicting = bound.contradictingSources;
+    let evidence = bound.text;
     let sourcesRelatedOnly = false;
-
-    const boundContra = bindLocalCitations("", v.contradictingSources, known);
-    let contradicting = boundContra.sources;
 
     let gaps = Array.isArray(v.evidenceGaps)
       ? v.evidenceGaps.filter((g): g is string => typeof g === "string").slice(0, 3)
@@ -351,7 +353,7 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
 
     if (supporting.length === 0 && contradicting.length === 0) {
       if (retrieved.length > 0) {
-        const related = bindRelatedSourcesOnly(hadModelSupporting ? evidence : v.evidence, retrieved);
+        const related = bindRelatedSourcesOnly(evidence, retrieved);
         supporting = related.sources;
         evidence = related.text;
         sourcesRelatedOnly = true;
@@ -359,21 +361,6 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
         gaps = [...gaps, "该原子定向检索无结果，待补证"].slice(0, 3);
         evidence = stripCitationMarkers(typeof v.evidence === "string" ? v.evidence : evidence);
       }
-    }
-
-    const verdictNorm = typeof v.verdict === "string" ? v.verdict.trim().toLowerCase() : "";
-    const aligned = alignFalseEvidenceBuckets({
-      verdict: verdictNorm,
-      supporting,
-      contradicting,
-      sourcesRelatedOnly,
-    });
-    supporting = aligned.supporting;
-    contradicting = aligned.contradicting;
-    if (supporting.length === 0 && contradicting.length > 0 && !sourcesRelatedOnly) {
-      const rebound = bindLocalCitations(v.evidence, contradicting, known);
-      contradicting = rebound.sources;
-      evidence = rebound.text;
     }
 
     const hasHttpUrl = [...supporting, ...contradicting].some(
