@@ -22,6 +22,9 @@
 
 # 当前状态
 
+2026-09-06 Issue #58：Git 集成 Vercel 项目应对准 `mvp/dist`（生产壳仍是 mvp），仓库根 Install + 先 build `@rhg/core` 再 `mvp` Vite。不能把 Root Directory 设成 mvp 后丢掉 `@rhg/core`。不改 Mode 3 输出结构。独立 PR，不与 #66 混。
+
+
 2026-09-06 PR #69 rebase 到 main `2cdba77`（#65 Source Drawer 已合入）。完整保留 Claim Trace、EvidenceBoard identity、DrawerSession identity-bound live/held。Conclusion Emergence 不 remount `.gp-canvas` / Original Claim / ClaimSection / EvidenceBoard，不抢走已 focus 的 Evidence，不自动关 Drawer / scroll / focus 结论。held Drawer 在 complete 后仍 held。goldenPath 86；根 767；mvp 956/1 skipped（4 个未改 server 套件仍是 worktree symlink）；三处 build 绿；capture_conclusion_emergence CAPTURE PASS（5184，fixture 非真实 SSE）。不 merge，不开 #66。
 
 2026-09-06 Issue #64 Conclusion Emergence 生产化（独立 PR 待人工验收）：investigating→complete 共用 `[data-gp-conclusion-region]` 同一 DOM 节点（`before === after`）；调查中容器高度为 0 且不预渲染答案；完成后同一容器显现 `directAnswer` lede（24px/700），judgment/计数/时间降为 12px 弱 metadata，unresolved 用句子写「现有证据还不够」。Emergence 320ms quick-out、directAnswer 最多 8px；不 focus / 不 scrollIntoView / 不关 Drawer。Boundary 中性 inset + hairline，无 warning role。取证在 `docs/design/2026-09-06-conclusion-emergence/`（fixture，真实 SSE 留给 #66）。
