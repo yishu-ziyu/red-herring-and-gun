@@ -1,7 +1,7 @@
 # 红鲱鱼与枪 · 产品说明书
 
 > 产品真相源。赛题是「词元工坊」赛道三：AI Agent · 信息真相猎人。  
-> 产品宪法与唯一主路径见第二节；当前规则写回对应章节；被取代的说法移出当前规则或明确标为历史。最新方向见 `docs/devlog/2026-09-05-product-constitution.md` 与 `docs/devlog/2026-09-05-debate-and-history.md`，实施与验收状态见 `docs/evals/2026-09-05-investigation-continuity.md`。
+> 产品宪法与唯一主路径见第二节；当前规则写回对应章节；被取代的说法移出当前规则或明确标为历史。最新方向见 `docs/devlog/2026-09-05-product-constitution.md` 与 `docs/devlog/2026-09-05-debate-and-history.md`，产品宪法与 Golden Path 验收见 `docs/evals/2026-09-05-product-constitution.md` 与 `docs/evals/2026-09-06-product-constitution-contract.md`。
 
 ## 一、产品是什么
 
@@ -183,7 +183,15 @@ conclusion 第一句直接回答原问题，像 **不会。** / **原句站不�
 
 ## 八、当前续做与判断依据
 
-本轮顺序：临时 HTML 呈现结果与关键操作 → 用户判断呈现方案 → 生产 mvp 接线 → 真实调查与五次历史留存验收 → 质询收益对照。详细尺度见 `docs/evals/2026-09-05-investigation-continuity.md`；原型尺度见 `docs/evals/2026-09-05-investigation-result-prototype.md`。
+当前处于 Product Reset（Issue #49）迭代周期。执行顺序以宪法契约为第一前置：
+
+1. **#50 产品宪法与 Golden Path 契约（阻塞任务）**：写回产品真相源，定死产品定义、不可让步原则、白盒三层、唯一 Golden Path 与实现层隐藏。
+2. **#51 白盒调查数据契约**：统一命题 / 证据 / 冲突 / 缺口 / 判断数据结构。
+3. **#52 前端 Golden Path**：重构输入 → 调查 → 判断完整主路径，消除复杂控制台与多余概念。
+4. **#53 视觉与 Motion 系统**：友善、低摩擦、可探索，作为发布门禁而非后置 polish。
+5. **#54 真实案例验收**：验证首次使用者无需技术术语即可理解调查逻辑与判断理由。
+
+（历史说明：2026-09-05 的连续性试验与临时 HTML 原型计划已由 Product Reset 全面接管，相关记录保留于 `docs/evals/2026-09-05-investigation-continuity.md` 作为工程参考，不再作为当前主线顺序。）
 
 质询是否有用，以相近资源下单调查、独立意见汇总、加入质询的案例对照判断，记录纠正的错误、新引入的错误、调用量和耗时。不以轮数、共识或分数上涨代替收益，不把小样本结果作为准确率宣传。
 
