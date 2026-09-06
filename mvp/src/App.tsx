@@ -154,7 +154,7 @@ function ProductApp() {
     void hydrateAccountCases();
   }, [hydrateAccountCases]);
 
-  // DEV 固定装置：/?fixture=investigating|judging|complete|conflict|interrupted|image-found|image-missing|mixed|nospan
+  // DEV 固定装置：/?fixture=investigating|judging|complete|conflict|interrupted|image-found|image-missing|mixed|nospan|settling
   // 用脚本化快照驱动真实组件树（截图与走查）。生产构建 dead-code eliminated。
   useEffect(() => {
     if (!import.meta.env.DEV) return;

@@ -132,7 +132,53 @@ export type FixtureName =
   | "image-found"
   | "image-missing"
   | "mixed"
-  | "nospan";
+  | "nospan"
+  | "settling";
+
+/** Issue #63 取证：三条材料从待核对归到支持 / 反驳 / 相关材料。确定性 fixture，不是真实 SSE。 */
+function settlingBefore() {
+  const atom = "隔夜菜会直接致癌";
+  const pack = [
+    src("https://piyao.example.org/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌"),
+    src("https://nutrition.example.cn/nitrite-facts", "食品科学解读：亚硝酸盐与致癌的量效关系", "正常冷藏隔夜菜亚硝酸盐远低于中毒剂量"),
+    src("https://diet.example.cn/leftover-guide", "膳食指南：隔夜菜冷藏期限与回热建议", "冷藏超过 3 天或反复回热仍有风险"),
+  ];
+  return buildInvestigationSnapshot(
+    {
+      originalClaim: FIXTURE_CLAIM,
+      phase: "investigating",
+      claimAtoms: [atom],
+      claimAtomTypes: [{ text: atom, verifiable: true, type: "causal" }],
+      atomSearchBundle: { atomsSearched: [atom], byAtomKey: { [atom]: pack } },
+    },
+    { claimAtomKeyFn: noopKey }
+  );
+}
+
+function settlingAfter() {
+  const before = settlingBefore();
+  const roleByUrl: Record<string, "support" | "contradict" | "context-only"> = {
+    "https://piyao.example.org/overnight-dishes": "contradict",
+    "https://nutrition.example.cn/nitrite-facts": "support",
+    "https://diet.example.cn/leftover-guide": "context-only",
+  };
+  const urlById = Object.fromEntries(before.sources.map((s) => [s.id, s.url]));
+  return {
+    ...before,
+    phase: "judging" as const,
+    claims: before.claims.map((claim) => ({
+      ...claim,
+      evidence: claim.evidence.map((link) => {
+        const role = roleByUrl[urlById[link.sourceId] ?? ""] ?? link.role;
+        return {
+          ...link,
+          role,
+          ...(role === "support" ? { finding: "公开材料不支持「直接致癌」的说法。" } : {}),
+        };
+      }),
+    })),
+  };
+}
 
 export function getDevFixture(
   name: FixtureName
@@ -153,6 +199,9 @@ export function getDevFixture(
       const snap = mixedWithoutSpans();
       at(60, () => emit({ type: "investigation_snapshot", investigation: snap, timestamp: Date.now() }));
       return () => timers.forEach(clearTimeout);
+    } else if (name === "settling") {
+      at(80, () => emit({ type: "investigation_snapshot", investigation: settlingBefore(), timestamp: Date.now() }));
+      at(1400, () => emit({ type: "investigation_snapshot", investigation: settlingAfter(), timestamp: Date.now() }));
     } else if (name === "investigating") {
       at(60, () => emitSnapshot("investigating"));
     } else if (name === "judging") {
