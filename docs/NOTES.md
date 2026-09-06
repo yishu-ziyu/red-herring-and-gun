@@ -22,7 +22,7 @@
 
 # 当前状态
 
-2026-09-06 PR #57 阻塞项修复完（改完停止，等人工复审）：按人工 review 将 Golden Path 从 Card-based SaaS Dashboard 彻底重构为 Editorial / Document-based 调查文稿（去除白卡/阴影/厚圆角盒子嵌套，Conclusion 标题化，原句变引用 blockquote，Claim 变文章小节 01/02，Evidence 变带有小圆点与轻量标签的引用行，Gap/Conflict 变边线批注与冷静争点，移动端单列流畅文章流，不改动快照契约与产品状态机）。验收标准见 `docs/evals/2026-09-06-golden-path-editorial.md`。截图见 `docs/design/2026-09-06-golden-path/` 13 张完整流（包含真实端到端推理完成截图 desktop-9-real-complete.png）。测试与构建全绿（root: core 578 / eval 85 / server 21 / web 83，mvp: 908 passed 1 skipped，各模块 build 全绿），不合并不启 #53。
+2026-09-06 PR #59 复审意见处理完成（只改契约文档，未动代码，改完停止等复审）：按人工 review 逐条修正 3 个阻塞项与 1 个文档准确性项：①`docs/PRODUCT_SPEC.md` 第八节如实基于 GitHub main、已合并 PR 与 Issue 状态重写，严格区分“计划依赖关系”与“当前工程事实”，明确标注 #51 与 #52 均已合并至 main，避免后续重复执行；②删除将“五词”升级为产品宪法的硬性约束，明确其为历史探索用语/非约束性现状，避免反向约束 #52 信息架构，证据语义（支持/反驳/仅相关/尚缺/争议）直接可见；③`docs/PRODUCT_SPEC.md` 文件头收敛为唯一真相源，明确区分当前产品规则、当前工程事实、设计背景与历史决策，devlog 明确标注为历史参考而非并列权威；④明确说明 `README.md` 与 `CONTEXT.md` 经检查后确认与宪法一致，因此零修改，消除产生未存在 diff 的暗示。验收见 `docs/evals/2026-09-06-product-constitution-contract.md`。npm test、npm run build、cd mvp && npm test 全绿，未动生产代码，等待人工 review。
 
 2026-09-06 用户要求把本地全部改动收进 `main` 并推远端，只留 `main` 一条分支。`dev` 与 `spine` 本地和远端均删除。独立 worktree `argument-structure-obligations` 目录已不在磁盘，未能合入。仓库：https://github.com/yishu-ziyu/red-herring-and-gun
 
