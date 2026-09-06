@@ -149,7 +149,11 @@ export function bindRelatedSourcesOnly(
 
 /** Global first-seen unique sources across verdicts (claim order). */
 export function buildGlobalCiteSources(
-  verdicts: Array<{ supportingSources?: CiteSource[] | null | undefined; sourcesRelatedOnly?: unknown }>
+  verdicts: Array<{
+    supportingSources?: CiteSource[] | null | undefined;
+    contradictingSources?: CiteSource[] | null | undefined;
+    sourcesRelatedOnly?: unknown;
+  }>
 ): CiteSource[] {
   const out: CiteSource[] = [];
   const seen = new Set<string>();
@@ -157,7 +161,9 @@ export function buildGlobalCiteSources(
     // relatedOnly（检索填充）源从未被模型引用：出处只是关键词检索命中，可能完全不相关。
     // 混进全局「参考资料」会让用户点开无关页面，打破「来源能点开」的承诺。
     if (v.sourcesRelatedOnly === true) continue;
-    const list = Array.isArray(v.supportingSources) ? v.supportingSources : [];
+    const supporting = Array.isArray(v.supportingSources) ? v.supportingSources : [];
+    const contradicting = Array.isArray(v.contradictingSources) ? v.contradictingSources : [];
+    const list = [...supporting, ...contradicting];
     for (const s of list) {
       const url = normalizeUrl(s?.url ?? "");
       if (!url || seen.has(url)) continue;
@@ -178,7 +184,11 @@ export function buildGlobalCiteSources(
  */
 export function bindGlobalConclusion(
   conclusion: unknown,
-  verdicts: Array<{ supportingSources?: CiteSource[] | null | undefined; sourcesRelatedOnly?: unknown }>
+  verdicts: Array<{
+    supportingSources?: CiteSource[] | null | undefined;
+    contradictingSources?: CiteSource[] | null | undefined;
+    sourcesRelatedOnly?: unknown;
+  }>
 ): { text: string; sources: CiteSource[] } {
   const sources = buildGlobalCiteSources(verdicts);
   const textIn = typeof conclusion === "string" ? conclusion : "";
@@ -243,18 +253,37 @@ export function normalizeReportCitations(report: Record<string, unknown>): void 
         supportingSources: sources,
       };
     }
-    const bound = bindLocalCitations(v.evidence, v.supportingSources, null);
+    const supporting = Array.isArray(v.supportingSources) ? v.supportingSources : [];
+    const contradicting = Array.isArray(v.contradictingSources) ? v.contradictingSources : [];
+    if (supporting.length > 0) {
+      const bound = bindLocalCitations(v.evidence, supporting, null);
+      return {
+        ...v,
+        evidence: bound.text,
+        supportingSources: bound.sources,
+      };
+    }
+    if (contradicting.length > 0) {
+      const bound = bindLocalCitations(v.evidence, contradicting, null);
+      return {
+        ...v,
+        evidence: bound.text,
+        contradictingSources: bound.sources,
+      };
+    }
     return {
       ...v,
-      evidence: bound.text,
-      supportingSources: bound.sources,
+      evidence: stripCitationMarkers(typeof v.evidence === "string" ? v.evidence : ""),
     };
   });
   report.subclaimVerdicts = normalizedVerdicts;
 
   const globalBound = bindGlobalConclusion(
     report.conclusion,
-    normalizedVerdicts as Array<{ supportingSources?: CiteSource[] }>
+    normalizedVerdicts as Array<{
+      supportingSources?: CiteSource[];
+      contradictingSources?: CiteSource[];
+    }>
   );
   if (typeof report.conclusion === "string") {
     report.conclusion = globalBound.text;

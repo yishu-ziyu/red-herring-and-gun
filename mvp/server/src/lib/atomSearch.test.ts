@@ -275,6 +275,47 @@ describe("bindAtomEvidenceToVerdicts", () => {
     expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://a.example"]);
   });
 
+  it("false + 证伪 URL 误写入 supportingSources → 改到 contradictingSources", () => {
+    const url = "https://a.example";
+    const out = bindAtomEvidenceToVerdicts(
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "false",
+          evidence: "感冒通常不需要输液[1]。",
+          supportingSources: [{ url, title: "ok", snippet: "通常不需要输液" }],
+          contradictingSources: [],
+        },
+      ],
+      byAtom,
+      key
+    );
+    expect(out[0].verdict).toBe("false");
+    expect(out[0].sourcesRelatedOnly).toBe(false);
+    expect(out[0].supportingSources).toEqual([]);
+    expect(out[0].contradictingSources?.map((s) => s.url)).toEqual([url]);
+    expect(out[0].evidence).toContain("[1]");
+  });
+
+  it("false + related-only 检索垫不改桶", () => {
+    const out = bindAtomEvidenceToVerdicts(
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "false",
+          supportingSources: [],
+          contradictingSources: [],
+          evidenceGaps: [],
+        },
+      ],
+      byAtom,
+      key
+    );
+    expect(out[0].sourcesRelatedOnly).toBe(true);
+    expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://a.example"]);
+    expect(out[0].contradictingSources).toEqual([]);
+  });
+
   it("false + 检索里真实反证 URL → 仍 false", () => {
     const out = bindAtomEvidenceToVerdicts(
       [

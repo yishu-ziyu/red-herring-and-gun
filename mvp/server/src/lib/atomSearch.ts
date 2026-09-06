@@ -7,6 +7,7 @@
 
 import {
   MAX_CLAIM_ATOMS,
+  alignFalseEvidenceBuckets,
   claimAtomKey,
   compactStrings,
   type NonVerifiableAtom,
@@ -360,10 +361,24 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
       }
     }
 
+    const verdictNorm = typeof v.verdict === "string" ? v.verdict.trim().toLowerCase() : "";
+    const aligned = alignFalseEvidenceBuckets({
+      verdict: verdictNorm,
+      supporting,
+      contradicting,
+      sourcesRelatedOnly,
+    });
+    supporting = aligned.supporting;
+    contradicting = aligned.contradicting;
+    if (supporting.length === 0 && contradicting.length > 0 && !sourcesRelatedOnly) {
+      const rebound = bindLocalCitations(v.evidence, contradicting, known);
+      contradicting = rebound.sources;
+      evidence = rebound.text;
+    }
+
     const hasHttpUrl = [...supporting, ...contradicting].some(
       (s) => typeof s?.url === "string" && /^https?:\/\//i.test(s.url)
     );
-    const verdictNorm = typeof v.verdict === "string" ? v.verdict.trim().toLowerCase() : "";
     const downgradeTrueFalse =
       (verdictNorm === "true" || verdictNorm === "false") && (sourcesRelatedOnly || !hasHttpUrl);
     if (downgradeTrueFalse && !gaps.some((g) => g.includes("待补证"))) {

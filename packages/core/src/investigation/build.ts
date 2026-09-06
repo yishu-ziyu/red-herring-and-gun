@@ -8,6 +8,8 @@
  * 判词纪律不在本文件发明：true/false 无已绑定 http(s) 来源时按生产 demote 规则
  * 收敛为 unresolved（与 mergeSubclaimVerdicts / bindAtomEvidenceToVerdicts 同向，
  * 只在读取时兜底，不回写生产数据）。
+ * false 且只有 supportingSources 时按生产 alignFalseEvidenceBuckets 改桶，
+ * 不用 finding 文本猜正负。
  */
 import type {
   InvestigationCheckability,
@@ -101,6 +103,28 @@ type VerdictLike = {
   sourcesRelatedOnly: boolean;
 };
 
+/**
+ * 与 claimAtom/merge.ts 的 alignFalseEvidenceBuckets 同向：只按结构化 verdict 改桶。
+ * Snapshot 读取兜底，不回写生产数据，不用 finding 文本。
+ */
+function alignFalseEvidenceBuckets<T>(input: {
+  verdict: string;
+  supporting: T[];
+  contradicting: T[];
+  sourcesRelatedOnly?: boolean;
+}): { supporting: T[]; contradicting: T[] } {
+  const verdict = String(input.verdict ?? "").trim().toLowerCase();
+  if (
+    verdict === "false" &&
+    input.sourcesRelatedOnly !== true &&
+    input.supporting.length > 0 &&
+    input.contradicting.length === 0
+  ) {
+    return { supporting: [], contradicting: input.supporting };
+  }
+  return { supporting: input.supporting, contradicting: input.contradicting };
+}
+
 function readVerdicts(raw: unknown, keyFn: (s: string) => string): Map<string, VerdictLike> {
   const out = new Map<string, VerdictLike>();
   for (const item of asArray(raw)) {
@@ -110,26 +134,34 @@ function readVerdicts(raw: unknown, keyFn: (s: string) => string): Map<string, V
     if (!atom) continue;
     const key = keyFn(atom);
     if (!key || out.has(key)) continue;
-    const supporting = asArray(rec.supportingSources)
+    const supportingRaw = asArray(rec.supportingSources)
       .map(asRecord)
       .filter((s): s is Record<string, unknown> => s !== null)
       .map((s) => ({ url: s.url, title: s.title, snippet: s.snippet }));
-    const contradicting = asArray(rec.contradictingSources)
+    const contradictingRaw = asArray(rec.contradictingSources)
       .map(asRecord)
       .filter((s): s is Record<string, unknown> => s !== null)
       .map((s) => ({ url: s.url, title: s.title, snippet: s.snippet }));
+    const sourcesRelatedOnly = rec.sourcesRelatedOnly === true;
+    const verdict = asString(rec.verdict).trim().toLowerCase();
+    const aligned = alignFalseEvidenceBuckets({
+      verdict,
+      supporting: supportingRaw,
+      contradicting: contradictingRaw,
+      sourcesRelatedOnly,
+    });
     out.set(key, {
       claimAtom: key,
-      verdict: asString(rec.verdict).trim().toLowerCase(),
+      verdict,
       evidence: clip(asString(rec.evidence), 240),
       boundary: clip(asString(rec.boundary), 200),
-      supportingSources: supporting,
-      contradictingSources: contradicting,
+      supportingSources: aligned.supporting,
+      contradictingSources: aligned.contradicting,
       evidenceGaps: asArray(rec.evidenceGaps)
         .map((g) => clip(asString(g), 120))
         .filter((g) => g.length > 0)
         .slice(0, 3),
-      sourcesRelatedOnly: rec.sourcesRelatedOnly === true,
+      sourcesRelatedOnly,
     });
   }
   return out;
@@ -392,7 +424,11 @@ export function buildInvestigationSnapshot(
         if (first) first.finding = verdict.evidence;
       }
       for (const s of a.contradict) {
-        evidence.push({ sourceId: sourceIdByUrl.get(s.url)!, role: "contradict" });
+        evidence.push({
+          sourceId: sourceIdByUrl.get(s.url)!,
+          role: "contradict",
+          ...(verdict.evidence ? { finding: verdict.evidence } : {}),
+        });
       }
       // 已核查命题：检索垫其余来源只是背景材料，不得残留 unassessed。
       for (const s of bundle.perAtom.get(a.key) ?? []) {

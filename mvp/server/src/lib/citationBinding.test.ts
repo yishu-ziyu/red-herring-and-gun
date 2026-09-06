@@ -97,6 +97,17 @@ describe("bindGlobalConclusion", () => {
     expect(text).not.toMatch(/\[9\]/);
   });
 
+  it("includes contradictingSources in global first-seen order", () => {
+    const { text, sources } = bindGlobalConclusion("该说法不成立[1]。", [
+      {
+        supportingSources: [],
+        contradictingSources: [{ url: "https://contra.example", title: "辟谣", snippet: "不实" }],
+      },
+    ]);
+    expect(sources.map((s) => s.url)).toEqual(["https://contra.example"]);
+    expect(text).toContain("[1]");
+  });
+
   it("excludes relatedOnly (retrieval fill) sources from global references", () => {
     const { sources } = bindGlobalConclusion("结论。", [
       {
@@ -112,6 +123,25 @@ describe("bindGlobalConclusion", () => {
 });
 
 describe("normalizeReportCitations", () => {
+  it("keeps [n] when only contradictingSources are cited", () => {
+    const report: Record<string, unknown> = {
+      conclusion: "该说法不成立[1]。",
+      subclaimVerdicts: [
+        {
+          claimAtom: "每次感冒都应当输液",
+          verdict: "false",
+          evidence: "感冒通常不需要输液[1]。",
+          supportingSources: [],
+          contradictingSources: [{ url: "https://health.example/iv", title: "输液", snippet: "通常不需要" }],
+        },
+      ],
+    };
+    normalizeReportCitations(report);
+    expect((report.citationSources as Array<{ url: string }>)[0].url).toBe("https://health.example/iv");
+    expect(report.conclusion).toBe("该说法不成立[1]。");
+    expect((report.subclaimVerdicts as Array<{ evidence: string }>)[0].evidence).toBe("感冒通常不需要输液[1]。");
+  });
+
   it("writes citationSources and rewrites chain evidence markers", () => {
     const report: Record<string, unknown> = {
       conclusion: "结论依赖[1]。",
