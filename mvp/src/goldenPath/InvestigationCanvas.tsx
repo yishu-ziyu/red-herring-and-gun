@@ -96,23 +96,34 @@ export function InvestigationCanvas({
         ) : null}
 
         <section className="gp-original" aria-label={copy.canvasOriginalLabel}>
-          <p className="gp-original-label">{copy.canvasOriginalLabel}</p>
-          <p className="gp-original-text">{markOriginal(snapshot)}</p>
-          <div className="gp-original-side">
-            {restoredAt ? (
-              <em className="gp-original-time">{copy.oldCaseNotice(formatDate(restoredAt))}</em>
-            ) : null}
-            {!complete && !interrupted && live ? <span className="gp-live-dot" aria-hidden="true" /> : null}
-            {complete || interrupted ? (
-              <button type="button" className="gp-ghost-btn" onClick={onReverify}>
-                {copy.reviewAgain}
-              </button>
-            ) : (
-              <button type="button" className="gp-ghost-btn" onClick={onBackHome}>
-                {copy.backHome}
-              </button>
-            )}
+          <div className="gp-original-meta">
+            <span className="gp-original-label">{copy.canvasOriginalLabel}</span>
+            <div className="gp-original-side">
+              {restoredAt ? (
+                <em className="gp-original-time">{copy.oldCaseNotice(formatDate(restoredAt))}</em>
+              ) : null}
+              {!complete && !interrupted && live ? (
+                <span className="gp-live-pill" aria-label="正在调查">
+                  <span className="gp-live-dot" aria-hidden="true" />
+                  <span>正在调查</span>
+                </span>
+              ) : null}
+              {complete || interrupted ? (
+                <button type="button" className="gp-link-btn" onClick={onReverify}>
+                  {copy.reviewAgain}
+                </button>
+              ) : (
+                <button type="button" className="gp-link-btn" onClick={onBackHome}>
+                  {copy.backHome}
+                </button>
+              )}
+            </div>
           </div>
+          <blockquote className="gp-original-quote">
+            <span className="gp-quote-open" aria-hidden="true">“</span>
+            <span className="gp-original-text">{markOriginal(snapshot)}</span>
+            <span className="gp-quote-close" aria-hidden="true">”</span>
+          </blockquote>
         </section>
 
         {!complete && !interrupted ? (

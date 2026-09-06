@@ -40,6 +40,7 @@ export function ClaimSection({ claim, index, sources, conflicts, defaultExpanded
   const judgment = claim.judgment;
   const showStatusChip = claim.progress === "searching" || claim.progress === "interrupted" || judgment !== null;
   const sourceFor = (link: InvestigationEvidenceLink) => sources.find((s) => s.id === link.sourceId);
+  const num = String(index + 1).padStart(2, "0");
 
   return (
     <article className={`gp-claim is-${claim.progress}`} data-gp-claim-id={claim.id}>
@@ -49,7 +50,7 @@ export function ClaimSection({ claim, index, sources, conflicts, defaultExpanded
         aria-expanded={expanded}
         onClick={() => setExpanded((open) => !open)}
       >
-        <span className="gp-claim-num" aria-hidden="true">{index + 1}</span>
+        <span className="gp-claim-num" aria-hidden="true">{num}</span>
         <span className="gp-claim-body">
           <strong className="gp-claim-text">{claim.text}</strong>
           {claim.checkability !== "checkable" ? (
@@ -66,7 +67,12 @@ export function ClaimSection({ claim, index, sources, conflicts, defaultExpanded
               {PROGRESS_LABEL[claim.progress]}
             </span>
           ) : null}
-          <span className="gp-claim-toggle" aria-hidden="true">{expanded ? "收起" : "展开"}</span>
+          <span className="gp-claim-toggle" aria-hidden="true">
+            {expanded ? "收起" : "展开"}
+            <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" className={`gp-toggle-arrow ${expanded ? "is-open" : ""}`}>
+              <path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
         </span>
       </button>
 
@@ -76,10 +82,13 @@ export function ClaimSection({ claim, index, sources, conflicts, defaultExpanded
             <div className="gp-evidence-space">
               {groups.map((group) => (
                 <section key={group.role} className={`gp-evidence-group is-${group.role}`} data-gp-role={group.role}>
-                  <h4 className="gp-evidence-group-label">
-                    {group.label}
-                    <span>{group.links.length}</span>
-                  </h4>
+                  <div className="gp-evidence-group-head">
+                    <span className={`gp-role-glyph is-${group.role}`} aria-hidden="true">
+                      {roleGlyph(group.role)}
+                    </span>
+                    <h4 className="gp-evidence-group-label">{group.label}</h4>
+                    <span className="gp-evidence-group-count">· {group.links.length}</span>
+                  </div>
                   <div className="gp-evidence-list">
                     {group.links.map((link, i) => (
                       <EvidenceItem
@@ -104,7 +113,10 @@ export function ClaimSection({ claim, index, sources, conflicts, defaultExpanded
 
           {claimConflicts.map((conflict) => (
             <section key={conflict.id} className="gp-conflict" data-gp-conflict-id={conflict.id}>
-              <h4 className="gp-conflict-label">{copy.conflictLabel}</h4>
+              <div className="gp-conflict-head">
+                <span className="gp-conflict-tag" aria-hidden="true">争点</span>
+                <h4 className="gp-conflict-label">{copy.conflictLabel}</h4>
+              </div>
               <p className="gp-conflict-summary">{conflict.summary}</p>
               <p className="gp-conflict-sides">
                 <button
@@ -119,33 +131,33 @@ export function ClaimSection({ claim, index, sources, conflicts, defaultExpanded
                   {conflictSidesLabel(conflict.sides)}
                 </button>
               </p>
-              {conflict.reasonStatus === "known" && conflict.reason ? (
-                <p className="gp-conflict-reason">
-                  <strong>{copy.conflictReasonKnown}：</strong>
-                  {conflict.reason}
-                </p>
-              ) : (
-                <p className="gp-conflict-reason is-unknown">{copy.conflictReasonUnknown}</p>
-              )}
+              <div className="gp-conflict-reason-wrap">
+                <strong className="gp-conflict-reason-lead">{copy.conflictReasonKnown}：</strong>
+                {conflict.reasonStatus === "known" && conflict.reason ? (
+                  <span className="gp-conflict-reason">{conflict.reason}</span>
+                ) : (
+                  <span className="gp-conflict-reason is-unknown">{copy.conflictReasonUnknown}</span>
+                )}
+              </div>
             </section>
           ))}
 
           {claim.gaps.length > 0 ? (
-            <section className="gp-gaps" aria-label={copy.gapLabel}>
-              <h4 className="gp-gaps-label">
-                {copy.gapLabel}
-                <span>{claim.gaps.length}</span>
-              </h4>
+            <aside className="gp-gaps" aria-label={copy.gapLabel}>
+              <div className="gp-gaps-head">
+                <h4 className="gp-gaps-label">{copy.gapLabel}</h4>
+                <span className="gp-gaps-count">· {claim.gaps.length}</span>
+              </div>
               {claim.gaps.length > 0 && <p className="gp-gaps-hint">{copy.gapHint}</p>}
-              <ul>
+              <ul className="gp-gaps-list">
                 {claim.gaps.map((gap) => (
-                  <li key={gap.id} data-gp-gap-status={gap.status}>
-                    <strong>{gap.description}</strong>
-                    {gap.consequence ? <span>{gap.consequence}</span> : null}
+                  <li key={gap.id} data-gp-gap-status={gap.status} className="gp-gap-item">
+                    <strong className="gp-gap-desc">{gap.description}</strong>
+                    {gap.consequence ? <span className="gp-gap-consequence">{gap.consequence}</span> : null}
                   </li>
                 ))}
               </ul>
-            </section>
+            </aside>
           ) : null}
 
           {claim.boundary ? (
@@ -158,4 +170,19 @@ export function ClaimSection({ claim, index, sources, conflicts, defaultExpanded
       ) : null}
     </article>
   );
+}
+
+function roleGlyph(role: InvestigationEvidenceLink["role"]): string {
+  switch (role) {
+    case "support":
+      return "●";
+    case "contradict":
+      return "●";
+    case "context-only":
+      return "○";
+    case "unassessed":
+      return "◌";
+    default:
+      return "●";
+  }
 }

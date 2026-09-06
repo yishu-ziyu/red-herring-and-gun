@@ -28,18 +28,13 @@ export function ConclusionHero({ directAnswer, judgment, boundaries, claimCount,
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
   return (
-    <section className="gp-hero" aria-label="调查结论" data-gp-conclusion-judgment={judgment}>
-      <div className="gp-hero-main">
-        <span className="gp-hero-lead">
-          <span className="gp-hero-check" aria-hidden="true">
-            <svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <path d="M4 10.5 8.2 14.5 16 6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </span>
-          {HERO_LEAD[judgment]}
-        </span>
-        <p className="gp-hero-answer" data-gp-direct-answer>{directAnswer}</p>
+    <header className="gp-hero" aria-label="调查结论" data-gp-conclusion-judgment={judgment}>
+      <div className="gp-hero-kicker">
+        <span className="gp-hero-kicker-label">调查结论</span>
+        <span className="gp-hero-kicker-sep" aria-hidden="true">·</span>
+        <span className="gp-hero-lead">{HERO_LEAD[judgment]}</span>
       </div>
+      <h2 className="gp-hero-answer" data-gp-direct-answer>{directAnswer}</h2>
       <div className="gp-hero-meta">
         <span className={`gp-chip gp-chip--${JUDGMENT_TONE[judgment]}`} data-gp-judgment={judgment}>
           {JUDGMENT_LABEL[judgment]}
@@ -50,15 +45,15 @@ export function ConclusionHero({ directAnswer, judgment, boundaries, claimCount,
       </div>
       {boundaries.length > 0 ? (
         <div className="gp-hero-boundaries">
-          <strong>{copy.boundaryLabel}</strong>
-          <ul>
+          <span className="gp-hero-boundary-title">{copy.boundaryLabel}</span>
+          <ul className="gp-hero-boundary-list">
             {boundaries.map((b) => (
               <li key={b}>{b}</li>
             ))}
           </ul>
         </div>
       ) : null}
-    </section>
+    </header>
   );
 }
 

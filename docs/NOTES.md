@@ -22,6 +22,8 @@
 
 # 当前状态
 
+2026-09-06 PR #57 阻塞项修复完（改完停止，等人工复审）：按人工 review 将 Golden Path 从 Card-based SaaS Dashboard 彻底重构为 Editorial / Document-based 调查文稿（去除白卡/阴影/厚圆角盒子嵌套，Conclusion 标题化，原句变引用 blockquote，Claim 变文章小节 01/02，Evidence 变带有小圆点与轻量标签的引用行，Gap/Conflict 变边线批注与冷静争点，移动端单列流畅文章流，不改动快照契约与产品状态机）。验收标准见 `docs/evals/2026-09-06-golden-path-editorial.md`。截图见 `docs/design/2026-09-06-golden-path/` 13 张完整流（包含真实端到端推理完成截图 desktop-9-real-complete.png）。测试与构建全绿（root: core 578 / eval 85 / server 21 / web 83，mvp: 908 passed 1 skipped，各模块 build 全绿），不合并不启 #53。
+
 2026-09-06 用户要求把本地全部改动收进 `main` 并推远端，只留 `main` 一条分支。`dev` 与 `spine` 本地和远端均删除。独立 worktree `argument-structure-obligations` 目录已不在磁盘，未能合入。仓库：https://github.com/yishu-ziyu/red-herring-and-gun
 
 2026-09-06 搜索策略迭代一期实现已提交：双路查询、同站限流保支撑反证、新度语义加成、单页硬超时 2.5 秒、HopTrace 脱敏。验收见 `docs/evals/2026-09-06-search-strategy-iter.md`，方向见 `docs/devlog/2026-09-06-search-strategy.md`。人评待看：出处精确到段、过程只挂当前轮、手机可读。

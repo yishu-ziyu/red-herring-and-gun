@@ -17,15 +17,31 @@ export function EvidenceItem({ link, source, onSelect }: EvidenceItemProps) {
   return (
     <button
       type="button"
-      className="gp-evidence-item"
+      className={`gp-evidence-item is-${link.role}`}
       data-gp-unreachable={unreachable || undefined}
+      data-gp-role={link.role}
       onClick={() => onSelect(link, source)}
     >
-      <span className="gp-evidence-title">
-        {source.title || source.url}
-        {unreachable ? <em className="gp-evidence-dead">（打不开）</em> : null}
+      <span className={`gp-evidence-dot is-${link.role}`} aria-hidden="true">
+        {link.role === "support" || link.role === "contradict" ? "●" : link.role === "context-only" ? "○" : "◌"}
       </span>
-      <span className="gp-evidence-domain">{domainOf(source.url)}</span>
+      <div className="gp-evidence-body">
+        <div className="gp-evidence-header">
+          <strong className="gp-evidence-title">
+            {source.title || source.url}
+          </strong>
+          {unreachable ? <em className="gp-evidence-dead">（打不开）</em> : null}
+          <span className="gp-evidence-domain">
+            {domainOf(source.url)}
+            <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" className="gp-ext-arrow">
+              <path d="M4 12 12 4M6 4h6v6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+        </div>
+        {source.excerpt ? (
+          <p className="gp-evidence-excerpt">{source.excerpt}</p>
+        ) : null}
+      </div>
     </button>
   );
 }
