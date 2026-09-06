@@ -235,23 +235,22 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
   );
 }
 
+/** 只有当前 snapshot 存在且唯一的 `identifyEvidenceLinks` key === identity 才返回 live view。 */
 export function resolveSourceDrawerView(
   claims: Array<{ id: string; text: string; evidence: InvestigationEvidenceLink[] }>,
   sources: InvestigationSource[],
   claimId: string,
-  sourceId: string,
-  role?: InvestigationEvidenceLink["role"],
+  identity: string,
 ): SourceDrawerView | null {
   const claimIndex = claims.findIndex((c) => c.id === claimId);
   const claim = claimIndex >= 0 ? claims[claimIndex] : undefined;
-  const source = sources.find((s) => s.id === sourceId);
-  const matches = claim?.evidence.filter((item) => item.sourceId === sourceId) ?? [];
-  const roleMatches = role ? matches.filter((item) => item.role === role) : matches;
-  let link: InvestigationEvidenceLink | undefined;
-  if (roleMatches.length === 1) link = roleMatches[0];
-  else if (matches.length === 1) link = matches[0];
-  else link = undefined;
-  if (!claim || !source || !link) return null;
+  if (!claim || !identity) return null;
+  const identified = identifyEvidenceLinks(claim.id, claim.evidence);
+  const matches = identified.filter((row) => row.key === identity);
+  if (matches.length !== 1) return null;
+  const link = matches[0]!.link;
+  const source = sources.find((s) => s.id === link.sourceId);
+  if (!source) return null;
   return {
     claimId: claim.id,
     claimIndex,

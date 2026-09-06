@@ -110,7 +110,7 @@ export function InvestigationCanvas({
   }, []);
 
   const liveView = drawer
-    ? resolveSourceDrawerView(snapshot.claims, snapshot.sources, drawer.claimId, drawer.sourceId, drawer.role)
+    ? resolveSourceDrawerView(snapshot.claims, snapshot.sources, drawer.claimId, drawer.identity)
     : null;
   if (drawer && liveView) {
     lastConfirmedRef.current = { identity: drawer.identity, view: liveView };

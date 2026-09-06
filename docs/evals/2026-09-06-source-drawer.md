@@ -83,7 +83,7 @@ python3 scripts/capture_source_drawer.py
 
 ### Evidence
 
-- 行为测试：`mvp/src/goldenPath/goldenPath.test.tsx` Issue #65 段为真实 focus / keydown / click；Issue #62 Claim Trace 与 Issue #63 Evidence Settling 段仍在。rebase 到 `d6507de` 后含 Drawer×Settling 交叉、duplicate fail-safe，以及 held-view identity 三条（A 首次点击 duplicate、B 跨 Drawer 不串数据、C 本 Drawer held）
+- 行为测试：`mvp/src/goldenPath/goldenPath.test.tsx` Issue #65 段为真实 focus / keydown / click；Issue #62 Claim Trace 与 Issue #63 Evidence Settling 段仍在。rebase 到 `d6507de` 后含 Drawer×Settling 交叉、duplicate fail-safe、held-view identity（A/B/C），以及 live resolve 服从 #63 identity（E1/E2/E3）
 - 截图：`docs/design/2026-09-06-source-drawer/`
   - Desktop 1440：`source-drawer.png`、`source-drawer-no-limitation.png`、`source-drawer-unreachable.png`、`source-drawer-grayscale.png`
   - Mobile 390：`source-sheet.png`、`source-sheet-grayscale.png`
@@ -91,7 +91,7 @@ python3 scripts/capture_source_drawer.py
 - 截图来源是生产 Golden Path + DEV fixture `/?fixture=source-audit`，**不是**真实 SSE（真实 SSE 属 #66）
 - `npm test`：core 578 / eval 85 / server 21 / web 83 = **767 通过**
 - `npm run build`：通过
-- `cd mvp && npm test`：goldenPath **73** 全绿；全量 **943 通过 / 1 跳过**（worktree 里 4 个未改的 server 套件因 symlink 解析 `@earendil-works/pi-coding-agent` 失败，不在本 PR diff）
+- `cd mvp && npm test`：goldenPath **76** 全绿；全量 **946 通过 / 1 跳过**（worktree 里 4 个未改的 server 套件因 symlink 解析 `@earendil-works/pi-coding-agent` 失败，不在本 PR diff）
 - `cd mvp && npm run build`：通过
 
 ### 复审（held-view identity）
@@ -102,3 +102,11 @@ python3 scripts/capture_source_drawer.py
 - [x] B. 打开 A → 关闭 → 点击 ambiguous duplicate B → 不含 A 的 title / claim / finding / limitation / excerpt
 - [x] C. B 可解析打开后 snapshot 无法唯一 resolve → dialog 不 remount、held、B 自己最后确认 view
 - [x] D. unique settling live update、1×→2× held、focus return、a11y 继续通过
+
+### 复审（live resolve 服从 #63 identity）
+
+人工 Review `5124981625`：held 跨 Drawer 已过；live 仍按 sourceId+role 找 link，1× unique support → 2× support+contradict 会因「还剩一条 support」错误继续 live。已改为：只有 `identifyEvidenceLinks` 中存在且唯一的 `row.key === drawer.identity` 才允许 live。
+
+- [x] E1. unique support → support+contradict：dialog 同节点、held、旧 support lastConfirmedView，无新 finding
+- [x] E2. unique unassessed → support：identity 仍 `claimId:sourceId`、live、最新 finding
+- [x] E3. relation 只改数组顺序：同一 identity 继续 live，dialog 不 remount

@@ -1383,7 +1383,7 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     fireEvent.click(rows[1]!);
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
     const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
-    expect(drawer.getAttribute("data-gp-source-resolve")).toBe("held");
+    expect(drawer.getAttribute("data-gp-source-resolve")).toBe("live");
     expect(within(drawer).getByText("关系B的发现")).toBeTruthy();
     expect(within(drawer).getByText("关系B的边界")).toBeTruthy();
     expect(drawer.textContent).not.toContain("关系A的发现");
@@ -1450,5 +1450,101 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     expect(still.textContent).not.toContain("甲独有发现");
     expect(still.textContent).not.toContain("甲独有边界");
     expect(still.textContent).not.toContain("甲来源独有摘录");
+  });
+
+  it("E1. unique support → support+contradict：identity 消失则 held，不读入新 relation", async () => {
+    const beforeSnap = settlingBoard();
+    const sourceId = beforeSnap.claims[0]!.evidence[0]!.sourceId;
+    const unique = withClaimEvidence(beforeSnap, [
+      { sourceId, role: "support", finding: "旧支持说明", limitation: "旧支持边界" },
+    ]);
+    const duplicated = withClaimEvidence(beforeSnap, [
+      { sourceId, role: "support", finding: "新支持说明不该出现" },
+      { sourceId, role: "contradict", finding: "反驳说明不该出现" },
+    ]);
+    const view = renderCanvas(unique);
+    const row = document.querySelector(`[data-source-id="${sourceId}"]`) as HTMLButtonElement;
+    expect(row.getAttribute("data-gp-evidence-key")).toBe(`claim-1:${sourceId}`);
+    fireEvent.click(row);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(dialog.getAttribute("data-gp-source-resolve")).toBe("live");
+    expect(within(dialog).getByText("旧支持说明")).toBeTruthy();
+
+    view.rerender(
+      <InvestigationCanvas snapshot={duplicated} live={false} finalReport={null} onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    const still = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(still).toBe(dialog);
+    expect(still.getAttribute("data-gp-source-resolve")).toBe("held");
+    expect(within(still).getByText("旧支持说明")).toBeTruthy();
+    expect(within(still).getByText("旧支持边界")).toBeTruthy();
+    expect(still.textContent).not.toContain("新支持说明不该出现");
+    expect(still.textContent).not.toContain("反驳说明不该出现");
+  });
+
+  it("E2. unique unassessed → support：identity 仍是 claimId:sourceId，live 取最新 finding", async () => {
+    const beforeSnap = settlingBoard();
+    const sourceId = beforeSnap.claims[0]!.evidence[0]!.sourceId;
+    const view = renderCanvas(beforeSnap);
+    const row = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`) as HTMLButtonElement;
+    expect(row.getAttribute("data-gp-evidence-key")).toBe(`claim-1:${sourceId}`);
+    fireEvent.click(row);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(dialog.getAttribute("data-gp-source-resolve")).toBe("live");
+
+    const next = withRoles(beforeSnap, { [sourceId]: "support" });
+    next.claims[0]!.evidence = next.claims[0]!.evidence.map((link) =>
+      link.sourceId === sourceId ? { ...link, finding: "归位后仍是同一对象" } : link,
+    );
+    view.rerender(
+      <InvestigationCanvas snapshot={next} live={false} finalReport={null} onReverify={() => {}} onBackHome={() => {}} />,
+    );
+    const still = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(still).toBe(dialog);
+    expect(still.getAttribute("data-gp-source-resolve")).toBe("live");
+    expect(still.getAttribute("data-gp-role")).toBe("support");
+    expect(within(still).getByText("归位后仍是同一对象")).toBeTruthy();
+    const afterRow = document.querySelector(`[data-gp-claim-id="claim-1"] [data-source-id="${sourceId}"]`) as HTMLButtonElement;
+    expect(afterRow).toBe(row);
+    expect(afterRow.getAttribute("data-gp-evidence-key")).toBe(`claim-1:${sourceId}`);
+  });
+
+  it("E3. duplicate relation 只改数组顺序：同一 identity 继续 live，dialog 不 remount", async () => {
+    const beforeSnap = settlingBoard();
+    const sourceId = beforeSnap.claims[0]!.evidence[0]!.sourceId;
+    const supportFirst = withClaimEvidence(beforeSnap, [
+      { sourceId, role: "support", finding: "支持关系仍在" },
+      { sourceId, role: "contradict", finding: "反驳关系仍在" },
+    ]);
+    const contradictFirst = withClaimEvidence(beforeSnap, [
+      { sourceId, role: "contradict", finding: "反驳关系仍在" },
+      { sourceId, role: "support", finding: "支持关系仍在" },
+    ]);
+    const view = renderCanvas(supportFirst);
+    const supportRow = document.querySelector(`[data-source-id="${sourceId}"][data-gp-role="support"]`) as HTMLButtonElement;
+    expect(supportRow.getAttribute("data-gp-evidence-key")).toBe(`claim-1:${sourceId}::support`);
+    fireEvent.click(supportRow);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(dialog.getAttribute("data-gp-source-resolve")).toBe("live");
+    expect(within(dialog).getByText("支持关系仍在")).toBeTruthy();
+    expect(dialog.textContent).not.toContain("反驳关系仍在");
+
+    view.rerender(
+      <InvestigationCanvas
+        snapshot={contradictFirst}
+        live={false}
+        finalReport={null}
+        onReverify={() => {}}
+        onBackHome={() => {}}
+      />,
+    );
+    const still = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(still).toBe(dialog);
+    expect(still.getAttribute("data-gp-source-resolve")).toBe("live");
+    expect(within(still).getByText("支持关系仍在")).toBeTruthy();
+    expect(still.textContent).not.toContain("反驳关系仍在");
   });
 });
