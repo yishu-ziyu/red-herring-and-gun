@@ -58,7 +58,16 @@ def run_tests():
             cases = page.evaluate("() => window.spikeResults.cases")
             assert "cjk1" in cases and cases["cjk1"]["lines"] > 0, "断言失败: kugiri.splitText() 未能成功切分中文长句"
             assert "repeatTest" in cases and cases["repeatTest"]["passed"] is True, "断言失败: kugiri revert 幂等性测试未通过"
-            print("✓ [TEST 1 PASS] kugiri runtime actually loaded & API splitText/revert actually invoked")
+            
+            # Case 5: text-wrap: balance 真实运行结果检查
+            assert "textWrapBalance" in cases and cases["textWrapBalance"]["tested"] is True, "断言失败: Case 5 text-wrap: balance 未执行真实实测"
+            assert cases["textWrapBalance"]["linesCount"] > 0, "断言失败: text-wrap: balance 拆行未记录行数"
+            
+            # Case 6: document.fonts.ready 字体加载时序检查
+            assert "fontReady" in cases and cases["fontReady"]["tested"] is True, "断言失败: Case 6 document.fonts.ready 未执行真实实测"
+            assert cases["fontReady"]["linesCount"] > 0, "断言失败: 字体就绪拆行未记录行数"
+            
+            print("✓ [TEST 1 PASS] kugiri runtime loaded; splitText, revert, text-wrap balance & font-load evidence verified")
             passed_count += 1
 
             # =================================================================
@@ -69,11 +78,22 @@ def run_tests():
             time.sleep(0.4)
 
             # =================================================================
-            # 测试 2: Fixture 准确性声明 (production-shaped design fixture)
+            # 测试 2: 主设计夹具严格 2 Claim，且 test-only missing-span 隔离
             # =================================================================
             fixture_type = page.evaluate("() => window.__RHG_PROTOTYPE__.fixture.fixtureType")
             assert fixture_type == "production-shaped design fixture", f"断言失败: fixtureType 应为 production-shaped design fixture, 实为 {fixture_type}"
-            print("✓ [TEST 2 PASS] fixture correctly labeled as 'production-shaped design fixture'")
+            
+            # 主夹具声明与渲染 claim 数量必须严格等于 2
+            fixture_claims_count = page.evaluate("() => window.__RHG_PROTOTYPE__.fixture.claims.length")
+            dom_claims_count = page.locator(".claim-chapter").count()
+            assert fixture_claims_count == 2, f"断言失败: 主夹具 claims 数量应为 2，实为 {fixture_claims_count}"
+            assert dom_claims_count == 2, f"断言失败: 页面渲染的命题章节数应为 2，实为 {dom_claims_count}"
+            
+            # 测试专用 claim 绝不泄漏进页面 DOM
+            missing_span_dom = page.locator("#chapter-claim-03-missing-span").count()
+            assert missing_span_dom == 0, "断言失败: 测试专用的 claim-03-missing-span 泄漏进了真实展示页面 DOM！"
+            
+            print("✓ [TEST 2 PASS] fixture correctly labeled; claims count === 2; test-only claim NOT in page DOM")
             passed_count += 1
 
             # =================================================================
@@ -113,38 +133,54 @@ def run_tests():
             passed_count += 1
 
             # =================================================================
-            # 测试 5: Claim Trace 严格由 originalSpan 生成并激活高亮
+            # 测试 5: Claim Trace 严格对应真实 Phrase（断言真实文本内容）
             # =================================================================
-            # 验证 buildTraceSegments 函数逻辑
-            trace_check = page.evaluate("""() => {
-                const quote = "ABCDEF";
-                const claims = [{ id: "c1", originalSpan: [1, 4] }];
-                const segs = window.__RHG_PROTOTYPE__.buildTraceSegments(quote, claims);
-                return segs.length === 3 && segs[1].text === "BCD" && segs[1].claimId === "c1";
-            }""")
-            assert trace_check, "断言失败: buildTraceSegments 未按 originalSpan 正确切分"
-
-            # 真实 DOM 联动检查：hover 命题 01
+            # 断言真实 DOM 中的 trace mark 节点文本严格等于短语
+            mark1_text = page.locator('mark[data-trace-claim="claim-01"]').text_content().strip()
+            mark2_text = page.locator('mark[data-trace-claim="claim-02"]').text_content().strip()
+            assert mark1_text == "维生素 C 能治感冒", f"断言失败: claim-01 高亮文本应为 '维生素 C 能治感冒'，实为 '{mark1_text}'"
+            assert mark2_text == "每次感冒都应该输液", f"断言失败: claim-02 高亮文本应为 '每次感冒都应该输液'，实为 '{mark2_text}'"
+            
+            # 联动检查：hover 命题 01
             claim1_head = page.locator("#chapter-claim-01 .claim-header")
             claim1_head.hover()
             time.sleep(0.2)
-            
             mark1_highlighted = page.locator('mark[data-trace-claim="claim-01"]').evaluate("el => el.classList.contains('is-highlighted')")
             assert mark1_highlighted, "断言失败: Hover 命题 01 时，原句中对应的 span 未能激活高亮！"
-            print("✓ [TEST 5 PASS] Claim Trace strictly derived from originalSpan & hover联动成立")
+
+            # 联动检查：hover 命题 02
+            claim2_head = page.locator("#chapter-claim-02 .claim-header")
+            claim2_head.hover()
+            time.sleep(0.2)
+            mark2_highlighted = page.locator('mark[data-trace-claim="claim-02"]').evaluate("el => el.classList.contains('is-highlighted')")
+            assert mark2_highlighted, "断言失败: Hover 命题 02 时，原句中对应的 span 未能激活高亮！"
+
+            print("✓ [TEST 5 PASS] real fixture claim-01 & claim-02 trace exact text and hover linkage PASS")
             passed_count += 1
 
             # =================================================================
-            # 测试 6: missing originalSpan => no highlight (不伪造高亮)
+            # 测试 6: missing originalSpan => no highlight (测试隔离用例)
             # =================================================================
-            # 命题 03 故意设置 originalSpan: null
-            claim3_head = page.locator("#chapter-claim-03-missing-span .claim-header")
-            claim3_head.hover()
-            time.sleep(0.2)
-            
-            mark3_count = page.locator('mark[data-trace-claim="claim-03-missing-span"]').count()
-            assert mark3_count == 0, "断言失败: 无 originalSpan 的 claim 却伪造了高亮 mark 节点！"
-            print("✓ [TEST 6 PASS] missing originalSpan => no mark highlight (坚守命题透明不伪造)")
+            # 使用包含 missing-span 的独立测试夹具验证 buildTraceSegments
+            missing_span_test = page.evaluate("""() => {
+                const quote = "维生素 C 能治感冒，而且每次感冒都应该输液。";
+                const testClaims = [
+                    { id: "claim-01", originalSpan: [0, 10] },
+                    { id: "claim-02", originalSpan: [13, 22] },
+                    { id: "claim-03-missing-span", originalSpan: null }
+                ];
+                const segs = window.__RHG_PROTOTYPE__.buildTraceSegments(quote, testClaims);
+                return {
+                    segsCount: segs.length,
+                    hasClaim3: segs.some(s => s.claimId === "claim-03-missing-span"),
+                    claim1: segs.find(s => s.claimId === "claim-01")?.text,
+                    claim2: segs.find(s => s.claimId === "claim-02")?.text
+                };
+            }""")
+            assert not missing_span_test["hasClaim3"], "断言失败: 缺失 originalSpan 的 claim 却生成了高亮切片！"
+            assert missing_span_test["claim1"] == "维生素 C 能治感冒", "断言失败: 纯函数 claim 1 切片文本错误"
+            assert missing_span_test["claim2"] == "每次感冒都应该输液", "断言失败: 纯函数 claim 2 切片文本错误"
+            print("✓ [TEST 6 PASS] missing originalSpan => no highlight verified on isolated test fixture")
             passed_count += 1
 
             # =================================================================

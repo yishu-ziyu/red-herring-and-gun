@@ -460,10 +460,10 @@
               <td><span class="badge badge-green">原生胜出</span></td>
             </tr>
             <tr>
-              <td>text-wrap: balance</td>
-              <td>拆分时计算的行位置与 balance 重排冲突，产生微抖动</td>
-              <td>浏览器 GPU/排版引擎一次性原生平衡计算</td>
-              <td><span class="badge badge-green">原生胜出</span></td>
+              <td>text-wrap: balance 原生交互</td>
+              <td><strong>Actual Runtime Evidence (Case 5 实测)</strong>：拆行硬插入 span 破坏原生平衡引擎；容器尺寸变化时原生 balance 无法在硬 span 间自适应重平衡</td>
+              <td>浏览器排版引擎在布局阶段一次性原生动态平衡</td>
+              <td><span class="badge badge-green">原生显著胜出</span></td>
             </tr>
             <tr>
               <td>动态 Resize (1440/768/390px)</td>
@@ -472,10 +472,22 @@
               <td><span class="badge badge-green">原生显著胜出</span></td>
             </tr>
             <tr>
-              <td>无障碍 (Screen Reader)</td>
-              <td><strong>Not tested（未跑实际 TTS 语音合成）</strong>；根据 A11y 树结构审查，DOM 节点被打碎成数十个独立 span，若未深度加 aria-hidden 存在生硬逐字拼读风险</td>
+              <td>字体加载时序 (document.fonts.ready)</td>
+              <td><strong>Actual Runtime Evidence (Case 6 实测)</strong>：严格依赖物理像素测量；在 WebFont 就绪前拆行会导致后续字体替换（font swap）时字形溢出和断行错位</td>
+              <td>原生 CSS 天然支持 <code>font-display: swap</code> 流式重排</td>
+              <td><span class="badge badge-green">原生显著胜出</span></td>
+            </tr>
+            <tr>
+              <td>无障碍 (Screen Reader 语音朗读)</td>
+              <td><strong>Not tested（未跑实际系统级 TTS 语音合成）</strong>；根据 A11y 树结构审查，DOM 节点被打碎成数十个独立 span，若未深度加 aria-hidden 存在生硬逐字拼读风险</td>
               <td>整句完整保留在 Accessibility Tree 中，语调连贯自然</td>
               <td><span class="badge badge-amber">结构风险高</span></td>
+            </tr>
+            <tr>
+              <td>kugiri 自身动画与 reduced-motion</td>
+              <td><strong>Not applicable</strong>：kugiri 仅为 DOM 拆分工具，自身不提供动画；原型业务层已通过 CSS <code>prefers-reduced-motion: 0s</code> 测试</td>
+              <td>外层纯 CSS 控制过渡与动画，无额外 JS 负担</td>
+              <td><span class="badge badge-green">原生统一控制</span></td>
             </tr>
           </tbody>
         </table>
@@ -538,7 +550,7 @@
             </tr>
             <tr>
               <td>TEST 02</td>
-              <td><strong>Claim Trace 由 originalSpan 驱动</strong> (span 正确包裹对应字词；缺失 span 时不产生高亮)</td>
+              <td><strong>Claim Trace 严格对应真实 Phrase 与主夹具纯净性</strong> (claim-01 === '维生素 C 能治感冒', claim-02 === '每次感冒都应该输液'；主夹具严格 2 Claim；测试用 missing-span claim 隔离不污染页面 DOM)</td>
               <td>Prototype Simulation</td>
               <td><span class="badge badge-green">PASS</span></td>
             </tr>
@@ -556,7 +568,7 @@
             </tr>
             <tr>
               <td>TEST 05</td>
-              <td><strong>kugiri 0.4.0 实际运行时行为</strong> (真实分词产生 3 lines / 25 words span 包装，revert 成功还原)</td>
+              <td><strong>kugiri 0.4.0 实际运行时与实测矩阵</strong> (3 lines / 25 words 真实包装、revert 还原、Case 5 text-wrap: balance 交互实测、Case 6 字体就绪实测；TTS 明确标注 Not tested)</td>
               <td>Actual Runtime</td>
               <td><span class="badge badge-green">PASS</span></td>
             </tr>

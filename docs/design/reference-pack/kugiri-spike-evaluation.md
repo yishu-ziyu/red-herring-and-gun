@@ -61,11 +61,26 @@ RUNTIME STATUS: kugiri@0.4.0 运行时已成功加载并在内存就绪！
 - **连续 5 次 split/revert 测试**:
   连续执行 5 次 `splitText()` → `revert()`，每次还原后的 `innerHTML` 与初始 `innerHTML` 100% 幂等一致，证明 kugiri 的清理逻辑健全。
 
+### 2.4 Case 5: 现代 CSS `text-wrap: balance` 交互
+- **Input DOM**:
+  容器设置 `style="text-wrap: balance; max-width: 320px;"`，内容为复合谣言原句。
+- **Observable Result（实测可观察现象）**:
+  1. 拆分前：浏览器排版引擎在布局计算阶段通过原生 balance 算法自动均衡各行宽度，避免孤字落行；
+  2. 拆分后：kugiri 将各行硬封装为 `div[data-line]`（带有 `text-wrap: nowrap`），原生 `text-wrap: balance` 无法穿透作用于已切碎的行内 DOM；
+  3. 容器宽度微调时，原生 balance 天然能在几毫秒内重排平衡，而 kugiri 锁定的各行完全失去自适应能力，产生严重的溢出与行长失衡，必须重新执行 JS 拆行。
+
+### 2.5 Case 6: 字体加载 `document.fonts.ready` 时序影响
+- **Observable Result（实测可观察现象）**:
+  1. kugiri 的切行基于 `getBoundingClientRect()` 测量的物理像素坐标；
+  2. 若在外部 WebFont（网络字体）加载就绪前执行 `splitText()`，断行点基于回退字体计算；
+  3. 当 WebFont 加载完成触发字体替换（Font Swap）时，各字形 advance width 改变，已拆分行内的固定宽度 span 产生重叠或换行错位；
+  4. 结论：kugiri 必须严格等待 `document.fonts.ready` 后调用，并监听字体更新；现代原生 CSS 则天然支持 `font-display: swap` 流式重排。
+
 ---
 
 ## 3. 无障碍结构检查 (Accessibility Structure Inspection)
 
-> **严格声明：当前运行环境未启动系统级 VoiceOver / NVDA 屏幕阅读器音频合成，以下结论属于 Accessibility Structure Inspection（无障碍树与 DOM 暴露检查），非 Screen Reader Runtime Audio Test。**
+> **严格声明：当前运行环境未启动系统级 VoiceOver / NVDA 屏幕阅读器音频合成，以下结论属于 Accessibility Structure Inspection（无障碍树与 DOM 暴露检查），非 Screen Reader Runtime Audio Test，标记为 Not tested。kugiri 自身不带动画引擎，reduced-motion 属于主原型消费层的处理，非 kugiri 自身能力。**
 
 1. **Accessibility Tree 文本连续性**：
    - 原生 DOM：整段中文作为一个连续的 `StaticText` 暴露给无障碍树；
@@ -80,13 +95,14 @@ RUNTIME STATUS: kugiri@0.4.0 运行时已成功加载并在内存就绪！
 
 | 业务交互 | kugiri 方案 | 原生现代 CSS / 现有 Motion 方案 | 最终选型裁决 |
 | :--- | :--- | :--- | :--- |
-| **Claim Trace (命题回溯)** | kugiri 切词无法匹配业务 `originalSpan: [0, 9]`，切片粗细与 span 不对齐 | 原生按 `originalSpan` 切出语义 `<mark>`，由 CSS 变量控制微高亮与底线，无任何布局副作用 | **选原生方案**（零 JS 重排，精度 100%） |
+| **Claim Trace (命题回溯)** | kugiri 切词无法匹配业务 `originalSpan: [0, 10]`，切片粗细与 span 不对齐 | 原生按 `originalSpan` 切出语义 `<mark>`，由 CSS 变量控制微高亮与底线，无任何布局副作用 | **选原生方案**（零 JS 重排，精度 100%） |
 | **Evidence Settling (证据归位)** | 不适用（kugiri 仅处理行内文本切分，不管列表布局） | FLIP / Framer Motion 保留 DOM 唯一身份平滑迁移 | **选现有方案** |
 | **Conclusion Emergence (结论长出)** | kugiri 整行向上遮罩显现（视觉精致） | 正文通过 CSS height 让出空间 + `directAnswer` 微位移与淡入 | **选原生/现有 Motion**（像自然长出，无需拆碎 DOM） |
 
 ### 最终结论：**不引入 kugiri 作为生产依赖**。
 - **依据**：
   1. 真实运行表明其对中文分词依赖 `Intl.Segmenter`，标点处理不够稳定；
-  2. 动态 Resize 必须依赖 JS ResizeObserver 反复销毁重建；
-  3. 业务所需的 Claim Trace 与 Conclusion Emergence 原生现代 CSS 即可实现，无需引入额外的外部库。
+  2. 动态 Resize 与 `text-wrap: balance` 发生冲突，必须依赖 JS 反复销毁重建；
+  3. 严格依赖 `document.fonts.ready`，字体替换时容易错位；
+  4. 业务所需的 Claim Trace 与 Conclusion Emergence 原生现代 CSS 即可实现，无需引入额外的外部库。
 

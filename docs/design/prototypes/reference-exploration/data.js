@@ -37,8 +37,8 @@ export const PRODUCTION_SHAPED_FIXTURE = {
       checkability: "checkable",
       judgment: "partial",
       judgmentLabel: "部分成立（被夸大）",
-      // 在 originalQuote 中严格对应 "维生素 C 能治感冒" (索引 0 到 9)
-      originalSpan: [0, 9],
+      // 在 originalQuote 中严格对应 "维生素 C 能治感冒" (索引 0 到 10，end-exclusive)
+      originalSpan: [0, 10],
       conflict: {
         id: "conflict-01",
         title: "试验统计差异争点",
@@ -78,8 +78,8 @@ export const PRODUCTION_SHAPED_FIXTURE = {
       checkability: "checkable",
       judgment: "false",
       judgmentLabel: "原句站不住",
-      // 在 originalQuote 中严格对应 "每次感冒都应该输液" (索引 12 到 22)
-      originalSpan: [12, 22],
+      // 在 originalQuote 中严格对应 "每次感冒都应该输液" (索引 13 到 22，end-exclusive)
+      originalSpan: [13, 22],
       conflict: null,
       evidenceGaps: [
         "该原子定向检索无任何正向支持结果，无公开临床指南支持感冒常规输液。"
@@ -98,23 +98,6 @@ export const PRODUCTION_SHAPED_FIXTURE = {
           note: "国家卫健委抗菌药物与输液管理规范"
         }
       ]
-    },
-    {
-      id: "claim-03-missing-span",
-      num: "03",
-      text: "输液能让感冒好得更快是常识",
-      type: "value_judgment",
-      typeLabel: "流传常识型判断",
-      checkability: "unverifiable",
-      judgment: "unverified",
-      judgmentLabel: "无公开依据支撑",
-      // 故意不提供 originalSpan (null)，验证 Claim Trace 绝不伪造高亮
-      originalSpan: null,
-      conflict: null,
-      evidenceGaps: [
-        "该原子属于民间习惯性断言，在原句中未直接出现具体词组，无法在原句中高亮回溯。"
-      ],
-      evidenceLinks: []
     }
   ],
 
@@ -176,3 +159,50 @@ export const PRODUCTION_SHAPED_FIXTURE = {
     }
   }
 };
+
+/**
+ * 专用于自动化回归测试的边界 Claims 夹具
+ * 包含缺失 originalSpan 的用例，坚决不进入用户可见的 PRODUCTION_SHAPED_FIXTURE 主设计夹具。
+ */
+export const TEST_ONLY_CLAIMS = [
+  ...PRODUCTION_SHAPED_FIXTURE.claims,
+  {
+    id: "claim-03-missing-span",
+    num: "03",
+    text: "输液能让感冒好得更快是常识",
+    type: "value_judgment",
+    typeLabel: "流传常识型判断",
+    checkability: "unverifiable",
+    judgment: "unverified",
+    judgmentLabel: "无公开依据支撑",
+    // 故意提供 null，测试 Claim Trace 绝不产生高亮
+    originalSpan: null,
+    conflict: null,
+    evidenceGaps: [
+      "该原子属于民间习惯性断言，在原句中未直接出现具体词组，无法在原句中高亮回溯。"
+    ],
+    evidenceLinks: []
+  }
+];
+
+// 夹具自洽性不变量检查 (Fixture Invariant Checks)
+if (typeof console !== 'undefined' && console.assert) {
+  console.assert(
+    PRODUCTION_SHAPED_FIXTURE.claims.length === 2,
+    "主设计夹具必须严格只有 2 个 Claim"
+  );
+  console.assert(
+    PRODUCTION_SHAPED_FIXTURE.originalQuote.slice(
+      PRODUCTION_SHAPED_FIXTURE.claims[0].originalSpan[0],
+      PRODUCTION_SHAPED_FIXTURE.claims[0].originalSpan[1]
+    ) === "维生素 C 能治感冒",
+    "claim-01 originalSpan 切片必须严格等于 '维生素 C 能治感冒'"
+  );
+  console.assert(
+    PRODUCTION_SHAPED_FIXTURE.originalQuote.slice(
+      PRODUCTION_SHAPED_FIXTURE.claims[1].originalSpan[0],
+      PRODUCTION_SHAPED_FIXTURE.claims[1].originalSpan[1]
+    ) === "每次感冒都应该输液",
+    "claim-02 originalSpan 切片必须严格等于 '每次感冒都应该输液'"
+  );
+}
