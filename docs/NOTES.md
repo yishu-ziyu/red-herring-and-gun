@@ -22,6 +22,10 @@
 
 # 当前状态
 
+2026-09-06 PR #70 rebase 到 main `347266b`（#62 Claim Trace 已合入）：冲突保留 Claim Trace hover/focus 仲裁与 originalSpan mark，同时保留 Evidence Settling 的 EvidenceBoard 与 DOM `before === after`。不 merge，不开 #64–#66。
+
+2026-09-06 Issue #63 Evidence Settling 生产化（独立 PR 待人工验收）：同一命题下证据行改为 `EvidenceBoard` 单一稳定父容器的 keyed children，key 为 `${claimId}:${sourceId}`（同源重复用 `#n`，不用数组下标）。角色变化时真实 DOM `before === after`；分组标题用文字 + CSS `order` 穿插，不把行搬到新父节点。layout 归位 280ms / `--gp-ease-out`，无 opacity 消失再出现；reduced-motion 立刻更新语义、无大幅 translate。取证在 `docs/design/2026-09-06-evidence-settling/`，脚本端口 5182，`/?fixture=settling` **不是真实 SSE**（留给 #66）。未做 #64/#65。不 merge。
+
 2026-09-06 PR #68 Review blocker 已修（推同一 PR，不 merge，等复审）：pointer hover 优先于残留 click-focus；keyboard focus 开始时清陈旧 hover；touch 仍走 expanded-active。jsdom 三条新路径 + 原有 hover/focus/blur/mouseleave/expand/mobile/no-span 全绿。Playwright 真实浏览器覆盖 click Claim 01 → hover Claim 02 只 Trace 02（focus 仍在 01），以及 leave 恢复与 keyboard 清 stale hover。goldenPath 37；mvp 928/1 skipped；根 767（一次 callJob 时序 flake 单跑绿）；三处 build 绿；capture GATE PASS。不改 producer，不扩 #62，不开 #63–#66。
 
 2026-09-06 PR #67 第三轮：生产代码与浏览器门禁已通过，本轮只收口文档真相源，未改 `mvp/` / CSS / 截图。Production Spec 把字阶/行高/间距标为 spec-only（不是 `--gp-type-*` / `--gp-lh-*` / `--gp-space-*` 变量）；`--gp-surface-inset` 不再写成 Original Claim 默认背景；Topbar 记为内联实现值，没有 `--gp-chrome-*`；墨色对比按 primary/secondary 与 tertiary/muted 分层，不再全局声称 WCAG AAA。Evaluator 合并为一套当前机器门禁（E3 为 Playwright computed-style；goldenPath 23；mvp 914/1 skipped）。等待最终验收，不 merge，不开 #62–#66。

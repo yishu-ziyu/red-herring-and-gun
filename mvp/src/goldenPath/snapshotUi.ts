@@ -103,6 +103,45 @@ export function groupEvidence(links: InvestigationEvidenceLink[]): EvidenceGroup
   })).filter((group) => group.links.length > 0);
 }
 
+/**
+ * 同一命题下一条证据的稳定业务身份。
+ * 默认 `${claimId}:${sourceId}`；同一 source 在同一 claim 出现多次时用出现序号，不用总数组下标当身份。
+ */
+export function evidenceLinkKey(claimId: string, links: InvestigationEvidenceLink[], index: number): string {
+  const sourceId = links[index]?.sourceId ?? "";
+  let seen = 0;
+  for (let i = 0; i <= index; i++) {
+    if (links[i]?.sourceId === sourceId) seen += 1;
+  }
+  let total = 0;
+  for (const link of links) {
+    if (link.sourceId === sourceId) total += 1;
+  }
+  if (total <= 1) return `${claimId}:${sourceId}`;
+  return `${claimId}:${sourceId}#${seen}`;
+}
+
+export const ROLE_LAYOUT_ORDER: Record<EvidenceRole, number> = {
+  contradict: 10,
+  support: 20,
+  unassessed: 30,
+  "context-only": 40,
+};
+
+export function roleGlyph(role: EvidenceRole): string {
+  switch (role) {
+    case "support":
+    case "contradict":
+      return "●";
+    case "context-only":
+      return "○";
+    case "unassessed":
+      return "◌";
+    default:
+      return "●";
+  }
+}
+
 export function sourceById(snapshot: InvestigationSnapshotV1, id: string): InvestigationSource | undefined {
   return snapshot.sources.find((s) => s.id === id);
 }
