@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>《红鲱鱼与枪》 视觉研究与交互原型总览 · Issue #53</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      --font-mono: "SF Mono", Monaco, Menlo, Consolas, monospace;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --fg: #0f172a;
+      --fg-muted: #475569;
+      --fg-subtle: #64748b;
+      --border: #e2e8f0;
+      --border-dark: #cbd5e1;
+      --accent: #2563eb;
+      --accent-bg: #eff6ff;
+      --success: #16a34a;
+      --success-bg: #f0fdf4;
+      --warn: #d97706;
+      --warn-bg: #fffbeb;
+      --danger: #dc2626;
+      --danger-bg: #fef2f2;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+      padding: 40px 20px 80px 20px;
+    }
+    .wrapper {
+      max-width: 1120px;
+      margin: 0 auto;
+    }
+    
+    /* 顶部 Hero */
+    header.hero {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 36px 40px;
+      margin-bottom: 32px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .badge-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge-blue { background: var(--accent-bg); color: var(--accent); }
+    .badge-green { background: var(--success-bg); color: var(--success); }
+    .badge-amber { background: var(--warn-bg); color: var(--warn); }
+    
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 12px;
+      color: #0f172a;
+    }
+    p.lead {
+      font-size: 16px;
+      color: var(--fg-muted);
+      max-width: 860px;
+      line-height: 1.65;
+      margin-bottom: 24px;
+    }
+    .action-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.15s ease;
+      cursor: pointer;
+    }
+    .btn-primary { background: #0f172a; color: #fff; }
+    .btn-primary:hover { background: #1e293b; }
+    .btn-secondary { background: #fff; color: #0f172a; border: 1px solid var(--border-dark); }
+    .btn-secondary:hover { background: #f8fafc; border-color: #94a3b8; }
+    
+    /* 模块容器 */
+    .section-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px;
+      margin-bottom: 32px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .section-header {
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+    }
+    .section-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .section-desc {
+      font-size: 14px;
+      color: var(--fg-subtle);
+    }
+    
+    /* 三模式网格 */
+    .modes-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 960px) {
+      .modes-grid { grid-template-columns: 1fr; }
+    }
+    .mode-box {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+      background: #fafafa;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .mode-box.is-recommended {
+      border-color: var(--accent);
+      background: #ffffff;
+      box-shadow: 0 4px 20px rgba(37, 99, 235, 0.08);
+    }
+    .mode-badge {
+      position: absolute;
+      top: -12px;
+      right: 16px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 999px;
+      letter-spacing: 0.5px;
+    }
+    .mode-name {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .mode-meta {
+      font-size: 12px;
+      color: var(--fg-subtle);
+      margin-bottom: 14px;
+    }
+    .mode-body {
+      font-size: 13.5px;
+      color: var(--fg-muted);
+      line-height: 1.6;
+      flex: 1;
+      margin-bottom: 16px;
+    }
+    .mode-preview {
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin-top: 12px;
+      background: #fff;
+    }
+    .mode-preview img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    
+    /* 签名交互网格 */
+    .motif-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 960px) {
+      .motif-grid { grid-template-columns: 1fr; }
+    }
+    .motif-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      background: #fdfdfd;
+    }
+    .motif-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .motif-desc {
+      font-size: 13px;
+      color: var(--fg-muted);
+      line-height: 1.6;
+    }
+    
+    /* 表格 */
+    .table-container {
+      overflow-x: auto;
+    }
+    table.spike-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+    table.spike-table th, table.spike-table td {
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      text-align: left;
+    }
+    table.spike-table th {
+      background: #f1f5f9;
+      font-weight: 600;
+      color: #334155;
+    }
+    
+    /* 12问折叠问答 */
+    .qa-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    details.qa-item {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      overflow: hidden;
+    }
+    details.qa-item summary {
+      padding: 14px 18px;
+      font-weight: 600;
+      font-size: 14.5px;
+      cursor: pointer;
+      background: #fafafa;
+      user-select: none;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    details.qa-item summary:hover {
+      background: #f1f5f9;
+    }
+    details.qa-item[open] summary {
+      background: #f8fafc;
+      border-bottom: 1px solid var(--border);
+    }
+    .qa-content {
+      padding: 16px 20px;
+      font-size: 13.5px;
+      line-height: 1.7;
+      color: var(--fg-muted);
+    }
+    .qa-content strong {
+      color: var(--fg);
+    }
+    
+    /* 画廊 */
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 768px) {
+      .gallery-grid { grid-template-columns: 1fr; }
+    }
+    .gallery-item {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .gallery-item img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-bottom: 1px solid var(--border);
+    }
+    .gallery-caption {
+      padding: 10px 14px;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--fg-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    
+    <!-- 顶部导航与项目定位 -->
+    <header class="hero">
+      <div class="badge-bar">
+        <span class="badge badge-blue">Issue #53 视觉与 Motion 系统</span>
+        <span class="badge badge-green">独立探索环境 · 零生产入侵</span>
+        <span class="badge badge-amber">测试全绿：767 根测试 / 908 MVP 测试</span>
+      </div>
+      <h1>《红鲱鱼与枪》视觉研究与交互原型总览</h1>
+      <p class="lead">
+        把外部世界中真正优秀的设计语言（Cuberto、Nikoloz Zaalovich、CollectUI、Edoardo Lunardi/kugiri）映射进白盒调查语义。
+        本页汇集了完整映射规范、kugiri 孤立实测结论、可运行的探索原型入口、以及 11 张全生命周期高保真走查截图。
+      </p>
+      <div class="action-links">
+        <a href="../prototypes/reference-exploration/index.html" target="_blank" class="btn btn-primary">
+          ▶ 打开交互原型 Playground (键盘 1/2/3 实时切换)
+        </a>
+        <a href="./kugiri-spike-test.html" target="_blank" class="btn btn-secondary">
+          🔬 打开 kugiri 孤立实测台
+        </a>
+        <a href="./design-reference-mapping.md" target="_blank" class="btn btn-secondary">
+          📄 映射规范文档 (Markdown)
+        </a>
+        <a href="./kugiri-spike-evaluation.md" target="_blank" class="btn btn-secondary">
+          📊 Spike 评估报告 (Markdown)
+        </a>
+      </div>
+    </header>
+
+    <!-- 三大模式横向肉眼对比 -->
+    <section class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">三种探索模式横向对比 (使用完全同构真实数据)</h2>
+          <p class="section-desc">统一消费真实维 C 案例（2 Claim, support, contradict, context-only, gap, conflict, directAnswer）</p>
+        </div>
+      </div>
+      <div class="modes-grid">
+        <!-- Mode 1 -->
+        <div class="mode-box">
+          <div class="mode-name">Mode 1 — Editorial Calm</div>
+          <div class="mode-meta">参考：Nikoloz Zaalovich / CollectUI Blog</div>
+          <div class="mode-body">
+            <strong>核心感官：严肃深度调查报道</strong><br>
+            彻底去除卡片盒子、阴影与圆角。依靠严格字阶比（12/14/15/18/26px）、大留白与 1px 发丝分割线。原话为 Quote，结论为首段 Lede，证据为 Citation Row，Gap/Conflict 为边注。静止截图即成立。
+          </div>
+          <div class="mode-preview">
+            <img src="./screenshots/desktop-mode1-editorial.png" alt="Mode 1 Editorial Calm 预览">
+          </div>
+        </div>
+
+        <!-- Mode 2 -->
+        <div class="mode-box">
+          <div class="mode-name">Mode 2 — Interactive Evidence</div>
+          <div class="mode-meta">参考：Cuberto / CollectUI UI Interaction</div>
+          <div class="mode-body">
+            <strong>核心感官：材料归位的物理连续性</strong><br>
+            仅借用 Cuberto 的“对象身份连续”机制。拒绝滚动劫持与炫技。实现完整的 <strong>Evidence Settling</strong>：材料从 <code>◌ 待核对</code> 通过 FLIP 算法平滑迁移至 <code>● 支持/反驳/相关</code>，DOM 身份永不销毁，无刷新无跳变。
+          </div>
+          <div class="mode-preview">
+            <img src="./screenshots/desktop-mode2-settled.png" alt="Mode 2 Interactive 预览">
+          </div>
+        </div>
+
+        <!-- Mode 3 (推荐) -->
+        <div class="mode-box is-recommended">
+          <span class="mode-badge">RECOMMENDED</span>
+          <div class="mode-name">Mode 3 — Hybrid / Red Herring</div>
+          <div class="mode-meta">《红鲱鱼与枪》专属调查美学语言</div>
+          <div class="mode-body">
+            <strong>核心感官：有生命的证据，答案自然长出</strong><br>
+            融合 Editorial 的文稿骨架 + Cuberto 式物理连续 + Edo 式克制文字动效。完整兑现三大签名交互（Claim Trace、Evidence Settling、Conclusion Emergence），无任何 Card-on-card 压迫感。
+          </div>
+          <div class="mode-preview">
+            <img src="./screenshots/desktop-mode3-hybrid.png" alt="Mode 3 Hybrid 预览">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 三大签名交互 -->
+    <section class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">三大认知型签名交互 (Signature Interactions)</h2>
+          <p class="section-desc">只保留具有强解释力的动效，坚决删除装饰性、表演性动画</p>
+        </div>
+      </div>
+      <div class="motif-grid">
+        <div class="motif-card">
+          <div class="motif-title">① Claim Trace (命题回溯)</div>
+          <div class="motif-desc">
+            鼠标悬停或聚焦命题 01 时，原始核查说法中的“维生素 C 能治感冒”被精确高亮（浅蓝底色与底线），悬停命题 02 时高亮“每次感冒都应该输液”。由真实 <code>originalSpan</code> 驱动，用户一眼看清原句与命题的对应。
+          </div>
+        </div>
+        <div class="motif-card">
+          <div class="motif-title">② Evidence Settling (证据归位)</div>
+          <div class="motif-desc">
+            材料初进场为 <code>◌ 待核对</code>。核查完成后，同一 DOM 节点平滑位移至对应结论组，Glyph 渐变为 <code>● 支持</code> 或 <code>● 反驳</code>。传达“调查桌上的同一叠材料被放到了它真正属于的档案袋”。
+          </div>
+        </div>
+        <div class="motif-card">
+          <div class="motif-title">③ Conclusion Emergence (结论自然生长)</div>
+          <div class="motif-desc">
+            调查中结论区不占位。随着证据稳定，下方调查正文平滑向下让位，<code>directAnswer</code> 大标题沉着浮现。不是系统在盖章宣布答案，而是用户肉眼看见答案从证据中自然长出。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- kugiri Spike 结论 -->
+    <section class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">Edo / kugiri (0.4.0) 孤立技术 Spike 裁决</h2>
+          <p class="section-desc">裁决：<strong style="color: var(--danger);">不引入生产依赖</strong>（原生 CSS 语义 mark + 现有 Motion 胜出）</p>
+        </div>
+      </div>
+      <div class="table-container">
+        <table class="spike-table">
+          <thead>
+            <tr>
+              <th>实测维度</th>
+              <th>kugiri (0.4.0) 表现</th>
+              <th>现代原生 CSS / 现有 Motion 表现</th>
+              <th>裁决结果</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>中文长句与标点禁则</td>
+              <td>基于 Intl.Segmenter 拆分后破坏标点挤压，跨 span 产生缝隙</td>
+              <td>排版引擎底层遵守 <code>line-break: strict</code>，无缝渲染</td>
+              <td><span class="badge badge-green">原生胜出</span></td>
+            </tr>
+            <tr>
+              <td>中英混排与 inline 标签</td>
+              <td>折行时克隆 <code>&lt;a&gt;</code>/<code>&lt;strong&gt;</code>，导致 DOM 节点膨胀与 ID 重复</td>
+              <td>DOM 节点保持单节点树结构，事件与外链天然完好</td>
+              <td><span class="badge badge-green">原生胜出</span></td>
+            </tr>
+            <tr>
+              <td>text-wrap: balance</td>
+              <td>拆分时计算的行位置与 balance 重排冲突，产生微抖动</td>
+              <td>浏览器 GPU/排版引擎一次性原生平衡计算</td>
+              <td><span class="badge badge-green">原生胜出</span></td>
+            </tr>
+            <tr>
+              <td>动态 Resize (1440/768/390px)</td>
+              <td>必须频繁调用 <code>revert()</code> 并重新 <code>split()</code>，引发掉帧</td>
+              <td>零 JS 介入，流式响应式排版，维持稳定 60/120 FPS</td>
+              <td><span class="badge badge-green">原生显著胜出</span></td>
+            </tr>
+            <tr>
+              <td>无障碍 (Screen Reader)</td>
+              <td>若未加深度 aria-hidden 保护，VoiceOver 会逐字生硬拼读</td>
+              <td>整句完整保留在 Accessibility Tree 中，语调连贯自然</td>
+              <td><span class="badge badge-green">原生显著胜出</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 12 问核心回答 -->
+    <section class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">12 项核心评审问答速查</h2>
+          <p class="section-desc">点击可展开阅读详细工程理由</p>
+        </div>
+      </div>
+      <div class="qa-list">
+        <details class="qa-item" open>
+          <summary>1. 最终入选了哪些外部参考？</summary>
+          <div class="qa-content">
+            入选 8 类高度聚焦的外部参考源：Cuberto、Nikoloz Zaalovich、Edoardo Lunardi/kugiri、CollectUI #Blog Post、#UI Interaction、#Tooltip/Drawer、#Empty States/Loading、#Quote。
+          </div>
+        </details>
+
+        <details class="qa-item">
+          <summary>2. 每个参考具体借了什么？</summary>
+          <div class="qa-content">
+            <strong>Cuberto</strong>：借对象身份连续性（FLIP）与微触觉物理阻尼；<strong>Nikoloz Zaalovich</strong>：借绝对排版层级与从容呼吸留白；<strong>Edoardo Lunardi</strong>：借文本克制进场与行级遮罩；<strong>CollectUI Blog</strong>：借严肃调查手记叙事流；<strong>CollectUI Drawer</strong>：借侧滑保留正文上下文；<strong>CollectUI Empty</strong>：借诚实平静的证据缺口展示。
+          </div>
+        </details>
+
+        <details class="qa-item">
+          <summary>3. 每个参考拒绝了什么？</summary>
+          <div class="qa-content">
+            拒绝 Cuberto 的营销滚动劫持与鼠标光标球；拒绝 Nikoloz 的低对比度灰字；拒绝 Edoardo 的打字机乱飞与逐字动画；拒绝常见 SaaS 的 Card-on-card 堆叠、Agent 头像、彩纸飞舞与报错红叉。
+          </div>
+        </details>
+
+        <details class="qa-item">
+          <summary>4. 哪一处已经真实映射到红鲱鱼与枪？</summary>
+          <div class="qa-content">
+            <strong>Evidence Settling</strong>：5 条材料从待核对平滑归入支持/反驳/相关；<strong>Claim Trace</strong>：Hover 命题时原话对应切片亮起；<strong>Conclusion Emergence</strong>：正文自然让位长出结论；<strong>Source Drawer/Sheet</strong>：点击证据展开包含 6 大字段的侧滑抽屉或底部浮层。
+          </div>
+        </details>
+
+        <details class="qa-item" open>
+          <summary>5. 三个模式最大的感知差异是什么？</summary>
+          <div class="qa-content">
+            <strong>Mode 1 (Editorial Calm)</strong>：一份静止已成立的严肃深度事实报道，毫无浮躁感；<br>
+            <strong>Mode 2 (Interactive Evidence)</strong>：调查桌上的同一叠材料被整齐分拣到档案袋的物理因果感；<br>
+            <strong>Mode 3 (Hybrid / Red Herring)</strong>：有生命的证据文稿，答案在眼前自然生长，原话与命题紧密互证。
+          </div>
+        </details>
+
+        <details class="qa-item" open>
+          <summary>6 & 7. 你推荐哪个？为什么？</summary>
+          <div class="qa-content">
+            <strong>推荐 Mode 3 (Hybrid / Red Herring)</strong>。<br>
+            理由：Mode 1 虽美但调查中缺少对“正在发生什么”的解释；Mode 2 交互稍密集；Mode 3 兼具 Mode 1 的排版尊严与大留白，同时仅保留 3 个具有强认知解释力的签名动效，真正长出了《红鲱鱼与枪》专属的调查美学。
+          </div>
+        </details>
+
+        <details class="qa-item">
+          <summary>8. 哪些 Motion 是认知机制？</summary>
+          <div class="qa-content">
+            Claim Trace（一眼看清命题拆自哪几个字）、Evidence Settling（看清证据为何归为反驳）、Conclusion Emergence（视觉明确结论依赖于下方证据链）。
+          </div>
+        </details>
+
+        <details class="qa-item">
+          <summary>9. 哪些 Motion 只是装饰，因此被删除？</summary>
+          <div class="qa-content">
+            删除 Agent 节点连线发光、删除 AI 打字机逐字吐字、删除 Confetti 彩纸飞舞、删除骨架屏 Shimmer 狂闪、删除 3D 倾斜卡片。
+          </div>
+        </details>
+
+        <details class="qa-item" open>
+          <summary>10. kugiri 是否值得进入 production dependency？</summary>
+          <div class="qa-content">
+            <strong>结论：不值得</strong>。CJK 标点挤压失效、动态 Resize 引发布局重排、Screen Reader 存在逐字拼读风险；原生现代 CSS + 现有 Motion 在 0 依赖的前提下完全达到同等甚至更优的质感。
+          </div>
+        </details>
+
+        <details class="qa-item">
+          <summary>11. Desktop / Mobile 是否都成立？</summary>
+          <div class="qa-content">
+            实测均完美成立：桌面 1440px 拥有 780px 黄金阅读中轴与 440px 侧滑抽屉；移动端 390px 单列流畅阅读，点击证据条自适应为原生手感的贴底 Bottom Sheet。
+          </div>
+        </details>
+
+        <details class="qa-item">
+          <summary>12. reduced-motion 后产品是否仍然成立？</summary>
+          <div class="qa-content">
+            完全成立：动画全部降为 0ms 即时生效，所有语义完全通过文字、字阶、符号（●、○、◌）与排版传递，无一处事实依赖动画。
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- 高保真截图画廊 -->
+    <section class="section-card">
+      <div class="section-header">
+        <div>
+          <h2 class="section-title">高保真走查截图矩阵 (11 张)</h2>
+          <p class="section-desc">覆盖桌面 1440px 与移动 390px 各关键状态</p>
+        </div>
+      </div>
+      <div class="gallery-grid">
+        <div class="gallery-item">
+          <img src="./screenshots/desktop-mode3-hybrid.png" alt="Mode 3 Hybrid 桌面全貌">
+          <div class="gallery-caption">Mode 3 (Hybrid) 桌面完成态：大字号 directAnswer + 命题章节 + 证据行</div>
+        </div>
+        <div class="gallery-item">
+          <img src="./screenshots/desktop-mode3-claim-trace.png" alt="Claim Trace 激活">
+          <div class="gallery-caption">签名交互 A: Claim Trace 激活（Hover 命题 01，原话精确高亮）</div>
+        </div>
+        <div class="gallery-item">
+          <img src="./screenshots/desktop-mode3-source-drawer.png" alt="Source Drawer 打开">
+          <div class="gallery-caption">Source Drawer 侧滑下钻：展示 6 项关键要素、背景浅遮罩</div>
+        </div>
+        <div class="gallery-item">
+          <img src="./screenshots/desktop-mode1-editorial.png" alt="Mode 1 Editorial Calm">
+          <div class="gallery-caption">Mode 1 (Editorial Calm)：彻底无卡片、纯排版层次与大留白</div>
+        </div>
+        <div class="gallery-item">
+          <img src="./screenshots/desktop-mode2-investigating.png" alt="Mode 2 Investigating 态">
+          <div class="gallery-caption">Mode 2 (Settling 前)：所有材料处于“待核对 ◌”群组</div>
+        </div>
+        <div class="gallery-item">
+          <img src="./screenshots/desktop-mode2-settled.png" alt="Mode 2 Settled 态">
+          <div class="gallery-caption">Mode 2 (Settling 后)：材料通过 FLIP 物理连续归入各结论组</div>
+        </div>
+        <div class="gallery-item">
+          <img src="./screenshots/mobile-source-sheet.png" alt="移动端 Bottom Sheet">
+          <div class="gallery-caption">移动端 390px：自适应为贴底 Bottom Sheet，保留拖动手柄</div>
+        </div>
+        <div class="gallery-item">
+          <img src="./screenshots/mobile-mode3-hybrid.png" alt="移动端 Mode 3">
+          <div class="gallery-caption">移动端 390px：流畅单列排版，无水平溢出</div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</body>
+</html>

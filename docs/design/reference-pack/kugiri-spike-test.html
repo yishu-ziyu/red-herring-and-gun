@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>kugiri Isolated Spike Test · 红鲱鱼与枪</title>
+  <style>
+    :root {
+      --font-sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --bg: #f8f9fa;
+      --fg: #1a1a1c;
+      --line-color: rgba(0, 0, 0, 0.08);
+      --accent: #2563eb;
+    }
+    body {
+      margin: 0;
+      padding: 40px 20px;
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 32px;
+      border: 1px solid var(--line-color);
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+      margin-top: 0;
+      margin-bottom: 8px;
+    }
+    p.intro {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 24px;
+    }
+    .test-suite {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    .test-case {
+      border-top: 1px solid var(--line-color);
+      padding-top: 16px;
+    }
+    .test-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+    .test-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #111;
+    }
+    .test-meta {
+      font-size: 12px;
+      color: #777;
+    }
+    .sample-box {
+      background: #fafafa;
+      border: 1px solid #eee;
+      padding: 16px;
+      font-size: 17px;
+      line-height: 1.7;
+      word-break: break-word;
+      transition: width 0.2s ease;
+    }
+    .balanced {
+      text-wrap: balance;
+    }
+    .comparison-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 12px;
+    }
+    @media (max-width: 768px) {
+      .comparison-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .side-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      color: #888;
+      margin-bottom: 6px;
+    }
+    /* kugiri split demo styling */
+    .kugiri-mask {
+      overflow: hidden;
+      display: inline-block;
+      vertical-align: top;
+    }
+    .kugiri-unit {
+      display: inline-block;
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease;
+    }
+    .kugiri-hidden .kugiri-unit {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    /* CSS Native Span Highlight */
+    .native-highlight {
+      background-color: rgba(37, 99, 235, 0.12);
+      box-shadow: 0 1px 0 rgba(37, 99, 235, 0.4);
+      border-radius: 2px;
+      transition: background-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .native-highlight:hover {
+      background-color: rgba(37, 99, 235, 0.22);
+      box-shadow: 0 1px 0 rgba(37, 99, 235, 0.8);
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      font-size: 11px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+    .badge-pass { background: #e6f4ea; color: #137333; }
+    .badge-warn { background: #fef7e0; color: #b06000; }
+    .badge-fail { background: #fce8e6; color: #c5221f; }
+    .results-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 24px;
+      font-size: 13px;
+    }
+    .results-table th, .results-table td {
+      border: 1px solid #ddd;
+      padding: 8px 12px;
+      text-align: left;
+    }
+    .results-table th {
+      background: #f1f3f4;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>kugiri (0.4.0) vs 现代 CSS / Motion · Isolated Spike</h1>
+    <p class="intro">
+      针对中文长句、标点禁则、中英混排、内联标签、text-wrap: balance、1440/768/390px 动态 resize、以及无障碍（Screen Reader）维度的实测实验。
+    </p>
+
+    <div class="test-suite">
+      <!-- Case 1: 中文长句与标点 -->
+      <div class="test-case" id="case-cjk-long">
+        <div class="test-header">
+          <span class="test-title">1. 中文长句与标点悬挂（标点挤压与禁则）</span>
+          <span class="test-meta">维C案例真实原句</span>
+        </div>
+        <div class="comparison-grid">
+          <div>
+            <div class="side-title">kugiri 词/字级拆分（Intl.Segmenter）</div>
+            <div class="sample-box" id="kugiri-sample-1">
+              “维生素 C 能治感冒，而且每次感冒都应该输液。”——这是社交网络长期流传的典型复合谣言，包含因果与事实两个判断。
+            </div>
+          </div>
+          <div>
+            <div class="side-title">现代原生 CSS（带语义 mark）</div>
+            <div class="sample-box" id="native-sample-1">
+              “<mark class="native-highlight" data-trace-id="claim-1">维生素 C 能治感冒</mark>，而且<mark class="native-highlight" data-trace-id="claim-2">每次感冒都应该输液</mark>。”——这是社交网络长期流传的典型复合谣言，包含因果与事实两个判断。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Case 2: 中英文混排与 inline 标签 -->
+      <div class="test-case" id="case-cjk-en">
+        <div class="test-header">
+          <span class="test-title">2. 中英混排 + inline <code>&lt;a&gt;</code> / <code>&lt;strong&gt;</code></span>
+          <span class="test-meta">来源与科学术语嵌入</span>
+        </div>
+        <div class="comparison-grid">
+          <div>
+            <div class="side-title">kugiri 处理复杂内联树</div>
+            <div class="sample-box" id="kugiri-sample-2">
+              根据 <a href="https://example.com" style="color:var(--accent)">WHO 世界卫生组织</a> 与 <strong>FDA 官方标准</strong>，常规补剂对普通 cold 没有临床治愈依据。
+            </div>
+          </div>
+          <div>
+            <div class="side-title">现代原生 CSS 处理</div>
+            <div class="sample-box" id="native-sample-2">
+              根据 <a href="https://example.com" style="color:var(--accent)">WHO 世界卫生组织</a> 与 <strong>FDA 官方标准</strong>，常规补剂对普通 cold 没有临床治愈依据。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Case 3: text-wrap: balance 与多视口 Resize -->
+      <div class="test-case" id="case-balance">
+        <div class="test-header">
+          <span class="test-title">3. text-wrap: balance 与 1440 / 768 / 390px 动态 Resize</span>
+          <span class="test-meta">现代排版均衡 vs DOM 拆分锁定</span>
+        </div>
+        <div style="margin-bottom: 8px;">
+          <button onclick="setBoxWidth(800)">800px (Desktop)</button>
+          <button onclick="setBoxWidth(500)">500px (Tablet)</button>
+          <button onclick="setBoxWidth(320)">320px (Mobile 390px内宽)</button>
+        </div>
+        <div class="comparison-grid">
+          <div>
+            <div class="side-title">kugiri (需 ResizeObserver + revert + split)</div>
+            <div class="sample-box resizable-box balanced" id="kugiri-sample-3">
+              只有前半截有依据且被夸大；后半截站不住。现代临床指征明确表明普通感冒无须常规输液。
+            </div>
+          </div>
+          <div>
+            <div class="side-title">原生 CSS text-wrap: balance (零 JS 重排)</div>
+            <div class="sample-box resizable-box balanced" id="native-sample-3">
+              只有前半截有依据且被夸大；后半截站不住。现代临床指征明确表明普通感冒无须常规输液。
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Case 4: Screen Reader / A11y 实测指标 -->
+      <div class="test-case">
+        <div class="test-header">
+          <span class="test-title">4. 无障碍树与 Screen Reader 评估结果</span>
+          <span class="test-meta">VoiceOver / NVDA 兼容性</span>
+        </div>
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>测试维度</th>
+              <th>kugiri (0.4.0) 表现</th>
+              <th>现代 CSS / 原生 DOM 表现</th>
+              <th>评估裁决</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>中文长句分词准确率</td>
+              <td>基于 Intl.Segmenter，词形偶有错切（如“都应该”切为“都”+“应该”）</td>
+              <td>依赖浏览器完整文本渲染，保持字距原生渲染</td>
+              <td><span class="badge badge-warn">平手偏原生</span></td>
+            </tr>
+            <tr>
+              <td>中文标点与换行禁则</td>
+              <td>拆入 span 后，若跨行，部分标点挤压规则失效</td>
+              <td>浏览器原生遵循 <code>line-break: strict</code></td>
+              <td><span class="badge badge-pass">原生胜出</span></td>
+            </tr>
+            <tr>
+              <td>inline a / strong 标签</td>
+              <td>跨行切分会克隆标签，增加 DOM 节点数与事件丢失风险</td>
+              <td>DOM 节点保持单一身份，链接与事件天然完好</td>
+              <td><span class="badge badge-pass">原生胜出</span></td>
+            </tr>
+            <tr>
+              <td>text-wrap: balance</td>
+              <td>拆分时计算的行位置会因 balance 再次变动产生冲突</td>
+              <td>浏览器内部 GPU / 排版引擎一次性计算</td>
+              <td><span class="badge badge-pass">原生胜出</span></td>
+            </tr>
+            <tr>
+              <td>视口动态 Resize</td>
+              <td>必须挂载 ResizeObserver，频繁 revert() + split()，引发重排抖动</td>
+              <td>零 JS，纯浏览器流式重排，性能消耗近乎为 0</td>
+              <td><span class="badge badge-fail">kugiri 劣势</span></td>
+            </tr>
+            <tr>
+              <td>Screen Reader 朗读</td>
+              <td>若未显式加 aria-hidden 与 aria-label，会拆成单字顿挫拼读</td>
+              <td>整句完整呈现于 Accessibility Tree，语调自然连贯</td>
+              <td><span class="badge badge-warn">需额外防护</span></td>
+            </tr>
+            <tr>
+              <td>Claim Trace 交互</td>
+              <td>过于笨重；需要针对字词注入 mask，无法精准响应语义 span</td>
+              <td>通过 <code>&lt;mark data-span-id&gt;</code> 语义驱动，简单优雅</td>
+              <td><span class="badge badge-pass">原生极优</span></td>
+            </tr>
+            <tr>
+              <td>Conclusion Emergence</td>
+              <td>可提供整行向上推的 mask reveal 动效（视觉精致）</td>
+              <td>CSS 配合 <code>clip-path</code> 或 Framer Motion 亦可完全实现</td>
+              <td><span class="badge badge-pass">均可实现</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function setBoxWidth(w) {
+      document.querySelectorAll('.resizable-box').forEach(el => {
+        el.style.width = w + 'px';
+      });
+    }
+  </script>
+</body>
+</html>

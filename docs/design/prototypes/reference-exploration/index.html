@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>《红鲱鱼与枪》 视觉研究与交互原型 · Reference Exploration</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body id="app-root">
+
+  <!-- 顶部开发环境轻量切换器 (仅存在于 prototype) -->
+  <aside class="prototype-switcher" aria-label="原型模式切换工具栏">
+    <div class="switcher-pill">
+      <button type="button" class="switcher-btn" data-mode-btn="1" title="切换到 Mode 1 (快捷键 1)">
+        <kbd>1</kbd> Editorial
+      </button>
+      <button type="button" class="switcher-btn" data-mode-btn="2" title="切换到 Mode 2 (快捷键 2)">
+        <kbd>2</kbd> Interactive
+      </button>
+      <button type="button" class="switcher-btn is-active" data-mode-btn="3" title="切换到 Mode 3 (快捷键 3)">
+        <kbd>3</kbd> Hybrid
+      </button>
+      
+      <span class="switcher-divider" aria-hidden="true"></span>
+      
+      <button type="button" class="switcher-action-btn" id="btn-replay-settling" title="重新演示 Evidence Settling 连续归位">
+        ⟳ 重放 Settling
+      </button>
+      <button type="button" class="switcher-action-btn" id="btn-toggle-phase" title="切换调查中与完成态">
+        当前：完成态
+      </button>
+      <button type="button" class="switcher-action-btn" id="btn-toggle-viewport" title="切换桌面与模拟移动端 390px 视口">
+        视口：1440px
+      </button>
+    </div>
+  </aside>
+
+  <!-- 主画布区域 -->
+  <div class="canvas-wrapper" id="canvas-wrapper">
+    <div class="investigation-document" id="doc-container">
+      <!-- 动态渲染内容 -->
+    </div>
+  </div>
+
+  <!-- Source Drawer / Bottom Sheet 浮层 -->
+  <div class="drawer-scrim" id="drawer-scrim" aria-hidden="true"></div>
+  <aside class="source-drawer" id="source-drawer" role="dialog" aria-labelledby="drawer-header-title" aria-modal="true" aria-hidden="true">
+    <header class="drawer-header">
+      <span class="drawer-header-title" id="drawer-header-title">核查材料详请 · 证据下钻</span>
+      <button type="button" class="drawer-close-btn" id="drawer-close-btn" aria-label="关闭抽屉 (Esc)">✕</button>
+    </header>
+    <div class="drawer-body" id="drawer-body">
+      <!-- 动态填充源材料详情 -->
+    </div>
+    <footer class="drawer-footer">
+      <a href="#" target="_blank" rel="noopener noreferrer" class="drawer-external-link" id="drawer-external-link">
+        查看原始网页公开来源
+        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+          <path d="M4 12 12 4M6 4h6v6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </a>
+    </footer>
+  </aside>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
