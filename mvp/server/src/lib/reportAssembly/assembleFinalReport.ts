@@ -16,7 +16,7 @@ import {
   selectAtomsToSearch,
   type AtomSearchBundle,
 } from "../atomSearch.js";
-import { normalizeReportCitations } from "../citationBinding.js";
+import { normalizeReportCitations, hasDirectionalBoundHttpUrl } from "../citationBinding.js";
 import { applyPublicCopy } from "../publicCopy.js";
 import { applyImageOriginToReport, type ImageOriginResult } from "../imageOrigin/index.js";
 
@@ -44,26 +44,34 @@ type DeriveVerdictInput = {
   sourcesRelatedOnly?: unknown;
 };
 
-function sourceHasHttpUrl(value: unknown): boolean {
-  if (!value || typeof value !== "object") return false;
-  return /^https?:\/\//i.test(String((value as { url?: unknown }).url || "").trim());
-}
-
-/** 有据：非 related-only，且支撑或反证里有可点开的 http(s) URL。 */
-function hasBoundHttpUrl(v: DeriveVerdictInput): boolean {
-  if (v?.sourcesRelatedOnly === true) return false;
-  const supporting = Array.isArray(v?.supportingSources) ? v.supportingSources : [];
-  const contradicting = Array.isArray(v?.contradictingSources) ? v.contradictingSources : [];
-  return supporting.some(sourceHasHttpUrl) || contradicting.some(sourceHasHttpUrl);
-}
-
+/**
+ * 方向专属「有据」（Review 5128449568 Blocker 3）：true/trueish 由 supportingSources
+ * 支撑、false 由 contradictingSources 支撑、related-only 永远不算。共享契约定义在
+ * citationBinding.hasDirectionalBoundHttpUrl，与 merge guard / conclusion gate / Snapshot 同向。
+ */
 function isSourcedTrueishVerdict(v: DeriveVerdictInput): boolean {
   const verdict = String(v?.verdict ?? "").trim().toLowerCase();
-  return TRUEISH_VERDICTS.has(verdict) && hasBoundHttpUrl(v);
+  return (
+    TRUEISH_VERDICTS.has(verdict) &&
+    hasDirectionalBoundHttpUrl({
+      verdict: v?.verdict,
+      supportingSources: v?.supportingSources,
+      contradictingSources: v?.contradictingSources,
+      sourcesRelatedOnly: v?.sourcesRelatedOnly,
+    })
+  );
 }
 
 function isSourcedFalseVerdict(v: DeriveVerdictInput): boolean {
-  return String(v?.verdict ?? "").trim().toLowerCase() === "false" && hasBoundHttpUrl(v);
+  return (
+    String(v?.verdict ?? "").trim().toLowerCase() === "false" &&
+    hasDirectionalBoundHttpUrl({
+      verdict: v?.verdict,
+      supportingSources: v?.supportingSources,
+      contradictingSources: v?.contradictingSources,
+      sourcesRelatedOnly: v?.sourcesRelatedOnly,
+    })
+  );
 }
 
 /**

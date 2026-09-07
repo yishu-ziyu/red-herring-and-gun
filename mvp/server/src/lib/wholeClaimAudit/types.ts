@@ -93,4 +93,13 @@ export interface WholeClaimAuditRun {
    * 为 null 时最终缺口沿用第一次 Evaluation（保守）。
    */
   reevaluation: WholeClaimAuditEvaluation | null;
+  /**
+   * Evaluation 完成状态（Review 5128449568 Blocker 2）。未配置 audit caller 时缺省
+   * （legacy fail-open 保持不变）；配置后三态：
+   * - completed：Evaluation 成功，缺口以（最后一次成功的）Evaluation 为准；
+   * - failed：Evaluation 失败/返回非法结构，缺口保守沿用 Planning 基线；
+   * - skipped-budget：预算不足未启动 Evaluation，缺口保守沿用 Planning 基线。
+   * 后两种状态不得把已知缺口静默清空（fail-closed）。
+   */
+  evaluationStatus?: "completed" | "failed" | "skipped-budget";
 }

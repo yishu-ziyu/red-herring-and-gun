@@ -2,8 +2,10 @@
  * Conclusion 收权门（Issue #78 §11 绝对硬门）——确定性代码，不读结论文本。
  *
  * 不变量：Summary 不能比 Claim / Evidence 层更「知道答案」。
- * - not-applicable / evidence=[] 的命题不得支撑整句 supported/refuted；
- * - 整句 hard verdict（true/false）必须有方向一致、带绑定来源的原子判词支撑；
+ * - not-applicable / evidence=[] / 方向无据的命题不得支撑整句 supported/refuted，
+ *   也不得被整句硬结论偷偷判掉（Review 5128449568 Blocker 1）；
+ * - 整句 hard verdict（true/false）必须有方向一致、带绑定来源的原子判词支撑
+ *   （方向契约：hasDirectionalBoundHttpUrl，Review 5128449568 Blocker 3）；
  * - audit 未解决的桥接缺口存在时，整句不得写成硬 true/false（A+B 真推不出 C 真）。
  *
  * 语义一致性（结论文本有没有把 not-applicable 写成已证伪）由模型层负责：
@@ -20,6 +22,7 @@
 import { deriveOverallVerdict } from "../reportAssembly/assembleFinalReport.js";
 import { listAtomsForSearch } from "../atomSearch.js";
 import { directAnswer } from "../publicCopy.js";
+import { hasDirectionalBoundHttpUrl } from "../citationBinding.js";
 
 export type ConclusionGateInput = {
   claimAtoms?: unknown;
@@ -58,6 +61,11 @@ function sourceHasHttpUrl(value: unknown): boolean {
   return /^https?:\/\//i.test(String((value as { url?: unknown }).url || "").trim());
 }
 
+/**
+ * 判词层是否还有「任何」绑定材料（两桶并集，方向不敏感）。
+ * 只用于两个区分：「完全无绑定」vs「有绑定材料」（pre-liveness 礼让 reportReviewer、
+ * post-liveness 全灭检查）。方向正确性一律走共享契约 hasDirectionalBoundHttpUrl。
+ */
 function verdictHasBoundHttpUrl(v: unknown): boolean {
   if (!v || typeof v !== "object") return false;
   const rec = v as Record<string, unknown>;
@@ -68,13 +76,22 @@ function verdictHasBoundHttpUrl(v: unknown): boolean {
   );
 }
 
+function directionalBound(verdict: unknown, rec: Record<string, unknown>): boolean {
+  return hasDirectionalBoundHttpUrl({
+    verdict,
+    supportingSources: rec.supportingSources,
+    contradictingSources: rec.contradictingSources,
+    sourcesRelatedOnly: rec.sourcesRelatedOnly,
+  });
+}
+
 function hasSourcedFalseVerdict(verdicts: unknown[]): boolean {
   return verdicts.some(
     (v) =>
       v &&
       typeof v === "object" &&
       String((v as Record<string, unknown>).verdict ?? "").trim().toLowerCase() === "false" &&
-      verdictHasBoundHttpUrl(v)
+      directionalBound("false", v as Record<string, unknown>)
   );
 }
 
@@ -178,6 +195,35 @@ function listSourcedVerdictEvidence(value: unknown): string[] {
   return buildScopedEvidence(value).texts;
 }
 
+/**
+ * 未查清的 checkable 原子（Review 5128449568 Blocker 1）：
+ * verdict=unverified，或 true/false 判词没有方向一致的绑定 URL（错桶/无源/related-only）。
+ * 与 Snapshot 的方向判词映射（supported 需 support、refuted 需 contradict）同向：
+ * 这些原子不得被整句硬结论当作已查清的消费对象，只能在文本里作「尚未查清」边界。
+ */
+function listUnresolvedCheckableAtoms(value: unknown): Array<{ text: string }> {
+  const out: Array<{ text: string }> = [];
+  if (!Array.isArray(value)) return out;
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const text = typeof rec.claimAtom === "string" ? rec.claimAtom.trim() : "";
+    if (!text) continue;
+    const verdict = String(rec.verdict ?? "").trim().toLowerCase();
+    if (verdict === "unverified") {
+      out.push({ text });
+      continue;
+    }
+    if (
+      (verdict === "true" || verdict === "false") &&
+      !directionalBound(verdict, rec)
+    ) {
+      out.push({ text });
+    }
+  }
+  return out;
+}
+
 type ScopedSource = { url: string; title: string; snippet: string };
 
 function collectBucketSources(value: unknown): ScopedSource[] {
@@ -279,6 +325,7 @@ const GATE_RULE_FINDING: Record<string, string> = {
   "reviewer-demotion": "整句结论强度已被下调，文本同步收权到证据撑到的层级。",
   "weak-conclusion-audit-alignment": "整句为弱结论：不适用真假判断的表述与未补齐依据只作边界，不计入真假判定。",
   "hard-verdict-with-not-applicable-boundary": "整句结论由有据命题支撑；不适用真假判断的表述未计入该判断，只作边界。",
+  "hard-verdict-with-unverified-boundary": "整句结论由有据命题支撑；尚未查清的命题未计入该判断，只作边界。",
 };
 
 function isHardVerdictType(value: string): boolean {
@@ -308,16 +355,18 @@ export type ConstrainedConclusionDecision = {
 };
 
 /**
- * 最终结构化 repair 触发判断（Review 5128022550 Blocker 3 + 5128220693 Blocker 1）。
+ * 最终结构化 repair 触发判断（Review 5128022550 Blocker 3 + 5128220693 Blocker 1 +
+ * 5128449568 Blocker 1）。
  *
  * 只读最终结构状态，不读 conclusion/summary 文本：
  * - 任何模块把 draft 硬 verdict 降为弱 verdict（含 reportReviewer/finalize），
  *   都必须同步修复用户可见文本；
  * - draft 本来就是弱 verdict，但存在 not-applicable Claim、未解决 audit 缺口、
- *   或没有任何存活 sourced relation 时，同样重建（无法确认原文安全时优先重建）；
- * - 终态仍是合法硬 verdict（true/false），但存在 nonVerifiableAtoms 时也必须重建：
- *   overall 判断可以保留，可不适用真假判断的部分必须明确留在边界里，
- *   不得暗示所有 Claim 都获得了同一 verdict。
+ *   或没有任何方向一致存活 sourced relation 时，同样重建（无法确认原文安全时优先重建）；
+ * - 终态仍是合法硬 verdict（true/false）时，overall 判断可由有据 Claim 合法保留，
+ *   但存在 not-applicable 原子、或 unresolved / 方向无据 / 缺判词的 checkable 原子时
+ *   也必须重建：这些原子不参与该判断，只能作为「尚未查清 / 不适用」边界出现，
+ *   不得被硬结论偷偷判掉。
  */
 export function needsConstrainedConclusion(
   input: ConstrainedConclusionInput = {}
@@ -331,12 +380,17 @@ export function needsConstrainedConclusion(
     : [];
   const hasNonVerifiable = listNonVerifiableAtoms(input.nonVerifiableAtoms).length > 0;
   const hasGaps = (input.auditUnresolvedGaps ?? []).length > 0;
-  const hasSourced = verdicts.some(verdictHasBoundHttpUrl);
+  const unresolvedCheckable = listUnresolvedCheckableAtoms(verdicts);
+  const hasSourced = verdicts.some((v) =>
+    v && typeof v === "object"
+      ? directionalBound((v as Record<string, unknown>).verdict, v as Record<string, unknown>)
+      : false
+  );
 
   const needed =
     weakened ||
     (isWeakVerdictType(final) && (hasNonVerifiable || hasGaps || !hasSourced)) ||
-    (isHardVerdictType(final) && hasNonVerifiable);
+    (isHardVerdictType(final) && (hasNonVerifiable || unresolvedCheckable.length > 0));
 
   let rule = "weak-conclusion-audit-alignment";
   if (input.finalGate?.changed && input.finalGate.rule) {
@@ -349,6 +403,8 @@ export function needsConstrainedConclusion(
     rule = "reviewer-demotion";
   } else if (isHardVerdictType(final) && hasNonVerifiable) {
     rule = "hard-verdict-with-not-applicable-boundary";
+  } else if (isHardVerdictType(final) && unresolvedCheckable.length > 0) {
+    rule = "hard-verdict-with-unverified-boundary";
   }
   return { needed, rule, from: draft, to: final };
 }
@@ -371,12 +427,16 @@ export function repairGatedConclusion(
   const gated = gate.to;
   const lead = directAnswer(gated);
   const nonVerifiable = listNonVerifiableAtoms(input.nonVerifiableAtoms).slice(0, 2);
+  const unresolvedCheckable = listUnresolvedCheckableAtoms(input.subclaimVerdicts).slice(0, 2);
   const sourcedEvidence = listSourcedVerdictEvidence(input.subclaimVerdicts);
   const gaps = (input.auditUnresolvedGaps ?? []).filter((g) => typeof g === "string" && g.trim()).slice(0, 1);
 
   const parts = [lead, ...sourcedEvidence];
   for (const atom of nonVerifiable) {
     parts.push(`「${clipText(atom.text, 40)}」不适用真假判断，未计入真假结论。`);
+  }
+  for (const atom of unresolvedCheckable) {
+    parts.push(`「${clipText(atom.text, 40)}」尚未查清，未计入该判断。`);
   }
   for (const gap of gaps) {
     parts.push(`仍缺关键依据：${clipText(gap, 120)}`);
@@ -387,6 +447,9 @@ export function repairGatedConclusion(
   if (nonVerifiable.length > 0) {
     summaryParts.push(`${nonVerifiable.length}条表述不适用真假判断，未计入结论。`);
   }
+  if (unresolvedCheckable.length > 0) {
+    summaryParts.push(`${unresolvedCheckable.length}条命题尚未查清，未计入结论。`);
+  }
   if (gaps.length > 0) {
     summaryParts.push(`桥接依据仍未补齐：${clipText(gaps[0], 80)}`);
   }
@@ -396,6 +459,7 @@ export function repairGatedConclusion(
   const finding = GATE_RULE_FINDING[gate.rule ?? ""] ?? "整句结论已按证据层级收权。";
   const boundaryItems = [
     ...nonVerifiable.map((a) => `「${clipText(a.text, 40)}」不适用真假判断`),
+    ...unresolvedCheckable.map((a) => `「${clipText(a.text, 40)}」尚未查清`),
     ...gaps.map((g) => `仍缺：${clipText(g, 100)}`),
   ];
   const gateLayer = {
