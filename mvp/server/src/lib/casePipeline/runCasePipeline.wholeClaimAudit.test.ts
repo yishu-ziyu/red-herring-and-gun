@@ -14,6 +14,7 @@ import { runCasePipeline } from "./runCasePipeline";
 import type { PipelineStep } from "./runCasePipeline";
 import type { InvestigationSnapshotV1 } from "../investigation/index.js";
 import { buildAgentInput } from "../agentConfigs.js";
+import { directAnswer } from "../publicCopy.js";
 
 const url = (atom: string, tag = "src") => `https://t.test/${encodeURIComponent(atom)}/${tag}`;
 
@@ -60,6 +61,8 @@ async function runHarness(input: {
   searchPlan?: Record<string, Array<{ url: string; title: string; snippet: string }>>;
   auditPlanOutput?: AgentOutput | null;
   auditEvalOutput?: AgentOutput | null;
+  /** Blocker 3 回归：按调用顺序消费的 Evaluation 输出序列（给了就按次取，不给了就复用 auditEvalOutput）。 */
+  auditEvalOutputs?: AgentOutput[];
   crossExamCallRaw?: unknown;
 }): Promise<HarnessResult> {
   const searchQueries: string[] = [];
@@ -106,6 +109,10 @@ async function runHarness(input: {
       ? async (call: { systemPrompt: string; userContent: string }) => {
           auditCalls.push({ system: call.systemPrompt, user: call.userContent });
           const isEval = call.systemPrompt.includes("整句证据评估器");
+          if (isEval && input.auditEvalOutputs && input.auditEvalOutputs.length > 0) {
+            const output = input.auditEvalOutputs.shift();
+            return { output, model: "audit-mock" };
+          }
           const output = isEval ? input.auditEvalOutput : input.auditPlanOutput;
           return { output, model: "audit-mock" };
         }
@@ -421,6 +428,251 @@ describe("Case 5：#78 failure shape", () => {
     expect(claim2).toMatchObject({ checkability: "not-applicable", judgment: "not-applicable", evidence: [] });
     // 整句结论不得是 refuted
     expect(complete.conclusion?.judgment).not.toBe("refuted");
+  });
+
+  it("Blocker 1 回归：收权后最终 directAnswer 不得再把 not-applicable Claim 写成已证伪，且保留可核查部分结论", async () => {
+    const c1 = "维生素C能治感冒";
+    const c2 = "每次感冒都应当输液";
+    const overclaim = "两条主张均不成立，普通感冒无需输液。";
+    const { result, snapshots } = await runHarness({
+      claim: `${c1}，而且${c2}。`,
+      rumor: rumorStep([
+        { text: c1, verifiable: true, type: "fact" },
+        { text: c2, verifiable: false, type: "normative" },
+      ]),
+      factOutputs: [
+        {
+          factCheckResult: "false",
+          subclaimVerdicts: [
+            {
+              claimAtom: c1,
+              verdict: "partial",
+              evidence: "仅可能略微缓解症状。",
+              boundary: "撑不到治愈",
+              supportingSources: [{ url: url(c1), title: "研究", snippet: "s" }],
+              contradictingSources: [],
+            },
+          ],
+        },
+      ],
+      composerOutput: {
+        verdictType: "false",
+        conclusion: overclaim,
+        subclaimVerdicts: [
+          {
+            claimAtom: c1,
+            verdict: "partial",
+            evidence: "仅可能略微缓解症状。",
+            boundary: "撑不到治愈",
+            supportingSources: [{ url: url(c1), title: "研究", snippet: "s" }],
+            contradictingSources: [],
+          },
+        ],
+      },
+      searchPlan: { [c1]: [{ url: url(c1), title: "研究", snippet: "s" }] },
+      auditPlanOutput: {
+        overallQuestion: "维C疗效与普遍输液建议是否成立",
+        checkabilityRevisions: [],
+        missingJustifications: [],
+        auditQuestions: [],
+      },
+      auditEvalOutput: {
+        supportedWhere: "c1 仅部分成立；c2 未核查",
+        biggestGap: "",
+        missingJustifications: [],
+        nextQuestions: [],
+      },
+    });
+
+    const gated = String(result.finalReport.verdictType);
+    expect(gated).not.toBe("false");
+    // repair 触发标记
+    expect((result.finalReport._conclusionGate as Record<string, unknown>).repaired).toBe(true);
+    const complete = snapshots.at(-1)!;
+    const finalDirectAnswer = complete.conclusion?.directAnswer ?? "";
+    // 1) 最终用户可见文本以 gated verdict 的标准答案开头，与 verdictType 一致
+    expect(finalDirectAnswer.startsWith(directAnswer(gated))).toBe(true);
+    // 2) composer 的越权原文（把 c2 写成已证伪）已被替换，不再出现
+    expect(finalDirectAnswer).not.toContain("均不成立");
+    // 3) c2 只按"不适用真假判断"表述
+    expect(finalDirectAnswer).toContain("不适用真假判断");
+    // 4) 可核查 Claim 已有的部分结论保留
+    expect(finalDirectAnswer).toContain("仅可能略微缓解症状");
+    // 5) summary 与 recommendation 同步收权
+    const summary = String(result.finalReport.summaryForPublic ?? "");
+    expect(summary.startsWith(directAnswer(gated))).toBe(true);
+    expect(summary).not.toContain("均不成立");
+    expect(String(result.finalReport.recommendation ?? "")).toBe(directAnswer(gated));
+    // 6) evidenceChain 有收权边界层
+    const chain = result.finalReport.evidenceChain as Array<Record<string, unknown>>;
+    expect(chain.some((layer) => layer.layer === "结论边界（整句收权）")).toBe(true);
+  });
+
+  it("Blocker 2 回归：not-applicable + on-topic debunk 来源时 legacy tiny-bound 不得把已收权整句推回 false", async () => {
+    const c1 = "维生素C能治感冒";
+    const c2 = "每次感冒都应当输液";
+    const debunkUrl = "https://t.test/debunk-1";
+    const { result, snapshots } = await runHarness({
+      claim: `${c1}，而且${c2}。`,
+      rumor: rumorStep([
+        { text: c1, verifiable: true, type: "fact" },
+        { text: c2, verifiable: false, type: "normative" },
+      ]),
+      factOutputs: [
+        {
+          factCheckResult: "false",
+          subclaimVerdicts: [
+            {
+              claimAtom: c1,
+              verdict: "partial",
+              evidence: "仅可能略微缓解症状。",
+              boundary: "撑不到治愈",
+              supportingSources: [{ url: url(c1), title: "研究", snippet: "s" }],
+              contradictingSources: [],
+            },
+          ],
+        },
+      ],
+      composerOutput: {
+        verdictType: "false",
+        conclusion: "两条主张均不成立，普通感冒无需输液。",
+        subclaimVerdicts: [
+          {
+            claimAtom: c1,
+            verdict: "partial",
+            evidence: "仅可能略微缓解症状。",
+            boundary: "撑不到治愈",
+            supportingSources: [{ url: url(c1), title: "研究", snippet: "s" }],
+            contradictingSources: [],
+          },
+        ],
+      },
+      // c1 的检索聚合里混入一条 on-topic 辟谣来源：足以触发 legacy boundTiny=false，
+      // 但整句含 not-applicable 成分且无 sourced-false 原子，contract 不允许硬 false。
+      searchPlan: {
+        [c1]: [
+          { url: url(c1), title: "维生素C与感冒研究", snippet: "随机对照结果" },
+          { url: debunkUrl, title: "感冒输液说法辟谣", snippet: "网传说法不实" },
+        ],
+      },
+      auditPlanOutput: {
+        overallQuestion: "维C疗效与普遍输液建议是否成立",
+        checkabilityRevisions: [],
+        missingJustifications: [],
+        auditQuestions: [],
+      },
+      auditEvalOutput: {
+        supportedWhere: "c1 仅部分成立；c2 未核查",
+        biggestGap: "",
+        missingJustifications: [],
+        nextQuestions: [],
+      },
+    });
+
+    expect(result.finalReport.verdictType).not.toBe("false");
+    expect(result.finalReport.verdictType === "mixed_misleading" || result.finalReport.verdictType === "unverified").toBe(true);
+    const complete = snapshots.at(-1)!;
+    expect(complete.conclusion?.judgment).not.toBe("refuted");
+    expect(complete.claims.find((cl) => cl.text === c2)).toMatchObject({
+      checkability: "not-applicable",
+      judgment: "not-applicable",
+    });
+  });
+
+  it("Blocker 3 回归：第一次 Evaluation 有 gap → extra pass 得新证据 → re-evaluation 关闭 gap → 允许证据支持的强度", async () => {
+    const atomText = "某保健品能根治高血压";
+    const debunkUrl = "https://t.test/clinical-1";
+    const suggestedQuery = "根治高血压 临床试验";
+    const { result, snapshots, auditCalls } = await runHarness({
+      claim: atomText,
+      rumor: rumorStep([{ text: atomText, verifiable: true, type: "fact" }]),
+      factOutputs: [
+        {
+          factCheckResult: "unverified",
+          subclaimVerdicts: [
+            {
+              claimAtom: atomText,
+              verdict: "unverified",
+              evidence: "",
+              boundary: "",
+              supportingSources: [],
+              contradictingSources: [],
+            },
+          ],
+        },
+        {
+          factCheckResult: "false",
+          subclaimVerdicts: [
+            {
+              claimAtom: atomText,
+              verdict: "false",
+              evidence: "临床试验未显示根治效果。",
+              boundary: "b",
+              supportingSources: [],
+              contradictingSources: [{ url: debunkUrl, title: "高血压临床试验", snippet: "s" }],
+            },
+          ],
+        },
+      ],
+      composerOutput: {
+        verdictType: "false",
+        conclusion: "该说法不成立，临床试验未显示根治效果。",
+        subclaimVerdicts: [
+          {
+            claimAtom: atomText,
+            verdict: "false",
+            evidence: "临床试验未显示根治效果。",
+            boundary: "b",
+            supportingSources: [],
+            contradictingSources: [{ url: debunkUrl, title: "高血压临床试验", snippet: "s" }],
+          },
+        ],
+      },
+      // 初轮检索无命中；audit 补查问题命中新来源
+      searchPlan: {
+        ["临床试验"]: [{ url: debunkUrl, title: "高血压临床试验", snippet: "未见根治证据" }],
+      },
+      auditPlanOutput: {
+        overallQuestion: "该保健品是否有根治依据",
+        checkabilityRevisions: [],
+        missingJustifications: [],
+        auditQuestions: [],
+      },
+      auditEvalOutputs: [
+        {
+          supportedWhere: "该命题尚未取得来源",
+          biggestGap: "缺临床依据",
+          missingJustifications: ["缺根治效果的临床依据"],
+          nextQuestions: [
+            {
+              question: "临床试验是否支持根治？",
+              reason: "缺核心依据",
+              targetClaimAtom: atomText,
+              suggestedQuery,
+            },
+          ],
+        },
+        {
+          supportedWhere: "临床反证已取得，该命题不成立",
+          biggestGap: "",
+          missingJustifications: [],
+          nextQuestions: [],
+        },
+      ],
+    });
+
+    // 第二次 Evaluation 确实跑了（Agent 根据新 observation 更新了判断）
+    const evalCalls = auditCalls.filter((c) => c.system.includes("整句证据评估器"));
+    expect(evalCalls).toHaveLength(2);
+    expect(result.wholeClaimAudit.reevaluation).toMatchObject({ missingJustifications: [] });
+    expect(result.wholeClaimAudit.extraPass).toMatchObject({ reevaluated: true, unresolvedQuestions: [] });
+    // gap 已关闭 → gate 不再以 audit-unresolved-bridge-gap 收权，有 sourced-false 支撑时允许 false
+    expect(result.finalReport.verdictType).toBe("false");
+    const complete = snapshots.at(-1)!;
+    expect(complete.conclusion?.judgment).toBe("refuted");
+    expect((result.finalReport._conclusionGate as Record<string, unknown> | undefined)?.rule).not.toBe(
+      "audit-unresolved-bridge-gap"
+    );
   });
 });
 

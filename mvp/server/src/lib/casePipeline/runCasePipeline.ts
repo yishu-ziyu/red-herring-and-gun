@@ -61,6 +61,7 @@ import {
 import {
   applyCheckabilityRevisions,
   applyConclusionGate,
+  repairGatedConclusion,
   resolveQuestionAtomKey,
   runWholeClaimEvaluation,
   runWholeClaimPlanning,
@@ -382,7 +383,13 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   // LM 做可核查性语义判断（normative 是否有外部可核查标准），确定性代码只守不变量：
   // 只应用 false→true 提升、必须命中真实 kept atom、type 不改写、不创建新原子。
   // 未注入 / 超预算 / 模型失败 → fail-open，保持 forceCheckable 后的 legacy 行为。
-  const wholeClaimAudit: WholeClaimAuditRun = { plan: null, evaluation: null, extraPass: null, model: "" };
+  const wholeClaimAudit: WholeClaimAuditRun = {
+    plan: null,
+    evaluation: null,
+    extraPass: null,
+    model: "",
+    reevaluation: null,
+  };
   const auditCallModel = input.wholeClaimAudit?.callModel;
   if (auditCallModel && timeLeftMs() > AUDIT_MIN_MS) {
     const planning = await runWholeClaimPlanning({
@@ -759,27 +766,59 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
           }
         }
       }
-      // 结算：无 target 的桥接问题 + 补查没取得新来源的问题 + eval 缺口 → 未解决，
-      // 交给收权门限制整句结论强度（§11）。
-      const resolvedKeys = new Set(Object.keys(newSourcesByAtomKey));
-      const unresolved = new Set<string>();
-      for (const q of evaluation.evaluation.nextQuestions) {
-        const atomKey = resolveQuestionAtomKey(q, keptAuditAtoms);
-        if (!atomKey || !keptKeys.has(atomKey) || !resolvedKeys.has(atomKey)) unresolved.add(q.question);
+      // 结算（Review 5127740625 Blocker 3）：extra pass 取得新来源 + 重判后，
+      // 跑一次 bounded re-evaluation。新证据回来以后 Agent 必须能根据新 observation
+      // 更新判断：第二次 Evaluation 的 missingJustifications 为准，旧 gap 可被关闭。
+      // 重评估失败 / 无新来源 / 预算不足 → 保守沿用第一次 Evaluation（gap 永久挂起的反面）。
+      let finalSupportedWhere = evaluation.evaluation.supportedWhere;
+      let finalBiggestGap = evaluation.evaluation.biggestGap;
+      let reevaluated = false;
+      const gainedSources = Object.keys(newSourcesByAtomKey).length > 0;
+      if (gainedSources && timeLeftMs() > COMPOSER_RESERVE_MS) {
+        const reevaluation = await runWholeClaimEvaluation({
+          claim,
+          keptAtoms: keptAuditAtoms,
+          claimAtomTypes: rumorStep.output.claimAtomTypes,
+          subclaimVerdicts: factStep?.output?.subclaimVerdicts,
+          missingJustificationsFromPlan: wholeClaimAudit.plan?.missingJustifications,
+          callModel: auditCallModel,
+        });
+        if (reevaluation) {
+          wholeClaimAudit.reevaluation = reevaluation.evaluation;
+          finalSupportedWhere = reevaluation.evaluation.supportedWhere;
+          finalBiggestGap = reevaluation.evaluation.biggestGap;
+          reevaluated = true;
+          const unresolvedAfterReeval = new Set<string>();
+          for (const q of reevaluation.evaluation.nextQuestions) unresolvedAfterReeval.add(q.question);
+          for (const gap of reevaluation.evaluation.missingJustifications) unresolvedAfterReeval.add(gap);
+          auditUnresolvedGaps = [...unresolvedAfterReeval];
+        }
       }
-      for (const gap of evaluation.evaluation.missingJustifications) unresolved.add(gap);
-      auditUnresolvedGaps = [...unresolved];
+      if (!reevaluated) {
+        // 无 target 的桥接问题 + 补查没取得新来源的问题 + eval 缺口 → 未解决，
+        // 交给收权门限制整句结论强度（§11）。
+        const resolvedKeys = new Set(Object.keys(newSourcesByAtomKey));
+        const unresolved = new Set<string>();
+        for (const q of evaluation.evaluation.nextQuestions) {
+          const atomKey = resolveQuestionAtomKey(q, keptAuditAtoms);
+          if (!atomKey || !keptKeys.has(atomKey) || !resolvedKeys.has(atomKey)) unresolved.add(q.question);
+        }
+        for (const gap of evaluation.evaluation.missingJustifications) unresolved.add(gap);
+        auditUnresolvedGaps = [...unresolved];
+      }
       wholeClaimAudit.extraPass = {
         ran: searchables.length > 0,
         questionsSearched: searchables.length,
         newSourcesByAtomKey,
         unresolvedQuestions: auditUnresolvedGaps,
+        reevaluated,
       };
       rumorStep.output.wholeClaimAudit = {
-        supportedWhere: evaluation.evaluation.supportedWhere,
-        biggestGap: evaluation.evaluation.biggestGap,
+        supportedWhere: finalSupportedWhere,
+        biggestGap: finalBiggestGap,
         missingJustifications: auditUnresolvedGaps,
         model: evaluation.model,
+        reevaluated,
       };
       // 里程碑：audit 补查可能新增来源 / 翻转判词，快照同步一次。
       emitInvestigation({
@@ -828,6 +867,9 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const atomVerdicts = Array.isArray(finalReport.subclaimVerdicts)
     ? (finalReport.subclaimVerdicts as Array<Record<string, unknown>>)
     : [];
+  // composer draft 的整句强度：repair 只在结构化降级把它调弱时触发，不碰本来就一致的 draft。
+  const draftVerdictType = String(finalReport.verdictType ?? "");
+  let mixedGuardDemoted = false;
   if (deriveOverallVerdict(atomVerdicts) === "partial") {
     const originalOverall = String(factStep?.output?.factCheckResult ?? "").trim();
     if (originalOverall === "false" && factStep?.output) {
@@ -837,19 +879,25 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     if (finalReport.verdictType === "false") {
       finalReport.verdictType = "mixed_misleading";
       finalReport._mixedGuard = "有据之真 + 假原子 → mixed（原子级守门）";
+      mixedGuardDemoted = true;
     }
   }
 
-  // Whole-Claim 收权门（Issue #78 §11 绝对硬门）：Summary 不得比 Claim / Evidence 层
-  // 更「知道答案」。not-applicable / 无据原子不得支撑整句 hard verdict；audit 未解决的
-  // 桥接缺口把硬 true/false 收成 unverified。结构化状态判定，不读结论文本。
-  // 放置点在 boundTinyRumorVerdict 之前：短谣确定性 force-false 通道不受影响。
-  applyConclusionGate(finalReport, {
+  // Whole-Claim 收权门（Issue #78 §11）：early + final 两次执行，同一 contract。
+  // early 在 boundTiny 之前先收权并记录；final 在 reviewer / 探活之后做最终兜底。
+  // reviewer 可能先把无源硬判定降级（此时 final gate 看不到 demote），repair 触发看的是
+  // "是否发生过结构化降级"（early / final / mixedGuard 任一），不是只看 final 那一次。
+  const gateProbeInput = {
     claimAtoms: rumorStep.output.claimAtoms,
     claimAtomTypes: rumorStep.output.claimAtomTypes,
     subclaimVerdicts: atomVerdicts,
     auditUnresolvedGaps,
-  });
+  };
+  const earlyGateResult = applyConclusionGate(finalReport, gateProbeInput);
+
+  // legacy 短谣通道：提成 false 之前先用同一 contract 做 probe，
+  // contract 不允许硬 false（not-applicable / 无 sourced-false / audit 缺口未解）
+  // 时不提，免得绕过收权不变量（Review 5127740625 Blocker 2）。
 
   const searchSources = Array.isArray((search360Result as { sources?: unknown[] } | undefined)?.sources)
     ? ((search360Result as { sources: Array<Record<string, unknown>> }).sources)
@@ -859,7 +907,12 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     bound === "false" &&
     (finalReport.verdictType === "mixed_misleading" || finalReport.verdictType === "unverified")
   ) {
-    finalReport.verdictType = "false";
+    const probe: Record<string, unknown> = { ...finalReport, verdictType: "false" };
+    if (!applyConclusionGate(probe, gateProbeInput).changed) {
+      finalReport.verdictType = "false";
+    } else {
+      finalReport._tinyBoundSuppressed = "contract-forbids-hard-false";
+    }
   }
 
   finalizeReport?.({
@@ -907,6 +960,43 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   // Reviewer may pad evidenceChain / rewrite conclusion — re-bind [n] to sources.
   normalizeReportCitations(finalReport);
   if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
+  // 最终 Whole-Claim consistency gate（Review 5127740625 Blocker 1+2）：
+  // 位于 boundTiny / finalizeReport / reportReviewer 之后、引用探活与快照之前，
+  // 是整条管线最后一个能改变整体 verdict 的位置。放在探活之前是因为 gate 与 repair
+  // 都读判词的绑定来源状态（与 early gate 同一状态）；探活只剪死链、不改 verdict。
+  // 触发 repair 的条件是"发生过结构化降级且最终强度弱于 composer draft"：draft 越过
+  // Claim/Evidence 时，最终用户可见 conclusion / summaryForPublic / evidenceChain
+  // 必须与 gated verdict 一致。repair 只用 gated verdict + 判词 evidence +
+  // nonVerifiableAtoms + audit 缺口重建，不读原文、不做关键词匹配。
+  const finalGateResult = applyConclusionGate(finalReport, {
+    claimAtoms: rumorStep.output.claimAtoms,
+    claimAtomTypes: rumorStep.output.claimAtomTypes,
+    subclaimVerdicts: finalReport.subclaimVerdicts,
+    auditUnresolvedGaps,
+  });
+  const finalVerdictType = String(finalReport.verdictType ?? "");
+  const structurallyDemoted =
+    finalGateResult.changed || earlyGateResult.changed || mixedGuardDemoted;
+  if (
+    structurallyDemoted &&
+    finalVerdictType !== draftVerdictType &&
+    (finalVerdictType === "mixed_misleading" || finalVerdictType === "unverified")
+  ) {
+    const repairRule =
+      (finalGateResult.changed ? finalGateResult.rule : undefined) ??
+      (earlyGateResult.changed ? earlyGateResult.rule : undefined) ??
+      "mixed-guard-partial";
+    repairGatedConclusion(
+      finalReport,
+      { changed: true, from: draftVerdictType, to: finalVerdictType, rule: repairRule },
+      {
+        nonVerifiableAtoms: finalReport.nonVerifiableAtoms,
+        subclaimVerdicts: finalReport.subclaimVerdicts,
+        auditUnresolvedGaps,
+      }
+    );
+    normalizeReportCitations(finalReport);
+  }
   // 「来源能点开」门：发布前对全局引用真实探活，死链剔除并重绑 [n] 标记。
   // 探活通道自身故障不阻断主流程——宁可用未剪枝的报告，也不丢结论。
   let deadCitationUrls: string[] = [];

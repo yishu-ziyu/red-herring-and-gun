@@ -9,8 +9,10 @@ import {
   applyConclusionGate,
   parseWholeClaimEvaluation,
   parseWholeClaimPlan,
+  repairGatedConclusion,
   resolveQuestionAtomKey,
 } from "./index.js";
+import { directAnswer } from "../publicCopy.js";
 
 describe("applyCheckabilityRevisions（§5/§12：模型语义决策，代码守不变量）", () => {
   it("false→true 提升：命中 kept atom 才应用，type 保持 normative 不改写", () => {
@@ -192,6 +194,70 @@ describe("applyConclusionGate（§11 收权门：结构化状态，不读结论�
   it("非硬判定 / 缺 verdictType 时门不动", () => {
     expect(applyConclusionGate({ verdictType: "unverified" }, {}).changed).toBe(false);
     expect(applyConclusionGate({}, {}).changed).toBe(false);
+  });
+});
+
+describe("repairGatedConclusion（Blocker 1：结构化 repair，不读原文）", () => {
+  const src = (url: string) => ({ url, title: "t", snippet: "s" });
+
+  it("demote 触发时重建 conclusion：gated lead 开头 + 保留有源判词 evidence + not-applicable 只作边界", () => {
+    const report: Record<string, unknown> = {
+      verdictType: "mixed_misleading",
+      conclusion: "两条主张均不成立，普通感冒无需输液。",
+      summaryForPublic: "两条主张均不成立。",
+      recommendation: "不要相信。",
+      evidenceChain: [{ layer: "命题", finding: "f", evidence: "e", boundary: "b", sourceRefs: [] }],
+    };
+    repairGatedConclusion(
+      report,
+      { changed: true, from: "false", to: "mixed_misleading", rule: "false-without-sourced-false-atom" },
+      {
+        nonVerifiableAtoms: [{ text: "每次感冒都应当输液", type: "normative" }],
+        subclaimVerdicts: [
+          {
+            claimAtom: "维生素C能治感冒",
+            verdict: "partial",
+            evidence: "仅可能略微缓解症状。",
+            supportingSources: [src("https://t.test/a")],
+            contradictingSources: [],
+          },
+        ],
+        auditUnresolvedGaps: [],
+      }
+    );
+    const conclusion = String(report.conclusion);
+    expect(conclusion.startsWith(directAnswer("mixed_misleading"))).toBe(true);
+    expect(conclusion).not.toContain("均不成立");
+    expect(conclusion).toContain("仅可能略微缓解症状");
+    expect(conclusion).toContain("不适用真假判断");
+    expect(String(report.summaryForPublic).startsWith(directAnswer("mixed_misleading"))).toBe(true);
+    expect(String(report.recommendation)).toBe(directAnswer("mixed_misleading"));
+    const chain = report.evidenceChain as Array<Record<string, unknown>>;
+    expect(chain.some((layer) => layer.layer === "结论边界（整句收权）")).toBe(true);
+  });
+
+  it("audit 缺口规则重建时带出缺口边界；门没动时不碰原文", () => {
+    const report: Record<string, unknown> = {
+      verdictType: "unverified",
+      conclusion: "原句成立。",
+      evidenceChain: [],
+    };
+    repairGatedConclusion(
+      report,
+      { changed: true, from: "true", to: "unverified", rule: "audit-unresolved-bridge-gap" },
+      {
+        nonVerifiableAtoms: [],
+        subclaimVerdicts: [],
+        auditUnresolvedGaps: ["从 A、B 到 C 还缺适应症依据"],
+      }
+    );
+    expect(String(report.conclusion)).toContain("仍缺关键依据");
+    expect(String(report.summaryForPublic)).toContain("桥接依据仍未补齐");
+
+    const untouched: Record<string, unknown> = { verdictType: "false", conclusion: "原文。" };
+    repairGatedConclusion(untouched, { changed: false }, {});
+    expect(untouched.conclusion).toBe("原文。");
+    expect(untouched.evidenceChain).toBeUndefined();
   });
 });
 

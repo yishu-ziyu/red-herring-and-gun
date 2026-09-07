@@ -29,4 +29,10 @@ export {
   runWholeClaimEvaluation,
   resolveQuestionAtomKey,
 } from "./evaluation.js";
-export { applyConclusionGate, type ConclusionGateInput, type ConclusionGateResult } from "./conclusionGate.js";
+export {
+  applyConclusionGate,
+  repairGatedConclusion,
+  type ConclusionGateInput,
+  type ConclusionGateResult,
+  type GatedConclusionRepairInput,
+} from "./conclusionGate.js";
