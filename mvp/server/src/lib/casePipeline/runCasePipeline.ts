@@ -391,6 +391,11 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     model: "",
     reevaluation: null,
   };
+  // Review 5128449568 Blocker 2：已配置 audit caller 时走 fail-closed——
+  // Planning 产出的 missingJustifications 一旦存在就是保守 gap，只有成功
+  // Evaluation / authoritative re-evaluation 才能更新或关闭；Evaluation 失败
+  // 或预算不足时保留基线并留下结构化状态，不静默清空。未配置 caller 时保持 legacy。
+  let auditUnresolvedGaps: string[] = [];
   const auditCallModel = input.wholeClaimAudit?.callModel;
   if (auditCallModel && timeLeftMs() > AUDIT_MIN_MS) {
     const planning = await runWholeClaimPlanning({
@@ -417,6 +422,8 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
         missingJustifications: planning.plan.missingJustifications,
         model: planning.model,
       };
+      // 保守 gap 基线：先于 Evaluation 存在，失败/超预算时仍进收权门。
+      auditUnresolvedGaps = [...(planning.plan.missingJustifications ?? [])];
     }
   }
 
@@ -707,7 +714,18 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   // 回答「原句现在成立到哪里 / 最大缺口 / 下一步查什么」；LM 先验只能生成问题，
   // 不得成为 Evidence。最多 1 次 audit-driven 补查：只有能映射到真实 kept atom
   // 的问题才补查（复用 searchOne + bundle 合并 + fact_checker 重判）；纯桥接缺口只记录。
-  let auditUnresolvedGaps: string[] = [];
+  // 失败/超预算时保守沿用 Planning 缺口基线（fail-closed，Review 5128449568 Blocker 2）。
+  const writeAuditConservativeArtifact = (status: "failed" | "skipped-budget") => {
+    rumorStep.output.wholeClaimAudit = {
+      supportedWhere: "",
+      biggestGap: "",
+      missingJustifications: auditUnresolvedGaps,
+      model: wholeClaimAudit.model,
+      reevaluated: false,
+      recheckCommitted: false,
+      evaluationStatus: status,
+    };
+  };
   if (auditCallModel && timeLeftMs() > COMPOSER_RESERVE_MS) {
     const keptAuditAtoms = Array.isArray(rumorStep.output.claimAtoms)
       ? (rumorStep.output.claimAtoms as string[])
@@ -720,6 +738,10 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       missingJustificationsFromPlan: wholeClaimAudit.plan?.missingJustifications,
       callModel: auditCallModel,
     });
+    if (!evaluation) {
+      wholeClaimAudit.evaluationStatus = "failed";
+      writeAuditConservativeArtifact("failed");
+    }
     if (evaluation) {
       wholeClaimAudit.evaluation = evaluation.evaluation;
       wholeClaimAudit.model = wholeClaimAudit.model || evaluation.model;
@@ -854,6 +876,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
         recheckCommitted,
         newlyBoundEvidenceUrlsByAtomKey,
       };
+      wholeClaimAudit.evaluationStatus = "completed";
       rumorStep.output.wholeClaimAudit = {
         supportedWhere: finalSupportedWhere,
         biggestGap: finalBiggestGap,
@@ -861,6 +884,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
         model: evaluation.model,
         reevaluated,
         recheckCommitted,
+        evaluationStatus: "completed",
       };
       // 里程碑：audit 补查可能新增来源 / 翻转判词，快照同步一次。
       emitInvestigation({
@@ -871,6 +895,10 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
         subclaimVerdicts: factStep?.output?.subclaimVerdicts,
       });
     }
+  } else if (auditCallModel) {
+    // 预算不足未启动 Evaluation：保守沿用 Planning 缺口基线，不留静默空档。
+    wholeClaimAudit.evaluationStatus = "skipped-budget";
+    writeAuditConservativeArtifact("skipped-budget");
   }
 
   // Phase 3: ReportComposer (+ fallback owned by adapter)

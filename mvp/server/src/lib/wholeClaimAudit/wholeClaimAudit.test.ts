@@ -16,7 +16,7 @@ import {
   resolveQuestionAtomKey,
 } from "./index.js";
 import { directAnswer } from "../publicCopy.js";
-import { normalizeReportCitations } from "../citationBinding.js";
+import { hasDirectionalBoundHttpUrl, normalizeReportCitations } from "../citationBinding.js";
 
 describe("applyCheckabilityRevisions（§5/§12：模型语义决策，代码守不变量）", () => {
   it("false→true 提升：命中 kept atom 才应用，type 保持 normative 不改写", () => {
@@ -627,5 +627,157 @@ describe("§14：Whole-Claim Audit 本身不是 Evidence", () => {
     // 审计产物即使被 JSON 序列化，也不含 InvestigationSource / EvidenceLink 的必备结构。
     const parsed = JSON.parse(text) as Record<string, unknown>;
     expect(Array.isArray(parsed.auditQuestions)).toBe(true);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// Review 5128449568：方向契约共享定义 + 硬结论不得偷判未查清命题
+// ───────────────────────────────────────────────────────────────
+
+describe("hasDirectionalBoundHttpUrl（Review 5128449568 Blocker 3：共享方向契约）", () => {
+  const s = { url: "https://t.test/a", title: "t", snippet: "s" };
+
+  it("true 只认 supportingSources 的 http(s)；false 只认 contradictingSources 的 http(s)", () => {
+    expect(hasDirectionalBoundHttpUrl({ verdict: "true", supportingSources: [s], contradictingSources: [] })).toBe(true);
+    expect(hasDirectionalBoundHttpUrl({ verdict: "true", supportingSources: [], contradictingSources: [s] })).toBe(false);
+    expect(hasDirectionalBoundHttpUrl({ verdict: "false", supportingSources: [], contradictingSources: [s] })).toBe(true);
+    expect(hasDirectionalBoundHttpUrl({ verdict: "false", supportingSources: [s], contradictingSources: [] })).toBe(false);
+  });
+
+  it("related-only 永远不算；partial（mixed 语义）两侧都算；无 URL 不算", () => {
+    expect(hasDirectionalBoundHttpUrl({ verdict: "true", supportingSources: [s], sourcesRelatedOnly: true })).toBe(false);
+    expect(hasDirectionalBoundHttpUrl({ verdict: "false", contradictingSources: [s], sourcesRelatedOnly: true })).toBe(false);
+    expect(hasDirectionalBoundHttpUrl({ verdict: "partial", supportingSources: [], contradictingSources: [s] })).toBe(true);
+    expect(hasDirectionalBoundHttpUrl({ verdict: "true", supportingSources: [], contradictingSources: [] })).toBe(false);
+  });
+});
+
+describe("applyConclusionGate 方向契约（Review 5128449568 Blocker 3）", () => {
+  const atom = (u: string) => ({ url: u, title: "t", snippet: "s" });
+
+  it("true + 仅错桶 contradict URL → 不得当 sourced true，整句 true 收权", () => {
+    const report: Record<string, unknown> = { verdictType: "true" };
+    const result = applyConclusionGate(report, {
+      claimAtoms: ["A"],
+      claimAtomTypes: [{ text: "A", verifiable: true, type: "fact" }],
+      subclaimVerdicts: [
+        { claimAtom: "A", verdict: "true", supportingSources: [], contradictingSources: [atom("https://t.test/x")] },
+      ],
+    });
+    expect(result).toMatchObject({ changed: true, to: "unverified", rule: "true-without-sourced-true-atoms" });
+  });
+
+  it("false + 仅错桶 support URL → 不得当 sourced false，整句 false 收权", () => {
+    const report: Record<string, unknown> = { verdictType: "false" };
+    const result = applyConclusionGate(report, {
+      claimAtoms: ["A"],
+      claimAtomTypes: [{ text: "A", verifiable: true, type: "fact" }],
+      subclaimVerdicts: [
+        { claimAtom: "A", verdict: "false", supportingSources: [atom("https://t.test/x")], contradictingSources: [] },
+      ],
+    });
+    expect(result).toMatchObject({ changed: true, to: "unverified", rule: "false-without-sourced-false-atom" });
+  });
+
+  it("false + 反证桶有 URL → 方向一致，整句 false 保留（对齐后的合法形状）", () => {
+    const report: Record<string, unknown> = { verdictType: "false" };
+    const result = applyConclusionGate(report, {
+      claimAtoms: ["A"],
+      claimAtomTypes: [{ text: "A", verifiable: true, type: "fact" }],
+      subclaimVerdicts: [
+        { claimAtom: "A", verdict: "false", supportingSources: [], contradictingSources: [atom("https://t.test/x")] },
+      ],
+    });
+    expect(result.changed).toBe(false);
+  });
+});
+
+describe("needsConstrainedConclusion 未查清边界（Review 5128449568 Blocker 1）", () => {
+  const src = (u: string) => ({ url: u, title: "t", snippet: "s" });
+
+  it("终态硬 false 由 A 合法支撑，但 B checkable-unverified → 需要 repair，只补边界不降级", () => {
+    const decision = needsConstrainedConclusion({
+      draftVerdictType: "false",
+      finalVerdictType: "false",
+      subclaimVerdicts: [
+        { claimAtom: "A", verdict: "false", supportingSources: [], contradictingSources: [src("https://t.test/a")] },
+        { claimAtom: "B", verdict: "unverified", supportingSources: [], contradictingSources: [] },
+      ],
+      nonVerifiableAtoms: [],
+      auditUnresolvedGaps: [],
+      finalGate: { changed: false },
+    });
+    expect(decision).toMatchObject({
+      needed: true,
+      rule: "hard-verdict-with-unverified-boundary",
+      from: "false",
+      to: "false",
+    });
+  });
+
+  it("终态硬 verdict 且存在方向不符（true 无支撑桶 URL）的 checkable atom → 需要 repair", () => {
+    const decision = needsConstrainedConclusion({
+      draftVerdictType: "true",
+      finalVerdictType: "true",
+      subclaimVerdicts: [
+        { claimAtom: "A", verdict: "true", supportingSources: [src("https://t.test/a")], contradictingSources: [] },
+        { claimAtom: "B", verdict: "true", supportingSources: [], contradictingSources: [src("https://t.test/b")] },
+      ],
+      nonVerifiableAtoms: [],
+      auditUnresolvedGaps: [],
+      finalGate: { changed: false },
+    });
+    expect(decision).toMatchObject({ needed: true, rule: "hard-verdict-with-unverified-boundary" });
+  });
+
+  it("全部 checkable atom 方向有据时硬 verdict 不因本规则 repair", () => {
+    const decision = needsConstrainedConclusion({
+      draftVerdictType: "false",
+      finalVerdictType: "false",
+      subclaimVerdicts: [
+        { claimAtom: "A", verdict: "false", supportingSources: [], contradictingSources: [src("https://t.test/a")] },
+      ],
+      nonVerifiableAtoms: [],
+      auditUnresolvedGaps: [],
+      finalGate: { changed: false },
+    });
+    expect(decision.needed).toBe(false);
+  });
+});
+
+describe("repairGatedConclusion 未查清边界文本（Review 5128449568 Blocker 1）", () => {
+  it("硬 verdict 保留时的 repair 文本明确「哪些 checkable Claim 尚未查清、未计入该判断」", () => {
+    const report: Record<string, unknown> = {
+      verdictType: "false",
+      conclusion: "旧文本",
+      summaryForPublic: "旧文本",
+      recommendation: "旧文本",
+      evidenceChain: [],
+    };
+    repairGatedConclusion(
+      report,
+      { changed: true, from: "false", to: "false", rule: "hard-verdict-with-unverified-boundary" },
+      {
+        nonVerifiableAtoms: [],
+        subclaimVerdicts: [
+          {
+            claimAtom: "A",
+            verdict: "false",
+            evidence: "对照研究[1]显示无效。",
+            supportingSources: [],
+            contradictingSources: [{ url: "https://t.test/a", title: "t", snippet: "s" }],
+          },
+          { claimAtom: "B", verdict: "unverified", evidence: "", supportingSources: [], contradictingSources: [] },
+        ],
+        auditUnresolvedGaps: [],
+      }
+    );
+    const conclusion = String(report.conclusion ?? "");
+    expect(conclusion).toContain(directAnswer("false"));
+    expect(conclusion).toContain("「B」尚未查清");
+    expect(conclusion).toContain("未计入该判断");
+    expect(String(report.summaryForPublic ?? "")).toContain("尚未查清");
+    const chain = report.evidenceChain as Array<Record<string, unknown>>;
+    expect(String(chain.at(-1)?.finding ?? "")).toContain("尚未查清");
   });
 });
