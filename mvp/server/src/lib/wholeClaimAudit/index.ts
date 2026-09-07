@@ -31,6 +31,7 @@ export {
 } from "./evaluation.js";
 export {
   applyConclusionGate,
+  buildScopedEvidence,
   needsConstrainedConclusion,
   repairGatedConclusion,
   type ConclusionGateInput,

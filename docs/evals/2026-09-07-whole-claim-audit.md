@@ -10,9 +10,9 @@ Change / Not this / Evaluator 三段写在最前；本文同时是 PR（Fixes #7
 
 ### Evaluator（命令化）
 
-- `npx vitest run server/src/lib/wholeClaimAudit/wholeClaimAudit.test.ts`（29 项，含收权门不变量、postLiveness 严格规则、needsConstrainedConclusion、compactVerdicts related-only 区分、repair 结构化重建）。
-- `npx vitest run server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts`（21 项，8 类 case + §14 + composer 输入 + 两轮 blocker 回归）。
-- `npx vitest run server/src/lib/citationLiveness.test.ts`（10 项，含双桶对称剪枝与同 URL 双 relation 保留）。
+- `npx vitest run server/src/lib/wholeClaimAudit/wholeClaimAudit.test.ts`（35 项，含收权门不变量、postLiveness 严格规则、needsConstrainedConclusion、compactVerdicts related-only 区分、repair 结构化重建、citation scope conversion）。
+- `npx vitest run server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts`（22 项，8 类 case + §14 + composer 输入 + 三轮 blocker 回归）。
+- `npx vitest run server/src/lib/citationLiveness.test.ts`（11 项，含双桶对称剪枝、同 URL 双 relation 保留、chain-only 全死链）。
 - `npx vitest run server/src/lib/casePipeline/runCasePipeline.test.ts`（既有管线行为不回归，含电瓶车短谣 tiny-bound 与 review hooks；两处硬结论用例注入 alive 探活使其 hermetic，意图不变）。
 - 人评项：真实模型下「每次感冒都应当输液」一句的 REAL SSE 一致性回归——留给 post-#78 的窄回归 PR/Issue，本 PR 不动 #72 artifacts（#72 已 merged，见 §11）。
 
@@ -59,7 +59,7 @@ repair 触发条件不再看"谁降的级"，只看最终结构约束（needsCon
 - 门执行两次、同一 contract：early（boundTiny 之前，liveness 前的宽松语义）+ 权威 final（reviewer → normalize → 探活之后，`postLiveness: true`，以存活证据为准，是最后一个改 verdict 的位置）。liveness 后硬 true/false 若无任何存活可点开证据支撑，直接收为 unverified（规则 `post-liveness-no-surviving-evidence`，死证不得支撑硬结论）；唯一豁免是短谣存活辟谣通道（聚合来源按 deadUrls 过滤后 `boundTinyRumorVerdict` 仍成立，只对 false 有效）。
 - 探活双桶对称（§12 Blocker 1）：supportingSources 与 contradictingSources 各自独立 filter、独立去重，不跨桶合并；同 URL 跨桶是两条 relation，都保留；判词句内编号继续「过滤后 support → 过滤后 contradict」（与 `bindDualBucketCitations` 同构，不破坏 #74）。
 - legacy boundTiny 提成 false 前先用同一 contract 做 probe，不通过不提（`_tinyBoundSuppressed`）；reviewer 的短谣豁免若与 contract 冲突，final 照样收回。
-- 结构化 conclusion repair（repairGatedConclusion）：触发由 `needsConstrainedConclusion` 按最终结构约束决定（§12 Blocker 3：draft/final 强度、nonVerifiable、gaps、存活绑定状态），不看降级来源、不读原文。用 gated verdict 的标准答案开头 + 有源判词 evidence（可核查部分保留）+ nonVerifiable 边界句 + 缺口边界句重建 conclusion（≤400 字），同步重建 summaryForPublic（≤200 字）、recommendation，并向 evidenceChain 追加「结论边界（整句收权）」层。`_conclusionGate.repaired=true`。repair 后重放幂等的 `applyImageOriginToReport`，用结构化 imageOrigin 对象恢复原图出处引用。
+- 结构化 conclusion repair（repairGatedConclusion）：触发由 `needsConstrainedConclusion` 按最终结构约束决定（§12 Blocker 3 → §13 Blocker 1 扩展到硬 verdict 保留的情形：终态仍是合法 true/false，但存在 nonVerifiableAtoms 时同样重建，overall 判断保留、不适用部分明确留边界，规则 `hard-verdict-with-not-applicable-boundary`）。不看降级来源、不读原文。用 gated verdict 的标准答案开头 + 有源判词 evidence（可核查部分保留，经显式 local→global citation scope conversion，§13 Blocker 2：按判词顺序建全局 source index，与 normalize 的 first-seen 同序，映射不到的 marker 删除）+ nonVerifiable 边界句 + 缺口边界句重建 conclusion（≤400 字），同步重建 summaryForPublic（≤200 字）、recommendation，并向 evidenceChain 追加「结论边界（整句收权）」层。`_conclusionGate.repaired=true`。repair 后重放幂等的 `applyImageOriginToReport`，用结构化 imageOrigin 对象恢复原图出处引用。
 - 重判提交条件（§12 Blocker 2）：`recheckCommitted` 要求同时满足 search 得新来源、重判成功、目标 atom 判词合法、bind 后形成非 related-only 的 support/contradict relation 且实际引用了本次新 URL（`newlyBoundEvidenceUrlsByAtomKey` 落盘）。只有提交后第二次 Evaluation 才 authoritative，可关闭旧 gap；否则保守沿用第一次（重评估失败/related-only/未引用/超预算都不清空 gaps）。
 - `compactVerdicts` 明确区分 supportCount / contradictCount / relatedOnlyCount / sourcesRelatedOnly：related-only 填充的 support/contradict 记 0，Evaluation prompt 同步声明"仅相关检索材料不是支持证据"。
 - 预算：时间不足（`AUDIT_MIN_MS=45s` / `COMPOSER_RESERVE_MS=90s` 之前）fail-open 跳过审计，宁可保守收束不饿死 composer。
@@ -100,13 +100,16 @@ repair 触发条件不再看"谁降的级"，只看最终结构约束（needsCon
 | R7 Blocker 2B（related-only） | search 得新 URL 但重判只形成 sourcesRelatedOnly → 不提交，gap 保留；compactVerdicts 把 related-only 计为 relatedOnlyCount，不计 support | PASS |
 | R8 Blocker 3A（无 audit + reviewer 降级） | composer true/“原句成立”被 reviewer 收到 unverified → 最终文案同步收权，Snapshot conclusion 一致 | PASS |
 | R9 Blocker 3B（弱 draft 越权） | draft 已是 mixed 但 conclusion 把 not-applicable Claim 写成已证伪 → verdict 无变化仍结构化重建 | PASS |
+| R10 Blocker 1（本轮：hard 保留 + 边界） | A sourced-false + B not-applicable + composer 写“都不成立” → overall false 保留，directAnswer/summary 不写 B 已证伪，B 明确未计入，引用作用域正确 | PASS |
+| R11 Blocker 2（本轮：scope conversion） | 双 atom 各自局部 [1] → 全局 [1]/[2] 分指 A/B；第二 atom support[1]contradict[2] → 全局顺延，无映射 marker 删除 | PASS |
+| R12 Blocker 3（本轮：chain 全死链） | evidenceChain-only 死链层 → sourceRefs=[]、marker 清除、序列化报告不含该 URL；chain-only URL 纳入探活 candidate | PASS |
 
 ## 9. tests / build
 
 - `npm test`（根）：54 files / 605 tests + 3 files / 85 tests + 2 files / 21 tests + 20 files / 83 tests，全绿。
 - `npx vitest run`（mvp 全量）：98 files（97 passed / 1 skipped）/ 1060 tests 通过、1 skipped、0 failed。`LegacyDesk.test.tsx > uses the clean analysis shell` 本轮全量与单跑表现不稳定（上一轮全量 1 failed、单跑通过；本轮基线对照单跑同样失败，详见 §12），属已知负载抖动：该测试只 import 前端模块，不在本分支改动依赖图内。
 - `npm run build`（根）与 `cd mvp && npm run build`（tsc + vite）通过；`mvp/server` `tsc --noEmit` 通过。
-- 新增定向测试：`wholeClaimAudit.test.ts` 29 项、`runCasePipeline.wholeClaimAudit.test.ts` 21 项、`citationLiveness.test.ts` 10 项。
+- 新增定向测试：`wholeClaimAudit.test.ts` 35 项、`runCasePipeline.wholeClaimAudit.test.ts` 22 项、`citationLiveness.test.ts` 11 项。
 - eval:gate：见下方记录。
 
 ### eval:gate 记录（如实）
@@ -148,6 +151,23 @@ repair 触发条件不再看"谁降的级"，只看最终结构约束（needsCon
 - **Blocker 3（repair 由最终结构约束触发）**：新增 `needsConstrainedConclusion`，只读 final verdictType、final 判词、nonVerifiableAtoms、audit gaps、存活绑定状态、draft/final 强度。draft 硬 verdict 被任何模块（含 reviewer/finalize）降为弱 verdict，或终态已是弱 verdict 但存在 not-applicable/未解决 gap/无存活 sourced relation → 重建；结构干净的弱结论保留 composer 原文。无法确认原文安全时优先重建。回归 R8/R9。
 - 最坏 LLM 调用数仍为 4（Planning + Evaluation + 重判 + bounded re-evaluation），但重评估门槛从"补查得新来源"收紧为"重判提交"，期望调用不增反降；latency / budget 上限不变。
 
+## 13. Review 5128220693 三 blocker 修复（本 PR 内第四轮，不开新 PR）
+
+人工 Review 认定第三轮总体方向通过（Planning、Evaluation、extra pass、recheckCommitted、bounded re-evaluation、post-liveness final gate），禁止重新设计 Whole-Claim Audit，只修 3 个最终发布一致性 blocker。不改 Planning 语义、Evaluation schema、extra-pass 数量、UI、Golden Path、Snapshot schema、source identity、Vercel、baseline、LegacyDesk、旧 REAL artifacts；不新增关键词规则、新 Agent、新模型 stage、自由循环。
+
+- **Blocker 1（hard verdict + not-applicable 边界）**：`needsConstrainedConclusion` 增加第三触发条件——终态仍是合法硬 verdict（true/false）但存在 nonVerifiableAtoms 时同样 repair，只补边界、不降级（规则 `hard-verdict-with-not-applicable-boundary`）。overall false/true 继续由有据 Claim 支撑；not-applicable Claim 明确写为"不适用真假判断，未计入该判断"。回归 R10。
+- **Blocker 2（repair 内 citation scope conversion）**：新增 `buildScopedEvidence`——按判词顺序（与 `normalizeReportCitations` 的全局 first-seen 同序）构造全局 source index，把每段 evidence 的局部 marker（supporting → [1..S]，contradicting → [S+1..S+C]）显式映射到全局编号；映射不到存活来源的 marker 删除。repair 不再直接复制带局部 marker 的 evidence，后续 normalize 只做 clamp 而不错绑。回归 R11（双 atom 局部 [1] 错绑形状 + 跨 atom 顺延形状）。
+- **Blocker 3（chain 全死链 fallback）**：`pruneDeadCitations` 的 evidenceChain 层改写——URL 与非 URL metadata 分开处理，全死时 `sourceRefs` 保持 `[]`（不再 fallback 整份原数组），evidence marker 随存活来源清除；evidenceChain-only URL 纳入 liveness candidate 收集（此前只收全局与判词来源，chain 自由填写的 URL 会漏网）。回归 R12。
+
+### 本轮 tests / build（实际运行）
+
+- 根 `npm test`：54/605 + 3/85 + 2/21 + 20/83，全绿。
+- 根 `npm run build`：exit 0。
+- `cd mvp && npm test`：98 files（96 passed / 1 failed file / 1 skipped），1067 passed / 1 failed / 1 skipped；唯一失败为 LegacyDesk 已知抖动（基线对照同失败，见 §12）。
+- `cd mvp && npm run build`：exit 0（tsc + vite）。
+- `cd mvp/server && npx tsc --noEmit`：exit 0。
+- `eval:gate` 未重跑（基线原因既有且无关，不改 baseline 换绿）。
+
 ### 本轮 tests / build（实际运行）
 
 - 根 `npm test`：54/605 + 3/85 + 2/21 + 20/83，全绿。
@@ -155,5 +175,5 @@ repair 触发条件不再看"谁降的级"，只看最终结构约束（needsCon
 - `cd mvp && npm test`：98 files（97 passed / 1 skipped），1060 passed / 1 skipped / 0 failed。
 - `cd mvp && npm run build`：exit 0（tsc + vite）。
 - `cd mvp/server && npx tsc --noEmit`：exit 0。
-- LegacyDesk 对照：本轮全量 0 failed；但该文件单跑在本轮与基线（stash 本分支改动）下同样出现 1 failed（同名用例 `uses the clean analysis shell for the real workspace too`，28 passed / 1 failed 两边一致），确认为已知负载抖动，与本轮改动无关。
+- LegacyDesk 对照：本轮全量 1 failed（`uses the clean analysis shell for the real workspace too`）；stash 本轮改动后基线（7df268d）单跑同文件同样 1 failed（同名用例），确认为已知负载抖动，与本轮改动无关。
 - `eval:gate` 未重跑：基线失败原因既有且与本轮无关（§9 记录），上一轮信号仍有效；不改 baseline 换绿。

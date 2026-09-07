@@ -166,6 +166,32 @@ describe("pruneDeadCitations", () => {
     expect(result.pruned).toBe(false);
   });
 
+  it("evidenceChain-only URL is a liveness candidate; all-dead layer keeps [] and drops markers", async () => {
+    const deadUrl = "https://dead.example/chain-only";
+    const report: Record<string, unknown> = {
+      conclusion: "结论无引用。",
+      citationSources: [],
+      subclaimVerdicts: [],
+      evidenceChain: [
+        {
+          layer: "检索",
+          finding: "f",
+          evidence: "链上材料见[1]。",
+          sourceRefs: [deadUrl],
+        },
+      ],
+    };
+    const result = await pruneDeadCitations(report, {
+      liveness: new Map([[deadUrl, "dead"]]),
+    });
+    expect(result.pruned).toBe(true);
+    expect(result.deadUrls).toEqual([deadUrl]);
+    const layers = report.evidenceChain as Array<Record<string, unknown>>;
+    expect(layers[0].sourceRefs).toEqual([]);
+    expect(String(layers[0].evidence)).not.toContain("[1]");
+    expect(JSON.stringify(report)).not.toContain(deadUrl);
+  });
+
   it("prunes contradictingSources symmetrically with dual-bucket numbering", async () => {
     const report: Record<string, unknown> = {
       conclusion: "A 成立[1]，但有反证[2][3]。",
