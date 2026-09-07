@@ -175,23 +175,98 @@ function listNonVerifiableAtoms(value: unknown): Array<{ text: string; type: str
 }
 
 function listSourcedVerdictEvidence(value: unknown): string[] {
+  return buildScopedEvidence(value).texts;
+}
+
+type ScopedSource = { url: string; title: string; snippet: string };
+
+function collectBucketSources(value: unknown): ScopedSource[] {
   if (!Array.isArray(value)) return [];
-  const out: string[] = [];
+  const out: ScopedSource[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const url = String(rec.url ?? "").trim();
+    if (!/^https?:\/\//i.test(url)) continue;
+    out.push({
+      url,
+      title: String(rec.title ?? "").slice(0, 200),
+      snippet: String(rec.snippet ?? "").slice(0, 320),
+    });
+  }
+  return out;
+}
+
+/**
+ * 把局部 [n] 映射到全局 source index（Review 5128220693 Blocker 2）。
+ * 局部编号与判词双桶同构：supporting → [1..S]，contradicting → [S+1..S+C]。
+ * 映射不到存活全局来源的 marker 直接删除，绝不错绑。
+ */
+function remapLocalMarkersToGlobal(
+  evidence: string,
+  supporting: ScopedSource[],
+  contradicting: ScopedSource[],
+  globalIndex: Map<string, number>
+): string {
+  const next = evidence.replace(/\[(\d+)\]/g, (_full, nStr: string) => {
+    const n = Number(nStr);
+    const local =
+      n >= 1 && n <= supporting.length
+        ? supporting[n - 1]
+        : n > supporting.length && n <= supporting.length + contradicting.length
+          ? contradicting[n - supporting.length - 1]
+          : undefined;
+    if (!local) return "";
+    const mapped = globalIndex.get(local.url);
+    return mapped != null ? `[${mapped}]` : "";
+  });
+  return next
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([，。；：、,.!?;:])/g, "$1")
+    .trim();
+}
+
+/**
+ * 按判词顺序（与 normalizeReportCitations 的全局 first-seen 同序）构造全局
+ * source index，把每段 evidence 的局部 marker 显式映射到全局编号。
+ * 只取前 2 条有源判词（与旧行为同 cap）；返回的 texts 可直接拼进整句 conclusion，
+ * 不得再被当成局部编号解读。
+ */
+export function buildScopedEvidence(value: unknown): {
+  texts: string[];
+  globalSources: ScopedSource[];
+} {
+  const texts: string[] = [];
+  const globalSources: ScopedSource[] = [];
+  const globalIndex = new Map<string, number>();
+  if (!Array.isArray(value)) return { texts, globalSources };
+  const scoped: Array<{ evidence: string; supporting: ScopedSource[]; contradicting: ScopedSource[] }> = [];
   for (const item of value) {
     if (!item || typeof item !== "object") continue;
     const rec = item as Record<string, unknown>;
     if (rec.sourcesRelatedOnly === true) continue;
-    const hasUrl =
-      (Array.isArray(rec.supportingSources) &&
-        rec.supportingSources.some((s) => /^https?:\/\//i.test(String((s as { url?: unknown } | null)?.url ?? "").trim()))) ||
-      (Array.isArray(rec.contradictingSources) &&
-        rec.contradictingSources.some((s) => /^https?:\/\//i.test(String((s as { url?: unknown } | null)?.url ?? "").trim())));
-    if (!hasUrl) continue;
-    const evidence = clipText(rec.evidence, 120);
-    if (evidence) out.push(evidence);
-    if (out.length >= 2) break;
+    const supporting = collectBucketSources(rec.supportingSources);
+    const contradicting = collectBucketSources(rec.contradictingSources);
+    if (supporting.length === 0 && contradicting.length === 0) continue;
+    scoped.push({ evidence: clipText(rec.evidence, 120), supporting, contradicting });
+    for (const src of [...supporting, ...contradicting]) {
+      if (!globalIndex.has(src.url)) {
+        globalIndex.set(src.url, globalSources.length + 1);
+        globalSources.push(src);
+      }
+    }
+    if (scoped.length >= 2) break;
   }
-  return out;
+  for (const entry of scoped) {
+    const remapped = remapLocalMarkersToGlobal(
+      entry.evidence,
+      entry.supporting,
+      entry.contradicting,
+      globalIndex
+    );
+    if (remapped) texts.push(remapped);
+  }
+  return { texts, globalSources };
 }
 
 const GATE_RULE_FINDING: Record<string, string> = {
@@ -203,6 +278,7 @@ const GATE_RULE_FINDING: Record<string, string> = {
   "post-liveness-no-surviving-evidence": "liveness 之后没有存活的可点开证据支撑硬结论，整句收为待核查。",
   "reviewer-demotion": "整句结论强度已被下调，文本同步收权到证据撑到的层级。",
   "weak-conclusion-audit-alignment": "整句为弱结论：不适用真假判断的表述与未补齐依据只作边界，不计入真假判定。",
+  "hard-verdict-with-not-applicable-boundary": "整句结论由有据命题支撑；不适用真假判断的表述未计入该判断，只作边界。",
 };
 
 function isHardVerdictType(value: string): boolean {
@@ -232,13 +308,16 @@ export type ConstrainedConclusionDecision = {
 };
 
 /**
- * 最终结构化 repair 触发判断（Review 5128022550 Blocker 3）。
+ * 最终结构化 repair 触发判断（Review 5128022550 Blocker 3 + 5128220693 Blocker 1）。
  *
  * 只读最终结构状态，不读 conclusion/summary 文本：
  * - 任何模块把 draft 硬 verdict 降为弱 verdict（含 reportReviewer/finalize），
  *   都必须同步修复用户可见文本；
  * - draft 本来就是弱 verdict，但存在 not-applicable Claim、未解决 audit 缺口、
- *   或没有任何存活 sourced relation 时，同样重建（无法确认原文安全时优先重建）。
+ *   或没有任何存活 sourced relation 时，同样重建（无法确认原文安全时优先重建）；
+ * - 终态仍是合法硬 verdict（true/false），但存在 nonVerifiableAtoms 时也必须重建：
+ *   overall 判断可以保留，可不适用真假判断的部分必须明确留在边界里，
+ *   不得暗示所有 Claim 都获得了同一 verdict。
  */
 export function needsConstrainedConclusion(
   input: ConstrainedConclusionInput = {}
@@ -255,7 +334,9 @@ export function needsConstrainedConclusion(
   const hasSourced = verdicts.some(verdictHasBoundHttpUrl);
 
   const needed =
-    weakened || (isWeakVerdictType(final) && (hasNonVerifiable || hasGaps || !hasSourced));
+    weakened ||
+    (isWeakVerdictType(final) && (hasNonVerifiable || hasGaps || !hasSourced)) ||
+    (isHardVerdictType(final) && hasNonVerifiable);
 
   let rule = "weak-conclusion-audit-alignment";
   if (input.finalGate?.changed && input.finalGate.rule) {
@@ -266,6 +347,8 @@ export function needsConstrainedConclusion(
     rule = "mixed-guard-partial";
   } else if (weakened) {
     rule = "reviewer-demotion";
+  } else if (isHardVerdictType(final) && hasNonVerifiable) {
+    rule = "hard-verdict-with-not-applicable-boundary";
   }
   return { needed, rule, from: draft, to: final };
 }
