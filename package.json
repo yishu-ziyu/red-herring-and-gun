@@ -12,7 +12,10 @@
     "dev:web": "npm run dev -w @rhg/web",
     "dev:server": "npm run dev -w @rhg/server",
     "eval": "npm run eval -w @rhg/eval --",
-    "eval:gate": "npm run eval:gate -w @rhg/eval --"
+    "eval:gate": "npm run eval:gate -w @rhg/eval --",
+    "qa:report": "python3 scripts/qa/qa_report.py",
+    "qa:contracts": "cd packages/core && npx vitest run src/text/qa/contracts.test.ts",
+    "qa:smoke": "python3 scripts/qa/qa_smoke.py"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
