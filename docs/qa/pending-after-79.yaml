@@ -1,0 +1,47 @@
+# 依赖 PR #79 合入后才能在 main 上运行的高风险组合（任务书§4）。
+# 状态一律 blocked-on-#79-merge；合入后逐条转成 main 上的公开回归并在此登记映射。
+# 本清单本身是公开的；真正的保留变式（语义等价改写）在 #79 合入后另行生成。
+
+combos:
+  - combo_id: contradict-only-not-sourced-true
+    描述: verdict=true 但只有反证桶 URL → 不得成为 sourced true，原子与整句同收 unresolved/unverified
+    覆盖回归: wholeClaimAudit.test.ts「applyConclusionGate 方向契约」+ 管线 Blocker 3「true + 仅 contradict URL」
+  - combo_id: support-only-false-after-alignment
+    描述: false + 仅支撑桶 → #74 alignment 改桶后保留；未对齐路径必须 unresolved
+    覆盖回归: agentConfigs.test.ts mergeSubclaimVerdicts 方向契约 + 管线「false + 仅 support URL」
+  - combo_id: sourced-false-plus-unverified-sibling
+    描述: A sourced-false + B checkable-unverified → overall false 保留但 B 不得被写成已证伪
+    覆盖回归: 管线「Review 5128449568 Blocker 1」+ repairGatedConclusion 未查清边界
+  - combo_id: hard-verdict-with-unverified-boundary
+    描述: 终态硬 verdict + 未查清 checkable 原子 → 只补边界不降级
+    覆盖回归: needsConstrainedConclusion 未查清边界三例
+  - combo_id: audit-eval-fail-closed
+    描述: Planning gap → Evaluation null/超预算 → 硬 verdict 收 unverified、缺口保留
+    覆盖回归: 管线 Blocker 2「failed」+「skipped-budget」
+  - combo_id: audit-success-no-overreach
+    描述: audit 完整成功且 gap=[] → 单命题正常硬 verdict 不被误伤
+    覆盖回归: 管线「防误伤」例
+  - combo_id: shared-direction-contract-consistency
+    描述: merge/derive/gate 三处对方向证据判定同结果（hasDirectionalBoundHttpUrl 共享定义）
+    覆盖回归: hasDirectionalBoundHttpUrl 单元 + derive 方向契约单元
+  - combo_id: dead-link-collapses-hard-verdict
+    描述: 唯一支撑/反证死链 → 硬 verdict 收 unverified（post-liveness）
+    覆盖回归: #79 第四轮 Blocker 1A/1B 管线回归
+  - combo_id: recheck-commitment-gates-gap-closure
+    描述: 补查重判未提交（related-only/未引用新 URL/抛错）→ 旧 gap 不得关闭
+    覆盖回归: #79 第三轮 Blocker 2A/2B 管线回归
+  - combo_id: multi-claim-local-citation-scopes
+    描述: 多条 Claim 各有局部 [1] → repair 作用域转换不错绑
+    覆盖回归: buildScopedEvidence Case A/B + #79 第四轮 R11
+  - combo_id: all-sources-dead
+    描述: 全部来源失效 → 报告不含死 URL、整句不可为硬判定
+    覆盖回归: #79 第四轮 Blocker 3 探活回归
+  - combo_id: missing-model-fields
+    描述: 模型输出缺字段/非法结构 → 判词回退 unverified、不产生伪造证据
+    覆盖回归: mergeSubclaimVerdicts 非法 verdict 回退（main 已有）+ #79 管线 Case 8
+  - combo_id: bridge-gap-preserved-on-eval-failure
+    描述: Planning 已发现 gap、Evaluation 失败 → gap 不静默消失（B 的「A 有据+C 不适用」变体同族）
+    覆盖回归: 管线 Blocker 2 failed 例
+  - combo_id: summary-not-omit-unknown-boundary-3plus-claims
+    描述: 三个以上 Claim 时摘要不遗漏关键未知边界
+    覆盖回归: 待 #79 合入后新增（当前无对应回归，不得假装已覆盖）

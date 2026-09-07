@@ -92,3 +92,4 @@ packages/core/output/
 
 # Generated local design catalog and cleanup receipts
 .context/design-overview/*.json
+__pycache__/
