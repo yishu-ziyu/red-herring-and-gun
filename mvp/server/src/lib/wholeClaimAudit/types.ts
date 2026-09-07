@@ -69,6 +69,17 @@ export interface WholeClaimAuditExtraPass {
    * true = 最终缺口以第二次 Evaluation 为准，旧 gap 可被关闭；false = 沿用第一次 Evaluation。
    */
   reevaluated: boolean;
+  /**
+   * fact_checker 重判是否真正提交（Review 5128022550 Blocker 2）：新来源到手、
+   * 重判成功、目标 atom 判词经 bind 形成非 related-only 的 support/contradict
+   * relation 且实际引用了新 URL。false 时第二次 Evaluation 无权关闭旧 gap。
+   */
+  recheckCommitted: boolean;
+  /**
+   * 经判词实际引用的新绑定证据 URL（按目标 atomKey）：只有这里出现过的 URL
+   * 才算"提交的新 Evidence"。未提交时为空对象。
+   */
+  newlyBoundEvidenceUrlsByAtomKey: Record<string, string[]>;
 }
 
 export interface WholeClaimAuditRun {

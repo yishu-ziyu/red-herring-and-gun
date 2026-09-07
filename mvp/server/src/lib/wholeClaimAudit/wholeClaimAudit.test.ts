@@ -7,6 +7,8 @@ import { describe, expect, it } from "vitest";
 import {
   applyCheckabilityRevisions,
   applyConclusionGate,
+  compactVerdicts,
+  needsConstrainedConclusion,
   parseWholeClaimEvaluation,
   parseWholeClaimPlan,
   repairGatedConclusion,
@@ -258,6 +260,202 @@ describe("repairGatedConclusion（Blocker 1：结构化 repair，不读原文）
     repairGatedConclusion(untouched, { changed: false }, {});
     expect(untouched.conclusion).toBe("原文。");
     expect(untouched.evidenceChain).toBeUndefined();
+  });
+});
+
+describe("applyConclusionGate postLiveness（Blocker 1：死证不得支撑硬结论）", () => {
+  const atom = (url: string) => ({ url, title: "t", snippet: "s" });
+  const checkable = [{ text: "A", verifiable: true, type: "fact" }];
+
+  it("liveness 后唯一支撑死掉 → 硬 true 收为 unverified", () => {
+    const report: Record<string, unknown> = { verdictType: "true" };
+    const result = applyConclusionGate(report, {
+      claimAtoms: ["A"],
+      claimAtomTypes: checkable,
+      subclaimVerdicts: [
+        { claimAtom: "A", verdict: "true", supportingSources: [], contradictingSources: [] },
+      ],
+      postLiveness: true,
+    });
+    expect(result).toMatchObject({
+      changed: true,
+      to: "unverified",
+      rule: "post-liveness-no-surviving-evidence",
+    });
+  });
+
+  it("liveness 后唯一反证死掉 → 硬 false 收为 unverified（无短谣豁免时）", () => {
+    const report: Record<string, unknown> = { verdictType: "false" };
+    const result = applyConclusionGate(report, {
+      claimAtoms: ["A"],
+      claimAtomTypes: checkable,
+      subclaimVerdicts: [
+        { claimAtom: "A", verdict: "false", supportingSources: [], contradictingSources: [] },
+      ],
+      postLiveness: true,
+      allowUnboundHardFalse: false,
+    });
+    expect(result).toMatchObject({
+      changed: true,
+      to: "unverified",
+      rule: "post-liveness-no-surviving-evidence",
+    });
+  });
+
+  it("短谣存活辟谣豁免：聚合仍有存活 on-topic 辟谣时无绑定 false 保留", () => {
+    const report: Record<string, unknown> = { verdictType: "false" };
+    const result = applyConclusionGate(report, {
+      claimAtoms: ["A"],
+      claimAtomTypes: checkable,
+      subclaimVerdicts: [],
+      postLiveness: true,
+      allowUnboundHardFalse: true,
+    });
+    expect(result.changed).toBe(false);
+    expect(report.verdictType).toBe("false");
+  });
+
+  it("liveness 前行为不变：无绑定时留给 reviewer，不重复惩罚", () => {
+    const report: Record<string, unknown> = { verdictType: "true" };
+    expect(
+      applyConclusionGate(report, {
+        claimAtoms: ["A"],
+        claimAtomTypes: checkable,
+        subclaimVerdicts: [],
+      }).changed
+    ).toBe(false);
+  });
+
+  it("存活支撑仍在时硬 true 不动", () => {
+    const report: Record<string, unknown> = { verdictType: "true" };
+    const result = applyConclusionGate(report, {
+      claimAtoms: ["A"],
+      claimAtomTypes: checkable,
+      subclaimVerdicts: [
+        {
+          claimAtom: "A",
+          verdict: "true",
+          supportingSources: [atom("https://t.test/a")],
+          contradictingSources: [],
+        },
+      ],
+      postLiveness: true,
+    });
+    expect(result.changed).toBe(false);
+  });
+});
+
+describe("needsConstrainedConclusion（Blocker 3：最终结构约束触发 repair）", () => {
+  it("reviewer 把 draft true 收到 unverified → 需要 repair，规则为 reviewer-demotion", () => {
+    const decision = needsConstrainedConclusion({
+      draftVerdictType: "true",
+      finalVerdictType: "unverified",
+      subclaimVerdicts: [],
+      nonVerifiableAtoms: [],
+      auditUnresolvedGaps: [],
+      finalGate: { changed: false },
+      earlyGate: { changed: false },
+      mixedGuardDemoted: false,
+    });
+    expect(decision).toMatchObject({ needed: true, rule: "reviewer-demotion", from: "true", to: "unverified" });
+  });
+
+  it("draft 已是弱 verdict，但有 not-applicable Claim → 需要 repair", () => {
+    const decision = needsConstrainedConclusion({
+      draftVerdictType: "mixed_misleading",
+      finalVerdictType: "mixed_misleading",
+      subclaimVerdicts: [],
+      nonVerifiableAtoms: [{ text: "立场句", type: "value" }],
+      auditUnresolvedGaps: [],
+      finalGate: { changed: false },
+    });
+    expect(decision).toMatchObject({ needed: true, rule: "weak-conclusion-audit-alignment" });
+  });
+
+  it("draft 已是弱 verdict，有未解决 audit 缺口 → 需要 repair", () => {
+    const decision = needsConstrainedConclusion({
+      draftVerdictType: "unverified",
+      finalVerdictType: "unverified",
+      subclaimVerdicts: [],
+      nonVerifiableAtoms: [],
+      auditUnresolvedGaps: ["桥接依据缺失"],
+    });
+    expect(decision.needed).toBe(true);
+  });
+
+  it("结构干净的弱结论（有源、无缺口、无立场句）→ 不 repair，保留 composer 原文", () => {
+    const decision = needsConstrainedConclusion({
+      draftVerdictType: "mixed_misleading",
+      finalVerdictType: "mixed_misleading",
+      subclaimVerdicts: [
+        {
+          claimAtom: "A",
+          verdict: "partial",
+          supportingSources: [{ url: "https://t.test/a", title: "t", snippet: "s" }],
+          contradictingSources: [],
+        },
+      ],
+      nonVerifiableAtoms: [],
+      auditUnresolvedGaps: [],
+      finalGate: { changed: false },
+    });
+    expect(decision.needed).toBe(false);
+  });
+
+  it("finalGate 触发时规则优先采用 gate 规则", () => {
+    const decision = needsConstrainedConclusion({
+      draftVerdictType: "false",
+      finalVerdictType: "mixed_misleading",
+      subclaimVerdicts: [],
+      nonVerifiableAtoms: [],
+      auditUnresolvedGaps: [],
+      finalGate: { changed: true, from: "false", to: "mixed_misleading", rule: "false-without-sourced-false-atom" },
+    });
+    expect(decision).toMatchObject({ needed: true, rule: "false-without-sourced-false-atom" });
+  });
+});
+
+describe("compactVerdicts（Blocker 2：related-only 不得计为 support）", () => {
+  it("sourcesRelatedOnly=true 时 support/contradict 记 0，另列 relatedOnlyCount", () => {
+    const out = compactVerdicts([
+      {
+        claimAtom: "A",
+        verdict: "unverified",
+        evidence: "e",
+        supportingSources: [{ url: "https://t.test/1" }, { url: "https://t.test/2" }],
+        contradictingSources: [],
+        sourcesRelatedOnly: true,
+      },
+    ]);
+    expect(out).toEqual([
+      {
+        claimAtom: "A",
+        verdict: "unverified",
+        supportCount: 0,
+        contradictCount: 0,
+        relatedOnlyCount: 2,
+        sourcesRelatedOnly: true,
+        evidence: "e",
+      },
+    ]);
+  });
+
+  it("普通判词计数不变，relatedOnlyCount 为 0", () => {
+    const out = compactVerdicts([
+      {
+        claimAtom: "A",
+        verdict: "false",
+        evidence: "e",
+        supportingSources: [],
+        contradictingSources: [{ url: "https://t.test/1" }],
+      },
+    ]);
+    expect(out[0]).toMatchObject({
+      supportCount: 0,
+      contradictCount: 1,
+      relatedOnlyCount: 0,
+      sourcesRelatedOnly: false,
+    });
   });
 });
 

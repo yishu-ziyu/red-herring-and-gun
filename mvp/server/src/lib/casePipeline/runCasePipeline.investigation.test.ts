@@ -181,7 +181,9 @@ describe("runCasePipeline investigation snapshots", () => {
     for (const claim of completeFrame.claims) {
       expect(claim.evidence.map((l) => l.role)).not.toContain("unassessed");
     }
-    expect(completeFrame.conclusion?.directAnswer).toContain("自燃有依据");
+    expect(completeFrame.conclusion?.directAnswer.startsWith("这句话里有站住的部分")).toBe(true);
+    expect(completeFrame.conclusion?.directAnswer).toContain("检测报告显示热失控可复现");
+    expect(completeFrame.conclusion?.directAnswer).toContain("不适用真假判断");
     expect(completeFrame.conclusion?.judgment).toBe("mixed");
     // 双方证据并存 → 冲突存在；质询未接入 → 原因如实 unknown
     expect(completeFrame.conflicts.length).toBe(1);

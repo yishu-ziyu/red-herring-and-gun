@@ -10,11 +10,11 @@
  * ReportComposer 输入带 nonVerifiableAtoms + wholeClaimAudit 上下文并受 prompt 约束；
  * 本门只用结构化状态做最后兜底，绝不用关键词 regex 判断结论文本越权。
  *
- * 放置点（Review 5127740625 Blocker 2）：最终 gate，位于 assemble / mixed guard /
- * boundTinyRumorVerdict / finalizeReport / reportReviewer 之后、引用探活与快照之前。
- * 探活只剪死链不改 verdict，因此 gate 之后没有任何 legacy mutator 能再把 verdict 推回硬判定；
- * demote（或 mixedGuard 结构化降级）触发时同步做结构化 conclusion repair
- *（repairGatedConclusion），保证用户可见文本与 gated verdict 一致。
+ * 放置点（Review 5128022550 Blocker 1）：early 留在 boundTiny 之前阻止绕过；
+ * 权威 final gate 在 reviewer → normalize → pruneDeadCitations 之后、快照之前，
+ * 以 liveness 后的存活证据为准（postLiveness），是最后一个改 verdict 的位置。
+ * repair 触发由 needsConstrainedConclusion 按最终结构约束决定（Blocker 3），
+ * 保证用户可见文本与 gated verdict 一致。
  */
 
 import { deriveOverallVerdict } from "../reportAssembly/assembleFinalReport.js";
@@ -28,6 +28,18 @@ export type ConclusionGateInput = {
   subclaimVerdicts?: unknown;
   /** Whole-Claim Evaluation 结算后仍未取得来源的桥接缺口。 */
   auditUnresolvedGaps?: readonly string[];
+  /**
+   * liveness 之后运行的权威 final gate 传 true：此时判词里已无死链，
+   * 硬 true/false 若没有任何存活的可点开证据支撑，直接收为 unverified
+   *（死证不得支撑硬结论；唯一例外见 allowUnboundHardFalse）。
+   */
+  postLiveness?: boolean;
+  /**
+   * 短谣 legacy 通道豁免：聚合检索里仍有存活的 on-topic 辟谣且无对题支持时，
+   * 允许无绑定判词的整句 false（对应 reviewer 的 keepBoundTinyFalse 豁免）。
+   * 只对 false 有效，不适用于 true。
+   */
+  allowUnboundHardFalse?: boolean;
 };
 
 export type ConclusionGateResult = {
@@ -98,7 +110,16 @@ export function applyConclusionGate(
 
   // 2) 整句 false 必须有「判 false 且带绑定 URL」的原子支撑（#78 真实失败形状：
   //    仅 partial 原子带来源，composer 却写整句不成立）。
-  if (verdictType === "false" && hasAnyBoundUrl && !hasSourcedFalseVerdict(verdicts)) {
+  if (verdictType === "false" && !hasSourcedFalseVerdict(verdicts)) {
+    // liveness 之前：判词层完全没有绑定 URL 时留给 reportReviewer，不重复惩罚。
+    if (!hasAnyBoundUrl && !input.postLiveness) return { changed: false };
+    // liveness 之后：死证已剔除仍无存活支撑 → 收权；短谣存活辟谣通道豁免除外。
+    if (!hasAnyBoundUrl && input.postLiveness && input.allowUnboundHardFalse) {
+      return { changed: false };
+    }
+    if (!hasAnyBoundUrl && input.postLiveness) {
+      return demote("unverified", "post-liveness-no-surviving-evidence");
+    }
     return demote(
       derived === "partial" ? "mixed_misleading" : "unverified",
       "false-without-sourced-false-atom"
@@ -106,11 +127,17 @@ export function applyConclusionGate(
   }
 
   // 3) 整句 true 必须有「有据之真」支撑（有绑定材料但无 sourced-true 时不救）。
-  if (verdictType === "true" && hasAnyBoundUrl && derived !== "true") {
-    return demote(
-      derived === "partial" ? "mixed_misleading" : "unverified",
-      "true-without-sourced-true-atoms"
-    );
+  if (verdictType === "true") {
+    // liveness 之后唯一支撑死掉 → 硬 true 不得保留。
+    if (!hasAnyBoundUrl && input.postLiveness) {
+      return demote("unverified", "post-liveness-no-surviving-evidence");
+    }
+    if (hasAnyBoundUrl && derived !== "true") {
+      return demote(
+        derived === "partial" ? "mixed_misleading" : "unverified",
+        "true-without-sourced-true-atoms"
+      );
+    }
   }
 
   // 4) audit 未解决的桥接缺口：前提真不自动推出整句结论 → 硬 true/false 收成 unverified
@@ -173,7 +200,75 @@ const GATE_RULE_FINDING: Record<string, string> = {
   "true-without-sourced-true-atoms": "没有带可点开来源的证实判定支撑整句成立，整句不写成成立。",
   "audit-unresolved-bridge-gap": "从各命题到整句结论的桥接依据仍未补齐，整句不写成确定成立或不成立。",
   "mixed-guard-partial": "部分命题有据成立、部分不成立，整句按有真有假表述，不写成整句不成立。",
+  "post-liveness-no-surviving-evidence": "liveness 之后没有存活的可点开证据支撑硬结论，整句收为待核查。",
+  "reviewer-demotion": "整句结论强度已被下调，文本同步收权到证据撑到的层级。",
+  "weak-conclusion-audit-alignment": "整句为弱结论：不适用真假判断的表述与未补齐依据只作边界，不计入真假判定。",
 };
+
+function isHardVerdictType(value: string): boolean {
+  return value === "true" || value === "false";
+}
+
+function isWeakVerdictType(value: string): boolean {
+  return value === "mixed_misleading" || value === "unverified";
+}
+
+export type ConstrainedConclusionInput = {
+  draftVerdictType?: unknown;
+  finalVerdictType?: unknown;
+  subclaimVerdicts?: unknown;
+  nonVerifiableAtoms?: unknown;
+  auditUnresolvedGaps?: readonly string[];
+  finalGate?: ConclusionGateResult;
+  earlyGate?: ConclusionGateResult;
+  mixedGuardDemoted?: boolean;
+};
+
+export type ConstrainedConclusionDecision = {
+  needed: boolean;
+  rule: string;
+  from: string;
+  to: string;
+};
+
+/**
+ * 最终结构化 repair 触发判断（Review 5128022550 Blocker 3）。
+ *
+ * 只读最终结构状态，不读 conclusion/summary 文本：
+ * - 任何模块把 draft 硬 verdict 降为弱 verdict（含 reportReviewer/finalize），
+ *   都必须同步修复用户可见文本；
+ * - draft 本来就是弱 verdict，但存在 not-applicable Claim、未解决 audit 缺口、
+ *   或没有任何存活 sourced relation 时，同样重建（无法确认原文安全时优先重建）。
+ */
+export function needsConstrainedConclusion(
+  input: ConstrainedConclusionInput = {}
+): ConstrainedConclusionDecision {
+  const draft = String(input.draftVerdictType ?? "").trim();
+  const final = String(input.finalVerdictType ?? "").trim();
+  const weakened = isHardVerdictType(draft) && isWeakVerdictType(final);
+
+  const verdicts = Array.isArray(input.subclaimVerdicts)
+    ? (input.subclaimVerdicts as unknown[])
+    : [];
+  const hasNonVerifiable = listNonVerifiableAtoms(input.nonVerifiableAtoms).length > 0;
+  const hasGaps = (input.auditUnresolvedGaps ?? []).length > 0;
+  const hasSourced = verdicts.some(verdictHasBoundHttpUrl);
+
+  const needed =
+    weakened || (isWeakVerdictType(final) && (hasNonVerifiable || hasGaps || !hasSourced));
+
+  let rule = "weak-conclusion-audit-alignment";
+  if (input.finalGate?.changed && input.finalGate.rule) {
+    rule = input.finalGate.rule;
+  } else if (input.earlyGate?.changed && input.earlyGate.rule && final !== draft) {
+    rule = input.earlyGate.rule;
+  } else if (input.mixedGuardDemoted && final !== draft) {
+    rule = "mixed-guard-partial";
+  } else if (weakened) {
+    rule = "reviewer-demotion";
+  }
+  return { needed, rule, from: draft, to: final };
+}
 
 /**
  * 受约束的 conclusion repair（Review 5127740625 Blocker 1）。
