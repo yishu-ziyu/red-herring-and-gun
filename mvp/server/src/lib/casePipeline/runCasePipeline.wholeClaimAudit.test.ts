@@ -66,6 +66,8 @@ async function runHarness(input: {
   /** citationLiveness 注入：传 Map 做确定性探活；不传走真实网络。 */
   citationLiveness?: Map<string, LivenessStatus>;
   crossExamCallRaw?: unknown;
+  /** 管线截止时间（epoch ms）：不传 = 无预算。 */
+  deadline?: number;
 }): Promise<HarnessResult> {
   const searchQueries: string[] = [];
   const snapshots: InvestigationSnapshotV1[] = [];
@@ -130,6 +132,7 @@ async function runHarness(input: {
     callSelfProofModel,
     ...(auditCallModel ? { wholeClaimAudit: { callModel: auditCallModel } } : {}),
     ...(input.citationLiveness ? { citationLiveness: { liveness: input.citationLiveness } } : {}),
+    ...(input.deadline != null ? { deadline: input.deadline } : {}),
     runReport: async ({ steps, search360Result, atomSearchBundle }) =>
       runAgent("report_composer", steps, search360Result, atomSearchBundle),
     hooks: {
@@ -1247,5 +1250,252 @@ describe("Blocker 3B：draft 已是 mixed 但 conclusion 越权", () => {
     expect(finalDirectAnswer).not.toContain("均不成立");
     expect(finalDirectAnswer).toContain("不适用真假判断");
     expect(finalDirectAnswer).toContain("仅可能略微缓解症状");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// Review 5128449568：三个 correctness blocker 的管线级反例
+// ───────────────────────────────────────────────────────────────
+
+describe("Review 5128449568 Blocker 1：checkable-unverified 不得被硬结论偷判", () => {
+  it("A sourced-false + B checkable-unverified + composer 写「都不成立」→ overall false 保留，B 明确写成尚未查清", async () => {
+    const a = "某保健品能治愈糖尿病";
+    const b = "某保健品能替代胰岛素";
+    const { result, snapshots } = await runHarness({
+      claim: `${a}，而且${b}。`,
+      rumor: rumorStep([
+        { text: a, verifiable: true, type: "fact" },
+        { text: b, verifiable: true, type: "fact" },
+      ]),
+      factOutputs: [
+        {
+          factCheckResult: "false",
+          subclaimVerdicts: [
+            {
+              claimAtom: a,
+              verdict: "false",
+              evidence: "对照研究[1]显示无效。",
+              boundary: "b",
+              supportingSources: [],
+              contradictingSources: [{ url: url(a), title: "研究", snippet: "s" }],
+            },
+            { claimAtom: b, verdict: "unverified", evidence: "", boundary: "", supportingSources: [], contradictingSources: [] },
+          ],
+        },
+      ],
+      composerOutput: { verdictType: "false", conclusion: `${a}、${b}都不成立。` },
+      searchPlan: { [a]: [{ url: url(a), title: "研究", snippet: "s" }] },
+      auditPlanOutput: {
+        overallQuestion: "q",
+        checkabilityRevisions: [],
+        missingJustifications: [],
+        auditQuestions: [],
+      },
+      auditEvalOutput: {
+        supportedWhere: "a 有反证来源；b 未核查",
+        biggestGap: "",
+        missingJustifications: [],
+        nextQuestions: [],
+      },
+      citationLiveness: new Map([[url(a), "alive" as LivenessStatus]]),
+    });
+
+    const verdicts = result.finalReport.subclaimVerdicts as Array<Record<string, unknown>>;
+    // B 保持 unresolved，不得被整体 false 偷偷判掉
+    expect(verdicts.find((v) => v.claimAtom === b)?.verdict).toBe("unverified");
+    // overall false 由 A 的 sourced-false 合法支撑 → 保留
+    expect(result.finalReport.verdictType).toBe("false");
+    // 用户可见文本必须明确 B 尚未查清，不得沿用「都不成立」的越权原文
+    const conclusion = String(result.finalReport.conclusion ?? "");
+    const summary = String(result.finalReport.summaryForPublic ?? "");
+    expect(conclusion).toContain(`「${b}」尚未查清`);
+    expect(conclusion).toContain("未计入该判断");
+    expect(conclusion).not.toContain("都不成立");
+    expect(summary).toContain("尚未查清");
+    const complete = snapshots.at(-1)!;
+    expect(complete.claims.find((cl) => cl.text === b)?.judgment).toBe("unresolved");
+    expect(complete.claims.find((cl) => cl.text === a)?.judgment).toBe("refuted");
+  });
+});
+
+describe("Review 5128449568 Blocker 2：audit 失败/超预算 fail-closed", () => {
+  const bridgeAtomA = "吃某微量元素能调节血压";
+  const bridgeAtomC = "所以高血压可以不药而愈";
+
+  async function runBridgeCase(input: { deadline?: number }) {
+    return runHarness({
+      claim: `${bridgeAtomA}，${bridgeAtomC}。`,
+      rumor: rumorStep([
+        { text: bridgeAtomA, verifiable: true, type: "fact" },
+        { text: bridgeAtomC, verifiable: true, type: "fact" },
+      ]),
+      factOutputs: [
+        {
+          factCheckResult: "true",
+          subclaimVerdicts: [
+            {
+              claimAtom: bridgeAtomA,
+              verdict: "true",
+              evidence: "e",
+              boundary: "b",
+              supportingSources: [{ url: url(bridgeAtomA), title: "A来源", snippet: "s" }],
+              contradictingSources: [],
+            },
+            { claimAtom: bridgeAtomC, verdict: "unverified", evidence: "", boundary: "", supportingSources: [], contradictingSources: [] },
+          ],
+        },
+      ],
+      composerOutput: { verdictType: "true", conclusion: "原句成立。" },
+      searchPlan: { [bridgeAtomA]: [{ url: url(bridgeAtomA), title: "A来源", snippet: "s" }] },
+      auditPlanOutput: {
+        overallQuestion: "微量元素与痊愈之间的桥接",
+        checkabilityRevisions: [],
+        missingJustifications: ["从调节血压到不药而愈还缺独立桥接依据"],
+        auditQuestions: [],
+      },
+      auditEvalOutput: null,
+      citationLiveness: new Map([[url(bridgeAtomA), "alive" as LivenessStatus]]),
+      deadline: input.deadline,
+    });
+  }
+
+  it("Planning 有桥接缺口 → Evaluation 返回 null → 硬 verdict 收 unverified，缺口保留且状态 failed", async () => {
+    const { result, snapshots } = await runBridgeCase({});
+    expect(result.wholeClaimAudit.evaluationStatus).toBe("failed");
+    expect(result.finalReport.verdictType).toBe("unverified");
+    expect((result.finalReport._conclusionGate as Record<string, unknown>).rule).toBe(
+      "audit-unresolved-bridge-gap"
+    );
+    // 已知缺口不得静默清空：结构化 audit artifact 保留 Planning 基线
+    const auditArtifact = (result.rumorStep.output as Record<string, unknown>).wholeClaimAudit as Record<string, unknown>;
+    expect(Array.isArray(auditArtifact.missingJustifications)).toBe(true);
+    expect(auditArtifact.missingJustifications).toContain("从调节血压到不药而愈还缺独立桥接依据");
+    expect(auditArtifact.evaluationStatus).toBe("failed");
+    // 结论文本不得沿用 composer 的硬 true 原文
+    expect(String(result.finalReport.conclusion ?? "")).not.toBe("原句成立。");
+    const complete = snapshots.at(-1)!;
+    expect(complete.conclusion?.judgment).toBe("unresolved");
+  });
+
+  it("预算不足未启动 Evaluation → 保守沿用 Planning 缺口，状态 skipped-budget", async () => {
+    const { result } = await runBridgeCase({ deadline: Date.now() + 70_000 });
+    expect(result.wholeClaimAudit.evaluationStatus).toBe("skipped-budget");
+    expect(result.finalReport.verdictType).toBe("unverified");
+    const auditArtifact = (result.rumorStep.output as Record<string, unknown>).wholeClaimAudit as Record<string, unknown>;
+    expect(auditArtifact.missingJustifications).toContain("从调节血压到不药而愈还缺独立桥接依据");
+    expect(auditArtifact.evaluationStatus).toBe("skipped-budget");
+  });
+
+  it("audit 完整成功且 gap=[]：单命题正常硬 verdict 保留，composer 原文不重建（防误伤）", async () => {
+    const a = "某市昨天下午下了一场冰雹";
+    const { result } = await runHarness({
+      claim: `${a}。`,
+      rumor: rumorStep([{ text: a, verifiable: true, type: "fact" }]),
+      factOutputs: [
+        {
+          factCheckResult: "true",
+          subclaimVerdicts: [
+            {
+              claimAtom: a,
+              verdict: "true",
+              evidence: "e",
+              boundary: "b",
+              supportingSources: [{ url: url(a), title: "报道", snippet: "s" }],
+              contradictingSources: [],
+            },
+          ],
+        },
+      ],
+      composerOutput: { verdictType: "true", conclusion: "该说法有来源支持。" },
+      searchPlan: { [a]: [{ url: url(a), title: "报道", snippet: "s" }] },
+      auditPlanOutput: {
+        overallQuestion: "q",
+        checkabilityRevisions: [],
+        missingJustifications: [],
+        auditQuestions: [],
+      },
+      auditEvalOutput: {
+        supportedWhere: "a 有来源支持",
+        biggestGap: "",
+        missingJustifications: [],
+        nextQuestions: [],
+      },
+      citationLiveness: new Map([[url(a), "alive" as LivenessStatus]]),
+    });
+    expect(result.wholeClaimAudit.evaluationStatus).toBe("completed");
+    expect(result.finalReport.verdictType).toBe("true");
+    expect(result.finalReport.conclusion).toBe("该说法有来源支持。");
+  });
+});
+
+describe("Review 5128449568 Blocker 3：方向契约（管线级）", () => {
+  it("true + 仅 contradict URL → merge 收 unverified、整句收 unverified、composer 硬文本重建", async () => {
+    const a = "某城市地铁明天全线停运";
+    const { result, snapshots } = await runHarness({
+      claim: `${a}。`,
+      rumor: rumorStep([{ text: a, verifiable: true, type: "fact" }]),
+      factOutputs: [
+        {
+          factCheckResult: "true",
+          subclaimVerdicts: [
+            {
+              claimAtom: a,
+              verdict: "true",
+              evidence: "e",
+              boundary: "b",
+              supportingSources: [],
+              contradictingSources: [{ url: url(a), title: "通报", snippet: "s" }],
+            },
+          ],
+        },
+      ],
+      composerOutput: { verdictType: "true", conclusion: "该说法成立。" },
+      searchPlan: { [a]: [{ url: url(a), title: "通报", snippet: "s" }] },
+      citationLiveness: new Map([[url(a), "alive" as LivenessStatus]]),
+    });
+
+    const verdicts = result.finalReport.subclaimVerdicts as Array<Record<string, unknown>>;
+    // 错桶 URL 不算 sourced true → 原子级就收 unverified（Claim 层与 Snapshot 同向）
+    expect(verdicts[0]?.verdict).toBe("unverified");
+    expect(result.finalReport.verdictType).toBe("unverified");
+    const complete = snapshots.at(-1)!;
+    expect(complete.claims[0]?.judgment).toBe("unresolved");
+    expect(complete.conclusion?.judgment).toBe("unresolved");
+    // composer 的硬 true 原文被重建为收权后的文本
+    expect(String(result.finalReport.conclusion ?? "")).not.toBe("该说法成立。");
+    expect(String(result.finalReport.conclusion ?? "")).toContain(directAnswer("unverified"));
+  });
+
+  it("false + 仅 support URL：#74 alignment 先改桶 → false 保留、judgment refuted（Claim 与 Conclusion 同向）", async () => {
+    const a = "某食品添加剂在常规用量下致癌";
+    const { result, snapshots } = await runHarness({
+      claim: `${a}。`,
+      rumor: rumorStep([{ text: a, verifiable: true, type: "fact" }]),
+      factOutputs: [
+        {
+          factCheckResult: "false",
+          subclaimVerdicts: [
+            {
+              claimAtom: a,
+              verdict: "false",
+              evidence: "e",
+              boundary: "b",
+              supportingSources: [{ url: url(a), title: "评估", snippet: "s" }],
+              contradictingSources: [],
+            },
+          ],
+        },
+      ],
+      composerOutput: { verdictType: "false", conclusion: "该说法不成立。" },
+      searchPlan: { [a]: [{ url: url(a), title: "评估", snippet: "s" }] },
+      citationLiveness: new Map([[url(a), "alive" as LivenessStatus]]),
+    });
+
+    const verdicts = result.finalReport.subclaimVerdicts as Array<Record<string, unknown>>;
+    expect(verdicts[0]?.verdict).toBe("false");
+    expect(result.finalReport.verdictType).toBe("false");
+    const complete = snapshots.at(-1)!;
+    expect(complete.claims[0]?.judgment).toBe("refuted");
+    expect(complete.conclusion?.judgment).toBe("refuted");
   });
 });
