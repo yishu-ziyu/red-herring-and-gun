@@ -129,6 +129,18 @@ export async function pruneDeadCitations(
     collectBucket(v as Record<string, unknown>, "supportingSources");
     collectBucket(v as Record<string, unknown>, "contradictingSources");
   }
+  // evidenceChain 层可能引用判词/全局之外的 URL（composer 自由填写的 sourceRefs）：
+  // chain-only URL 同样纳入探活，否则死链会从证据链漏网。
+  if (Array.isArray(report.evidenceChain)) {
+    for (const layer of report.evidenceChain) {
+      if (!layer || typeof layer !== "object") continue;
+      const refs = (layer as Record<string, unknown>).sourceRefs;
+      if (!Array.isArray(refs)) continue;
+      for (const s of refs) {
+        if (typeof s === "string" && /^https?:\/\//i.test(s.trim())) urls.push(s.trim());
+      }
+    }
+  }
   const candidates = urls.filter(Boolean);
   if (candidates.length === 0) return { pruned: false, deadUrls: [] };
 
@@ -209,16 +221,21 @@ export async function pruneDeadCitations(
     report.evidenceChain = report.evidenceChain.map((layer) => {
       if (!layer || typeof layer !== "object") return layer;
       const rec = layer as Record<string, unknown>;
-      const refsIn = Array.isArray(rec.sourceRefs)
-        ? rec.sourceRefs.filter(
-            (s): s is string => typeof s === "string" && aliveSet.has(s.trim())
-          )
-        : [];
-      const bound = bindEvidenceChainLayer(rec.evidence, refsIn, titleByUrl);
+      const rawRefs = Array.isArray(rec.sourceRefs) ? rec.sourceRefs : [];
+      // URL 与非 URL metadata 明确分开处理：只保留存活 URL，非 URL 原样保留；
+      // 原层有 URL 但全部死亡时保持 []，绝不把整份原数组（含死链）fallback 回来。
+      const nonUrlRefs = rawRefs.filter(
+        (s): s is string =>
+          typeof s === "string" && s.trim().length > 0 && !/^https?:\/\//i.test(s.trim())
+      );
+      const aliveUrlRefs = rawRefs.filter(
+        (s): s is string => typeof s === "string" && aliveSet.has(s.trim())
+      );
+      const bound = bindEvidenceChainLayer(rec.evidence, aliveUrlRefs, titleByUrl);
       return {
         ...rec,
         evidence: bound.text,
-        sourceRefs: bound.sourceRefs.length > 0 ? bound.sourceRefs : rec.sourceRefs,
+        sourceRefs: [...bound.sourceRefs, ...nonUrlRefs],
         _citeSources: bound.sources,
       };
     });

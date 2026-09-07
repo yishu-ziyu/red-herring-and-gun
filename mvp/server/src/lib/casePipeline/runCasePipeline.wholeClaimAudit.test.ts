@@ -863,8 +863,72 @@ describe("ReportComposer 输入带收权上下文", () => {
 });
 
 // ───────────────────────────────────────────────────────────────
-// Review 5128022550 Blocker 1A：唯一 support 死链 → 硬 true 不得保留
+// Review 5128220693 Blocker 1：hard false 可保留，但 not-applicable 不得被写成已证伪
 // ───────────────────────────────────────────────────────────────
+describe("Blocker 1（本轮）：A sourced-false + B not-applicable", () => {
+  it("overall false 由 A 合法支撑时保留，但 conclusion/summary 不得把 B 写成已证伪", async () => {
+    const a = "该保健品含违禁成分";
+    const b = "所有人都应当抵制该保健品";
+    const urlA = url(a, "lab");
+    const sourcedA = {
+      claimAtom: a,
+      verdict: "false",
+      evidence: "检测显示未检出违禁成分[1]。",
+      boundary: "b",
+      supportingSources: [],
+      contradictingSources: [{ url: urlA, title: "检测报告", snippet: "s" }],
+    };
+    const { result, snapshots } = await runHarness({
+      claim: `${a}，而且${b}。`,
+      rumor: rumorStep([
+        { text: a, verifiable: true, type: "fact" },
+        { text: b, verifiable: false, type: "normative" },
+      ]),
+      factOutputs: [{ factCheckResult: "false", subclaimVerdicts: [sourcedA] }],
+      composerOutput: {
+        verdictType: "false",
+        conclusion: "A、B两条主张都不成立。",
+        subclaimVerdicts: [sourcedA],
+      },
+      searchPlan: { [a]: [{ url: urlA, title: "检测报告", snippet: "s" }] },
+      citationLiveness: new Map([[urlA, "alive"]]),
+      auditPlanOutput: {
+        overallQuestion: "成分与抵制主张是否成立",
+        checkabilityRevisions: [],
+        missingJustifications: [],
+        auditQuestions: [],
+      },
+      auditEvalOutput: {
+        supportedWhere: "A 有反证；B 未核查",
+        biggestGap: "",
+        missingJustifications: [],
+        nextQuestions: [],
+      },
+    });
+
+    // overall false 可以保留（A 合法支撑）
+    expect(result.finalReport.verdictType).toBe("false");
+    const complete = snapshots.at(-1)!;
+    expect(complete.conclusion?.judgment).toBe("refuted");
+    expect(complete.claims.find((cl) => cl.text === b)).toMatchObject({
+      checkability: "not-applicable",
+      judgment: "not-applicable",
+    });
+    // 但 B 不得被写成已证伪：必须明确作为 boundary
+    const finalDirectAnswer = complete.conclusion?.directAnswer ?? "";
+    expect(finalDirectAnswer.startsWith(directAnswer("false"))).toBe(true);
+    expect(finalDirectAnswer).not.toContain("都不成立");
+    expect(finalDirectAnswer).toContain("不适用真假判断");
+    expect(finalDirectAnswer).toContain("检测显示未检出违禁成分");
+    const summary = String(result.finalReport.summaryForPublic ?? "");
+    expect(summary.startsWith(directAnswer("false"))).toBe(true);
+    expect(summary).not.toContain("都不成立");
+    // 引用作用域正确：局部 [1]（contradict 桶）映射到全局同一来源
+    const globals = result.finalReport.citationSources as Array<{ url: string }>;
+    expect(globals.map((s) => s.url)).toContain(urlA);
+    expect(finalDirectAnswer).toMatch(/检测显示未检出违禁成分\[\d+\]/);
+  });
+});
 describe("Blocker 1A：唯一 supporting 来源死链", () => {
   it("liveness 后支撑死光 → true 收为 unverified，Claim/Conclusion 同向，无无主引用", async () => {
     const atomText = "某新药能根治偏头痛";

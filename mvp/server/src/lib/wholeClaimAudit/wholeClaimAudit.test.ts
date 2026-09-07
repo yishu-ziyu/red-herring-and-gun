@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyCheckabilityRevisions,
   applyConclusionGate,
+  buildScopedEvidence,
   compactVerdicts,
   needsConstrainedConclusion,
   parseWholeClaimEvaluation,
@@ -15,6 +16,7 @@ import {
   resolveQuestionAtomKey,
 } from "./index.js";
 import { directAnswer } from "../publicCopy.js";
+import { normalizeReportCitations } from "../citationBinding.js";
 
 describe("applyCheckabilityRevisions（§5/§12：模型语义决策，代码守不变量）", () => {
   it("false→true 提升：命中 kept atom 才应用，type 保持 normative 不改写", () => {
@@ -412,6 +414,156 @@ describe("needsConstrainedConclusion（Blocker 3：最终结构约束触发 repa
       finalGate: { changed: true, from: "false", to: "mixed_misleading", rule: "false-without-sourced-false-atom" },
     });
     expect(decision).toMatchObject({ needed: true, rule: "false-without-sourced-false-atom" });
+  });
+
+  it("终态仍是合法硬 verdict，但存在 nonVerifiableAtoms → 需要 repair（不降级，只补边界）", () => {
+    const decision = needsConstrainedConclusion({
+      draftVerdictType: "false",
+      finalVerdictType: "false",
+      subclaimVerdicts: [
+        {
+          claimAtom: "A",
+          verdict: "false",
+          supportingSources: [],
+          contradictingSources: [{ url: "https://t.test/a", title: "t", snippet: "s" }],
+        },
+      ],
+      nonVerifiableAtoms: [{ text: "B", type: "normative" }],
+      auditUnresolvedGaps: [],
+      finalGate: { changed: false },
+      earlyGate: { changed: false },
+    });
+    expect(decision).toMatchObject({
+      needed: true,
+      rule: "hard-verdict-with-not-applicable-boundary",
+      from: "false",
+      to: "false",
+    });
+  });
+
+  it("终态硬 verdict 且无 not-applicable → 不 repair", () => {
+    const decision = needsConstrainedConclusion({
+      draftVerdictType: "false",
+      finalVerdictType: "false",
+      subclaimVerdicts: [
+        {
+          claimAtom: "A",
+          verdict: "false",
+          supportingSources: [],
+          contradictingSources: [{ url: "https://t.test/a", title: "t", snippet: "s" }],
+        },
+      ],
+      nonVerifiableAtoms: [],
+      auditUnresolvedGaps: [],
+      finalGate: { changed: false },
+    });
+    expect(decision.needed).toBe(false);
+  });
+});
+
+describe("buildScopedEvidence（Blocker 2：局部 marker 显式映射到全局）", () => {
+  it("Case A：两个 atom 各有局部 [1] → 全局 [1]/[2] 分别指向各自来源", () => {
+    const { texts, globalSources } = buildScopedEvidence([
+      {
+        claimAtom: "A",
+        verdict: "true",
+        evidence: "A证据[1]",
+        supportingSources: [{ url: "https://t.test/a", title: "A", snippet: "s" }],
+        contradictingSources: [],
+      },
+      {
+        claimAtom: "B",
+        verdict: "true",
+        evidence: "B证据[1]",
+        supportingSources: [{ url: "https://t.test/b", title: "B", snippet: "s" }],
+        contradictingSources: [],
+      },
+    ]);
+    expect(globalSources.map((s) => s.url)).toEqual(["https://t.test/a", "https://t.test/b"]);
+    expect(texts).toEqual(["A证据[1]", "B证据[2]"]);
+  });
+
+  it("Case B：第二 atom 的 support[1] contradict[2] → 全局顺延，不错绑到第一 atom", () => {
+    const { texts, globalSources } = buildScopedEvidence([
+      {
+        claimAtom: "A",
+        verdict: "true",
+        evidence: "A证据[1]",
+        supportingSources: [{ url: "https://t.test/a", title: "A", snippet: "s" }],
+        contradictingSources: [],
+      },
+      {
+        claimAtom: "B",
+        verdict: "partial",
+        evidence: "B支持[1]B反驳[2]",
+        supportingSources: [{ url: "https://t.test/bs", title: "BS", snippet: "s" }],
+        contradictingSources: [{ url: "https://t.test/bc", title: "BC", snippet: "s" }],
+      },
+    ]);
+    expect(globalSources.map((s) => s.url)).toEqual([
+      "https://t.test/a",
+      "https://t.test/bs",
+      "https://t.test/bc",
+    ]);
+    // 朴素复制会留下 B反驳[2]（指向 url-bs）；正确映射是 [3]（指向 url-bc）
+    expect(texts).toEqual(["A证据[1]", "B支持[2]B反驳[3]"]);
+  });
+
+  it("映射不到存活来源的 marker 删除，不错绑", () => {
+    const { texts } = buildScopedEvidence([
+      {
+        claimAtom: "A",
+        verdict: "true",
+        evidence: "证据见[1][9]。",
+        supportingSources: [{ url: "https://t.test/a", title: "A", snippet: "s" }],
+        contradictingSources: [],
+      },
+    ]);
+    expect(texts).toEqual(["证据见[1]。"]);
+  });
+});
+
+describe("repairGatedConclusion 在硬 verdict 保留时补边界（Blocker 1）", () => {
+  it("overall false 由 A 合法支撑：保留 false，B 只作不适用边界，引用作用域正确", () => {
+    const report: Record<string, unknown> = {
+      verdictType: "false",
+      conclusion: "A、B两条主张都不成立。",
+      summaryForPublic: "两者都不成立。",
+      recommendation: "不要相信。",
+      evidenceChain: [],
+      subclaimVerdicts: [
+        {
+          claimAtom: "A",
+          verdict: "false",
+          evidence: "A证据[1]",
+          supportingSources: [],
+          contradictingSources: [{ url: "https://t.test/a", title: "A", snippet: "s" }],
+        },
+      ],
+    };
+    repairGatedConclusion(
+      report,
+      { changed: true, from: "false", to: "false", rule: "hard-verdict-with-not-applicable-boundary" },
+      {
+        nonVerifiableAtoms: [{ text: "B", type: "normative" }],
+        subclaimVerdicts: report.subclaimVerdicts,
+        auditUnresolvedGaps: [],
+      }
+    );
+    expect(report.verdictType).toBe("false");
+    const conclusion = String(report.conclusion);
+    expect(conclusion.startsWith(directAnswer("false"))).toBe(true);
+    expect(conclusion).not.toContain("都不成立");
+    expect(conclusion).toContain("不适用真假判断");
+    expect(conclusion).toContain("A证据[1]");
+    const summary = String(report.summaryForPublic);
+    expect(summary.startsWith(directAnswer("false"))).toBe(true);
+    expect(summary).not.toContain("两者都不成立");
+    // 全局编号自洽：repair 后再 normalize 不得错绑
+    normalizeReportCitations(report);
+    const globals = report.citationSources as Array<{ url: string }>;
+    expect(globals.map((s) => s.url)).toEqual(["https://t.test/a"]);
+    expect(String(report.conclusion)).toContain("A证据[1]");
   });
 });
 
