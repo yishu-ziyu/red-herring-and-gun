@@ -10,10 +10,11 @@ Change / Not this / Evaluator 三段写在最前；本文同时是 PR（Fixes #7
 
 ### Evaluator（命令化）
 
-- `npx vitest run server/src/lib/wholeClaimAudit/wholeClaimAudit.test.ts`（17 项，含收权门四条不变量、修订只提升不降级、audit 不是 Evidence、repairGatedConclusion 结构化重建）。
-- `npx vitest run server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts`（15 项，8 类 case + §14 + composer 输入 + Review 5127740625 三个 blocker 回归）。
-- `npx vitest run server/src/lib/casePipeline/runCasePipeline.test.ts`（既有管线行为不回归，含电瓶车短谣 tiny-bound 与 review hooks）。
-- 人评项：真实模型下「每次感冒都应当输液」一句的 REAL SSE 一致性回归——按 #78 要求留给 post-#78 的窄回归 PR/Issue，本 PR 不动 #72 artifacts（#72 已 merged，见 §11）。
+- `npx vitest run server/src/lib/wholeClaimAudit/wholeClaimAudit.test.ts`（29 项，含收权门不变量、postLiveness 严格规则、needsConstrainedConclusion、compactVerdicts related-only 区分、repair 结构化重建）。
+- `npx vitest run server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts`（21 项，8 类 case + §14 + composer 输入 + 两轮 blocker 回归）。
+- `npx vitest run server/src/lib/citationLiveness.test.ts`（10 项，含双桶对称剪枝与同 URL 双 relation 保留）。
+- `npx vitest run server/src/lib/casePipeline/runCasePipeline.test.ts`（既有管线行为不回归，含电瓶车短谣 tiny-bound 与 review hooks；两处硬结论用例注入 alive 探活使其 hermetic，意图不变）。
+- 人评项：真实模型下「每次感冒都应当输液」一句的 REAL SSE 一致性回归——留给 post-#78 的窄回归 PR/Issue，本 PR 不动 #72 artifacts（#72 已 merged，见 §11）。
 
 ## 1. 当前 workflow 的真实缺口（审计结论）
 
@@ -26,16 +27,20 @@ Change / Not this / Evaluator 三段写在最前；本文同时是 PR（Fixes #7
 
 ```
 rumor → self-proof → forceCheckable → 【Planning】→ 检索决策 → FactChecker/Source
-→ evidenceLoop → crossExam → causal → 【Evaluation → ≤1 次 audit 补查 → 重判 → bounded re-evaluation（仅当补查取得新来源）】
+→ evidenceLoop → crossExam → causal → 【Evaluation → ≤1 次 audit 补查 → 重判（提交才算）→ bounded re-evaluation（仅当 recheckCommitted）】
 → ReportComposer（输入带 nonVerifiableAtoms + audit 上下文 + 收权 prompt）
 → assemble → mixedGuard → 【early conclusionGate】→ boundTiny（contract probe，不服从不提）
-→ finalizeReport → reviewer → 【final conclusionGate + 结构化 conclusion repair】→ 引用探活 → 快照 complete
+→ finalizeReport → reviewer → normalize → imageOrigin → pruneDeadCitations（双桶对称）
+→ 【权威 final conclusionGate（postLiveness，基于存活证据）+ 结构化 conclusion repair】
+→ normalize → origin 重放 → faceVerdict/checkedAt → 快照 complete
 ```
 
-final gate 是最后一个能改变整体 verdict 的位置；探活只剪死链、不改 verdict。
-repair 触发条件："发生过结构化降级（early / final / mixedGuard 任一）且最终强度弱于 composer draft"。
-重建只用 gated verdict + 有绑定来源的判词 evidence + nonVerifiableAtoms + audit 缺口，
-不读原 conclusion/summary 文本、不做任何关键词匹配（§11 Blocker 1）。
+final gate 是最后一个能改变整体 verdict 的位置，位于探活之后，以存活证据为准。
+early gate 保留在 boundTiny 之前阻止绕过。
+repair 触发条件不再看"谁降的级"，只看最终结构约束（needsConstrainedConclusion，
+§12 Blocker 3）：draft 硬 verdict 被任何模块（含 reviewer/finalize）降为弱 verdict，
+或终态已是弱 verdict 但存在 not-applicable / 未解决 gap / 无存活 sourced relation，
+就重建用户可见文本。不读原文、不做关键词匹配。
 
 实现层模块：`mvp/server/src/lib/wholeClaimAudit/`（types / planning / evaluation / conclusionGate）。不是新 UI、不是用户可见 Agent、不进 InvestigationSnapshot schema；artifact 只落在 `rumorStep.output.wholeClaimAuditPlan / wholeClaimAudit`（实现层），调用静默、不进 SSE Agent 日志。
 
@@ -51,8 +56,12 @@ repair 触发条件："发生过结构化降级（early / final / mixedGuard 任
 - 修订只能提升（false→true）、必须命中真实 kept claimAtom（按 claimAtomKey）、type 不改写、不创建新「用户 Claim」、不降级、旧 heuristic 不回压。
 - audit 文本（assessment/question/reason/missingJustification/suggestedQuery）永不进入 InvestigationSource / EvidenceLink / support / contradict；只有真实 searchOne 取得并 bind 进 bundle 的来源才是 Evidence。
 - 收权门（applyConclusionGate，确定性、不读结论文本）：① 全部命题 not-applicable → 整句不得是任何硬判定；② 有绑定材料但无「判 false 且带绑定 URL」的原子 → 整句 false 收成 mixed_misleading/unverified（#78 真实形状）；③ 无 sourced-true 支撑的整句 true 收权；④ audit 桥接缺口未解决 → 硬 true/false 收成 unverified（A+B 真推不出 C 真）。
-- 门执行两次、同一 contract：early（boundTiny 之前）+ final（reviewer 之后、探活之前；最后一个改 verdict 的位置）。legacy boundTiny 提成 false 前先用同一 contract 做 probe，不通过不提（`_tinyBoundSuppressed`）；reviewer 的短谣豁免若与 contract 冲突，final gate 照样收回。
-- 结构化 conclusion repair（repairGatedConclusion，§11 Blocker 1）：demote 且终态弱于 composer draft 时，用 gated verdict 的标准答案开头 + 有源判词 evidence（可核查部分保留）+ nonVerifiable 边界句 + 缺口边界句重建 conclusion（≤400 字），同步重建 summaryForPublic（≤200 字）、recommendation，并向 evidenceChain 追加「结论边界（整句收权）」层。`_conclusionGate.repaired=true`。
+- 门执行两次、同一 contract：early（boundTiny 之前，liveness 前的宽松语义）+ 权威 final（reviewer → normalize → 探活之后，`postLiveness: true`，以存活证据为准，是最后一个改 verdict 的位置）。liveness 后硬 true/false 若无任何存活可点开证据支撑，直接收为 unverified（规则 `post-liveness-no-surviving-evidence`，死证不得支撑硬结论）；唯一豁免是短谣存活辟谣通道（聚合来源按 deadUrls 过滤后 `boundTinyRumorVerdict` 仍成立，只对 false 有效）。
+- 探活双桶对称（§12 Blocker 1）：supportingSources 与 contradictingSources 各自独立 filter、独立去重，不跨桶合并；同 URL 跨桶是两条 relation，都保留；判词句内编号继续「过滤后 support → 过滤后 contradict」（与 `bindDualBucketCitations` 同构，不破坏 #74）。
+- legacy boundTiny 提成 false 前先用同一 contract 做 probe，不通过不提（`_tinyBoundSuppressed`）；reviewer 的短谣豁免若与 contract 冲突，final 照样收回。
+- 结构化 conclusion repair（repairGatedConclusion）：触发由 `needsConstrainedConclusion` 按最终结构约束决定（§12 Blocker 3：draft/final 强度、nonVerifiable、gaps、存活绑定状态），不看降级来源、不读原文。用 gated verdict 的标准答案开头 + 有源判词 evidence（可核查部分保留）+ nonVerifiable 边界句 + 缺口边界句重建 conclusion（≤400 字），同步重建 summaryForPublic（≤200 字）、recommendation，并向 evidenceChain 追加「结论边界（整句收权）」层。`_conclusionGate.repaired=true`。repair 后重放幂等的 `applyImageOriginToReport`，用结构化 imageOrigin 对象恢复原图出处引用。
+- 重判提交条件（§12 Blocker 2）：`recheckCommitted` 要求同时满足 search 得新来源、重判成功、目标 atom 判词合法、bind 后形成非 related-only 的 support/contradict relation 且实际引用了本次新 URL（`newlyBoundEvidenceUrlsByAtomKey` 落盘）。只有提交后第二次 Evaluation 才 authoritative，可关闭旧 gap；否则保守沿用第一次（重评估失败/related-only/未引用/超预算都不清空 gaps）。
+- `compactVerdicts` 明确区分 supportCount / contradictCount / relatedOnlyCount / sourcesRelatedOnly：related-only 填充的 support/contradict 记 0，Evaluation prompt 同步声明"仅相关检索材料不是支持证据"。
 - 预算：时间不足（`AUDIT_MIN_MS=45s` / `COMPOSER_RESERVE_MS=90s` 之前）fail-open 跳过审计，宁可保守收束不饿死 composer。
 
 ## 5. 为什么这不是关键词规则引擎
@@ -67,8 +76,8 @@ repair 触发条件："发生过结构化降级（early / final / mixedGuard 任
 
 - 最多 1 次补查 pass（不重写 orchestration、无自由循环）。
 - 每次 Audit 最多 3 个高价值问题；只有能按 claimAtomKey 映射到真实 kept atom 的问题才补查（复用 searchOne + `mergeSourcesIntoBundle` + fact_checker 重判 + `bindAtomEvidenceToVerdicts`）；纯桥接问题只记录为内部 missing justification。
-- 补查取得新来源 + 重判后，最多再跑 1 次 bounded re-evaluation（§11 Blocker 3）：用更新后的判词重估，第二次 Evaluation 的 missingJustifications 为准，旧 gap 可被关闭；重评估失败/无新来源/预算不足则保守沿用第一次。
-- 新增 LLM 调用：Planning 1 次 + Evaluation 1 次 + 补查取得新证据时 fact_checker 重判 1 次 + bounded re-evaluation 1 次（仅当补查取得新来源）= 最坏 4 次。最坏额外 evidence pass = 1。每次补查前、每个问题前、重评估前检查 `timeLeftMs() > COMPOSER_RESERVE_MS`，超预算即止，不与 composer 抢时间。
+- 补查取得新来源 + 重判后，最多再跑 1 次 bounded re-evaluation（§11 Blocker 3 → §12 Blocker 2 收紧）：只有重判真正提交（`recheckCommitted`：新 URL 进 bind 后的非 related-only relation）时才跑，并以第二次的 missingJustifications 为准，旧 gap 可被关闭；未提交/重评估失败/预算不足则保守沿用第一次。
+- 新增 LLM 调用：Planning 1 次 + Evaluation 1 次 + 补查取得新证据时 fact_checker 重判 1 次 + bounded re-evaluation 1 次（仅当重判提交）= 最坏 4 次。最坏额外 evidence pass = 1。每次补查前、每个问题前、重评估前检查 `timeLeftMs() > COMPOSER_RESERVE_MS`，超预算即止，不与 composer 抢时间。latency 上限不变（同一 composer reserve 约束）。
 
 ## 8. 8 类 regression 结果
 
@@ -83,14 +92,21 @@ repair 触发条件："发生过结构化降级（early / final / mixedGuard 任
 | 7 长尾表达（应当输液/一律得挂水/就该打吊瓶） | 三种措辞同一 mock 语义决策均提升并检索；无字符串 special-case | PASS |
 | 8 旧类型不回归 | 不注入 audit 时 legacy 行为保持（normative 仍立场型、无 artifact）；既有全量套件（含 fact/causal/value/prediction/personal 边界与因果 enrichment）全绿 | PASS |
 | R1 Blocker 2（tiny-bound 绕过） | c1 partial 带源 + c2 not-applicable + 聚合来源含 on-topic 辟谣时，legacy tiny-bound 不得把已收权整句推回 false；终态 mixed/unverified，快照非 refuted，c2 保持 not-applicable | PASS |
-| R2 Blocker 3（re-evaluation 闭环） | 第一次 Evaluation 有 gap → extra pass 得新来源 → 第二次 Evaluation gap 清零（`reevaluated=true`）→ gate 不再以 audit 缺口收权，有 sourced-false 时允许 false | PASS |
+| R2 Blocker 3（re-evaluation 闭环） | 第一次 Evaluation 有 gap → extra pass 得新来源 → 重判提交（`recheckCommitted`）→ 第二次 Evaluation gap 清零 → gate 不再以 audit 缺口收权，有 sourced-false 时允许 false | PASS |
+| R3 Blocker 1A（唯一 support 死链） | liveness 后支撑死光 → 硬 true 收为 unverified（`post-liveness-no-surviving-evidence`）；Claim/Conclusion 同为 unresolved；directAnswer 无无主 `[n]` 且与 verdict 同向 | PASS |
+| R4 Blocker 1B（唯一 contradict 死链） | liveness 后反证死光 → 硬 false 收为 unverified，不允许死反证支撑 refuted | PASS |
+| R5 Blocker 1C（同 URL 双桶） | 同 URL 在 support/contradict 同时存活 → 两条 relation 都保留，本地编号按过滤后 support → contradict，不跨桶合并 | PASS |
+| R6 Blocker 2A（重判失败） | search 得新 URL 但 fact_checker 抛错 → `recheckCommitted=false`，不跑第二次 Evaluation，旧 gap 保留，硬 false 不放行 | PASS |
+| R7 Blocker 2B（related-only） | search 得新 URL 但重判只形成 sourcesRelatedOnly → 不提交，gap 保留；compactVerdicts 把 related-only 计为 relatedOnlyCount，不计 support | PASS |
+| R8 Blocker 3A（无 audit + reviewer 降级） | composer true/“原句成立”被 reviewer 收到 unverified → 最终文案同步收权，Snapshot conclusion 一致 | PASS |
+| R9 Blocker 3B（弱 draft 越权） | draft 已是 mixed 但 conclusion 把 not-applicable Claim 写成已证伪 → verdict 无变化仍结构化重建 | PASS |
 
 ## 9. tests / build
 
-- `npm test`（根）：20 files / 83 tests 全绿。
-- `npx vitest run`（mvp 全量）：98 files / 1034 tests 通过、1 skipped、1 failed —— 失败项 `LegacyDesk.test.tsx > uses the clean analysis shell` 为 main 上已存在的负载抖动：单跑 29/29 通过；stash 本分支改动后全量基线同样 1 failed（1007 passed），与本 PR 无关（该测试只 import 前端 `LegacyDesk`/`requestOrchestrateStream`，不在本分支改动依赖图内）。
+- `npm test`（根）：54 files / 605 tests + 3 files / 85 tests + 2 files / 21 tests + 20 files / 83 tests，全绿。
+- `npx vitest run`（mvp 全量）：98 files（97 passed / 1 skipped）/ 1060 tests 通过、1 skipped、0 failed。`LegacyDesk.test.tsx > uses the clean analysis shell` 本轮全量与单跑表现不稳定（上一轮全量 1 failed、单跑通过；本轮基线对照单跑同样失败，详见 §12），属已知负载抖动：该测试只 import 前端模块，不在本分支改动依赖图内。
 - `npm run build`（根）与 `cd mvp && npm run build`（tsc + vite）通过；`mvp/server` `tsc --noEmit` 通过。
-- 新增定向测试：`wholeClaimAudit.test.ts` 17 项、`runCasePipeline.wholeClaimAudit.test.ts` 15 项。
+- 新增定向测试：`wholeClaimAudit.test.ts` 29 项、`runCasePipeline.wholeClaimAudit.test.ts` 21 项、`citationLiveness.test.ts` 10 项。
 - eval:gate：见下方记录。
 
 ### eval:gate 记录（如实）
@@ -108,9 +124,11 @@ repair 触发条件："发生过结构化降级（early / final / mixedGuard 任
 - 不扩 InvestigationSnapshot schema；audit artifact 不进快照（实现层字段够用）。若后续需要把 audit 缺口显式呈现给用户，应另立裁决单元。
 - Planning 只允许提升（false→true），不处理「模型认为可核查命题其实纯偏好」的降级方向——避免误伤既有 fact/causal 边界，留待真实误报出现再裁。
 - 桥接问题（无法映射到已有 claimAtom 的缺口）第一版只限制结论强度、不补查、不发明新 Claim。
-- 结论文本越权：结构化降级触发时由 repair 重建兜底（§11 Blocker 1）；未加独立的 LLM conclusion reviewer（避免每 run 常驻 +1 次模型调用）。reviewer 自身降级（overclaim/unsourced）改 verdict 不改文本的路径仍是 prompt 约束，留白如实声明。
+- 结论文本越权：最终结构约束触发时由 repair 重建兜底（§11 Blocker 1 → §12 Blocker 3 扩展到 reviewer/finalize 降级与弱 draft）；未加独立的 LLM conclusion reviewer（避免每 run 常驻 +1 次模型调用）。
 - credibilityScore / credibilityLabel 的 band 仍跟 composer draft 走，gate demote 时不重算（Review 只要求 directAnswer/summary/evidenceChain 与 gated verdict 一致）。
 - Composer 对整句 `mixed_misleading` 与 audit 缺口并存时的措辞强度未做更细的确定性约束（依赖 prompt）。
+- repair 重建会丢弃 composer 原文的个性化措辞（含 `[n]` 引用形式），换来确定性一致；结构干净的弱结论（有源、无缺口、无立场句）不触发 repair，保留原文。
+- 快照 Claim evidence 仍可含 bundle 侧的来源链接（含死链，标 `reachable:false` + 缺口对象）；Claim/Conclusion 的 judgment 同向由 gate + 快照收敛规则保证。
 
 ## 11. Review 5127740625 三 blocker 修复（本 PR 内第二轮，不开新 PR）
 
@@ -120,3 +138,22 @@ repair 触发条件："发生过结构化降级（early / final / mixedGuard 任
 - **Blocker 2**：`boundTinyRumorVerdict` 在 gate 之后把 mixed/unverified 推回 false，且 reviewer 的短谣豁免也可能保留 false。修复 = gate 成为最终 gate：early（boundTiny 前）+ final（reviewer 后、探活前，最后一个改 verdict 的位置），同一 contract；boundTiny 提 false 前先 probe，不通过记 `_tinyBoundSuppressed` 不提；final 照样能把 reviewer 豁免保留的 false 收回。回归：not-applicable + on-topic debunk 来源时终态不得为 false。
 - **Blocker 3**：第一次 Evaluation 的 `missingJustifications` 被无条件沿用，新证据永远关不掉旧 gap。修复 = bounded re-evaluation：extra pass 取得新来源 + fact_checker 重判后、且 `timeLeftMs() > COMPOSER_RESERVE_MS` 时，用更新后判词再跑一次 Evaluation，以第二次的 missingJustifications/nextQuestions 为准（`extraPass.reevaluated=true`，`wholeClaimAudit.reevaluation` 落盘，rumorStep 输出同步）；无新来源/重评估失败/预算不足则保守沿用第一次。代价：最坏 LLM 调用 3→4 次（§7），latency 上限不变（各阶段仍受同一 composer reserve 约束，重评估拿不到预算就跳过）。
 - 流程事实同步：PR #72 已 merged、Issue #66 已 closed，本 PR 不再执行"rebase #72 跑 REAL SSE"；同一句输入的 Whole-Claim 一致性 REAL 回归留给 post-#78 的窄 PR/Issue。
+
+## 12. Review 5128022550 三 blocker 修复（本 PR 内第三轮，不开新 PR）
+
+人工 Review 认定第二轮方向正确、Agentic loop 方向通过，但指出三个 correctness blocker。本轮按 Review 逐条修复，不扩大产品范围、不改 UI、不启动 #54，不新增关键词语义规则、不改 Snapshot schema、不碰旧 REAL artifacts/baseline/LegacyDesk。
+
+- **Blocker 1（final gate 早于 liveness）**：顺序改为 reviewer → normalize → prune → 权威 final gate → repair → normalize → faceVerdict/checkedAt → Snapshot（early gate 保留在 boundTiny 之前）。`pruneDeadCitations` 双桶对称：support/contradict 各自独立 filter 与去重，同 URL 跨桶是两条 relation，都保留；本地编号按过滤后 support → contradict（与 `bindDualBucketCitations` 同构，不破坏 #74）。final gate 以 `postLiveness: true` 运行：死证剔除后无存活支撑的硬 true/false 直接收为 unverified（`post-liveness-no-surviving-evidence`）；短谣豁免只看按 deadUrls 过滤后的聚合来源是否仍成立。回归 R3/R4/R5。
+- **Blocker 2（只有提交的新 Evidence 才能关闭 gap）**：新增 `recheckCommitted` + `newlyBoundEvidenceUrlsByAtomKey` 状态。提交要求 search 得新来源、重判成功、目标 atom 判词合法、bind 后形成非 related-only 的 support/contradict relation 且实际引用本次新 URL；FactChecker 抛错/failed/error/空判词/缺目标 atom/只有 related-only/新 URL 未被引用 → 一律保守沿用第一次 gap，不跑第二次 Evaluation（informational 也不跑，省预算）。`compactVerdicts` 区分 supportCount / contradictCount / relatedOnlyCount / sourcesRelatedOnly，Evaluation prompt 同步声明 related-only 不是支持证据。回归 R6/R7（R2 加强：不断言 recheck 失败路径，只断言提交后关闭）。
+- **Blocker 3（repair 由最终结构约束触发）**：新增 `needsConstrainedConclusion`，只读 final verdictType、final 判词、nonVerifiableAtoms、audit gaps、存活绑定状态、draft/final 强度。draft 硬 verdict 被任何模块（含 reviewer/finalize）降为弱 verdict，或终态已是弱 verdict 但存在 not-applicable/未解决 gap/无存活 sourced relation → 重建；结构干净的弱结论保留 composer 原文。无法确认原文安全时优先重建。回归 R8/R9。
+- 最坏 LLM 调用数仍为 4（Planning + Evaluation + 重判 + bounded re-evaluation），但重评估门槛从"补查得新来源"收紧为"重判提交"，期望调用不增反降；latency / budget 上限不变。
+
+### 本轮 tests / build（实际运行）
+
+- 根 `npm test`：54/605 + 3/85 + 2/21 + 20/83，全绿。
+- 根 `npm run build`：exit 0。
+- `cd mvp && npm test`：98 files（97 passed / 1 skipped），1060 passed / 1 skipped / 0 failed。
+- `cd mvp && npm run build`：exit 0（tsc + vite）。
+- `cd mvp/server && npx tsc --noEmit`：exit 0。
+- LegacyDesk 对照：本轮全量 0 failed；但该文件单跑在本轮与基线（stash 本分支改动）下同样出现 1 failed（同名用例 `uses the clean analysis shell for the real workspace too`，28 passed / 1 failed 两边一致），确认为已知负载抖动，与本轮改动无关。
+- `eval:gate` 未重跑：基线失败原因既有且与本轮无关（§9 记录），上一轮信号仍有效；不改 baseline 换绿。
