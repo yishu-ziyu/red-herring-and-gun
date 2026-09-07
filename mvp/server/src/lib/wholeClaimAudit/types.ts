@@ -64,6 +64,11 @@ export interface WholeClaimAuditExtraPass {
   newSourcesByAtomKey: Record<string, number>;
   /** 补查后仍未取得新来源的问题（或从未能映射到真实 atom 的问题）。 */
   unresolvedQuestions: string[];
+  /**
+   * 补查取得新来源后是否跑了 bounded re-evaluation（Review 5127740625 Blocker 3）。
+   * true = 最终缺口以第二次 Evaluation 为准，旧 gap 可被关闭；false = 沿用第一次 Evaluation。
+   */
+  reevaluated: boolean;
 }
 
 export interface WholeClaimAuditRun {
@@ -71,4 +76,10 @@ export interface WholeClaimAuditRun {
   evaluation: WholeClaimAuditEvaluation | null;
   extraPass: WholeClaimAuditExtraPass | null;
   model: string;
+  /**
+   * Bounded re-evaluation（Review 5127740625 Blocker 3）：extra pass 取得新来源 +
+   * fact_checker 重判后，用更新后的判词再跑一次 Evaluation。只有此时才非 null；
+   * 为 null 时最终缺口沿用第一次 Evaluation（保守）。
+   */
+  reevaluation: WholeClaimAuditEvaluation | null;
 }
