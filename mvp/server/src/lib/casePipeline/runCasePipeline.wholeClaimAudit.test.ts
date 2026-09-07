@@ -15,6 +15,7 @@ import type { PipelineStep } from "./runCasePipeline";
 import type { InvestigationSnapshotV1 } from "../investigation/index.js";
 import { buildAgentInput } from "../agentConfigs.js";
 import { directAnswer } from "../publicCopy.js";
+import type { LivenessStatus } from "../citationLiveness.js";
 
 const url = (atom: string, tag = "src") => `https://t.test/${encodeURIComponent(atom)}/${tag}`;
 
@@ -61,8 +62,9 @@ async function runHarness(input: {
   searchPlan?: Record<string, Array<{ url: string; title: string; snippet: string }>>;
   auditPlanOutput?: AgentOutput | null;
   auditEvalOutput?: AgentOutput | null;
-  /** Blocker 3 回归：按调用顺序消费的 Evaluation 输出序列（给了就按次取，不给了就复用 auditEvalOutput）。 */
   auditEvalOutputs?: AgentOutput[];
+  /** citationLiveness 注入：传 Map 做确定性探活；不传走真实网络。 */
+  citationLiveness?: Map<string, LivenessStatus>;
   crossExamCallRaw?: unknown;
 }): Promise<HarnessResult> {
   const searchQueries: string[] = [];
@@ -76,6 +78,9 @@ async function runHarness(input: {
     if (agentId === "fact_checker") {
       const output = input.factOutputs[Math.min(factCallCount, input.factOutputs.length - 1)];
       factCallCount += 1;
+      if (output && (output as { __throw?: unknown }).__throw) {
+        throw new Error(String((output as { __throw?: unknown }).__throw));
+      }
       return factStep(output);
     }
     if (agentId === "source_validator") {
@@ -124,6 +129,7 @@ async function runHarness(input: {
     searchOne,
     callSelfProofModel,
     ...(auditCallModel ? { wholeClaimAudit: { callModel: auditCallModel } } : {}),
+    ...(input.citationLiveness ? { citationLiveness: { liveness: input.citationLiveness } } : {}),
     runReport: async ({ steps, search360Result, atomSearchBundle }) =>
       runAgent("report_composer", steps, search360Result, atomSearchBundle),
     hooks: {
@@ -212,6 +218,8 @@ describe("Case 2：每次感冒都应当输液", () => {
         ],
       },
       searchPlan: { [atomText]: [{ url: sourceUrl, title: "指南", snippet: "s" }] },
+      // 反证来源存活是本用例的前提（断言 refuted 与可下钻），注入 alive 使其 hermetic
+      citationLiveness: new Map([[sourceUrl, "alive"]]),
       auditPlanOutput: {
         overallQuestion: "感冒普遍输液是否有医学标准支撑",
         checkabilityRevisions: [
@@ -470,6 +478,8 @@ describe("Case 5：#78 failure shape", () => {
         ],
       },
       searchPlan: { [c1]: [{ url: url(c1), title: "研究", snippet: "s" }] },
+      // 探活注入 alive：本用例不断言 liveness，来源必须存活到 repair，才能验证可核查部分被保留
+      citationLiveness: new Map([[url(c1), "alive"]]),
       auditPlanOutput: {
         overallQuestion: "维C疗效与普遍输液建议是否成立",
         checkabilityRevisions: [],
@@ -632,6 +642,8 @@ describe("Case 5：#78 failure shape", () => {
       searchPlan: {
         ["临床试验"]: [{ url: debunkUrl, title: "高血压临床试验", snippet: "未见根治证据" }],
       },
+      // 反证来源存活到 liveness 之后，final gate 才能允许证据支持的 false
+      citationLiveness: new Map([[debunkUrl, "alive"]]),
       auditPlanOutput: {
         overallQuestion: "该保健品是否有根治依据",
         checkabilityRevisions: [],
@@ -666,6 +678,11 @@ describe("Case 5：#78 failure shape", () => {
     expect(evalCalls).toHaveLength(2);
     expect(result.wholeClaimAudit.reevaluation).toMatchObject({ missingJustifications: [] });
     expect(result.wholeClaimAudit.extraPass).toMatchObject({ reevaluated: true, unresolvedQuestions: [] });
+    // 重判真正提交：新 URL 进了 bind 后的 contradict relation
+    expect(result.wholeClaimAudit.extraPass).toMatchObject({
+      recheckCommitted: true,
+      newlyBoundEvidenceUrlsByAtomKey: { [atomText]: [debunkUrl] },
+    });
     // gap 已关闭 → gate 不再以 audit-unresolved-bridge-gap 收权，有 sourced-false 支撑时允许 false
     expect(result.finalReport.verdictType).toBe("false");
     const complete = snapshots.at(-1)!;
@@ -842,5 +859,329 @@ describe("ReportComposer 输入带收权上下文", () => {
     const input = buildAgentInput("report_composer", "原句", [rumor, fact]);
     expect(input.nonVerifiableAtoms).toEqual([{ text: "每次感冒都应当输液", type: "normative" }]);
     expect(input.wholeClaimAudit).toMatchObject({ missingJustifications: ["缺桥接依据"] });
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// Review 5128022550 Blocker 1A：唯一 support 死链 → 硬 true 不得保留
+// ───────────────────────────────────────────────────────────────
+describe("Blocker 1A：唯一 supporting 来源死链", () => {
+  it("liveness 后支撑死光 → true 收为 unverified，Claim/Conclusion 同向，无无主引用", async () => {
+    const atomText = "某新药能根治偏头痛";
+    const supportUrl = url(atomText, "trial");
+    const sourced = {
+      claimAtom: atomText,
+      verdict: "true",
+      evidence: "试验显示有效。",
+      boundary: "b",
+      supportingSources: [{ url: supportUrl, title: "试验", snippet: "s" }],
+      contradictingSources: [],
+    };
+    const { result, snapshots } = await runHarness({
+      claim: atomText,
+      rumor: rumorStep([{ text: atomText, verifiable: true, type: "fact" }]),
+      factOutputs: [{ factCheckResult: "true", subclaimVerdicts: [sourced] }],
+      composerOutput: {
+        verdictType: "true",
+        conclusion: "该说法成立，有试验支持。",
+        subclaimVerdicts: [sourced],
+      },
+      searchPlan: { [atomText]: [{ url: supportUrl, title: "试验", snippet: "s" }] },
+      auditPlanOutput: {
+        overallQuestion: "该药是否有根治依据",
+        checkabilityRevisions: [],
+        missingJustifications: [],
+        auditQuestions: [],
+      },
+      auditEvalOutput: {
+        supportedWhere: "有试验支持",
+        biggestGap: "",
+        missingJustifications: [],
+        nextQuestions: [],
+      },
+      citationLiveness: new Map([[supportUrl, "dead"]]),
+    });
+
+    expect(result.finalReport.verdictType).toBe("unverified");
+    expect((result.finalReport._conclusionGate as Record<string, unknown>).rule).toBe(
+      "post-liveness-no-surviving-evidence"
+    );
+    const complete = snapshots.at(-1)!;
+    expect(complete.claims[0]).toMatchObject({ judgment: "unresolved" });
+    expect(complete.conclusion?.judgment).toBe("unresolved");
+    expect(complete.conclusion?.directAnswer ?? "").not.toMatch(/\[\d+\]/);
+    expect(complete.conclusion?.directAnswer.startsWith(directAnswer("unverified"))).toBe(true);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// Review 5128022550 Blocker 1B：唯一 contradict 死链 → 硬 false 不得保留
+// ───────────────────────────────────────────────────────────────
+describe("Blocker 1B：唯一 contradicting 来源死链", () => {
+  it("liveness 后反证死光 → false 收为 unverified，不允许死反证支撑 refuted", async () => {
+    const atomText = "某食品能包治百病";
+    const contraUrl = url(atomText, "watch");
+    const sourced = {
+      claimAtom: atomText,
+      verdict: "false",
+      evidence: "观察未见效果。",
+      boundary: "b",
+      supportingSources: [],
+      contradictingSources: [{ url: contraUrl, title: "临床观察", snippet: "未见效果" }],
+    };
+    const { result, snapshots } = await runHarness({
+      claim: atomText,
+      rumor: rumorStep([{ text: atomText, verifiable: true, type: "fact" }]),
+      factOutputs: [{ factCheckResult: "false", subclaimVerdicts: [sourced] }],
+      composerOutput: {
+        verdictType: "false",
+        conclusion: "该说法不成立，观察未见效果。",
+        subclaimVerdicts: [sourced],
+      },
+      searchPlan: { [atomText]: [{ url: contraUrl, title: "临床观察", snippet: "未见效果" }] },
+      auditPlanOutput: {
+        overallQuestion: "该食品是否有疗效依据",
+        checkabilityRevisions: [],
+        missingJustifications: [],
+        auditQuestions: [],
+      },
+      auditEvalOutput: {
+        supportedWhere: "有观察反证",
+        biggestGap: "",
+        missingJustifications: [],
+        nextQuestions: [],
+      },
+      citationLiveness: new Map([[contraUrl, "dead"]]),
+    });
+
+    expect(result.finalReport.verdictType).toBe("unverified");
+    const complete = snapshots.at(-1)!;
+    expect(complete.conclusion?.judgment).not.toBe("refuted");
+    expect(complete.conclusion?.judgment).toBe("unresolved");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// Review 5128022550 Blocker 2A：search 得新 URL 但重判失败 → 不得关闭 gap
+// ───────────────────────────────────────────────────────────────
+describe("Blocker 2A：补查得新来源但重判失败", () => {
+  it("recheck throw → recheckCommitted=false，不跑第二次 Evaluation，旧 gap 保留，硬 verdict 不放行", async () => {
+    const atomText = "某保健品能根治高血压";
+    const newUrl = "https://t.test/clinical-a";
+    const suggestedQuery = "根治高血压 临床试验";
+    const gap = "缺根治效果的临床依据";
+    const { result, auditCalls } = await runHarness({
+      claim: atomText,
+      rumor: rumorStep([{ text: atomText, verifiable: true, type: "fact" }]),
+      factOutputs: [
+        {
+          factCheckResult: "unverified",
+          subclaimVerdicts: [
+            {
+              claimAtom: atomText,
+              verdict: "unverified",
+              evidence: "",
+              boundary: "",
+              supportingSources: [],
+              contradictingSources: [],
+            },
+          ],
+        },
+        { __throw: "fact_checker down" },
+      ],
+      composerOutput: { verdictType: "false", conclusion: "该说法不成立。" },
+      searchPlan: {
+        ["临床试验"]: [{ url: newUrl, title: "高血压临床试验", snippet: "未见根治证据" }],
+      },
+      auditPlanOutput: {
+        overallQuestion: "该保健品是否有根治依据",
+        checkabilityRevisions: [],
+        missingJustifications: [],
+        auditQuestions: [],
+      },
+      auditEvalOutputs: [
+        {
+          supportedWhere: "该命题尚未取得来源",
+          biggestGap: "缺临床依据",
+          missingJustifications: [gap],
+          nextQuestions: [
+            {
+              question: "临床试验是否支持根治？",
+              reason: "缺核心依据",
+              targetClaimAtom: atomText,
+              suggestedQuery,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.wholeClaimAudit.extraPass).toMatchObject({
+      recheckCommitted: false,
+      reevaluated: false,
+      unresolvedQuestions: [gap],
+    });
+    expect(auditCalls.filter((c) => c.system.includes("整句证据评估器"))).toHaveLength(1);
+    // 旧 gap 保留 → gate 照收，硬 false 不放行
+    expect(result.finalReport.verdictType).toBe("unverified");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// Review 5128022550 Blocker 2B：重判只得到 related-only → 不得关闭 gap
+// ───────────────────────────────────────────────────────────────
+describe("Blocker 2B：补查重判只得到 sourcesRelatedOnly", () => {
+  it("新 URL 未进判词 relation → 不提交，gap 保留", async () => {
+    const atomText = "某保健品能根治高血压";
+    const newUrl = "https://t.test/clinical-b";
+    const suggestedQuery = "根治高血压 临床试验";
+    const gap = "缺根治效果的临床依据";
+    const { result, auditCalls } = await runHarness({
+      claim: atomText,
+      rumor: rumorStep([{ text: atomText, verifiable: true, type: "fact" }]),
+      factOutputs: [
+        {
+          factCheckResult: "unverified",
+          subclaimVerdicts: [
+            {
+              claimAtom: atomText,
+              verdict: "unverified",
+              evidence: "",
+              boundary: "",
+              supportingSources: [],
+              contradictingSources: [],
+            },
+          ],
+        },
+        // 重判成功但判词没有引用任何来源：bind 后只能是 related-only 填充
+        {
+          factCheckResult: "unverified",
+          subclaimVerdicts: [
+            {
+              claimAtom: atomText,
+              verdict: "unverified",
+              evidence: "",
+              boundary: "",
+              supportingSources: [],
+              contradictingSources: [],
+            },
+          ],
+        },
+      ],
+      composerOutput: { verdictType: "false", conclusion: "该说法不成立。" },
+      searchPlan: {
+        ["临床试验"]: [{ url: newUrl, title: "高血压临床试验", snippet: "未见根治证据" }],
+      },
+      auditPlanOutput: {
+        overallQuestion: "该保健品是否有根治依据",
+        checkabilityRevisions: [],
+        missingJustifications: [],
+        auditQuestions: [],
+      },
+      auditEvalOutputs: [
+        {
+          supportedWhere: "该命题尚未取得来源",
+          biggestGap: "缺临床依据",
+          missingJustifications: [gap],
+          nextQuestions: [
+            {
+              question: "临床试验是否支持根治？",
+              reason: "缺核心依据",
+              targetClaimAtom: atomText,
+              suggestedQuery,
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.wholeClaimAudit.extraPass).toMatchObject({
+      recheckCommitted: false,
+      reevaluated: false,
+      unresolvedQuestions: [gap],
+    });
+    expect(auditCalls.filter((c) => c.system.includes("整句证据评估器"))).toHaveLength(1);
+    expect(result.finalReport.verdictType).toBe("unverified");
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// Review 5128022550 Blocker 3A：无 audit + reviewer 降级 → 文本必须同步修
+// ───────────────────────────────────────────────────────────────
+describe("Blocker 3A：audit 不可用时 reviewer 的降级也要修文本", () => {
+  it("composer true + 结论“原句成立”被 reviewer 收到 unverified → 最终文案同步收权", async () => {
+    const atomText = "某偏方能一夜治愈感冒";
+    const { result, snapshots } = await runHarness({
+      claim: atomText,
+      rumor: rumorStep([{ text: atomText, verifiable: true, type: "fact" }]),
+      factOutputs: [{ factCheckResult: "unverified", subclaimVerdicts: [] }],
+      composerOutput: { verdictType: "true", conclusion: "原句成立。" },
+      searchPlan: {},
+    });
+
+    expect(result.finalReport.verdictType).toBe("unverified");
+    expect(String(result.finalReport.conclusion)).not.toBe("原句成立。");
+    expect(String(result.finalReport.conclusion).startsWith(directAnswer("unverified"))).toBe(true);
+    expect(String(result.finalReport.summaryForPublic).startsWith(directAnswer("unverified"))).toBe(true);
+    expect(String(result.finalReport.recommendation)).toBe(directAnswer("unverified"));
+    const complete = snapshots.at(-1)!;
+    expect(complete.conclusion?.judgment).toBe("unresolved");
+    expect(complete.conclusion?.directAnswer).toBe(String(result.finalReport.conclusion).slice(0, 400));
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// Review 5128022550 Blocker 3B：draft 已是弱 verdict 但文本越权 → 仍重建
+// ───────────────────────────────────────────────────────────────
+describe("Blocker 3B：draft 已是 mixed 但 conclusion 越权", () => {
+  it("verdict 无变化时，not-applicable Claim 被写成已证伪仍触发结构化重建", async () => {
+    const c1 = "维生素C能治感冒";
+    const c2 = "每次感冒都应当输液";
+    const { result, snapshots } = await runHarness({
+      claim: `${c1}，而且${c2}。`,
+      rumor: rumorStep([
+        { text: c1, verifiable: true, type: "fact" },
+        { text: c2, verifiable: false, type: "normative" },
+      ]),
+      factOutputs: [
+        {
+          factCheckResult: "false",
+          subclaimVerdicts: [
+            {
+              claimAtom: c1,
+              verdict: "partial",
+              evidence: "仅可能略微缓解症状。",
+              boundary: "撑不到治愈",
+              supportingSources: [{ url: url(c1), title: "研究", snippet: "s" }],
+              contradictingSources: [],
+            },
+          ],
+        },
+      ],
+      composerOutput: {
+        verdictType: "mixed_misleading",
+        conclusion: "两条主张均不成立，普通感冒无需输液。",
+        subclaimVerdicts: [
+          {
+            claimAtom: c1,
+            verdict: "partial",
+            evidence: "仅可能略微缓解症状。",
+            boundary: "撑不到治愈",
+            supportingSources: [{ url: url(c1), title: "研究", snippet: "s" }],
+            contradictingSources: [],
+          },
+        ],
+      },
+      searchPlan: { [c1]: [{ url: url(c1), title: "研究", snippet: "s" }] },
+      citationLiveness: new Map([[url(c1), "alive"]]),
+    });
+
+    expect(result.finalReport.verdictType).toBe("mixed_misleading");
+    const complete = snapshots.at(-1)!;
+    const finalDirectAnswer = complete.conclusion?.directAnswer ?? "";
+    expect(finalDirectAnswer.startsWith(directAnswer("mixed_misleading"))).toBe(true);
+    expect(finalDirectAnswer).not.toContain("均不成立");
+    expect(finalDirectAnswer).toContain("不适用真假判断");
+    expect(finalDirectAnswer).toContain("仅可能略微缓解症状");
   });
 });

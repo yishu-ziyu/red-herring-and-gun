@@ -31,8 +31,11 @@ export {
 } from "./evaluation.js";
 export {
   applyConclusionGate,
+  needsConstrainedConclusion,
   repairGatedConclusion,
   type ConclusionGateInput,
   type ConclusionGateResult,
+  type ConstrainedConclusionDecision,
+  type ConstrainedConclusionInput,
   type GatedConclusionRepairInput,
 } from "./conclusionGate.js";

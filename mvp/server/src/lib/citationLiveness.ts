@@ -96,8 +96,13 @@ export type PruneResult = {
 
 /**
  * 剔除 report 里的死链引用并重绑所有 [n] 标记：
- * subclaimVerdicts 的 evidence/supportingSources、claimItems 内嵌 verdict、
+ * subclaimVerdicts 的 evidence/supportingSources/contradictingSources、claimItems 内嵌 verdict、
  * 全局 conclusion/citationSources、evidenceChain 的 sourceRefs 全部同步。
+ *
+ * 双桶对称（Review 5128022550 Blocker 1）：supportingSources 与 contradictingSources
+ * 各自独立 filter、各自独立去重，绝不跨桶合并去重；同 URL 同时出现在两桶时是两条
+ * relation，都保留。判词句内编号继续按「过滤后 support → 过滤后 contradict」
+ *（与 citationBinding.bindDualBucketCitations 同构），不破坏 #74。
  */
 export async function pruneDeadCitations(
   report: Record<string, unknown>,
@@ -106,19 +111,23 @@ export async function pruneDeadCitations(
   if (!report || typeof report !== "object") return { pruned: false, deadUrls: [] };
   const citationSources = Array.isArray(report.citationSources) ? report.citationSources : [];
   const verdictsIn = Array.isArray(report.subclaimVerdicts) ? report.subclaimVerdicts : [];
-  // 收集范围要同时覆盖全局引用与 verdict 层来源：全局列表不含检索填充源，
+  // 收集范围要同时覆盖全局引用与 verdict 层两桶来源：全局列表不含检索填充源，
   // 只按全局收集会把 aliveSet 缺口变成对填充源的误杀。
   const urls: string[] = [];
   for (const s of citationSources) {
     if (s && typeof s === "object") urls.push(String((s as Record<string, unknown>).url ?? ""));
   }
-  for (const v of verdictsIn) {
-    if (!v || typeof v !== "object") continue;
-    const list = (v as Record<string, unknown>).supportingSources;
-    if (!Array.isArray(list)) continue;
+  const collectBucket = (v: Record<string, unknown>, key: string) => {
+    const list = v[key];
+    if (!Array.isArray(list)) return;
     for (const s of list) {
       if (s && typeof s === "object") urls.push(String((s as Record<string, unknown>).url ?? ""));
     }
+  };
+  for (const v of verdictsIn) {
+    if (!v || typeof v !== "object") continue;
+    collectBucket(v as Record<string, unknown>, "supportingSources");
+    collectBucket(v as Record<string, unknown>, "contradictingSources");
   }
   const candidates = urls.filter(Boolean);
   if (candidates.length === 0) return { pruned: false, deadUrls: [] };
@@ -131,16 +140,30 @@ export async function pruneDeadCitations(
   const prunedVerdicts = verdictsIn.map((raw) => {
     if (!raw || typeof raw !== "object") return raw;
     const v = raw as Record<string, unknown>;
-    const { sources, remap } = filterSourcesWithRemap(v.supportingSources, aliveSet);
+    const supportingRaw = Array.isArray(v.supportingSources) ? v.supportingSources : [];
+    const contradictingRaw = Array.isArray(v.contradictingSources) ? v.contradictingSources : [];
+    const supportingBound = filterSourcesWithRemap(supportingRaw, aliveSet);
+    const contradictingBound = filterSourcesWithRemap(contradictingRaw, aliveSet);
+    // 双桶编号：support → [1..S]，contradict → [S+1..S+C]（与 bindDualBucketCitations 同构）。
+    const remap = new Map<number, number>(supportingBound.remap);
+    for (const [oldN, newN] of contradictingBound.remap) {
+      remap.set(supportingRaw.length + oldN, supportingBound.sources.length + newN);
+    }
+    const total = supportingBound.sources.length + contradictingBound.sources.length;
     if (v.sourcesRelatedOnly === true) {
-      // 填充源的 evidence 已被 strip 标记，只需同步剔除死链来源。
-      return { ...v, supportingSources: sources };
+      // 填充源的 evidence 已被 strip 标记，只需同步剔除两桶死链来源。
+      return {
+        ...v,
+        supportingSources: supportingBound.sources,
+        contradictingSources: contradictingBound.sources,
+      };
     }
     const evidence = typeof v.evidence === "string" ? v.evidence : "";
     return {
       ...v,
-      evidence: clampMarkersToSources(remapCitationMarkers(evidence, remap), sources.length),
-      supportingSources: sources,
+      evidence: clampMarkersToSources(remapCitationMarkers(evidence, remap), total),
+      supportingSources: supportingBound.sources,
+      contradictingSources: contradictingBound.sources,
     };
   });
   report.subclaimVerdicts = prunedVerdicts;

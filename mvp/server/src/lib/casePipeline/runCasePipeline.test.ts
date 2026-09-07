@@ -307,6 +307,8 @@ describe("runCasePipeline", () => {
         agent: "report_composer",
         output: { verdictType: "mixed_misleading", conclusion: "只能信一部分。" },
       }),
+      // 本用例断言 tiny-bound 短谣通道：辟谣来源存活是前提，注入 alive 使其 hermetic
+      citationLiveness: { liveness: new Map([["https://www.piyao.org.cn/ebike", "alive"]]) },
     });
 
     expect(result.finalReport.verdictType).toBe("false");
@@ -745,6 +747,13 @@ describe("runCasePipeline", () => {
         agent: "report_composer",
         output: { verdictType: "false", conclusion: "不能信。" },
       }),
+      // 本用例断言 mixedGuard 不救无据之真：反证来源存活是前提，注入 alive 使其 hermetic
+      citationLiveness: {
+        liveness: new Map([
+          [`https://t.test/${encodeURIComponent(atoms[0])}`, "alive"],
+          [`https://t.test/${encodeURIComponent(atoms[1])}`, "alive"],
+        ]),
+      },
     });
 
     expect(result.finalReport.verdictType).toBe("false");

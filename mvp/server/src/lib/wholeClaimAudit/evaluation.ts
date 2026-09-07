@@ -32,6 +32,7 @@ export const WHOLE_CLAIM_EVALUATION_SYSTEM_PROMPT = [
   "",
   "硬约束：",
   "- 模型记忆不是证据：你发现疑点只能生成问题，不得据此宣称某命题成立或不成立。",
+  "- relatedOnlyCount 是仅相关检索材料数，不是支持证据；sourcesRelatedOnly=true 的命题没有任何支持/反驳证据，不得计入成立依据。",
   "- missingJustifications 只在「现有证据不足以把各命题连成整句结论」时填写；单命题查证充分、整句论证完整时必须留空数组。",
   "- 不得输出 supported / refuted 之类整句标签。",
   "",
@@ -77,6 +78,8 @@ export function compactVerdicts(verdicts: unknown): Array<{
   verdict: string;
   supportCount: number;
   contradictCount: number;
+  relatedOnlyCount: number;
+  sourcesRelatedOnly: boolean;
   evidence: string;
 }> {
   if (!Array.isArray(verdicts)) return [];
@@ -85,18 +88,35 @@ export function compactVerdicts(verdicts: unknown): Array<{
     verdict: string;
     supportCount: number;
     contradictCount: number;
+    relatedOnlyCount: number;
+    sourcesRelatedOnly: boolean;
     evidence: string;
   }> = [];
   for (const item of verdicts) {
     if (!item || typeof item !== "object") continue;
-    const rec = item as VerdictSummaryInput;
+    const rec = item as VerdictSummaryInput & { sourcesRelatedOnly?: unknown };
     const atom = typeof rec.claimAtom === "string" ? rec.claimAtom.trim() : "";
     if (!atom) continue;
+    // sourcesRelatedOnly=true 的是仅相关检索填充，不是支持/反驳证据：
+    // support/contradict 必须记 0，另用 relatedOnlyCount 标识，避免 LM 误读为支持。
+    const relatedOnly = rec.sourcesRelatedOnly === true;
     out.push({
       claimAtom: atom,
       verdict: typeof rec.verdict === "string" ? rec.verdict : "unverified",
-      supportCount: Array.isArray(rec.supportingSources) ? rec.supportingSources.length : 0,
-      contradictCount: Array.isArray(rec.contradictingSources) ? rec.contradictingSources.length : 0,
+      supportCount: relatedOnly
+        ? 0
+        : Array.isArray(rec.supportingSources)
+          ? rec.supportingSources.length
+          : 0,
+      contradictCount: relatedOnly
+        ? 0
+        : Array.isArray(rec.contradictingSources)
+          ? rec.contradictingSources.length
+          : 0,
+      relatedOnlyCount: relatedOnly && Array.isArray(rec.supportingSources)
+        ? rec.supportingSources.length
+        : 0,
+      sourcesRelatedOnly: relatedOnly,
       evidence: typeof rec.evidence === "string" ? rec.evidence.slice(0, 160) : "",
     });
     if (out.length >= 12) break;
