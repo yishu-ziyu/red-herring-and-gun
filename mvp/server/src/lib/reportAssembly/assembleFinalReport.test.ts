@@ -218,8 +218,10 @@ describe("deriveOverallVerdict", () => {
     expect(deriveOverallVerdict([{ verdict: "false", contradictingSources: [sourced] }])).toBe("false");
   });
 
-  it("全 true 且至少一条有据 → true；全无据 true → null", () => {
-    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }, { verdict: "true" }])).toBe("true");
+  it("每个必要成分均有支持证据才可聚合 true；一条无据即不能证明整体（Shannon §3）", () => {
+    // 原句 A∧B：A 有据不能替代 B 的证据。依据本轮任务 §3，不依实现反推期望。
+    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }, { verdict: "true" }])).toBeNull();
+    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }, { verdict: "true", supportingSources: [sourced] }])).toBe("true");
     expect(deriveOverallVerdict([{ verdict: "true" }, { verdict: "true", supportingSources: [] }])).toBeNull();
   });
 

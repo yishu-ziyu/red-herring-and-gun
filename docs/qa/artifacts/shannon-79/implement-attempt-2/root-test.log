@@ -1,0 +1,56 @@
+
+> rhg@0.0.0 test
+> npm test --workspaces --if-present
+
+
+> @rhg/core@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /private/tmp/rhg-79-shannon/packages/core
+
+
+ Test Files  54 passed (54)
+      Tests  605 passed (605)
+   Start at  11:35:44
+   Duration  3.74s (transform 4.71s, setup 0ms, import 12.68s, tests 2.13s, environment 6ms)
+
+
+> @rhg/eval@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /private/tmp/rhg-79-shannon/packages/eval
+
+
+ Test Files  3 passed (3)
+      Tests  85 passed (85)
+   Start at  11:35:48
+   Duration  801ms (transform 953ms, setup 0ms, import 1.47s, tests 19ms, environment 0ms)
+
+
+> @rhg/server@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /private/tmp/rhg-79-shannon/packages/server
+
+
+ Test Files  2 passed (2)
+      Tests  21 passed (21)
+   Start at  11:35:49
+   Duration  13.77s (transform 894ms, setup 0ms, import 1.80s, tests 12.81s, environment 0ms)
+
+
+> @rhg/web@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /private/tmp/rhg-79-shannon/packages/web
+
+
+ Test Files  20 passed (20)
+      Tests  83 passed (83)
+   Start at  11:36:03
+   Duration  4.07s (transform 1.29s, setup 0ms, import 6.91s, tests 2.71s, environment 13.50s)
+

@@ -1,0 +1,239 @@
+diff --git a/docs/NOTES.md b/docs/NOTES.md
+index fe1508d..f8b00bd 100644
+--- a/docs/NOTES.md
++++ b/docs/NOTES.md
+@@ -1,3 +1,11 @@
++# 当前状态（2026-09-08 Shannon #79 实现）
++
++第 1 次修复测量 15/17（related-only 管线 2 红）；第 2 次补齐 merge 丢失 related-only 标记的源头后冻结 17/17 全绿。根因修复：必要原子逐条有支持方向证据才可 true；partial 真侧只认 support；merge/bind 保留显式 related-only，不得重绑升级；缺判词也进入未知边界。生产镜像同步。邻接 99 项通过，根 794 项、根/mvp build 通过。mvp 首轮全量 1079 过、2 个旧 Audit rule 断言失败、1 跳过，4 套件因 worktree 缺 server 依赖不能加载；补既有依赖 symlink 后该 4 套件 21 项及 server tsc 通过。独立 Validator 正审核两条旧诊断字段期待，完成后再跑 mvp 全量。所有记录在 `docs/qa/artifacts/shannon-79/implement-attempt-{1,2}/`。未跑 LIVE/eval:gate，未提交、推送、合并。
++
++# 当前状态（2026-09-08 Shannon 独立 Validator）
++
++#79 独立合取测试已冻结：17 项，修复前 10 失败、7 通过。旧验收“至少一条 true 有据即可整体 true”已依附件 §3 独立纠正；纠正后的同版测量器在独立旧 HEAD worktree 复测为 33 项、11 失败/22 通过（corrected-before.log）。真实生产管线使用 synthetic 模型/搜索输出和 alive 注入，完整输出与失败日志在 `docs/qa/artifacts/shannon-79/`，验收在 `docs/evals/2026-09-08-shannon-conjunction.md`。独立代理但共享账户，隔离仅 logical-only；无 LIVE 或 eval:gate。未改生产代码，交 Implementer 修复后使用相同测试 hash 重验。
++
+ 2026-09-08 PR #79 人工 Review（review_id 5128449568）三个 correctness blocker 修完并推回同一分支，未开新 PR（修完停止，等人工复审，不 merge，不启动 #54，不做 QA 平台）：Blocker 3 先立共享方向契约 `citationBinding.hasDirectionalBoundHttpUrl`（mvp/server 与 packages/core/src/text 字节镜像）——true/trueish 只认 supportingSources、false 只认 contradictingSources（#74 alignment 先行）、related-only 永远不算，merge guard（demoteUnsourcedTrueFalse）、deriveOverallVerdict、applyConclusionGate 的 hasSourcedFalseVerdict 三处同换，verdictHasBoundHttpUrl 并集仅留给「完全无绑定 vs 有绑定」区分；Blocker 1 needsConstrainedConclusion 新增第四触发——终态硬 verdict 但存在 unresolved/方向无据 checkable 原子（listUnresolvedCheckableAtoms）时重建，规则 hard-verdict-with-unverified-boundary，overall 由有据 Claim 支撑时保留，repair 文本带「「X」尚未查清，未计入该判断」边界，弱 verdict 的 hasSourced 同步改方向契约；Blocker 2 audit 改 fail-closed——Planning 的 missingJustifications 一旦产出立即成为保守 gap 基线，Evaluation 失败（null）记 evaluationStatus="failed"、预算不足记 "skipped-budget"，两态都写结构化 rumorStep.output.wholeClaimAudit artifact 且缺口不静默清空，只有成功 Evaluation/authoritative re-evaluation 能更新或关闭；WholeClaimAuditRun 加可选 evaluationStatus（实现层字段，非 Snapshot schema）。新增回归 12 项，反例先行（修复前单测 9 红 + 管线 5 红）。机器：根 605 加 85 加 21 加 83 全绿，mvp 1085 过 1 跳过零失败（LegacyDesk 本轮未复现，仍是已知抖动），根 build、mvp build、server tsc 全绿，镜像 diff 为空，无 schema/UI 触碰。eval:gate 未重跑（基线既有原因且需模型费用授权，等人裁）。验收见 `docs/evals/2026-09-08-review-5128449568-blockers.md`。
+ 
+ 2026-09-07 PR #79 人工 Review（review_id 5128220693）三个发布一致性 blocker 修完并推回同一分支，未开新 PR（修完停止，等最终复审，不 merge，不启动 #54；本轮禁止重新设计 Whole-Claim Audit）：Blocker 1 给 needsConstrainedConclusion 增加第三触发条件，终态仍是合法硬 verdict 但存在 nonVerifiableAtoms 时同样 repair，只补边界不降级，overall false 与 true 继续由有据 Claim 支撑；Blocker 2 新增 buildScopedEvidence，按判词顺序建全局 source index，把每段判词 evidence 的局部 marker 显式映射到全局编号，映射不到的删除，repair 不再直接复制局部 marker；Blocker 3 修 pruneDeadCitations 的 evidenceChain 层，网址与非网址来源分开处理，全死时 sourceRefs 保持空数组不再恢复原始死链，chain-only 网址纳入探活候选。新增回归 8 项（触发判断 2、作用域转换 3、硬保留 repair 1、管线 1、探活 1）。机器：根 605 加 85 加 21 加 83 全绿，mvp 1067 过 1 跳过 1 失败（LegacyDesk 已知抖动，基线对照同失败），根 build、mvp build、server tsc 全绿。约束保持：无关键词规则、无 Schema 改动、无 UI、无 Planning 与 Evaluation 改动、无 extra-pass 数量改动、无旧 REAL artifacts、无 baseline 与 LegacyDesk 改动。验收见 `docs/evals/2026-09-07-whole-claim-audit.md` §13。
+diff --git a/mvp/server/src/lib/atomSearch.ts b/mvp/server/src/lib/atomSearch.ts
+index 2c99e51..1237d7e 100644
+--- a/mvp/server/src/lib/atomSearch.ts
++++ b/mvp/server/src/lib/atomSearch.ts
+@@ -338,6 +338,7 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
+     const contradictingRaw = Array.isArray(v.contradictingSources) ? v.contradictingSources : [];
+     const aligned = alignFalseEvidenceBuckets({
+       verdict: verdictNorm,
++      sourcesRelatedOnly: v.sourcesRelatedOnly === true,
+       supporting: supportingRaw,
+       contradicting: contradictingRaw,
+     });
+@@ -345,7 +346,9 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
+     let supporting = bound.supportingSources;
+     let contradicting = bound.contradictingSources;
+     let evidence = bound.text;
+-    let sourcesRelatedOnly = false;
++    // Rebinding cannot promote explicitly related material into directional evidence.
++    let sourcesRelatedOnly = v.sourcesRelatedOnly === true;
++    if (sourcesRelatedOnly) evidence = stripCitationMarkers(evidence);
+ 
+     let gaps = Array.isArray(v.evidenceGaps)
+       ? v.evidenceGaps.filter((g): g is string => typeof g === "string").slice(0, 3)
+diff --git a/mvp/server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts b/mvp/server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts
+index d3fb89c..7af607b 100644
+--- a/mvp/server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts
++++ b/mvp/server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts
+@@ -336,6 +336,8 @@ describe("Case 4：A+B 都真推不出 C", () => {
+         [b]: [{ url: url(b), title: "B来源", snippet: "s" }],
+         // c：检索无结果 → unverified
+       },
++      // 用例前提 A/B 有充分支持；假域名不能交真实网络决定证据存活。
++      citationLiveness: new Map([[url(a), "alive"], [url(b), "alive"]]),
+       auditPlanOutput: {
+         overallQuestion: "血糖机制能否推出普遍注射建议",
+         checkabilityRevisions: [],
+@@ -362,9 +364,11 @@ describe("Case 4：A+B 都真推不出 C", () => {
+     expect(cVerdict?.verdict).toBe("unverified"); // C 不被写成成立
+     // 整句 true 被收权门收成 unverified（audit 缺口未解决）
+     expect(result.finalReport.verdictType).toBe("unverified");
+-    expect((result.finalReport._conclusionGate as Record<string, unknown>).rule).toBe(
+-      "audit-unresolved-bridge-gap"
+-    );
++    // 同时存在必要命题未知和审计缺口；合同要求缺口保留与结果收束，不规定 gate 先后。
++    const auditArtifact = (result.rumorStep.output as Record<string, unknown>).wholeClaimAudit as Record<string, unknown>;
++    expect(auditArtifact.missingJustifications).toContain("A、B 真推不出 C，缺桥接依据");
++    expect(snapshots.at(-1)?.conclusion?.directAnswer).toContain("指南是否支持普遍餐后注射胰岛素？");
++    expect(snapshots.at(-1)?.conclusion?.directAnswer).toContain(`「${c}」尚未查清`);
+     const complete = snapshots.at(-1)!;
+     expect(complete.claims.find((cl) => cl.text === c)?.judgment).toBe("unresolved");
+     expect(complete.conclusion?.judgment).toBe("unresolved");
+@@ -1363,9 +1367,9 @@ describe("Review 5128449568 Blocker 2：audit 失败/超预算 fail-closed", ()
+     const { result, snapshots } = await runBridgeCase({});
+     expect(result.wholeClaimAudit.evaluationStatus).toBe("failed");
+     expect(result.finalReport.verdictType).toBe("unverified");
+-    expect((result.finalReport._conclusionGate as Record<string, unknown>).rule).toBe(
+-      "audit-unresolved-bridge-gap"
+-    );
++    // 此输入也有未知必要命题；不能以另一条 gate 先收权掩盖 Planning gap 丢失。
++    expect(snapshots.at(-1)?.conclusion?.directAnswer).toContain("从调节血压到不药而愈还缺独立桥接依据");
++    expect(snapshots.at(-1)?.conclusion?.directAnswer).toContain(`「${bridgeAtomC}」尚未查清`);
+     // 已知缺口不得静默清空：结构化 audit artifact 保留 Planning 基线
+     const auditArtifact = (result.rumorStep.output as Record<string, unknown>).wholeClaimAudit as Record<string, unknown>;
+     expect(Array.isArray(auditArtifact.missingJustifications)).toBe(true);
+diff --git a/mvp/server/src/lib/claimAtom/merge.ts b/mvp/server/src/lib/claimAtom/merge.ts
+index f7558f0..41c9ddf 100644
+--- a/mvp/server/src/lib/claimAtom/merge.ts
++++ b/mvp/server/src/lib/claimAtom/merge.ts
+@@ -17,7 +17,8 @@ function demoteUnsourcedTrueFalse(
+   verdict: SubclaimVerdict["verdict"],
+   supporting: VerdictSource[],
+   contradicting: VerdictSource[],
+-  gaps: string[]
++  gaps: string[],
++  sourcesRelatedOnly = false
+ ): { verdict: SubclaimVerdict["verdict"]; evidenceGaps: string[] } {
+   if (verdict !== "true" && verdict !== "false") {
+     return { verdict, evidenceGaps: gaps };
+@@ -28,6 +29,7 @@ function demoteUnsourcedTrueFalse(
+   if (
+     hasDirectionalBoundHttpUrl({
+       verdict,
++      sourcesRelatedOnly,
+       supportingSources: supporting,
+       contradictingSources: contradicting,
+     })
+@@ -93,6 +95,7 @@ export function mergeSubclaimVerdicts(
+       : "unverified") as SubclaimVerdict["verdict"];
+     const aligned = alignFalseEvidenceBuckets({
+       verdict,
++      sourcesRelatedOnly: rec.sourcesRelatedOnly === true,
+       supporting: Array.isArray(rec.supportingSources) ? rec.supportingSources : [],
+       contradicting: Array.isArray(rec.contradictingSources) ? rec.contradictingSources : [],
+     });
+@@ -108,7 +111,8 @@ export function mergeSubclaimVerdicts(
+       verdict,
+       supportingSources,
+       contradictingSources,
+-      sanitizeEvidenceGaps(rec.evidenceGaps)
++      sanitizeEvidenceGaps(rec.evidenceGaps),
++      rec.sourcesRelatedOnly === true
+     );
+     result.push({
+       claimAtom: atom,
+@@ -118,6 +122,7 @@ export function mergeSubclaimVerdicts(
+       supportingSources,
+       contradictingSources,
+       evidenceGaps: guarded.evidenceGaps,
++      ...(rec.sourcesRelatedOnly === true ? { sourcesRelatedOnly: true } : {}),
+     });
+   }
+   for (const atom of atoms) {
+diff --git a/mvp/server/src/lib/reportAssembly/assembleFinalReport.test.ts b/mvp/server/src/lib/reportAssembly/assembleFinalReport.test.ts
+index 1c31b1b..ba4135d 100644
+--- a/mvp/server/src/lib/reportAssembly/assembleFinalReport.test.ts
++++ b/mvp/server/src/lib/reportAssembly/assembleFinalReport.test.ts
+@@ -218,8 +218,10 @@ describe("deriveOverallVerdict", () => {
+     expect(deriveOverallVerdict([{ verdict: "false", contradictingSources: [sourced] }])).toBe("false");
+   });
+ 
+-  it("全 true 且至少一条有据 → true；全无据 true → null", () => {
+-    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }, { verdict: "true" }])).toBe("true");
++  it("每个必要成分均有支持证据才可聚合 true；一条无据即不能证明整体（Shannon §3）", () => {
++    // 原句 A∧B：A 有据不能替代 B 的证据。依据本轮任务 §3，不依实现反推期望。
++    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }, { verdict: "true" }])).toBeNull();
++    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }, { verdict: "true", supportingSources: [sourced] }])).toBe("true");
+     expect(deriveOverallVerdict([{ verdict: "true" }, { verdict: "true", supportingSources: [] }])).toBeNull();
+   });
+ 
+diff --git a/mvp/server/src/lib/reportAssembly/assembleFinalReport.ts b/mvp/server/src/lib/reportAssembly/assembleFinalReport.ts
+index efcb3c9..8b9e620 100644
+--- a/mvp/server/src/lib/reportAssembly/assembleFinalReport.ts
++++ b/mvp/server/src/lib/reportAssembly/assembleFinalReport.ts
+@@ -54,7 +54,7 @@ function isSourcedTrueishVerdict(v: DeriveVerdictInput): boolean {
+   return (
+     TRUEISH_VERDICTS.has(verdict) &&
+     hasDirectionalBoundHttpUrl({
+-      verdict: v?.verdict,
++      verdict: "true",
+       supportingSources: v?.supportingSources,
+       contradictingSources: v?.contradictingSources,
+       sourcesRelatedOnly: v?.sourcesRelatedOnly,
+@@ -80,7 +80,7 @@ function isSourcedFalseVerdict(v: DeriveVerdictInput): boolean {
+  * 原子判词 + 绑定证据才是依据：
+  * - 有据之真 + 有据之假 → partial（mixed_misleading 的公式载体，救回真的部分）；
+  * - 单独有据之假 → false（无据之假不撑整句；短谣 boundTiny 不在本函数）；
+- * - 全 true 且至少一条有据 → true（无据之真不升整句）；
++ * - 每个必要原子均为 true 且各自有支持方向证据 → true；
+  * - 仅 partial/exaggerated → partial；无肯定判词 → null（保留 LLM 整体字段）。
+  */
+ export function deriveOverallVerdict(
+@@ -94,7 +94,9 @@ export function deriveOverallVerdict(
+   if (hasSourcedFalse) return "false";
+   const affirmative = norms.filter((n) => TRUEISH_VERDICTS.has(n));
+   if (affirmative.length === 0) return null;
+-  if (affirmative.every((n) => n === "true")) return hasSourcedTrueish ? "true" : null;
++  if (affirmative.every((n) => n === "true")) {
++    return verdicts.every((v, index) => norms[index] === "true" && isSourcedTrueishVerdict(v)) ? "true" : null;
++  }
+   return "partial";
+ }
+ 
+diff --git a/mvp/server/src/lib/wholeClaimAudit/conclusionGate.ts b/mvp/server/src/lib/wholeClaimAudit/conclusionGate.ts
+index f39c545..6a9dd3a 100644
+--- a/mvp/server/src/lib/wholeClaimAudit/conclusionGate.ts
++++ b/mvp/server/src/lib/wholeClaimAudit/conclusionGate.ts
+@@ -210,7 +210,7 @@ function listUnresolvedCheckableAtoms(value: unknown): Array<{ text: string }> {
+     const text = typeof rec.claimAtom === "string" ? rec.claimAtom.trim() : "";
+     if (!text) continue;
+     const verdict = String(rec.verdict ?? "").trim().toLowerCase();
+-    if (verdict === "unverified") {
++    if (!verdict || verdict === "unknown" || verdict === "unverified") {
+       out.push({ text });
+       continue;
+     }
+diff --git a/packages/core/src/text/claimAtom/merge.ts b/packages/core/src/text/claimAtom/merge.ts
+index f7558f0..41c9ddf 100644
+--- a/packages/core/src/text/claimAtom/merge.ts
++++ b/packages/core/src/text/claimAtom/merge.ts
+@@ -17,7 +17,8 @@ function demoteUnsourcedTrueFalse(
+   verdict: SubclaimVerdict["verdict"],
+   supporting: VerdictSource[],
+   contradicting: VerdictSource[],
+-  gaps: string[]
++  gaps: string[],
++  sourcesRelatedOnly = false
+ ): { verdict: SubclaimVerdict["verdict"]; evidenceGaps: string[] } {
+   if (verdict !== "true" && verdict !== "false") {
+     return { verdict, evidenceGaps: gaps };
+@@ -28,6 +29,7 @@ function demoteUnsourcedTrueFalse(
+   if (
+     hasDirectionalBoundHttpUrl({
+       verdict,
++      sourcesRelatedOnly,
+       supportingSources: supporting,
+       contradictingSources: contradicting,
+     })
+@@ -93,6 +95,7 @@ export function mergeSubclaimVerdicts(
+       : "unverified") as SubclaimVerdict["verdict"];
+     const aligned = alignFalseEvidenceBuckets({
+       verdict,
++      sourcesRelatedOnly: rec.sourcesRelatedOnly === true,
+       supporting: Array.isArray(rec.supportingSources) ? rec.supportingSources : [],
+       contradicting: Array.isArray(rec.contradictingSources) ? rec.contradictingSources : [],
+     });
+@@ -108,7 +111,8 @@ export function mergeSubclaimVerdicts(
+       verdict,
+       supportingSources,
+       contradictingSources,
+-      sanitizeEvidenceGaps(rec.evidenceGaps)
++      sanitizeEvidenceGaps(rec.evidenceGaps),
++      rec.sourcesRelatedOnly === true
+     );
+     result.push({
+       claimAtom: atom,
+@@ -118,6 +122,7 @@ export function mergeSubclaimVerdicts(
+       supportingSources,
+       contradictingSources,
+       evidenceGaps: guarded.evidenceGaps,
++      ...(rec.sourcesRelatedOnly === true ? { sourcesRelatedOnly: true } : {}),
+     });
+   }
+   for (const atom of atoms) {

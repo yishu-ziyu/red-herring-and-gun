@@ -1,0 +1,41 @@
+
+> red-herring-and-gun@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.7 /private/tmp/rhg-79-shannon/mvp
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts (28 tests | 1 failed) 564ms
+     × A、B 有据支持、C 未核实、audit 桥接缺口未解决 → 整句 true 收成 unverified，C 不被写成成立 50ms
+Retired. Live deploy is: ./ops.sh deploy --yes
+That command ships the current workspace (dev), not origin main.
+Retired. Live deploy is: ./ops.sh deploy --yes
+Run it from the repo root. Do not use this script.
+[knowledgeBase] red-herring-knowledge-cases 写入失败，尝试裁剪重试 QuotaExceededError: The quota has been exceeded.
+[knowledgeBase] red-herring-knowledge-cases 写入失败，尝试裁剪重试 QuotaExceededError: The quota has been exceeded.
+[knowledgeBase] red-herring-knowledge-cases 写入失败，尝试裁剪重试 QuotaExceededError: The quota has been exceeded.
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts > Case 4：A+B 都真推不出 C > A、B 有据支持、C 未核实、audit 桥接缺口未解决 → 整句 true 收成 unverified，C 不被写成成立
+AssertionError: expected '公开材料还撑不住判断。「吃饭会使血糖升高」尚未查清，未计入该判断。「胰岛素…' to contain 'A、B 真推不出 C，缺桥接依据'
+
+Expected: "A、B 真推不出 C，缺桥接依据"
+Received: "公开材料还撑不住判断。「吃饭会使血糖升高」尚未查清，未计入该判断。「胰岛素可以降低血糖」尚未查清，未计入该判断。仍缺关键依据：指南是否支持普遍餐后注射胰岛素？"
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts:368:56
+    366|     expect(result.finalReport.verdictType).toBe("unverified");
+    367|     // 同时存在必要命题未知和审计缺口；合同要求缺口保留与结果收束，不规定 gate 先后。
+    368|     const auditArtifact = (result.rumorStep.output as Record<string, u…
+       |                                                        ^
+    369|     expect(auditArtifact.missingJustifications).toContain("A、B 真推不出 C，…
+    370|     expect(snapshots.at(-1)?.conclusion?.directAnswer).toContain("指南是否…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 97 passed | 1 skipped (99)
+      Tests  1 failed | 1101 passed | 1 skipped (1103)
+   Start at  11:40:48
+   Duration  55.26s (transform 7.47s, setup 22.18s, import 53.20s, tests 29.23s, environment 234.25s)
+

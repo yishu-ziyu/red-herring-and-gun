@@ -1,0 +1,31 @@
+{
+  "evidence_kind": "synthetic-pipeline",
+  "isolation": "logical-only",
+  "candidate_sha": "3cd4dfe5b33772f9e9ad6f4ded40db8913655c6c",
+  "phase": "before implementation",
+  "command": "cd mvp && RHG_SHANNON_ARTIFACT_DIR=../docs/qa/artifacts/shannon-79/before npm test -- server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts",
+  "finished_at": "2026-09-08T03:29:57.257998+00:00",
+  "exit_code": 1,
+  "tests": {
+    "failed": 10,
+    "passed": 7,
+    "total": 17
+  },
+  "frozen_test_sha256": "a10642b7d2ba5f5d03fe56fdcffbcc3d0325e3ff255f04624116191ce9ea3403",
+  "test_path": "mvp/server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts",
+  "artifacts": {
+    "before/missing-clean-true.json": "882cfdef78201b65bf317288769e7f9950025f588b1032a09dd80c4e28089a4e",
+    "before/missing-unavailable-true.json": "69b5d81c7ba0ae85ef39b11386bb5a4d36f6ba3389963ea62e0a2cc2a94cdbad",
+    "before/related-only-clean-true.json": "d330a67f073724d81183716e6bafd6a475a9eac3073a53d892b11502ac7f044d",
+    "before/related-only-unavailable-true.json": "11e3d2754a37ed802eeee9239455233918bf8b8080d95e78b4a91f15ea170556",
+    "before/single-clean-true.json": "f46fa1df86b9bfe46760a043464994c0fb64283119af30c69b0e5c18b3b76b2a",
+    "before/single-unavailable-true.json": "903d239c5731a9f71df7b93c1f36b8abb7492b2d4ebad96900189e50ea4dc576",
+    "before/supported-clean-true.json": "f30cdcf6da723be66dbdb5e5f33eeead986296dfbf686a4c63b559347259c332",
+    "before/supported-unavailable-true.json": "75f49506dfdfc0820f1642e29f1fab47b598b1c5a84100dc181f5425cd3ebe6c",
+    "before/unverified-clean-false.json": "62f00d1fcaccd3ac8b4fb7b070a6e1c7c01dd1676955662438e85e229ec69643",
+    "before/unverified-clean-true.json": "d3e35d163727ba0da3c150a790fbbfbc9264bbfa74db79a8b2b825c5265f5392",
+    "before/unverified-unavailable-false.json": "86a1ab5882a83a127afce894789856ec699ce7c8115d6a58515a02e74a6d1587",
+    "before/unverified-unavailable-true.json": "45a68d7d1aea174501b9611de64b2a2ebafe817a770586a2bcf522ca3ea29eec",
+    "before.log": "5efcbd5901d610a0051027c5f1eaab8917322150ecb970bea7f65525639c04ca"
+  }
+}

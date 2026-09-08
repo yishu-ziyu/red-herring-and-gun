@@ -210,7 +210,7 @@ function listUnresolvedCheckableAtoms(value: unknown): Array<{ text: string }> {
     const text = typeof rec.claimAtom === "string" ? rec.claimAtom.trim() : "";
     if (!text) continue;
     const verdict = String(rec.verdict ?? "").trim().toLowerCase();
-    if (verdict === "unverified") {
+    if (!verdict || verdict === "unknown" || verdict === "unverified") {
       out.push({ text });
       continue;
     }

@@ -336,6 +336,8 @@ describe("Case 4：A+B 都真推不出 C", () => {
         [b]: [{ url: url(b), title: "B来源", snippet: "s" }],
         // c：检索无结果 → unverified
       },
+      // 用例前提 A/B 有充分支持；假域名不能交真实网络决定证据存活。
+      citationLiveness: new Map([[url(a), "alive"], [url(b), "alive"]]),
       auditPlanOutput: {
         overallQuestion: "血糖机制能否推出普遍注射建议",
         checkabilityRevisions: [],
@@ -362,9 +364,11 @@ describe("Case 4：A+B 都真推不出 C", () => {
     expect(cVerdict?.verdict).toBe("unverified"); // C 不被写成成立
     // 整句 true 被收权门收成 unverified（audit 缺口未解决）
     expect(result.finalReport.verdictType).toBe("unverified");
-    expect((result.finalReport._conclusionGate as Record<string, unknown>).rule).toBe(
-      "audit-unresolved-bridge-gap"
-    );
+    // 同时存在必要命题未知和审计缺口；合同要求缺口保留与结果收束，不规定 gate 先后。
+    const auditArtifact = (result.rumorStep.output as Record<string, unknown>).wholeClaimAudit as Record<string, unknown>;
+    expect(auditArtifact.missingJustifications).toContain("A、B 真推不出 C，缺桥接依据");
+    expect(snapshots.at(-1)?.conclusion?.directAnswer).toContain("指南是否支持普遍餐后注射胰岛素？");
+    expect(snapshots.at(-1)?.conclusion?.directAnswer).toContain(`「${c}」尚未查清`);
     const complete = snapshots.at(-1)!;
     expect(complete.claims.find((cl) => cl.text === c)?.judgment).toBe("unresolved");
     expect(complete.conclusion?.judgment).toBe("unresolved");
@@ -1363,9 +1367,9 @@ describe("Review 5128449568 Blocker 2：audit 失败/超预算 fail-closed", () 
     const { result, snapshots } = await runBridgeCase({});
     expect(result.wholeClaimAudit.evaluationStatus).toBe("failed");
     expect(result.finalReport.verdictType).toBe("unverified");
-    expect((result.finalReport._conclusionGate as Record<string, unknown>).rule).toBe(
-      "audit-unresolved-bridge-gap"
-    );
+    // 此输入也有未知必要命题；不能以另一条 gate 先收权掩盖 Planning gap 丢失。
+    expect(snapshots.at(-1)?.conclusion?.directAnswer).toContain("从调节血压到不药而愈还缺独立桥接依据");
+    expect(snapshots.at(-1)?.conclusion?.directAnswer).toContain(`「${bridgeAtomC}」尚未查清`);
     // 已知缺口不得静默清空：结构化 audit artifact 保留 Planning 基线
     const auditArtifact = (result.rumorStep.output as Record<string, unknown>).wholeClaimAudit as Record<string, unknown>;
     expect(Array.isArray(auditArtifact.missingJustifications)).toBe(true);

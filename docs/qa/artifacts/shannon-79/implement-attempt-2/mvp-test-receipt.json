@@ -1,0 +1,13 @@
+{
+  "name": "mvp-test",
+  "argv": [
+    "npm",
+    "test"
+  ],
+  "cwd": "/private/tmp/rhg-79-shannon/mvp",
+  "startedAt": "2026-09-08T03:36:10.099070+00:00",
+  "finishedAt": "2026-09-08T03:36:50.413020+00:00",
+  "exitCode": 1,
+  "evidenceKind": "local-machine-check",
+  "logSha256": "5accd426fde800d2cbd665f854bce3776d29ff8e920b5670ef2c9e4b2b0dd1b8"
+}
