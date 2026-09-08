@@ -8,8 +8,8 @@ import LegacyDesk from "./LegacyDesk";
 import { requestOrchestrateStream } from "../lib/agentExpansion";
 
 beforeAll(async () => {
-  // 全量时动态 import MissionControlView 会与其它文件抢 transform；
-  // 失败 DOM 停在「正在打开核查工作台…」，不是 apodex-run 断言写错。
+  // 业务套件隔离：预热工作台，不把冷加载耗时算进本文件断言。
+  // 冷加载、失败复位与 unhandled rejection 见 LegacyDesk.workbenchLoader.test.tsx。
   await import("../components/v3/phases/MissionControlView");
 });
 
