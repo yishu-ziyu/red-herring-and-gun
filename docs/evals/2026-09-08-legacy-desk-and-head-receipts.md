@@ -52,9 +52,17 @@
 | D 关闭 fileParallelism | 同上串行 | 134 通过 |
 | E 暖缓存全量 | `cd mvp && npm test` | 1008 通过 / 1 skip / 22.41s |
 
-因此它不是本轮 #79 独有失败，也不是断言写错。根因是 `React.lazy(MissionControlView)` 的异步生命周期：点击后还要等 300ms 切相，再等动态 import；全量 transform 争用时 import 超过 1 秒，首条启动用例失败。不预设「无害抖动」，不删断言、不 skip、不重试刷绿。
+因此它不是本轮 #79 独有失败，也不是断言写错。
 
-修复（本独立分支）：挂载即预取工作台模块；动态 import 失败时清空缓存以便重试；测试 `beforeAll` 先 `import` 同一模块，使本 worker 不再和全量抢首包。原 `apodex-run` 断言保留。
+区分：
+
+- **历史失败**：当时全量 DOM 停在 Suspense「正在打开核查工作台…」，`apodex-run` 尚未挂上。支持「当时卡在等待工作台模块」的定位。
+- **当前未复现**：本轮改动前，同一台机器上 main 的单文件、并行、串行、冷暖全量都通过。没有本轮实测的耗时/trace 证明「transform 争用超过 1 秒」就是唯一根因。
+- **候选解释**：全量 transform 争用拉长了首次动态 import，与默认 1 秒 `findBy` 竞态。这是解释，不是已证唯一根因。
+- **定向防护**：挂载预取；失败清缓存；投机预取显式消费 rejection。
+- **测试隔离**：原业务套件 `beforeAll` 预热，避免把冷加载耗时算进业务断言。冷路径由独立文件用受控 importer 覆盖。
+
+不预设「无害抖动」，不删断言、不 skip、不重试刷绿。
 
 ### 收据
 
@@ -67,6 +75,6 @@ https://github.com/yishu-ziyu/red-herring-and-gun/releases/tag/evidence-shannon-
 
 ### LIVE
 
-仍待批准，实际 0 次。强制方式见 `docs/evals/2026-09-08-live-admission.md`。金额单价 unknown，在途 fetch 超时不 abort，故「停止计费」仍 BLOCKED。下一批真实核对见 `docs/evals/2026-09-08-next-real-result-checks.md`。
+仍待批准，实际 0 次。调用上限是「强制方案已定义，尚未接线验证」，见 `docs/evals/2026-09-08-live-admission.md`。金额单价 unknown。客户端 abort 不能等同供应商停止计费。下一批真实核对见 `docs/evals/2026-09-08-next-real-result-checks.md`。
 
 #53 / #54 未关闭。#79 / #80 未合并。

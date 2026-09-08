@@ -1,4 +1,6 @@
-2026-09-08 从 main `861386d` 开独立窄分支 `fix/legacy-desk-full-suite`：定位 LegacyDesk 全量「missing apodex-run」。先前失败 DOM 停在「正在打开核查工作台…」（lazy MissionControlView），不是断言写错。本机单文件/相邻文件/暖缓存全量/冷缓存全量均通过，未删断言、未 skip。修复为挂载预取 + import 失败清缓存 + 测试 beforeAll 预热同一模块。HEAD 收据以 GitHub pre-release 交付，不改 #79/#80 SHA。LIVE 四次仍待批准（金额单价 unknown、在途 fetch 超时不 abort → 停止计费 BLOCKED）。不合并、不关 #53/#54。
+2026-09-08 PR #81 复审 5137757199：投机预取改为显式消费 rejection，loader 失败仍清缓存并拒绝。独立冷加载测试覆盖挂载预取、fallback、apodex-run、失败复位。transform 争用标成候选解释；本轮改动前 main 全量已通过。LIVE 方案已定义尚未接线验证，未执行。不合并、不关 #53/#54。
+
+2026-09-08 从 main `861386d` 开独立窄分支 `fix/legacy-desk-full-suite`：定位 LegacyDesk 全量「missing apodex-run」。历史失败 DOM 停在「正在打开核查工作台…」。本轮改动前同一机器 main 全量通过，transform 争用是候选解释不是已证唯一根因。定向防护为挂载预取 + 失败清缓存；业务套件 beforeAll 预热属测试隔离。HEAD 收据以 GitHub pre-release 交付，不改 #79/#80 SHA。LIVE 四次仍待批准。不合并、不关 #53/#54。
 
 2026-09-06 Issue #66 生产集成验收进行中（独立 PR 待人工验收，不 merge、不关 #53、不启 #54）：从 main `e560485` 开独立分支 `feat/reset-4f-production-integration`。真实输入「维生素C能治感冒，而且每次感冒都应当输液。」走完 received→decomposed→investigating→judging→complete（193s，REAL SSE）。Claim Trace 两段 exact span；Evidence Settling `claim-1:src-1` unassessed→support 且回放 DOM before===after；Conclusion region 不 remount、scrollY=0；Source Drawer live + keyboard 闭环。产物 `docs/design/2026-09-06-mode3-production/final/`，SOURCE.md 分清 REAL SSE / REAL SNAPSHOT REPLAY / FIXTURE。直播 DOM 跳过 decomposed 一帧，用同次 JSON 回放补截图。Producer gap：claim-2 否定输液的 finding 被标 support，未手改数据、未改 backend。Vercel #58 不混本分支。
 
