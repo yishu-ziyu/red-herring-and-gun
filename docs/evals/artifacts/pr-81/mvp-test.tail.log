@@ -1,0 +1,50 @@
+ ✓ server/src/lib/caseStore.test.ts (10 tests) 16ms
+ ✓ server/src/lib/reportAssembly/assembleFinalReport.test.ts (15 tests) 15ms
+ ✓ server/src/lib/reportReviewer.test.ts (15 tests) 14ms
+ ✓ server/src/lib/caseHandlers.investigation.test.ts (4 tests) 8ms
+ ✓ server/src/lib/planSearch.test.ts (4 tests) 12ms
+ ✓ server/src/lib/atomSearchQuery.test.ts (18 tests) 40ms
+ ✓ src/lib/caseIntake.test.ts (2 tests) 4ms
+ ✓ src/lib/citationBinding.test.ts (6 tests) 6ms
+ ✓ server/src/lib/casePipeline/runCasePipeline.debate.test.ts (1 test) 17ms
+ ✓ server/src/lib/evidencePursuit/evidencePursuit.test.ts (12 tests) 7ms
+ ✓ server/src/lib/modelServiceHealth.test.ts (3 tests) 9ms
+ ✓ server/src/lib/aipingAuth.test.ts (5 tests) 4ms
+ ✓ src/lib/knowledgeBase.match.test.ts (3 tests) 3ms
+ ✓ server/src/lib/reportSanitizer.test.ts (4 tests) 10ms
+ ✓ src/lib/byoProviderPresets.test.ts (9 tests) 6ms
+ ✓ server/src/lib/crossExam/crossExam.test.ts (8 tests) 9ms
+ ✓ server/src/handlers.investigation.test.ts (3 tests) 31ms
+ ✓ src/components/v3/phases/mission/memoMarkdown.test.ts (7 tests) 7ms
+ ✓ src/lib/investigationContract.test.ts (2 tests) 10ms
+ ✓ src/lib/missionShell/labels.test.ts (18 tests) 14ms
+ ✓ src/lib/knowledgeBase.history.test.ts (3 tests) 5ms
+ ✓ src/lib/semanticRecall.test.ts (8 tests) 5ms
+ ✓ server/src/lib/crossExam/crossExam.debate.test.ts (4 tests) 26ms
+ ✓ server/src/lib/availableModels.test.ts (14 tests) 6ms
+ ✓ src/lib/missionStreamStatus.test.ts (3 tests) 3ms
+ ✓ server/src/lib/retrievalFilter.test.ts (11 tests) 11ms
+ ✓ src/components/v3/phases/MissionControlView.test.ts (13 tests) 6ms
+ ✓ server/src/lib/agentConfigs.debate.test.ts (1 test) 4ms
+ ✓ server/src/lib/anthropicParse.test.ts (3 tests) 16ms
+[knowledgeBase] red-herring-knowledge-cases 写入失败，尝试裁剪重试 QuotaExceededError: The quota has been exceeded.
+[knowledgeBase] red-herring-knowledge-cases 写入失败，尝试裁剪重试 QuotaExceededError: The quota has been exceeded.
+[knowledgeBase] red-herring-knowledge-cases 写入失败，尝试裁剪重试 QuotaExceededError: The quota has been exceeded.
+ ✓ src/legacy/loadMissionControlView.test.ts (2 tests) 6ms
+ ✓ src/lib/knowledgeBase.overflow.test.ts (1 test) 15ms
+ ✓ server/src/lib/investigation/mirror.test.ts (5 tests) 6ms
+ ✓ server/src/lib/contextStatusBar.test.ts (3 tests) 9ms
+ ✓ server/src/handlers.friendlyError.test.ts (5 tests) 16ms
+ ✓ src/lib/composeFollowUpClaim.test.ts (3 tests) 4ms
+ ✓ server/src/lib/claimReview.test.ts (8 tests) 5ms
+ ✓ server/src/lib/contextCrossCheck.test.ts (7 tests) 4ms
+ ✓ server/src/lib/claimAtom/forceCheckable.test.ts (5 tests) 4ms
+ ✓ src/indexMeta.test.ts (1 test) 2ms
+ ↓ server/src/lib/casePipeline/runCasePipeline.real.test.ts (1 test | 1 skipped)
+
+ Test Files  97 passed | 1 skipped (98)
+      Tests  1012 passed | 1 skipped (1013)
+   Start at  14:17:24
+   Duration  33.34s (transform 10.39s, setup 10.51s, import 34.83s, tests 38.64s, environment 125.44s)
+
+MVP_TEST:0

@@ -12,18 +12,18 @@
 
 `out/shannon-80-review-head/replay` 是未改写的 real-after-76 Snapshot 在当前 UI 上的 RECORDED_REPLAY。它不能证明 #79 新 producer，不能当作真实调查、实时延迟或真人理解通过。
 
-## 调用上限（可执行）
+## 调用上限（强制方案已定义，尚未接线验证）
 
-四次调查，失败、重试、fallback 均计入。并发 1。
+四次调查，失败、重试、fallback 均计入。并发 1。本文件只定义方案；#81 未实现 provider/runner 计数器，不得把这段写成限额已经生效。
 
 - 每次：最多 40 次模型请求、80 次搜索请求。
 - 批次：最多 160 次模型请求、320 次搜索请求。
 - 墙钟：每次 10 分钟、批次 40 分钟。
 - 浏览器：每 session 至多 40 个动作。
 - 模型：仅 MiniMax-M2.7-highspeed；独立质询仅 step-3.7-flash。其它 fallback 未申请，一旦出现即计次并停止该次。
-- 计数点：每个 provider HTTP、每次 retry、每次 fallback、每次搜索 provider 分别 +1。超限必须在发起下一请求前拒绝，而不是事后记录。
+- 计数点必须在实际请求尝试层：每个 provider HTTP、每次 retry、每次 fallback、每次独立裸模型调用、每次搜索 provider 分别 +1。超限必须在发出该次请求前拒绝。只包一层 `runAgent` / `searchOne` 不能自行证明内部多次 HTTP 均被覆盖。
 
-实现位置：现有 `runCasePipeline` 的 `runAgent` / `searchOne` 外包一层计数器即可，不必新建 QA 平台。未接线前不得开跑。
+未接线、未在请求尝试层验证前不得开跑。
 
 ## 总费用上限（当前不可执行）
 
@@ -50,7 +50,7 @@
 - `providerRouter.withTimeout` 同样 race，不把 AbortSignal 传进 `callMiniMaxAgent` 等 fetch。
 - MiniMax 的 `callMiniMaxAgent` 已接受 `signal`，但 `dispatchSingleProvider` 未传入。
 
-停止机制要成为可执行：超时与用户取消必须 `abort()` 同一条 signal，并把它传到每个 provider fetch。在此之前 LIVE 维持 BLOCKED，不能仅凭墙钟声明开跑。
+取消要验证：不再新发请求、无继续 retry/fallback、signal 传到在途 fetch。没有供应商侧证据时，不能把客户端 abort 写成「停止计费」。费用与 LIVE 继续 BLOCKED，不能仅凭墙钟声明开跑。
 
 ## 停止预算
 
