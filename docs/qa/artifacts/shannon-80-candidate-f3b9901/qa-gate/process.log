@@ -1,0 +1,48 @@
+
+> rhg@0.0.0 qa:gate
+> python3 -m unittest scripts.qa.qa_report_test scripts.qa.qa_report_shannon_test -v && npm run qa:contracts
+
+test_automated_needs_human_is_incomplete (scripts.qa.qa_report_test.QaReportTests.test_automated_needs_human_is_incomplete) ... ok
+test_command_must_be_allowed_by_contract (scripts.qa.qa_report_test.QaReportTests.test_command_must_be_allowed_by_contract) ... ok
+test_fail_attempt_not_cancelled_by_pass (scripts.qa.qa_report_test.QaReportTests.test_fail_attempt_not_cancelled_by_pass) ... ok
+test_human_fail_blocks_overall (scripts.qa.qa_report_test.QaReportTests.test_human_fail_blocks_overall) ... ok
+test_human_pending_is_not_overall_pass (scripts.qa.qa_report_test.QaReportTests.test_human_pending_is_not_overall_pass) ... ok
+test_live_needs_expected_backend_and_artifact (scripts.qa.qa_report_test.QaReportTests.test_live_needs_expected_backend_and_artifact) ... ok
+test_missing_and_tampered_artifacts_fail_closed (scripts.qa.qa_report_test.QaReportTests.test_missing_and_tampered_artifacts_fail_closed) ... ok
+test_missing_required_check_cannot_pass (scripts.qa.qa_report_test.QaReportTests.test_missing_required_check_cannot_pass) ... ok
+test_na_requires_contract_and_adjudication (scripts.qa.qa_report_test.QaReportTests.test_na_requires_contract_and_adjudication) ... ok
+test_no_receipt_cannot_pass (scripts.qa.qa_report_test.QaReportTests.test_no_receipt_cannot_pass) ... ok
+test_old_candidate_separate (scripts.qa.qa_report_test.QaReportTests.test_old_candidate_separate) ... ok
+test_partial_coverage_cannot_pass_from_subset (scripts.qa.qa_report_test.QaReportTests.test_partial_coverage_cannot_pass_from_subset) ... ok
+test_real_complete_contract_receipt_passes_without_backend (scripts.qa.qa_report_test.QaReportTests.test_real_complete_contract_receipt_passes_without_backend) ... ok
+test_receipt_binding_and_completeness (scripts.qa.qa_report_test.QaReportTests.test_receipt_binding_and_completeness) ... ok
+test_replay_needs_frontend_and_historical_manifest (scripts.qa.qa_report_test.QaReportTests.test_replay_needs_frontend_and_historical_manifest) ... ok
+test_required_check_contract_must_exist (scripts.qa.qa_report_test.QaReportTests.test_required_check_contract_must_exist) ... ok
+test_terminal_failure_not_hidden (scripts.qa.qa_report_test.QaReportTests.test_terminal_failure_not_hidden) ... ok
+test_json_cannot_impersonate_screenshot_and_trace (scripts.qa.qa_report_shannon_test.IndependentIntegrityTests.test_json_cannot_impersonate_screenshot_and_trace) ... ok
+test_live_binding_contents_must_match_backend_and_api (scripts.qa.qa_report_shannon_test.IndependentIntegrityTests.test_live_binding_contents_must_match_backend_and_api) ... ok
+test_live_non_sha_backend_and_generic_json_are_invalid (scripts.qa.qa_report_shannon_test.IndependentIntegrityTests.test_live_non_sha_backend_and_generic_json_are_invalid) ... ok
+test_matching_non_sha_candidate_is_invalid (scripts.qa.qa_report_shannon_test.IndependentIntegrityTests.test_matching_non_sha_candidate_is_invalid) ... ok
+test_coverage_repo_suite_without_receipt_never_passes (scripts.qa.qa_report_shannon_test.IndependentShannonReportTests.test_coverage_repo_suite_without_receipt_never_passes) ... ok
+test_human_failure_blocks_overall_gate (scripts.qa.qa_report_shannon_test.IndependentShannonReportTests.test_human_failure_blocks_overall_gate) ... ok
+test_repo_suite_cannot_mask_recorded_failure (scripts.qa.qa_report_shannon_test.IndependentShannonReportTests.test_repo_suite_cannot_mask_recorded_failure) ... ok
+test_required_automation_needs_human_is_incomplete (scripts.qa.qa_report_shannon_test.IndependentShannonReportTests.test_required_automation_needs_human_is_incomplete) ... ok
+test_terminal_failed_cannot_be_overridden_by_pass_checks (scripts.qa.qa_report_shannon_test.IndependentShannonReportTests.test_terminal_failed_cannot_be_overridden_by_pass_checks) ... ok
+
+----------------------------------------------------------------------
+Ran 26 tests in 0.046s
+
+OK
+
+> rhg@0.0.0 qa:contracts
+> cd packages/core && npx vitest run src/text/qa/contracts.test.ts
+
+
+ RUN  v4.1.11 /Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/packages/core
+
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  11:49:42
+   Duration  514ms (transform 147ms, setup 0ms, import 189ms, tests 57ms, environment 0ms)
+
