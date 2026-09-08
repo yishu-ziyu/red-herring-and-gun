@@ -1,0 +1,13 @@
+{
+  "name": "root-test",
+  "argv": [
+    "npm",
+    "test"
+  ],
+  "cwd": "/private/tmp/rhg-79-shannon",
+  "startedAt": "2026-09-08T03:35:41.554359+00:00",
+  "finishedAt": "2026-09-08T03:36:07.421232+00:00",
+  "exitCode": 0,
+  "evidenceKind": "local-machine-check",
+  "logSha256": "c9f6c15cb9a089bc782c8d23730ac6f3b2114e4ada897a0fd28bff77caf56502"
+}

@@ -1,0 +1,13 @@
+
+> red-herring-and-gun@0.1.0 test
+> vitest run server/src/lib/atomSearch.test.ts server/src/lib/claimAtom.test.ts server/src/lib/reportAssembly/assembleFinalReport.test.ts server/src/lib/wholeClaimAudit/wholeClaimAudit.test.ts server/src/lib/casePipeline/runCasePipeline.test.ts
+
+
+ RUN  v4.1.7 /private/tmp/rhg-79-shannon/mvp
+
+
+ Test Files  4 passed (4)
+      Tests  99 passed (99)
+   Start at  11:35:21
+   Duration  3.18s (transform 596ms, setup 403ms, import 802ms, tests 1.71s, environment 3.47s)
+

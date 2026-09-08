@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "npm",
+    "test"
+  ],
+  "cwd": "/private/tmp/rhg-79-shannon/mvp",
+  "startedAt": "2026-09-08T03:40:47.978762+00:00",
+  "finishedAt": "2026-09-08T03:41:43.882847+00:00",
+  "exitCode": 1,
+  "logSha256": "385a7445589e2ce0daf5fcbd3e2058f653249f252e53d881f41017533e12e987",
+  "note": "Same production candidate as attempt 2; independent Validator corrected old gate diagnostic assertions; server dependency link restored."
+}

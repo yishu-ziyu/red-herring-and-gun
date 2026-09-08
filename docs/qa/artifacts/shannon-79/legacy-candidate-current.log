@@ -1,0 +1,9 @@
+
+ RUN  v4.1.7 /private/tmp/rhg-79-shannon/mvp
+
+
+ Test Files  1 passed (1)
+      Tests  29 passed (29)
+   Start at  11:44:42
+   Duration  7.50s (transform 750ms, setup 78ms, import 714ms, tests 5.72s, environment 806ms)
+
