@@ -1,0 +1,15 @@
+{
+  "cwd": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/mvp",
+  "pid": 37965,
+  "command": [
+    "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/mvp/node_modules/.bin/vite",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "61801",
+    "--strictPort"
+  ],
+  "url": "http://127.0.0.1:61838/?fixture=replay",
+  "started_at": "2026-09-08T03:48:41.583449+00:00",
+  "backend": "DISABLED_RECORDED_REPLAY"
+}
