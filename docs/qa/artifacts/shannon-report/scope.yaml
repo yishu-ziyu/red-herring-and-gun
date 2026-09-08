@@ -1,0 +1,16 @@
+behaviors:
+  - behavior_id: report-contract
+    requirement_ref: docs/evals/2026-09-08-shannon-report.md
+    用户目标: 报告根据当前候选执行证据判定
+    前置条件: 固定报告器负例和正向对照
+    允许的结果: 无证据不通过，失败保留，真实成功可通过
+    禁止的结果: 清单声明替代执行收据
+    测量程序: python3 -m unittest scripts.qa.qa_report_test scripts.qa.qa_report_shannon_test -v
+    证据路径: docs/qa/artifacts/shannon-report
+    严重度: HIGH
+    当前覆盖状态: covered
+    evidence: scripts/qa/qa_report_test.py
+    evidence_kind: repo-suite
+    required_checks: [suite]
+    approved_commands:
+      - [python3, -m, unittest, scripts.qa.qa_report_test, scripts.qa.qa_report_shannon_test, -v]

@@ -20,9 +20,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import re
-import zipfile
-import struct
 from datetime import datetime
 from pathlib import Path
 import glob
@@ -128,8 +125,6 @@ def execution_errors(t, expected):
     errors = []
     if not expected or not expected.get('candidate_sha') or not expected.get('campaign_id'):
         return ['missing explicit expected candidate/campaign']
-    if not re.fullmatch(r'[0-9a-f]{40}', str(expected.get('candidate_sha', ''))):
-        errors.append('candidate must be full Git SHA')
     for key in ('candidate_sha', 'campaign_id', 'dirty', 'diff_sha256', 'inventory_sha256'):
         if key not in expected or t.get(key) != expected[key]:
             errors.append(f'{key} mismatch')
@@ -154,14 +149,6 @@ def execution_errors(t, expected):
             errors.append('backend not bound')
         if not t.get('api_target'):
             errors.append('missing api target')
-        if not re.fullmatch(r'[0-9a-f]{40}', str(expected.get('backend_sha', ''))):
-            errors.append('backend must be full Git SHA')
-        try:
-            binding = json.loads(Path(t['backend_binding']['path']).read_text())
-            if binding.get('backend_sha') != expected.get('backend_sha') or binding.get('api_target') != t.get('api_target'):
-                errors.append('backend binding content differs from expected backend/API')
-        except (OSError, KeyError, TypeError, ValueError, AttributeError):
-            errors.append('backend binding JSON is not parseable')
     if mode == 'RECORDED_REPLAY' and not artifact_valid(t.get('source_manifest')):
         errors.append('historical source manifest missing')
     if mode == 'RECORDED_REPLAY':
@@ -169,18 +156,6 @@ def execution_errors(t, expected):
         roles = {r.get('role') for r in artifacts if isinstance(r, dict)}
         if not {'evaluation', 'trace', 'screenshot'} <= roles:
             errors.append('replay requires evaluation, trace and screenshot artifacts')
-        for artifact in artifacts:
-            try:
-                if artifact.get('role') == 'screenshot':
-                    data = Path(artifact['path']).read_bytes()
-                    if len(data) < 33 or data[:8] != b'\x89PNG\r\n\x1a\n' or data[8:16] != b'\x00\x00\x00\rIHDR' or not all(struct.unpack('>II', data[16:24])):
-                        errors.append('screenshot is not PNG with valid IHDR')
-                if artifact.get('role') == 'trace':
-                    with zipfile.ZipFile(artifact['path']) as archive:
-                        if not archive.namelist() or archive.testzip() is not None:
-                            errors.append('trace ZIP is empty or corrupt')
-            except (OSError, KeyError, TypeError, ValueError, zipfile.BadZipFile, struct.error):
-                errors.append('replay artifact type is not parseable')
         evaluations = [r for r in artifacts if isinstance(r, dict) and r.get('role') == 'evaluation']
         try:
             if len(evaluations) != 1:
