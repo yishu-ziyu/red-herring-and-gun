@@ -1,0 +1,76 @@
+test_coverage_repo_suite_without_receipt_never_passes (__main__.IndependentShannonReportTests.test_coverage_repo_suite_without_receipt_never_passes) ... FAIL
+test_human_failure_blocks_overall_gate (__main__.IndependentShannonReportTests.test_human_failure_blocks_overall_gate) ... FAIL
+test_repo_suite_cannot_mask_recorded_failure (__main__.IndependentShannonReportTests.test_repo_suite_cannot_mask_recorded_failure) ... FAIL
+test_required_automation_needs_human_is_incomplete (__main__.IndependentShannonReportTests.test_required_automation_needs_human_is_incomplete) ... FAIL
+test_terminal_failed_cannot_be_overridden_by_pass_checks (__main__.IndependentShannonReportTests.test_terminal_failed_cannot_be_overridden_by_pass_checks) ... FAIL
+
+======================================================================
+FAIL: test_coverage_repo_suite_without_receipt_never_passes (__main__.IndependentShannonReportTests.test_coverage_repo_suite_without_receipt_never_passes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 44, in test_coverage_repo_suite_without_receipt_never_passes
+    self.assert_rejected(behavior(evidence_kind='repo-suite'), [])
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 39, in assert_rejected
+    self.assertNotEqual(result['behaviors'][0]['status'], 'PASS', result)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'PASS' == 'PASS' : {'gate': 'READY_ONLY_IF_HUMAN_GATES_PASS', 'behaviors': [{'behavior_id': 'independent-b', 'severity': 'HIGH', 'coverage': 'covered', 'status': 'PASS', 'blocked_on': '', 'human_gate': False}]}
+
+======================================================================
+FAIL: test_human_failure_blocks_overall_gate (__main__.IndependentShannonReportTests.test_human_failure_blocks_overall_gate)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 50, in test_human_failure_blocks_overall_gate
+    self.assert_rejected(behavior(human_gate=True), [trial('FAIL')])
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 40, in assert_rejected
+    self.assertEqual(result['gate'], 'GATE_NOT_MET', result)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'READY_ONLY_IF_HUMAN_GATES_PASS' != 'GATE_NOT_MET'
+- READY_ONLY_IF_HUMAN_GATES_PASS
++ GATE_NOT_MET
+ : {'gate': 'READY_ONLY_IF_HUMAN_GATES_PASS', 'behaviors': [{'behavior_id': 'independent-b', 'severity': 'HIGH', 'coverage': 'covered', 'status': 'FAIL', 'blocked_on': '', 'human_gate': True}]}
+
+======================================================================
+FAIL: test_repo_suite_cannot_mask_recorded_failure (__main__.IndependentShannonReportTests.test_repo_suite_cannot_mask_recorded_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 47, in test_repo_suite_cannot_mask_recorded_failure
+    self.assert_rejected(behavior(evidence_kind='repo-suite'), [trial('FAIL')])
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 39, in assert_rejected
+    self.assertNotEqual(result['behaviors'][0]['status'], 'PASS', result)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'PASS' == 'PASS' : {'gate': 'READY_ONLY_IF_HUMAN_GATES_PASS', 'behaviors': [{'behavior_id': 'independent-b', 'severity': 'HIGH', 'coverage': 'covered', 'status': 'PASS', 'blocked_on': '', 'human_gate': False}]}
+
+======================================================================
+FAIL: test_required_automation_needs_human_is_incomplete (__main__.IndependentShannonReportTests.test_required_automation_needs_human_is_incomplete)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 56, in test_required_automation_needs_human_is_incomplete
+    self.assert_rejected(behavior(), [trial('NEEDS_HUMAN')])
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 40, in assert_rejected
+    self.assertEqual(result['gate'], 'GATE_NOT_MET', result)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'READY_ONLY_IF_HUMAN_GATES_PASS' != 'GATE_NOT_MET'
+- READY_ONLY_IF_HUMAN_GATES_PASS
++ GATE_NOT_MET
+ : {'gate': 'READY_ONLY_IF_HUMAN_GATES_PASS', 'behaviors': [{'behavior_id': 'independent-b', 'severity': 'HIGH', 'coverage': 'covered', 'status': 'NEEDS_HUMAN', 'blocked_on': '', 'human_gate': False}]}
+
+======================================================================
+FAIL: test_terminal_failed_cannot_be_overridden_by_pass_checks (__main__.IndependentShannonReportTests.test_terminal_failed_cannot_be_overridden_by_pass_checks)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 53, in test_terminal_failed_cannot_be_overridden_by_pass_checks
+    self.assert_rejected(behavior(), [trial('PASS', 'FAILED')])
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 39, in assert_rejected
+    self.assertNotEqual(result['behaviors'][0]['status'], 'PASS', result)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'PASS' == 'PASS' : {'gate': 'READY_ONLY_IF_HUMAN_GATES_PASS', 'behaviors': [{'behavior_id': 'independent-b', 'severity': 'HIGH', 'coverage': 'covered', 'status': 'PASS', 'blocked_on': '', 'human_gate': False}]}
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.002s
+
+FAILED (failures=5)

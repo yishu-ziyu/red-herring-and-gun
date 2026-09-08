@@ -15,7 +15,10 @@
     "eval:gate": "npm run eval:gate -w @rhg/eval --",
     "qa:report": "python3 scripts/qa/qa_report.py",
     "qa:contracts": "cd packages/core && npx vitest run src/text/qa/contracts.test.ts",
-    "qa:smoke": "python3 scripts/qa/qa_smoke.py"
+    "qa:smoke": "python3 scripts/qa/qa_smoke.py",
+    "qa:replay": "python3 scripts/qa/qa_replay.py",
+    "qa:suite": "python3 scripts/qa/qa_suite.py",
+    "qa:gate": "python3 -m unittest scripts.qa.qa_report_test scripts.qa.qa_report_shannon_test -v && npm run qa:contracts"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",

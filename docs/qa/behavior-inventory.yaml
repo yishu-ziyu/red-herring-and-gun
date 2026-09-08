@@ -4,13 +4,13 @@
 # 允许的结果 / 禁止的结果 / 测量程序 / 证据路径 / 严重度 / 当前覆盖状态。
 #
 # 当前覆盖状态词表（报告生成器强制）：
-#   covered      — 有有效证据（evidence 字段指向可回查的具体测试/记录）
+#   covered      — 有测量办法（evidence 指向测量程序；不表示当前候选已执行）
 #   partial      — 部分子方面有证据；missing_aspects 必须列出缺的部分
 #   pending-audit— 尚未把现有测试/记录映射到本行为，映射前不得当 covered
 #   blocked      — 有明确阻塞条件；blocked_on 必填
 #   missing      — 无实现也无证据
 #
-# 报告门语义：非人评必需行为只要不是 covered，自动化总门即 NOT_RUN/FAIL（fail-closed）。
+# 报告门语义：coverage / execution / acceptance 分开；covered 也必须有当前候选完整有效收据。
 # 本清单不以「已实现」为分母：缺失的必需行为必须留在清单里。
 
 behaviors:

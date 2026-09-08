@@ -1,0 +1,10 @@
+test_coverage_repo_suite_without_receipt_never_passes (__main__.IndependentShannonReportTests.test_coverage_repo_suite_without_receipt_never_passes) ... ok
+test_human_failure_blocks_overall_gate (__main__.IndependentShannonReportTests.test_human_failure_blocks_overall_gate) ... ok
+test_repo_suite_cannot_mask_recorded_failure (__main__.IndependentShannonReportTests.test_repo_suite_cannot_mask_recorded_failure) ... ok
+test_required_automation_needs_human_is_incomplete (__main__.IndependentShannonReportTests.test_required_automation_needs_human_is_incomplete) ... ok
+test_terminal_failed_cannot_be_overridden_by_pass_checks (__main__.IndependentShannonReportTests.test_terminal_failed_cannot_be_overridden_by_pass_checks) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK
