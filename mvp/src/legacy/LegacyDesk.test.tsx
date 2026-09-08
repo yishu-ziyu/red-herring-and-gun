@@ -3,9 +3,22 @@
  * 经 /?legacy=1 仍需完整可用——本文件整体承接原 App.test.tsx。
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import LegacyDesk from "./LegacyDesk";
 import { requestOrchestrateStream } from "../lib/agentExpansion";
+
+beforeAll(async () => {
+  // 全量时动态 import MissionControlView 会与其它文件抢 transform；
+  // 失败 DOM 停在「正在打开核查工作台…」，不是 apodex-run 断言写错。
+  await import("../components/v3/phases/MissionControlView");
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  window.localStorage.clear();
+  window.history.pushState({}, "", "/");
+});
 
 vi.mock("../lib/agentExpansion", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/agentExpansion")>();

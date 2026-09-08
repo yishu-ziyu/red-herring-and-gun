@@ -22,7 +22,10 @@ let missionControlViewPromise: Promise<
 > | null = null;
 
 function loadMissionControlView() {
-  missionControlViewPromise ??= import("../components/v3/phases/MissionControlView");
+  missionControlViewPromise ??= import("../components/v3/phases/MissionControlView").catch((error) => {
+    missionControlViewPromise = null;
+    throw error;
+  });
   return missionControlViewPromise;
 }
 
@@ -165,6 +168,10 @@ function LegacyDeskContent() {
       }
     }
   }, [resetWorkspace, setMemoryScope]);
+
+  useEffect(() => {
+    void loadMissionControlView();
+  }, []);
 
   useEffect(() => {
     void hydrateAccountCases();
