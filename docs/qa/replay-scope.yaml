@@ -1,0 +1,41 @@
+# Frozen scope is UI fidelity only. Full inventory remains behavior-inventory.yaml.
+behaviors:
+  - behavior_id: replay-source-task
+    requirement_ref: docs/evals/2026-09-08-shannon-replay.md
+    用户目标: 阅读历史调查，展开命题，打开对应原文并关闭返回
+    前置条件: 当前生产 UI 和未改写的 real-after-76 记录
+    允许的结果: 桌面、390px、键盘 Reduced Motion 完成相同来源路径
+    禁止的结果: 未点击即通过、引用错绑、缺答案、丢焦点、把历史医学答案当真值
+    测量程序: npm run qa:replay -- --campaign CAMPAIGN --out OUTPUT
+    证据路径: OUTPUT/trial.json
+    严重度: HIGH
+    当前覆盖状态: covered
+    evidence: scripts/qa/replay_checks.py
+    required_checks:
+      - desktop.original_claim
+      - desktop.direct_answer
+      - desktop.claim_decomposition
+      - desktop.citation_binding
+      - desktop.source_navigation
+      - desktop.close_return
+      - desktop.no_horizontal_overflow
+      - desktop.artifacts
+      - mobile390.original_claim
+      - mobile390.direct_answer
+      - mobile390.claim_decomposition
+      - mobile390.citation_binding
+      - mobile390.source_navigation
+      - mobile390.close_return
+      - mobile390.no_horizontal_overflow
+      - mobile390.artifacts
+      - mobile390.viewport
+      - keyboardReduced.original_claim
+      - keyboardReduced.direct_answer
+      - keyboardReduced.claim_decomposition
+      - keyboardReduced.citation_binding
+      - keyboardReduced.source_navigation
+      - keyboardReduced.close_return
+      - keyboardReduced.no_horizontal_overflow
+      - keyboardReduced.artifacts
+      - keyboardReduced.focus_return
+      - keyboardReduced.reduced_motion

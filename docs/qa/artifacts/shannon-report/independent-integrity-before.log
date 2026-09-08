@@ -1,0 +1,53 @@
+test_json_cannot_impersonate_screenshot_and_trace (__main__.IndependentIntegrityTests.test_json_cannot_impersonate_screenshot_and_trace) ... FAIL
+test_live_binding_contents_must_match_backend_and_api (__main__.IndependentIntegrityTests.test_live_binding_contents_must_match_backend_and_api) ... FAIL
+test_live_non_sha_backend_and_generic_json_are_invalid (__main__.IndependentIntegrityTests.test_live_non_sha_backend_and_generic_json_are_invalid) ... FAIL
+test_matching_non_sha_candidate_is_invalid (__main__.IndependentIntegrityTests.test_matching_non_sha_candidate_is_invalid) ... FAIL
+
+======================================================================
+FAIL: test_json_cannot_impersonate_screenshot_and_trace (__main__.IndependentIntegrityTests.test_json_cannot_impersonate_screenshot_and_trace)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 88, in test_json_cannot_impersonate_screenshot_and_trace
+    self.assertTrue(reporter.execution_errors(self.t, self.expected),
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    'JSON bytes labeled trace/screenshot are not browser evidence')
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: [] is not true : JSON bytes labeled trace/screenshot are not browser evidence
+
+======================================================================
+FAIL: test_live_binding_contents_must_match_backend_and_api (__main__.IndependentIntegrityTests.test_live_binding_contents_must_match_backend_and_api)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 108, in test_live_binding_contents_must_match_backend_and_api
+    self.assertTrue(reporter.execution_errors(self.t, self.expected),
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    'Valid hash of a binding for another backend/API cannot verify this run')
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: [] is not true : Valid hash of a binding for another backend/API cannot verify this run
+
+======================================================================
+FAIL: test_live_non_sha_backend_and_generic_json_are_invalid (__main__.IndependentIntegrityTests.test_live_non_sha_backend_and_generic_json_are_invalid)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 100, in test_live_non_sha_backend_and_generic_json_are_invalid
+    self.assertTrue(reporter.execution_errors(self.t, self.expected),
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    'Generic JSON and matching non-SHA strings cannot establish live backend')
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: [] is not true : Generic JSON and matching non-SHA strings cannot establish live backend
+
+======================================================================
+FAIL: test_matching_non_sha_candidate_is_invalid (__main__.IndependentIntegrityTests.test_matching_non_sha_candidate_is_invalid)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_report_shannon_test.py", line 93, in test_matching_non_sha_candidate_is_invalid
+    self.assertTrue(reporter.execution_errors(self.t, self.expected),
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    'Matching arbitrary strings do not establish a candidate SHA')
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: [] is not true : Matching arbitrary strings do not establish a candidate SHA
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.050s
+
+FAILED (failures=4)

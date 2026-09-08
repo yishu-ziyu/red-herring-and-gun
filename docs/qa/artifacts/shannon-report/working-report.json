@@ -1,0 +1,32 @@
+{
+  "gate": "READY_ONLY_IF_HUMAN_GATES_PASS",
+  "automation": "PASS",
+  "overall_acceptance": "PASS",
+  "behaviors": [
+    {
+      "behavior_id": "report-contract",
+      "severity": "HIGH",
+      "coverage": "covered",
+      "execution": "COMPLETE",
+      "acceptance": "PASS",
+      "status": "PASS",
+      "human_gate": false,
+      "blocked_on": "",
+      "evidence_errors": [
+        {
+          "trial_id": "42259c2d-89b4-4c5d-ba83-916cd3ca6835",
+          "errors": []
+        }
+      ]
+    }
+  ],
+  "historical_trials": [],
+  "expected": {
+    "candidate_sha": "0e499ee403249238f23df12dccb542d9726441cf",
+    "campaign_id": "shannon-report-working-20260908",
+    "dirty": true,
+    "diff_sha256": "ed5e3ec3fa56f8cc5cb5207b0e70521659295d73c5266b101f9915cdf6b10067",
+    "inventory_sha256": "d968fefe5ef5e62d195619f7dba3c9ce10b21e84bb8b160dd22ba59e3d4d5a96",
+    "backend_sha": null
+  }
+}

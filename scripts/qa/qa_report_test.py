@@ -1,273 +1,125 @@
-#!/usr/bin/env python3
-"""qa_report.py 自身的行为测试（验收工具也要被验收，任务书§9.4）。
-
-运行：python3 -m unittest scripts.qa.qa_report_test -v（仓库根）
-或： cd scripts/qa && python3 -m unittest qa_report_test -v
-"""
-
-from __future__ import annotations
-
-import os
-import sys
+"""Evidence contract tests: no live model calls."""
+import base64
+import zipfile
+import copy
+import json
 import tempfile
-import textwrap
 import unittest
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import qa_report  # noqa: E402
-
-
-def write_yaml(directory: str, name: str, content: str) -> str:
-    path = os.path.join(directory, name)
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(textwrap.dedent(content))
-    return path
-
-
-def behavior(behavior_id: str = "b1", **overrides) -> str:
-    """生成单条 behavior 的 yaml 文本（默认 covered + evidence）。"""
-    base = {
-        "behavior_id": behavior_id,
-        "requirement_ref": "ref",
-        "用户目标": "g",
-        "前置条件": "p",
-        "允许的结果": "ok",
-        "禁止的结果": "bad",
-        "测量程序": "cmd",
-        "证据路径": "evidence",
-        "严重度": "HIGH",
-        "当前覆盖状态": "covered",
-        "evidence": "some-test-file",
-    }
-    base.update(overrides)
-    items = [f"    {key}: {value}" for key, value in base.items()]
-    return "behaviors:\n  -\n" + "\n".join(items) + "\n"
+from pathlib import Path
+from scripts.qa import qa_report as q
 
 
 class QaReportTests(unittest.TestCase):
-    def make_inventory(self, content: str) -> str:
-        self._tmp = tempfile.TemporaryDirectory()
-        return write_yaml(self._tmp.name, "inventory.yaml", content)
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name)
+        artifact = self.path / 'result.json'
+        artifact.write_text('{"observed":true}')
+        self.ref = dict(path=str(artifact), sha256=q.sha256(artifact))
+        self.b = dict(behavior_id='b', 严重度='HIGH', 当前覆盖状态='covered', evidence_kind='repo-suite', requirement_ref='contract', required_checks=['suite'], approved_commands=[['python3','test.py']])
+        self.expected = dict(candidate_sha='a'*40, campaign_id='campaign', dirty=False, diff_sha256='d'*64, inventory_sha256='e'*64)
+        self.t = dict(**self.expected, trial_id='run', behavior_ids=['b'], execution_mode='CONTRACT_SUITE', driver='deterministic_runner', command=['python3','test.py'], started_at='2026-09-08T01:00:00+00:00', ended_at='2026-09-08T01:00:01+00:00', exit_code=0, terminal_status='COMPLETE', instrument=self.ref, result_artifacts=[self.ref], checks=[dict(id='suite', behavior_id='b', status='PASS', evidence_refs=[self.ref])])
 
-    def tearDown(self):
-        if hasattr(self, "_tmp"):
-            self._tmp.cleanup()
+    def report(self, t=None, b=None):
+        t = copy.deepcopy(t or self.t)
+        t['_errors'] = q.execution_errors(t, self.expected)
+        return q.build_report([b or self.b], {'b':[t]})
 
-    def test_missing_required_field_is_schema_error(self):
-        content = """
-        behaviors:
-          - behavior_id: b1
-            requirement_ref: ref
-        """
-        inv = self.make_inventory(content)
-        with self.assertRaises(qa_report.SchemaError):
-            qa_report.validate_inventory(qa_report.load_yaml(inv))
+    def test_real_complete_contract_receipt_passes_without_backend(self):
+        self.assertEqual(self.report()['overall_acceptance'], 'PASS')
 
-    def test_covered_without_evidence_is_schema_error(self):
-        content = """
-        behaviors:
-          - behavior_id: b1
-            requirement_ref: ref
-            用户目标: g
-            前置条件: p
-            允许的结果: ok
-            禁止的结果: bad
-            测量程序: cmd
-            证据路径: e
-            严重度: HIGH
-            当前覆盖状态: covered
-        """
-        inv = self.make_inventory(content)
-        with self.assertRaises(qa_report.SchemaError):
-            qa_report.validate_inventory(qa_report.load_yaml(inv))
+    def test_no_receipt_cannot_pass(self):
+        self.assertEqual(q.build_report([self.b], {})['behaviors'][0]['status'], 'NOT_RUN')
 
-    def test_blocked_without_blocked_on_is_schema_error(self):
-        content = """
-        behaviors:
-          - behavior_id: b1
-            requirement_ref: ref
-            用户目标: g
-            前置条件: p
-            允许的结果: ok
-            禁止的结果: bad
-            测量程序: cmd
-            证据路径: e
-            严重度: HIGH
-            当前覆盖状态: blocked
-        """
-        inv = self.make_inventory(content)
-        with self.assertRaises(qa_report.SchemaError):
-            qa_report.validate_inventory(qa_report.load_yaml(inv))
+    def test_missing_and_tampered_artifacts_fail_closed(self):
+        for ref in [dict(path='/no/such/file', sha256='x'), dict(**self.ref, extra=True)]:
+            t = copy.deepcopy(self.t)
+            t['checks'][0]['evidence_refs'] = [ref]
+            if ref.get('extra'): ref['sha256'] = 'bad'
+            self.assertNotEqual(self.report(t)['overall_acceptance'], 'PASS')
 
-    def test_pass_check_without_evidence_is_schema_error(self):
-        """评分器自检反例：check 声称 PASS 但没有证据 → 试验记录非法，不得产生 PASS。"""
-        content = behavior("b1")
-        inv = self.make_inventory(content)
-        trials = tempfile.mkdtemp()
-        write_yaml(
-            trials,
-            "t1.yaml",
-            """
-            trial_id: t1
-            behavior_ids: [b1]
-            execution_mode: REAL_LIVE
-            driver: browser_agent
-            frontend_sha: abcdef0
-            backend_sha: 1234567
-            api_target: http://localhost
-            instrument_version: v1
-            checks:
-              - id: c1
-                status: PASS
-                evidence_refs: []
-            terminal_status: COMPLETE
-            """,
-        )
-        qa_report.validate_inventory(qa_report.load_yaml(inv))
-        with self.assertRaises(qa_report.SchemaError):
-            qa_report.load_trials(trials)
+    def test_receipt_binding_and_completeness(self):
+        for key in ['candidate_sha','campaign_id','diff_sha256','inventory_sha256','dirty','started_at','command','instrument','result_artifacts']:
+            with self.subTest(key=key):
+                t = copy.deepcopy(self.t); del t[key]
+                self.assertNotEqual(self.report(t)['overall_acceptance'], 'PASS')
 
-    def test_fail_is_not_masked_by_other_pass(self):
-        """两个行为一 PASS 一 FAIL：总门必须 GATE_NOT_MET。"""
-        content = (
-            behavior("b1")
-            + """  -
-    behavior_id: b2
-    requirement_ref: ref
-    用户目标: g
-    前置条件: p
-    允许的结果: ok
-    禁止的结果: bad
-    测量程序: cmd
-    证据路径: e
-    严重度: HIGH
-    当前覆盖状态: missing
-"""
-        )
-        inv = self.make_inventory(content)
-        behaviors = qa_report.validate_inventory(qa_report.load_yaml(inv))
-        report = qa_report.build_report(behaviors, {})
-        statuses = {r["behavior_id"]: r["status"] for r in report["behaviors"]}
-        self.assertEqual(statuses["b2"], "FAIL")
-        self.assertEqual(report["gate"], "GATE_NOT_MET")
+    def test_fail_attempt_not_cancelled_by_pass(self):
+        passed = copy.deepcopy(self.t); passed['_errors'] = []
+        failed = copy.deepcopy(passed); failed['checks'][0]['status'] = 'FAIL'
+        self.assertEqual(q.build_report([self.b], {'b':[passed,failed]})['overall_acceptance'], 'FAIL')
 
-    def test_covered_without_valid_trial_is_not_run(self):
-        """清单声称 covered 但没有任何环境可验证的 trial → NOT_RUN，不得 PASS。"""
-        inv = self.make_inventory(behavior("b1"))
-        behaviors = qa_report.validate_inventory(qa_report.load_yaml(inv))
-        report = qa_report.build_report(behaviors, {})
-        self.assertEqual(report["behaviors"][0]["status"], "NOT_RUN")
-        self.assertEqual(report["gate"], "GATE_NOT_MET")
+    def test_human_fail_blocks_overall(self):
+        t = copy.deepcopy(self.t); t['driver']='human'; t['checks'][0]['status']='FAIL'
+        b = dict(self.b, human_gate=True)
+        self.assertEqual(self.report(t,b)['overall_acceptance'], 'FAIL')
 
-    def test_env_unverified_trial_does_not_produce_pass(self):
-        inv = self.make_inventory(behavior("b1"))
-        trials = tempfile.mkdtemp()
-        write_yaml(
-            trials,
-            "t1.yaml",
-            """
-            trial_id: t1
-            behavior_ids: [b1]
-            execution_mode: REAL_LIVE
-            driver: browser_agent
-            frontend_sha: abcdef0
-            backend_sha: unverified
-            api_target: http://localhost
-            instrument_version: v1
-            checks:
-              - id: c1
-                status: PASS
-                evidence_refs: [shot.png]
-            terminal_status: COMPLETE
-            """,
-        )
-        behaviors = qa_report.validate_inventory(qa_report.load_yaml(inv))
-        trials_by_behavior, _ = qa_report.load_trials(trials)
-        report = qa_report.build_report(behaviors, trials_by_behavior)
-        self.assertEqual(report["behaviors"][0]["status"], "NOT_RUN")
+    def test_human_pending_is_not_overall_pass(self):
+        b = dict(self.b, human_gate=True)
+        r = q.build_report([b], {})
+        self.assertEqual(r['automation'],'PASS')
+        self.assertEqual(r['overall_acceptance'],'HUMAN_PENDING')
 
-    def test_valid_trial_with_pass_checks_produces_pass(self):
-        inv = self.make_inventory(behavior("b1"))
-        trials = tempfile.mkdtemp()
-        write_yaml(
-            trials,
-            "t1.yaml",
-            """
-            trial_id: t1
-            behavior_ids: [b1]
-            execution_mode: REAL_LIVE
-            driver: browser_agent
-            frontend_sha: abcdef0
-            backend_sha: 1234567
-            api_target: http://localhost:8080
-            instrument_version: v1
-            checks:
-              - id: c1
-                status: PASS
-                evidence_refs: [artifacts/shot.png]
-            terminal_status: COMPLETE
-            """,
-        )
-        behaviors = qa_report.validate_inventory(qa_report.load_yaml(inv))
-        trials_by_behavior, _ = qa_report.load_trials(trials)
-        report = qa_report.build_report(behaviors, trials_by_behavior)
-        self.assertEqual(report["behaviors"][0]["status"], "PASS")
-        self.assertNotEqual(report["gate"], "GATE_NOT_MET")
+    def test_automated_needs_human_is_incomplete(self):
+        t = copy.deepcopy(self.t); t['checks'][0]['status']='NEEDS_HUMAN'
+        self.assertEqual(self.report(t)['gate'],'GATE_NOT_MET')
 
-    def test_repo_suite_evidence_produces_pass_without_trial(self):
-        """covered + evidence_kind=repo-suite：确定性仓库套件即版本绑定证据（随 npm test 对 HEAD 运行）。"""
-        inv = self.make_inventory(behavior("b1", evidence_kind="repo-suite"))
-        behaviors = qa_report.validate_inventory(qa_report.load_yaml(inv))
-        report = qa_report.build_report(behaviors, {})
-        self.assertEqual(report["behaviors"][0]["status"], "PASS")
-        self.assertNotEqual(report["gate"], "GATE_NOT_MET")
+    def test_terminal_failure_not_hidden(self):
+        t = dict(self.t, terminal_status='FAILED')
+        self.assertEqual(self.report(t)['overall_acceptance'],'FAIL')
 
-    def test_human_gate_pending_reports_automation_passed_human_pending(self):
-        """自动化全过 + 人评门未完成 → AUTOMATION_PASSED_HUMAN_PENDING，不是 READY_TO_SHIP。"""
-        content = (
-            behavior("b1")
-            + """  -
-    behavior_id: human1
-    requirement_ref: ref
-    用户目标: g
-    前置条件: p
-    允许的结果: ok
-    禁止的结果: bad
-    测量程序: cmd
-    证据路径: e
-    严重度: HIGH
-    当前覆盖状态: blocked
-    blocked_on: "issue-54 human validation"
-    human_gate: true
-"""
-        )
-        inv = self.make_inventory(content)
-        trials = tempfile.mkdtemp()
-        write_yaml(
-            trials,
-            "t1.yaml",
-            """
-            trial_id: t1
-            behavior_ids: [b1]
-            execution_mode: REAL_LIVE
-            driver: browser_agent
-            frontend_sha: abcdef0
-            backend_sha: 1234567
-            api_target: http://localhost:8080
-            instrument_version: v1
-            checks:
-              - id: c1
-                status: PASS
-                evidence_refs: [artifacts/shot.png]
-            terminal_status: COMPLETE
-            """,
-        )
-        behaviors = qa_report.validate_inventory(qa_report.load_yaml(inv))
-        trials_by_behavior, _ = qa_report.load_trials(trials)
-        report = qa_report.build_report(behaviors, trials_by_behavior)
-        self.assertEqual(report["gate"], "AUTOMATION_PASSED_HUMAN_PENDING")
+    def test_old_candidate_separate(self):
+        t = dict(self.t, candidate_sha='old')
+        (self.path/'trial.json').write_text(json.dumps(t))
+        # Only trial files belong in trials directory.
+        (self.path/'result.json').rename(self.path/'result.txt')
+        loaded,_ = q.load_trials(str(self.path),self.expected)
+        r=q.build_report([self.b],loaded)
+        self.assertEqual(r['behaviors'][0]['status'],'NOT_RUN')
+        self.assertEqual(len(r['historical_trials']),1)
 
+    def test_na_requires_contract_and_adjudication(self):
+        t = copy.deepcopy(self.t); t['checks'][0]['status']='NOT_APPLICABLE'
+        self.assertEqual(self.report(t)['overall_acceptance'],'FAIL')
+        t['checks'][0]['adjudication']=dict(reason='outside frozen contract',by='reviewer',contract_ref='contract',evidence=self.ref)
+        self.assertEqual(self.report(t,dict(self.b,allow_not_applicable=True))['overall_acceptance'],'PASS')
 
-if __name__ == "__main__":
+    def test_replay_needs_frontend_and_historical_manifest(self):
+        t=dict(self.t,execution_mode='RECORDED_REPLAY')
+        self.assertEqual(self.report(t)['overall_acceptance'],'FAIL')
+        t.update(frontend_sha=self.expected['candidate_sha'],source_manifest=self.ref)
+        evaluation = self.path / 'evaluation.json'
+        evaluation.write_text(json.dumps(dict(trial_id=t['trial_id'],checks=t['checks'])))
+        screenshot = self.path / 'shot.png'
+        screenshot.write_bytes(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='))
+        trace = self.path / 'trace.zip'
+        with zipfile.ZipFile(trace, 'w') as z:
+            z.writestr('trace.trace', '{"type":"context-options"}\n')
+        t['result_artifacts'] = [dict(path=str(evaluation),sha256=q.sha256(evaluation),role='evaluation'),dict(path=str(trace),sha256=q.sha256(trace),role='trace'),dict(path=str(screenshot),sha256=q.sha256(screenshot),role='screenshot')]
+        self.assertEqual(self.report(t)['overall_acceptance'],'PASS')
+
+    def test_live_needs_expected_backend_and_artifact(self):
+        t=dict(self.t,execution_mode='REAL_LIVE',frontend_sha=self.expected['candidate_sha'],backend_sha='b'*40,api_target='http://localhost')
+        self.assertEqual(self.report(t)['overall_acceptance'],'FAIL')
+        self.expected['backend_sha']='b'*40
+        binding = self.path / 'binding.json'
+        binding.write_text(json.dumps(dict(backend_sha='b'*40, api_target=t['api_target'])))
+        t['backend_binding']=dict(path=str(binding),sha256=q.sha256(binding))
+        self.assertEqual(self.report(t)['overall_acceptance'],'PASS')
+
+    def test_partial_coverage_cannot_pass_from_subset(self):
+        self.assertEqual(self.report(b=dict(self.b, 当前覆盖状态='partial'))['overall_acceptance'],'FAIL')
+
+    def test_command_must_be_allowed_by_contract(self):
+        t = dict(self.t,command=['echo','passed'])
+        self.assertEqual(self.report(t)['overall_acceptance'],'FAIL')
+
+    def test_required_check_contract_must_exist(self):
+        self.assertEqual(self.report(b=dict(self.b,required_checks=[]))['overall_acceptance'],'FAIL')
+
+    def test_missing_required_check_cannot_pass(self):
+        self.assertEqual(self.report(b=dict(self.b,required_checks=['another']))['overall_acceptance'],'FAIL')
+
+if __name__ == '__main__':
     unittest.main()
