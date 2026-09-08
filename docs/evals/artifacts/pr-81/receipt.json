@@ -1,6 +1,6 @@
 {
   "campaign_id": "pr-81-review-5137757199",
-  "candidate_sha": "9cebb9543168853394c7c90066786cabca86a481",
+  "candidate_sha": "44e976e9763dc15996b862d74e300cc4ef505ad4",
   "dirty": false,
   "execution_mode": "SYNTHETIC_FIXTURE",
   "driver": "deterministic_runner",
