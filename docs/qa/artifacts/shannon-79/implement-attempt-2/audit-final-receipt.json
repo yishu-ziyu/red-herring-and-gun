@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "npm",
+    "test",
+    "--",
+    "server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts"
+  ],
+  "cwd": "/private/tmp/rhg-79-shannon/mvp",
+  "startedAt": "2026-09-08T03:41:58.385945+00:00",
+  "finishedAt": "2026-09-08T03:42:01.839891+00:00",
+  "exitCode": 0,
+  "testSha256": "ae6f0f4ab12dab89e623b6b7b808504a12e7980f2f6ec729caf46ea3aa67584c",
+  "logSha256": "7e9554b8450b5e03e140a4252a44b307d05ad5aa393a643c50535bd4abe21f76"
+}

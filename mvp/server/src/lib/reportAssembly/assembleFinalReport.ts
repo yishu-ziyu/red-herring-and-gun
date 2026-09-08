@@ -54,7 +54,7 @@ function isSourcedTrueishVerdict(v: DeriveVerdictInput): boolean {
   return (
     TRUEISH_VERDICTS.has(verdict) &&
     hasDirectionalBoundHttpUrl({
-      verdict: v?.verdict,
+      verdict: "true",
       supportingSources: v?.supportingSources,
       contradictingSources: v?.contradictingSources,
       sourcesRelatedOnly: v?.sourcesRelatedOnly,
@@ -80,7 +80,7 @@ function isSourcedFalseVerdict(v: DeriveVerdictInput): boolean {
  * 原子判词 + 绑定证据才是依据：
  * - 有据之真 + 有据之假 → partial（mixed_misleading 的公式载体，救回真的部分）；
  * - 单独有据之假 → false（无据之假不撑整句；短谣 boundTiny 不在本函数）；
- * - 全 true 且至少一条有据 → true（无据之真不升整句）；
+ * - 每个必要原子均为 true 且各自有支持方向证据 → true；
  * - 仅 partial/exaggerated → partial；无肯定判词 → null（保留 LLM 整体字段）。
  */
 export function deriveOverallVerdict(
@@ -94,7 +94,9 @@ export function deriveOverallVerdict(
   if (hasSourcedFalse) return "false";
   const affirmative = norms.filter((n) => TRUEISH_VERDICTS.has(n));
   if (affirmative.length === 0) return null;
-  if (affirmative.every((n) => n === "true")) return hasSourcedTrueish ? "true" : null;
+  if (affirmative.every((n) => n === "true")) {
+    return verdicts.every((v, index) => norms[index] === "true" && isSourcedTrueishVerdict(v)) ? "true" : null;
+  }
   return "partial";
 }
 

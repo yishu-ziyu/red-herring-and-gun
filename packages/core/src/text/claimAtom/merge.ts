@@ -17,7 +17,8 @@ function demoteUnsourcedTrueFalse(
   verdict: SubclaimVerdict["verdict"],
   supporting: VerdictSource[],
   contradicting: VerdictSource[],
-  gaps: string[]
+  gaps: string[],
+  sourcesRelatedOnly = false
 ): { verdict: SubclaimVerdict["verdict"]; evidenceGaps: string[] } {
   if (verdict !== "true" && verdict !== "false") {
     return { verdict, evidenceGaps: gaps };
@@ -28,6 +29,7 @@ function demoteUnsourcedTrueFalse(
   if (
     hasDirectionalBoundHttpUrl({
       verdict,
+      sourcesRelatedOnly,
       supportingSources: supporting,
       contradictingSources: contradicting,
     })
@@ -93,6 +95,7 @@ export function mergeSubclaimVerdicts(
       : "unverified") as SubclaimVerdict["verdict"];
     const aligned = alignFalseEvidenceBuckets({
       verdict,
+      sourcesRelatedOnly: rec.sourcesRelatedOnly === true,
       supporting: Array.isArray(rec.supportingSources) ? rec.supportingSources : [],
       contradicting: Array.isArray(rec.contradictingSources) ? rec.contradictingSources : [],
     });
@@ -108,7 +111,8 @@ export function mergeSubclaimVerdicts(
       verdict,
       supportingSources,
       contradictingSources,
-      sanitizeEvidenceGaps(rec.evidenceGaps)
+      sanitizeEvidenceGaps(rec.evidenceGaps),
+      rec.sourcesRelatedOnly === true
     );
     result.push({
       claimAtom: atom,
@@ -118,6 +122,7 @@ export function mergeSubclaimVerdicts(
       supportingSources,
       contradictingSources,
       evidenceGaps: guarded.evidenceGaps,
+      ...(rec.sourcesRelatedOnly === true ? { sourcesRelatedOnly: true } : {}),
     });
   }
   for (const atom of atoms) {

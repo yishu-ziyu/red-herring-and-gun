@@ -1,0 +1,34 @@
+
+> red-herring-and-gun@0.1.0 test
+> vitest run server/src/lib/reportAssembly/assembleFinalReport.test.ts server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts
+
+
+ RUN  v4.1.7 /private/tmp/rhg-79-shannon/mvp
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts (28 tests | 1 failed) 523ms
+     × A、B 有据支持、C 未核实、audit 桥接缺口未解决 → 整句 true 收成 unverified，C 不被写成成立 53ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts > Case 4：A+B 都真推不出 C > A、B 有据支持、C 未核实、audit 桥接缺口未解决 → 整句 true 收成 unverified，C 不被写成成立
+AssertionError: expected '公开材料还撑不住判断。「吃饭会使血糖升高」尚未查清，未计入该判断。「胰岛素…' to contain 'A、B 真推不出 C，缺桥接依据'
+
+Expected: "A、B 真推不出 C，缺桥接依据"
+Received: "公开材料还撑不住判断。「吃饭会使血糖升高」尚未查清，未计入该判断。「胰岛素可以降低血糖」尚未查清，未计入该判断。仍缺关键依据：指南是否支持普遍餐后注射胰岛素？"
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts:368:56
+    366|     const auditArtifact = (result.rumorStep.output as Record<string, u…
+    367|     expect(auditArtifact.missingJustifications).toContain("A、B 真推不出 C，…
+    368|     expect(snapshots.at(-1)?.conclusion?.directAnswer).toContain("A、B …
+       |                                                        ^
+    369|     expect(snapshots.at(-1)?.conclusion?.directAnswer).toContain(`「${c…
+    370|     const complete = snapshots.at(-1)!;
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 60 passed (61)
+   Start at  11:39:56
+   Duration  2.77s (transform 1.25s, setup 384ms, import 2.06s, tests 814ms, environment 3.12s)
+
