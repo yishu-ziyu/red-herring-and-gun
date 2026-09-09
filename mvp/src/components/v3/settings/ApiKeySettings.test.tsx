@@ -86,9 +86,11 @@ describe("ApiKeySettings", () => {
     render(<ApiKeySettings />);
 
     expect(screen.getByText(/本机浏览器存储/)).toBeInTheDocument();
-    expect(screen.getAllByText(/测试连接时/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/当前站点的测试接口/)).toBeInTheDocument();
-    expect(screen.getByText(/base64 不是加密/)).toBeInTheDocument();
+    expect(screen.getByText(/只保存在这台电脑的浏览器里/)).toBeInTheDocument();
+    expect(screen.getByText(/本站不做存储/)).toBeInTheDocument();
+    expect(screen.getByText(/发起一次连接验证/)).toBeInTheDocument();
+    expect(screen.getByText(/不会展示密钥/)).toBeInTheDocument();
+    expect(screen.getByText(/清除本页保存的配置/)).toBeInTheDocument();
     expect(screen.queryByText(/不会上传到我们的服务端/)).not.toBeInTheDocument();
   });
 
@@ -246,4 +248,26 @@ describe("ApiKeySettings", () => {
     await screen.findByText(/连接成功/);
     expect(screen.getByText(/上次测试/)).toBeInTheDocument();
   });
+
+  it("allows toggling API key visibility between password and text", () => {
+    render(<ApiKeySettings />);
+    const keyInput = screen.getByLabelText(/API Key/i);
+    expect(keyInput).toHaveAttribute("type", "password");
+
+    const toggleBtn = screen.getByRole("button", { name: "显示密钥" });
+    fireEvent.click(toggleBtn);
+    expect(keyInput).toHaveAttribute("type", "text");
+
+    const hideBtn = screen.getByRole("button", { name: "隐藏密钥" });
+    fireEvent.click(hideBtn);
+    expect(keyInput).toHaveAttribute("type", "password");
+  });
+
+  it("renders structured card headings and security callout", () => {
+    render(<ApiKeySettings />);
+    expect(screen.getByRole("heading", { name: "选择服务商" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "端点与访问凭证" })).toBeInTheDocument();
+    expect(screen.getByLabelText("安全与存储说明")).toBeInTheDocument();
+  });
 });
+
