@@ -8,8 +8,6 @@
  * 产品规则不写在 HTTP 层；域深度在 mvp/server/src/lib/。
  */
 
-import dns from "node:dns/promises";
-
 import { type AtomSearchBundle } from "./lib/atomSearch.js";
 
 import { runCasePipeline, type PipelineStep, type RunAgentFn } from "./lib/casePipeline/index.js";
@@ -75,6 +73,15 @@ import { makeSearch360ReverseImage } from "./lib/reverseImage/search360ReverseIm
 import { applyContextCrossCheckToReport } from "./lib/contextCrossCheck.js";
 
 import { createOrchestrateAdapter } from "./lib/orchestrate.js";
+
+import {
+  baseUrlTargetsPrivateNetwork,
+  ByoKeyError,
+  isLocalHttpUrl,
+  isPrivateAddressText,
+  parseByoConfig,
+  searchEnvWithByoCredentials,
+} from "./lib/orchestrateByo.js";
 
 // ───────────────────────────────────────────────────────────────
 // 公开 SSE 只发用户可读文案。原始 provider 诊断留在服务端 logger，
@@ -158,7 +165,13 @@ export function toPublicStreamEvent(data: object): Record<string, unknown> {
   const event = scrubProviderDiagnostics(data) as Record<string, unknown>;
   delete event.detail;
   delete event.providerErrors;
-  if (event.type === "error" && event.code !== "checks_exhausted") {
+  // code=byo_key_failed 的错误文案是服务端手写的固定中文（不含密钥与诊断），
+  // 必须原样到达用户——BYO 密钥失败是用户自己能修复的问题，吞成通用文案就失去 fail-closed 的意义。
+  if (
+    event.type === "error" &&
+    event.code !== "checks_exhausted" &&
+    event.code !== "byo_key_failed"
+  ) {
     event.message = "这次核查没能完成，请稍后重试";
     delete event.error;
   } else if (event.type === "agent_error" || event.type === "tool_error") {
@@ -180,8 +193,8 @@ export function createHandlers(env: Record<string, string>) {
   const codexModel = env.CODEX_LOCAL_MODEL || process.env.CODEX_LOCAL_MODEL || "gpt-5.5";
 
   // 多 Agent Orchestrate 编排（组装/状态栏/Skills/自证/改写/交叉二审）收在 lib/orchestrate。
-  const { makeRunAgent, makeSelfProofCaller, makeRewriteCaller, makeCrossExamCaller } =
-    createOrchestrateAdapter({ env, codexBin });
+  // 批量端点无 BYO 语义，用进程级适配器；orchestrate-stream 是请求内 BYO 接管，适配器按请求创建。
+  const batchAdapter = createOrchestrateAdapter({ env, codexBin });
 
   async function modelsListHandler(req: any, res: any, next: any) {
     if (req.method !== "GET") return next();
@@ -229,7 +242,10 @@ export function createHandlers(env: Record<string, string>) {
       });
   }
 
-  function makeSearchOneAtom(onSearchProgress?: (event: SearchProgressEvent) => void) {
+  function makeSearchOneAtom(
+    onSearchProgress?: (event: SearchProgressEvent) => void,
+    searchEnvOverride: Record<string, string> = env
+  ) {
     let reuseHitsPromise: Promise<MemoryCandidateHit[]> | undefined;
     return async (atom: string) => {
       if (!reuseHitsPromise) {
@@ -240,7 +256,7 @@ export function createHandlers(env: Record<string, string>) {
       const reuseHits = await reuseHitsPromise;
       let result: Record<string, unknown>;
       try {
-        result = await retrieveAtomSources(env, atom, reuseHits, onSearchProgress);
+        result = await retrieveAtomSources(searchEnvOverride, atom, reuseHits, onSearchProgress);
       } catch (error) {
         const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
         result = build360SearchFailure(atom, message);
@@ -331,7 +347,7 @@ export function createHandlers(env: Record<string, string>) {
           claim: one,
           env,
           maxToolCalls,
-          callSelfProofModel: makeSelfProofCaller(one, modelChoice),
+          callSelfProofModel: batchAdapter.makeSelfProofCaller(one, modelChoice),
         });
         results.push({
           claim: one,
@@ -358,6 +374,21 @@ export function createHandlers(env: Record<string, string>) {
     return report;
   }
 
+  /** 合并多个 abort 源：任一触发即以原 reason 中止（Node 版本无关，不依赖 AbortSignal.any）。 */
+  function combineAbortSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
+    const combined = new AbortController();
+    const forward = (source: AbortSignal) => {
+      if (source.aborted) {
+        combined.abort(source.reason);
+        return;
+      }
+      source.addEventListener("abort", () => combined.abort(source.reason), { once: true });
+    };
+    forward(a);
+    forward(b);
+    return combined.signal;
+  }
+
   async function orchestrateStreamHandler(req: any, res: any, next: any) {
     if (req.method !== "POST") return next();
 
@@ -372,6 +403,15 @@ export function createHandlers(env: Record<string, string>) {
     if (!claim || typeof claim !== "string") {
       return sendJson(res, 400, { message: "缺少 claim 参数" });
     }
+    // BYO key 接管：请求携带合法 byoKey 时，调查管线主力模型调用与命中家的检索改用请求内凭证；
+    // 未携带时 byo=undefined，行为与现状零差异。携带但畸形 → 400 拒绝（先退还本次核查名额）。
+    const byoParsed = await parseByoConfig(payload.byoKey);
+    if (!byoParsed.ok) {
+      const earlyTicket = req.checkTicket;
+      if (earlyTicket) releaseFreeCheck(earlyTicket);
+      return sendJson(res, 400, { message: byoParsed.error });
+    }
+    const byo = byoParsed.config;
     const modelChoice = payload.modelChoice;
     const mcValidation = validateModelChoice(env, modelChoice);
     if (!mcValidation.ok) {
@@ -399,6 +439,19 @@ export function createHandlers(env: Record<string, string>) {
     res.on("close", () => {
       if (!res.writableEnded) disconnect.abort(new Error("client-disconnected"));
     });
+
+    // BYO fail-closed：请求内密钥失败（鉴权/网络）→ 独立 abort 源中止管线，
+    // 与客户端断开分开计数——密钥失败要退还名额并给出密钥相关的用户可读错误，不与断连混淆。
+    const byoFail = new AbortController();
+    const onByoFailure = (error: unknown) => {
+      if (!byoFail.signal.aborted) {
+        byoFail.abort(error instanceof Error ? error : new Error("byo-key-failed"));
+      }
+    };
+    const pipelineSignal = combineAbortSignals(disconnect.signal, byoFail.signal);
+
+    // 检索凭证绑定：BYO 端点命中 MiniMax / 阶跃 → 对应检索路径换用户密钥；其余端点检索仍全走 env。
+    const searchEnv = searchEnvWithByoCredentials(env, byo);
 
     const sendEvent = (data: object) => {
       if (res.writableEnded || disconnect.signal.aborted) return;
@@ -458,11 +511,14 @@ export function createHandlers(env: Record<string, string>) {
         }
       }
 
+      // BYO 接管的请求内适配器：byo 存在时全部主力调用直调用户端点；不存在时与现状零差异。
+      const byoAdapter = createOrchestrateAdapter({ env, codexBin, byo, onByoFailure });
+
       if (wantsAgentLoop(payload, env)) {
         const loop = await runClaimLoopPi({
           claim,
           env,
-          callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
+          callSelfProofModel: byoAdapter.makeSelfProofCaller(claim, modelChoice),
           lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
           onEvent: sendEvent,
         });
@@ -478,7 +534,7 @@ export function createHandlers(env: Record<string, string>) {
         return;
       }
 
-      const runAgent = makeRunAgent({
+      const runAgent = byoAdapter.makeRunAgent({
         claim,
         modelChoice,
         intakeMetadata,
@@ -536,17 +592,18 @@ export function createHandlers(env: Record<string, string>) {
 
       const pipelinePromise = runCasePipeline({
         claim,
-        signal: disconnect.signal,
+        // 断连与 BYO 密钥失败两个 abort 源合并：任一触发，管线阶段边界立即退出
+        signal: pipelineSignal,
         // 截止 = 总超时 − 10s 收尾余量：补查/复核提前收敛，报告写作不再被总超时截断
         deadline: Date.now() + PIPELINE_TOTAL_TIMEOUT_MS - 10_000,
         runAgent,
-        searchOne: makeSearchOneAtom((event) => sendEvent(event)),
+        searchOne: makeSearchOneAtom((event) => sendEvent(event), searchEnv),
         lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
-        callSelfProofModel: makeSelfProofCaller(claim, modelChoice),
-        evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteCaller(modelChoice)) },
-        crossExam: { callRaw: makeCrossExamCaller(modelChoice, (data) => sendEvent(data)) },
-        runReport: (args) =>
-          makeReportRunner(runAgent)({
+        callSelfProofModel: byoAdapter.makeSelfProofCaller(claim, modelChoice),
+        evidenceLoop: { callRewriteModel: makeRewriteQueryCall(byoAdapter.makeRewriteCaller(modelChoice)) },
+        crossExam: { callRaw: byoAdapter.makeCrossExamCaller(modelChoice, (data) => sendEvent(data)) },
+        runReport: async (args) => {
+          const reportStep = await makeReportRunner(runAgent)({
             ...args,
             onFallback: (step) => {
               sendEvent({
@@ -560,7 +617,16 @@ export function createHandlers(env: Record<string, string>) {
                 timestamp: Date.now(),
               });
             },
-          }),
+          });
+          // BYO fail-closed：密钥失败引发的报告兜底不算完成，抛出触发错误收尾，
+          // 绝不把确定性兜底报告冒充成功结果，也绝不回退 env 密钥重烧一遍。
+          if (byo && byoFail.signal.aborted) {
+            throw byoFail.signal.reason instanceof Error
+              ? byoFail.signal.reason
+              : new ByoKeyError("你保存的模型密钥调用失败，这次核查已停止。");
+          }
+          return reportStep;
+        },
         hooks: {
           searchMode: "sequential",
           onInvestigationSnapshot: (snapshot) => {
@@ -769,6 +835,33 @@ export function createHandlers(env: Record<string, string>) {
       commitFreeCheck(res, ticket);
       res.end();
     } catch (error) {
+      // BYO key fail-closed（Evaluator 3）必须在最前：密钥失败时管线已被 byoFail 中止，
+      // 不需要再走断连 abort；先发中断帧与密钥错误帧，再收尾，绝不静默回退 env 密钥重烧。
+      if (byo && byoFail.signal.aborted) {
+        releaseFreeCheck(ticket);
+        console.error(
+          `[byo-key] investigation ended fail-closed label=${byo.modelName} detail=${
+            error instanceof Error ? error.name : "unknown"
+          }`
+        );
+        const byoMessage =
+          error instanceof ByoKeyError && error.userMessage
+            ? error.userMessage
+            : "你保存的模型密钥调用失败，这次核查没能完成。请检查模型设置后重试。";
+        sendEvent({
+          type: "investigation_snapshot",
+          investigation: interruptedInvestigationSnapshot(lastInvestigation, claim),
+          timestamp: Date.now(),
+        });
+        sendEvent({
+          type: "error",
+          code: "byo_key_failed",
+          message: byoMessage,
+          timestamp: Date.now(),
+        });
+        res.end();
+        return;
+      }
       // B1：无论总超时还是其它异常，流水线都是 race 的落败方仍在跑——abort 它，
       // 各阶段边界会立即退出，不再僵尸烧 token
       if (!disconnect.signal.aborted) {
@@ -830,52 +923,8 @@ export function createHandlers(env: Record<string, string>) {
   //   - prod 拒绝任何 loopback / 内网 IP
   //   - 5s 超时 + AbortController
   //   - 永不记录 apiKey
+  // 内网/loopback 判定抽到 lib/orchestrateByo.ts，供 BYO 接管路径共用同一纪律。
   // ───────────────────────────────────────────────────────────────
-
-  /** 覆盖 IPv4 私网/保留段、IPv6 ULA/链路本地、以及内网惯用主机名。 */
-  function isPrivateAddressText(host: string): boolean {
-    const h = host.toLowerCase().replace(/^\[|\]$/g, "");
-    if (h === "localhost" || h.endsWith(".local") || h.endsWith(".internal") || h.endsWith(".lan")) {
-      return true;
-    }
-    const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (v4) {
-      const a = Number(v4[1]);
-      const b = Number(v4[2]);
-      if (a === 0 || a === 10 || a === 127) return true;
-      if (a === 172 && b >= 16 && b <= 31) return true;
-      if (a === 192 && b === 168) return true;
-      if (a === 169 && b === 254) return true; // 含云 metadata 169.254.169.254
-      if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-      if (a >= 224) return true; // 组播/保留段
-      return false;
-    }
-    if (h.includes(":")) {
-      if (h === "::" || h === "::1") return true;
-      if (/^f[cd][0-9a-f]{2}:/.test(h) || h.startsWith("fc") || h.startsWith("fd")) return true; // fc00::/7
-      if (/^fe[89ab][0-9a-f]:/.test(h) || h.startsWith("fe8") || h.startsWith("fe9") || h.startsWith("fea") || h.startsWith("feb")) return true; // fe80::/10
-      return false;
-    }
-    return false;
-  }
-
-  /** 域名可能解析到内网 IP（含 DNS rebinding），生产环境必须解析后再核验。 */
-  async function baseUrlTargetsPrivateNetwork(baseUrl: string): Promise<boolean> {
-    let hostname = "";
-    try {
-      hostname = new URL(baseUrl).hostname;
-    } catch {
-      return true; // 非法 URL 一律拦
-    }
-    if (isPrivateAddressText(hostname)) return true;
-    try {
-      const resolved = await dns.lookup(hostname, { all: true });
-      return resolved.some((row) => isPrivateAddressText(row.address));
-    } catch {
-      // DNS 解析失败：交给后续 fetch 自然报错，不在这里放结论
-      return false;
-    }
-  }
 
   async function testLlmHandler(req: any, res: any, next: any) {
     if (process.env.NODE_ENV === "production") {
@@ -898,7 +947,7 @@ export function createHandlers(env: Record<string, string>) {
       return sendJson(res, 400, { ok: false, error: "缺少 baseUrl 或 apiKey" });
     }
 
-    const isLocalhost = baseUrl.startsWith("http://localhost") || baseUrl.startsWith("http://127.0.0.1");
+    const isLocalhost = isLocalHttpUrl(baseUrl);
     if (!baseUrl.startsWith("https://") && !isLocalhost) {
       return sendJson(res, 400, {
         ok: false,
