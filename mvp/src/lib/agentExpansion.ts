@@ -1,4 +1,5 @@
 import { caseIntakePrimaryText, type CaseIntake } from "./caseIntake";
+import { readSavedByoKey } from "./byoKeyRequest";
 import type { MemoryCandidate, MemoryCandidateStatus } from "./memoryCandidateTypes";
 import type { AgentEvidenceBundle } from "./schemas";
 import type { AgentContract } from "./agentConfigs";
@@ -212,6 +213,16 @@ export async function* requestOrchestrateStream(
   const payload: Record<string, unknown> = typeof input === "string" ? { claim } : { claim, intake: input };
   if (memoryRecall) payload.memoryRecall = memoryRecall;
   if (modelChoice && Object.keys(modelChoice).length > 0) payload.modelChoice = modelChoice;
+  // BYO key 接管：本地保存过密钥时随请求上行，调查的模型调用改烧用户密钥；
+  // 未保存时请求体与现状完全一致（行为零变化）。
+  const savedByoKey = readSavedByoKey();
+  if (savedByoKey) {
+    payload.byoKey = {
+      baseUrl: savedByoKey.baseUrl.trim(),
+      apiKey: savedByoKey.apiKey.trim(),
+      modelName: savedByoKey.modelName.trim(),
+    };
+  }
   if (typeof window !== "undefined") {
     try {
       const params = new URLSearchParams(window.location.search);
