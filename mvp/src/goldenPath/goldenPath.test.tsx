@@ -634,6 +634,18 @@ describe("Issue #61 [Reset 4A] 生产视觉基础断言", () => {
     expect(promptTsx).toContain("data-prompt-send");
   });
 
+  it("输入卡片内层可编辑区域消除重复 focus-visible 边框", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const gp = readFileSync(join(process.cwd(), "src", "goldenPath", "golden-path.css"), "utf8");
+    expect(gp).toMatch(/\.gp-input-card\s+#claim-input:focus-visible/);
+    expect(gp).toMatch(/\.gp-input-card\s+\[contenteditable="true"\]:focus-visible/);
+    const match = gp.match(/\.gp-input-card\s+#claim-input:focus-visible[^{]*\{([^}]+)\}/);
+    expect(match).toBeTruthy();
+    expect(match![1]).toContain("box-shadow: none;");
+    expect(match![1]).toContain("outline: none;");
+  });
+
   it("Content Layer 的争点 / 尚缺 / 原图出处不是 inset 圆角卡片", async () => {
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
