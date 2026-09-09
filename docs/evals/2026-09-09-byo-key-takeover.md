@@ -30,3 +30,13 @@
 4. **不落盘测试**：案例存档/报告 JSON 序列化结果、console 输出（spy）、公开流事件中均断言不含 apiKey 值。
 5. **全量门禁**：`cd mvp && npm test` 全绿（既有 1000+ 项零回归）；根 `npm test` 全绿；根 `npm run build` 通过；`cd mvp && npm run build` 通过。
 6. 人评项：无（本工作包纯接线，无新用户可见界面；UI 说明句归 #83 后续）。
+
+## 结果（2026-09-09）
+
+独立验收官按契约逐条复核：Evaluator 1-5 全部 PASS，结论 ACCEPT。门禁实测：mvp 1035 过 / 1 跳过 / 0 失败（main 基线 1008 + 新增 27），根 core 605 / eval 85 / server 21 / web 83 全绿（main 基线口径），根 build 与 mvp build 均 exit 0。
+
+验收官单列三项安全观察及处置：
+
+1. `?execution=loop` 调试路径（默认 UI 不可达，仅 URL 参数触发）绕过 BYO 仍烧服务端密钥——已知边界，登记 NOTES，另开工作包接管。
+2. `http://localhost` 前缀匹配可被 `http://localhost.evil.com` 类公网域名穿透——**本 PR 内已修**：抽出共享 `isLocalHttpUrl` 按 URL hostname 精确判定，`parseByoConfig` 与 test-llm 两处同口径换用，新增回归测试（借前缀的 http 公网域名一律拒绝；https 到公网主机本就合法，不在此列）。
+3. `toPublicStreamEvent` 为 `byo_key_failed` 开白名单后，该 code 的帧将来若挂 `error` 字段不会被通用分支删除——当前唯一发射点只发固定中文文案，现状安全；后续改该帧须保持不附原始错误对象。
