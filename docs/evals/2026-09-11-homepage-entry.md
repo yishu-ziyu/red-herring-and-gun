@@ -10,8 +10,8 @@
 仓库现状与线上现状不一致，动手前已核实：
 
 - 未登录左栏壳 = `AppShell` + `Dashboard`（`LegacyDesk`），今天在代码里只挂在 `/?legacy=1`（#52 已把默认路径换成 Golden Path）。
-- 线上 `gun.yishuziyu.cn` 仍在跑这一套（浏览器实测 DOM 有「历史卷宗 / 新查一条 / 模型设置」，且只加载单包 `index-DlJ2SMPv.js`）。
-- 本地 `npm run dev`（5199）默认 `/` 是 Golden Path：`ProductShell` + `InputStage`，构建出 `index-DzOHwM4G.js` + 独立 `LegacyDesk-*.js` 分包 —— 与线上不是同一份产物，即**线上是 #52 之前的旧部署**。
+- 线上 `gun.yishuziyu.cn` 仍在跑这一套（2026-09-11 用内置浏览器实测：DOM 有「历史卷宗 / 新查一条 / 模型设置」，且只加载**单包** `index-DlJ2SMPv.js`）。
+- 本地 `npm run dev`（5199）默认 `/` 是 Golden Path：`ProductShell` + `InputStage`。它的构建产物是「主包 + 按需加载的独立 `LegacyDesk-*.js` 分包」（本批构建为 `index-CjrndYjV.js` + `LegacyDesk-BBdQPLWm.js`，hash 随内容漂移、只作示意）——线上是**单包结构、没有这个分包**，说明不是同一份产物，即**线上是 #52 之前的旧部署**。
 - 任务书自己的验收第 5 条（未登录首页不得出现模型 / Agent / provider）与既有 `mvp/src/App.test.tsx` 的 E3 扫描一致，而 E3 扫描的对象正是 Golden Path 首页。
 
 因此两份都要改，且改动语义一致：
@@ -60,7 +60,7 @@
 |---|------|--------|------|
 | E1 | 未登录 `/` 首页 `document` 里不存在模式为「新查一条 / 新调查」的按钮 | `mvp` vitest：`screen.queryByRole("button", { name: /新查一条\|新调查/ })` 为 null；等价断言放到 `App.test.tsx` | 命令 |
 | E2 | 未登录 `/` 首页不存在指向 `/settings/api-key` 的链接，且页面文本无「模型设置」 | `App.test.tsx` 断言 `queryByRole("link", { name: "模型设置" })` 为 null | 命令 |
-| E3 | 未登录 `/` 首页渲染示意块：文案含「示意」、「支持」「反驳」、一句回答、片段口径 | `App.test.tsx` 断言示意区（`aria-label` 定位）文本含上述四类 | 命令 |
+| E3 | 未登录 `/` 首页渲染示意块：文案含「示意」、「支持」「反驳」、一句回答、片段口径 | `App.test.tsx` 断言示意区（测试用 `[data-gp-result-preview]` 定位；同一节点同时带 `aria-label`）文本含上述四类 | 命令 |
 | E4 | 登录后账号菜单里仍有 `/settings/api-key` 入口 | `goldenPath.test.tsx` / 既有账号菜单测试断言 | 命令 |
 | E5 | 结果态仍有回空白输入的入口，且点击后回到输入态 | `App.test.tsx`：完成态点该入口后 `textbox` 重新出现 | 命令 |
 | E6 | 未登录 `/` 首页文本不出现实现层词汇（模型 / provider / Agent / 工具日志） | 既有 E3 扫描测试（`App.test.tsx` 第 65 条）保持全绿 | 命令 |
@@ -73,3 +73,4 @@
 
 - 任务书 mock 的左栏形态来自旧壳；本地默认 `/` 是顶栏形态。E1–E8 取「语义一致」而非「像素一致」。
 - mock 用「帮 / 拆」是临时稿口语；真页面用既有词表「支持 / 反驳」（E3 按后者验）。
+- **未纳入本轮的机器门**：`npm run eval:gate`（根 `AGENTS.md` 要求行为变更要跑）。未跑的原因是该基线在 main 上即为红、且需模型费用授权（见 `docs/NOTES.md` 既有记录），本批零模型零检索改动。这一项由用户裁决，不由本契约自动放行。
