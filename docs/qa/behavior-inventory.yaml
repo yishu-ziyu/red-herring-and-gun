@@ -1,0 +1,190 @@
+# 产品行为清单（工作包 B 第一版，2026-09-08）
+#
+# 每条 behavior 必含字段：behavior_id / requirement_ref / 用户目标 / 前置条件 /
+# 允许的结果 / 禁止的结果 / 测量程序 / 证据路径 / 严重度 / 当前覆盖状态。
+#
+# 当前覆盖状态词表（报告生成器强制）：
+#   covered      — 有测量办法（evidence 指向测量程序；不表示当前候选已执行）
+#   partial      — 部分子方面有证据；missing_aspects 必须列出缺的部分
+#   pending-audit— 尚未把现有测试/记录映射到本行为，映射前不得当 covered
+#   blocked      — 有明确阻塞条件；blocked_on 必填
+#   missing      — 无实现也无证据
+#
+# 报告门语义：coverage / execution / acceptance 分开；covered 也必须有当前候选完整有效收据。
+# 本清单不以「已实现」为分母：缺失的必需行为必须留在清单里。
+
+behaviors:
+  # ── 输入与原话 ────────────────────────────────────────────────
+  - behavior_id: input-fidelity
+    requirement_ref: 任务书§4「输入与原话」；PRODUCT_SPEC 白盒三层
+    用户目标: 用户提交的文本/链接/截图对象、范围、时间、限定条件被原样核查，不支持的材料被明确说明
+    前置条件: 一条包含可核查与不可核查成分的输入
+    允许的结果: Snapshot.originalClaim 与输入逐字一致；不可核查成分标记 not-applicable 并说明
+    禁止的结果: 偷改对象/范围/时间/限定条件；把不支持的材料混入证据链
+    测量程序: "cd mvp && npx vitest run src/lib/casePipeline/runCasePipeline.investigation.test.ts（originalClaim 逐字传递断言）；REAL SSE 样本对照输入串"
+    证据路径: docs/qa/artifacts/<runId>/manifest.json
+    严重度: HIGH
+    当前覆盖状态: pending-audit
+
+  # ── 命题拆解 ─────────────────────────────────────────────────
+  - behavior_id: claim-decomposition
+    requirement_ref: 任务书§4「命题拆解」；#52 Golden Path；PRODUCT_SPEC 拆分结果可对照
+    用户目标: 原句拆成的命题与原话准确对应；没有依据的 span 不伪造；遗漏或改题可见
+    前置条件: 单句含两个以上成分的输入
+    允许的结果: 每条 Claim 能在原句中定位（exact span 或并列合并记录）；拆分结果用户可见可对照
+    禁止的结果: 无 span 时伪造；把原句没说的内容当作用户主张
+    测量程序: "cd mvp && npx vitest run src/lib/claimAtom（shape/长度/删除理由）；packages/eval 原子拆分套件；真实模型样本逐条人工对照原句"
+    证据路径: docs/qa/artifacts/<runId>/snapshot-decomposed.json
+    严重度: HIGH
+    当前覆盖状态: partial
+    covered_aspects: 拆分形状/长度/删除理由由 claimAtom 单元套件与 eval 套件覆盖
+    missing_aspects: 真实模型下 exact span 定位与改题检测无已归档证据（依赖 live 预算授权）
+
+  # ── 证据关系 ─────────────────────────────────────────────────
+  - behavior_id: evidence-relation-direction
+    requirement_ref: 任务书§4「证据关系」；#74 证伪分桶；#76 source identity
+    用户目标: 支持/反驳/仅相关分开呈现；同一来源可对多条命题各有一条 relation
+    前置条件: 带支撑与反证来源的判词输入
+    允许的结果: false 判词的反证在 contradictingSources；同 URL 跨桶保留两条 relation；related-only 不计为支持
+    禁止的结果: 证伪材料标成 support；检索垫冒充方向证据
+    测量程序: "cd packages/core && npx vitest run src/text/qa/contracts.test.ts（含 #74 分桶、双桶保留、related-only 降级不变量）"
+    证据路径: qa:contracts 输出（随根 npm test 运行）
+    严重度: HIGH
+    当前覆盖状态: covered
+    evidence_kind: repo-suite
+    evidence: packages/core/src/text/qa/contracts.test.ts + src/text/citationBinding.test.ts + src/text/claimAtom 既有套件（随根 npm test 运行）
+
+  # ── 整句审计 ─────────────────────────────────────────────────
+  - behavior_id: whole-claim-audit-consistency
+    requirement_ref: 任务书§4「整句审计」；Issue #78 全部硬不变量
+    用户目标: 结论不比命题/证据层更「知道答案」；桥接缺口可见；整句判断被允许它的关系支撑
+    前置条件: PR #79 合入 main
+    允许的结果: unresolved/方向无据/未查清命题不被硬结论偷判；audit 失败 fail-closed；方向契约三处一致
+    禁止的结果: 用「包含应该」类正则判断结论文本；audit 失败后静默放行硬 verdict
+    测量程序: "cd mvp && npx vitest run src/lib/wholeClaimAudit src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts（#79 分支已实现并全绿）；合入后改在 main 复跑"
+    证据路径: PR #79 的 docs/evals/2026-09-08-review-5128449568-blockers.md + 合入后 main 复跑记录
+    严重度: HIGH
+    当前覆盖状态: blocked
+    blocked_on: "PR #79 merge（组合清单见 docs/qa/pending-after-79.yaml）"
+
+  # ── 失败与未知 ───────────────────────────────────────────────
+  - behavior_id: failure-unknown-semantics
+    requirement_ref: 任务书§4「失败与未知」；PRODUCT_SPEC 证据语义
+    用户目标: 未核查不等于假；not-applicable 与 unresolved 不混；已知 gap 在失败时保留
+    前置条件: 故障注入或真实失败的调查路径
+    允许的结果: interrupted 帧保留已获数据不补造 conclusion；Snapshot judgment=unresolved 与 not-applicable 分开
+    禁止的结果: 失败被写成确定结论；超时/断连后伪造 complete
+    测量程序: "cd mvp && npx vitest run src/lib/investigation src/lib/casePipeline/runCasePipeline.continuity.test.ts（main 现有套件）；FAULT_INJECTED_LIVE 样本另行记录"
+    证据路径: docs/qa/artifacts/<runId>/manifest.json
+    严重度: HIGH
+    当前覆盖状态: partial
+    covered_aspects: Snapshot 判词映射与 interrupted 帧契约由 mvp investigation/continuity 套件覆盖
+    missing_aspects: 真实故障注入的 live 记录（依赖 qa:live 实现与预算授权）
+
+  # ── 引用与来源 ───────────────────────────────────────────────
+  - behavior_id: citation-scope-integrity
+    requirement_ref: 任务书§4「引用与来源」；#74/#76 引用与 identity 契约
+    用户目标: 每个引用标记指向该段所依赖的来源；未知可达性不冒称已验证
+    前置条件: 带 [n] 标记的报告与来源列表
+    允许的结果: clamp 后每个 marker 有存活全局来源；死链剔除后不复活；不可达来源如实标记
+    禁止的结果: 局部 [n] 跨段错绑；全死链时恢复死 URL
+    测量程序: "cd packages/core && npx vitest run src/text/citationBinding.test.ts src/text/qa/contracts.test.ts；cd mvp && npx vitest run src/lib/citationLiveness"
+    证据路径: qa:contracts 输出
+    严重度: HIGH
+    当前覆盖状态: covered
+    evidence_kind: repo-suite
+    evidence: citationBinding/citationLiveness 既有套件 + contracts.test.ts（随根 npm test 运行）
+
+  # ── 动态界面 ─────────────────────────────────────────────────
+  - behavior_id: dynamic-ui-identity
+    requirement_ref: 任务书§4「动态界面」；#65/#69 identity；#76 sourceId 稳定
+    用户目标: 同一稳定证据在界面变更时身份连续；Drawer/结论更新不串数据不丢焦点
+    前置条件: 真实或回放的调查流
+    允许的结果: sourceIdsStable；unassessed→support 同 URL 同 sourceId；Evidence focus 在更新中保留
+    禁止的结果: phase 切换导致 source 重编号；focus 被抢走
+    测量程序: "cd mvp && npx vitest run src/goldenPath（identity/settling 套件）；python3 scripts/capture_evidence_settling.py（回放 DOM before===after）；REAL 复验属工作包 C"
+    证据路径: docs/qa/artifacts/<runId>/settling-dom.json
+    严重度: HIGH
+    当前覆盖状态: partial
+    covered_aspects: identity/settling 的自动化不变量（fixture/回放）由 goldenPath 套件与捕获脚本覆盖
+    missing_aspects: post-#78 真实生产路径复验（blocked-on-#79-merge，工作包 C 执行）
+
+  # ── 视觉 ─────────────────────────────────────────────────────
+  - behavior_id: visual-quiet-editorial
+    requirement_ref: 任务书§4「视觉」；#53 视觉门禁；已批准设计基准
+    用户目标: Quiet Editorial 视觉；去色仍可理解；字体/留白/运动服务阅读
+    前置条件: 已批准设计对照基准
+    允许的结果: computed-style 门禁通过；灰度截图仍可读
+    禁止的结果: 回到彩色卡片堆；未过 #53 HIGH/MEDIUM 就宣称视觉完成
+    测量程序: "cd mvp && npx vitest run src/goldenPath（E3 computed-style）；python3 scripts/capture_screenshots.py（灰度/双端截图）；人评对照已批准设计"
+    证据路径: docs/design/ 对应截图目录
+    严重度: MEDIUM
+    当前覆盖状态: partial
+    covered_aspects: computed-style 机器门禁（E3）已存在并随 mvp 测试运行
+    missing_aspects: #53 的人工视觉验收（blocked-on-#53-human-review）
+
+  # ── 后续使用 ─────────────────────────────────────────────────
+  - behavior_id: follow-up-usage
+    requirement_ref: 任务书§4「后续使用」
+    用户目标: 核对追问、重查、打开旧调查的实际支持状态符合呈现；不跨用户复用、不伪造刷新
+    前置条件: 一条已完成的调查
+    允许的结果: 历史打开确定性重建（不启动模型）；追问引用既有证据身份
+    禁止的结果: 旧调查打开时悄悄重跑/改判词；跨用户串数据
+    测量程序: "cd mvp && npx vitest run src/lib（历史重建套件）；交互级验证待浏览器模拟会话"
+    证据路径: docs/qa/artifacts/<runId>/manifest.json
+    严重度: MEDIUM
+    当前覆盖状态: pending-audit
+
+  # ── 隐私与隔离 ───────────────────────────────────────────────
+  - behavior_id: privacy-isolation
+    requirement_ref: 任务书§5.3；附录 B 字段
+    用户目标: 用户数据不跨账号复用；凭证/cookie/私人调查不进 Git、截图包、trace
+    前置条件: QA 运行使用独立测试账号与 runId
+    允许的结果: 只清理自建 sandbox 数据；敏感文件在 .gitignore 且未入库
+    禁止的结果: storageState/凭证进 PR；原始 trace 未脱敏分享
+    测量程序: "git ls-files 抽查 + qa:report 的 manifest 校验（artifacts 必须带来源与完整性字段）；泄漏扫描脚本待建（missing）"
+    证据路径: docs/qa/artifacts/manifest 抽查记录
+    严重度: HIGH
+    当前覆盖状态: partial
+    covered_aspects: manifest 字段校验由 qa:report 强制
+    missing_aspects: 自动泄漏扫描器未实现
+
+  # ── 理解 ─────────────────────────────────────────────────────
+  - behavior_id: simulated-comprehension
+    requirement_ref: 任务书§6；#54 五问
+    用户目标: 模拟用户能凭页面可见内容回答五问并附页面依据；页面没说的答「页面未提供」
+    前置条件: qa:live 用户模拟器实现；阴性对照 fixture
+    允许的结果: simulated_comprehension_score 附逐题页面证据；阴性对照能识破缺依据
+    禁止的结果: 用预训练知识补页面没写的解释；把模拟分当真人理解率
+    测量程序: "待 qa:live 实现（附录 A 提示词 + §6.5 阴性对照先行）；未实现前不得产生任何分数"
+    证据路径: docs/qa/artifacts/<runId>/comprehension.json
+    严重度: HIGH
+    当前覆盖状态: blocked
+    blocked_on: "qa:live 未实现（且真人理解属 #54，blocked-on-#54-human-validation）"
+
+  - behavior_id: human-comprehension
+    requirement_ref: 任务书§11；#54 合同（五类/五问/4-5 通过/删减测试）
+    用户目标: 实际/潜在用户能说明命题、证据关系、缺口、冲突和答案依据
+    前置条件: 招募 3-5 位实际/潜在用户；五类案例 dossier 就绪
+    允许的结果: 每类有真实观察记录；答错区分四种归因（后台数据错/界面没呈现/措辞误导/用户没找到）
+    禁止的结果: 熟悉仓库的人冒充首次用户；无参与者时伪造访谈
+    测量程序: "主持稿/任务卡/记分表（材料可先备）；实测只能由人执行"
+    证据路径: docs/qa/artifacts/human-studies/<date>/
+    严重度: HIGH
+    当前覆盖状态: blocked
+    blocked_on: "#54 真人环节（HUMAN_VALIDATION_PENDING）"
+    human_gate: true
+
+  # ── 环境与版本绑定 ───────────────────────────────────────────
+  - behavior_id: environment-version-binding
+    requirement_ref: 任务书§5.2
+    用户目标: 每次运行能证明测的是哪个前端 SHA + 哪个后端 SHA/镜像 + 实际 API target
+    前置条件: 任意 QA 运行
+    允许的结果: trial 记录含 frontend_sha/backend_sha/api_target/instrument_version；无法证明时 ENVIRONMENT_UNVERIFIED
+    禁止的结果: Preview Ready 或静态 health 冒充后端验证
+    测量程序: "qa:report 对 trial 记录的必需字段做 schema 校验（缺字段不得 PASS）"
+    证据路径: docs/qa/artifacts/trials/*.yaml
+    严重度: HIGH
+    当前覆盖状态: covered
+    evidence_kind: repo-suite
+    evidence: scripts/qa/qa_report.py（schema 强制字段 + ENVIRONMENT_UNVERIFIED 规则）及其单元测试

@@ -1,0 +1,564 @@
+{
+  "trial_id": "replay",
+  "campaign_id": "shannon-80-final",
+  "candidate_sha": "f3b9901639f5e9e9d190dde9b5b569c6ac54a4fb",
+  "dirty": false,
+  "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "frontend_sha": "f3b9901639f5e9e9d190dde9b5b569c6ac54a4fb",
+  "execution_mode": "RECORDED_REPLAY",
+  "driver": "deterministic_runner",
+  "command": [
+    "/opt/homebrew/opt/python@3.14/bin/python3.14",
+    "scripts/qa/qa_replay.py",
+    "--campaign",
+    "shannon-80-final",
+    "--out",
+    "out/shannon-80-final/replay"
+  ],
+  "started_at": "2026-09-08T03:47:11.048261+00:00",
+  "ended_at": "2026-09-08T03:48:09.642137+00:00",
+  "exit_code": 0,
+  "terminal_status": "COMPLETE",
+  "inventory_sha256": "7fa0ed28ffcca0ce1df606f681bb0bade9c84a08acea63b9d14993e510460cbf",
+  "instrument": {
+    "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/qa_replay.py",
+    "sha256": "35f2ea51aa0612e59d4e4891deec807b0239ebfba15945be4aa409a2cdfcb922"
+  },
+  "instrument_files": [
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/scripts/qa/replay_checks.py",
+      "sha256": "e3902571d2b0c4648e57ec84ef88d912e066173c6ceb188012964a856cb26f7f"
+    }
+  ],
+  "source_manifest": {
+    "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/source-manifest.json",
+    "sha256": "e494bd0e679d46a8ccd3de6bf6c8a270111105f46e102bc81c00084d782334e7"
+  },
+  "result_artifacts": [
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+      "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942",
+      "role": "evaluation"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/desktop/answer.png",
+      "sha256": "88bdc0c5078c22506c89e17cc38811748624606837611d863d2dd72c53002db7",
+      "role": "screenshot"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/desktop/drawer.png",
+      "sha256": "ca43d9872409e64fa236b2cd92edd3d1edae39bdff4422ea74cac420a37fe011",
+      "role": "screenshot"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/desktop/external-source.png",
+      "sha256": "2c33bdc488513c68a1099914a2bb54dec68c36964a218f344177a8812c8b7682",
+      "role": "screenshot"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/desktop/operations.json",
+      "sha256": "a7660058d1b0eed9f6a2f43057d3d85335e2a708a9907c6cb58029c4404c91b2",
+      "role": "record"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/desktop/returned.png",
+      "sha256": "88bdc0c5078c22506c89e17cc38811748624606837611d863d2dd72c53002db7",
+      "role": "screenshot"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/desktop/trace.zip",
+      "sha256": "69c28ac0f01c141e8b52e901672a3bab293ed9b619d82c76aa590703b2a4128c",
+      "role": "trace"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/frontend-process.json",
+      "sha256": "c45beaa66c2ec43dab092b8b693b9b51377c757454e26a51211554d8f0f0a943",
+      "role": "record"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/keyboardReduced/answer.png",
+      "sha256": "88bdc0c5078c22506c89e17cc38811748624606837611d863d2dd72c53002db7",
+      "role": "screenshot"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/keyboardReduced/drawer.png",
+      "sha256": "916a5137400003c7f93b2df44fc645495755ca7398b2b9b073905251124ea2d1",
+      "role": "screenshot"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/keyboardReduced/external-source.png",
+      "sha256": "77602f38cb24628191e5935059aaa7ffb097c3d6aaf11e785bc80d14742a10aa",
+      "role": "screenshot"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/keyboardReduced/operations.json",
+      "sha256": "e5db64e2c09acb893eb1425d609783132fd0fb8328a7385521d6405302bc9abc",
+      "role": "record"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/keyboardReduced/returned.png",
+      "sha256": "873f3ed8beff07876e6cd46ba3e258e1c3b3902fc86c364bb6b261b032b3c315",
+      "role": "screenshot"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/keyboardReduced/trace.zip",
+      "sha256": "33beda0a0113735ccbc7ee0b2790e793cb53d172c8a6ec2aa0d98a7efd37ad7a",
+      "role": "trace"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/mobile390/answer.png",
+      "sha256": "3ebc5e22782e9ac55e466b5615c2456c346c04af33eb98391fb96937d3a29c43",
+      "role": "screenshot"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/mobile390/drawer.png",
+      "sha256": "019a4bd438dc98b79bc26d9c3e45a8870eb35f99df0132517e3c5bfd4edb1bc5",
+      "role": "screenshot"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/mobile390/external-source.png",
+      "sha256": "0bae90da888bd6fcc93f534b87c8d09c78b083cda396111502bb9077373c2ea2",
+      "role": "screenshot"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/mobile390/operations.json",
+      "sha256": "a45a7d58293fa3b1260768cdae2a5c15ea3552c53c55293ade08432e19cc7818",
+      "role": "record"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/mobile390/returned.png",
+      "sha256": "92c73533914b7a7ea2c4eed24c571d1d42cb4407145b234601b3f668f881cee0",
+      "role": "screenshot"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/mobile390/trace.zip",
+      "sha256": "b1ef8126f5649d800e39b85b2c2cedef91a96572e4a355897ec164e1398acb20",
+      "role": "trace"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+      "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29",
+      "role": "record"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/source-manifest.json",
+      "sha256": "e494bd0e679d46a8ccd3de6bf6c8a270111105f46e102bc81c00084d782334e7",
+      "role": "record"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/vite.log",
+      "sha256": "0c8fc150c0d3a58fe16aa6da978e139a8e931027835c399b84e2bbbe541d6f62",
+      "role": "record"
+    }
+  ],
+  "behavior_ids": [
+    "replay-source-task"
+  ],
+  "checks": [
+    {
+      "id": "desktop.original_claim",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "desktop.direct_answer",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "desktop.claim_decomposition",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "desktop.citation_binding",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "desktop.source_navigation",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "desktop.close_return",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "desktop.no_horizontal_overflow",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "desktop.artifacts",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "mobile390.original_claim",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "mobile390.direct_answer",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "mobile390.claim_decomposition",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "mobile390.citation_binding",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "mobile390.source_navigation",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "mobile390.close_return",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "mobile390.no_horizontal_overflow",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "mobile390.artifacts",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "mobile390.viewport",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "keyboardReduced.original_claim",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "keyboardReduced.direct_answer",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "keyboardReduced.claim_decomposition",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "keyboardReduced.citation_binding",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "keyboardReduced.source_navigation",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "keyboardReduced.close_return",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "keyboardReduced.no_horizontal_overflow",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "keyboardReduced.artifacts",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "keyboardReduced.focus_return",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    },
+    {
+      "id": "keyboardReduced.reduced_motion",
+      "behavior_id": "replay-source-task",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/observations.json",
+          "sha256": "6e56e97ae71169ad1253b56791037e7c620294712869c08cfd59b0670635cf29"
+        },
+        {
+          "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-80-final/replay/checks.json",
+          "sha256": "8989856d40f64d0a21b9228c12f8edb2fd3bb4ff87b1ac7b9dce84c4b4825942"
+        }
+      ]
+    }
+  ]
+}

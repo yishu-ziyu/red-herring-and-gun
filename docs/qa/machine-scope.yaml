@@ -1,0 +1,112 @@
+# Machine checks only; eval:gate requires paid authorization and stays NOT_RUN outside this offline scope.
+behaviors:
+- behavior_id: root-tests
+  requirement_ref: AGENTS.md / red_herring_next_step_shannon.md §9
+  用户目标: 候选必须实际执行规定的 root-tests
+  前置条件: 本地候选与依赖就绪
+  允许的结果: 固定命令实际完成且退出0
+  禁止的结果: 未跑、失败、缺收据被写成通过
+  测量程序: &id001
+  - npm
+  - test
+  证据路径: out/shannon-80-final/root-tests/receipt.json
+  严重度: HIGH
+  当前覆盖状态: covered
+  evidence: package.json / mvp/package.json / scripts/qa/qa_report_test.py
+  required_checks:
+  - suite
+  approved_commands:
+  - *id001
+- behavior_id: root-build
+  requirement_ref: AGENTS.md / red_herring_next_step_shannon.md §9
+  用户目标: 候选必须实际执行规定的 root-build
+  前置条件: 本地候选与依赖就绪
+  允许的结果: 固定命令实际完成且退出0
+  禁止的结果: 未跑、失败、缺收据被写成通过
+  测量程序: &id002
+  - npm
+  - run
+  - build
+  证据路径: out/shannon-80-final/root-build/receipt.json
+  严重度: HIGH
+  当前覆盖状态: covered
+  evidence: package.json / mvp/package.json / scripts/qa/qa_report_test.py
+  required_checks:
+  - suite
+  approved_commands:
+  - *id002
+- behavior_id: mvp-tests
+  requirement_ref: AGENTS.md / red_herring_next_step_shannon.md §9
+  用户目标: 候选必须实际执行规定的 mvp-tests
+  前置条件: 本地候选与依赖就绪
+  允许的结果: 固定命令实际完成且退出0
+  禁止的结果: 未跑、失败、缺收据被写成通过
+  测量程序: &id003
+  - npm
+  - --prefix
+  - mvp
+  - test
+  证据路径: out/shannon-80-final/mvp-tests/receipt.json
+  严重度: HIGH
+  当前覆盖状态: covered
+  evidence: package.json / mvp/package.json / scripts/qa/qa_report_test.py
+  required_checks:
+  - suite
+  approved_commands:
+  - *id003
+- behavior_id: mvp-build
+  requirement_ref: AGENTS.md / red_herring_next_step_shannon.md §9
+  用户目标: 候选必须实际执行规定的 mvp-build
+  前置条件: 本地候选与依赖就绪
+  允许的结果: 固定命令实际完成且退出0
+  禁止的结果: 未跑、失败、缺收据被写成通过
+  测量程序: &id004
+  - npm
+  - --prefix
+  - mvp
+  - run
+  - build
+  证据路径: out/shannon-80-final/mvp-build/receipt.json
+  严重度: HIGH
+  当前覆盖状态: covered
+  evidence: package.json / mvp/package.json / scripts/qa/qa_report_test.py
+  required_checks:
+  - suite
+  approved_commands:
+  - *id004
+- behavior_id: server-tsc
+  requirement_ref: AGENTS.md / red_herring_next_step_shannon.md §9
+  用户目标: 候选必须实际执行规定的 server-tsc
+  前置条件: 本地候选与依赖就绪
+  允许的结果: 固定命令实际完成且退出0
+  禁止的结果: 未跑、失败、缺收据被写成通过
+  测量程序: &id005
+  - sh
+  - -c
+  - cd mvp/server && npx tsc --noEmit
+  证据路径: out/shannon-80-final/server-tsc/receipt.json
+  严重度: HIGH
+  当前覆盖状态: covered
+  evidence: package.json / mvp/package.json / scripts/qa/qa_report_test.py
+  required_checks:
+  - suite
+  approved_commands:
+  - *id005
+- behavior_id: qa-gate
+  requirement_ref: AGENTS.md / red_herring_next_step_shannon.md §9
+  用户目标: 候选必须实际执行规定的 qa-gate
+  前置条件: 本地候选与依赖就绪
+  允许的结果: 固定命令实际完成且退出0
+  禁止的结果: 未跑、失败、缺收据被写成通过
+  测量程序: &id006
+  - npm
+  - run
+  - qa:gate
+  证据路径: out/shannon-80-final/qa-gate/receipt.json
+  严重度: HIGH
+  当前覆盖状态: covered
+  evidence: package.json / mvp/package.json / scripts/qa/qa_report_test.py
+  required_checks:
+  - suite
+  approved_commands:
+  - *id006
