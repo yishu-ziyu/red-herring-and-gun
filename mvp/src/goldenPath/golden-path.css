@@ -846,22 +846,6 @@
   line-height: 1.45;
   letter-spacing: -0.01em;
   color: var(--gp-ink-primary);
-  text-decoration: underline;
-  text-decoration-thickness: 1.5px;
-  text-underline-offset: 0.22em;
-  text-decoration-color: transparent;
-}
-
-/* 判断色只做细线，不对整句铺色 */
-.gp-hero[data-gp-conclusion-judgment="supported"] .gp-hero-answer {
-  text-decoration-color: color-mix(in srgb, var(--verdict-true, var(--gp-semantic-support)) 62%, transparent);
-}
-.gp-hero[data-gp-conclusion-judgment="refuted"] .gp-hero-answer {
-  text-decoration-color: color-mix(in srgb, var(--verdict-false, var(--gp-semantic-contradict)) 62%, transparent);
-}
-.gp-hero[data-gp-conclusion-judgment="mixed"] .gp-hero-answer,
-.gp-hero[data-gp-conclusion-judgment="unresolved"] .gp-hero-answer {
-  text-decoration-color: color-mix(in srgb, var(--verdict-unclear, var(--gp-semantic-gap)) 62%, transparent);
 }
 
 .gp-hero-uncertainty {
@@ -1153,6 +1137,15 @@
 /* 分组头降为次要索引；行左侧关系标签承担主语义 */
 .gp-evidence-group-head .gp-evidence-group-label {
   color: var(--gp-ink-3);
+}
+
+/* 完成态不再用分组标题切块；关系写在每一行左侧，分组头只留给读屏 */
+.gp-canvas[data-gp-phase="complete"] .gp-evidence-group-head {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }
 
 .gp-evidence-group-count {
