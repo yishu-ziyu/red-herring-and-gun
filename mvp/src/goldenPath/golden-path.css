@@ -485,6 +485,13 @@
   box-shadow: 0 0 0 1px var(--gp-accent), var(--gp-elevation-input);
 }
 
+/* 输入框内层可编辑区域由外层卡片统一承担聚焦反馈，消除嵌套重复焦点环 */
+.gp-input-card #claim-input:focus-visible,
+.gp-input-card [contenteditable="true"]:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .gp-link-row {
   display: flex;
   flex-wrap: wrap;
