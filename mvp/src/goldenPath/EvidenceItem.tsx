@@ -5,7 +5,7 @@
  */
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { domainOf, ROLE_LABEL, roleGlyph, type EvidenceIdentityKind } from "./snapshotUi";
+import { domainOf, ROLE_LABEL, ROLE_TONE, type EvidenceIdentityKind } from "./snapshotUi";
 import type { InvestigationEvidenceLink, InvestigationSource } from "@rhg/core/investigation";
 
 /** 与 `--gp-motion-layout: 280ms` / `--gp-ease-out` 对齐（260–360ms 窗）。 */
@@ -68,8 +68,8 @@ export function EvidenceItem({
         onSelect(link, source, event.currentTarget);
       }}
     >
-      <span className={`gp-evidence-dot is-${link.role}`} aria-hidden="true">
-        {roleGlyph(link.role)}
+      <span className={`gp-chip gp-chip--${ROLE_TONE[link.role]}`} aria-hidden="true">
+        {ROLE_LABEL[link.role]}
       </span>
       <div className="gp-evidence-body">
         <div className="gp-evidence-header">

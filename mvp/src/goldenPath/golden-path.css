@@ -654,6 +654,19 @@
   animation: gp-pulse 1.6s ease-in-out infinite;
 }
 
+/* 拆解命题前尚无任何命题可显示的等待态：和 .gp-phase-line 同一视觉权重，
+   之前完全没有样式（继承默认 <p>），是唯一一段没有任何「系统还活着」信号的空白。 */
+.gp-waiting {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--gp-ink-2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gp-waiting .il-loader { color: var(--gp-accent); }
+
 .gp-announcer {
   position: absolute;
   width: 1px;
@@ -851,6 +864,12 @@
   font-weight: 500;
   color: var(--gp-ink-tertiary);
 }
+
+/* judgment 仍是 directAnswer 之后的弱 metadata（不升级成 .gp-chip，见 goldenPath.test.tsx #3），
+   只补上 tone 颜色——目前 4 个语义色只用在命题级子标签，总体判断反而是纯灰。 */
+.gp-hero-judgment[data-gp-judgment="supported"] { color: var(--gp-semantic-support); }
+.gp-hero-judgment[data-gp-judgment="refuted"] { color: var(--gp-semantic-contradict); }
+.gp-hero-judgment[data-gp-judgment="mixed"] { color: var(--gp-semantic-gap); }
 
 .gp-hero-meta-item {
   display: inline-flex;
@@ -1148,18 +1167,6 @@
 .gp-evidence-item[data-gp-settling="1"] {
   z-index: 2;
 }
-
-.gp-evidence-dot {
-  flex: none;
-  font-size: 10px;
-  line-height: 1.6;
-  margin-top: 1px;
-}
-
-.gp-evidence-dot.is-support { color: var(--gp-semantic-support); }
-.gp-evidence-dot.is-contradict { color: var(--gp-semantic-contradict); }
-.gp-evidence-dot.is-context-only { color: var(--gp-semantic-context); }
-.gp-evidence-dot.is-unassessed { color: var(--gp-semantic-pending); }
 
 .gp-evidence-body {
   flex: 1;
@@ -1459,7 +1466,16 @@
 .gp-chip--negative { color: var(--gp-semantic-contradict); border-color: rgba(185, 28, 28, 0.28); background: transparent; }
 .gp-chip--mixed { color: var(--gp-semantic-gap); border-color: rgba(146, 64, 14, 0.28); background: transparent; }
 .gp-chip--muted { color: var(--gp-ink-2); border-color: var(--gp-hairline); background: transparent; }
+.gp-chip--neutral { color: var(--gp-semantic-context); border-color: rgba(75, 85, 99, 0.28); background: transparent; }
 .gp-chip--live { color: var(--gp-accent); border-color: rgba(37, 99, 235, 0.3); background: transparent; }
+
+/* 证据行角色标签：同一套 .gp-chip 图案，只是行内密度更紧——换掉原来只靠色彩的 10px 圆点。 */
+.gp-evidence-item > .gp-chip {
+  flex: none;
+  margin-top: 1px;
+  font-size: 10.5px;
+  padding: 1px 5px;
+}
 
 .gp-primary-btn {
   display: inline-flex;
