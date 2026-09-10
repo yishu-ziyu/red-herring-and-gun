@@ -1,6 +1,6 @@
 import type { SubclaimVerdict, VerdictSource } from "./types.js";
 import { claimAtomKey, compactStrings, compactText, MAX_CLAIM_ATOMS } from "./text.js";
-import { bindDualBucketCitations } from "../citationBinding.js";
+import { bindDualBucketCitations, hasDirectionalBoundHttpUrl } from "../citationBinding.js";
 
 const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated"];
 
@@ -13,20 +13,27 @@ function sanitizeEvidenceGaps(value: unknown): string[] {
   return compactStrings(value, 3, 120);
 }
 
-function hasHttpUrl(sources: VerdictSource[]): boolean {
-  return sources.some((s) => /^https?:\/\//i.test(String(s.url || "").trim()));
-}
-
 function demoteUnsourcedTrueFalse(
   verdict: SubclaimVerdict["verdict"],
   supporting: VerdictSource[],
   contradicting: VerdictSource[],
-  gaps: string[]
+  gaps: string[],
+  sourcesRelatedOnly = false
 ): { verdict: SubclaimVerdict["verdict"]; evidenceGaps: string[] } {
   if (verdict !== "true" && verdict !== "false") {
     return { verdict, evidenceGaps: gaps };
   }
-  if (hasHttpUrl(supporting) || hasHttpUrl(contradicting)) {
+  // 方向专属契约（Review 5128449568 Blocker 3）：true 只认支撑桶、false 只认反证桶
+  // （alignFalseEvidenceBuckets 已先行改桶）；错桶 URL 不算该方向的证据，
+  // 与 deriveOverallVerdict / applyConclusionGate / Snapshot 判词映射同向。
+  if (
+    hasDirectionalBoundHttpUrl({
+      verdict,
+      sourcesRelatedOnly,
+      supportingSources: supporting,
+      contradictingSources: contradicting,
+    })
+  ) {
     return { verdict, evidenceGaps: gaps };
   }
   const evidenceGaps = gaps.some((g) => g.includes("待补证"))
@@ -88,6 +95,7 @@ export function mergeSubclaimVerdicts(
       : "unverified") as SubclaimVerdict["verdict"];
     const aligned = alignFalseEvidenceBuckets({
       verdict,
+      sourcesRelatedOnly: rec.sourcesRelatedOnly === true,
       supporting: Array.isArray(rec.supportingSources) ? rec.supportingSources : [],
       contradicting: Array.isArray(rec.contradictingSources) ? rec.contradictingSources : [],
     });
@@ -103,7 +111,8 @@ export function mergeSubclaimVerdicts(
       verdict,
       supportingSources,
       contradictingSources,
-      sanitizeEvidenceGaps(rec.evidenceGaps)
+      sanitizeEvidenceGaps(rec.evidenceGaps),
+      rec.sourcesRelatedOnly === true
     );
     result.push({
       claimAtom: atom,
@@ -113,6 +122,7 @@ export function mergeSubclaimVerdicts(
       supportingSources,
       contradictingSources,
       evidenceGaps: guarded.evidenceGaps,
+      ...(rec.sourcesRelatedOnly === true ? { sourcesRelatedOnly: true } : {}),
     });
   }
   for (const atom of atoms) {

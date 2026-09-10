@@ -1,0 +1,14 @@
+{
+  "name": "server-tsc",
+  "argv": [
+    "npx",
+    "tsc",
+    "--noEmit"
+  ],
+  "cwd": "/private/tmp/rhg-79-shannon/mvp/server",
+  "startedAt": "2026-09-08T03:36:56.040062+00:00",
+  "finishedAt": "2026-09-08T03:36:58.384874+00:00",
+  "exitCode": 2,
+  "evidenceKind": "local-machine-check",
+  "logSha256": "10b6b622aa1e78b81a29531224ef951126fe16a9bc766a6fda28c0c4b9508a5f"
+}
