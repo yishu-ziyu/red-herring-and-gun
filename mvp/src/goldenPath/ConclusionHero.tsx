@@ -55,9 +55,9 @@ export function ConclusionHero({ directAnswer, judgment, boundaries, claimCount,
           <span className="gp-hero-judgment" data-gp-judgment={judgment}>
             {JUDGMENT_LABEL[judgment]}
           </span>
-          <span className="gp-hero-meta-item">{copy.claimCount(claimCount)}</span>
-          <span className="gp-hero-meta-item">{copy.sourceCount(sourceCount)}</span>
-          {checkedAt ? <span className="gp-hero-meta-item">{copy.checkedAt(formatTime(checkedAt))}</span> : null}
+          <span className="gp-hero-meta-item" data-gp-hero-meta="claims">{copy.claimCount(claimCount)}</span>
+          <span className="gp-hero-meta-item" data-gp-hero-meta="sources">{copy.sourceCount(sourceCount)}</span>
+          {checkedAt ? <span className="gp-hero-meta-item" data-gp-hero-meta="time">{copy.checkedAt(formatTime(checkedAt))}</span> : null}
         </div>
         {boundaries.length > 0 ? (
           <div className="gp-hero-boundaries" data-gp-boundaries>
