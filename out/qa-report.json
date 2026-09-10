@@ -1,0 +1,109 @@
+{
+  "gate": "GATE_NOT_MET",
+  "behaviors": [
+    {
+      "behavior_id": "input-fidelity",
+      "severity": "HIGH",
+      "coverage": "pending-audit",
+      "status": "NOT_RUN",
+      "blocked_on": "",
+      "human_gate": false
+    },
+    {
+      "behavior_id": "claim-decomposition",
+      "severity": "HIGH",
+      "coverage": "partial",
+      "status": "NOT_RUN",
+      "blocked_on": "",
+      "human_gate": false
+    },
+    {
+      "behavior_id": "evidence-relation-direction",
+      "severity": "HIGH",
+      "coverage": "covered",
+      "status": "PASS",
+      "blocked_on": "",
+      "human_gate": false
+    },
+    {
+      "behavior_id": "whole-claim-audit-consistency",
+      "severity": "HIGH",
+      "coverage": "blocked",
+      "status": "BLOCKED",
+      "blocked_on": "PR #79 merge（组合清单见 docs/qa/pending-after-79.yaml）",
+      "human_gate": false
+    },
+    {
+      "behavior_id": "failure-unknown-semantics",
+      "severity": "HIGH",
+      "coverage": "partial",
+      "status": "NOT_RUN",
+      "blocked_on": "",
+      "human_gate": false
+    },
+    {
+      "behavior_id": "citation-scope-integrity",
+      "severity": "HIGH",
+      "coverage": "covered",
+      "status": "PASS",
+      "blocked_on": "",
+      "human_gate": false
+    },
+    {
+      "behavior_id": "dynamic-ui-identity",
+      "severity": "HIGH",
+      "coverage": "partial",
+      "status": "NOT_RUN",
+      "blocked_on": "",
+      "human_gate": false
+    },
+    {
+      "behavior_id": "visual-quiet-editorial",
+      "severity": "MEDIUM",
+      "coverage": "partial",
+      "status": "NOT_RUN",
+      "blocked_on": "",
+      "human_gate": false
+    },
+    {
+      "behavior_id": "follow-up-usage",
+      "severity": "MEDIUM",
+      "coverage": "pending-audit",
+      "status": "NOT_RUN",
+      "blocked_on": "",
+      "human_gate": false
+    },
+    {
+      "behavior_id": "privacy-isolation",
+      "severity": "HIGH",
+      "coverage": "partial",
+      "status": "NOT_RUN",
+      "blocked_on": "",
+      "human_gate": false
+    },
+    {
+      "behavior_id": "simulated-comprehension",
+      "severity": "HIGH",
+      "coverage": "blocked",
+      "status": "BLOCKED",
+      "blocked_on": "qa:live 未实现（且真人理解属 #54，blocked-on-#54-human-validation）",
+      "human_gate": false
+    },
+    {
+      "behavior_id": "human-comprehension",
+      "severity": "HIGH",
+      "coverage": "blocked",
+      "status": "BLOCKED",
+      "blocked_on": "#54 真人环节（HUMAN_VALIDATION_PENDING）",
+      "human_gate": true
+    },
+    {
+      "behavior_id": "environment-version-binding",
+      "severity": "HIGH",
+      "coverage": "covered",
+      "status": "PASS",
+      "blocked_on": "",
+      "human_gate": false
+    }
+  ]
+}

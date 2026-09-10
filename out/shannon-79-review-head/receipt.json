@@ -1,0 +1,73 @@
+{
+  "candidate_sha": "c5517a8ca9b8a6ce7a0696f21070a513aa155376",
+  "dirty": false,
+  "command": [
+    "npm",
+    "test",
+    "--",
+    "server/src/lib/reportAssembly/assembleFinalReport.test.ts",
+    "server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts",
+    "server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts"
+  ],
+  "cwd": "/tmp/rhg-79-shannon/mvp",
+  "started_at": "2026-09-08T03:54:59.822338+00:00",
+  "ended_at": "2026-09-08T03:55:01.652889+00:00",
+  "exit_code": 0,
+  "execution_mode": "SYNTHETIC_FIXTURE",
+  "driver": "deterministic_runner",
+  "result_artifacts": [
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/process.log",
+      "sha256": "ac6d3780d5e113f6eb804cccc322f30abb02e598eade5ca6d1645bdc020aeae4"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/snapshots/unverified-unavailable-false.json",
+      "sha256": "b846f115814e12edefc348d856fb46b0ac8771403b5be4bd266f3ed2d68ae63c"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/snapshots/missing-clean-true.json",
+      "sha256": "bd34956f0165273e405e3efc8a3c27690b705adfe4acc73a3ff62628125e9db7"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/snapshots/related-only-unavailable-true.json",
+      "sha256": "e2a43567eb7e2fc89e8fcdda0a446178eb41df1a03d3725da1483be8b49fcb85"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/snapshots/related-only-clean-true.json",
+      "sha256": "5a50901d18b5fbad8245e8c0166c9e444f6619690eb6c98e854e70f3fe12a222"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/snapshots/supported-clean-true.json",
+      "sha256": "07783a53ce10d372fa44708f60af859dc1f4a579d7f4929f374177e09bda4038"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/snapshots/single-clean-true.json",
+      "sha256": "c0e89def727a15be85c8a7e08d5f09de151df13e79b7b822a0d9528378609111"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/snapshots/supported-unavailable-true.json",
+      "sha256": "a719f8515d43cf469bde4b641a7f200e3764af2b33e99ba5322a81edf4b80afb"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/snapshots/single-unavailable-true.json",
+      "sha256": "d9a5188b7d5b5e7d6f6e1abdd74a04d0be39794aec2809cbfc2edba593028582"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/snapshots/missing-unavailable-true.json",
+      "sha256": "d5a17640bf9558097b18aafa69fe397362bf742861ec892e5ef6bedc092ae0db"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/snapshots/unverified-unavailable-true.json",
+      "sha256": "55562019b1fe1b2145f9435bc67f9732ec8f65013fd553f01f5ab5a5d7fe8f3c"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/snapshots/unverified-clean-false.json",
+      "sha256": "4c33185a902487ea1ff03b478c4a96c16e168416f9adc5ae2261a5b6c23a2484"
+    },
+    {
+      "path": "/Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/out/shannon-79-review-head/snapshots/unverified-clean-true.json",
+      "sha256": "a7430bdb98a950593d39d914370c65814a7c1d539ff48ffcdf8d5aad11db91c9"
+    }
+  ],
+  "scope": "61 frozen corrected pipeline and helper regressions; full-suite LegacyDesk failure remains recorded separately"
+}

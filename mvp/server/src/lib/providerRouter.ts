@@ -483,7 +483,8 @@ export function isAgentJsonParseError(error: unknown): boolean {
   );
 }
 
-function buildJsonRepairUserContent(brokenText: string, originalUserContent: string): string {
+// 导出给 orchestrateByo 复用：BYO 接管模式下的 JSON 修复重试与 fallback 链保持同一提示词。
+export function buildJsonRepairUserContent(brokenText: string, originalUserContent: string): string {
   const broken = brokenText.length > 14000 ? `${brokenText.slice(0, 14000)}\n…[truncated]` : brokenText;
   const original =
     originalUserContent.length > 6000
