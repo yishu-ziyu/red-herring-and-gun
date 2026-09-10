@@ -91,6 +91,106 @@ function clip(text: string, max: number): string {
   return trimmed.length > max ? trimmed.slice(0, max) : trimmed;
 }
 
+/**
+ * 结论分层用的确定性切句：与 `text/publicCopy` 的 splitSentences 同规则
+ * （按 。！？ 切、去空白、丢空段）。不 import 是因为 build.ts 是 core / server
+ * 的字节镜像，两侧 publicCopy 路径不同，import 会让镜像漂移。
+ */
+function splitConclusionSentences(text: string): string[] {
+  return text
+    .split(/(?<=[。！？])/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+/** 复述句的引导词；长词在前，避免被短词前缀截断。 */
+const CLAIM_LEAD_WORDS = ["流传说法是", "这句话", "原句", "该说法"] as const;
+
+/**
+ * 引导词之后紧跟的连接词（「该说法称…」的「称」）。单独成表，便于以后补词。
+ * 顺序不影响结果：只剥离一个命中的连接词。
+ */
+const CLAIM_CONNECTORS = ["指出", "表示", "宣称", "写道", "提到", "认为", "称", "说"] as const;
+
+/** 去掉首尾引号与引导词，再去掉句末标点，用于和 originalClaim 比对。 */
+function stripClaimLeadWords(sentence: string): string {
+  let out = sentence.trim();
+  out = out.replace(/^[「『“"'（(]+/, "").replace(/[」』”"'）)]+$/, "").trim();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const word of CLAIM_LEAD_WORDS) {
+      if (out.startsWith(word)) {
+        out = out.slice(word.length).replace(/^[：:，,、\s]+/, "").trim();
+        changed = true;
+      }
+    }
+  }
+  return out.replace(/[。！？]+$/, "").trim();
+}
+
+/** 剥离紧跟引导词之后的连接词（可再带引号/冒号等分隔符）。 */
+function stripClaimConnector(text: string): string {
+  const out = text.trim();
+  for (const word of CLAIM_CONNECTORS) {
+    if (out.startsWith(word)) {
+      return out
+        .slice(word.length)
+        .replace(/^[：:，,、\s「『“"']+/, "")
+        .replace(/[」』”"']+$/, "")
+        .trim();
+    }
+  }
+  return out;
+}
+
+function startsWithClaimLeadWord(sentence: string): boolean {
+  const t = sentence.trim().replace(/^[「『“"'（(]+/, "");
+  return CLAIM_LEAD_WORDS.some((word) => t.startsWith(word));
+}
+
+/**
+ * 是否为「原句复述句」（丢弃，不进任何一层；原句已由「你调查的说法」块展示）。
+ * 命中任一即算，且两条都要求「与 originalClaim 完全相同」，无任何重叠率 / 比例阈值：
+ * ① 逐字复述：去掉首尾引号与引导词后，剩余文本与 originalClaim 完全相同
+ *    （「原句站不住。」不等于原句，不会被误丢）；
+ * ② 带引导词 / 连接词的复述：剥离引导词后再剥离紧跟的连接词，剩余文本与 originalClaim
+ *    完全相同。只盖到「完全相同」为止：像「该说法称喝隔夜水会致癌，但没超标。」这种
+ *    在原句之上追加了新信息的句子，剥离后 ≠ 原句，必须保留。
+ * 判据宁严不宽：判不出来就保留（三轮比例判据都因误伤「原句 + 新信息」被废止）。
+ */
+function isClaimRestatement(sentence: string, originalClaim: string): boolean {
+  const trimmed = sentence.trim();
+  const stripped = stripClaimLeadWords(trimmed);
+  const claim = stripClaimLeadWords(originalClaim);
+  if (stripped.length > 0 && stripped === claim) return true;
+  if (startsWithClaimLeadWord(trimmed) && stripped.length > 0) {
+    const withoutConnector = stripClaimConnector(stripped);
+    return withoutConnector.length > 0 && withoutConnector === claim;
+  }
+  return false;
+}
+
+/**
+ * 从 report.conclusion 原文切两层：丢掉开头连续的复述句后，verdictLead = 第 1 句，
+ * rationale = 其后各句拼接（为空则不给）。全部被丢弃时不产出 verdictLead，交前端回退。
+ */
+function splitConclusionLayers(
+  conclusion: string,
+  originalClaim: string
+): { verdictLead?: string; rationale?: string } {
+  const sentences = splitConclusionSentences(conclusion);
+  let start = 0;
+  while (start < sentences.length && isClaimRestatement(sentences[start]!, originalClaim)) {
+    start += 1;
+  }
+  const rest = sentences.slice(start);
+  if (rest.length === 0) return {};
+  const verdictLead = rest[0]!;
+  const rationale = rest.slice(1).join("");
+  return rationale ? { verdictLead, rationale } : { verdictLead };
+}
+
 type VerdictSourceLike = { url?: unknown; title?: unknown; snippet?: unknown };
 
 type VerdictLike = {
@@ -544,7 +644,8 @@ export function buildInvestigationSnapshot(
 
   let conclusion: InvestigationSnapshotV1["conclusion"];
   if (phase === "complete" && report) {
-    const directAnswer = clip(asString(report.conclusion), 400);
+    const conclusionText = asString(report.conclusion);
+    const directAnswer = clip(conclusionText, 400);
     if (directAnswer) {
       const hasCheckable = claims.some((c) => c.checkability !== "not-applicable");
       const overall = asString(report.verdictType).trim().toLowerCase();
@@ -563,18 +664,16 @@ export function buildInvestigationSnapshot(
           .filter((s): s is Record<string, unknown> => s !== null)
           .map((s) => asString(s.url).trim())
       );
+      // 顶层边界只承载整次调查级边界（causalBoundary）。命题级 boundary 继续在
+      // 命题内部展示（ClaimSection），不再同一屏出现第二次。
       const boundaries: string[] = [];
-      const seenBoundary = new Set<string>();
-      for (const claim of claims) {
-        const b = claim.boundary;
-        if (!b || seenBoundary.has(b)) continue;
-        seenBoundary.add(b);
-        boundaries.push(b);
-      }
       const causal = clip(asString(report.causalBoundary), 200);
-      if (causal && !seenBoundary.has(causal)) boundaries.push(causal);
+      if (causal) boundaries.push(causal);
+      const layers = splitConclusionLayers(conclusionText, originalClaim);
       conclusion = {
         directAnswer,
+        ...(layers.verdictLead ? { verdictLead: layers.verdictLead } : {}),
+        ...(layers.rationale ? { rationale: layers.rationale } : {}),
         judgment: overallJudgment,
         boundaries,
         claimIds: claims.map((c) => c.id),
