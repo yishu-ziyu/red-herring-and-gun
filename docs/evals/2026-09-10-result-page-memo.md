@@ -22,13 +22,13 @@
 
 机器项（全绿才交付）：
 
-- [ ] M1 `cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx` 全绿（含本期 P0/P1 新增断言）。
-- [ ] M2 完成态 fixture：`[data-gp-direct-answer]` 是结论区第一可见正文；`.gp-hero-answer` 的 CSS 含 `var(--gp-serif)` 与 `clamp(19px, 2.2vw, 24px)`；judgment 节点不是 `.gp-chip`。
-- [ ] M3 有 `excerpt` 的来源：证据行出现 `.gp-evidence-excerpt`，文本等于快照字段，不另写句子。无 `excerpt` 时不渲染摘录节点。
-- [ ] M4 每条 `.gp-evidence-item` 有左侧关系标签（文字属于 支持/反驳/相关/待核对，并带 glyph）；整行 `button` 仍打开 SourceDrawer。
-- [ ] M5 SourceDrawer 在有摘录时渲染 `[data-gp-source-section="excerpt"]`，且该块带强调样式类；无摘录时整节不出现。
-- [ ] M6 `mvp/src/goldenPath/` 用户面文案扫描仍无 Agent / provider / tool / pipeline 实现层词汇（沿用既有负向扫描）。
-- [ ] M7 行为未改后端：不改 `packages/core` Snapshot schema，不改 `ops.sh`，不删 `mvp/`。
+- [x] M1 `cd mvp && npx vitest run src/goldenPath/goldenPath.test.tsx` 全绿（含本期 P0/P1 新增断言）。101 项通过。
+- [x] M2 完成态 fixture：`[data-gp-direct-answer]` 是结论区第一可见正文；`.gp-hero-answer` 的 CSS 含 `var(--gp-serif)` 与 `clamp(19px, 2.2vw, 24px)`；judgment 节点不是 `.gp-chip`。
+- [x] M3 有 `excerpt` 的来源：证据行出现 `.gp-evidence-excerpt`，文本等于快照字段，不另写句子。无 `excerpt` 时不渲染摘录节点。
+- [x] M4 每条 `.gp-evidence-item` 有左侧关系标签（文字属于 支持/反驳/相关/待核对，并带 glyph）；整行 `button` 仍打开 SourceDrawer。
+- [x] M5 SourceDrawer 在有摘录时渲染 `[data-gp-source-section="excerpt"]`，且该块带强调样式类；无摘录时整节不出现。
+- [x] M6 `mvp/src/goldenPath/` 用户面文案扫描仍无 Agent / provider / tool / pipeline 实现层词汇（沿用既有负向扫描）。
+- [x] M7 行为未改后端：不改 `packages/core` Snapshot schema，不改 `ops.sh`，不删 `mvp/`。
 
 人评项（单独列出，等人裁）：
 
