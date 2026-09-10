@@ -5,6 +5,7 @@
  * interrupted：保留已获真实数据、无伪结论、可重试。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { InlineLoader } from "generative-loaders";
 import type {
   InvestigationEvidenceLink,
   InvestigationSnapshotV1,
@@ -216,11 +217,12 @@ export function InvestigationCanvas({
               ))}
             </div>
           </section>
-        ) : (
+        ) : live ? (
           <p className="gp-waiting" role="status">
-            {live ? "正在拆解这句话…" : ""}
+            <InlineLoader variant="signal" size={15} />
+            正在拆解这句话…
           </p>
-        )}
+        ) : null}
 
         {imageOrigin ? (
           imageOrigin.status === "found" ? (
