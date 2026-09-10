@@ -391,6 +391,7 @@ function LegacyDeskContent() {
         ) : undefined
       }
       account={account}
+      showNewCase={renderedPhase === "executing"}
       onLoginClick={() => setLoginOpen(true)}
       onAccountClick={() => setAccountOpen(true)}
       onLogout={() => {

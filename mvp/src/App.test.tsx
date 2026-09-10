@@ -74,11 +74,42 @@ describe("生产首页（输入态）", () => {
     expect(html).not.toMatch(/\bAgent\b/);
   });
 
-  it("登出态保留设置入口与登录入口，不挡首次 Golden Path", async () => {
+  it("登出态进门只留登录入口，不摆模型设置，不挡首次 Golden Path", async () => {
     mockFetch();
     render(<App />);
-    const settings = await screen.findByRole("link", { name: "模型设置" });
-    expect(settings).toHaveAttribute("href", "/settings/api-key");
+    expect(await screen.findByRole("button", { name: "登录" })).toBeInTheDocument();
+    // 进门第一眼不出现模型设置（登录后由账号菜单进入 /settings/api-key）。
+    expect(screen.queryByRole("link", { name: "模型设置" })).toBeNull();
+    expect(screen.queryByText("模型设置")).toBeNull();
+  });
+
+  it("进门没有重复的「新调查」入口：空白输入态品牌只是名字，不是按钮", async () => {
+    mockFetch();
+    render(<App />);
+    await screen.findByRole("textbox", { name: "要调查的说法" });
+    expect(screen.queryByRole("button", { name: /新调查|新查一条/ })).toBeNull();
+    // 品牌仍在，但静态渲染。
+    expect(document.querySelector(".gp-brand")).toBeTruthy();
+    expect(document.querySelector("button.gp-brand")).toBeNull();
+  });
+
+  it("进门能看到「查完大概长这样」示意：一句回答 + 帮/拆关系 + 片段，并写明是示意", async () => {
+    mockFetch();
+    render(<App />);
+    await screen.findByRole("textbox", { name: "要调查的说法" });
+    const preview = document.querySelector("[data-gp-result-preview]") as HTMLElement | null;
+    expect(preview).toBeTruthy();
+    const text = preview!.textContent ?? "";
+    expect(text).toContain("示意");
+    expect(text).toContain("不是真结果");
+    // 一句直接回答
+    expect(text).toContain("不会。维生素 C");
+    // 关系可分辨：支持 / 反驳
+    expect(preview!.querySelector('[data-gp-preview-relation="support"]')?.textContent).toContain("支持");
+    expect(preview!.querySelector('[data-gp-preview-relation="contradict"]')?.textContent).toContain("反驳");
+    // 片段沿用诚实口径，不写成逐字原文
+    expect(text).toContain("检索片段（非逐字原文）");
+    expect(preview!.textContent).not.toContain("原文摘录");
   });
 
   it("未知路径回落到生产首页", async () => {
@@ -121,6 +152,34 @@ describe("调查态与完成态（同画布）", () => {
     // 仍在同一画布（没换壳）：原始说法卡还在
     expect(document.querySelector(".gp-original-text")?.textContent).toBe(REFUTED_CLAIM);
     expect(requestOrchestrateStream).toHaveBeenCalledTimes(1);
+  });
+
+  it("完成态仍能回到空白输入：品牌变回可点，点击后回到输入态（首页不放这颗按钮）", async () => {
+    mockFetch();
+    const complete = refutedComplete();
+    vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
+      yield { type: "investigation_snapshot", investigation: investigatingUnassessed() } as OrchestrateStreamEvent;
+      yield { type: "investigation_snapshot", investigation: complete } as OrchestrateStreamEvent;
+      yield {
+        type: "complete",
+        finalReport: { conclusion: "原句站不住。", investigation: complete },
+      } as OrchestrateStreamEvent;
+    });
+
+    render(<App />);
+    const editor = await screen.findByRole("textbox", { name: "要调查的说法" });
+    editor.textContent = REFUTED_CLAIM;
+    fireEvent.input(editor);
+    fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-gp-phase="complete"]')).toBeTruthy();
+    });
+    // 结果态才出现「回空白输入」的入口。
+    const backHome = await screen.findByRole("button", { name: "新调查" });
+    fireEvent.click(backHome);
+    expect(await screen.findByRole("textbox", { name: "要调查的说法" })).toBeInTheDocument();
+    expect(document.querySelector('[data-gp-phase="complete"]')).toBeNull();
   });
 
   it("流中断：保留已获命题、无伪结论、可重试", async () => {

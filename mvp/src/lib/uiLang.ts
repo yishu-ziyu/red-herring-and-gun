@@ -38,6 +38,16 @@ export type UiCopy = {
   /* 首页落地层 */
   mission: string;
   outcome: string;
+  /* 「查完大概长这样」示意块 */
+  resultPreviewLabel: string;
+  resultPreviewAnswer: string;
+  resultPreviewMeta: string;
+  resultPreviewSupportLabel: string;
+  resultPreviewSupportText: string;
+  resultPreviewSupportExcerpt: string;
+  resultPreviewContradictLabel: string;
+  resultPreviewContradictText: string;
+  resultPreviewContradictExcerpt: string;
   materialLabel: string;
   materialPlaceholder: string;
   submitStart: string;
@@ -120,6 +130,15 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     stepsUnit: "步",
     mission: "把你想核查的句子、链接或截图放进来",
     outcome: "告诉你这条说法是否可靠，问题在哪里，来源能点开。",
+    resultPreviewLabel: "查完大概长这样（示意，不是真结果）",
+    resultPreviewAnswer: "不会。维生素 C 顶多略缩短病程，谈不上「治感冒」；普通感冒也很少需要输液。",
+    resultPreviewMeta: "有对有错 · 命题 2 条 · 来源 10 条",
+    resultPreviewSupportLabel: "支持",
+    resultPreviewSupportText: "极端劳累时可能略缩短病程",
+    resultPreviewSupportExcerpt: "检索片段（非逐字原文）：可略微缩短感冒病程",
+    resultPreviewContradictLabel: "反驳",
+    resultPreviewContradictText: "普通人谈不上治疗或预防",
+    resultPreviewContradictExcerpt: "检索片段（非逐字原文）：不能预防或治疗普通感冒",
     materialLabel: "你想核查什么？",
     materialPlaceholder: "一句话、一条链接，或一张截图",
     submitStart: "开始核查",
@@ -203,6 +222,15 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     stepsUnit: "steps",
     mission: "Paste it in. Trace the source.",
     outcome: "Tells you which part holds up, where the problems are, with sources you can open.",
+    resultPreviewLabel: "What a finished check looks like (sample, not a real result)",
+    resultPreviewAnswer: "No. Vitamin C at best slightly shortens a cold; it does not cure one, and an ordinary cold rarely needs an IV drip.",
+    resultPreviewMeta: "Partly right · 2 statements · 10 sources",
+    resultPreviewSupportLabel: "Supports",
+    resultPreviewSupportText: "May slightly shorten a cold under extreme exertion",
+    resultPreviewSupportExcerpt: "Search snippet (not a verbatim quote): can slightly shorten a cold",
+    resultPreviewContradictLabel: "Refutes",
+    resultPreviewContradictText: "For most people it neither treats nor prevents",
+    resultPreviewContradictExcerpt: "Search snippet (not a verbatim quote): cannot prevent or treat the common cold",
     materialLabel: "Material to check",
     materialPlaceholder: "A sentence, a link, or a screenshot",
     submitStart: "Start the check",
