@@ -167,6 +167,13 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
         </header>
 
         <div className="gp-source-body">
+          {excerpt ? (
+            <section className="gp-source-block is-excerpt-lead" data-gp-source-section="excerpt">
+              <h3 className="gp-source-label">{copy.sourceExcerpt}</h3>
+              <blockquote className="gp-source-excerpt">{excerpt}</blockquote>
+            </section>
+          ) : null}
+
           <section className="gp-source-block" data-gp-source-section="claim">
             <h3 className="gp-source-label">{copy.sourceAgainstClaim}</h3>
             <p className="gp-source-claim">
@@ -176,13 +183,6 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
               <span>{claimText}</span>
             </p>
           </section>
-
-          {excerpt ? (
-            <section className="gp-source-block" data-gp-source-section="excerpt">
-              <h3 className="gp-source-label">{copy.sourceExcerpt}</h3>
-              <blockquote className="gp-source-excerpt">{excerpt}</blockquote>
-            </section>
-          ) : null}
 
           {finding ? (
             <section className="gp-source-block" data-gp-source-section="finding">
