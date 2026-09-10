@@ -591,6 +591,114 @@ describe("Issue #64 [Reset 4D] Conclusion Emergence", () => {
   });
 });
 
+describe("结论两层（短判断 + 解释）E4–E6", () => {
+  function layeredCompleteLede(): InvestigationSnapshotV1 {
+    const atom = "喝隔夜水会致癌";
+    const refuteUrl = "https://piyao.org.cn/overnight-water";
+    return buildInvestigationSnapshot(
+      {
+        originalClaim: "世界卫生组织已经宣布喝隔夜水会致癌。",
+        phase: "complete",
+        claimAtoms: [atom],
+        claimAtomTypes: [{ text: atom, verifiable: true, type: "causal" }],
+        atomSearchBundle: {
+          atomsSearched: [atom],
+          byAtomKey: { [atom]: [{ url: refuteUrl, title: "世卫组织辟谣平台", snippet: "未发布该结论" }] },
+        },
+        subclaimVerdicts: [
+          {
+            claimAtom: atom,
+            verdict: "false",
+            evidence: "世卫组织辟谣平台声明无此结论。",
+            boundary: "只覆盖声明发布时间前的公开记录",
+            supportingSources: [],
+            contradictingSources: [{ url: refuteUrl, title: "世卫组织辟谣平台", snippet: "未发布该结论" }],
+            evidenceGaps: [],
+          },
+        ],
+        report: {
+          conclusion: "世界卫生组织已经宣布喝隔夜水会致癌。原句站不住。世卫组织从未发布过这一结论。",
+          verdictType: "false",
+          causalBoundary: "现有材料不能推出隔夜水本身有任何致癌性",
+          citationSources: [{ url: refuteUrl, title: "世卫组织辟谣平台", snippet: "" }],
+          checkedAt: "2026-09-06T08:00:00.000Z",
+        },
+        checkedAt: "2026-09-06T08:00:00.000Z",
+      },
+      { claimAtomKeyFn: (s) => s.replace(/\u3000/g, " ").trim() }
+    );
+  }
+
+  it("E4：判断句与解释是两个节点，互不包含，原句复述不再进首屏", () => {
+    renderCanvas(layeredCompleteLede());
+    const hero = screen.getByLabelText("调查结论");
+    const answer = hero.querySelector("[data-gp-direct-answer]") as HTMLElement;
+    const rationale = hero.querySelector("[data-gp-rationale]") as HTMLElement;
+    expect(answer).toBeTruthy();
+    expect(answer.textContent).toBe("原句站不住。");
+    // 只含一句判断：去掉句末标点后句内不再有 。！？
+    expect(answer.textContent!.replace(/[。！？]+$/, "")).not.toMatch(/[。！？]/);
+    // 被丢弃的原句复述句不得出现在判断节点
+    expect(answer.textContent).not.toContain("喝隔夜水会致癌");
+    expect(rationale).toBeTruthy();
+    expect(rationale.textContent).toBe("世卫组织从未发布过这一结论。");
+    expect(rationale.textContent!.length).toBeGreaterThan(0);
+    // 两层不重叠
+    expect(answer.textContent).not.toContain(rationale.textContent!);
+    expect(rationale.textContent).not.toContain(answer.textContent!);
+  });
+
+  it("E5：顶层边界只承载整调查级边界，不重复命题边界", () => {
+    renderCanvas(layeredCompleteLede());
+    const box = document.querySelector("[data-gp-boundaries]") as HTMLElement;
+    expect(box).toBeTruthy();
+    // 既有第 7 条：认识论说明，不是 warning alert
+    expect(box.getAttribute("role")).not.toBe("alert");
+    expect(box.getAttribute("role")).not.toBe("warning");
+    expect(box.textContent).not.toContain("⚠️");
+    expect(box.textContent).toMatch(/不能推出/);
+    const topBoundary = "现有材料不能推出隔夜水本身有任何致癌性";
+    expect(box.textContent).toContain(topBoundary);
+
+    // 命题级 boundary 继续只在命题内部展示，信息不丢
+    const claimBoundaries = [...document.querySelectorAll(".gp-boundary")];
+    expect(claimBoundaries.length).toBeGreaterThan(0);
+    expect(claimBoundaries.map((n) => n.textContent).join(" ")).toContain("只覆盖声明发布时间前的公开记录");
+
+    // 顶层边界文本不出现在任一命题 boundary 节点；命题边界也不出现在顶层块
+    expect(claimBoundaries.every((n) => !n.textContent?.includes(topBoundary))).toBe(true);
+    expect(box.textContent).not.toContain("只覆盖声明发布时间前的公开记录");
+  });
+
+  it("E12：结论区不再渲染「边界」小标题，边界正文仍在", () => {
+    renderCanvas(layeredCompleteLede());
+    expect(document.querySelectorAll(".gp-hero-boundary-title").length).toBe(0);
+    const box = document.querySelector("[data-gp-boundaries]") as HTMLElement;
+    expect(box).toBeTruthy();
+    expect(box.textContent).toContain("现有材料不能推出隔夜水本身有任何致癌性");
+  });
+
+  it("E13：命题级边界的行内引导词保留", () => {
+    renderCanvas(layeredCompleteLede());
+    const claimBoundaries = [...document.querySelectorAll(".gp-boundary")];
+    expect(claimBoundaries.length).toBeGreaterThan(0);
+    expect(claimBoundaries.every((n) => n.textContent?.startsWith("边界"))).toBe(true);
+  });
+
+  it("E6：verdictLead / rationale 缺省时回退，directAnswer 仍有内容", () => {
+    const base = refutedComplete();
+    const conclusion: Record<string, unknown> = { ...(base.conclusion ?? {}) };
+    delete conclusion.verdictLead;
+    delete conclusion.rationale;
+    const fallback = { ...base, conclusion } as unknown as InvestigationSnapshotV1;
+    renderCanvas(fallback);
+    const answer = document.querySelector("[data-gp-direct-answer]") as HTMLElement;
+    expect(answer).toBeTruthy();
+    expect(answer.textContent).toContain("原句站不住");
+    expect(document.querySelector("[data-gp-rationale]")).toBeNull();
+  });
+});
+
 describe("Issue #61 [Reset 4A] 生产视觉基础断言", () => {
   it("golden-path.css 包含 Quiet Editorial tokens，废止大面积语义背景", async () => {
     const { readFileSync } = await import("node:fs");
@@ -1501,7 +1609,18 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
     expect(drawer.querySelector('[data-gp-source-section="excerpt"]')).toBeNull();
     expect(drawer.querySelector(".gp-source-excerpt")).toBeNull();
-    expect(drawer.textContent).not.toContain("原文摘录");
+    // 注意：不要断言「不含旧文案」——旧字符串已从代码里删除，那种断言会变成永真断言。
+    expect(drawer.textContent).not.toContain("检索片段（非逐字原文）");
+  });
+
+  it("摘录诚实性：有 excerpt 时抽屉标题写明是检索片段，不是逐字原文", async () => {
+    renderCanvas(refutedComplete());
+    await openFirstEvidence("contradict");
+    const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
+    const section = drawer.querySelector('[data-gp-source-section="excerpt"]') as HTMLElement;
+    expect(section).toBeTruthy();
+    const label = section.querySelector(".gp-source-label") as HTMLElement;
+    expect(label.textContent).toBe("检索片段（非逐字原文）");
   });
 
   it("6. reachable=false 说明原链接打不开，不伪造来源结论", async () => {

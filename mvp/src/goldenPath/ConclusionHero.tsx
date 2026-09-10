@@ -10,6 +10,10 @@ import { JUDGMENT_LABEL } from "./snapshotUi";
 
 type ConclusionHeroProps = {
   directAnswer: string;
+  /** 第一句判断句（含结尾标点）。缺失/为空时回退到 directAnswer 单层渲染。 */
+  verdictLead?: string;
+  /** 判断句之后的解释文本；缺失时不渲染解释层。 */
+  rationale?: string;
   judgment: "supported" | "refuted" | "mixed" | "unresolved" | "not-applicable";
   boundaries: string[];
   claimCount: number;
@@ -22,10 +26,12 @@ const EMERGE_S = 0.32;
 const EMERGE_EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 const ANSWER_Y = 8;
 
-export function ConclusionHero({ directAnswer, judgment, boundaries, claimCount, sourceCount, checkedAt }: ConclusionHeroProps) {
+export function ConclusionHero({ directAnswer, verdictLead, rationale, judgment, boundaries, claimCount, sourceCount, checkedAt }: ConclusionHeroProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
   const reduce = Boolean(useReducedMotion());
+  const lead = verdictLead && verdictLead.trim() ? verdictLead : directAnswer;
+  const explanation = verdictLead && verdictLead.trim() && rationale && rationale.trim() ? rationale : "";
 
   return (
     <motion.header
@@ -44,8 +50,13 @@ export function ConclusionHero({ directAnswer, judgment, boundaries, claimCount,
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: reduce ? 0 : EMERGE_S, ease: EMERGE_EASE }}
         >
-          {directAnswer}
+          {lead}
         </motion.p>
+        {explanation ? (
+          <p className="gp-hero-rationale" data-gp-rationale>
+            {explanation}
+          </p>
+        ) : null}
         {judgment === "unresolved" ? (
           <p className="gp-hero-uncertainty" data-gp-uncertainty>
             {copy.uncertaintyLine}
@@ -61,7 +72,6 @@ export function ConclusionHero({ directAnswer, judgment, boundaries, claimCount,
         </div>
         {boundaries.length > 0 ? (
           <div className="gp-hero-boundaries" data-gp-boundaries>
-            <span className="gp-hero-boundary-title">{copy.boundaryLabel}</span>
             <ul className="gp-hero-boundary-list">
               {boundaries.map((b) => (
                 <li key={b}>{b}</li>
