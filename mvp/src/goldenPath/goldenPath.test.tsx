@@ -1609,7 +1609,18 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
     expect(drawer.querySelector('[data-gp-source-section="excerpt"]')).toBeNull();
     expect(drawer.querySelector(".gp-source-excerpt")).toBeNull();
-    expect(drawer.textContent).not.toContain("原文摘录");
+    // 注意：不要断言「不含旧文案」——旧字符串已从代码里删除，那种断言会变成永真断言。
+    expect(drawer.textContent).not.toContain("检索片段（非逐字原文）");
+  });
+
+  it("摘录诚实性：有 excerpt 时抽屉标题写明是检索片段，不是逐字原文", async () => {
+    renderCanvas(refutedComplete());
+    await openFirstEvidence("contradict");
+    const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
+    const section = drawer.querySelector('[data-gp-source-section="excerpt"]') as HTMLElement;
+    expect(section).toBeTruthy();
+    const label = section.querySelector(".gp-source-label") as HTMLElement;
+    expect(label.textContent).toBe("检索片段（非逐字原文）");
   });
 
   it("6. reachable=false 说明原链接打不开，不伪造来源结论", async () => {
