@@ -162,7 +162,10 @@ export const InvestigationConclusionSchema = Type.Object(
   {
     /** 对原问题的直接回答（生产 conclusion 文本），不是内部 verdict 标签。 */
     directAnswer: Type.String(),
+    /** 结论第一句判断句（含结尾标点）；缺失时前端回退，只渲染 directAnswer。 */
+    verdictLead: Type.Optional(Type.String()),
     judgment: InvestigationJudgmentSchema,
+    /** 判断句之后的解释文本；为空则不输出该字段（前端不渲染解释层）。 */
     rationale: Type.Optional(Type.String()),
     boundaries: Type.Array(Type.String()),
     claimIds: Type.Array(Type.String()),
