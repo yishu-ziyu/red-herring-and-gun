@@ -1,0 +1,425 @@
+{
+  "evidenceKind": "synthetic-pipeline",
+  "isolation": "logical-only",
+  "report": {
+    "verdictType": "true",
+    "conclusion": "两项均已证实。",
+    "subclaimVerdicts": [
+      {
+        "claimAtom": "甲馆于周二开放",
+        "verdict": "true",
+        "evidence": "甲馆公告确认周二开放[1]。",
+        "boundary": "公告对应甲馆",
+        "supportingSources": [
+          {
+            "url": "https://shannon.test/alpha-hours",
+            "title": "甲馆时间",
+            "snippet": "甲馆周二开放"
+          }
+        ],
+        "contradictingSources": [],
+        "evidenceGaps": [],
+        "sourcesRelatedOnly": false
+      }
+    ],
+    "nonVerifiableAtoms": [],
+    "atomSearchMeta": {
+      "atomsSearched": [
+        "甲馆于周二开放"
+      ],
+      "source": "per-atom-search"
+    },
+    "claimItems": [
+      {
+        "text": "甲馆于周二开放",
+        "verifiable": true,
+        "type": "",
+        "verdict": {
+          "claimAtom": "甲馆于周二开放",
+          "verdict": "true",
+          "evidence": "甲馆公告确认周二开放[1]。",
+          "boundary": "公告对应甲馆",
+          "supportingSources": [
+            {
+              "url": "https://shannon.test/alpha-hours",
+              "title": "甲馆时间",
+              "snippet": "甲馆周二开放"
+            }
+          ],
+          "contradictingSources": [],
+          "evidenceGaps": [],
+          "sourcesRelatedOnly": false
+        }
+      }
+    ],
+    "faceVerdict": "能信",
+    "citationSources": [
+      {
+        "url": "https://shannon.test/alpha-hours",
+        "title": "甲馆时间",
+        "snippet": "甲馆周二开放"
+      }
+    ],
+    "summaryForPublic": "公开材料撑得住这条说法。",
+    "recommendation": "公开材料撑得住这条说法。",
+    "evidenceChain": [
+      {
+        "layer": "命题",
+        "finding": "甲馆于周二开放。",
+        "evidence": "没有新的外部出处",
+        "boundary": "不得据此推出比材料更强的结论",
+        "sourceRefs": [],
+        "_citeSources": []
+      },
+      {
+        "layer": "证据",
+        "finding": "这一层还没有查到可点开的出处",
+        "evidence": "没有新的外部出处",
+        "boundary": "不得据此推出比材料更强的结论",
+        "sourceRefs": [],
+        "_citeSources": []
+      },
+      {
+        "layer": "边界",
+        "finding": "这一层还没有查到可点开的出处",
+        "evidence": "没有新的外部出处",
+        "boundary": "不得据此推出比材料更强的结论",
+        "sourceRefs": [],
+        "_citeSources": []
+      }
+    ],
+    "crossExam": {
+      "ran": false,
+      "skippedReason": "未接入独立复核",
+      "model": "",
+      "adjustment": 0,
+      "atoms": []
+    },
+    "canSay": [
+      "仅可陈述已列出的证据与边界，不得超出证据链。"
+    ],
+    "cannotSay": [
+      "不能把未验证材料当作已证实事实。"
+    ],
+    "credibilityScore": 50,
+    "closureActions": [
+      {
+        "type": "archive_doubt",
+        "label": "存疑归档",
+        "content": "本案证据仍有缺口，建议归档待补证。",
+        "status": "ready"
+      }
+    ],
+    "_review": {
+      "reviewer": "deterministic-report-reviewer",
+      "issueCount": 8,
+      "errorCount": 3,
+      "passed": false
+    },
+    "checkedAt": "2026-09-08T03:55:01.565Z",
+    "investigation": {
+      "schemaVersion": 1,
+      "originalClaim": "甲馆于周二开放。",
+      "phase": "complete",
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "甲馆于周二开放",
+          "order": 0,
+          "originalSpan": {
+            "start": 0,
+            "end": 7
+          },
+          "checkability": "checkable",
+          "progress": "complete",
+          "judgment": "supported",
+          "boundary": "公告对应甲馆",
+          "evidence": [
+            {
+              "sourceId": "src-0de7ad97f70631e8",
+              "role": "support",
+              "finding": "甲馆公告确认周二开放[1]。"
+            }
+          ],
+          "gaps": []
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-0de7ad97f70631e8",
+          "url": "https://shannon.test/alpha-hours",
+          "title": "甲馆时间",
+          "excerpt": "甲馆周二开放"
+        }
+      ],
+      "conflicts": [],
+      "conclusion": {
+        "directAnswer": "两项均已证实。",
+        "judgment": "supported",
+        "boundaries": [
+          "公告对应甲馆"
+        ],
+        "claimIds": [
+          "claim-1"
+        ],
+        "sourceIds": [
+          "src-0de7ad97f70631e8"
+        ]
+      },
+      "checkedAt": "2026-09-08T03:55:01.565Z"
+    }
+  },
+  "snapshots": [
+    {
+      "schemaVersion": 1,
+      "originalClaim": "甲馆于周二开放。",
+      "phase": "received",
+      "claims": [],
+      "sources": [],
+      "conflicts": []
+    },
+    {
+      "schemaVersion": 1,
+      "originalClaim": "甲馆于周二开放。",
+      "phase": "decomposed",
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "甲馆于周二开放",
+          "order": 0,
+          "originalSpan": {
+            "start": 0,
+            "end": 7
+          },
+          "checkability": "checkable",
+          "progress": "pending",
+          "judgment": null,
+          "evidence": [],
+          "gaps": []
+        }
+      ],
+      "sources": [],
+      "conflicts": []
+    },
+    {
+      "schemaVersion": 1,
+      "originalClaim": "甲馆于周二开放。",
+      "phase": "investigating",
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "甲馆于周二开放",
+          "order": 0,
+          "originalSpan": {
+            "start": 0,
+            "end": 7
+          },
+          "checkability": "checkable",
+          "progress": "searching",
+          "judgment": null,
+          "evidence": [],
+          "gaps": []
+        }
+      ],
+      "sources": [],
+      "conflicts": []
+    },
+    {
+      "schemaVersion": 1,
+      "originalClaim": "甲馆于周二开放。",
+      "phase": "investigating",
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "甲馆于周二开放",
+          "order": 0,
+          "originalSpan": {
+            "start": 0,
+            "end": 7
+          },
+          "checkability": "checkable",
+          "progress": "searching",
+          "judgment": null,
+          "evidence": [
+            {
+              "sourceId": "src-0de7ad97f70631e8",
+              "role": "unassessed"
+            }
+          ],
+          "gaps": []
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-0de7ad97f70631e8",
+          "url": "https://shannon.test/alpha-hours",
+          "title": "甲馆时间",
+          "excerpt": "甲馆周二开放"
+        }
+      ],
+      "conflicts": []
+    },
+    {
+      "schemaVersion": 1,
+      "originalClaim": "甲馆于周二开放。",
+      "phase": "judging",
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "甲馆于周二开放",
+          "order": 0,
+          "originalSpan": {
+            "start": 0,
+            "end": 7
+          },
+          "checkability": "checkable",
+          "progress": "searching",
+          "judgment": "supported",
+          "boundary": "公告对应甲馆",
+          "evidence": [
+            {
+              "sourceId": "src-0de7ad97f70631e8",
+              "role": "support",
+              "finding": "甲馆公告确认周二开放[1]。"
+            }
+          ],
+          "gaps": []
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-0de7ad97f70631e8",
+          "url": "https://shannon.test/alpha-hours",
+          "title": "甲馆时间",
+          "excerpt": "甲馆周二开放"
+        }
+      ],
+      "conflicts": []
+    },
+    {
+      "schemaVersion": 1,
+      "originalClaim": "甲馆于周二开放。",
+      "phase": "judging",
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "甲馆于周二开放",
+          "order": 0,
+          "originalSpan": {
+            "start": 0,
+            "end": 7
+          },
+          "checkability": "checkable",
+          "progress": "searching",
+          "judgment": "supported",
+          "boundary": "公告对应甲馆",
+          "evidence": [
+            {
+              "sourceId": "src-0de7ad97f70631e8",
+              "role": "support",
+              "finding": "甲馆公告确认周二开放[1]。"
+            }
+          ],
+          "gaps": []
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-0de7ad97f70631e8",
+          "url": "https://shannon.test/alpha-hours",
+          "title": "甲馆时间",
+          "excerpt": "甲馆周二开放"
+        }
+      ],
+      "conflicts": []
+    },
+    {
+      "schemaVersion": 1,
+      "originalClaim": "甲馆于周二开放。",
+      "phase": "judging",
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "甲馆于周二开放",
+          "order": 0,
+          "originalSpan": {
+            "start": 0,
+            "end": 7
+          },
+          "checkability": "checkable",
+          "progress": "searching",
+          "judgment": "supported",
+          "boundary": "公告对应甲馆",
+          "evidence": [
+            {
+              "sourceId": "src-0de7ad97f70631e8",
+              "role": "support",
+              "finding": "甲馆公告确认周二开放[1]。"
+            }
+          ],
+          "gaps": []
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-0de7ad97f70631e8",
+          "url": "https://shannon.test/alpha-hours",
+          "title": "甲馆时间",
+          "excerpt": "甲馆周二开放"
+        }
+      ],
+      "conflicts": []
+    },
+    {
+      "schemaVersion": 1,
+      "originalClaim": "甲馆于周二开放。",
+      "phase": "complete",
+      "claims": [
+        {
+          "id": "claim-1",
+          "text": "甲馆于周二开放",
+          "order": 0,
+          "originalSpan": {
+            "start": 0,
+            "end": 7
+          },
+          "checkability": "checkable",
+          "progress": "complete",
+          "judgment": "supported",
+          "boundary": "公告对应甲馆",
+          "evidence": [
+            {
+              "sourceId": "src-0de7ad97f70631e8",
+              "role": "support",
+              "finding": "甲馆公告确认周二开放[1]。"
+            }
+          ],
+          "gaps": []
+        }
+      ],
+      "sources": [
+        {
+          "id": "src-0de7ad97f70631e8",
+          "url": "https://shannon.test/alpha-hours",
+          "title": "甲馆时间",
+          "excerpt": "甲馆周二开放"
+        }
+      ],
+      "conflicts": [],
+      "conclusion": {
+        "directAnswer": "两项均已证实。",
+        "judgment": "supported",
+        "boundaries": [
+          "公告对应甲馆"
+        ],
+        "claimIds": [
+          "claim-1"
+        ],
+        "sourceIds": [
+          "src-0de7ad97f70631e8"
+        ]
+      },
+      "checkedAt": "2026-09-08T03:55:01.565Z"
+    }
+  ]
+}

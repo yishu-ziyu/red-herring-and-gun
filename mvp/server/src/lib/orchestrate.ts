@@ -18,12 +18,21 @@ import {
 } from "./providerRouter.js";
 import { compactSearchResultForAgent, buildReportEvidenceInputs } from "./searchProviders.js";
 import { splitReasoningSentences, thoughtInterSentenceDelayMs } from "./reasoningThoughts.js";
-import { sleepMs } from "./httpUtils.js";
+import { getTimeoutMs, sleepMs } from "./httpUtils.js";
+import { callByoAgent, ByoKeyError, type ByoConfig } from "./orchestrateByo.js";
 import type { RunAgentFn } from "./casePipeline/index.js";
 
 export interface OrchestrateAdapterDeps {
   env: Record<string, string>;
   codexBin: string;
+  /**
+   * 请求内 BYO 配置。存在时全部主力模型调用（runAgent / 自证 / 改写 / 交叉质询）
+   * 直调用户端点（request-scoped），不读服务端 env 主力密钥；
+   * 主力模型以 BYO modelName 为准（endpoint 与 model 是一对），忽略 modelChoice 的主力模型语义。
+   */
+  byo?: ByoConfig;
+  /** BYO 凭证失败（鉴权/网络）回调：handlers 用来中止管线、以用户可读错误收尾（fail-closed）。 */
+  onByoFailure?: (error: unknown) => void;
 }
 
 /** Prefer rumor_detector stanceClaimType; default mixed for skill routing. */
@@ -38,6 +47,35 @@ function inferClaimTypeForSkills(steps: Array<{ agent?: string; output?: Record<
 
 export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
   const { env, codexBin } = deps;
+  const byo = deps.byo;
+  const onByoFailure = deps.onByoFailure;
+
+  const byoTimeoutMs = () => getTimeoutMs(env, "ORCHESTRATE_BYO_TIMEOUT_MS", 120_000);
+
+  /**
+   * BYO 接管模式下的单次主力调用：只打用户端点。
+   * 凭证失败（鉴权/网络）→ 先回调 onByoFailure 触发 fail-closed 收尾，再把 ByoKeyError 原样上抛；
+   * 输出解析失败等非凭证问题按普通错误上抛，走现有 agent_error / fail-open 语义。
+   */
+  async function callByoPrimary(input: {
+    systemPrompt: string;
+    userContent: string;
+    maxTokens: number;
+  }): Promise<{ output: any; model: string; reasoning?: string }> {
+    if (!byo) throw new Error("BYO 接管模式未启用");
+    try {
+      return await callByoAgent({
+        byo,
+        systemPrompt: input.systemPrompt,
+        userContent: input.userContent,
+        maxTokens: input.maxTokens,
+        timeoutMs: byoTimeoutMs(),
+      });
+    } catch (error) {
+      if (error instanceof ByoKeyError) onByoFailure?.(error);
+      throw error;
+    }
+  }
 
   /** 单个 Agent 调用：组装输入 → LLM fallback → 结果 step。 */
   function makeRunAgent(opts: {
@@ -104,30 +142,42 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
 
       let output: Record<string, unknown>;
       let modelUsed: string;
+      let reasoning: string | undefined;
       try {
-        const modelOverride =
-          opts.modelChoice && typeof opts.modelChoice === "object"
-            ? (opts.modelChoice as Record<string, { provider: string; model: string }>)[agentConfig.id]
-            : undefined;
-        const result = await callAgentWithFallback({
-          agentId: agentConfig.id,
-          systemPrompt,
-          userContent,
-          responseSchema: agentConfig.responseSchema,
-          maxTokens: agentConfig.maxTokens,
-          env,
-          codexBin,
-          reasoningEffort: "high",
-          modelOverride: modelOverride as { provider: AgentTextProviderId; model: string } | undefined,
-          options: { logger: console },
-        });
+        let result: { output: any; model: string; reasoning?: string };
+        if (byo) {
+          // BYO 接管：主力模型只打用户端点；endpoint 与 model 成对，忽略 modelChoice。
+          result = await callByoPrimary({
+            systemPrompt,
+            userContent,
+            maxTokens: agentConfig.maxTokens,
+          });
+        } else {
+          const modelOverride =
+            opts.modelChoice && typeof opts.modelChoice === "object"
+              ? (opts.modelChoice as Record<string, { provider: string; model: string }>)[agentConfig.id]
+              : undefined;
+          result = await callAgentWithFallback({
+            agentId: agentConfig.id,
+            systemPrompt,
+            userContent,
+            responseSchema: agentConfig.responseSchema,
+            maxTokens: agentConfig.maxTokens,
+            env,
+            codexBin,
+            reasoningEffort: "high",
+            modelOverride: modelOverride as { provider: AgentTextProviderId; model: string } | undefined,
+            options: { logger: console },
+          });
+        }
         output = result.output;
         modelUsed = result.model;
+        reasoning = result.reasoning;
         // Capture model wall-clock before SSE thought pacing (UI must show real think time).
         const modelLatencyMs = Date.now() - stepStart;
         // Real reasoning only: split + pace SSE so ThinkingReasoning can reveal sentence-by-sentence.
-        if (opts.onThought && typeof result.reasoning === "string" && result.reasoning.trim()) {
-          const sentences = splitReasoningSentences(result.reasoning);
+        if (opts.onThought && typeof reasoning === "string" && reasoning.trim()) {
+          const sentences = splitReasoningSentences(reasoning);
           const gap = thoughtInterSentenceDelayMs(sentences.length);
           for (let index = 0; index < sentences.length; index++) {
             opts.onThought!(
@@ -156,21 +206,30 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         return step;
       } catch (error) {
         opts.onError?.(agentId, agentConfig, error);
+        // BYO 凭证失败保持原错误上抛（携带用户可读文案），不包一层：fail-closed 收尾要认它。
+        if (error instanceof ByoKeyError) throw error;
         const message = error instanceof Error ? error.message : "Agent 调用失败";
         throw new Error(`${agentConfig.name} 真实模型调用失败：${message}`);
       }
     };
   }
 
-  /** 自证子调用（原句自证，claimAtom 用）。 */
+  /** 自证子调用（原句自证，claimAtom 用）。BYO 接管时走用户端点，忽略 modelChoice。 */
   function makeSelfProofCaller(claim: string, modelChoice: any) {
     return (input: {
       systemPrompt: string;
       userContent: string;
       responseSchema: object;
       maxTokens: number;
-    }) =>
-      callAgentWithFallback({
+    }) => {
+      if (byo) {
+        return callByoPrimary({
+          systemPrompt: input.systemPrompt,
+          userContent: input.userContent,
+          maxTokens: input.maxTokens,
+        }).then((r) => ({ output: r.output, model: r.model }));
+      }
+      return callAgentWithFallback({
         agentId: "rumor_detector_selfproof",
         systemPrompt: input.systemPrompt,
         userContent: input.userContent,
@@ -182,17 +241,25 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         modelOverride: modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
         options: { logger: console },
       }).then((r) => ({ output: r.output, model: r.model }));
+    };
   }
 
-  /** Evidence loop 语义改写（ADR-004）：裸模型调用 → makeRewriteQueryCall 绑定 prompt/解析。 */
+  /** Evidence loop 语义改写（ADR-004）：裸模型调用 → makeRewriteQueryCall 绑定 prompt/解析。BYO 接管时走用户端点。 */
   function makeRewriteCaller(modelChoice: any) {
     return (input: {
       systemPrompt: string;
       userContent: string;
       responseSchema: object;
       maxTokens: number;
-    }) =>
-      callAgentWithFallback({
+    }) => {
+      if (byo) {
+        return callByoPrimary({
+          systemPrompt: input.systemPrompt,
+          userContent: input.userContent,
+          maxTokens: input.maxTokens,
+        }).then((r) => ({ output: r.output, model: r.model }));
+      }
+      return callAgentWithFallback({
         agentId: "evidence_loop_rewriter",
         systemPrompt: input.systemPrompt,
         userContent: input.userContent,
@@ -205,6 +272,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
           modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
         options: { logger: console },
       }).then((r) => ({ output: r.output, model: r.model }));
+    };
   }
 
   // Cross exam 第二意见（G3/P1）：国产优先、与主判 provider 不同源（真双模型交叉）。
@@ -225,6 +293,49 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
   }
 
   function makeCrossExamCaller(modelChoice: any, sendAgentEvent?: (data: object) => void) {
+    // BYO 接管：交叉质询同属主力模型调用，走用户端点（不再挑第二 provider）。
+    if (byo) {
+      return (input: {
+        systemPrompt: string;
+        userContent: string;
+        responseSchema: object;
+        maxTokens: number;
+      }) => {
+        sendAgentEvent?.({
+          type: "agent_start",
+          agent: "cross_examiner",
+          agentName: "CrossExaminer",
+          query: "第二模型独立复核冲突证据",
+          timestamp: Date.now(),
+        });
+        return callByoPrimary({
+          systemPrompt: input.systemPrompt,
+          userContent: input.userContent,
+          maxTokens: input.maxTokens,
+        })
+          .then((r) => {
+            sendAgentEvent?.({
+              type: "agent_complete",
+              agent: "cross_examiner",
+              agentName: "CrossExaminer",
+              output: r.output,
+              model: r.model,
+              timestamp: Date.now(),
+            });
+            return { output: r.output, model: r.model };
+          })
+          .catch((error) => {
+            sendAgentEvent?.({
+              type: "agent_error",
+              agent: "cross_examiner",
+              agentName: "CrossExaminer",
+              error: "独立复核未完成",
+              timestamp: Date.now(),
+            });
+            throw error;
+          });
+      };
+    }
     const modelOverride = pickCrossExamModel(modelChoice);
     if (!modelOverride) return undefined;
     return (input: {
