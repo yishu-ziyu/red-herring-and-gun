@@ -436,6 +436,7 @@ function ProductApp() {
         onLoginClick={() => setLoginOpen(true)}
         onAccountClick={() => setAccountOpen(true)}
         onLogout={() => void handleLogout()}
+        viewingInvestigation={mode === "investigation"}
       >
         {historyNotice ? <p className="gp-global-notice" role="alert">{historyNotice}</p> : null}
         {sameClaim ? (

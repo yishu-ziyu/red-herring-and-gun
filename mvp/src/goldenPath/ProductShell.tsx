@@ -27,6 +27,8 @@ type ProductShellProps = {
   onLoginClick: () => void;
   onAccountClick: () => void;
   onLogout: () => void;
+  /** 正在看一次调查/旧结果：只有这时品牌才作为「回到空白输入」的入口。 */
+  viewingInvestigation: boolean;
   topRightExtra?: ReactNode;
   children: ReactNode;
 };
@@ -47,6 +49,7 @@ export function ProductShell({
   onLoginClick,
   onAccountClick,
   onLogout,
+  viewingInvestigation,
   topRightExtra,
   children,
 }: ProductShellProps) {
@@ -108,27 +111,28 @@ export function ProductShell({
       ) : null}
     </div>
   ) : (
-    <>
-      <a className="gp-icon-btn" href="/settings/api-key">
-        {copy.modelSettings}
-      </a>
-      <button type="button" className="gp-icon-btn" onClick={onLoginClick}>
-        {copy.signIn}
-      </button>
-    </>
+    <button type="button" className="gp-icon-btn" onClick={onLoginClick}>
+      {copy.signIn}
+    </button>
   );
 
   return (
     <div className="gp-shell">
       <header className="gp-topbar">
         <div className="gp-topbar-inner">
-          <button type="button" className="gp-brand" onClick={onNewCase} aria-label={copy.newCheck}>
+          {/* 进门态品牌只是名字，不假装能点；回空白输入的入口只在看旧结果时出现在导航里。 */}
+          <div className="gp-brand gp-brand--static">
             <img src="/logo.png?v=20260615" alt="" className="gp-brand-logo" />
             <span className="gp-brand-name">红鲱鱼与枪</span>
             <span className="gp-brand-divider" aria-hidden="true">|</span>
             <span className="gp-brand-tagline">{copy.brandTagline}</span>
-          </button>
+          </div>
           <nav className="gp-topbar-actions" aria-label="产品导航">
+            {viewingInvestigation ? (
+              <button type="button" className="gp-icon-btn" onClick={onNewCase}>
+                {copy.newCheck}
+              </button>
+            ) : null}
             {topRightExtra}
             <button
               type="button"

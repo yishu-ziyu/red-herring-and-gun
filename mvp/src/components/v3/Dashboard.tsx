@@ -505,6 +505,33 @@ export function Dashboard({
             })}
           </ul>
         </section>
+
+        {/* 静态示意：输入框与例子下方，不跑真调查、不发任何请求 */}
+        <section className="landing-preview" aria-label={copy.resultPreviewLabel}>
+          <p className="landing-preview-label">{copy.resultPreviewLabel}</p>
+          <div className="landing-preview-card">
+            <p className="landing-preview-answer">{copy.resultPreviewAnswer}</p>
+            <p className="landing-preview-meta">{copy.resultPreviewMeta}</p>
+            <div className="landing-preview-row">
+              <span className="landing-preview-tag landing-preview-tag--support">
+                {copy.resultPreviewSupportLabel}
+              </span>
+              <span className="landing-preview-body">
+                {copy.resultPreviewSupportText}
+                <span className="landing-preview-quote">{copy.resultPreviewSupportExcerpt}</span>
+              </span>
+            </div>
+            <div className="landing-preview-row">
+              <span className="landing-preview-tag landing-preview-tag--refute">
+                {copy.resultPreviewContradictLabel}
+              </span>
+              <span className="landing-preview-body">
+                {copy.resultPreviewContradictText}
+                <span className="landing-preview-quote">{copy.resultPreviewContradictExcerpt}</span>
+              </span>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   );

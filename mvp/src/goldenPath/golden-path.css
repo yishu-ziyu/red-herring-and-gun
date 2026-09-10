@@ -144,6 +144,15 @@
   background: var(--gp-surface-inset);
 }
 
+/* 进门态品牌只是名字：不假装能点。 */
+.gp-brand--static {
+  cursor: default;
+}
+
+.gp-brand--static:hover {
+  background: none;
+}
+
 .gp-brand-logo {
   width: 24px;
   height: 24px;
@@ -620,6 +629,88 @@
   color: var(--gp-accent);
   background: var(--gp-accent-subtle);
   font-weight: 500;
+}
+
+/* ---------- 进门示意（查完大概长这样，静态样例） ---------- */
+
+.gp-result-preview {
+  width: 100%;
+  margin-top: 44px;
+  padding-top: 24px;
+  border-top: 1px solid var(--gp-hairline);
+  text-align: left;
+}
+
+.gp-result-preview-label {
+  margin: 0 0 12px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--gp-ink-3);
+  text-align: center;
+}
+
+.gp-result-preview-card {
+  background: var(--gp-surface);
+  border: 1px solid var(--gp-hairline);
+  border-radius: var(--gp-radius-card);
+  box-shadow: var(--gp-elevation-input);
+  padding: 16px 18px 12px;
+}
+
+.gp-result-preview-answer {
+  margin: 0 0 6px;
+  font-size: 15.5px;
+  font-weight: 650;
+  line-height: 1.55;
+  color: var(--gp-ink-primary);
+}
+
+.gp-result-preview-meta {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--gp-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.gp-result-preview-row {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--gp-line-subtle);
+}
+
+.gp-result-preview-tag {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.6;
+}
+
+.gp-result-preview-tag.is-support {
+  color: var(--gp-semantic-support);
+}
+
+.gp-result-preview-tag.is-contradict {
+  color: var(--gp-semantic-contradict);
+}
+
+.gp-result-preview-body {
+  min-width: 0;
+}
+
+.gp-result-preview-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--gp-ink-2);
+}
+
+/* 片段不是逐字原文：刻意用 sans + 弱色，避免读成引文。 */
+.gp-result-preview-excerpt {
+  margin: 3px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--gp-ink-muted);
 }
 
 /* ---------- 调查画布（Content Layer） ---------- */

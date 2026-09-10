@@ -281,6 +281,33 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
           ))}
         </ul>
       </section>
+
+      {/* 进门示意：只读静态样例，不发起调查，不改任何状态。 */}
+      <section
+        className="gp-result-preview"
+        aria-label={copy.resultPreviewLabel}
+        data-gp-result-preview
+      >
+        <p className="gp-result-preview-label">{copy.resultPreviewLabel}</p>
+        <div className="gp-result-preview-card">
+          <p className="gp-result-preview-answer">{copy.resultPreviewAnswer}</p>
+          <p className="gp-result-preview-meta">{copy.resultPreviewMeta}</p>
+          <div className="gp-result-preview-row" data-gp-preview-relation="support">
+            <span className="gp-result-preview-tag is-support">{copy.resultPreviewSupportLabel}</span>
+            <div className="gp-result-preview-body">
+              <p className="gp-result-preview-text">{copy.resultPreviewSupportText}</p>
+              <p className="gp-result-preview-excerpt">{copy.resultPreviewSupportExcerpt}</p>
+            </div>
+          </div>
+          <div className="gp-result-preview-row" data-gp-preview-relation="contradict">
+            <span className="gp-result-preview-tag is-contradict">{copy.resultPreviewContradictLabel}</span>
+            <div className="gp-result-preview-body">
+              <p className="gp-result-preview-text">{copy.resultPreviewContradictText}</p>
+              <p className="gp-result-preview-excerpt">{copy.resultPreviewContradictExcerpt}</p>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
