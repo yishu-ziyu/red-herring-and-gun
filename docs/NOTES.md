@@ -1,6 +1,6 @@
 # 当前状态
 
-2026-09-10 完成态结果页第一视觉稿（P0+P1）实现中：独立分支 `cursor/result-page-memo-dd88`，验收 `docs/evals/2026-09-10-result-page-memo.md`。P0 加强 ConclusionHero 文书层级（衬线 700 + clamp 字号 + 墨色 + 判断色细下划线）；P1 证据行左侧固定关系标签并默认展示已有 excerpt，SourceDrawer 把摘录提前并加重。P2 并排冲突卡未做。机器项待跑。
+2026-09-10 完成态结果页第一视觉稿（P0+P1）已开 PR #85（`cursor/result-page-memo-dd88`，验收 `docs/evals/2026-09-10-result-page-memo.md`）。P0：ConclusionHero 衬线 700 + clamp 字号 + 墨色，判断词/条数/时间是弱 metadata，原句紧贴英雄区。P1：证据行左侧固定写出支持/反驳/相关/待核对并默认展示已有 excerpt；完成态隐藏分组标题避免切块；SourceDrawer 摘录提前加重。P2 并排冲突卡未做。机器：goldenPath 101 绿；mvp 全量 1143 过 / 1 跳过（补齐 server 依赖后）。人评待裁：第一屏眼睛是否先落到直接回答、证据行是否读成关系+标题+摘录+域名。
 
 2026-09-09 模型设置页（ApiKeySettings）视觉重构完成（独立 PR 待人工验收）：按 `docs/evals/2026-09-09-api-key-settings-redesign.md` 契约把 `/settings/api-key` 从旧 `--zt-*` 表单样式换成主站 `--gp-*`（Quiet Editorial / Golden Path）设计语言，结构化卡片分区（页头导航与说明、服务商药丸卡片组、端点与凭证表单、操作与测试状态徽标、底部安全 Callout），Key 显隐切换、测试 loading 与成功/失败状态徽标；`gun-byo-key` 本地持久化、`/api/agent/test-llm`、既有业务契约零变更。底部安全 Callout 文案经用户裁决换成说人话方案 A（旧「base64 不是加密」披露是 7-06 a8d0987 引入的实现层行话，违反宪法实现层默认隐藏，已换并同步测试断言）。样式解耦为专属 `mvp/src/components/v3/settings/ApiKeySettings.css`（`styles.css` 中 `api-key` 引用归零，`prefers-reduced-motion` 三条规则随迁专属段）。门禁：根 core 612 / eval 85 / server 21 / web 83 全绿，根 build 通过，mvp 1011 过 / 1 跳过 / 0 失败（含 ApiKeySettings 17 项；上次会话 npm test 后台复跑中断，本结果为完整复跑），mvp build 通过；文案更换后 ApiKeySettings 17 项复跑全绿。真实浏览器截图取证归档 `docs/design/2026-09-09-api-key-settings/`（桌面整页 / 390 手机整页 / 首页对照；手机整页截图底部第二份页头经 DOM 核查为 fullPage 截屏伪影，非产品缺陷）。已查明密钥流：BYO key 目前只用于本地保存与 test-llm 连接探针，真实调查管线用服务端 env 密钥；用户已裁决「key 真接管」方向，另立工作包实现。
 
