@@ -1,0 +1,106 @@
+{
+  "campaign_id": "pr-81-review-5137757199",
+  "candidate_sha": "44e976e9763dc15996b862d74e300cc4ef505ad4",
+  "dirty": false,
+  "execution_mode": "SYNTHETIC_FIXTURE",
+  "driver": "deterministic_runner",
+  "started_note": "Logs captured on working tree immediately before commit of this directory plus product/docs changes.",
+  "commands": [
+    {
+      "id": "directed",
+      "command": [
+        "npx",
+        "vitest",
+        "run",
+        "src/legacy/loadMissionControlView.test.ts",
+        "src/legacy/LegacyDesk.workbenchLoader.test.tsx",
+        "src/legacy/LegacyDesk.test.tsx"
+      ],
+      "cwd": "mvp",
+      "exit_code": 0,
+      "summary": "33 passed (29 original LegacyDesk + 2 loader + 2 cold workbench)",
+      "log": "docs/evals/artifacts/pr-81/directed.log"
+    },
+    {
+      "id": "mvp-test",
+      "command": [
+        "npm",
+        "test"
+      ],
+      "cwd": "mvp",
+      "exit_code": 0,
+      "summary": "1012 passed / 1 skipped (98 files, 97 passed)",
+      "log": "docs/evals/artifacts/pr-81/mvp-test.tail.log"
+    },
+    {
+      "id": "mvp-build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "cwd": "mvp",
+      "exit_code": 0,
+      "summary": "tsc + vite build 0; MissionControlView remains a separate chunk",
+      "log": "docs/evals/artifacts/pr-81/mvp-build.tail.log"
+    },
+    {
+      "id": "root-test",
+      "command": [
+        "npm",
+        "test"
+      ],
+      "cwd": ".",
+      "exit_code": 0,
+      "summary": "core 605 + eval 85 + server 21 + web 83",
+      "log": "docs/evals/artifacts/pr-81/root-test.tail.log"
+    },
+    {
+      "id": "root-build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "cwd": ".",
+      "exit_code": 0,
+      "summary": "workspace build 0",
+      "log": "docs/evals/artifacts/pr-81/root-build.tail.log"
+    }
+  ],
+  "assertions_kept": [
+    "uses the clean analysis shell for the real workspace too",
+    "screen.findByTestId('apodex-run')"
+  ],
+  "skipped_or_retried": false,
+  "live_executed": false,
+  "issues_53_54": "left open",
+  "captured_at": "2026-09-08T06:21:05.720409+00:00",
+  "result_artifacts": [
+    {
+      "path": "directed.log",
+      "sha256": "8c0b0ce6677cbd9a917a57f29db2abeed73d3cbcd45e39bdc6912266e60dbb83",
+      "bytes": 301
+    },
+    {
+      "path": "mvp-build.tail.log",
+      "sha256": "a28c69f88151597772ffc4abb2b85673285d7df04130f66736982d9959be47d0",
+      "bytes": 1275
+    },
+    {
+      "path": "mvp-test.tail.log",
+      "sha256": "27abcf10b77c2aacc39bd8eae5c7a9f5eb7b032008e232e361213dddfcdf6176",
+      "bytes": 3027
+    },
+    {
+      "path": "root-build.tail.log",
+      "sha256": "6d6495af991f7b3a2f4218ae6fe263778eb5afd95322e1fe7fa7953d598ea2ac",
+      "bytes": 656
+    },
+    {
+      "path": "root-test.tail.log",
+      "sha256": "e0adac60a461b6ab2219aab7877132a32cea3404b0db6f30b318477e49c2f759",
+      "bytes": 1401
+    }
+  ]
+}

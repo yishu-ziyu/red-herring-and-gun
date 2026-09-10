@@ -16,15 +16,7 @@ import { accountDisplayName } from "../lib/accountIdentity";
 import { caseIntakePrimaryText, type CaseIntake } from "../lib/caseIntake";
 import type { ModelChoiceMap } from "../lib/agentExpansion";
 import { createKnowledgeBase, normalizeHistoryClaim } from "../lib/knowledgeBase";
-
-let missionControlViewPromise: Promise<
-  typeof import("../components/v3/phases/MissionControlView")
-> | null = null;
-
-function loadMissionControlView() {
-  missionControlViewPromise ??= import("../components/v3/phases/MissionControlView");
-  return missionControlViewPromise;
-}
+import { loadMissionControlView, prefetchMissionControlView } from "./loadMissionControlView";
 
 const MissionControlView = lazy(() =>
   loadMissionControlView().then((module) => ({ default: module.MissionControlView }))
@@ -167,6 +159,10 @@ function LegacyDeskContent() {
   }, [resetWorkspace, setMemoryScope]);
 
   useEffect(() => {
+    void prefetchMissionControlView();
+  }, []);
+
+  useEffect(() => {
     void hydrateAccountCases();
   }, [hydrateAccountCases]);
 
@@ -180,7 +176,7 @@ function LegacyDeskContent() {
       }
       setPendingHistory(null);
       setHistoryNotice("");
-      void loadMissionControlView();
+      void prefetchMissionControlView();
       dispatch({ type: "RESET" });
       persistOnCompleteRef.current = true;
       const claim = caseIntakePrimaryText(intake);
@@ -302,7 +298,7 @@ function LegacyDeskContent() {
       setPendingHistory(null);
       setArtifactOpen(true);
       setExecutionNonce((n) => n + 1);
-      void loadMissionControlView();
+      void prefetchMissionControlView();
       setAppPhase("executing");
     },
     [cases, dispatch]

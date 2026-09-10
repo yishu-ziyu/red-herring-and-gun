@@ -1,0 +1,40 @@
+
+ Test Files  2 passed (2)
+      Tests  21 passed (21)
+   Start at  14:18:27
+   Duration  13.08s (transform 637ms, setup 0ms, import 1.18s, tests 12.45s, environment 0ms)
+
+
+> @rhg/web@0.0.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /private/tmp/rhg-main-shannon/packages/web
+
+ ✓ src/lib/searchInstrument.test.ts (3 tests) 11ms
+ ✓ src/lib/select.test.ts (14 tests) 33ms
+ ✓ src/lib/originInk.test.ts (10 tests) 20ms
+ ✓ src/case/ReportCard.test.tsx (4 tests) 92ms
+ ✓ src/shell/AppShell.test.tsx (5 tests) 191ms
+ ✓ src/lib/useCaseStream.test.ts (4 tests) 254ms
+ ✓ src/pages/HomePage.test.tsx (7 tests) 444ms
+ ✓ src/panel/ClaimList.test.tsx (3 tests) 43ms
+ ✓ src/case/InstrumentStrip.test.tsx (4 tests) 229ms
+ ✓ src/lib/copy.test.ts (8 tests) 3ms
+ ✓ src/case/ThreadView.test.tsx (2 tests) 88ms
+ ✓ src/case/Citations.test.tsx (2 tests) 139ms
+ ✓ src/panel/ProvenanceGraph.test.tsx (2 tests) 174ms
+ ✓ src/lib/fixtures.test.ts (3 tests) 36ms
+ ✓ src/App.test.tsx (4 tests) 263ms
+ ✓ src/pages/SearchSettings.test.tsx (2 tests) 143ms
+ ✓ src/lib/time.test.ts (2 tests) 2ms
+ ✓ src/lib/opening.test.ts (1 test) 2ms
+ ✓ src/case/SearchRadar.test.tsx (2 tests) 35ms
+ ✓ src/index.test.ts (1 test) 2ms
+
+ Test Files  20 passed (20)
+      Tests  83 passed (83)
+   Start at  14:18:40
+   Duration  3.47s (transform 1.83s, setup 0ms, import 6.59s, tests 2.20s, environment 10.64s)
+
+ROOT_TEST:0
