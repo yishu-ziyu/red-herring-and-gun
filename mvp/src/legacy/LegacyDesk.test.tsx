@@ -58,8 +58,10 @@ describe("model settings preview", () => {
     expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "打开快捷操作" })).not.toBeInTheDocument();
 
-    const settingsLink = screen.getByRole("link", { name: "模型设置" });
-    expect(settingsLink).toHaveAttribute("href", "/settings/api-key");
+    // 未登录进门：没有指向设置页的实现层入口，也没有重复的「新查一条」；登录入口仍在。
+    expect(screen.queryByRole("link", { name: "模型设置" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "新查一条" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
   });
 
   it("renders a dedicated provider settings preview page with preset defaults", async () => {
@@ -156,6 +158,21 @@ describe("real analysis workspace", () => {
     expect(await screen.findByTestId("apodex-run")).toBeInTheDocument();
     return rendered;
   }
+
+  it("keeps 新查一条 in the result state and returns to the blank input", async () => {
+    mockModelsList(FAKE_MODELS);
+
+    await startRealAnalysis();
+
+    // 调查/结果态：左栏出现回空白输入的入口，且不把「模型设置」带回来。
+    const newCase = await screen.findByRole("button", { name: "新查一条" });
+    expect(screen.queryByRole("link", { name: "模型设置" })).not.toBeInTheDocument();
+
+    fireEvent.click(newCase);
+
+    expect(await screen.findByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "新查一条" })).not.toBeInTheDocument();
+  });
 
   it("uses the clean analysis shell for the real workspace too", async () => {
     const { container } = await startRealAnalysis();
@@ -516,7 +533,8 @@ describe("landing Version A storytelling", () => {
     expect(screen.getByRole("heading", { name: "红鲱鱼与枪" })).toBeInTheDocument();
     expect(screen.getByLabelText("历史卷宗")).toBeInTheDocument();
     expect(screen.getByLabelText("核查卷宗")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "新查一条" })).toBeInTheDocument();
+    // 未登录空白输入态：左栏不重复「新查一条」
+    expect(screen.queryByRole("button", { name: "新查一条" })).not.toBeInTheDocument();
     const landingMission = document.querySelector(".landing-mission");
     expect(landingMission).toHaveTextContent("把你想核查的句子、链接或截图放进来");
     expect(landingMission).not.toHaveTextContent("能不能信");
@@ -528,6 +546,23 @@ describe("landing Version A storytelling", () => {
     expect(screen.queryByRole("heading", { name: "它如何工作" })).not.toBeInTheDocument();
     expect(screen.queryByText("某公司未来三年营收将增长十倍")).not.toBeInTheDocument();
     expect(await screen.findByText("今天还能免费查 1 条")).toBeInTheDocument();
+  });
+
+  it("shows the finished-check sample under the examples", async () => {
+    mockModelsList(FAKE_MODELS);
+
+    render(<LegacyDesk />);
+
+    const preview = await screen.findByLabelText("查完大概长这样（示意，不是真结果）");
+    expect(preview).toHaveTextContent("示意");
+    expect(preview).toHaveTextContent("不会。维生素 C 顶多略缩短病程，谈不上「治感冒」；普通感冒也很少需要输液。");
+    expect(preview).toHaveTextContent("有对有错 · 命题 2 条 · 来源 10 条");
+    expect(preview).toHaveTextContent("支持");
+    expect(preview).toHaveTextContent("极端劳累时可能略缩短病程");
+    expect(preview).toHaveTextContent("检索片段（非逐字原文）：可略微缩短感冒病程");
+    expect(preview).toHaveTextContent("反驳");
+    expect(preview).toHaveTextContent("普通人谈不上治疗或预防");
+    expect(preview).toHaveTextContent("检索片段（非逐字原文）：不能预防或治疗普通感冒");
   });
 
   it("offers optional email login without blocking the desk", async () => {
@@ -722,7 +757,7 @@ describe("model picker (simplified BYO)", () => {
 
     expect(await screen.findByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
     expect(screen.queryByLabelText("模型选择")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "模型设置" })).toHaveAttribute("href", "/settings/api-key");
+    expect(screen.queryByRole("link", { name: "模型设置" })).not.toBeInTheDocument();
   });
 
   it("B6-b: /model-settings-preview does not show the model picker", async () => {

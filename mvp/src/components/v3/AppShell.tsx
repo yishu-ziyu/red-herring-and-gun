@@ -33,6 +33,8 @@ type AppShellProps = {
   onLoginClick?: () => void;
   onLogout?: () => void;
   onAccountClick?: () => void;
+  /** 只在「正在看一次调查 / 旧结果」时为 true；未登录空白输入态首页不重复出现「新查一条」。 */
+  showNewCase?: boolean;
   children: ReactNode;
 };
 
@@ -55,6 +57,7 @@ export function AppShell({
   onLoginClick,
   onLogout,
   onAccountClick,
+  showNewCase = false,
   children,
 }: AppShellProps) {
   const { copy } = useUiLang();
@@ -157,9 +160,11 @@ export function AppShell({
         <img src="/logo.png?v=20260615" alt="" className="app-shell-logo" />
         <span>红鲱鱼与枪</span>
       </div>
-      <button type="button" className="app-shell-new" onClick={onNewCase}>
-        {copy.newCheck}
-      </button>
+      {showNewCase ? (
+        <button type="button" className="app-shell-new" onClick={onNewCase}>
+          {copy.newCheck}
+        </button>
+      ) : null}
       <p className="app-shell-rail-label">{copy.recentLabel}</p>
       {cases.length === 0 ? (
         <p className="app-shell-rail-empty">{copy.recentEmpty}</p>
@@ -179,16 +184,11 @@ export function AppShell({
           ))}
         </ul>
       )}
-      <nav className="app-shell-rail-foot" aria-label={copy.accountNavLabel}>
-        <div className="app-shell-rail-dock">
-          {accountChip}
-          {account ? null : (
-            <a className="app-shell-rail-meta" href="/settings/api-key">
-              {copy.modelSettings}
-            </a>
-          )}
-        </div>
-      </nav>
+      {accountChip ? (
+        <nav className="app-shell-rail-foot" aria-label={copy.accountNavLabel}>
+          <div className="app-shell-rail-dock">{accountChip}</div>
+        </nav>
+      ) : null}
     </aside>
   );
 
@@ -223,9 +223,11 @@ export function AppShell({
     return (
       <div className="app-shell app-shell--narrow">
         <header className="app-shell-narrow-bar">
-          <button type="button" onClick={onNewCase}>
-            {copy.newCheck}
-          </button>
+          {showNewCase ? (
+            <button type="button" onClick={onNewCase}>
+              {copy.newCheck}
+            </button>
+          ) : null}
           <span>红鲱鱼与枪</span>
           {account ? (
             <button type="button" onClick={onAccountClick ?? onLogout}>
