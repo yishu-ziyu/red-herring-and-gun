@@ -1,0 +1,63 @@
+# 公开测试场景登记（工作包 B 第一版，2026-09-08）
+#
+# 用途：登记可用于公开回归与后续 #54 研究的场景。dossier 字段按任务书§8.1：
+# 原文与时间、适用范围、关键来源、允许答案范围、不可推出的结论、哪些问题本来就没有定论。
+#
+# 诚实声明：五类案例（明确错误/基本正确/半真半假/证据不足/真实冲突）的 reference
+# dossier 由 Validator 另行整理，本文件只登记结构与两条历史诊断输入。
+# 题目标签不得直接抄被测系统输出；「错误」类的判定必须先于测试由 dossier 独立成立。
+
+scenarios:
+  # ── 历史诊断输入（调查系统的诊断输入，不是医疗建议）────────────
+  - scenario_id: diag-vitamin-c-infusion
+    case_class: diagnostic  # 历史诊断输入，不属于五类
+    statement: 维生素C能治感冒，而且每次感冒都应当输液。
+    origin: #78 真实失败样本（real-after-76 specimen）；历史高风险输入，安排重复 live trials
+    适用范围: 普通人群日常预防/治疗感冒场景
+    关键来源: 待 Validator 按权威原始资料（维生素临床试验综述、静脉输液临床指南）补齐
+    允许答案范围: 证据链与推理边界正确即可；不预设整句必须 false；claim-2 不得在无证据链时被写成已证伪
+    不可推出的结论: 单个成分的判断不得无条件外推到另一成分；normative 建议不得因语感判错
+    本无定论之处: 维生素C对特定人群（如马拉松跑者）的效果文献存在分歧，允许保留未知
+    dossier_status: PENDING（专业准确性需权威来源核对，无法裁决的部分标 NEEDS_HUMAN 专家复核）
+
+  - scenario_id: diag-insulin-logic
+    case_class: diagnostic
+    statement: 吃饭会使血糖升高，胰岛素可以降低血糖，所以所有人每顿饭后都应该注射胰岛素。
+    origin: 历史桥接推理诊断输入（A∧B 推不出 C）
+    适用范围: 全人群「每顿饭后」的普遍性主张
+    关键来源: 待 Validator 补齐（血糖调节生理学、胰岛素适应症规范）
+    允许答案范围: 前提为真但桥接缺口（适应症/普遍适用性）必须可见；整句不得写成硬 true
+    不可推出的结论: 前提真不推出结论成立；不得把 normative 医疗建议当成已证伪的事实判断
+    本无定论之处: 无——桥接缺口本身是确定的未知边界
+    dossier_status: PENDING（同上）
+
+  # ── #54 五类案例（dossier 待 Validator 整理后逐条登记）─────────
+  - scenario_id: class-clearly-false
+    case_class: clearly-false
+    dossier_status: PENDING
+    note: 判定「明确错误」的依据必须来自 dossier 的独立权威来源，先于测试成立
+
+  - scenario_id: class-basically-true
+    case_class: basically-true
+    dossier_status: PENDING
+
+  - scenario_id: class-half-true-half-false
+    case_class: half-true-half-false
+    dossier_status: PENDING
+
+  - scenario_id: class-insufficient-evidence
+    case_class: insufficient-evidence
+    dossier_status: PENDING
+    note: 允许答案必须包含「现有证据不足」的合法输出，不得要求系统强行给方向
+
+  - scenario_id: class-real-conflict
+    case_class: real-conflict
+    dossier_status: PENDING
+    note: 冲突必须来自可比较情境下的实际材料分歧；争议有合理多解时保留可接受答案集合与未知
+
+# 保留题（未公开组合/语义等价改写）管理规则：
+# - 目前不存在保留题。#79 合入后由 Validator 生成并存放于 Implementer workspace 之外，
+#   isolation 按当前环境如实标 logical-only。
+# - 已公开用于修复的保留题降级为公开回归，再生成新的保留变式。
+# - 变式不得沿用原答案：事实含义、人群、时间范围、「每次/有时」量词变化即新任务。
+reserved_variants: []
