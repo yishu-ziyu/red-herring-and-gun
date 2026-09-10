@@ -27,7 +27,7 @@
 
 字体一条规则：衬线只给品牌与文书层（主标题、tagline、侧栏字标、卷宗头、判断正文），sans 给所有 UI（按钮、chips、表单、标签、meta），mono 给数字与链接。sans 一律 `var(--font-sans)`（Noto Sans SC 打头，与 Noto Serif SC 配对），不要裸写系统字体栈。
 
-判断色只认三个 token：`--verdict-true`（能信）/ `--verdict-false`（有问题）/ `--verdict-unclear`（查不清，mixed 与 unverified 都归它）。用法只做文字色、细线、淡底（color-mix 派生，标准浓度 6% 底 / 14% 高亮 / 20% 线），不做大面积色块；没有对应 token 的判断表达先加 token 再写样式，禁止裸写 rgba(22,163,74,x)。判定句规格：衬线 700、clamp(19px, 2.2vw, 24px)、墨色文字 + 判断色 62% 高亮下划线。原句沿用主线程的输入气泡；ResearchMemo 的 h1 是中性章节头，16px，不再添加原句证物框。判定句沿用当前 ResearchMemo 的 21–26px 衬线高亮样式。
+判断色只认三个 token：`--verdict-true`（能信）/ `--verdict-false`（有问题）/ `--verdict-unclear`（查不清，mixed 与 unverified 都归它）。用法只做文字色、细线、淡底（color-mix 派生，标准浓度 6% 底 / 14% 高亮 / 20% 线），不做大面积色块；没有对应 token 的判断表达先加 token 再写样式，禁止裸写 rgba(22,163,74,x)。判定句规格：衬线 700、clamp(19px, 2.2vw, 24px)、墨色文字，整句不加高亮——整句铺判断色等于用颜色替读者下结论，还会和命题级回溯抢同一个下划线槽位。判断类别用判断色文字（13.5px / 600）与规模行并排，颜色不单独表意；只对被更正的那一段做 14% 淡底 + 20% 细底线，标的是证据落点而不是判断本身。原句沿用主线程的输入气泡；ResearchMemo 的 h1 是中性章节头，16px，不再添加原句证物框。判定句沿用当前 ResearchMemo 的 21–26px 衬线规格。
 
 退役 token（历史引用走别名，新代码禁用）：`--zt-primary` → `--accent`（电光蓝已废）；`--agent-*` 角色四色 → 语义 token（rumor→unclear、fact→accent、source→ink-muted、report→true）；`--credibility-*` 五档 → 判断三色（high/good→true、medium→unclear、low/critical→false，五档三色相）。提示类文案（表单校验、额度、服务状态）用 `--verdict-unclear` 混墨的暗橙，破坏性错误才用 accent 红。排版 token `--type-*` 对齐桌面节奏 12 / 14 / 17 / 20 / 24，`--type-display` 只给品牌 hero。
 
