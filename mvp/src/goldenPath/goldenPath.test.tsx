@@ -21,7 +21,7 @@ import {
 } from "./fixtures";
 import { applyRunEvent, type RunState } from "./useInvestigationRun";
 import type { OrchestrateStreamEvent } from "../lib/agentExpansion";
-import { identifyEvidenceLinks, type EvidenceRole } from "./snapshotUi";
+import { identifyEvidenceLinks, sourceExcerpt, type EvidenceRole } from "./snapshotUi";
 
 vi.mock("../lib/agentExpansion", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/agentExpansion")>();
@@ -2123,6 +2123,124 @@ describe("Issue #66 post-#76 real SSE artifacts", () => {
       expect(span).toBeTruthy();
       expect(complete.originalClaim.slice(span!.start, span!.end)).toBe(claim.text);
     }
+  });
+});
+
+describe("结果页 P0/P1：调查备忘录视觉", () => {
+  it("M2：directAnswer 是结论第一句；judgment 不是 chip；CSS 用衬线 clamp", async () => {
+    renderCanvas(refutedComplete());
+    const hero = screen.getByLabelText("调查结论");
+    const answer = hero.querySelector("[data-gp-direct-answer]") as HTMLElement;
+    const judgment = hero.querySelector("[data-gp-judgment]") as HTMLElement;
+    expect(answer.textContent).toMatch(/^原句站不住/);
+    expect(answer.compareDocumentPosition(judgment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(judgment.classList.contains("gp-chip")).toBe(false);
+    expect(hero.querySelector(".gp-hero-kicker")).toBeNull();
+
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const css = readFileSync(join(process.cwd(), "src", "goldenPath", "golden-path.css"), "utf8");
+    const answerRule = css.match(/\.gp-hero-answer\s*\{([^}]*)\}/);
+    expect(answerRule![1]).toContain("var(--gp-serif)");
+    expect(answerRule![1]).toContain("clamp(19px, 2.2vw, 24px)");
+    expect(answerRule![1]).toContain("font-weight: 700");
+    expect(answerRule![1]).toContain("var(--gp-ink-primary)");
+    expect(answerRule![1]).not.toMatch(/background:\s*(?!transparent)/);
+  });
+
+  it("M3：有 excerpt 默认展示原字段；无 excerpt 不编造、不留空壳", () => {
+    const withExcerpt = refutedComplete();
+    expect(withExcerpt.sources[0]?.excerpt).toBe("官方声明未提及隔夜水致癌");
+    renderCanvas(withExcerpt);
+    const excerpt = document.querySelector("[data-gp-evidence-excerpt]") as HTMLElement;
+    expect(excerpt).toBeTruthy();
+    expect(excerpt.textContent).toBe("官方声明未提及隔夜水致癌");
+    expect(excerpt.textContent).not.toMatch(/根据模型|可以认为|总结来说/);
+    cleanup();
+
+    const bare = {
+      ...withExcerpt,
+      sources: withExcerpt.sources.map(({ excerpt: _excerpt, ...source }) => source),
+    };
+    renderCanvas(bare);
+    expect(document.querySelector("[data-gp-evidence-excerpt]")).toBeNull();
+    expect(document.querySelector(".gp-evidence-excerpt")).toBeNull();
+    expect(document.querySelector(".gp-evidence-title")?.textContent).toContain("世卫组织辟谣平台");
+  });
+
+  it("sourceExcerpt 只回传已有摘录，空白当缺失", () => {
+    expect(sourceExcerpt({ id: "s", url: "https://a.example", title: "t", excerpt: "  原句  " })).toBe("原句");
+    expect(sourceExcerpt({ id: "s", url: "https://a.example", title: "t", excerpt: "   " })).toBe("");
+    expect(sourceExcerpt({ id: "s", url: "https://a.example", title: "t" })).toBe("");
+    expect(sourceExcerpt(undefined)).toBe("");
+  });
+
+  it("M4：证据行左侧关系是文字+符号；整行仍打开抽屉", async () => {
+    renderCanvas(refutedComplete());
+    const row = document.querySelector(".gp-evidence-item") as HTMLButtonElement;
+    const relation = row.querySelector("[data-gp-relation]") as HTMLElement;
+    expect(relation).toBeTruthy();
+    expect(relation.classList.contains("gp-chip")).toBe(false);
+    expect(relation.textContent).toMatch(/●\s*反驳/);
+    expect(row.querySelector(".gp-evidence-relation-label")?.textContent).toBe("反驳");
+    fireEvent.click(row);
+    await waitFor(() => {
+      expect(document.querySelector(".gp-drawer--source")).toBeTruthy();
+    });
+    expect(document.querySelector(".gp-drawer--source")?.getAttribute("data-gp-role")).toBe("contradict");
+  });
+
+  it("相关行左侧写「相关」，分组标题仍是「相关材料」", () => {
+    const mixed = mixedComplete();
+    mixed.sources = [
+      ...mixed.sources,
+      { id: "src-context", url: "https://context.example/note", title: "背景材料", excerpt: "只提供背景，不单独支撑或反驳。" },
+    ];
+    mixed.claims[0]!.evidence.push({ sourceId: "src-context", role: "context-only" });
+    renderCanvas(mixed);
+    const row = document.querySelector('.gp-evidence-item[data-gp-role="context-only"]') as HTMLElement;
+    expect(row.querySelector(".gp-evidence-relation-label")?.textContent).toBe("相关");
+    expect(row.querySelector("[data-gp-evidence-excerpt]")?.textContent).toBe("只提供背景，不单独支撑或反驳。");
+    expect(document.querySelector('[data-gp-group-role="context-only"]')?.textContent).toContain("相关材料");
+  });
+
+  it("M5：抽屉有摘录时摘录块在前且带强调类；无摘录整节不出现", async () => {
+    renderCanvas(refutedComplete());
+    fireEvent.click(document.querySelector(".gp-evidence-item")!);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
+    const excerpt = drawer.querySelector('[data-gp-source-section="excerpt"]') as HTMLElement;
+    const claim = drawer.querySelector('[data-gp-source-section="claim"]') as HTMLElement;
+    expect(excerpt.classList.contains("is-excerpt-lead")).toBe(true);
+    expect(excerpt.textContent).toContain("官方声明未提及隔夜水致癌");
+    expect(excerpt.compareDocumentPosition(claim) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(drawer.querySelector("[data-gp-source-close]")!);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
+    cleanup();
+
+    const bare = refutedComplete();
+    renderCanvas({
+      ...bare,
+      sources: bare.sources.map(({ excerpt: _excerpt, ...source }) => source),
+    });
+    fireEvent.click(document.querySelector(".gp-evidence-item")!);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
+    const empty = document.querySelector(".gp-drawer--source") as HTMLElement;
+    expect(empty.querySelector('[data-gp-source-section="excerpt"]')).toBeNull();
+    expect(empty.querySelector(".gp-source-excerpt")).toBeNull();
+  });
+
+  it("M6 CSS：证据行有固定关系栏与 44px 点击高度；判断句不对整句铺色", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const css = readFileSync(join(process.cwd(), "src", "goldenPath", "golden-path.css"), "utf8");
+    expect(css).toContain(".gp-evidence-relation");
+    expect(css).toContain(".gp-evidence-excerpt");
+    expect(css).toContain(".gp-source-block.is-excerpt-lead");
+    const item = css.match(/\.gp-evidence-item\s*\{([^}]*)\}/);
+    expect(item![1]).toMatch(/min-height:\s*44px/);
+    expect(css).toMatch(/\.gp-hero\[data-gp-conclusion-judgment="supported"\] \.gp-hero-answer/);
+    expect(css).not.toMatch(/\.gp-hero-answer[^{]*\{[^}]*background:\s*(linear-gradient|#)/);
   });
 });
 

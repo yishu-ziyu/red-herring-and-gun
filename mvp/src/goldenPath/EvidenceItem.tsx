@@ -1,11 +1,11 @@
 /**
- * EvidenceItem — 一条材料行：角色 + 标题 + 域名，点击进入来源下钻。
- * unassessed（待核对）保持中性，绝不能看起来像支持/反驳。
- * Issue #63：同一节点上做 layout 归位，不用 clone，也不用 opacity 消失再出现。
+ * EvidenceItem — 一条材料行：左侧关系（文字+符号）+ 标题 + 已有摘录 + 域名。
+ * 整行进入来源下钻。unassessed（待核对）保持中性，绝不能看起来像支持/反驳。
+ * 摘录只展示快照已有字段，不编造。Issue #63：同一节点上做 layout 归位。
  */
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { domainOf, ROLE_LABEL, ROLE_TONE, type EvidenceIdentityKind } from "./snapshotUi";
+import { domainOf, ROLE_LABEL, ROLE_ROW_LABEL, roleGlyph, sourceExcerpt, type EvidenceIdentityKind } from "./snapshotUi";
 import type { InvestigationEvidenceLink, InvestigationSource } from "@rhg/core/investigation";
 
 /** 与 `--gp-motion-layout: 280ms` / `--gp-ease-out` 对齐（260–360ms 窗）。 */
@@ -40,6 +40,8 @@ export function EvidenceItem({
   const title = source?.title || source?.url || link.sourceId;
   const unreachable = source?.reachable === false;
   const roleLabel = ROLE_LABEL[link.role];
+  const rowLabel = ROLE_ROW_LABEL[link.role];
+  const excerpt = sourceExcerpt(source);
 
   return (
     <motion.button
@@ -68,8 +70,9 @@ export function EvidenceItem({
         onSelect(link, source, event.currentTarget);
       }}
     >
-      <span className={`gp-chip gp-chip--${ROLE_TONE[link.role]}`} aria-hidden="true">
-        {ROLE_LABEL[link.role]}
+      <span className={`gp-evidence-relation is-${link.role}`} data-gp-relation={link.role} aria-hidden="true">
+        <span className={`gp-role-glyph is-${link.role}`}>{roleGlyph(link.role)}</span>
+        <span className="gp-evidence-relation-label">{rowLabel}</span>
       </span>
       <div className="gp-evidence-body">
         <div className="gp-evidence-header">
@@ -84,8 +87,10 @@ export function EvidenceItem({
             </span>
           ) : null}
         </div>
-        {source?.excerpt ? (
-          <p className="gp-evidence-excerpt">{source.excerpt}</p>
+        {excerpt ? (
+          <blockquote className="gp-evidence-excerpt" data-gp-evidence-excerpt>
+            {excerpt}
+          </blockquote>
         ) : null}
       </div>
     </motion.button>
