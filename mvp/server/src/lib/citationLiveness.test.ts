@@ -165,4 +165,104 @@ describe("pruneDeadCitations", () => {
     const result = await pruneDeadCitations(report, { liveness: new Map() });
     expect(result.pruned).toBe(false);
   });
+
+  it("evidenceChain-only URL is a liveness candidate; all-dead layer keeps [] and drops markers", async () => {
+    const deadUrl = "https://dead.example/chain-only";
+    const report: Record<string, unknown> = {
+      conclusion: "结论无引用。",
+      citationSources: [],
+      subclaimVerdicts: [],
+      evidenceChain: [
+        {
+          layer: "检索",
+          finding: "f",
+          evidence: "链上材料见[1]。",
+          sourceRefs: [deadUrl],
+        },
+      ],
+    };
+    const result = await pruneDeadCitations(report, {
+      liveness: new Map([[deadUrl, "dead"]]),
+    });
+    expect(result.pruned).toBe(true);
+    expect(result.deadUrls).toEqual([deadUrl]);
+    const layers = report.evidenceChain as Array<Record<string, unknown>>;
+    expect(layers[0].sourceRefs).toEqual([]);
+    expect(String(layers[0].evidence)).not.toContain("[1]");
+    expect(JSON.stringify(report)).not.toContain(deadUrl);
+  });
+
+  it("prunes contradictingSources symmetrically with dual-bucket numbering", async () => {
+    const report: Record<string, unknown> = {
+      conclusion: "A 成立[1]，但有反证[2][3]。",
+      citationSources: [
+        { url: "https://alive.example/ok", title: "活链", snippet: "s" },
+        { url: "https://dead.example/gone", title: "死链", snippet: "s" },
+        { url: "https://alive.example/other", title: "活链2", snippet: "s" },
+      ],
+      subclaimVerdicts: [
+        {
+          claimAtom: "原子A",
+          evidence: "支持见[1]，反驳见[2][3]。",
+          supportingSources: [{ url: "https://alive.example/ok", title: "活链", snippet: "s" }],
+          contradictingSources: [
+            { url: "https://dead.example/gone", title: "死链", snippet: "s" },
+            { url: "https://alive.example/other", title: "活链2", snippet: "s" },
+          ],
+        },
+      ],
+      evidenceChain: [],
+    };
+    const result = await pruneDeadCitations(report, {
+      liveness: new Map([
+        ["https://alive.example/ok", "alive"],
+        ["https://dead.example/gone", "dead"],
+        ["https://alive.example/other", "alive"],
+      ]),
+    });
+    expect(result.pruned).toBe(true);
+    const verdicts = report.subclaimVerdicts as Array<Record<string, unknown>>;
+    // 反证桶独立过滤：死链出、活链留，编号为 support 之后顺延（[2][3]→[2]）
+    expect(
+      (verdicts[0].contradictingSources as Array<{ url: string }>).map((s) => s.url)
+    ).toEqual(["https://alive.example/other"]);
+    expect(verdicts[0].evidence).toBe("支持见[1]，反驳见[2]。");
+  });
+
+  it("keeps the same URL in both buckets as two relations when alive", async () => {
+    const shared = "https://alive.example/shared";
+    const report: Record<string, unknown> = {
+      conclusion: "材料两面[1][2]，另见[3]。",
+      citationSources: [
+        { url: shared, title: "双面材料", snippet: "s" },
+        { url: shared, title: "双面材料", snippet: "s" },
+        { url: "https://dead.example/gone", title: "死链", snippet: "s" },
+      ],
+      subclaimVerdicts: [
+        {
+          claimAtom: "原子A",
+          evidence: "支持见[1]，反驳见[2]。",
+          supportingSources: [{ url: shared, title: "双面材料", snippet: "s" }],
+          contradictingSources: [{ url: shared, title: "双面材料", snippet: "s" }],
+        },
+      ],
+      evidenceChain: [],
+    };
+    const result = await pruneDeadCitations(report, {
+      liveness: new Map([
+        [shared, "alive"],
+        ["https://dead.example/gone", "dead"],
+      ]),
+    });
+    // 剪枝真实发生，但逐桶处理不得跨桶合并 stance：同 URL 两条 relation 都保留
+    expect(result.pruned).toBe(true);
+    const verdicts = report.subclaimVerdicts as Array<Record<string, unknown>>;
+    expect(
+      (verdicts[0].supportingSources as Array<{ url: string }>).map((s) => s.url)
+    ).toEqual([shared]);
+    expect(
+      (verdicts[0].contradictingSources as Array<{ url: string }>).map((s) => s.url)
+    ).toEqual([shared]);
+    expect(verdicts[0].evidence).toBe("支持见[1]，反驳见[2]。");
+  });
 });

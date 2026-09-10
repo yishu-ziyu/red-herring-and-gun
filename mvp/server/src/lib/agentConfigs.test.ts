@@ -150,6 +150,38 @@ describe("subclaimVerdicts / claimAtoms 数据契约", () => {
     expect(mergeSubclaimVerdicts(undefined, [{ claimAtom: "X", verdict: "true" }])).toEqual([]);
   });
 
+  it("mergeSubclaimVerdicts：方向契约（Review 5128449568 Blocker 3）——true 缺支撑桶收 unverified；false 由 #74 alignment 先改桶后保留", () => {
+    const claimAtoms = ["原子A", "原子B"];
+    const verdicts = [
+      {
+        // true + 仅反证桶 URL：错桶不算有据 → unverified（待补证）
+        claimAtom: "原子A",
+        verdict: "true",
+        evidence: "E",
+        boundary: "B",
+        supportingSources: [],
+        contradictingSources: [{ url: "https://a.example.com", title: "A", snippet: "s" }],
+      },
+      {
+        // false + 仅支撑桶 URL：alignFalseEvidenceBuckets 先改桶 → contradict 有 URL → false 保留
+        claimAtom: "原子B",
+        verdict: "false",
+        evidence: "E",
+        boundary: "B",
+        supportingSources: [{ url: "https://b.example.com", title: "B", snippet: "s" }],
+        contradictingSources: [],
+      },
+    ];
+    const result = mergeSubclaimVerdicts(claimAtoms, verdicts);
+    const a = result.find((r) => r.claimAtom === "原子A");
+    expect(a?.verdict).toBe("unverified");
+    expect(a?.evidenceGaps.some((g) => g.includes("待补证"))).toBe(true);
+    const b = result.find((r) => r.claimAtom === "原子B");
+    expect(b?.verdict).toBe("false");
+    expect(b?.supportingSources ?? []).toHaveLength(0);
+    expect(b?.contradictingSources ?? []).toHaveLength(1);
+  });
+
   it("buildAgentInput：fact_checker 透传 claimAtoms，report_composer 透传 merge 后的 subclaimVerdicts", () => {
     const previousSteps = [
       {

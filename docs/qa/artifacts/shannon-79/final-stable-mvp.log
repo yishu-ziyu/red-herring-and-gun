@@ -1,0 +1,314 @@
+
+> red-herring-and-gun@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.7 /private/tmp/rhg-79-shannon/mvp
+
+Retired. Live deploy is: ./ops.sh deploy --yes
+That command ships the current workspace (dev), not origin main.
+Retired. Live deploy is: ./ops.sh deploy --yes
+Run it from the repo root. Do not use this script.
+ ❯ src/legacy/LegacyDesk.test.tsx (29 tests | 1 failed) 12775ms
+     × uses the clean analysis shell for the real workspace too 1223ms
+[knowledgeBase] red-herring-knowledge-cases 写入失败，尝试裁剪重试 QuotaExceededError: The quota has been exceeded.
+[knowledgeBase] red-herring-knowledge-cases 写入失败，尝试裁剪重试 QuotaExceededError: The quota has been exceeded.
+[knowledgeBase] red-herring-knowledge-cases 写入失败，尝试裁剪重试 QuotaExceededError: The quota has been exceeded.
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/legacy/LegacyDesk.test.tsx > real analysis workspace > uses the clean analysis shell for the real workspace too
+TestingLibraryElementError: Unable to find an element by: [data-testid="apodex-run"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"app-shell"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mdata-testid[39m=[32m"desk-shell"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<aside[39m
+            [33maria-label[39m=[32m"历史卷宗"[39m
+            [33mclass[39m=[32m"app-shell-rail"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"app-shell-rail-brand"[39m
+            [36m>[39m
+              [36m<img[39m
+                [33malt[39m=[32m""[39m
+                [33mclass[39m=[32m"app-shell-logo"[39m
+                [33msrc[39m=[32m"/logo.png?v=20260615"[39m
+              [36m/>[39m
+              [36m<span>[39m
+                [0m红鲱鱼与枪[0m
+              [36m</span>[39m
+            [36m</div>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"app-shell-new"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m新查一条[0m
+            [36m</button>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"app-shell-rail-label"[39m
+            [36m>[39m
+              [0m最近核查[0m
+            [36m</p>[39m
+            [36m<ul[39m
+              [33mclass[39m=[32m"app-shell-case-list"[39m
+            [36m>[39m
+              [36m<li>[39m
+                [36m<button[39m
+                  [33mclass[39m=[32m"app-shell-case is-active"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [36m<strong>[39m
+                    [0m隔夜菜会致癌，吃了等于吃毒药[0m
+                  [36m</strong>[39m
+                  [36m<em>[39m
+                    [0m核查中[0m
+                  [36m</em>[39m
+                [36m</button>[39m
+              [36m</li>[39m
+            [36m</ul>[39m
+            [36m<nav[39m
+              [33maria-label[39m=[32m"账号与设置"[39m
+              [33mclass[39m=[32m"app-shell-rail-foot"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"app-shell-rail-dock"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33mclass[39m=[32m"app-shell-login"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"app-shell-account-mark"[39m
+                  [36m/>[39m
+                  [0m登录[0m
+                [36m</button>[39m
+                [36m<a[39m
+                  [33mclass[39m=[32m"app-shell-rail-meta"[39m
+                  [33mhref[39m=[32m"/settings/api-key"[39m
+                [36m>[39m
+                  [0m模型设置[0m
+                [36m</a>[39m
+              [36m</div>[39m
+            [36m</nav>[39m
+          [36m</aside>[39m
+        [36m</div>[39m
+        [36m<div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"app-shell-center"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"app-phase-shell phase-enter"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mrole[39m=[32m"status"[39m
+                [33mstyle[39m=[32m"display: grid; min-height: 240px; place-items: center; color: rgb(119, 115, 107); font-size: 14px;"[39m
+              [36m>[39m
+                [0m正在打开核查工作台…[0m
+              [36m</div>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div>[39m
+          [36m<aside[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33maria-label[39m=[32m"核查卷宗"[39m
+            [33mclass[39m=[32m"app-shell-dossier"[39m
+            [33minert[39m=[32m""[39m
+          [36m>[39m
+            [36m<header[39m
+              [33mclass[39m=[32m"app-shell-dossier-head"[39m
+            [36m>[39m
+              [36m<strong>[39m
+                [0m隔夜菜会致癌，吃了等于吃毒药[0m
+              [36m</strong>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"app-shell-dossier-close"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [0m收起[0m
+              [36m</button>[39m
+            [36m</header>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"app-shell-dossier-stage"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"app-shell-paper"[39m
+              [36m>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"app-shell-paper-empty"[39m
+                [36m>[39m
+                  [0m查完的判断会出现在这里。[0m
+                [36m</p>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+          [36m</aside>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"app-shell"[39m
+    [36m>[39m
+      [36m<div[39m
+        [33mdata-testid[39m=[32m"desk-shell"[39m
+      [36m>[39m
+        [36m<div>[39m
+          [36m<aside[39m
+            [33maria-label[39m=[32m"历史卷宗"[39m
+            [33mclass[39m=[32m"app-shell-rail"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"app-shell-rail-brand"[39m
+            [36m>[39m
+              [36m<img[39m
+                [33malt[39m=[32m""[39m
+                [33mclass[39m=[32m"app-shell-logo"[39m
+                [33msrc[39m=[32m"/logo.png?v=20260615"[39m
+              [36m/>[39m
+              [36m<span>[39m
+                [0m红鲱鱼与枪[0m
+              [36m</span>[39m
+            [36m</div>[39m
+            [36m<button[39m
+              [33mclass[39m=[32m"app-shell-new"[39m
+              [33mtype[39m=[32m"button"[39m
+            [36m>[39m
+              [0m新查一条[0m
+            [36m</button>[39m
+            [36m<p[39m
+              [33mclass[39m=[32m"app-shell-rail-label"[39m
+            [36m>[39m
+              [0m最近核查[0m
+            [36m</p>[39m
+            [36m<ul[39m
+              [33mclass[39m=[32m"app-shell-case-list"[39m
+            [36m>[39m
+              [36m<li>[39m
+                [36m<button[39m
+                  [33mclass[39m=[32m"app-shell-case is-active"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [36m<strong>[39m
+                    [0m隔夜菜会致癌，吃了等于吃毒药[0m
+                  [36m</strong>[39m
+                  [36m<em>[39m
+                    [0m核查中[0m
+                  [36m</em>[39m
+                [36m</button>[39m
+              [36m</li>[39m
+            [36m</ul>[39m
+            [36m<nav[39m
+              [33maria-label[39m=[32m"账号与设置"[39m
+              [33mclass[39m=[32m"app-shell-rail-foot"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"app-shell-rail-dock"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33mclass[39m=[32m"app-shell-login"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"app-shell-account-mark"[39m
+                  [36m/>[39m
+                  [0m登录[0m
+                [36m</button>[39m
+                [36m<a[39m
+                  [33mclass[39m=[32m"app-shell-rail-meta"[39m
+                  [33mhref[39m=[32m"/settings/api-key"[39m
+                [36m>[39m
+                  [0m模型设置[0m
+                [36m</a>[39m
+              [36m</div>[39m
+            [36m</nav>[39m
+          [36m</aside>[39m
+        [36m</div>[39m
+        [36m<div>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"app-shell-center"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"app-phase-shell phase-enter"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mrole[39m=[32m"status"[39m
+                [33mstyle[39m=[32m"display: grid; min-height: 240px; place-items: center; color: rgb(119, 115, 107); font-size: 14px;"[39m
+              [36m>[39m
+                [0m正在打开核查工作台…[0m
+              [36m</div>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+        [36m</div>[39m
+        [36m<div>[39m
+          [36m<aside[39m
+            [33maria-hidden[39m=[32m"true"[39m
+            [33maria-label[39m=[32m"核查卷宗"[39m
+            [33mclass[39m=[32m"app-shell-dossier"[39m
+            [33minert[39m=[32m""[39m
+          [36m>[39m
+            [36m<header[39m
+              [33mclass[39m=[32m"app-shell-dossier-head"[39m
+            [36m>[39m
+              [36m<strong>[39m
+                [0m隔夜菜会致癌，吃了等于吃毒药[0m
+              [36m</strong>[39m
+              [36m<button[39m
+                [33mclass[39m=[32m"app-shell-dossier-close"[39m
+                [33mtype[39m=[32m"button"[39m
+              [36m>[39m
+                [0m收起[0m
+              [36m</button>[39m
+            [36m</header>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"app-shell-dossier-stage"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"app-shell-paper"[39m
+              [36m>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"app-shell-paper-empty"[39m
+                [36m>[39m
+                  [0m查完的判断会出现在这里。[0m
+                [36m</p>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+          [36m</aside>[39m
+        [36m</div>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/mvp/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../Users/mahaoxuan/Desktop/黑客松/红鲱鱼与枪/mvp/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ startRealAnalysis src/legacy/LegacyDesk.test.tsx:143:25
+    141|     fireEvent.click(screen.getByRole("button", { name: /开始核查/ }));
+    142|
+    143|     expect(await screen.findByTestId("apodex-run")).toBeInTheDocument(…
+       |                         ^
+    144|     return rendered;
+    145|   }
+ ❯ src/legacy/LegacyDesk.test.tsx:148:27
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 97 passed | 1 skipped (99)
+      Tests  1 failed | 1101 passed | 1 skipped (1103)
+   Start at  11:43:14
+   Duration  56.20s (transform 9.81s, setup 20.23s, import 46.93s, tests 50.15s, environment 230.08s)
+

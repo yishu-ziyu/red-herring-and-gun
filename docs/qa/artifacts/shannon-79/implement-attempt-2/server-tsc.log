@@ -1,0 +1,11 @@
+src/lib/checkQuota.ts(14,8): error TS6059: File '/private/tmp/rhg-79-shannon/mvp/src/lib/checkQuota.ts' is not under 'rootDir' '/private/tmp/rhg-79-shannon/mvp/server'. 'rootDir' is expected to contain all source files.
+  The file is in the program because:
+    Imported via "../../../src/lib/checkQuota.js" from file '/private/tmp/rhg-79-shannon/mvp/server/src/lib/checkQuota.ts'
+    Imported via "../../../src/lib/checkQuota.js" from file '/private/tmp/rhg-79-shannon/mvp/server/src/lib/accountStore.ts'
+src/lib/emailAuthHandlers.ts(18,58): error TS6059: File '/private/tmp/rhg-79-shannon/mvp/src/lib/accountIdentity.ts' is not under 'rootDir' '/private/tmp/rhg-79-shannon/mvp/server'. 'rootDir' is expected to contain all source files.
+src/lib/piBridge/piModels.ts(8,35): error TS2307: Cannot find module '@earendil-works/pi-coding-agent' or its corresponding type declarations.
+src/lib/piBridge/piSession.ts(15,8): error TS2307: Cannot find module '@earendil-works/pi-coding-agent' or its corresponding type declarations.
+src/lib/piBridge/piTools.ts(9,35): error TS2307: Cannot find module '@earendil-works/pi-coding-agent' or its corresponding type declarations.
+src/lib/piBridge/piTools.ts(32,23): error TS7006: Parameter '_toolCallId' implicitly has an 'any' type.
+src/lib/piBridge/piTools.ts(69,23): error TS7006: Parameter '_toolCallId' implicitly has an 'any' type.
+src/lib/piBridge/piTools.ts(110,23): error TS7006: Parameter '_toolCallId' implicitly has an 'any' type.

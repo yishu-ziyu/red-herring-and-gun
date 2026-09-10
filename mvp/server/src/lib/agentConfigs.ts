@@ -445,10 +445,12 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "【可核查性判定 / claimAtomTypes 与 stanceClaimType — 强制】",
       "对每个 claimAtoms 原子，必须用 claimAtomTypes 逐条给出 verifiable（是否可核查）与 type（类型）。",
       "硬不可核查（verifiable=false，不进入事实核查范畴，只会被原位灰标标注为立场型，不订真/假）：",
-      "- value 价值判断：对事物价值的评价（\"有意义/无意义\"\"好/坏\"\"应该/不应该\"）。示例如\"文科教育正在失去意义\"若指价值立场。",
-      "- normative 规范命题：主张某人/某机构应当如何（\"政府应该禁止 X\"）。",
+      "- value 价值判断：对事物价值的纯评价或偏好立场（\"有意义/无意义\"\"好/坏\"），没有任何外部客观标准决定其真伪。示例如\"文科教育正在失去意义\"若指价值立场。",
+      "- normative 规范命题（无外部标准形态）：纯政策/价值偏好（\"政府应该禁止 X\"\"这部电影应该获奖\"），没有任何公开规则决定其真伪。",
       "可核查（verifiable=true，正常进入逐条判定）：",
       "- fact 事实陈述、causal 因果推断、comparison 比较命题、concept 概念定义。",
+      "- normative 规范命题（有外部标准形态）：这个「应当」存在明确的外部可核查标准——医学指南、适应症、药品说明书、法规、行业标准、技术规范、明确公开规则——可以由这些标准支持或反驳。此时 verifiable=true，且 type 仍写 normative（不得改成 fact/causal；type 描述语言行为，verifiable 描述有没有外部依据可查，两者是不同维度）。示例：\"每次感冒都应当输液\"可由医学指南与适应症核查；\"这个药应该每天服三次\"可由药品说明书核查。",
+      "- 判断依据是语义上「有没有明确外部标准」，不是「应该/应当/禁止」等词面；同一词面两种形态都可能，逐条独立判断并按上方定义归类。",
       "",
       "灰度区判定规则（按断言形态，不硬性归集）：",
       "- 个人经验 personal：凡断言形态是\"某人/某群体 报告/声称 某种经验或反应\"，可核查（去查是否有这些报告），verifiable=true；凡属说话者第一人称主观体验或未经证实的普遍化主观判断，不可核查，verifiable=false。示例：\"大量患者报告服用 X 后出现失眠\"→可核查（查是否有这些报告）；\"这药对我失眠很有效\"→不可核查。注意：即使机制未知（可能是安慰剂效应），只要形态是\"患者报告了反应\"就可核查\"是否有报告\"，但绝不能核查为\"该反应是药理作用\"（那是 causal，另判）。",
@@ -456,13 +458,13 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "- 能力与风险断言按事实或因果标可查，不按预测：凡说现在吃/用/点什么会怎样（手机会中毒、吃了会致癌、喝了能排毒），都是在断言当下成立的能力或因果，verifiable=true，type 按 fact/causal。只有纯未来、无现在抓手的（\"未来三年就业会恶化\"）才按 prediction 判不可查。",
       "- 预测 prediction：先找现在能点开的出处，再标明出处撑不到哪。凡有公开承诺、正式文件、已发布预测、已经作出的决定、规划/批复/立项等现在时抓手，verifiable=true（去查抓手在不在；不能把未来写成已经发生）。示例：\"某公司未来三年营收将增长十倍\"→可核查（追有没有公开承诺）；\"某项政策已经正式确定并将立即实施\"→可核查（追有没有正式文件）；\"某地要建地铁\"→可核查（追有没有规划/批复，不要因为动词是「将/要」就跳过）。凡无现在时抓手、只是对世界的裸预测（\"未来三年就业会恶化\"），verifiable=false。不得把原子改写成「作出过承诺」等原句未声称的命题。",
       "",
-      "整句判定 stanceClaimType：对整条 claim 判 type、verifiable 与 reason。若整句为纯价值/规范型说法，verifiable=false（报告顶部会标注\"立场型\"横幅），但仍会走完整核查流程，可核查部分照常判定。整句为预测时：有现在时抓手则 verifiable=true，不要因为动词是「将」就整句标立场型。",
+      "整句判定 stanceClaimType：对整条 claim 判 type、verifiable 与 reason。若整句为纯价值/规范型说法（各命题都没有外部可核查标准），verifiable=false（报告顶部会标注\"立场型\"横幅），但仍会走完整核查流程，可核查部分照常判定；含外部标准可核查命题的整句按可核查判。整句为预测时：有现在时抓手则 verifiable=true，不要因为动词是「将」就整句标立场型。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
       "{\n  \"claimAtoms\": [\"可核查原子命题1\", \"可核查原子命题2\"],\n  \"claimAtomTypes\": [\n    {\"text\": \"可核查原子命题1\", \"verifiable\": true, \"type\": \"fact\"},\n    {\"text\": \"可核查原子命题2\", \"verifiable\": false, \"type\": \"value\"}\n  ],\n  \"stanceClaimType\": {\"verifiable\": false, \"type\": \"value\", \"reason\": \"整句为价值判断，不适用于事实核查\"},\n  \"rumorIndicators\": [\"谣言特征1\", \"谣言特征2\"],\n  \"severity\": \"medium\",\n  \"analysis\": \"详细分析说明\",\n  \"detectedPatterns\": [\"匹配的模式1\", \"匹配的模式2\"]\n}",
       "",
       "severity 必须是 'low'、'medium'、'high' 之一。",
-      "claimAtomTypes 的 text 必须与 claimAtoms 逐一对应；value/normative 的 verifiable 必须为 false；fact/causal/comparison/concept 的 verifiable 必须为 true；prediction/personal 按上方灰度规则，不得一律标 false。",
+      "claimAtomTypes 的 text 必须与 claimAtoms 逐一对应；纯价值/政策偏好型 value/normative 的 verifiable 必须为 false；有明确外部可核查标准的 normative 必须 verifiable=true 且 type 保持 normative；fact/causal/comparison/concept 的 verifiable 必须为 true；prediction/personal 按上方灰度规则，不得一律标 false。",
     ].join("\n"),
     responseSchema: rumorDetectorSchema,
   },
@@ -625,10 +627,19 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "- 可选 search360 搜索摘要与来源",
       "- evidenceInputs：可放入证据链的搜索来源、反证、缺口和已审计来源",
       "- factCheck.subclaimVerdicts：逐条判定清单（claimAtom/verdict/evidence/boundary）",
+      "- nonVerifiableAtoms：立场型 / 不适用真/假判断的命题清单",
+      "- wholeClaimAudit：整句审计上下文（整句成立到哪里、桥接缺口）——只作结论强度约束，不是证据",
       "",
       "【逐条判定清单渲染 / subclaimVerdicts — 强制】",
       "把 subclaimVerdicts 作为报告的一部分渲染，逐条列出每个 claimAtom 的判定（verdict）、证据与边界，不得遗漏、不得编造输入中不存在的原子。",
       "若输入 FactChecker 已给出 supportingSources / contradictingSources / evidence 中的 [n]，应保留可点击来源，并保证本条 evidence 的 [n] 仍对本条 supportingSources 再 contradictingSources 的合并顺序有效。不得把反驳材料改写入 supportingSources。",
+      "【结论收权 / 逐条状态对齐 — 强制】",
+      "Summary 不能比逐条证据层更「知道答案」：",
+      "1. 输入 nonVerifiableAtoms 列出的是立场型 / 不适用真/假判断的命题：不得在 conclusion、summaryForPublic、evidenceChain 中把它们写成已证伪、已证实、或「缺乏证据支持因此错误」；它们只能按「立场型 / 不适用真/假判断」表述，也不得计入 verdictType 的真假方向。",
+      "2. 判定为 unverified、或没有任何绑定来源的命题：不得写成已证伪或已证实。",
+      "3. 各命题成立不等于整句结论成立：输入 wholeClaimAudit.missingJustifications 非空时，说明从各命题到整句结论之间还有未补齐的桥接依据——结论只能写到证据撑到的层级，把推不出的部分写进边界（boundary / cannotSay），verdictType 相应保守。",
+      "4. verdictType 只能由 subclaimVerdicts 中有绑定来源的判定支撑：没有带来源的 false 判词不得写整句 false；没有带来源的 true 判词不得写整句 true。",
+      "",
       "预测类原子：结论只能写现在能点开的出处撑到哪；不得把未来写成已经发生；没有公开承诺或正式文件时写还查不清，不写假。",
       "",
       "【句内引用编号 / Inline citations — 强制】",
@@ -803,6 +814,18 @@ export function buildAgentInput(
         claim,
         task: "生成综合核查报告",
         crossExam: [...previousSteps].reverse().find(s => s.agent === "cross_examiner")?.output,
+        // Issue #78 结论收权输入：立场型命题清单 + 整句审计上下文（约束结论强度，不是证据）。
+        nonVerifiableAtoms: (() => {
+          const types = rumorStep?.output?.claimAtomTypes;
+          if (!Array.isArray(types)) return [];
+          return types
+            .map((t) => (t && typeof t === "object" && !Array.isArray(t) ? (t as Record<string, unknown>) : null))
+            .filter((t): t is Record<string, unknown> =>
+              t !== null && t.verifiable === false && typeof t.text === "string" && t.text.length > 0
+            )
+            .map((t) => ({ text: String(t.text).slice(0, 180), type: String(t.type ?? "").slice(0, 40) }));
+        })(),
+        wholeClaimAudit: rumorStep?.output?.wholeClaimAudit,
         rumorAnalysis: {
           claimAtoms: compactStrings(rumorStep?.output?.claimAtoms, 12, 180),
           rumorTypes: compactStrings(rumorStep?.output?.rumorTypes, 4, 80),

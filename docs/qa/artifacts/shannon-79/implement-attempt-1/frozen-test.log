@@ -1,0 +1,158 @@
+
+> red-herring-and-gun@0.1.0 test
+> vitest run server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts
+
+
+ RUN  v4.1.7 /private/tmp/rhg-79-shannon/mvp
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts (17 tests | 2 failed) 75ms
+     × A supported, B related-only, audit clean, composer true 14ms
+     × A supported, B related-only, audit unavailable, composer true 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit clean, composer true
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit unavailable, composer true
+AssertionError: expected 'true' to be 'unverified' // Object.is equality
+
+Expected: "unverified"
+Received: "true"
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts:102:41
+    100|       it(`A supported, B ${kind}, audit ${audit}, composer true`, asyn…
+    101|         const { report, snapshot } = await execute(kind, audit);
+    102|         expect.soft(report.verdictType).toBe("unverified");
+       |                                         ^
+    103|         expect.soft(snapshot.conclusion?.judgment).toBe("unresolved");
+    104|         expect.soft(snapshot.claims.find(c => c.text === A)?.judgment)…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/16]⎯
+
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit clean, composer true
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit unavailable, composer true
+AssertionError: expected 'supported' to be 'unresolved' // Object.is equality
+
+Expected: "unresolved"
+Received: "supported"
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts:103:52
+    101|         const { report, snapshot } = await execute(kind, audit);
+    102|         expect.soft(report.verdictType).toBe("unverified");
+    103|         expect.soft(snapshot.conclusion?.judgment).toBe("unresolved");
+       |                                                    ^
+    104|         expect.soft(snapshot.claims.find(c => c.text === A)?.judgment)…
+    105|         expect.soft(snapshot.claims.find(c => c.text === B)?.judgment)…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/16]⎯
+
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit clean, composer true
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit unavailable, composer true
+AssertionError: expected 'supported' to be 'unresolved' // Object.is equality
+
+Expected: "unresolved"
+Received: "supported"
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts:105:72
+    103|         expect.soft(snapshot.conclusion?.judgment).toBe("unresolved");
+    104|         expect.soft(snapshot.claims.find(c => c.text === A)?.judgment)…
+    105|         expect.soft(snapshot.claims.find(c => c.text === B)?.judgment)…
+       |                                                                        ^
+    106|         const answer = snapshot.conclusion?.directAnswer ?? "";
+    107|         expect.soft(answer.startsWith(directAnswer("unverified"))).toB…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/16]⎯
+
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit clean, composer true
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit unavailable, composer true
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts:107:68
+    105|         expect.soft(snapshot.claims.find(c => c.text === B)?.judgment)…
+    106|         const answer = snapshot.conclusion?.directAnswer ?? "";
+    107|         expect.soft(answer.startsWith(directAnswer("unverified"))).toB…
+       |                                                                    ^
+    108|         expect.soft(answer).toContain(B);
+    109|         expect.soft(answer).toMatch(/尚未查清|未核实|无法确认|缺少/);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/16]⎯
+
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit clean, composer true
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit unavailable, composer true
+AssertionError: expected '两项均已证实。' to contain '乙馆于周二开放'
+
+Expected: "乙馆于周二开放"
+Received: "两项均已证实。"
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts:108:29
+    106|         const answer = snapshot.conclusion?.directAnswer ?? "";
+    107|         expect.soft(answer.startsWith(directAnswer("unverified"))).toB…
+    108|         expect.soft(answer).toContain(B);
+       |                             ^
+    109|         expect.soft(answer).toMatch(/尚未查清|未核实|无法确认|缺少/);
+    110|         expect.soft(answer).not.toContain("两项均已证实");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/16]⎯
+
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit clean, composer true
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit unavailable, composer true
+AssertionError: expected '两项均已证实。' to match /尚未查清|未核实|无法确认|缺少/
+
+- Expected:
+/尚未查清|未核实|无法确认|缺少/
+
++ Received:
+"两项均已证实。"
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts:109:29
+    107|         expect.soft(answer.startsWith(directAnswer("unverified"))).toB…
+    108|         expect.soft(answer).toContain(B);
+    109|         expect.soft(answer).toMatch(/尚未查清|未核实|无法确认|缺少/);
+       |                             ^
+    110|         expect.soft(answer).not.toContain("两项均已证实");
+    111|         assertSourceBinding(snapshot, A, SA.url, "support");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/16]⎯
+
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit clean, composer true
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit unavailable, composer true
+AssertionError: expected '两项均已证实。' not to contain '两项均已证实'
+
+Expected: "两项均已证实"
+Received: "两项均已证实。"
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts:110:33
+    108|         expect.soft(answer).toContain(B);
+    109|         expect.soft(answer).toMatch(/尚未查清|未核实|无法确认|缺少/);
+    110|         expect.soft(answer).not.toContain("两项均已证实");
+       |                                 ^
+    111|         assertSourceBinding(snapshot, A, SA.url, "support");
+    112|         assertPublishedCitation(report, snapshot);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/16]⎯
+
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit clean, composer true
+ FAIL  server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts > Shannon real pipeline to final Snapshot/directAnswer > A supported, B related-only, audit unavailable, composer true
+AssertionError: 已知 A 的说明须有可解析的发布引用: expected null not to be null
+ ❯ assertPublishedCitation server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts:75:44
+     73|   const answer = snapshot.conclusion?.directAnswer ?? "";
+     74|   const marker = answer.match(/甲馆公告确认周二(?:开放|关闭)\[(\d+)\]/);
+     75|   expect(marker, "已知 A 的说明须有可解析的发布引用").not.toBeNull();
+       |                                            ^
+     76|   const sources = report.citationSources as Array<{ url: string }>;
+     77|   expect(sources[Number(marker![1]) - 1]?.url).toBe(SA.url);
+ ❯ server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts:112:9
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/16]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 15 passed (17)
+   Start at  11:34:01
+   Duration  1.68s (transform 244ms, setup 80ms, import 467ms, tests 75ms, environment 962ms)
+

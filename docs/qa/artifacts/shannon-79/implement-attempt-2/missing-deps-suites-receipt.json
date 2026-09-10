@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "npm",
+    "test",
+    "--",
+    "server/src/handlers.friendlyError.test.ts",
+    "server/src/handlers.investigation.test.ts",
+    "server/src/lib/planSearch.test.ts",
+    "server/src/lib/searchProviders.progress.test.ts"
+  ],
+  "cwd": "/private/tmp/rhg-79-shannon/mvp",
+  "startedAt": "2026-09-08T03:38:10.073231+00:00",
+  "finishedAt": "2026-09-08T03:38:13.627501+00:00",
+  "exitCode": 0,
+  "environmentRepair": "Worktree mvp/server/node_modules linked to existing canonical server dependencies; no dependencies downloaded.",
+  "logSha256": "c0a526ba668f7fe624a598c934b7bfbbe0ccbc663a14bd7225a433b0ab495b87"
+}

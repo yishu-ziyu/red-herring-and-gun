@@ -1,0 +1,46 @@
+{
+  "candidate_base_sha": "3cd4dfe5b33772f9e9ad6f4ded40db8913655c6c",
+  "main_sha": "861386d349c4e406f52c9d9e239954c7043aec24",
+  "candidate_full": {
+    "command": "cd mvp && npm test",
+    "exit_code": 1,
+    "passed": 1101,
+    "failed": 1,
+    "skipped": 1
+  },
+  "main_full": {
+    "command": "cd mvp && npm test",
+    "exit_code": 1,
+    "passed": 1007,
+    "failed": 1,
+    "skipped": 1
+  },
+  "focused_main_and_candidate": {
+    "command": "cd mvp && npx vitest run src/legacy/LegacyDesk.test.tsx",
+    "exit_codes": [
+      0,
+      0
+    ],
+    "passed_each": 29
+  },
+  "failure_signature": "LegacyDesk.test.tsx: uses the clean analysis shell for the real workspace too; Unable to find [data-testid=\"apodex-run\"]",
+  "acceptance": "MACHINE_GATE_NOT_MET; no automatic waiver or retry-to-green",
+  "artifacts": [
+    {
+      "path": "/tmp/rhg-79-shannon/docs/qa/artifacts/shannon-79/final-stable-mvp.log",
+      "sha256": "706a9cf2178c7293403fa1a38f2711d63eebf3534f8b6d46b292ddfb7c60481e"
+    },
+    {
+      "path": "/tmp/rhg-79-shannon/docs/qa/artifacts/shannon-79/full-main-current.log",
+      "sha256": "65da33ad5d4f323c89b49aab6a42d794565627dd355336ba77e3e6c6731f2b67"
+    },
+    {
+      "path": "/tmp/rhg-79-shannon/docs/qa/artifacts/shannon-79/legacy-main-current.log",
+      "sha256": "c906eb0df16bb99043c98151b2005973c7e74364e492cec2e0aaa5c35d1cca54"
+    },
+    {
+      "path": "/tmp/rhg-79-shannon/docs/qa/artifacts/shannon-79/legacy-candidate-current.log",
+      "sha256": "0b6866b8ed510ee21f22f606a514461d07f13e59dddb27f21cfbd69a4b4b1f3b"
+    }
+  ]
+}

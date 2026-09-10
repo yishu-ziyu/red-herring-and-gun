@@ -1,0 +1,13 @@
+
+> red-herring-and-gun@0.1.0 test
+> vitest run server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts
+
+
+ RUN  v4.1.7 /private/tmp/rhg-79-shannon/mvp
+
+
+ Test Files  1 passed (1)
+      Tests  17 passed (17)
+   Start at  11:34:59
+   Duration  1.61s (transform 424ms, setup 81ms, import 678ms, tests 83ms, environment 650ms)
+

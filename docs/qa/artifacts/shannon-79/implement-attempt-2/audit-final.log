@@ -1,0 +1,13 @@
+
+> red-herring-and-gun@0.1.0 test
+> vitest run server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts
+
+
+ RUN  v4.1.7 /private/tmp/rhg-79-shannon/mvp
+
+
+ Test Files  1 passed (1)
+      Tests  28 passed (28)
+   Start at  11:41:59
+   Duration  2.60s (transform 594ms, setup 97ms, import 1.08s, tests 379ms, environment 860ms)
+

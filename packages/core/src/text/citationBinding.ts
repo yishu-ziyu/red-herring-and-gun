@@ -140,6 +140,41 @@ function asSourceList(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+/** 肯定为真侧的原子判词（exaggerated 有真实内核，计入真侧）。 */
+const TRUE_DIRECTION_VERDICTS = new Set(["true", "mostly_true", "exaggerated"]);
+
+function listHasHttpUrl(list: unknown[]): boolean {
+  return list.some((s) => {
+    const url = s && typeof s === "object" ? normalizeUrl(String((s as { url?: unknown }).url ?? "")) : "";
+    return /^https?:\/\//i.test(url);
+  });
+}
+
+/**
+ * 方向专属「有据」契约（Review 5128449568 Blocker 3 共享定义）：
+ * - true / trueish 必须由 supportingSources 的 http(s) 支撑；
+ * - false 必须由 contradictingSources 的 http(s) 支撑（alignFalseEvidenceBuckets 先行改桶）；
+ * - related-only 永远不算；
+ * - partial 按 Snapshot 的 mixed 判词映射，两侧材料都算；
+ * - 错桶 URL 不是该方向的证据。
+ * merge guard（demoteUnsourcedTrueFalse）、deriveOverallVerdict、applyConclusionGate
+ * 与 publication repair 同用此语义，保证 Claim 判词与整句 Conclusion 同向。
+ */
+export function hasDirectionalBoundHttpUrl(input: {
+  verdict: unknown;
+  supportingSources?: unknown;
+  contradictingSources?: unknown;
+  sourcesRelatedOnly?: unknown;
+}): boolean {
+  if (input?.sourcesRelatedOnly === true) return false;
+  const verdict = String(input?.verdict ?? "").trim().toLowerCase();
+  const supporting = asSourceList(input?.supportingSources);
+  const contradicting = asSourceList(input?.contradictingSources);
+  if (verdict === "false") return listHasHttpUrl(contradicting);
+  if (TRUE_DIRECTION_VERDICTS.has(verdict)) return listHasHttpUrl(supporting);
+  return listHasHttpUrl(supporting) || listHasHttpUrl(contradicting);
+}
+
 /**
  * Local [n] across both stance buckets.
  * Filter / dedupe / cap independently per bucket (each bucket keeps at most 5).

@@ -338,6 +338,7 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
     const contradictingRaw = Array.isArray(v.contradictingSources) ? v.contradictingSources : [];
     const aligned = alignFalseEvidenceBuckets({
       verdict: verdictNorm,
+      sourcesRelatedOnly: v.sourcesRelatedOnly === true,
       supporting: supportingRaw,
       contradicting: contradictingRaw,
     });
@@ -345,7 +346,9 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
     let supporting = bound.supportingSources;
     let contradicting = bound.contradictingSources;
     let evidence = bound.text;
-    let sourcesRelatedOnly = false;
+    // Rebinding cannot promote explicitly related material into directional evidence.
+    let sourcesRelatedOnly = v.sourcesRelatedOnly === true;
+    if (sourcesRelatedOnly) evidence = stripCitationMarkers(evidence);
 
     let gaps = Array.isArray(v.evidenceGaps)
       ? v.evidenceGaps.filter((g): g is string => typeof g === "string").slice(0, 3)

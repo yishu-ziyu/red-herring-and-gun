@@ -1,0 +1,38 @@
+{
+  "phase": "after",
+  "evidence_kind": "synthetic-pipeline-and-unit-suite",
+  "isolation": "logical-only",
+  "candidate_sha": "3cd4dfe5b33772f9e9ad6f4ded40db8913655c6c",
+  "production_dirty": true,
+  "production_patch_sha256": "30d4bc46f34160e7c357e5c5dfacec9795935855a5d2c9cbc50dc0911359ed6e",
+  "command": "cd mvp && npm test -- server/src/lib/reportAssembly/assembleFinalReport.test.ts server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts",
+  "started_at": "2026-09-08T03:41:02Z",
+  "duration_seconds": 5.33,
+  "exit_code": 0,
+  "tests": {
+    "total": 61,
+    "failed": 0,
+    "passed": 61
+  },
+  "test_hashes": {
+    "mvp/server/src/lib/reportAssembly/assembleFinalReport.test.ts": "db609ea8d3c1d3443c2feb920bee75699d748e42cf7d2327f41ef38088a9c006",
+    "mvp/server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts": "a10642b7d2ba5f5d03fe56fdcffbcc3d0325e3ff255f04624116191ce9ea3403",
+    "mvp/server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts": "ae6f0f4ab12dab89e623b6b7b808504a12e7980f2f6ec729caf46ea3aa67584c"
+  },
+  "log_path": "validator-after.log",
+  "log_sha256": "3e51c9b89adcbf99c32569a3975c116abff0d868eeadb3f0b3655f4e472b3439",
+  "result_artifacts": {
+    "validator-after/missing-clean-true.json": "514b7863add09241286f7f749110d24925cfb67306b316d20c67b540e24cd84d",
+    "validator-after/missing-unavailable-true.json": "b87a6a2994bcb91c3411e9b525772deabc5eeea0bb67c6ed79de600ca5717a2f",
+    "validator-after/related-only-clean-true.json": "87cf496bc3c90b4cd3e3351f5fe37fde66bde0a0d0d2f18007f9fb6a92fef515",
+    "validator-after/related-only-unavailable-true.json": "232a0d40244f136aeb1aaef6416e7ad1a9bb91f9970f52a67e99a8fb2a06bd3b",
+    "validator-after/single-clean-true.json": "4ddf0ad1292cde530bc29789964e7a4046c97d98d9d7b5284c4beae378c99ee8",
+    "validator-after/single-unavailable-true.json": "dcac3b7723010b65d9169273e0876389c359a05478fc6e3f95e79286a6de7f2f",
+    "validator-after/supported-clean-true.json": "8b9e914867531410c3b8578608edf1e98761718f628a5d5f9d717a9015851fee",
+    "validator-after/supported-unavailable-true.json": "549d1c5530e73f61334c1dbdf1bbe576104c18b9836af5dab4f3b9d2d78704d2",
+    "validator-after/unverified-clean-false.json": "47afa04843446a7537a34565ef8a3caf2d169ac5fb29be576d893aeef54dfca5",
+    "validator-after/unverified-clean-true.json": "7da73d7e4db70ff5593fe0f42feb0071719f643cd1eb2f17133e0f613e9da06c",
+    "validator-after/unverified-unavailable-false.json": "60592274b77a9a1381434c6b53687130e26fef49bd072d06fac3c815835bdcbb",
+    "validator-after/unverified-unavailable-true.json": "c01e775a4d8220c4756b52ba3f4916261395404c8d31fe1504c7ce48892b097b"
+  }
+}
