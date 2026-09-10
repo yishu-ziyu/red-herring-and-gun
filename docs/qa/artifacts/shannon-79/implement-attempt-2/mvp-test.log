@@ -1,0 +1,108 @@
+
+> red-herring-and-gun@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.7 /private/tmp/rhg-79-shannon/mvp
+
+Retired. Live deploy is: ./ops.sh deploy --yes
+That command ships the current workspace (dev), not origin main.
+Retired. Live deploy is: ./ops.sh deploy --yes
+Run it from the repo root. Do not use this script.
+ ❯ server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts (28 tests | 2 failed) 434ms
+     × A、B 有据支持、C 未核实、audit 桥接缺口未解决 → 整句 true 收成 unverified，C 不被写成成立 34ms
+     × Planning 有桥接缺口 → Evaluation 返回 null → 硬 verdict 收 unverified，缺口保留且状态 failed 14ms
+ ❯ server/src/lib/searchProviders.progress.test.ts (0 test)
+[knowledgeBase] red-herring-knowledge-cases 写入失败，尝试裁剪重试 QuotaExceededError: The quota has been exceeded.
+[knowledgeBase] red-herring-knowledge-cases 写入失败，尝试裁剪重试 QuotaExceededError: The quota has been exceeded.
+[knowledgeBase] red-herring-knowledge-cases 写入失败，尝试裁剪重试 QuotaExceededError: The quota has been exceeded.
+ ❯ server/src/lib/planSearch.test.ts (0 test)
+ ❯ server/src/handlers.investigation.test.ts (0 test)
+ ❯ server/src/handlers.friendlyError.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  server/src/handlers.friendlyError.test.ts [ server/src/handlers.friendlyError.test.ts ]
+ FAIL  server/src/handlers.investigation.test.ts [ server/src/handlers.investigation.test.ts ]
+ FAIL  server/src/lib/planSearch.test.ts [ server/src/lib/planSearch.test.ts ]
+Error: Failed to resolve import "@earendil-works/pi-coding-agent" from "server/src/lib/piBridge/piSession.ts". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /private/tmp/rhg-79-shannon/mvp/server/src/lib/piBridge/piSession.ts:15:7
+  6  |  * 会话用 SessionManager.inMemory()（Web 多用户，不落 ~/.pi）。
+  7  |  */
+  8  |  ...ceLoader, getAgentDir, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
+     |                                                                 ^
+  9  |  import { piProviderConfigs, registerProviders, pickFirstModel } from "./piModels.js";
+  10 |  import { toolExtension } from "./piTools.js";
+ ❯ TransformPluginContext._formatLog ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:30486:39
+ ❯ TransformPluginContext.error ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:30483:14
+ ❯ normalizeUrl ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:27725:18
+ ❯ ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:27788:30
+ ❯ TransformPluginContext.transform ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:27756:4
+ ❯ EnvironmentPluginContainer.transform ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:30271:14
+ ❯ loadAndTransform ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:24532:26
+ ❯ fetchModule ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:23123:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  server/src/lib/searchProviders.progress.test.ts [ server/src/lib/searchProviders.progress.test.ts ]
+Error: Failed to resolve import "@earendil-works/pi-coding-agent" from "server/src/lib/piBridge/piSession.ts". Does the file exist?
+  Plugin: vite:import-analysis
+  File: /private/tmp/rhg-79-shannon/mvp/server/src/lib/piBridge/piSession.ts:15:7
+  6  |  * 会话用 SessionManager.inMemory()（Web 多用户，不落 ~/.pi）。
+  7  |  */
+  8  |  ...ceLoader, getAgentDir, ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
+     |                                                                 ^
+  9  |  import { piProviderConfigs, registerProviders, pickFirstModel } from "./piModels.js";
+  10 |  import { toolExtension } from "./piTools.js";
+ ❯ TransformPluginContext._formatLog ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:30486:39
+ ❯ TransformPluginContext.error ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:30483:14
+ ❯ normalizeUrl ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:27725:18
+ ❯ ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:27788:30
+ ❯ TransformPluginContext.transform ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:27756:4
+ ❯ EnvironmentPluginContainer.transform ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:30271:14
+ ❯ loadAndTransform ../../../../Users/mahaoxuan/Desktop/%E9%BB%91%E5%AE%A2%E6%9D%BE/%E7%BA%A2%E9%B2%B1%E9%B1%BC%E4%B8%8E%E6%9E%AA/mvp/node_modules/vite/dist/node/chunks/node.js:24532:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts > Case 4：A+B 都真推不出 C > A、B 有据支持、C 未核实、audit 桥接缺口未解决 → 整句 true 收成 unverified，C 不被写成成立
+AssertionError: expected 'true-without-sourced-true-atoms' to be 'audit-unresolved-bridge-gap' // Object.is equality
+
+Expected: "audit-unresolved-bridge-gap"
+Received: "true-without-sourced-true-atoms"
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts:365:82
+    363|     // 整句 true 被收权门收成 unverified（audit 缺口未解决）
+    364|     expect(result.finalReport.verdictType).toBe("unverified");
+    365|     expect((result.finalReport._conclusionGate as Record<string, unkno…
+       |                                                                                  ^
+    366|       "audit-unresolved-bridge-gap"
+    367|     );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts > Review 5128449568 Blocker 2：audit 失败/超预算 fail-closed > Planning 有桥接缺口 → Evaluation 返回 null → 硬 verdict 收 unverified，缺口保留且状态 failed
+AssertionError: expected 'true-without-sourced-true-atoms' to be 'audit-unresolved-bridge-gap' // Object.is equality
+
+Expected: "audit-unresolved-bridge-gap"
+Received: "true-without-sourced-true-atoms"
+
+ ❯ server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts:1366:82
+    1364|     expect(result.wholeClaimAudit.evaluationStatus).toBe("failed");
+    1365|     expect(result.finalReport.verdictType).toBe("unverified");
+    1366|     expect((result.finalReport._conclusionGate as Record<string, unkno…
+       |                                                                                  ^
+    1367|       "audit-unresolved-bridge-gap"
+    1368|     );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+
+ Test Files  5 failed | 93 passed | 1 skipped (99)
+      Tests  2 failed | 1079 passed | 1 skipped (1082)
+   Start at  11:36:10
+   Duration  39.82s (transform 12.21s, setup 14.72s, import 29.84s, tests 37.83s, environment 161.69s)
+

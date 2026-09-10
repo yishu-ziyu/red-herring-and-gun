@@ -166,7 +166,7 @@ describe("deriveOverallVerdict", () => {
   it("有据 true + 有据 false → partial（mixed 救回，RUMOR-011 形态）", () => {
     expect(
       deriveOverallVerdict([
-        { verdict: "false", supportingSources: [sourced] },
+        { verdict: "false", contradictingSources: [sourced] },
         { verdict: "true", supportingSources: [sourced] },
         { verdict: "partial", supportingSources: [sourced] },
       ])
@@ -174,7 +174,7 @@ describe("deriveOverallVerdict", () => {
     expect(
       deriveOverallVerdict([
         { verdict: "true", supportingSources: [sourced] },
-        { verdict: "false", supportingSources: [sourced] },
+        { verdict: "false", contradictingSources: [sourced] },
       ])
     ).toBe("partial");
   });
@@ -182,10 +182,17 @@ describe("deriveOverallVerdict", () => {
   it("真但无据 + 有据之假 → false（无据不救，纯谣言不受零星 true 干扰）", () => {
     expect(
       deriveOverallVerdict([
-        { verdict: "false", supportingSources: [sourced] },
+        { verdict: "false", contradictingSources: [sourced] },
         { verdict: "true", supportingSources: [] },
       ])
     ).toBe("false");
+  });
+
+  it("方向契约（Review 5128449568 Blocker 3）：true 只认支撑桶，false 只认反证桶", () => {
+    expect(deriveOverallVerdict([{ verdict: "true", contradictingSources: [sourced] }])).toBeNull();
+    expect(deriveOverallVerdict([{ verdict: "false", supportingSources: [sourced] }])).toBeNull();
+    expect(deriveOverallVerdict([{ verdict: "false", contradictingSources: [sourced] }])).toBe("false");
+    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }])).toBe("true");
   });
 
   it("检索垫的 related-only 来源不算有据（sourcesRelatedOnly=true 不救）", () => {
@@ -197,7 +204,7 @@ describe("deriveOverallVerdict", () => {
     ).toBeNull();
     expect(
       deriveOverallVerdict([
-        { verdict: "false", supportingSources: [sourced] },
+        { verdict: "false", contradictingSources: [sourced] },
         { verdict: "true", supportingSources: [sourced], sourcesRelatedOnly: true },
       ])
     ).toBe("false");
@@ -208,12 +215,13 @@ describe("deriveOverallVerdict", () => {
   });
 
   it("单独一条有据 false → false", () => {
-    expect(deriveOverallVerdict([{ verdict: "false", supportingSources: [sourced] }])).toBe("false");
     expect(deriveOverallVerdict([{ verdict: "false", contradictingSources: [sourced] }])).toBe("false");
   });
 
-  it("全 true 且至少一条有据 → true；全无据 true → null", () => {
-    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }, { verdict: "true" }])).toBe("true");
+  it("每个必要成分均有支持证据才可聚合 true；一条无据即不能证明整体（Shannon §3）", () => {
+    // 原句 A∧B：A 有据不能替代 B 的证据。依据本轮任务 §3，不依实现反推期望。
+    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }, { verdict: "true" }])).toBeNull();
+    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }, { verdict: "true", supportingSources: [sourced] }])).toBe("true");
     expect(deriveOverallVerdict([{ verdict: "true" }, { verdict: "true", supportingSources: [] }])).toBeNull();
   });
 

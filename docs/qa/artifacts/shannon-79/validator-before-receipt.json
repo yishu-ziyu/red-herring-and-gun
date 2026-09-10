@@ -1,0 +1,24 @@
+{
+  "phase": "before",
+  "evidence_kind": "synthetic-pipeline-and-unit-suite",
+  "isolation": "logical-only",
+  "candidate_sha": "3cd4dfe5b33772f9e9ad6f4ded40db8913655c6c",
+  "production_dirty": false,
+  "production_patch_sha256": null,
+  "command": "cd mvp && npm test -- server/src/lib/reportAssembly/assembleFinalReport.test.ts server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts",
+  "started_at": "2026-09-08T03:41:04Z",
+  "duration_seconds": 4.96,
+  "exit_code": 1,
+  "tests": {
+    "total": 61,
+    "failed": 11,
+    "passed": 50
+  },
+  "test_hashes": {
+    "mvp/server/src/lib/reportAssembly/assembleFinalReport.test.ts": "db609ea8d3c1d3443c2feb920bee75699d748e42cf7d2327f41ef38088a9c006",
+    "mvp/server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts": "a10642b7d2ba5f5d03fe56fdcffbcc3d0325e3ff255f04624116191ce9ea3403",
+    "mvp/server/src/lib/casePipeline/runCasePipeline.wholeClaimAudit.test.ts": "ae6f0f4ab12dab89e623b6b7b808504a12e7980f2f6ec729caf46ea3aa67584c"
+  },
+  "log_path": "validator-corrected-before.log",
+  "log_sha256": "c646bee753b01841e57e13a0010563312e6edc11be1e7f6d4b9659a131b40029"
+}

@@ -16,7 +16,7 @@ import {
   selectAtomsToSearch,
   type AtomSearchBundle,
 } from "../atomSearch.js";
-import { normalizeReportCitations } from "../citationBinding.js";
+import { normalizeReportCitations, hasDirectionalBoundHttpUrl } from "../citationBinding.js";
 import { applyPublicCopy } from "../publicCopy.js";
 import { applyImageOriginToReport, type ImageOriginResult } from "../imageOrigin/index.js";
 
@@ -44,26 +44,34 @@ type DeriveVerdictInput = {
   sourcesRelatedOnly?: unknown;
 };
 
-function sourceHasHttpUrl(value: unknown): boolean {
-  if (!value || typeof value !== "object") return false;
-  return /^https?:\/\//i.test(String((value as { url?: unknown }).url || "").trim());
-}
-
-/** 有据：非 related-only，且支撑或反证里有可点开的 http(s) URL。 */
-function hasBoundHttpUrl(v: DeriveVerdictInput): boolean {
-  if (v?.sourcesRelatedOnly === true) return false;
-  const supporting = Array.isArray(v?.supportingSources) ? v.supportingSources : [];
-  const contradicting = Array.isArray(v?.contradictingSources) ? v.contradictingSources : [];
-  return supporting.some(sourceHasHttpUrl) || contradicting.some(sourceHasHttpUrl);
-}
-
+/**
+ * 方向专属「有据」（Review 5128449568 Blocker 3）：true/trueish 由 supportingSources
+ * 支撑、false 由 contradictingSources 支撑、related-only 永远不算。共享契约定义在
+ * citationBinding.hasDirectionalBoundHttpUrl，与 merge guard / conclusion gate / Snapshot 同向。
+ */
 function isSourcedTrueishVerdict(v: DeriveVerdictInput): boolean {
   const verdict = String(v?.verdict ?? "").trim().toLowerCase();
-  return TRUEISH_VERDICTS.has(verdict) && hasBoundHttpUrl(v);
+  return (
+    TRUEISH_VERDICTS.has(verdict) &&
+    hasDirectionalBoundHttpUrl({
+      verdict: "true",
+      supportingSources: v?.supportingSources,
+      contradictingSources: v?.contradictingSources,
+      sourcesRelatedOnly: v?.sourcesRelatedOnly,
+    })
+  );
 }
 
 function isSourcedFalseVerdict(v: DeriveVerdictInput): boolean {
-  return String(v?.verdict ?? "").trim().toLowerCase() === "false" && hasBoundHttpUrl(v);
+  return (
+    String(v?.verdict ?? "").trim().toLowerCase() === "false" &&
+    hasDirectionalBoundHttpUrl({
+      verdict: v?.verdict,
+      supportingSources: v?.supportingSources,
+      contradictingSources: v?.contradictingSources,
+      sourcesRelatedOnly: v?.sourcesRelatedOnly,
+    })
+  );
 }
 
 /**
@@ -72,7 +80,7 @@ function isSourcedFalseVerdict(v: DeriveVerdictInput): boolean {
  * 原子判词 + 绑定证据才是依据：
  * - 有据之真 + 有据之假 → partial（mixed_misleading 的公式载体，救回真的部分）；
  * - 单独有据之假 → false（无据之假不撑整句；短谣 boundTiny 不在本函数）；
- * - 全 true 且至少一条有据 → true（无据之真不升整句）；
+ * - 每个必要原子均为 true 且各自有支持方向证据 → true；
  * - 仅 partial/exaggerated → partial；无肯定判词 → null（保留 LLM 整体字段）。
  */
 export function deriveOverallVerdict(
@@ -86,7 +94,9 @@ export function deriveOverallVerdict(
   if (hasSourcedFalse) return "false";
   const affirmative = norms.filter((n) => TRUEISH_VERDICTS.has(n));
   if (affirmative.length === 0) return null;
-  if (affirmative.every((n) => n === "true")) return hasSourcedTrueish ? "true" : null;
+  if (affirmative.every((n) => n === "true")) {
+    return verdicts.every((v, index) => norms[index] === "true" && isSourcedTrueishVerdict(v)) ? "true" : null;
+  }
   return "partial";
 }
 

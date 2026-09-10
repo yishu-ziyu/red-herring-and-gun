@@ -1,0 +1,14 @@
+{
+  "command": "RHG_SHANNON_ARTIFACT_DIR=<attempt-dir>/snapshots npm --prefix mvp test -- server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts",
+  "evidenceKind": "synthetic-pipeline",
+  "isolation": "logical-only",
+  "tests": {
+    "passed": 17,
+    "failed": 0
+  },
+  "exitCode": 0,
+  "exitCodeNote": "Vitest command returned exit 0.",
+  "testSha256": "a10642b7d2ba5f5d03fe56fdcffbcc3d0325e3ff255f04624116191ce9ea3403",
+  "logSha256": "cdf18d32e4375d11f4791e1bddaa0737ead1f5a95b9f6b41a13a3a85d175e981",
+  "paidCalls": 0
+}

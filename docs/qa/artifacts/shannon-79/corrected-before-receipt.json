@@ -1,0 +1,23 @@
+{
+  "phase": "before implementation with corrected measurement",
+  "evidence_kind": "synthetic-pipeline-and-unit-suite",
+  "isolation": "logical-only",
+  "candidate_sha": "3cd4dfe5b33772f9e9ad6f4ded40db8913655c6c",
+  "worktree": "/tmp/rhg-79-validator-baseline",
+  "command": "cd mvp && npm test -- server/src/lib/reportAssembly/assembleFinalReport.test.ts server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts",
+  "started_at": "2026-09-08T03:34:57Z",
+  "duration_seconds": 1.57,
+  "exit_code": 1,
+  "tests": {
+    "total": 33,
+    "failed": 11,
+    "passed": 22
+  },
+  "test_hashes": {
+    "mvp/server/src/lib/reportAssembly/assembleFinalReport.test.ts": "db609ea8d3c1d3443c2feb920bee75699d748e42cf7d2327f41ef38088a9c006",
+    "mvp/server/src/lib/casePipeline/runCasePipeline.shannonConjunction.test.ts": "a10642b7d2ba5f5d03fe56fdcffbcc3d0325e3ff255f04624116191ce9ea3403"
+  },
+  "log_path": "corrected-before.log",
+  "log_sha256": "b395a0f2ed8416686b9525677bd8f6f586d15f78dec7370cdf7caaf620c34d6f",
+  "notes": "Baseline production code unchanged. Only same corrected measurement installed. No paid execution."
+}
