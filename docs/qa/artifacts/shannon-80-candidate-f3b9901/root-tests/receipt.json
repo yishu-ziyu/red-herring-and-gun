@@ -1,0 +1,55 @@
+{
+  "trial_id": "fcbd43e9-ab5f-4161-917d-9b5bb473b12b",
+  "campaign_id": "shannon-80-final",
+  "candidate_sha": "f3b9901639f5e9e9d190dde9b5b569c6ac54a4fb",
+  "dirty": false,
+  "diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "execution_mode": "CONTRACT_SUITE",
+  "driver": "deterministic_runner",
+  "command": [
+    "npm",
+    "test"
+  ],
+  "started_at": "2026-09-08T03:47:08.100877+00:00",
+  "ended_at": "2026-09-08T03:48:14.483641+00:00",
+  "exit_code": 0,
+  "terminal_status": "COMPLETE",
+  "inventory_sha256": "484531f848f96902b88e71b2692cbb46ddc71a9441c2379a989531dab1e86818",
+  "instrument": {
+    "path": "/Users/mahaoxuan/Desktop/\u9ed1\u5ba2\u677e/\u7ea2\u9cb1\u9c7c\u4e0e\u67aa/scripts/qa/qa_suite.py",
+    "sha256": "55704bcb3fbda12a2401920b5ba7e2fb18ce755d20a07ae06d7ffabfeeeb7638"
+  },
+  "instrument_files": [
+    {
+      "path": "scripts/qa/qa_report.py",
+      "sha256": "5c1be02f7a3c81535373df79f109f81e568c0b7321b4641662b76defa01a427e"
+    },
+    {
+      "path": "scripts/qa/qa_report_test.py",
+      "sha256": "870a91d80c4972fe9e2b71bfa14f18951ac0f8b9808e53b4d52549e712478757"
+    }
+  ],
+  "result_artifacts": [
+    {
+      "path": "out/shannon-80-final/root-tests/process.log",
+      "sha256": "da38ecc277d35aa870897bb8ea3b9922a4526efd7098e2b80834fec7a0b5238d"
+    }
+  ],
+  "behavior_ids": [
+    "root-tests"
+  ],
+  "checks": [
+    {
+      "id": "suite",
+      "behavior_id": "root-tests",
+      "status": "PASS",
+      "evidence_refs": [
+        {
+          "path": "out/shannon-80-final/root-tests/process.log",
+          "sha256": "da38ecc277d35aa870897bb8ea3b9922a4526efd7098e2b80834fec7a0b5238d"
+        }
+      ]
+    }
+  ],
+  "source_unchanged_during_run": true
+}

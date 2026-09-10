@@ -1,0 +1,5 @@
+
+  VITE v8.0.13  ready in 2805 ms
+
+  ➜  Local:   http://127.0.0.1:61801/
+11:49:27 AM [vite] (client) [console.warn] You have Reduced Motion enabled on your device. Animations may not appear as expected.. For more information and steps for solving, visit https://motion.dev/troubleshooting/reduced-motion-disabled
