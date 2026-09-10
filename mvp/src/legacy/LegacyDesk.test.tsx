@@ -3,9 +3,22 @@
  * 经 /?legacy=1 仍需完整可用——本文件整体承接原 App.test.tsx。
  */
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import LegacyDesk from "./LegacyDesk";
 import { requestOrchestrateStream } from "../lib/agentExpansion";
+
+beforeAll(async () => {
+  // 业务套件隔离：预热工作台，不把冷加载耗时算进本文件断言。
+  // 冷加载、失败复位与 unhandled rejection 见 LegacyDesk.workbenchLoader.test.tsx。
+  await import("../components/v3/phases/MissionControlView");
+});
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  window.localStorage.clear();
+  window.history.pushState({}, "", "/");
+});
 
 vi.mock("../lib/agentExpansion", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/agentExpansion")>();
