@@ -134,6 +134,8 @@ export function InvestigationCanvas({
           {complete && conclusion ? (
             <ConclusionHero
               directAnswer={conclusion.directAnswer}
+              verdictLead={conclusion.verdictLead}
+              rationale={conclusion.rationale}
               judgment={conclusion.judgment}
               boundaries={conclusion.boundaries}
               claimCount={snapshot.claims.length}
