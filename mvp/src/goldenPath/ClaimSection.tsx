@@ -121,6 +121,7 @@ export function ClaimSection({
             </p>
           )}
 
+          {/* TODO(P2): 争议改为双方材料并排对照，本期只保留现有摘要行。 */}
           {claimConflicts.map((conflict) => (
             <section key={conflict.id} className="gp-conflict" data-gp-conflict-id={conflict.id}>
               <div className="gp-conflict-head">

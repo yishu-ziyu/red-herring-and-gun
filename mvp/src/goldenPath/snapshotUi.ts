@@ -23,6 +23,20 @@ export const ROLE_LABEL: Record<EvidenceRole, string> = {
   "context-only": "相关材料",
 };
 
+/** 证据行左侧固定栏：比分组标题更短，相关不写「相关材料」。 */
+export const ROLE_ROW_LABEL: Record<EvidenceRole, string> = {
+  support: "支持",
+  contradict: "反驳",
+  unassessed: "待核对",
+  "context-only": "相关",
+};
+
+/** 只回传来源已有摘录，不编造。 */
+export function sourceExcerpt(source: InvestigationSource | undefined): string {
+  const text = source?.excerpt?.trim();
+  return text || "";
+}
+
 /** role 的 neutral/positive/negative 语气；unassessed 绝不能被染成证据位。 */
 export const ROLE_TONE: Record<EvidenceRole, "positive" | "negative" | "neutral" | "muted"> = {
   support: "positive",
