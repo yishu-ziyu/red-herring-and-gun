@@ -17,7 +17,7 @@ const FAKE_MODELS = [
   { provider: "deepseek", model: "deepseek-v4-pro", label: "DeepSeek V4 Pro", tier: "high", hint: "强推理" },
 ];
 
-function mockFetch(options: { cases?: unknown[]; caseDetail?: unknown } = {}) {
+function mockFetch(options: { cases?: unknown[]; caseDetail?: unknown; accountEmail?: string } = {}) {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input: unknown) => {
     const url = typeof input === "string" ? input : (input as URL | Request)?.toString?.() ?? "";
     if (url.includes("/api/models/health")) {
@@ -27,6 +27,19 @@ function mockFetch(options: { cases?: unknown[]; caseDetail?: unknown } = {}) {
       return new Response(JSON.stringify({ models: FAKE_MODELS }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (url.includes("/api/auth/email/me") || url.includes("/api/auth/me")) {
+      if (options.accountEmail) {
+        return new Response(
+          JSON.stringify({
+            authenticated: true,
+            email: options.accountEmail,
+            displayName: "核对人",
+            createdAt: 1757000000000,
+            loginCount: 2,
+            lastLoginAt: 1757000000000,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
       return new Response(JSON.stringify({ authenticated: false }), { status: 401, headers: { "Content-Type": "application/json" } });
     }
     if (url.includes("/api/checks/quota")) {
@@ -83,6 +96,15 @@ describe("生产首页（输入态）", () => {
     expect(screen.queryByText("模型设置")).toBeNull();
   });
 
+  it("登录后账号菜单里仍能进模型设置：进门不摆，但入口不丢", async () => {
+    mockFetch({ accountEmail: "checked@example.com" });
+    render(<App />);
+    const chip = await screen.findByRole("button", { name: "我的" });
+    fireEvent.click(chip);
+    const settings = await screen.findByRole("menuitem", { name: "模型设置" });
+    expect(settings).toHaveAttribute("href", "/settings/api-key");
+  });
+
   it("进门没有重复的「新调查」入口：空白输入态品牌只是名字，不是按钮", async () => {
     mockFetch();
     render(<App />);
@@ -93,8 +115,7 @@ describe("生产首页（输入态）", () => {
     expect(document.querySelector("button.gp-brand")).toBeNull();
   });
 
-  it("进门能看到「查完大概长这样」示意：一句回答 + 帮/拆关系 + 片段，并写明是示意", async () => {
-    mockFetch();
+  it("进门能看到「查完大概长这样」示意：一句回答 + 帮/拆关系 + 片段，并写明是示意", async () => {    mockFetch();
     render(<App />);
     await screen.findByRole("textbox", { name: "要调查的说法" });
     const preview = document.querySelector("[data-gp-result-preview]") as HTMLElement | null;
