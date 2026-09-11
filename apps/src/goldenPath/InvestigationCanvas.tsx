@@ -10,12 +10,14 @@ import type {
   InvestigationEvidenceLink,
   InvestigationSnapshotV1,
   InvestigationSource,
+  PublicActivity,
 } from "../lib/investigation";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import { phaseHeadline, readImageOrigin, type ImageOriginView } from "./snapshotUi";
 import { buildClaimTraceSegments } from "./claimTrace";
 import { ClaimSection } from "./ClaimSection";
+import { ActivityFeed } from "./ActivityFeed";
 import { ConclusionHero } from "./ConclusionHero";
 import { WorkRoles, roleIndexForPhase } from "./WorkRoles";
 import {
@@ -30,6 +32,8 @@ type InvestigationCanvasProps = {
   snapshot: InvestigationSnapshotV1;
   /** 连接/运行是否仍在进行（决定调查态的进行中语气）。 */
   live: boolean;
+  /** 公共活动（可选）：空数组是合法常态，活动层坏了不影响结果。 */
+  activities?: PublicActivity[];
   /** 完成态 finalReport（imageOrigin side-channel）。 */
   finalReport?: Record<string, unknown> | null;
   restoredAt?: number;
@@ -48,6 +52,7 @@ type DrawerSession = {
 export function InvestigationCanvas({
   snapshot,
   live,
+  activities = [],
   finalReport,
   restoredAt,
   onReverify,
@@ -200,10 +205,11 @@ export function InvestigationCanvas({
 
         {!complete && !interrupted ? (
           <>
-            <WorkRoles compact activeIndex={roleIndexForPhase(snapshot.phase)} />
+            <WorkRoles compact phase={snapshot.phase} activeIndex={roleIndexForPhase(snapshot.phase)} />
             <p className="gp-phase-line" role="status">
               {phaseHeadline(snapshot)}
             </p>
+            <ActivityFeed activities={activities} snapshot={snapshot} onSelectSource={openSource} />
           </>
         ) : null}
 

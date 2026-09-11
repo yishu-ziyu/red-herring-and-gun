@@ -268,7 +268,15 @@ describe("imageOrigin side-channel", () => {
 });
 
 describe("E2 负向测试：raw legacy 事件不产生任何产品语义", () => {
-  const INITIAL: RunState = { snapshot: null, connection: "connecting", errorMessage: "", finalReport: null };
+  const INITIAL: RunState = {
+    snapshot: null,
+    connection: "connecting",
+    errorMessage: "",
+    finalReport: null,
+    activities: [],
+    activityRunId: null,
+    lastActivitySeq: 0,
+  };
   const legacyEvents: OrchestrateStreamEvent[] = [
     { type: "agent_start", agent: "rumor_detector", agentName: "拆题" },
     { type: "agent_complete", agent: "rumor_detector", output: { claimAtoms: ["假命题甲", "假命题乙"] } },

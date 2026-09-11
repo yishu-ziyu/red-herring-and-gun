@@ -8,6 +8,8 @@
  * 产品规则不写在 HTTP 层；域深度在 mvp/server/src/lib/。
  */
 
+import { randomUUID } from "node:crypto";
+
 import { type AtomSearchBundle } from "./lib/atomSearch.js";
 
 import { runCasePipeline, type PipelineStep, type RunAgentFn } from "./lib/casePipeline/index.js";
@@ -16,6 +18,7 @@ import {
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
 } from "./lib/investigation/index.js";
+import { createInvestigationEmitter } from "./lib/investigationEmitter.js";
 
 import { createLoopLlm, modelFromChoice, wantsAgentLoop } from "./lib/agentLoop/index.js";
 import { runClaimLoopPi } from "./lib/agentLoop/runClaimLoopPi.js";
@@ -474,6 +477,15 @@ export function createHandlers(env: Record<string, string>) {
 
     // Investigation Snapshot 最新帧：中断/超时时补发 interrupted 帧（保留已真实获得的数据）。
     let lastInvestigation: InvestigationSnapshotV1 | undefined;
+    // 公共活动账本（IMPLEMENTATION_PLAN §5.1）：只由已校验快照差分与结构化 hook 生成。
+    // runId 目前只覆盖这一条流；跨刷新的重放要等 RunService（PR-D）。
+    // 公共活动（IMPLEMENTATION_PLAN §5.1）：只由已校验快照差分与结构化 hook 生成。
+    // runId 目前只覆盖这一条流；跨刷新的重放要等 RunService（PR-D）。
+    const emitter = createInvestigationEmitter({ runId: randomUUID(), send: sendEvent });
+    const emitInvestigation = (snapshot: InvestigationSnapshotV1) => {
+      lastInvestigation = snapshot;
+      emitter.emitSnapshot(snapshot);
+    };
 
     try {
       if (intake?.images.length) {
@@ -631,12 +643,7 @@ export function createHandlers(env: Record<string, string>) {
         hooks: {
           searchMode: "sequential",
           onInvestigationSnapshot: (snapshot) => {
-            lastInvestigation = snapshot;
-            sendEvent({
-              type: "investigation_snapshot",
-              investigation: snapshot,
-              timestamp: Date.now(),
-            });
+            emitInvestigation(snapshot);
           },
           onSelfProof: (info) => {
             console.log(
@@ -650,6 +657,7 @@ export function createHandlers(env: Record<string, string>) {
               query: atom,
               timestamp: Date.now(),
             });
+            emitter.emitSearchStarted(atom);
           },
           onAtomSearchResult: (atom, result) => {
             const searchToolName = getSearchToolName(result as any);
@@ -871,11 +879,7 @@ export function createHandlers(env: Record<string, string>) {
       // 整体超时 → 给「还没查完」的中间结论，不发 error
       if (error instanceof Error && error.message.includes("整体核查")) {
         const interrupted = interruptedInvestigationSnapshot(lastInvestigation, claim);
-        sendEvent({
-          type: "investigation_snapshot",
-          investigation: interrupted,
-          timestamp: Date.now(),
-        });
+        emitInvestigation(interrupted);
         const timedOut = buildTimedOutReport(claim);
         timedOut.investigation = interrupted;
         applyContextCrossCheckToReport(timedOut, { claim, visualExtraction });
@@ -901,11 +905,7 @@ export function createHandlers(env: Record<string, string>) {
       }
       const { message } = toFriendlyError(error, "这次核查没能完成，请稍后重试");
       // 中断帧先行：前端拿到 phase=interrupted 的真实部分数据，再收 error 提示。
-      sendEvent({
-        type: "investigation_snapshot",
-        investigation: interruptedInvestigationSnapshot(lastInvestigation, claim),
-        timestamp: Date.now(),
-      });
+      emitInvestigation(interruptedInvestigationSnapshot(lastInvestigation, claim));
       sendEvent({
         type: "error",
         message,

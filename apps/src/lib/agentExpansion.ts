@@ -8,7 +8,7 @@ import {
   checksExhaustedMessage,
   isChecksExhaustedMessage,
 } from "./checkQuota";
-import type { InvestigationSnapshotV1 } from "./investigation";
+import type { InvestigationSnapshotV1, PublicActivity } from "./investigation";
 import type {
   ConsensusDebateUpdate,
   ExecutionDagPlan,
@@ -128,6 +128,7 @@ export interface SearchProgressSource {
 export interface OrchestrateStreamEvent {
   type:
     | "investigation_snapshot"
+    | "investigation_activity"
     | "search_progress"
     | "planner_update"
     | "speculative_update"
@@ -147,6 +148,11 @@ export interface OrchestrateStreamEvent {
    * 生产 Golden Path 的唯一调查语义来源；其余 raw 事件仅供 legacy/debug。
    */
   investigation?: InvestigationSnapshotV1;
+  /**
+   * investigation_activity：调查刚刚做了什么、带回了什么（IMPLEMENTATION_PLAN §5.1）。
+   * 服务端确定性投影，不是模型写的直播稿；先落快照，后发引用它的活动。
+   */
+  activity?: PublicActivity;
   agent?: string;
   agentName?: string;
   agentIcon?: string;

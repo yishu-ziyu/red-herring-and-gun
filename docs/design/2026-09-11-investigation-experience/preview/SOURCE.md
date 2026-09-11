@@ -2,8 +2,8 @@
 
 - 日期：2026-09-11
 - 分支：`feat/investigation-experience`
-- 生产入口：`mvp/src/App.tsx` ProductApp（真实 `goldenPath` 组件，不是独立 demo）
-- 本地预览：`http://127.0.0.1:5210/`
+- 生产入口：`apps/src/App.tsx` ProductApp（`mvp/` 已改名 `apps/`）（真实 `goldenPath` 组件，不是独立 demo）
+- 本地预览：`http://127.0.0.1:5211/`
 - fixture：`/?fixture=investigating|complete|interrupted`（DEV，驱动真实组件树）
 
 | 文件 | viewport | 驱动 |
@@ -16,6 +16,10 @@
 | conflict-desktop.png | 1440×1200 | `?fixture=conflict`，争点两侧各自列出 |
 | conflict-contradict-open.png | 1440×1000 | 同上，点反驳侧材料后打开反驳侧来源 |
 | conflict-mobile.png | 390×844 | `?fixture=conflict` |
+| activity-desktop.png | 1440×1100 | `?fixture=judging`，公共活动层 |
+| activity-mobile.png | 390×900 | 同上 |
+| activity-live-real.png | 1440×1200 | **真实一次调查**（隔夜菜亚硝酸盐），进行中抓拍 |
+| activity-live-real.sse.txt | — | 同一次调查的原始 SSE（含活动帧） |
 | prb-home-mobile.png | 390×844 | 生产 `/` |
 | prb-complete-mobile.png | 390×844 | `?fixture=complete` |
 
