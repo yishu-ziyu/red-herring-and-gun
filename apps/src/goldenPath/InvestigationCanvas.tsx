@@ -40,6 +40,8 @@ type InvestigationCanvasProps = {
   onStop?: () => void;
   /** 保存状态：独立于结果存在与否，不把失败藏在 console。 */
   saveStatus?: "idle" | "local" | "syncing" | "synced" | "failed";
+  /** 同步失败要真的能点重试，不能只写「重试」两个字。 */
+  onRetrySave?: () => void;
   /** 有服务端 caseId 才谈得上分享：没有对象就没有分享。 */
   shareCaseId?: string | null;
   /** 完成态 finalReport（imageOrigin side-channel）。 */
@@ -64,6 +66,7 @@ export function InvestigationCanvas({
   stop = "idle",
   onStop,
   saveStatus = "idle",
+  onRetrySave,
   shareCaseId = null,
   finalReport,
   restoredAt,
@@ -197,15 +200,27 @@ export function InvestigationCanvas({
                 </span>
               ) : null}
               {saveStatus !== "idle" ? (
-                <span className={`gp-save-state is-${saveStatus}`} data-gp-save-status={saveStatus}>
-                  {saveStatus === "synced"
-                    ? copy.saveSynced
-                    : saveStatus === "syncing"
-                      ? copy.saveSyncing
-                      : saveStatus === "failed"
-                        ? copy.saveFailed
-                        : copy.saveLocal}
-                </span>
+                saveStatus === "failed" && onRetrySave ? (
+                  <button
+                    type="button"
+                    className="gp-save-state is-failed"
+                    data-gp-save-status="failed"
+                    data-gp-save-retry
+                    onClick={onRetrySave}
+                  >
+                    {copy.saveFailed}
+                  </button>
+                ) : (
+                  <span className={`gp-save-state is-${saveStatus}`} data-gp-save-status={saveStatus}>
+                    {saveStatus === "synced"
+                      ? copy.saveSynced
+                      : saveStatus === "syncing"
+                        ? copy.saveSyncing
+                        : saveStatus === "failed"
+                          ? copy.saveFailed
+                          : copy.saveLocal}
+                  </span>
+                )
               ) : null}
               {!complete && !interrupted && onStop && stop !== "stopped" ? (
                 <button

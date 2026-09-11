@@ -245,19 +245,14 @@ function ProductApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 完成：本地留存 +（已登录）服务端落库。保存失败不挡结果，但必须可见。
-  useEffect(() => {
-    const report = run.state.finalReport;
-    if (!report || mode !== "investigation" || active?.restored) return;
-    const doneAt = Date.now();
-    const localId = active?.localId ?? `case-${doneAt}`;
-    const claim = active?.claim ?? "";
-    setCases((prev) => [
-      { id: localId, claim, status: report._source === "error-boundary" ? ("interrupted" as const) : ("done" as const), createdAt: doneAt },
-      ...prev.filter((item) => item.id !== localId),
-    ]);
-    setSaveStatus("syncing");
-    void (async () => {
+  /**
+   * 落库一次：先本地，再（已登录时）服务端。
+   * 抽成 useCallback 是为了让「同步失败，重试」真的有得点——说得出就必须点得到。
+   */
+  const persistResult = useCallback(
+    async (report: Record<string, unknown>, localId: string, claim: string) => {
+      const doneAt = Date.now();
+      setSaveStatus("syncing");
       const knowledgeBase = createKnowledgeBase(accountEmailRef.current);
       const entry: KnowledgeBaseEntry = {
         id: localId,
@@ -315,7 +310,29 @@ function ProductApp() {
         setHistoryNotice(copy.historySyncFailed);
         setSaveStatus("failed");
       }
-    })();
+    },
+    [copy.historySyncFailed]
+  );
+
+  /** 重试同步：用当前这份结果再走一遍，不重新调查。 */
+  const retrySave = useCallback(() => {
+    const report = run.state.finalReport;
+    if (!report || !active) return;
+    void persistResult(report, active.localId, active.claim);
+  }, [active, persistResult, run.state.finalReport]);
+
+  // 完成：本地留存 +（已登录）服务端落库。保存失败不挡结果，但必须可见。
+  useEffect(() => {
+    const report = run.state.finalReport;
+    if (!report || mode !== "investigation" || active?.restored) return;
+    const doneAt = Date.now();
+    const localId = active?.localId ?? `case-${doneAt}`;
+    const claim = active?.claim ?? "";
+    setCases((prev) => [
+      { id: localId, claim, status: report._source === "error-boundary" ? ("interrupted" as const) : ("done" as const), createdAt: doneAt },
+      ...prev.filter((item) => item.id !== localId),
+    ]);
+    void persistResult(report, localId, claim);
     // 只在 finalReport 首次出现时执行一次。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run.state.finalReport]);
@@ -576,6 +593,7 @@ function ProductApp() {
             stop={active.restored ? "idle" : run.state.stop}
             onStop={active.restored || !run.state.runId ? undefined : () => void run.cancel()}
             saveStatus={saveStatus}
+            onRetrySave={retrySave}
             shareCaseId={active.serverCaseId ?? null}
             finalReport={active.restored ? active.restored.report : run.state.finalReport}
             restoredAt={active.restored?.at}

@@ -993,6 +993,17 @@
   color: var(--gp-accent);
 }
 
+button.gp-save-state {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 /* 已停止：材料留着，语气平，不当作错误也不当作完成。 */
 .gp-stopped {
   margin: 0 0 20px;
