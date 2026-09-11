@@ -129,7 +129,7 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     stepsComplete: "完成",
     stepsUnit: "步",
     mission: "把你想核查的句子、链接或截图放进来",
-    outcome: "告诉你这条说法是否可靠，问题在哪里，来源能点开。",
+    outcome: "告诉你哪一截站得住，问题在哪里，来源能点开。",
     resultPreviewLabel: "查完大概长这样（示意，不是真结果）",
     resultPreviewAnswer: "不会。维生素 C 顶多略缩短病程，谈不上「治感冒」；普通感冒也很少需要输液。",
     resultPreviewMeta: "有对有错 · 命题 2 条 · 来源 10 条",
