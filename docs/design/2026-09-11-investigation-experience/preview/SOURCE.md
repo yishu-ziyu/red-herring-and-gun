@@ -13,6 +13,9 @@
 | prb-complete-desktop.png | 1440×1000 | `?fixture=complete` |
 | prb-source-desktop.png | 1440×1000 | complete + 点证据 |
 | prb-interrupted-desktop.png | 1440×1000 | `?fixture=interrupted` |
+| conflict-desktop.png | 1440×1200 | `?fixture=conflict`，争点两侧各自列出 |
+| conflict-contradict-open.png | 1440×1000 | 同上，点反驳侧材料后打开反驳侧来源 |
+| conflict-mobile.png | 390×844 | `?fixture=conflict` |
 | prb-home-mobile.png | 390×844 | 生产 `/` |
 | prb-complete-mobile.png | 390×844 | `?fixture=complete` |
 

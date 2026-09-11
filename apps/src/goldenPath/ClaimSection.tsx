@@ -17,10 +17,18 @@ import {
   JUDGMENT_LABEL,
   JUDGMENT_TONE,
   PROGRESS_LABEL,
-  conflictSidesLabel,
+  ROLE_LABEL,
 } from "./snapshotUi";
 import { EvidenceBoard } from "./EvidenceBoard";
 import { scrubFaceText, tooSimilarTo } from "./scrubFace";
+import type { InvestigationConflictSide } from "../lib/investigation";
+
+/** 快照的 position 允许 other；other 不冒充支持或反驳。 */
+function conflictSideLabel(position: InvestigationConflictSide["position"], otherLabel: string): string {
+  if (position === "support") return ROLE_LABEL.support;
+  if (position === "contradict") return ROLE_LABEL.contradict;
+  return otherLabel;
+}
 
 type ClaimSectionProps = {
   claim: InvestigationClaim;
@@ -157,28 +165,54 @@ export function ClaimSection({
                     <h4 className="gp-conflict-label">{copy.conflictLabel}</h4>
                   </div>
                   <p className="gp-conflict-summary">{conflict.summary}</p>
-                  <p className="gp-conflict-sides">
-                    <button
-                      type="button"
-                      className="gp-conflict-side"
-                      onClick={(event) => {
-                        const first = conflict.sides[0]?.sourceIds[0];
-                        const source = first ? sources.find((s) => s.id === first) : undefined;
-                        if (source) onSelectSource({ sourceId: first!, role: "context-only" }, source, claim.id, event.currentTarget);
-                      }}
-                    >
-                      {conflictSidesLabel(conflict.sides)}
-                    </button>
-                  </p>
-                  <div className="gp-conflict-reason-wrap">
-                    <strong className="gp-conflict-reason-lead">{copy.conflictReasonKnown}：</strong>
-                    {conflict.reasonStatus === "known" && conflict.reason ? (
-                      <span className="gp-conflict-reason">{conflict.reason}</span>
-                    ) : (
-                      <span className="gp-conflict-reason is-unknown">{copy.conflictReasonUnknown}</span>
-                    )}
-                  </div>
                 </>
+              )}
+
+              <div className="gp-conflict-sides">
+                {conflict.sides.map((side) => {
+                  // 只取本侧自己的证据行：点击必须落到这一侧的材料，不能合开另一侧。
+                  const rows = side.sourceIds.flatMap((id) => {
+                    const link =
+                      claim.evidence.find((l) => l.sourceId === id && l.role === side.position) ??
+                      claim.evidence.find((l) => l.sourceId === id);
+                    const source = link ? sources.find((s) => s.id === link.sourceId) : undefined;
+                    return link && source ? [{ link, source }] : [];
+                  });
+                  return (
+                    <div
+                      key={side.position}
+                      className={`gp-conflict-side is-${side.position}`}
+                      data-gp-conflict-side={side.position}
+                    >
+                      <span className="gp-conflict-side-label">{conflictSideLabel(side.position, copy.conflictSideOther)}</span>
+                      {rows.length === 0 ? (
+                        <span className="gp-conflict-side-missing">{copy.conflictSideMissing}</span>
+                      ) : (
+                        rows.map(({ link, source }) => (
+                          <button
+                            key={`${side.position}-${link.sourceId}`}
+                            type="button"
+                            className="gp-conflict-side-item"
+                            onClick={(event) => onSelectSource(link, source, claim.id, event.currentTarget)}
+                          >
+                            {source.title || source.url || link.sourceId}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {asResult ? null : (
+                <div className="gp-conflict-reason-wrap">
+                  <strong className="gp-conflict-reason-lead">{copy.conflictReasonKnown}：</strong>
+                  {conflict.reasonStatus === "known" && conflict.reason ? (
+                    <span className="gp-conflict-reason">{conflict.reason}</span>
+                  ) : (
+                    <span className="gp-conflict-reason is-unknown">{copy.conflictReasonUnknown}</span>
+                  )}
+                </div>
               )}
             </section>
           ))}

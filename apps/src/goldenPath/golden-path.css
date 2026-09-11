@@ -673,6 +673,22 @@
   min-height: 0;
 }
 
+@keyframes gp-role-emerge {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.gp-roles.is-compact .gp-role.is-enter {
+  animation: gp-role-emerge var(--gp-motion-ui) var(--gp-ease-out) both;
+  animation-delay: var(--gp-enter-delay, 0ms);
+}
+
 .gp-home-case {
   width: 100%;
   max-width: 920px;
@@ -1922,18 +1938,58 @@
 
 .gp-conflict-sides {
   margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 20px;
+}
+
+@media (max-width: 640px) {
+  .gp-conflict-sides {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .gp-conflict-side {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gp-conflict-side-label {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--gp-ink-2);
+}
+
+.gp-conflict-side.is-support .gp-conflict-side-label {
+  color: var(--gp-semantic-support);
+}
+
+.gp-conflict-side.is-contradict .gp-conflict-side-label {
+  color: var(--gp-semantic-contradict);
+}
+
+.gp-conflict-side-missing {
+  font-size: 12.5px;
+  color: var(--gp-ink-3);
+  font-style: italic;
+}
+
+.gp-conflict-side-item {
   border: 0;
   background: none;
   padding: 0;
   font: inherit;
   font-size: 12.5px;
+  line-height: 1.5;
+  text-align: left;
   color: var(--gp-accent);
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 3px;
+  overflow-wrap: anywhere;
 }
 
 .gp-conflict-reason-wrap {
@@ -2337,6 +2393,10 @@
   }
   .gp-canvas[data-gp-phase="investigating"] .gp-evidence-item,
   .gp-canvas[data-gp-phase="judging"] .gp-evidence-item {
+    animation: none;
+    transform: none;
+  }
+  .gp-roles.is-compact .gp-role.is-enter {
     animation: none;
     transform: none;
   }
