@@ -149,6 +149,21 @@ describe("D22 保存状态独立显示", () => {
     }
   });
 
+  it("同步失败要能真的点重试", () => {
+    const onRetrySave = vi.fn();
+    renderCanvas({ saveStatus: "failed", onRetrySave });
+    const retry = document.querySelector<HTMLElement>("[data-gp-save-retry]")!;
+    expect(retry.tagName).toBe("BUTTON");
+    fireEvent.click(retry);
+    expect(onRetrySave).toHaveBeenCalledTimes(1);
+  });
+
+  it("没有重试回调时不给出可点的假按钮", () => {
+    renderCanvas({ saveStatus: "failed" });
+    expect(document.querySelector("[data-gp-save-retry]")).toBeNull();
+    expect(screen.getByText("同步失败，重试").tagName).toBe("SPAN");
+  });
+
   it("idle 不渲染任何保存状态", () => {
     renderCanvas({ saveStatus: "idle" });
     expect(document.querySelector("[data-gp-save-status]")).toBeNull();
