@@ -248,7 +248,7 @@ app.post("/api/case", (req, res, next) => postCaseHandler(req, res).catch(next))
 app.post("/api/feedback", (req, res, next) => postGeneralFeedbackHandler(req, res).catch(next));
 app.get("/api/case/:caseId", (req, res, next) => getCaseHandler(req, res));
 app.get("/api/cases", (req, res, next) => listCasesHandler(req, res));
-app.get("/r/:caseId", (req, res, next) => renderCaseHtmlHandler(req, res));
+app.get("/r/:caseId", (req, res, next) => renderCaseHtmlHandler(req, res).catch(next));
 
 /** POST /api/feedback — 用户对某次判断的异议。落在 RHG_DATA_DIR，供 golden 反向采集。 */
 async function postGeneralFeedbackHandler(req: any, res: any): Promise<void> {
