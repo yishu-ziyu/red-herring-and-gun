@@ -36,7 +36,13 @@ type ClaimSectionProps = {
   onHeaderHover?: (claimId: string | null) => void;
   onHeaderFocus?: (claimId: string | null) => void;
   onExpandedTrace?: (claimId: string | null) => void;
+  asResult?: boolean;
 };
+
+function claimPoint(claim: InvestigationClaim): string {
+  const fromFinding = claim.evidence.map((link) => link.finding?.trim() ?? "").find((text) => text.length > 0);
+  return fromFinding ?? "";
+}
 
 function usesExpandedTrace(): boolean {
   return typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches === true;
@@ -52,6 +58,7 @@ export function ClaimSection({
   onHeaderHover,
   onHeaderFocus,
   onExpandedTrace,
+  asResult = false,
 }: ClaimSectionProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
@@ -59,6 +66,7 @@ export function ClaimSection({
   const claimConflicts = conflicts.filter((c) => c.claimId === claim.id);
   const judgment = claim.judgment;
   const showStatusChip = claim.progress === "searching" || claim.progress === "interrupted" || judgment !== null;
+  const point = asResult ? claimPoint(claim) : "";
   const num = String(index + 1).padStart(2, "0");
 
   return (
@@ -107,11 +115,14 @@ export function ClaimSection({
 
       {expanded ? (
         <div className="gp-claim-detail">
+          {point ? <p className="gp-point">{point}</p> : null}
+
           {claim.evidence.length > 0 ? (
             <div className="gp-evidence-space">
               <EvidenceBoard
                 claim={claim}
                 sources={sources}
+                asResult={asResult}
                 onSelect={(l, s, trigger) => onSelectSource(l, s, claim.id, trigger)}
               />
             </div>
@@ -121,60 +132,83 @@ export function ClaimSection({
             </p>
           )}
 
-          {/* TODO(P2): 争议改为双方材料并排对照，本期只保留现有摘要行。 */}
           {claimConflicts.map((conflict) => (
             <section key={conflict.id} className="gp-conflict" data-gp-conflict-id={conflict.id}>
-              <div className="gp-conflict-head">
-                <span className="gp-conflict-tag" aria-hidden="true">争点</span>
-                <h4 className="gp-conflict-label">{copy.conflictLabel}</h4>
-              </div>
-              <p className="gp-conflict-summary">{conflict.summary}</p>
-              <p className="gp-conflict-sides">
-                <button
-                  type="button"
-                  className="gp-conflict-side"
-                  onClick={(event) => {
-                    const first = conflict.sides[0]?.sourceIds[0];
-                    const source = first ? sources.find((s) => s.id === first) : undefined;
-                    if (source) onSelectSource({ sourceId: first!, role: "context-only" }, source, claim.id, event.currentTarget);
-                  }}
-                >
-                  {conflictSidesLabel(conflict.sides)}
-                </button>
-              </p>
-              <div className="gp-conflict-reason-wrap">
-                <strong className="gp-conflict-reason-lead">{copy.conflictReasonKnown}：</strong>
-                {conflict.reasonStatus === "known" && conflict.reason ? (
-                  <span className="gp-conflict-reason">{conflict.reason}</span>
-                ) : (
-                  <span className="gp-conflict-reason is-unknown">{copy.conflictReasonUnknown}</span>
-                )}
-              </div>
+              {asResult ? (
+                <p className="gp-note">
+                  {conflict.reasonStatus === "known" && conflict.reason
+                    ? conflict.reason
+                    : copy.conflictReasonUnknown}
+                </p>
+              ) : (
+                <>
+                  <div className="gp-conflict-head">
+                    <span className="gp-conflict-tag" aria-hidden="true">争点</span>
+                    <h4 className="gp-conflict-label">{copy.conflictLabel}</h4>
+                  </div>
+                  <p className="gp-conflict-summary">{conflict.summary}</p>
+                  <p className="gp-conflict-sides">
+                    <button
+                      type="button"
+                      className="gp-conflict-side"
+                      onClick={(event) => {
+                        const first = conflict.sides[0]?.sourceIds[0];
+                        const source = first ? sources.find((s) => s.id === first) : undefined;
+                        if (source) onSelectSource({ sourceId: first!, role: "context-only" }, source, claim.id, event.currentTarget);
+                      }}
+                    >
+                      {conflictSidesLabel(conflict.sides)}
+                    </button>
+                  </p>
+                  <div className="gp-conflict-reason-wrap">
+                    <strong className="gp-conflict-reason-lead">{copy.conflictReasonKnown}：</strong>
+                    {conflict.reasonStatus === "known" && conflict.reason ? (
+                      <span className="gp-conflict-reason">{conflict.reason}</span>
+                    ) : (
+                      <span className="gp-conflict-reason is-unknown">{copy.conflictReasonUnknown}</span>
+                    )}
+                  </div>
+                </>
+              )}
             </section>
           ))}
 
           {claim.gaps.length > 0 ? (
             <aside className="gp-gaps" aria-label={copy.gapLabel}>
-              <div className="gp-gaps-head">
-                <h4 className="gp-gaps-label">{copy.gapLabel}</h4>
-                <span className="gp-gaps-count">· {claim.gaps.length}</span>
-              </div>
-              {claim.gaps.length > 0 && <p className="gp-gaps-hint">{copy.gapHint}</p>}
-              <ul className="gp-gaps-list">
-                {claim.gaps.map((gap) => (
-                  <li key={gap.id} data-gp-gap-status={gap.status} className="gp-gap-item">
-                    <strong className="gp-gap-desc">{gap.description}</strong>
-                    {gap.consequence ? <span className="gp-gap-consequence">{gap.consequence}</span> : null}
-                  </li>
-                ))}
-              </ul>
+              {asResult ? (
+                claim.gaps.map((gap) => (
+                  <p key={gap.id} className="gp-note" data-gp-gap-status={gap.status}>
+                    {gap.description}
+                  </p>
+                ))
+              ) : (
+                <>
+                  <div className="gp-gaps-head">
+                    <h4 className="gp-gaps-label">{copy.gapLabel}</h4>
+                    <span className="gp-gaps-count">· {claim.gaps.length}</span>
+                  </div>
+                  {claim.gaps.length > 0 && <p className="gp-gaps-hint">{copy.gapHint}</p>}
+                  <ul className="gp-gaps-list">
+                    {claim.gaps.map((gap) => (
+                      <li key={gap.id} data-gp-gap-status={gap.status} className="gp-gap-item">
+                        <strong className="gp-gap-desc">{gap.description}</strong>
+                        {gap.consequence ? <span className="gp-gap-consequence">{gap.consequence}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
             </aside>
           ) : null}
 
           {claim.boundary ? (
             <p className="gp-boundary">
-              <strong>{copy.boundaryLabel}</strong>
-              {claim.boundary}
+              {asResult ? claim.boundary : (
+                <>
+                  <strong>{copy.boundaryLabel}</strong>
+                  {claim.boundary}
+                </>
+              )}
             </p>
           ) : null}
         </div>

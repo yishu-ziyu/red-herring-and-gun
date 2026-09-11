@@ -27,10 +27,11 @@ function prefersReducedMotion(): boolean {
 type EvidenceBoardProps = {
   claim: InvestigationClaim;
   sources: InvestigationSource[];
+  asResult?: boolean;
   onSelect: (link: InvestigationEvidenceLink, source: InvestigationSource, trigger: HTMLElement) => void;
 };
 
-export function EvidenceBoard({ claim, sources, onSelect }: EvidenceBoardProps) {
+export function EvidenceBoard({ claim, sources, asResult = false, onSelect }: EvidenceBoardProps) {
   const reduce = useReducedMotion() === true || prefersReducedMotion();
   const groups = groupEvidence(claim.evidence);
   const identified = identifyEvidenceLinks(claim.id, claim.evidence);
@@ -86,10 +87,11 @@ export function EvidenceBoard({ claim, sources, onSelect }: EvidenceBoardProps) 
             order={ROLE_LAYOUT_ORDER[link.role] + 1}
             layoutEnabled={layoutEnabled && identity === "stable"}
             groupLabelId={`gp-eg-${claim.id}-${link.role}`}
+            asResult={asResult}
             onSelect={onSelect}
           />
         ))}
-        {supportFinding ? (
+        {supportFinding && !asResult ? (
           <p className="gp-finding" style={{ order: ROLE_LAYOUT_ORDER.support + 2 }}>
             {supportFinding}
           </p>

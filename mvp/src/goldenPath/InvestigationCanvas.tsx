@@ -229,6 +229,7 @@ export function InvestigationCanvas({
                   onHeaderHover={handleHeaderHover}
                   onHeaderFocus={handleHeaderFocus}
                   onExpandedTrace={setExpandedTraceClaimId}
+                  asResult={complete}
                 />
               ))}
             </div>

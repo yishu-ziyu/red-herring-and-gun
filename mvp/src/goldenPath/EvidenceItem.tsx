@@ -22,6 +22,8 @@ type EvidenceItemProps = {
   order: number;
   layoutEnabled: boolean;
   groupLabelId: string;
+  /** 完成态：片段是收据，标题是出处。调查中仍按「找到了哪页」来读。 */
+  asResult?: boolean;
   onSelect: (link: InvestigationEvidenceLink, source: InvestigationSource, trigger: HTMLElement) => void;
 };
 
@@ -34,6 +36,7 @@ export function EvidenceItem({
   order,
   layoutEnabled,
   groupLabelId,
+  asResult = false,
   onSelect,
 }: EvidenceItemProps) {
   const [settling, setSettling] = useState(false);
@@ -42,6 +45,7 @@ export function EvidenceItem({
   const roleLabel = ROLE_LABEL[link.role];
   const rowLabel = ROLE_ROW_LABEL[link.role];
   const excerpt = sourceExcerpt(source);
+  const named = excerpt || title;
 
   return (
     <motion.button
@@ -64,7 +68,7 @@ export function EvidenceItem({
       data-gp-identity={identity}
       data-gp-settling={settling ? "1" : undefined}
       aria-describedby={groupLabelId}
-      aria-label={`${roleLabel}：${title}`}
+      aria-label={`${roleLabel}：${asResult ? named : title}`}
       onClick={(event) => {
         if (!source) return;
         onSelect(link, source, event.currentTarget);
@@ -75,6 +79,11 @@ export function EvidenceItem({
         <span className="gp-evidence-relation-label">{rowLabel}</span>
       </span>
       <div className="gp-evidence-body">
+        {asResult && excerpt ? (
+          <blockquote className="gp-evidence-excerpt" data-gp-evidence-excerpt>
+            {excerpt}
+          </blockquote>
+        ) : null}
         <div className="gp-evidence-header">
           <strong className="gp-evidence-title">{title}</strong>
           {unreachable ? <em className="gp-evidence-dead">（打不开）</em> : null}
@@ -87,7 +96,7 @@ export function EvidenceItem({
             </span>
           ) : null}
         </div>
-        {excerpt ? (
+        {!asResult && excerpt ? (
           <blockquote className="gp-evidence-excerpt" data-gp-evidence-excerpt>
             {excerpt}
           </blockquote>
