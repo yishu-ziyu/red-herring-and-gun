@@ -24,10 +24,10 @@ function repoRoot(): string {
 
 const ROOT = repoRoot();
 
-describe("investigation 契约镜像一致性（mvp/server 侧）", () => {
+describe("investigation 契约镜像一致性（apps/server 侧）", () => {
   for (const file of FILES) {
     it(`${file} 与 packages/core 源文件字节一致`, () => {
-      const mirror = readFileSync(join(ROOT, "mvp", "server", "src", "lib", "investigation", file), "utf8");
+      const mirror = readFileSync(join(ROOT, "apps", "server", "src", "lib", "investigation", file), "utf8");
       const core = readFileSync(join(ROOT, "packages", "core", "src", "investigation", file), "utf8");
       expect(mirror).toBe(core);
     });

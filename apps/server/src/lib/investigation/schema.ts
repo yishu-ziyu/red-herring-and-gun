@@ -11,7 +11,7 @@
  * CaseFile 未覆盖的语义（Evidence Gap / Conflict / phase / conclusion）为本契约一等对象。
  *
  * 镜像约束：本目录（schema.ts / build.ts / invariants.ts / sourceIdentity.ts / index.ts）
- * 被整份镜像到生产 `mvp/server/src/lib/investigation/`（部署只打包 mvp/，server 不能
+ * 被整份镜像到生产 `apps/server/src/lib/investigation/`（部署只打包 apps/，server 不能
  * 运行时依赖工作区包）。两侧由 drift-guard 测试做字节级一致校验；改动必须两侧同步。
  */
 import { Type, type Static } from "typebox";

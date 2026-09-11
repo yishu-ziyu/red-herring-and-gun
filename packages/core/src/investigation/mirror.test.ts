@@ -27,7 +27,7 @@ describe("investigation 契约镜像一致性", () => {
   for (const file of FILES) {
     it(`${file} 与生产镜像字节一致`, () => {
       const core = readFileSync(join(ROOT, "packages", "core", "src", "investigation", file), "utf8");
-      const mirror = readFileSync(join(ROOT, "mvp", "server", "src", "lib", "investigation", file), "utf8");
+      const mirror = readFileSync(join(ROOT, "apps", "server", "src", "lib", "investigation", file), "utf8");
       expect(mirror).toBe(core);
     });
   }
