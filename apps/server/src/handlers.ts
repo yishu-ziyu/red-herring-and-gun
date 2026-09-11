@@ -21,7 +21,7 @@ import {
 import { createInvestigationEmitter } from "./lib/investigationEmitter.js";
 import { createRunService, hashRunInput } from "./lib/runService.js";
 import { readEmailAccountOptional } from "./lib/emailSession.js";
-import { openRunStore } from "./lib/runStore.js";
+import { isTerminalStatus, openRunStore } from "./lib/runStore.js";
 import { generateCaseId } from "./lib/caseStore.js";
 
 import { createLoopLlm, modelFromChoice, wantsAgentLoop } from "./lib/agentLoop/index.js";
@@ -224,11 +224,101 @@ export function createHandlers(env: Record<string, string>) {
     }
     const result = runs.cancel(runId);
     if (result.kind === "not-found") return sendJson(res, 404, { message: "没有这次调查" });
+    // 立刻把「在停」广播到还开着的流上：客户端不能靠 POST 回执猜流上的状态。
+    runs.publish(runId, { type: "run_state", status: result.run.status, terminal: false, timestamp: Date.now() });
     return sendJson(res, 200, {
       runId,
       status: result.run.status,
       accepted: result.kind === "cancelling",
     });
+  }
+
+  /**
+   * GET /api/investigations/:runId — 刷新恢复（IMPLEMENTATION_PLAN §5.3）。
+   * 只给本人（或拿得到不可猜 runId 的匿名访客）；不跑模型、不检索、不扣额。
+   */
+  async function getInvestigationHandler(req: any, res: any, next: any) {
+    if (req.method !== "GET") return next();
+    const runId = String(req.params?.runId ?? "").trim();
+    if (!runId) return sendJson(res, 400, { message: "缺少 runId" });
+    const run = runs.get(runId);
+    if (!run) return sendJson(res, 404, { message: "没有这次调查" });
+    const account = await readEmailAccountOptional(req);
+    if (run.ownerHash && run.ownerHash !== (account?.hash ?? null)) {
+      return sendJson(res, 404, { message: "没有这次调查" });
+    }
+    return sendJson(res, 200, {
+      runId: run.runId,
+      caseId: run.caseId,
+      status: run.status,
+      revision: run.revision,
+      lastSeq: run.lastSeq,
+      snapshot: run.snapshot,
+      activities: runs.replayActivities(runId, 0),
+      updatedAt: run.updatedAt,
+    });
+  }
+
+  /**
+   * GET /api/investigations/:runId/events?after=N — 补发 N 之后的活动，再接直播。
+   * 重连不新建 run、不重复扣额；终态的 run 补完就关，不挂长连接。
+   */
+  async function investigationEventsHandler(req: any, res: any, next: any) {
+    if (req.method !== "GET") return next();
+    const runId = String(req.params?.runId ?? "").trim();
+    const run = runId ? runs.get(runId) : null;
+    if (!run) return sendJson(res, 404, { message: "没有这次调查" });
+    const account = await readEmailAccountOptional(req);
+    if (run.ownerHash && run.ownerHash !== (account?.hash ?? null)) {
+      return sendJson(res, 404, { message: "没有这次调查" });
+    }
+    const afterRaw = Number(new URL(req.url ?? "/", "http://localhost").searchParams.get("after") ?? 0);
+    const after = Number.isFinite(afterRaw) && afterRaw > 0 ? Math.floor(afterRaw) : 0;
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    const write = (event: object) => {
+      try {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      } catch {
+        /* 客户端已断开，由 close 收尾 */
+      }
+    };
+
+    write({ type: "run_started", runId, caseId: run.caseId, timestamp: Date.now() });
+    // 补发：先给已经发生过的活动，再给最新快照。
+    for (const activity of runs.replayActivities(runId, after)) {
+      write({ type: "investigation_activity", activity, timestamp: Date.now() });
+    }
+    if (run.snapshot) {
+      write({ type: "investigation_snapshot", investigation: run.snapshot, timestamp: Date.now() });
+    }
+
+    const terminal = isTerminalStatus(run.status);
+    write({ type: "run_state", status: run.status, terminal, timestamp: Date.now() });
+    if (terminal) {
+      res.end();
+      return;
+    }
+
+    const unsubscribe = runs.subscribe(runId, (event) => write(event));
+    const heartbeat = setInterval(() => {
+      try {
+        res.write(": keepalive\n\n");
+      } catch {
+        /* ignored */
+      }
+    }, 15_000);
+    const close = () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      if (!res.writableEnded) res.end();
+    };
+    res.on("close", close);
   }
 
   async function modelsListHandler(req: any, res: any, next: any) {
@@ -514,14 +604,23 @@ export function createHandlers(env: Record<string, string>) {
     // 检索凭证绑定：BYO 端点命中 MiniMax / 阶跃 → 对应检索路径换用户密钥；其余端点检索仍全走 env。
     const searchEnv = searchEnvWithByoCredentials(env, byo);
 
-    const sendEvent = (data: object) => {
-      if (res.writableEnded || disconnect.signal.aborted) return;
+    const writeFrame = (data: object) => {
+      // 只看 res 自己有没有结束：`disconnect.abort()` 是「停管线」的信号，
+      // 不是「别写了」的信号。之前两者混用，导致 catch 里 abort 之后的所有帧
+      // （超时的中断帧、取消的终态帧）全部被丢掉。
+      if (res.writableEnded || res.destroyed) return;
       try {
         res.write(`data: ${JSON.stringify(toPublicStreamEvent(data))}\n\n`);
       } catch {
         disconnect.abort(new Error("stream-write-failed"));
       }
     };
+    // 总线是唯一出口：本流、重连的订阅者、取消时补发的状态帧走同一条路，
+    // 不会出现「POST 说在停、流上什么都没有」。
+    const sendEvent = (data: object) => {
+      runs.publish(runId, data as Record<string, unknown>);
+    };
+    const unsubscribeRun = runs.subscribe(runId, (event) => writeFrame(event));
 
     // 先告诉客户端这次调查的 runId：取消与刷新恢复都要它。
     sendEvent({ type: "run_started", runId, caseId: started.run.caseId, timestamp: Date.now() });
@@ -541,6 +640,20 @@ export function createHandlers(env: Record<string, string>) {
     // 公共活动账本（IMPLEMENTATION_PLAN §5.1）：只由已校验快照差分与结构化 hook 生成。
     // runId 目前只覆盖这一条流；跨刷新的重放要等 RunService（PR-D）。
     // 公共活动（IMPLEMENTATION_PLAN §5.1）：只由已校验快照差分与结构化 hook 生成。
+    /**
+     * 收尾：落终态并把结果广播出去。客户端就靠这帧把「正在停止」翻成「已停止」，
+     * 不能让它自己猜——猜出来的状态等于假状态。
+     */
+    const finishRun = (status: "completed" | "interrupted" | "cancelled") => {
+      runs.finish(runId, status);
+      sendEvent({
+        type: "run_state",
+        status: runs.get(runId)?.status ?? status,
+        terminal: true,
+        timestamp: Date.now(),
+      });
+    };
+
     const emitter = createInvestigationEmitter({
       runId,
       send: sendEvent,
@@ -616,7 +729,7 @@ export function createHandlers(env: Record<string, string>) {
           finalReport: loop.finalReport,
           timestamp: Date.now(),
         });
-        runs.finish(runId, "completed");
+        finishRun("completed");
         commitFreeCheck(res, ticket);
         res.end();
         return;
@@ -917,7 +1030,7 @@ export function createHandlers(env: Record<string, string>) {
         memoryCandidates: result.memoryCandidates,
         timestamp: Date.now(),
       });
-      runs.finish(runId, "completed");
+      finishRun("completed");
       commitFreeCheck(res, ticket);
       res.end();
     } catch (error) {
@@ -945,7 +1058,7 @@ export function createHandlers(env: Record<string, string>) {
           message: byoMessage,
           timestamp: Date.now(),
         });
-        runs.finish(runId, runSignal?.aborted ? "cancelled" : "interrupted");
+        finishRun(runSignal?.aborted ? "cancelled" : "interrupted");
         res.end();
         return;
       }
@@ -971,7 +1084,7 @@ export function createHandlers(env: Record<string, string>) {
           memoryCandidates: [],
           timestamp: Date.now(),
         });
-        runs.finish(runId, "interrupted");
+        finishRun("interrupted");
         res.end();
         return;
       }
@@ -991,10 +1104,11 @@ export function createHandlers(env: Record<string, string>) {
         timestamp: Date.now(),
       });
       // 用户取消 → cancelled；断连或服务端问题 → interrupted。两者都不算「完成」。
-      runs.finish(runId, runSignal?.aborted ? "cancelled" : "interrupted");
+      finishRun(runSignal?.aborted ? "cancelled" : "interrupted");
       res.end();
     } finally {
       clearInterval(heartbeat);
+      unsubscribeRun();
     }
   }
 
@@ -1110,6 +1224,8 @@ export function createHandlers(env: Record<string, string>) {
     modelsHealthHandler,
     orchestrateStreamHandler,
     cancelInvestigationHandler,
+    getInvestigationHandler,
+    investigationEventsHandler,
     testLlmHandler,
     batchHandler,
   };

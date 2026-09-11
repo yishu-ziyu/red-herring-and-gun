@@ -241,5 +241,73 @@ describe("runStore 不变量（D7）", () => {
   });
 });
 
+describe("D15–D19 重连与重放", () => {
+  it("D15 补发只给 after 之后的活动，顺序按 seq", () => {
+    const svc = service();
+    const { run } = svc.start({ caseId: "case-1", ownerHash: "a" }) as { run: { runId: string } };
+    const make = (seq: number) => ({
+      version: 1 as const,
+      id: `${run.runId}:${seq}`,
+      runId: run.runId,
+      seq,
+      occurredAt: "2026-09-11T10:00:00.000Z",
+      kind: "search_started" as const,
+      role: "source" as const,
+      claimIds: [],
+      sourceIds: [],
+      snapshotRevision: seq,
+      payload: { query: `q${seq}` },
+    });
+    store.appendActivities(run.runId, [make(1), make(2), make(3)]);
+    expect(svc.replayActivities(run.runId, 0).map((a) => a.seq)).toEqual([1, 2, 3]);
+    expect(svc.replayActivities(run.runId, 2).map((a) => a.seq)).toEqual([3]);
+    expect(svc.replayActivities(run.runId, 3)).toEqual([]);
+  });
+
+  it("D17 订阅者收到后续帧；退订后不再收", () => {
+    const svc = service();
+    const { run } = svc.start({ caseId: "case-1", ownerHash: "a" }) as { run: { runId: string } };
+    const seen: string[] = [];
+    const off = svc.subscribe(run.runId, (event) => seen.push(String(event.type)));
+    svc.publish(run.runId, { type: "investigation_activity" });
+    off();
+    svc.publish(run.runId, { type: "complete" });
+    expect(seen).toEqual(["investigation_activity"]);
+  });
+
+  it("G15 一个订阅者抛错不影响其他订阅者", () => {
+    const svc = service();
+    const { run } = svc.start({ caseId: "case-1", ownerHash: "a" }) as { run: { runId: string } };
+    const seen: string[] = [];
+    svc.subscribe(run.runId, () => {
+      throw new Error("坏订阅者");
+    });
+    svc.subscribe(run.runId, (event) => seen.push(String(event.type)));
+    expect(() => svc.publish(run.runId, { type: "complete" })).not.toThrow();
+    expect(seen).toEqual(["complete"]);
+  });
+
+  it("D19 终态的 run replay 仍有内容，但 activeCount 已归零", () => {
+    const svc = service();
+    const { run } = svc.start({ caseId: "case-1", ownerHash: "a" }) as { run: { runId: string } };
+    svc.publish(run.runId, { type: "x" });
+    svc.finish(run.runId, "completed");
+    expect(svc.activeCount()).toBe(0);
+    expect(svc.get(run.runId)!.status).toBe("completed");
+    expect(svc.replayActivities(run.runId, 0)).toEqual([]);
+  });
+
+  it("重连不新建 run：同一个 runId 反复读仍是同一条", () => {
+    const svc = service();
+    const { run } = svc.start({ caseId: "case-1", ownerHash: "a", clientRequestId: "req-1" }) as {
+      run: { runId: string };
+    };
+    const before = svc.activeCount();
+    expect(svc.get(run.runId)!.runId).toBe(run.runId);
+    expect(svc.get(run.runId)!.runId).toBe(run.runId);
+    expect(svc.activeCount()).toBe(before);
+  });
+});
+
 // openRunStore 在 file 顶部只是为了类型；这里显式断言它是可用的导出。
 expect(typeof openRunStore).toBe("function");

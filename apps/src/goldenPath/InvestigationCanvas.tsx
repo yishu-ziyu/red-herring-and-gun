@@ -34,6 +34,11 @@ type InvestigationCanvasProps = {
   live: boolean;
   /** 公共活动（可选）：空数组是合法常态，活动层坏了不影响结果。 */
   activities?: PublicActivity[];
+  /** 停止：三态由服务端确认驱动，不提前说已停止。 */
+  stop?: "idle" | "stopping" | "stopped";
+  onStop?: () => void;
+  /** 保存状态：独立于结果存在与否，不把失败藏在 console。 */
+  saveStatus?: "idle" | "local" | "syncing" | "synced" | "failed";
   /** 完成态 finalReport（imageOrigin side-channel）。 */
   finalReport?: Record<string, unknown> | null;
   restoredAt?: number;
@@ -53,6 +58,9 @@ export function InvestigationCanvas({
   snapshot,
   live,
   activities = [],
+  stop = "idle",
+  onStop,
+  saveStatus = "idle",
   finalReport,
   restoredAt,
   onReverify,
@@ -94,7 +102,8 @@ export function InvestigationCanvas({
 
   const conclusion = snapshot.conclusion;
   const complete = snapshot.phase === "complete" && Boolean(conclusion);
-  const interrupted = snapshot.phase === "interrupted";
+  // 用户点过停止就不再把它读成「中断」：同一次事故不该有两种说法。
+  const interrupted = snapshot.phase === "interrupted" && stop !== "stopped";
   const openSource = (
     link: InvestigationEvidenceLink,
     source: InvestigationSource,
@@ -183,6 +192,28 @@ export function InvestigationCanvas({
                   <span>正在调查</span>
                 </span>
               ) : null}
+              {saveStatus !== "idle" ? (
+                <span className={`gp-save-state is-${saveStatus}`} data-gp-save-status={saveStatus}>
+                  {saveStatus === "synced"
+                    ? copy.saveSynced
+                    : saveStatus === "syncing"
+                      ? copy.saveSyncing
+                      : saveStatus === "failed"
+                        ? copy.saveFailed
+                        : copy.saveLocal}
+                </span>
+              ) : null}
+              {!complete && !interrupted && onStop && stop !== "stopped" ? (
+                <button
+                  type="button"
+                  className="gp-link-btn"
+                  data-gp-stop
+                  disabled={stop === "stopping"}
+                  onClick={onStop}
+                >
+                  {stop === "stopping" ? copy.stoppingInvestigation : copy.stopInvestigation}
+                </button>
+              ) : null}
               {interrupted ? (
                 <button type="button" className="gp-link-btn" onClick={onReverify}>
                   {copy.reviewAgain}
@@ -202,6 +233,28 @@ export function InvestigationCanvas({
             <span className="gp-quote-close" aria-hidden="true">”</span>
           </blockquote>
         </section>
+
+        {stop !== "idle" ? (
+          <section
+            className={`gp-stopped${stop === "stopping" ? " is-stopping" : ""}`}
+            role="status"
+            data-gp-stopped
+            data-gp-stop-state={stop}
+          >
+            <strong>{stop === "stopping" ? copy.stoppingInvestigation : copy.stoppedInvestigation}</strong>
+            <p>{copy.stoppedBody}</p>
+            {stop === "stopped" ? (
+              <div className="gp-stopped-actions">
+                <button type="button" className="gp-primary-btn" data-gp-stopped-retry onClick={onReverify}>
+                  {copy.reviewAgain}
+                </button>
+                <button type="button" className="gp-ghost-btn" onClick={onBackHome}>
+                  {copy.backHome}
+                </button>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         {!complete && !interrupted ? (
           <>

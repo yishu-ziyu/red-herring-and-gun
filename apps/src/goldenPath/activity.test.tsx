@@ -41,6 +41,9 @@ const INITIAL: RunState = {
   activities: [],
   activityRunId: null,
   lastActivitySeq: 0,
+  runId: null,
+  serverStatus: null,
+  stop: "idle",
 };
 
 function stateAfter(...activities: PublicActivity[]): RunState {
