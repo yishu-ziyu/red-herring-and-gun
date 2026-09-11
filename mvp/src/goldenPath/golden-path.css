@@ -1156,7 +1156,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0 0;
-  margin: 0 0 12px;
+  margin: 16px 0 0;
   font-size: 14px;
   font-weight: 400;
   color: var(--gp-ink-2);
@@ -1191,11 +1191,10 @@
 }
 
 .gp-hero-boundaries {
-  margin-top: 16px;
+  margin-top: 12px;
   padding: 0;
   background: transparent;
   border: 0;
-  border-top: 1px solid var(--gp-hairline);
   border-radius: 0;
   box-shadow: none;
   font-size: 16px;
@@ -1203,13 +1202,8 @@
   color: var(--gp-ink-2);
 }
 
-.gp-hero-boundary-list {
+.gp-hero-boundary-line {
   margin: 0;
-  padding-left: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  color: var(--gp-ink-secondary);
 }
 
 /* 中断态（Quiet Editorial 警示，无黄色大色块） */
@@ -1353,6 +1347,23 @@
   padding: 14px 0;
   gap: 14px;
   min-height: 44px;
+}
+
+.gp-canvas[data-gp-phase="complete"] [data-gp-hero-meta="claims"],
+.gp-canvas[data-gp-phase="complete"] [data-gp-hero-meta="sources"] {
+  display: none;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-claim-toggle {
+  display: none;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-original-text .gp-trace-mark {
+  text-decoration-color: #c8c4ba;
+}
+
+.gp-result-again {
+  margin: 36px 0 0;
 }
 
 .gp-claim-list {
