@@ -255,6 +255,52 @@ export function conflictUnknownReason(): InvestigationSnapshotV1 {
   );
 }
 
+/** 双方各有多条材料：支持 2 条、反驳 1 条。验证两侧各自列出、不合并、不丢。 */
+export function conflictMultiSource(): InvestigationSnapshotV1 {
+  const atom = conflictBase.atom;
+  const supportA = conflictBase.support;
+  const supportB = "https://gov.example/briefing-2026";
+  const refute = conflictBase.refute;
+  return buildInvestigationSnapshot(
+    {
+      ...conflictBase.input,
+      phase: "complete",
+      atomSearchBundle: {
+        atomsSearched: [atom],
+        byAtomKey: {
+          [atom]: [
+            src(supportA, "某地试点通知", "试点要求登记识别芯片"),
+            src(supportB, "主管部门说明会", "说明会重申登记要求"),
+            src(refute, "全国性新规查证", "无全国统一识别芯片要求"),
+          ],
+        },
+      },
+      subclaimVerdicts: [
+        {
+          ...conflictBase.verdict,
+          supportingSources: [
+            src(supportA, "某地试点通知", "试点要求登记识别芯片"),
+            src(supportB, "主管部门说明会", "说明会重申登记要求"),
+          ],
+          contradictingSources: [src(refute, "全国性新规查证", "无全国统一识别芯片要求")],
+        },
+      ],
+      report: { conclusion: "该说法把地方试点说成了全国新规。", verdictType: "unverified" },
+    },
+    { claimAtomKeyFn: noopKey }
+  );
+}
+
+export function receivedOnly(): InvestigationSnapshotV1 {
+  return buildInvestigationSnapshot(
+    {
+      originalClaim: "因为咖啡的争夺，在古代产生了非常多的战争。",
+      phase: "received",
+    },
+    { claimAtomKeyFn: noopKey }
+  );
+}
+
 export const INVESTIGATING_CLAIM = "某市下周将试点无人驾驶公交。";
 
 export function investigatingUnassessed(): InvestigationSnapshotV1 {

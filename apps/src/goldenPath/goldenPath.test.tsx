@@ -5,9 +5,11 @@ import { InvestigationCanvas } from "./InvestigationCanvas";
 import { buildClaimTraceSegments } from "./claimTrace";
 import {
   conflictKnownReason,
+  conflictMultiSource,
   conflictUnknownReason,
   interruptedPartial,
   investigatingUnassessed,
+  receivedOnly,
   LONG_CLAIM_PREFIX,
   longClaimComplete,
   MIXED_ATOM_A,
@@ -106,6 +108,57 @@ describe("golden case 5：真实冲突（complete）", () => {
     const conflict = document.querySelector("[data-gp-conflict-id]")!;
     expect(within(conflict as HTMLElement).getByText("双方材料并存，分歧的原因目前还不清楚。")).toBeTruthy();
     expect(conflict.textContent).not.toContain("分歧来自适用范围");
+  });
+});
+
+describe("争议双方各自可点（A15）", () => {
+  it("E1 两侧各自成组，不合并成一个按钮", () => {
+    renderCanvas(conflictKnownReason());
+    const conflict = document.querySelector("[data-gp-conflict-id]")!;
+    const support = conflict.querySelector('[data-gp-conflict-side="support"]');
+    const contradict = conflict.querySelector('[data-gp-conflict-side="contradict"]');
+    expect(support).toBeTruthy();
+    expect(contradict).toBeTruthy();
+    expect(support!.querySelectorAll("button").length).toBeGreaterThan(0);
+    expect(contradict!.querySelectorAll("button").length).toBeGreaterThan(0);
+  });
+
+  it("E2 点支持侧打开支持侧来源", () => {
+    const snapshot = conflictKnownReason();
+    const support = snapshot.sources.find((s) => s.url.includes("gov.example"))!;
+    renderCanvas(snapshot);
+    const conflict = document.querySelector("[data-gp-conflict-id]")!;
+    fireEvent.click(conflict.querySelector<HTMLElement>('[data-gp-conflict-side="support"] button')!);
+    const drawer = document.querySelector("[data-gp-source-layer]")!;
+    expect(drawer.querySelector("[data-gp-source-id]")?.getAttribute("data-gp-source-id")).toBe(support.id);
+  });
+
+  it("E3 点反驳侧打开反驳侧来源，不落到支持侧", () => {
+    const snapshot = conflictKnownReason();
+    const support = snapshot.sources.find((s) => s.url.includes("gov.example"))!;
+    const refute = snapshot.sources.find((s) => s.url.includes("fact.example"))!;
+    renderCanvas(snapshot);
+    const conflict = document.querySelector("[data-gp-conflict-id]")!;
+    fireEvent.click(conflict.querySelector<HTMLElement>('[data-gp-conflict-side="contradict"] button')!);
+    const panel = document.querySelector("[data-gp-source-layer]")!.querySelector("[data-gp-source-id]")!;
+    expect(panel.getAttribute("data-gp-source-id")).toBe(refute.id);
+    expect(panel.getAttribute("data-gp-source-id")).not.toBe(support.id);
+  });
+
+  it("E4 一侧有 N 份材料就列出 N 行", () => {
+    renderCanvas(conflictMultiSource());
+    const conflict = document.querySelector("[data-gp-conflict-id]")!;
+    expect(conflict.querySelectorAll('[data-gp-conflict-side="support"] button').length).toBe(2);
+    expect(conflict.querySelectorAll('[data-gp-conflict-side="contradict"] button').length).toBe(1);
+  });
+
+  it("E5 来源查不到时不渲染死按钮", () => {
+    const snapshot = conflictKnownReason();
+    const refute = snapshot.sources.find((s) => s.url.includes("fact.example"))!;
+    renderCanvas({ ...snapshot, sources: snapshot.sources.filter((s) => s.id !== refute.id) });
+    const conflict = document.querySelector("[data-gp-conflict-id]")!;
+    expect(conflict.querySelectorAll('[data-gp-conflict-side="contradict"] button').length).toBe(0);
+    expect(conflict.querySelector('[data-gp-conflict-side="contradict"]')!.textContent).toContain("材料暂缺");
   });
 });
 
@@ -2273,7 +2326,49 @@ describe("Issue #66 post-#76 real SSE artifacts", () => {
   });
 });
 
+describe("调查中职责按快照出场", () => {
+  it("received 只有拆问题，不提前写出处三人", () => {
+    renderCanvas(receivedOnly());
+    const roles = document.querySelector("[data-gp-roles=compact]");
+    expect(roles).toBeTruthy();
+    expect(screen.getByText("拆问题")).toBeInTheDocument();
+    expect(screen.queryByText("找出处")).not.toBeInTheDocument();
+    expect(screen.queryByText("核语境")).not.toBeInTheDocument();
+    expect(screen.queryByText("作判断")).not.toBeInTheDocument();
+    expect(roles!.querySelectorAll(".gp-role")).toHaveLength(1);
+  });
+
+  it("investigating 四人到齐，后三人带出场标记", () => {
+    renderCanvas(investigatingUnassessed());
+    expect(screen.getByText("拆问题")).toBeInTheDocument();
+    expect(screen.getByText("找出处")).toBeInTheDocument();
+    expect(screen.getByText("核语境")).toBeInTheDocument();
+    expect(screen.getByText("作判断")).toBeInTheDocument();
+    expect(document.querySelectorAll("[data-gp-roles=compact] .gp-role.is-enter")).toHaveLength(3);
+  });
+});
+
 describe("结果页 P0/P1：调查备忘录视觉", () => {
+  it("完成态丢掉 S1/S3 来源序号；与判断段重叠的 finding 不出现", () => {
+    const snap = refutedComplete();
+    const leaked =
+      "所有来源均为非学术性文章。S1将「咖啡与茶的千年战争」定义为「文化较量」。S3/S5中「人类战争史」指能量补充。S2/S4同样为概括性叙述。";
+    snap.conclusion = {
+      ...snap.conclusion!,
+      verdictLead: "公开材料还撑不住判断。",
+      rationale: leaked,
+    };
+    snap.claims[0]!.evidence = snap.claims[0]!.evidence.map((link, index) =>
+      index === 0 ? { ...link, finding: leaked } : link,
+    );
+    renderCanvas(snap);
+    const hero = screen.getByLabelText("调查结论");
+    expect(hero.textContent).not.toMatch(/\bS\d+\b/);
+    expect(hero.textContent).toContain("咖啡与茶的千年战争");
+    expect(document.body.textContent).not.toMatch(/\bS\d+\b/);
+    expect(document.querySelector(".gp-point")).toBeNull();
+  });
+
   it("完成态丢掉 wholeClaimAudit 整句和 [n]，不把判断再抄进依据", () => {
     const snap = refutedComplete();
     const leaked = "官方已辟谣。但wholeClaimAudit指出的四项桥接缺口仍未补齐[1]。各来源一致。";
@@ -2325,6 +2420,9 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-original\s*\{[^}]*display:\s*none/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-claim-head\s*\{[^}]*display:\s*none/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-relation\s*\{[^}]*display:\s*none/);
+    expect(css).toContain("gp-role-emerge");
+    expect(css).toContain("--gp-enter-delay");
+    expect(css).toMatch(/prefers-reduced-motion: reduce[\s\S]*\.gp-role\.is-enter/);
     const point = document.querySelector(".gp-point");
     if (point) {
       expect(point.compareDocumentPosition(document.querySelector("[data-gp-evidence-excerpt]")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
