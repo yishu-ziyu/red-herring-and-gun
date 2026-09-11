@@ -214,7 +214,7 @@ export function InvestigationCanvas({
                   index={index}
                   sources={snapshot.sources}
                   conflicts={snapshot.conflicts}
-                  defaultExpanded={complete ? index === 0 : true}
+                  defaultExpanded={complete ? index === 0 : interrupted ? true : claim.progress !== "pending"}
                   onSelectSource={openSource}
                   onHeaderHover={handleHeaderHover}
                   onHeaderFocus={handleHeaderFocus}

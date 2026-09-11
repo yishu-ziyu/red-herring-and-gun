@@ -134,7 +134,7 @@ export function ProductShell({
                 {copy.newCheck}
               </button>
             ) : (
-              <a className="gp-nav-text" href="#gp-home-case">
+              <a className="gp-nav-text" href="#gp-examples">
                 {copy.examplesNav}
               </a>
             )}
