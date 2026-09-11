@@ -66,6 +66,26 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # 应用外壳与 Service Worker 必须每次回源校验。缺 Cache-Control 时浏览器按 Last-Modified
+    # 做启发式缓存，会把旧 index.html 当新鲜内容复用 —— 部署新版后回访用户会一直停在旧壳
+    # （2026-09-11 实测：线上 HTML 停在 Sep 2 的构建，引用的还是 #52 之前的包）。
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /sw.js {
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /manifest.webmanifest {
+        add_header Cache-Control "no-cache";
+    }
+
+    # 文件名带内容 hash，改名即换内容，可以长期缓存。
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
     location / {
         try_files $uri $uri/ /index.html;
     }

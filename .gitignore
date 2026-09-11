@@ -96,3 +96,14 @@ __pycache__/
 
 # Local QA Python environment
 .venv-qa/
+
+# QA run output and local agent/MCP state (generated per run)
+# 锚定仓库根：不加前导斜杠会匹配任意层级同名目录
+/out/
+/.omo/
+/.statamcp/
+/tmp/
+.vercel
+
+# Playwright 调试轨迹：体积大且可由 qa:replay 重生成，不随仓库分发（文件保留在本地磁盘）
+docs/**/*.zip

@@ -2,7 +2,7 @@
  * Golden Path UI fixtures：用 #51 的 buildInvestigationSnapshot 确定性构建
  * 5 类 golden case + 边界快照。与 core 契约同源，不经手写 JSON。
  */
-import { buildInvestigationSnapshot, type InvestigationSnapshotV1 } from "@rhg/core/investigation";
+import { buildInvestigationSnapshot, type InvestigationSnapshotV1 } from "../lib/investigation";
 
 const src = (url: string, title: string, snippet: string) => ({ url, title, snippet });
 

@@ -9,7 +9,7 @@ import {
   rebuildInvestigationFromReport,
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
-} from "@rhg/core/investigation";
+} from "./lib/investigation";
 import { ProductShell, type ShellCase } from "./goldenPath/ProductShell";
 import { InputStage } from "./goldenPath/InputStage";
 import { InvestigationCanvas } from "./goldenPath/InvestigationCanvas";

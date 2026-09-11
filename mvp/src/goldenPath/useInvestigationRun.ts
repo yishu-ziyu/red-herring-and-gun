@@ -13,7 +13,7 @@ import {
   rebuildInvestigationFromReport,
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
-} from "@rhg/core/investigation";
+} from "../lib/investigation";
 import { requestOrchestrateStream, type OrchestrateStreamEvent } from "../lib/agentExpansion";
 import { caseIntakePrimaryText, type CaseIntake } from "../lib/caseIntake";
 import { createKnowledgeBase } from "../lib/knowledgeBase";

@@ -10,7 +10,7 @@ Lazy glossary for agents. Product truth — definition, constitution (Evidence A
 | **claim atom** | Minimal proposition extracted from the user claim; keyed by `claimAtomKey` |
 | **self-proof** | Gate: drop atoms not directly supported by the original claim |
 | **exclusion / non-verifiable** | Stance/value/normative atoms: never enter `subclaimVerdicts`; UI copy is 「立场型 / 不适用真/假判断」, never 「灰」. Prediction: search present-tense traces (commitment/filing); skip only bare futures |
-| **type gate** | Same MiniMax-M3 as the rest of the pipeline, RumorDetector job sheet only: write `type` + `verifiable`, must not verdict. Code routes on those two fields. Circulating-claim lookalikes forced checkable (`forceCheckableAtomTypes`). No second LLM on the label (unlike crossExam). See PRODUCT_SPEC §四「类型谁标」 |
+| **type gate** | Same model as the rest of the pipeline (公网默认 MiniMax-M2.7-highspeed，M3 显式覆盖 — 见 PRODUCT_SPEC §四), RumorDetector job sheet only: write `type` + `verifiable`, must not verdict. Code routes on those two fields. Circulating-claim lookalikes forced checkable (`forceCheckableAtomTypes`). No second LLM on the label (unlike crossExam). See PRODUCT_SPEC §四「类型谁标」 |
 | **subclaim verdict** | Per verifiable atom: true/false/partial/unverified/exaggerated + sources. No http(s) or related-only true/false → unverified |
 | **per-atom retrieval** | Search verifiable atoms (cap 6, causal/numeric first), bind evidence per atom. Unselected atoms stay in `claimItems` as unverified |
 | **evidence loop** | Post fact-check targeted re-search for unverified/conflicted atoms; 2 strategy rounds, explicit stop reasons; new evidence → fact_checker re-run once — ADR-004 |
