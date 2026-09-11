@@ -2302,6 +2302,7 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(css).toMatch(/data-gp-hero-meta="claims"[\s\S]*display:\s*none/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-original\s*\{[^}]*display:\s*none/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-claim-head\s*\{[^}]*display:\s*none/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-relation\s*\{[^}]*display:\s*none/);
     const point = document.querySelector(".gp-point");
     if (point) {
       expect(point.compareDocumentPosition(document.querySelector("[data-gp-evidence-excerpt]")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
