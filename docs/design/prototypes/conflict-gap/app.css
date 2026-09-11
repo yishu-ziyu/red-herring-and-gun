@@ -1,0 +1,763 @@
+/*
+ * 原型取景页 + 产品上下文样式 + 三个变体样式。
+ * 产品上下文（.gp-*）逐字取自 mvp/src/goldenPath/golden-path.css 的相关规则，
+ * 保证变体是在真实版式里被评估的，而不是被重新设计一遍。
+ */
+
+/* ---------- 取景页 ---------- */
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--gp-bg);
+  color: var(--gp-ink-primary);
+  font-family: var(--gp-font);
+  -webkit-font-smoothing: antialiased;
+}
+
+.proto-stage {
+  min-height: 100vh;
+  padding: 56px 24px 140px;
+}
+
+.doc {
+  max-width: var(--gp-content-width);
+  margin: 0 auto;
+}
+
+.doc-head {
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--gp-hairline);
+}
+
+.doc-kicker {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--gp-ink-3);
+}
+
+.doc-claim {
+  margin: 0;
+  font-family: var(--gp-serif);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--gp-ink-primary);
+}
+
+.doc-meta {
+  margin: 12px 0 0;
+  font-size: 12.5px;
+  color: var(--gp-ink-3);
+}
+
+/* ---------- 产品上下文（复制自 golden-path.css） ---------- */
+.gp-claim {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  border-top: 1px solid var(--gp-hairline);
+  padding: 20px 0 22px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.gp-claim.is-collapsed-context {
+  padding: 14px 0;
+}
+
+.gp-claim-head {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: default;
+}
+
+.gp-claim-num {
+  flex: none;
+  font-family: var(--gp-mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gp-ink-3);
+  letter-spacing: -0.02em;
+  line-height: 1.5;
+  margin-top: 1px;
+  min-width: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gp-claim-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.gp-claim-text {
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.55;
+  color: var(--gp-ink-primary);
+}
+
+.gp-claim-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  margin-top: 2px;
+}
+
+.gp-claim-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--gp-ink-3);
+}
+
+.gp-claim-detail {
+  padding: 14px 0 4px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gp-evidence-board {
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.gp-evidence-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  padding: 14px 0 4px;
+  background: transparent;
+}
+
+.gp-evidence-board > .gp-evidence-group-head:first-child {
+  padding-top: 0;
+}
+
+.gp-role-glyph { font-size: 10px; line-height: 1; }
+.gp-role-glyph.is-support { color: var(--gp-semantic-support); }
+.gp-role-glyph.is-contradict { color: var(--gp-semantic-contradict); }
+.gp-role-glyph.is-context-only { color: var(--gp-semantic-context); }
+
+.gp-evidence-group-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--gp-ink-3);
+}
+
+.gp-evidence-group-count {
+  font-size: 11.5px;
+  color: var(--gp-ink-3);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.gp-evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-top: 1px solid var(--gp-line-subtle);
+}
+
+.gp-evidence-item {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid var(--gp-line-subtle);
+  background: transparent;
+  border-radius: 0;
+  padding: 12px 8px;
+  margin: 0 -8px;
+  min-height: 44px;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  position: relative;
+  transition: background-color var(--gp-motion-fast) var(--gp-ease-out);
+}
+
+.gp-evidence-item:hover {
+  background: rgba(15, 23, 42, 0.03);
+}
+
+.gp-evidence-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.gp-evidence-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.gp-evidence-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--gp-ink-primary);
+  line-height: 1.5;
+  flex: 1;
+  min-width: 0;
+}
+
+.gp-evidence-domain {
+  font-family: var(--gp-mono);
+  font-size: 11.5px;
+  color: var(--gp-ink-3);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  white-space: nowrap;
+}
+
+.gp-ext-arrow { opacity: 0.7; }
+
+.gp-evidence-relation {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 4.25em;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.3;
+  color: var(--gp-ink-2);
+  white-space: nowrap;
+}
+
+.gp-evidence-relation.is-support { color: var(--gp-semantic-support); }
+.gp-evidence-relation.is-contradict { color: var(--gp-semantic-contradict); }
+.gp-evidence-relation.is-context-only { color: var(--gp-semantic-context); }
+
+.gp-evidence-excerpt {
+  margin: 6px 0 0;
+  padding: 0 0 0 10px;
+  border: 0;
+  border-left: 2px solid var(--gp-hairline);
+  font-family: var(--gp-serif);
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--gp-ink-secondary);
+  line-height: 1.65;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gp-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--gp-hairline);
+  border-radius: var(--gp-radius-sm);
+  background: transparent;
+  padding: 2px 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.gp-chip--mixed { color: var(--gp-semantic-gap); border-color: rgba(146, 64, 14, 0.28); }
+.gp-chip--negative { color: var(--gp-semantic-contradict); border-color: rgba(185, 28, 28, 0.28); }
+
+.gp-conflict {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  border-left: 2px solid var(--gp-semantic-conflict);
+  padding: 2px 0 8px 12px;
+  margin: 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gp-conflict-head { display: flex; align-items: center; gap: 6px; }
+
+.gp-conflict-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gp-semantic-conflict);
+  letter-spacing: 0.04em;
+}
+
+.gp-conflict-label { margin: 0; font-size: 12.5px; font-weight: 650; color: var(--gp-ink-primary); }
+.gp-conflict-summary { margin: 0; font-size: 13.5px; color: var(--gp-ink-primary); line-height: 1.55; }
+.gp-conflict-sides { margin: 0; }
+
+.gp-conflict-side {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--gp-accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.gp-conflict-reason-wrap { margin-top: 2px; font-size: 12.8px; line-height: 1.6; color: var(--gp-ink-2); }
+.gp-conflict-reason-lead { color: var(--gp-ink-primary); font-weight: 600; }
+.gp-conflict-reason { color: var(--gp-ink-2); }
+.gp-conflict-reason.is-unknown { color: var(--gp-ink-3); font-style: italic; }
+
+.gp-gaps {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  border-top: 1px solid var(--gp-hairline);
+  border-left: 2px solid var(--gp-semantic-gap);
+  padding: 16px 0 4px 12px;
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gp-gaps-head { display: flex; align-items: center; gap: 4px; }
+.gp-gaps-label { margin: 0; font-size: 12.5px; font-weight: 650; color: var(--gp-semantic-gap); }
+.gp-gaps-count { font-size: 12px; color: var(--gp-ink-3); font-weight: 500; font-variant-numeric: tabular-nums; }
+.gp-gaps-hint { margin: 0; font-size: 12px; color: var(--gp-ink-3); }
+.gp-gaps-list { list-style: none; margin: 2px 0 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.gp-gap-item { background: transparent; border: none; border-radius: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.gp-gap-desc { font-size: 13px; font-weight: 600; color: var(--gp-ink-primary); line-height: 1.5; }
+.gp-gap-consequence { font-size: 12.5px; color: var(--gp-ink-3); line-height: 1.5; }
+
+.gp-boundary {
+  margin: 4px 0 0 0;
+  font-size: 12.8px;
+  line-height: 1.65;
+  color: var(--gp-ink-2);
+  border-top: 1px dashed var(--gp-hairline);
+  padding-top: 8px;
+}
+
+.gp-boundary strong { color: var(--gp-ink-primary); margin-right: 6px; font-size: 12px; }
+
+/* ---------- 来源抽屉（产品 Source Drawer 的取景版） ---------- */
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(24, 24, 27, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--gp-motion-ui) var(--gp-ease-out);
+  z-index: 40;
+}
+
+.drawer-scrim.is-open { opacity: 1; pointer-events: auto; }
+
+.source-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 92vw);
+  background: var(--gp-surface);
+  box-shadow: var(--gp-elevation-drawer);
+  transform: translateX(100%);
+  transition: transform var(--gp-motion-ui) var(--gp-ease-out);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px 22px;
+  overflow-y: auto;
+}
+
+.source-drawer.is-open { transform: translateX(0); }
+
+.drawer-head { display: flex; align-items: center; justify-content: space-between; }
+.drawer-kicker { font-size: 11.5px; font-weight: 650; letter-spacing: 0.04em; color: var(--gp-ink-3); }
+.drawer-kicker.is-support { color: var(--gp-semantic-support); }
+.drawer-kicker.is-contradict { color: var(--gp-semantic-contradict); }
+.drawer-kicker.is-context-only { color: var(--gp-semantic-context); }
+
+.drawer-close {
+  border: 0;
+  background: none;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--gp-ink-3);
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.drawer-title { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.5; }
+.drawer-domain { margin: 0; font-family: var(--gp-mono); font-size: 11.5px; color: var(--gp-ink-3); }
+
+.drawer-excerpt {
+  margin: 6px 0 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--gp-hairline);
+  font-family: var(--gp-serif);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--gp-ink-secondary);
+}
+
+.drawer-link { font-size: 13px; color: var(--gp-accent); text-decoration: none; font-weight: 600; }
+.drawer-link:hover { text-decoration: underline; }
+
+/* =========================================================
+   变体 1 · 两造对质
+   争点不再是证据列表下面的注脚，而是把两边的材料并排摆开。
+   ========================================================= */
+.v1-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 14px 0 4px;
+}
+
+.v1-tag {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--gp-semantic-conflict);
+  letter-spacing: 0.04em;
+}
+
+.v1-head-text { font-size: 12.5px; color: var(--gp-ink-3); }
+
+.v1-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--gp-line-subtle);
+  border-bottom: 1px solid var(--gp-line-subtle);
+}
+
+.v1-side {
+  padding: 12px 0 14px;
+  min-width: 0;
+  transition: opacity var(--gp-motion-ui) var(--gp-ease-out);
+}
+
+.v1-side.is-support { padding-right: 18px; animation: v1-in-left var(--gp-motion-layout) var(--gp-ease-out) both; }
+.v1-side.is-contradict {
+  border-left: 1px solid var(--gp-line-subtle);
+  padding-left: 18px;
+  animation: v1-in-right var(--gp-motion-layout) var(--gp-ease-out) both;
+}
+
+/* 读一边的时候，另一边退到背景里——对质是两次阅读，不是一张表 */
+.v1-cols:has(.v1-side:hover) .v1-side:not(:hover) { opacity: 0.5; }
+
+.v1-side-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.v1-side-head h4 { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: 0.02em; color: var(--gp-ink-2); }
+.v1-side-count { font-size: 11.5px; color: var(--gp-ink-3); font-variant-numeric: tabular-nums; }
+
+.v1-side .gp-evidence-item { padding-left: 0; padding-right: 0; margin: 0; }
+.v1-side .gp-evidence-item:last-child { border-bottom: 0; }
+.v1-side .gp-evidence-header { flex-direction: column; gap: 2px; }
+.v1-side .gp-evidence-title { font-size: 13px; }
+
+.v1-seam-note {
+  margin: 12px 0 0;
+  font-size: 12.8px;
+  line-height: 1.6;
+  color: var(--gp-ink-2);
+  animation: v1-fade var(--gp-motion-ui) var(--gp-ease-out) 160ms both;
+}
+
+.v1-seam-note strong { color: var(--gp-ink-primary); font-weight: 600; }
+.v1-seam-note.is-unknown { color: var(--gp-ink-3); font-style: italic; }
+
+@keyframes v1-in-left {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes v1-in-right {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes v1-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+
+/* =========================================================
+   第二轮 · 中缝
+   争点解释不再压在底部，而是搬进两栏之间；两边向左右退开。
+   用的是真实字段 reason（质询回应），不需要新内容。
+   ========================================================= */
+.seam-cols {
+  display: grid;
+  grid-template-columns: 1fr 172px 1fr;
+  border-top: 1px solid var(--gp-line-subtle);
+  border-bottom: 1px solid var(--gp-line-subtle);
+}
+
+.seam-side {
+  padding: 12px 0 14px;
+  min-width: 0;
+  transition: opacity var(--gp-motion-ui) var(--gp-ease-out);
+}
+
+.seam-side.is-support { padding-right: 18px; animation: v1-in-left var(--gp-motion-layout) var(--gp-ease-out) both; }
+.seam-side.is-contradict { padding-left: 18px; animation: v1-in-right var(--gp-motion-layout) var(--gp-ease-out) both; }
+
+.seam-cols:has(.seam-side:hover) .seam-side:not(:hover) { opacity: 0.5; }
+
+.seam-side-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.seam-side-head h4 { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: 0.02em; color: var(--gp-ink-2); }
+.seam-side-count { font-size: 11.5px; color: var(--gp-ink-3); font-variant-numeric: tabular-nums; }
+
+.seam-side .gp-evidence-item { padding-left: 0; padding-right: 0; margin: 0; }
+.seam-side .gp-evidence-item:last-child { border-bottom: 0; }
+.seam-side .gp-evidence-header { flex-direction: column; gap: 2px; }
+.seam-side .gp-evidence-title { font-size: 13px; }
+
+.seam-column {
+  border-left: 1px solid var(--gp-line-subtle);
+  border-right: 1px solid var(--gp-line-subtle);
+  background: var(--gp-surface-soft);
+  padding: 12px 14px 14px;
+  animation: v1-fade var(--gp-motion-ui) var(--gp-ease-out) 120ms both;
+}
+
+.seam-tag {
+  display: block;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--gp-semantic-conflict);
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.seam-text { margin: 0; font-size: 12.5px; line-height: 1.65; color: var(--gp-ink-2); }
+.seam-summary { margin: 0 0 6px; font-size: 13.5px; font-weight: 600; line-height: 1.55; color: var(--gp-ink-primary); }
+.seam-text.is-unknown { color: var(--gp-ink-3); font-style: italic; }
+
+.seam-note { margin: 10px 0 0; font-size: 12px; color: var(--gp-ink-3); line-height: 1.6; }
+
+/* =========================================================
+   第二轮 · 片段
+   对不上的其实是两句话，不是两个标题。摘录领衔，来源退后。
+   不新增内容。
+   ========================================================= */
+.snip-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--gp-line-subtle);
+  border-bottom: 1px solid var(--gp-line-subtle);
+}
+
+.snip-side {
+  padding: 12px 0 14px;
+  min-width: 0;
+  transition: opacity var(--gp-motion-ui) var(--gp-ease-out);
+}
+
+.snip-side.is-support { padding-right: 18px; animation: v1-in-left var(--gp-motion-layout) var(--gp-ease-out) both; }
+.snip-side.is-contradict {
+  border-left: 1px solid var(--gp-line-subtle);
+  padding-left: 18px;
+  animation: v1-in-right var(--gp-motion-layout) var(--gp-ease-out) both;
+}
+
+.snip-cols:has(.snip-side:hover) .snip-side:not(:hover) { opacity: 0.5; }
+
+.snip-side-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.snip-side-head h4 { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: 0.02em; color: var(--gp-ink-2); }
+
+.snip-row { padding: 12px 0; margin: 0; border-bottom: 0; }
+
+.snip-quote {
+  display: block;
+  font-family: var(--gp-serif);
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--gp-ink-primary);
+}
+
+.snip-source {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--gp-ink-3);
+}
+
+.snip-source-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gp-ink-3);
+}
+
+.snip-source .gp-evidence-domain { display: inline-flex; margin-left: 6px; vertical-align: baseline; }
+
+/* =========================================================
+   第二轮 · 立场
+   每边先说自己主张什么，材料在下面当账本。
+   注意：真实快照的 conflict.sides 没有 position 摘要字段，
+   这句要成立需要调查为每一边生成一句主张（内容层改动）。
+   ========================================================= */
+.stance-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--gp-line-subtle);
+  border-bottom: 1px solid var(--gp-line-subtle);
+}
+
+.stance-side {
+  padding: 12px 0 14px;
+  min-width: 0;
+  transition: opacity var(--gp-motion-ui) var(--gp-ease-out);
+}
+
+.stance-side.is-support { padding-right: 18px; animation: v1-in-left var(--gp-motion-layout) var(--gp-ease-out) both; }
+.stance-side.is-contradict {
+  border-left: 1px solid var(--gp-line-subtle);
+  padding-left: 18px;
+  animation: v1-in-right var(--gp-motion-layout) var(--gp-ease-out) both;
+}
+
+.stance-cols:has(.stance-side:hover) .stance-side:not(:hover) { opacity: 0.5; }
+
+.stance-side-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.stance-side-head h4 { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: 0.02em; color: var(--gp-ink-2); }
+
+.stance-claim { margin: 0 0 10px; font-size: 15px; font-weight: 600; line-height: 1.6; color: var(--gp-ink-primary); }
+.stance-claim-lead {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--gp-ink-3);
+  margin-bottom: 4px;
+}
+
+.stance-side .gp-evidence-item { padding-left: 0; padding-right: 0; margin: 0; }
+.stance-side .gp-evidence-item:last-child { border-bottom: 0; }
+.stance-side .gp-evidence-header { flex-direction: column; gap: 2px; }
+.stance-side .gp-evidence-title { font-size: 13px; }
+
+.stance-seam-note {
+  margin: 12px 0 0;
+  font-size: 12.8px;
+  line-height: 1.6;
+  color: var(--gp-ink-2);
+  animation: v1-fade var(--gp-motion-ui) var(--gp-ease-out) 160ms both;
+}
+
+.stance-seam-note strong { color: var(--gp-ink-primary); font-weight: 600; }
+
+/* ---------- 窄屏 ---------- */
+@media (max-width: 640px) {
+  .seam-cols, .snip-cols, .stance-cols { grid-template-columns: 1fr; }
+  .seam-side.is-support, .snip-side.is-support, .stance-side.is-support { padding-right: 0; }
+  .seam-side.is-contradict, .snip-side.is-contradict, .stance-side.is-contradict {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--gp-line-subtle);
+  }
+  .seam-column { border-left: 0; border-right: 0; border-top: 1px solid var(--gp-line-subtle); border-bottom: 1px solid var(--gp-line-subtle); }
+  .seam-cols:has(.seam-side:hover) .seam-side:not(:hover),
+  .snip-cols:has(.snip-side:hover) .snip-side:not(:hover),
+  .stance-cols:has(.stance-side:hover) .stance-side:not(:hover) { opacity: 1; }
+}
+
+/* ---------- reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .v1-side, .v1-seam-note,
+  .seam-side, .seam-column,
+  .snip-side,
+  .stance-side, .stance-seam-note { animation: none; }
+}
+
+/* =========================================================
+   第三轮 · 角色系统（2026-09-11 视觉人格修正案）
+   像素角色只站材料状态位：立案、两边材料对不上、这一格还空着、收束。
+   不进执行流程，不写角色名，不表演“正在思考”。
+   ========================================================= */
+.gp-avatar {
+  border-radius: 50%;
+  object-fit: cover;
+  background: #fff;
+  border: 1px solid var(--gp-hairline);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  flex: none;
+  vertical-align: middle;
+}
+
+.gp-avatar.is-sm { width: 30px; height: 30px; }
+.gp-avatar.is-md { width: 34px; height: 34px; }
+.gp-avatar.is-lg { width: 56px; height: 56px; }
+
+/* 页眉里角色与 kicker 同行 */
+.sig-kicker { display: flex; align-items: center; gap: 8px; }
+
+/* 页尾署名 */
+.sig-foot {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--gp-hairline);
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.sig-foot-body { display: flex; flex-direction: column; gap: 3px; }
+.sig-foot-body strong { font-size: 14px; font-weight: 650; color: var(--gp-ink-primary); }
+.sig-foot-body span { font-size: 12.8px; color: var(--gp-ink-3); line-height: 1.6; }
+
+/* 状态位 */
+.state-line { display: flex; gap: 12px; align-items: center; margin: 16px 0 0; }
+.state-line .v1-seam-note { margin: 0; }
+
+.state-gaps .gp-gaps-head { gap: 8px; }
+.state-gaps .gp-avatar { margin-right: 2px; }
+
+.state-boundary { display: flex; align-items: center; gap: 12px; }
+
+/* 对质：一人读一边 */
+.duel-reader { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.duel-reader .snip-side-head { margin-bottom: 0; }
+.duel-cols .snip-side.is-support .gp-avatar { border-color: rgba(21, 128, 61, 0.35); }
+.duel-cols .snip-side.is-contradict .gp-avatar { border-color: rgba(185, 28, 28, 0.35); }
+
+@media (max-width: 640px) {
+  .sig-foot { flex-direction: row; }
+}
