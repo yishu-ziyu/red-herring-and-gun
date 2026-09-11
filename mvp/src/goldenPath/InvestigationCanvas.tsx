@@ -161,9 +161,9 @@ export function InvestigationCanvas({
           </section>
         ) : null}
 
-        <section className="gp-original" aria-label={copy.canvasOriginalLabel}>
+        <section className="gp-original" aria-label={complete ? copy.canvasOriginalInResult : copy.canvasOriginalLabel}>
           <div className="gp-original-meta">
-            <span className="gp-original-label">{copy.canvasOriginalLabel}</span>
+            <span className="gp-original-label">{complete ? copy.canvasOriginalInResult : copy.canvasOriginalLabel}</span>
             <div className="gp-original-side">
               {restoredAt ? (
                 <em className="gp-original-time">{copy.oldCaseNotice(formatDate(restoredAt))}</em>
@@ -174,15 +174,15 @@ export function InvestigationCanvas({
                   <span>正在调查</span>
                 </span>
               ) : null}
-              {complete || interrupted ? (
+              {interrupted ? (
                 <button type="button" className="gp-link-btn" onClick={onReverify}>
                   {copy.reviewAgain}
                 </button>
-              ) : (
+              ) : !complete ? (
                 <button type="button" className="gp-link-btn" onClick={onBackHome}>
                   {copy.backHome}
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
           <blockquote className="gp-original-quote">
@@ -252,6 +252,14 @@ export function InvestigationCanvas({
               <p>{copy.imageOriginHint}</p>
             </section>
           )
+        ) : null}
+
+        {complete ? (
+          <p className="gp-result-again">
+            <button type="button" className="gp-link-btn" onClick={onReverify}>
+              {copy.reviewAgain}
+            </button>
+          </p>
         ) : null}
       </div>
 
