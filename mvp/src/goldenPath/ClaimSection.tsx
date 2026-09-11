@@ -37,6 +37,7 @@ type ClaimSectionProps = {
   onHeaderFocus?: (claimId: string | null) => void;
   onExpandedTrace?: (claimId: string | null) => void;
   asResult?: boolean;
+  asWork?: boolean;
 };
 
 function claimPoint(claim: InvestigationClaim): string {
@@ -59,6 +60,7 @@ export function ClaimSection({
   onHeaderFocus,
   onExpandedTrace,
   asResult = false,
+  asWork = false,
 }: ClaimSectionProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
@@ -123,6 +125,7 @@ export function ClaimSection({
                 claim={claim}
                 sources={sources}
                 asResult={asResult}
+                asWork={asWork}
                 onSelect={(l, s, trigger) => onSelectSource(l, s, claim.id, trigger)}
               />
             </div>
@@ -132,7 +135,7 @@ export function ClaimSection({
             </p>
           )}
 
-          {claimConflicts.map((conflict) => (
+          {asWork ? null : claimConflicts.map((conflict) => (
             <section key={conflict.id} className="gp-conflict" data-gp-conflict-id={conflict.id}>
               {asResult ? (
                 <p className="gp-note">
@@ -173,7 +176,7 @@ export function ClaimSection({
             </section>
           ))}
 
-          {claim.gaps.length > 0 ? (
+          {asWork ? null : claim.gaps.length > 0 ? (
             <aside className="gp-gaps" aria-label={copy.gapLabel}>
               {asResult ? (
                 claim.gaps.map((gap) => (
@@ -201,7 +204,7 @@ export function ClaimSection({
             </aside>
           ) : null}
 
-          {claim.boundary ? (
+          {asWork ? null : claim.boundary ? (
             <p className="gp-boundary">
               {asResult ? claim.boundary : (
                 <>
