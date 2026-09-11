@@ -1,0 +1,157 @@
+{
+  "scope": "Offline proposed prototype only; no repository/production/backend/model test",
+  "browser": "Playwright + system Chromium; Browser plugin absent. Navigation to file/localhost blocked by administrator; rendered supplied HTML in memory via set_content; no external requests.",
+  "viewports": [
+    {
+      "state": "home",
+      "viewport": "1440x1000",
+      "title": "红鲱鱼与枪 · 首页",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "investigation",
+      "viewport": "1440x1000",
+      "title": "红鲱鱼与枪 · 调查中",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "result",
+      "viewport": "1440x1000",
+      "title": "红鲱鱼与枪 · 结果",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "source",
+      "viewport": "1440x1000",
+      "title": "红鲱鱼与枪 · 来源详情",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "conflict",
+      "viewport": "1440x1000",
+      "title": "红鲱鱼与枪 · 材料对照",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "interrupted",
+      "viewport": "1440x1000",
+      "title": "红鲱鱼与枪 · 中断",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "history",
+      "viewport": "1440x1000",
+      "title": "红鲱鱼与枪 · 历史",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "settings",
+      "viewport": "1440x1000",
+      "title": "红鲱鱼与枪 · 设置",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "examples",
+      "viewport": "1440x1000",
+      "title": "红鲱鱼与枪 · 案例",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "share",
+      "viewport": "1440x1000",
+      "title": "红鲱鱼与枪 · 分享预览",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "home",
+      "viewport": "390x844",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "investigation",
+      "viewport": "390x844",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "result",
+      "viewport": "390x844",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "conflict",
+      "viewport": "390x844",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "settings",
+      "viewport": "390x844",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "source",
+      "viewport": "390x844",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "home",
+      "viewport": "320x844",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "investigation",
+      "viewport": "320x844",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "result",
+      "viewport": "320x844",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "conflict",
+      "viewport": "320x844",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "settings",
+      "viewport": "320x844",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    },
+    {
+      "state": "source",
+      "viewport": "320x844",
+      "horizontalOverflow": false,
+      "meaningfulText": true
+    }
+  ],
+  "interactions": [
+    "Home fill -> submit notice -> explicitly replay -> 1/2/3 discoveries -> result PASS",
+    "Left and right sources open distinct correct materials; Escape closes PASS",
+    "History search empty state PASS",
+    "Share disclosure -> read-only preview; no real share created PASS",
+    "Custom input stays draft; no fake result for user input PASS"
+  ],
+  "errors": [],
+  "consoleWarningsAndErrors": []
+}

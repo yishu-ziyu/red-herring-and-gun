@@ -168,8 +168,9 @@ function LegacyDeskContent() {
 
   const handleStartAnalysis = useCallback(
     (intake: CaseIntake, modelChoice: ModelChoiceMap, force = false) => {
-      if (!historyReady) return;
-      const match = intake.links.length || intake.images.length ? undefined : cases.find((item) => item.status === "done" && normalizeHistoryClaim(item.claim) === normalizeHistoryClaim(caseIntakePrimaryText(intake)));
+      const match = historyReady && !force && !(intake.links.length || intake.images.length)
+        ? cases.find((item) => item.status === "done" && normalizeHistoryClaim(item.claim) === normalizeHistoryClaim(caseIntakePrimaryText(intake)))
+        : undefined;
       if (match && !force) {
         setPendingHistory({ item: match, intake, modelChoice });
         return;
@@ -411,14 +412,12 @@ function LegacyDeskContent() {
         </section>}
         {!historyReady && <p role="status">正在读取调查历史…</p>}
         {renderedPhase === "input" ? (
-          <fieldset disabled={!historyReady} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           <Dashboard
             onStartAnalysis={handleStartAnalysis}
             initialClaim={activeClaim}
             accountEmail={account?.email ?? null}
             onNeedLogin={() => setLoginOpen(true)}
           />
-          </fieldset>
         ) : (
           <Suspense
             fallback={

@@ -3,7 +3,7 @@
  *
  * POST /api/case      → 保存 case（带 claimReview JSON-LD）→ 返回 caseId
  * GET  /api/case/:id  → 取出 case JSON（有归属则只给主人）
- * GET  /r/:id         → HTML 页面（带 case JSON 注入），分享仍公开
+ * GET  /r/:id         → HTML 页面；无显式分享许可时与 JSON 一样只给主人
  * GET  /api/cases     → 当前登录账号的最近核查；未登录返回 []
  */
 
@@ -111,6 +111,13 @@ function toPublicCase(entry: NonNullable<ReturnType<typeof getCase>>) {
   return investigation ? { ...rest, investigation } : rest;
 }
 
+/** 无分享令牌前：无归属旧记录一律私有；有归属只给主人。 */
+async function canReadPrivateCase(req: any, entry: NonNullable<ReturnType<typeof getCase>>): Promise<boolean> {
+  if (!entry.ownerHash) return false;
+  const account = await readEmailAccountOptional(req);
+  return Boolean(account && account.hash === entry.ownerHash);
+}
+
 /**
  * POST /api/case — 保存 case。需邮箱会话；写入归属与限流。
  */
@@ -177,27 +184,20 @@ export async function getCaseHandler(req: any, res: any): Promise<void> {
     return;
   }
   const entry = getCase(caseId);
-  if (!entry) {
+  if (!entry || !(await canReadPrivateCase(req, entry))) {
     sendJson(res, 404, { error: "case not found", caseId });
     return;
-  }
-  if (entry.ownerHash) {
-    const account = await readEmailAccountOptional(req);
-    if (!account || account.hash !== entry.ownerHash) {
-      sendJson(res, 404, { error: "case not found", caseId });
-      return;
-    }
   }
   sendJson(res, 200, toPublicCase(entry));
 }
 
 /**
- * GET /r/:caseId — 返回 HTML 页面（带 case JSON 嵌入）
- * 让浏览器/爬虫/分享预览都能消费。
+ * GET /r/:caseId — 仅主人可读的 HTML。未确认分享许可的记录不公开正文。
  */
-export function renderCaseHtmlHandler(req: any, res: any): void {
+export async function renderCaseHtmlHandler(req: any, res: any): Promise<void> {
   const caseId = String(req.params?.caseId ?? "").trim();
-  const entry = caseId ? getCase(caseId) : null;
+  const found = caseId ? getCase(caseId) : null;
+  const entry = found && (await canReadPrivateCase(req, found)) ? found : null;
   const html = buildSharePageHtml(caseId, entry);
   if (typeof res.set === "function") {
     res.set("Content-Type", "text/html; charset=utf-8");

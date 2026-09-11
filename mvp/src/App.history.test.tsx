@@ -22,6 +22,8 @@ let logoutAttempt = 0;
 function stubFetch(overrides: {
   authenticated?: boolean;
   cases?: unknown[];
+  /** 让 GET /api/cases 永不返回，用来模拟历史加载卡住。 */
+  casesHang?: boolean;
   /** GET /api/case/:id 的响应体；传函数可自定义（含挂起）。 */
   caseDetail?: unknown | (() => Response);
   logout?: (attempt: number) => Response | Promise<Response>;
@@ -45,6 +47,7 @@ function stubFetch(overrides: {
       return new Response("{}", { status: 200 });
     }
     if (u === "/api/cases") {
+      if (overrides.casesHang) return new Promise<Response>(() => {});
       return new Response(JSON.stringify({ cases: overrides.cases ?? [] }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (/^\/api\/case\/[^/]+$/.test(u)) {
@@ -173,6 +176,20 @@ it("打开已留存的账户历史不发起新调查、不重复落库", async (
   expect(hero.textContent).toContain("原调查的直接回答");
   expect(fetcher.mock.calls.some(([url]) => String(url) === "/api/case")).toBe(false);
   expect(requestOrchestrateStream).not.toHaveBeenCalled();
+});
+
+it("历史 API 未返回时，非空提交仍发起一次调查，不静默返回", async () => {
+  stubFetch({ casesHang: true });
+  render(<App />);
+  const editor = await screen.findByRole("textbox", { name: "要调查的说法" });
+  await waitFor(() => expect(editor).toBeEnabled());
+  expect(screen.getByText("正在读取调查历史…")).toBeInTheDocument();
+  editor.textContent = "历史还在加载时交来的新说法";
+  fireEvent.input(editor);
+  await waitFor(() => expect(screen.getByRole("button", { name: /开始调查/ })).toBeEnabled());
+  fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
+  await waitFor(() => expect(requestOrchestrateStream).toHaveBeenCalledTimes(1));
+  expect(document.querySelector(".gp-original-text")?.textContent).toBe("历史还在加载时交来的新说法");
 });
 
 it("带新链接的提交不做同句继承，直接开始新调查", async () => {
