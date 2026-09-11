@@ -16,6 +16,10 @@ server {
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
+    # 裸 http:// 会被备案拦截返回 403（实测），用 HSTS 让访问过一次的浏览器不再去试 HTTP。
+    # 注意：location 一旦有自己的 add_header 就不再继承本行，所以下面四个 location 各写一遍。
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
     root /opt/red-herring/dist;
     index index.html;
     client_max_body_size 20m;
@@ -71,19 +75,23 @@ server {
     # （2026-09-11 实测：线上 HTML 停在 Sep 2 的构建，引用的还是 #52 之前的包）。
     location = /index.html {
         add_header Cache-Control "no-cache";
+        add_header Strict-Transport-Security "max-age=31536000" always;
     }
 
     location = /sw.js {
         add_header Cache-Control "no-cache";
+        add_header Strict-Transport-Security "max-age=31536000" always;
     }
 
     location = /manifest.webmanifest {
         add_header Cache-Control "no-cache";
+        add_header Strict-Transport-Security "max-age=31536000" always;
     }
 
     # 文件名带内容 hash，改名即换内容，可以长期缓存。
     location /assets/ {
         add_header Cache-Control "public, max-age=31536000, immutable";
+        add_header Strict-Transport-Security "max-age=31536000" always;
     }
 
     location / {
