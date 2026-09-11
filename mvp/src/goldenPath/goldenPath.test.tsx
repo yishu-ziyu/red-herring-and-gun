@@ -2274,6 +2274,28 @@ describe("Issue #66 post-#76 real SSE artifacts", () => {
 });
 
 describe("结果页 P0/P1：调查备忘录视觉", () => {
+  it("完成态丢掉 wholeClaimAudit 整句和 [n]，不把判断再抄进依据", () => {
+    const snap = refutedComplete();
+    const leaked = "官方已辟谣。但wholeClaimAudit指出的四项桥接缺口仍未补齐[1]。各来源一致。";
+    snap.conclusion = {
+      ...snap.conclusion!,
+      verdictLead: "公开材料不支持这条说法。",
+      rationale: leaked,
+    };
+    snap.claims[0]!.evidence = snap.claims[0]!.evidence.map((link, index) =>
+      index === 0 ? { ...link, finding: leaked } : link,
+    );
+    renderCanvas(snap);
+    const hero = screen.getByLabelText("调查结论");
+    expect(hero.textContent).not.toMatch(/wholeClaimAudit/);
+    expect(hero.textContent).not.toMatch(/\[\d+\]/);
+    expect(hero.textContent).toContain("公开材料不支持这条说法");
+    expect(hero.textContent).toContain("各来源一致");
+    expect(hero.textContent).not.toMatch(/桥接缺口/);
+    const point = document.querySelector(".gp-point");
+    expect(point).toBeNull();
+  });
+
   it("M2：先回答后判断类别；judgment 不是 chip；回答用衬线 22–28px", async () => {
     renderCanvas(refutedComplete());
     const hero = screen.getByLabelText("调查结论");

@@ -21,6 +21,17 @@ describe("scrubPublicText", () => {
     const text = scrubPublicText("本次工具调用成功。Agent 写入 canSay。");
     expect(text).not.toMatch(/工具调用|\bAgent\b|canSay/);
   });
+
+  it("整句丢掉 wholeClaimAudit，不留残句", () => {
+    const text = scrubPublicText(
+      "微波本身不致癌。但wholeClaimAudit指出的四项桥接缺口仍未补齐。各来源一致指出致癌物来自焦糊。",
+    );
+    expect(text).not.toMatch(/wholeClaimAudit/);
+    expect(text).not.toMatch(/桥接缺口/);
+    expect(text).toContain("微波本身不致癌");
+    expect(text).toContain("各来源一致指出致癌物来自焦糊");
+  });
+
 });
 
 describe("leadWithFace", () => {

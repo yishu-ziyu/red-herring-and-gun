@@ -17,7 +17,17 @@ const FACE_BY_TYPE: Record<string, (typeof FACE_WORDS)[number]> = {
 
 /** Internal roles, vendors, schemas — never on the result page. */
 const JARGON_RE =
-  /ReportComposer|FactChecker|RumorDetector|SourceValidator|CrossExaminer|AlternativeExplanationSearcher|AgentRuntime|search360|atomSearches|MiniMax-M3|MiniMax|Mimic|StepFun|Tavily|AnySearch|Metaso|function calling|Function Calling|工具调用|智能体|LangChain|CrewAI|\bADK\b|\bAgent\b|360 AI Search|canSay|cannotSay|web_search|web_fetch|todo_write|submit_verdict|investigator/gi;
+  /wholeClaimAudit|whole_claim_auditor|WholeClaimAudit|wholeClaimAuditPlan|ReportComposer|FactChecker|RumorDetector|SourceValidator|CrossExaminer|AlternativeExplanationSearcher|AgentRuntime|search360|atomSearches|MiniMax-M3|MiniMax|Mimic|StepFun|Tavily|AnySearch|Metaso|function calling|Function Calling|工具调用|智能体|LangChain|CrewAI|\bADK\b|\bAgent\b|360 AI Search|canSay|cannotSay|web_search|web_fetch|todo_write|submit_verdict|investigator/gi;
+
+/** 含内部标识的整句从用户可见正文拿掉，避免只删单词留下「但指出的四项…」。 */
+const INTERNAL_SENTENCE_RE = /wholeClaimAudit|whole_claim_auditor|WholeClaimAudit|wholeClaimAuditPlan|\bAgent:\w+/i;
+
+function dropInternalSentences(text: string): string {
+  return text
+    .split(/(?<=[。！？；\n])/)
+    .filter((part) => !INTERNAL_SENTENCE_RE.test(part))
+    .join("");
+}
 
 const FORWARD_RE = /先别转发|建议转发|转不转|二次传播|再传播|勿传播/;
 /** 模糊量词 — 来源里的具体数字不得被改写成这些词。 */
@@ -99,7 +109,8 @@ export function directAnswer(verdictType: unknown): string {
 
 export function scrubPublicText(value: unknown): string {
   if (typeof value !== "string") return "";
-  let text = value.replace(JARGON_RE, "");
+  let text = dropInternalSentences(value);
+  text = text.replace(JARGON_RE, "");
   text = text.replace(/[ \t]{2,}/g, " ");
   text = text.replace(/[，、]{2,}/g, "，");
   text = text.replace(/\s+([。！？，、])/g, "$1");
@@ -109,11 +120,10 @@ export function scrubPublicText(value: unknown): string {
 /** Keep newlines so a research memo does not collapse into a slogan card. */
 export function scrubMemoText(value: unknown): string {
   if (typeof value !== "string") return "";
-  return value
+  return dropInternalSentences(value)
     .split("\n")
     .map((line) =>
-      line
-        .replace(JARGON_RE, "")
+      line.replace(JARGON_RE, "")
         .replace(/[ \t]{2,}/g, " ")
         .replace(/\s+$/g, "")
     )
@@ -212,9 +222,9 @@ function scrubChain(value: unknown): unknown {
     });
     return {
       ...rec,
-      finding: scrubPublicText(rec.finding) || rec.finding,
-      evidence: scrubPublicText(rec.evidence) || rec.evidence,
-      boundary: scrubPublicText(rec.boundary) || rec.boundary,
+      finding: scrubPublicText(rec.finding),
+      evidence: scrubPublicText(rec.evidence),
+      boundary: scrubPublicText(rec.boundary),
       sourceRefs,
     };
   });
@@ -238,8 +248,8 @@ function scrubVerdicts(value: unknown): unknown {
     const rec = item as Record<string, unknown>;
     return {
       ...rec,
-      evidence: scrubPublicText(rec.evidence) || rec.evidence,
-      boundary: scrubPublicText(rec.boundary) || rec.boundary,
+      evidence: scrubPublicText(rec.evidence),
+      boundary: scrubPublicText(rec.boundary),
     };
   });
 }
