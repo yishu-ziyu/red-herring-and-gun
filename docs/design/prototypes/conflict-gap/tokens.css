@@ -1,0 +1,71 @@
+/*
+ * 产品设计 token，逐字取自 mvp/src/goldenPath/golden-path.css 的 :root。
+ * 原型只消费 token，不改产品文件。
+ */
+:root {
+  /* Quiet Editorial 规范系统 Token */
+  --gp-bg: #fcfcfd;
+  --gp-canvas: #fcfcfd;
+  --gp-bg-deep: #f7f7f5;
+  --gp-surface: #ffffff;
+  --gp-surface-paper: #ffffff;
+  --gp-surface-inset: #f7f7f5;
+  --gp-surface-soft: #fbfbfa;
+
+  /* 墨水阶梯 */
+  --gp-ink: #18181b;
+  --gp-ink-primary: #18181b;
+  --gp-ink-2: #52525b;
+  --gp-ink-secondary: #52525b;
+  --gp-ink-3: #71717a;
+  --gp-ink-tertiary: #71717a;
+  --gp-ink-muted: #a1a1aa;
+
+  /* 发丝细线 */
+  --gp-line: #e7e5e4;
+  --gp-hairline: #e7e5e4;
+  --gp-line-subtle: #f0eeec;
+  --gp-hairline-subtle: #f0eeec;
+
+  /* 单一主强调色 */
+  --gp-accent: #2563eb;
+  --gp-accent-deep: #1d4ed8;
+  --gp-accent-subtle: rgba(37, 99, 235, 0.08);
+
+  /* 语义微墨水 */
+  --gp-semantic-support: #15803d;
+  --gp-semantic-contradict: #b91c1c;
+  --gp-semantic-context: #4b5563;
+  --gp-semantic-pending: #71717a;
+  --gp-semantic-gap: #92400e;
+  --gp-semantic-conflict: #9a3412;
+
+  /* 功能 Surface 圆角与阴影 */
+  --gp-radius-card: 12px;
+  --gp-radius: 12px;
+  --gp-radius-sm: 8px;
+  --gp-radius-pill: 999px;
+
+  --gp-elevation-input: 0 1px 3px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.03);
+  --gp-elevation-menu: 0 4px 16px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --gp-elevation-drawer: -4px 0 24px rgba(15, 23, 42, 0.08);
+
+  --gp-focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #2563eb;
+
+  /* Motion tokens */
+  --gp-motion-fast: 140ms;
+  --gp-motion-ui: 240ms;
+  --gp-motion-layout: 280ms;
+  --gp-motion-emerge: 320ms;
+  --gp-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* 尺寸与版心 */
+  --gp-content-width: 780px;
+  --gp-shell-width: 1080px;
+
+  --font-sans: "Noto Sans SC", ui-sans-serif, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-serif: "Noto Serif SC", "Songti SC", serif;
+  --gp-font: var(--font-sans);
+  --gp-serif: var(--font-serif);
+  --gp-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
