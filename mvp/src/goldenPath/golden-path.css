@@ -641,6 +641,7 @@
   gap: 8px;
   padding: 0 0 23px;
   border-bottom: 1px solid var(--gp-line);
+  flex-wrap: nowrap;
 }
 
 .gp-roles.is-compact .gp-role {
@@ -658,6 +659,18 @@
 
 .gp-roles.is-compact .is-active small {
   color: var(--gp-accent);
+}
+
+.gp-roles.is-compact .gp-role[data-gp-role-state="idle"] {
+  opacity: 0.38;
+}
+
+.gp-roles.is-compact .gp-role[data-gp-role-state="done"] {
+  opacity: 0.7;
+}
+
+.gp-roles.is-compact .gp-role[data-gp-role-state="idle"] small {
+  min-height: 0;
 }
 
 .gp-home-case {
@@ -843,6 +856,56 @@
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+
+/* 调查中：原句与问题在左，发现在右。完成态仍是一篇文稿。 */
+.gp-canvas[data-gp-phase="investigating"] .gp-canvas-inner,
+.gp-canvas[data-gp-phase="judging"] .gp-canvas-inner {
+  max-width: 1080px;
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  column-gap: 48px;
+  align-items: start;
+}
+
+.gp-canvas[data-gp-phase="investigating"] .gp-original,
+.gp-canvas[data-gp-phase="judging"] .gp-original {
+  grid-column: 1;
+  grid-row: 1 / span 8;
+  margin: 0;
+  padding: 6px 0 0 18px;
+  border-left-color: var(--gp-accent);
+  position: sticky;
+  top: 96px;
+}
+
+.gp-canvas[data-gp-phase="investigating"] .gp-original-text,
+.gp-canvas[data-gp-phase="judging"] .gp-original-text {
+  font-size: 20px;
+  line-height: 1.55;
+}
+
+@media (min-width: 769px) {
+  .gp-canvas[data-gp-phase="investigating"] .gp-original-side,
+  .gp-canvas[data-gp-phase="judging"] .gp-original-side {
+    display: none;
+  }
+}
+
+.gp-canvas[data-gp-phase="investigating"] .gp-roles,
+.gp-canvas[data-gp-phase="judging"] .gp-roles {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.gp-canvas[data-gp-phase="investigating"] .gp-phase-line,
+.gp-canvas[data-gp-phase="judging"] .gp-phase-line {
+  grid-column: 2;
+}
+
+.gp-canvas[data-gp-phase="investigating"] .gp-claims,
+.gp-canvas[data-gp-phase="judging"] .gp-claims {
+  grid-column: 2;
 }
 
 .gp-phase-line {
@@ -1404,6 +1467,52 @@
   background: rgba(15, 23, 42, 0.03);
 }
 
+.gp-canvas[data-gp-phase="investigating"] .gp-evidence-item,
+.gp-canvas[data-gp-phase="judging"] .gp-evidence-item {
+  background: var(--gp-surface);
+  border: 1px solid var(--gp-line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin: 0 0 10px;
+  box-shadow: 0 4px 18px #38302608;
+  transition: transform 140ms var(--gp-ease-out), box-shadow 140ms var(--gp-ease-out), border-color 140ms var(--gp-ease-out), background-color 140ms var(--gp-ease-out);
+  animation: gp-find-in 220ms var(--gp-ease-out) both;
+}
+
+.gp-canvas[data-gp-phase="investigating"] .gp-claim:nth-child(1) .gp-evidence-item:nth-of-type(1),
+.gp-canvas[data-gp-phase="judging"] .gp-claim:nth-child(1) .gp-evidence-item:nth-of-type(1) {
+  animation-delay: 40ms;
+}
+.gp-canvas[data-gp-phase="investigating"] .gp-claim:nth-child(1) .gp-evidence-item:nth-of-type(2),
+.gp-canvas[data-gp-phase="judging"] .gp-claim:nth-child(1) .gp-evidence-item:nth-of-type(2) {
+  animation-delay: 80ms;
+}
+.gp-canvas[data-gp-phase="investigating"] .gp-claim:nth-child(2) .gp-evidence-item,
+.gp-canvas[data-gp-phase="judging"] .gp-claim:nth-child(2) .gp-evidence-item {
+  animation-delay: 120ms;
+}
+
+@keyframes gp-find-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gp-canvas[data-gp-phase="investigating"] .gp-evidence-item:hover,
+  .gp-canvas[data-gp-phase="judging"] .gp-evidence-item:hover {
+    background: var(--gp-surface);
+    transform: translateY(-1px);
+    border-color: #d0ccc3;
+    box-shadow: 0 8px 24px #3830260e;
+  }
+}
+
 .gp-evidence-item[data-gp-settling="1"] {
   z-index: 2;
 }
@@ -1963,6 +2072,11 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  .gp-canvas[data-gp-phase="investigating"] .gp-evidence-item,
+  .gp-canvas[data-gp-phase="judging"] .gp-evidence-item {
+    animation: none;
+    transform: none;
+  }
 }
 
 /* ---------- 响应式（Responsive 768px & 390px） ---------- */
@@ -2017,6 +2131,37 @@
   }
   .gp-canvas-inner {
     padding: 24px 16px 64px;
+  }
+  .gp-canvas[data-gp-phase="investigating"] .gp-canvas-inner,
+  .gp-canvas[data-gp-phase="judging"] .gp-canvas-inner {
+    display: flex;
+    flex-direction: column;
+    max-width: var(--gp-content-width);
+  }
+  .gp-canvas[data-gp-phase="investigating"] .gp-original,
+  .gp-canvas[data-gp-phase="judging"] .gp-original {
+    position: static;
+    grid-column: auto;
+    grid-row: auto;
+    margin-bottom: 20px;
+  }
+  .gp-canvas[data-gp-phase="investigating"] .gp-original-text,
+  .gp-canvas[data-gp-phase="judging"] .gp-original-text {
+    font-size: 17px;
+  }
+  .gp-roles.is-compact .gp-role-avatar {
+    width: 52px;
+    height: 52px;
+  }
+  .gp-roles.is-compact .gp-role {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+  .gp-roles.is-compact .gp-role strong {
+    font-size: 12px;
+  }
+  .gp-roles.is-compact .gp-role small {
+    font-size: 10px;
   }
   .gp-input-stage {
     padding: 36px 16px 48px;
