@@ -4,10 +4,10 @@ import {
   assertInvestigationInvariants,
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
-} from "@rhg/core/investigation";
+} from "./investigation";
 
 /**
- * Issue #51 web 侧契约测试：前端经 `@rhg/core/investigation` 消费与 server
+ * Issue #51 web 侧契约测试：前端经 `../lib/investigation` 再导出消费与 server
  * 完全相同的 versioned schema/type 与校验函数（不存在两份漂移 interface）。
  * #52 的 Golden Path UI 只依赖本契约 + 连接状态，不读 raw Agent/tool 事件。
  */

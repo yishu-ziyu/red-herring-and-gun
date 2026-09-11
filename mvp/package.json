@@ -25,6 +25,7 @@
     "react": "latest",
     "react-dom": "latest",
     "react-resizable-panels": "^4.12.2",
+    "typebox": "^1.3.7",
     "typescript": "latest",
     "vite": "latest"
   },

@@ -7,7 +7,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import { ROLE_LABEL, domainOf, identifyEvidenceLinks } from "./snapshotUi";
-import type { InvestigationEvidenceLink, InvestigationSource } from "@rhg/core/investigation";
+import type { InvestigationEvidenceLink, InvestigationSource } from "../lib/investigation";
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';

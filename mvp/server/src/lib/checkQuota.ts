@@ -1,12 +1,16 @@
 /**
- * 免费核查闸门。未登录每天 1 条，登录后每天 3 条。
+ * 免费核查闸门。未登录访客每天 2 条，登录后每天 3 条。
  * 开始时占位，出判断才扣；我们自己失败则放回；用户中途取消仍计一次。
+ *
+ * 额度分两个独立维度：访客桶（按 cookie id）与 IP 桶（整条来源 IP 的聚合）。
+ * IP 是共享的，所以 IP 桶只当天花板、不当单人额度 —— 见 `guestState` 里的说明。
  */
 
 import crypto from "node:crypto";
 import {
   ACCOUNT_DAILY_CHECKS,
   GUEST_DAILY_CHECKS,
+  IP_DAILY_CHECKS,
   checksExhaustedMessage,
   shanghaiDayKey,
   type CheckQuotaKind,
@@ -26,6 +30,24 @@ import { loadSnapshot, registerSnapshotSource } from "./jsonSnapshot.js";
 
 export const GUEST_CHECKS_COOKIE = "v3_guest_checks";
 const GUEST_COOKIE_TTL_SECONDS = 2 * 24 * 60 * 60;
+
+/** 非负整数环境变量；未设置或非法时回落到默认值。 */
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
+}
+
+/** 单个访客每天的免费核查数。`CHECK_QUOTA_GUEST_LIMIT` 可覆盖（测试期放宽用）。 */
+export function guestDailyLimit(): number {
+  return envInt("CHECK_QUOTA_GUEST_LIMIT", GUEST_DAILY_CHECKS);
+}
+
+/** 整条来源 IP 每天的核查总数上限。`CHECK_QUOTA_IP_LIMIT` 可覆盖。 */
+export function ipDailyLimit(): number {
+  return envInt("CHECK_QUOTA_IP_LIMIT", IP_DAILY_CHECKS);
+}
 
 let enforcedForTests: boolean | null = null;
 
@@ -161,8 +183,11 @@ function guestState(
   const memory = syncBucket(guests.get(id), day);
   const ip = syncBucket(guestsByIp.get(ipKey), day);
   const cookieUsed = cookie && cookie.day === day ? cookie.used : 0;
-  memory.used = Math.max(memory.used, ip.used, cookieUsed);
-  ip.used = Math.max(ip.used, memory.used);
+  // 访客桶只记这个访客自己的用量。
+  // 这里曾经写成 `Math.max(memory.used, ip.used, cookieUsed)`：IP 桶是整条出口 IP 的聚合，
+  // 那行会让同一网络下的新访客一进门就背上前一个人的用量，等于整条 IP 当天只允许 1 次核查。
+  // IP 桶仍照常累加（见 commitFreeCheck），但只在 IP 天花板上起作用，不参与访客自己的额度。
+  memory.used = Math.max(memory.used, cookieUsed);
   guests.set(id, memory);
   guestsByIp.set(ipKey, ip);
   return { id, day, memory, ip, ipKey };
@@ -173,13 +198,15 @@ function remainingOf(used: number, inflight: number, total: number) {
 }
 
 function bypassQuotaView(kind: CheckQuotaKind): CheckQuotaView {
-  const total = kind === "account" ? ACCOUNT_DAILY_CHECKS : GUEST_DAILY_CHECKS;
+  const total = kind === "account" ? ACCOUNT_DAILY_CHECKS : guestDailyLimit();
   return { remaining: total, total, used: 0, kind, enforced: false };
 }
 
+/** 访客桶比单人额度，IP 桶比 IP 天花板；两者独立，任一触顶即拦。 */
 function guestBlocked(memory: GuestBucket, ip: GuestBucket) {
   return (
-    memory.used + memory.inflight >= GUEST_DAILY_CHECKS || ip.used + ip.inflight >= GUEST_DAILY_CHECKS
+    memory.used + memory.inflight >= guestDailyLimit() ||
+    ip.used + ip.inflight >= ipDailyLimit()
   );
 }
 
@@ -243,10 +270,15 @@ export async function peekCheckQuota(
     return { remaining: checks.remaining, total: checks.total, used: checks.used, kind: "account", enforced: true };
   }
   const { memory, ip } = guestState(req);
+  // used 只报访客自己的用量；remaining 取「访客剩余」与「IP 剩余」的较小值，
+  // 这样 IP 触顶时界面不会谎报还有额度。
   return {
-    remaining: remainingOf(Math.max(memory.used, ip.used), Math.max(memory.inflight, ip.inflight), GUEST_DAILY_CHECKS),
-    total: GUEST_DAILY_CHECKS,
-    used: Math.max(memory.used, ip.used),
+    remaining: Math.min(
+      remainingOf(memory.used, memory.inflight, guestDailyLimit()),
+      remainingOf(ip.used, ip.inflight, ipDailyLimit())
+    ),
+    total: guestDailyLimit(),
+    used: memory.used,
     kind: "guest",
     enforced: true,
   };

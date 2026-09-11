@@ -12,9 +12,12 @@ import {
 
 describe("checkQuota copy", () => {
   it("names the daily caps in people language", () => {
-    expect(GUEST_DAILY_CHECKS).toBe(1);
+    expect(GUEST_DAILY_CHECKS).toBe(2);
     expect(ACCOUNT_DAILY_CHECKS).toBe(3);
-    expect(checksRemainingMessage({ remaining: 1, total: 1, used: 0, kind: "guest", enforced: true })).toBe(
+    expect(checksRemainingMessage({ remaining: 2, total: 2, used: 0, kind: "guest", enforced: true })).toBe(
+      "今天还能免费查 2 条"
+    );
+    expect(checksRemainingMessage({ remaining: 1, total: 2, used: 1, kind: "guest", enforced: true })).toBe(
       "今天还能免费查 1 条"
     );
     expect(checksRemainingMessage({ remaining: 2, total: 3, used: 1, kind: "account", enforced: true })).toBe(

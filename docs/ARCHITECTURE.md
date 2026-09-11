@@ -24,7 +24,7 @@ packages/                 脊柱 core / server / web / eval，尚未切生产
 mvp/src/                  脸（React）
 mvp/server/src/           生产 HTTP + 判决 + 编排
 mvp/vite.config.ts        前端 dev server；`/api` 代理到 Express
-docs/adr/                 运行时决策（尤其 ADR-003）
+docs/adr/                 运行时决策（现行以 ADR-007 为准；ADR-003 已被它取代）
 tmp-apodex-study/         研究代码克隆；旧界面截图已清理，不进 git
 ```
 

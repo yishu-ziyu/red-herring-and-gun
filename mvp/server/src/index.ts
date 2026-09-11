@@ -28,7 +28,8 @@ import {
   emailRequestHandler,
   emailVerifyHandler,
 } from "./lib/emailAuthHandlers.js";
-import { checksQuotaHandler, gateFreeCheck } from "./lib/checkQuota.js";
+import { checksQuotaHandler } from "./lib/checkQuota.js";
+import { quotaGate } from "./lib/quotaPolicy.js";
 import { flushSnapshots, startSnapshotLoop } from "./lib/jsonSnapshot.js";
 import { readEmailAccountOptional } from "./lib/emailSession.js";
 
@@ -103,13 +104,6 @@ const env = process.env as Record<string, string>;
 const handlers = createHandlers(env);
 const aipingConfig = getAipingConfig(env);
 
-async function requireQuota(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const ticket = await gateFreeCheck(req, res);
-  if (!ticket) return;
-  (req as express.Request & { checkTicket?: typeof ticket }).checkTicket = ticket;
-  next();
-}
-
 async function requireIdentity(req: express.Request, res: express.Response, next: express.NextFunction) {
   const account = await readEmailAccountOptional(req);
   if (account) {
@@ -129,7 +123,7 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: Date.now() });
 });
 
-app.all("/mcp", requireQuota, (req, res) => {
+app.all("/mcp", quotaGate("/mcp"), (req, res) => {
   void mcpHttpHandler(req, res, env);
 });
 
@@ -209,17 +203,23 @@ app.post("/api/auth/logout", (req, res) => {
 });
 
 // API routes
-app.post("/api/agent/orchestrate-stream", requireQuota, (req, res, next) => handlers.orchestrateStreamHandler(req, res, next));
-app.post("/api/agent/batch", requireQuota, (req, res, next) => handlers.batchHandler(req, res, next));
+app.post(
+  "/api/agent/orchestrate-stream",
+  quotaGate("/api/agent/orchestrate-stream"),
+  (req, res, next) => handlers.orchestrateStreamHandler(req, res, next)
+);
+app.post("/api/agent/batch", quotaGate("/api/agent/batch"), (req, res, next) => handlers.batchHandler(req, res, next));
 if (process.env.NODE_ENV === "production") {
   app.post("/api/agent/test-llm", (_req, res) => {
     res.status(404).json({ error: "Not found" });
   });
 } else {
-  app.post("/api/agent/test-llm", requireQuota, (req, res, next) => handlers.testLlmHandler(req, res, next));
+  app.post("/api/agent/test-llm", quotaGate("/api/agent/test-llm"), (req, res, next) => handlers.testLlmHandler(req, res, next));
 }
 app.get("/api/models/list", (req, res, next) => handlers.modelsListHandler(req, res, next));
-app.get("/api/models/health", requireQuota, (req, res, next) => handlers.modelsHealthHandler(req, res, next));
+// 可用性探针不计入每日核查额度：输入页每次加载都会调它，计进去会让访客打开一次首页就用光配额。
+// 闸门判定来源 lib/quotaPolicy.ts，契约 docs/evals/2026-09-11-health-probe-quota.md。
+app.get("/api/models/health", (req, res, next) => handlers.modelsHealthHandler(req, res, next));
 app.post("/api/agent/memory-candidates", requireIdentity, (req, res, next) => updateMemoryCandidateHandler(req, res).catch(next));
 
 // v3 邮箱登录 + 账号数据（用 email 前缀避开与 AI Ping /api/auth/{me,logout} 的第一匹配冲突）

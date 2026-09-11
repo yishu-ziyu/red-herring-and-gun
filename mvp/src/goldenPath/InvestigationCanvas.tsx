@@ -10,7 +10,7 @@ import type {
   InvestigationEvidenceLink,
   InvestigationSnapshotV1,
   InvestigationSource,
-} from "@rhg/core/investigation";
+} from "../lib/investigation";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import { phaseHeadline, readImageOrigin, type ImageOriginView } from "./snapshotUi";

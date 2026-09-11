@@ -9,7 +9,7 @@ import type {
   InvestigationConflict,
   InvestigationEvidenceLink,
   InvestigationSource,
-} from "@rhg/core/investigation";
+} from "../lib/investigation";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import {
