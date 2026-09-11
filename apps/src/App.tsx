@@ -36,6 +36,8 @@ type ActiveCase = {
   localId: string;
   claim: string;
   intake: CaseIntake | null;
+  /** 服务端存档 id：只有它存在时才谈得上分享（分享是服务端投影）。 */
+  serverCaseId?: string | null;
   /** 历史/旧调查打开：直接渲染落库快照，不发起调查。 */
   restored?: {
     snapshot: InvestigationSnapshotV1;
@@ -303,7 +305,11 @@ function ProductApp() {
           await knowledgeBase.saveCase({ ...saved, id: data.caseId });
         }
         setCases((prev) => prev.map((item) => (item.id === localId ? { ...item, id: data.caseId as string } : item)));
-        setActive((prev) => (prev && prev.localId === localId ? { ...prev, localId: data.caseId ?? prev.localId } : prev));
+        setActive((prev) =>
+          prev && prev.localId === localId
+            ? { ...prev, localId: data.caseId ?? prev.localId, serverCaseId: data.caseId ?? null }
+            : prev
+        );
       } catch (error) {
         console.error("[cases] 服务端存档异常", error);
         setHistoryNotice(copy.historySyncFailed);
@@ -418,6 +424,8 @@ function ProductApp() {
           localId: id,
           claim: data.claim ?? item.claim,
           intake: null,
+          // 从服务端读回来的记录：分享的对象就是它。
+          serverCaseId: id,
           restored: { snapshot, report: data.report ?? null, at: data.createdAt ?? item.createdAt },
         });
         setMode("investigation");
@@ -568,6 +576,7 @@ function ProductApp() {
             stop={active.restored ? "idle" : run.state.stop}
             onStop={active.restored || !run.state.runId ? undefined : () => void run.cancel()}
             saveStatus={saveStatus}
+            shareCaseId={active.serverCaseId ?? null}
             finalReport={active.restored ? active.restored.report : run.state.finalReport}
             restoredAt={active.restored?.at}
             onReverify={handleRetry}

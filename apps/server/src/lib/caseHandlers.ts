@@ -282,7 +282,8 @@ function buildSharePageHtml(caseId: string, entry: ReturnType<typeof getCase>): 
       <p>${escapeHtml(entry.report.rewrittenClaim.publicFacing)}</p>`
         : ""}
     </div>
-    <p><a href="https://gun.yishuziyu.cn/r/${escapeHtml(entry.caseId)}">分享此报告</a> · <a href="/">回到红鲱鱼与枪</a></p>
+    <p class="owner-only">这个地址只有你自己能打开。要给别人看，请在结果页里创建分享链接。</p>
+    <p><a href="/">回到红鲱鱼与枪</a></p>
   </main>
 </body>
 </html>`;
