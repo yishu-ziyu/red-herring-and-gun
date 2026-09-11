@@ -35,3 +35,15 @@
    （`checkQuota.ts` 的 `clientIp` 只取 XFF 最后一跳）。这是设计取舍，不要顺手改。
 
 Vercel 面已删：域名解绑、重复项目删除。恢复需要在控制台重新操作。
+
+## 控制台操作记录（2026-09-11，用户裁决「甲」）
+
+| 动作 | 对象 | 结果 |
+|---|---|---|
+| 解除域名绑定 | Vercel 项目 `mvp` 上的 `gun.yishuziyu.cn` | 已移除（HTTP 200）。该项目现只剩 `mvp-five-orpin.vercel.app` |
+| 保留 | Vercel 项目 `red-herring-and-gun` | 保留作 Preview。核查过：**它的项目设置自带完整 Build/Output/Install override**，与根 `vercel.json` 内容重复，所以删 `vercel.json` 不影响它；上次构建失败的唯一原因是我写的 `.vercelignore` 排掉了 `mvp/server`，该文件已删 |
+| 保留 | Vercel 项目 `mvp` 本身 | 保留但已无域名。核查过：**它没有连接任何 Git 仓库**（设置页是 Connect 按钮、无仓库链接），所以不会在推送时自动构建，是个不再作响的空壳 |
+
+解除绑定后实测：`ops.sh public` 的 `System DNS` 仍是 `121.89.90.68`，https / health / models 三条仍 200；外部视角（浏览器经代理、远端解析 DNS）打开 `https://gun.yishuziyu.cn/` 仍渲染当前 Golden Path。**域名移除不影响服务**——DNS 记录在阿里云云解析，与 Vercel 无关。
+
+恢复办法：在 Vercel `mvp` 项目 Domains 里重新 Add `gun.yishuziyu.cn`，并按本文开头那三个条件改造（不要只把 DNS 指回去）。
