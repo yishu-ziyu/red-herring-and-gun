@@ -1410,6 +1410,31 @@
   display: none;
 }
 
+.gp-point {
+  margin: 18px 0 8px;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.65;
+  color: var(--gp-ink);
+}
+
+.gp-note {
+  margin: 8px 0 0;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.65;
+  color: var(--gp-ink-2);
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-hero-judgment {
+  display: none;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-hero-meta-item[data-gp-hero-meta="time"]::before {
+  content: none;
+  margin: 0;
+}
+
 .gp-result-again {
   margin: 36px 0 0;
 }
