@@ -25,6 +25,8 @@ export type InvestigationEmitter = {
 export function createInvestigationEmitter(options: {
   runId: string;
   send: (event: Record<string, unknown>) => void;
+  /** 追加活动时回调（持久化用）；失败不抛，不挡流。 */
+  onActivities?: (activities: PublicActivity[]) => void;
   now?: () => Date;
   timestamp?: () => number;
 }): InvestigationEmitter {
@@ -33,8 +35,15 @@ export function createInvestigationEmitter(options: {
   let previous: InvestigationSnapshotV1 | null = null;
 
   const sendActivities = (activities: PublicActivity[]) => {
+    if (activities.length === 0) return;
     for (const activity of activities) {
       options.send({ type: "investigation_activity", activity, timestamp: timestamp() });
+    }
+    try {
+      options.onActivities?.(activities);
+    } catch (error) {
+      // 活动落库失败不影响已经发出去的帧。
+      console.error("[activity] 落库失败", error);
     }
   };
 

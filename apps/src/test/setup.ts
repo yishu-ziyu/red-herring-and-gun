@@ -1,4 +1,13 @@
 import { vi } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// 测试绝不碰开发库：DATA_DIR 指向本次进程的临时目录，
+// caseStore / accounts / quota 都落在那里。想用真数据就得先显式改回。
+if (!process.env.DATA_DIR) {
+  process.env.DATA_DIR = mkdtempSync(join(tmpdir(), "rhg-test-data-"));
+}
 
 if (typeof window === "undefined") {
   // node-environment tests (deploy pipeline) skip jsdom polyfills
