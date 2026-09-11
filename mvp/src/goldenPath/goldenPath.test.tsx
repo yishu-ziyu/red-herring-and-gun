@@ -989,7 +989,6 @@ describe("Issue #62 Claim Trace", () => {
     fireEvent.click(head);
     expect(head.getAttribute("aria-expanded")).toBe("true");
     expect(claim.querySelector('[data-gp-role="support"]')).toBeTruthy();
-    fireEvent.click(document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!);
     const claimBNode = document.querySelector('[data-gp-claim-id="claim-2"]')!;
     expect(claimBNode.querySelector(".gp-claim-head")!.getAttribute("aria-expanded")).toBe("true");
     expect(within(claimBNode as HTMLElement).getByText("证据反驳")).toBeTruthy();
@@ -1585,8 +1584,8 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
 
     const claimB = document.querySelector('[data-gp-claim-id="claim-2"]') as HTMLElement;
-    fireEvent.click(within(claimB).getByRole("button"));
-    await openFirstEvidence("contradict");
+    fireEvent.click(claimB.querySelector('.gp-evidence-item[data-gp-role="contradict"]')!);
+    await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
     expect(within(document.querySelector(".gp-drawer--source") as HTMLElement).getByText(/对这条命题：反驳/)).toBeTruthy();
     fireEvent.click(document.querySelector("[data-gp-source-close]")!);
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
@@ -2285,9 +2284,6 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(judgment.classList.contains("gp-chip")).toBe(false);
     expect(hero.querySelector(".gp-hero-kicker")).toBeNull();
     expect(screen.getByRole("heading", { name: "依据" })).toBeInTheDocument();
-    expect(screen.getByText("这句话里")).toBeInTheDocument();
-    expect(screen.queryByText("你调查的说法")).toBeNull();
-    expect(document.querySelector(".gp-original")?.textContent).not.toContain("重新调查");
 
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
@@ -2303,6 +2299,8 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-title\s*\{[^}]*font-size: 16px/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-excerpt\s*\{[^}]*font-size: 16px/);
     expect(css).toMatch(/data-gp-hero-meta="claims"[\s\S]*display:\s*none/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-original\s*\{[^}]*display:\s*none/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-claim-head\s*\{[^}]*display:\s*none/);
   });
 
   it("M3：有 excerpt 默认展示原字段；无 excerpt 不编造、不留空壳", () => {
