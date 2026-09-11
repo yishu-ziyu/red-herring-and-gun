@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildInvestigationSnapshot, sourceIdsStableAcross, type InvestigationSnapshotV1 } from "@rhg/core/investigation";
+import { buildInvestigationSnapshot, sourceIdsStableAcross, type InvestigationSnapshotV1 } from "../lib/investigation";
 import { InvestigationCanvas } from "./InvestigationCanvas";
 import { buildClaimTraceSegments } from "./claimTrace";
 import {

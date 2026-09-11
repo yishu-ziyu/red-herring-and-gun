@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef } from "react";
 import { LayoutGroup, useReducedMotion } from "framer-motion";
-import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSource } from "@rhg/core/investigation";
+import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSource } from "../lib/investigation";
 import { EvidenceItem } from "./EvidenceItem";
 import {
   ROLE_LABEL,

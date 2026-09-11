@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { domainOf, ROLE_LABEL, ROLE_ROW_LABEL, roleGlyph, sourceExcerpt, type EvidenceIdentityKind } from "./snapshotUi";
-import type { InvestigationEvidenceLink, InvestigationSource } from "@rhg/core/investigation";
+import type { InvestigationEvidenceLink, InvestigationSource } from "../lib/investigation";
 
 /** 与 `--gp-motion-layout: 280ms` / `--gp-ease-out` 对齐（260–360ms 窗）。 */
 const SETTLE_TRANSITION = {

@@ -1,5 +1,5 @@
 /* 离线壳：只缓存应用外壳，API 走网络（核查结果不缓存，避免把旧判断当新）。 */
-const CACHE = "rhg-shell-v2";
+const CACHE = "rhg-shell-v3";
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/manifest.webmanifest"])));
   self.skipWaiting();
@@ -18,7 +18,9 @@ self.addEventListener("fetch", (event) => {
   // 页面入口网络优先，离线回落缓存 — 部署新版后不会停在旧壳
   if (url.pathname === "/") {
     event.respondWith(
-      fetch(event.request)
+      // cache: "reload" 显式绕过浏览器 HTTP 缓存：只写 network-first 还不够，
+      // fetch() 默认仍会命中 HTTP 缓存里的旧 index.html（2026-09-11 实测）。
+      fetch(event.request, { cache: "reload" })
         .then((resp) => {
           const copy = resp.clone();
           caches.open(CACHE).then((c) => c.put(event.request, copy)).catch(() => undefined);

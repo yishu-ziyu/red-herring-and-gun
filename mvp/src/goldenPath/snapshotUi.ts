@@ -10,7 +10,7 @@ import type {
   InvestigationProgress,
   InvestigationSnapshotV1,
   InvestigationSource,
-} from "@rhg/core/investigation";
+} from "../lib/investigation";
 
 export type EvidenceRole = InvestigationEvidenceLink["role"];
 

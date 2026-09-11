@@ -8,7 +8,7 @@ import {
   checksExhaustedMessage,
   isChecksExhaustedMessage,
 } from "./checkQuota";
-import type { InvestigationSnapshotV1 } from "@rhg/core/investigation";
+import type { InvestigationSnapshotV1 } from "./investigation";
 import type {
   ConsensusDebateUpdate,
   ExecutionDagPlan,

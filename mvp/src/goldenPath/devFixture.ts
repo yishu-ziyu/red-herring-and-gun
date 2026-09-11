@@ -3,7 +3,7 @@
  * 生成确定性的调查中 / 完成 / 争议 / 中断界面（截图与走查用）。
  * 仅在 import.meta.env.DEV 下被动态 import，不进生产 bundle。
  */
-import { buildInvestigationSnapshot } from "@rhg/core/investigation";
+import { buildInvestigationSnapshot } from "../lib/investigation";
 import type { OrchestrateStreamEvent } from "../lib/agentExpansion";
 import { mixedComplete, mixedWithoutSpans } from "./fixtures";
 
