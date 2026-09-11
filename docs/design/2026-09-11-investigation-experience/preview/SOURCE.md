@@ -17,5 +17,6 @@
 | prb-complete-mobile.png | 390×844 | `?fixture=complete` |
 
 头像用仓库既有 `mvp/public/agents/*.png`，不是交接包概念裁图。
-首页下方维生素 C 块仍标明「示意，不是真结果」，未把海岬市公园虚构案例改标签上线。
+2026-09-11 用户裁定后：首页示意卡已去掉；调查中改为左原句、右发现，未开始的命题收起。
+另有 `prb-investigating-mobile.png`（390×844，`?fixture=investigating`）。
 视觉是否满意由用户判断。

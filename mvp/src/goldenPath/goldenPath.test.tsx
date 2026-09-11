@@ -121,6 +121,35 @@ describe("调查态（investigating）", () => {
     expect(claim.querySelector('[data-gp-role="contradict"]')).toBeNull();
     expect(within(claim as HTMLElement).getByText("正在追查")).toBeTruthy();
   });
+
+  it("还没开始的命题默认收起，正在追查的命题仍能看见材料", () => {
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: "甲且乙。",
+      phase: "investigating",
+      claimAtoms: ["甲", "乙"],
+      atomSearchBundle: {
+        atomsSearched: ["甲"],
+        byAtomKey: {
+          甲: [{ url: "https://news.example/a", title: "报道", snippet: "官方片段" }],
+        },
+      },
+    });
+    renderCanvas(snapshot);
+    const searchingHead = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head');
+    const pendingHead = document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head');
+    expect(searchingHead?.getAttribute("aria-expanded")).toBe("true");
+    expect(pendingHead?.getAttribute("aria-expanded")).toBe("false");
+    expect(document.querySelector('[data-gp-claim-id="claim-1"] .gp-evidence-item')).toBeTruthy();
+    expect(document.querySelector('[data-gp-claim-id="claim-2"] .gp-evidence-item')).toBeNull();
+  });
+
+  it("调查中发现进入动效在 reduced-motion 下被关掉", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const css = readFileSync(join(process.cwd(), "src", "goldenPath", "golden-path.css"), "utf8");
+    expect(css).toContain("gp-find-in");
+    expect(css).toMatch(/prefers-reduced-motion: reduce[\s\S]*animation:\s*none/);
+  });
 });
 
 describe("边界", () => {

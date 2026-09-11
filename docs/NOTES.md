@@ -1,5 +1,7 @@
 # 当前状态
 
+2026-09-11 预览方向两处改（契约 `docs/evals/2026-09-11-preview-direction.md`）：生产首页拿掉「不只给结论 / 查完大概长这样」示意卡；调查中改为左原句右发现、未开始命题收起、职责头像只强调正在做的那个。fixture 仍驱动真实 `InvestigationCanvas`。门禁：mvp 1174 过 / 1 跳过。截图 `docs/design/2026-09-11-investigation-experience/preview/`。未合并未部署。
+
 2026-09-11 调查体验重构 PR-B：生产 `goldenPath` 换成交接包设计系统（浅暖灰 #F6F4EF、品牌 #A13734、标题「这句话，站得住吗？」、四职责头像用既有 `public/agents/*.png`、首页教学示意仍标「不是真结果」）。真实入口仍是 `mvp/src/App.tsx`，`?fixture=` 驱动同一棵组件树。预览 `http://127.0.0.1:5210/`，截图 `docs/design/2026-09-11-investigation-experience/preview/`。门禁：mvp 1172 过 / 1 跳过。视觉等人评，未合并未部署。后端活动层 / RunService 还没接。
 
 2026-09-11 调查体验重构 PR-A（交接包 `docs/design/2026-09-11-investigation-experience/`，验收 `docs/evals/2026-09-11-investigation-experience.md`）：从当前 main `632746e` 开 `feat/investigation-experience`，不回退。生产入口仍是 `mvp/src/App.tsx` 的 ProductApp。**权限**：`GET /r/:id` 与 `GET /api/case/:id` 共用 `canReadPrivateCase`——无归属旧记录一律私有，有归属只给主人；未登录/他人打开 HTML 与 JSON 都是 404 且不含说法、结论、ClaimReview。显式分享令牌还没做（PR-E），旧 `/r` 不再当公开入口。**提交**：`handleStart` 不再因 `historyReady===false` 静默 return；同句提醒只在历史已读到时出现；旧壳也去掉了用 fieldset 禁用输入。先失败后通过：caseHandlers 4 红→绿，历史挂起提交 1 红→绿。门禁：mvp 1172 过 / 1 跳过，mvp build、server tsc 绿。基线截图 `docs/design/2026-09-11-investigation-experience/baseline/`（fixture，非真实 SSE）。未合并、未部署。下一步 PR-B：用原型设计系统改生产组件并给可点预览。

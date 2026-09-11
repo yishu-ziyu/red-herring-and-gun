@@ -38,9 +38,14 @@ export function WorkRoles({ compact = false, activeIndex = -1 }: WorkRolesProps)
       {WORK_ROLES.map((role, index) => {
         const active = compact && index === activeIndex;
         const done = compact && index < activeIndex;
-        const caption = compact ? (done ? role.done : active ? role.doing : role.idle) : role.desc;
+        const caption = compact ? (done ? role.done : active ? role.doing : "") : role.desc;
         return (
-          <div key={role.id} className={`gp-role${active ? " is-active" : ""}`} data-gp-role={role.id}>
+          <div
+            key={role.id}
+            className={`gp-role${active ? " is-active" : ""}${done ? " is-done" : ""}`}
+            data-gp-role={role.id}
+            data-gp-role-state={compact ? (done ? "done" : active ? "doing" : "idle") : "home"}
+          >
             <img className="gp-role-avatar" src={role.src} alt="" width={74} height={74} />
             <strong>{role.name}</strong>
             <small>{caption}</small>

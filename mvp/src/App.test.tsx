@@ -121,22 +121,14 @@ describe("生产首页（输入态）", () => {
     expect(document.querySelector("button.gp-brand")).toBeNull();
   });
 
-  it("进门能看到「查完大概长这样」示意：一句回答 + 帮/拆关系 + 片段，并写明是示意", async () => {    mockFetch();
+  it("进门不再放示意结果卡：没有「查完大概长这样」和维生素 C 样例", async () => {
+    mockFetch();
     render(<App />);
     await screen.findByRole("textbox", { name: "要调查的说法" });
-    const preview = document.querySelector("[data-gp-result-preview]") as HTMLElement | null;
-    expect(preview).toBeTruthy();
-    const text = preview!.textContent ?? "";
-    expect(text).toContain("示意");
-    expect(text).toContain("不是真结果");
-    // 一句直接回答
-    expect(text).toContain("不会。维生素 C");
-    // 关系可分辨：支持 / 反驳
-    expect(preview!.querySelector('[data-gp-preview-relation="support"]')?.textContent).toContain("支持");
-    expect(preview!.querySelector('[data-gp-preview-relation="contradict"]')?.textContent).toContain("反驳");
-    // 片段沿用诚实口径，不写成逐字原文
-    expect(text).toContain("检索片段（非逐字原文）");
-    expect(preview!.textContent).not.toContain("原文摘录");
+    expect(document.querySelector("[data-gp-result-preview]")).toBeNull();
+    expect(screen.queryByText("查完大概长这样（示意，不是真结果）")).toBeNull();
+    expect(screen.queryByText(/维生素 C/)).toBeNull();
+    expect(screen.queryByText("不只给结论。把依据一起交给你。")).toBeNull();
   });
 
   it("未知路径回落到生产首页", async () => {
