@@ -124,7 +124,11 @@ export function InvestigationCanvas({
   const drawerView = liveView ?? heldView;
 
   return (
-    <div className="gp-canvas" data-gp-phase={snapshot.phase}>
+    <div
+      className="gp-canvas"
+      data-gp-phase={snapshot.phase}
+      data-gp-single-claim={snapshot.claims.length === 1 ? "true" : undefined}
+    >
       <div className="gp-canvas-inner">
         <section
           className={complete ? "gp-conclusion-region is-complete" : "gp-conclusion-region is-pending"}
@@ -230,6 +234,7 @@ export function InvestigationCanvas({
                   onHeaderFocus={handleHeaderFocus}
                   onExpandedTrace={setExpandedTraceClaimId}
                   asResult={complete}
+                  asWork={!complete && !interrupted}
                 />
               ))}
             </div>

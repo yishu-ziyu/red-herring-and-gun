@@ -1340,12 +1340,74 @@
   color: var(--gp-ink-2);
 }
 
+.gp-canvas[data-gp-phase="investigating"] .gp-finding,
+.gp-canvas[data-gp-phase="judging"] .gp-finding,
 .gp-canvas[data-gp-phase="complete"] .gp-finding {
   display: none;
 }
 
+.gp-canvas[data-gp-phase="investigating"] .gp-evidence-relation,
+.gp-canvas[data-gp-phase="judging"] .gp-evidence-relation,
 .gp-canvas[data-gp-phase="complete"] .gp-evidence-relation {
   display: none;
+}
+
+.gp-canvas[data-gp-phase="investigating"] .gp-evidence-group-head,
+.gp-canvas[data-gp-phase="judging"] .gp-evidence-group-head {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.gp-canvas[data-gp-phase="investigating"] .gp-chip,
+.gp-canvas[data-gp-phase="judging"] .gp-chip,
+.gp-canvas[data-gp-phase="investigating"] .gp-claim-toggle,
+.gp-canvas[data-gp-phase="judging"] .gp-claim-toggle {
+  display: none;
+}
+
+.gp-canvas[data-gp-single-claim="true"]:not([data-gp-phase="complete"]) .gp-claim-head,
+.gp-canvas[data-gp-single-claim="true"]:not([data-gp-phase="complete"]) .gp-section-label {
+  display: none;
+}
+
+.gp-canvas[data-gp-phase="investigating"] .gp-evidence-excerpt,
+.gp-canvas[data-gp-phase="judging"] .gp-evidence-excerpt {
+  order: -1;
+  margin: 0 0 4px;
+  padding: 0;
+  border: 0;
+  font-family: var(--gp-font);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.65;
+  color: var(--gp-ink);
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+
+.gp-canvas[data-gp-phase="investigating"] .gp-evidence-title,
+.gp-canvas[data-gp-phase="judging"] .gp-evidence-title {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--gp-ink-2);
+}
+
+.gp-canvas[data-gp-phase="investigating"] .gp-evidence-header,
+.gp-canvas[data-gp-phase="judging"] .gp-evidence-header {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+}
+
+.gp-canvas[data-gp-phase="investigating"] .gp-evidence-body,
+.gp-canvas[data-gp-phase="judging"] .gp-evidence-body {
+  display: flex;
+  flex-direction: column;
 }
 
 .gp-canvas[data-gp-phase="complete"] .gp-evidence-domain {
@@ -1669,13 +1731,15 @@
 
 .gp-canvas[data-gp-phase="investigating"] .gp-evidence-item,
 .gp-canvas[data-gp-phase="judging"] .gp-evidence-item {
-  background: var(--gp-surface);
-  border: 1px solid var(--gp-line);
-  border-radius: 14px;
-  padding: 14px 16px;
-  margin: 0 0 10px;
-  box-shadow: 0 4px 18px #38302608;
-  transition: transform 140ms var(--gp-ease-out), box-shadow 140ms var(--gp-ease-out), border-color 140ms var(--gp-ease-out), background-color 140ms var(--gp-ease-out);
+  display: block;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 8px 0 10px;
+  margin: 0;
+  box-shadow: none;
+  min-height: 44px;
+  text-align: left;
   animation: gp-find-in 220ms var(--gp-ease-out) both;
 }
 
@@ -1706,10 +1770,9 @@
 @media (hover: hover) and (pointer: fine) {
   .gp-canvas[data-gp-phase="investigating"] .gp-evidence-item:hover,
   .gp-canvas[data-gp-phase="judging"] .gp-evidence-item:hover {
-    background: var(--gp-surface);
-    transform: translateY(-1px);
-    border-color: #d0ccc3;
-    box-shadow: 0 8px 24px #3830260e;
+    background: transparent;
+    transform: none;
+    box-shadow: none;
   }
 }
 
