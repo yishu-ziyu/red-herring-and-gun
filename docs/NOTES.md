@@ -1,5 +1,7 @@
 # 当前状态
 
+2026-09-11 结果页阅读顺序（契约 `docs/evals/2026-09-11-result-reading-order.md`）：完成态改成「判断 → 回答 → 原句 → 判断依据」。四档字号实测 14 / 28 / 20 / 16。分组「反驳 · 1」完成态不再抢视觉。门禁 mvp 1174 过 / 1 跳过。截图 `preview/prb-complete-desktop.png`。未合并未部署。
+
 2026-09-11 预览方向两处改（契约 `docs/evals/2026-09-11-preview-direction.md`）：生产首页拿掉「不只给结论 / 查完大概长这样」示意卡；调查中改为左原句右发现、未开始命题收起、职责头像只强调正在做的那个。fixture 仍驱动真实 `InvestigationCanvas`。门禁：mvp 1174 过 / 1 跳过。截图 `docs/design/2026-09-11-investigation-experience/preview/`。未合并未部署。
 
 2026-09-11 调查体验重构 PR-B：生产 `goldenPath` 换成交接包设计系统（浅暖灰 #F6F4EF、品牌 #A13734、标题「这句话，站得住吗？」、四职责头像用既有 `public/agents/*.png`、首页教学示意仍标「不是真结果」）。真实入口仍是 `mvp/src/App.tsx`，`?fixture=` 驱动同一棵组件树。预览 `http://127.0.0.1:5210/`，截图 `docs/design/2026-09-11-investigation-experience/preview/`。门禁：mvp 1172 过 / 1 跳过。视觉等人评，未合并未部署。后端活动层 / RunService 还没接。

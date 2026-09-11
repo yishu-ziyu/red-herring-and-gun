@@ -1112,12 +1112,13 @@
 .gp-hero-answer {
   margin: 0 0 16px 0;
   font-family: var(--gp-serif);
-  font-size: clamp(26px, 3.2vw, 38px);
+  font-size: clamp(22px, 2.2vw, 28px);
   font-weight: 650;
-  line-height: 1.45;
-  letter-spacing: -0.5px;
+  line-height: 1.4;
+  letter-spacing: -0.4px;
   color: var(--gp-ink-primary);
   text-decoration: none;
+  max-width: 38em;
 }
 
 /* 判断色只做细线，不对整句铺色 */
@@ -1135,11 +1136,11 @@
 /* 结论第二层：判断句之后的解释，降到正文档层级，与 24px/700 的判断明确分层。
    不新起一套 token，沿用既有的正文墨色与字号阶梯。 */
 .gp-hero-rationale {
-  margin: 0;
-  font-size: 15px;
+  margin: 8px 0 0;
+  font-size: 16px;
   font-weight: 400;
   line-height: 1.7;
-  color: var(--gp-ink-secondary);
+  color: var(--gp-ink-2);
 }
 
 .gp-hero-uncertainty {
@@ -1155,16 +1156,15 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0 0;
-  font-size: 11.5px;
+  margin: 0 0 12px;
+  font-size: 14px;
   font-weight: 400;
-  color: var(--gp-ink-muted);
+  color: var(--gp-ink-2);
   font-variant-numeric: tabular-nums;
 }
 
 .gp-hero-judgment {
-  /* 取 13.5px/600：与已提交的 mvp/DESIGN.md「判断类别用判断色文字（13.5px / 600）
-     与规模行并排」一致。PR #85 原来的 11.5px/500 与该规格不符，故合并时取前者。 */
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--gp-ink-tertiary);
 }
@@ -1191,16 +1191,16 @@
 }
 
 .gp-hero-boundaries {
-  margin-top: 12px;
+  margin-top: 16px;
   padding: 0;
   background: transparent;
   border: 0;
   border-top: 1px solid var(--gp-hairline);
   border-radius: 0;
   box-shadow: none;
-  font-size: 12.5px;
+  font-size: 16px;
   line-height: 1.65;
-  color: var(--gp-ink-tertiary);
+  color: var(--gp-ink-2);
 }
 
 .gp-hero-boundary-list {
@@ -1258,6 +1258,101 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--gp-ink-3);
+}
+
+/* 完成态：四档字号。判断 14 / 回答 22–28 / 节题 20 / 正文 16。 */
+.gp-canvas[data-gp-phase="complete"] .gp-section-label {
+  margin: 28px 0 12px;
+  font-family: var(--gp-serif);
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--gp-ink);
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-original {
+  margin: 20px 0 8px;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-original-label {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--gp-ink-2);
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-original-text {
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-claim-text {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-claim-num {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-chip {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 14px;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-claim-toggle {
+  font-size: 14px;
+  color: var(--gp-ink-2);
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-evidence-group-head {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-evidence-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-evidence-excerpt {
+  font-family: var(--gp-font);
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--gp-ink-2);
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-evidence-relation {
+  font-size: 14px;
+  min-width: 3.5em;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-evidence-domain {
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-boundary,
+.gp-canvas[data-gp-phase="complete"] .gp-gaps-label,
+.gp-canvas[data-gp-phase="complete"] .gp-gaps-hint,
+.gp-canvas[data-gp-phase="complete"] .gp-gap-desc {
+  font-size: 16px;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-evidence-item {
+  padding: 14px 0;
+  gap: 14px;
+  min-height: 44px;
 }
 
 .gp-claim-list {
