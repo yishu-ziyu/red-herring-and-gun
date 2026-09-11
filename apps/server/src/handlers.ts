@@ -19,6 +19,10 @@ import {
   type InvestigationSnapshotV1,
 } from "./lib/investigation/index.js";
 import { createInvestigationEmitter } from "./lib/investigationEmitter.js";
+import { createRunService, hashRunInput } from "./lib/runService.js";
+import { readEmailAccountOptional } from "./lib/emailSession.js";
+import { openRunStore } from "./lib/runStore.js";
+import { generateCaseId } from "./lib/caseStore.js";
 
 import { createLoopLlm, modelFromChoice, wantsAgentLoop } from "./lib/agentLoop/index.js";
 import { runClaimLoopPi } from "./lib/agentLoop/runClaimLoopPi.js";
@@ -190,6 +194,10 @@ export function toPublicStreamEvent(data: object): Record<string, unknown> {
 
 export function createHandlers(env: Record<string, string>) {
   const apiKey = env.OPENAI_API_KEY;
+  // 运行身份与取消（PR-D）：存储不可用时退化成进程内注册表，不阻塞启动。
+  const runStore = openRunStore();
+  const runs = createRunService({ store: runStore });
+  runs.markInterruptedOnBoot();
   const baseUrl = (env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   const model = env.OPENAI_MODEL || "gpt-4.1-mini";
   const codexBin = env.CODEX_BIN || process.env.CODEX_BIN || "/usr/local/bin/codex";
@@ -198,6 +206,30 @@ export function createHandlers(env: Record<string, string>) {
   // 多 Agent Orchestrate 编排（组装/状态栏/Skills/自证/改写/交叉二审）收在 lib/orchestrate。
   // 批量端点无 BYO 语义，用进程级适配器；orchestrate-stream 是请求内 BYO 接管，适配器按请求创建。
   const batchAdapter = createOrchestrateAdapter({ env, codexBin });
+
+  /**
+   * 取消一次正在跑的调查（IMPLEMENTATION_PLAN §5.5）。
+   * 幂等：终态再调无副作用。有归属的 run 只给主人取消；匿名 run 靠不可猜的 runId 当能力凭证。
+   */
+  async function cancelInvestigationHandler(req: any, res: any, next: any) {
+    if (req.method !== "POST") return next();
+    const runId = String(req.params?.runId ?? "").trim();
+    if (!runId) return sendJson(res, 400, { message: "缺少 runId" });
+    const run = runs.get(runId);
+    if (!run) return sendJson(res, 404, { message: "没有这次调查" });
+    const account = await readEmailAccountOptional(req);
+    const requester = account?.hash ?? null;
+    if (run.ownerHash && run.ownerHash !== requester) {
+      return sendJson(res, 404, { message: "没有这次调查" });
+    }
+    const result = runs.cancel(runId);
+    if (result.kind === "not-found") return sendJson(res, 404, { message: "没有这次调查" });
+    return sendJson(res, 200, {
+      runId,
+      status: result.run.status,
+      accepted: result.kind === "cancelling",
+    });
+  }
 
   async function modelsListHandler(req: any, res: any, next: any) {
     if (req.method !== "GET") return next();
@@ -378,17 +410,15 @@ export function createHandlers(env: Record<string, string>) {
   }
 
   /** 合并多个 abort 源：任一触发即以原 reason 中止（Node 版本无关，不依赖 AbortSignal.any）。 */
-  function combineAbortSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
+  function combineAbortSignals(...sources: AbortSignal[]): AbortSignal {
     const combined = new AbortController();
-    const forward = (source: AbortSignal) => {
+    for (const source of sources) {
       if (source.aborted) {
         combined.abort(source.reason);
-        return;
+        continue;
       }
       source.addEventListener("abort", () => combined.abort(source.reason), { once: true });
-    };
-    forward(a);
-    forward(b);
+    }
     return combined.signal;
   }
 
@@ -427,6 +457,30 @@ export function createHandlers(env: Record<string, string>) {
     const clientMemoryRecall = normalizeClientMemoryRecall(payload.memoryRecall);
     let visualExtraction: Record<string, unknown> | undefined;
 
+    // 运行身份（PR-D 片一）：clientRequestId 幂等、runId 供取消与后续重连使用。
+    // 没有这条 run 之前，「停止」只能是前端不管结果，服务端照跑照烧。
+    const clientRequestId =
+      typeof payload.clientRequestId === "string" && payload.clientRequestId.trim()
+        ? payload.clientRequestId.trim().slice(0, 120)
+        : null;
+    const ownerAccount = await readEmailAccountOptional(req);
+    const ownerHash = ownerAccount?.hash ?? null;
+    const started = runs.start({
+      caseId: typeof payload.caseId === "string" && payload.caseId ? payload.caseId : generateCaseId(claim),
+      ownerHash,
+      clientRequestId,
+      inputHash: hashRunInput(claim, { intake: intakeMetadata }),
+    });
+    if (started.kind === "conflict") {
+      releaseFreeCheck(ticket);
+      return sendJson(res, 409, {
+        message: "同一个请求编号对应了不同的材料，这次没有重复核查。",
+        runId: started.existing.runId,
+      });
+    }
+    const runId = started.run.runId;
+    const runSignal = runs.signalFor(runId);
+
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -451,7 +505,11 @@ export function createHandlers(env: Record<string, string>) {
         byoFail.abort(error instanceof Error ? error : new Error("byo-key-failed"));
       }
     };
-    const pipelineSignal = combineAbortSignals(disconnect.signal, byoFail.signal);
+    const pipelineSignal = combineAbortSignals(
+      disconnect.signal,
+      byoFail.signal,
+      ...(runSignal ? [runSignal] : [])
+    );
 
     // 检索凭证绑定：BYO 端点命中 MiniMax / 阶跃 → 对应检索路径换用户密钥；其余端点检索仍全走 env。
     const searchEnv = searchEnvWithByoCredentials(env, byo);
@@ -464,6 +522,9 @@ export function createHandlers(env: Record<string, string>) {
         disconnect.abort(new Error("stream-write-failed"));
       }
     };
+
+    // 先告诉客户端这次调查的 runId：取消与刷新恢复都要它。
+    sendEvent({ type: "run_started", runId, caseId: started.run.caseId, timestamp: Date.now() });
 
     // 心跳：report_composer 等阶段可静默 ~50s，SSE 注释帧让中间代理与浏览器
     // 知道流还活着（客户端解析器只认 "data: " 行，注释天然被忽略）。
@@ -480,11 +541,25 @@ export function createHandlers(env: Record<string, string>) {
     // 公共活动账本（IMPLEMENTATION_PLAN §5.1）：只由已校验快照差分与结构化 hook 生成。
     // runId 目前只覆盖这一条流；跨刷新的重放要等 RunService（PR-D）。
     // 公共活动（IMPLEMENTATION_PLAN §5.1）：只由已校验快照差分与结构化 hook 生成。
-    // runId 目前只覆盖这一条流；跨刷新的重放要等 RunService（PR-D）。
-    const emitter = createInvestigationEmitter({ runId: randomUUID(), send: sendEvent });
+    const emitter = createInvestigationEmitter({
+      runId,
+      send: sendEvent,
+      onActivities: (activities) => runStore?.appendActivities(runId, activities),
+    });
     const emitInvestigation = (snapshot: InvestigationSnapshotV1) => {
       lastInvestigation = snapshot;
+      // 运行状态跟着快照阶段走（§5.2：run 状态与快照 phase 有确定映射）。
+      if (snapshot.phase === "investigating") runs.advance(runId, "investigating");
+      else if (snapshot.phase === "judging") runs.advance(runId, "judging");
       emitter.emitSnapshot(snapshot);
+      if (runStore) {
+        try {
+          runStore.saveSnapshot(runId, snapshot);
+        } catch (error) {
+          // 保存失败不挡结果：前端照拿快照，服务端记一笔。
+          console.error(`[run] 快照落库失败 runId=${runId}`, error);
+        }
+      }
     };
 
     try {
@@ -541,6 +616,7 @@ export function createHandlers(env: Record<string, string>) {
           finalReport: loop.finalReport,
           timestamp: Date.now(),
         });
+        runs.finish(runId, "completed");
         commitFreeCheck(res, ticket);
         res.end();
         return;
@@ -841,6 +917,7 @@ export function createHandlers(env: Record<string, string>) {
         memoryCandidates: result.memoryCandidates,
         timestamp: Date.now(),
       });
+      runs.finish(runId, "completed");
       commitFreeCheck(res, ticket);
       res.end();
     } catch (error) {
@@ -868,6 +945,7 @@ export function createHandlers(env: Record<string, string>) {
           message: byoMessage,
           timestamp: Date.now(),
         });
+        runs.finish(runId, runSignal?.aborted ? "cancelled" : "interrupted");
         res.end();
         return;
       }
@@ -893,6 +971,7 @@ export function createHandlers(env: Record<string, string>) {
           memoryCandidates: [],
           timestamp: Date.now(),
         });
+        runs.finish(runId, "interrupted");
         res.end();
         return;
       }
@@ -911,6 +990,8 @@ export function createHandlers(env: Record<string, string>) {
         message,
         timestamp: Date.now(),
       });
+      // 用户取消 → cancelled；断连或服务端问题 → interrupted。两者都不算「完成」。
+      runs.finish(runId, runSignal?.aborted ? "cancelled" : "interrupted");
       res.end();
     } finally {
       clearInterval(heartbeat);
@@ -1028,6 +1109,7 @@ export function createHandlers(env: Record<string, string>) {
     modelsListHandler,
     modelsHealthHandler,
     orchestrateStreamHandler,
+    cancelInvestigationHandler,
     testLlmHandler,
     batchHandler,
   };

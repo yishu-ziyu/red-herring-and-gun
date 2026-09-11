@@ -127,6 +127,7 @@ export interface SearchProgressSource {
 
 export interface OrchestrateStreamEvent {
   type:
+    | "run_started"
     | "investigation_snapshot"
     | "investigation_activity"
     | "search_progress"
@@ -153,6 +154,9 @@ export interface OrchestrateStreamEvent {
    * 服务端确定性投影，不是模型写的直播稿；先落快照，后发引用它的活动。
    */
   activity?: PublicActivity;
+  /** run_started：这次调查的运行身份（取消与刷新恢复都要它）。 */
+  runId?: string;
+  caseId?: string;
   agent?: string;
   agentName?: string;
   agentIcon?: string;

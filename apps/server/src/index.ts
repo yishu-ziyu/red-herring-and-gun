@@ -246,6 +246,7 @@ import { appendUserFeedback } from "./lib/userFeedback.js";
 
 app.post("/api/case", (req, res, next) => postCaseHandler(req, res).catch(next));
 app.post("/api/feedback", (req, res, next) => postGeneralFeedbackHandler(req, res).catch(next));
+app.post("/api/investigations/:runId/cancel", (req, res, next) => handlers.cancelInvestigationHandler(req, res, next));
 app.get("/api/case/:caseId", (req, res, next) => getCaseHandler(req, res));
 app.get("/api/cases", (req, res, next) => listCasesHandler(req, res));
 app.get("/r/:caseId", (req, res, next) => renderCaseHtmlHandler(req, res).catch(next));

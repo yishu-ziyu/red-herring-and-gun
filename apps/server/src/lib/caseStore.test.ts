@@ -126,15 +126,16 @@ describe("Plan Item 2 · caseStore", () => {
     expect(caseCount()).toBe(0);
   });
 
-  it("LRU 淘汰：超过 1000 时按插入顺序淘汰最旧", () => {
-    // 插 1005 条，最旧 5 条应被淘汰
+  it("超过 1000 条不再淘汰：交接包禁止静默丢掉用户记录", () => {
+    // 旧实现是 Map + JSON 落盘，必须靠 LRU 截断才写得动一个文件；
+    // 换成 SQLite 后没有这个约束，而 IMPLEMENTATION_PLAN §5.4 明写
+    // 「禁止静默删掉 1000 条以外的用户记录」。故不再按条数淘汰。
+    // 保留期限是产品决策，要删得先改这条断言。
     for (let i = 0; i < 1005; i++) {
       putCase(makeEntry(`c${i}`));
     }
-    expect(caseCount()).toBe(1000);
-    // c0 ~ c4 应已被淘汰
-    expect(listCases(2000).find((c) => c.claim === "c0")).toBeUndefined();
-    // c1004 应保留
+    expect(caseCount()).toBe(1005);
+    expect(listCases(2000).find((c) => c.claim === "c0")).toBeDefined();
     expect(listCases(2000).find((c) => c.claim === "c1004")).toBeDefined();
   });
 });
