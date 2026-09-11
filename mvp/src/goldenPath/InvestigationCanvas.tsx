@@ -17,6 +17,7 @@ import { phaseHeadline, readImageOrigin, type ImageOriginView } from "./snapshot
 import { buildClaimTraceSegments } from "./claimTrace";
 import { ClaimSection } from "./ClaimSection";
 import { ConclusionHero } from "./ConclusionHero";
+import { WorkRoles, roleIndexForPhase } from "./WorkRoles";
 import {
   SourceDrawer,
   buildSourceDrawerViewFromClick,
@@ -194,9 +195,12 @@ export function InvestigationCanvas({
         </section>
 
         {!complete && !interrupted ? (
-          <p className="gp-phase-line" role="status">
-            {phaseHeadline(snapshot)}
-          </p>
+          <>
+            <WorkRoles compact activeIndex={roleIndexForPhase(snapshot.phase)} />
+            <p className="gp-phase-line" role="status">
+              {phaseHeadline(snapshot)}
+            </p>
+          </>
         ) : null}
 
         {snapshot.claims.length > 0 ? (

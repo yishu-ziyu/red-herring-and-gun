@@ -123,16 +123,21 @@ export function ProductShell({
           {/* 进门态品牌只是名字，不假装能点；回空白输入的入口只在看旧结果时出现在导航里。 */}
           <div className="gp-brand gp-brand--static">
             <img src="/logo.png?v=20260615" alt="" className="gp-brand-logo" />
-            <span className="gp-brand-name">红鲱鱼与枪</span>
-            <span className="gp-brand-divider" aria-hidden="true">|</span>
-            <span className="gp-brand-tagline">{copy.brandTagline}</span>
+            <div className="gp-brand-text">
+              <span className="gp-brand-name">红鲱鱼与枪</span>
+              <span className="gp-brand-tagline">{copy.brandTagline}</span>
+            </div>
           </div>
           <nav className="gp-topbar-actions" aria-label="产品导航">
             {viewingInvestigation ? (
               <button type="button" className="gp-icon-btn" onClick={onNewCase}>
                 {copy.newCheck}
               </button>
-            ) : null}
+            ) : (
+              <a className="gp-nav-text" href="#gp-home-case">
+                {copy.examplesNav}
+              </a>
+            )}
             {topRightExtra}
             <button
               type="button"
