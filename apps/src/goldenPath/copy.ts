@@ -96,6 +96,20 @@ export const GP_COPY = {
     historySyncFailed: "账户历史同步失败，暂时无法跨设备找回。",
     oldCaseNotice: (t: string) => `原调查时间：${t}。打开的是当时的记录，没有重新核查。`,
     unknownTime: "旧记录未保存时间",
+    activityLabel: "刚刚发生",
+    activityUnseen: (n: number) => `有 ${n} 条新发现`,
+    activityClaimDecomposed: (text: string) => (text ? `拆出问题：${text}` : "拆出了问题"),
+    activitySearchStarted: (query: string) => (query ? `开始查找：${query}` : "开始查找"),
+    activitySourceFound: (title: string, domain: string) =>
+      title && domain ? `带回材料：${title} · ${domain}` : title ? `带回材料：${title}` : "带回一份材料",
+    activitySourceChecked: (title: string, role: string) =>
+      role ? `判定这条材料：${role}｜${title || "未标题"}` : `核对材料：${title || "未标题"}`,
+    activityEvidenceAssessed: (judgment: string) => (judgment ? `形成判断：${judgment}` : "形成判断"),
+    activityJudgmentRevised: (from: string, to: string) =>
+      from && to ? `判断改变：${from} → ${to}` : "判断有修正",
+    activityConflictDetected: (summary: string) => (summary ? `发现分歧：${summary}` : "发现分歧"),
+    activityGapIdentified: (description: string) => (description ? `还缺：${description}` : "还有材料没拿到"),
+    activityRunCompleted: "调查完成",
   },
   en: {
     brandTagline: "RED HERRING & GUN",
@@ -187,6 +201,20 @@ export const GP_COPY = {
     historySyncFailed: "Account history sync failed; saved checks may not sync across devices.",
     oldCaseNotice: (t: string) => `Original check: ${t}. Showing the saved record, not a new check.`,
     unknownTime: "time not saved",
+    activityLabel: "Just now",
+    activityUnseen: (n: number) => `${n} new finding${n === 1 ? "" : "s"}`,
+    activityClaimDecomposed: (text: string) => (text ? `Question split out: ${text}` : "Split out the questions"),
+    activitySearchStarted: (query: string) => (query ? `Looking for: ${query}` : "Looking for sources"),
+    activitySourceFound: (title: string, domain: string) =>
+      title && domain ? `Material brought back: ${title} · ${domain}` : title ? `Material brought back: ${title}` : "Material brought back",
+    activitySourceChecked: (title: string, role: string) =>
+      role ? `This material counts as ${role}: ${title || "untitled"}` : `Checked material: ${title || "untitled"}`,
+    activityEvidenceAssessed: (judgment: string) => (judgment ? `Judgment formed: ${judgment}` : "Judgment formed"),
+    activityJudgmentRevised: (from: string, to: string) =>
+      from && to ? `Judgment revised: ${from} → ${to}` : "Judgment revised",
+    activityConflictDetected: (summary: string) => (summary ? `Conflict found: ${summary}` : "Conflict found"),
+    activityGapIdentified: (description: string) => (description ? `Still missing: ${description}` : "Something is still missing"),
+    activityRunCompleted: "Investigation complete",
   },
 } as const;
 

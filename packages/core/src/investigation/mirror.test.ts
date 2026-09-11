@@ -4,16 +4,16 @@ import { describe, expect, it } from "vitest";
 
 /**
  * 镜像守卫：packages/core/src/investigation 是唯一契约源文件；
- * 生产 mvp/server/src/lib/investigation 是同内容镜像（部署只打包 mvp/，
+ * 生产 apps/server/src/lib/investigation 是同内容镜像（部署只打包 apps/，
  * server 不能运行时依赖工作区包）。任何单侧改动必须两侧同步，否则此测试红。
  */
-const FILES = ["schema.ts", "build.ts", "invariants.ts", "sourceIdentity.ts", "index.ts"] as const;
+const FILES = ["schema.ts", "build.ts", "invariants.ts", "sourceIdentity.ts", "activity.ts", "index.ts"] as const;
 
 function repoRoot(): string {
   for (const root of [process.cwd(), join(process.cwd(), ".."), join(process.cwd(), "..", "..")]) {
     if (
       existsSync(join(root, "packages", "core", "src", "investigation", "schema.ts")) &&
-      existsSync(join(root, "mvp", "server", "src", "lib", "investigation", "schema.ts"))
+      existsSync(join(root, "apps", "server", "src", "lib", "investigation", "schema.ts"))
     ) {
       return root;
     }

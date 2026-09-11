@@ -10,9 +10,11 @@
  */
 import { useCallback, useRef, useState } from "react";
 import {
+  isPublicActivity,
   rebuildInvestigationFromReport,
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
+  type PublicActivity,
 } from "../lib/investigation";
 import { requestOrchestrateStream, type OrchestrateStreamEvent } from "../lib/agentExpansion";
 import { caseIntakePrimaryText, type CaseIntake } from "../lib/caseIntake";
@@ -45,6 +47,15 @@ export type RunState = {
   errorMessage: string;
   /** complete 事件的 finalReport（imageOrigin side-channel 与父层落库用）。 */
   finalReport: Record<string, unknown> | null;
+  /**
+   * 公共活动：按 seq 累计、按 id 去重。只由 investigation_activity 事件写入；
+   * 活动层坏了不影响快照与结果（空数组是合法常态）。
+   */
+  activities: PublicActivity[];
+  /** 当前活动的 runId；不同 run 的活动不混在一起。 */
+  activityRunId: string | null;
+  /** 已接受的最大 seq；小于等于它的重放一律忽略。 */
+  lastActivitySeq: number;
 };
 
 const INITIAL_STATE: RunState = {
@@ -52,6 +63,9 @@ const INITIAL_STATE: RunState = {
   connection: "connecting",
   errorMessage: "",
   finalReport: null,
+  activities: [],
+  activityRunId: null,
+  lastActivitySeq: 0,
 };
 
 /**
@@ -60,6 +74,23 @@ const INITIAL_STATE: RunState = {
  * claim 供 complete 报告缺快照时的确定性重建使用。
  */
 export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: string): RunState {
+  if (event.type === "investigation_activity") {
+    // 终态不能被晚到活动倒退：complete/error 之后一律不再收活动。
+    if (prev.connection === "ended" || prev.connection === "failed") return prev;
+    const activity = event.activity;
+    if (!activity || !isPublicActivity(activity)) return prev;
+    const sameRun = prev.activityRunId === activity.runId;
+    // 重放与重复只按 id 去重；乱序到达按 seq 插到正确位置，不丢帧。
+    if (sameRun && prev.activities.some((item) => item.id === activity.id)) return prev;
+    const merged = sameRun ? [...prev.activities, activity] : [activity];
+    merged.sort((a, b) => a.seq - b.seq);
+    return {
+      ...prev,
+      activities: merged,
+      activityRunId: activity.runId,
+      lastActivitySeq: sameRun ? Math.max(prev.lastActivitySeq, activity.seq) : activity.seq,
+    };
+  }
   if (event.type === "investigation_snapshot" && event.investigation) {
     try {
       const snapshot = validateInvestigationSnapshot(event.investigation);

@@ -4,7 +4,9 @@
  * 仅在 import.meta.env.DEV 下被动态 import，不进生产 bundle。
  */
 import { buildInvestigationSnapshot } from "../lib/investigation";
+import { createActivityLog } from "../lib/investigation";
 import type { OrchestrateStreamEvent } from "../lib/agentExpansion";
+import type { InvestigationSnapshotV1 } from "../lib/investigation";
 import { mixedComplete, mixedWithoutSpans } from "./fixtures";
 
 const src = (url: string, title: string, snippet: string) => ({ url, title, snippet });
@@ -203,19 +205,34 @@ export function getDevFixture(
     const at = (ms: number, fn: () => void) => {
       timers.push(setTimeout(fn, ms));
     };
+    // DEV 固定装置也走生产同一套投影：先发快照，再发引用它的活动。
+    const log = createActivityLog({ runId: `fixture-${name}` });
+    let previousSnapshot: InvestigationSnapshotV1 | null = null;
+    const emitWithActivity = (investigation: InvestigationSnapshotV1) => {
+      emit({ type: "investigation_snapshot", investigation, timestamp: Date.now() });
+      for (const activity of log.project(previousSnapshot, investigation)) {
+        emit({ type: "investigation_activity", activity, timestamp: Date.now() });
+      }
+      previousSnapshot = investigation;
+    };
+    const emitSearchStarted = (query: string) => {
+      for (const activity of log.recordSearchStarted(query)) {
+        emit({ type: "investigation_activity", activity, timestamp: Date.now() });
+      }
+    };
     const emitSnapshot = (phase: "investigating" | "judging" | "complete") =>
-      emit({ type: "investigation_snapshot", investigation: staged(phase), timestamp: Date.now() });
+      emitWithActivity(staged(phase));
+
+    if (name === "investigating" || name === "judging" || name === "conflict") {
+      at(40, () => emitSearchStarted("隔夜菜 致癌"));
+    }
 
     if (name === "replay") {
       const pack = (window as unknown as { __RHG_REPLAY?: { frames?: Array<{ delayMs?: number; investigation: unknown; complete?: boolean }> } }).__RHG_REPLAY;
       const frames = pack?.frames ?? [];
       for (const frame of frames) {
         at(frame.delayMs ?? 60, () => {
-          emit({
-            type: "investigation_snapshot",
-            investigation: frame.investigation as never,
-            timestamp: Date.now(),
-          });
+          emitWithActivity(frame.investigation as InvestigationSnapshotV1);
           if (frame.complete) {
             emit({
               type: "complete",
@@ -228,21 +245,21 @@ export function getDevFixture(
       return () => timers.forEach(clearTimeout);
     } else if (name === "mixed") {
       const snap = mixedComplete();
-      at(60, () => emit({ type: "investigation_snapshot", investigation: snap, timestamp: Date.now() }));
+      at(60, () => emitWithActivity(snap));
       return () => timers.forEach(clearTimeout);
     } else if (name === "nospan") {
       const snap = mixedWithoutSpans();
-      at(60, () => emit({ type: "investigation_snapshot", investigation: snap, timestamp: Date.now() }));
+      at(60, () => emitWithActivity(snap));
       return () => timers.forEach(clearTimeout);
     } else if (name === "settling") {
-      at(80, () => emit({ type: "investigation_snapshot", investigation: settlingBefore(), timestamp: Date.now() }));
-      at(1400, () => emit({ type: "investigation_snapshot", investigation: settlingAfter(), timestamp: Date.now() }));
+      at(80, () => emitWithActivity(settlingBefore()));
+      at(1400, () => emitWithActivity(settlingAfter()));
     } else if (name === "source-audit") {
       const audit = sourceAuditSnapshot();
-      at(60, () => emit({ type: "investigation_snapshot", investigation: staged("investigating"), timestamp: Date.now() }));
-      at(360, () => emit({ type: "investigation_snapshot", investigation: staged("judging"), timestamp: Date.now() }));
+      at(60, () => emitWithActivity(staged("investigating")));
+      at(360, () => emitWithActivity(staged("judging")));
       at(900, () => {
-        emit({ type: "investigation_snapshot", investigation: audit, timestamp: Date.now() });
+        emitWithActivity(audit);
         at(120, () =>
           emit({
             type: "complete",
@@ -259,7 +276,7 @@ export function getDevFixture(
       at(360, () => emitSnapshot("judging"));
     } else if (name === "interrupted") {
       at(60, () => emitSnapshot("investigating"));
-      at(360, () => emit({ type: "investigation_snapshot", investigation: interruptedSnapshot(), timestamp: Date.now() }));
+      at(360, () => emitWithActivity(interruptedSnapshot()));
     } else {
       // complete / conflict / image-found / image-missing：完整走完三段。
       at(60, () => emitSnapshot("investigating"));

@@ -924,6 +924,106 @@
   grid-column: 2;
 }
 
+/* 公共活动（调查中）：紧凑的一列刚刚发生的事。不是日志面板，不是卡片堆。 */
+.gp-activity {
+  position: relative;
+  margin: 0 0 24px;
+  border-left: 2px solid var(--gp-hairline);
+  padding-left: 12px;
+}
+
+.gp-activity-head {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--gp-ink-3);
+}
+
+.gp-activity-label {
+  font-weight: 650;
+  color: var(--gp-ink-2);
+}
+
+.gp-activity-scroller {
+  max-height: 168px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.gp-activity-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.gp-activity-item {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.gp-activity-role {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gp-ink-3);
+  transform: translateY(-2px);
+}
+
+.gp-activity-role.is-support {
+  background: var(--gp-semantic-support);
+}
+
+.gp-activity-role.is-contradict,
+.gp-activity-role.is-question {
+  background: var(--gp-accent);
+}
+
+.gp-activity-role.is-judgment {
+  background: var(--gp-ink-2);
+}
+
+.gp-activity-line {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--gp-ink-2);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.gp-activity-line.is-linked {
+  color: var(--gp-accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.gp-activity-new {
+  position: absolute;
+  right: 0;
+  bottom: -12px;
+  border: 1px solid var(--gp-hairline);
+  background: var(--gp-surface);
+  color: var(--gp-accent);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(37 39 35 / 8%);
+}
+
 .gp-phase-line {
   margin: 0 0 20px 0;
   font-size: 13.5px;

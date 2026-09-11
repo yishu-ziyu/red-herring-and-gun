@@ -487,6 +487,7 @@ function ProductApp() {
           <InvestigationCanvas
             snapshot={snapshot}
             live={active.restored ? false : run.state.connection === "connecting" || run.state.connection === "live"}
+            activities={active.restored ? [] : run.state.activities}
             finalReport={active.restored ? active.restored.report : run.state.finalReport}
             restoredAt={active.restored?.at}
             onReverify={handleRetry}
