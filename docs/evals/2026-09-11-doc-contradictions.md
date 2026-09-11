@@ -11,7 +11,7 @@
 | C7 | 运行时决策指向 | `docs/ARCHITECTURE.md:27`「尤其 ADR-003」 | 改为指向 ADR-007，并注明 ADR-003 已被取代 | `docs/adr/ADR-007-casefile-spine.md:10`「与 ADR-001～006 冲突处以本文为准」 |
 | C8 | 隐藏强度 | `README.md:20`「属实现层，默认不出现」 | 改为「一律不出现在用户界面」 | `PRODUCT_SPEC.md:55` 用的是一律不许出现；「默认」会被读成可以开开关 |
 
-## 二、需人裁（涉及产品判断，未改）
+## 二、原需人裁，2026-09-11 已按裁定处理
 
 | # | 事项 | 两侧 | 为什么不能替你决定 |
 |---|---|---|---|
@@ -45,3 +45,27 @@ outcome: "告诉你这条说法是否可靠，问题在哪里，来源能点开�
 `README.md` 明确写过「撤『告诉你能信还是不能信』」，`docs/PRODUCT_SPEC.md` 第七节记「（2026-08-13）按赛题原文收回定位…废止「先别转发 / 转不转」作为产品语言」。这句在 Golden Path 里已不存在（`rg '是否可靠' mvp/src/goldenPath/` 无命中），但旧三栏壳 `/?legacy=1` 仍会显示它。改它要连 `mvp/src/legacy/LegacyDesk.test.tsx:541` 的断言一起改。
 
 **本次未改**：旧壳不是默认路径（只在 `?legacy=1` 可达），改动涉及测试断言，属产品文案裁决，留人裁。
+
+
+## 五、第二节四条的处置结果（2026-09-11）
+
+用户裁定「按你的建议来改」，四条全部落地：
+
+| # | 处置 | 落到哪 |
+|---|---|---|
+| C3 五词 | `docs/ROADMAP.md` 那句改成记录「2026-09-06 用户曾定」并显式说明**已被 PRODUCT_SPEC 第二节取代**，不再作为现行规则；仍然成立的只有「内部词不上用户面前」，判据以 PRODUCT_SPEC 的实现层清单为准 | `docs/ROADMAP.md` 开头 |
+| C4 接线状态 | `docs/ARCHITECTURE.md` 的「本轮接线状态（2026-09-05）」整节重写为「当前接线状态（2026-09-11）」：补上阿里云单源与 Vercel 退场、Golden Path 为默认路径、`InvestigationSnapshotV1` 的三层关系与前端再导出、有界质询、额度闸门现状，并标明 T20 未执行。**同时核掉一条陈旧断言**：`providerRouter` 超时不取消在途请求这条仍成立（`providerRouter.ts:596` 仍是裸 `Promise.race`），故保留 | `docs/ARCHITECTURE.md` |
+| C5 `mvp/docs/` | ①`docs/PRODUCT_SPEC.md` 那句指针从「以代码和 `mvp/docs/` 技术文档为准」改为「**以代码为准**」，并明说 `mvp/docs/` 是 2026-06～08 历史文档、其产品口径已被取代；②给 `mvp/docs/` 下 **12 个 md** 全部加历史横幅（列出「四字章」「Mission Control 是产品脸」这两条典型失效口径作为例子） | `docs/PRODUCT_SPEC.md`、`mvp/docs/*.md` |
+| C6 谁压谁 | `docs/ROADMAP.md` 里「本轮会话定的事优先于历史文档」改成：会话决定**不自动生效**，要写回 PRODUCT_SPEC 或落地成验收契约才算数；并明说不再保留「会话高于一切」这类通用优先级规则，因为它与「PRODUCT_SPEC 是唯一产品真相源」直接冲突 | `docs/ROADMAP.md` |
+
+### 第四节那条也一并处理了
+
+`mvp/src/lib/uiLang.ts` 里旧壳的 `outcome` 文案：
+
+```
+改前：告诉你这条说法是否可靠，问题在哪里，来源能点开。
+改后：告诉你哪一截站得住，问题在哪里，来源能点开。
+```
+
+改后这句是 PRODUCT_SPEC 自己用的说法（「半真半假就点名哪一截站住」）。英文那半（`Tells you which part holds up, …`）本来就是合规说法，未动。
+唯一消费者是旧壳 `mvp/src/components/v3/Dashboard.tsx:420`，Golden Path 不读它；测试断言 `mvp/src/legacy/LegacyDesk.test.tsx:541` 已同步。

@@ -1,5 +1,11 @@
 # Recursive Evidence Search v7 Plan
 
+> **历史文档（2026-06 ～ 2026-08）。** 本目录的产品口径已被 `docs/PRODUCT_SPEC.md` 取代：
+> 例如「结论只许用能信 / 不能信 / 只能信一部分 / 还查不清」「Mission Control 是产品脸 / 多 Agent 角色上前台」
+> 这些说法现在都不成立。实现细节以代码为准，产品规则以 `docs/PRODUCT_SPEC.md` 为准。
+> 保留本目录只为追溯当时的工程记录，不要照它写新东西。
+
+
 ## 1. Opus 半截工作的参考价值
 
 Opus 没有产出最终规划，但它的读取路径本身是有价值的。它没有从“新增搜索页”或“重做 UI”开始，而是依次读了项目交接、设计规范、V3 规格、Flowith UX、状态层、Canvas 数据、LLM 调用、V3 组件和样式。这说明下一步真正应该做的是：在现有 Flowith-inspired Agent Reasoning Canvas 上，补一个节点级递归证据搜索能力。

@@ -538,7 +538,7 @@ describe("landing Version A storytelling", () => {
     const landingMission = document.querySelector(".landing-mission");
     expect(landingMission).toHaveTextContent("把你想核查的句子、链接或截图放进来");
     expect(landingMission).not.toHaveTextContent("能不能信");
-    expect(screen.getByText("告诉你这条说法是否可靠，问题在哪里，来源能点开。")).toBeInTheDocument();
+    expect(screen.getByText("告诉你哪一截站得住，问题在哪里，来源能点开。")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "你想核查什么？" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "隔夜菜会致癌，等于吃毒药" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "5G信号塔辐射导致周边居民头晕失眠" })).toBeInTheDocument();

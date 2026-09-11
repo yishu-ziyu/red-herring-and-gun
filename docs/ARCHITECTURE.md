@@ -7,15 +7,36 @@
 公网 `https://gun.yishuziyu.cn`：Nginx 静态 + `/api` 反代 Express。  
 生产壳本地在 `mvp/` 执行 `npm run dev`：Express 管 API，Vite 只代理 `/api`。根目录的 `dev:web` / `dev:server` 启动 `packages/` 脊柱，尚未执行 T20 上线切换。
 
-## 本轮接线状态（2026-09-05）
+## 当前接线状态（2026-09-11）
 
-生产仍走 `mvp/`。默认 `runCasePipeline` 已包含有界质询：真实证据 → 独立意见 → 可选补查 → 主调查回应 → 最新完整调查进入报告；最多两个争点各一轮，真实记录写入 `finalReport.crossExam`。分歧本身不扣分。
+生产壳仍是 `mvp/`：`./ops.sh deploy --yes` 在本机构建后打包上传，远端 Docker 重建 Express，
+Nginx 从 `/opt/red-herring/dist` 发静态、把 `/api/` 与 `/health` 反代到 `127.0.0.1:3000`。
+域名 `gun.yishuziyu.cn` 是 A → `121.89.90.68`（阿里云单源）。Vercel 那条路 2026-09-11 退场，
+原因与恢复条件见 `docs/tasks/2026-09-11-deploy/vercel-retirement.md`。
 
-主线程结果在 `ApodexRunView` 的 `ResearchMemo` 中，历史卷宗走 `ResultView` 的 `dossier` 形态；两处尚未消费新质询记录。`App.tsx` 与 `reasoningStore` 已接自动留存、账号/访客作用域和显式同句复用，完整浏览器路径仍未验收。
+前端默认路径是 Golden Path（`mvp/src/goldenPath/`）：`ProductShell` + `InputStage` →
+同一个 `InvestigationCanvas` 承载调查中与完成态 → `ConclusionHero` + `SourceDrawer`。
+旧三栏壳（AppShell + MissionControl + ResultView）整建制退到 `/?legacy=1`（`legacy/LegacyDesk.tsx`），
+不再承担生产信息架构。
 
-停止检查发生在步骤边界。`providerRouter` 的 Promise.race 超时不会取消在途模型请求，不保证硬截止时间。
+白盒调查数据契约 `InvestigationSnapshotV1`：源文件 `packages/core/src/investigation`，
+生产侧 `mvp/server/src/lib/investigation` 是它的字节级镜像（两侧 `mirror.test.ts` 双向守卫），
+**前端经 `mvp/src/lib/investigation` 再导出消费**（同 `mvp/src/lib/claimAtom` 的做法）。
+服务端在 received → decomposed → investigating → judging → complete 八个语义里程碑发完整快照，
+SSE 事件 `investigation_snapshot`；`GET /api/case/:id` 对旧历史做确定性重建。
 
-当前先制作独立 HTML 原型，用户认可后接上述真实报告出口；随后验证真实调查、五次留存、刷新重开零新增调用和窄屏体验。旧 eval 门禁修订、T20 与默认引擎切换不在本轮。完整状态见 `docs/evals/2026-09-05-investigation-continuity.md`。
+默认执行引擎 `runCasePipeline` 含有界质询：真实证据 → 独立意见 → 可选补查 → 主调查回应 →
+最新完整调查进入报告；最多两个争点各一轮，真实记录写入 `finalReport.crossExam`。分歧本身不扣分。
+
+每日免费核查闸门：未登录访客 2 条/人/天，登录 3 条；来源 IP 另有天花板（20）只防「清 cookie 无限刷」，
+不当单人额度。`/api/models/health` 是可用性探针，**不计额度**（计额度端点集合收在
+`mvp/server/src/lib/quotaPolicy.ts`）。测试期可用 `CHECK_QUOTA_GUEST_LIMIT` / `CHECK_QUOTA_IP_LIMIT` 放宽。
+
+已知限制：`providerRouter` 的 `Promise.race` 超时（`providerRouter.ts:596`）不会取消在途模型请求，
+不保证硬截止时间。停止检查发生在步骤边界。
+
+T20（生产切到 `packages/` 脊柱）仍未执行，`ops.sh` 与 `mvp/` 按红线保持原样。
+完整当前状态见 `docs/NOTES.md` 头部。
 
 ## 仓库
 

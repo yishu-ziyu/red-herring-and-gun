@@ -1,5 +1,11 @@
 # StreamingReasoningPanel 技术规格书
 
+> **历史文档（2026-06 ～ 2026-08）。** 本目录的产品口径已被 `docs/PRODUCT_SPEC.md` 取代：
+> 例如「结论只许用能信 / 不能信 / 只能信一部分 / 还查不清」「Mission Control 是产品脸 / 多 Agent 角色上前台」
+> 这些说法现在都不成立。实现细节以代码为准，产品规则以 `docs/PRODUCT_SPEC.md` 为准。
+> 保留本目录只为追溯当时的工程记录，不要照它写新东西。
+
+
 > 目标：为 Codex 提供清晰的实现规范，生成 Mock 流式数据生成器。
 > 前端由人工实现，Codex 只负责 `src/lib/streamingMock.ts` 中的数据层。
 
