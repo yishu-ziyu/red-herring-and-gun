@@ -28,10 +28,11 @@ type EvidenceBoardProps = {
   claim: InvestigationClaim;
   sources: InvestigationSource[];
   asResult?: boolean;
+  asWork?: boolean;
   onSelect: (link: InvestigationEvidenceLink, source: InvestigationSource, trigger: HTMLElement) => void;
 };
 
-export function EvidenceBoard({ claim, sources, asResult = false, onSelect }: EvidenceBoardProps) {
+export function EvidenceBoard({ claim, sources, asResult = false, asWork = false, onSelect }: EvidenceBoardProps) {
   const reduce = useReducedMotion() === true || prefersReducedMotion();
   const groups = groupEvidence(claim.evidence);
   const identified = identifyEvidenceLinks(claim.id, claim.evidence);
@@ -88,6 +89,7 @@ export function EvidenceBoard({ claim, sources, asResult = false, onSelect }: Ev
             layoutEnabled={layoutEnabled && identity === "stable"}
             groupLabelId={`gp-eg-${claim.id}-${link.role}`}
             asResult={asResult}
+            asWork={asWork}
             onSelect={onSelect}
           />
         ))}
