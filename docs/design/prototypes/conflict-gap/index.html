@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>争点与缺口 · 交互原型（#53）</title>
+  <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./tokens.css">
+  <link rel="stylesheet" href="./picker.css">
+  <link rel="stylesheet" href="./app.css">
+</head>
+<body>
+  <main id="stage" class="proto-stage"></main>
+
+  <nav class="proto-picker" aria-label="Prototype variants">
+    <span class="proto-picker-highlight" aria-hidden="true"></span>
+    <button class="proto-picker-item" data-active aria-current="true">片段</button>
+    <button class="proto-picker-item">署名</button>
+    <button class="proto-picker-item">状态</button>
+    <button class="proto-picker-item">对质</button>
+    <span class="proto-picker-divider" aria-hidden="true"></span>
+    <button class="proto-picker-item proto-picker-replay" aria-label="Replay animation (R)">↻</button>
+  </nav>
+
+  <script src="./data.js"></script>
+  <script src="./common.js"></script>
+  <script src="./variant-snippet.js"></script>
+  <script src="./variant-signature.js"></script>
+  <script src="./variant-states.js"></script>
+  <script src="./variant-duel.js"></script>
+  <script src="./harness.js"></script>
+</body>
+</html>

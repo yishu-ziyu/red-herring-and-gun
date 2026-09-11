@@ -14,10 +14,12 @@
 
 硬护栏：
 - 不重新引入 Card Stack / Bento / Dashboard。
-- 不重新引入 Mission Control / Agent stage / tool log。
+- 不重新引入 tool log（执行日志不上前台）；角色与美术资产于 2026-09-11 解禁，详见 `docs/devlog/2026-09-11-visual-identity-amendment.md`。
 - 不把“Apple 感”等价成 glassmorphism。
 - 不因为“有趣”而增加无语义动画。
 - 支持 / 反驳 / 相关 / 待核对 / 尚缺 / 争点必须靠文字、位置、符号共同表达，不能只靠颜色。
+
+> 2026-09-11 修正：本文件此前通篇为禁令，是展示面退化的根因之一。从本日起，本包必须同时提供正向美术方向（角色系统、资产规格、动效预算、对照画面）；新增条款不得只有“不要”。
 
 ---
 
