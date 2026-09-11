@@ -1,5 +1,7 @@
 # 当前状态
 
+2026-09-11 PR-F：不动生产结构。新增 `docs/design/2026-09-11-investigation-experience/RELEASE.md`（改过的生产路径 / 数据库与迁移 / 逐提交回滚 / 没做的 / 已知风险 / 等人裁决的四件事）。只删了一处有消费者证明的死代码（`snapshotUi.conflictSidesLabel`，调用点已在本轮替换，全仓库含测试无引用）。旧壳 `?legacy=1`、`packages/` 脊柱切换都没动。另记一条无法复现的测试红（21:57 一次 1 failed / 1280 passed，未捕获是哪条，随后连跑三次全绿），写进 lessons F14 与 RELEASE 已知风险。
+
 2026-09-11 完成情况回填 + 失败经验归档：交接包 `docs/design/2026-09-11-investigation-experience/` 里的 `ACCEPTANCE.md` 从「检查清单」改成「完成情况」（A01–A40 逐行 ✅/🔶/⛔ + 证据），`ISSUES.md` 加 RHG-00～08 状态，新增 `lessons.md` 记录 13 条**真跑红过**的失败（每条：检查项 / 失败值 / 根因 / 改法 / 复发防线）。同批修掉同类第 2 例：保存状态写着「同步失败，重试」却没有可点的重试。门禁 1281 过 / 1 跳过、build 绿。PR-F（清理旧展示逻辑 + 发布回滚说明）未做，等用户裁决。
 
 2026-09-11 显式分享（PR-E，契约 `docs/evals/2026-09-11-share-tokens.md`）：`GET /api/cases/:caseId/share-preview`（只看不写）、`POST /api/cases/:caseId/shares`（返回明文令牌一次）、`DELETE .../shares/:shareId`、`GET /s/:shareId`（只读投影渲染，不读私有 case）。令牌随机不可猜、库里只存 sha256；投影走白名单 + 递归丢秘密键；撤销幂等、过期不可读、读不到只有一种 404 说法。结果页加「创建分享链接」：先看会公开哪些字段 → 再生成 → 可撤销，并明说已下载的副本收不回。`/r/:caseId` 页那句「分享此报告」拿掉（它是主人自己看的页，分享另有入口）。门禁 1279 过 / 1 跳过、build 绿。未部署。
