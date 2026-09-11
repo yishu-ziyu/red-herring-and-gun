@@ -2422,8 +2422,8 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(css).toContain(".gp-source-block.is-excerpt-lead");
     const item = css.match(/\.gp-evidence-item\s*\{([^}]*)\}/);
     expect(item![1]).toMatch(/min-height:\s*44px/);
-    expect(css).toMatch(/\.gp-hero\[data-gp-conclusion-judgment="supported"\] \.gp-hero-answer/);
     expect(css).not.toMatch(/\.gp-hero-answer[^{]*\{[^}]*background:\s*(linear-gradient|#)/);
+    expect(css).toMatch(/\.gp-canvas\[data-gp-phase="complete"\] \.gp-evidence-group-head/);
   });
 });
 
