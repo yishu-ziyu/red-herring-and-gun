@@ -924,6 +924,47 @@
   grid-column: 2;
 }
 
+/* 保存状态：一句话，不是徽章墙；失败要看得见。 */
+.gp-save-state {
+  font-size: 12px;
+  color: var(--gp-ink-3);
+}
+
+.gp-save-state.is-failed {
+  color: var(--gp-accent);
+}
+
+/* 已停止：材料留着，语气平，不当作错误也不当作完成。 */
+.gp-stopped {
+  margin: 0 0 20px;
+  padding: 12px 0 12px 12px;
+  border-left: 2px solid var(--gp-hairline);
+}
+
+.gp-stopped strong {
+  display: block;
+  font-size: 14px;
+  color: var(--gp-ink-primary);
+}
+
+.gp-stopped p {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--gp-ink-2);
+}
+
+.gp-stopped-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.gp-link-btn[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* 公共活动（调查中）：紧凑的一列刚刚发生的事。不是日志面板，不是卡片堆。 */
 .gp-activity {
   position: relative;

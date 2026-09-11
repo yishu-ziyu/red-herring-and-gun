@@ -128,6 +128,7 @@ export interface SearchProgressSource {
 export interface OrchestrateStreamEvent {
   type:
     | "run_started"
+    | "run_state"
     | "investigation_snapshot"
     | "investigation_activity"
     | "search_progress"
@@ -157,6 +158,9 @@ export interface OrchestrateStreamEvent {
   /** run_started：这次调查的运行身份（取消与刷新恢复都要它）。 */
   runId?: string;
   caseId?: string;
+  /** run_state：服务端确认的运行状态（重连时先给一次）。 */
+  status?: string;
+  terminal?: boolean;
   agent?: string;
   agentName?: string;
   agentIcon?: string;
@@ -217,12 +221,15 @@ export interface OrchestrateStreamEvent {
 export async function* requestOrchestrateStream(
   input: string | CaseIntake,
   memoryRecall?: Record<string, unknown>,
-  modelChoice?: Record<string, { provider: string; model: string }>
+  modelChoice?: Record<string, { provider: string; model: string }>,
+  /** 幂等键（PR-D）：同一身份下同一个键只建一条 run，双击不会开两条管线。 */
+  clientRequestId?: string
 ): AsyncGenerator<OrchestrateStreamEvent> {
   const claim = typeof input === "string" ? input : caseIntakePrimaryText(input);
   const payload: Record<string, unknown> = typeof input === "string" ? { claim } : { claim, intake: input };
   if (memoryRecall) payload.memoryRecall = memoryRecall;
   if (modelChoice && Object.keys(modelChoice).length > 0) payload.modelChoice = modelChoice;
+  if (clientRequestId) payload.clientRequestId = clientRequestId;
   // BYO key 接管：本地保存过密钥时随请求上行，调查的模型调用改烧用户密钥；
   // 未保存时请求体与现状完全一致（行为零变化）。
   const savedByoKey = readSavedByoKey();

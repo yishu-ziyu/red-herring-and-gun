@@ -51,6 +51,40 @@ type ServerCaseItem = {
   createdAt?: number;
 };
 
+/** 进行中那条 run 在本地留的座标：刷新后靠它接回去，而不是重开一次调查。 */
+type SaveStatus = "idle" | "local" | "syncing" | "synced" | "failed";
+
+type StoredRunPointer = {
+  runId: string;
+  claim: string;
+  intake: CaseIntake | null;
+  lastSeq: number;
+  at: number;
+};
+
+const RUN_POINTER_KEY = "rhg:active-run";
+
+function readRunPointer(): StoredRunPointer | null {
+  try {
+    const raw = window.localStorage.getItem(RUN_POINTER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredRunPointer;
+    if (!parsed || typeof parsed.runId !== "string" || !parsed.runId) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeRunPointer(value: StoredRunPointer | null): void {
+  try {
+    if (value) window.localStorage.setItem(RUN_POINTER_KEY, JSON.stringify(value));
+    else window.localStorage.removeItem(RUN_POINTER_KEY);
+  } catch {
+    /* 隐私模式下写不了就不写，不影响调查本身 */
+  }
+}
+
 /** 从落库 finalReport 确定性取回 Snapshot：优先保存的 investigation，旧数据客户端重建（零模型零搜索）。 */
 function snapshotFromReport(report: Record<string, unknown> | null | undefined): InvestigationSnapshotV1 | undefined {
   if (!report || typeof report !== "object") return undefined;
@@ -90,6 +124,8 @@ function ProductApp() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [sameClaim, setSameClaim] = useState<{ id: string; claim: string; at?: number; intake: CaseIntake } | null>(null);
+  /** 保存状态：独立于结果存在与否显示，不把失败藏在 console。 */
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const scopeVersion = useRef(0);
   const accountEmailRef = useRef<string | null>(null);
   const run = useInvestigationRun();
@@ -154,6 +190,41 @@ function ProductApp() {
     void hydrateAccountCases();
   }, [hydrateAccountCases]);
 
+  // 刷新恢复：本地留过一条没跑完的 run，就接回去读它的状态与已有材料。
+  // 不重开调查，也不重复扣额。只跑一次。
+  const resumedRef = useRef(false);
+  useEffect(() => {
+    if (resumedRef.current) return;
+    resumedRef.current = true;
+    const pointer = readRunPointer();
+    if (!pointer) return;
+    setActive({ localId: `case-${pointer.at}`, claim: pointer.claim, intake: pointer.intake, restored: null });
+    setMode("investigation");
+    run.resume(pointer.runId, pointer.lastSeq, pointer.claim);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 记录进行中那条 run 的座标；终态或回首页时清掉。
+  useEffect(() => {
+    if (mode !== "investigation" || active?.restored) {
+      writeRunPointer(null);
+      return;
+    }
+    const runId = run.state.runId;
+    if (!runId || !active) return;
+    if (run.state.connection === "ended" || run.state.stop === "stopped") {
+      writeRunPointer(null);
+      return;
+    }
+    writeRunPointer({
+      runId,
+      claim: active.claim,
+      intake: active.intake,
+      lastSeq: run.state.lastActivitySeq,
+      at: Date.now(),
+    });
+  }, [mode, active, run.state.runId, run.state.lastActivitySeq, run.state.connection, run.state.stop]);
+
   // DEV 固定装置：/?fixture=investigating|judging|complete|conflict|interrupted|image-found|image-missing|mixed|nospan|settling|source-audit|replay
   // 用脚本化快照驱动真实组件树（截图与走查）。生产构建 dead-code eliminated。
   useEffect(() => {
@@ -183,6 +254,7 @@ function ProductApp() {
       { id: localId, claim, status: report._source === "error-boundary" ? ("interrupted" as const) : ("done" as const), createdAt: doneAt },
       ...prev.filter((item) => item.id !== localId),
     ]);
+    setSaveStatus("syncing");
     void (async () => {
       const knowledgeBase = createKnowledgeBase(accountEmailRef.current);
       const entry: KnowledgeBaseEntry = {
@@ -201,8 +273,10 @@ function ProductApp() {
       } catch (error) {
         console.error("[cases] 案例写入本地知识库失败", error);
         setHistoryNotice("调查自动保存失败，刷新后可能无法找回。请先保留当前报告。");
+        setSaveStatus("failed");
         return;
       }
+      setSaveStatus("local");
       if (!accountEmailRef.current) return;
       try {
         const res = await fetch("/api/case", {
@@ -218,8 +292,10 @@ function ProductApp() {
         if (!res.ok) {
           console.error(`[cases] 服务端存档失败 HTTP ${res.status}`);
           setHistoryNotice(copy.historySyncFailed);
+          setSaveStatus("failed");
           return;
         }
+        setSaveStatus("synced");
         const data = (await res.json()) as { caseId?: string };
         if (!data.caseId) return;
         const saved = await knowledgeBase.getCase(localId);
@@ -231,6 +307,7 @@ function ProductApp() {
       } catch (error) {
         console.error("[cases] 服务端存档异常", error);
         setHistoryNotice(copy.historySyncFailed);
+        setSaveStatus("failed");
       }
     })();
     // 只在 finalReport 首次出现时执行一次。
@@ -488,6 +565,9 @@ function ProductApp() {
             snapshot={snapshot}
             live={active.restored ? false : run.state.connection === "connecting" || run.state.connection === "live"}
             activities={active.restored ? [] : run.state.activities}
+            stop={active.restored ? "idle" : run.state.stop}
+            onStop={active.restored || !run.state.runId ? undefined : () => void run.cancel()}
+            saveStatus={saveStatus}
             finalReport={active.restored ? active.restored.report : run.state.finalReport}
             restoredAt={active.restored?.at}
             onReverify={handleRetry}

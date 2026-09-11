@@ -276,6 +276,9 @@ describe("E2 负向测试：raw legacy 事件不产生任何产品语义", () =>
     activities: [],
     activityRunId: null,
     lastActivitySeq: 0,
+    runId: null,
+    serverStatus: null,
+    stop: "idle",
   };
   const legacyEvents: OrchestrateStreamEvent[] = [
     { type: "agent_start", agent: "rumor_detector", agentName: "拆题" },

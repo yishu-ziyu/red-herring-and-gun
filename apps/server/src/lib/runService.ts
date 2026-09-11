@@ -13,6 +13,9 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { isTerminalStatus, type RunRecord, type RunStatus, type RunStore } from "./runStore.js";
+import type { PublicActivity } from "./investigation/index.js";
+
+type PublicActivityLike = PublicActivity;
 
 export type StartRunInput = {
   caseId: string;
@@ -42,16 +45,22 @@ type ActiveRun = {
   status: RunStatus;
 };
 
+/** 流上已经发出去的一帧；重连时用来补发。 */
+export type RunEvent = Record<string, unknown>;
+
 export type RunService = ReturnType<typeof createRunService>;
 
-export function createRunService(options: { store?: RunStore | null; now?: () => number } = {}) {
+export function createRunService(options: { store?: RunStore | null; now?: () => Date | number } = {}) {
   const store = options.store ?? null;
-  const now = options.now ?? (() => Date.now());
+  const nowRaw = options.now ?? (() => Date.now());
+  const now = () => (typeof nowRaw() === "number" ? (nowRaw() as number) : (nowRaw() as Date).getTime());
   // 进程内活体注册表：signal 与「当前是不是真在跑」只有活着的进程知道。
   const active = new Map<string, ActiveRun>();
   // 没有 SQLite 时的记录表，键是 runId。
   const memory = new Map<string, RunRecord>();
   const memoryByIdempotency = new Map<string, string>();
+  // 直播订阅：重连时接上同一只 run 后续的帧，不再开第二条管线。
+  const subscribers = new Map<string, Set<(event: RunEvent) => void>>();
 
   function idempotencyKey(ownerHash: string | null, clientRequestId: string): string {
     return `${ownerHash ?? "\u0000anonymous"}\u0000${clientRequestId}`;
@@ -190,6 +199,37 @@ export function createRunService(options: { store?: RunStore | null; now?: () =>
     },
 
     get: read,
+
+    /** 把一帧广播给所有订阅者；没有人听也不报错。 */
+    publish(runId: string, event: RunEvent): void {
+      const listeners = subscribers.get(runId);
+      if (!listeners) return;
+      for (const listener of [...listeners]) {
+        try {
+          listener(event);
+        } catch {
+          listeners.delete(listener);
+        }
+      }
+    },
+
+    /** 订阅后续帧；返回退订函数。 */
+    subscribe(runId: string, listener: (event: RunEvent) => void): () => void {
+      const listeners = subscribers.get(runId) ?? new Set();
+      listeners.add(listener);
+      subscribers.set(runId, listeners);
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0 && !active.has(runId)) subscribers.delete(runId);
+      };
+    },
+
+    /** 重连用：先补 afterSeq 之后的活动，再返回退订函数。 */
+    replayActivities(runId: string, afterSeq: number): PublicActivityLike[] {
+      if (!store) return [];
+      return store.listActivities(runId, afterSeq);
+    },
+
     /** 进程重启：未完成的 run 标 interrupted，中间快照保留。 */
     markInterruptedOnBoot(): number {
       return store ? store.markInterruptedOnBoot(now()) : 0;

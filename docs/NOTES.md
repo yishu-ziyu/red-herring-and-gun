@@ -1,5 +1,7 @@
 # 当前状态
 
+2026-09-11 RunService 片二（契约同 `docs/evals/2026-09-11-run-service.md`）：`GET /api/investigations/:runId` 与 `/events?after=N` 补发+直播已接；前端加停止按钮三态（停止调查 → 正在停止 → 已停止，只有服务端确认才说已停止）、刷新恢复（本地座标接回原 run，不重开不扣额）、保存状态（已保存在此设备 / 同步中 / 已同步 / 同步失败）。**真实浏览器跑完三态**，截图 `preview/stop-before.png`、`stop-confirmed.png`。片二跑出三个真 bug：取消终态帧到不了客户端（总线不是唯一出口）、`writeFrame` 拿 `disconnect.aborted` 当「别写了」导致 **超时中断帧一直就没发出去过**、说了「重新调查一次」却没按钮。门禁 1260 过 / 1 跳过、build 绿。未部署。
+
 2026-09-11 任务身份与取消（PR-D 片一，契约 `docs/evals/2026-09-11-run-service.md`）：存储换成 `node:sqlite`（Node 22 自带，零新依赖），旧 `cases.json` 首次启动幂等导入并先备份；`runStore` 管 runs / run_activities / shares，`runService` 管身份幂等、状态机、AbortSignal 取消，`POST /api/investigations/:runId/cancel` 已接。流开头新增 `run_started` 事件带 runId。**真实跑通两次取消**。**行为变更**：`caseStore` 不再按 1000 条淘汰（交接包禁止静默丢记录）；**测试隔离**：`src/test/setup.ts` 把 DATA_DIR 指到临时目录（改之前跑测试会清开发库）。四道门禁 1241 过 / 1 跳过、build 绿。未部署。片二还剩：重连/刷新恢复接口 + 前端停止按钮与保存状态。
 
 2026-09-11 公共活动层（PR-C，契约 `docs/evals/2026-09-11-public-activity-layer.md`）：`PublicActivity` 判别联合 + payload 白名单落在 `packages/core/src/investigation/activity.ts` 并镜像到 `apps/server`；`createActivityLog` 从快照差分产出拆题/带回材料/判定材料/形成判断/还缺/分歧/完成，`search_started` 来自 `onAtomSearchStart` 且不带任何引用。传输走新 SSE 事件 `investigation_activity`，由 `createInvestigationEmitter` 保证「快照先落、活动后发」。前端 `applyRunEvent` 按 id 去重、按 seq 归位、终态不被晚到活动倒退；调查中画布新 `ActivityFeed`，有引用的行可点开来源，用户上滚时显示「有 N 条新发现」。**真实一次调查跑通**（隔夜菜亚硝酸盐，27 条活动，原始流与截图在 `preview/activity-live-real.*`）。门禁 1219 过 / 1 跳过、build 绿。未部署。已知未清：原始 `agent_thought` 帧仍在流上（Golden Path 不消费），属 PR-F。

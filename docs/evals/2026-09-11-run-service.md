@@ -48,9 +48,19 @@
 | D13 | 运行状态机：终态（completed / interrupted / cancelled）不能被后续状态倒退 | 同上 | 命令 |
 | D14 | 重启后未完成的 run 标 `interrupted`，中间快照保留 | 同上 | 命令 |
 
-### 片二（下一轮）
+### 片二 · 重连、刷新恢复、停止与保存状态
 
-重连与重放：`GET /api/investigations/:runId`、`GET /api/investigations/:runId/events?after=N`、断网回连不重复事件、刷新不新跑不重复扣额。前端：停止按钮、`正在停止 / 已停止`、素材与草稿保留、保存状态。
+| # | 判据 | 怎么验 | 类型 |
+|---|------|--------|------|
+| D15 | `GET /api/investigations/:runId` 给状态、revision、lastSeq、快照与全部活动；他人 404 | `runService.test.ts` + 真实 curl | 命令 |
+| D16 | 匿名 run 靠不可猜 runId 当能力凭证；有归属的只给主人 | `handlers` 行为 + 真实 curl | 命令 |
+| D17 | `GET /events?after=N` 只补发 `seq > N`，再接直播；心跳保留 | `runService.test.ts` | 命令 |
+| D18 | 重连不新建 run、不扣额：同一 runId 反复读仍是同一条，`activeCount` 不变 | 同上 | 命令 |
+| D19 | 终态的 run 补完就关，不挂长连接；订阅者抛错不影响其他订阅者 | 同上 | 命令 |
+| D20 | 停止按钮三态：`停止调查 → 正在停止 → 已停止`，只有服务端确认才说「已停止」；已停止时不再说「中断」 | `goldenPath/stopAndResume.test.tsx` + 真实跑 | 命令 + 人评 |
+| D21 | 刷新恢复：本地座标存在时接回原 run（`resume(runId, lastSeq)`）而不是重开；`clientRequestId` 双击只建一条 run | 同上 | 命令 |
+| D22 | 保存状态独立显示「已保存在此设备 / 同步中 / 已同步 / 同步失败，重试」，失败不进 console 了事 | 同上 | 命令 |
+| D23 | 门禁 | `cd apps && npm test`；`cd apps && npm run build` | 命令 |
 
 ## Evidence（片一）
 
@@ -62,7 +72,16 @@
 - **第一次实跑暴露了一个真 bug**：第二次取消时管线刚好在写最后一份报告，结果被报成 `completed` —— 用户点了停止却显示「已完成」。已改成硬规矩：`cancelling` 不可能是 `completed`，并补了两条测试。这条不是设计推演出来的，是跑出来的。
 - 行为变更（需要你知道）：`caseStore` 换 SQLite 后**不再按 1000 条淘汰**。交接包 §5.4 明写「禁止静默删掉 1000 条以外的用户记录」，而 LRU 存在的唯一理由是 JSON 单文件写不动。旧的 LRU 断言已改成「不再淘汰」，保留期限要单独产品决策。
 - 测试隔离：`src/test/setup.ts` 现在把 `DATA_DIR` 指到临时目录。**改之前，跑测试会直接写开发库并清空 cases 表**——这是我踩到的，先修掉才敢继续。
-- 未验证项：跨刷新重放、断线补发、前端停止按钮（片二）；额度是否按取消口径退还（沿用现有 checkQuota，未改）。
+### 片二
+
+- 测试：`runService.test.ts` 21 条、`stopAndResume.test.tsx` 12 条。全量 `cd apps && npm test` → 1260 过 / 1 跳过；`build` 绿。
+- **真实浏览器跑完三态**：提交 → 停止调查 → 正在停止 → 已停止（服务端确认）。截图 `preview/stop-before.png`、`stop-confirmed.png`。停止后材料、活动、待核对证据都还在。
+- **这一片跑出三个真 bug，全部是「看着像完成，其实是假的」那类**：
+  1. **取消的终态帧到不了客户端**。总线只在 `sendEvent` 里发布，而取消的 `run_state` 是由另一个请求（POST cancel）触发的，那条路径不经过当前流的发送点。客户端于是永远停在「正在停止」，10 秒后流断，画面自己翻成「调查中断」。改成：总线是唯一出口，处理函数自己也订阅它。
+  2. **`writeFrame` 用错了信号**。它拿 `disconnect.signal.aborted` 当「别写了」，而 catch 块里 `disconnect.abort()` 是「停管线」的意思。两者混用的后果：`abort` 之后的所有帧全被丢掉——包括**超时路径那条早就写好的「中断帧」**。也就是说，超时的时候前端从来就没收到过中断帧。这不是本轮引入的，是顺着这条线才浮出来的。
+  3. **说了「重新调查一次」却没有按钮**。我在已停止文案里写了这句话，但那个状态下 `reviewAgain` 不渲染。现在补上按钮，并加了「说得出就必须点得到」的测试。
+- 未验证项：断网（非刷新）回连；额度是否按取消口径退还（沿用现有 checkQuota，未改）。
+- **能力边界（照实际写，不承诺做不到的事）**：客户端断开时服务端会中止管线并保留已获快照，所以刷新接回来的是「已中断 + 已有材料」，不是「后台继续跑」。界面上没有写「你可以随意切走，我们继续查」。
 - 回滚：`cases.json` 备份在原地；删掉 `apps/server/.data/rhg.sqlite` 即回到空库（旧记录从备份恢复）；代码 `git revert` 本提交。
 
 ## 边界

@@ -17,6 +17,7 @@ import {
   type PublicActivity,
 } from "../lib/investigation";
 import { requestOrchestrateStream, type OrchestrateStreamEvent } from "../lib/agentExpansion";
+import { cancelInvestigation, resumeInvestigationStream } from "../lib/investigationResume";
 import { caseIntakePrimaryText, type CaseIntake } from "../lib/caseIntake";
 import { createKnowledgeBase } from "../lib/knowledgeBase";
 import { buildLocalMemoryRecall } from "../lib/localMemoryRecall";
@@ -40,6 +41,9 @@ const IGNORED_LEGACY_EVENT_TYPES: ReadonlySet<OrchestrateStreamEvent["type"]> = 
 
 export type ConnectionPhase = "connecting" | "live" | "ended" | "failed";
 
+/** 停止只分三态：没在停 / 已请求、等后端 / 后端已确认。不提前说「已停止」。 */
+export type StopPhase = "idle" | "stopping" | "stopped";
+
 export type RunState = {
   /** null = 尚未收到任何快照（拆题还没回来）。 */
   snapshot: InvestigationSnapshotV1 | null;
@@ -56,6 +60,11 @@ export type RunState = {
   activityRunId: string | null;
   /** 已接受的最大 seq；小于等于它的重放一律忽略。 */
   lastActivitySeq: number;
+  /** 服务端运行身份（run_started 事件）。刷新恢复与取消都要它。 */
+  runId: string | null;
+  /** 服务端确认的 run 状态（run_state 事件 / 取消响应）。 */
+  serverStatus: string | null;
+  stop: StopPhase;
 };
 
 const INITIAL_STATE: RunState = {
@@ -66,6 +75,9 @@ const INITIAL_STATE: RunState = {
   activities: [],
   activityRunId: null,
   lastActivitySeq: 0,
+  runId: null,
+  serverStatus: null,
+  stop: "idle",
 };
 
 /**
@@ -74,6 +86,18 @@ const INITIAL_STATE: RunState = {
  * claim 供 complete 报告缺快照时的确定性重建使用。
  */
 export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: string): RunState {
+  if (event.type === "run_started") {
+    return { ...prev, runId: typeof event.runId === "string" ? event.runId : prev.runId };
+  }
+  if (event.type === "run_state") {
+    const status = typeof event.status === "string" ? event.status : prev.serverStatus;
+    const stopped = status === "cancelled" || status === "cancelling";
+    return {
+      ...prev,
+      serverStatus: status,
+      stop: stopped ? (status === "cancelling" ? "stopping" : "stopped") : prev.stop,
+    };
+  }
   if (event.type === "investigation_activity") {
     // 终态不能被晚到活动倒退：complete/error 之后一律不再收活动。
     if (prev.connection === "ended" || prev.connection === "failed") return prev;
@@ -138,9 +162,20 @@ export type StartOptions = {
   fixture?: (emit: (event: OrchestrateStreamEvent) => void) => () => void;
 };
 
+function newClientRequestId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  } catch {
+    /* 老环境回退 */
+  }
+  return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export function useInvestigationRun() {
   const [state, setState] = useState<RunState>(INITIAL_STATE);
   const runIdRef = useRef(0);
+  // 双击保护：同一份材料在短时间内重复提交只算一次（服务端幂等，这里是它的补充）。
+  const lastSubmitRef = useRef<{ key: string; clientRequestId: string; at: number } | null>(null);
 
   const applyEvent = useCallback((event: OrchestrateStreamEvent, claim?: string) => {
     setState((prev) => applyRunEvent(prev, event, claim));
@@ -150,6 +185,14 @@ export function useInvestigationRun() {
     (intake: CaseIntake, options: StartOptions = {}) => {
       const runId = ++runIdRef.current;
       const claim = caseIntakePrimaryText(intake);
+      const submitKey = `${claim}\u0000${intake.links.length}\u0000${intake.images.length}`;
+      const previous = lastSubmitRef.current;
+      // 同一份材料 + 5 秒内重复提交 → 复用同一个 clientRequestId，服务端只建一条 run。
+      const clientRequestId =
+        previous && previous.key === submitKey && Date.now() - previous.at < 5_000
+          ? previous.clientRequestId
+          : newClientRequestId();
+      lastSubmitRef.current = { key: submitKey, clientRequestId, at: Date.now() };
       setState({ ...INITIAL_STATE, connection: "connecting" });
 
       if (options.fixture && import.meta.env.DEV) {
@@ -170,7 +213,12 @@ export function useInvestigationRun() {
         } catch {
           // 召回降级不阻断调查
         }
-        for await (const event of requestOrchestrateStream(intake, memoryRecall, options.modelChoice)) {
+        for await (const event of requestOrchestrateStream(
+          intake,
+          memoryRecall,
+          options.modelChoice,
+          clientRequestId
+        )) {
           if (runIdRef.current !== runId) return;
           if (IGNORED_LEGACY_EVENT_TYPES.has(event.type)) continue;
           applyEvent(event, claim);
@@ -192,5 +240,49 @@ export function useInvestigationRun() {
     setState(INITIAL_STATE);
   }, []);
 
-  return { state, start, reset };
+  /** 取消：先本地记「正在停」，再等服务端确认；服务端确认不了就不说「已停止」。 */
+  const cancel = useCallback(async () => {
+    const runId = state.runId;
+    if (!runId) return { ok: false as const };
+    setState((prev) => ({ ...prev, stop: "stopping" }));
+    const result = await cancelInvestigation(runId);
+    setState((prev) => ({
+      ...prev,
+      serverStatus: result.status ?? prev.serverStatus,
+      stop: result.ok ? (result.status === "cancelled" ? "stopped" : "stopping") : prev.stop,
+      ...(result.ok ? {} : { errorMessage: "停止请求没有送达，调查可能还在继续。" }),
+    }));
+    return result;
+  }, [state.runId]);
+
+  /**
+   * 接回一条已有 run（刷新/返回）。不新建 run、不扣额。
+   * 返回的 cancel 只关本地连接。
+   */
+  const resume = useCallback(
+    (runId: string, after: number, claim: string) => {
+      const local = ++runIdRef.current;
+      setState({ ...INITIAL_STATE, runId, connection: "connecting" });
+      const handle = resumeInvestigationStream(
+        runId,
+        after,
+        (event) => {
+          if (runIdRef.current !== local) return;
+          applyEvent(event, claim);
+        },
+        (reason) => {
+          if (runIdRef.current !== local) return;
+          setState((prev) =>
+            prev.connection === "ended" || prev.connection === "failed"
+              ? prev
+              : { ...prev, connection: reason === "failed" ? "failed" : prev.finalReport ? "ended" : "live" }
+          );
+        }
+      );
+      return { cancel: () => { runIdRef.current += 1; handle.close(); } };
+    },
+    [applyEvent]
+  );
+
+  return { state, start, reset, cancel, resume };
 }
