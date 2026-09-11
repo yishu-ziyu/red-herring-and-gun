@@ -1320,7 +1320,7 @@
 
 .gp-canvas[data-gp-phase="complete"] .gp-evidence-excerpt {
   order: -1;
-  margin: 0 0 8px;
+  margin: 0 0 4px;
   padding: 0;
   border: 0;
   font-family: var(--gp-font);
@@ -1345,8 +1345,7 @@
 }
 
 .gp-canvas[data-gp-phase="complete"] .gp-evidence-relation {
-  font-size: 14px;
-  min-width: 3.5em;
+  display: none;
 }
 
 .gp-canvas[data-gp-phase="complete"] .gp-evidence-domain {
@@ -1361,10 +1360,31 @@
   font-size: 16px;
 }
 
+.gp-canvas[data-gp-phase="complete"] .gp-boundary {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 8px;
+}
+
 .gp-canvas[data-gp-phase="complete"] .gp-evidence-item {
-  padding: 14px 0;
-  gap: 14px;
+  display: block;
+  padding: 8px 0 10px;
+  margin: 0;
+  border: 0;
   min-height: 44px;
+  text-align: left;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-evidence-item + .gp-evidence-item {
+  border-top: 0;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-claim + .gp-claim {
+  margin-top: 28px;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-evidence-space {
+  padding-left: 0;
 }
 
 .gp-canvas[data-gp-phase="complete"] [data-gp-hero-meta="claims"],
@@ -1390,9 +1410,10 @@
 }
 
 .gp-canvas[data-gp-phase="complete"] .gp-evidence-header {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
 }
 
 .gp-canvas[data-gp-phase="complete"] .gp-conflict,
@@ -1411,7 +1432,7 @@
 }
 
 .gp-point {
-  margin: 18px 0 8px;
+  margin: 0 0 10px;
   font-size: 16px;
   font-weight: 650;
   line-height: 1.65;
