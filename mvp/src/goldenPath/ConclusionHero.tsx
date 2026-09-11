@@ -43,6 +43,14 @@ export function ConclusionHero({ directAnswer, verdictLead, rationale, judgment,
       transition={{ duration: reduce ? 0 : EMERGE_S, ease: EMERGE_EASE }}
     >
       <div className="gp-hero-inner">
+        <div className="gp-hero-meta">
+          <span className="gp-hero-judgment" data-gp-judgment={judgment}>
+            {JUDGMENT_LABEL[judgment]}
+          </span>
+          <span className="gp-hero-meta-item" data-gp-hero-meta="claims">{copy.claimCount(claimCount)}</span>
+          <span className="gp-hero-meta-item" data-gp-hero-meta="sources">{copy.sourceCount(sourceCount)}</span>
+          {checkedAt ? <span className="gp-hero-meta-item" data-gp-hero-meta="time">{copy.checkedAt(formatTime(checkedAt))}</span> : null}
+        </div>
         <motion.p
           className="gp-hero-answer"
           data-gp-direct-answer
@@ -62,14 +70,6 @@ export function ConclusionHero({ directAnswer, verdictLead, rationale, judgment,
             {copy.uncertaintyLine}
           </p>
         ) : null}
-        <div className="gp-hero-meta">
-          <span className="gp-hero-judgment" data-gp-judgment={judgment}>
-            {JUDGMENT_LABEL[judgment]}
-          </span>
-          <span className="gp-hero-meta-item" data-gp-hero-meta="claims">{copy.claimCount(claimCount)}</span>
-          <span className="gp-hero-meta-item" data-gp-hero-meta="sources">{copy.sourceCount(sourceCount)}</span>
-          {checkedAt ? <span className="gp-hero-meta-item" data-gp-hero-meta="time">{copy.checkedAt(formatTime(checkedAt))}</span> : null}
-        </div>
         {boundaries.length > 0 ? (
           <div className="gp-hero-boundaries" data-gp-boundaries>
             <ul className="gp-hero-boundary-list">

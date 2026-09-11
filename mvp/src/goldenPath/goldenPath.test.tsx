@@ -542,13 +542,13 @@ describe("Issue #64 [Reset 4D] Conclusion Emergence", () => {
     expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')?.getAttribute("data-gp-trace-active")).toBe("false");
   });
 
-  it("3：directAnswer 是结论区第一可见正文，judgment/meta 在其后", () => {
+  it("3：结论区先判断后回答，judgment 不是 chip", () => {
     renderCanvas(refutedComplete());
     const hero = screen.getByLabelText("调查结论");
     const answer = hero.querySelector("[data-gp-direct-answer]") as HTMLElement;
     const judgment = hero.querySelector("[data-gp-judgment]") as HTMLElement;
     expect(answer.textContent).toMatch(/原句站不住/);
-    expect(answer.compareDocumentPosition(judgment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(judgment.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(judgment.classList.contains("gp-chip")).toBe(false);
     expect(hero.querySelector(".gp-hero-kicker")).toBeNull();
     expect(hero.textContent).not.toMatch(/调查完成/);
@@ -2275,25 +2275,30 @@ describe("Issue #66 post-#76 real SSE artifacts", () => {
 });
 
 describe("结果页 P0/P1：调查备忘录视觉", () => {
-  it("M2：directAnswer 是结论第一句；judgment 不是 chip；CSS 用衬线 clamp", async () => {
+  it("M2：先判断后回答；judgment 不是 chip；回答用衬线 22–28px", async () => {
     renderCanvas(refutedComplete());
     const hero = screen.getByLabelText("调查结论");
     const answer = hero.querySelector("[data-gp-direct-answer]") as HTMLElement;
     const judgment = hero.querySelector("[data-gp-judgment]") as HTMLElement;
     expect(answer.textContent).toMatch(/^原句站不住/);
-    expect(answer.compareDocumentPosition(judgment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(judgment.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(judgment.classList.contains("gp-chip")).toBe(false);
     expect(hero.querySelector(".gp-hero-kicker")).toBeNull();
+    expect(screen.getByRole("heading", { name: "判断依据" })).toBeInTheDocument();
 
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const css = readFileSync(join(process.cwd(), "src", "goldenPath", "golden-path.css"), "utf8");
     const answerRule = css.match(/\.gp-hero-answer\s*\{([^}]*)\}/);
     expect(answerRule![1]).toContain("var(--gp-serif)");
-    expect(answerRule![1]).toContain("clamp(26px, 3.2vw, 38px)");
+    expect(answerRule![1]).toContain("clamp(22px, 2.2vw, 28px)");
     expect(answerRule![1]).toContain("font-weight: 650");
     expect(answerRule![1]).toContain("var(--gp-ink-primary)");
     expect(answerRule![1]).not.toMatch(/background:\s*(?!transparent)/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-section-label\s*\{[^}]*font-size: 20px/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-claim-text\s*\{[^}]*font-size: 16px/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-title\s*\{[^}]*font-size: 16px/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-excerpt\s*\{[^}]*font-size: 16px/);
   });
 
   it("M3：有 excerpt 默认展示原字段；无 excerpt 不编造、不留空壳", () => {

@@ -205,7 +205,11 @@ export function InvestigationCanvas({
 
         {snapshot.claims.length > 0 ? (
           <section className="gp-claims" aria-label={copy.canvasEvidenceLabel}>
-            {!complete ? <h3 className="gp-section-label">{copy.canvasClaimsLabel}</h3> : <h3 className="gp-section-label">{copy.canvasEvidenceLabel}</h3>}
+            {!complete ? (
+              <h3 className="gp-section-label">{copy.canvasClaimsLabel}</h3>
+            ) : (
+              <h2 className="gp-section-label">{copy.canvasEvidenceLabel}</h2>
+            )}
             <div className="gp-claim-list">
               {snapshot.claims.map((claim, index) => (
                 <ClaimSection
