@@ -1354,12 +1354,42 @@
   display: none;
 }
 
+.gp-canvas[data-gp-phase="complete"] .gp-original {
+  display: none;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-claim-head {
+  display: none;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-claim {
+  border-top: 0;
+  padding: 0;
+}
+
 .gp-canvas[data-gp-phase="complete"] .gp-claim-toggle {
   display: none;
 }
 
-.gp-canvas[data-gp-phase="complete"] .gp-original-text .gp-trace-mark {
-  text-decoration-color: #c8c4ba;
+.gp-canvas[data-gp-phase="complete"] .gp-evidence-header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-conflict,
+.gp-canvas[data-gp-phase="complete"] .gp-gaps {
+  margin: 16px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-conflict-head,
+.gp-canvas[data-gp-phase="complete"] .gp-gaps-head {
+  display: none;
 }
 
 .gp-result-again {

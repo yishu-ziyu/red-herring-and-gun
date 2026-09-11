@@ -161,9 +161,9 @@ export function InvestigationCanvas({
           </section>
         ) : null}
 
-        <section className="gp-original" aria-label={complete ? copy.canvasOriginalInResult : copy.canvasOriginalLabel}>
+        <section className="gp-original" aria-label={copy.canvasOriginalLabel}>
           <div className="gp-original-meta">
-            <span className="gp-original-label">{complete ? copy.canvasOriginalInResult : copy.canvasOriginalLabel}</span>
+            <span className="gp-original-label">{copy.canvasOriginalLabel}</span>
             <div className="gp-original-side">
               {restoredAt ? (
                 <em className="gp-original-time">{copy.oldCaseNotice(formatDate(restoredAt))}</em>
@@ -218,7 +218,13 @@ export function InvestigationCanvas({
                   index={index}
                   sources={snapshot.sources}
                   conflicts={snapshot.conflicts}
-                  defaultExpanded={complete ? index === 0 : interrupted ? true : claim.progress !== "pending"}
+                  defaultExpanded={
+                    complete
+                      ? claim.evidence.length > 0 || Boolean(claim.judgment) || claim.gaps.length > 0
+                      : interrupted
+                        ? true
+                        : claim.progress !== "pending"
+                  }
                   onSelectSource={openSource}
                   onHeaderHover={handleHeaderHover}
                   onHeaderFocus={handleHeaderFocus}
