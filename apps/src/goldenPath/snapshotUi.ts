@@ -225,16 +225,6 @@ export function hasDrilldownSource(snapshot: InvestigationSnapshotV1): boolean {
   return snapshot.sources.some((s) => Boolean(s.url));
 }
 
-/** 冲突的双方摘要（来源已解析）；unknown reason 必须保持未知。 */
-export function conflictSidesLabel(sides: InvestigationSnapshotV1["conflicts"][number]["sides"]): string {
-  const support = sides.find((s) => s.position === "support");
-  const contradict = sides.find((s) => s.position === "contradict");
-  const parts: string[] = [];
-  if (support && support.sourceIds.length > 0) parts.push(`支持 ${support.sourceIds.length} 条`);
-  if (contradict && contradict.sourceIds.length > 0) parts.push(`反驳 ${contradict.sourceIds.length} 条`);
-  return parts.join("、");
-}
-
 /** imageOrigin（finalReport 临时 side-channel）的只读视图。 */
 export type ImageOriginView =
   | { status: "found"; url: string; title: string; label: string }
