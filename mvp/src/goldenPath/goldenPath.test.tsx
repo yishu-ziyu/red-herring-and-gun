@@ -2261,8 +2261,8 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     const css = readFileSync(join(process.cwd(), "src", "goldenPath", "golden-path.css"), "utf8");
     const answerRule = css.match(/\.gp-hero-answer\s*\{([^}]*)\}/);
     expect(answerRule![1]).toContain("var(--gp-serif)");
-    expect(answerRule![1]).toContain("clamp(19px, 2.2vw, 24px)");
-    expect(answerRule![1]).toContain("font-weight: 700");
+    expect(answerRule![1]).toContain("clamp(26px, 3.2vw, 38px)");
+    expect(answerRule![1]).toContain("font-weight: 650");
     expect(answerRule![1]).toContain("var(--gp-ink-primary)");
     expect(answerRule![1]).not.toMatch(/background:\s*(?!transparent)/);
   });

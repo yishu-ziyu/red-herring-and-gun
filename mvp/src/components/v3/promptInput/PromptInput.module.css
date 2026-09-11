@@ -329,6 +329,32 @@
   stroke-width: 2.25;
 }
 
+.sendText {
+  width: auto;
+  height: auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: 9px;
+}
+.sendText::before {
+  border-radius: 9px;
+}
+.sendText.sendActive::before {
+  background: #a13734;
+}
+.sendText.sendActive:hover::before {
+  background: #862b29;
+}
+.sendLabel {
+  position: relative;
+  z-index: 1;
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .spinner {
   position: relative;
   color: #a1a1a1;

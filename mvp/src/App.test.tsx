@@ -71,8 +71,14 @@ describe("生产首页（输入态）", () => {
     mockFetch();
     render(<App />);
     expect(await screen.findByRole("textbox", { name: "要调查的说法" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /这句话.*站得住吗/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /开始调查/ })).toBeInTheDocument();
     expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
+    expect(document.querySelector("[data-gp-roles=home]")).toBeTruthy();
+    expect(screen.getByText("拆问题")).toBeInTheDocument();
+    expect(screen.getByText("找出处")).toBeInTheDocument();
+    expect(screen.getByText("核语境")).toBeInTheDocument();
+    expect(screen.getByText("作判断")).toBeInTheDocument();
   });
 
   it("首页默认无 AI Ping 品牌、无 BatchChecker、无 provider 控制（E3）", async () => {
