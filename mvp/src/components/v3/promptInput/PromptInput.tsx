@@ -203,6 +203,8 @@ export type PromptInputProps = {
   placeholder?: string;
   ariaLabel?: string;
   submitLabel?: string;
+  /** 生产首页用可见文字按钮；旧壳保持圆形箭头。 */
+  submitText?: boolean;
   disabled?: boolean;
   /** Keep the editor usable while preventing submission, e.g. during service readiness checks. */
   submitDisabled?: boolean;
@@ -223,6 +225,7 @@ export function PromptInput({
   placeholder = "输入文字、粘贴链接，或添加聊天截图 / 网页截图",
   ariaLabel = "待核查材料",
   submitLabel = "开始核查",
+  submitText = false,
   disabled = false,
   submitDisabled = false,
   busy = false,
@@ -898,7 +901,12 @@ export function PromptInput({
             {trailing}
             <button
               type="button"
-              className={[styles.iconBtn, styles.send, sendActive && styles.sendActive]
+              className={[
+                styles.iconBtn,
+                styles.send,
+                sendActive && styles.sendActive,
+                submitText && styles.sendText,
+              ]
                 .filter(Boolean)
                 .join(" ")}
               data-prompt-send
@@ -908,6 +916,8 @@ export function PromptInput({
             >
               {busy ? (
                 <Icon name="loader" size={15} className={styles.spinner} />
+              ) : submitText ? (
+                <span className={styles.sendLabel}>{submitLabel}</span>
               ) : (
                 <Icon name="arrow-up" size={15} />
               )}

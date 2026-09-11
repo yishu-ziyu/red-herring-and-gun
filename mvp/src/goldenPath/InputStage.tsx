@@ -14,6 +14,7 @@ import {
 import { extractFramesFromVideo } from "../lib/videoFrames";
 import { formatScrapedContent, scrapeLinks } from "../lib/linkScraper";
 import { PromptInput, type PromptAttachment } from "../components/v3/promptInput/PromptInput";
+import { WorkRoles } from "./WorkRoles";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import {
@@ -214,7 +215,7 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
 
   return (
     <div className="gp-input-stage">
-      <p className="gp-kicker">{copy.inputKicker}</p>
+      {copy.inputKicker ? <p className="gp-kicker">{copy.inputKicker}</p> : null}
       <h1 className="gp-headline">
         {copy.inputHeadlineA}
         <em>{copy.inputHeadlineAccent}</em>
@@ -235,6 +236,7 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
           onRemoveAttachment={removeImage}
           submitDisabled={blocked}
           busy={isScraping}
+          submitText
           submitLabel={isScraping ? copy.inputScraping : copy.inputSubmit}
           ariaLabel={copy.inputLabel}
           placeholder={copy.inputPlaceholder}
@@ -282,31 +284,39 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
         </ul>
       </section>
 
-      {/* 进门示意：只读静态样例，不发起调查，不改任何状态。 */}
-      <section
-        className="gp-result-preview"
-        aria-label={copy.resultPreviewLabel}
-        data-gp-result-preview
-      >
-        <p className="gp-result-preview-label">{copy.resultPreviewLabel}</p>
-        <div className="gp-result-preview-card">
-          <p className="gp-result-preview-answer">{copy.resultPreviewAnswer}</p>
-          <p className="gp-result-preview-meta">{copy.resultPreviewMeta}</p>
-          <div className="gp-result-preview-row" data-gp-preview-relation="support">
-            <span className="gp-result-preview-tag is-support">{copy.resultPreviewSupportLabel}</span>
-            <div className="gp-result-preview-body">
-              <p className="gp-result-preview-text">{copy.resultPreviewSupportText}</p>
-              <p className="gp-result-preview-excerpt">{copy.resultPreviewSupportExcerpt}</p>
-            </div>
-          </div>
-          <div className="gp-result-preview-row" data-gp-preview-relation="contradict">
-            <span className="gp-result-preview-tag is-contradict">{copy.resultPreviewContradictLabel}</span>
-            <div className="gp-result-preview-body">
-              <p className="gp-result-preview-text">{copy.resultPreviewContradictText}</p>
-              <p className="gp-result-preview-excerpt">{copy.resultPreviewContradictExcerpt}</p>
-            </div>
-          </div>
+      <WorkRoles />
+
+      <section className="gp-home-case" id="gp-home-case">
+        <div className="gp-home-case-copy">
+          <h2>{copy.homeCaseTitle}</h2>
+          <p>{copy.homeCaseLead}</p>
         </div>
+        {/* 教学示意：只读静态样例，不发起调查，不改任何状态，不冒充已核对真实案例。 */}
+        <section
+          className="gp-result-preview"
+          aria-label={copy.resultPreviewLabel}
+          data-gp-result-preview
+        >
+          <p className="gp-result-preview-label">{copy.resultPreviewLabel}</p>
+          <div className="gp-result-preview-card">
+            <p className="gp-result-preview-answer">{copy.resultPreviewAnswer}</p>
+            <p className="gp-result-preview-meta">{copy.resultPreviewMeta}</p>
+            <div className="gp-result-preview-row" data-gp-preview-relation="support">
+              <span className="gp-result-preview-tag is-support">{copy.resultPreviewSupportLabel}</span>
+              <div className="gp-result-preview-body">
+                <p className="gp-result-preview-text">{copy.resultPreviewSupportText}</p>
+                <p className="gp-result-preview-excerpt">{copy.resultPreviewSupportExcerpt}</p>
+              </div>
+            </div>
+            <div className="gp-result-preview-row" data-gp-preview-relation="contradict">
+              <span className="gp-result-preview-tag is-contradict">{copy.resultPreviewContradictLabel}</span>
+              <div className="gp-result-preview-body">
+                <p className="gp-result-preview-text">{copy.resultPreviewContradictText}</p>
+                <p className="gp-result-preview-excerpt">{copy.resultPreviewContradictExcerpt}</p>
+              </div>
+            </div>
+          </div>
+        </section>
       </section>
     </div>
   );
