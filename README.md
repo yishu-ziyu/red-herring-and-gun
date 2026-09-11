@@ -75,4 +75,6 @@ npm run build
 
 ## 部署
 
-域名 `gun.yishuziyu.cn`。Nginx 服务静态资源，`/api/` 与 `/health` 代理到本机 Express。唯一发布入口：`./ops.sh deploy --yes`（不要跑 `deploy-to-aliyun.sh` 或 `mvp/deploy.sh`）。发布门禁见 `docs/PRODUCT_RELEASE_GATE.md`。
+域名 `gun.yishuziyu.cn`，DNS 为 A → `121.89.90.68`。Nginx 服务静态资源，`/api/` 与 `/health` 代理到本机 Express。唯一发布入口：`./ops.sh deploy --yes`（不要跑 `deploy-to-aliyun.sh` 或 `mvp/deploy.sh`）。发布门禁见 `docs/PRODUCT_RELEASE_GATE.md`。
+
+Vercel 已于 2026-09-11 退场：它的 `/api` rewrite 指向自身域名会 508 自环，且国内可用性不可靠（`PRODUCT_RELEASE_GATE.md` 第二节）。仓库里不再保留 `vercel.json`；要恢复必须先读 `docs/tasks/2026-09-11-deploy/vercel-retirement.md`，那里写了三个必须同时满足的条件。
