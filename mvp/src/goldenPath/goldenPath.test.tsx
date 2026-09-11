@@ -88,7 +88,6 @@ describe("golden case 4：证据不足（complete）", () => {
     renderCanvas(unresolvedComplete());
     const claim = document.querySelector('[data-gp-claim-id="claim-1"]')!;
     expect(within(claim as HTMLElement).getByText("证据不足")).toBeTruthy();
-    expect(within(claim as HTMLElement).getByText("尚缺")).toBeTruthy();
     expect(within(claim as HTMLElement).getByText(/定向检索无结果/)).toBeTruthy();
     // 没找到证据 ≠ 反驳：这条命题不允许出现反驳组
     expect(claim.querySelector('[data-gp-role="contradict"]')).toBeNull();
@@ -707,11 +706,12 @@ describe("结论两层（短判断 + 解释）E4–E6", () => {
     expect(box.textContent).toContain("现有材料不能推出隔夜水本身有任何致癌性");
   });
 
-  it("E13：命题级边界的行内引导词保留", () => {
+  it("E13：完成态命题边界只留限制句，不出现「边界」表单标签", () => {
     renderCanvas(layeredCompleteLede());
     const claimBoundaries = [...document.querySelectorAll(".gp-boundary")];
     expect(claimBoundaries.length).toBeGreaterThan(0);
-    expect(claimBoundaries.every((n) => n.textContent?.startsWith("边界"))).toBe(true);
+    expect(claimBoundaries.map((n) => n.textContent).join(" ")).toContain("只覆盖声明发布时间前的公开记录");
+    expect(claimBoundaries.every((n) => !n.textContent?.startsWith("边界"))).toBe(true);
   });
 
   it("E6：verdictLead / rationale 缺省时回退，directAnswer 仍有内容", () => {
@@ -2302,6 +2302,10 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(css).toMatch(/data-gp-hero-meta="claims"[\s\S]*display:\s*none/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-original\s*\{[^}]*display:\s*none/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-claim-head\s*\{[^}]*display:\s*none/);
+    const point = document.querySelector(".gp-point");
+    if (point) {
+      expect(point.compareDocumentPosition(document.querySelector("[data-gp-evidence-excerpt]")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 
   it("M3：有 excerpt 默认展示原字段；无 excerpt 不编造、不留空壳", () => {
