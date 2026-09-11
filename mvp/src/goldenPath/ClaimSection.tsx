@@ -20,6 +20,7 @@ import {
   conflictSidesLabel,
 } from "./snapshotUi";
 import { EvidenceBoard } from "./EvidenceBoard";
+import { scrubFaceText, tooSimilarTo } from "./scrubFace";
 
 type ClaimSectionProps = {
   claim: InvestigationClaim;
@@ -38,11 +39,16 @@ type ClaimSectionProps = {
   onExpandedTrace?: (claimId: string | null) => void;
   asResult?: boolean;
   asWork?: boolean;
+  conclusionText?: string;
 };
 
-function claimPoint(claim: InvestigationClaim): string {
-  const fromFinding = claim.evidence.map((link) => link.finding?.trim() ?? "").find((text) => text.length > 0);
-  return fromFinding ?? "";
+function claimPoint(claim: InvestigationClaim, conclusionText = ""): string {
+  const fromFinding = claim.evidence.map((link) => link.finding?.trim() ?? "").find((text) => text.length > 0) ?? "";
+  if (!fromFinding) return "";
+  const cleaned = scrubFaceText(fromFinding);
+  if (!cleaned) return "";
+  if (tooSimilarTo(cleaned, conclusionText)) return "";
+  return cleaned;
 }
 
 function usesExpandedTrace(): boolean {
@@ -61,6 +67,7 @@ export function ClaimSection({
   onExpandedTrace,
   asResult = false,
   asWork = false,
+  conclusionText = "",
 }: ClaimSectionProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
@@ -68,7 +75,7 @@ export function ClaimSection({
   const claimConflicts = conflicts.filter((c) => c.claimId === claim.id);
   const judgment = claim.judgment;
   const showStatusChip = claim.progress === "searching" || claim.progress === "interrupted" || judgment !== null;
-  const point = asResult ? claimPoint(claim) : "";
+  const point = asResult ? claimPoint(claim, conclusionText) : "";
   const num = String(index + 1).padStart(2, "0");
 
   return (

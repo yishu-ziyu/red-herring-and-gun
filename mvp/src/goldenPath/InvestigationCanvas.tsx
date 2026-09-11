@@ -235,6 +235,11 @@ export function InvestigationCanvas({
                   onExpandedTrace={setExpandedTraceClaimId}
                   asResult={complete}
                   asWork={!complete && !interrupted}
+                  conclusionText={
+                    complete && conclusion
+                      ? `${conclusion.directAnswer ?? ""}${conclusion.verdictLead ?? ""}${conclusion.rationale ?? ""}`
+                      : ""
+                  }
                 />
               ))}
             </div>

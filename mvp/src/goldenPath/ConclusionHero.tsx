@@ -7,6 +7,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import { JUDGMENT_LABEL } from "./snapshotUi";
+import { scrubFaceText } from "./scrubFace";
 
 type ConclusionHeroProps = {
   directAnswer: string;
@@ -30,8 +31,10 @@ export function ConclusionHero({ directAnswer, verdictLead, rationale, judgment,
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
   const reduce = Boolean(useReducedMotion());
-  const lead = verdictLead && verdictLead.trim() ? verdictLead : directAnswer;
-  const explanation = verdictLead && verdictLead.trim() && rationale && rationale.trim() ? rationale : "";
+  const rawLead = verdictLead && verdictLead.trim() ? verdictLead : directAnswer;
+  const lead = scrubFaceText(rawLead) || rawLead;
+  const explanation =
+    verdictLead && verdictLead.trim() && rationale && rationale.trim() ? scrubFaceText(rationale) : "";
 
   return (
     <motion.header
