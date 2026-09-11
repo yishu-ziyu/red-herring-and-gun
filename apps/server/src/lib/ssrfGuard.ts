@@ -26,6 +26,21 @@ function isBlockedPrivateIpv4(parts: number[]): boolean {
   return false;
 }
 
+/**
+ * IPv4-mapped IPv6（::ffff:a.b.c.d）取出内嵌的 IPv4。
+ *
+ * 为什么要单独处理：`new URL()` 会把 `[::ffff:127.0.0.1]` 规范化成 `[::ffff:7f00:1]`，
+ * 于是「剥掉 ::ffff: 再递归」拿到的是 `7f00:1` 这种半截主机，守卫直接漏过。
+ * 实测 `http://[::ffff:127.0.0.1]/v1` 在修之前**不被拦截**。
+ */
+function ipv4FromMappedIpv6(host: string): number[] | null {
+  const match = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(host);
+  if (!match) return null;
+  const high = Number.parseInt(match[1]!, 16);
+  const low = Number.parseInt(match[2]!, 16);
+  return [(high >> 8) & 0xff, high & 0xff, (low >> 8) & 0xff, low & 0xff];
+}
+
 export function isBlockedTestLlmUrl(raw: string): boolean {
   let parsed: URL;
   try {
@@ -47,7 +62,13 @@ export function isBlockedTestLlmUrl(raw: string): boolean {
     return true;
   }
   if (host.startsWith("::ffff:")) {
-    return isBlockedTestLlmUrl(`https://${host.slice("::ffff:".length)}`);
+    const mapped = ipv4FromMappedIpv6(host);
+    if (mapped) return isBlockedPrivateIpv4(mapped);
+    const tail = host.slice("::ffff:".length);
+    // 点分写法（未经 URL 规范化的那一种）
+    if (/^[\d.]+$/.test(tail)) return isBlockedTestLlmUrl(`https://${tail}`);
+    // 其余映射形态按内网处理：宁可拦错，不可放过
+    return true;
   }
   if (host.includes(":")) {
     if (host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80")) return true;

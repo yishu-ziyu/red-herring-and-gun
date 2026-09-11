@@ -2747,6 +2747,33 @@ button.gp-save-state {
 }
 
 @media (max-width: 420px) {
+  /* 320px 实测：品牌名与右侧导航会互相压住。两头都收一档，不做成两行。 */
+  .gp-topbar-inner {
+    padding: 8px 14px;
+    gap: 8px;
+  }
+
+  .gp-brand-name {
+    font-size: 15px;
+    letter-spacing: 0;
+  }
+
+  .gp-brand-logo {
+    width: 24px;
+    height: 24px;
+  }
+
+  .gp-topbar-actions {
+    gap: 2px;
+  }
+
+  .gp-nav-text,
+  .gp-icon-btn {
+    font-size: 12.5px;
+    padding: 6px 6px;
+    gap: 3px;
+  }
+
   .gp-claim-text {
     font-size: 15px;
   }

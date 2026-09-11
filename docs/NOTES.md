@@ -1,5 +1,7 @@
 # 当前状态
 
+2026-09-11 清账：验收矩阵从 ✅26/🔶7/⛔4 收到 **✅38 / 🔶0 / ⛔2**。清的过程里补出两个真问题——**A02 320px 品牌名与导航互相压住**（已修，截图重拍）；**A32 SSRF 模块此前一个测试都没有，补测时发现 `http://[::ffff:127.0.0.1]/v1` 不被拦截**（`new URL()` 把它规范化成 `[::ffff:7f00:1]`，旧代码剥前缀后拿到半截主机）——已修。新增 `ssrfGuard.test.ts`(6)、`materialAndAccount.test.tsx`(5)、`resultAndQuota.test.tsx`(3)。剩下 ⛔ 两条是同一件事：公共案例与回放页（`/examples`、`/examples/:slug`）没做。门禁 1295 过 / 1 跳过、build 绿。
+
 2026-09-11 PR-F：不动生产结构。新增 `docs/design/2026-09-11-investigation-experience/RELEASE.md`（改过的生产路径 / 数据库与迁移 / 逐提交回滚 / 没做的 / 已知风险 / 等人裁决的四件事）。只删了一处有消费者证明的死代码（`snapshotUi.conflictSidesLabel`，调用点已在本轮替换，全仓库含测试无引用）。旧壳 `?legacy=1`、`packages/` 脊柱切换都没动。另记一条无法复现的测试红（21:57 一次 1 failed / 1280 passed，未捕获是哪条，随后连跑三次全绿），写进 lessons F14 与 RELEASE 已知风险。
 
 2026-09-11 完成情况回填 + 失败经验归档：交接包 `docs/design/2026-09-11-investigation-experience/` 里的 `ACCEPTANCE.md` 从「检查清单」改成「完成情况」（A01–A40 逐行 ✅/🔶/⛔ + 证据），`ISSUES.md` 加 RHG-00～08 状态，新增 `lessons.md` 记录 13 条**真跑红过**的失败（每条：检查项 / 失败值 / 根因 / 改法 / 复发防线）。同批修掉同类第 2 例：保存状态写着「同步失败，重试」却没有可点的重试。门禁 1281 过 / 1 跳过、build 绿。PR-F（清理旧展示逻辑 + 发布回滚说明）未做，等用户裁决。
