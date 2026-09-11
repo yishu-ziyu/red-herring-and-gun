@@ -18,6 +18,7 @@ import { phaseHeadline, readImageOrigin, type ImageOriginView } from "./snapshot
 import { buildClaimTraceSegments } from "./claimTrace";
 import { ClaimSection } from "./ClaimSection";
 import { ActivityFeed } from "./ActivityFeed";
+import { ShareControl } from "./ShareControl";
 import { ConclusionHero } from "./ConclusionHero";
 import { WorkRoles, roleIndexForPhase } from "./WorkRoles";
 import {
@@ -39,6 +40,8 @@ type InvestigationCanvasProps = {
   onStop?: () => void;
   /** 保存状态：独立于结果存在与否，不把失败藏在 console。 */
   saveStatus?: "idle" | "local" | "syncing" | "synced" | "failed";
+  /** 有服务端 caseId 才谈得上分享：没有对象就没有分享。 */
+  shareCaseId?: string | null;
   /** 完成态 finalReport（imageOrigin side-channel）。 */
   finalReport?: Record<string, unknown> | null;
   restoredAt?: number;
@@ -61,6 +64,7 @@ export function InvestigationCanvas({
   stop = "idle",
   onStop,
   saveStatus = "idle",
+  shareCaseId = null,
   finalReport,
   restoredAt,
   onReverify,
@@ -329,6 +333,8 @@ export function InvestigationCanvas({
             </section>
           )
         ) : null}
+
+        {complete && shareCaseId ? <ShareControl caseId={shareCaseId} /> : null}
 
         {complete ? (
           <p className="gp-result-again">

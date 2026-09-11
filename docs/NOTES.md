@@ -1,5 +1,7 @@
 # 当前状态
 
+2026-09-11 显式分享（PR-E，契约 `docs/evals/2026-09-11-share-tokens.md`）：`GET /api/cases/:caseId/share-preview`（只看不写）、`POST /api/cases/:caseId/shares`（返回明文令牌一次）、`DELETE .../shares/:shareId`、`GET /s/:shareId`（只读投影渲染，不读私有 case）。令牌随机不可猜、库里只存 sha256；投影走白名单 + 递归丢秘密键；撤销幂等、过期不可读、读不到只有一种 404 说法。结果页加「创建分享链接」：先看会公开哪些字段 → 再生成 → 可撤销，并明说已下载的副本收不回。`/r/:caseId` 页那句「分享此报告」拿掉（它是主人自己看的页，分享另有入口）。门禁 1279 过 / 1 跳过、build 绿。未部署。
+
 2026-09-11 RunService 片二（契约同 `docs/evals/2026-09-11-run-service.md`）：`GET /api/investigations/:runId` 与 `/events?after=N` 补发+直播已接；前端加停止按钮三态（停止调查 → 正在停止 → 已停止，只有服务端确认才说已停止）、刷新恢复（本地座标接回原 run，不重开不扣额）、保存状态（已保存在此设备 / 同步中 / 已同步 / 同步失败）。**真实浏览器跑完三态**，截图 `preview/stop-before.png`、`stop-confirmed.png`。片二跑出三个真 bug：取消终态帧到不了客户端（总线不是唯一出口）、`writeFrame` 拿 `disconnect.aborted` 当「别写了」导致 **超时中断帧一直就没发出去过**、说了「重新调查一次」却没按钮。门禁 1260 过 / 1 跳过、build 绿。未部署。
 
 2026-09-11 任务身份与取消（PR-D 片一，契约 `docs/evals/2026-09-11-run-service.md`）：存储换成 `node:sqlite`（Node 22 自带，零新依赖），旧 `cases.json` 首次启动幂等导入并先备份；`runStore` 管 runs / run_activities / shares，`runService` 管身份幂等、状态机、AbortSignal 取消，`POST /api/investigations/:runId/cancel` 已接。流开头新增 `run_started` 事件带 runId。**真实跑通两次取消**。**行为变更**：`caseStore` 不再按 1000 条淘汰（交接包禁止静默丢记录）；**测试隔离**：`src/test/setup.ts` 把 DATA_DIR 指到临时目录（改之前跑测试会清开发库）。四道门禁 1241 过 / 1 跳过、build 绿。未部署。片二还剩：重连/刷新恢复接口 + 前端停止按钮与保存状态。

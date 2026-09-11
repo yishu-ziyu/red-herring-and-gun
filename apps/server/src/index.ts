@@ -243,6 +243,7 @@ import {
   updateMemoryCandidateHandler,
 } from "./lib/memoryCandidateHandlers.js";
 import { appendUserFeedback } from "./lib/userFeedback.js";
+import { createShareHandler, previewShareHandler, revokeShareHandler, renderShareHtmlHandler } from "./lib/shareHandlers.js";
 
 app.post("/api/case", (req, res, next) => postCaseHandler(req, res).catch(next));
 app.post("/api/feedback", (req, res, next) => postGeneralFeedbackHandler(req, res).catch(next));
@@ -251,6 +252,10 @@ app.get("/api/investigations/:runId", (req, res, next) => handlers.getInvestigat
 app.post("/api/investigations/:runId/cancel", (req, res, next) => handlers.cancelInvestigationHandler(req, res, next));
 app.get("/api/case/:caseId", (req, res, next) => getCaseHandler(req, res));
 app.get("/api/cases", (req, res, next) => listCasesHandler(req, res));
+app.get("/api/cases/:caseId/share-preview", (req, res, next) => previewShareHandler(req, res).catch(next));
+app.post("/api/cases/:caseId/shares", (req, res, next) => createShareHandler(req, res).catch(next));
+app.delete("/api/cases/:caseId/shares/:shareId", (req, res, next) => revokeShareHandler(req, res).catch(next));
+app.get("/s/:shareId", (req, res, next) => renderShareHtmlHandler(req, res).catch(next));
 app.get("/r/:caseId", (req, res, next) => renderCaseHtmlHandler(req, res).catch(next));
 
 /** POST /api/feedback — 用户对某次判断的异议。落在 RHG_DATA_DIR，供 golden 反向采集。 */
