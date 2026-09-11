@@ -143,18 +143,23 @@ describe("Plan Item 2 · getCaseHandler", () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it("已存无归属 case → 200 + JSON", async () => {
+  it("已存无归属 case → 404，JSON 无正文（旧记录无分享许可按私有）", async () => {
     const entry = putCase({
-      claim: "stored",
-      report: makeReport("stored"),
+      claim: "stored-unowned-secret",
+      report: makeReport("stored-unowned-secret"),
       claimReview: {} as never,
       credibilityScore: 60,
     });
-    const res = mockRes();
-    await getCaseHandler(mockReq({ caseId: entry.caseId }) as never, res);
-    expect(res.statusCode).toBe(200);
-    expect(res.body.claim).toBe("stored");
-    expect(res.body.ownerHash).toBeUndefined();
+    const guest = mockRes();
+    await getCaseHandler(mockReq({ caseId: entry.caseId }) as never, guest);
+    expect(guest.statusCode).toBe(404);
+    expect(JSON.stringify(guest.body)).not.toContain("stored-unowned-secret");
+
+    const cookie = await sessionCookie("logged-in@example.com");
+    const loggedIn = mockRes();
+    await getCaseHandler(mockReq({ caseId: entry.caseId }, null, cookie) as never, loggedIn);
+    expect(loggedIn.statusCode).toBe(404);
+    expect(JSON.stringify(loggedIn.body)).not.toContain("stored-unowned-secret");
   });
 
   it("有归属的 case 只给主人", async () => {
@@ -218,63 +223,111 @@ describe("Plan Item 2 · postCaseHandler owner match", () => {
 });
 
 describe("Plan Item 2 · renderCaseHtmlHandler", () => {
-  beforeEach(() => clearCases());
+  beforeEach(() => {
+    clearCases();
+    resetForTests();
+    process.env.AIPING_SESSION_SECRET = TEST_SECRET;
+  });
 
-  it("不存在 case → 404 + HTML 含「报告未找到」", () => {
+  function htmlHasPrivateBody(html: string, secret: string) {
+    expect(html).not.toContain(secret);
+    expect(html).not.toContain("application/ld+json");
+    expect(html).not.toContain("ClaimReview");
+    expect(html).not.toContain("cautious version");
+    expect(html).not.toContain("public version");
+  }
+
+  it("不存在 case → 404 + HTML 含「报告未找到」", async () => {
     const res = mockRes();
-    renderCaseHtmlHandler(mockReq({ caseId: "missing" }) as never, res);
+    await renderCaseHtmlHandler(mockReq({ caseId: "missing" }) as never, res);
     expect(res.statusCode).toBe(404);
     expect(res.headers["Content-Type"]).toContain("text/html");
     expect(res.body).toContain("报告未找到");
   });
 
-  it("已存 case → 200 + HTML 含 schema.org/ClaimReview", () => {
+  it("无归属旧记录：游客打开 /r/:id → 404，HTML 无正文", async () => {
     const entry = putCase({
-      claim: "测试说法",
-      report: makeReport("测试说法"),
+      claim: "unowned-html-secret",
+      report: makeReport("unowned-html-secret"),
       claimReview: {
         "@context": "https://schema.org",
         "@type": "ClaimReview",
-        claimReviewed: "测试说法",
-        reviewRating: { "@type": "Rating", ratingValue: 50, bestRating: 100, worstRating: 0, alternateName: "存疑" },
-        author: { "@type": "Organization", name: "红鲱鱼与枪", url: "https://gun.yishuziyu.cn" },
-        datePublished: "2026-07-25T00:00:00Z",
+        claimReviewed: "unowned-html-secret",
       } as never,
       credibilityScore: 60,
     });
     const res = mockRes();
-    renderCaseHtmlHandler(mockReq({ caseId: entry.caseId }) as never, res);
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toContain("application/ld+json");
-    expect(res.body).toContain("ClaimReview");
-    expect(res.body).toContain("测试说法");
+    await renderCaseHtmlHandler(mockReq({ caseId: entry.caseId }) as never, res);
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toContain("报告未找到");
+    htmlHasPrivateBody(String(res.body), "unowned-html-secret");
   });
 
-  it("中断报告（无 rewrittenClaim）→ 200，不 500", () => {
-    const entry = putCase({
-      claim: "中断的核查",
-      report: { _source: "error-boundary", message: "provider down" } as never,
-      claimReview: {} as never,
-      credibilityScore: 50,
-    });
-    const res = mockRes();
-    renderCaseHtmlHandler(mockReq({ caseId: entry.caseId }) as never, res);
-    expect(res.statusCode).toBe(200);
-    expect(res.body).toContain("结论未生成");
+  it("有归属的 case：未登录与他人打开 /r/:id → 404 无正文；主人可读", async () => {
+    const cookieA = await sessionCookie("a@example.com");
+    const cookieB = await sessionCookie("b@example.com");
+    const created = mockRes();
+    await postCaseHandler(
+      mockReq({}, { claim: "private-html-claim", report: makeReport("private-html-claim") }, cookieA) as never,
+      created,
+    );
+    const caseId = created.body.caseId as string;
+
+    const guest = mockRes();
+    await renderCaseHtmlHandler(mockReq({ caseId }) as never, guest);
+    expect(guest.statusCode).toBe(404);
+    htmlHasPrivateBody(String(guest.body), "private-html-claim");
+
+    const stranger = mockRes();
+    await renderCaseHtmlHandler(mockReq({ caseId }, null, cookieB) as never, stranger);
+    expect(stranger.statusCode).toBe(404);
+    htmlHasPrivateBody(String(stranger.body), "private-html-claim");
+
+    const owner = mockRes();
+    await renderCaseHtmlHandler(mockReq({ caseId }, null, cookieA) as never, owner);
+    expect(owner.statusCode).toBe(200);
+    expect(owner.body).toContain("private-html-claim");
+    expect(owner.body).toContain("application/ld+json");
   });
 
-  it("HTML 转义：claim 含 <script> 必须 htmlEscape", () => {
+  it("主人打开中断报告（无 rewrittenClaim）→ 200，不 500", async () => {
+    const cookieA = await sessionCookie("a@example.com");
+    const created = mockRes();
+    await postCaseHandler(
+      mockReq(
+        {},
+        { claim: "中断的核查", report: { _source: "error-boundary", message: "provider down" } },
+        cookieA,
+      ) as never,
+      created,
+    );
+    const owner = mockRes();
+    await renderCaseHtmlHandler(mockReq({ caseId: created.body.caseId }, null, cookieA) as never, owner);
+    expect(owner.statusCode).toBe(200);
+    expect(owner.body).toContain("结论未生成");
+  });
+
+  it("HTML 转义：主人看到的 claim 含 <script> 必须 htmlEscape；游客页面不出现该脚本", async () => {
     const maliciousClaim = "<script>alert(1)</script>";
-    const entry = putCase({
-      claim: maliciousClaim,
-      report: makeReport(maliciousClaim),
-      claimReview: {} as never,
-      credibilityScore: 60,
-    });
-    const res = mockRes();
-    renderCaseHtmlHandler(mockReq({ caseId: entry.caseId }) as never, res);
-    expect(res.body).not.toContain("<script>alert(1)</script>");
-    expect(res.body).toContain("&lt;script&gt;");
+    const cookieA = await sessionCookie("a@example.com");
+    const created = mockRes();
+    await postCaseHandler(
+      mockReq({}, { claim: maliciousClaim, report: makeReport(maliciousClaim) }, cookieA) as never,
+      created,
+    );
+    const caseId = created.body.caseId as string;
+
+    const guest = mockRes();
+    await renderCaseHtmlHandler(mockReq({ caseId }) as never, guest);
+    expect(guest.statusCode).toBe(404);
+    expect(String(guest.body)).not.toContain("<script>alert(1)</script>");
+    expect(String(guest.body)).not.toContain("alert(1)");
+
+    const owner = mockRes();
+    await renderCaseHtmlHandler(mockReq({ caseId }, null, cookieA) as never, owner);
+    expect(owner.statusCode).toBe(200);
+    expect(owner.body).not.toContain("<script>alert(1)</script>");
+    expect(owner.body).toContain("&lt;script&gt;");
   });
 });
 

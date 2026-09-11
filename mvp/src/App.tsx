@@ -254,10 +254,9 @@ function ProductApp() {
 
   const handleStart = useCallback(
     (intake: CaseIntake) => {
-      if (!historyReady) return;
       const claim = caseIntakePrimaryText(intake);
-      // 同句已查过：先问打开旧调查还是重新核查（不静默继承）。
-      if (!intake.links.length && !intake.images.length) {
+      // 同句提醒只在历史已经可靠读到时出现；加载中不截断新提交。
+      if (historyReady && !intake.links.length && !intake.images.length) {
         const match = cases.find((item) => item.status === "done" && normalizeHistoryClaim(item.claim) === normalizeHistoryClaim(claim));
         if (match) {
           setSameClaim({ id: match.id, claim: match.claim, at: match.createdAt, intake });
@@ -266,8 +265,7 @@ function ProductApp() {
       }
       beginRun(intake);
     },
-    // beginRun 在下方定义；依赖由 useInvestigationRun/cases/historyReady 组成
-    [cases, historyReady, run, beginRun]
+    [cases, historyReady, beginRun]
   );
 
   const handleBackHome = useCallback(() => {
