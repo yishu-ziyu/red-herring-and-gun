@@ -1313,17 +1313,35 @@
   clip: rect(0 0 0 0);
 }
 
-.gp-canvas[data-gp-phase="complete"] .gp-evidence-title {
-  font-size: 16px;
-  font-weight: 600;
-  line-height: 1.5;
+.gp-canvas[data-gp-phase="complete"] .gp-evidence-body {
+  display: flex;
+  flex-direction: column;
 }
 
 .gp-canvas[data-gp-phase="complete"] .gp-evidence-excerpt {
+  order: -1;
+  margin: 0 0 8px;
+  padding: 0;
+  border: 0;
   font-family: var(--gp-font);
   font-size: 16px;
+  font-weight: 400;
   line-height: 1.65;
+  color: var(--gp-ink);
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-evidence-title {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.45;
   color: var(--gp-ink-2);
+}
+
+.gp-canvas[data-gp-phase="complete"] .gp-finding {
+  display: none;
 }
 
 .gp-canvas[data-gp-phase="complete"] .gp-evidence-relation {

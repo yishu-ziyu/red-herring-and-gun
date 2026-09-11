@@ -2296,8 +2296,9 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(answerRule![1]).not.toMatch(/background:\s*(?!transparent)/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-section-label\s*\{[^}]*font-size: 20px/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-claim-text\s*\{[^}]*font-size: 16px/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-title\s*\{[^}]*font-size: 16px/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-title\s*\{[^}]*font-size: 14px/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-excerpt\s*\{[^}]*font-size: 16px/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-excerpt\s*\{[^}]*order:\s*-1/);
     expect(css).toMatch(/data-gp-hero-meta="claims"[\s\S]*display:\s*none/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-original\s*\{[^}]*display:\s*none/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-claim-head\s*\{[^}]*display:\s*none/);
