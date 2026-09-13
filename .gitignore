@@ -6,7 +6,7 @@ dist/
 
 # Runtime directories
 .agent-memory/
-mvp/server/.data/
+apps/server/.data/
 .agent-swarm/
 .superpowers/
 .claude/
@@ -15,7 +15,7 @@ mvp/server/.data/
 .playwright-mcp/
 
 # Evaluation baseline (env-dependent, regenerated per run)
-mvp/server/eval/baseline.json
+apps/server/eval/baseline.json
 
 # Build artifacts
 dist-a/
@@ -43,20 +43,20 @@ pitch-style-variants.html
 # Local visual QA screenshots and references
 *.pptx
 kimi-webbridge-gun-home.png
-mvp/kimi-screenshot-*.png
-mvp/mission-control-view.png
-mvp/plan-*.png
-mvp/product-homepage.png
-mvp/ref-*.png
-mvp/ref-*.jpg
-mvp/ref-*.md
-mvp/research-*.md
-mvp/screenshot-*.png
-mvp/multi-agent-viz-research/
+apps/kimi-screenshot-*.png
+apps/mission-control-view.png
+apps/plan-*.png
+apps/product-homepage.png
+apps/ref-*.png
+apps/ref-*.jpg
+apps/ref-*.md
+apps/research-*.md
+apps/screenshot-*.png
+apps/multi-agent-viz-research/
 
 # Misc screenshots and scratch summary drafts
 1.png
-mvp/tmp/
+apps/tmp/
 
 # Local clones / nested worktrees (never commit)
 vendor/
@@ -65,7 +65,7 @@ vendor/
 
 # Design-study clones (FrontierAgent, visual replica). Not product.
 tmp-apodex-study/
-mvp/apodex-replica/
+apps/apodex-replica/
 
 # Local Teable CLI
 .teable/
@@ -82,7 +82,7 @@ skills-lock.json
 packages/*/dist
 packages/*/node_modules
 .data/
-packages/eval/baseline.json
+# packages/eval/baseline.json 是对照成绩单，跟踪在 git 里。runs 是逐题事件 dump，不进库。
 packages/eval/runs/
 packages/web/output/
 packages/core/output/
@@ -107,3 +107,6 @@ __pycache__/
 
 # Playwright 调试轨迹：体积大且可由 qa:replay 重生成，不随仓库分发（文件保留在本地磁盘）
 docs/**/*.zip
+
+# 黑客松参赛过程档案（含对手分析），仅本地
+参赛记录/
