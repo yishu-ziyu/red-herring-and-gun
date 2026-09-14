@@ -58,6 +58,16 @@ apps/multi-agent-viz-research/
 1.png
 /real-*.png
 /tracker-*.png
+
+# Local walkthrough dumps — not standing docs
+docs/reports/
+docs/evals/artifacts/
+docs/evals/2026-09-14-qa/
+docs/evals/2026-09-15-salt-run/
+docs/evals/2026-09-15-salt-run2/
+apps/public/decision-assets/
+apps/public/decision-tracker.html
+apps/public/reports/
 apps/tmp/
 
 # Local clones / nested worktrees (never commit)
