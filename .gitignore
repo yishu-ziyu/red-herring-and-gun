@@ -65,6 +65,10 @@ docs/evals/artifacts/
 docs/evals/2026-09-14-qa/
 docs/evals/2026-09-15-salt-run/
 docs/evals/2026-09-15-salt-run2/
+docs/evals/*.png
+docs/evals/**/*.png
+!docs/evals/2026-09-15-salt-run3/03-end.png
+docs/design/2026-09-11-investigation-experience/preview/
 apps/public/decision-assets/
 apps/public/decision-tracker.html
 apps/public/reports/
