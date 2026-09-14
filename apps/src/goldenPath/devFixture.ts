@@ -138,7 +138,32 @@ function sourceAuditSnapshot() {
   return snap;
 }
 
+function receivedSnapshot(): InvestigationSnapshotV1 {
+  return buildInvestigationSnapshot(
+    {
+      originalClaim: FIXTURE_CLAIM,
+      phase: "received",
+    },
+    { claimAtomKeyFn: noopKey }
+  );
+}
+
+function decomposedSnapshot(): InvestigationSnapshotV1 {
+  return buildInvestigationSnapshot(
+    {
+      originalClaim: FIXTURE_CLAIM,
+      phase: "decomposed",
+      claimAtoms: ATOMS.map((a) => a.atom),
+      claimAtomTypes: ATOMS.map((a) => ({ text: a.atom, verifiable: true, type: "fact" })),
+    },
+    { claimAtomKeyFn: noopKey }
+  );
+}
+
 export type FixtureName =
+  | "received"
+  | "decomposed"
+  | "first-beat"
   | "investigating"
   | "judging"
   | "complete"
@@ -264,6 +289,27 @@ export function getDevFixture(
           emit({
             type: "complete",
             finalReport: { conclusion: "见调查结论。", investigation: audit } as Record<string, unknown>,
+            timestamp: Date.now(),
+          })
+        );
+      });
+    } else if (name === "received") {
+      at(60, () => emitWithActivity(receivedSnapshot()));
+      return () => timers.forEach(clearTimeout);
+    } else if (name === "decomposed") {
+      at(60, () => emitWithActivity(decomposedSnapshot()));
+      return () => timers.forEach(clearTimeout);
+    } else if (name === "first-beat") {
+      at(60, () => emitWithActivity(receivedSnapshot()));
+      at(1800, () => emitWithActivity(decomposedSnapshot()));
+      at(4000, () => emitSnapshot("investigating"));
+      at(6800, () => emitSnapshot("judging"));
+      at(9800, () => {
+        emitSnapshot("complete");
+        at(120, () =>
+          emit({
+            type: "complete",
+            finalReport: { conclusion: "见调查结论。", investigation: staged("complete") } as Record<string, unknown>,
             timestamp: Date.now(),
           })
         );

@@ -101,7 +101,7 @@ describe("T1 pack payload includes frontend dist", () => {
 });
 
 describe("T2 nginx writers emit SSE and /r/", () => {
-  it("dumps the conf the Aliyun writers would write (not mvp/nginx.conf)", () => {
+  it("dumps the conf the Aliyun writers would write (not apps/nginx.conf)", () => {
     const dir = mkdtempSync(join(tmpdir(), "rhg-nginx-"));
     try {
       const domainOut = join(dir, "domain.conf");
@@ -133,7 +133,7 @@ describe("T3 single live deploy entry", () => {
     expect(readme).not.toMatch(/git reset --hard origin\/main/);
     expect(checklist).not.toMatch(/git reset --hard origin\/main/);
 
-    for (const rel of ["deploy-to-aliyun.sh", "mvp/deploy.sh"]) {
+    for (const rel of ["scripts/retired/deploy-to-aliyun.sh", "apps/deploy.sh"]) {
       const text = readFileSync(join(repoRoot, rel), "utf8");
       expect(text, rel).not.toMatch(/git reset --hard origin\/main/);
       expect(text, rel).not.toMatch(/--exclude=['"]dist['"]/);

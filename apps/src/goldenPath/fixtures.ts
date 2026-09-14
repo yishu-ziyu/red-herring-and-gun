@@ -301,6 +301,20 @@ export function receivedOnly(): InvestigationSnapshotV1 {
   );
 }
 
+export function decomposedOnly(): InvestigationSnapshotV1 {
+  const atom1 = "咖啡的争夺";
+  const atom2 = "古代";
+  const atom3 = "非常多的战争";
+  return buildInvestigationSnapshot(
+    {
+      originalClaim: "因为咖啡的争夺，在古代产生了非常多的战争。",
+      phase: "decomposed",
+      claimAtoms: [atom1, atom2, atom3],
+    },
+    { claimAtomKeyFn: noopKey }
+  );
+}
+
 export const INVESTIGATING_CLAIM = "某市下周将试点无人驾驶公交。";
 
 export function investigatingUnassessed(): InvestigationSnapshotV1 {

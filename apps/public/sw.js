@@ -1,5 +1,12 @@
 /* 离线壳：只缓存应用外壳，API 走网络（核查结果不缓存，避免把旧判断当新）。 */
-const CACHE = "rhg-shell-v3";
+const CACHE = "rhg-shell-v4";
+
+function remember(request, resp) {
+  const copy = resp.clone();
+  caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => undefined);
+  return resp;
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/manifest.webmanifest"])));
   self.skipWaiting();
@@ -11,6 +18,9 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET") return;
+  // 谷歌字体等跨源请求不能进这个缓存：离线壳一旦代发，CORS 头会丢，
+  // 浏览器拒收字体文件，中文就会变成方块或错字。
+  if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api")) return;
   if (url.pathname === "/health") return;
   // Vite 开发模块无内容 hash，缓存优先会永久遮蔽更新 — 直连网络
@@ -21,11 +31,7 @@ self.addEventListener("fetch", (event) => {
       // cache: "reload" 显式绕过浏览器 HTTP 缓存：只写 network-first 还不够，
       // fetch() 默认仍会命中 HTTP 缓存里的旧 index.html（2026-09-11 实测）。
       fetch(event.request, { cache: "reload" })
-        .then((resp) => {
-          const copy = resp.clone();
-          caches.open(CACHE).then((c) => c.put(event.request, copy)).catch(() => undefined);
-          return resp;
-        })
+        .then((resp) => remember(event.request, resp))
         .catch(() => caches.match(event.request).then((hit) => hit || Response.error()))
     );
     return;
@@ -34,11 +40,7 @@ self.addEventListener("fetch", (event) => {
     caches.match(event.request).then(
       (hit) =>
         hit ||
-        fetch(event.request).then((resp) => {
-          const copy = resp.clone();
-          caches.open(CACHE).then((c) => c.put(event.request, copy)).catch(() => undefined);
-          return resp;
-        })
+        fetch(event.request).then((resp) => remember(event.request, resp))
     )
   );
 });

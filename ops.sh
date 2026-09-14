@@ -4,12 +4,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MVP_DIR="${ROOT_DIR}/mvp"
-SERVER_DIR="${MVP_DIR}/server"
+APP_DIR="${ROOT_DIR}/apps"
+SERVER_DIR="${APP_DIR}/server"
 
 ALIYUN_HOST="${ALIYUN_HOST:-}"
 ALIYUN_USER="${ALIYUN_USER:-}"
-REMOTE_MVP_DIR="${REMOTE_MVP_DIR:-}"
+REMOTE_APP_DIR="${REMOTE_APP_DIR:-${REMOTE_MVP_DIR:-}}"
 APP_DOMAIN="${APP_DOMAIN:-gun.yishuziyu.cn}"
 SSH_TARGET="${ALIYUN_USER}@${ALIYUN_HOST}"
 
@@ -27,10 +27,10 @@ Usage:
   ./ops.sh public             Probe public domain/IP without using local proxy
   ./ops.sh aliyun-domain      Probe the domain as if DNS points to the Aliyun server
   ./ops.sh remote             Read-only remote Docker/API status check over SSH
-  ./ops.sh deploy --yes       Build locally, upload current mvp (including dist/), rebuild Docker, publish /opt/red-herring/dist, apply host nginx, verify
+  ./ops.sh deploy --yes       Build locally, upload current apps/ (including dist/), rebuild Docker, publish /opt/red-herring/dist, apply host nginx, verify
   ./ops.sh rollback --yes     Restore /opt/red-herring/dist.prev and image :prev (no compose down -v)
   ./ops.sh restore-keep --yes Restore dist.keep and image :keep after a rollback drill
-  ./ops.sh pack <archive.tgz> Pack the mvp payload (PACK_SRC overrides the tree; tests use this)
+  ./ops.sh pack <archive.tgz> Pack the apps payload (PACK_SRC overrides the tree; tests use this)
   ./ops.sh print-remote-deploy [remote-dir]
                               Print the remote extract/migrate/compose steps (no SSH)
   ./ops.sh print-rollback     Print the remote rollback steps (no SSH)
@@ -39,7 +39,7 @@ Usage:
 Environment overrides:
   ALIYUN_HOST=${ALIYUN_HOST}
   ALIYUN_USER=${ALIYUN_USER}
-  REMOTE_MVP_DIR=${REMOTE_MVP_DIR:-auto-detect}
+  REMOTE_APP_DIR=${REMOTE_APP_DIR:-auto-detect}
   APP_DOMAIN=${APP_DOMAIN}
 EOF
 }
@@ -60,7 +60,7 @@ need_cmd() {
 # Never globally exclude *.png — that dropped logo.png in 2026-06-15.
 pack_mvp_archive() {
   local archive="$1"
-  local src="${PACK_SRC:-$MVP_DIR}"
+  local src="${PACK_SRC:-$APP_DIR}"
   need_cmd tar
 
   if [ ! -f "$src/dist/index.html" ]; then
@@ -142,6 +142,14 @@ else
   echo "pre-migration empty (no running container)"
 fi
 
+if [ -f /opt/red-herring/mvp/docker-compose.yml ]; then
+  (cd /opt/red-herring/mvp && docker compose down) || true
+fi
+# Pre-apps live stack is still /opt/red-herring. Stop it after docker cp migrate,
+# or compose up in /opt/red-herring/apps collides on container name and :3000.
+if [ "$APP_DIR" != "/opt/red-herring" ] && [ -f /opt/red-herring/docker-compose.yml ]; then
+  (cd /opt/red-herring && docker compose down) || true
+fi
 docker compose down
 docker compose up -d --build
 sleep 5
@@ -389,8 +397,8 @@ local_builds() {
   section "Local tests and builds"
   need_cmd npm
 
-  (cd "$MVP_DIR" && npm test)
-  (cd "$MVP_DIR" && npm run build)
+  (cd "$APP_DIR" && npm test)
+  (cd "$APP_DIR" && npm run build)
   (cd "$SERVER_DIR" && npm run build)
 }
 
@@ -488,14 +496,16 @@ remote_check() {
 
   ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" <<EOF
 set -euo pipefail
-if [ -n "$REMOTE_MVP_DIR" ] && [ -f "$REMOTE_MVP_DIR/docker-compose.yml" ]; then
-  APP_DIR="$REMOTE_MVP_DIR"
+if [ -n "$REMOTE_APP_DIR" ] && [ -f "$REMOTE_APP_DIR/docker-compose.yml" ]; then
+  APP_DIR="$REMOTE_APP_DIR"
+elif [ -f /opt/red-herring/apps/docker-compose.yml ]; then
+  APP_DIR=/opt/red-herring/apps
 elif [ -f /opt/red-herring/mvp/docker-compose.yml ]; then
   APP_DIR=/opt/red-herring/mvp
 elif [ -f /opt/red-herring/docker-compose.yml ]; then
   APP_DIR=/opt/red-herring
 else
-  echo "No docker-compose.yml found in /opt/red-herring/mvp or /opt/red-herring"
+  echo "No docker-compose.yml found in /opt/red-herring/apps, /opt/red-herring/mvp or /opt/red-herring"
   exit 1
 fi
 cd "\$APP_DIR"
@@ -515,14 +525,14 @@ EOF
 deploy_current_mvp() {
   require_aliyun
   if [ "${1:-}" != "--yes" ]; then
-    echo "This will upload the current local mvp directory and restart the remote Docker service."
+    echo "This will upload the current local apps directory and restart the remote Docker service."
     echo "Run: ./ops.sh deploy --yes"
     exit 2
   fi
 
   local_builds
 
-  section "Pack current mvp"
+  section "Pack current apps"
   need_cmd tar
   need_cmd scp
   need_cmd ssh
@@ -534,13 +544,13 @@ deploy_current_mvp() {
   section "Upload and rebuild remote Docker"
   local remote_dir
   remote_dir="$(ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" \
-    "if [ -n '$REMOTE_MVP_DIR' ]; then echo '$REMOTE_MVP_DIR'; elif [ -f /opt/red-herring/mvp/docker-compose.yml ]; then echo /opt/red-herring/mvp; else echo /opt/red-herring; fi")"
+    "if [ -n '$REMOTE_APP_DIR' ]; then echo '$REMOTE_APP_DIR'; elif [ -f /opt/red-herring/apps/docker-compose.yml ]; then echo /opt/red-herring/apps; else echo /opt/red-herring/apps; fi")"
   echo "Remote dir: $remote_dir"
   ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" "mkdir -p '$remote_dir'"
   scp "$archive" "$SSH_TARGET:/tmp/red-herring-mvp.tar.gz"
-  if env_file_is_uploadable "$MVP_DIR/.env.local"; then
-    scp "$MVP_DIR/.env.local" "$SSH_TARGET:${remote_dir}/.env.local"
-  elif [ -f "$MVP_DIR/.env.local" ]; then
+  if env_file_is_uploadable "$APP_DIR/.env.local"; then
+    scp "$APP_DIR/.env.local" "$SSH_TARGET:${remote_dir}/.env.local"
+  elif [ -f "$APP_DIR/.env.local" ]; then
     echo "Local .env.local is empty; not overwriting remote env."
   else
     echo "Local .env.local not found; keeping remote env file unchanged."
@@ -559,7 +569,7 @@ remote_logs() {
   require_aliyun
   need_cmd ssh
   ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" \
-    "if [ -n '$REMOTE_MVP_DIR' ] && [ -f '$REMOTE_MVP_DIR/docker-compose.yml' ]; then cd '$REMOTE_MVP_DIR'; elif [ -f /opt/red-herring/mvp/docker-compose.yml ]; then cd /opt/red-herring/mvp; else cd /opt/red-herring; fi && docker compose logs --tail=120 red-herring-api"
+    "if [ -n '$REMOTE_APP_DIR' ] && [ -f '$REMOTE_APP_DIR/docker-compose.yml' ]; then cd '$REMOTE_APP_DIR'; elif [ -f /opt/red-herring/apps/docker-compose.yml ]; then cd /opt/red-herring/apps; elif [ -f /opt/red-herring/mvp/docker-compose.yml ]; then cd /opt/red-herring/mvp; else cd /opt/red-herring; fi && docker compose logs --tail=120 red-herring-api"
 }
 
 case "${1:-}" in

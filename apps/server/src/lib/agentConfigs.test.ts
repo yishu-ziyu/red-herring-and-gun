@@ -75,6 +75,14 @@ describe("AGENT_CONFIGS · P0-1 Grounding 硬约束", () => {
     expect(prompt).toMatch(/模型记忆不是出处/);
   });
 
+  it("FactChecker 与 ReportComposer 禁止把 S1 写进用户正文", () => {
+    const fc = getAgentConfig("fact_checker")!.systemPrompt;
+    const rc = getAgentConfig("report_composer")!.systemPrompt;
+    expect(fc).toMatch(/禁止写 S1/);
+    expect(rc).toMatch(/禁止写 S1/);
+    expect(rc).not.toMatch(/来源编号/);
+  });
+
   it("两个 Agent prompt 都应包含禁止编造的硬约束（来源/日期/专家名）", () => {
     const fc = getAgentConfig("fact_checker")!.systemPrompt;
     const sv = getAgentConfig("source_validator")!.systemPrompt;
@@ -782,6 +790,9 @@ describe("排除层 · splitVerifiableAtoms 确定性拆分", () => {
     expect(prompt).toMatch(/微博级谣言|流传短句/);
     expect(prompt).toMatch(/太琐碎/);
     expect(prompt).toMatch(/某地要建地铁/);
+    expect(prompt).toMatch(/课文|不要按句号/);
+    expect(prompt).toMatch(/最多 4 条/);
+    expect(prompt).toMatch(/写进教科书/);
     expect(prompt).not.toMatch(/value\/prediction\/normative 的 verifiable 必须为 false/);
   });
 
@@ -791,9 +802,14 @@ describe("排除层 · splitVerifiableAtoms 确定性拆分", () => {
     expect(fc).toMatch(/现在时抓手|公开承诺/);
     expect(fc).toMatch(/不得把原子改写成/);
     expect(fc).toMatch(/Search-first|模型记忆不是核查/);
+    expect(fc).toMatch(/知识库初稿/);
+    expect(fc).toMatch(/人物、日期、链接/);
+    expect(fc).toMatch(/不得沿用初稿/);
     expect(fc).toMatch(/无证据 ≠ 假|无证据 ≠ 假/);
     expect(rc).toMatch(/不得把未来写成已经发生/);
     expect(rc).toMatch(/能信 \/ 不能信 \/ 只能信一部分 \/ 还查不清/);
+    expect(rc).toMatch(/按条说哪几句站住/);
+    expect(rc).toMatch(/同一条核查的追问/);
   });
 });
 
@@ -859,6 +875,7 @@ describe("原句自证闸门 · 常量与 userContent", () => {
     // 忠实 vs 可核查边界：本闸门只判忠实，不判可核查性；立场/价值/规范/预测若原句声称应判 supported
     expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/不判「可核查性」|不判"可核查性"/);
     expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/排除层/);
+    expect(SELF_PROOF_SYSTEM_PROMPT).toMatch(/课文|背景铺垫/);
   });
 
   it("selfProofSchema 结构符合要求（results 数组，item 含 atom/supported/reason）", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildCrossExamUserContent,
   compareVerdicts,
+  CROSS_EXAM_SYSTEM_PROMPT,
   crossExamConfidenceAdjustment,
   findCrossExamTargets,
   makeSecondOpinionCall,
@@ -32,6 +33,14 @@ function mkBundle(atoms: string[], byAtomKey: Record<string, AtomSearchSource[]>
 }
 
 const atom = "某说法既有支撑也有反证";
+
+describe("CROSS_EXAM_SYSTEM_PROMPT", () => {
+  it("写明初稿只供复核，人物日期链接变了必须当新命题", () => {
+    expect(CROSS_EXAM_SYSTEM_PROMPT).toContain("上次核查初稿");
+    expect(CROSS_EXAM_SYSTEM_PROMPT).toContain("人物/日期/链接");
+    expect(CROSS_EXAM_SYSTEM_PROMPT).toContain("没证据不得沿用初稿");
+  });
+});
 
 describe("findCrossExamTargets", () => {
   it("支撑与反证同时非空才触发，上限 2", () => {
@@ -118,6 +127,24 @@ describe("runCrossExam", () => {
     const userContent = callRaw.mock.calls[0][0].userContent;
     expect(userContent).toContain("支撑证据");
     expect(userContent).toContain("https://s/1");
+  });
+
+  it("有知识库初稿时写进用户内容，并标明只供复核", () => {
+    const content = buildCrossExamUserContent({
+      claim: "原句",
+      target: {
+        atom,
+        atomKey: claimAtomKey(atom),
+        primaryVerdict: "true",
+        supporting: [{ url: "https://s/1", title: "a", snippet: "a" }],
+        contradicting: [{ url: "https://s/2", title: "b", snippet: "b" }],
+        priorDraft: { originDate: "2026-09-12", priorVerdict: "false" },
+      },
+    });
+    expect(content).toContain("上次核查初稿");
+    expect(content).toContain("2026-09-12");
+    expect(content).toContain("只供复核");
+    expect(content).toContain("不得沿用初稿");
   });
 
   it("第二意见分歧 → disagree、-10；失败 → inconclusive 不阻断", async () => {

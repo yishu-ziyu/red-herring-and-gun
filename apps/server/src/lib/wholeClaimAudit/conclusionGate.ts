@@ -171,6 +171,8 @@ export type GatedConclusionRepairInput = {
   nonVerifiableAtoms?: unknown;
   subclaimVerdicts?: unknown;
   auditUnresolvedGaps?: readonly string[];
+  /** 短谣存活辟谣通道：无原子绑定也可保留硬 false，不得被 leftover 收成 unverified。 */
+  allowUnboundHardFalse?: boolean;
 };
 
 function clipText(value: unknown, max: number): string {
@@ -218,6 +220,39 @@ function listUnresolvedCheckableAtoms(value: unknown): Array<{ text: string }> {
       (verdict === "true" || verdict === "false") &&
       !directionalBound(verdict, rec)
     ) {
+      out.push({ text });
+    }
+  }
+  return out;
+}
+
+const STANDING_VERDICTS = new Set(["true", "partial", "exaggerated"]);
+
+function listStandingAtoms(value: unknown): Array<{ text: string }> {
+  const out: Array<{ text: string }> = [];
+  if (!Array.isArray(value)) return out;
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const text = typeof rec.claimAtom === "string" ? rec.claimAtom.trim() : "";
+    if (!text) continue;
+    const verdict = String(rec.verdict ?? "").trim().toLowerCase();
+    if (STANDING_VERDICTS.has(verdict) && directionalBound("true", rec)) {
+      out.push({ text });
+    }
+  }
+  return out;
+}
+
+function listSourcedFalseAtoms(value: unknown): Array<{ text: string }> {
+  const out: Array<{ text: string }> = [];
+  if (!Array.isArray(value)) return out;
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const rec = item as Record<string, unknown>;
+    const text = typeof rec.claimAtom === "string" ? rec.claimAtom.trim() : "";
+    if (!text) continue;
+    if (String(rec.verdict ?? "").trim().toLowerCase() === "false" && directionalBound("false", rec)) {
       out.push({ text });
     }
   }
@@ -381,6 +416,9 @@ export function needsConstrainedConclusion(
   const hasNonVerifiable = listNonVerifiableAtoms(input.nonVerifiableAtoms).length > 0;
   const hasGaps = (input.auditUnresolvedGaps ?? []).length > 0;
   const unresolvedCheckable = listUnresolvedCheckableAtoms(verdicts);
+  const standing = listStandingAtoms(verdicts);
+  const falling = listSourcedFalseAtoms(verdicts);
+  const bothSides = standing.length > 0 && falling.length > 0;
   const hasSourced = verdicts.some((v) =>
     v && typeof v === "object"
       ? directionalBound((v as Record<string, unknown>).verdict, v as Record<string, unknown>)
@@ -389,14 +427,19 @@ export function needsConstrainedConclusion(
 
   const needed =
     weakened ||
+    bothSides ||
     (isWeakVerdictType(final) && (hasNonVerifiable || hasGaps || !hasSourced)) ||
     (isHardVerdictType(final) && (hasNonVerifiable || unresolvedCheckable.length > 0));
+
+  const to = bothSides && isHardVerdictType(final) ? "mixed_misleading" : final;
 
   let rule = "weak-conclusion-audit-alignment";
   if (input.finalGate?.changed && input.finalGate.rule) {
     rule = input.finalGate.rule;
   } else if (input.earlyGate?.changed && input.earlyGate.rule && final !== draft) {
     rule = input.earlyGate.rule;
+  } else if (bothSides) {
+    rule = "mixed-guard-partial";
   } else if (input.mixedGuardDemoted && final !== draft) {
     rule = "mixed-guard-partial";
   } else if (weakened) {
@@ -406,7 +449,7 @@ export function needsConstrainedConclusion(
   } else if (isHardVerdictType(final) && unresolvedCheckable.length > 0) {
     rule = "hard-verdict-with-unverified-boundary";
   }
-  return { needed, rule, from: draft, to: final };
+  return { needed, rule, from: draft, to };
 }
 
 /**
@@ -424,12 +467,40 @@ export function repairGatedConclusion(
   input: GatedConclusionRepairInput = {}
 ): void {
   if (!gate.changed || !gate.to) return;
-  const gated = gate.to;
-  const lead = directAnswer(gated);
+  let gated = gate.to;
   const nonVerifiable = listNonVerifiableAtoms(input.nonVerifiableAtoms).slice(0, 2);
   const unresolvedCheckable = listUnresolvedCheckableAtoms(input.subclaimVerdicts).slice(0, 2);
+  const standing = listStandingAtoms(input.subclaimVerdicts);
+  const falling = listSourcedFalseAtoms(input.subclaimVerdicts);
   const sourcedEvidence = listSourcedVerdictEvidence(input.subclaimVerdicts);
   const gaps = (input.auditUnresolvedGaps ?? []).filter((g) => typeof g === "string" && g.trim()).slice(0, 1);
+
+  // 计入判断的主张都尚未查清时，不能把整段打成「不支持」再挂「尚未查清」。
+  // 短谣辟谣通道（allowUnboundHardFalse）是唯一豁免：检索层已有对题辟谣。
+  if (
+    standing.length === 0 &&
+    falling.length === 0 &&
+    (gated === "false" || gated === "true") &&
+    !input.allowUnboundHardFalse
+  ) {
+    gated = "unverified";
+    report.verdictType = "unverified";
+  }
+  // 有据之真 + 有据之假：按条说，不得整段盖「不支持」。
+  if (standing.length > 0 && falling.length > 0) {
+    gated = "mixed_misleading";
+    report.verdictType = "mixed_misleading";
+  }
+
+  const enumerated =
+    standing.length + falling.length > 0 &&
+    standing.length + falling.length + unresolvedCheckable.length > 1;
+  const lead = enumerated
+    ? `${[
+        ...standing.map((atom) => `「${clipText(atom.text, 40)}」站得住`),
+        ...falling.map((atom) => `「${clipText(atom.text, 40)}」站不住`),
+      ].join("；")}。`
+    : directAnswer(gated);
 
   const parts = [lead, ...sourcedEvidence];
   for (const atom of nonVerifiable) {

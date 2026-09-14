@@ -92,9 +92,24 @@ export function directAnswer(verdictType: unknown): string {
   }
 }
 
+/** 检索曾把来源标成 S1/C1。可见正文里拿掉序号，不碰句内 [n] 绑定。 */
+const SOURCE_ALIAS_RE = /\b[SC]\d+(?:\s*[/、,，]\s*[SC]\d+)*(?:将|把|中)?/g;
+
+export function stripSourceAliases(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(SOURCE_ALIAS_RE, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([。！？，、；：])/g, "$1")
+    .replace(/^[，、；：\s]+/gm, "")
+    .replace(/[，、]{2,}/g, "，")
+    .trim();
+}
+
 export function scrubPublicText(value: unknown): string {
   if (typeof value !== "string") return "";
   let text = value.replace(JARGON_RE, "");
+  text = stripSourceAliases(text);
   text = text.replace(/[ \t]{2,}/g, " ");
   text = text.replace(/[，、]{2,}/g, "，");
   text = text.replace(/\s+([。！？，、])/g, "$1");
@@ -107,8 +122,7 @@ export function scrubMemoText(value: unknown): string {
   return value
     .split("\n")
     .map((line) =>
-      line
-        .replace(JARGON_RE, "")
+      stripSourceAliases(line.replace(JARGON_RE, ""))
         .replace(/[ \t]{2,}/g, " ")
         .replace(/\s+$/g, "")
     )

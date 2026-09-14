@@ -18,9 +18,9 @@ export function loadLocalEnv(): void {
   const repoRoot = resolve(here, "../../..");
   const candidates = [
     join(process.cwd(), ".env.local"),
-    join(process.cwd(), "mvp/.env.local"),
+    join(process.cwd(), "apps/.env.local"),
     join(repoRoot, ".env.local"),
-    join(repoRoot, "mvp/.env.local"),
+    join(repoRoot, "apps/.env.local"),
   ];
   const seen = new Set<string>();
   for (const path of candidates) {

@@ -48,6 +48,11 @@ export type InvestigationBuildInput = {
   /** 引用探活死链（pruneDeadCitations.deadUrls）：死链来源标 reachable=false。 */
   reachability?: { deadUrls?: readonly string[] };
   checkedAt?: string;
+  /**
+   * received 且命题尚未出现：正在拆原句，或正在核对这些拆出来的说法。
+   * 只在 received 写出；命题出现后由 builder 丢掉，避免完成态还带着过程字段。
+   */
+  preClaimWork?: "splitting" | "checking";
 };
 
 export type InvestigationBuildOptions = {
@@ -89,6 +94,34 @@ function asArray(value: unknown): unknown[] {
 function clip(text: string, max: number): string {
   const trimmed = text.trim();
   return trimmed.length > max ? trimmed.slice(0, max) : trimmed;
+}
+
+const DISPLAY_EXCERPT_MAX = 80;
+
+/** 调查中可见摘录：约 80 字，超出打省略号。 */
+function clipExcerpt(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  if (trimmed.length <= DISPLAY_EXCERPT_MAX) return trimmed;
+  return `${trimmed.slice(0, DISPLAY_EXCERPT_MAX)}…`;
+}
+
+/** finding 若整段或其中一句已经写在结论里，就不要再挂到依据。 */
+function overlapsPublicProse(candidate: string, corpus: string): boolean {
+  const needle = candidate.replace(/\s+/g, "");
+  const hay = corpus.replace(/\s+/g, "");
+  if (needle.length < 12 || hay.length < 12) return false;
+  if (hay.includes(needle) || needle.includes(hay)) return true;
+  const parts = (text: string) =>
+    text.split(/[。！？；\n]/).map((s) => s.replace(/\s+/g, "")).filter((s) => s.length >= 12);
+  return parts(candidate).some((s) => hay.includes(s)) || parts(corpus).some((s) => needle.includes(s));
+}
+
+function pointFinding(evidence: string | undefined, conclusionText: string): string | undefined {
+  const text = (evidence ?? "").trim();
+  if (!text) return undefined;
+  if (overlapsPublicProse(text, conclusionText)) return undefined;
+  return text;
 }
 
 /**
@@ -192,6 +225,24 @@ function splitConclusionLayers(
 }
 
 type VerdictSourceLike = { url?: unknown; title?: unknown; snippet?: unknown };
+
+/**
+ * 检索/注入进 bundle 的来源（build 侧读取形状）。
+ * provenance/originDate 是复用来源的两个可选字段：知识库或同一案上一轮。
+ */
+type ReuseProvenance = "knowledge" | "prior-round";
+
+type BundleSource = {
+  url: string;
+  title: string;
+  snippet: string;
+  provenance?: ReuseProvenance;
+  originDate?: string;
+};
+
+function reuseProvenanceOf(value: unknown): ReuseProvenance | undefined {
+  return value === "knowledge" || value === "prior-round" ? value : undefined;
+}
 
 type VerdictLike = {
   claimAtom: string;
@@ -304,12 +355,12 @@ function readBundle(
   searchedKeys: Set<string>;
   /** byAtomKey 里出现过的键（含空列表）：空列表 = 检索过但零命中，仍要拦幻觉 URL。 */
   allowKeys: Set<string>;
-  perAtom: Map<string, Array<{ url: string; title: string; snippet: string }>>;
+  perAtom: Map<string, Array<BundleSource>>;
 } {
   const rec = asRecord(raw);
   const searchedKeys = new Set<string>();
   const allowKeys = new Set<string>();
-  const perAtom = new Map<string, Array<{ url: string; title: string; snippet: string }>>();
+  const perAtom = new Map<string, Array<BundleSource>>();
   if (!rec) return { searchedKeys, allowKeys, perAtom };
   for (const atom of asArray(rec.atomsSearched)) {
     if (typeof atom === "string" && atom.trim()) searchedKeys.add(keyFn(atom));
@@ -321,11 +372,20 @@ function readBundle(
       const sources = asArray(list)
         .map(asRecord)
         .filter((s): s is Record<string, unknown> => s !== null)
-        .map((s) => ({
-          url: asString(s.url).trim(),
-          title: clip(asString(s.title), 200),
-          snippet: clip(asString(s.snippet), 320),
-        }))
+        .map((s): BundleSource => {
+          // 复用标记只在真带 knowledge / prior-round 时透传；老快照 / 普通检索来源没有。
+          const provenance = reuseProvenanceOf(s.provenance);
+          const reusable = Boolean(provenance) && isHttpUrl(asString(s.url).trim());
+          return {
+            url: asString(s.url).trim(),
+            title: clip(asString(s.title), 200),
+            snippet: clipExcerpt(asString(s.snippet)),
+            ...(reusable && provenance ? { provenance } : {}),
+            ...(reusable && asString(s.originDate).trim()
+              ? { originDate: clip(asString(s.originDate), 40) }
+              : {}),
+          };
+        })
         .filter((s) => isHttpUrl(s.url));
       if (sources.length > 0) perAtom.set(key, sources);
     }
@@ -454,15 +514,15 @@ export function buildInvestigationSnapshot(
     const checkability: InvestigationCheckability =
       info && info.verifiable === false ? "not-applicable" : "checkable";
     const allowed = bundle.perAtom.get(key) ?? (bundle.allowKeys.has(key) ? [] : undefined);
-    const inBundle = (list: VerdictSourceLike[]): Array<{ url: string; title: string; snippet: string }> => {
-      const out: Array<{ url: string; title: string; snippet: string }> = [];
+    const inBundle = (list: VerdictSourceLike[]): BundleSource[] => {
+      const out: BundleSource[] = [];
       const seen = new Set<string>();
       for (const s of list) {
         const url = asString(s.url).trim();
         if (!isHttpUrl(url) || seen.has(url)) continue;
         if (allowed && !allowed.some((a) => a.url === url)) continue; // 幻觉 URL 拦截
         seen.add(url);
-        out.push({ url, title: clip(asString(s.title), 200), snippet: clip(asString(s.snippet), 320) });
+        out.push({ url, title: clip(asString(s.title), 200), snippet: clipExcerpt(asString(s.snippet)) });
       }
       return out;
     };
@@ -484,6 +544,25 @@ export function buildInvestigationSnapshot(
   // 数组顺序仍是证据位先、检索垫后——只影响 catalog 排列，不决定 identity。
   const sources: InvestigationSource[] = [];
   const sourceIdByUrl = new Map<string, string>();
+  // 知识库复用的 URL → 两个新增可选字段。先在 bundle 上收集再登记：
+  // 同一 URL 若先被 verdict 来源登记（那份对象没有这两个字段），快照条目也不会丢标记。
+  const reuseFieldsByUrl = new Map<string, { provenance: ReuseProvenance; originDate?: string }>();
+  for (const list of bundle.perAtom.values()) {
+    for (const s of list) {
+      if (!s.provenance) continue;
+      const key = normalizeInvestigationSourceUrl(s.url);
+      if (!key) continue;
+      reuseFieldsByUrl.set(key, {
+        provenance: s.provenance,
+        ...(s.originDate ? { originDate: s.originDate } : {}),
+      });
+    }
+  }
+  const reuseFieldsOf = (url: string): { provenance?: ReuseProvenance; originDate?: string } => {
+    const meta = reuseFieldsByUrl.get(normalizeInvestigationSourceUrl(url));
+    if (!meta) return {};
+    return { provenance: meta.provenance, ...(meta.originDate ? { originDate: meta.originDate } : {}) };
+  };
   const registerSource = (s: { url: string; title: string; snippet: string }): string => {
     const key = normalizeInvestigationSourceUrl(s.url);
     const existing = sourceIdByUrl.get(key);
@@ -494,8 +573,9 @@ export function buildInvestigationSnapshot(
       id,
       url: key,
       title: s.title,
-      ...(s.snippet ? { excerpt: s.snippet } : {}),
+      ...(s.snippet ? { excerpt: clipExcerpt(s.snippet) } : {}),
       ...(deadUrls.has(key) ? { reachable: false } : {}),
+      ...reuseFieldsOf(key),
     });
     return id;
   };
@@ -508,40 +588,62 @@ export function buildInvestigationSnapshot(
     for (const s of bundle.perAtom.get(a.key) ?? []) registerSource(s);
   }
 
+  const conclusionText = asString(report?.conclusion);
+
   const claims: InvestigationClaim[] = assemblies.map((a) => {
     const verdict = a.verdict;
     const evidence: InvestigationEvidenceLink[] = [];
     if (verdict) {
+      const finding = pointFinding(verdict.evidence, conclusionText);
       // 支持位：related-only 的检索填充绝不映射为 support。
+      // 同一出处不得同时当支持和反驳。
+      // 同一段 finding 只挂到第一条需要它的证据上，不复制到同命题其他出处。
+      const seenSourceIds = new Set<string>();
+      let findingAttached = false;
+      const takeFinding = (): { finding?: string } => {
+        if (!finding || findingAttached) return {};
+        findingAttached = true;
+        return { finding };
+      };
       for (const s of a.support) {
+        const sourceId = sourceIdByUrl.get(s.url)!;
         const role = a.relatedOnly ? "context-only" : "support";
+        seenSourceIds.add(sourceId);
         evidence.push({
-          sourceId: sourceIdByUrl.get(s.url)!,
+          sourceId,
           role,
-          ...(role === "support" && verdict.evidence ? { finding: verdict.evidence } : {}),
+          ...((role === "support" || role === "context-only") ? takeFinding() : {}),
+          ...reuseFieldsOf(s.url),
         });
       }
-      if (a.relatedOnly && a.support.length > 0 && verdict.evidence) {
-        // 相关检索的说明文字挂在第一个 context-only link 上，不重复每条。
-        const first = evidence.find((l) => l.role === "context-only");
-        if (first) first.finding = verdict.evidence;
-      }
       for (const s of a.contradict) {
+        const sourceId = sourceIdByUrl.get(s.url)!;
+        if (seenSourceIds.has(sourceId)) continue;
+        seenSourceIds.add(sourceId);
         evidence.push({
-          sourceId: sourceIdByUrl.get(s.url)!,
+          sourceId,
           role: "contradict",
-          ...(verdict.evidence ? { finding: verdict.evidence } : {}),
+          ...takeFinding(),
+          ...reuseFieldsOf(s.url),
         });
       }
       // 已核查命题：检索垫其余来源只是背景材料，不得残留 unassessed。
       for (const s of bundle.perAtom.get(a.key) ?? []) {
         if (sourceIdByUrl.get(s.url) && evidence.some((l) => l.sourceId === sourceIdByUrl.get(s.url))) continue;
-        evidence.push({ sourceId: sourceIdByUrl.get(s.url)!, role: "context-only" });
+        evidence.push({
+          sourceId: sourceIdByUrl.get(s.url)!,
+          role: "context-only",
+          ...reuseFieldsOf(s.url),
+        });
       }
     } else if (bundle.searchedKeys.has(a.key)) {
       // 检索已返回、核查未开始：只能是 unassessed 暂态。
       for (const s of bundle.perAtom.get(a.key) ?? []) {
-        evidence.push({ sourceId: sourceIdByUrl.get(s.url)!, role: "unassessed" });
+        evidence.push({
+          sourceId: sourceIdByUrl.get(s.url)!,
+          role: "unassessed",
+          ...reuseFieldsOf(s.url),
+        });
       }
     }
 
@@ -647,17 +749,32 @@ export function buildInvestigationSnapshot(
     const conclusionText = asString(report.conclusion);
     const directAnswer = clip(conclusionText, 400);
     if (directAnswer) {
+      // 一条命题都没拆出来时不能写 not-applicable（那是在断言整句是立场/价值表达）：
+      // 无命题只说明证据撑不出判断，按 unresolved 显示，与「还查不清」同义。
+      const hasClaim = claims.length > 0;
       const hasCheckable = claims.some((c) => c.checkability !== "not-applicable");
+      const checkableClaims = claims.filter((c) => c.checkability !== "not-applicable");
+      const hasSettledJudgment = checkableClaims.some(
+        (c) => c.judgment === "supported" || c.judgment === "refuted" || c.judgment === "mixed"
+      );
+      const hasSupported = checkableClaims.some((c) => c.judgment === "supported");
+      const hasRefuted = checkableClaims.some((c) => c.judgment === "refuted");
       const overall = asString(report.verdictType).trim().toLowerCase();
-      const overallJudgment: InvestigationJudgment = !hasCheckable
-        ? "not-applicable"
-        : overall === "true"
-          ? "supported"
-          : overall === "false"
-            ? "refuted"
-            : overall === "mixed_misleading" || overall === "partial"
+      const overallJudgment: InvestigationJudgment = !hasClaim
+        ? "unresolved"
+        : !hasCheckable
+          ? "not-applicable"
+          : !hasSettledJudgment
+            ? "unresolved"
+            : hasSupported && hasRefuted
               ? "mixed"
-              : "unresolved";
+              : overall === "true"
+                ? "supported"
+                : overall === "false"
+                  ? "refuted"
+                  : overall === "mixed_misleading" || overall === "partial"
+                    ? "mixed"
+                    : "unresolved";
       const citedUrls = new Set(
         asArray(report.citationSources)
           .map((s) => asRecord(s))
@@ -685,6 +802,11 @@ export function buildInvestigationSnapshot(
   const checkedAt =
     input.checkedAt ?? (report && typeof report.checkedAt === "string" ? report.checkedAt : undefined);
 
+  const preClaimWork =
+    phase === "received" && (input.preClaimWork === "checking" || input.preClaimWork === "splitting")
+      ? input.preClaimWork
+      : undefined;
+
   return validateInvestigationSnapshot({
     schemaVersion: 1,
     originalClaim,
@@ -694,6 +816,7 @@ export function buildInvestigationSnapshot(
     conflicts,
     ...(conclusion ? { conclusion } : {}),
     ...(checkedAt ? { checkedAt } : {}),
+    ...(preClaimWork ? { preClaimWork } : {}),
   });
 }
 

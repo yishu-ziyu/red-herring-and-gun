@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto";
 
 import { type AtomSearchBundle } from "./lib/atomSearch.js";
 
-import { runCasePipeline, type PipelineStep, type RunAgentFn } from "./lib/casePipeline/index.js";
+import { runCasePipeline, type CasePipelineHooks, type PipelineStep, type RunAgentFn } from "./lib/casePipeline/index.js";
 
 import {
   validateInvestigationSnapshot,
@@ -22,12 +22,16 @@ import { createInvestigationEmitter } from "./lib/investigationEmitter.js";
 import { createRunService, hashRunInput } from "./lib/runService.js";
 import { readEmailAccountOptional } from "./lib/emailSession.js";
 import { isTerminalStatus, openRunStore } from "./lib/runStore.js";
-import { generateCaseId } from "./lib/caseStore.js";
-
-import { createLoopLlm, modelFromChoice, wantsAgentLoop } from "./lib/agentLoop/index.js";
-import { runClaimLoopPi } from "./lib/agentLoop/runClaimLoopPi.js";
+import { getCase, generateCaseId, type CaseEntry } from "./lib/caseStore.js";
+import {
+  appendFollowUpObservation,
+  buildFollowUpObservation,
+  type FollowUpObservationStats,
+} from "./lib/followupObservation.js";
 
 import { makeRewriteQueryCall } from "./lib/evidenceLoop/index.js";
+
+import { createKnowledgeMemory } from "./lib/knowledgeStore.js";
 
 import { getMemoryCandidateStore } from "./lib/memoryCandidateHandlers.js";
 
@@ -81,6 +85,9 @@ import { applyContextCrossCheckToReport } from "./lib/contextCrossCheck.js";
 
 import { createOrchestrateAdapter } from "./lib/orchestrate.js";
 
+import { followUpReuseFromClientBrief } from "./lib/followUpReuse.js";
+import { boundedInterruptedAnswer } from "./lib/publicCopy.js";
+
 import {
   baseUrlTargetsPrivateNetwork,
   ByoKeyError,
@@ -89,6 +96,12 @@ import {
   parseByoConfig,
   searchEnvWithByoCredentials,
 } from "./lib/orchestrateByo.js";
+
+/**
+ * 追问关联失败只说这一句：不区分「案件不存在」与「不是你的案件」，
+ * 否则拿别人的 caseId 试一次就能问出它存不存在。三种失败共用同一文案。
+ */
+export const FOLLOW_UP_CASE_MISSING_MESSAGE = "追问关联的案件不存在或无权访问";
 
 // ───────────────────────────────────────────────────────────────
 // 公开 SSE 只发用户可读文案。原始 provider 诊断留在服务端 logger，
@@ -114,8 +127,10 @@ export function toFriendlyError(error: unknown, fallback: string): FriendlyError
 const PROVIDER_NAME_RE = /minimax|stepfun|deepseek|360gpt|ai360|mimo|anthropic|openai|moonshot|kimi/i;
 
 /**
- * 中断帧（Issue #51）：phase=interrupted，保留已真实获得的 claims/sources/gaps/conflicts，
- * 不补造 conclusion；进行中的命题标 interrupted。没有历史快照时给最小诚实空帧。
+ * 中断帧（Issue #51）：phase=interrupted，保留已真实获得的 claims/sources/gaps/conflicts。
+ * 已有 conclusion 必须留下，不得清掉。没有 conclusion、但每条可核查命题都有判断时，
+ * 用分条判断拼一句有界总答，不装成报告写完。进行中的命题标 interrupted。
+ * 没有历史快照时给最小诚实空帧。
  */
 export function interruptedInvestigationSnapshot(
   last: InvestigationSnapshotV1 | undefined,
@@ -131,17 +146,36 @@ export function interruptedInvestigationSnapshot(
       conflicts: [],
     };
   }
+  const claims = last.claims.map((claimRow) =>
+    claimRow.progress === "complete"
+      ? claimRow
+      : { ...claimRow, progress: "interrupted" as const }
+  );
+  const conclusion = last.conclusion ?? synthesizeInterruptedConclusion(claims);
   return validateInvestigationSnapshot({
     ...last,
     phase: "interrupted",
-    conclusion: undefined,
-    checkedAt: undefined,
-    claims: last.claims.map((claimRow) =>
-      claimRow.progress === "complete"
-        ? claimRow
-        : { ...claimRow, progress: "interrupted" as const }
-    ),
+    conclusion,
+    checkedAt: last.conclusion ? last.checkedAt : undefined,
+    claims,
   });
+}
+
+function synthesizeInterruptedConclusion(
+  claims: InvestigationSnapshotV1["claims"]
+): InvestigationSnapshotV1["conclusion"] {
+  const bounded = boundedInterruptedAnswer(claims);
+  if (!bounded) return undefined;
+  const sourceIds = [
+    ...new Set(claims.flatMap((row) => row.evidence.map((link) => link.sourceId))),
+  ];
+  return {
+    directAnswer: bounded.directAnswer,
+    judgment: bounded.judgment,
+    boundaries: [],
+    claimIds: claims.map((row) => row.id),
+    sourceIds,
+  };
 }
 const MODEL_REF_RE = /^[a-z0-9_-]+:[A-Za-z0-9._-]+$/;
 
@@ -192,20 +226,350 @@ export function toPublicStreamEvent(data: object): Record<string, unknown> {
 // Express handlers extracted from vite.config.ts
 // All LLM provider calls and agent orchestration logic
 
+/**
+ * 管道总时限默认值：210s → 300s（P0）→ 420s（给 MiniMax-M2.7 作判断 180s 留余量）。
+ * 依据：真实走查那一轮总时长压到 210 秒线附近，管线在 225.9s 才真正跑完并落了一份带结论的快照，
+ * 而客户端在 210.0s 已经被判成「没查完」——那份 16 秒后产出的真结论没有任何人看得到。
+ */
+export const PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT = 420_000;
+
+/**
+ * 总超时之后还给仍在跑的管线多少时间自己收尾（同一个契约）。
+ * 宽限期内跑完 → run 落 complete，结论经刷新恢复通道取回；宽限期到仍不回来 → 按中断收尾。
+ * 有界，是为了不让一条僵尸管线永远占着后台；运维可用 ORCHESTRATE_LATE_GRACE_MS 覆盖。
+ */
+export const PIPELINE_LATE_GRACE_MS_DEFAULT = 120_000;
+
+/**
+ * BYO fail-closed 报告工厂：包装 makeReportRunner，密钥失败时抛出阻断收尾，不静默回退 env 密钥。
+ */
+function makeRunReport(
+  runAgent: RunAgentFn,
+  byo: { modelName?: string } | undefined,
+  byoFail: AbortController,
+  sendEvent: (data: object) => void
+): Parameters<typeof runCasePipeline>[0]["runReport"] {
+  return async (args) => {
+    const reportStep = await makeReportRunner(runAgent)({
+      ...args,
+      onFallback: (step) => {
+        sendEvent({
+          type: "agent_complete",
+          agent: step.agent,
+          agentName: step.agentName,
+          agentIcon: step.agentIcon,
+          output: step.output,
+          model: step.model,
+          latencyMs: step.latencyMs,
+          timestamp: Date.now(),
+        });
+      },
+    });
+    // BYO fail-closed：密钥失败引发的报告兜底不算完成，抛出触发错误收尾，
+    // 绝不把确定性兜底报告冒充成功结果，也绝不回退 env 密钥重烧一遍。
+    if (byo && byoFail.signal.aborted) {
+      throw byoFail.signal.reason instanceof Error
+        ? byoFail.signal.reason
+        : new ByoKeyError("你保存的模型密钥调用失败，这次核查已停止。");
+    }
+    return reportStep;
+  };
+}
+
+/**
+ * Agent 事件回调工厂：把 agent_start / agent_thought / agent_complete / agent_error 四帧
+ * 的 sendEvent 调用聚在一起，入口主体只传给 byoAdapter.makeRunAgent。
+ */
+function makeRunAgentCallbacks(sendEvent: (data: object) => void) {
+  return {
+    onStart: (agentId: string, agentConfig: { name: string; icon?: string; model?: string }) => {
+      sendEvent({
+        type: "agent_start",
+        agent: agentId,
+        agentName: agentConfig.name,
+        agentIcon: agentConfig.icon,
+        model: agentConfig.model || "",
+        timestamp: Date.now(),
+      });
+    },
+    onThought: (agentId: string, agentConfig: { name: string; icon?: string }, content: string, seq: number, done: boolean) => {
+      sendEvent({
+        type: "agent_thought",
+        agent: agentId,
+        agentName: agentConfig.name,
+        agentIcon: agentConfig.icon,
+        content,
+        seq,
+        done,
+        timestamp: Date.now(),
+      });
+    },
+    onComplete: (step: { agent: string; agentName: string; agentIcon?: string; output: unknown; model: string; latencyMs: number }) => {
+      sendEvent({
+        type: "agent_complete",
+        agent: step.agent,
+        agentName: step.agentName,
+        agentIcon: step.agentIcon,
+        output: step.output,
+        model: step.model,
+        latencyMs: step.latencyMs,
+        timestamp: Date.now(),
+      });
+    },
+    onError: (agentId: string, agentConfig: { name: string; icon?: string }, error: unknown) => {
+      const { message } = toFriendlyError(error, "核查服务暂时不可用，请稍后重试");
+      sendEvent({
+        type: "agent_error",
+        agent: agentId,
+        agentName: agentConfig.name,
+        agentIcon: agentConfig.icon,
+        error: message,
+        timestamp: Date.now(),
+      });
+    },
+  };
+}
+
+/**
+ * 管线观测钩子工厂：把 SSE 帧发送、活动账本、检索计数封装成 CasePipelineHooks。
+ * 闭包变量显式传入，入口主体只写 hooks: makePipelineHooks(…)。
+ * 事件名与载荷字节级不变——这里只改形状，不改语义。
+ */
+function makePipelineHooks(ctx: {
+  claim: string;
+  sendEvent: (data: object) => void;
+  emitInvestigation: (snapshot: InvestigationSnapshotV1) => void;
+  emitter: ReturnType<typeof createInvestigationEmitter>;
+  searchesCounter: { current: number };
+}): CasePipelineHooks {
+  const { claim, sendEvent, emitInvestigation, emitter, searchesCounter } = ctx;
+  return {
+    searchMode: "sequential",
+    onInvestigationSnapshot: (snapshot) => {
+      emitInvestigation(snapshot);
+    },
+    onSelfProof: (info) => {
+      console.log(
+        `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${info.kept.length} dropped=${info.dropped.length}`
+      );
+    },
+    onAtomSearchStart: (atom) => {
+      searchesCounter.current += 1;
+      sendEvent({ type: "tool_start", toolName: "Atom Search", query: atom, timestamp: Date.now() });
+      emitter.emitSearchStarted(atom);
+    },
+    // 命中知识库 → 活动流一行「命中知识库（YYYY-MM-DD 已核），免于本次检索」。
+    // 动作类活动：引用数组为空（该命题这次没有检索，也就没有可取的对象）；
+    // 日期走 payload.originDate，读侧不从文案里猜时间。
+    onKnowledgeHit: (hit) => {
+      emitter.emitKnowledgeHit(hit.originDate);
+    },
+    onPriorRoundReuse: (hit) => {
+      emitter.emitPriorRoundReuse(hit.originDate);
+    },
+    onAtomSearchResult: (atom, result) => {
+      const searchToolName = getSearchToolName(result as any);
+      if ((result as any)?._source === "tool-error") {
+        sendEvent({
+          type: "tool_error",
+          toolName: searchToolName,
+          query: atom,
+          error: (result as any).traceText,
+          result,
+          timestamp: Date.now(),
+        });
+      } else {
+        sendEvent({
+          type: "tool_result",
+          toolName: searchToolName,
+          query: atom,
+          model: (result as any)?.model,
+          result,
+          timestamp: Date.now(),
+        });
+      }
+    },
+    onEvidenceLoopRoundStart: (info) => {
+      searchesCounter.current += 1;
+      sendEvent({
+        type: "tool_start",
+        toolName: "证据追索",
+        query: info.query,
+        result: {
+          kind: "evidence_pursuit",
+          atom: info.atom,
+          round: info.round,
+          goal: info.goal,
+          purpose: info.purpose,
+          missingEvidence: info.missingEvidence,
+          trigger: info.trigger,
+        },
+        timestamp: Date.now(),
+      });
+    },
+    onEvidenceLoopRoundResult: (info) => {
+      sendEvent({
+        type: "tool_result",
+        toolName: "证据追索",
+        query: info.query,
+        result: {
+          kind: "evidence_pursuit",
+          atom: info.atom,
+          round: info.round,
+          sourceCount: info.sourceCount,
+          newSourceCount: info.newSourceCount,
+          goal: info.goal,
+          purpose: info.purpose,
+          resultKind: info.resultKind,
+          gain: info.gain,
+          missingAfter: info.missingAfter,
+          action: info.action,
+          detail: info.detail,
+        },
+        timestamp: Date.now(),
+      });
+    },
+    onEvidenceLoopStopped: (info) => {
+      const reasonText: Record<string, string> = {
+        "evidence-found": "缺口收窄，转入重判",
+        "no-new-evidence": "继续搜也没有新证据，判停",
+        "rewrite-empty": "没有可用的新查询，判停",
+        "search-failed": "补查检索失败，判停",
+      };
+      sendEvent({
+        type: "tool_result",
+        toolName: "证据追索",
+        query: info.atom,
+        result: {
+          kind: "evidence_pursuit",
+          atom: info.atom,
+          rounds: info.rounds,
+          reason: info.reason,
+          reasonText: reasonText[info.reason] ?? info.reason,
+        },
+        timestamp: Date.now(),
+      });
+    },
+    afterFactSource: async ({ factStep, sourceStep, search360Result }) => {
+      const debate = buildConsensusDebate(factStep, sourceStep, search360Result);
+      if (debate.status !== "not_needed") {
+        sendEvent({
+          type: "consensus_debate_round",
+          phase: "handoff",
+          debate: { ...debate, status: "running", rounds: [], finalConsensus: "事实核查与溯源还在对证据，先不写结论。" },
+          timestamp: Date.now(),
+        });
+        await wait(220);
+        for (let index = 0; index < debate.rounds.length; index += 1) {
+          sendEvent({
+            type: "consensus_debate_round",
+            phase: "handoff",
+            debate: {
+              ...debate,
+              status: "running",
+              rounds: debate.rounds.slice(0, index + 1),
+              finalConsensus: "正在根据两边的证据收紧：哪些能信，哪些不能信。",
+            },
+            timestamp: Date.now(),
+          });
+          await wait(220);
+        }
+      }
+      sendEvent({ type: "consensus_debate_final", phase: "handoff", debate, timestamp: Date.now() });
+    },
+    onReportReviewStart: (info) => {
+      sendEvent({ type: "tool_start", toolName: info.toolName, query: info.query, timestamp: Date.now() });
+    },
+    onReportReviewResult: (info) => {
+      sendEvent({
+        type: "tool_result",
+        toolName: info.toolName,
+        query: info.query,
+        result: { passed: info.passed, score: info.score, issues: info.issues, checks: info.checks },
+        timestamp: Date.now(),
+      });
+    },
+    onMemoryWriteStart: (info) => {
+      sendEvent({ type: "tool_start", toolName: info.toolName, query: info.query, timestamp: Date.now() });
+    },
+    onMemoryWriteResult: (info) => {
+      sendEvent({
+        type: "tool_result",
+        toolName: info.toolName,
+        query: info.query,
+        result: { proposedCandidateCount: info.proposedCandidateCount },
+        timestamp: Date.now(),
+      });
+    },
+  };
+}
+
 export function createHandlers(env: Record<string, string>) {
   const apiKey = env.OPENAI_API_KEY;
   // 运行身份与取消（PR-D）：存储不可用时退化成进程内注册表，不阻塞启动。
   const runStore = openRunStore();
   const runs = createRunService({ store: runStore });
   runs.markInterruptedOnBoot();
+
+  /**
+   * 追问关联校验（阶段 3）：案件必须存在，且 ownerHash 与请求者一致。
+   * 无归属的老 case 与匿名请求（ownerHash 为空）一律视为无权——案件只在登录后才写入。
+   * 读库出错也按「不存在或无权访问」处理：宁可 400，也不把名额留在半空、不建 run。
+   */
+  function readOwnedCase(caseId: string, ownerHash: string | null): CaseEntry | null {
+    if (!caseId || !ownerHash) return null;
+    try {
+      const entry = getCase(caseId);
+      return entry && entry.ownerHash === ownerHash ? entry : null;
+    } catch (error) {
+      console.error(`[followup] 读上一轮案件失败 caseId=${caseId}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 追问观测记录（阶段 3）：报告 finalize 后写一行计数与判词标签到 JSONL。
+   * 三件事都不许发生：阻断 run、把失败透给用户、把 claim 文本或 URL 写进文件。
+   * 上一轮案件读不到（被删 / 报告缺失）→ 静默跳过；写文件真出异常 → 记一笔日志后跳过。
+   */
+  function recordFollowUpObservation(input: {
+    runId: string;
+    caseId: string;
+    priorCaseId: string;
+    report: Record<string, unknown>;
+    snapshot: InvestigationSnapshotV1 | undefined;
+    atomsSearched: number;
+    searchesTotal: number;
+  }): void {
+    try {
+      const priorCase = getCase(input.priorCaseId);
+      if (!priorCase) return;
+      const claims = input.snapshot?.claims ?? [];
+      const stats: FollowUpObservationStats = {
+        atomsTotal: claims.length || input.atomsSearched,
+        atomsSearched: input.atomsSearched,
+        // 完成态里判词 unresolved / 尚未给判词的命题，都是这轮没查出定论的命题。
+        atomsUnverified: claims.filter((claim) => claim.judgment === "unresolved" || claim.judgment === null).length,
+        searchesTotal: input.searchesTotal,
+      };
+      const record = buildFollowUpObservation({
+        priorReport: priorCase.report,
+        report: input.report,
+        stats,
+        runId: input.runId,
+        caseId: input.caseId,
+        priorCaseId: input.priorCaseId,
+      });
+      if (record) appendFollowUpObservation(record);
+    } catch (error) {
+      console.error(`[followup-observation] 观测记录未写入 runId=${input.runId}`, error);
+    }
+  }
+
   const baseUrl = (env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
   const model = env.OPENAI_MODEL || "gpt-4.1-mini";
   const codexBin = env.CODEX_BIN || process.env.CODEX_BIN || "/usr/local/bin/codex";
   const codexModel = env.CODEX_LOCAL_MODEL || process.env.CODEX_LOCAL_MODEL || "gpt-5.5";
-
-  // 多 Agent Orchestrate 编排（组装/状态栏/Skills/自证/改写/交叉二审）收在 lib/orchestrate。
-  // 批量端点无 BYO 语义，用进程级适配器；orchestrate-stream 是请求内 BYO 接管，适配器按请求创建。
-  const batchAdapter = createOrchestrateAdapter({ env, codexBin });
 
   /**
    * 取消一次正在跑的调查（IMPLEMENTATION_PLAN §5.5）。
@@ -437,62 +801,14 @@ export function createHandlers(env: Record<string, string>) {
     applyContextCrossCheckToReport(ctx.finalReport, { claim: ctx.claim, visualExtraction });
   }
 
-  /** POST /api/agent/batch — 一次核查多条（newsroom 批量）。逐条走 pi agent 循环，判决纪律不变。 */
-  async function batchHandler(req: any, res: any, next: any) {
-    if (req.method !== "POST") return next();
-    let payload: any;
-    try {
-      payload = await readJson(req);
-    } catch {
-      return sendJson(res, 400, { message: "无法解析请求 JSON" });
-    }
-    const claims = Array.isArray(payload.claims)
-      ? payload.claims
-          .map((c: unknown) => (typeof c === "string" ? c.trim() : ""))
-          .filter((c: string) => c.length > 0)
-          .slice(0, 20)
-      : [];
-    if (claims.length === 0) {
-      return sendJson(res, 400, { message: "缺少 claims（至少一条）" });
-    }
-    if (claims.some((c: string) => c.length > 2000)) {
-      return sendJson(res, 400, { message: "单条最多 2000 字" });
-    }
-    const modelChoice = payload.modelChoice;
-    const mcValidation = validateModelChoice(env, modelChoice);
-    if (!mcValidation.ok) {
-      return sendJson(res, 400, { message: mcValidation.error || "modelChoice 非法" });
-    }
-    const intake = normalizeCaseIntake(payload.intake);
-    const maxToolCalls = typeof payload.maxToolCalls === "number" ? payload.maxToolCalls : 24;
-    try {
-      const results = [];
-      for (const one of claims) {
-        const loop = await runClaimLoopPi({
-          claim: one,
-          env,
-          maxToolCalls,
-          callSelfProofModel: batchAdapter.makeSelfProofCaller(one, modelChoice),
-        });
-        results.push({
-          claim: one,
-          verdictType: loop.finalReport.verdictType,
-          credibilityScore: loop.finalReport.credibilityScore,
-          conclusion: loop.finalReport.conclusion,
-          faceVerdict: loop.finalReport.faceVerdict,
-          finalReport: loop.finalReport,
-        });
-      }
-      return sendJson(res, 200, { results, execution: "loop", count: results.length });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "批量核查失败";
-      return sendJson(res, 502, { message });
-    }
-  }
+  const PIPELINE_TOTAL_TIMEOUT_MS = Number(env.ORCHESTRATE_TOTAL_TIMEOUT_MS || PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT);
+  /** 超时后给管线自己收尾的宽限（Change C）；ORCHESTRATE_LATE_GRACE_MS 可覆盖，默认 120s。 */
+  const PIPELINE_LATE_GRACE_MS = Number(env.ORCHESTRATE_LATE_GRACE_MS || PIPELINE_LATE_GRACE_MS_DEFAULT);
 
-  const PIPELINE_TOTAL_TIMEOUT_MS = Number(env.ORCHESTRATE_TOTAL_TIMEOUT_MS || 210_000);
-
-  /** 整体核查超时兜底：不憋用户，先给「还没查完」的中间结论（unverified + error-boundary）。 */
+  /**
+   * 整体核查超时兜底：不憋用户，先给「还没查完」的中间结论（unverified + error-boundary）。
+   * 只在宽限期也过了、管线确定回不来时用（Change C 之后超时本身不再走这条路）。
+   */
   function buildTimedOutReport(c: string): Record<string, unknown> {
     const report = buildDeterministicFinalReport(c, [], undefined, "核查超过时限，先给中间结论。");
     report._source = "error-boundary";
@@ -555,8 +871,28 @@ export function createHandlers(env: Record<string, string>) {
         : null;
     const ownerAccount = await readEmailAccountOptional(req);
     const ownerHash = ownerAccount?.hash ?? null;
+
+    // 追问关联：followUp=true 且带了 caseId → 必须是本人名下案件。
+    // 访客没有服务端档案：不带 caseId，把上一轮可见材料放在 priorRound；校验放在建 run 与额度扣除之前。
+    // 首轮与 legacy 路径不传 followUp，行为与现状完全一致（caseId 仍按老规矩当本次 case 用）。
+    const isFollowUp = payload.followUp === true;
+    const priorCaseId = typeof payload.caseId === "string" ? payload.caseId.trim() : "";
+    const priorCase = isFollowUp && priorCaseId ? readOwnedCase(priorCaseId, ownerHash) : null;
+    if (isFollowUp && priorCaseId && !priorCase) {
+      releaseFreeCheck(ticket);
+      return sendJson(res, 400, { message: FOLLOW_UP_CASE_MISSING_MESSAGE });
+    }
+    const clientFollowUpReuse =
+      isFollowUp && !priorCase ? followUpReuseFromClientBrief(payload.priorRound) : null;
+
     const started = runs.start({
-      caseId: typeof payload.caseId === "string" && payload.caseId ? payload.caseId : generateCaseId(claim),
+      // 追问轮是新一轮调查：caseId 另生成一个，上一轮的 caseId 记在 priorCaseId 上，
+      // 不拿上一轮的 caseId 当本轮的 caseId（那会让两轮共用同一个案件坐标）。
+      caseId: isFollowUp
+        ? generateCaseId(claim)
+        : typeof payload.caseId === "string" && payload.caseId
+          ? payload.caseId
+          : generateCaseId(claim),
       ownerHash,
       clientRequestId,
       inputHash: hashRunInput(claim, { intake: intakeMetadata }),
@@ -569,6 +905,7 @@ export function createHandlers(env: Record<string, string>) {
       });
     }
     const runId = started.run.runId;
+    if (isFollowUp && priorCaseId) runStore?.markFollowUp(runId, priorCaseId);
     const runSignal = runs.signalFor(runId);
 
     res.writeHead(200, {
@@ -582,8 +919,12 @@ export function createHandlers(env: Record<string, string>) {
     // B1：客户端断开（关页/刷新/断网）→ abort 流水线，不再僵尸烧 token；
     // 必须挂 res 而不是 req：body 已被中间件读完，req 的 close 早已发生不会再触发。
     // 响应已结束后的事件写入一律空操作，避免对已关闭流写数据触发无监听 EPIPE。
+    // 例外（Change C）：总超时之后这条连接不再是管线的生命线——用户按界面提示离开页面时
+    // 不再中止管线，晚完成的结论仍会落 complete 并可经刷新恢复取回。
+    let detachedFromClient = false;
     const disconnect = new AbortController();
     res.on("close", () => {
+      if (detachedFromClient) return;
       if (!res.writableEnded) disconnect.abort(new Error("client-disconnected"));
     });
 
@@ -620,6 +961,18 @@ export function createHandlers(env: Record<string, string>) {
     const sendEvent = (data: object) => {
       runs.publish(runId, data as Record<string, unknown>);
     };
+    /**
+     * 收尾响应：Change C 之后管线可能已经与这条连接解耦（用户按提示离开了页面），
+     * res 已关不算错——结论已经落 run 库，经刷新恢复通道可取回。
+     */
+    const endResponse = () => {
+      if (res.writableEnded || res.destroyed) return;
+      try {
+        res.end();
+      } catch {
+        /* 连接已关：不影响已落库的结果 */
+      }
+    };
     const unsubscribeRun = runs.subscribe(runId, (event) => writeFrame(event));
 
     // 先告诉客户端这次调查的 runId：取消与刷新恢复都要它。
@@ -637,6 +990,9 @@ export function createHandlers(env: Record<string, string>) {
 
     // Investigation Snapshot 最新帧：中断/超时时补发 interrupted 帧（保留已真实获得的数据）。
     let lastInvestigation: InvestigationSnapshotV1 | undefined;
+    // 追问观测用：本轮实际发起的检索次数 = 命题检索 + 证据追索补查轮次。
+    // 数值来自钩子（真发生过的动作），不来自报告文本。
+    const searchesCounter = { current: 0 };
     // 公共活动账本（IMPLEMENTATION_PLAN §5.1）：只由已校验快照差分与结构化 hook 生成。
     // runId 目前只覆盖这一条流；跨刷新的重放要等 RunService（PR-D）。
     // 公共活动（IMPLEMENTATION_PLAN §5.1）：只由已校验快照差分与结构化 hook 生成。
@@ -714,82 +1070,18 @@ export function createHandlers(env: Record<string, string>) {
       // BYO 接管的请求内适配器：byo 存在时全部主力调用直调用户端点；不存在时与现状零差异。
       const byoAdapter = createOrchestrateAdapter({ env, codexBin, byo, onByoFailure });
 
-      if (wantsAgentLoop(payload, env)) {
-        const loop = await runClaimLoopPi({
-          claim,
-          env,
-          callSelfProofModel: byoAdapter.makeSelfProofCaller(claim, modelChoice),
-          lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
-          onEvent: sendEvent,
-        });
-        sendEvent({
-          type: "complete",
-          claim,
-          steps: [],
-          finalReport: loop.finalReport,
-          timestamp: Date.now(),
-        });
-        finishRun("completed");
-        commitFreeCheck(res, ticket);
-        res.end();
-        return;
-      }
-
       const runAgent = byoAdapter.makeRunAgent({
         claim,
         modelChoice,
         intakeMetadata,
         visualExtraction,
         clientMemoryRecall,
-        onStart: (agentId, agentConfig) => {
-          sendEvent({
-            type: "agent_start",
-            agent: agentId,
-            agentName: agentConfig.name,
-            agentIcon: agentConfig.icon,
-            model: agentConfig.model || "",
-            timestamp: Date.now(),
-          });
-        },
-        onThought: (agentId, agentConfig, content, seq, done) => {
-          sendEvent({
-            type: "agent_thought",
-            agent: agentId,
-            agentName: agentConfig.name,
-            agentIcon: agentConfig.icon,
-            content,
-            seq,
-            done,
-            timestamp: Date.now(),
-          });
-        },
-        onComplete: (step) => {
-          sendEvent({
-            type: "agent_complete",
-            agent: step.agent,
-            agentName: step.agentName,
-            agentIcon: step.agentIcon,
-            output: step.output,
-            model: step.model,
-            latencyMs: step.latencyMs,
-            timestamp: Date.now(),
-          });
-        },
-        onError: (agentId, agentConfig, error) => {
-          const { message } = toFriendlyError(
-            error,
-            "核查服务暂时不可用，请稍后重试"
-          );
-          sendEvent({
-            type: "agent_error",
-            agent: agentId,
-            agentName: agentConfig.name,
-            agentIcon: agentConfig.icon,
-            error: message,
-            timestamp: Date.now(),
-          });
-        },
+        ...makeRunAgentCallbacks(sendEvent),
       });
+
+      // 证据库（Part 1 · 记忆复用）：每次调查一份端口。claim 传进去是为了隐私闸门——
+      // 整句等于原句的 atom 一律不进知识库、不落观测（原句全文不写盘）。
+      const knowledgeBase = createKnowledgeMemory({ runId, claim });
 
       const pipelinePromise = runCasePipeline({
         claim,
@@ -804,211 +1096,16 @@ export function createHandlers(env: Record<string, string>) {
         evidenceLoop: { callRewriteModel: makeRewriteQueryCall(byoAdapter.makeRewriteCaller(modelChoice)) },
         crossExam: { callRaw: byoAdapter.makeCrossExamCaller(modelChoice, (data) => sendEvent(data)) },
         wholeClaimAudit: { callModel: byoAdapter.makeWholeClaimAuditCaller(modelChoice) },
-        runReport: async (args) => {
-          const reportStep = await makeReportRunner(runAgent)({
-            ...args,
-            onFallback: (step) => {
-              sendEvent({
-                type: "agent_complete",
-                agent: step.agent,
-                agentName: step.agentName,
-                agentIcon: step.agentIcon,
-                output: step.output,
-                model: step.model,
-                latencyMs: step.latencyMs,
-                timestamp: Date.now(),
-              });
-            },
-          });
-          // BYO fail-closed：密钥失败引发的报告兜底不算完成，抛出触发错误收尾，
-          // 绝不把确定性兜底报告冒充成功结果，也绝不回退 env 密钥重烧一遍。
-          if (byo && byoFail.signal.aborted) {
-            throw byoFail.signal.reason instanceof Error
-              ? byoFail.signal.reason
-              : new ByoKeyError("你保存的模型密钥调用失败，这次核查已停止。");
-          }
-          return reportStep;
-        },
-        hooks: {
-          searchMode: "sequential",
-          onInvestigationSnapshot: (snapshot) => {
-            emitInvestigation(snapshot);
-          },
-          onSelfProof: (info) => {
-            console.log(
-              `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${info.kept.length} dropped=${info.dropped.length}`
-            );
-          },
-          onAtomSearchStart: (atom) => {
-            sendEvent({
-              type: "tool_start",
-              toolName: "Atom Search",
-              query: atom,
-              timestamp: Date.now(),
-            });
-            emitter.emitSearchStarted(atom);
-          },
-          onAtomSearchResult: (atom, result) => {
-            const searchToolName = getSearchToolName(result as any);
-            if ((result as any)?._source === "tool-error") {
-              sendEvent({
-                type: "tool_error",
-                toolName: searchToolName,
-                query: atom,
-                error: (result as any).traceText,
-                result,
-                timestamp: Date.now(),
-              });
-            } else {
-              sendEvent({
-                type: "tool_result",
-                toolName: searchToolName,
-                query: atom,
-                model: (result as any)?.model,
-                result,
-                timestamp: Date.now(),
-              });
+        knowledgeBase,
+        followUpReuse: priorCase
+          ? {
+              priorReport: priorCase.report,
+              priorClaim: priorCase.claim,
+              priorCreatedAt: priorCase.createdAt,
             }
-          },
-          onEvidenceLoopRoundStart: (info) => {
-            sendEvent({
-              type: "tool_start",
-              toolName: "证据追索",
-              query: info.query,
-              result: {
-                kind: "evidence_pursuit",
-                atom: info.atom,
-                round: info.round,
-                goal: info.goal,
-                purpose: info.purpose,
-                missingEvidence: info.missingEvidence,
-                trigger: info.trigger,
-              },
-              timestamp: Date.now(),
-            });
-          },
-          onEvidenceLoopRoundResult: (info) => {
-            sendEvent({
-              type: "tool_result",
-              toolName: "证据追索",
-              query: info.query,
-              result: {
-                kind: "evidence_pursuit",
-                atom: info.atom,
-                round: info.round,
-                sourceCount: info.sourceCount,
-                newSourceCount: info.newSourceCount,
-                goal: info.goal,
-                purpose: info.purpose,
-                resultKind: info.resultKind,
-                gain: info.gain,
-                missingAfter: info.missingAfter,
-                action: info.action,
-                detail: info.detail,
-              },
-              timestamp: Date.now(),
-            });
-          },
-          onEvidenceLoopStopped: (info) => {
-            const reasonText: Record<string, string> = {
-              "evidence-found": "缺口收窄，转入重判",
-              "no-new-evidence": "继续搜也没有新证据，判停",
-              "rewrite-empty": "没有可用的新查询，判停",
-              "search-failed": "补查检索失败，判停",
-            };
-            sendEvent({
-              type: "tool_result",
-              toolName: "证据追索",
-              query: info.atom,
-              result: {
-                kind: "evidence_pursuit",
-                atom: info.atom,
-                rounds: info.rounds,
-                reason: info.reason,
-                reasonText: reasonText[info.reason] ?? info.reason,
-              },
-              timestamp: Date.now(),
-            });
-          },
-          afterFactSource: async ({ factStep, sourceStep, search360Result }) => {
-            const debate = buildConsensusDebate(factStep, sourceStep, search360Result);
-            if (debate.status !== "not_needed") {
-              sendEvent({
-                type: "consensus_debate_round",
-                phase: "handoff",
-                debate: {
-                  ...debate,
-                  status: "running",
-                  rounds: [],
-                  finalConsensus: "事实核查与溯源还在对证据，先不写结论。",
-                },
-                timestamp: Date.now(),
-              });
-              await wait(220);
-              for (let index = 0; index < debate.rounds.length; index += 1) {
-                sendEvent({
-                  type: "consensus_debate_round",
-                  phase: "handoff",
-                  debate: {
-                    ...debate,
-                    status: "running",
-                    rounds: debate.rounds.slice(0, index + 1),
-                    finalConsensus: "正在根据两边的证据收紧：哪些能信，哪些不能信。",
-                  },
-                  timestamp: Date.now(),
-                });
-                await wait(220);
-              }
-            }
-            sendEvent({
-              type: "consensus_debate_final",
-              phase: "handoff",
-              debate,
-              timestamp: Date.now(),
-            });
-          },
-          onReportReviewStart: (info) => {
-            sendEvent({
-              type: "tool_start",
-              toolName: info.toolName,
-              query: info.query,
-              timestamp: Date.now(),
-            });
-          },
-          onReportReviewResult: (info) => {
-            sendEvent({
-              type: "tool_result",
-              toolName: info.toolName,
-              query: info.query,
-              result: {
-                passed: info.passed,
-                score: info.score,
-                issues: info.issues,
-                checks: info.checks,
-              },
-              timestamp: Date.now(),
-            });
-          },
-          onMemoryWriteStart: (info) => {
-            sendEvent({
-              type: "tool_start",
-              toolName: info.toolName,
-              query: info.query,
-              timestamp: Date.now(),
-            });
-          },
-          onMemoryWriteResult: (info) => {
-            sendEvent({
-              type: "tool_result",
-              toolName: info.toolName,
-              query: info.query,
-              result: {
-                proposedCandidateCount: info.proposedCandidateCount,
-              },
-              timestamp: Date.now(),
-            });
-          },
-        },
+          : clientFollowUpReuse ?? undefined,
+        runReport: makeRunReport(runAgent, byo, byoFail, sendEvent),
+        hooks: makePipelineHooks({ claim, sendEvent, emitInvestigation, emitter, searchesCounter }),
         finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>
           pipelineFinalize(fctx, visualExtraction),
         memoryCandidateStore: getMemoryCandidateStore(),
@@ -1016,8 +1113,28 @@ export function createHandlers(env: Record<string, string>) {
       // withTimeout 是 race：落败方的 rejection 必须被吸收，
       // 否则断连/超时触发的 abort 会变成 unhandledRejection 直接崩进程
       pipelinePromise.catch(() => {});
-      const result = await withTimeout(pipelinePromise, PIPELINE_TOTAL_TIMEOUT_MS, "整体核查");
+      const result = await (async () => {
+        try {
+          return await withTimeout(pipelinePromise, PIPELINE_TOTAL_TIMEOUT_MS, "整体核查");
+        } catch (error) {
+          // 契约 Change C：超时不再一锤定音。超时只说明「这条连接的等待到头了」，不是管线失败：
+          //  1) 先告诉客户端「还在查」，用户留在页面上就继续跟着看；
+          //  2) 从此这条连接不再是管线的生命线（detachedFromClient），用户离开页面也不再 abort 它；
+          //  3) 再等管线自己收尾：晚完成 → 落 complete，快照与结论经刷新恢复通道取回；
+          //  4) 宽限期到还没回来 → 抛出，走下面既有的「超时中断」收尾（现有文案与重查入口）。
+          if (!(error instanceof Error && error.message.includes("整体核查"))) throw error;
+          detachedFromClient = true;
+          sendEvent({ type: "timeout_pending", timestamp: Date.now() });
+          console.log(
+            `[orchestrate] 总时限 ${PIPELINE_TOTAL_TIMEOUT_MS}ms 到，管线继续收尾（宽限 ${PIPELINE_LATE_GRACE_MS}ms）runId=${runId}`
+          );
+          return await withTimeout(pipelinePromise, PIPELINE_LATE_GRACE_MS, "整体核查");
+        }
+      })();
 
+      if (detachedFromClient) {
+        console.log(`[orchestrate] 超时后管线晚完成，真结论照常送达 runId=${runId}`);
+      }
       console.log(
         `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length} memoryCandidates=${result.memoryCandidates.length}`
       );
@@ -1031,8 +1148,21 @@ export function createHandlers(env: Record<string, string>) {
         timestamp: Date.now(),
       });
       finishRun("completed");
+      // 追问观测：报告已 finalize、响应还没结束——写一行计数与判词标签就完事。
+      // 只在追问轮写；写不进去也不改这次 run 的结局（recordFollowUpObservation 内部兜住）。
+      if (isFollowUp && priorCaseId) {
+        recordFollowUpObservation({
+          runId,
+          caseId: started.run.caseId,
+          priorCaseId,
+          report: result.finalReport,
+          snapshot: lastInvestigation,
+          atomsSearched: result.atomSearchBundle.atomsSearched.length,
+          searchesTotal: searchesCounter.current,
+        });
+      }
       commitFreeCheck(res, ticket);
-      res.end();
+      endResponse();
     } catch (error) {
       // BYO key fail-closed（Evaluator 3）必须在最前：密钥失败时管线已被 byoFail 中止，
       // 不需要再走断连 abort；先发中断帧与密钥错误帧，再收尾，绝不静默回退 env 密钥重烧。
@@ -1062,12 +1192,13 @@ export function createHandlers(env: Record<string, string>) {
         res.end();
         return;
       }
-      // B1：无论总超时还是其它异常，流水线都是 race 的落败方仍在跑——abort 它，
-      // 各阶段边界会立即退出，不再僵尸烧 token
+      // B1：走到这里说明这次管线已经是 race 的落败方——abort 它，
+      // 各阶段边界会立即退出，不再僵尸烧 token。
+      // （Change C：第一次总超时不再走这条——那条路上管线被故意留着继续收尾。）
       if (!disconnect.signal.aborted) {
         disconnect.abort(error instanceof Error ? error : new Error("aborted"));
       }
-      // 整体超时 → 给「还没查完」的中间结论，不发 error
+      // 宽限期也过了、管线仍不回来 → 才按超时中断收尾：给「还没查完」的中间结论，不发 error。
       if (error instanceof Error && error.message.includes("整体核查")) {
         const interrupted = interruptedInvestigationSnapshot(lastInvestigation, claim);
         emitInvestigation(interrupted);
@@ -1085,7 +1216,7 @@ export function createHandlers(env: Record<string, string>) {
           timestamp: Date.now(),
         });
         finishRun("interrupted");
-        res.end();
+        endResponse();
         return;
       }
       // 客户端主动断开（刷新/关页/写失败）→ 照常计费，放弃不能变成免费重试入口；
@@ -1227,6 +1358,5 @@ export function createHandlers(env: Record<string, string>) {
     getInvestigationHandler,
     investigationEventsHandler,
     testLlmHandler,
-    batchHandler,
   };
 }

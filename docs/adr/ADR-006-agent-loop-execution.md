@@ -6,7 +6,7 @@
 
 ## 状态
 
-已开始（feature-flag）。默认生产仍是 ADR-003 Case Pipeline。
+**废止（2026-09-14）。** `apps/server/src/lib/agentLoop` 已删除。生产执行只有 ADR-003 Case Pipeline。下面正文是当时的决定，不再描述现行代码。
 
 ## 背景
 

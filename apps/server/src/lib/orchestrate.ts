@@ -17,6 +17,7 @@ import {
   AgentTextProviderId,
 } from "./providerRouter.js";
 import { compactSearchResultForAgent, buildReportEvidenceInputs } from "./searchProviders.js";
+import { attachKnowledgeDrafts } from "./atomSearch.js";
 import { splitReasoningSentences, thoughtInterSentenceDelayMs } from "./reasoningThoughts.js";
 import { getTimeoutMs, sleepMs } from "./httpUtils.js";
 import { callByoAgent, ByoKeyError, type ByoConfig } from "./orchestrateByo.js";
@@ -111,6 +112,9 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         if (atomSearchBundle && (agentId === "fact_checker" || agentId === "report_composer")) {
           agentInput.atomSearches = atomSearchBundle.forAgent;
         }
+      }
+      if (atomSearchBundle && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
+        attachKnowledgeDrafts(agentInput, atomSearchBundle);
       }
       if (agentId === "report_composer") {
         agentInput.evidenceInputs = buildReportEvidenceInputs(steps as any, search360Result);
@@ -214,6 +218,15 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
     };
   }
 
+  /**
+   * 自证阶段硬预算（主路 P1 Change H）
+   * 真实走查实证：没有阶段预算时，minimax 自证单次烧 84.9 秒才报错降级，stepfun 再跟两次，
+   * 合计 111 秒（加上前面 rumor 的 29.3 秒 = 画面 141.4 秒没有任何新内容）。
+   * 阶段总账由 deadlineMs 管，单次尝试由 attemptTimeoutCapMs 管（卡住的那家尽早让位给下一家）。
+   */
+  const SELF_PROOF_STAGE_BUDGET_MS_DEFAULT = 45_000;
+  const SELF_PROOF_ATTEMPT_TIMEOUT_CAP_MS_DEFAULT = 25_000;
+
   /** 自证子调用（原句自证，claimAtom 用）。BYO 接管时走用户端点，忽略 modelChoice。 */
   function makeSelfProofCaller(claim: string, modelChoice: any) {
     return (input: {
@@ -239,7 +252,18 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         codexBin,
         reasoningEffort: "low",
         modelOverride: modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
-        options: { logger: console },
+        options: {
+          logger: console,
+          // 每次调用（含管道那一次重试）各拿一份完整预算，不是整个 run 共享。
+          deadlineMs:
+            Date.now() +
+            getTimeoutMs(env, "ORCHESTRATE_SELFPROOF_STAGE_BUDGET_MS", SELF_PROOF_STAGE_BUDGET_MS_DEFAULT),
+          attemptTimeoutCapMs: getTimeoutMs(
+            env,
+            "ORCHESTRATE_SELFPROOF_ATTEMPT_TIMEOUT_CAP_MS",
+            SELF_PROOF_ATTEMPT_TIMEOUT_CAP_MS_DEFAULT
+          ),
+        },
       }).then((r) => ({ output: r.output, model: r.model }));
     };
   }

@@ -18,11 +18,11 @@ npm test
 npm run build
 ```
 
-行为变更再跑 `npm run eval:gate`。生产壳仍是 `mvp/` 时另跑 `cd mvp && npm test`。
+行为变更再跑 `npm run eval:gate`。生产壳是 `apps/`，另跑 `cd apps && npm test`。
 
 可见路径：对原句的直接回答 → 问题点 → 出处。测试绿不算验收。
 
-T20 之前不改 `ops.sh`、不删 `mvp/`。
+T20 是生产切到 `packages/` 脊柱。生产壳目录是 `apps/`（由 `mvp/` 改名）。发布走 `./ops.sh`。
 
 ## 怎么说
 

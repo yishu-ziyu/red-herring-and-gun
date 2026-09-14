@@ -201,7 +201,7 @@ def start_stack_if_needed():
     log_file = open(log_path / "mvp-dev-5186.log", "ab")
     proc = subprocess.Popen(
         ["npm", "run", "dev", "--", "--port", str(PORT)],
-        cwd=os.path.abspath("mvp"),
+        cwd=os.path.abspath("apps"),
         stdout=log_file,
         stderr=subprocess.STDOUT,
     )

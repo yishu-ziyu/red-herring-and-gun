@@ -3,20 +3,9 @@
  *   cd mvp/server && npx tsx eval/probe360Reverse.ts
  * 若接口可用，输出命中数与首条 JSON；不可用则输出错误结构。
  */
-import { readFileSync } from "node:fs";
+import { loadLocalEnv } from "./localEnv.js";
 
-function loadEnv() {
-  for (const p of [".env.local", "../.env.local"]) {
-    try {
-      const text = readFileSync(p, "utf8");
-      for (const line of text.split("\n")) {
-        const m = /^([A-Z_]+)=(.*)$/.exec(line.trim());
-        if (m) process.env[m[1]] = m[2];
-      }
-    } catch {}
-  }
-}
-loadEnv();
+loadLocalEnv();
 
 const TEST_IMG =
   process.env.PROBE_IMG_URL ||

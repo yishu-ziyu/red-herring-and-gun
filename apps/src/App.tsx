@@ -13,7 +13,7 @@ import {
 import { ProductShell, type ShellCase } from "./goldenPath/ProductShell";
 import { InputStage } from "./goldenPath/InputStage";
 import { InvestigationCanvas } from "./goldenPath/InvestigationCanvas";
-import { useInvestigationRun } from "./goldenPath/useInvestigationRun";
+import { useInvestigationRun, type StartOptions } from "./goldenPath/useInvestigationRun";
 import { gpCopyFor } from "./goldenPath/copy";
 import { useUiLang } from "./lib/useUiLang";
 import { LoginView } from "./components/v3/auth/LoginView";
@@ -22,9 +22,11 @@ import { ModelProviderSettingsPreview } from "./components/v3/settings/ModelProv
 import { ApiKeySettings } from "./components/v3/settings/ApiKeySettings";
 import type { AccountProfile } from "./components/v3/auth/accountTypes";
 import { accountDisplayName } from "./lib/accountIdentity";
-import { caseIntakePrimaryText, type CaseIntake } from "./lib/caseIntake";
+import { caseIntakeFailedLinks, caseIntakePrimaryText, type CaseIntake } from "./lib/caseIntake";
 import { createKnowledgeBase, normalizeHistoryClaim } from "./lib/knowledgeBase";
 import type { KnowledgeBaseEntry } from "./lib/schemas";
+import { composeFollowUpClaim, previousAnswerText } from "./lib/composeFollowUpClaim";
+import { visiblePriorRoundFromSnapshot } from "./lib/priorRoundBrief";
 
 const LegacyDesk = lazy(() =>
   import("./legacy/LegacyDesk").then((module) => ({ default: module.default }))
@@ -85,6 +87,34 @@ function writeRunPointer(value: StoredRunPointer | null): void {
   } catch {
     /* 隐私模式下写不了就不写，不影响调查本身 */
   }
+}
+
+/**
+ * 超时不再一锤定音时的提示（契约 docs/evals/2026-09-12-mainpath-p0.md Change C）。
+ * 服务端总超时之后管线仍在跑，这时等结果是可选的：人还在就继续跟着看，
+ * 离开或刷新也能从同一条 run 取回同一份结论。
+ */
+const TIMEOUT_PENDING_NOTICE = {
+  zh: "还在查，可以离开页面，稍后回来或刷新能看到结果",
+  en: "Still investigating. You can leave this page — come back later or refresh to see the result.",
+};
+
+/**
+ * 打开历史条目失败时的提示（契约 docs/evals/2026-09-12-mainpath-p1.md Change G）。
+ * 服务端 404/报错、网络中断、旧记录读不出可用快照，这三种都是「点了没反应」，
+ * 必须说出来；条目本身的状态不动，用户还能再试。
+ */
+const HISTORY_OPEN_FAILED_NOTICE = {
+  zh: "这条历史暂时打不开，条目还留在列表里，可以稍后重试。",
+  en: "This saved check can't be opened right now. It stays in your list; try again later.",
+};
+
+/** 浏览器把接口进程死掉写成 Failed to fetch，不能原样摊在首页主区。 */
+function publicTransportError(message: string, fallback: string): string {
+  if (!message || /failed to fetch|networkerror|load failed|network request failed/i.test(message)) {
+    return fallback;
+  }
+  return message;
 }
 
 /** 从落库 finalReport 确定性取回 Snapshot：优先保存的 investigation，旧数据客户端重建（零模型零搜索）。 */
@@ -207,9 +237,17 @@ function ProductApp() {
   }, []);
 
   // 记录进行中那条 run 的座标；终态或回首页时清掉。
+  // 接不回去且还没有任何材料：清座标、回输入页。否则刷新会反复钉在「连接中断」。
   useEffect(() => {
     if (mode !== "investigation" || active?.restored) {
       writeRunPointer(null);
+      return;
+    }
+    if (run.state.connection === "failed" && !run.state.snapshot) {
+      writeRunPointer(null);
+      setHistoryNotice(publicTransportError(run.state.errorMessage, copy.connectionLost));
+      setActive(null);
+      setMode("input");
       return;
     }
     const runId = run.state.runId;
@@ -225,7 +263,7 @@ function ProductApp() {
       lastSeq: run.state.lastActivitySeq,
       at: Date.now(),
     });
-  }, [mode, active, run.state.runId, run.state.lastActivitySeq, run.state.connection, run.state.stop]);
+  }, [mode, active, copy.connectionLost, run.state.runId, run.state.lastActivitySeq, run.state.connection, run.state.stop, run.state.snapshot, run.state.errorMessage]);
 
   // DEV 固定装置：/?fixture=investigating|judging|complete|conflict|interrupted|image-found|image-missing|mixed|nospan|settling|source-audit|replay
   // 用脚本化快照驱动真实组件树（截图与走查）。生产构建 dead-code eliminated。
@@ -339,7 +377,12 @@ function ProductApp() {
 
   /** 无守卫直接开跑：同句守卫的「重新核查」与普通提交共用。 */
   const beginRun = useCallback(
-    (intake: CaseIntake, fixture?: NonNullable<Parameters<ReturnType<typeof useInvestigationRun>["start"]>[1]>["fixture"]) => {
+    (
+      intake: CaseIntake,
+      fixture?: NonNullable<Parameters<ReturnType<typeof useInvestigationRun>["start"]>[1]>["fixture"],
+      // 追问：登录带 caseId；访客带上一轮可见材料。首轮不传。
+      followUp?: Pick<StartOptions, "priorCaseId" | "priorRound">
+    ) => {
       setSameClaim(null);
       setDraftClaim("");
       const claim = caseIntakePrimaryText(intake);
@@ -347,7 +390,12 @@ function ProductApp() {
       setActive({ localId, claim, intake });
       setCases((prev) => [{ id: localId, claim, status: "running" as const }, ...prev.filter((item) => item.id !== localId)]);
       setMode("investigation");
-      run.start(intake, { accountEmail: accountEmailRef.current, fixture });
+      run.start(intake, {
+        accountEmail: accountEmailRef.current,
+        fixture,
+        priorCaseId: followUp?.priorCaseId,
+        priorRound: followUp?.priorRound,
+      });
     },
     [run]
   );
@@ -419,7 +467,11 @@ function ProductApp() {
       try {
         const res = await fetch(`/api/case/${encodeURIComponent(id)}`, { credentials: "include" });
         if (version !== scopeVersion.current) return;
-        if (!res.ok) return;
+        // 404/报错不能点了没反应：提示可见，条目状态不动（Change G）。
+        if (!res.ok) {
+          setHistoryNotice(HISTORY_OPEN_FAILED_NOTICE[lang]);
+          return;
+        }
         const data = (await res.json()) as {
           claim?: string;
           report?: Record<string, unknown>;
@@ -435,7 +487,11 @@ function ProductApp() {
               }
             })()
           : snapshotFromReport(data.report);
-        if (!snapshot) return; // 无快照且重建失败：不伪造，保持原列表
+        if (!snapshot) {
+          // 无快照且重建失败：不伪造，保持原列表；但读不出内容同样是打开失败，要说出来。
+          setHistoryNotice(HISTORY_OPEN_FAILED_NOTICE[lang]);
+          return;
+        }
         run.reset();
         setActive({
           localId: id,
@@ -447,10 +503,12 @@ function ProductApp() {
         });
         setMode("investigation");
       } catch {
+        // 网络中断/响应不可解析：同上，给反应而不是静默吞掉。
+        setHistoryNotice(HISTORY_OPEN_FAILED_NOTICE[lang]);
         return;
       }
     },
-    [active?.localId, cases, run]
+    [active?.localId, cases, lang, run]
   );
 
   const handleLogout = useCallback(async () => {
@@ -518,11 +576,54 @@ function ProductApp() {
         const s = run.state.snapshot;
         if (!s) return null;
         // 流失败但已有真实数据：按 interrupted 呈现（保留数据、无伪结论、可重试）。
-        if (run.state.connection === "failed" && s.phase !== "complete" && s.phase !== "interrupted") {
+        // 例外（Change C）：超时之后的断线不是调查失败——服务端管线仍在跑，结论经刷新可取回；
+        // 这时候说「没查完」是假话，界面上有超时提示说明真实状态。
+        if (
+          run.state.connection === "failed" &&
+          !run.state.timeoutPending &&
+          s.phase !== "complete" &&
+          s.phase !== "interrupted"
+        ) {
           return { ...s, phase: "interrupted" as const };
         }
         return s;
       })();
+
+  /**
+   * 超时提示（Change C）：只在「这次调查还没拿到结果、也不是历史回看」时出现。
+   * 真结果一到（finalReport 或 error 翻成中断态）就退场，不与结论或中断文案并列。
+   */
+  const showTimeoutPending = !active?.restored && run.state.timeoutPending && !run.state.finalReport;
+  const showLinkUnreachable =
+    mode === "investigation" && Boolean(active?.intake) && caseIntakeFailedLinks(active!.intake).length > 0;
+
+  const handleFollowUp = useCallback(
+    (question: string) => {
+      if (!active) return;
+      const prevAnswer =
+        previousAnswerText(
+          (active.restored?.report ?? run.state.finalReport) as { conclusion?: string; memo?: string } | null
+        ) || snapshot?.conclusion?.directAnswer || "";
+      const composed = composeFollowUpClaim({
+        originalClaim: active.claim,
+        previousAnswer: prevAnswer,
+        followUp: question,
+      });
+      beginRun(
+        {
+          text: composed,
+          links: [],
+          images: [],
+          createdAt: Date.now(),
+        },
+        undefined,
+        active.serverCaseId
+          ? { priorCaseId: active.serverCaseId }
+          : { priorRound: visiblePriorRoundFromSnapshot(snapshot) }
+      );
+    },
+    [active, run.state.finalReport, snapshot, beginRun]
+  );
 
   return (
     <>
@@ -539,6 +640,11 @@ function ProductApp() {
         viewingInvestigation={mode === "investigation"}
       >
         {historyNotice ? <p className="gp-global-notice" role="alert">{historyNotice}</p> : null}
+        {showLinkUnreachable ? (
+          <p className="gp-global-notice" role="alert">
+            {copy.linkUnreachableNotice}
+          </p>
+        ) : null}
         {sameClaim ? (
           <div className="gp-same-claim" role="dialog" aria-label={copy.sameClaimTitle}>
             <p className="gp-same-claim-title">{copy.sameClaimTitle}</p>
@@ -586,23 +692,38 @@ function ProductApp() {
             />
           </>
         ) : active && snapshot ? (
-          <InvestigationCanvas
-            snapshot={snapshot}
-            live={active.restored ? false : run.state.connection === "connecting" || run.state.connection === "live"}
-            activities={active.restored ? [] : run.state.activities}
-            stop={active.restored ? "idle" : run.state.stop}
-            onStop={active.restored || !run.state.runId ? undefined : () => void run.cancel()}
-            saveStatus={saveStatus}
-            onRetrySave={retrySave}
-            shareCaseId={active.serverCaseId ?? null}
-            finalReport={active.restored ? active.restored.report : run.state.finalReport}
-            restoredAt={active.restored?.at}
-            onReverify={handleRetry}
-            onBackHome={handleBackHome}
-          />
+          <>
+            {showTimeoutPending ? (
+              <p className="gp-hint" role="status" data-gp-timeout-pending>
+                {TIMEOUT_PENDING_NOTICE[lang]}
+              </p>
+            ) : null}
+            <InvestigationCanvas
+              snapshot={snapshot}
+              live={active.restored ? false : run.state.connection === "connecting" || run.state.connection === "live"}
+              activities={active.restored ? [] : run.state.activities}
+              stop={active.restored ? "idle" : run.state.stop}
+              onStop={active.restored || !run.state.runId ? undefined : () => void run.cancel()}
+              saveStatus={saveStatus}
+              onRetrySave={retrySave}
+              shareCaseId={active.serverCaseId ?? null}
+              finalReport={active.restored ? active.restored.report : run.state.finalReport}
+              restoredAt={active.restored?.at}
+              onReverify={handleRetry}
+              onBackHome={handleBackHome}
+              onFollowUp={handleFollowUp}
+              linkUnreachable={caseIntakeFailedLinks(active.intake).length > 0}
+            />
+          </>
+        ) : showTimeoutPending ? (
+          <p className="gp-hint" role="status" data-gp-timeout-pending>
+            {TIMEOUT_PENDING_NOTICE[lang]}
+          </p>
         ) : (
           <p className="gp-waiting" role="status">
-            {run.state.connection === "failed" && !snapshot ? run.state.errorMessage || copy.connectionLost : "正在拆解这句话…"}
+            {run.state.connection === "failed" && !snapshot
+              ? publicTransportError(run.state.errorMessage, copy.connectionLost)
+              : "正在拆解这句话…"}
           </p>
         )}
       </ProductShell>

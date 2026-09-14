@@ -13,7 +13,7 @@
     "build": "tsc",
     "test": "vitest run",
     "eval": "tsx src/run.ts",
-    "eval:gate": "tsx src/run.ts --gate ../../mvp/server/eval/baseline.json"
+    "eval:gate": "tsx src/run.ts --gate ./baseline.json"
   },
   "dependencies": {
     "@rhg/core": "*"

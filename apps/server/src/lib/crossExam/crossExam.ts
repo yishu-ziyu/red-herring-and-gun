@@ -16,6 +16,8 @@ export type CrossExamTarget = {
   contradicting: AtomSearchSource[];
   evidence?: AtomSearchSource[];
   evidenceGaps?: string[];
+  /** 知识库初稿：只供复核，不是结论。 */
+  priorDraft?: { originDate: string; priorVerdict: string };
 };
 
 export type CrossExamAtomResult = {
@@ -58,6 +60,7 @@ export type CrossExamRawModelCall = (input: {
 export const CROSS_EXAM_SYSTEM_PROMPT = [
   "你是独立复核员。检查所给证据中的冲突或明确缺口。",
   "只依据给出的证据独立判断，不看主模型结论。不引入外部记忆的事实。",
+  "若输入含「上次核查初稿」，那是可复核草稿，不是结论：必须对照本轮所给证据复核；人物/日期/链接变了必须当新命题；没证据不得沿用初稿。",
   "输出 JSON：{\"verdict\": \"true|false|unverified\", \"reason\": \"一句话理由\", \"boundary\": \"证据能/不能支持什么\"}。",
   "证据不足以裁决时必须给 unverified，不要勉强站队。",
   "若有具体疑问，输出 challenge（可回答的质询）、sources（相关证据 URL）、query（最多一个定向补查问题）。没有疑问时 challenge 和 query 留空，不强行对抗。引用只能来自所给证据。",
@@ -99,6 +102,7 @@ export function findCrossExamTargets(input: {
     const evidenceGaps = Array.isArray(v.evidenceGaps) ? v.evidenceGaps.filter((g): g is string => typeof g === "string" && !!g.trim()) : [];
     if (!(supporting.length && contradicting.length) && !evidenceGaps.length) continue;
     seen.add(key);
+    const draft = (input.bundle.knowledgeDrafts ?? []).find((item) => input.claimAtomKeyFn(item.claimAtom) === key);
     targets.push({
       atom,
       atomKey: key,
@@ -107,6 +111,9 @@ export function findCrossExamTargets(input: {
       contradicting,
       evidence: evidence.filter(s => isHttp(s.url)),
       evidenceGaps,
+      ...(draft
+        ? { priorDraft: { originDate: draft.originDate, priorVerdict: draft.priorVerdict } }
+        : {}),
     });
   }
   return targets;
@@ -130,6 +137,11 @@ export function buildCrossExamUserContent(input: {
     "其他已检索材料（未判定支持或反对）：",
     fmt(input.target.evidence ?? []),
     `明确证据缺口：${(input.target.evidenceGaps ?? []).join("；")}`,
+    ...(input.target.priorDraft
+      ? [
+          `上次核查初稿（只供复核，不是结论）：判词 ${input.target.priorDraft.priorVerdict}，已核日期 ${input.target.priorDraft.originDate}。人物/日期/链接变了必须当新命题。没证据不得沿用初稿。`,
+        ]
+      : []),
     "只根据以上证据判断该说法。",
   ].join("\n");
 }

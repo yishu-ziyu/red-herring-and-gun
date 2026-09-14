@@ -4,11 +4,15 @@ import {
   callAgentWithFallback,
   envValue,
   isEmptyProviderResponse,
+  isHardProviderAuthError,
   isHardProviderQuotaError,
+  isProviderQuotaSkipped,
   modelForAgent,
+  noteProviderFailure,
   parseAgentJson,
   providerOrderForAgent,
   resetProviderQuotaSkipForTests,
+  timeoutForProviderModel,
 } from "./providerRouter.js";
 
 // Mock LLM provider；让 B2-B5 测试可以验证"哪个被调用、哪个没被调用"
@@ -663,5 +667,51 @@ describe("providerRouter quota skip", () => {
     expect(second.model).toBe("stepfun:step-2-mini");
     expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
     expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("作判断超时：M2.7 时限与跳过规则", () => {
+  beforeEach(() => {
+    resetProviderQuotaSkipForTests();
+  });
+
+  afterEach(() => {
+    resetProviderQuotaSkipForTests();
+  });
+
+  it("MiniMax-M2.7-highspeed 单次时限默认 180s，大于 90s", () => {
+    expect(timeoutForProviderModel({}, "minimax", "MiniMax-M2.7-highspeed", 90_000)).toBe(180_000);
+    expect(timeoutForProviderModel({}, "minimax", "MiniMax-M2.7", 90_000)).toBe(180_000);
+    expect(
+      timeoutForProviderModel(
+        { MINIMAX_M27_PROVIDER_TIMEOUT_MS: "150000" },
+        "minimax",
+        "MiniMax-M2.7-highspeed",
+        90_000
+      )
+    ).toBe(150_000);
+  });
+
+  it("MiniMax-M2.7 超时一次不跳过，两次才跳过", () => {
+    noteProviderFailure("minimax", "Agent:fact_checker minimax:MiniMax-M2.7-highspeed 超时 90000ms");
+    expect(isProviderQuotaSkipped("minimax")).toBe(false);
+    noteProviderFailure("minimax", "Agent:fact_checker minimax:MiniMax-M2.7-highspeed 超时 180000ms");
+    expect(isProviderQuotaSkipped("minimax")).toBe(true);
+  });
+
+  it("MiniMax-M3 超时一次仍跳过", () => {
+    noteProviderFailure("minimax", "Agent:rumor_detector minimax:MiniMax-M3 超时 1ms");
+    expect(isProviderQuotaSkipped("minimax")).toBe(true);
+  });
+
+  it("DeepSeek Authentication Fails / api key is invalid 算密钥失效", () => {
+    expect(
+      isHardProviderAuthError("DeepSeek API 调用失败：Authentication Fails, Your api key: ****ef35 is invalid")
+    ).toBe(true);
+    noteProviderFailure(
+      "deepseek",
+      "DeepSeek API 调用失败：Authentication Fails, Your api key: ****ef35 is invalid"
+    );
+    expect(isProviderQuotaSkipped("deepseek")).toBe(true);
   });
 });

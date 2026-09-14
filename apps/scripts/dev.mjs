@@ -19,6 +19,15 @@ const bin = (dir, name) => {
   return unix;
 };
 
+function requireBin(dir, name, missingMessage) {
+  const path = bin(dir, name);
+  if (!existsSync(path)) {
+    console.error(missingMessage);
+    process.exit(1);
+  }
+  return path;
+}
+
 function sleep(ms) {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 }
@@ -48,11 +57,7 @@ let apiChild = null;
 if (await apiHealthy()) {
   console.log(`[dev] reusing API at ${apiOrigin}`);
 } else {
-  const tsx = bin(serverDir, "tsx");
-  if (!existsSync(tsx)) {
-    console.error("[dev] server deps missing. Run: cd mvp/server && npm install");
-    process.exit(1);
-  }
+  const tsx = requireBin(serverDir, "tsx", "[dev] server deps missing. Run: cd mvp/server && npm install");
   apiChild = spawn(tsx, ["watch", "src/index.ts"], {
     cwd: serverDir,
     stdio: "inherit",
@@ -69,11 +74,7 @@ if (await apiHealthy()) {
   console.log(`[dev] API ready at ${apiOrigin}`);
 }
 
-const vite = bin(root, "vite");
-if (!existsSync(vite)) {
-  console.error("[dev] frontend deps missing. Run: cd mvp && npm install");
-  process.exit(1);
-}
+const vite = requireBin(root, "vite", "[dev] frontend deps missing. Run: cd apps && npm install");
 
 const web = spawn(vite, ["--host", "127.0.0.1", ...viteArgs], {
   cwd: root,

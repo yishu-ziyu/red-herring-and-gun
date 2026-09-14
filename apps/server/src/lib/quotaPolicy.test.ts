@@ -23,7 +23,7 @@ describe("quotaPolicy 计额度端点集合", () => {
   });
 
   it("真正发起核查的端点仍计入每日额度", () => {
-    for (const path of ["/api/agent/orchestrate-stream", "/api/agent/batch", "/mcp"]) {
+    for (const path of ["/api/agent/orchestrate-stream", "/mcp"]) {
       expect(isQuotaGatedPath(path), path).toBe(true);
     }
   });

@@ -895,7 +895,7 @@ Evidence：截图路径；commit。
 
 依赖：T16 门禁通过、T18、T19。
 
-Change：`ops.sh` 与部署脚本改指 `packages/server` 与 `packages/web` 构建产物；nginx 配置更新；生产 `/health` 与一次真实核查通过；删除 `mvp/`（含其 docs）与 `docs/AGENTIFICATION.md`；重写 `docs/ARCHITECTURE.md` 为一张目标形状图 + 包地图（≤80 行）；`docs/PRODUCT_SPEC.md` 第七节追加一条记录并把第二节的「查完可以再问一句」改为「案件即线程」；`AGENTS.md` 命令段改为根目录命令；ADR-007 状态改「已实施」。
+Change：`ops.sh` 与部署脚本改指 `packages/server` 与 `packages/web` 构建产物；nginx 配置更新；生产 `/health` 与一次真实核查通过；删除 `mvp/`（含其 docs）与 `docs/archive/AGENTIFICATION.md`；重写 `docs/ARCHITECTURE.md` 为一张目标形状图 + 包地图（≤80 行）；`docs/PRODUCT_SPEC.md` 第七节追加一条记录并把第二节的「查完可以再问一句」改为「案件即线程」；`AGENTS.md` 命令段改为根目录命令；ADR-007 状态改「已实施」。
 
 Not this：不在门禁未过时切换；不保留双部署。
 

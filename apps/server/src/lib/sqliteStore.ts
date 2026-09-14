@@ -127,6 +127,41 @@ function migrate(db: DatabaseSync): void {
     `);
     db.prepare("INSERT INTO schema_version (version, appliedAt) VALUES (1, ?)").run(new Date().toISOString());
   }
+  if (current < 2) {
+    // runs 补两列（追问观测）：老库用 ALTER 加，老行保持 NULL / 0。
+    // 先查列在不在再改：版本号写入与 ALTER 之间崩过时，重跑不能炸。
+    const columns = new Set(
+      (db.prepare("PRAGMA table_info(runs)").all() as Array<{ name?: unknown }>).map((row) => String(row.name))
+    );
+    if (!columns.has("priorCaseId")) db.exec("ALTER TABLE runs ADD COLUMN priorCaseId TEXT");
+    if (!columns.has("isFollowUp")) db.exec("ALTER TABLE runs ADD COLUMN isFollowUp INTEGER NOT NULL DEFAULT 0");
+    db.prepare("INSERT OR IGNORE INTO schema_version (version, appliedAt) VALUES (2, ?)").run(
+      new Date().toISOString()
+    );
+  }
+  if (current < 3) {
+    // 证据库（契约 docs/evals/2026-09-12-evidence-base.md）：调查 finalize 后沉淀的
+    // 命题级核查知识。atomNorm 是规范化命题文本，唯一索引决定「同一命题只一条」；
+    // 时间列与 cases / runs 一致用 epoch ms。CREATE TABLE/INDEX IF NOT EXISTS 幂等，
+    // 版本号用 INSERT OR IGNORE：崩在中间重跑不会炸、也不会重复建。
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS knowledge_entries (
+        id TEXT PRIMARY KEY,
+        atomNorm TEXT NOT NULL,
+        atomText TEXT NOT NULL,
+        verdict TEXT NOT NULL,
+        evidence TEXT NOT NULL DEFAULT '[]',
+        sourceRunId TEXT NOT NULL,
+        createdAt INTEGER NOT NULL,
+        lastVerifiedAt INTEGER NOT NULL,
+        hitCount INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_entries_atom_norm ON knowledge_entries(atomNorm);
+    `);
+    db.prepare("INSERT OR IGNORE INTO schema_version (version, appliedAt) VALUES (3, ?)").run(
+      new Date().toISOString()
+    );
+  }
 }
 
 /** 测试/维护用：关掉当前实例，下次 openDatabase 重新打开。 */

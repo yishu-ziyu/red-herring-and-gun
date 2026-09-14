@@ -32,6 +32,8 @@ export type WorkRole = Static<typeof WorkRoleSchema>;
 export const ACTIVITY_KINDS = [
   "claim_decomposed",
   "search_started",
+  "knowledge_hit",
+  "prior_round_reuse",
   "source_found",
   "source_checked",
   "evidence_assessed",
@@ -45,6 +47,16 @@ export const ACTIVITY_KINDS = [
 export const ActivityKindSchema = Type.Union([
   Type.Literal("claim_decomposed"),
   Type.Literal("search_started"),
+  /**
+   * 命中本地知识库：该命题跳过这次联网检索（记忆只加速，不代替核查）。
+   * 没有可归属对象（动作类）：claimIds / sourceIds 留空，日期只在 payload 里。
+   */
+  Type.Literal("knowledge_hit"),
+  /**
+   * 同一案上一轮证据够用：该命题不再联网检索。
+   * 没有可归属对象（动作类）：claimIds / sourceIds 留空。
+   */
+  Type.Literal("prior_round_reuse"),
   Type.Literal("source_found"),
   Type.Literal("source_checked"),
   Type.Literal("evidence_assessed"),
@@ -59,6 +71,9 @@ export type ActivityKind = Static<typeof ActivityKindSchema>;
 export const ACTIVITY_PAYLOAD_KEYS: Record<ActivityKind, readonly string[]> = {
   claim_decomposed: ["claimText"],
   search_started: ["query"],
+  /** 已核日期（YYYY-MM-DD）。verifiedAt 是历史别名，两个键都可能出现。 */
+  knowledge_hit: ["originDate", "verifiedAt"],
+  prior_round_reuse: ["originDate"],
   source_found: ["title", "domain"],
   source_checked: ["title", "domain", "role"],
   evidence_assessed: ["judgment"],
@@ -72,6 +87,8 @@ export const ACTIVITY_PAYLOAD_KEYS: Record<ActivityKind, readonly string[]> = {
 export const ACTIVITY_ROLE: Record<ActivityKind, WorkRole> = {
   claim_decomposed: "question",
   search_started: "source",
+  knowledge_hit: "source",
+  prior_round_reuse: "source",
   source_found: "source",
   source_checked: "source",
   evidence_assessed: "judgment",
@@ -203,6 +220,31 @@ export function createActivityLog(options: { runId: string; now?: () => Date }) 
     /** 动作类事件：没有可归属对象，只能描述动作。 */
     recordSearchStarted(query: string): PublicActivity[] {
       return push({ kind: "search_started", claimIds: [], sourceIds: [], payload: { query } });
+    },
+
+    /**
+     * 命中知识库 → 该命题这次不联网检索。
+     * 与 search_started 同类：动作本身没有可归属对象（证据会由快照给出来源行），
+     * 所以引用数组留空；日期放 payload，读侧不从文案里猜时间。
+     */
+    recordKnowledgeHit(originDate: string): PublicActivity[] {
+      const day = String(originDate ?? "").trim();
+      if (!day) return [];
+      return push({ kind: "knowledge_hit", claimIds: [], sourceIds: [], payload: { originDate: day } });
+    },
+
+    /**
+     * 同一案上一轮证据够用 → 该命题这次不联网检索。
+     * 与 knowledge_hit 同类：动作类、引用留空；日期可缺（不编日期）。
+     */
+    recordPriorRoundReuse(originDate: string): PublicActivity[] {
+      const day = String(originDate ?? "").trim();
+      return push({
+        kind: "prior_round_reuse",
+        claimIds: [],
+        sourceIds: [],
+        payload: day ? { originDate: day } : {},
+      });
     },
 
     /** 快照先落，再允许引用。同一份快照重复投影不产生新活动。 */

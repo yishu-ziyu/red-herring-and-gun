@@ -174,6 +174,54 @@ function scoreMustSearch(needles: string[] | undefined, bundle: unknown): boolea
   });
 }
 
+function failedCaseScores(golden: CaseResult["case"], loopExpected: boolean): MetricScores {
+  return {
+    caseId: golden.id,
+    claim: golden.claim,
+    category: golden.category,
+    difficulty: golden.difficulty,
+    routingCorrect: false,
+    verdictCorrect: false,
+    credibilityInRange: false,
+    hallucinationDetected: false,
+    reportContractPass: false,
+    reportReviewScore: 0,
+    overallPass: false,
+    atomMatchPass: true,
+    mustSearchPass: true,
+    evidenceLoopExpected: loopExpected,
+    evidenceLoopRan: false,
+    evidenceLoopRescued: false,
+  };
+}
+
+function routingIsCorrect(category: string, actualAgents: string[]): boolean {
+  if (category === "concept") {
+    return actualAgents.filter((a) => a !== "report_composer").length === 0;
+  }
+  return (
+    actualAgents.includes("rumor_detector") &&
+    actualAgents.includes("fact_checker") &&
+    actualAgents.includes("source_validator") &&
+    actualAgents.includes("report_composer")
+  );
+}
+
+function reviewFromReport(report: Record<string, unknown>): { reportContractPass: boolean; reportReviewScore: number } {
+  const review = report._review as
+    | { passed?: boolean; errorCount?: number; issueCount?: number; score?: number }
+    | undefined;
+  const reportContractPass = review?.passed === true;
+  const errorCount = typeof review?.errorCount === "number" ? review.errorCount : 0;
+  const issueCount = typeof review?.issueCount === "number" ? review.issueCount : 0;
+  const warnCount = Math.max(0, issueCount - errorCount);
+  const reportReviewScore =
+    typeof review?.score === "number"
+      ? review.score
+      : Math.max(0, Math.min(100, 100 - errorCount * 25 - warnCount * 8));
+  return { reportContractPass, reportReviewScore };
+}
+
 export function scoreCase(result: CaseResult): MetricScores {
   const golden = result.case;
   const loopExpected = golden.expectsEvidenceLoop === true;
@@ -181,40 +229,10 @@ export function scoreCase(result: CaseResult): MetricScores {
   const loopRan = loop?.ran === true;
   // 翻案 = 补查命中新证据（任一原子 evidence-found）
   const loopRescued = loopRan && (loop?.atoms?.some((a) => a.stopReason === "evidence-found") ?? false);
-  if (result.error) {
-    return {
-      caseId: golden.id,
-      claim: golden.claim,
-      category: golden.category,
-      difficulty: golden.difficulty,
-      routingCorrect: false,
-      verdictCorrect: false,
-      credibilityInRange: false,
-      hallucinationDetected: false,
-      reportContractPass: false,
-      reportReviewScore: 0,
-      overallPass: false,
-      atomMatchPass: true,
-      mustSearchPass: true,
-      evidenceLoopExpected: loopExpected,
-      evidenceLoopRan: false,
-      evidenceLoopRescued: false,
-    };
-  }
+  if (result.error) return failedCaseScores(golden, loopExpected);
 
   const actualAgents = result.steps.map((s) => s.agent).filter(Boolean) as string[];
-  // routing：非 concept 需包含 rumor/fact/source/report 四个主链 agent
-  let routingCorrect: boolean;
-  if (golden.category === "concept") {
-    routingCorrect = actualAgents.filter((a) => a !== "report_composer").length === 0;
-  } else {
-    routingCorrect =
-      actualAgents.includes("rumor_detector") &&
-      actualAgents.includes("fact_checker") &&
-      actualAgents.includes("source_validator") &&
-      actualAgents.includes("report_composer");
-  }
-
+  const routingCorrect = routingIsCorrect(golden.category, actualAgents);
   const actualVerdict = extractVerdict(result.finalReport);
   const actualCredibility = extractCredibility(result.finalReport);
   const verdictCorrect = actualVerdict === golden.expectedVerdictType;
@@ -224,21 +242,7 @@ export function scoreCase(result: CaseResult): MetricScores {
   const hallucinationDetected = isHallucination(golden.expectedVerdictType, actualVerdict);
   const atomMatchPass = scoreAtomMatch(golden.expectedAtoms, result.finalReport);
   const mustSearchPass = scoreMustSearch(golden.mustSearch, result.atomSearchBundle);
-
-  // 报告契约：确定性 reviewer 检查（与生产 reviewAndRepairReport 同源，写入 finalReport._review）
-  const review = result.finalReport._review as
-    | { passed?: boolean; errorCount?: number; issueCount?: number; score?: number }
-    | undefined;
-  const reportContractPass = review?.passed === true;
-  // reviewer 不写 score，用与 production 一致的 errorCount*25 + warnCount*8 推导
-  const errorCount = typeof review?.errorCount === "number" ? review.errorCount : 0;
-  const issueCount = typeof review?.issueCount === "number" ? review.issueCount : 0;
-  const warnCount = Math.max(0, issueCount - errorCount);
-  const reportReviewScore =
-    typeof review?.score === "number"
-      ? review.score
-      : Math.max(0, Math.min(100, 100 - errorCount * 25 - warnCount * 8));
-
+  const { reportContractPass, reportReviewScore } = reviewFromReport(result.finalReport);
   const overallPass =
     routingCorrect &&
     verdictCorrect &&
@@ -325,17 +329,13 @@ export function aggregateRepeats(runs: RepeatRun[]): {
   };
 }
 
-export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
-  const total = scores.length;
-  const passed = scores.filter((s) => s.overallPass).length;
+function share(count: number, total: number): number {
+  return total > 0 ? count / total : 0;
+}
 
-  const routingCorrect = scores.filter((s) => s.routingCorrect).length;
-  const verdictCorrect = scores.filter((s) => s.verdictCorrect).length;
-  const credibilityCorrect = scores.filter((s) => s.credibilityInRange).length;
-  const hallucinations = scores.filter((s) => s.hallucinationDetected).length;
-  const contractPass = scores.filter((s) => s.reportContractPass).length;
-  const reviewScoreSum = scores.reduce((acc, s) => acc + s.reportReviewScore, 0);
-
+function tallyByCategory(
+  scores: MetricScores[]
+): Record<string, { total: number; passed: number; verdictCorrectCount: number }> {
   const byCategory: Record<string, { total: number; passed: number; verdictCorrectCount: number }> = {};
   for (const s of scores) {
     if (!byCategory[s.category]) byCategory[s.category] = { total: 0, passed: 0, verdictCorrectCount: 0 };
@@ -343,46 +343,48 @@ export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
     if (s.overallPass) byCategory[s.category].passed++;
     if (s.verdictCorrect) byCategory[s.category].verdictCorrectCount++;
   }
+  return byCategory;
+}
 
-  // ADR-004 观测指标：分母 = expectsEvidenceLoop 的 case
+function failureReason(s: MetricScores): string {
+  return [
+    !s.routingCorrect && "routing wrong",
+    !s.verdictCorrect && "verdict mismatch",
+    !s.credibilityInRange && "credibility out of range",
+    s.hallucinationDetected && "hallucination detected",
+    !s.reportContractPass && `report contract fail (score ${s.reportReviewScore})`,
+    !s.atomMatchPass && "atom verdict mismatch",
+    !s.mustSearchPass && "mustSearch miss",
+  ]
+    .filter(Boolean)
+    .join("; ");
+}
+
+export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
+  const total = scores.length;
+  const passed = scores.filter((s) => s.overallPass).length;
   const loopExpectedScores = scores.filter((s) => s.evidenceLoopExpected);
   const loopExpectedCount = loopExpectedScores.length;
-  const loopTriggeredCount = loopExpectedScores.filter((s) => s.evidenceLoopRan).length;
-  const loopRescuedCount = loopExpectedScores.filter((s) => s.evidenceLoopRescued).length;
-
-  const failures = scores
-    .filter((s) => !s.overallPass)
-    .map((s) => ({
-      caseId: s.caseId,
-      claim: s.claim,
-      reason: [
-        !s.routingCorrect && "routing wrong",
-        !s.verdictCorrect && "verdict mismatch",
-        !s.credibilityInRange && "credibility out of range",
-        s.hallucinationDetected && "hallucination detected",
-        !s.reportContractPass && `report contract fail (score ${s.reportReviewScore})`,
-        !s.atomMatchPass && "atom verdict mismatch",
-        !s.mustSearchPass && "mustSearch miss",
-      ]
-        .filter(Boolean)
-        .join("; "),
-    }));
 
   return {
     totalCases: total,
     passed,
     failed: total - passed,
-    routingAccuracy: total > 0 ? routingCorrect / total : 0,
-    verdictAccuracy: total > 0 ? verdictCorrect / total : 0,
-    credibilityAccuracy: total > 0 ? credibilityCorrect / total : 0,
-    hallucinationRate: total > 0 ? hallucinations / total : 0,
-    reportContractPassRate: total > 0 ? contractPass / total : 0,
-    avgReportReviewScore: total > 0 ? reviewScoreSum / total : 0,
-    byCategory,
-    failures,
+    routingAccuracy: share(scores.filter((s) => s.routingCorrect).length, total),
+    verdictAccuracy: share(scores.filter((s) => s.verdictCorrect).length, total),
+    credibilityAccuracy: share(scores.filter((s) => s.credibilityInRange).length, total),
+    hallucinationRate: share(scores.filter((s) => s.hallucinationDetected).length, total),
+    reportContractPassRate: share(scores.filter((s) => s.reportContractPass).length, total),
+    avgReportReviewScore: share(scores.reduce((acc, s) => acc + s.reportReviewScore, 0), total),
+    byCategory: tallyByCategory(scores),
+    failures: scores.filter((s) => !s.overallPass).map((s) => ({
+      caseId: s.caseId,
+      claim: s.claim,
+      reason: failureReason(s),
+    })),
     evidenceLoopExpectedCount: loopExpectedCount,
-    evidenceLoopTriggerRate: loopExpectedCount > 0 ? loopTriggeredCount / loopExpectedCount : 0,
-    evidenceLoopRescueRate: loopExpectedCount > 0 ? loopRescuedCount / loopExpectedCount : 0,
+    evidenceLoopTriggerRate: share(loopExpectedScores.filter((s) => s.evidenceLoopRan).length, loopExpectedCount),
+    evidenceLoopRescueRate: share(loopExpectedScores.filter((s) => s.evidenceLoopRescued).length, loopExpectedCount),
   };
 }
 

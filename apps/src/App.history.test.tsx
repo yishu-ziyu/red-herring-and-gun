@@ -24,8 +24,8 @@ function stubFetch(overrides: {
   cases?: unknown[];
   /** 让 GET /api/cases 永不返回，用来模拟历史加载卡住。 */
   casesHang?: boolean;
-  /** GET /api/case/:id 的响应体；传函数可自定义（含挂起）。 */
-  caseDetail?: unknown | (() => Response);
+  /** GET /api/case/:id 的响应体；传函数可自定义（含挂起 / 拒绝）。 */
+  caseDetail?: unknown | (() => Response | Promise<Response>);
   logout?: (attempt: number) => Response | Promise<Response>;
 } = {}) {
   logoutAttempt = 0;
@@ -51,7 +51,7 @@ function stubFetch(overrides: {
       return new Response(JSON.stringify({ cases: overrides.cases ?? [] }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
     if (/^\/api\/case\/[^/]+$/.test(u)) {
-      if (typeof overrides.caseDetail === "function") return (overrides.caseDetail as () => Response)();
+      if (typeof overrides.caseDetail === "function") return (overrides.caseDetail as () => Response | Promise<Response>)();
       if (overrides.caseDetail !== undefined) return new Response(JSON.stringify(overrides.caseDetail), { status: 200, headers: { "Content-Type": "application/json" } });
       return new Response("not-found", { status: 404 });
     }
@@ -154,6 +154,72 @@ it("退出后移除账户历史；迟到的旧报告响应不渲染", async () =
   await waitFor(() => expect(screen.queryByText("账户私有原句")).not.toBeInTheDocument());
   expect(screen.queryByText(/账户私有回答/)).not.toBeInTheDocument();
   expect(requestOrchestrateStream).not.toHaveBeenCalled();
+  // 迟到的响应属于上一段账户会话：不提示、不渲染（Change G 只治真正的打开失败）。
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("打开返回 404 的历史条目：给出可见失败提示，条目状态保持原样", async () => {
+  stubFetch({ authenticated: true, cases: [{ caseId: "gone", claim: "打不开的历史", status: "done", createdAt: 100 }] });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: /历史记录/ }));
+  fireEvent.click(await screen.findByText("打不开的历史"));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("这条历史暂时打不开");
+  expect(requestOrchestrateStream).not.toHaveBeenCalled();
+
+  // 条目状态保持原样：历史抽屉里还在，还是完成态，没有被改写成没查完。
+  fireEvent.click(screen.getByRole("button", { name: /历史记录/ }));
+  const reopened = await screen.findByText("打不开的历史");
+  expect(reopened.closest("button")?.querySelector("[data-gp-case-status]")?.getAttribute("data-gp-case-status")).toBe("done");
+});
+
+it("退出账户后迟到的打开失败不提示", async () => {
+  let resolveDetail!: (value: Response) => void;
+  stubFetch({
+    authenticated: true,
+    cases: [{ caseId: "alice-gone", claim: "退出前的历史", createdAt: 100 }],
+    caseDetail: () => new Promise<Response>((resolve) => { resolveDetail = resolve; }),
+  });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: /历史记录/ }));
+  fireEvent.click(await screen.findByText("退出前的历史"));
+  // 这一条 /api/case 还在途时退出账户：失败属于上一段会话，不对新会话喊话。
+  fireEvent.click(await screen.findByRole("button", { name: "我的" }));
+  fireEvent.click(await screen.findByText("退出"));
+  await screen.findByText("登录");
+  await act(async () => {
+    resolveDetail(new Response("not-found", { status: 404 }));
+  });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("打开历史时网络中断：同样给提示，不静默返回", async () => {
+  stubFetch({
+    authenticated: true,
+    cases: [{ caseId: "offline", claim: "断网时的历史", createdAt: 100 }],
+    caseDetail: () => Promise.reject(new Error("offline")),
+  });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: /历史记录/ }));
+  fireEvent.click(await screen.findByText("断网时的历史"));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("这条历史暂时打不开");
+  // 没打开就不装作打开了：人还停在首页输入。
+  expect(screen.getByRole("textbox", { name: "要调查的说法" })).toBeInTheDocument();
+});
+
+it("服务端记录读不出可用快照：提示可见，不伪造内容", async () => {
+  stubFetch({
+    authenticated: true,
+    cases: [{ caseId: "broken", claim: "读不出的历史", createdAt: 100 }],
+    caseDetail: { claim: "读不出的历史", investigation: { garbage: true } },
+  });
+  render(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: /历史记录/ }));
+  fireEvent.click(await screen.findByText("读不出的历史"));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("这条历史暂时打不开");
+  expect(screen.queryByLabelText("调查结论")).not.toBeInTheDocument();
 });
 
 it("打开已留存的账户历史不发起新调查、不重复落库", async () => {

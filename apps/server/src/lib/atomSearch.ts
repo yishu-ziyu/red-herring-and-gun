@@ -14,6 +14,7 @@ import {
   type SubclaimVerdict,
 } from "./claimAtom/index.js";
 import { filterAtomSources, type FilterMeta, type FilterableSource } from "./retrievalFilter.js";
+import { isOffTopicSource } from "./atomSearchQuery.js";
 import {
   bindDualBucketCitations,
   bindRelatedSourcesOnly,
@@ -47,6 +48,36 @@ export type AtomSearchSource = {
   title: string;
   snippet: string;
   credibility?: string;
+  /**
+   * 复用来源标记：知识库是跨案；prior-round 是同一案上一轮。
+   * 走联网检索拿到的来源没有这两个字段，两边的下游（快照 / 报告）行为完全一致。
+   */
+  provenance?: "knowledge" | "prior-round";
+  originDate?: string;
+};
+
+/** 知识库注入材料：条目的已核日期 + 该条目当时绑定的真实来源。 */
+export type KnowledgeInjection = {
+  /** YYYY-MM-DD（条目 lastVerifiedAt 的日期）；进快照 originDate 与活动行。 */
+  originDate: string;
+  evidence: Array<{ url: string; title: string; snippet: string }>;
+  /** 上次沉淀的判词；没有就不写，判定拍当普通核查。 */
+  priorVerdict?: string;
+};
+
+/** 判定拍用的可复核初稿（记忆只加速，不代替本轮核查）。 */
+export type KnowledgeDraft = {
+  claimAtom: string;
+  originDate: string;
+  priorVerdict: string;
+  evidence: Array<{ url: string; title: string; snippet: string }>;
+};
+
+/** 一个 atom 命中知识库并真的注入了。 */
+export type KnowledgeHit = {
+  atom: string;
+  originDate: string;
+  sourceCount: number;
 };
 
 export type AtomSearchItem = {
@@ -55,7 +86,12 @@ export type AtomSearchItem = {
 };
 
 export type AtomSearchBundle = {
-  /** 实际发起检索的原子（截断后） */
+  /**
+   * 本次做过材料收集的原子（截断后）：联网检索到的 + 命中知识库注入的
+   * （后者不发起联网、也不占 MAX_ATOM_SEARCHES 名额）。
+   * 下游按「已在 atomsSearched 里」判断该原子有材料，所以注入的原子必须在这里，
+   * 否则报告会被按「检索预算未覆盖」压成 unverified，证据循环也看不到它。
+   */
   atomsSearched: string[];
   /** claimAtomKey → 该原子检索到的来源（已筛选） */
   byAtomKey: Record<string, AtomSearchSource[]>;
@@ -73,6 +109,8 @@ export type AtomSearchBundle = {
   };
   /** 注入 Agent 的按条材料 */
   forAgent: Array<{ claimAtom: string; sources: AtomSearchSource[] }>;
+  /** 命中知识库的原子：上次判词与证据，供判定拍当可复核初稿。 */
+  knowledgeDrafts?: KnowledgeDraft[];
   /** 筛选可观测性：过滤前→后条数 */
   filterMeta?: {
     perAtom: Record<string, FilterMeta>;
@@ -247,7 +285,7 @@ export function buildAtomSearchBundle(
     const atom = item.atom;
     atomsSearched.push(atom);
     const key = claimAtomKeyFn(atom);
-    const rawSources = asSourceList(item.result);
+    const rawSources = asSourceList(item.result).filter((s) => !isOffTopicSource(atom, s));
     const { sources: filtered, meta } = filterAtomSources(rawSources);
     perAtomMeta[key] = meta;
     totals.before += meta.before;
@@ -287,6 +325,7 @@ export function buildAtomSearchBundle(
     atomsSearched,
     byAtomKey,
     forAgent,
+    knowledgeDrafts: [],
     filterMeta: { perAtom: perAtomMeta, totals },
     aggregate: {
       answer: answers.join("\n\n").slice(0, 1800),
@@ -387,9 +426,102 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
   });
 }
 
+export function attachKnowledgeDrafts(
+  agentInput: Record<string, unknown>,
+  bundle: Pick<AtomSearchBundle, "knowledgeDrafts"> | null | undefined
+): void {
+  const drafts = bundle?.knowledgeDrafts;
+  if (drafts && drafts.length > 0) agentInput.knowledgeDrafts = drafts;
+}
+
+/** 命中的条目至少要有 1 条真实 http(s) 证据才配得上「免于本次检索」（没证据不出结论）。 */
+function usableKnowledgeEvidence(injection: KnowledgeInjection): KnowledgeInjection["evidence"] {
+  return (Array.isArray(injection?.evidence) ? injection.evidence : []).filter((item) =>
+    /^https?:\/\//i.test(String(item?.url ?? "").trim())
+  );
+}
+
+/**
+ * 把知识库证据注入 bundle（线上检索路径之外的唯一入口，纯函数）。
+ *
+ * 注入纪律：
+ * - 只留真实 http(s) URL；没有可用来源返回 0（调用方据此不记 injected）。
+ * - 证据位先、检索垫后：注入的是「上次核过这条命题时绑过的证据」，排在本次检索材料之前。
+ * - 同时写进 `aggregate.sources`：`mergeSubclaimVerdicts` 用聚合来源当 URL 白名单，
+ *   少写一处模型引用就会被当幻觉剥掉，注入等于白做。
+ * - 注入的原子追加进 `atomsSearched`：它是「这次该原子有材料」的既有信号（见类型注释）。
+ * - 不改 traceText / filterMeta：那两项统计的是本次联网检索做了多少轮、滤掉多少条，
+ *   注入没走那条漏斗，硬算进去反而让数字变假。
+ */
+export function injectKnowledgeEvidence(
+  bundle: AtomSearchBundle,
+  atom: string,
+  injection: KnowledgeInjection,
+  claimAtomKeyFn: (s: string) => string,
+  provenance: "knowledge" | "prior-round" = "knowledge"
+): number {
+  const key = claimAtomKeyFn(atom);
+  const existing = bundle.byAtomKey[key] ?? [];
+  const seen = new Set(existing.map((s) => s.url));
+  const aggregateSeen = new Set(
+    bundle.aggregate.sources.map((s) => String((s as { url?: unknown }).url ?? ""))
+  );
+  const added: AtomSearchSource[] = [];
+  for (const item of usableKnowledgeEvidence(injection)) {
+    const url = String(item?.url ?? "").trim();
+    if (seen.has(url)) continue;
+    seen.add(url);
+    added.push({
+      url,
+      title: String(item?.title ?? "").slice(0, 200),
+      snippet: String(item?.snippet ?? "").slice(0, 320),
+      provenance,
+      originDate: injection.originDate,
+    });
+  }
+  if (added.length === 0) return 0;
+
+  const merged = [...added, ...existing];
+  bundle.byAtomKey[key] = merged;
+  const forAgentItem = bundle.forAgent.find((f) => claimAtomKeyFn(f.claimAtom) === key);
+  if (forAgentItem) forAgentItem.sources = merged;
+  else bundle.forAgent.push({ claimAtom: atom, sources: merged });
+
+  for (const source of added) {
+    if (aggregateSeen.has(source.url)) continue;
+    aggregateSeen.add(source.url);
+    bundle.aggregate.sources.push({
+      title: source.title,
+      url: source.url,
+      snippet: source.snippet,
+      credibility: "",
+      forClaimAtom: atom,
+    });
+  }
+
+  if (!bundle.atomsSearched.some((entry) => claimAtomKeyFn(entry) === key)) {
+    bundle.atomsSearched.push(atom);
+  }
+  if (!bundle.knowledgeDrafts) bundle.knowledgeDrafts = [];
+  const priorVerdict = String(injection.priorVerdict ?? "").trim();
+  if (priorVerdict) {
+    bundle.knowledgeDrafts.push({
+      claimAtom: atom,
+      originDate: injection.originDate,
+      priorVerdict,
+      evidence: added.map((source) => ({ url: source.url, title: source.title, snippet: source.snippet })),
+    });
+  }
+  return added.length;
+}
+
 /**
  * Per-atom retrieval behind one interface.
  * Selects verifiable atoms, calls searchOne per atom, builds bundle with claimAtomKey.
+ *
+ * 记忆只加速（契约 Part 1）：`knowledge` 注入时，先逐 atom 查本地知识库；
+ * 命中且新鲜的 atom 用条目证据替换这次联网（也不占 MAX_ATOM_SEARCHES 名额），
+ * 名额让给后面的原子。未注入 / 不命中 / 超龄 / 判词不可注入 → 行为与没有记忆时完全一致。
  */
 export async function retrieveForAtoms(options: {
   claimAtoms: unknown;
@@ -399,15 +531,67 @@ export async function retrieveForAtoms(options: {
   claimAtomKeyFn?: (s: string) => string;
   /** Screenshot reverse-image lookup, beside searchOne. OCR/text hits must not fill origin. */
   lookupImageOrigin?: () => Promise<ImageOriginResult>;
+  /** 知识库查库（记忆层实现见 knowledgeStore.createKnowledgeMemory）。 */
+  knowledge?: {
+    lookup: (atom: string) => KnowledgeInjection | null;
+    /** 某个 atom 真的注入了（供活动流 / 观测记录）。 */
+    onInjected?: (hit: KnowledgeHit) => void;
+  };
+  /**
+   * 同一案上一轮证据（契约 docs/evals/2026-09-13-followup-fast-path.md）。
+   * 先于知识库：这一案的材料优先于跨案记忆。
+   */
+  priorRound?: {
+    lookup: (atom: string) => KnowledgeInjection | null;
+    onInjected?: (hit: KnowledgeHit) => void;
+  };
 }): Promise<{
   atomsToSearch: string[];
   atomSearchBundle: AtomSearchBundle;
   search360Result: AtomSearchBundle["aggregate"];
   imageOrigin?: ImageOriginResult;
+  /** 命中知识库并注入的原子（没注入能力时为空数组）。 */
+  knowledgeHits: KnowledgeHit[];
+  /** 复用同一案上一轮证据的原子。 */
+  priorRoundHits: KnowledgeHit[];
 }> {
   const keyFn = options.claimAtomKeyFn ?? claimAtomKey;
   const listed = listAtomsForSearch(options.claimAtoms, options.claimAtomTypes);
-  const atomsToSearch = selectAtomsToSearch(listed.verifiable, listed.typeByKey);
+
+  const collectInjections = (
+    atoms: string[],
+    channel: { lookup: (atom: string) => KnowledgeInjection | null } | undefined,
+    skip: Set<string>
+  ): Array<{ atom: string; injection: KnowledgeInjection }> => {
+    if (!channel) return [];
+    const out: Array<{ atom: string; injection: KnowledgeInjection }> = [];
+    for (const atom of atoms) {
+      if (skip.has(keyFn(atom))) continue;
+      let injection: KnowledgeInjection | null = null;
+      try {
+        injection = channel.lookup(atom);
+      } catch (error) {
+        console.warn(`[atomSearch] 复用查库失败，按未命中处理: ${String(error)}`);
+        injection = null;
+      }
+      if (injection && usableKnowledgeEvidence(injection).length > 0) {
+        out.push({ atom, injection });
+      }
+    }
+    return out;
+  };
+
+  // 同一案上一轮先于跨案知识库：命中的原子退出联网候选，名额自然让给新问题。
+  const priorInjections = collectInjections(listed.verifiable, options.priorRound, new Set());
+  const priorKeys = new Set(priorInjections.map(({ atom }) => keyFn(atom)));
+  const knowledgeInjections = collectInjections(listed.verifiable, options.knowledge, priorKeys);
+  const injections = [...priorInjections, ...knowledgeInjections];
+  const injectedKeys = new Set(injections.map(({ atom }) => keyFn(atom)));
+  const candidates =
+    injectedKeys.size === 0
+      ? listed.verifiable
+      : listed.verifiable.filter((atom) => !injectedKeys.has(keyFn(atom)));
+  const atomsToSearch = selectAtomsToSearch(candidates, listed.typeByKey);
   const mode = options.hooks?.mode ?? "parallel";
   const items: AtomSearchItem[] = [];
   const originPromise = options.lookupImageOrigin
@@ -434,6 +618,22 @@ export async function retrieveForAtoms(options: {
   }
 
   const atomSearchBundle = buildAtomSearchBundle(items, keyFn);
+  const knowledgeHits: KnowledgeHit[] = [];
+  const priorRoundHits: KnowledgeHit[] = [];
+  for (const { atom, injection } of priorInjections) {
+    const sourceCount = injectKnowledgeEvidence(atomSearchBundle, atom, injection, keyFn, "prior-round");
+    if (sourceCount === 0) continue;
+    const hit: KnowledgeHit = { atom, originDate: injection.originDate, sourceCount };
+    priorRoundHits.push(hit);
+    options.priorRound?.onInjected?.(hit);
+  }
+  for (const { atom, injection } of knowledgeInjections) {
+    const sourceCount = injectKnowledgeEvidence(atomSearchBundle, atom, injection, keyFn, "knowledge");
+    if (sourceCount === 0) continue;
+    const hit: KnowledgeHit = { atom, originDate: injection.originDate, sourceCount };
+    knowledgeHits.push(hit);
+    options.knowledge?.onInjected?.(hit);
+  }
   const imageOrigin = await originPromise;
   if (imageOrigin) attachImageOriginToBundle(atomSearchBundle, imageOrigin);
   return {
@@ -441,5 +641,7 @@ export async function retrieveForAtoms(options: {
     atomSearchBundle,
     search360Result: atomSearchBundle.aggregate,
     imageOrigin: atomSearchBundle.imageOrigin,
+    knowledgeHits,
+    priorRoundHits,
   };
 }

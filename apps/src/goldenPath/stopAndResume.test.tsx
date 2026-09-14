@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InvestigationCanvas } from "./InvestigationCanvas";
 import { applyRunEvent, type RunState } from "./useInvestigationRun";
-import { investigatingUnassessed } from "./fixtures";
+import { investigatingUnassessed, refutedComplete, REFUTED_CLAIM } from "./fixtures";
 
 const requestOrchestrateStream = vi.fn();
 vi.mock("../lib/agentExpansion", async (importOriginal) => {
@@ -28,6 +28,7 @@ const INITIAL: RunState = {
   runId: null,
   serverStatus: null,
   stop: "idle",
+  timeoutPending: false,
 };
 
 afterEach(() => {
@@ -197,6 +198,121 @@ describe("D21 刷新恢复：接回原 run，不重开调查", () => {
     expect(runId).toBe("run-stored-1");
     // 从断点接：after 是上次看过的 seq，不是从头
     expect(after).toBe(4);
+    window.localStorage.clear();
+  });
+
+  it("接不回去且没有任何材料 → 回首页输入，不钉死连接中断", async () => {
+    vi.resetModules();
+    window.localStorage.setItem(
+      "rhg:active-run",
+      JSON.stringify({
+        runId: "run-dead-1",
+        claim: "隔夜菜会致癌",
+        intake: { text: "隔夜菜会致癌", links: [], images: [] },
+        lastSeq: 0,
+        at: 1_760_000_000_000,
+      })
+    );
+    const resumeSpy = vi.fn((_runId: string, _after: number, _onEvent: (event: unknown) => void, onEnd: (reason: string) => void) => {
+      onEnd("failed");
+      return { cancel: () => {} };
+    });
+    vi.doMock("../lib/investigationResume", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("../lib/investigationResume")>();
+      return { ...actual, resumeInvestigationStream: resumeSpy, cancelInvestigation: vi.fn(async () => ({ ok: true })) };
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: unknown) => {
+      const url = typeof input === "string" ? input : "";
+      if (url.includes("/api/cases")) {
+        return new Response(JSON.stringify({ cases: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/models/health")) {
+        return new Response(JSON.stringify({ status: "available", message: "" }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.includes("/api/checks/quota")) {
+        return new Response(JSON.stringify({ remaining: 1, total: 1, used: 0, kind: "guest" }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ authenticated: false }), { status: 401, headers: { "Content-Type": "application/json" } });
+    });
+
+    const { default: App } = await import("../App");
+    render(<App />);
+    await waitFor(() => expect(resumeSpy).toHaveBeenCalled());
+    expect(await screen.findByRole("textbox", { name: "要调查的说法" })).toBeTruthy();
+    expect(document.querySelector(".gp-waiting")).toBeNull();
+    expect(document.body.textContent).not.toContain("与核查服务的连接中断了");
+    window.localStorage.clear();
+  });
+});
+
+// 契约 docs/evals/2026-09-12-mainpath-p0.md Change C：超时不是失败。
+describe("Change C 超时不再一锤定音（reducer）", () => {
+  it("timeout_pending：只翻「还在查」标记，连接与已有快照都不动", () => {
+    const live = applyRunEvent(INITIAL, { type: "investigation_snapshot", investigation: investigatingUnassessed() });
+    const pending = applyRunEvent(live, { type: "timeout_pending" });
+    expect(pending.timeoutPending).toBe(true);
+    expect(pending.connection).toBe("live");
+    expect(pending.snapshot).toBe(live.snapshot);
+  });
+
+  it("晚到的 complete：提示退场，真报告进 state", () => {
+    const pending = applyRunEvent(INITIAL, { type: "timeout_pending" });
+    const done = applyRunEvent(
+      pending,
+      { type: "complete", finalReport: { conclusion: "真结论", investigation: refutedComplete() } },
+      REFUTED_CLAIM
+    );
+    expect(done.timeoutPending).toBe(false);
+    expect(done.connection).toBe("ended");
+    expect(done.finalReport?.conclusion).toBe("真结论");
+  });
+
+  it("超时后最终失败：提示退场，交给现有失败态与中断文案", () => {
+    const pending = applyRunEvent(INITIAL, { type: "timeout_pending" });
+    const failed = applyRunEvent(pending, { type: "error", message: "上游失败" });
+    expect(failed.timeoutPending).toBe(false);
+    expect(failed.connection).toBe("failed");
+    expect(failed.errorMessage).toBe("上游失败");
+  });
+
+  it("刷新回到已完成的 run：按已结束渲染，不留「进行中」的座标", async () => {
+    vi.resetModules();
+    window.localStorage.setItem(
+      "rhg:active-run",
+      JSON.stringify({
+        runId: "run-done-1",
+        claim: REFUTED_CLAIM,
+        intake: { text: REFUTED_CLAIM, links: [], images: [] },
+        lastSeq: 7,
+        at: 1_760_000_000_000,
+      })
+    );
+    // 超时后晚完成的那条 run 已落终态：补发的帧里有带结论的快照，补完就关流。
+    const resumeSpy = vi.fn((_runId: string, _after: number, onEvent: (event: unknown) => void, onEnd: (reason: string) => void) => {
+      onEvent({ type: "investigation_snapshot", investigation: refutedComplete() });
+      onEvent({ type: "run_state", status: "completed", terminal: true });
+      onEnd("closed");
+      return { cancel: () => {} };
+    });
+    vi.doMock("../lib/investigationResume", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("../lib/investigationResume")>();
+      return { ...actual, resumeInvestigationStream: resumeSpy, cancelInvestigation: vi.fn(async () => ({ ok: true })) };
+    });
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input: unknown) => {
+      const url = typeof input === "string" ? input : "";
+      if (url.includes("/api/cases")) {
+        return new Response(JSON.stringify({ cases: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ authenticated: false }), { status: 401, headers: { "Content-Type": "application/json" } });
+    });
+
+    const { default: App } = await import("../App");
+    render(<App />);
+    await waitFor(() => expect(resumeSpy).toHaveBeenCalled());
+    // 结论照常呈现
+    expect(await screen.findByLabelText("调查结论")).toBeTruthy();
+    // 服务端已确认终态：本地座标清掉（还当「进行中」的话它会一直留着）
+    await waitFor(() => expect(window.localStorage.getItem("rhg:active-run")).toBeNull());
     window.localStorage.clear();
   });
 });

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { ActivityFeed } from "./ActivityFeed";
 import { InvestigationCanvas } from "./InvestigationCanvas";
 import { applyRunEvent, type RunState } from "./useInvestigationRun";
 import { conflictKnownReason, investigatingUnassessed } from "./fixtures";
@@ -44,6 +45,7 @@ const INITIAL: RunState = {
   runId: null,
   serverStatus: null,
   stop: "idle",
+  timeoutPending: false,
 };
 
 function stateAfter(...activities: PublicActivity[]): RunState {
@@ -151,7 +153,7 @@ describe("C13/C14 调查中渲染活动行并可从活动打开来源", () => {
         payload: { title: "某市交通局公告", domain: "example.org", role: "support" },
       }),
     ]);
-    expect(screen.getByText("拆出问题：某市下周将试点无人驾驶公交")).toBeTruthy();
+    expect(screen.queryByText("拆出问题：某市下周将试点无人驾驶公交")).toBeNull();
     expect(screen.getByText(/判定这条材料：支持/)).toBeTruthy();
   });
 
@@ -190,6 +192,23 @@ describe("C13/C14 调查中渲染活动行并可从活动打开来源", () => {
     expect(document.querySelector(".gp-activity-line.is-linked")).toBeNull();
     expect(screen.getByText("带回材料：不存在 · example.org")).toBeTruthy();
   });
+
+  it("发现分歧活动渲染为 is-jump 跳转按钮，不解析为来源抽屉", () => {
+    const snapshot = investigatingUnassessed();
+    renderCanvas(snapshot, [
+      activity(1, {
+        kind: "conflict_detected",
+        role: "conflict" as unknown as PublicActivity["role"],
+        claimIds: [snapshot.claims[0]!.id],
+        sourceIds: [snapshot.sources[0]?.id ?? "src-1"],
+        payload: { summary: "存在相反证据" },
+      }),
+    ]);
+    expect(document.querySelector(".gp-activity-line.is-linked")).toBeNull();
+    const jumpBtn = document.querySelector<HTMLElement>(".gp-activity-line.is-jump");
+    expect(jumpBtn).toBeTruthy();
+    expect(jumpBtn?.textContent).toContain("发现分歧：存在相反证据");
+  });
 });
 
 describe("C15 用户上滚时新发现不抢滚动", () => {
@@ -220,5 +239,68 @@ describe("C15 用户上滚时新发现不抢滚动", () => {
 
     fireEvent.click(badge);
     expect(document.querySelector("[data-gp-activity-unseen]")).toBeNull();
+  });
+});
+
+describe("C16 命中知识库的活动行", () => {
+  /** 命中知识库的活动：动作类，引用数组留空，日期走 payload（服务端 emitter 的形状）。 */
+  function knowledgeHit(payload: Record<string, string>): PublicActivity {
+    return activity(1, {
+      kind: "knowledge_hit",
+      role: "source",
+      claimIds: [],
+      sourceIds: [],
+      payload,
+    });
+  }
+
+  function renderFeed(hit: PublicActivity) {
+    return render(
+      <ActivityFeed activities={[hit]} snapshot={investigatingUnassessed()} onSelectSource={() => {}} />
+    );
+  }
+
+  it("渲染成一行「命中知识库（YYYY-MM-DD 已核），免于本次检索」，颜色走既有语义色", () => {
+    renderFeed(knowledgeHit({ originDate: "2026-09-11T03:20:00.000Z" }));
+
+    expect(screen.getByText("命中知识库（2026-09-11 已核），免于本次检索")).toBeTruthy();
+    const item = document.querySelector<HTMLElement>('[data-gp-activity-kind="knowledge_hit"]')!;
+    expect(item.style.getPropertyValue("--gp-pulse")).toBe("var(--gp-semantic-context)");
+  });
+
+  it("payload 用白名单里的另一个日期键 verifiedAt 也认", () => {
+    renderFeed(knowledgeHit({ verifiedAt: "2026-08-01T09:00:00.000Z" }));
+
+    expect(screen.getByText("命中知识库（2026-08-01 已核），免于本次检索")).toBeTruthy();
+  });
+
+  it("哪里都没有日期就只写「已核」，不编一个日期出来", () => {
+    renderFeed(knowledgeHit({}));
+
+    expect(screen.getByText("命中知识库（已核），免于本次检索")).toBeTruthy();
+  });
+
+  it("这一 kind 在公共活动契约里：走过事件流校验后仍留在活动里并渲染", () => {
+    const hit = knowledgeHit({ originDate: "2026-09-11" });
+    const state = stateAfter(hit);
+    expect(state.activities).toHaveLength(1);
+
+    renderFeed(state.activities[0]!);
+    expect(screen.getByText("命中知识库（2026-09-11 已核），免于本次检索")).toBeTruthy();
+  });
+
+  it("同一案上一轮复用渲染成「依据来自刚才那一轮，不再检索已核过的命题」", () => {
+    renderFeed(
+      activity(1, {
+        kind: "prior_round_reuse",
+        role: "source",
+        claimIds: [],
+        sourceIds: [],
+        payload: {},
+      })
+    );
+    expect(screen.getByText("依据来自刚才那一轮，不再检索已核过的命题")).toBeTruthy();
+    const item = document.querySelector<HTMLElement>('[data-gp-activity-kind="prior_round_reuse"]')!;
+    expect(item.style.getPropertyValue("--gp-pulse")).toBe("var(--gp-semantic-context)");
   });
 });

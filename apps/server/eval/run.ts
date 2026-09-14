@@ -18,7 +18,8 @@ import { readFileSync, appendFileSync, existsSync, writeFileSync } from "node:fs
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { goldenDataset, type ScoreCaseGolden } from "./golden.js";
-import { runCase } from "./runCase.js";
+import { loadLocalEnv } from "./localEnv.js";
+import { runCase, type EvalEnv } from "./runCase.js";
 import {
   scoreCase,
   aggregateMetrics,
@@ -31,23 +32,6 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// ── env 加载（与 runCasePipeline.real.test.ts 同款）──
-function loadLocalEnv() {
-  const cwd = process.cwd();
-  const candidates = [".env.local", "server/.env.local", "../.env.local", ".env.local.example"];
-  const found = candidates.map((p) => join(cwd, p)).find((p) => existsSync(p));
-  if (!found) return;
-  const text = readFileSync(found, "utf8");
-  for (const rawLine of text.split("\n")) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq <= 0) continue;
-    const key = line.slice(0, eq).trim();
-    const value = line.slice(eq + 1).trim().replace(/^["']|["']$/g, "");
-    if (key && process.env[key] === undefined) process.env[key] = value;
-  }
-}
 loadLocalEnv();
 
 const hasAnyKey = Boolean(
@@ -57,19 +41,19 @@ const hasAnyKey = Boolean(
     process.env.MIMO_API_KEY
 );
 
+function flagValue(argv: string[], name: string): string | undefined {
+  const i = argv.indexOf(name);
+  return i >= 0 ? argv[i + 1] : undefined;
+}
+
 function parseArgs(argv: string[]) {
-  const out: { gate?: string; ids?: string[]; domain?: string; repeats: number } = { repeats: 1 };
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    if (a === "--gate") out.gate = argv[i + 1];
-    if (a === "--ids") out.ids = (argv[i + 1] ?? "").split(",").filter(Boolean);
-    if (a === "--domain") out.domain = argv[i + 1];
-    if (a === "--repeats") {
-      const n = Number(argv[i + 1]);
-      out.repeats = Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
-    }
-  }
-  return out;
+  const repeatsRaw = Number(flagValue(argv, "--repeats"));
+  return {
+    gate: flagValue(argv, "--gate"),
+    ids: flagValue(argv, "--ids")?.split(",").filter(Boolean),
+    domain: flagValue(argv, "--domain"),
+    repeats: Number.isFinite(repeatsRaw) && repeatsRaw >= 1 ? Math.floor(repeatsRaw) : 1,
+  };
 }
 
 function filterCases(args: { ids?: string[]; domain?: string }): ScoreCaseGolden[] {
@@ -87,120 +71,130 @@ function historyPath(): string {
   return join(__dirname, "../../../.ship/evaluation/benchmark-history.jsonl");
 }
 
-function summarizeSearch(bundle: unknown, report: Record<string, unknown>) {
-  const rec = bundle && typeof bundle === "object" ? (bundle as Record<string, unknown>) : {};
-  const atoms = Array.isArray(rec.atomsSearched) ? rec.atomsSearched.filter((a) => typeof a === "string") : [];
-  const aggregate = rec.aggregate && typeof rec.aggregate === "object" ? (rec.aggregate as Record<string, unknown>) : {};
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function searchedAtoms(bundle: unknown): string[] {
+  const rec = asRecord(bundle);
+  return Array.isArray(rec.atomsSearched) ? rec.atomsSearched.filter((a) => typeof a === "string") : [];
+}
+
+function sourceUrls(bundle: unknown): string[] {
+  const rec = asRecord(bundle);
+  const aggregate = asRecord(rec.aggregate);
   const sources = Array.isArray(aggregate.sources)
     ? aggregate.sources
     : Array.isArray(rec.forAgent)
       ? (rec.forAgent as Array<{ sources?: unknown[] }>).flatMap((item) => item.sources ?? [])
       : [];
-  const urls = sources
+  return sources
     .map((s) => {
       if (!s || typeof s !== "object") return "";
       return String((s as { url?: unknown }).url || "").trim();
     })
     .filter((u) => /^https?:\/\//i.test(u));
+}
+
+function faceFromReport(report: Record<string, unknown>): string {
+  if (typeof report.faceVerdict === "string" && report.faceVerdict) return report.faceVerdict;
   const conclusion = String(report.conclusion || report.summaryForPublic || report.faceVerdict || "");
-  const face =
-    typeof report.faceVerdict === "string" && report.faceVerdict
-      ? report.faceVerdict
-      : /只能信一部分/.test(conclusion)
-        ? "只能信一部分"
-        : /还查不清/.test(conclusion)
-          ? "还查不清"
-          : /不能信/.test(conclusion)
-            ? "不能信"
-            : /能信/.test(conclusion)
-              ? "能信"
-              : "";
+  if (/只能信一部分/.test(conclusion)) return "只能信一部分";
+  if (/还查不清/.test(conclusion)) return "还查不清";
+  if (/不能信/.test(conclusion)) return "不能信";
+  if (/能信/.test(conclusion)) return "能信";
+  return "missing";
+}
+
+function summarizeSearch(bundle: unknown, report: Record<string, unknown>) {
+  const atoms = searchedAtoms(bundle);
+  const urls = sourceUrls(bundle);
   return {
     searched: atoms.length > 0,
     atoms,
     urlCount: urls.length,
     sampleUrls: urls.slice(0, 3),
-    face: face || "missing",
+    face: faceFromReport(report),
   };
 }
 
-async function main() {
-  if (!hasAnyKey) {
-    console.error("未检测到任何 API key（STEPFUN/DEEPSEEK/MINIMAX/MIMO）。请先在 mvp/.env.local 配置。");
-    process.exit(1);
+function oneRepeat(
+  error: string | undefined,
+  finalReport: Record<string, unknown>,
+  steps: Awaited<ReturnType<typeof runCase>>["steps"],
+  runIndex: number
+): { run: RepeatRun; detail: Record<string, unknown> } {
+  const verdict = error ? "ERROR" : String(finalReport.verdictType ?? "?");
+  const cred =
+    error || typeof finalReport.credibilityScore !== "number" ? 50 : (finalReport.credibilityScore as number);
+  return {
+    run: { verdict, credibility: cred, error },
+    detail: {
+      run: runIndex,
+      verdict,
+      credibility: error ? null : finalReport.credibilityScore,
+      error: error ?? null,
+      scoreBreakdown: finalReport._scoreBreakdown ?? null,
+      agents: steps.map((s) => s.agent),
+    },
+  };
+}
+
+function writeCaseProgress(
+  repeats: number,
+  verdict: string,
+  cred: number | string,
+  searchMeta: ReturnType<typeof summarizeSearch>,
+  ms: number
+): void {
+  const searchBit = `search=${searchMeta.searched ? "yes" : "no"} urls=${searchMeta.urlCount} face=${searchMeta.face} (${ms}ms)\n`;
+  process.stdout.write(
+    repeats > 1 ? `→ majority=${verdict} medianCred=${cred} ${searchBit}` : `verdict=${verdict} credibility=${cred} ${searchBit}`
+  );
+}
+
+async function collectRepeats(golden: ScoreCaseGolden, evalEnv: EvalEnv, repeats: number) {
+  const repeatRuns: RepeatRun[] = [];
+  const perRunDetails: Array<Record<string, unknown>> = [];
+  let lastSteps: Awaited<ReturnType<typeof runCase>>["steps"] = [];
+  let lastReport: Record<string, unknown> = {};
+  let lastError: string | undefined;
+  let lastBundle: Awaited<ReturnType<typeof runCase>>["atomSearchBundle"];
+  let lastLoop: Awaited<ReturnType<typeof runCase>>["evidenceLoop"];
+
+  for (let r = 0; r < repeats; r++) {
+    const { steps, finalReport, error, atomSearchBundle, evidenceLoop } = await runCase(golden, evalEnv);
+    lastSteps = steps;
+    lastReport = finalReport;
+    lastError = error;
+    lastBundle = atomSearchBundle;
+    lastLoop = evidenceLoop;
+    const { run, detail } = oneRepeat(error, finalReport, steps, r + 1);
+    repeatRuns.push(run);
+    perRunDetails.push(detail);
+    if (repeats > 1) {
+      process.stdout.write(`r${r + 1}=${run.verdict}/${error ? "-" : finalReport.credibilityScore} `);
+    }
   }
 
-  const args = parseArgs(process.argv.slice(2));
-  const cases = filterCases(args);
-  const evalEnv = {
-    env: process.env as Record<string, string>,
-    codexBin: process.env.CODEX_BIN || "/usr/local/bin/codex",
+  return { repeatRuns, perRunDetails, lastSteps, lastReport, lastError, lastBundle, lastLoop };
+}
+
+function scoreCollected(golden: ScoreCaseGolden, collected: Awaited<ReturnType<typeof collectRepeats>>) {
+  const agg = aggregateRepeats(collected.repeatRuns);
+  const verdict = agg.error ? "ERROR" : agg.verdict;
+  const cred = agg.error ? "-" : agg.credibility;
+  const scoredReport: Record<string, unknown> = {
+    ...collected.lastReport,
+    verdictType: verdict === "ERROR" ? collected.lastReport.verdictType : verdict,
+    credibilityScore: typeof cred === "number" ? cred : collected.lastReport.credibilityScore,
   };
-
-  const repeats = args.repeats;
-  console.log(
-    `跑 ${cases.length} 个 golden case（含真实模型 + 真实搜索）${repeats > 1 ? `，每 case ×${repeats} 次（verdict 多数 / credibility 中位）` : ""}...`
-  );
-  const results = [];
-  const scores = [];
-  for (const golden of cases) {
-    const t0 = Date.now();
-    process.stdout.write(`  ${golden.id} ${golden.claim.slice(0, 30)}... `);
-
-    const repeatRuns: RepeatRun[] = [];
-    const perRunDetails: Array<Record<string, unknown>> = [];
-    let lastSteps: Awaited<ReturnType<typeof runCase>>["steps"] = [];
-    let lastReport: Record<string, unknown> = {};
-    let lastError: string | undefined;
-
-    let lastBundle: Awaited<ReturnType<typeof runCase>>["atomSearchBundle"];
-    let lastLoop: Awaited<ReturnType<typeof runCase>>["evidenceLoop"];
-
-    for (let r = 0; r < repeats; r++) {
-      const { steps, finalReport, error, atomSearchBundle, evidenceLoop } = await runCase(golden, evalEnv);
-      lastSteps = steps;
-      lastReport = finalReport;
-      lastError = error;
-      lastBundle = atomSearchBundle;
-      lastLoop = evidenceLoop;
-      const verdict = error ? "ERROR" : String(finalReport.verdictType ?? "?");
-      const cred =
-        error || typeof finalReport.credibilityScore !== "number"
-          ? 50
-          : (finalReport.credibilityScore as number);
-      repeatRuns.push({ verdict, credibility: cred, error });
-      perRunDetails.push({
-        run: r + 1,
-        verdict,
-        credibility: error ? null : finalReport.credibilityScore,
-        error: error ?? null,
-        scoreBreakdown: (finalReport as Record<string, unknown>)._scoreBreakdown ?? null,
-        agents: steps.map((s) => s.agent),
-      });
-      if (repeats > 1) {
-        process.stdout.write(`r${r + 1}=${verdict}/${error ? "-" : finalReport.credibilityScore} `);
-      }
-    }
-
-    const ms = Date.now() - t0;
-    const agg = aggregateRepeats(repeatRuns);
-    const verdict = agg.error ? "ERROR" : agg.verdict;
-    const cred = agg.error ? "-" : agg.credibility;
-
-    // 用聚合后的 verdict/credibility 覆盖 lastReport，供 scoreCase 打分
-    const scoredReport: Record<string, unknown> = {
-      ...lastReport,
-      verdictType: verdict === "ERROR" ? lastReport.verdictType : verdict,
-      credibilityScore: typeof cred === "number" ? cred : lastReport.credibilityScore,
-    };
-    const searchMeta = summarizeSearch(lastBundle, lastReport);
-    process.stdout.write(
-      repeats > 1
-        ? `→ majority=${verdict} medianCred=${cred} search=${searchMeta.searched ? "yes" : "no"} urls=${searchMeta.urlCount} face=${searchMeta.face} (${ms}ms)\n`
-        : `verdict=${verdict} credibility=${cred} search=${searchMeta.searched ? "yes" : "no"} urls=${searchMeta.urlCount} face=${searchMeta.face} (${ms}ms)\n`
-    );
-
-    const score = scoreCase({
+  return {
+    agg,
+    verdict,
+    cred,
+    searchMeta: summarizeSearch(collected.lastBundle, collected.lastReport),
+    score: scoreCase({
       case: {
         id: golden.id,
         claim: golden.claim,
@@ -213,74 +207,91 @@ async function main() {
         expectedAtoms: golden.expectedAtoms,
         mustSearch: golden.mustSearch,
       },
-      steps: lastSteps,
+      steps: collected.lastSteps,
       finalReport: scoredReport,
-      atomSearchBundle: lastBundle,
-      evidenceLoop: lastLoop as CaseResult["evidenceLoop"],
+      atomSearchBundle: collected.lastBundle,
+      evidenceLoop: collected.lastLoop as CaseResult["evidenceLoop"],
       error: agg.error,
-    });
-    scores.push(score);
-    results.push({
+    }),
+  };
+}
+
+async function evaluateGolden(golden: ScoreCaseGolden, evalEnv: EvalEnv, repeats: number) {
+  const t0 = Date.now();
+  process.stdout.write(`  ${golden.id} ${golden.claim.slice(0, 30)}... `);
+  const collected = await collectRepeats(golden, evalEnv, repeats);
+  const scored = scoreCollected(golden, collected);
+  const ms = Date.now() - t0;
+  writeCaseProgress(repeats, scored.verdict, scored.cred, scored.searchMeta, ms);
+  return {
+    score: scored.score,
+    row: {
       id: golden.id,
       claim: golden.claim,
-      verdict,
-      credibility: cred,
-      error: agg.error ?? lastError,
+      verdict: scored.verdict,
+      credibility: scored.cred,
+      error: scored.agg.error ?? collected.lastError,
       latencyMs: ms,
-      agents: lastSteps.map((s) => s.agent),
-      search: searchMeta,
-      evidenceLoop: lastLoop ?? undefined,
-      scoreBreakdown: (lastReport as Record<string, unknown>)._scoreBreakdown ?? null,
-      repeats: repeats > 1 ? { n: repeats, votes: agg.verdictVotes, samples: agg.credibilitySamples, runs: perRunDetails } : undefined,
-    });
-  }
+      agents: collected.lastSteps.map((s) => s.agent),
+      search: scored.searchMeta,
+      evidenceLoop: collected.lastLoop ?? undefined,
+      scoreBreakdown: collected.lastReport._scoreBreakdown ?? null,
+      repeats: repeats > 1
+        ? { n: repeats, votes: scored.agg.verdictVotes, samples: scored.agg.credibilitySamples, runs: collected.perRunDetails }
+        : undefined,
+    },
+  };
+}
 
-  const aggregate: AggregateMetrics = aggregateMetrics(scores);
-  console.log("\n===== 聚合指标 =====");
-  console.log(JSON.stringify(aggregate, null, 2));
+function searchMetaOf(row: { search?: unknown }): { searched?: boolean; urlCount?: number; face?: string } {
+  return row.search && typeof row.search === "object"
+    ? (row.search as { searched?: boolean; urlCount?: number; face?: string })
+    : {};
+}
 
+function printTinySummary(results: Array<{ id: unknown; verdict: unknown; search?: unknown }>): void {
   const tiny = results.filter((r) => String(r.id).startsWith("TINY-"));
-  if (tiny.length > 0) {
-    const searched = tiny.filter((r) => (r.search as { searched?: boolean } | undefined)?.searched).length;
-    const withUrl = tiny.filter((r) => ((r.search as { urlCount?: number } | undefined)?.urlCount ?? 0) > 0).length;
-    const faceOk = tiny.filter((r) => {
-      const face = (r.search as { face?: string } | undefined)?.face;
-      return face && face !== "missing";
-    }).length;
-    const directionOk = tiny.filter((r) => r.verdict === "false" || r.verdict === "mixed_misleading").length;
-    console.log("\n===== 微博级短谣 =====");
-    console.log(
-      JSON.stringify(
-        {
-          total: tiny.length,
-          searchedShare: searched / tiny.length,
-          boundUrlShare: withUrl / tiny.length,
-          faceShare: faceOk / tiny.length,
-          correctDirectionShare: directionOk / tiny.length,
-        },
-        null,
-        2
-      )
-    );
-  }
+  if (tiny.length === 0) return;
+  const searched = tiny.filter((r) => searchMetaOf(r).searched).length;
+  const withUrl = tiny.filter((r) => (searchMetaOf(r).urlCount ?? 0) > 0).length;
+  const faceOk = tiny.filter((r) => {
+    const face = searchMetaOf(r).face;
+    return face && face !== "missing";
+  }).length;
+  const directionOk = tiny.filter((r) => r.verdict === "false" || r.verdict === "mixed_misleading").length;
+  console.log("\n===== 微博级短谣 =====");
+  console.log(
+    JSON.stringify(
+      {
+        total: tiny.length,
+        searchedShare: searched / tiny.length,
+        boundUrlShare: withUrl / tiny.length,
+        faceShare: faceOk / tiny.length,
+        correctDirectionShare: directionOk / tiny.length,
+      },
+      null,
+      2
+    )
+  );
+}
 
-  // ADR-004 evidenceLoop 观测汇总：只看 expectsEvidenceLoop 的 case
-  if (aggregate.evidenceLoopExpectedCount > 0) {
-    console.log("\n===== Evidence Loop（翻案案例） =====");
-    console.log(
-      JSON.stringify(
-        {
-          expected: aggregate.evidenceLoopExpectedCount,
-          triggerRate: aggregate.evidenceLoopTriggerRate,
-          rescueRate: aggregate.evidenceLoopRescueRate,
-        },
-        null,
-        2
-      )
-    );
-  }
+function printEvidenceLoop(aggregate: AggregateMetrics): void {
+  if (aggregate.evidenceLoopExpectedCount <= 0) return;
+  console.log("\n===== Evidence Loop（翻案案例） =====");
+  console.log(
+    JSON.stringify(
+      {
+        expected: aggregate.evidenceLoopExpectedCount,
+        triggerRate: aggregate.evidenceLoopTriggerRate,
+        rescueRate: aggregate.evidenceLoopRescueRate,
+      },
+      null,
+      2
+    )
+  );
+}
 
-  // 写历史
+function appendHistory(results: unknown[], aggregate: AggregateMetrics): void {
   const entry = {
     timestamp: new Date().toISOString(),
     runId: `eval-${Date.now()}`,
@@ -290,43 +301,83 @@ async function main() {
   const hp = historyPath();
   appendFileSync(hp, JSON.stringify(entry) + "\n");
   console.log(`\n已追加到 ${hp}`);
+}
 
-  // 门禁
-  if (args.gate) {
-    if (!existsSync(args.gate)) {
-      console.error(`基线文件不存在：${args.gate}`);
-      process.exit(1);
-    }
-    const baseline = JSON.parse(readFileSync(args.gate, "utf8")) as AggregateMetrics;
-    const comparison = compareToBaseline(baseline, aggregate);
-    for (const check of comparison.checks) {
-      if (check.name === "totalCases") {
-        console.log(`  totalCases: baseline=${check.baseline} now=${check.current} ${check.ok ? "PASS" : "FAIL"}`);
-        continue;
-      }
-      const delta = check.current - check.baseline;
-      console.log(
-        `  ${check.name}: baseline=${check.baseline.toFixed(3)} now=${check.current.toFixed(3)} delta=${delta.toFixed(3)} ${check.ok ? "PASS" : "FAIL"}`
-      );
-    }
-    if (!comparison.passed) {
-      const casesMismatch = comparison.checks.some((c) => c.name === "totalCases" && !c.ok);
-      console.error(
-        casesMismatch
-          ? "\n门禁失败：黄金集条数与基线不一致，禁止用旧聚合当门禁。"
-          : "\n门禁失败：核心指标相对基线退化超过 5 个点。"
-      );
-      process.exit(1);
-    }
-    console.log("\n门禁通过。");
+function logGateCheck(check: { name: string; baseline: number; current: number; ok: boolean }): void {
+  if (check.name === "totalCases") {
+    console.log(`  totalCases: baseline=${check.baseline} now=${check.current} ${check.ok ? "PASS" : "FAIL"}`);
+    return;
+  }
+  const delta = check.current - check.baseline;
+  console.log(
+    `  ${check.name}: baseline=${check.baseline.toFixed(3)} now=${check.current.toFixed(3)} delta=${delta.toFixed(3)} ${check.ok ? "PASS" : "FAIL"}`
+  );
+}
+
+function maybeRunGate(gatePath: string | undefined, aggregate: AggregateMetrics): void {
+  if (!gatePath) return;
+  if (!existsSync(gatePath)) {
+    console.error(`基线文件不存在：${gatePath}`);
+    process.exit(1);
+  }
+  const baseline = JSON.parse(readFileSync(gatePath, "utf8")) as AggregateMetrics;
+  const comparison = compareToBaseline(baseline, aggregate);
+  for (const check of comparison.checks) logGateCheck(check);
+  if (!comparison.passed) {
+    const casesMismatch = comparison.checks.some((c) => c.name === "totalCases" && !c.ok);
+    console.error(
+      casesMismatch
+        ? "\n门禁失败：黄金集条数与基线不一致，禁止用旧聚合当门禁。"
+        : "\n门禁失败：核心指标相对基线退化超过 5 个点。"
+    );
+    process.exit(1);
+  }
+  console.log("\n门禁通过。");
+}
+
+function maybeWriteBaseline(
+  args: { gate?: string; ids?: string[]; domain?: string },
+  aggregate: AggregateMetrics
+): void {
+  if (args.gate || args.ids || args.domain) return;
+  const baselinePath = join(__dirname, "baseline.json");
+  writeFileSync(baselinePath, JSON.stringify(aggregate, null, 2));
+  console.log(`\n首次基线已写入 ${baselinePath}（后续 --gate baseline.json 校验）`);
+}
+
+async function main() {
+  if (!hasAnyKey) {
+    console.error("未检测到任何 API key（STEPFUN/DEEPSEEK/MINIMAX/MIMO）。请先在 mvp/.env.local 配置。");
+    process.exit(1);
   }
 
-  // 写基线：仅全量跑且未指定 --gate 时更新，避免子集评测覆盖门禁基线
-  if (!args.gate && !args.ids && !args.domain) {
-    const baselinePath = join(__dirname, "baseline.json");
-    writeFileSync(baselinePath, JSON.stringify(aggregate, null, 2));
-    console.log(`\n首次基线已写入 ${baselinePath}（后续 --gate baseline.json 校验）`);
+  const args = parseArgs(process.argv.slice(2));
+  const cases = filterCases(args);
+  const evalEnv: EvalEnv = {
+    env: process.env as Record<string, string>,
+    codexBin: process.env.CODEX_BIN || "/usr/local/bin/codex",
+  };
+
+  const repeats = args.repeats;
+  console.log(
+    `跑 ${cases.length} 个 golden case（含真实模型 + 真实搜索）${repeats > 1 ? `，每 case ×${repeats} 次（verdict 多数 / credibility 中位）` : ""}...`
+  );
+  const results = [];
+  const scores = [];
+  for (const golden of cases) {
+    const { score, row } = await evaluateGolden(golden, evalEnv, repeats);
+    scores.push(score);
+    results.push(row);
   }
+
+  const aggregate: AggregateMetrics = aggregateMetrics(scores);
+  console.log("\n===== 聚合指标 =====");
+  console.log(JSON.stringify(aggregate, null, 2));
+  printTinySummary(results);
+  printEvidenceLoop(aggregate);
+  appendHistory(results, aggregate);
+  maybeRunGate(args.gate, aggregate);
+  maybeWriteBaseline(args, aggregate);
 }
 
 main().catch((e) => {

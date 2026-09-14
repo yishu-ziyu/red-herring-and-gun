@@ -43,6 +43,10 @@ export type RunRecord = {
   lastSeq: number;
   createdAt: number;
   updatedAt: number;
+  /** 追问 run 的上一轮 caseId；首轮、老行、进程内直接构造的 run 没有该字段。 */
+  priorCaseId?: string | null;
+  /** 是否追问 run；首轮与老行为 false。 */
+  isFollowUp?: boolean;
 };
 
 type RunRow = {
@@ -57,6 +61,8 @@ type RunRow = {
   lastSeq: number;
   createdAt: number;
   updatedAt: number;
+  priorCaseId: string | null;
+  isFollowUp: number;
 };
 
 function toRecord(row: RunRow): RunRecord {
@@ -80,6 +86,8 @@ function toRecord(row: RunRow): RunRecord {
     lastSeq: row.lastSeq,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    priorCaseId: row.priorCaseId ?? null,
+    isFollowUp: row.isFollowUp === 1,
   };
 }
 
@@ -207,6 +215,21 @@ export function createRunStore(db: DatabaseSync) {
         .prepare("SELECT * FROM runs WHERE caseId = ? ORDER BY createdAt DESC LIMIT 1")
         .get(caseId) as RunRow | undefined;
       return row ? toRecord(row) : null;
+    },
+
+    /**
+     * 记一次追问：写上一轮 caseId 并置 isFollowUp。
+     * run 不存在返回 false；重复写同样的值无副作用（幂等）。
+     */
+    markFollowUp(runId: string, priorCaseId: string, now = Date.now()): boolean {
+      const row = selectRun.get(runId) as RunRow | undefined;
+      if (!row) return false;
+      db.prepare("UPDATE runs SET priorCaseId = ?, isFollowUp = 1, updatedAt = ? WHERE runId = ?").run(
+        priorCaseId,
+        now,
+        runId
+      );
+      return true;
     },
   };
 }

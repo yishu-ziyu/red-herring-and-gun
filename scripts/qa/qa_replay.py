@@ -84,7 +84,7 @@ def replay_server(snapshot, out, port=0):
     pack = json.dumps({'frames': [{'delayMs': 50, 'investigation': snapshot, 'complete': True}]}, ensure_ascii=False).replace('<', '\\u003c')
     inject = f'<script>window.__RHG_REPLAY={pack};</script>'.encode()
     log = (out / 'vite.log').open('w')
-    process = subprocess.Popen(command, cwd=ROOT / 'mvp', stdout=log, stderr=subprocess.STDOUT)
+    process = subprocess.Popen(command, cwd=ROOT / 'apps', stdout=log, stderr=subprocess.STDOUT)
     server = None
     try:
         for _ in range(100):
@@ -124,7 +124,7 @@ def replay_server(snapshot, out, port=0):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         url = f'http://127.0.0.1:{server.server_port}/?fixture=replay'
-        write(out / 'frontend-process.json', {'cwd': str(ROOT / 'mvp'), 'pid': process.pid, 'command': command, 'url': url, 'started_at': now(), 'backend': 'DISABLED_RECORDED_REPLAY'})
+        write(out / 'frontend-process.json', {'cwd': str(ROOT / 'apps'), 'pid': process.pid, 'command': command, 'url': url, 'started_at': now(), 'backend': 'DISABLED_RECORDED_REPLAY'})
         yield url
     finally:
         if server:

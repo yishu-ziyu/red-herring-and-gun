@@ -25,7 +25,7 @@ import {
 // 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
 import { extractJsonObject } from "./anthropicParse.js";
 export { extractJsonObject };
-import { miniMaxCallOptions } from "./minimaxM3.js";
+import { isMiniMaxM27, miniMaxCallOptions, MINIMAX_M27_DEFAULT_TIMEOUT_MS, MINIMAX_M3_DEFAULT_TIMEOUT_MS } from "./minimaxM3.js";
 
 export type AgentTextProviderId =
   | "deepseek"
@@ -63,7 +63,9 @@ export function isHardProviderQuotaError(message: string): boolean {
 }
 
 export function isHardProviderAuthError(message: string): boolean {
-  return /invalid api key|invalid_key|incorrect api key|unauthorized|ENOENT/i.test(message);
+  return /invalid api key|invalid_key|incorrect api key|unauthorized|ENOENT|authentication fails|api key[\s\S]{0,80}is invalid/i.test(
+    message
+  );
 }
 
 /** Empty-body / no-text is usually a dead account or thinking-budget wipe, not a transient blip. */
@@ -106,8 +108,11 @@ export function noteProviderFailure(provider: string, message: string): void {
     const id = canonicalProviderId(provider);
     const n = (timeoutStrikes.get(id) || 0) + 1;
     timeoutStrikes.set(id, n);
-    // MiniMax-M3 default wait is 10 min; one hang is enough to skip the rest of this process.
-    if (n >= (id === "minimax" ? 1 : 2)) skipProvider(provider);
+    const timeoutMs = Number(/超时 (\d+)ms/.exec(message)?.[1] ?? 0);
+    // MiniMax-M3 默认等 10 分钟：一次挂死才跳过。M2.7 的 90s/180s 超时是慢，不是额度耗尽。
+    const minimaxM3Hang =
+      /minimax:MiniMax-M3\b/i.test(message) || (id === "minimax" && timeoutMs >= 300_000);
+    if (n >= (minimaxM3Hang ? 1 : 2)) skipProvider(provider);
   }
 }
 
@@ -569,7 +574,7 @@ function getTimeoutMs(env: Record<string, string>, key: string, fallbackMs: numb
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
 }
 
-function timeoutForProviderModel(
+export function timeoutForProviderModel(
   env: Record<string, string>,
   provider: AgentTextProviderId | string,
   model: string,
@@ -580,7 +585,10 @@ function timeoutForProviderModel(
   }
   // MiniMax-M3 adaptive thinking is unbounded in practice; don't clip it with the 45s cloud default.
   if (provider === "minimax" && /^MiniMax-M3$/i.test(model)) {
-    return getTimeoutMs(env, "MINIMAX_M3_PROVIDER_TIMEOUT_MS", 600000);
+    return getTimeoutMs(env, "MINIMAX_M3_PROVIDER_TIMEOUT_MS", MINIMAX_M3_DEFAULT_TIMEOUT_MS);
+  }
+  if (provider === "minimax" && isMiniMaxM27(model)) {
+    return getTimeoutMs(env, "MINIMAX_M27_PROVIDER_TIMEOUT_MS", MINIMAX_M27_DEFAULT_TIMEOUT_MS);
   }
   return fallbackMs;
 }

@@ -16,17 +16,15 @@ Lazy glossary for agents. Product truth — definition, constitution (Evidence A
 | **evidence loop** | Post fact-check targeted re-search for unverified/conflicted atoms; 2 strategy rounds, explicit stop reasons; new evidence → fact_checker re-run once — ADR-004 |
 | **evidence pursuit** | Search policy inside the loop and first retrieve: query portfolio, evidence gap, RRF across queries, information gain stop — ADR-005. Product copy: 证据追索 |
 | **claimItems** | Server-preordered list for UI: verifiable + stance in original order |
-| **Case Pipeline** | Production orchestration module (`mvp/server/src/lib/casePipeline`) — ADR-003 |
+| **Case Pipeline** | Production orchestration module (`apps/server/src/lib/casePipeline`) — ADR-003 |
 
 ## Architecture modules (depth)
 
-运行时怎么接在一起：`docs/ARCHITECTURE.md`。
+运行时怎么接在一起：`docs/ARCHITECTURE.md`。文件为什么在这里：`docs/REPO.md`。
 
 - `claimAtom` — key, split, merge, self-proof
 - `atomSearch` — select, bundle, bind, `retrieveForAtoms(searchOne)`
 - `evidenceLoop` — trigger, rewrite fallback, bundle merge, budget & stop reasons (ADR-004)
 - `evidencePursuit` — query portfolio, discriminability, evidence gap, RRF, information gain (ADR-005); used by atomSearchQuery + evidenceLoop
 - `reportAssembly` — `assembleFinalReport`
-- `casePipeline` — **production** orchestrate (`runCasePipeline`). HTTP / SSE are adapters. Default path (ADR-003).
-- `agentLoop` — ReAct execution (`runAgentLoop` + tools + `finalizeLoopReport`). Feature-flagged (ADR-006). Does not own 能信/不能信.
-- `AgentRuntime` — leftover client runtime source; its benchmark and dedicated tests are retired. Not the live claim path (ADR-003). Local HTTP is Express.
+- `casePipeline` — **production** orchestrate (`runCasePipeline`). HTTP / SSE are adapters. Default and only live path (ADR-003). `agentLoop` 已删（ADR-006 废止）。

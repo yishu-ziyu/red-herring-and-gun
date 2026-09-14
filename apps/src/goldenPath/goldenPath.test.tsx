@@ -10,6 +10,7 @@ import {
   interruptedPartial,
   investigatingUnassessed,
   receivedOnly,
+  decomposedOnly,
   LONG_CLAIM_PREFIX,
   longClaimComplete,
   MIXED_ATOM_A,
@@ -217,12 +218,50 @@ describe("边界", () => {
       />
     );
     expect(screen.queryByLabelText("调查结论")).toBeNull();
-    expect(screen.getByText("这次调查没有完成")).toBeTruthy();
+    expect(screen.getByText("还没有写成总判断")).toBeTruthy();
+    expect(screen.getByText(/调查中途停了/)).toBeTruthy();
+    expect(screen.getByText(/分条判断是停之前查到的/)).toBeTruthy();
+    expect(screen.queryByText("这次调查没有完成")).toBeNull();
     expect(document.querySelectorAll("[data-gp-claim-id]").length).toBe(2);
     expect(document.querySelector('[data-gp-interrupted]')).toBeTruthy();
     const banner = document.querySelector("[data-gp-interrupted]")!;
+    expect(within(banner as HTMLElement).getByText("返回首页")).toBeTruthy();
+    expect(screen.getAllByText("返回首页")).toHaveLength(1);
     fireEvent.click(within(banner as HTMLElement).getByText("重新调查"));
     expect(onReverify).toHaveBeenCalled();
+  });
+
+  it("interrupted：有总答时仍给总答，黄卡不装成没查到", () => {
+    const base = interruptedPartial();
+    const snapshot: InvestigationSnapshotV1 = {
+      ...base,
+      conclusion: {
+        directAnswer: "高铁停运只覆盖部分车次，不是全线三天。",
+        judgment: "mixed",
+        boundaries: [],
+        claimIds: base.claims.map((claim) => claim.id),
+        sourceIds: [],
+      },
+    };
+    render(
+      <InvestigationCanvas
+        snapshot={snapshot}
+        live={false}
+        finalReport={null}
+        onReverify={() => {}}
+        onBackHome={() => {}}
+      />,
+    );
+    const banner = document.querySelector("[data-gp-interrupted]") as HTMLElement;
+    expect(banner).toBeTruthy();
+    expect(banner.textContent).toContain("收束时中途停了");
+    expect(banner.textContent).toContain("下面是已经查到的");
+    expect(banner.textContent).not.toContain("不会假装有结论");
+    expect(banner.textContent).not.toContain("分条判断是停之前查到的");
+    expect(banner.textContent).not.toMatch(/没查到|没有查完|这次调查没有完成/);
+    const answer = document.querySelector("[data-gp-interrupted-answer]");
+    expect(answer).toBeTruthy();
+    expect(answer!.textContent).toContain("高铁停运只覆盖部分车次");
   });
 
   it(">180 字命题完整显示，不使用内部截断键", () => {
@@ -279,6 +318,7 @@ describe("E2 负向测试：raw legacy 事件不产生任何产品语义", () =>
     runId: null,
     serverStatus: null,
     stop: "idle",
+    timeoutPending: false,
   };
   const legacyEvents: OrchestrateStreamEvent[] = [
     { type: "agent_start", agent: "rumor_detector", agentName: "拆题" },
@@ -1702,17 +1742,17 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     expect(drawer.querySelector('[data-gp-source-section="excerpt"]')).toBeNull();
     expect(drawer.querySelector(".gp-source-excerpt")).toBeNull();
     // 注意：不要断言「不含旧文案」——旧字符串已从代码里删除，那种断言会变成永真断言。
-    expect(drawer.textContent).not.toContain("检索片段（非逐字原文）");
+    expect(drawer.textContent).not.toContain("出处原文摘录");
   });
 
-  it("摘录诚实性：有 excerpt 时抽屉标题写明是检索片段，不是逐字原文", async () => {
+  it("摘录诚实性：有 excerpt 时抽屉标题标明出处原文摘录", async () => {
     renderCanvas(refutedComplete());
     await openFirstEvidence("contradict");
     const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
     const section = drawer.querySelector('[data-gp-source-section="excerpt"]') as HTMLElement;
     expect(section).toBeTruthy();
     const label = section.querySelector(".gp-source-label") as HTMLElement;
-    expect(label.textContent).toBe("检索片段（非逐字原文）");
+    expect(label.textContent).toBe("出处原文摘录");
   });
 
   it("6. reachable=false 说明原链接打不开，不伪造来源结论", async () => {
@@ -1744,10 +1784,22 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     await openFirstEvidence();
     const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
     const closeBtn = dialog.querySelector("[data-gp-source-close]") as HTMLElement;
-    const link = dialog.querySelector("a") as HTMLElement;
+    // 与 SourceDrawer 的 focusableIn 同规则：停点数量随内容（引证角标、关联来源 chips）变化，
+    // 闭环语义不变——Tab 按 DOM 顺序走完所有停点后回到关闭按钮。
+    const items = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter(
+      (el) => el.getAttribute("aria-hidden") !== "true" && !el.hasAttribute("disabled") && el.tabIndex >= 0
+    );
+    expect(items.length).toBeGreaterThanOrEqual(2);
+    expect(items[0]).toBe(closeBtn);
     expect(document.activeElement).toBe(closeBtn);
-    fireEvent.keyDown(document, { key: "Tab" });
-    expect(document.activeElement).toBe(link);
+    for (let i = 1; i < items.length; i++) {
+      fireEvent.keyDown(document, { key: "Tab" });
+      expect(document.activeElement).toBe(items[i]);
+    }
     fireEvent.keyDown(document, { key: "Tab" });
     expect(document.activeElement).toBe(closeBtn);
     expect(document.querySelector(".gp-canvas-inner")?.hasAttribute("inert")).toBe(true);
@@ -1758,12 +1810,20 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     await openFirstEvidence();
     const dialog = document.querySelector(".gp-drawer--source") as HTMLElement;
     const closeBtn = dialog.querySelector("[data-gp-source-close]") as HTMLElement;
-    const link = dialog.querySelector("a") as HTMLElement;
+    const items = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter(
+      (el) => el.getAttribute("aria-hidden") !== "true" && !el.hasAttribute("disabled") && el.tabIndex >= 0
+    );
+    expect(items.length).toBeGreaterThanOrEqual(2);
     expect(document.activeElement).toBe(closeBtn);
-    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
-    expect(document.activeElement).toBe(link);
-    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
-    expect(document.activeElement).toBe(closeBtn);
+    for (let step = 1; step <= items.length; step++) {
+      fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+      const expected = items[(items.length - step) % items.length]!;
+      expect(document.activeElement).toBe(expected);
+    }
   });
 
   it("10. Escape 关闭 Drawer", async () => {
@@ -2338,24 +2398,64 @@ describe("Issue #66 post-#76 real SSE artifacts", () => {
 });
 
 describe("调查中职责按快照出场", () => {
-  it("received 只有拆问题，不提前写出处三人", () => {
+  it("received 只有拆问题，带 doing / shimmer 状态，不提前写出处三人", () => {
     renderCanvas(receivedOnly());
     const roles = document.querySelector("[data-gp-roles=compact]");
     expect(roles).toBeTruthy();
     expect(screen.getByText("拆问题")).toBeInTheDocument();
+    expect(screen.getByText("拆分问题中")).toBeInTheDocument();
+    expect(screen.getByText("拆分问题中")).toHaveClass("gp-role-shimmer");
+    const role = document.querySelector('[data-gp-role="question"]');
+    expect(role?.getAttribute("data-gp-role-state")).toBe("doing");
+    expect(role?.classList.contains("is-active")).toBe(true);
+
     expect(screen.queryByText("找出处")).not.toBeInTheDocument();
     expect(screen.queryByText("核语境")).not.toBeInTheDocument();
     expect(screen.queryByText("作判断")).not.toBeInTheDocument();
     expect(roles!.querySelectorAll(".gp-role")).toHaveLength(1);
   });
 
-  it("investigating 四人到齐，后三人带出场标记", () => {
+  it("decomposed 拆问题收拢为已完成，后三人仍未到场", () => {
+    renderCanvas(decomposedOnly());
+    const roles = document.querySelector("[data-gp-roles=compact]");
+    expect(roles).toBeTruthy();
+    expect(roles!.querySelectorAll(".gp-role")).toHaveLength(1);
+    expect(screen.getByText("拆问题")).toBeInTheDocument();
+    expect(screen.getByText("已拆出问题")).toBeInTheDocument();
+    const role = document.querySelector('[data-gp-role="question"]');
+    expect(role?.getAttribute("data-gp-role-state")).toBe("done");
+    expect(role?.classList.contains("is-done")).toBe(true);
+    expect(screen.queryByText("找出处")).not.toBeInTheDocument();
+  });
+
+  it("decomposed 原句中切片标定可见下划线，命题区呈现 01/02/03 待查议程", () => {
+    renderCanvas(decomposedOnly());
+    const marks = document.querySelectorAll("mark.gp-trace-mark");
+    expect(marks.length).toBeGreaterThanOrEqual(3);
+    const claimTexts = Array.from(document.querySelectorAll(".gp-claim-text")).map((el) => el.textContent);
+    expect(claimTexts).toEqual(["咖啡的争夺", "古代", "非常多的战争"]);
+    const claimNums = Array.from(document.querySelectorAll(".gp-claim-num")).map((el) => el.textContent);
+    expect(claimNums).toEqual(["01", "02", "03"]);
+    expect(screen.getByRole("heading", { level: 3, name: "这句话被拆成了这些命题" })).toBeInTheDocument();
+  });
+
+  it("investigating 四人到齐，后三人带出场标记，找出处在做", () => {
     renderCanvas(investigatingUnassessed());
     expect(screen.getByText("拆问题")).toBeInTheDocument();
     expect(screen.getByText("找出处")).toBeInTheDocument();
     expect(screen.getByText("核语境")).toBeInTheDocument();
     expect(screen.getByText("作判断")).toBeInTheDocument();
     expect(document.querySelectorAll("[data-gp-roles=compact] .gp-role.is-enter")).toHaveLength(3);
+    expect(screen.getByText("查找出处中")).toBeInTheDocument();
+    expect(document.querySelector('[data-gp-role="source"]')?.getAttribute("data-gp-role-state")).toBe("doing");
+  });
+
+  it("judging 核语境在做，找出处已结算", () => {
+    renderCanvas({ ...investigatingUnassessed(), phase: "judging" });
+    expect(document.querySelector('[data-gp-role="context"]')?.getAttribute("data-gp-role-state")).toBe("doing");
+    expect(document.querySelector('[data-gp-role="source"]')?.getAttribute("data-gp-role-state")).toBe("done");
+    expect(screen.getByText("核对范围中")).toBeInTheDocument();
+    expect(screen.queryByText("形成判断中")).toBeNull();
   });
 });
 
@@ -2418,14 +2518,16 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     const css = readFileSync(join(process.cwd(), "src", "goldenPath", "golden-path.css"), "utf8");
     const answerRule = css.match(/\.gp-hero-answer\s*\{([^}]*)\}/);
     expect(answerRule![1]).toContain("var(--gp-serif)");
-    expect(answerRule![1]).toContain("clamp(22px, 2.2vw, 28px)");
-    expect(answerRule![1]).toContain("font-weight: 650");
+    expect(answerRule![1]).toContain("var(--gp-type-24)");
+    expect(answerRule![1]).toContain("font-weight: 500");
     expect(answerRule![1]).toContain("var(--gp-ink-primary)");
     expect(answerRule![1]).not.toMatch(/background:\s*(?!transparent)/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-section-label\s*\{[^}]*font-size: 20px/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-claim-text\s*\{[^}]*font-size: 16px/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-section-label\s*\{[^}]*margin: 28px 0 12px/);
+    expect(css).not.toMatch(/data-gp-phase="complete"\] \.gp-section-label\s*\{[^}]*font-size: 24px/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-claim-text\s*\{[^}]*font-size: 14px/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-title\s*\{[^}]*font-size: 14px/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-excerpt\s*\{[^}]*font-size: 16px/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-excerpt\s*\{[^}]*font-size: 14px/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-excerpt\s*\{[^}]*var\(--gp-serif\)/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-excerpt\s*\{[^}]*order:\s*-1/);
     expect(css).toMatch(/data-gp-hero-meta="claims"[\s\S]*display:\s*none/);
     expect(css).toMatch(/data-gp-phase="complete"\] \.gp-original\s*\{[^}]*display:\s*none/);

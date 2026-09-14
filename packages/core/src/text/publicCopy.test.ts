@@ -47,6 +47,20 @@ describe("scrubPublicText", () => {
     const text = scrubPublicText("本次工具调用成功。Agent 写入 canSay。");
     expect(text).not.toMatch(/工具调用|\bAgent\b|canSay/);
   });
+
+  it("剥掉 S1 / S3/S5 来源序号，留下标题", () => {
+    const text = scrubPublicText(
+      "所有来源均为非学术性文章。S1将「咖啡与茶的千年战争」定义为「文化较量」。S3/S5中「人类战争史」指能量补充。S2/S4同样为概括性叙述。",
+    );
+    expect(text).not.toMatch(/\bS\d+\b/);
+    expect(text).toContain("「咖啡与茶的千年战争」");
+    expect(text).toContain("「人类战争史」");
+    expect(text).toContain("同样为概括性叙述");
+  });
+
+  it("不误伤第一次世界大战", () => {
+    expect(scrubPublicText("第一次世界大战改变了补给。")).toBe("第一次世界大战改变了补给。");
+  });
 });
 
 describe("leadWithFace", () => {

@@ -58,18 +58,30 @@ function redact(value: unknown, depth = 0): unknown {
   return value;
 }
 
+function asPublicRecord(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return {};
+}
+
+function stringField(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" ? field : undefined;
+}
+
 /** 从 case 造公开投影。ownerHash、feedback 一律不进。 */
 export function buildPublicProjection(entry: CaseEntry): PublicShareProjection {
+  const checkedAt = stringField(entry.report, "checkedAt");
   return {
     caseId: entry.caseId,
     claim: entry.claim,
-    report: (redact(entry.report) as Record<string, unknown>) ?? {},
-    claimReview: (redact(entry.claimReview) as Record<string, unknown>) ?? {},
+    report: asPublicRecord(redact(entry.report)),
+    claimReview: asPublicRecord(redact(entry.claimReview)),
     credibilityScore: entry.credibilityScore,
     createdAt: entry.createdAt,
-    ...(typeof (entry.report as { checkedAt?: unknown })?.checkedAt === "string"
-      ? { checkedAt: (entry.report as { checkedAt: string }).checkedAt }
-      : {}),
+    ...(checkedAt ? { checkedAt } : {}),
   };
 }
 

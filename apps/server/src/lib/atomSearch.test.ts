@@ -149,6 +149,35 @@ describe("buildAtomSearchBundle", () => {
     expect(bundle.filterMeta?.totals.afterTopK).toBe(2);
     expect(src).toHaveLength(2);
   });
+
+  it("长城工程命题不收钢铁长城比喻来源", () => {
+    const atom = "长城总长度超过两万公里";
+    const bundle = buildAtomSearchBundle(
+      [
+        {
+          atom,
+          result: {
+            sources: [
+              {
+                url: "https://pla.example/steel-wall",
+                title: "中国人民解放军是保卫祖国的钢铁长城",
+                snippet: "人民军队被誉为钢铁长城",
+              },
+              {
+                url: "https://ncha.gov.cn/len",
+                title: "国家文物局公布长城总长度超过两万公里",
+                snippet: "资源调查 21196.18 千米",
+              },
+            ],
+          },
+        },
+      ],
+      key
+    );
+    const src = bundle.byAtomKey[key(atom)] ?? [];
+    expect(src.some((s) => s.url.includes("steel-wall"))).toBe(false);
+    expect(src.some((s) => s.url.includes("ncha.gov.cn"))).toBe(true);
+  });
 });
 
 describe("bindAtomEvidenceToVerdicts", () => {
