@@ -187,6 +187,9 @@ export function mergeParallelSearchPayloads(
     sources.splice(0, sources.length, ...fused.map((d) => byUrl.get(d.url)!));
   }
 
+  const onTopic = sources.filter((rec) => !isOffTopicSource(atom, rec));
+  sources.splice(0, sources.length, ...onTopic);
+
   sources.sort((a, b) => {
     const rank = (rec: Record<string, unknown>) => {
       const overlap = topicOverlap(atom, rec);
@@ -278,6 +281,18 @@ function topicOverlap(atom: string, rec: Record<string, unknown>): number {
   const keys = topicTokens(atom);
   const text = `${rec.title || ""} ${rec.snippet || rec.summary || ""}`;
   return keys.reduce((n, k) => n + (text.includes(k) ? 1 : 0), 0);
+}
+
+/** 解放军「钢铁长城」比喻，不是文物/工程长城。按命题文本绑定时拿掉，不当依据。 */
+const WALL_METAPHOR_RE = /钢铁长城|(?:解放军|人民军队).{0,16}保卫祖国.{0,12}长城/;
+
+export function isOffTopicSource(atom: string, rec: Record<string, unknown>): boolean {
+  const blob = `${rec.title || ""} ${rec.snippet || rec.summary || ""}`;
+  if (!atom.trim() || !blob.trim()) return false;
+  if (/长城/.test(atom) && !/钢铁长城|解放军|人民军队/.test(atom) && WALL_METAPHOR_RE.test(blob)) {
+    return true;
+  }
+  return false;
 }
 
 /** On-topic 辟谣 and no on-topic support → circulating sentence is not believable. */

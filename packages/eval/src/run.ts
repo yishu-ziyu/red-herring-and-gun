@@ -6,6 +6,7 @@ import { fakeDeps, hasLlmKey, liveDeps, loadLocalEnv, readProcessEnv } from "./e
 import {
   compareGate,
   formatGateLine,
+  GATE_METRIC_NAMES,
   METRIC_SEMVER,
   parseBaseline,
   snapshotFromSummary,
@@ -28,6 +29,7 @@ type CliArgs = {
   domain?: string;
   repeats: number;
   gate?: string;
+  writeBaseline?: string;
   fake: boolean;
   noDump: boolean;
 };
@@ -80,6 +82,16 @@ function parseArgs(argv: string[]): CliArgs {
     if (a === "--gate") {
       out.gate = argv[i + 1];
       i += 1;
+      continue;
+    }
+    if (a === "--write-baseline") {
+      const next = argv[i + 1];
+      if (next && !next.startsWith("-")) {
+        out.writeBaseline = next;
+        i += 1;
+      } else {
+        out.writeBaseline = join(dirname(fileURLToPath(import.meta.url)), "../baseline.json");
+      }
       continue;
     }
     if (a === "--ids") {
@@ -154,6 +166,31 @@ async function runOne(golden: ScoreCaseGolden, fake: boolean, repeat: number): P
     },
     events,
   };
+}
+
+function printCurrentMetrics(output: EvalOutput): void {
+  console.log(`valid ${output.valid}`);
+  console.log(`unlabeled ${output.summary.unlabeled}`);
+  if (output.invalidReason) console.log(`invalidReason ${output.invalidReason}`);
+  for (const name of GATE_METRIC_NAMES) {
+    const value = output.summary[name];
+    console.log(`current ${name} ${value}`);
+  }
+}
+
+function writeBaselineFile(path: string, output: EvalOutput): void {
+  const snap = snapshotFromSummary(
+    output.summary,
+    output.cases.map((row) => ({ id: row.id, qualification: row.qualification })),
+  );
+  const recorded = {
+    recordedAt: output.startedAt,
+    runId: output.runId,
+    source: "live",
+    ...snap,
+  };
+  writeFileSync(path, `${JSON.stringify(recorded, null, 2)}\n`);
+  console.log(`wrote baseline ${path}`);
 }
 
 function applyGate(path: string, output: EvalOutput): boolean {
@@ -243,6 +280,23 @@ async function main(): Promise<void> {
   mkdirSync(RUNS_DIR, { recursive: true });
   writeFileSync(join(RUNS_DIR, `${runId}.json`), `${JSON.stringify(output, null, 2)}\n`);
   console.log(JSON.stringify(output));
+  printCurrentMetrics(output);
+
+  if (args.writeBaseline) {
+    if (args.fake) {
+      console.error("拒绝用 --fake 跑分写入对照成绩单。");
+      process.exit(1);
+    }
+    if (args.ids || args.domain) {
+      console.error("拒绝用子集跑分写入对照成绩单。");
+      process.exit(1);
+    }
+    if (!output.valid) {
+      console.error(output.invalidReason ?? "eval run invalid");
+      process.exit(1);
+    }
+    writeBaselineFile(args.writeBaseline, output);
+  }
 
   if (args.gate) {
     const passed = applyGate(args.gate, output);

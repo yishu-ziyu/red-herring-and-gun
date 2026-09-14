@@ -1025,6 +1025,26 @@ describe("summarizeRun", () => {
     expect(summary.valid).toBe(true);
     expect(summary.invalidReason).toBeUndefined();
   });
+
+  it("does not treat an enter_check case that stopped before retrieve as unknown search infra", () => {
+    const summary = summarizeRun(
+      [
+        {
+          metrics: blankMetrics(),
+          elapsedMs: 10,
+          turnReason: "done",
+          judgeRan: false,
+          qualification: "enter_check",
+          progress: "early_stop",
+          searchHealth: "unknown",
+        },
+      ],
+      [[]],
+    );
+    expect(summary.valid).toBe(true);
+    expect(summary.invalidReason).toBeUndefined();
+    expect(summary.searchHealth.unknown).toBe(1);
+  });
 });
 
 function blankMetrics() {

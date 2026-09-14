@@ -130,20 +130,31 @@ export function build360SearchFailure(query: string, message: string) {
   };
 }
 
+/** 给写作模型看的来源：标题、URL、域名、片段。不带 S1/C1 这类检索序号。 */
+function agentFacingSource(source: any) {
+  const url = String(source?.url || source?.link || "").trim();
+  const domain = String(source?.domain || source?.site || "").trim();
+  const title = String(source?.title || source?.name || "").trim().slice(0, 120) || domain || url;
+  if (!title && !url) return null;
+  return {
+    title,
+    url,
+    domain,
+    snippet: String(source?.snippet || source?.summary || source?.content || ""),
+    role: source?.evidenceRole || source?.role || "线索",
+    credibility: source?.credibility || source?.credibilityScore || "",
+  };
+}
+
+function agentFacingSources(list: unknown, limit: number) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(0, limit).map(agentFacingSource).filter(Boolean);
+}
+
 export function buildReportEvidenceInputs(steps: any[], searchResult?: any) {
   const factStep = steps.find((step) => step.agent === "fact_checker");
   const sourceStep = steps.find((step) => step.agent === "source_validator");
-  const sources = Array.isArray(searchResult?.sources)
-    ? searchResult.sources.slice(0, 8).map((source: any, index: number) => ({
-        ref: source?.id || `S${index + 1}`,
-        title: source?.title || source?.name || `来源 ${index + 1}`,
-        url: source?.url || source?.link || "",
-        domain: source?.domain || source?.site || "",
-        snippet: source?.snippet || source?.summary || source?.content || "",
-        role: source?.evidenceRole || source?.role || "线索",
-        credibility: source?.credibility || source?.credibilityScore || "",
-      }))
-    : [];
+  const sources = agentFacingSources(searchResult?.sources, 8);
 
   return {
     searchSummary: {
@@ -173,17 +184,11 @@ export function buildReportEvidenceInputs(steps: any[], searchResult?: any) {
 }
 
 export function compactSearchResultForAgent(searchResult: any) {
-  const sources = Array.isArray(searchResult?.sources)
-    ? searchResult.sources.slice(0, 8).map((source: any, index: number) => ({
-        id: String(source?.id || `S${index + 1}`),
-        title: String(source?.title || source?.name || `来源 ${index + 1}`).slice(0, 120),
-        url: String(source?.url || source?.link || ""),
-        domain: String(source?.domain || source?.site || ""),
-        snippet: String(source?.snippet || source?.summary || source?.content || "").slice(0, 450),
-        credibility: source?.credibility || source?.credibilityScore || "",
-        role: source?.evidenceRole || source?.role || "线索",
-      }))
-    : [];
+  const sources = agentFacingSources(searchResult?.sources, 8).map((source) => ({
+    ...source!,
+    title: String(source!.title).slice(0, 120),
+    snippet: String(source!.snippet).slice(0, 450),
+  }));
 
   return {
     answer: typeof searchResult?.answer === "string" ? searchResult.answer.slice(0, 1800) : "",

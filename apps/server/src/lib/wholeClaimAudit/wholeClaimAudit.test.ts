@@ -773,11 +773,130 @@ describe("repairGatedConclusion 未查清边界文本（Review 5128449568 Blocke
       }
     );
     const conclusion = String(report.conclusion ?? "");
-    expect(conclusion).toContain(directAnswer("false"));
+    expect(conclusion).toContain("「A」站不住");
+    expect(conclusion).not.toMatch(/^公开材料不支持这条说法/);
     expect(conclusion).toContain("「B」尚未查清");
     expect(conclusion).toContain("未计入该判断");
     expect(String(report.summaryForPublic ?? "")).toContain("尚未查清");
     const chain = report.evidenceChain as Array<Record<string, unknown>>;
     expect(String(chain.at(-1)?.finding ?? "")).toContain("尚未查清");
+  });
+
+  it("计入的主张都尚未查清时，第一句不是整段不支持，verdictType 收成 unverified", () => {
+    const report: Record<string, unknown> = {
+      verdictType: "false",
+      conclusion: "公开材料不支持这条说法。",
+      summaryForPublic: "旧文本",
+      recommendation: "旧文本",
+      evidenceChain: [],
+    };
+    repairGatedConclusion(
+      report,
+      { changed: true, from: "false", to: "false", rule: "hard-verdict-with-unverified-boundary" },
+      {
+        nonVerifiableAtoms: [],
+        subclaimVerdicts: [
+          { claimAtom: "长城是古代军事防御工程", verdict: "unverified", evidence: "", supportingSources: [], contradictingSources: [] },
+          { claimAtom: "长城能从太空用肉眼看到", verdict: "unverified", evidence: "", supportingSources: [], contradictingSources: [] },
+        ],
+        auditUnresolvedGaps: [],
+      }
+    );
+    expect(report.verdictType).toBe("unverified");
+    const conclusion = String(report.conclusion ?? "");
+    expect(conclusion.startsWith("公开材料不支持这条说法")).toBe(false);
+    expect(conclusion).toContain("尚未查清");
+    expect(conclusion).toContain("军事防御");
+  });
+
+  it("短谣辟谣通道：无原子绑定也可保留硬 false，不收成 unverified", () => {
+    const report: Record<string, unknown> = {
+      verdictType: "false",
+      conclusion: "只能信一部分。",
+      summaryForPublic: "旧文本",
+      recommendation: "旧文本",
+      evidenceChain: [],
+    };
+    repairGatedConclusion(
+      report,
+      { changed: true, from: "mixed_misleading", to: "false", rule: "hard-verdict-with-unverified-boundary" },
+      {
+        nonVerifiableAtoms: [],
+        subclaimVerdicts: [
+          { claimAtom: "我说我的电瓶车叫谁偷走了，原来送给非洲人去了", verdict: "unverified", evidence: "", supportingSources: [], contradictingSources: [] },
+        ],
+        auditUnresolvedGaps: [],
+        allowUnboundHardFalse: true,
+      }
+    );
+    expect(report.verdictType).toBe("false");
+  });
+
+  it("有据之真 + 有据之假：第一句按条说站住/站不住，不是整段不支持", () => {
+    const report: Record<string, unknown> = {
+      verdictType: "false",
+      conclusion: "公开材料不支持这条说法。",
+      summaryForPublic: "公开材料不支持这条说法。",
+      recommendation: "公开材料不支持这条说法。",
+      evidenceChain: [],
+    };
+    repairGatedConclusion(
+      report,
+      { changed: true, from: "false", to: "false", rule: "mixed-guard-partial" },
+      {
+        nonVerifiableAtoms: [],
+        subclaimVerdicts: [
+          {
+            claimAtom: "长城是古代军事防御工程",
+            verdict: "true",
+            evidence: "文物局与百科条目确认其为古代军事防御工程[1]。",
+            supportingSources: [{ url: "https://t.test/wall", title: "t", snippet: "s" }],
+            contradictingSources: [],
+          },
+          {
+            claimAtom: "长城能从太空用肉眼看到",
+            verdict: "false",
+            evidence: "航天员观测不支持肉眼可见[2]。",
+            supportingSources: [],
+            contradictingSources: [{ url: "https://t.test/space", title: "t", snippet: "s" }],
+          },
+        ],
+        auditUnresolvedGaps: [],
+      }
+    );
+    expect(report.verdictType).toBe("mixed_misleading");
+    const conclusion = String(report.conclusion ?? "");
+    expect(conclusion.startsWith("公开材料不支持这条说法")).toBe(false);
+    expect(conclusion).toContain("「长城是古代军事防御工程」站得住");
+    expect(conclusion).toContain("「长城能从太空用肉眼看到」站不住");
+  });
+});
+
+describe("needsConstrainedConclusion 多主张分截", () => {
+  it("composer 写整段 false，但有据之真+有据之假 → 必须 repair，收到 mixed", () => {
+    const decision = needsConstrainedConclusion({
+      draftVerdictType: "false",
+      finalVerdictType: "false",
+      subclaimVerdicts: [
+        {
+          claimAtom: "长城是古代军事防御工程",
+          verdict: "true",
+          supportingSources: [{ url: "https://t.test/wall", title: "t", snippet: "s" }],
+          contradictingSources: [],
+        },
+        {
+          claimAtom: "长城能从太空用肉眼看到",
+          verdict: "false",
+          supportingSources: [],
+          contradictingSources: [{ url: "https://t.test/space", title: "t", snippet: "s" }],
+        },
+      ],
+      nonVerifiableAtoms: [],
+      auditUnresolvedGaps: [],
+      finalGate: { changed: false },
+    });
+    expect(decision.needed).toBe(true);
+    expect(decision.to).toBe("mixed_misleading");
+    expect(decision.rule).toBe("mixed-guard-partial");
   });
 });

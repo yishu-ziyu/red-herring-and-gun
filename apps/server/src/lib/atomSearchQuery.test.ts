@@ -3,6 +3,7 @@ import {
   boundTinyRumorVerdict,
   buildAtomSearchQueries,
   enRumorQueries,
+  isOffTopicSource,
   looksLikeEnglishClaim,
   looksLikePlanOrPrediction,
   mergeParallelSearchPayloads,
@@ -187,5 +188,46 @@ describe("英文谣言分语言策略", () => {
     expect(enRumorQueries("常喝牛奶会致癌")).toEqual([]);
     const zh = buildAtomSearchQueries("常喝牛奶会致癌");
     expect(zh.some((q) => /^Drinking milk causes cancer study debunked/i.test(q))).toBe(false);
+  });
+});
+
+describe("比喻义材料不得绑上工程命题", () => {
+  const WALL = "国家文物局公布的资源调查结果显示长城总长度超过两万公里";
+  const metaphor = {
+    url: "https://pla.example/steel-wall",
+    title: "中国人民解放军是保卫祖国的钢铁长城",
+    snippet: "人民军队被誉为钢铁长城，保卫祖国安全。",
+  };
+  const length = {
+    url: "https://ncha.gov.cn/great-wall-length",
+    title: "国家文物局：长城总长度 21196.18 千米",
+    snippet: "资源调查结果显示中国长城总长度超过两万公里。",
+  };
+  const space = {
+    url: "https://news.example/space",
+    title: "从太空看不到长城",
+    snippet: "肉眼无法从近地轨道看见长城。",
+  };
+
+  it("T1：钢铁长城比喻对长城工程命题判为跑题", () => {
+    expect(isOffTopicSource(WALL, metaphor)).toBe(true);
+    expect(isOffTopicSource("长城是古代军事防御工程", metaphor)).toBe(true);
+  });
+
+  it("T2：文物局长度 / 太空可见仍保留", () => {
+    expect(isOffTopicSource(WALL, length)).toBe(false);
+    expect(isOffTopicSource("长城是唯一能从太空用肉眼看到的人造建筑", space)).toBe(false);
+  });
+
+  it("用户在问钢铁长城本身时不误杀", () => {
+    expect(isOffTopicSource("解放军被誉为钢铁长城", metaphor)).toBe(false);
+  });
+
+  it("合并检索时丢掉比喻来源、留下对题来源", () => {
+    const merged = mergeParallelSearchPayloads(WALL, [{ sources: [metaphor, length, space] }]);
+    const urls = (merged.sources as Array<{ url: string }>).map((s) => s.url);
+    expect(urls).not.toContain(metaphor.url);
+    expect(urls).toContain(length.url);
+    expect(urls).toContain(space.url);
   });
 });

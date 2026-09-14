@@ -13,7 +13,6 @@ import {
   type CaseIntake,
 } from "../../lib/caseIntake";
 import { extractFramesFromVideo } from "../../lib/videoFrames";
-import { BatchChecker } from "./BatchChecker";
 import {
   scrapeLinks,
   formatScrapedContent,
@@ -443,7 +442,6 @@ export function Dashboard({
               ariaLabel={copy.materialLabel}
               placeholder={copy.materialPlaceholder}
             />
-            <BatchChecker initialText={inputValue} />
             {detectedLinks.length > 0 ? (
               <div className="landing-link-row" aria-label={copy.linksDetected}>
                 {detectedLinks.map((link) => (

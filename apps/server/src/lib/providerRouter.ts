@@ -3,9 +3,11 @@
 // 把 server/src/handlers.ts 和 vite.config.ts 重复的 callAgentWithFallback 抽到一处。
 // 行为以 server/src/handlers.ts 原实现为基线（per-agent routing、per-agent model、
 // parseAgentJson 带 repair、API key 缺失 push 到 errors）。
-// 调用方通过 options 注入 logger / onMissingApiKey 行为以匹配各自的差异。
-// timeout 由调用方 outer-wrap（vite 自己有 per-agent 90-120s timeout），
-// lib 不重复实现。
+// 调用方通过 options 注入 logger / onMissingApiKey / 阶段预算（deadlineMs、
+// attemptTimeoutCapMs）行为以匹配各自的差异。
+// 超时有三层：per-provider 预算（ORCHESTRATE_PROVIDER_TIMEOUT_MS，按模型可覆写）、
+// 调用方给的阶段硬预算（options.deadlineMs）、调用方给的单次尝试上限（options.attemptTimeoutCapMs）；
+// 单次生效超时取三者最小值。不传后两个时行为与旧版一致。
 // ───────────────────────────────────────────────────────────────
 
 import { readFile } from "node:fs/promises";
@@ -25,7 +27,7 @@ import {
 // 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
 import { extractJsonObject } from "./anthropicParse.js";
 export { extractJsonObject };
-import { miniMaxCallOptions } from "./minimaxM3.js";
+import { isMiniMaxM27, miniMaxCallOptions, MINIMAX_M27_DEFAULT_TIMEOUT_MS, MINIMAX_M3_DEFAULT_TIMEOUT_MS } from "./minimaxM3.js";
 
 export type AgentTextProviderId =
   | "deepseek"
@@ -46,7 +48,7 @@ const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>([
   "codex",
 ]);
 
-/** Process-local: once a provider returns hard quota/balance, skip it for later agents in this run. */
+/** Process-local: once a provider returns hard quota/balance, skip it for later agents in this process. */
 const quotaExhaustedUntil = new Map<string, number>();
 const timeoutStrikes = new Map<string, number>();
 const QUOTA_SKIP_MS = 10 * 60 * 1000;
@@ -63,7 +65,9 @@ export function isHardProviderQuotaError(message: string): boolean {
 }
 
 export function isHardProviderAuthError(message: string): boolean {
-  return /invalid api key|invalid_key|incorrect api key|unauthorized|ENOENT/i.test(message);
+  return /invalid api key|invalid_key|incorrect api key|unauthorized|ENOENT|authentication fails|api key[\s\S]{0,80}is invalid/i.test(
+    message
+  );
 }
 
 /** Empty-body / no-text is usually a dead account or thinking-budget wipe, not a transient blip. */
@@ -106,8 +110,11 @@ export function noteProviderFailure(provider: string, message: string): void {
     const id = canonicalProviderId(provider);
     const n = (timeoutStrikes.get(id) || 0) + 1;
     timeoutStrikes.set(id, n);
-    // MiniMax-M3 default wait is 10 min; one hang is enough to skip the rest of this process.
-    if (n >= (id === "minimax" ? 1 : 2)) skipProvider(provider);
+    const timeoutMs = Number(/超时 (\d+)ms/.exec(message)?.[1] ?? 0);
+    // MiniMax-M3 默认等 10 分钟：一次挂死才跳过。M2.7 的 90s/180s 超时是慢，不是额度耗尽。
+    const minimaxM3Hang =
+      /minimax:MiniMax-M3\b/i.test(message) || (id === "minimax" && timeoutMs >= 300_000);
+    if (n >= (minimaxM3Hang ? 1 : 2)) skipProvider(provider);
   }
 }
 
@@ -517,6 +524,16 @@ export interface ProviderRouterOptions {
   logger?: ProviderRouterLogger;
   /** API key 缺失时的处理：缺省 "error"（push 到 errors 数组），vite 传 "silent"（静默跳过） */
   onMissingApiKey?: "silent" | "log" | "error";
+  /**
+   * 阶段级硬预算（主路 P1 Change H）：绝对时间戳，本次调用含全部 provider 尝试合计不得超过它。
+   * 到点不再开下一次尝试，已开的那次用剩余时长封顶。术语与 packages/core 的 callJob.deadlineMs 对齐。
+   */
+  deadlineMs?: number;
+  /**
+   * 阶段内单次 provider 尝试的上限（毫秒）。一个 provider 卡住时用它就地降级到下一家，
+   * 不必等 per-provider 预算（minimax 默认 600000）耗尽；缺省沿用 per-provider 预算。
+   */
+  attemptTimeoutCapMs?: number;
 }
 
 export interface CallAgentParams {
@@ -570,7 +587,12 @@ function getTimeoutMs(env: Record<string, string>, key: string, fallbackMs: numb
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
 }
 
-function timeoutForProviderModel(
+/** 非正数 / NaN / undefined 一律当「没给」，不因为一个坏值把阶段预算写成 0。 */
+function positiveMs(value: number | undefined): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+export function timeoutForProviderModel(
   env: Record<string, string>,
   provider: AgentTextProviderId | string,
   model: string,
@@ -581,7 +603,10 @@ function timeoutForProviderModel(
   }
   // MiniMax-M3 adaptive thinking is unbounded in practice; don't clip it with the 45s cloud default.
   if (provider === "minimax" && /^MiniMax-M3$/i.test(model)) {
-    return getTimeoutMs(env, "MINIMAX_M3_PROVIDER_TIMEOUT_MS", 600000);
+    return getTimeoutMs(env, "MINIMAX_M3_PROVIDER_TIMEOUT_MS", MINIMAX_M3_DEFAULT_TIMEOUT_MS);
+  }
+  if (provider === "minimax" && isMiniMaxM27(model)) {
+    return getTimeoutMs(env, "MINIMAX_M27_PROVIDER_TIMEOUT_MS", MINIMAX_M27_DEFAULT_TIMEOUT_MS);
   }
   return fallbackMs;
 }
@@ -717,6 +742,36 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   const providerOrder = providerOrderForAgent(env, agentId);
   let hardFailuresThisCall = 0;
 
+  // ───────────────────────────────────────────────────────────────
+  // 阶段级硬预算（主路 P1 Change H）
+  // 单次 provider 预算拦不住「换着 provider 一家家等」：真实走查里 minimax 烧了 84.9 秒、
+  // stepfun 再跟两次，自证阶段合计 111 秒。deadlineMs 是本阶段的总账，
+  // attemptTimeoutCapMs 让卡住的那家尽早让位给下一家。
+  // ───────────────────────────────────────────────────────────────
+  const stageDeadlineMs = positiveMs(options.deadlineMs);
+  const attemptTimeoutCapMs = positiveMs(options.attemptTimeoutCapMs);
+  const stageRemainingMs = () =>
+    stageDeadlineMs === undefined ? undefined : stageDeadlineMs - Date.now();
+  const stageBudgetExpired = () => {
+    const left = stageRemainingMs();
+    return left !== undefined && left <= 0;
+  };
+  /** 单次尝试的生效超时 = min(per-provider 预算, 阶段内单次上限, 阶段剩余) */
+  const attemptTimeoutMs = (perProviderMs: number) => {
+    const limits = [perProviderMs];
+    if (attemptTimeoutCapMs !== undefined) limits.push(attemptTimeoutCapMs);
+    const left = stageRemainingMs();
+    if (left !== undefined) limits.push(left);
+    return Math.max(1, Math.min(...limits));
+  };
+  const noteStageBudgetExhausted = () => {
+    logger.error("[orchestrate-provider] stage_budget_exhausted", {
+      agent: traceLabel,
+      budgetMs: stageDeadlineMs === undefined ? undefined : stageDeadlineMs - startTime,
+      elapsedMs: Date.now() - startTime,
+    });
+  };
+
   if (areCloudProvidersHardSkipped(env, agentId)) {
     throw new ProviderFallbackError("所有备用模型均已调用失败，请检查模型配置或稍后重试", [
       "configured cloud providers already skipped this process",
@@ -789,12 +844,19 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
     }
     if (isProviderQuotaSkipped(ovProvider)) {
       errors.push(`[${canonicalProviderId(ovProvider)}] 本进程已因额度耗尽跳过`);
+    } else if (stageBudgetExpired()) {
+      noteStageBudgetExhausted();
+      errors.push(`[stage] 阶段硬预算已用尽，跳过 modelOverride ${ovProvider}:${ovModel}`);
     } else {
       const ovStart = Date.now();
+      const ovTimeoutMs = attemptTimeoutMs(
+        timeoutForProviderModel(env, ovProvider, ovModel, providerTimeoutMs)
+      );
       logger.info("[orchestrate-provider] start (override)", {
         agent: traceLabel,
         provider: ovProvider,
         model: ovModel,
+        timeoutMs: ovTimeoutMs,
       });
       try {
         const result = await invokeAndParse(
@@ -813,7 +875,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
               codexBin,
               reasoningEffort,
             }),
-          timeoutForProviderModel(env, ovProvider, ovModel, providerTimeoutMs),
+          ovTimeoutMs,
           "override"
         );
         logger.info("[orchestrate-provider] complete (override)", {
@@ -830,6 +892,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           provider: ovProvider,
           model: ovModel,
           latencyMs: Date.now() - ovStart,
+          timeoutMs: ovTimeoutMs,
           message,
         });
         noteProviderFailure(ovProvider, message);
@@ -849,17 +912,21 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
     call: (sys: string, user: string) => Promise<{ text: string; model: string }>
   ): Promise<{ ok: true; result: CallAgentResult } | { ok: false; msg: string }> => {
     const providerStart = Date.now();
+    const attemptTimeout = attemptTimeoutMs(
+      timeoutForProviderModel(env, provider, modelName, providerTimeoutMs)
+    );
     logger.info("[orchestrate-provider] start", {
       agent: traceLabel,
       provider,
       model: modelName,
+      timeoutMs: attemptTimeout,
     });
     try {
       const result = await invokeAndParse(
         provider,
         modelName,
         call,
-        timeoutForProviderModel(env, provider, modelName, providerTimeoutMs),
+        attemptTimeout,
         "fallback"
       );
       logger.info("[orchestrate-provider] complete", {
@@ -876,6 +943,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         provider,
         model: modelName,
         latencyMs: Date.now() - providerStart,
+        timeoutMs: attemptTimeout,
         message,
       });
       noteProviderFailure(provider, message);
@@ -885,6 +953,13 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   };
 
   for (const provider of providerOrder) {
+    if (stageBudgetExpired()) {
+      noteStageBudgetExhausted();
+      errors.push(
+        `[stage] 阶段硬预算 ${stageDeadlineMs === undefined ? 0 : stageDeadlineMs - startTime}ms 已用尽，不再尝试后续 provider`
+      );
+      break;
+    }
     if (isProviderQuotaSkipped(provider)) {
       errors.push(`[${canonicalProviderId(provider)}] 本进程已因额度耗尽跳过`);
       continue;
@@ -929,6 +1004,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       ];
       for (const clusterUrl of clusters) {
         if (isProviderQuotaSkipped("mimo")) break;
+        if (stageBudgetExpired()) break;
         const out = await runOne(`mimo@${clusterUrl}`, model, (sys, user) =>
           callMimoAgent({ baseUrl: clusterUrl, apiKey, model, systemPrompt: sys, userContent: user, maxTokens })
         );

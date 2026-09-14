@@ -8,6 +8,18 @@ import { motion } from "framer-motion";
 import { domainOf, ROLE_LABEL, ROLE_ROW_LABEL, roleGlyph, sourceExcerpt, type EvidenceIdentityKind } from "./snapshotUi";
 import type { InvestigationEvidenceLink, InvestigationSource } from "../lib/investigation";
 
+/** 行内引用式域名：灰字小字跟在摘录之后，「— domain ↗」，不再右对齐悬浮。 */
+function DomainCite({ url }: { url: string }) {
+  return (
+    <span className="gp-evidence-domain">
+      — {domainOf(url)}
+      <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" className="gp-ext-arrow">
+        <path d="M4 12 12 4M6 4h6v6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
+}
+
 /** 与 `--gp-motion-layout: 280ms` / `--gp-ease-out` 对齐（260–360ms 窗）。 */
 const SETTLE_TRANSITION = {
   layout: { duration: 0.28, ease: [0.16, 1, 0.3, 1] as const },
@@ -90,20 +102,14 @@ export function EvidenceItem({
         <div className="gp-evidence-header">
           <strong className="gp-evidence-title">{title}</strong>
           {unreachable ? <em className="gp-evidence-dead">（打不开）</em> : null}
-          {source?.url ? (
-            <span className="gp-evidence-domain">
-              {domainOf(source.url)}
-              <svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" className="gp-ext-arrow">
-                <path d="M4 12 12 4M6 4h6v6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </span>
-          ) : null}
+          {source?.url && !excerpt ? <DomainCite url={source.url} /> : null}
         </div>
         {!receipt && excerpt ? (
           <blockquote className="gp-evidence-excerpt" data-gp-evidence-excerpt>
             {excerpt}
           </blockquote>
         ) : null}
+        {excerpt && source?.url ? <DomainCite url={source.url} /> : null}
       </div>
     </motion.button>
   );

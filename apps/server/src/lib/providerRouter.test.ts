@@ -4,11 +4,15 @@ import {
   callAgentWithFallback,
   envValue,
   isEmptyProviderResponse,
+  isHardProviderAuthError,
   isHardProviderQuotaError,
+  isProviderQuotaSkipped,
   modelForAgent,
+  noteProviderFailure,
   parseAgentJson,
   providerOrderForAgent,
   resetProviderQuotaSkipForTests,
+  timeoutForProviderModel,
 } from "./providerRouter.js";
 
 // Mock LLM provider；让 B2-B5 测试可以验证"哪个被调用、哪个没被调用"
@@ -664,5 +668,177 @@ describe("providerRouter quota skip", () => {
     expect(second.model).toBe("stepfun:step-2-mini");
     expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
     expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ───────────────────────────────────────────────────────────────
+// 主路 P1 Change H：阶段级硬预算（deadlineMs / attemptTimeoutCapMs）
+//
+// 真实走查（docs/reports/2026-09-12-mainpath-p0/real-notes.md §摩擦 1）实证：
+// 自证阶段先等 minimax 84.9 秒才降级，stepfun 再跟两次，合计 141.4 秒画面没有新内容；
+// 单次 provider 预算（ORCHESTRATE_PROVIDER_TIMEOUT_MS）拦不住「换着 provider 一家家等」。
+// 这一组用真实计时（毫秒级）验证阶段总账与就地降级都在。
+// ───────────────────────────────────────────────────────────────
+
+describe("providerRouter 阶段级硬预算（主路 P1 Change H）", () => {
+  beforeEach(() => {
+    resetAllMocks();
+    resetProviderQuotaSkipForTests();
+  });
+
+  afterEach(() => {
+    resetProviderQuotaSkipForTests();
+  });
+
+  /** 模拟真实环境：per-provider 预算被 env 放大到 600 秒，只有阶段预算能封顶。 */
+  const bigProviderBudgetEnv = {
+    MINIMAX_API_KEY: "sk-mm",
+    STEPFUN_API_KEY: "sk-sf",
+    ORCHESTRATE_PROVIDER_TIMEOUT_MS: "600000",
+    ORCHESTRATE_TEXT_PROVIDER_ORDER: "minimax,stepfun",
+  };
+
+  const hang = () => new Promise<never>(() => {});
+  const stepfunOk = (delayMs: number) =>
+    new Promise<{ text: string; model: string }>((resolve) =>
+      setTimeout(() => resolve({ text: '{"ok":true}', model: "stepfun:step-2-mini" }), delayMs)
+    );
+
+  it("H1: 首家用满单次上限就降级到下一家，全阶段不超过 deadlineMs", async () => {
+    allProviders.callMiniMaxAgent.mockImplementation(hang);
+    allProviders.callStepFunAgent.mockImplementation(() => stepfunOk(30));
+
+    const t0 = Date.now();
+    const result = await callAgentWithFallback({
+      agentId: "rumor_detector_selfproof",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: bigProviderBudgetEnv,
+      codexBin: "/usr/bin/codex",
+      options: { deadlineMs: Date.now() + 400, attemptTimeoutCapMs: 120 },
+    });
+    const elapsed = Date.now() - t0;
+
+    expect(result.model).toBe("stepfun:step-2-mini");
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+    expect(allProviders.callStepFunAgent).toHaveBeenCalledTimes(1);
+    // 卡住的那家只准占 attemptTimeoutCapMs（±调度抖动），不是 600 秒
+    expect(elapsed).toBeGreaterThanOrEqual(120);
+    expect(elapsed).toBeLessThan(400);
+  });
+
+  it("H2: 阶段预算用尽后不再开下一次尝试（后续 provider 连 start 都不打）", async () => {
+    allProviders.callMiniMaxAgent.mockImplementation(hang);
+    allProviders.callStepFunAgent.mockImplementation(() => stepfunOk(0));
+
+    const t0 = Date.now();
+    const error = await callAgentWithFallback({
+      agentId: "rumor_detector_selfproof",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: bigProviderBudgetEnv,
+      codexBin: "/usr/bin/codex",
+      // 单次尝试上限大于阶段预算 -> 第一次尝试吃满整个预算，后续没有名额
+      options: { deadlineMs: Date.now() + 150, attemptTimeoutCapMs: 60_000 },
+    }).catch((e: unknown) => e as Error & { providerErrors?: string[] });
+    const elapsed = Date.now() - t0;
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toMatch(/所有备用模型/);
+    expect(error.providerErrors?.join(" | ")).toMatch(/阶段硬预算/);
+    expect(allProviders.callMiniMaxAgent).toHaveBeenCalledTimes(1);
+    expect(allProviders.callStepFunAgent).not.toHaveBeenCalled();
+    expect(elapsed).toBeLessThan(400);
+  });
+
+  it("H3: 只给单次上限、不给阶段预算也会就地降级（单次上限单独生效）", async () => {
+    allProviders.callMiniMaxAgent.mockImplementation(hang);
+    allProviders.callStepFunAgent.mockImplementation(() => stepfunOk(0));
+
+    const t0 = Date.now();
+    const result = await callAgentWithFallback({
+      agentId: "rumor_detector_selfproof",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: bigProviderBudgetEnv,
+      codexBin: "/usr/bin/codex",
+      options: { attemptTimeoutCapMs: 80 },
+    });
+
+    expect(result.model).toBe("stepfun:step-2-mini");
+    expect(Date.now() - t0).toBeLessThan(400);
+  });
+
+  it("H4: 不传阶段预算时行为不变（沿用 per-provider 预算，回归）", async () => {
+    allProviders.callMiniMaxAgent.mockImplementation(hang);
+    allProviders.callStepFunAgent.mockImplementation(() => stepfunOk(0));
+
+    const result = await callAgentWithFallback({
+      agentId: "rumor_detector_selfproof",
+      systemPrompt: "x",
+      userContent: "x",
+      responseSchema: { type: "object" },
+      maxTokens: 100,
+      env: {
+        ...bigProviderBudgetEnv,
+        ORCHESTRATE_PROVIDER_TIMEOUT_MS: "60",
+        MINIMAX_MODEL: "MiniMax-M2.5",
+      },
+      codexBin: "/usr/bin/codex",
+    });
+
+    expect(result.model).toBe("stepfun:step-2-mini");
+  });
+});
+
+describe("作判断超时：M2.7 时限与跳过规则", () => {
+  beforeEach(() => {
+    resetProviderQuotaSkipForTests();
+  });
+
+  afterEach(() => {
+    resetProviderQuotaSkipForTests();
+  });
+
+  it("MiniMax-M2.7-highspeed 单次时限默认 180s，大于 90s", () => {
+    expect(timeoutForProviderModel({}, "minimax", "MiniMax-M2.7-highspeed", 90_000)).toBe(180_000);
+    expect(timeoutForProviderModel({}, "minimax", "MiniMax-M2.7", 90_000)).toBe(180_000);
+    expect(
+      timeoutForProviderModel(
+        { MINIMAX_M27_PROVIDER_TIMEOUT_MS: "150000" },
+        "minimax",
+        "MiniMax-M2.7-highspeed",
+        90_000
+      )
+    ).toBe(150_000);
+  });
+
+  it("MiniMax-M2.7 超时一次不跳过，两次才跳过", () => {
+    noteProviderFailure("minimax", "Agent:fact_checker minimax:MiniMax-M2.7-highspeed 超时 90000ms");
+    expect(isProviderQuotaSkipped("minimax")).toBe(false);
+    noteProviderFailure("minimax", "Agent:fact_checker minimax:MiniMax-M2.7-highspeed 超时 180000ms");
+    expect(isProviderQuotaSkipped("minimax")).toBe(true);
+  });
+
+  it("MiniMax-M3 超时一次仍跳过", () => {
+    noteProviderFailure("minimax", "Agent:rumor_detector minimax:MiniMax-M3 超时 1ms");
+    expect(isProviderQuotaSkipped("minimax")).toBe(true);
+  });
+
+  it("DeepSeek Authentication Fails / api key is invalid 算密钥失效", () => {
+    expect(
+      isHardProviderAuthError("DeepSeek API 调用失败：Authentication Fails, Your api key: ****ef35 is invalid")
+    ).toBe(true);
+    noteProviderFailure(
+      "deepseek",
+      "DeepSeek API 调用失败：Authentication Fails, Your api key: ****ef35 is invalid"
+    );
+    expect(isProviderQuotaSkipped("deepseek")).toBe(true);
   });
 });

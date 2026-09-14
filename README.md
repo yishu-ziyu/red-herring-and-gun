@@ -36,13 +36,15 @@
 
 ## 项目结构
 
+这是一个 npm workspaces 单体仓库。生产 app 是 `apps/`；`packages/` 是领域脊柱，T20 才会切到线上。地图：`docs/REPO.md`。文档入口：`docs/README.md`。
+
 ```text
-.
-├── README.md
-├── docs/PRODUCT_SPEC.md     # 产品真相
-├── docs/adr/                # 架构决策
-├── mvp/src/                 # React 前端
-└── mvp/server/src/          # Express 后端
+apps/                 生产：脸（goldenPath）+ Express + casePipeline
+  src/goldenPath/     现行界面
+  server/src/         生产 API 与编排
+packages/             脊柱：core（领域）/ server / web / eval（尚未切生产）
+docs/                 产品、架构、验收、设计
+ops.sh                唯一发布入口
 ```
 
 ## 本地运行
@@ -50,18 +52,18 @@
 一次起前端和 API（Vite 把 `/api` 代理到 Express）：
 
 ```bash
-cd mvp
+cd apps
 npm install
 npm --prefix server install
 npm run dev
 ```
 
-只要 API：`cd mvp/server && npm run dev`（默认 `http://127.0.0.1:3000`）。只要前端、自己已经起了 API：`cd mvp && npm run dev:web`。
+只要 API：`cd apps/server && npm run dev`（默认 `http://127.0.0.1:3000`）。只要前端、自己已经起了 API：`cd apps && npm run dev:web`。
 
 构建与测试：
 
 ```bash
-cd mvp
+cd apps
 npm test
 npm run build
 
@@ -71,10 +73,10 @@ npm run build
 
 ## 环境变量
 
-示例见 `mvp/.env.local.example`。常用：`DEEPSEEK_API_KEY`、`MIMO_API_KEY`、`STEPFUN_API_KEY`、`AIPING_*`、`PUBLIC_BASE_URL=https://gun.yishuziyu.cn`。不要把真实密钥提交进仓库。
+示例见 `apps/.env.local.example`。常用：`DEEPSEEK_API_KEY`、`MIMO_API_KEY`、`STEPFUN_API_KEY`、`AIPING_*`、`PUBLIC_BASE_URL=https://gun.yishuziyu.cn`。不要把真实密钥提交进仓库。
 
 ## 部署
 
-域名 `gun.yishuziyu.cn`，DNS 为 A → `121.89.90.68`。Nginx 服务静态资源，`/api/` 与 `/health` 代理到本机 Express。唯一发布入口：`./ops.sh deploy --yes`（不要跑 `deploy-to-aliyun.sh` 或 `mvp/deploy.sh`）。发布门禁见 `docs/PRODUCT_RELEASE_GATE.md`。
+域名 `gun.yishuziyu.cn`，DNS 为 A → `121.89.90.68`。Nginx 服务静态资源，`/api/` 与 `/health` 代理到本机 Express。唯一发布入口：`./ops.sh deploy --yes`（不要跑 `scripts/retired/deploy-to-aliyun.sh` 或 `apps/deploy.sh`）。发布门禁见 `docs/PRODUCT_RELEASE_GATE.md`。
 
 Vercel 已于 2026-09-11 退场：它的 `/api` rewrite 指向自身域名会 508 自环，且国内可用性不可靠（`PRODUCT_RELEASE_GATE.md` 第二节）。仓库里不再保留 `vercel.json`；要恢复必须先读 `docs/tasks/2026-09-11-deploy/vercel-retirement.md`，那里写了三个必须同时满足的条件。

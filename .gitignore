@@ -56,6 +56,8 @@ apps/multi-agent-viz-research/
 
 # Misc screenshots and scratch summary drafts
 1.png
+/real-*.png
+/tracker-*.png
 apps/tmp/
 
 # Local clones / nested worktrees (never commit)

@@ -87,7 +87,12 @@ function makeRunAgent({ env, codexBin }: EvalEnv, claim: string) {
   };
 }
 
-function makeSelfProof({ env, codexBin }: EvalEnv) {
+function makeBareCall(
+  evalEnv: EvalEnv,
+  agentId: string,
+  reasoningEffort: "low" | "high",
+  modelOverride?: { provider: string; model: string }
+) {
   return (input: {
     systemPrompt: string;
     userContent: string;
@@ -95,16 +100,21 @@ function makeSelfProof({ env, codexBin }: EvalEnv) {
     maxTokens: number;
   }) =>
     callAgentWithFallback({
-      agentId: "rumor_detector_selfproof",
+      agentId,
       systemPrompt: input.systemPrompt,
       userContent: input.userContent,
       responseSchema: input.responseSchema,
       maxTokens: input.maxTokens,
-      env,
-      codexBin,
-      reasoningEffort: "low",
+      env: evalEnv.env,
+      codexBin: evalEnv.codexBin,
+      reasoningEffort,
+      ...(modelOverride ? { modelOverride } : {}),
       options: { logger: { info: () => {}, error: console.error.bind(console) } },
     }).then((r) => ({ output: r.output, model: r.model }));
+}
+
+function makeSelfProof(evalEnv: EvalEnv) {
+  return makeBareCall(evalEnv, "rumor_detector_selfproof", "low");
 }
 
 /** 生产搜索：与 Case Pipeline HTTP 同一 retrieveAtomSources（双路查询 + 并行源）。 */
@@ -119,48 +129,15 @@ function makeSearchOne(env: Record<string, string>) {
 }
 
 /** evidenceLoop 裸模型改写调用（与 handlers.makeRewriteCaller 同款）。 */
-function makeRewriteRaw({ env, codexBin }: EvalEnv) {
-  return (input: {
-    systemPrompt: string;
-    userContent: string;
-    responseSchema: object;
-    maxTokens: number;
-  }) =>
-    callAgentWithFallback({
-      agentId: "evidence_loop_rewriter",
-      systemPrompt: input.systemPrompt,
-      userContent: input.userContent,
-      responseSchema: input.responseSchema,
-      maxTokens: input.maxTokens,
-      env,
-      codexBin,
-      reasoningEffort: "low",
-      options: { logger: { info: () => {}, error: console.error.bind(console) } },
-    }).then((r) => ({ output: r.output, model: r.model }));
+function makeRewriteRaw(evalEnv: EvalEnv) {
+  return makeBareCall(evalEnv, "evidence_loop_rewriter", "low");
 }
 
 /** cross exam 第二意见裸调用（与 handlers.makeCrossExamCaller 同款，国产优先）。 */
 function makeCrossExamRaw(evalEnv: EvalEnv) {
   const modelOverride = pickCrossExamModel(evalEnv.env);
   if (!modelOverride) return undefined;
-  return (input: {
-    systemPrompt: string;
-    userContent: string;
-    responseSchema: object;
-    maxTokens: number;
-  }) =>
-    callAgentWithFallback({
-      agentId: "cross_examiner",
-      systemPrompt: input.systemPrompt,
-      userContent: input.userContent,
-      responseSchema: input.responseSchema,
-      maxTokens: input.maxTokens,
-      env: evalEnv.env,
-      codexBin: evalEnv.codexBin,
-      reasoningEffort: "high",
-      modelOverride,
-      options: { logger: { info: () => {}, error: console.error.bind(console) } },
-    }).then((r) => ({ output: r.output, model: r.model }));
+  return makeBareCall(evalEnv, "cross_examiner", "high", modelOverride);
 }
 
 export interface EvalCaseResult {

@@ -51,9 +51,9 @@ function loadEnvFile(path: string, env: NodeJS.ProcessEnv): void {
 function hydrateEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const worktreeRoot = fileURLToPath(new URL("../../../../../", import.meta.url));
   const candidates = [
-    join(worktreeRoot, "mvp/.env.local"),
+    join(worktreeRoot, "apps/.env.local"),
     join(worktreeRoot, ".env.local"),
-    join(worktreeRoot, "../../mvp/.env.local"),
+    join(worktreeRoot, "../../apps/.env.local"),
   ];
   for (const file of candidates) loadEnvFile(file, env);
   return env;

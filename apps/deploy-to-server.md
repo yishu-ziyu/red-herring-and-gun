@@ -8,4 +8,4 @@
 
 这会：本地测试并 `npm run build`，把含 `mvp/dist/` 的包传到服务器，重建 Docker，把前端写到 `/opt/red-herring/dist`，再套 host nginx。
 
-不要跑 `deploy-to-aliyun.sh` 或 `mvp/deploy.sh`。它们会立刻失败并指向 `ops.sh`。
+不要跑 `scripts/retired/deploy-to-aliyun.sh` 或 `apps/deploy.sh`。它们会立刻失败并指向 `ops.sh`。

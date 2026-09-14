@@ -88,7 +88,7 @@ export function phaseHeadline(snapshot: InvestigationSnapshotV1): string {
     case "complete":
       return "调查完成。";
     case "interrupted":
-      return "这次调查没有完成。";
+      return "还没有写成总判断。";
   }
 }
 

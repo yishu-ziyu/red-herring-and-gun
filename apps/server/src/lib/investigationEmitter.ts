@@ -18,6 +18,10 @@ export type InvestigationEmitter = {
   emitSnapshot(snapshot: InvestigationSnapshotV1): void;
   /** 动作类事件：没有可归属对象，只能描述动作。 */
   emitSearchStarted(atom: string): void;
+  /** 命中知识库、免于本次检索：同样是动作类事件（引用数组为空）。 */
+  emitKnowledgeHit(originDate: string): void;
+  /** 同一案上一轮证据够用、不再检索已核命题。 */
+  emitPriorRoundReuse(originDate: string): void;
   /** 已发过的活动，供测试与运维查看，不参与客户端语义。 */
   activities(): PublicActivity[];
 };
@@ -56,6 +60,12 @@ export function createInvestigationEmitter(options: {
     },
     emitSearchStarted(atom) {
       sendActivities(log.recordSearchStarted(atom));
+    },
+    emitKnowledgeHit(originDate) {
+      sendActivities(log.recordKnowledgeHit(originDate));
+    },
+    emitPriorRoundReuse(originDate) {
+      sendActivities(log.recordPriorRoundReuse(originDate));
     },
     activities: () => log.all(),
   };

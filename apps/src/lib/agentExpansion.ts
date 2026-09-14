@@ -9,6 +9,7 @@ import {
   isChecksExhaustedMessage,
 } from "./checkQuota";
 import type { InvestigationSnapshotV1, PublicActivity } from "./investigation";
+import type { VisiblePriorRound } from "./priorRoundBrief";
 import type {
   ConsensusDebateUpdate,
   ExecutionDagPlan,
@@ -144,6 +145,8 @@ export interface OrchestrateStreamEvent {
     | "tool_result"
     | "tool_error"
     | "complete"
+    /** 超时后管线仍在跑（契约 2026-09-12-mainpath-p0 Change C）：这条连接等不到头了，但调查没失败。 */
+    | "timeout_pending"
     | "error";
   /**
    * investigation_snapshot：完整 InvestigationSnapshotV1（Issue #51 契约）。
@@ -218,18 +221,43 @@ export interface OrchestrateStreamEvent {
   timestamp?: number;
 }
 
+export type OrchestrateFollowUpLink = {
+  priorCaseId?: string;
+  priorRound?: VisiblePriorRound | null;
+};
+
+function asFollowUpLink(link?: string | OrchestrateFollowUpLink): OrchestrateFollowUpLink {
+  if (!link) return {};
+  if (typeof link === "string") return { priorCaseId: link };
+  return link;
+}
+
 export async function* requestOrchestrateStream(
   input: string | CaseIntake,
   memoryRecall?: Record<string, unknown>,
   modelChoice?: Record<string, { provider: string; model: string }>,
   /** 幂等键（PR-D）：同一身份下同一个键只建一条 run，双击不会开两条管线。 */
-  clientRequestId?: string
+  clientRequestId?: string,
+  /**
+   * 追问：登录传 caseId；访客无 caseId 时传上一轮可见材料。
+   * 字符串仍当 priorCaseId（旧调用）。首轮不传，payload 不出现这些字段。
+   */
+  followUpLink?: string | OrchestrateFollowUpLink
 ): AsyncGenerator<OrchestrateStreamEvent> {
   const claim = typeof input === "string" ? input : caseIntakePrimaryText(input);
   const payload: Record<string, unknown> = typeof input === "string" ? { claim } : { claim, intake: input };
   if (memoryRecall) payload.memoryRecall = memoryRecall;
   if (modelChoice && Object.keys(modelChoice).length > 0) payload.modelChoice = modelChoice;
   if (clientRequestId) payload.clientRequestId = clientRequestId;
+  const followUp = asFollowUpLink(followUpLink);
+  const priorCaseId = typeof followUp.priorCaseId === "string" ? followUp.priorCaseId.trim() : "";
+  if (priorCaseId) {
+    payload.caseId = priorCaseId;
+    payload.followUp = true;
+  } else if (followUp.priorRound) {
+    payload.followUp = true;
+    payload.priorRound = followUp.priorRound;
+  }
   // BYO key 接管：本地保存过密钥时随请求上行，调查的模型调用改烧用户密钥；
   // 未保存时请求体与现状完全一致（行为零变化）。
   const savedByoKey = readSavedByoKey();
@@ -374,7 +402,11 @@ export async function* requestOrchestrateStream(
       reader.releaseLock();
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Orchestrate Stream API 调用异常";
+    const raw = error instanceof Error ? error.message : "";
+    const message =
+      !raw || /failed to fetch|networkerror|load failed|network request failed/i.test(raw)
+        ? "与核查服务的连接中断了，这次没有查完。请重试。"
+        : raw;
     trace.emit({
       sessionId: traceSessionId,
       agent: "transport",

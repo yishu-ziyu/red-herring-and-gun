@@ -147,7 +147,7 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
         finding: searchSources[0]?.title || "搜索服务返回的来源有限。",
         evidence: searchSources.map((source: any, index: number) => `${index + 1}. ${source?.title || source?.url || "未命名来源"}`).join("；"),
         boundary: "搜索摘要只能提供交叉验证线索，不能单独推出最终事实。",
-        sourceRefs: searchSources.map((source: any, index: number) => String(source?.url || source?.title || `S${index + 1}`)),
+        sourceRefs: searchSources.map((source: any) => String(source?.url || source?.title || "")).filter(Boolean),
       },
       {
         layer: "结论边界",

@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   applyPublicCopy,
+  applyUnopenedLinkConclusion,
+  boundedInterruptedAnswer,
   constrainRecommendation,
   leadWithFace,
   looksLikeResearchMemo,
+  looksLikeUrlOnlyClaim,
   shapeConclusion,
   scrubPublicText,
+  UNOPENED_LINK_ANSWER,
 } from "./publicCopy";
 
 describe("scrubPublicText", () => {
@@ -32,6 +36,59 @@ describe("scrubPublicText", () => {
     expect(text).toContain("各来源一致指出致癌物来自焦糊");
   });
 
+  it("剥掉 S1 / S3/S5 来源序号，留下标题", () => {
+    const text = scrubPublicText(
+      "所有来源均为非学术性文章。S1将「咖啡与茶的千年战争」定义为「文化较量」。S3/S5中「人类战争史」指能量补充。S2/S4同样为概括性叙述。",
+    );
+    expect(text).not.toMatch(/\bS\d+\b/);
+    expect(text).toContain("「咖啡与茶的千年战争」");
+    expect(text).toContain("「人类战争史」");
+    expect(text).toContain("同样为概括性叙述");
+  });
+
+  it("不误伤第一次世界大战", () => {
+    expect(scrubPublicText("第一次世界大战改变了补给。")).toBe("第一次世界大战改变了补给。");
+  });
+
+  it("丢掉 claim中，不留下内部 schema 词", () => {
+    const text = scrubPublicText(
+      "课文已删。claim中「这句话曾被写进无数教科书与科普读物」尚未查清，未计入该判断。",
+    );
+    expect(text).not.toMatch(/claim/i);
+    expect(text).toContain("「这句话曾被写进无数教科书与科普读物」尚未查清");
+  });
+
+  it("丢掉半截 IA 和双引号残字，保住完整 IARC", () => {
+    const cut = scrubPublicText(
+      "各来源均未提及专项评估。IA「「微波炉加热食物会致癌」这一说法尚未查清，未计入该判断。",
+    );
+    expect(cut).not.toMatch(/\bIA\b/);
+    expect(cut).not.toContain("「「");
+    expect(cut).toContain("「微波炉加热食物会致癌」");
+    expect(scrubPublicText("IARC 将射频辐射列为 2B 类。")).toContain("IARC");
+  });
+});
+
+describe("boundedInterruptedAnswer", () => {
+  it("分条判断齐了：按条写出哪一截站住、哪一截站不住，总判断是有对有错", () => {
+    const out = boundedInterruptedAnswer([
+      { text: "低钠盐能预防中风", checkability: "checkable", judgment: "mixed" },
+      { text: "肾病患者也能吃", checkability: "checkable", judgment: "refuted" },
+      { text: "这消息传得很快", checkability: "not-applicable", judgment: "not-applicable" },
+    ]);
+    expect(out).not.toBeNull();
+    expect(out!.directAnswer).toBe("「低钠盐能预防中风」有对有错；「肾病患者也能吃」站不住。");
+    expect(out!.judgment).toBe("mixed");
+  });
+
+  it("还有命题没判断：不写总答", () => {
+    expect(
+      boundedInterruptedAnswer([
+        { text: "命题A", checkability: "checkable", judgment: "refuted" },
+        { text: "命题B", checkability: "checkable", judgment: null },
+      ])
+    ).toBeNull();
+  });
 });
 
 describe("leadWithFace", () => {
@@ -152,5 +209,29 @@ describe("applyPublicCopy", () => {
     expect(String(report.conclusion)).toContain("REFERENCES");
     expect(String(report.conclusion)).toContain("这一判断分两层");
     expect(String(report.conclusion)).not.toMatch(/## 核心结论\s+\*\*不能信/);
+  });
+});
+
+describe("只贴链接打不开", () => {
+  it("原句只是 URL 且 0 命题时，结论说链接打不开，不假装查完", () => {
+    expect(looksLikeUrlOnlyClaim("https://weibo.com/1749990115/P3bF9xY1z")).toBe(true);
+    expect(looksLikeUrlOnlyClaim("https://weibo.com/x 隔夜菜会致癌吗")).toBe(false);
+    const report: Record<string, unknown> = {
+      verdictType: "unverified",
+      conclusion: "公开材料还撑不住判断。",
+      summaryForPublic: "公开材料还撑不住判断。",
+      recommendation: "公开材料还撑不住判断。",
+      causalBoundary: "无法建立证据链：缺少原句文本，无法拆解原子命题",
+    };
+    applyUnopenedLinkConclusion(report, "https://weibo.com/1749990115/P3bF9xY1z", 0);
+    expect(report.conclusion).toBe(UNOPENED_LINK_ANSWER);
+    expect(String(report.causalBoundary)).toContain("链接打不开");
+    expect(String(report.conclusion)).not.toContain("撑不住判断");
+  });
+
+  it("已经拆出命题时不改结论", () => {
+    const report: Record<string, unknown> = { conclusion: "公开材料还撑不住判断。" };
+    applyUnopenedLinkConclusion(report, "https://weibo.com/x", 2);
+    expect(report.conclusion).toBe("公开材料还撑不住判断。");
   });
 });

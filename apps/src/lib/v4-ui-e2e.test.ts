@@ -9,7 +9,7 @@ import { resolve } from "node:path";
  */
 
 const PROJECT_ROOT = resolve(__dirname, "../../..");
-const STYLES = resolve(PROJECT_ROOT, "mvp/src/styles.css");
+const STYLES = resolve(PROJECT_ROOT, "apps/src/styles.css");
 
 describe("v4-ui E2E: 设计令牌", () => {
   it("8 档动效时长全部就位", () => {

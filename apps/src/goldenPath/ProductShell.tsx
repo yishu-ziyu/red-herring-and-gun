@@ -146,7 +146,7 @@ export function ProductShell({
               aria-expanded={historyOpen}
               onClick={() => setHistoryOpen(true)}
             >
-              <svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6">
                 <circle cx="10" cy="10" r="7.2" />
                 <path d="M10 5.8V10l2.8 1.8" strokeLinecap="round" />
               </svg>

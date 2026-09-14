@@ -38,7 +38,7 @@ def start_vite_if_needed():
     print(f"Starting Vite server on port {PORT}...")
     proc = subprocess.Popen(
         ["npx", "vite", "--host", "127.0.0.1", "--port", str(PORT)],
-        cwd=os.path.abspath("mvp"),
+        cwd=os.path.abspath("apps"),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )

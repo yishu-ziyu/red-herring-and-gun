@@ -1,7 +1,7 @@
 import type { CaseMetrics, QualificationExpectation } from "./score.js";
 
 /** 指标语义版本。分母规则或案例集合含义变了必须加一，旧基线不得再比数字。 */
-export const METRIC_SEMVER = "4.0.0";
+export const METRIC_SEMVER = "5.0.0";
 
 export const GATE_METRIC_NAMES = [
   "verdictAccuracy",

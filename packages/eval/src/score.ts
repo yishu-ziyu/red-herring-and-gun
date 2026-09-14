@@ -428,8 +428,14 @@ export function summarizeRun(
     }
     const qualification = row.qualification ?? "unlabeled";
     if (qualification === "unlabeled") unlabeled += 1;
-    if (qualification === "enter_check" && healthReport.health === "unknown") enterCheckUnknown += 1;
-    if (qualification === "enter_check" && healthReport.health === "failed") enterCheckFailed += 1;
+    // 该进核查却停在检索前：记产品分 0，不把「没搜过」当成搜索通道故障。
+    const reachedSearch = caseProgress !== "early_stop";
+    if (qualification === "enter_check" && reachedSearch && healthReport.health === "unknown") {
+      enterCheckUnknown += 1;
+    }
+    if (qualification === "enter_check" && reachedSearch && healthReport.health === "failed") {
+      enterCheckFailed += 1;
+    }
   });
   const latencies = new Map<string, number[]>();
   const llmByJob: Record<string, LlmJobStat> = {};

@@ -107,10 +107,113 @@ export function directAnswer(verdictType: unknown): string {
   }
 }
 
+const CLAIM_JUDGMENT_PHRASE: Record<string, string> = {
+  supported: "站得住",
+  refuted: "站不住",
+  mixed: "有对有错",
+  unresolved: "还查不清",
+};
+
+export type BoundedInterruptedClaim = {
+  text: string;
+  checkability: string;
+  judgment: string | null;
+};
+
+export type BoundedInterruptedAnswer = {
+  directAnswer: string;
+  judgment: "supported" | "refuted" | "mixed" | "unresolved";
+};
+
+/**
+ * 中断且报告还没写成时：用已有分条判断拼一句总答。
+ * 每条可核查命题都有 judgment 才写；不编来源、不装成报告写完。
+ */
+export function boundedInterruptedAnswer(
+  claims: readonly BoundedInterruptedClaim[]
+): BoundedInterruptedAnswer | null {
+  const checkable = claims.filter((c) => c.checkability === "checkable");
+  if (checkable.length === 0) return null;
+  if (checkable.some((c) => c.judgment == null || c.judgment === "")) return null;
+
+  const phrases = checkable.map((c) => {
+    const word = CLAIM_JUDGMENT_PHRASE[c.judgment!] ?? "还查不清";
+    return `「${c.text}」${word}`;
+  });
+  const directAnswer = `${phrases.join("；")}。`;
+
+  const judgments = new Set(checkable.map((c) => c.judgment));
+  const hasSupported = judgments.has("supported");
+  const hasRefuted = judgments.has("refuted");
+  const hasMixed = judgments.has("mixed");
+  const judgment: BoundedInterruptedAnswer["judgment"] =
+    hasMixed || (hasSupported && hasRefuted)
+      ? "mixed"
+      : hasRefuted
+        ? "refuted"
+        : hasSupported
+          ? "supported"
+          : "unresolved";
+  return { directAnswer, judgment };
+}
+
+/** 只贴了链接、没有其它要查的文字。 */
+export function looksLikeUrlOnlyClaim(claim: string): boolean {
+  const raw = String(claim ?? "").trim();
+  if (!raw) return false;
+  const t = raw.replace(/^请核查链接内容：/, "").trim();
+  const leftover = t.replace(/https?:\/\/[^\s]+/gi, "").replace(/\s+/g, "");
+  return leftover.length === 0;
+}
+
+export const UNOPENED_LINK_NOTICE = "链接打不开（可能需要登录），已按你输入的文字继续";
+export const UNOPENED_LINK_ANSWER = "链接打不开（可能需要登录），没法从链接里读到要查的说法。";
+
+/** 0 命题且原句只是打不开的链接：结论不能假装已经查完。 */
+export function applyUnopenedLinkConclusion(
+  report: Record<string, unknown>,
+  claim: string,
+  atomCount: number
+): void {
+  if (!report || typeof report !== "object") return;
+  if (atomCount > 0 || !looksLikeUrlOnlyClaim(claim)) return;
+  report.verdictType = "unverified";
+  report.conclusion = UNOPENED_LINK_ANSWER;
+  report.summaryForPublic = UNOPENED_LINK_ANSWER;
+  report.recommendation = UNOPENED_LINK_ANSWER;
+  report.causalBoundary = UNOPENED_LINK_NOTICE;
+}
+
+/** 检索曾把来源标成 S1/C1。可见正文里拿掉序号，不碰句内 [n] 绑定。 */
+const SOURCE_ALIAS_RE = /\b[SC]\d+(?:\s*[/、,，]\s*[SC]\d+)*(?:将|把|中)?/g;
+
+export function stripSourceAliases(text: string): string {
+  if (!text) return "";
+  return text
+    .replace(SOURCE_ALIAS_RE, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([。！？，、；：])/g, "$1")
+    .replace(/^[，、；：\s]+/gm, "")
+    .replace(/[，、]{2,}/g, "，")
+    .trim();
+}
+
+/** 模型把 schema 词写进解释：`claim中「…」`。先删「claim中」再删孤立 claim。 */
+const SCHEMA_ZH_RE = /claim中/gi;
+const SCHEMA_WORD_RE = /\b(?:claimAtom|subclaim|verdictType|atomSearches|claim)\b/gi;
+/** 400 字截断留下的半截拉丁残字，紧贴下一段引号。完整 IARC（4 字母）不动。 */
+const TRUNCATED_LATIN_BEFORE_QUOTE_RE = /[A-Za-z]{1,3}(?=「)/g;
+
 export function scrubPublicText(value: unknown): string {
   if (typeof value !== "string") return "";
   let text = dropInternalSentences(value);
   text = text.replace(JARGON_RE, "");
+  text = text.replace(SCHEMA_ZH_RE, "");
+  text = text.replace(SCHEMA_WORD_RE, "");
+  text = stripSourceAliases(text);
+  text = text.replace(TRUNCATED_LATIN_BEFORE_QUOTE_RE, "");
+  text = text.replace(/「{2,}/g, "「");
+  text = text.replace(/」{2,}/g, "」");
   text = text.replace(/[ \t]{2,}/g, " ");
   text = text.replace(/[，、]{2,}/g, "，");
   text = text.replace(/\s+([。！？，、])/g, "$1");
@@ -123,7 +226,7 @@ export function scrubMemoText(value: unknown): string {
   return dropInternalSentences(value)
     .split("\n")
     .map((line) =>
-      line.replace(JARGON_RE, "")
+      stripSourceAliases(line.replace(JARGON_RE, ""))
         .replace(/[ \t]{2,}/g, " ")
         .replace(/\s+$/g, "")
     )

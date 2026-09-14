@@ -16,6 +16,7 @@ export type {
 export { claimAtomKey, compactStrings, compactText, MAX_CLAIM_ATOMS } from "./text.js";
 export { alignFalseEvidenceBuckets, mergeSubclaimVerdicts, splitVerifiableAtoms } from "./merge.js";
 export { forceCheckableAtomTypes, looksLikeCirculatingClaim } from "./forceCheckable.js";
+export { collapseNarrativeAtoms, ensureLeapAtoms, extractLeapAtoms, retainAtomTypes } from "./textbookAtoms.js";
 export {
   SELF_PROOF_SYSTEM_PROMPT,
   applySelfProof,

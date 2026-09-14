@@ -97,3 +97,41 @@ describe("C12 快照先落、活动后发", () => {
     }
   });
 });
+
+describe("命中知识库的活动行（Part 1）", () => {
+  it("发出 knowledge_hit：动作类（引用留空）、日期走 payload、角色是 source", () => {
+    const { frames, emitter } = harness();
+    emitter.emitKnowledgeHit("2026-09-11");
+
+    const frame = frames.find((item) => item.type === "investigation_activity")!;
+    const activity = frame.activity as {
+      kind: string;
+      role: string;
+      claimIds: string[];
+      sourceIds: string[];
+      payload: Record<string, string>;
+    };
+    expect(activity.kind).toBe("knowledge_hit");
+    expect(activity.role).toBe("source");
+    expect(activity.claimIds).toEqual([]);
+    expect(activity.sourceIds).toEqual([]);
+    expect(activity.payload).toEqual({ originDate: "2026-09-11" });
+  });
+
+  it("没有日期不发（不编一个日期出来）", () => {
+    const { frames, emitter } = harness();
+    emitter.emitKnowledgeHit("");
+    expect(frames).toEqual([]);
+  });
+
+  it("发出 prior_round_reuse：动作类、引用留空；没有日期也发（不编日期）", () => {
+    const { frames, emitter } = harness();
+    emitter.emitPriorRoundReuse("");
+    const activity = (frames.find((item) => item.type === "investigation_activity") as {
+      activity: { kind: string; payload: Record<string, string>; claimIds: string[] };
+    }).activity;
+    expect(activity.kind).toBe("prior_round_reuse");
+    expect(activity.claimIds).toEqual([]);
+    expect(activity.payload).toEqual({});
+  });
+});

@@ -112,17 +112,22 @@ describe("runCasePipeline investigation snapshots", () => {
       claim: "某款电芯会自燃，并且厂商已召回该批次，召回范围覆盖全部批次，这次召回很让人失望。",
       runAgent,
       searchOne,
-      callSelfProofModel: async () => ({
-        output: {
-          results: [
-            { atom: ATOM_TRUE, supported: true, reason: "原句直说" },
-            { atom: ATOM_FALSE, supported: true, reason: "原句直说" },
-            { atom: ATOM_CONFLICT, supported: true, reason: "原句直说" },
-            { atom: ATOM_VALUE, supported: true, reason: "立场保留" },
-          ],
-        },
-        model: "selfproof-m",
-      }),
+      callSelfProofModel: async () => {
+        const latest = frames[frames.length - 1] as { phase?: string; preClaimWork?: string; claims?: unknown[] };
+        expect(latest.phase).toBe("decomposed");
+        expect((latest.claims ?? []).length).toBeGreaterThan(0);
+        return {
+          output: {
+            results: [
+              { atom: ATOM_TRUE, supported: true, reason: "原句直说" },
+              { atom: ATOM_FALSE, supported: true, reason: "原句直说" },
+              { atom: ATOM_CONFLICT, supported: true, reason: "原句直说" },
+              { atom: ATOM_VALUE, supported: true, reason: "立场保留" },
+            ],
+          },
+          model: "selfproof-m",
+        };
+      },
       runReport: async ({ steps, search360Result, atomSearchBundle }) =>
         runAgent("report_composer", steps, search360Result, atomSearchBundle),
       citationLiveness: {
@@ -143,18 +148,24 @@ describe("runCasePipeline investigation snapshots", () => {
     });
 
     expect(phases[0]).toBe("received");
+    expect((frames[0] as { preClaimWork?: string }).preClaimWork).toBeUndefined();
     expect(phases[1]).toBe("decomposed");
+    expect((frames[1] as { claims: unknown[] }).claims.length).toBeGreaterThan(0);
     // 三条可核查原子各一次「检索开始」，随后一次「检索返回」
-    expect(phases.slice(2, 6)).toEqual([
+    expect(phases.slice(3, 7)).toEqual([
       "investigating",
       "investigating",
       "investigating",
       "investigating",
     ]);
-    expect(phases.slice(6)).toEqual(["judging", "judging", "judging", "complete"]);
+    expect(phases.slice(7)).toEqual(["judging", "judging", "judging", "complete"]);
 
     // 检索返回帧：来源 unassessed（尚未核查）
-    const investigatingFrame = frames[5] as Awaited<ReturnType<typeof validateInvestigationSnapshot>>;
+    const investigatingFrame = [...frames]
+      .reverse()
+      .find((frame) => frame.phase === "investigating") as Awaited<
+      ReturnType<typeof validateInvestigationSnapshot>
+    >;
     const investigatingClaims = investigatingFrame.claims.filter(
       (c) => c.checkability === "checkable"
     );
@@ -181,7 +192,8 @@ describe("runCasePipeline investigation snapshots", () => {
     for (const claim of completeFrame.claims) {
       expect(claim.evidence.map((l) => l.role)).not.toContain("unassessed");
     }
-    expect(completeFrame.conclusion?.directAnswer.startsWith("这句话里有站住的部分")).toBe(true);
+    expect(completeFrame.conclusion?.directAnswer).toContain("站得住");
+    expect(completeFrame.conclusion?.directAnswer).toContain("站不住");
     expect(completeFrame.conclusion?.directAnswer).toContain("检测报告显示热失控可复现");
     expect(completeFrame.conclusion?.directAnswer).toContain("不适用真假判断");
     expect(completeFrame.conclusion?.judgment).toBe("mixed");
@@ -230,9 +242,62 @@ describe("runCasePipeline investigation snapshots", () => {
     });
     expect(phases).toContain("decomposed");
     expect(phases[phases.length - 1]).toBe("complete");
+    expect(phases.filter((phase) => phase === "received")).toEqual(["received"]);
     const snapshot = validateInvestigationSnapshot(result.finalReport.investigation);
     assertInvestigationInvariants(snapshot);
     expect(snapshot.claims[0]!.text).toContain("整句按可核查继续检索");
     expect(snapshot.claims[0]!.judgment).toBe("unresolved");
+  });
+
+  it("拆题回来、自证模型返回前发出 checking 快照；拆题失败不发", async () => {
+    const frames: Array<{ phase: string; preClaimWork?: string; claims: unknown[] }> = [];
+    const searchOne = vi.fn(async () => ({ answer: "", model: "m", sources: [] }));
+    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+      if (agentId === "rumor_detector") {
+        return {
+          agent: "rumor_detector",
+          output: {
+            claimAtoms: [ATOM_TRUE],
+            claimAtomTypes: [{ text: ATOM_TRUE, verifiable: true, type: "fact" }],
+          },
+        };
+      }
+      if (agentId === "fact_checker") {
+        return { agent: "fact_checker", output: { factCheckResult: "unverified", subclaimVerdicts: [] } };
+      }
+      if (agentId === "source_validator") {
+        return { agent: "source_validator", output: { sourceReliability: "unverified" } };
+      }
+      throw new Error(`unexpected ${agentId}`);
+    });
+    await runCasePipeline({
+      claim: ATOM_TRUE,
+      runAgent,
+      searchOne,
+      callSelfProofModel: async () => {
+        expect(frames.at(-1)?.phase).toBe("decomposed");
+        expect((frames.at(-1)?.claims ?? []).length).toBeGreaterThan(0);
+        return {
+          output: { results: [{ atom: ATOM_TRUE, supported: true, reason: "原句直说" }] },
+          model: "selfproof-m",
+        };
+      },
+      runReport: async () => ({
+        agent: "report_composer",
+        output: { verdictType: "unverified", conclusion: "公开材料还撑不住。" },
+      }),
+      hooks: {
+        searchMode: "sequential",
+        onInvestigationSnapshot: (snapshot) => {
+          frames.push({
+            phase: snapshot.phase,
+            preClaimWork: snapshot.preClaimWork,
+            claims: snapshot.claims,
+          });
+        },
+      },
+    });
+    expect(frames[0]?.preClaimWork).toBeUndefined();
+    expect(frames.some((frame) => frame.phase === "decomposed")).toBe(true);
   });
 });

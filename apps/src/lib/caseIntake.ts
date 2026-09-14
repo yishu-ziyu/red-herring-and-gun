@@ -6,6 +6,8 @@ export interface CaseLink {
   scrapedAt?: number;
   scrapeStatus?: "success" | "error";
   scrapeError?: string;
+  /** 抓取判定失败（空正文 / 过短 / 登录墙）：正文不可用，不拼进 claim。 */
+  scrapeFailed?: boolean;
 }
 
 export interface CaseImage {
@@ -82,6 +84,20 @@ export function createCaseIntake(text: string, images: CaseImage[]): CaseIntake 
 
 export function caseIntakeHasMaterial(intake: Pick<CaseIntake, "text" | "links" | "images">) {
   return Boolean(intake.text.trim() || intake.links.length > 0 || intake.images.length > 0);
+}
+
+/** 抓取失败、正文不可用的链接。历史回看没有 intake 时当没有失败链接。 */
+export function caseIntakeFailedLinks(intake: Pick<CaseIntake, "links"> | null | undefined): CaseLink[] {
+  return (intake?.links ?? []).filter((link) => link.scrapeFailed === true);
+}
+
+/** 用户输入去掉 URL 之后没有别的字：只贴了链接。 */
+export function isUrlOnlyClaim(text: string): boolean {
+  const raw = String(text ?? "").trim();
+  if (!raw) return false;
+  const t = raw.replace(/^请核查链接内容：/, "").trim();
+  const leftover = t.replace(/https?:\/\/[^\s]+/gi, "").replace(/\s+/g, "");
+  return leftover.length === 0;
 }
 
 export function caseIntakePrimaryText(intake: CaseIntake) {

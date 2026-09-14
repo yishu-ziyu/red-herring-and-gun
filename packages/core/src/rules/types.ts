@@ -1,6 +1,6 @@
 /**
- * Minimal mvp/src/lib/schemas types needed by sourceCredibility.ts.
- * Sourced verbatim from mvp/src/lib/schemas.ts; T09 will decide canonical home.
+ * Minimal apps/src/lib/schemas types needed by sourceCredibility.ts.
+ * Sourced verbatim from apps/src/lib/schemas.ts; T09 will decide canonical home.
  */
 
 export type EvidenceRole = "支持" | "反驳" | "限定" | "背景" | "线索" | "不可用";

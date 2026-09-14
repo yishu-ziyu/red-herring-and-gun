@@ -28,7 +28,7 @@ describe("compareGate", () => {
       "reportContractPassRate",
     ]);
     expect(GATE_METRIC_NAMES).not.toContain("hallucinationRate");
-    expect(METRIC_SEMVER.startsWith("4.")).toBe(true);
+    expect(METRIC_SEMVER.startsWith("5.")).toBe(true);
     const { passed, rows } = compareGate(four, four);
     expect(passed).toBe(true);
     expect(rows.map((row) => row.name)).toEqual([...GATE_METRIC_NAMES]);
@@ -187,6 +187,40 @@ describe("compareGate identity", () => {
     expect(passed).toBe(false);
     expect(rejectReason).toMatch(/unlabeled/);
     expect(rows).toEqual([]);
+  });
+});
+
+describe("old pipeline scorecard", () => {
+  it("rejects a numeric-only apps/server eval dump that has no metricSemver", () => {
+    expect(() =>
+      parseBaseline({
+        totalCases: 26,
+        routingAccuracy: 1,
+        verdictAccuracy: 0.69,
+        credibilityAccuracy: 0.92,
+        hallucinationRate: 0.03,
+        reportContractPassRate: 0.96,
+      }),
+    ).toThrow(/metricSemver/);
+  });
+});
+
+describe("packages/eval/baseline.json", () => {
+  it("parses the recorded live scorecard with no unlabeled cases", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { dirname, join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const path = join(dirname(fileURLToPath(import.meta.url)), "../baseline.json");
+    const parsed = parseBaseline(JSON.parse(readFileSync(path, "utf8")));
+    expect(parsed.metricSemver).toBe(METRIC_SEMVER);
+    expect(parsed.caseIds).toHaveLength(24);
+    expect(parsed.qualificationFingerprint.split(",").some((part) => part.endsWith(":unlabeled"))).toBe(false);
+    expect(typeof parsed.verdictAccuracy).toBe("number");
+    expect(typeof parsed.citationIntegrityErrorRate).toBe("number");
+    const { passed, rows } = compareGate(parsed, parsed);
+    expect(passed).toBe(true);
+    expect(rows).toHaveLength(4);
+    expect(rows.every((row) => row.delta === 0)).toBe(true);
   });
 });
 

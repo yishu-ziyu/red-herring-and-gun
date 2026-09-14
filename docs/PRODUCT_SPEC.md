@@ -163,21 +163,21 @@ conclusion 第一句直接回答原问题，像 **不会。** / **原句站不�
 
 - （2026-08-13）按赛题原文收回定位：信息真相猎人。用户问题是能不能信。废止「先别转发 / 转不转 / 小陈」作为产品语言。
 - （2026-08-13）预测从硬排除改为灰度：有公开承诺/正式文件等现在时抓手则照常查，查的是抓手不是未来；价值/规范仍不发起证真证伪检索。
-- 管线、按条检索、公式分、自证闸门的实现细节**以代码为准**。`mvp/docs/` 是 2026-06～08 的历史技术文档，其中的产品口径（例如结论用「能信 / 不能信 / 只能信一部分 / 还查不清」四个词、Mission Control 是产品脸）已被本文件取代；那批文档顶部已加历史横幅。
+- 管线、按条检索、公式分、自证闸门的实现细节**以代码为准**。
 - （2026-08-15）业界对照调研定论：差异轴是**判决纪律**，不是编排动态性。站位「案件级动态路由 + 条件触发升级 + 步骤级确定性执行」，路线 P0–P3 见第八节。
 - （2026-08-18）P0 检索政策第一增量（ADR-005 Evidence Pursuit）：Query Portfolio + 辨识力打分 + Evidence Gap + 多 query RRF + 信息增益判停，接到已有 evidenceLoop，不另起 Search Agent。过程 UI 展示证据追索 hops。
 - （2026-08-15）编排合理性论证写入第八节：学术背书映射（FActScore/SAFE/FacTool/Self-RAG/CoVe/AIS 等）、弃自主三理由、agentbook 十章对照；三个缺口定为 G1 eval 翻案案例、G2 记忆语义召回、G3 冲突触发真辩论。
-- （2026-08-15）G1 已实现：eval golden 集补 evidenceLoop 翻案案例（口语说法与官方口径词表错位类），`mvp/server/eval/score.ts` 增加观测指标 evidenceLoopExpected/Ran/Rescued（触发率与翻案率，不进门禁）。
-- （2026-08-15）G2 已实现：记忆语义召回走确定性路线（`mvp/src/lib/semanticRecall.ts`）——领域同义词组桥接 + 汉字字符 Dice + bigram Jaccard 加权合成，零模型零延迟；同义改写零词面交集仍可召回（电瓶车→电动车）。本地 embedding 留作 ADR-001 Phase 3 备选，不在 MVP 引入。
-- （2026-08-15，旧机制已于 2026-09-05 取代）G3 当时实现：冲突触发第二模型交叉对抗（`mvp/server/src/lib/crossExam/`）。触发条件确定性（原子命题支撑与反证同时非空才升级）；第二模型国产优先且与主判不同源（MiniMax → MiMo → StepFun）；分歧处置确定性——不重写判词，可信度降分（每分歧 -10、封顶 -20）并标注 contested，报告可审计。935 测试全绿。
+- （2026-08-15）G1 已实现：eval golden 集补 evidenceLoop 翻案案例（口语说法与官方口径词表错位类），`apps/server/eval/score.ts` 增加观测指标 evidenceLoopExpected/Ran/Rescued（触发率与翻案率，不进门禁）。
+- （2026-08-15）G2 已实现：记忆语义召回走确定性路线（`apps/src/lib/semanticRecall.ts`）——领域同义词组桥接 + 汉字字符 Dice + bigram Jaccard 加权合成，零模型零延迟；同义改写零词面交集仍可召回（电瓶车→电动车）。本地 embedding 留作 ADR-001 Phase 3 备选，不在 MVP 引入。
+- （2026-08-15，旧机制已于 2026-09-05 取代）G3 当时实现：冲突触发第二模型交叉对抗（`apps/server/src/lib/crossExam/`）。触发条件确定性（原子命题支撑与反证同时非空才升级）；第二模型国产优先且与主判不同源（MiniMax → MiMo → StepFun）；分歧处置确定性——不重写判词，可信度降分（每分歧 -10、封顶 -20）并标注 contested，报告可审计。935 测试全绿。
 - （2026-08-15）G3 真实案例三路径验证：RUMOR-008 无冲突正确不触发（条件触发省 token）；RUMOR-011 触发 AGREE 不降分（二审独立指出相关性≠因果）；RUMOR-013 触发 INCONCLUSIVE 不惩罚（二审发现支撑证据偏题，留痕可审计）。
 - （2026-08-15）evidenceLoop 翻案续期：递归深度从固定 2 轮改为按提问质量续命——提问 → 重判 → 判词仍翻转中且问题仍产证据 → 换策略再问（pass 2，round 3-4 走「当事方与原始数据」）；判停全确定性：无新证据（坏问题停）/ 全部收敛（问完了）/ pass ≤2 总轮 ≤4（笼子）。SSE 轮次跨 pass 连续编号可回看。
 - （2026-08-15）StepFun Token Plan 接入（Anthropic 协议 `api.stepfun.com/step_plan/v1/messages`，Bearer）：crossExam 第二意见与主判真正双源——主判 MiniMax-M3，二审 step-3.7-flash（生产路径实测：异源自动选中、JSON 干净、带 boundary）。RUMOR-011 本轮一遍收敛无冲突原子，crossExam 合法未触发（条件触发）。
 - （2026-08-15）原子级整句守门（`deriveOverallVerdict`）：修复「真假交织被判整体 false」的校准漂移（RUMOR-011 自 08-12 起 verdict 漂移）。规则确定性：有据之真（模型引用 URL 且 bind 对 bundle 校验通过，检索垫的 related-only 不算）+ 有假原子 → mixed_misleading + 公式收 partial（false→cap15 不再触发）；无据不救。配套：fact_checker prompt 增复合句 partial 指引与「肯定判词必须带 URL」硬约束；missingPenalty 封顶 0.15→0.10（缺源是软信号，惩罚不得重于假判词）。真实验证 RUMOR-011 ×2 重复：majority=mixed_misleading / medianCred=20 ∈ [10,35]，全指标 PASS（此前 false/1 FAIL）。951 测试全绿。
 - （2026-08-19）拆题类型闸聊清：类型不是更强模型标的，是 MiniMax-M3 填拆题工单（只许写 `type` / `verifiable`，不许判真假）。沟通禁用「灰」。流传说法被标立场 → `forceCheckableAtomTypes` 强制可核查并检索。类型仍无第二模型意见。
-- （2026-08-19）《Agentic Design Patterns》21 章对照后已落地：无网址不得真/假；7 条按负荷选 6、未选仍展示为还查不清；eval 能抓半真半假拆反 / 该查不清却下判 / 该搜没搜。总表：`docs/reviews/agentic-patterns/INDEX.md`。验收：`docs/reviews/agentic-patterns/specs/done/`。
+- （2026-08-19）《Agentic Design Patterns》对照后已落地：无网址不得真/假；7 条按负荷选 6、未选仍展示为还查不清；eval 能抓半真半假拆反 / 该查不清却下判 / 该搜没搜。细则以代码与本文件为准。
 - （2026-08-19）结果页逐条清单改读 `claimItems`：原句序、立场型夹在中间、反证 URL 也能点开。整句判断优先用 `faceVerdict`。本地 Vite `/api/agent/orchestrate(-stream)` 与生产同一条 Case Pipeline，不再走 AgentRuntime 实验床。
-- （2026-08-19）输出语言按工具使用那一章的产品含义收束：结论只来自检索；用户看见的字不露工具名、不写转不转。见第二节「用户看见的字」；代码闸 `mvp/server/src/lib/publicCopy.ts`。
+- （2026-08-19）输出语言按工具使用那一章的产品含义收束：结论只来自检索；用户看见的字不露工具名、不写转不转。见第二节「用户看见的字」；代码闸 `apps/server/src/lib/publicCopy.ts`。
 - （2026-08-27）结论第一句不再盖「能信 / 不能信 / 只能信一部分 / 还查不清」。那四个词留作内部类型。用户看见的是对原句的直接回答。
 - （2026-08-27）查完可以再问一句：同一条线程第二轮，气泡是用户的追问，编排入口带上原对象和上一轮回答。再查一条才回首页。不是闲聊产品。
 - （2026-08-30）公网默认模型改为 MiniMax-M2.7-highspeed，M3 保留为显式高深度覆盖。原因不是降级判决纪律，而是一次真实健康核查中 M3 多步链超过用户耐心窗口；highspeed 在 120 秒内完成拆题、两条分判与 8 个可点来源。来源摘要 LLM 润色默认退出核心路径，原始搜索摘要直接进入核查。

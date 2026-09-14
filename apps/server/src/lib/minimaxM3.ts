@@ -8,6 +8,11 @@
 export const MINIMAX_M3_RECOMMENDED_MAX_TOKENS = 131072;
 export const MINIMAX_M3_ABSOLUTE_MAX_TOKENS = 524288;
 export const MINIMAX_M3_DEFAULT_TIMEOUT_MS = 600000;
+/** MiniMax-M2.7 作判断：四条命题 + 二十来条来源实测 61s 成功、90s 被掐。 */
+export const MINIMAX_M27_DEFAULT_TIMEOUT_MS = 180000;
+export function isMiniMaxM27(model: string): boolean {
+  return /^MiniMax-M2\.7(?:-highspeed)?$/i.test(model);
+}
 
 export type MiniMaxThinkingType = "adaptive" | "disabled";
 
@@ -37,7 +42,7 @@ export function miniMaxMaxTokensForModel(
   model: string,
   requested: number
 ): number {
-  if (/^MiniMax-M2\.7(?:-highspeed)?$/i.test(model)) {
+  if (isMiniMaxM27(model)) {
     const explicitFloor = Number(envPick(env, "MINIMAX_M27_MIN_MAX_TOKENS"));
     const floor = Number.isFinite(explicitFloor) && explicitFloor > 0 ? explicitFloor : 4096;
     return Math.max(requested, Math.floor(floor));

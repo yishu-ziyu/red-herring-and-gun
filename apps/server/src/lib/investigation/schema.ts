@@ -71,6 +71,10 @@ export const InvestigationSourceSchema = Type.Object(
     publishedAt: Type.Optional(Type.String()),
     retrievedAt: Type.Optional(Type.String()),
     reachable: Type.Optional(Type.Boolean()),
+    /** 材料复用来源：知识库是跨案；prior-round 是同一案上一轮。老快照无此字段，照常渲染。 */
+    provenance: Type.Optional(Type.Union([Type.Literal("knowledge"), Type.Literal("prior-round")])),
+    /** 复用条目的已核日期（YYYY-MM-DD）；只有带 provenance 时才有意义。 */
+    originDate: Type.Optional(Type.String()),
   },
   closed,
 );
@@ -83,6 +87,9 @@ export const InvestigationEvidenceLinkSchema = Type.Object(
     role: InvestigationEvidenceRoleSchema,
     finding: Type.Optional(Type.String()),
     limitation: Type.Optional(Type.String()),
+    /** 同上：复用的证据条目。字段与来源条目同名。 */
+    provenance: Type.Optional(Type.Union([Type.Literal("knowledge"), Type.Literal("prior-round")])),
+    originDate: Type.Optional(Type.String()),
   },
   closed,
 );
@@ -175,6 +182,17 @@ export const InvestigationConclusionSchema = Type.Object(
 );
 export type InvestigationConclusion = Static<typeof InvestigationConclusionSchema>;
 
+/**
+ * 命题尚未出现时，思考区跟的是哪一段真实工作。
+ * 缺省（received 且不写本字段）= 正在拆原句；checking = 拆完、正在核对这些说法站不站得住。
+ * 命题出现后不写。不是前端按秒解锁的假阶段。
+ */
+export const InvestigationPreClaimWorkSchema = Type.Union([
+  Type.Literal("splitting"),
+  Type.Literal("checking"),
+]);
+export type InvestigationPreClaimWork = Static<typeof InvestigationPreClaimWorkSchema>;
+
 export const InvestigationSnapshotSchema = Type.Object(
   {
     schemaVersion: Type.Literal(1),
@@ -185,6 +203,7 @@ export const InvestigationSnapshotSchema = Type.Object(
     conflicts: Type.Array(InvestigationConflictSchema),
     conclusion: Type.Optional(InvestigationConclusionSchema),
     checkedAt: Type.Optional(Type.String()),
+    preClaimWork: Type.Optional(InvestigationPreClaimWorkSchema),
   },
   closed,
 );

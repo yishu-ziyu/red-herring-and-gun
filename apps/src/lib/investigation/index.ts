@@ -6,6 +6,6 @@
  * workspace 软链才能解析，新克隆只装 `mvp/` 时 `tsc` 与 `vite build` 都会报
  * `Cannot find module '@rhg/core/investigation'`。
  *
- * 与 `mvp/src/lib/claimAtom/index.ts` 同一做法。契约 `docs/evals/2026-09-11-mvp-phantom-dependency.md`。
+ * 与 `apps/src/lib/claimAtom/index.ts` 同一做法。契约 `docs/evals/2026-09-11-mvp-phantom-dependency.md`。
  */
 export * from "../../../server/src/lib/investigation/index";

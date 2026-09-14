@@ -254,8 +254,30 @@ describe("Issue #74：false 的证伪材料被写成 supportingSources 时不得
       "contradict",
     ]);
     expect(claim2!.evidence.some((l) => l.role === "support")).toBe(false);
-    expect(claim2!.evidence.every((l) => l.finding?.includes("通常不需要输液"))).toBe(true);
+    const findings = claim2!.evidence.map((l) => l.finding).filter((text): text is string => Boolean(text));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toContain("通常不需要输液");
     expectCleanContract(snapshot);
+  });
+
+  it("finding 若与结论同一段则不挂到依据", () => {
+    const atom = "咖啡争夺引发古代战争";
+    const leaked = "所有来源均为非学术性文章。公开材料撑不住「争夺咖啡引发古代战争」。";
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: atom,
+      phase: "complete",
+      claimAtoms: [atom],
+      subclaimVerdicts: [
+        {
+          claimAtom: atom,
+          verdict: "unverified",
+          evidence: leaked,
+          supportingSources: [src("https://a.example/coffee", "咖啡与茶的千年战争", "摘要")],
+        },
+      ],
+      report: { conclusion: leaked, verdictType: "unverified" },
+    }, { claimAtomKeyFn: keyFn });
+    expect(snapshot.claims[0]!.evidence.every((l) => !l.finding)).toBe(true);
   });
 
   it("已正确放入 contradictingSources 的路径不回归", () => {
@@ -301,7 +323,7 @@ describe("Issue #74：false 的证伪材料被写成 supportingSources 时不得
     expect(snapshot.claims[0]!.judgment).toBe("supported");
   });
 
-  it("同一 URL 跨桶：同一 sourceId 同时产出 support 与 contradict", () => {
+  it("同一 URL 跨桶：只保留一个角色，不把同一摘录写成支持和反驳", () => {
     const url = "https://same.example/x";
     const shared = src(url, "同一来源", "既支持一部分也反驳另一部分");
     const snapshot = buildInvestigationSnapshot({
@@ -320,12 +342,63 @@ describe("Issue #74：false 的证伪材料被写成 supportingSources 时不得
         },
       ],
     }, { claimAtomKeyFn: keyFn });
-    const links = snapshot.claims[0]!.evidence;
-    expect(links.map((l) => l.role)).toEqual(["support", "contradict"]);
-    expect(links[0]!.sourceId).toBe(links[1]!.sourceId);
+    const links = snapshot.claims[0]!.evidence.filter((l) => l.sourceId === snapshot.sources[0]!.id);
+    expect(links).toHaveLength(1);
+    expect(links[0]!.role).toBe("support");
     expect(snapshot.sources).toHaveLength(1);
     expect(snapshot.sources[0]!.url).toBe(url);
     expectCleanContract(snapshot);
+  });
+
+  it("同一 finding 两出处：该 finding 只挂一次", () => {
+    const finding = "同一份说明：低钠有益，但不能推出全民预防中风。";
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: "低钠盐就能预防中风。",
+      phase: "complete",
+      claimAtoms: ["低钠盐就能预防中风"],
+      subclaimVerdicts: [
+        {
+          claimAtom: "低钠盐就能预防中风",
+          verdict: "partial",
+          evidence: finding,
+          supportingSources: [
+            src("https://a.example/one", "来源一", "短摘录一"),
+            src("https://b.example/two", "来源二", "短摘录二"),
+          ],
+          contradictingSources: [],
+          evidenceGaps: [],
+        },
+      ],
+    }, { claimAtomKeyFn: keyFn });
+    const findings = snapshot.claims[0]!.evidence
+      .map((l) => l.finding)
+      .filter((text): text is string => Boolean(text));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toBe(finding);
+    expect(snapshot.claims[0]!.evidence).toHaveLength(2);
+  });
+
+  it("摘录长于 80 字时展示带省略，长度不超过约 80 字", () => {
+    const long = "甲".repeat(120);
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: "某说法。",
+      phase: "complete",
+      claimAtoms: ["某说法"],
+      subclaimVerdicts: [
+        {
+          claimAtom: "某说法",
+          verdict: "true",
+          evidence: "有出处[1]。",
+          supportingSources: [src("https://long.example/x", "长摘录", long)],
+          contradictingSources: [],
+          evidenceGaps: [],
+        },
+      ],
+    }, { claimAtomKeyFn: keyFn });
+    const excerpt = snapshot.sources[0]!.excerpt ?? "";
+    expect(excerpt.length === 0 || excerpt.length <= 80 || excerpt.endsWith("…")).toBe(true);
+    expect(excerpt.endsWith("…")).toBe(true);
+    expect(excerpt.length).toBeLessThanOrEqual(81);
   });
 
   it("related-only 检索垫不得被改成 contradict", () => {
@@ -801,9 +874,95 @@ describe("命题透明", () => {
     }, { claimAtomKeyFn: keyFn });
     expect(snapshot.conclusion?.judgment).toBe("not-applicable");
   });
+
+  it("claims 为空（一条命题都没拆出来）：结论 judgment=unresolved，不写成立场表达", () => {
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: "这条说法里没有一个字被拆成可核查命题。",
+      phase: "complete",
+      claimAtoms: [],
+      report: { conclusion: "现有材料撑不住这条说法，还查不清。", verdictType: "false" },
+    }, { claimAtomKeyFn: keyFn });
+    expect(snapshot.claims).toEqual([]);
+    expect(snapshot.conclusion?.judgment).toBe("unresolved");
+    expectCleanContract(snapshot);
+  });
+
+  it("可核查主张都尚未查清时，即使报告写 false 也不渲染证据反驳", () => {
+    const atomA = "长城是古代军事防御工程";
+    const atomB = "长城能从太空用肉眼看到";
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: `${atomA}。${atomB}。`,
+      phase: "complete",
+      claimAtoms: [atomA, atomB],
+      claimAtomTypes: [
+        { text: atomA, verifiable: true, type: "fact" },
+        { text: atomB, verifiable: true, type: "fact" },
+      ],
+      subclaimVerdicts: [
+        { claimAtom: atomA, verdict: "unverified", evidence: "", boundary: "", supportingSources: [], contradictingSources: [], evidenceGaps: ["检索预算未覆盖"] },
+        { claimAtom: atomB, verdict: "unverified", evidence: "", boundary: "模型未覆盖，待补证", supportingSources: [], contradictingSources: [], evidenceGaps: [] },
+      ],
+      report: { conclusion: "公开材料不支持这条说法。", verdictType: "false" },
+    }, { claimAtomKeyFn: keyFn });
+    expect(snapshot.conclusion?.judgment).toBe("unresolved");
+    expect(snapshot.claims.every((c) => c.judgment === "unresolved")).toBe(true);
+  });
+
+  it("有据之真 + 有据之假：即使报告写 false，整句标签也是 mixed 不是证据反驳", () => {
+    const atomA = "长城是古代军事防御工程";
+    const atomB = "长城能从太空用肉眼看到";
+    const support = { url: "https://ncha.example/wall", title: "文物局", snippet: "古代军事防御" };
+    const contra = { url: "https://nasa.example/visibility", title: "航天观测", snippet: "肉眼不可见" };
+    const snapshot = buildInvestigationSnapshot({
+      originalClaim: `${atomA}。${atomB}。`,
+      phase: "complete",
+      claimAtoms: [atomA, atomB],
+      claimAtomTypes: [
+        { text: atomA, verifiable: true, type: "fact" },
+        { text: atomB, verifiable: true, type: "fact" },
+      ],
+      atomSearchBundle: {
+        atomsSearched: [atomA, atomB],
+        byAtomKey: { [atomA]: [support], [atomB]: [contra] },
+      },
+      subclaimVerdicts: [
+        { claimAtom: atomA, verdict: "true", evidence: "文物局确认。", boundary: "", supportingSources: [support], contradictingSources: [], evidenceGaps: [] },
+        { claimAtom: atomB, verdict: "false", evidence: "航天观测不支持。", boundary: "", supportingSources: [], contradictingSources: [contra], evidenceGaps: [] },
+      ],
+      report: { conclusion: "公开材料不支持这条说法。", verdictType: "false" },
+    }, { claimAtomKeyFn: keyFn });
+    expect(snapshot.conclusion?.judgment).toBe("mixed");
+    expect(snapshot.claims.find((c) => c.text === atomA)?.judgment).toBe("supported");
+    expect(snapshot.claims.find((c) => c.text === atomB)?.judgment).toBe("refuted");
+  });
 });
 
 describe("schema 与不变量", () => {
+  it("received 可带 preClaimWork=checking；命题出现后丢掉", () => {
+    const checking = buildInvestigationSnapshot(
+      { originalClaim: "x", phase: "received", preClaimWork: "checking" },
+      { claimAtomKeyFn: keyFn },
+    );
+    expect(checking.preClaimWork).toBe("checking");
+    expect(() => validateInvestigationSnapshot(checking)).not.toThrow();
+    const later = buildInvestigationSnapshot(
+      { originalClaim: "x", phase: "decomposed", claimAtoms: ["x"], preClaimWork: "checking" },
+      { claimAtomKeyFn: keyFn },
+    );
+    expect(later.preClaimWork).toBeUndefined();
+    expect(() =>
+      validateInvestigationSnapshot({
+        schemaVersion: 1,
+        originalClaim: "x",
+        phase: "received",
+        claims: [],
+        sources: [],
+        conflicts: [],
+        preClaimWork: "self-proof",
+      }),
+    ).toThrow();
+  });
+
   it("拒绝实现层字段（closed schema）", () => {
     const bad = {
       schemaVersion: 1,
@@ -974,12 +1133,11 @@ describe("Issue #76 source identity 跨 Snapshot 稳定", () => {
     expect(context.claims[0]!.evidence.map((l) => l.role)).toEqual(["context-only"]);
   });
 
-  it("E. 同 URL dual relation：一个 Source，两条 EvidenceLink，不合成 source-level verdict", () => {
+  it("E. 同 URL 进两桶：一个 Source、一条 EvidenceLink，不合成 source-level verdict", () => {
     const snapshot = judgingOf({ bundle: [urlX], support: [urlX], contradict: [urlX] });
     expect(snapshot.sources.filter((s) => s.url === urlX)).toHaveLength(1);
     expect(snapshot.sources).toHaveLength(1);
-    expect(snapshot.claims[0]!.evidence.map((l) => l.role)).toEqual(["support", "contradict"]);
-    expect(snapshot.claims[0]!.evidence[0]!.sourceId).toBe(snapshot.claims[0]!.evidence[1]!.sourceId);
+    expect(snapshot.claims[0]!.evidence.map((l) => l.role)).toEqual(["support"]);
     expect(snapshot.sources[0]!).not.toHaveProperty("verdict");
     expect(snapshot.sources[0]!).not.toHaveProperty("role");
   });
@@ -1157,6 +1315,34 @@ describe("Issue #76 capture gate：semantic source identity", () => {
     });
     expect(gate.ok).toBe(false);
     expect(gate.errors).toContain("sourceIdsStable=false");
+  });
+});
+
+describe("同一出处不得同时支持和反驳", () => {
+  it("同一 URL 进两桶时只保留支持位", () => {
+    const url = "https://www.anyang.gov.cn/2024/08-07/2445369.html";
+    const atom = "高钠摄入是高血压最主要的危险因素";
+    const snapshot = buildInvestigationSnapshot(
+      {
+        originalClaim: atom,
+        phase: "judging",
+        claimAtoms: [atom],
+        subclaimVerdicts: [
+          {
+            claimAtom: atom,
+            verdict: "mixed",
+            evidence: "高钠、低钾饮食是导致我国大多数高血压患者发病的主要危险因素之一。",
+            supportingSources: [src(url, "高血压的病因", "摘录")],
+            contradictingSources: [src(url, "高血压的病因", "摘录")],
+            evidenceGaps: [],
+          },
+        ],
+      },
+      { claimAtomKeyFn: keyFn },
+    );
+    const roles = snapshot.claims[0]!.evidence.filter((link) => link.sourceId === snapshot.sources[0]!.id);
+    expect(roles).toHaveLength(1);
+    expect(roles[0]!.role).toBe("support");
   });
 });
 

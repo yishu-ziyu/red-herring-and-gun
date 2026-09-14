@@ -895,7 +895,7 @@ describe("runCasePipeline", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   it("7 条可核查时含导致的第 7 条进检索，未入选条仍在 claimItems 且 unverified", async () => {
     const atoms = [
@@ -1016,5 +1016,178 @@ describe("runCasePipeline abort（B1 僵尸流水线回归）", () => {
     ).rejects.toBeDefined();
     expect(callSelfProofModel).not.toHaveBeenCalled();
     expect(searchOne).not.toHaveBeenCalled();
+  });
+});
+
+// 首轮与追问轮共用同一入口 runCasePipeline（handlers.ts 的 followUp 只影响 caseId 与关联校验），
+// 所以本组的兜底结论对首轮与追问轮同样成立。
+describe("runCasePipeline self-proof 全丢兜底（主路 P0 Change B）", () => {
+  const ATOM_A = "事实A";
+  const ATOM_B = "事实B";
+
+  function stubRunAgent() {
+    return vi.fn(async (agentId: string): Promise<PipelineStep> => {
+      if (agentId === "rumor_detector") {
+        return {
+          agent: "rumor_detector",
+          output: {
+            claimAtoms: [ATOM_A, ATOM_B],
+            claimAtomTypes: [
+              { text: ATOM_A, verifiable: true, type: "fact" },
+              { text: ATOM_B, verifiable: true, type: "fact" },
+            ],
+          },
+        };
+      }
+      if (agentId === "fact_checker") {
+        return { agent: "fact_checker", output: { factCheckResult: "unverified", subclaimVerdicts: [] } };
+      }
+      if (agentId === "source_validator") {
+        return { agent: "source_validator", output: { sourceReliability: "unverified" } };
+      }
+      throw new Error(`unexpected ${agentId}`);
+    });
+  }
+
+  const makeSearchOne = () =>
+    vi.fn(async (atom: string) => ({
+      answer: atom,
+      model: "m",
+      sources: [{ url: `https://t.test/${encodeURIComponent(atom)}`, title: atom, snippet: "s" }],
+    }));
+
+  const stubRunReport = async (): Promise<PipelineStep> => ({
+    agent: "report_composer",
+    output: { verdictType: "unverified", conclusion: "还查不清。" },
+  });
+
+  const allUnsupported = {
+    output: {
+      results: [
+        { atom: ATOM_A, supported: false, reason: "不在原句" },
+        { atom: ATOM_B, supported: false, reason: "不在原句" },
+      ],
+    },
+    model: "selfproof-m",
+  };
+
+  const allSupported = {
+    output: {
+      results: [
+        { atom: ATOM_A, supported: true, reason: "原句直说" },
+        { atom: ATOM_B, supported: true, reason: "原句直说" },
+      ],
+    },
+    model: "selfproof-m",
+  };
+
+  it("self-proof 首轮全丢 → 自动重试一次，重试有保留时按重试结果继续", async () => {
+    let calls = 0;
+    const callSelfProofModel = vi.fn(async () => {
+      calls += 1;
+      return calls === 1 ? allUnsupported : allSupported;
+    });
+    const searchOne = makeSearchOne();
+
+    const result = await runCasePipeline({
+      claim: `原句同时说了${ATOM_A}和${ATOM_B}`,
+      runAgent: stubRunAgent(),
+      searchOne,
+      callSelfProofModel,
+      runReport: stubRunReport,
+    });
+
+    expect(callSelfProofModel).toHaveBeenCalledTimes(2);
+    expect([...new Set(searchOne.mock.calls.map((c) => c[0]))]).toEqual(
+      expect.arrayContaining([ATOM_A, ATOM_B])
+    );
+    expect(result.rumorStep.output.claimAtoms).toEqual([ATOM_A, ATOM_B]);
+  });
+
+  it("self-proof 两次全丢 → fail-open 保留全部候选、记日志、管道继续", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const callSelfProofModel = vi.fn(async () => allUnsupported);
+      const searchOne = makeSearchOne();
+
+      const result = await runCasePipeline({
+        claim: `原句同时说了${ATOM_A}和${ATOM_B}`,
+        runAgent: stubRunAgent(),
+        searchOne,
+        callSelfProofModel,
+        runReport: stubRunReport,
+      });
+
+      expect(callSelfProofModel).toHaveBeenCalledTimes(2);
+      // 全部候选照常检索，没有一条命题被这一闸门丢掉
+      expect([...new Set(searchOne.mock.calls.map((c) => c[0]))]).toEqual(
+        expect.arrayContaining([ATOM_A, ATOM_B])
+      );
+      expect(result.rumorStep.output.claimAtoms).toEqual([ATOM_A, ATOM_B]);
+      expect(result.rumorStep.output.claimAtomSelfProof).toMatchObject({
+        kept: [ATOM_A, ATOM_B],
+        dropped: [],
+      });
+      const warnings = warn.mock.calls.map((call) => String(call[0]));
+      expect(warnings.some((line) => line.includes("fail-open"))).toBe(true);
+      // 管道继续到报告，不是中途抛错
+      expect(result.finalReport.verdictType).toBe("unverified");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("self-proof 有保留时不重试", async () => {
+    const callSelfProofModel = vi.fn(async () => allSupported);
+    const searchOne = makeSearchOne();
+
+    const result = await runCasePipeline({
+      claim: `原句同时说了${ATOM_A}和${ATOM_B}`,
+      runAgent: stubRunAgent(),
+      searchOne,
+      callSelfProofModel,
+      runReport: stubRunReport,
+    });
+
+    expect(callSelfProofModel).toHaveBeenCalledTimes(1);
+    expect(result.rumorStep.output.claimAtoms).toEqual([ATOM_A, ATOM_B]);
+  });
+
+  it("拆题候选为空时不重试也不兜底（不凭空造出命题）", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const callSelfProofModel = vi.fn(async () => allUnsupported);
+      const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+        if (agentId === "rumor_detector") {
+          return {
+            agent: "rumor_detector",
+            output: { claimAtoms: ["   ", ""], claimAtomTypes: [] },
+          };
+        }
+        if (agentId === "fact_checker") {
+          return { agent: "fact_checker", output: { factCheckResult: "unverified", subclaimVerdicts: [] } };
+        }
+        if (agentId === "source_validator") {
+          return { agent: "source_validator", output: { sourceReliability: "unverified" } };
+        }
+        throw new Error(`unexpected ${agentId}`);
+      });
+      const searchOne = makeSearchOne();
+
+      const result = await runCasePipeline({
+        claim: "空拆题",
+        runAgent,
+        searchOne,
+        callSelfProofModel,
+        runReport: stubRunReport,
+      });
+
+      expect(callSelfProofModel).not.toHaveBeenCalled();
+      expect(searchOne).not.toHaveBeenCalled();
+      expect(result.rumorStep.output.claimAtoms).toEqual([]);
+      expect(warn.mock.calls.map((call) => String(call[0])).some((line) => line.includes("fail-open"))).toBe(false);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

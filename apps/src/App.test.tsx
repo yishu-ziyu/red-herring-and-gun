@@ -71,7 +71,7 @@ describe("生产首页（输入态）", () => {
     mockFetch();
     render(<App />);
     expect(await screen.findByRole("textbox", { name: "要调查的说法" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /这句话.*站得住吗/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /你听到的说法.*真的靠谱吗/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /开始调查/ })).toBeInTheDocument();
     expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
     expect(document.querySelector("[data-gp-roles=home]")).toBeTruthy();
@@ -217,6 +217,71 @@ describe("调查态与完成态（同画布）", () => {
     expect(await screen.findByText("这次调查没有完成")).toBeInTheDocument();
     expect(document.querySelector('[data-gp-claim-id="claim-1"]')).toBeTruthy();
     expect(screen.queryByLabelText("调查结论")).toBeNull();
+  });
+
+  // 契约 docs/evals/2026-09-12-mainpath-p0.md Change C：超时不再一锤定音。
+  it("超时：提示可以离开页面，晚到的真结论到达后提示退场、结论照常送达", async () => {
+    mockFetch();
+    const complete = refutedComplete();
+    let releaseLate: () => void = () => {};
+    const lateArrived = new Promise<void>((resolve) => {
+      releaseLate = resolve;
+    });
+    vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
+      yield { type: "investigation_snapshot", investigation: investigatingUnassessed() } as OrchestrateStreamEvent;
+      // 总时限到了，管线还在跑
+      yield { type: "timeout_pending" } as OrchestrateStreamEvent;
+      await lateArrived;
+      // 晚完成的真结论
+      yield { type: "investigation_snapshot", investigation: complete } as OrchestrateStreamEvent;
+      yield {
+        type: "complete",
+        finalReport: { conclusion: "原句站不住。", investigation: complete },
+      } as OrchestrateStreamEvent;
+    });
+
+    render(<App />);
+    const editor = await screen.findByRole("textbox", { name: "要调查的说法" });
+    editor.textContent = REFUTED_CLAIM;
+    fireEvent.input(editor);
+    fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
+
+    // 超时态：说清楚「还在查」与「可以走」，而且不许冒充没查完
+    expect(await screen.findByText("还在查，可以离开页面，稍后回来或刷新能看到结果")).toBeInTheDocument();
+    expect(screen.queryByText("这次调查没有完成")).toBeNull();
+    expect(document.querySelector('[data-gp-timeout-pending]')).toBeTruthy();
+    // 已获得的命题照常留在画布上
+    expect(document.querySelector('[data-gp-claim-id="claim-1"]')).toBeTruthy();
+
+    releaseLate();
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-gp-phase="complete"]')).toBeTruthy();
+    });
+    expect(screen.getByLabelText("调查结论").textContent).toContain("原句站不住");
+    // 真结论到了，超时提示退场（两种说法不并列）
+    expect(screen.queryByText("还在查，可以离开页面，稍后回来或刷新能看到结果")).toBeNull();
+    expect(document.querySelector('[data-gp-timeout-pending]')).toBeNull();
+  });
+
+  it("超时后传输层断线：仍说「还在查」，不说成「这次调查没有完成」", async () => {
+    mockFetch();
+    vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
+      yield { type: "investigation_snapshot", investigation: investigatingUnassessed() } as OrchestrateStreamEvent;
+      yield { type: "timeout_pending" } as OrchestrateStreamEvent;
+      // 之后本地连接断了，但服务端管线还在跑（结论经刷新恢复可取回）
+    });
+
+    render(<App />);
+    const editor = await screen.findByRole("textbox", { name: "要调查的说法" });
+    editor.textContent = REFUTED_CLAIM;
+    fireEvent.input(editor);
+    fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
+
+    expect(await screen.findByText("还在查，可以离开页面，稍后回来或刷新能看到结果")).toBeInTheDocument();
+    // 断线不是调查失败：不冒充「没查完」，已获命题照常留着
+    expect(screen.queryByText("这次调查没有完成")).toBeNull();
+    expect(document.querySelector('[data-gp-claim-id="claim-1"]')).toBeTruthy();
   });
 });
 

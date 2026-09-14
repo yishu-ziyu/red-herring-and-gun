@@ -1314,11 +1314,80 @@ describe("Review 5128449568 Blocker 1：checkable-unverified 不得被硬结论�
     const summary = String(result.finalReport.summaryForPublic ?? "");
     expect(conclusion).toContain(`「${b}」尚未查清`);
     expect(conclusion).toContain("未计入该判断");
+    expect(conclusion).toContain(`「${a}」站不住`);
+    expect(conclusion.startsWith("公开材料不支持这条说法")).toBe(false);
     expect(conclusion).not.toContain("都不成立");
     expect(summary).toContain("尚未查清");
     const complete = snapshots.at(-1)!;
     expect(complete.claims.find((cl) => cl.text === b)?.judgment).toBe("unresolved");
     expect(complete.claims.find((cl) => cl.text === a)?.judgment).toBe("refuted");
+  });
+
+  it("有据之真 + 有据之假：composer 整段不支持 → 第一句按条说站住/站不住", async () => {
+    const stand = "长城是古代军事防御工程";
+    const rumor = "长城能从太空用肉眼看到";
+    const { result, snapshots } = await runHarness({
+      claim: `${stand}。${rumor}。`,
+      rumor: rumorStep([
+        { text: stand, verifiable: true, type: "fact" },
+        { text: rumor, verifiable: true, type: "fact" },
+      ]),
+      factOutputs: [
+        {
+          factCheckResult: "false",
+          subclaimVerdicts: [
+            {
+              claimAtom: stand,
+              verdict: "true",
+              evidence: "文物局确认其为古代军事防御工程[1]。",
+              boundary: "",
+              supportingSources: [{ url: url(stand), title: "文物局", snippet: "古代军事防御" }],
+              contradictingSources: [],
+            },
+            {
+              claimAtom: rumor,
+              verdict: "false",
+              evidence: "航天观测不支持肉眼可见[1]。",
+              boundary: "",
+              supportingSources: [],
+              contradictingSources: [{ url: url(rumor), title: "航天观测", snippet: "肉眼不可见" }],
+            },
+          ],
+        },
+      ],
+      composerOutput: { verdictType: "false", conclusion: "公开材料不支持这条说法。" },
+      searchPlan: {
+        [stand]: [{ url: url(stand), title: "文物局", snippet: "古代军事防御" }],
+        [rumor]: [{ url: url(rumor), title: "航天观测", snippet: "肉眼不可见" }],
+      },
+      auditPlanOutput: {
+        overallQuestion: "q",
+        checkabilityRevisions: [],
+        missingJustifications: [],
+        auditQuestions: [],
+      },
+      auditEvalOutput: {
+        supportedWhere: "防御工程有据；太空可见被反驳",
+        biggestGap: "",
+        missingJustifications: [],
+        nextQuestions: [],
+      },
+      citationLiveness: new Map([
+        [url(stand), "alive" as LivenessStatus],
+        [url(rumor), "alive" as LivenessStatus],
+      ]),
+    });
+
+    expect(result.finalReport.verdictType).toBe("mixed_misleading");
+    const conclusion = String(result.finalReport.conclusion ?? "");
+    expect(conclusion.startsWith("公开材料不支持这条说法")).toBe(false);
+    expect(conclusion).toContain(`「${stand}」站得住`);
+    expect(conclusion).toContain(`「${rumor}」站不住`);
+    const complete = snapshots.at(-1)!;
+    expect(complete.conclusion?.judgment).toBe("mixed");
+    const lead = complete.conclusion?.verdictLead ?? complete.conclusion?.directAnswer ?? "";
+    expect(lead).toContain("站得住");
+    expect(lead).toContain("站不住");
   });
 });
 

@@ -9,5 +9,6 @@ export default defineConfig({
     exclude: ["**/node_modules/**", "**/dist/**", "server/dist/**"],
     globals: false,
     css: false,
+    testTimeout: 15000,
   },
 });

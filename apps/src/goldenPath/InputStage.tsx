@@ -3,8 +3,9 @@
  * 只有用户级状态（服务不可用 / 次数用尽 / 登录引导 / 链接抓取失败）；
  * 实现层品牌、积分、批量工具与模型供应商控制一律不在默认首页（E3 扫描对象）。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  caseIntakeFailedLinks,
   createCaseIntake,
   extractLinks,
   imageFileToCaseImage,
@@ -32,6 +33,53 @@ type ServiceState = {
 const MAX_IMAGE_COUNT = 4;
 const MAX_TOTAL_IMAGE_BYTES = 6 * 1024 * 1024;
 
+const LINK_SCRAPE_NOTICE_CLASS = "gp-link-scrape-notice";
+const LINK_SCRAPE_NOTICE_TTL_MS = 12000;
+
+/**
+ * 把「链接打不开」的提示挂到输入态所在的那一层页面容器上（产品壳的 main），
+ * 而不是挂在输入态的 React 树里。
+ *
+ * 原因：点提交后 App 立刻切到调查态，输入态整块卸载，挂在输入态树里的提示一帧都画不出来
+ * （docs/reports/2026-09-12-golden-path-walkthrough/wiring-review.md P8）。产品壳的 main
+ * 在一次会话里始终在，提示挂上去以后提交后仍留在屏幕上，十几秒后自己消失。
+ */
+function showLinkScrapeNotice(text: string, host: HTMLElement | null) {
+  if (typeof document === "undefined" || !document.body) return;
+
+  const container = host?.isConnected && host.parentElement ? host.parentElement : document.body;
+  let notice = container.querySelector<HTMLElement>(`.${LINK_SCRAPE_NOTICE_CLASS}`);
+  if (!notice) {
+    notice = document.createElement("p");
+    notice.className = LINK_SCRAPE_NOTICE_CLASS;
+    notice.setAttribute("role", "alert");
+    const { style } = notice;
+    style.position = "fixed";
+    style.left = "50%";
+    style.bottom = "28px";
+    style.transform = "translateX(-50%)";
+    style.maxWidth = "min(560px, calc(100vw - 32px))";
+    style.padding = "10px 16px";
+    style.borderRadius = "8px";
+    style.border = "1px solid var(--gp-hairline, #dedcd4)";
+    style.background = "var(--gp-surface, #ffffff)";
+    style.color = "var(--gp-ink, #252723)";
+    style.fontSize = "14px";
+    style.lineHeight = "1.5";
+    style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.16)";
+    // 低于 scrim(40)/drawer(50)：抽屉打开时提示不该浮在遮罩之上。
+    style.zIndex = "35";
+    container.appendChild(notice);
+  }
+
+  notice.textContent = text;
+  window.setTimeout(() => {
+    if (!container.isConnected) return;
+    const current = container.querySelector<HTMLElement>(`.${LINK_SCRAPE_NOTICE_CLASS}`);
+    if (current?.textContent === text) current.remove();
+  }, LINK_SCRAPE_NOTICE_TTL_MS);
+}
+
 type InputStageProps = {
   onSubmit: (intake: CaseIntake, modelChoice: ModelChoiceMap) => void;
   initialClaim?: string;
@@ -50,6 +98,7 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
   const [hasModels, setHasModels] = useState(true);
   const [checkQuota, setCheckQuota] = useState<CheckQuotaView | null>(null);
   const [highlightedDemo, setHighlightedDemo] = useState<string | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   const detectedLinks = useMemo(() => extractLinks(inputValue), [inputValue]);
   const hasMaterial = Boolean(inputValue.trim() || detectedLinks.length > 0 || images.length > 0);
@@ -122,23 +171,24 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
       try {
         const scraped = await scrapeLinks(intake.links);
         const text = formatScrapedContent(scraped);
-        const failed = scraped.filter((l) => l.scrapeStatus === "error");
-        if (failed.length > 0) {
-          setInputError(`${failed.length} 个链接抓取失败，将跳过这些链接继续调查。`);
-        }
         enriched = {
           ...intake,
           links: scraped,
           text: text ? `${intake.text}\n\n【链接抓取内容】\n${text}` : intake.text,
         };
+        if (caseIntakeFailedLinks(enriched).length > 0) {
+          showLinkScrapeNotice(copy.linkUnreachableNotice, rootRef.current);
+        }
       } catch (error) {
-        setInputError(error instanceof Error ? error.message : legacy.scrapeFailed);
+        const message = error instanceof Error ? error.message : legacy.scrapeFailed;
+        setInputError(message);
+        showLinkScrapeNotice(message, rootRef.current);
       } finally {
         setIsScraping(false);
       }
     }
     onSubmit(enriched, {});
-  }, [blocked, checkQuota, copy.serviceUnavailable, images, inputValue, isScraping, legacy.fillMaterialFirst, legacy.scrapeFailed, onNeedLogin, onSubmit, quotaExhausted]);
+  }, [blocked, checkQuota, copy.serviceUnavailable, images, inputValue, isScraping, lang, legacy.fillMaterialFirst, legacy.scrapeFailed, onNeedLogin, onSubmit, quotaExhausted]);
 
   const handleAddFiles = useCallback(
     async (files: File[], kind: "image" | "file") => {
@@ -214,7 +264,7 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
   })();
 
   return (
-    <div className="gp-input-stage">
+    <div className="gp-input-stage" ref={rootRef}>
       {copy.inputKicker ? <p className="gp-kicker">{copy.inputKicker}</p> : null}
       <h1 className="gp-headline">
         {copy.inputHeadlineA}

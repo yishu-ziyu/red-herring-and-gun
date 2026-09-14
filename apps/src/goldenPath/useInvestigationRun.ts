@@ -22,6 +22,7 @@ import { caseIntakePrimaryText, type CaseIntake } from "../lib/caseIntake";
 import { createKnowledgeBase } from "../lib/knowledgeBase";
 import { buildLocalMemoryRecall } from "../lib/localMemoryRecall";
 import type { ModelChoiceMap } from "../lib/agentExpansion";
+import type { VisiblePriorRound } from "../lib/priorRoundBrief";
 
 /** legacy 原始事件：只存在于 debug/telemetry；Golden Path 不从中推导任何产品语义。 */
 const IGNORED_LEGACY_EVENT_TYPES: ReadonlySet<OrchestrateStreamEvent["type"]> = new Set([
@@ -65,6 +66,12 @@ export type RunState = {
   /** 服务端确认的 run 状态（run_state 事件 / 取消响应）。 */
   serverStatus: string | null;
   stop: StopPhase;
+  /**
+   * 整体超时后管线仍在跑（契约 2026-09-12-mainpath-p0 Change C）：
+   * 这时候等结果变成「可选」——用户离开页面或刷新都还能拿回同一份结论。
+   * complete（真结果到了）或 error（最终失败）时翻回 false。
+   */
+  timeoutPending: boolean;
 };
 
 const INITIAL_STATE: RunState = {
@@ -78,11 +85,12 @@ const INITIAL_STATE: RunState = {
   runId: null,
   serverStatus: null,
   stop: "idle",
+  timeoutPending: false,
 };
 
 /**
  * 纯 reducer：一条 SSE 事件 → 下一份产品 state。
- * 只认 investigation_snapshot / complete / error；legacy 事件原样忽略（E2 负向测试的对象）。
+ * 只认 investigation_snapshot / complete / error / timeout_pending；legacy 事件原样忽略（E2 负向测试的对象）。
  * claim 供 complete 报告缺快照时的确定性重建使用。
  */
 export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: string): RunState {
@@ -124,6 +132,10 @@ export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, cla
       return prev;
     }
   }
+  if (event.type === "timeout_pending") {
+    // 超时只改「等结果要不要必须」这一件事：连接还是活的，快照照来，别的一概不动。
+    return { ...prev, timeoutPending: true };
+  }
   if (event.type === "complete") {
     const report = (event.finalReport ?? null) as Record<string, unknown> | null;
     let snapshot = prev.snapshot;
@@ -143,13 +155,15 @@ export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, cla
         /* 保留 null */
       }
     }
-    return { ...prev, snapshot, finalReport: report, connection: "ended" };
+    return { ...prev, snapshot, finalReport: report, connection: "ended", timeoutPending: false };
   }
   if (event.type === "error") {
     return {
       ...prev,
       connection: "failed",
       errorMessage: typeof event.message === "string" ? event.message : "这次调查没有完成，请重试。",
+      // 超时后管线最终失败 → 交给现有中断文案与重查入口，超时提示不再并列显示。
+      timeoutPending: false,
     };
   }
   return prev;
@@ -160,6 +174,12 @@ export type StartOptions = {
   accountEmail?: string | null;
   /** DEV 固定装置：不走网络，按脚本回放快照（仅 import.meta.env.DEV）。 */
   fixture?: (emit: (event: OrchestrateStreamEvent) => void) => () => void;
+  /**
+   * 追问：登录带刚完成案件的 caseId；访客无 caseId 时带上一轮可见材料。
+   * 不带时请求体与现状完全一致（首轮、重试、legacy 都不带）。
+   */
+  priorCaseId?: string;
+  priorRound?: VisiblePriorRound | null;
 };
 
 function newClientRequestId(): string {
@@ -217,7 +237,8 @@ export function useInvestigationRun() {
           intake,
           memoryRecall,
           options.modelChoice,
-          clientRequestId
+          clientRequestId,
+          { priorCaseId: options.priorCaseId, priorRound: options.priorRound }
         )) {
           if (runIdRef.current !== runId) return;
           if (IGNORED_LEGACY_EVENT_TYPES.has(event.type)) continue;
@@ -272,11 +293,19 @@ export function useInvestigationRun() {
         },
         (reason) => {
           if (runIdRef.current !== local) return;
-          setState((prev) =>
-            prev.connection === "ended" || prev.connection === "failed"
-              ? prev
-              : { ...prev, connection: reason === "failed" ? "failed" : prev.finalReport ? "ended" : "live" }
-          );
+          setState((prev) => {
+            if (prev.connection === "ended" || prev.connection === "failed") return prev;
+            // 服务端已确认终态：补发完就关流，不是「还活着」。超时后晚完成的 run 走的正是这条路——
+            // 刷新回来能拿到 phase=complete 的快照，界面必须按「已结束」渲染，不能挂着进行中。
+            if (
+              prev.serverStatus === "completed" ||
+              prev.serverStatus === "interrupted" ||
+              prev.serverStatus === "cancelled"
+            ) {
+              return { ...prev, connection: "ended" };
+            }
+            return { ...prev, connection: reason === "failed" ? "failed" : prev.finalReport ? "ended" : "live" };
+          });
         }
       );
       return { cancel: () => { runIdRef.current += 1; handle.close(); } };

@@ -208,7 +208,6 @@ app.post(
   quotaGate("/api/agent/orchestrate-stream"),
   (req, res, next) => handlers.orchestrateStreamHandler(req, res, next)
 );
-app.post("/api/agent/batch", quotaGate("/api/agent/batch"), (req, res, next) => handlers.batchHandler(req, res, next));
 if (process.env.NODE_ENV === "production") {
   app.post("/api/agent/test-llm", (_req, res) => {
     res.status(404).json({ error: "Not found" });

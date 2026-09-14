@@ -7,8 +7,11 @@
 import { randomUUID } from "node:crypto";
 import {
   claimAtomKey,
+  collapseNarrativeAtoms,
+  ensureLeapAtoms,
   forceCheckableAtomTypes,
   prefilterClaimAtoms,
+  retainAtomTypes,
   runClaimAtomSelfProof,
   type SelfProofModelCall,
 } from "../claimAtom/index.js";
@@ -17,6 +20,8 @@ import {
   buildAtomSearchBundle,
   bindAtomEvidenceToVerdicts,
   type AtomSearchBundle,
+  type KnowledgeHit,
+  type KnowledgeInjection,
   type SearchOneAtom,
 } from "../atomSearch.js";
 import { assembleFinalReport, deriveOverallVerdict, faceVerdictFor } from "../reportAssembly/index.js";
@@ -70,6 +75,14 @@ import {
   type WholeClaimAuditQuestion,
   type WholeClaimAuditRun,
 } from "../wholeClaimAudit/index.js";
+import {
+  applyFollowUpAnswerLead,
+  collapseFollowUpAtoms,
+  planFollowUpReuse,
+  priorRoundLookupOf,
+  reusedAtomKeysOf,
+} from "../followUpReuse.js";
+import { applyUnopenedLinkConclusion } from "../publicCopy.js";
 
 export type PipelineStep = {
   agent: string;
@@ -92,12 +105,36 @@ export type RunAgentFn = (
   atomSearchBundle?: AtomSearchBundle | null
 ) => Promise<PipelineStep>;
 
+/**
+ * 证据库端口（服务端实现见 `knowledgeStore.createKnowledgeMemory`，测试可注入内存实现）。
+ *
+ * 宪法边界（写死在这里）：
+ * - **记忆只加速、不代替核查**：lookup 只给「上次核过这条命题时绑过的证据」，
+ *   判词仍由本轮 fact_checker 重新判；绑定失败 / 判 unverified → settle 前的
+ *   evidenceLoop 会自动对该 atom 联网补查。
+ * - **没证据不出结论**：注入证据必须带真实 URL，空来源一律当没命中（在 atomSearch 里再兜一道）。
+ * - **不静默继承**：匹配闸门在 knowledgeMatch.ts；人物/日期/链接换了就匹配不上 → 正常联网。
+ * 不传这个端口 = 整条管线与没有记忆时逐字节等价（老行为）。
+ */
+export type KnowledgeMemoryPort = {
+  lookup: (atom: string) => KnowledgeInjection | null;
+  markInjected: (atom: string, originDate: string) => void;
+  /** 注入过的 atom 最终仍 unverified / 证据不足 → 记 downgraded。 */
+  conclude: (verdicts: unknown) => void;
+  /** 收尾沉淀：可核查且判词非 unverified 的 atom → upsert 一条。 */
+  settle: (input: { claim: string; verdicts: unknown }) => void;
+};
+
 export type CasePipelineHooks = {
   /** after self-proof written on rumor step */
   onSelfProof?: (info: { kept: string[]; dropped: unknown[]; model: string }) => void;
   /** atom search lifecycle (SSE) */
   onAtomSearchStart?: (atom: string) => void;
   onAtomSearchResult?: (atom: string, result: unknown) => void;
+  /** 命中知识库、免于本次检索（活动流 knowledge_hit 行） */
+  onKnowledgeHit?: (hit: KnowledgeHit) => void;
+  /** 同一案上一轮证据够用、不再检索已核命题（活动流 prior_round_reuse 行） */
+  onPriorRoundReuse?: (hit: KnowledgeHit) => void;
   /** between fact//source and report (e.g. consensus debate SSE) */
   afterFactSource?: (ctx: {
     steps: PipelineStep[];
@@ -134,7 +171,8 @@ export type CasePipelineHooks = {
   /**
    * Investigation Snapshot 语义里程碑（SSE investigation_snapshot）：
    * 每次回调携带完整 InvestigationSnapshotV1，前端只取最新版。
-   * 里程碑：received → decomposed → investigating（检索开始/返回）→ judging
+   * 里程碑：received（拆题）→ decomposed（拆题一出来就上屏；没拆出条才发 checking）→
+   * investigating（检索开始/返回）→ judging
    * （核查绑定 / 补查 / 质询）→ complete。中断帧由 handlers 补发。
    */
   onInvestigationSnapshot?: (snapshot: InvestigationSnapshotV1) => void;
@@ -220,6 +258,21 @@ export type CasePipelineInput = {
    * `false` 关闭；测试传 { liveness: Map } 注入结果避免触网。
    */
   citationLiveness?: LivenessDeps | false;
+  /**
+   * 证据库（Part 1 · 记忆复用）：逐 atom 联网前查库、命中免检索、finalize 后沉淀。
+   * 不传 = 无记忆行为（与旧版逐字节等价）。
+   */
+  knowledgeBase?: KnowledgeMemoryPort;
+  /**
+   * 同一案追问快路径（契约 docs/evals/2026-09-13-followup-fast-path.md）。
+   * 登录读服务端档案，访客读请求里的上一轮可见材料；没有可用证据时
+   * 分类器返回 null，本函数仍走完整管道。
+   */
+  followUpReuse?: {
+    priorReport: unknown;
+    priorClaim: string;
+    priorCreatedAt: number;
+  };
 };
 
 export type CasePipelineResult = {
@@ -312,6 +365,34 @@ function fallbackAgentStep(agentId: string, error: unknown, search360Result?: un
   };
 }
 
+/**
+ * self-proof 全丢兜底（主路 P0 Change B）：模型偶发把全部候选判为不支持时，
+ * 先重试一次；仍全丢则 fail-open 保留全部候选继续管道，不让拆题结果凭空归零。
+ * 判定标准与拆题候选都不改，只兜「全丢」这一种结局。
+ */
+async function runSelfProofWithRetry(
+  claim: string,
+  rawAtoms: unknown,
+  callModel: SelfProofModelCall
+): Promise<Awaited<ReturnType<typeof runClaimAtomSelfProof>>> {
+  const first = await runClaimAtomSelfProof(claim, rawAtoms, callModel);
+  if (first.kept.length > 0) return first;
+  // 候选为空 = 本来就没有可保留的命题，不是「全丢」，不重试也不兜底。
+  const candidates = prefilterClaimAtoms(claim, rawAtoms).atoms;
+  if (candidates.length === 0) return first;
+  const retried = await runClaimAtomSelfProof(claim, rawAtoms, callModel);
+  if (retried.kept.length > 0) return retried;
+  console.warn(
+    `[casePipeline] self-proof 两次均未保留任何候选（候选 ${candidates.length} 条），` +
+      `fail-open 保留全部候选继续管道；被丢弃的候选：${retried.dropped
+        .slice(0, 3)
+        .map((item) => item.text)
+        .join(" / ")}`
+  );
+  // kept 已覆盖全部候选，没有任何候选被这一闸门丢掉。
+  return { kept: candidates, dropped: [], model: retried.model };
+}
+
 export async function runCasePipeline(input: CasePipelineInput): Promise<CasePipelineResult> {
   const { claim, runAgent, searchOne, callSelfProofModel, runReport, hooks, finalizeReport } = input;
   const steps: PipelineStep[] = [];
@@ -350,40 +431,15 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const timeLeftMs = () =>
     input.deadline == null ? Number.POSITIVE_INFINITY : input.deadline - Date.now();
 
-  // Phase 1: RumorDetector — fail-open to the original sentence so search still runs.
-  let rumorStep: PipelineStep;
-  try {
-    rumorStep = await runAgent("rumor_detector", steps);
-  } catch (error) {
-    rumorStep = fallbackRumorStep(claim, error);
-  }
-  steps.push(rumorStep);
+  const reusePlan = input.followUpReuse
+    ? planFollowUpReuse({
+        claim,
+        priorReport: input.followUpReuse.priorReport,
+        priorClaim: input.followUpReuse.priorClaim,
+        priorCreatedAt: input.followUpReuse.priorCreatedAt,
+      })
+    : null;
 
-  throwIfAborted();
-  // Phase 1a: self-proof (must precede per-atom search).
-  // If rumor_detector already exhausted providers, don't spend another full fallback chain.
-  const selfProof = rumorStep.error
-    ? (() => {
-        const pre = prefilterClaimAtoms(claim, rumorStep?.output?.claimAtoms ?? []);
-        return { kept: pre.atoms, dropped: pre.dropped, model: "fallback:skip-after-rumor-error" };
-      })()
-    : await runClaimAtomSelfProof(claim, rumorStep?.output?.claimAtoms ?? [], callSelfProofModel);
-  if (!rumorStep.output || typeof rumorStep.output !== "object") {
-    rumorStep.output = {};
-  }
-  rumorStep.output.claimAtoms = selfProof.kept;
-  rumorStep.output.claimAtomSelfProof = {
-    kept: selfProof.kept,
-    dropped: selfProof.dropped,
-    model: selfProof.model,
-  };
-  rumorStep.output.claimAtomTypes = forceCheckableAtomTypes(rumorStep.output.claimAtomTypes);
-  hooks?.onSelfProof?.(selfProof);
-
-  // Whole-Claim Planning（Issue #78 §4）：self-proof 后、retrieval 决策前。
-  // LM 做可核查性语义判断（normative 是否有外部可核查标准），确定性代码只守不变量：
-  // 只应用 false→true 提升、必须命中真实 kept atom、type 不改写、不创建新原子。
-  // 未注入 / 超预算 / 模型失败 → fail-open，保持 forceCheckable 后的 legacy 行为。
   const wholeClaimAudit: WholeClaimAuditRun = {
     plan: null,
     evaluation: null,
@@ -391,39 +447,105 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     model: "",
     reevaluation: null,
   };
-  // Review 5128449568 Blocker 2：已配置 audit caller 时走 fail-closed——
-  // Planning 产出的 missingJustifications 一旦存在就是保守 gap，只有成功
-  // Evaluation / authoritative re-evaluation 才能更新或关闭；Evaluation 失败
-  // 或预算不足时保留基线并留下结构化状态，不静默清空。未配置 caller 时保持 legacy。
   let auditUnresolvedGaps: string[] = [];
   const auditCallModel = input.wholeClaimAudit?.callModel;
-  if (auditCallModel && timeLeftMs() > AUDIT_MIN_MS) {
-    const planning = await runWholeClaimPlanning({
+
+  // Phase 1: RumorDetector — fail-open to the original sentence so search still runs.
+  // 同一案追问且上一轮有可点开证据：不再完整拆题，沿用已核命题（+ 新冒出来的小问题）。
+  let rumorStep: PipelineStep;
+  if (reusePlan) {
+    rumorStep = {
+      agent: "rumor_detector",
+      agentName: "RumorDetector",
+      output: {
+        claimAtoms: reusePlan.atoms,
+        claimAtomTypes: reusePlan.atoms.map((text) => ({ text, verifiable: true, type: "fact" })),
+        claimAtomSelfProof: { kept: reusePlan.atoms, dropped: [], model: "followup-reuse:skip" },
+        stanceClaimType: {
+          verifiable: true,
+          type: "fact",
+          reason: "同一条核查的追问，沿用上一轮已拆命题",
+        },
+        rumorIndicators: [],
+        severity: "medium",
+        analysis: "追问沿用上一轮已拆命题，不再完整拆题。",
+        detectedPatterns: [],
+      },
+      status: "completed",
+      timestamp: Date.now(),
+    };
+    steps.push(rumorStep);
+  } else {
+    try {
+      rumorStep = await runAgent("rumor_detector", steps);
+    } catch (error) {
+      rumorStep = fallbackRumorStep(claim, error);
+    }
+    steps.push(rumorStep);
+
+    throwIfAborted();
+    // 拆题后再自证：长文先抽断言、追问先收成这句追问，避免自证 9 条课文或把 IARC 拆出来顶替。
+    const rawAtoms = Array.isArray(rumorStep?.output?.claimAtoms) ? rumorStep.output.claimAtoms : [];
+    const narrowed = ensureLeapAtoms(claim, collapseFollowUpAtoms(claim, collapseNarrativeAtoms(claim, rawAtoms)));
+    if (!rumorStep.output || typeof rumorStep.output !== "object") {
+      rumorStep.output = {};
+    }
+    rumorStep.output.claimAtoms = narrowed;
+    rumorStep.output.claimAtomTypes = retainAtomTypes(narrowed, rumorStep.output.claimAtomTypes);
+    // 拆题模型已经回来：有命题就立刻上屏，不等自证。没拆出条才停在核对句。
+    if (!rumorStep.error && narrowed.length > 0) {
+      emitInvestigation({ phase: "decomposed", claimAtoms: narrowed });
+    } else if (!rumorStep.error) {
+      emitInvestigation({ phase: "received", preClaimWork: "checking" });
+    }
+    const selfProof = rumorStep.error
+      ? (() => {
+          const pre = prefilterClaimAtoms(claim, rumorStep?.output?.claimAtoms ?? []);
+          return { kept: pre.atoms, dropped: pre.dropped, model: "fallback:skip-after-rumor-error" };
+        })()
+      : await runSelfProofWithRetry(claim, rumorStep?.output?.claimAtoms ?? [], callSelfProofModel);
+    rumorStep.output.claimAtoms = ensureLeapAtoms(
       claim,
-      keptAtoms: Array.isArray(rumorStep.output.claimAtoms) ? (rumorStep.output.claimAtoms as string[]) : [],
-      claimAtomTypes: rumorStep.output.claimAtomTypes,
-      stanceClaimType: rumorStep.output.stanceClaimType,
-      callModel: auditCallModel,
-    });
-    if (planning) {
-      const revised = applyCheckabilityRevisions(
-        rumorStep.output.claimAtomTypes,
-        Array.isArray(rumorStep.output.claimAtoms) ? (rumorStep.output.claimAtoms as string[]) : [],
-        planning.plan.checkabilityRevisions
-      );
-      rumorStep.output.claimAtomTypes = revised.claimAtomTypes;
-      wholeClaimAudit.plan = planning.plan;
-      wholeClaimAudit.model = planning.model;
-      rumorStep.output.wholeClaimAuditPlan = {
-        overallQuestion: planning.plan.overallQuestion,
-        checkabilityRevisions: planning.plan.checkabilityRevisions,
-        appliedRevisions: revised.applied,
-        ignoredRevisions: revised.ignored,
-        missingJustifications: planning.plan.missingJustifications,
-        model: planning.model,
-      };
-      // 保守 gap 基线：先于 Evaluation 存在，失败/超预算时仍进收权门。
-      auditUnresolvedGaps = [...(planning.plan.missingJustifications ?? [])];
+      collapseFollowUpAtoms(claim, collapseNarrativeAtoms(claim, selfProof.kept)),
+    );
+    rumorStep.output.claimAtomSelfProof = {
+      kept: rumorStep.output.claimAtoms,
+      dropped: selfProof.dropped,
+      model: selfProof.model,
+    };
+    rumorStep.output.claimAtomTypes = retainAtomTypes(
+      rumorStep.output.claimAtoms,
+      forceCheckableAtomTypes(rumorStep.output.claimAtomTypes)
+    );
+    hooks?.onSelfProof?.({ ...selfProof, kept: rumorStep.output.claimAtoms });
+
+    if (auditCallModel && timeLeftMs() > AUDIT_MIN_MS) {
+      const planning = await runWholeClaimPlanning({
+        claim,
+        keptAtoms: Array.isArray(rumorStep.output.claimAtoms) ? (rumorStep.output.claimAtoms as string[]) : [],
+        claimAtomTypes: rumorStep.output.claimAtomTypes,
+        stanceClaimType: rumorStep.output.stanceClaimType,
+        callModel: auditCallModel,
+      });
+      if (planning) {
+        const revised = applyCheckabilityRevisions(
+          rumorStep.output.claimAtomTypes,
+          Array.isArray(rumorStep.output.claimAtoms) ? (rumorStep.output.claimAtoms as string[]) : [],
+          planning.plan.checkabilityRevisions
+        );
+        rumorStep.output.claimAtomTypes = revised.claimAtomTypes;
+        wholeClaimAudit.plan = planning.plan;
+        wholeClaimAudit.model = planning.model;
+        rumorStep.output.wholeClaimAuditPlan = {
+          overallQuestion: planning.plan.overallQuestion,
+          checkabilityRevisions: planning.plan.checkabilityRevisions,
+          appliedRevisions: revised.applied,
+          ignoredRevisions: revised.ignored,
+          missingJustifications: planning.plan.missingJustifications,
+          model: planning.model,
+        };
+        auditUnresolvedGaps = [...(planning.plan.missingJustifications ?? [])];
+      }
     }
   }
 
@@ -436,12 +558,33 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
 
   throwIfAborted();
   // Phase 1b: per-atom retrieval (+ screenshot reverse-image beside searchOne)
+  // 记忆层先查库：命中且新鲜的 atom 用知识库证据替换联网检索（不占 6 个名额），
+  // 命中的原子在 hooks.onKnowledgeHit 里落一条活动行。
   const { atomSearchBundle, search360Result } = await retrieveForAtoms({
     claimAtoms: rumorStep.output.claimAtoms,
     claimAtomTypes: rumorStep.output.claimAtomTypes,
     searchOne,
     claimAtomKeyFn: claimAtomKey,
     lookupImageOrigin: input.lookupImageOrigin,
+    knowledge: input.knowledgeBase
+      ? {
+          lookup: input.knowledgeBase.lookup,
+          onInjected: (hit) => {
+            try {
+              input.knowledgeBase?.markInjected(hit.atom, hit.originDate);
+            } catch (error) {
+              console.error("[casePipeline] 知识库注入记录失败", error);
+            }
+            hooks?.onKnowledgeHit?.(hit);
+          },
+        }
+      : undefined,
+    priorRound: reusePlan
+      ? {
+          lookup: priorRoundLookupOf(reusePlan),
+          onInjected: (hit) => hooks?.onPriorRoundReuse?.(hit),
+        }
+      : undefined,
     hooks: {
       mode: hooks?.searchMode ?? "parallel",
       onAtomStart: (atom) => {
@@ -496,7 +639,10 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   // 提问 → 重判 → 判词仍翻转中且问题仍产证据 → 换策略再问（pass 2+）→ 再重判。
   // 好问题续命（翻转判词的提问 earns another pass），坏问题判停（整 pass 零新增）。
   let evidenceLoop: EvidenceLoopOutcome | undefined;
-  if (input.evidenceLoop?.enabled !== false && atomSearchBundle.atomsSearched.length > 0) {
+  const loopAtoms = reusePlan
+    ? atomSearchBundle.atomsSearched.filter((atom) => !reusedAtomKeysOf(reusePlan).has(claimAtomKey(atom)))
+    : atomSearchBundle.atomsSearched;
+  if (input.evidenceLoop?.enabled !== false && loopAtoms.length > 0) {
     const roundsPerPass = Math.max(
       1,
       input.evidenceLoop?.maxRounds ?? MAX_EVIDENCE_LOOP_ROUNDS
@@ -524,7 +670,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       }
       const passOutcome = await runEvidenceLoop({
         claim,
-        bundle: atomSearchBundle,
+        bundle: { ...atomSearchBundle, atomsSearched: loopAtoms },
         factVerdicts: currentVerdicts(),
         searchOne,
         claimAtomKeyFn: claimAtomKey,
@@ -568,7 +714,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       }
       // 问完了：重判后无 unverified / 冲突原子 → 停
       const remaining = findLoopTargets({
-        atomsSearched: atomSearchBundle.atomsSearched,
+        atomsSearched: loopAtoms,
         verdicts: currentVerdicts(),
         claimAtomKeyFn: claimAtomKey,
       });
@@ -1086,6 +1232,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
         nonVerifiableAtoms: finalReport.nonVerifiableAtoms,
         subclaimVerdicts: finalReport.subclaimVerdicts,
         auditUnresolvedGaps,
+        allowUnboundHardFalse: tinyHoldsOnAliveSources,
       }
     );
     normalizeReportCitations(finalReport);
@@ -1093,6 +1240,9 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     // finalReport.imageOrigin 恢复原图出处引用（不断言文本、只读对象）。
     if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
   }
+  applyFollowUpAnswerLead(finalReport, claim);
+  const keptAtomCount = Array.isArray(rumorStep.output.claimAtoms) ? rumorStep.output.claimAtoms.length : 0;
+  applyUnopenedLinkConclusion(finalReport, claim, keptAtomCount);
   finalReport.faceVerdict = faceVerdictFor(finalReport.verdictType);
   // 结论文本会写「按当前信息」，这里打上实际核查时间；结论时效随来源窗口走。
   finalReport.checkedAt = new Date().toISOString();
@@ -1122,6 +1272,21 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     issues: review.issues,
     checks: review.checks,
   });
+
+  // Phase 3b2: 证据库收尾（Part 1 · 记忆复用）。
+  // 到这里判词已经是最终值（复核 / 探活 / 收权门 / repair 全部走过）：
+  //  - conclude：注入过的 atom 若最终仍 unverified/证据不足 → 记 downgraded
+  //    （它的联网补查已经由上面的 evidenceLoop 做过，此处只观测，不改判词）；
+  //  - settle：可核查且判词非 unverified 的 atom → 沉淀进知识库。
+  // 记忆层失败不得改这次调查的结局：端口实现内部兜住并记服务端日志。
+  if (input.knowledgeBase) {
+    try {
+      input.knowledgeBase.conclude(finalReport.subclaimVerdicts);
+      input.knowledgeBase.settle({ claim, verdicts: finalReport.subclaimVerdicts });
+    } catch (error) {
+      console.error("[casePipeline] 知识库收尾失败", error);
+    }
+  }
 
   // Phase 3c: propose memory candidates (same as AgentRuntime memory write)
   const runId = input.runId ?? randomUUID();
