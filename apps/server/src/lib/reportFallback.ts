@@ -1,5 +1,5 @@
 /**
- * reportFallback.ts — ReportComposer 失败时的确定性兜底报告与共识辩论构建。
+ * reportFallback.ts — ReportComposer 失败/超时时的确定性兜底报告与共识辩论构建。
  * 结构完整、不撒谎、不空白；分数走公式路径。
  */
 
@@ -15,24 +15,56 @@ import { applyPublicCopy } from "./publicCopy.js";
 
 import { stringItems } from "./valueCoerce.js";
 
+/**
+ * ReportComposer 只负责把已有判断写成报告，不能无限期阻塞调查收束。
+ * 生产侧历史测量表明它可静默约 50s；75s 给正常调用留余量，同时给 reviewer / 探活 / final gate 留收尾窗口。
+ * 调用者可在测试或特殊环境显式覆盖。
+ */
+export const REPORT_COMPOSER_TIMEOUT_MS_DEFAULT = 75_000;
+
+async function settleReportWithin<T>(inflight: Promise<T>, timeoutMs: number): Promise<T> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return inflight;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      inflight,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`ReportComposer 未在 ${timeoutMs}ms 内完成，改用确定性收束`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function runReportComposerWithFallback({
   claim,
   steps,
   search360Result,
   runAgent,
   onFallback,
+  timeoutMs = REPORT_COMPOSER_TIMEOUT_MS_DEFAULT,
 }: {
   claim: string;
   steps: any[];
   search360Result: any;
   runAgent: (agentId: string, steps: any[], search360Result?: any) => Promise<any>;
   onFallback?: (step: any) => void;
+  /** ReportComposer 自身的硬预算；到点后用已有事实判断确定性收束。 */
+  timeoutMs?: number;
 }) {
+  const startedAt = Date.now();
   try {
-    return await runAgent("report_composer", steps, search360Result);
+    // Promise.race 不会取消在途 provider 请求；显式吸收晚到 rejection，避免 unhandledRejection。
+    // 真正的 provider 取消由底层能力补齐，本层只保证「写作模型不能卡死产品状态机」。
+    const inflight = Promise.resolve().then(() => runAgent("report_composer", steps, search360Result));
+    void inflight.catch(() => {});
+    return await settleReportWithin(inflight, timeoutMs);
   } catch (error) {
     const message = error instanceof Error ? error.message : "ReportComposer 调用失败";
-    const startedAt = Date.now();
     const fallbackStep = {
       agent: "report_composer",
       agentName: "ReportComposer",
