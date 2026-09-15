@@ -42,5 +42,8 @@ Date: 2026-09-15
 - 运行：`cd apps && npm run dev` 起 Express `:3000` + Vite `:5173`。`curl :3000/health` → `{"status":"ok",...}`；`curl :5173/` 返回含 `#root` 的 HTML，标题「红鲱鱼与枪…」。截图 `home_page_golden_path.webp`、`claim_typed_in_input.webp`、`api_health_ok.webp`。
 - 加 `MINIMAX_API_KEY` 后 `:3000/api/models/health` → `{"status":"available"}`，`models/list` 列 MiniMax M3 / M2.7-highspeed。
 - 端到端：`POST :3000/api/agent/orchestrate-stream {"claim":"北京是中国的首都"}`（SSE）走完 `received → decomposed → investigating → judging`，产出 `directAnswer=「北京是中国的首都」站得住`、`judgment=supported`、5 条真实来源；服务端四个 MiniMax agent 调用全部 complete。末尾 `interrupted` 是 `docs/NOTES.md` 记的既有收束问题，非环境故障。日志 `e2e_investigation_run.log`。
-- computerUse 浏览器录屏因 Claude 额度上限起不来；实时调查未录屏，端到端以 SSE 实跑日志为证。
+- computerUse / videoReview 因 Claude/Gemini 额度上限起不来；改用 Playwright 驱动系统 Chrome（不耗模型额度）录下完整流程：首页 → 输入「北京是中国的首都」→ 开始调查 → 调查中（拆问题 + 活动流）→ 终态「北京是中华人民共和国的首都」站得住。录像 `dev_env_live_investigation_walkthrough.mp4`（73s），截图 `ui_home_service_available.png`、`ui_investigating_live.png`、`ui_result_verdict.png`。
+- Draft build `bld-20260915-92f14bba-fbd9-4c08-8b1e-b5a1cf9ff9bf` SUCCEEDED：fresh `main` checkout 上 install 依次 `npm install`(229 包) → `npm run build`(core/server/web/eval) → `apps` install(331 包) → `apps/server` install(220 包)，Exit 0，快照就绪。
+- Fresh Cloud Agent（从该 build 启动）验证 PASS：node v22.14.0 / npm 10.9.7；`node_modules` 与 `packages/core/dist` 齐备；`npm run build` Exit 0（幂等）；`/health` 返回 `ok`；前端标题正确；`models/list` 显示 MiniMax 已配置（密钥注入生效）。冷启 `node scripts/dev.mjs` 2 秒答 `/health`。
+- 环境形状：`install = npm install / npm run build / npm --prefix apps install / npm --prefix apps/server install`；`start = cd apps && npm run dev`（Vite `:5173` + Express `:3000`）。已 `propose` 供用户 Save。
 
