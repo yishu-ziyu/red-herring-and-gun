@@ -36,4 +36,11 @@ Date: 2026-09-15
 
 ## Evidence
 
-（实施后回填）
+- 依赖：`npm install`（根，229 包）、`npm --prefix apps install`、`npm --prefix apps/server install` 均退出码 0；`apps` install 第二次跑仍退出码 0（幂等）。合并 install 命令 `npm install && npm run build && npm --prefix apps install && npm --prefix apps/server install` 退出码 0。
+- 构建：根 `npm run build` 绿（@rhg/core→server→web→eval，`packages/*/dist` 有产物）；`cd apps && npm run build` 绿（`tsc && vite build`，`apps/dist` 有产物）。
+- 测试：根 `npm test` 里 @rhg/core 未直接跑用例、@rhg/server 21 绿、@rhg/web 83 绿；@rhg/eval 1 红——`packages/eval/baseline.json` 未提交（`origin/main` 上也不存在），属预存缺件，不在本次搭建范围，未伪造。`cd apps && npm test` 1573 绿 / 10 红 / 1 skip；10 红是 `casePipeline`/`App` 文案断言漂移，在 `main` 上即红，非环境问题。
+- 运行：`cd apps && npm run dev` 起 Express `:3000` + Vite `:5173`。`curl :3000/health` → `{"status":"ok",...}`；`curl :5173/` 返回含 `#root` 的 HTML，标题「红鲱鱼与枪…」。截图 `home_page_golden_path.webp`、`claim_typed_in_input.webp`、`api_health_ok.webp`。
+- 加 `MINIMAX_API_KEY` 后 `:3000/api/models/health` → `{"status":"available"}`，`models/list` 列 MiniMax M3 / M2.7-highspeed。
+- 端到端：`POST :3000/api/agent/orchestrate-stream {"claim":"北京是中国的首都"}`（SSE）走完 `received → decomposed → investigating → judging`，产出 `directAnswer=「北京是中国的首都」站得住`、`judgment=supported`、5 条真实来源；服务端四个 MiniMax agent 调用全部 complete。末尾 `interrupted` 是 `docs/NOTES.md` 记的既有收束问题，非环境故障。日志 `e2e_investigation_run.log`。
+- computerUse 浏览器录屏因 Claude 额度上限起不来；实时调查未录屏，端到端以 SSE 实跑日志为证。
+
