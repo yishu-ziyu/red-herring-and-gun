@@ -86,8 +86,7 @@ import { applyContextCrossCheckToReport } from "./lib/contextCrossCheck.js";
 import { createOrchestrateAdapter } from "./lib/orchestrate.js";
 
 import { followUpReuseFromClientBrief } from "./lib/followUpReuse.js";
-import { boundedInterruptedAnswer } from "./lib/publicCopy.js";
-
+import { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot.js";
 import {
   baseUrlTargetsPrivateNetwork,
   ByoKeyError,
@@ -96,6 +95,8 @@ import {
   parseByoConfig,
   searchEnvWithByoCredentials,
 } from "./lib/orchestrateByo.js";
+
+export { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot.js";
 
 /**
  * 追问关联失败只说这一句：不区分「案件不存在」与「不是你的案件」，
@@ -126,57 +127,6 @@ export function toFriendlyError(error: unknown, fallback: string): FriendlyError
 // latencyMs 整个删除；普通正文不匹配模型引用形状，不受影响。服务端 logger 保留全量诊断。
 const PROVIDER_NAME_RE = /minimax|stepfun|deepseek|360gpt|ai360|mimo|anthropic|openai|moonshot|kimi/i;
 
-/**
- * 中断帧（Issue #51）：phase=interrupted，保留已真实获得的 claims/sources/gaps/conflicts。
- * 已有 conclusion 必须留下，不得清掉。没有 conclusion、但每条可核查命题都有判断时，
- * 用分条判断拼一句有界总答，不装成报告写完。进行中的命题标 interrupted。
- * 没有历史快照时给最小诚实空帧。
- */
-export function interruptedInvestigationSnapshot(
-  last: InvestigationSnapshotV1 | undefined,
-  claim: string
-): InvestigationSnapshotV1 {
-  if (!last) {
-    return {
-      schemaVersion: 1,
-      originalClaim: claim,
-      phase: "interrupted",
-      claims: [],
-      sources: [],
-      conflicts: [],
-    };
-  }
-  const claims = last.claims.map((claimRow) =>
-    claimRow.progress === "complete"
-      ? claimRow
-      : { ...claimRow, progress: "interrupted" as const }
-  );
-  const conclusion = last.conclusion ?? synthesizeInterruptedConclusion(claims);
-  return validateInvestigationSnapshot({
-    ...last,
-    phase: "interrupted",
-    conclusion,
-    checkedAt: last.conclusion ? last.checkedAt : undefined,
-    claims,
-  });
-}
-
-function synthesizeInterruptedConclusion(
-  claims: InvestigationSnapshotV1["claims"]
-): InvestigationSnapshotV1["conclusion"] {
-  const bounded = boundedInterruptedAnswer(claims);
-  if (!bounded) return undefined;
-  const sourceIds = [
-    ...new Set(claims.flatMap((row) => row.evidence.map((link) => link.sourceId))),
-  ];
-  return {
-    directAnswer: bounded.directAnswer,
-    judgment: bounded.judgment,
-    boundaries: [],
-    claimIds: claims.map((row) => row.id),
-    sourceIds,
-  };
-}
 const MODEL_REF_RE = /^[a-z0-9_-]+:[A-Za-z0-9._-]+$/;
 
 function scrubProviderDiagnostics(value: unknown, depth = 0): unknown {
@@ -239,6 +189,29 @@ export const PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT = 420_000;
  * 有界，是为了不让一条僵尸管线永远占着后台；运维可用 ORCHESTRATE_LATE_GRACE_MS 覆盖。
  */
 export const PIPELINE_LATE_GRACE_MS_DEFAULT = 120_000;
+
+function makeReportRunner(runAgent: RunAgentFn) {
+  return async ({
+    claim,
+    steps,
+    search360Result,
+    atomSearchBundle,
+    onFallback,
+  }: {
+    claim: string;
+    steps: PipelineStep[];
+    search360Result: unknown;
+    atomSearchBundle: AtomSearchBundle;
+    onFallback?: (step: PipelineStep) => void;
+  }) =>
+    runReportComposerWithFallback({
+      claim,
+      steps,
+      search360Result,
+      runAgent: (agentId, s, search) => runAgent(agentId, s as PipelineStep[], search, atomSearchBundle),
+      onFallback,
+    });
+}
 
 /**
  * BYO fail-closed 报告工厂：包装 makeReportRunner，密钥失败时抛出阻断收尾，不静默回退 env 密钥。
@@ -752,29 +725,6 @@ export function createHandlers(env: Record<string, string>) {
       }
       return result;
     };
-  }
-
-  function makeReportRunner(runAgent: RunAgentFn) {
-    return async ({
-      claim,
-      steps,
-      search360Result,
-      atomSearchBundle,
-      onFallback,
-    }: {
-      claim: string;
-      steps: PipelineStep[];
-      search360Result: unknown;
-      atomSearchBundle: AtomSearchBundle;
-      onFallback?: (step: any) => void;
-    }) =>
-      runReportComposerWithFallback({
-        claim,
-        steps,
-        search360Result,
-        runAgent: (agentId, s, search) => runAgent(agentId, s as any, search, atomSearchBundle),
-        onFallback,
-      });
   }
 
   function pipelineFinalize(
