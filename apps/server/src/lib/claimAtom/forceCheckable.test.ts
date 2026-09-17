@@ -5,6 +5,7 @@ import { splitVerifiableAtoms } from "./merge";
 describe("looksLikeCirculatingClaim", () => {
   it("隔夜菜会致癌 / 某地要建地铁 像流传说法", () => {
     expect(looksLikeCirculatingClaim("隔夜菜会致癌")).toBe(true);
+    expect(looksLikeCirculatingClaim("隔夜菜亚硝酸盐超标百倍")).toBe(true);
     expect(looksLikeCirculatingClaim("某地要建地铁")).toBe(true);
   });
 
@@ -51,6 +52,16 @@ describe("forceCheckableAtomTypes", () => {
     expect(types).toEqual([
       { text: "隔夜菜导致癌症", verifiable: true, type: "causal" },
       { text: "上海车展上演全武行", verifiable: true, type: "fact" },
+    ]);
+  });
+
+  it("量化超标事实被模型误标 value 时也必须拉回可核查", () => {
+    expect(
+      forceCheckableAtomTypes([
+        { text: "隔夜菜亚硝酸盐超标百倍", verifiable: false, type: "value" },
+      ])
+    ).toEqual([
+      { text: "隔夜菜亚硝酸盐超标百倍", verifiable: true, type: "fact" },
     ]);
   });
 

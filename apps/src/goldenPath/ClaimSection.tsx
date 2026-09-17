@@ -3,7 +3,7 @@
  * 命题文本 / 当前状态 / 支持-反驳-待核对-相关材料 / 尚缺 / 争议 / 边界。
  * 争议只来自 Snapshot.conflicts（真实证据层双方并存），unknown reason 如实未知。
  */
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useEnteringIds } from "./useEnteringIds";
 import type {
   InvestigationClaim,
@@ -116,15 +116,19 @@ export function ClaimSection({
   const copy = gpCopyFor(lang);
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [showRelated, setShowRelated] = useState(false);
-  // 卡片常在 decomposed 拍就挂载（进度 pending、内容为空），内容要到完成拍才补齐。
-  // 只在挂载时读一次 defaultExpanded，完成态「有内容的卡展开」就永远不生效；
-  // 进入完成态时按父级给的新默认重决议一次——过程里的收/展不跨越阶段保留，
-  // 因为完成态卡头被 CSS 收起，收着的卡内容就再没有入口。
-  const [resolvedAsResult, setResolvedAsResult] = useState(asResult);
-  if (asResult !== resolvedAsResult) {
-    setResolvedAsResult(asResult);
-    if (asResult) setExpanded(defaultExpanded);
-  }
+  const previousAsResult = useRef(asResult);
+  const previousDefaultExpanded = useRef(defaultExpanded);
+  // 卡片通常在 decomposed 时先以 pending 折叠挂载。进入 searching 后，父级会把
+  // defaultExpanded 从 false 翻成 true；此时自动展开一次，让刚到的证据真正可见。
+  // 用户随后手动收起时 defaultExpanded 不再变化，因此不会被下一拍强行打开。
+  // 进入完成态仍按完成态默认重决议一次，确保结果明细可达。
+  useEffect(() => {
+    const enteredResult = asResult && !previousAsResult.current;
+    const becameExpandableDuringWork = asWork && defaultExpanded && !previousDefaultExpanded.current;
+    if (enteredResult || becameExpandableDuringWork) setExpanded(defaultExpanded);
+    previousAsResult.current = asResult;
+    previousDefaultExpanded.current = defaultExpanded;
+  }, [asResult, asWork, defaultExpanded]);
   const claimConflicts = conflicts.filter((c) => c.claimId === claim.id);
   const judgment = claim.judgment;
   const relatedLinks = claim.evidence.filter((link) => link.role === "context-only");

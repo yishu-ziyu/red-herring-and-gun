@@ -27,6 +27,30 @@ function entry(overrides: Partial<CaseEntry> = {}): CaseEntry {
 }
 
 describe("公开投影白名单", () => {
+  it("公开追问只显示本轮问题，不带用于模型续查的上一轮上下文", () => {
+    const composed = "请核对日期\n\n（同一条核查的追问，不是新案件。）\n原对象：私人材料A\n上一轮回答：私人判断B";
+    const projection = buildPublicProjection(entry({
+      claim: composed,
+      report: { conclusion: "日期尚未确认。", claim: composed, investigation: { originalClaim: composed } } as never,
+      claimReview: { claimReviewed: composed } as never,
+    }));
+    const serialized = JSON.stringify(projection);
+    expect(projection.claim).toBe("请核对日期");
+    expect(serialized).not.toContain("私人材料A");
+    expect(serialized).not.toContain("私人判断B");
+  });
+  it("分享本轮不带出前轮私人调查，保留本轮范围说明", () => {
+    const projection = buildPublicProjection(entry({ report: {
+      conclusion: "仅核对了政策范围。",
+      investigationThread: { originalClaim: "私人原始材料", rounds: [{ question: "未同意公开的上一轮" }] },
+      investigation: { claims: [{ id: "c1", text: "补贴金额" }], sources: [], scope: { includedClaimIds: [], deferredClaimIds: ["c1"] } },
+    } as never }));
+    expect(JSON.stringify(projection)).not.toContain("私人原始材料");
+    expect(JSON.stringify(projection)).not.toContain("未同意公开");
+    const html = buildSharedPageHtml("test-share", projection);
+    expect(html).toContain("本轮未覆盖：补贴金额");
+    expect(html).toContain("不代表整份材料已获证实");
+  });
   it("只带白名单字段，ownerHash 与 feedback 一定不在", () => {
     const projection = buildPublicProjection(entry());
     expect(Object.keys(projection).sort()).toEqual(

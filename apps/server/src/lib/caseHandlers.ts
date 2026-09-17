@@ -16,6 +16,7 @@ import {
   type InvestigationSnapshotV1,
 } from "./investigation/index.js";
 import { readEmailAccountOptional } from "./emailSession.js";
+import { threadSummary } from "./investigationThread.js";
 
 interface PostCaseBody {
   claim?: string;
@@ -79,6 +80,7 @@ function toListItem(entry: ReturnType<typeof getCase>) {
     createdAt: entry.createdAt,
     credibilityScore: entry.credibilityScore,
     status: caseStatus(entry.report),
+    ...threadSummary(entry.report),
   };
 }
 

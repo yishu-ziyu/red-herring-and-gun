@@ -2,9 +2,10 @@
  * FollowUpSection — 调查结论后的探索与追问入口（全栈闭环）。
  * 针对当前结论提供高频追问建议胶囊、自由追问输入框以及操作按钮组。
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { displayFollowUpClaim } from "../lib/composeFollowUpClaim";
 import type { InvestigationClaim } from "../lib/investigation";
+import { isCompleteEmptyShell, isMetaQuestionFragment } from "./leftoverClaims";
 
 type FollowUpSectionProps = {
   onFollowUp?: (question: string) => void;
@@ -13,47 +14,103 @@ type FollowUpSectionProps = {
   originalClaim?: string;
   boundaries?: string[];
   claims?: InvestigationClaim[];
+  leftoverTexts?: string[];
+  checkedAt?: string;
+  sourceUrls?: string[];
+  suggestedQuestion?: string;
+  coverageNote?: string;
 };
 
-function generateFollowUpSuggestions(
-  originalClaim = "",
+function formatBriefDate(value: string): string {
+  const time = Date.parse(value);
+  if (Number.isNaN(time)) return value;
+  return new Date(time).toLocaleDateString("zh-CN");
+}
+
+/** 简报只放原句、判断、边界、日期、真实来源 URL。产品署名不是证据。 */
+export function buildConclusionBrief(input: {
+  originalClaim: string;
+  directAnswer: string;
+  boundaries?: string[];
+  checkedAt?: string;
+  sourceUrls?: string[];
+  coverageNote?: string;
+}): string {
+  const claim = displayFollowUpClaim(input.originalClaim);
+  const urls = (input.sourceUrls ?? []).map((url) => url.trim()).filter(Boolean);
+  return [
+    claim ? `原句：${claim}` : "",
+    input.directAnswer ? `判断：${input.directAnswer}` : "",
+    input.boundaries?.length ? `必要边界：${input.boundaries.join("；")}` : "",
+    input.coverageNote ?? "",
+    input.checkedAt ? `核查日期：${formatBriefDate(input.checkedAt)}` : "",
+    urls.length ? `关键来源：\n${urls.join("\n")}` : "关键来源：这次没有可用的来源链接",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function clipAsk(text: string): string {
+  // Keep qualifiers and negations in the actual question; visual wrapping belongs to CSS.
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function hasTwoSidedEvidence(claims: InvestigationClaim[]): boolean {
+  return claims.some(
+    (claim) =>
+      claim.evidence.some((link) => link.role === "support") &&
+      claim.evidence.some((link) => link.role === "contradict"),
+  );
+}
+
+/** 只从真实缺口、未覆盖原句、未解决争点生成；没有就不给建议。 */
+export function generateFollowUpSuggestions(
+  _originalClaim = "",
   boundaries: string[] = [],
-  claims: InvestigationClaim[] = []
+  claims: InvestigationClaim[] = [],
+  leftoverTexts: string[] = [],
 ): string[] {
   const suggestions: string[] = [];
+  const push = (raw: string) => {
+    const text = raw.replace(/\s+/g, " ").trim();
+    if (!text || text.length > 1500 || suggestions.includes(text) || suggestions.length >= 3) return;
+    suggestions.push(text);
+  };
 
-  // 1. 如果有明确的边界，将边界转化为追问
-  for (const b of boundaries) {
-    if (b.includes("冷藏") || b.includes("储存") || b.includes("变质")) {
-      suggestions.push("冷藏隔夜菜具体能放多久？细菌与毒素随时间如何变化？");
-    } else if (b.includes("剂量") || b.includes("夸大")) {
-      suggestions.push("医学或权威机构对该有害成分的安全限量标准是多少？");
+  for (const claim of claims) {
+    if (isCompleteEmptyShell(claim)) continue;
+    for (const gap of claim.gaps) {
+      if (gap.status === "open" && gap.description.trim()) push(`还没查清：${clipAsk(gap.description)}`);
     }
   }
 
-  // 2. 根据原始文本与命题特征推荐深入方向
-  const text = `${originalClaim} ${claims.map((c) => c.text).join(" ")}`;
-  if (text.includes("隔夜") || text.includes("亚硝酸盐")) {
-    if (!suggestions.some((s) => s.includes("蔬菜"))) {
-      suggestions.push("不同蔬菜（如叶菜 vs 根茎类）亚硝酸盐残留有何差异？");
+  for (const leftover of leftoverTexts) {
+    if (leftover.trim() && !isMetaQuestionFragment(leftover)) {
+      push(`原句里还没查：「${clipAsk(leftover)}」站得住吗？`);
     }
-    if (!suggestions.some((s) => s.includes("加热"))) {
-      suggestions.push("隔夜菜彻底回热能杀灭有害菌或分解亚硝酸盐吗？");
-    }
-    if (!suggestions.some((s) => s.includes("限量"))) {
-      suggestions.push("国家标准中对熟食亚硝酸盐含量的上限是如何规定的？");
-    }
-  } else if (text.includes("癌") || text.includes("致病") || text.includes("健康")) {
-    suggestions.push("这一说法在流行病学或临床医学中是否有可靠的实验数据支持？");
-    suggestions.push("该说法最初是从哪个渠道或事件发酵起来的？");
-    suggestions.push("针对此类风险，普通公众在日常生活中应当如何科学防范？");
-  } else {
-    suggestions.push("针对这一结论，学术界或行业权威是否存在不同观点？");
-    suggestions.push("支持与反驳双方的核心分歧究竟在何处？");
-    suggestions.push("如果想要进一步核实一手资料，最权威的查证渠道是什么？");
   }
 
-  return suggestions.slice(0, 3);
+  for (const claim of claims) {
+    if (claim.judgment === "unresolved" && claim.text.trim()) {
+      push(`「${clipAsk(claim.text)}」还缺什么才能判断？`);
+    }
+  }
+
+  if (hasTwoSidedEvidence(claims) && suggestions.length === 0) {
+    push("支持与反驳双方的核心分歧究竟在何处？");
+  }
+
+  for (const claim of claims) {
+    if (claim.boundary?.trim()) push(`适用边界是「${clipAsk(claim.boundary)}」，还要再查哪一段？`);
+  }
+
+  if (suggestions.length === 0) {
+    for (const boundary of boundaries) {
+      if (boundary.trim()) push(`适用边界是「${clipAsk(boundary)}」，还要再查哪一段？`);
+    }
+  }
+
+  return suggestions;
 }
 
 export function FollowUpSection({
@@ -63,14 +120,21 @@ export function FollowUpSection({
   originalClaim = "",
   boundaries = [],
   claims = [],
+  leftoverTexts = [],
+  checkedAt,
+  sourceUrls = [],
+  suggestedQuestion = "",
+  coverageNote,
 }: FollowUpSectionProps) {
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (suggestedQuestion) setQuery(suggestedQuestion);
+  }, [suggestedQuestion]);
 
-  const suggestions = generateFollowUpSuggestions(originalClaim, boundaries, claims);
-  // 复制出去的简报只放用户自己写的说法，不放内部拼接段（与原句区同一份裁切规则）。
-  const claimForCopy = displayFollowUpClaim(originalClaim);
+  const suggestions = generateFollowUpSuggestions(originalClaim, boundaries, claims, leftoverTexts);
 
   const handleSubmit = () => {
     const text = query.trim();
@@ -80,21 +144,31 @@ export function FollowUpSection({
   };
 
   const handleCopySummary = () => {
-    const summary = [
-      `【调查结论】${directAnswer}`,
-      claimForCopy ? `原说法：${claimForCopy}` : "",
-      boundaries.length > 0 ? `边界与注意：${boundaries.join("；")}` : "",
-      `来源核查：红鲱鱼与枪（事实核查与出处查证引擎）`,
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-
-    navigator.clipboard?.writeText(summary).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {
-      // 容错降级
+    const summary = buildConclusionBrief({
+      originalClaim,
+      directAnswer,
+      boundaries,
+      checkedAt,
+      sourceUrls,
+      coverageNote,
     });
+    const write = navigator.clipboard?.writeText;
+    if (!write) {
+      setCopied(false);
+      setCopyError("没能复制到剪贴板，请重试。");
+      return;
+    }
+    void write(summary).then(
+      () => {
+        setCopyError("");
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      },
+      () => {
+        setCopied(false);
+        setCopyError("没能复制到剪贴板，请重试。");
+      }
+    );
   };
 
   return (
@@ -106,9 +180,9 @@ export function FollowUpSection({
               <path d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 0 1-4.083-.98L2 17l1.138-3.415C2.422 12.484 2 11.282 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </span>
-          <h3 className="gp-followup-title">针对此结论追问与深入查证</h3>
+          <h3 className="gp-followup-title">基于当前缺口继续查证</h3>
         </div>
-        <p className="gp-followup-subtitle">点一个推荐问题，它会填入下方输入框；确认后再发出追查。</p>
+        <p className="gp-followup-subtitle">点一个推荐问题，它会填入下方输入框；确认后再发出追查。本轮结果会保留，补查仍在同一份调查里。</p>
       </div>
 
       {suggestions.length > 0 ? (
@@ -146,7 +220,7 @@ export function FollowUpSection({
           onChange={(e) => setQuery(e.target.value)}
           placeholder="针对此结论追问，或展开未尽命题…（按 Enter 发送）"
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               handleSubmit();
             }
@@ -178,7 +252,7 @@ export function FollowUpSection({
               <span>重新调查</span>
             </button>
           ) : null}
-          <button type="button" className="gp-action-btn gp-action-btn--ghost" onClick={handleCopySummary}>
+          <button type="button" className="gp-action-btn gp-action-btn--ghost" data-gp-copy-brief onClick={handleCopySummary}>
             {copied ? (
               <>
                 <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="#16a34a" strokeWidth="2" aria-hidden="true">
@@ -199,6 +273,11 @@ export function FollowUpSection({
         </div>
         <span className="gp-followup-tip">支持快捷键 Enter 直接提交追问</span>
       </div>
+      {copyError ? (
+        <p className="gp-followup-copy-error" role="alert" data-gp-copy-brief-error>
+          {copyError}
+        </p>
+      ) : null}
     </section>
   );
 }

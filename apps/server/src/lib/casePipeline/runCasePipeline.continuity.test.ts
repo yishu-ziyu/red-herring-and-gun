@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { runCasePipeline, type PipelineStep } from "./runCasePipeline";
 import { buildReportEvidenceInputs } from "../searchProviders";
 import { buildDeterministicFinalReport } from "../reportFallback";
+import { confirmedSourceValidatorStep } from "./testSourceRelationAudit";
 
 it("both report evidence and fallback consume the latest investigation", () => {
   const steps = ["true", "false"].map(factCheckResult => ({ agent: "fact_checker", output: { factCheckResult } }));
@@ -17,13 +18,15 @@ it.each(["missing-atom", "missing-response"])("does not replace the investigatio
     { claimAtom: b, verdict: "true", supportingSources: [source], evidenceGaps: ["时间"] },
   ];
   let checks = 0;
-  const runAgent = async (agent: string): Promise<PipelineStep> => ({ agent, output:
-    agent === "rumor_detector" ? { claimAtoms: [a, b], claimAtomTypes: [a, b].map(text => ({ text, verifiable: true, type: "fact" })) } :
-    agent === "fact_checker" ? { factCheckResult: "true", subclaimVerdicts: ++checks === 1 ? initial : [
+  const runAgent = async (agent: string, steps: PipelineStep[]): Promise<PipelineStep> => {
+    if (agent === "rumor_detector") return { agent, output: { claimAtoms: [a, b], claimAtomTypes: [a, b].map(text => ({ text, verifiable: true, type: "fact" })) } };
+    if (agent === "source_validator") return confirmedSourceValidatorStep(steps, "high");
+    if (agent === "fact_checker") return { agent, output: { factCheckResult: "true", subclaimVerdicts: ++checks === 1 ? initial : [
       ...(failure === "missing-atom" ? [] : [initial[0]]),
       { claimAtom: b, verdict: "false", contradictingSources: [source], ...(failure === "missing-response" ? {} : { crossExamResponse: "乙未发生" }) },
-    ] } : {},
-  });
+    ] } };
+    return { agent, output: {} };
+  };
   const result = await runCasePipeline({
     claim: `${a}；${b}`, runAgent,
     searchOne: async () => ({ sources: [source] }),

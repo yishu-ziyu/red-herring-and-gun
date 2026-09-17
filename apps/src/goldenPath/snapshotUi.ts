@@ -220,6 +220,67 @@ export function sourceById(snapshot: InvestigationSnapshotV1, id: string): Inves
   return snapshot.sources.find((s) => s.id === id);
 }
 
+/** 某条来源真正挂在哪些命题上：保留原始 EvidenceLink，不按 sourceId 首次遇见或 claims[0] 重建。 */
+export function attachmentsForSource(
+  sourceId: string,
+  claims: InvestigationClaim[],
+): Array<{ claim: InvestigationClaim; link: InvestigationEvidenceLink }> {
+  const rows: Array<{ claim: InvestigationClaim; link: InvestigationEvidenceLink }> = [];
+  for (const claim of claims) {
+    for (const link of claim.evidence ?? []) {
+      if (link.sourceId === sourceId) rows.push({ claim, link });
+    }
+  }
+  return rows;
+}
+
+export type DecisiveEvidenceItem = {
+  claimId: string;
+  claimText: string;
+  link: InvestigationEvidenceLink;
+  source: InvestigationSource;
+};
+
+function isDecisiveRole(role: EvidenceRole): role is "support" | "contradict" {
+  return role === "support" || role === "contradict";
+}
+
+/** 1–3 条决定性依据。只取支持/反驳，不拿相关材料凑数。 */
+export function pickDecisiveEvidence(
+  claims: InvestigationClaim[],
+  sources: InvestigationSource[],
+): DecisiveEvidenceItem[] {
+  const items: DecisiveEvidenceItem[] = [];
+  const seen = new Set<string>();
+
+  const add = (claim: InvestigationClaim, link: InvestigationEvidenceLink) => {
+    if (items.length >= 3 || !isDecisiveRole(link.role)) return;
+    const source = sources.find((item) => item.id === link.sourceId);
+    if (!source) return;
+    const key = `${claim.id}\0${link.sourceId}\0${link.role}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ claimId: claim.id, claimText: claim.text, link, source });
+  };
+
+  for (const claim of claims) {
+    const preferredRole =
+      claim.judgment === "refuted" ? "contradict" : claim.judgment === "supported" ? "support" : null;
+    const preferred = preferredRole
+      ? claim.evidence.find((link) => link.role === preferredRole)
+      : claim.evidence.find((link) => isDecisiveRole(link.role));
+    if (preferred) add(claim, preferred);
+    if (claim.judgment === "mixed") {
+      const other = claim.evidence.find(
+        (link) => isDecisiveRole(link.role) && link !== preferred,
+      );
+      if (other) add(claim, other);
+    }
+  }
+
+  return items;
+}
+
 /** 完成态下是否有任何可下钻的来源。 */
 export function hasDrilldownSource(snapshot: InvestigationSnapshotV1): boolean {
   return snapshot.sources.some((s) => Boolean(s.url));

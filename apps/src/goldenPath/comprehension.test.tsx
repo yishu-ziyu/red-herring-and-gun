@@ -65,9 +65,7 @@ describe("看不看得懂 · 机器可检", () => {
     renderComplete(refutedComplete());
     const hero = screen.getByLabelText("调查结论");
     expect(within(hero).getByText(/原句站不住/)).toBeTruthy();
-    const claim = document.querySelector('[data-gp-claim-id="claim-1"]')!;
-    const contradictGroup = claim.querySelector('[data-gp-role="contradict"]')!;
-    fireEvent.click(within(contradictGroup as HTMLElement).getByText("世卫组织辟谣平台：无此结论"));
+    fireEvent.click(document.querySelector("[data-gp-key-evidence-item]") as HTMLButtonElement);
     const drawer = document.querySelector(".gp-drawer--source")!;
     const link = drawer.querySelector('a[href="https://piyao.org.cn/overnight-water"]');
     expect(link).toBeTruthy();

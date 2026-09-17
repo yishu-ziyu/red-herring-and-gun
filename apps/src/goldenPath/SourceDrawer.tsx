@@ -57,7 +57,9 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
   const { source, link, claimText, claimIndex } = view;
   const num = String(claimIndex + 1).padStart(2, "0");
   const relation = ROLE_LABEL[link.role];
-  const excerpt = source.excerpt?.trim();
+  const excerpt = link.passage?.trim() || source.excerpt?.trim();
+  const sectionTitle = link.sectionTitle?.trim();
+  const relationReason = link.relationReason?.trim();
   const finding = link.finding?.trim();
   const limitation = link.limitation?.trim();
   const unreachable = source.reachable === false;
@@ -182,6 +184,11 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
             <strong className="gp-source-title" id={titleId}>
               {source.title || domain}
             </strong>
+            {sectionTitle ? (
+              <p className="gp-source-section-hit" data-gp-source-section-title>
+                {lang === "en" ? "Matched section" : "命中小节"}：{sectionTitle}
+              </p>
+            ) : null}
           </div>
           <button
             type="button"
@@ -215,6 +222,11 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
                   {num}
                 </span>
                 <p className="gp-source-claim-text">{claimText}</p>
+                {relationReason ? (
+                  <p className="gp-source-relation-reason" data-gp-source-relation-reason>
+                    {lang === "en" ? "Why this relation" : "为什么是这个关系"}：{relationReason}
+                  </p>
+                ) : null}
               </div>
             </section>
 
@@ -302,7 +314,7 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
                   rel="noopener noreferrer"
                 >
                   <span className="gp-source-open-icon" aria-hidden="true">🌐</span>
-                  <span className="gp-source-open-label">前往官方原文核验</span>
+                  <span className="gp-source-open-label">{copy.sourceOpen}</span>
                   <span className="gp-source-open-domain">({domain})</span>
                   <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8">
                     <path d="M4 12 12 4M6 4h6v6" strokeLinecap="round" strokeLinejoin="round" />
@@ -340,7 +352,7 @@ function renderFindingWithCitations(text: string, sources?: InvestigationSource[
           target="_blank"
           rel="noopener noreferrer"
           className="gp-finding-cite-badge"
-          title={`查看官方来源: ${tip}`}
+          title={tip}
           data-gp-cite={n}
         >
           {n}

@@ -65,6 +65,7 @@ export async function callDeepSeekAgent({
   systemPrompt,
   userContent,
   maxTokens,
+  signal,
 }: {
   apiKey: string;
   baseUrl: string;
@@ -72,9 +73,11 @@ export async function callDeepSeekAgent({
   systemPrompt: string;
   userContent: string;
   maxTokens: number;
+  signal?: AbortSignal;
 }) {
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
+    signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -110,6 +113,7 @@ export async function callMimoAgent({
   systemPrompt,
   userContent,
   maxTokens,
+  signal,
 }: {
   baseUrl: string;
   apiKey: string;
@@ -117,9 +121,11 @@ export async function callMimoAgent({
   systemPrompt: string;
   userContent: string;
   maxTokens: number;
+  signal?: AbortSignal;
 }) {
   const response = await fetch(`${baseUrl}/v1/messages`, {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
       "api-key": apiKey,
@@ -183,6 +189,7 @@ export async function callStepFunAgent({
   userContent,
   maxTokens,
   reasoningEffort = "high",
+  signal,
 }: {
   baseUrl: string;
   apiKey: string;
@@ -191,15 +198,17 @@ export async function callStepFunAgent({
   userContent: string;
   maxTokens: number;
   reasoningEffort?: "low" | "medium" | "high";
+  signal?: AbortSignal;
 }) {
   // Token Plan（Anthropic 协议）：/step_plan 前缀走 /v1/messages + Bearer，非流式。
   if (baseUrl.includes("/step_plan")) {
-    return callStepFunPlanAgent({ baseUrl, apiKey, model, systemPrompt, userContent, maxTokens });
+    return callStepFunPlanAgent({ baseUrl, apiKey, model, systemPrompt, userContent, maxTokens, signal });
   }
   // Reasoning 系列模型（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
   // 三者皆会触发 400 Invalid request。仅 chat 模型才发这些字段。
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
+    signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -250,6 +259,7 @@ export async function callStepFunPlanAgent({
   systemPrompt,
   userContent,
   maxTokens,
+  signal,
 }: {
   baseUrl: string;
   apiKey: string;
@@ -257,10 +267,12 @@ export async function callStepFunPlanAgent({
   systemPrompt: string;
   userContent: string;
   maxTokens: number;
+  signal?: AbortSignal;
 }) {
   const url = `${baseUrl.replace(/\/$/, "")}/v1/messages`;
   const response = await fetch(url, {
     method: "POST",
+    signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -314,6 +326,7 @@ export async function call360ChatAgent({
   systemPrompt,
   userContent,
   maxTokens,
+  signal,
 }: {
   apiKey: string;
   baseUrl: string;
@@ -321,9 +334,11 @@ export async function call360ChatAgent({
   systemPrompt: string;
   userContent: string;
   maxTokens: number;
+  signal?: AbortSignal;
 }) {
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
+    signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -361,6 +376,7 @@ export async function callAnthropicAgent({
   systemPrompt,
   userContent,
   maxTokens,
+  signal,
 }: {
   baseUrl: string;
   token: string;
@@ -368,9 +384,11 @@ export async function callAnthropicAgent({
   systemPrompt: string;
   userContent: string;
   maxTokens: number;
+  signal?: AbortSignal;
 }) {
   const response = await fetch(`${baseUrl}/v1/messages`, {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
       "anthropic-version": "2023-06-01",
@@ -508,6 +526,7 @@ export async function callCodexAgent({
   userContent,
   responseSchema,
   maxTokens,
+  signal,
 }: {
   codexBin: string;
   model: string;
@@ -515,7 +534,9 @@ export async function callCodexAgent({
   userContent: string;
   responseSchema: object;
   maxTokens: number;
+  signal?: AbortSignal;
 }) {
+  signal?.throwIfAborted();
   const tempDir = await mkdtemp(join(tmpdir(), "suzheng-orchestrate-"));
   const schemaPath = join(tempDir, "schema.json");
   const outputPath = join(tempDir, "last-message.json");
@@ -544,6 +565,7 @@ export async function callCodexAgent({
 
     await execFileAsync(codexBin, args, {
       cwd: process.cwd(),
+      signal,
       timeout,
       maxBuffer: 1024 * 1024 * 8,
       env: { ...process.env, NO_COLOR: "1" },
@@ -552,6 +574,7 @@ export async function callCodexAgent({
     const raw = await readFile(outputPath, "utf8");
     return { text: raw, model: `codex-local:${model}` };
   } catch (error: any) {
+    signal?.throwIfAborted();
     const stderr = typeof error?.stderr === "string" ? error.stderr.trim() : "";
     const detail = stderr.split("\n").slice(-4).join(" ") || error?.message || "未知错误";
     throw new Error(`Codex Agent 调用失败：${detail}`);

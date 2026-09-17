@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { runCasePipeline, type PipelineStep } from "./runCasePipeline";
 import { buildAgentInput } from "../agentConfigs";
+import { confirmedSourceValidatorStep } from "./testSourceRelationAudit";
 
 it("质询→原命题补查→主调查回应→报告使用更新判词", async () => {
   const atom = "该研究证明儿童也有效";
@@ -10,6 +11,7 @@ it("质询→原命题补查→主调查回应→报告使用更新判词", asyn
   let checks = 0;
   const runAgent = async (agent: string, steps: PipelineStep[]): Promise<PipelineStep> => {
     if (agent === "rumor_detector") return { agent, output: { claimAtoms: [atom], claimAtomTypes: [{ text: atom, verifiable: true, type: "fact" }] } };
+    if (agent === "source_validator") return confirmedSourceValidatorStep(steps, "high");
     if (agent !== "fact_checker") return { agent, output: {} };
     checks++;
     if (checks === 2) expect(buildAgentInput(agent, atom, steps).crossExam).toMatchObject({ atoms: [expect.objectContaining({ challenge: "研究是否纳入儿童？", searchStatus: "completed" })] });

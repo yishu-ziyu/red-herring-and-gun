@@ -484,6 +484,23 @@ describe("bindAtomEvidenceToVerdicts", () => {
     expect(out[0].supportingSources?.map((s) => s.url)).toEqual(["https://a.example"]);
   });
 
+  it("合法 URL 也不能让模型覆盖检索层的 canonical title/snippet", () => {
+    const out = bindAtomEvidenceToVerdicts(
+      [
+        {
+          claimAtom: "原子A",
+          verdict: "true",
+          evidence: "真来源[1]。",
+          supportingSources: [{ url: "https://a.example", title: "模型改写标题", snippet: "模型改写摘录" }],
+          contradictingSources: [],
+        },
+      ],
+      byAtom,
+      key
+    );
+    expect(out[0].supportingSources).toEqual([{ url: "https://a.example", title: "A", snippet: "sa" }]);
+  });
+
   it("partial / exaggerated 走 related-only 时判词不变", () => {
     for (const verdict of ["partial", "exaggerated"] as const) {
       const out = bindAtomEvidenceToVerdicts(

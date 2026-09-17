@@ -46,10 +46,12 @@ const ENV_KEYS = {
   OPENAI_API_KEY: "env-openai-key",
 };
 
-/** 拆题 agent 的合法 JSON 输出（云端路径只要求可解析，不校验 schema）。 */
+/** Credential tests use a schema-valid response; malformed outputs are tested separately. */
 const RUMOR_JSON = JSON.stringify({
   claimAtoms: ["测试说法"],
+  claimAtomTypes: [{ text: "测试说法", verifiable: true, type: "fact" }],
   stanceClaimType: { verifiable: true, type: "fact", reason: "测试理由" },
+  rumorIndicators: [], severity: "low", analysis: "测试", detectedPatterns: [],
 });
 
 type FetchCall = { url: string; init: Record<string, any> };
@@ -193,7 +195,7 @@ describe("接管测试：BYO 存在时主力模型调用收到用户凭证", () 
     expect(step.output.claimAtoms).toEqual(["测试说法"]);
   });
 
-  it("自证 / 改写 / 交叉质询三个子调用在 BYO 下同样只打用户端点", async () => {
+  it("自证 / 改写 / 交叉质询 / 整句审计在 BYO 下都只打用户端点", async () => {
     const { calls } = installFetchStub(() => openAiJsonResponse('{"ok":true}'));
     const adapter = createOrchestrateAdapter({
       env: { ...ENV_KEYS },
@@ -211,11 +213,13 @@ describe("接管测试：BYO 存在时主力模型调用收到用户凭证", () 
     const crossExam = adapter.makeCrossExamCaller(undefined);
     expect(crossExam).toBeTruthy();
     const cross = await crossExam!(input);
+    const audit = await adapter.makeWholeClaimAuditCaller(undefined)(input);
 
     expect(selfProof.model).toBe(`byo:${BYO.modelName}`);
     expect(rewrite.model).toBe(`byo:${BYO.modelName}`);
     expect(cross.model).toBe(`byo:${BYO.modelName}`);
-    expect(calls.length).toBe(3);
+    expect(audit.model).toBe(`byo:${BYO.modelName}`);
+    expect(calls.length).toBe(4);
     expect(calls.every((c) => c.url === `${BYO.baseUrl}/chat/completions`)).toBe(true);
     expect(
       calls.every((c) => c.init.headers.Authorization === `Bearer ${BYO.apiKey}`)

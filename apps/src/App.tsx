@@ -10,6 +10,7 @@ import {
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
 } from "./lib/investigation";
+import { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot";
 import { ProductShell, type ShellCase } from "./goldenPath/ProductShell";
 import { InputStage } from "./goldenPath/InputStage";
 import { InvestigationCanvas } from "./goldenPath/InvestigationCanvas";
@@ -22,11 +23,14 @@ import { ModelProviderSettingsPreview } from "./components/v3/settings/ModelProv
 import { ApiKeySettings } from "./components/v3/settings/ApiKeySettings";
 import type { AccountProfile } from "./components/v3/auth/accountTypes";
 import { accountDisplayName } from "./lib/accountIdentity";
-import { caseIntakeFailedLinks, caseIntakePrimaryText, type CaseIntake } from "./lib/caseIntake";
+import { caseIntakeFailedLinks, caseIntakePrimaryText, createCaseIntake, type CaseIntake } from "./lib/caseIntake";
+import { homeCaseSnapshot, type HomeCaseId } from "./goldenPath/homeCases";
 import { createKnowledgeBase, normalizeHistoryClaim } from "./lib/knowledgeBase";
 import type { KnowledgeBaseEntry } from "./lib/schemas";
-import { composeFollowUpClaim, previousAnswerText } from "./lib/composeFollowUpClaim";
+import { composeFollowUpClaim, displayFollowUpClaim, previousAnswerText } from "./lib/composeFollowUpClaim";
 import { visiblePriorRoundFromSnapshot } from "./lib/priorRoundBrief";
+import { appendInvestigationRound, readInvestigationThread, threadSummary, type InvestigationThread, type InvestigationRound } from "./lib/investigationThread";
+import { InvestigationThreadHeader } from "./goldenPath/InvestigationThreadHeader";
 
 const LegacyDesk = lazy(() =>
   import("./legacy/LegacyDesk").then((module) => ({ default: module.default }))
@@ -38,6 +42,10 @@ type ActiveCase = {
   localId: string;
   claim: string;
   intake: CaseIntake | null;
+  /** Completed earlier rounds; the current round remains live until it settles. */
+  thread?: InvestigationThread;
+  roundId?: string;
+  roundKind?: InvestigationRound["kind"];
   /** 服务端存档 id：只有它存在时才谈得上分享（分享是服务端投影）。 */
   serverCaseId?: string | null;
   /** 历史/旧调查打开：直接渲染落库快照，不发起调查。 */
@@ -53,6 +61,9 @@ type ServerCaseItem = {
   claim: string;
   status?: "done" | "interrupted";
   createdAt?: number;
+  threadId?: string;
+  threadClaim?: string;
+  roundCount?: number;
 };
 
 /** 进行中那条 run 在本地留的座标：刷新后靠它接回去，而不是重开一次调查。 */
@@ -64,6 +75,11 @@ type StoredRunPointer = {
   intake: CaseIntake | null;
   lastSeq: number;
   at: number;
+  localId?: string;
+  roundId?: string;
+  roundKind?: InvestigationRound["kind"];
+  thread?: InvestigationThread;
+  accountScope?: string | null;
 };
 
 const RUN_POINTER_KEY = "rhg:active-run";
@@ -138,10 +154,41 @@ function snapshotFromReport(report: Record<string, unknown> | null | undefined):
 function toShellCases(items: ServerCaseItem[]): ShellCase[] {
   return items.map((item) => ({
     id: item.caseId,
-    claim: item.claim,
+    claim: item.threadClaim ?? item.claim,
+    threadId: item.threadId,
+    roundCount: item.roundCount,
     status: item.status === "interrupted" ? "interrupted" : item.status === "done" ? "done" : "running",
     createdAt: item.createdAt,
   }));
+}
+
+function groupThreadCases(items: ShellCase[]): ShellCase[] {
+  const latest = new Map<string, ShellCase>();
+  for (const item of items) {
+    const key = item.threadId ?? item.id;
+    const previous = latest.get(key);
+    if (!previous || (item.roundCount ?? 0) > (previous.roundCount ?? 0) ||
+        ((item.roundCount ?? 0) === (previous.roundCount ?? 0) && (item.createdAt ?? 0) > (previous.createdAt ?? 0))) latest.set(key, item);
+  }
+  return [...latest.values()].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+}
+
+function threadForRound(active: ActiveCase, snapshot: InvestigationSnapshotV1): InvestigationThread {
+  const thread = active.thread ?? { version: 1 as const, id: active.roundId ?? active.localId, originalClaim: active.claim, rounds: [] };
+  if (snapshot.phase !== "complete" && snapshot.phase !== "interrupted") return thread;
+  return appendInvestigationRound(thread, {
+    id: active.roundId ?? active.localId,
+    kind: active.roundKind ?? "initial",
+    question: displayFollowUpClaim(active.claim),
+    snapshot,
+  });
+}
+
+function restoredThreadFields(report: unknown): Pick<ActiveCase, "thread" | "roundId" | "roundKind"> {
+  const saved = readInvestigationThread(report);
+  if (!saved?.rounds.length) return {};
+  const last = saved.rounds[saved.rounds.length - 1];
+  return { thread: { ...saved, rounds: saved.rounds.slice(0, -1) }, roundId: last.id, roundKind: last.kind };
 }
 
 function ProductApp() {
@@ -149,6 +196,8 @@ function ProductApp() {
   const copy = gpCopyFor(lang);
   const [mode, setMode] = useState<ProductMode>("input");
   const [active, setActive] = useState<ActiveCase | null>(null);
+  const activeIdRef = useRef<string | null>(null);
+  activeIdRef.current = active?.localId ?? null;
   const [cases, setCases] = useState<ShellCase[]>([]);
   const [historyReady, setHistoryReady] = useState(false);
   const [historyNotice, setHistoryNotice] = useState("");
@@ -162,6 +211,10 @@ function ProductApp() {
   const accountEmailRef = useRef<string | null>(null);
   const run = useInvestigationRun();
   const [draftClaim, setDraftClaim] = useState("");
+  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
+  const [pendingFocus, setPendingFocus] = useState<{ question: string; runId: string } | null>(null);
+  const persistedRoundRef = useRef<string | null>(null);
+  const [initialRunPointer] = useState(readRunPointer);
 
   const isModelSettingsPreviewRoute = import.meta.env.DEV && window.location.pathname === "/model-settings-preview";
   const isApiKeySettingsRoute = window.location.pathname === "/settings/api-key";
@@ -197,20 +250,21 @@ function ProductApp() {
       const listRes = await fetch("/api/cases", { credentials: "include" });
       if (listRes.ok && version === scopeVersion.current) {
         const list = (await listRes.json()) as { cases?: ServerCaseItem[] };
-        setCases(toShellCases(Array.isArray(list.cases) ? list.cases : []));
+        setCases(groupThreadCases(toShellCases(Array.isArray(list.cases) ? list.cases : [])));
       }
       const local = await createKnowledgeBase(accountEmailRef.current).listCases();
       if (version !== scopeVersion.current) return;
       setCases((prev) => {
         const localItems: ShellCase[] = local.map((entry) => ({
           id: entry.id,
-          claim: entry.claim,
-          status: "done" as const,
+          claim: threadSummary(entry.finalReport).threadClaim ?? entry.claim,
+          ...threadSummary(entry.finalReport),
+          status: (entry.finalReport as Record<string, unknown>)._source === "error-boundary" ? "interrupted" as const : "done" as const,
           createdAt: entry.timestamp,
           report: entry.finalReport as Record<string, unknown>,
         }));
         const ids = new Set(localItems.map((item) => item.id));
-        return [...localItems, ...prev.filter((item) => !ids.has(item.id))];
+        return groupThreadCases([...localItems, ...prev.filter((item) => !ids.has(item.id))]);
       });
       setHistoryReady(true);
     } catch {
@@ -226,15 +280,16 @@ function ProductApp() {
   // 不重开调查，也不重复扣额。只跑一次。
   const resumedRef = useRef(false);
   useEffect(() => {
-    if (resumedRef.current) return;
+    if (resumedRef.current || !historyReady) return;
     resumedRef.current = true;
-    const pointer = readRunPointer();
+    const pointer = initialRunPointer;
     if (!pointer) return;
-    setActive({ localId: `case-${pointer.at}`, claim: pointer.claim, intake: pointer.intake, restored: null });
+    if ((pointer.accountScope ?? null) !== accountEmailRef.current) { writeRunPointer(null); return; }
+    setActive({ localId: pointer.localId ?? `case-${pointer.at}`, roundId: pointer.roundId, roundKind: pointer.roundKind, thread: readInvestigationThread({ investigationThread: pointer.thread }), claim: pointer.claim, intake: pointer.intake, restored: null });
     setMode("investigation");
     run.resume(pointer.runId, pointer.lastSeq, pointer.claim);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [historyReady]);
 
   // 记录进行中那条 run 的座标；终态或回首页时清掉。
   // 接不回去且还没有任何材料：清座标、回输入页。否则刷新会反复钉在「连接中断」。
@@ -245,6 +300,11 @@ function ProductApp() {
     }
     if (run.state.connection === "failed" && !run.state.snapshot) {
       writeRunPointer(null);
+      // 刚提交、链接打不开、调查已开始：留下调查态和链接提示。
+      // 连接中断是空流/无快照的副作用，不能盖掉这次提交自己的提示。
+      if (active && caseIntakeFailedLinks(active.intake).length > 0) {
+        return;
+      }
       setHistoryNotice(publicTransportError(run.state.errorMessage, copy.connectionLost));
       setActive(null);
       setMode("input");
@@ -262,6 +322,11 @@ function ProductApp() {
       intake: active.intake,
       lastSeq: run.state.lastActivitySeq,
       at: Date.now(),
+      localId: active.localId,
+      roundId: active.roundId,
+      roundKind: active.roundKind,
+      thread: active.thread,
+      accountScope: accountEmailRef.current,
     });
   }, [mode, active, copy.connectionLost, run.state.runId, run.state.lastActivitySeq, run.state.connection, run.state.stop, run.state.snapshot, run.state.errorMessage]);
 
@@ -290,8 +355,11 @@ function ProductApp() {
   const persistResult = useCallback(
     async (report: Record<string, unknown>, localId: string, claim: string) => {
       const doneAt = Date.now();
-      setSaveStatus("syncing");
-      const knowledgeBase = createKnowledgeBase(accountEmailRef.current);
+      const ownerEmail = accountEmailRef.current;
+      const isCurrent = () => activeIdRef.current === localId && accountEmailRef.current === ownerEmail;
+      if (isCurrent()) setSaveStatus("syncing");
+      const knowledgeBase = createKnowledgeBase(ownerEmail);
+      const existing = await knowledgeBase.getCase(localId).catch(() => null);
       const entry: KnowledgeBaseEntry = {
         id: localId,
         claim,
@@ -300,7 +368,7 @@ function ProductApp() {
         finalReport: report,
         handoffSteps: [],
         credibilityScore: typeof report.credibilityScore === "number" ? report.credibilityScore : 50,
-        timestamp: doneAt,
+        timestamp: existing?.timestamp ?? doneAt,
         tags: ["golden-path"],
       };
       try {
@@ -308,11 +376,12 @@ function ProductApp() {
       } catch (error) {
         console.error("[cases] 案例写入本地知识库失败", error);
         setHistoryNotice("调查自动保存失败，刷新后可能无法找回。请先保留当前报告。");
-        setSaveStatus("failed");
+        if (isCurrent()) setSaveStatus("failed");
         return;
       }
-      setSaveStatus("local");
-      if (!accountEmailRef.current) return;
+      if (accountEmailRef.current !== ownerEmail) return;
+      if (isCurrent()) setSaveStatus("local");
+      if (!ownerEmail) return;
       try {
         const res = await fetch("/api/case", {
           method: "POST",
@@ -327,10 +396,11 @@ function ProductApp() {
         if (!res.ok) {
           console.error(`[cases] 服务端存档失败 HTTP ${res.status}`);
           setHistoryNotice(copy.historySyncFailed);
-          setSaveStatus("failed");
+          if (isCurrent()) setSaveStatus("failed");
           return;
         }
-        setSaveStatus("synced");
+        if (accountEmailRef.current !== ownerEmail) return;
+        if (isCurrent()) setSaveStatus("synced");
         const data = (await res.json()) as { caseId?: string };
         if (!data.caseId) return;
         const saved = await knowledgeBase.getCase(localId);
@@ -346,7 +416,7 @@ function ProductApp() {
       } catch (error) {
         console.error("[cases] 服务端存档异常", error);
         setHistoryNotice(copy.historySyncFailed);
-        setSaveStatus("failed");
+        if (isCurrent()) setSaveStatus("failed");
       }
     },
     [copy.historySyncFailed]
@@ -354,26 +424,42 @@ function ProductApp() {
 
   /** 重试同步：用当前这份结果再走一遍，不重新调查。 */
   const retrySave = useCallback(() => {
-    const report = run.state.finalReport;
+    const report = active?.restored?.report ?? run.state.finalReport;
     if (!report || !active) return;
-    void persistResult(report, active.localId, active.claim);
+    const snapshot = snapshotFromReport(report);
+    void persistResult(snapshot ? { ...report, investigationThread: threadForRound(active, snapshot) } : report, active.localId, active.claim);
   }, [active, persistResult, run.state.finalReport]);
 
   // 完成：本地留存 +（已登录）服务端落库。保存失败不挡结果，但必须可见。
   useEffect(() => {
-    const report = run.state.finalReport;
-    if (!report || mode !== "investigation" || active?.restored) return;
+    if (mode !== "investigation" || !active || active.restored) return;
+    const terminalConnection = run.state.connection === "ended" || run.state.connection === "failed";
+    const interrupted = run.state.snapshot?.phase === "interrupted" && terminalConnection;
+    const restoredCompletion = run.state.snapshot?.phase === "complete" && terminalConnection;
+    const report = run.state.finalReport ?? (interrupted || restoredCompletion ? {
+      _source: interrupted ? "error-boundary" : "restored-snapshot",
+      conclusion: run.state.snapshot?.conclusion?.directAnswer ?? "",
+      investigation: run.state.snapshot,
+      ...(run.state.snapshot?.checkedAt ? { checkedAt: run.state.snapshot.checkedAt } : {}),
+    } : null);
+    if (!report) return;
+    const persistedKey = `${active.roundId ?? active.localId}:${run.state.finalReport || restoredCompletion ? "report" : "interrupted"}`;
+    if (persistedRoundRef.current === persistedKey) return;
+    persistedRoundRef.current = persistedKey;
     const doneAt = Date.now();
-    const localId = active?.localId ?? `case-${doneAt}`;
-    const claim = active?.claim ?? "";
-    setCases((prev) => [
-      { id: localId, claim, status: report._source === "error-boundary" ? ("interrupted" as const) : ("done" as const), createdAt: doneAt },
+    const localId = active.localId;
+    const claim = active.claim;
+    const savedSnapshot = snapshotFromReport(report);
+    const durable = savedSnapshot ? { ...report, investigationThread: threadForRound(active, savedSnapshot) } : report;
+    const summary = threadSummary(durable);
+    setCases((prev) => groupThreadCases([
+      { id: localId, claim: summary.threadClaim ?? claim, ...summary, report: durable, status: report._source === "error-boundary" ? ("interrupted" as const) : ("done" as const), createdAt: doneAt },
       ...prev.filter((item) => item.id !== localId),
-    ]);
-    void persistResult(report, localId, claim);
+    ]));
+    void persistResult(durable, localId, claim);
     // 只在 finalReport 首次出现时执行一次。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run.state.finalReport]);
+  }, [run.state.finalReport, run.state.snapshot, run.state.connection, active, mode, persistResult]);
 
   /** 无守卫直接开跑：同句守卫的「重新核查」与普通提交共用。 */
   const beginRun = useCallback(
@@ -381,14 +467,22 @@ function ProductApp() {
       intake: CaseIntake,
       fixture?: NonNullable<Parameters<ReturnType<typeof useInvestigationRun>["start"]>[1]>["fixture"],
       // 追问：登录带 caseId；访客带上一轮可见材料。首轮不传。
-      followUp?: Pick<StartOptions, "priorCaseId" | "priorRound">
+      followUp?: Pick<StartOptions, "priorCaseId" | "priorRound">,
+      previousThread?: InvestigationThread,
+      roundKind: InvestigationRound["kind"] = "initial",
     ) => {
+      resumedRef.current = true;
+      setSelectedRoundId(null);
+      setPendingFocus(null);
+      setSaveStatus("idle");
+      setHistoryNotice("");
       setSameClaim(null);
       setDraftClaim("");
       const claim = caseIntakePrimaryText(intake);
-      const localId = `case-${Date.now()}`;
-      setActive({ localId, claim, intake });
-      setCases((prev) => [{ id: localId, claim, status: "running" as const }, ...prev.filter((item) => item.id !== localId)]);
+      const localId = `case-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const thread = previousThread ?? { version: 1 as const, id: localId, originalClaim: claim, rounds: [] };
+      setActive({ localId, roundId: localId, roundKind, claim, intake, thread });
+      setCases((prev) => [{ id: localId, claim: thread.originalClaim, threadId: thread.id, roundCount: thread.rounds.length + 1, status: "running" as const }, ...prev.filter((item) => item.id !== localId && item.threadId !== thread.id)]);
       setMode("investigation");
       run.start(intake, {
         accountEmail: accountEmailRef.current,
@@ -416,26 +510,57 @@ function ProductApp() {
     [cases, historyReady, beginRun]
   );
 
+  const handleViewHomeCase = useCallback(
+    (id: HomeCaseId) => {
+      const opened = homeCaseSnapshot(id);
+      if (!opened) return;
+      run.reset();
+      setSelectedRoundId(null);
+      setSameClaim(null);
+      setActive({
+        localId: `home-${id}`,
+        claim: opened.claim,
+        intake: createCaseIntake(opened.claim, []),
+        restored: { snapshot: opened.snapshot, report: null, at: opened.investigatedAt },
+      });
+      setMode("investigation");
+    },
+    [run]
+  );
+
+  const handleRecheckHomeCase = useCallback(
+    (claim: string) => {
+      beginRun(createCaseIntake(claim, []));
+    },
+    [beginRun]
+  );
+
   const handleBackHome = useCallback(() => {
     // 从调查/旧报告返回首页时预填原句，方便改完再查（与旧壳一致）。
-    setDraftClaim((prev) => active?.claim ?? prev);
+    setDraftClaim((prev) => active?.thread?.originalClaim ?? active?.claim ?? prev);
+    setSelectedRoundId(null);
+    setPendingFocus(null);
     run.reset();
     setActive(null);
     setMode("input");
   }, [active?.claim, run]);
 
   const handleRetry = useCallback(() => {
-    if (!active?.intake) {
+    if (!active) {
       handleBackHome();
       return;
     }
-    run.start(active.intake, { accountEmail: accountEmailRef.current });
-  }, [active, handleBackHome, run]);
+    const snapshot = active.restored?.snapshot ?? run.state.snapshot;
+    beginRun(active.intake ?? createCaseIntake(active.claim, []), undefined, undefined,
+      snapshot ? threadForRound(active, snapshot) : active.thread, "recheck");
+  }, [active, beginRun, handleBackHome, run.state.snapshot]);
 
   const handleSelectCase = useCallback(
     async (id: string) => {
       const item = cases.find((entry) => entry.id === id);
       if (!item) return;
+      setSelectedRoundId(null);
+      setPendingFocus(null);
       // 本地在跑的那条：直接回到当前画布，不重新请求。
       if (item.status === "running" && active?.localId === id) {
         setMode("investigation");
@@ -453,6 +578,7 @@ function ProductApp() {
             setActive({
               localId: id,
               claim: entry.claim,
+              ...restoredThreadFields(entry.finalReport),
               intake: null,
               restored: { snapshot, report: entry.finalReport as Record<string, unknown>, at: entry.timestamp },
             });
@@ -496,6 +622,7 @@ function ProductApp() {
         setActive({
           localId: id,
           claim: data.claim ?? item.claim,
+          ...restoredThreadFields(data.report),
           intake: null,
           // 从服务端读回来的记录：分享的对象就是它。
           serverCaseId: id,
@@ -526,6 +653,12 @@ function ProductApp() {
     if (version !== scopeVersion.current) return;
     setAccount(null);
     accountEmailRef.current = null;
+    run.reset();
+    setActive(null);
+    setSelectedRoundId(null);
+    setPendingFocus(null);
+    setMode("input");
+    writeRunPointer(null);
     const local = await createKnowledgeBase(null).listCases();
     if (version !== scopeVersion.current) return;
     setCases(local.map((entry) => ({ id: entry.id, claim: entry.claim, status: "done" as const, createdAt: entry.timestamp, report: entry.finalReport as Record<string, unknown> })));
@@ -563,11 +696,29 @@ function ProductApp() {
     </div>
   ) : null;
 
+  useEffect(() => {
+    if (!pendingFocus || pendingFocus.runId !== run.state.runId) return;
+    if (!["cancelled", "completed", "interrupted"].includes(run.state.serverStatus ?? "")) return;
+    setPendingFocus(null);
+    handleFollowUp(pendingFocus.question);
+    // A focus change waits for the server terminal state, never just the POST acknowledgement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFocus, run.state.runId, run.state.serverStatus]);
+
   if (isModelSettingsPreviewRoute) {
     return <ModelProviderSettingsPreview />;
   }
   if (isApiKeySettingsRoute) {
     return <ApiKeySettings />;
+  }
+  if (window.location.pathname.startsWith("/s/")) {
+    return (
+      <main className="gp-share-unavailable" data-gp-share-unavailable>
+        <h1>{copy.shareUnavailableTitle}</h1>
+        <p>{copy.shareUnavailableBody}</p>
+        <a href="/">{copy.backHome}</a>
+      </main>
+    );
   }
 
   const snapshot = active?.restored
@@ -575,37 +726,38 @@ function ProductApp() {
     : (() => {
         const s = run.state.snapshot;
         if (!s) return null;
-        // 流失败但已有真实数据：按 interrupted 呈现（保留数据、无伪结论、可重试）。
-        // 例外（Change C）：超时之后的断线不是调查失败——服务端管线仍在跑，结论经刷新可取回；
-        // 这时候说「没查完」是假话，界面上有超时提示说明真实状态。
-        if (
-          run.state.connection === "failed" &&
-          !run.state.timeoutPending &&
-          s.phase !== "complete" &&
-          s.phase !== "interrupted"
-        ) {
-          return { ...s, phase: "interrupted" as const };
+        // 流失败但已有真实数据：按 interrupted 收口（保留数据、可重试）。
+        // timeout_pending 后流结束且没有 finalReport：同样收口，不得停在 judging +「还在查」。
+        // 连接仍活着时 timeoutPending 提示继续挂着，等晚到的 complete。
+        const streamEndedWithoutReport =
+          (run.state.connection === "failed" || run.state.connection === "ended") &&
+          !run.state.finalReport;
+        if (streamEndedWithoutReport && s.phase !== "complete" && s.phase !== "interrupted") {
+          return interruptedInvestigationSnapshot(s, s.originalClaim);
         }
         return s;
       })();
 
   /**
-   * 超时提示（Change C）：只在「这次调查还没拿到结果、也不是历史回看」时出现。
-   * 真结果一到（finalReport 或 error 翻成中断态）就退场，不与结论或中断文案并列。
+   * 超时提示：只在连接还活着、这次调查还没拿到结果、也不是历史回看时出现。
+   * 流已结束且没有报告 → 已按中断收口，不再说「还在查」。
    */
-  const showTimeoutPending = !active?.restored && run.state.timeoutPending && !run.state.finalReport;
+  const showTimeoutPending =
+    !active?.restored &&
+    run.state.timeoutPending &&
+    !run.state.finalReport &&
+    (run.state.connection === "live" || run.state.connection === "connecting");
   const showLinkUnreachable =
     mode === "investigation" && Boolean(active?.intake) && caseIntakeFailedLinks(active!.intake).length > 0;
 
-  const handleFollowUp = useCallback(
-    (question: string) => {
+  function handleFollowUp(question: string) {
       if (!active) return;
       const prevAnswer =
         previousAnswerText(
           (active.restored?.report ?? run.state.finalReport) as { conclusion?: string; memo?: string } | null
         ) || snapshot?.conclusion?.directAnswer || "";
       const composed = composeFollowUpClaim({
-        originalClaim: active.claim,
+        originalClaim: active.thread?.originalClaim ?? active.claim,
         previousAnswer: prevAnswer,
         followUp: question,
       });
@@ -619,11 +771,28 @@ function ProductApp() {
         undefined,
         active.serverCaseId
           ? { priorCaseId: active.serverCaseId }
-          : { priorRound: visiblePriorRoundFromSnapshot(snapshot) }
+          : { priorRound: visiblePriorRoundFromSnapshot(snapshot) },
+        snapshot ? threadForRound(active, snapshot) : active.thread,
+        "follow-up",
       );
-    },
-    [active, run.state.finalReport, snapshot, beginRun]
-  );
+  }
+
+  const archivedRound = selectedRoundId ? active?.thread?.rounds.find((round) => round.id === selectedRoundId) : undefined;
+  const displaySnapshot = archivedRound?.snapshot ?? snapshot;
+  const adjustFocus = (question: string) => {
+    if (active?.restored || snapshot?.phase === "complete" || run.state.connection === "ended" || run.state.connection === "failed") {
+      handleFollowUp(question);
+      return;
+    }
+    if (!run.state.runId || pendingFocus) return;
+    setPendingFocus({ question, runId: run.state.runId });
+    void run.cancel().then((result) => {
+      if (!result.ok) {
+        setPendingFocus(null);
+        setHistoryNotice("停止请求未送达，尚未开始按新重点核查。");
+      }
+    });
+  };
 
   return (
     <>
@@ -639,11 +808,12 @@ function ProductApp() {
         onLogout={() => void handleLogout()}
         viewingInvestigation={mode === "investigation"}
       >
-        {historyNotice ? <p className="gp-global-notice" role="alert">{historyNotice}</p> : null}
         {showLinkUnreachable ? (
           <p className="gp-global-notice" role="alert">
             {copy.linkUnreachableNotice}
           </p>
+        ) : historyNotice ? (
+          <p className="gp-global-notice" role="alert">{historyNotice}</p>
         ) : null}
         {sameClaim ? (
           <div className="gp-same-claim" role="dialog" aria-label={copy.sameClaimTitle}>
@@ -681,6 +851,12 @@ function ProductApp() {
             </div>
           </div>
         ) : null}
+        {mode === "investigation" && active?.thread ? <InvestigationThreadHeader
+          thread={active.thread}
+          currentQuestion={displayFollowUpClaim(active.claim)}
+          selectedRoundId={selectedRoundId}
+          onSelect={setSelectedRoundId}
+        /> : null}
         {mode === "input" ? (
           <>
             {!historyReady ? <p className="gp-global-notice" role="status">{copy.loadingHistory}</p> : null}
@@ -689,9 +865,11 @@ function ProductApp() {
               initialClaim={draftClaim}
               accountEmail={account?.email ?? null}
               onNeedLogin={() => setLoginOpen(true)}
+              onViewHomeCase={handleViewHomeCase}
+              onRecheckHomeCase={handleRecheckHomeCase}
             />
           </>
-        ) : active && snapshot ? (
+        ) : active && displaySnapshot ? (
           <>
             {showTimeoutPending ? (
               <p className="gp-hint" role="status" data-gp-timeout-pending>
@@ -699,19 +877,23 @@ function ProductApp() {
               </p>
             ) : null}
             <InvestigationCanvas
-              snapshot={snapshot}
-              live={active.restored ? false : run.state.connection === "connecting" || run.state.connection === "live"}
-              activities={active.restored ? [] : run.state.activities}
-              stop={active.restored ? "idle" : run.state.stop}
-              onStop={active.restored || !run.state.runId ? undefined : () => void run.cancel()}
+              key={archivedRound?.id ?? active.roundId ?? active.localId}
+              snapshot={displaySnapshot}
+              readOnly={Boolean(archivedRound)}
+              onAdjustFocus={archivedRound ? undefined : adjustFocus}
+              adjustingFocus={Boolean(pendingFocus)}
+              live={archivedRound || active.restored ? false : run.state.connection === "connecting" || run.state.connection === "live"}
+              activities={archivedRound || active.restored ? [] : run.state.activities}
+              stop={archivedRound || active.restored ? "idle" : run.state.stop}
+              onStop={archivedRound || active.restored || !run.state.runId ? undefined : () => void run.cancel()}
               saveStatus={saveStatus}
               onRetrySave={retrySave}
-              shareCaseId={active.serverCaseId ?? null}
-              finalReport={active.restored ? active.restored.report : run.state.finalReport}
+              shareCaseId={archivedRound ? null : active.serverCaseId ?? null}
+              finalReport={archivedRound ? null : active.restored ? active.restored.report : run.state.finalReport}
               restoredAt={active.restored?.at}
               onReverify={handleRetry}
               onBackHome={handleBackHome}
-              onFollowUp={handleFollowUp}
+              onFollowUp={archivedRound ? undefined : handleFollowUp}
               linkUnreachable={caseIntakeFailedLinks(active.intake).length > 0}
             />
           </>
@@ -721,7 +903,7 @@ function ProductApp() {
           </p>
         ) : (
           <p className="gp-waiting" role="status">
-            {run.state.connection === "failed" && !snapshot
+            {run.state.connection === "failed" && !snapshot && !showLinkUnreachable
               ? publicTransportError(run.state.errorMessage, copy.connectionLost)
               : "正在拆解这句话…"}
           </p>

@@ -6,7 +6,8 @@
  *   2. 用户点「停止」原本只是前端不管结果，服务端照跑照烧 —— 现在有真 AbortSignal。
  *   3. 同一份请求重放成两份 run —— payload 不同就明确冲突，不静默复用。
  *
- * signal 必须真的传进检索与模型调用；只 `Promise.race` 把结果丢掉不等于取消。
+ * signal 由编排适配层传到模型、检索及响应流，阶段边界同时检查以阻止迟到写入。
+ * 请求中止不代表供应商停止计算或退款；这里仅维护本地运行状态与取消身份。
  *
  * 持久化是可选的：没有可用 SQLite 时退化成进程内注册表（重启即丢状态），
  * 但取消与幂等在本次进程内仍然成立。
@@ -168,8 +169,8 @@ export function createRunService(options: { store?: RunStore | null; now?: () =>
     },
 
     /**
-     * 取消：先 abort signal（在途请求立刻断），状态进 cancelling；
-     * 终态再调无副作用。幂等。
+     * 取消：abort signal，状态进 cancelling，等待执行层清理后落 cancelled。
+     * 终态再调无副作用；底层响应与重试共享取消信号。
      */
     cancel(runId: string): CancelResult {
       const current = read(runId);

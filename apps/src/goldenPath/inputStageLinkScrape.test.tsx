@@ -7,7 +7,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
-import { caseIntakePrimaryText, type CaseIntake } from "../lib/caseIntake";
+import { type CaseIntake } from "../lib/caseIntake";
 import { InputStage } from "./InputStage";
 
 vi.mock("../lib/agentExpansion", async (importOriginal) => {
@@ -86,26 +86,23 @@ describe("链接抓不到：提示必须出现，材料照旧继续", () => {
     await waitFor(() => expect(document.body.textContent).toContain(NOTICE));
   });
 
-  it("只贴了一条打不开的链接：仍然继续，提示照样出现", async () => {
+  it("只贴打不开的链接且无正文：请求补充材料，不发起无对象调查", async () => {
     stubFetch(LOGIN_WALL);
     const onSubmit = vi.fn();
     render(<InputStage onSubmit={onSubmit} />);
 
     await submitClaim(WEIBO_URL);
 
-    const intake = await submittedIntake(onSubmit);
-    expect(intake.links).toHaveLength(1);
-    expect(intake.links[0]!.scrapeFailed).toBe(true);
-    expect(caseIntakePrimaryText(intake)).toContain(WEIBO_URL);
-    expect(caseIntakePrimaryText(intake)).not.toContain("【链接抓取内容】");
-    await waitFor(() => expect(document.body.textContent).toContain(NOTICE));
+    await screen.findByText(/请补充原文或截图，尚未开始调查/);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(document.body.textContent).not.toContain(NOTICE);
   });
 
   it("提示挂在页面容器上，不在输入态里面（输入态卸载也不丢）", async () => {
     stubFetch(LOGIN_WALL);
     const view = render(<InputStage onSubmit={vi.fn()} />);
 
-    await submitClaim(WEIBO_URL);
+    await submitClaim(`${WEIBO_URL} 隔夜菜会致癌吗？`);
     await waitFor(() => expect(document.body.textContent).toContain(NOTICE));
 
     const notice = document.querySelector(".gp-link-scrape-notice")!;
@@ -170,10 +167,15 @@ describe("真实 App 接线：提交后输入态卸载，提示仍在", () => {
     expect(document.body.textContent).toContain(NOTICE);
     expect(document.body.textContent).not.toContain("【链接抓取内容】");
     expect(document.querySelector(".gp-global-notice")?.textContent).toContain(NOTICE);
+    await waitFor(() => expect(document.querySelectorAll(".gp-link-scrape-notice")).toHaveLength(0));
+    const duplicateNotices = [...document.querySelectorAll<HTMLElement>('[role="alert"]')].filter((el) =>
+      (el.textContent ?? "").includes(NOTICE)
+    );
+    expect(duplicateNotices).toHaveLength(1);
   });
 
-  it("只贴打不开的链接：调查态也有常驻提示", async () => {
-    stubAppFetch(LOGIN_WALL);
+  it("只贴打不开的链接：保留输入，让用户补材料，不发送核查请求", async () => {
+    const fetcher = stubAppFetch(LOGIN_WALL);
     render(<App />);
 
     const editor = await screen.findByRole("textbox", { name: "要调查的说法" });
@@ -183,7 +185,8 @@ describe("真实 App 接线：提交后输入态卸载，提示仍在", () => {
     await waitFor(() => expect(send).not.toBeDisabled());
     fireEvent.click(send);
 
-    await waitFor(() => expect(document.querySelector(".gp-input-stage")).toBeNull());
-    await waitFor(() => expect(document.querySelector(".gp-global-notice")?.textContent).toContain(NOTICE));
+    await screen.findByText(/请补充原文或截图，尚未开始调查/);
+    expect(document.querySelector(".gp-input-stage")).toBeTruthy();
+    expect(fetcher.mock.calls.some(([url]) => String(url).includes("/orchestrate-stream"))).toBe(false);
   });
 });

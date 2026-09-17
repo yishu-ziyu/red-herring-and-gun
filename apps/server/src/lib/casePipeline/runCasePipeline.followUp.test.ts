@@ -6,6 +6,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { runCasePipeline, type PipelineStep } from "./runCasePipeline";
+import { confirmedSourceValidatorStep } from "./testSourceRelationAudit";
 import { collapseFollowUpAtoms, FOLLOW_UP_MARKER, priorReportFromVisibleBrief } from "../followUpReuse.js";
 
 const ATOM_NITRITE = "隔夜菜的亚硝酸盐含量会超标";
@@ -38,7 +39,7 @@ function composed(followUp: string): string {
 }
 
 function stubAgents(atoms: string[]) {
-  const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+  const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
     if (agentId === "rumor_detector") {
       return {
         agent: "rumor_detector",
@@ -71,7 +72,7 @@ function stubAgents(atoms: string[]) {
       };
     }
     if (agentId === "source_validator") {
-      return { agent: "source_validator", output: { sourceReliability: "medium" } };
+      return confirmedSourceValidatorStep(steps, "medium");
     }
     throw new Error(`unexpected ${agentId}`);
   });

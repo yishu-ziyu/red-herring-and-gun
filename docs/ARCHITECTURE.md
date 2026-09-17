@@ -32,8 +32,10 @@ SSE 事件 `investigation_snapshot`；`GET /api/case/:id` 对旧历史做确定�
 不当单人额度。`/api/models/health` 是可用性探针，**不计额度**（计额度端点集合收在
 `apps/server/src/lib/quotaPolicy.ts`）。测试期可用 `CHECK_QUOTA_GUEST_LIMIT` / `CHECK_QUOTA_IP_LIMIT` 放宽。
 
-已知限制：`providerRouter` 的 `Promise.race` 超时（`providerRouter.ts:596`）不会取消在途模型请求，
-不保证硬截止时间。停止检查发生在步骤边界。
+2026-09-17：`executionBudget` 将取消与绝对截止时间传入模型、BYO、检索及响应流。
+首调与一次 JSON 修复共用预算，报告超时会中止写作请求再使用确定性兜底。
+显式停止取消调查；刷新/断线只退订，不取消。取消终态不接受迟到结果，重复请求只订阅原运行。
+已用本地 HTTP 挂起响应及真实页面停止验证连接关闭；不据此保证供应商停止计算或退款。
 
 T20（生产切到 `packages/` 脊柱）仍未执行。生产壳目录是 `apps/`。
 完整当前状态见 `docs/NOTES.md` 头部。

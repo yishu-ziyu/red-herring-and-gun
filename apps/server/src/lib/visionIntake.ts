@@ -149,10 +149,12 @@ export async function callStepFunVisionForIntake({
   env,
   claim,
   intake,
+  signal,
 }: {
   env: Record<string, string>;
   claim: string;
   intake: CaseIntakePayload;
+  signal?: AbortSignal;
 }) {
   const apiKey = env.STEPFUN_API_KEY || process.env.STEPFUN_API_KEY;
   if (!apiKey) throw new Error("缺少 STEPFUN_API_KEY，无法解析图片材料。");
@@ -173,6 +175,7 @@ export async function callStepFunVisionForIntake({
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
+    signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",

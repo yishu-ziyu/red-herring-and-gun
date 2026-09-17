@@ -18,12 +18,15 @@ import {
 } from "./providerRouter.js";
 import { compactSearchResultForAgent, buildReportEvidenceInputs } from "./searchProviders.js";
 import { attachKnowledgeDrafts } from "./atomSearch.js";
-import { splitReasoningSentences, thoughtInterSentenceDelayMs } from "./reasoningThoughts.js";
-import { getTimeoutMs, sleepMs } from "./httpUtils.js";
+import { splitReasoningSentences } from "./reasoningThoughts.js";
+import { getTimeoutMs } from "./httpUtils.js";
+import type { ExecutionBudget } from "./executionBudget.js";
 import { callByoAgent, ByoKeyError, type ByoConfig } from "./orchestrateByo.js";
 import type { RunAgentFn } from "./casePipeline/index.js";
 
 export interface OrchestrateAdapterDeps {
+  signal?: AbortSignal;
+  deadlineMs?: number;
   env: Record<string, string>;
   codexBin: string;
   /**
@@ -50,6 +53,8 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
   const { env, codexBin } = deps;
   const byo = deps.byo;
   const onByoFailure = deps.onByoFailure;
+  const deadlineFor = (deadline?: number) => Math.min(deadline ?? Infinity, deps.deadlineMs ?? Infinity);
+  const requestOptions = () => ({ logger: console, signal: deps.signal, deadlineMs: deps.deadlineMs });
 
   const byoTimeoutMs = () => getTimeoutMs(env, "ORCHESTRATE_BYO_TIMEOUT_MS", 120_000);
 
@@ -62,7 +67,8 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
     systemPrompt: string;
     userContent: string;
     maxTokens: number;
-  }): Promise<{ output: any; model: string; reasoning?: string }> {
+    responseSchema?: object;
+  } & ExecutionBudget): Promise<{ output: any; model: string; reasoning?: string }> {
     if (!byo) throw new Error("BYO 接管模式未启用");
     try {
       return await callByoAgent({
@@ -71,6 +77,9 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         userContent: input.userContent,
         maxTokens: input.maxTokens,
         timeoutMs: byoTimeoutMs(),
+        signal: input.signal ?? deps.signal,
+        deadlineMs: deadlineFor(input.deadlineMs),
+        responseSchema: input.responseSchema,
       });
     } catch (error) {
       if (error instanceof ByoKeyError) onByoFailure?.(error);
@@ -96,7 +105,10 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
     onComplete?: (step: any) => void;
     onError?: (agentId: string, agentConfig: (typeof AGENT_CONFIGS)[number], error: unknown) => void;
   }): RunAgentFn {
-    return async function runAgent(agentId, steps, search360Result?, atomSearchBundle?) {
+    return async function runAgent(agentId, steps, search360Result?, atomSearchBundle?, execution = {}) {
+      const signal = execution.signal && deps.signal
+        ? AbortSignal.any([execution.signal, deps.signal]) : execution.signal ?? deps.signal;
+      signal?.throwIfAborted();
       const agentConfig = AGENT_CONFIGS.find((a) => a.id === agentId);
       if (!agentConfig) {
         throw new Error(`Unknown agent: ${agentId}`);
@@ -109,7 +121,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
       if (opts.clientMemoryRecall) agentInput.memoryRecall = opts.clientMemoryRecall;
       if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
         agentInput.search360 = compactSearchResultForAgent(search360Result);
-        if (atomSearchBundle && (agentId === "fact_checker" || agentId === "report_composer")) {
+        if (atomSearchBundle && (agentId === "fact_checker" || agentId === "source_validator" || agentId === "report_composer")) {
           agentInput.atomSearches = atomSearchBundle.forAgent;
         }
       }
@@ -155,6 +167,9 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
             systemPrompt,
             userContent,
             maxTokens: agentConfig.maxTokens,
+            responseSchema: agentConfig.responseSchema,
+            signal,
+            deadlineMs: deadlineFor(execution.deadlineMs),
           });
         } else {
           const modelOverride =
@@ -171,18 +186,18 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
             codexBin,
             reasoningEffort: "high",
             modelOverride: modelOverride as { provider: AgentTextProviderId; model: string } | undefined,
-            options: { logger: console },
+            options: { logger: console, signal, deadlineMs: deadlineFor(execution.deadlineMs) },
           });
         }
         output = result.output;
+        signal?.throwIfAborted();
         modelUsed = result.model;
         reasoning = result.reasoning;
         // Capture model wall-clock before SSE thought pacing (UI must show real think time).
         const modelLatencyMs = Date.now() - stepStart;
-        // Real reasoning only: split + pace SSE so ThinkingReasoning can reveal sentence-by-sentence.
+        // Report actual reasoning without delaying evidence publication for display pacing.
         if (opts.onThought && typeof reasoning === "string" && reasoning.trim()) {
           const sentences = splitReasoningSentences(reasoning);
-          const gap = thoughtInterSentenceDelayMs(sentences.length);
           for (let index = 0; index < sentences.length; index++) {
             opts.onThought!(
               agentConfig.id,
@@ -191,7 +206,6 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
               index,
               index === sentences.length - 1
             );
-            if (index < sentences.length - 1) await sleepMs(gap);
           }
         }
         const step = {
@@ -209,6 +223,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         opts.onComplete?.(step);
         return step;
       } catch (error) {
+        signal?.throwIfAborted();
         opts.onError?.(agentId, agentConfig, error);
         // BYO 凭证失败保持原错误上抛（携带用户可读文案），不包一层：fail-closed 收尾要认它。
         if (error instanceof ByoKeyError) throw error;
@@ -229,17 +244,21 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
 
   /** 自证子调用（原句自证，claimAtom 用）。BYO 接管时走用户端点，忽略 modelChoice。 */
   function makeSelfProofCaller(claim: string, modelChoice: any) {
+    let stageDeadline: number | undefined;
     return (input: {
       systemPrompt: string;
       userContent: string;
       responseSchema: object;
       maxTokens: number;
     }) => {
+      stageDeadline ??= deadlineFor(Date.now() + getTimeoutMs(env, "ORCHESTRATE_SELFPROOF_STAGE_BUDGET_MS", SELF_PROOF_STAGE_BUDGET_MS_DEFAULT));
       if (byo) {
         return callByoPrimary({
           systemPrompt: input.systemPrompt,
           userContent: input.userContent,
           maxTokens: input.maxTokens,
+          responseSchema: input.responseSchema,
+          deadlineMs: stageDeadline,
         }).then((r) => ({ output: r.output, model: r.model }));
       }
       return callAgentWithFallback({
@@ -254,10 +273,8 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         modelOverride: modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
         options: {
           logger: console,
-          // 每次调用（含管道那一次重试）各拿一份完整预算，不是整个 run 共享。
-          deadlineMs:
-            Date.now() +
-            getTimeoutMs(env, "ORCHESTRATE_SELFPROOF_STAGE_BUDGET_MS", SELF_PROOF_STAGE_BUDGET_MS_DEFAULT),
+          signal: deps.signal,
+          deadlineMs: stageDeadline,
           attemptTimeoutCapMs: getTimeoutMs(
             env,
             "ORCHESTRATE_SELFPROOF_ATTEMPT_TIMEOUT_CAP_MS",
@@ -281,6 +298,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
           systemPrompt: input.systemPrompt,
           userContent: input.userContent,
           maxTokens: input.maxTokens,
+          responseSchema: input.responseSchema,
         }).then((r) => ({ output: r.output, model: r.model }));
       }
       return callAgentWithFallback({
@@ -294,7 +312,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         reasoningEffort: "low",
         modelOverride:
           modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
-        options: { logger: console },
+        options: requestOptions(),
       }).then((r) => ({ output: r.output, model: r.model }));
     };
   }
@@ -336,6 +354,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
           systemPrompt: input.systemPrompt,
           userContent: input.userContent,
           maxTokens: input.maxTokens,
+          responseSchema: input.responseSchema,
         })
           .then((r) => {
             sendAgentEvent?.({
@@ -385,7 +404,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         codexBin,
         reasoningEffort: "high",
         modelOverride,
-        options: { logger: console },
+        options: requestOptions(),
       })
         .then((r) => {
           sendAgentEvent?.({
@@ -418,8 +437,9 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
       userContent: string;
       responseSchema: object;
       maxTokens: number;
-    }) =>
-      callAgentWithFallback({
+    }) => {
+      if (byo) return callByoPrimary(input).then((r) => ({ output: r.output, model: r.model }));
+      return callAgentWithFallback({
         agentId: "whole_claim_auditor",
         systemPrompt: input.systemPrompt,
         userContent: input.userContent,
@@ -429,8 +449,9 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         codexBin,
         reasoningEffort: "low",
         modelOverride: modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
-        options: { logger: console },
+        options: requestOptions(),
       }).then((r) => ({ output: r.output, model: r.model }));
+    };
   }
 
   return { makeRunAgent, makeSelfProofCaller, makeRewriteCaller, makeCrossExamCaller, makeWholeClaimAuditCaller };

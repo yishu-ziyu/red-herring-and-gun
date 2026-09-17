@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InvestigationCanvas } from "./InvestigationCanvas";
 import { applyRunEvent, type RunState } from "./useInvestigationRun";
-import { investigatingUnassessed, refutedComplete, REFUTED_CLAIM } from "./fixtures";
+import { investigatingUnassessed, interruptedPartial, refutedComplete, REFUTED_CLAIM } from "./fixtures";
 
 const requestOrchestrateStream = vi.fn();
 vi.mock("../lib/agentExpansion", async (importOriginal) => {
@@ -102,6 +102,27 @@ describe("D20 停止：只有服务端确认才说已停止", () => {
     expect(document.querySelector("[data-gp-stopped]")!.textContent).toContain("已停止");
   });
 
+  it("点停止且分条已齐：不重复说中断，总答仍在", () => {
+    const base = interruptedPartial();
+    const snapshot = {
+      ...base,
+      phase: "interrupted" as const,
+      conclusion: {
+        directAnswer: "高铁停运只覆盖部分车次，不是全线三天。",
+        judgment: "mixed" as const,
+        boundaries: [],
+        claimIds: base.claims.map((claim) => claim.id),
+        sourceIds: [],
+      },
+    };
+    renderCanvas({ snapshot, live: false, onStop: () => {}, stop: "stopped" });
+    expect(document.querySelector("[data-gp-interrupted]")).toBeNull();
+    expect(document.querySelector("[data-gp-stopped]")!.textContent).toContain("已停止");
+    const answer = document.querySelector("[data-gp-interrupted-answer]");
+    expect(answer).toBeTruthy();
+    expect(answer!.textContent).toContain("高铁停运只覆盖部分车次");
+  });
+
   it("不是用户停的，仍然按「中断」读", () => {
     const snapshot = { ...investigatingUnassessed(), phase: "interrupted" as const };
     renderCanvas({ snapshot, live: false });
@@ -133,6 +154,12 @@ describe("D20 run_state 事件驱动停止三态", () => {
     const done = applyRunEvent(INITIAL, { type: "run_state", status: "completed", terminal: true });
     expect(done.stop).toBe("idle");
     expect(done.serverStatus).toBe("completed");
+  });
+
+  it("取消终态不能被迟到的 cancelling 事件倒退", () => {
+    const done = applyRunEvent(INITIAL, { type: "run_state", status: "cancelled", terminal: true });
+    expect(applyRunEvent(done, { type: "run_state", status: "cancelling" })).toEqual(done);
+    expect(done.connection).toBe("ended");
   });
 });
 

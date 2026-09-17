@@ -1,11 +1,10 @@
-import { useState } from "react";
 import type {
   InvestigationEvidenceLink,
   InvestigationSnapshotV1,
   InvestigationSource,
   PublicActivity,
 } from "../lib/investigation";
-import { ThinkingDisclosure } from "./ThinkingDisclosure";
+import { attachmentsForSource } from "./snapshotUi";
 import { ActivityFeed } from "./ActivityFeed";
 
 type InvestigationDossierProps = {
@@ -26,95 +25,112 @@ export function InvestigationDossier({
   onSelectSource,
   onSelectConflict,
 }: InvestigationDossierProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [selectedMilestone, setSelectedMilestone] = useState<number | null>(null);
-
-  const safeSelectSource = onSelectSource ?? (() => {});
-
-  const claimCount = snapshot.claims.length;
-  const sourceCount = snapshot.sources.length;
-
-  const milestones = [
-    { id: 0, time: "0.0s", title: "帖子原话抓取", detail: "提取清洗核心断言，唤醒白盒流水线" },
-    { id: 1, time: "1.4s", title: "思考与定义域", detail: "锁定核查边界，排除二传二改噪音" },
-    { id: 2, time: "2.1s", title: `拆出 ${claimCount} 项原子命题`, detail: "对原句短语锚定切片与出处链" },
-    { id: 3, time: "15.2s", title: `结算 ${sourceCount} 篇权威材料`, detail: "国家疾控与专业科研机构数据归位" },
-    { id: 4, time: "23.4s", title: "综合核验终审", detail: "三值裁决裁定与全栈追问就绪" },
-  ];
+  const gaps = snapshot.claims.flatMap((claim) => claim.gaps);
+  const hasExperience = activities.length > 0;
 
   return (
-    <section className="gp-dossier" aria-label="调查案卷与回溯时间轴" data-gp-dossier>
+    <section className="gp-dossier" aria-label="调查案卷" data-gp-dossier>
       <div className="gp-dossier-bar">
-        <div className="gp-dossier-header" onClick={() => setIsExpanded(!isExpanded)} role="button" tabIndex={0}>
-          <div className="gp-dossier-title">
-            <span className="gp-dossier-dot"></span>
-            <strong>调查全案卷与时空回溯</strong>
-            <span className="gp-dossier-pill">5 拍慢动作切片已归档</span>
-          </div>
-          <button
-            type="button"
-            className="gp-dossier-toggle"
-            aria-expanded={isExpanded}
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsExpanded(!isExpanded);
-            }}
-          >
-            {isExpanded ? "收起调查案卷 ▲" : "展开慢动作与思考全链条 ▼"}
-          </button>
-        </div>
-
-        {/* 5-step time capsules */}
-        <div className="gp-dossier-milestones" role="tablist">
-          {milestones.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              className={`gp-milestone-pill ${selectedMilestone === m.id ? "is-selected" : ""}`}
-              onClick={() => {
-                setSelectedMilestone(m.id);
-                setIsExpanded(true);
-              }}
-              title={m.detail}
-            >
-              <span className="gp-milestone-time">{m.time}</span>
-              <span className="gp-milestone-title">{m.title}</span>
-            </button>
-          ))}
+        <div className="gp-dossier-title">
+          <span className="gp-dossier-dot"></span>
+          <strong>调查案卷</strong>
         </div>
       </div>
 
-      {isExpanded ? (
-        <div className="gp-dossier-body" data-gp-dossier-expanded>
-          <div className="gp-dossier-summary-card">
-            <span className="gp-dossier-card-tag">
-              {selectedMilestone !== null ? `核查节点 0${selectedMilestone + 1}` : "完整调查案卷"}
-            </span>
-            <p className="gp-dossier-card-desc">
-              {selectedMilestone !== null
-                ? `${milestones[selectedMilestone].title} (${milestones[selectedMilestone].time})：${milestones[selectedMilestone].detail}`
-                : "完整记录调查过程中的思考过程与实时活动轨迹。所有证据材料与推理链条永久保留，供随时复盘与核验。"}
-            </p>
-          </div>
+      <div className="gp-dossier-body" data-gp-dossier-expanded>
+        <section className="gp-dossier-col" data-gp-dossier-section="sources">
+          <h4 className="gp-dossier-section-title">收集到的来源</h4>
+          {snapshot.sources.length === 0 ? (
+            <p className="gp-dossier-card-desc">还没有收集到的来源。</p>
+          ) : (
+            <ul className="gp-dossier-list">
+              {snapshot.sources.map((source) => {
+                const attachments = attachmentsForSource(source.id, snapshot.claims);
+                const seen = new Set<string>();
+                const associated = attachments.filter((row) => {
+                  if (seen.has(row.claim.id)) return false;
+                  seen.add(row.claim.id);
+                  return true;
+                });
+                const primary = attachments[0];
+                const title = source.title || source.url || source.id;
+                return (
+                  <li key={source.id} className="gp-dossier-item" data-gp-dossier-source={source.id}>
+                    {primary && onSelectSource ? (
+                      <button
+                        type="button"
+                        className="gp-dossier-item-btn"
+                        onClick={(event) => onSelectSource(primary.link, source, primary.claim.id, event.currentTarget)}
+                      >
+                        {title}
+                      </button>
+                    ) : (
+                      <span>{title}</span>
+                    )}
+                    {associated.length > 0 ? (
+                      <p className="gp-source-claims" data-gp-source-claims>
+                        关联命题：{associated.map((row) => row.claim.text).join("；")}
+                      </p>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
 
-          <div className="gp-dossier-content">
-            <div className="gp-dossier-col">
-              <h4 className="gp-dossier-section-title">✦ 深度思考过程与边界推导</h4>
-              <ThinkingDisclosure snapshot={snapshot} live={false} />
-            </div>
+        <section className="gp-dossier-col" data-gp-dossier-section="conflicts">
+          <h4 className="gp-dossier-section-title">分歧</h4>
+          {snapshot.conflicts.length === 0 ? (
+            <p className="gp-dossier-card-desc">没有记录到的分歧。</p>
+          ) : (
+            <ul className="gp-dossier-list">
+              {snapshot.conflicts.map((conflict) => (
+                <li key={conflict.id} className="gp-dossier-item">
+                  {onSelectConflict ? (
+                    <button
+                      type="button"
+                      className="gp-dossier-item-btn"
+                      onClick={(event) => onSelectConflict(conflict.claimId, event.currentTarget)}
+                    >
+                      {conflict.summary}
+                    </button>
+                  ) : (
+                    <span>{conflict.summary}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
-            <div className="gp-dossier-col">
-              <h4 className="gp-dossier-section-title">✦ 实时活动流与事实检索凭据 ({activities.length} 条已核对)</h4>
-              <ActivityFeed
-                activities={activities}
-                snapshot={snapshot}
-                onSelectSource={safeSelectSource}
-                onSelectConflict={onSelectConflict}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
+        <section className="gp-dossier-col" data-gp-dossier-section="gaps">
+          <h4 className="gp-dossier-section-title">缺口</h4>
+          {gaps.length === 0 ? (
+            <p className="gp-dossier-card-desc">没有记录到的缺口。</p>
+          ) : (
+            <ul className="gp-dossier-list">
+              {gaps.map((gap) => (
+                <li key={gap.id} className="gp-dossier-item">
+                  {gap.description}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {hasExperience ? (
+          <section className="gp-dossier-col" data-gp-dossier-section="experience">
+            <h4 className="gp-dossier-section-title">调查经历</h4>
+            <ActivityFeed
+              activities={activities}
+              snapshot={snapshot}
+              onSelectSource={onSelectSource ?? (() => {})}
+              onSelectConflict={onSelectConflict}
+            />
+          </section>
+        ) : null}
+      </div>
     </section>
   );
 }

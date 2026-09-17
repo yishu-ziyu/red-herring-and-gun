@@ -195,6 +195,34 @@ describe("applyConclusionGate（§11 收权门：结构化状态，不读结论�
     ).toMatchObject({ changed: true, to: "unverified", rule: "audit-unresolved-bridge-gap" });
   });
 
+  it("规则4反例：所有可核查原子都已有据证伪时，不为无关的更强否定命题收回整句 false", () => {
+    const report: Record<string, unknown> = { verdictType: "false" };
+    const result = applyConclusionGate(report, {
+      claimAtoms: ["隔夜菜亚硝酸盐超标百倍", "隔夜菜中的亚硝酸盐直接致癌"],
+      claimAtomTypes: [
+        { text: "隔夜菜亚硝酸盐超标百倍", verifiable: true, type: "fact" },
+        { text: "隔夜菜中的亚硝酸盐直接致癌", verifiable: true, type: "fact" },
+      ],
+      subclaimVerdicts: [
+        {
+          claimAtom: "隔夜菜亚硝酸盐超标百倍",
+          verdict: "false",
+          supportingSources: [],
+          contradictingSources: [atom("https://t.test/nitrite")],
+        },
+        {
+          claimAtom: "隔夜菜中的亚硝酸盐直接致癌",
+          verdict: "false",
+          supportingSources: [],
+          contradictingSources: [atom("https://t.test/cancer")],
+        },
+      ],
+      auditUnresolvedGaps: ["还要排除隔夜菜中的其它致癌因素"],
+    });
+    expect(result.changed).toBe(false);
+    expect(report.verdictType).toBe("false");
+  });
+
   it("非硬判定 / 缺 verdictType 时门不动", () => {
     expect(applyConclusionGate({ verdictType: "unverified" }, {}).changed).toBe(false);
     expect(applyConclusionGate({}, {}).changed).toBe(false);
@@ -238,6 +266,36 @@ describe("repairGatedConclusion（Blocker 1：结构化 repair，不读原文）
     expect(String(report.recommendation)).toBe(directAnswer("mixed_misleading"));
     const chain = report.evidenceChain as Array<Record<string, unknown>>;
     expect(chain.some((layer) => layer.layer === "结论边界（整句收权）")).toBe(true);
+  });
+
+  it("partial / exaggerated 不能被 publication repair 写成整条站得住", () => {
+    const report: Record<string, unknown> = { verdictType: "mixed_misleading" };
+    repairGatedConclusion(
+      report,
+      { changed: true, from: "false", to: "mixed_misleading", rule: "mixed-guard-partial" },
+      {
+        subclaimVerdicts: [
+          {
+            claimAtom: "隔夜菜亚硝酸盐超标会直接致癌",
+            verdict: "partial",
+            evidence: "亚硝酸盐本身不致癌，风险来自后续转化。",
+            supportingSources: [src("https://t.test/partial")],
+            contradictingSources: [],
+          },
+          {
+            claimAtom: "隔夜菜亚硝酸盐超标百倍",
+            verdict: "false",
+            evidence: "检测没有出现百倍超标。",
+            supportingSources: [],
+            contradictingSources: [src("https://t.test/false")],
+          },
+        ],
+      }
+    );
+    const conclusion = String(report.conclusion);
+    expect(conclusion).toContain("「隔夜菜亚硝酸盐超标会直接致癌」只有一部分站得住");
+    expect(conclusion).toContain("「隔夜菜亚硝酸盐超标百倍」站不住");
+    expect(conclusion).not.toContain("「隔夜菜亚硝酸盐超标会直接致癌」站得住");
   });
 
   it("audit 缺口规则重建时带出缺口边界；门没动时不碰原文", () => {

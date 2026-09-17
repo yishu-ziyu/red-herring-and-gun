@@ -75,6 +75,7 @@ const SALT_BACKGROUND = [
 describe("ensureLeapAtoms", () => {
   it("抽出所以之后的三截跳跃", () => {
     const leaps = extractLeapAtoms(SALT);
+    expect(leaps.some((item) => item.startsWith("所以") && item.includes("全是吃盐"))).toBe(true);
     expect(leaps.some((item) => item.includes("全是吃盐"))).toBe(true);
     expect(leaps.some((item) => item.includes("预防中风"))).toBe(true);
     expect(leaps.some((item) => item.includes("完全适用") || item.includes("肾功能"))).toBe(true);
@@ -92,5 +93,14 @@ describe("ensureLeapAtoms", () => {
 
   it("没有所以/因此时原样返回", () => {
     expect(ensureLeapAtoms("隔夜菜会致癌", ["隔夜菜会致癌"])).toEqual(["隔夜菜会致癌"]);
+  });
+
+  it("已有带主语的完整主张时，不再制造无主语的所以残句", () => {
+    const claim = "气泡水是碱性的，所以可以中和酸。因此，当胃有些不舒服的时候，喝苏打水就够了。";
+    const atoms = ["气泡水是碱性的", "气泡水可以中和酸", "当胃有些不舒服的时候，喝苏打水就够了"];
+    const out = ensureLeapAtoms(claim, atoms);
+    expect(out).toContain("气泡水可以中和酸");
+    expect(out).not.toContain("所以可以中和酸");
+    expect(out.filter((item) => item.includes("可以中和酸"))).toHaveLength(1);
   });
 });

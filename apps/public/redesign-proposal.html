@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>红鲱鱼与枪 · 交互与去 AI 味视觉方案重塑提案（V2·保留角色动态联动）</title>
+  <style>
+    :root {
+      --bg: #F8F7F4;
+      --surface: #FFFFFF;
+      --surface-subtle: #F2EFEB;
+      --surface-hover: #ECE9E3;
+      --ink: #1C1D1A;
+      --ink-secondary: #575B52;
+      --ink-tertiary: #8C9086;
+      --line: #E2DFD7;
+      --line-subtle: #ECEAE3;
+      --brand: #A13734;
+      --brand-soft: #FBF0EF;
+      --good: #28705A;
+      --good-soft: #EEF6F3;
+      --amber: #946B18;
+      --amber-soft: #FDF7EC;
+      --blue: #2E5AAC;
+      --blue-soft: #F0F4FC;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --serif: "Songti SC", "Source Han Serif SC", "Noto Serif CJK SC", Georgia, serif;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+      --shadow-card: 0 4px 16px -2px rgba(0,0,0,0.05), 0 1px 4px rgba(0,0,0,0.03);
+      --shadow-pop: 0 12px 32px -4px rgba(0,0,0,0.1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* 顶部控制栏（演示专用工具条） */
+    .demo-bar {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      background: rgba(28, 29, 26, 0.94);
+      backdrop-filter: blur(12px);
+      color: #fff;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .demo-title {
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .demo-badge {
+      background: var(--brand);
+      color: #fff;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: normal;
+    }
+    .demo-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-toggle {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fff;
+      padding: 5px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+    .btn-toggle.active {
+      background: #fff;
+      color: var(--ink);
+      font-weight: 600;
+      border-color: #fff;
+    }
+    .annotation-toggle {
+      background: #E5A93B;
+      color: #241A04;
+      font-weight: 600;
+      border: none;
+      padding: 5px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* 页面主壳 */
+    .app-header {
+      background: var(--bg);
+      border-bottom: 1px solid var(--line);
+      padding: 16px 36px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .brand-area {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-symbol {
+      width: 30px;
+      height: 30px;
+      background: var(--ink);
+      color: #fff;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--serif);
+      font-weight: bold;
+      font-size: 16px;
+    }
+    .brand-text h1 {
+      font-size: 15px;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+    .brand-text p {
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      color: var(--ink-tertiary);
+      text-transform: uppercase;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 13px;
+    }
+    .nav-btn {
+      background: transparent;
+      border: 1px solid var(--line);
+      padding: 6px 14px;
+      border-radius: 6px;
+      color: var(--ink-secondary);
+      cursor: pointer;
+    }
+
+    /* 主画布 */
+    .main-container {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 36px 24px 80px;
+    }
+
+    /* 批注 Callout 样式 */
+    .critique-box {
+      background: #FFF9E6;
+      border: 1px solid #E6D49D;
+      border-left: 4px solid #D99B16;
+      padding: 12px 16px;
+      border-radius: var(--radius-sm);
+      margin: 16px 0;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #5C430B;
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+    .critique-box.show { display: block; }
+    .critique-box b { color: #8A5800; }
+    .critique-tag {
+      display: inline-block;
+      background: #D99B16;
+      color: #fff;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      margin-right: 6px;
+    }
+
+    /* 待查原句引述卡 */
+    .original-quote-card {
+      background: transparent;
+      border-left: 3px solid var(--brand);
+      padding: 4px 0 4px 18px;
+      margin-bottom: 28px;
+    }
+    .quote-meta {
+      font-size: 12px;
+      color: var(--ink-tertiary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .quote-body {
+      font-family: var(--serif);
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--ink);
+      line-height: 1.4;
+    }
+
+    /* ===================================================
+       核心改良：四人调查职责组（保留头像 + 真实后端逻辑动效联动）
+       =================================================== */
+    .roles-dossier-bar {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 18px 24px 16px;
+      margin-bottom: 28px;
+      box-shadow: var(--shadow-sm);
+    }
+    .roles-bar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line-subtle);
+      font-size: 12px;
+    }
+    .roles-title {
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: var(--ink-secondary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .roles-backend-state {
+      color: var(--ink-tertiary);
+      font-family: monospace;
+      font-size: 11px;
+    }
+
+    .roles-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      position: relative;
+    }
+
+    /* 角色卡片 */
+    .role-card {
+      background: var(--surface-subtle);
+      border: 1px solid var(--line-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      position: relative;
+      transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .role-avatar-wrap {
+      position: relative;
+      width: 60px;
+      height: 60px;
+      margin-bottom: 10px;
+    }
+    .role-avatar {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--line);
+      background: #fff;
+      transition: all 0.3s ease;
+    }
+
+    .role-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 2px;
+    }
+    .role-action-text {
+      font-size: 11px;
+      color: var(--ink-secondary);
+      line-height: 1.3;
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* 角色状态：IDLE (未到场/等待中) */
+    .role-card.state-idle {
+      opacity: 0.55;
+      background: #FAF9F6;
+    }
+    .role-card.state-idle .role-avatar {
+      filter: grayscale(80%);
+    }
+
+    /* 角色状态：ACTIVE (真实逻辑正在执行) */
+    .role-card.state-active {
+      opacity: 1;
+      background: #FFFFFF;
+      border-color: var(--brand);
+      box-shadow: 0 4px 14px rgba(161, 55, 52, 0.12);
+      transform: translateY(-2px);
+    }
+    .role-card.state-active .role-avatar {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 3px rgba(161, 55, 52, 0.15);
+    }
+    .role-card.state-active .role-name {
+      color: var(--brand);
+    }
+
+    /* 角色状态：DONE (已完成该阶段工作) */
+    .role-card.state-done {
+      opacity: 0.9;
+      background: #F8FAF9;
+      border-color: #CFE3DC;
+    }
+    .role-card.state-done .role-avatar {
+      border-color: var(--good);
+    }
+
+    /* 动作与真实逻辑微动效 */
+    /* 1. 完成状态勾选徽章 */
+    .badge-done-check {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      background: var(--good);
+      color: #fff;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: bold;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+      animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    /* 2. 检索雷达波纹（找出处） */
+    .radar-beacon {
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      border: 2px solid var(--brand);
+      opacity: 0;
+      animation: radarPulse 1.8s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
+      pointer-events: none;
+    }
+
+    /* 3. 正在搜索的数据吞吐徽章（真实计数） */
+    .live-ingest-badge {
+      position: absolute;
+      bottom: -4px;
+      right: -6px;
+      background: var(--brand);
+      color: #fff;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 1px 6px;
+      border-radius: 10px;
+      border: 1px solid #fff;
+      animation: bounceCount 0.4s ease;
+    }
+
+    /* 4. 天平/比对微摇晃（核语境） */
+    .scale-icon-pulse {
+      animation: subtleRock 2.4s infinite ease-in-out;
+    }
+
+    /* 5. 戳印微动效（作判断） */
+    .stamp-ready-pulse {
+      animation: stampPulse 1.5s infinite alternate;
+    }
+
+    /* ===================================================
+       状态一：调查进行态（去 AI 味、去玩具卡通的专业版）
+       =================================================== */
+    .view-investigating { display: none; }
+    .view-investigating.active { display: block; }
+
+    /* 正在核对的范围与优先级 */
+    .scope-panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+    .scope-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line-subtle);
+    }
+    .scope-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink-secondary);
+      letter-spacing: 0.5px;
+    }
+    .scope-adjust-btn {
+      font-size: 12px;
+      color: var(--blue);
+      background: var(--blue-soft);
+      border: none;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .focus-points-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .focus-point-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface-subtle);
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid transparent;
+    }
+    .focus-point-item.in-progress {
+      border-color: #E2C58A;
+      background: #FFFAF0;
+    }
+    .focus-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .focus-idx {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ink-tertiary);
+    }
+    .focus-text {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--ink);
+    }
+    .focus-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+    .badge-amber { background: var(--amber-soft); color: var(--amber); border: 1px solid #E8D3A3; }
+    .badge-good { background: var(--good-soft); color: var(--good); border: 1px solid #BFE0D4; }
+
+    /* 信源检索沉静流（代替原始 Agent 日志） */
+    .source-radar {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      padding: 20px;
+    }
+    .radar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .radar-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink-secondary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .live-pulse {
+      width: 8px;
+      height: 8px;
+      background: var(--good);
+      border-radius: 50%;
+      box-shadow: 0 0 0 rgba(40,112,90, 0.4);
+      animation: pulse 1.6s infinite;
+    }
+    .sources-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .source-stream-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      background: #FAF9F6;
+      transition: all 0.2s;
+    }
+    .source-stream-card:hover {
+      background: #fff;
+      border-color: var(--ink-tertiary);
+    }
+    .stream-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--ink-tertiary);
+      margin-bottom: 4px;
+    }
+    .stream-tag {
+      background: #E8E5DC;
+      color: #3C3E37;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+    .stream-headline {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+      line-height: 1.4;
+      margin-bottom: 4px;
+    }
+    .stream-conclusion {
+      font-size: 12px;
+      color: var(--ink-secondary);
+    }
+
+    /* ===================================================
+       状态二：最终定谳案卷态（严肃、清晰、层次分明）
+       =================================================== */
+    .view-complete { display: none; }
+    .view-complete.active { display: block; }
+
+    /* 调查案卷总览 Hero */
+    .verdict-hero {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 36px 36px 32px;
+      box-shadow: var(--shadow-card);
+      margin-bottom: 32px;
+      position: relative;
+    }
+    .verdict-meta-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    .verdict-tag-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge-verdict {
+      background: #FAECEB;
+      color: var(--brand);
+      border: 1px solid #F0C4C2;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+    }
+    .thread-indicator {
+      font-size: 12px;
+      color: var(--ink-tertiary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .verdict-headline {
+      font-family: var(--serif);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--ink);
+      line-height: 1.35;
+      margin-bottom: 14px;
+      letter-spacing: -0.2px;
+    }
+    .verdict-summary {
+      font-size: 15px;
+      line-height: 1.65;
+      color: var(--ink-secondary);
+      margin-bottom: 28px;
+    }
+
+    /* 关键决定性证据看板 */
+    .evidence-section-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--ink-tertiary);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .evidence-cards-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .evidence-dossier-card {
+      background: var(--surface-subtle);
+      border: 1px solid var(--line-subtle);
+      border-radius: var(--radius-md);
+      padding: 16px 20px;
+      transition: all 0.2s;
+    }
+    .evidence-dossier-card:hover {
+      background: #FAF8F5;
+      border-color: var(--line);
+      box-shadow: var(--shadow-sm);
+    }
+    .evidence-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .source-authority {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .org-badge {
+      font-size: 11px;
+      font-weight: 700;
+      background: #E8E5DC;
+      color: #383A33;
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    .doc-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .stance-label {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    .stance-refute { background: #FDE8E7; color: #9E2B27; }
+    .stance-support { background: #E7F3EF; color: #21634F; }
+    .stance-context { background: #FFF4DC; color: #8F620D; }
+
+    .evidence-quote {
+      font-size: 14px;
+      color: var(--ink);
+      line-height: 1.5;
+      margin-bottom: 8px;
+      font-style: normal;
+    }
+    .evidence-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--ink-tertiary);
+    }
+    .evidence-link {
+      color: var(--blue);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .evidence-link:hover { text-decoration: underline; }
+
+    /* 逐项争议对照（人话替代“命题”） */
+    .cross-examination-section {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      padding: 28px 36px;
+      margin-bottom: 32px;
+    }
+    .point-card {
+      border-bottom: 1px solid var(--line-subtle);
+      padding: 16px 0;
+    }
+    .point-card:last-child { border-bottom: none; }
+    .point-title-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .point-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--ink);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .point-num {
+      color: var(--ink-tertiary);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .point-desc {
+      font-size: 13px;
+      color: var(--ink-secondary);
+      line-height: 1.5;
+    }
+
+    /* 底部继续追问与深入区（自然融入，不割裂） */
+    .deep-dive-section {
+      background: #F2EFEB;
+      border: 1px dashed var(--line);
+      border-radius: var(--radius-lg);
+      padding: 24px 32px;
+    }
+    .deep-dive-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--ink);
+      margin-bottom: 6px;
+    }
+    .deep-dive-sub {
+      font-size: 13px;
+      color: var(--ink-secondary);
+      margin-bottom: 16px;
+    }
+    .chips-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .suggest-chip {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      padding: 7px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      color: var(--ink);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .suggest-chip:hover {
+      border-color: var(--ink);
+      background: #fff;
+    }
+    .custom-ask-box {
+      display: flex;
+      gap: 10px;
+    }
+    .ask-input {
+      flex: 1;
+      padding: 10px 16px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      outline: none;
+      background: #fff;
+    }
+    .ask-submit-btn {
+      background: var(--ink);
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* 动效定义 */
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(40,112,90, 0.6); }
+      70% { box-shadow: 0 0 0 8px rgba(40,112,90, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(40,112,90, 0); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes radarPulse {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      100% { transform: scale(1.4); opacity: 0; }
+    }
+    @keyframes popIn {
+      0% { transform: scale(0); opacity: 0; }
+      80% { transform: scale(1.2); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes bounceCount {
+      0% { transform: scale(0.7); }
+      50% { transform: scale(1.3); }
+      100% { transform: scale(1); }
+    }
+    @keyframes subtleRock {
+      0%, 100% { transform: rotate(0deg); }
+      25% { transform: rotate(-4deg); }
+      75% { transform: rotate(4deg); }
+    }
+    @keyframes stampPulse {
+      0% { transform: scale(1); }
+      100% { transform: scale(1.06); filter: drop-shadow(0 2px 8px rgba(161,55,52,0.25)); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部演示切换条 -->
+  <div class="demo-bar">
+    <div class="demo-title">
+      <span>红鲱鱼与枪 · 界面与交互重塑原型</span>
+      <span class="demo-badge">V2 · 角色动态联动版</span>
+    </div>
+    <div class="demo-controls">
+      <span>查看视图：</span>
+      <button class="btn-toggle active" id="btn-show-complete" onclick="switchView('complete')">① 定谳案卷 (完成态)</button>
+      <button class="btn-toggle" id="btn-show-investigating" onclick="switchView('investigating')">② 调查规程 (进行态)</button>
+      <button class="annotation-toggle" id="btn-toggle-critique" onclick="toggleCritique()">
+        <span>💡 显示改良点批注</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 产品顶部壳 -->
+  <header class="app-header">
+    <div class="brand-area">
+      <div class="brand-symbol">枪</div>
+      <div class="brand-text">
+        <h1>红鲱鱼与枪</h1>
+        <p>Fact-Dossier & Source Verification</p>
+      </div>
+    </div>
+    <div class="nav-actions">
+      <button class="nav-btn">+ 新调查</button>
+      <button class="nav-btn">历史档案</button>
+      <button class="nav-btn">账号</button>
+    </div>
+  </header>
+
+  <main class="main-container">
+
+    <!-- 原句引述 -->
+    <div class="original-quote-card">
+      <div class="quote-meta">
+        <span>核验对象原句</span>
+        <span>·</span>
+        <span>公开发布材料</span>
+      </div>
+      <div class="quote-body">
+        “隔夜菜会致癌，吃了等于吃毒药。”
+      </div>
+    </div>
+
+    <!-- =======================================================
+         核心角色职责组（保留 4 位人物头像 + 真实后端流水线动效）
+         ======================================================= -->
+    <section class="roles-dossier-bar">
+      <div class="roles-bar-header">
+        <div class="roles-title">
+          <span>调查协同规程组</span>
+          <span style="font-weight:normal; color:var(--ink-tertiary);">（动效严格对应后端 SSE 运行管道事件）</span>
+        </div>
+        <div class="roles-backend-state" id="roles-state-display">
+          PIPELINE: investigating | EVENT: evidence_ingested (6/6)
+        </div>
+      </div>
+
+      <div class="roles-grid">
+        <!-- 角色 1：拆问题 (已完成) -->
+        <div class="role-card state-done" id="card-role-question">
+          <div class="role-avatar-wrap">
+            <img class="role-avatar" src="/agents/rumor-detector.png" alt="拆问题">
+            <div class="badge-done-check">✓</div>
+          </div>
+          <div class="role-name">拆问题</div>
+          <div class="role-action-text" id="text-role-question">
+            已拆出 2 项核心要点
+          </div>
+        </div>
+
+        <!-- 角色 2：找出处 (进行中：雷达脉冲 + 实时材料吸收计数) -->
+        <div class="role-card state-active" id="card-role-source">
+          <div class="role-avatar-wrap">
+            <img class="role-avatar" src="/agents/source-validator.png" alt="找出处">
+            <div class="radar-beacon"></div>
+            <div class="live-ingest-badge" id="source-count-badge">+6 篇</div>
+          </div>
+          <div class="role-name">找出处</div>
+          <div class="role-action-text" id="text-role-source" style="color:var(--brand); font-weight:600;">
+            调取权威公报中...
+          </div>
+        </div>
+
+        <!-- 角色 3：核语境 (等待接棒：天平比对) -->
+        <div class="role-card state-idle" id="card-role-context">
+          <div class="role-avatar-wrap">
+            <img class="role-avatar scale-icon-pulse" src="/agents/fact-checker.png" alt="核语境">
+          </div>
+          <div class="role-name">核语境</div>
+          <div class="role-action-text" id="text-role-context">
+            等待交叉比对量效
+          </div>
+        </div>
+
+        <!-- 角色 4：作判断 (等待接棒：定稿出具) -->
+        <div class="role-card state-idle" id="card-role-judgment">
+          <div class="role-avatar-wrap">
+            <img class="role-avatar stamp-ready-pulse" src="/agents/report-composer.png" alt="作判断">
+          </div>
+          <div class="role-name">作判断</div>
+          <div class="role-action-text" id="text-role-judgment">
+            等待终审定谳
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==========================================
+         视图一：定谳案卷（完成态）
+         ========================================== -->
+    <div class="view-complete active" id="view-complete">
+
+      <div class="critique-box" data-critique>
+        <span class="critique-tag">改良点 1</span>
+        <b>保留 4 位人物，但赋予真实后端联动的生命力：</b>
+        人物头像保留，不再是孤立玩具。在调查过程中，每个角色的状态、头顶雷达光波、数据进件计数（如 `+6 篇`）、勾选完成徽章<b>均由后端真实 SSE 事件驱动</b>，消除了虚假轮询感；在完成态下，4 人全部归位并显示已交付成果。
+      </div>
+
+      <!-- 核心裁决 Hero -->
+      <section class="verdict-hero">
+        <div class="verdict-meta-bar">
+          <div class="verdict-tag-group">
+            <span class="badge-verdict">裁定 · 断章取义 / 夸大风险</span>
+            <span style="font-size:12px; color:var(--ink-tertiary);">案卷编号 RHG-20260906-81</span>
+          </div>
+          <div class="thread-indicator">
+            <span>第 1 轮核查结果 · 2026/09/06 归档</span>
+          </div>
+        </div>
+
+        <h2 class="verdict-headline">现有权威医学与食品安全证据均不支持「隔夜菜会直接致癌、吃了等于吃毒药」。</h2>
+
+        <p class="verdict-summary">
+          核心事实在于：不当常温保存确实存在致病菌繁殖风险，但规范冷藏并在食用前彻底加温的隔夜菜，其亚硝酸盐残留量远低于国家食品安全限量，并不存在“吃即中毒”的量效基础；同时，“冷藏就绝对安全”同样不严谨，超过 72 小时的储存仍建议废弃。
+        </p>
+
+        <!-- 关键决定性依据 -->
+        <div class="evidence-section-title">
+          <span>关键决定性证据 (Key Sources)</span>
+          <span style="font-weight:normal; text-transform:none;">— 3 项核心交叉佐证</span>
+        </div>
+
+        <div class="evidence-cards-container">
+          <!-- 证据 1 -->
+          <div class="evidence-dossier-card">
+            <div class="evidence-header">
+              <div class="source-authority">
+                <span class="org-badge">WHO 世卫组织</span>
+                <span class="doc-title">《食品中亚硝胺与膳食风险通报》</span>
+              </div>
+              <span class="stance-label stance-refute">核心反驳</span>
+            </div>
+            <div class="evidence-quote">
+              “正常储存条件下的隔夜蔬菜所测得的次生亚硝酸盐水平，远低于引发机体病变的毒理剂量阈值，无流行病学证据表明常规食用隔夜菜与恶性肿瘤发生有直接因果关联。”
+            </div>
+            <div class="evidence-footer">
+              <span>出处平台：世卫组织辟谣平台 2024-03</span>
+              <a href="#" class="evidence-link">查阅出处公报 ↗</a>
+            </div>
+          </div>
+
+          <!-- 证据 2 -->
+          <div class="evidence-dossier-card">
+            <div class="evidence-header">
+              <div class="source-authority">
+                <span class="org-badge">中国 CDC</span>
+                <span class="doc-title">《家庭食品储存安全与致病菌预防指引》</span>
+              </div>
+              <span class="stance-label stance-context">适用范围澄清</span>
+            </div>
+            <div class="evidence-quote">
+              “‘等于吃毒药’系脱离实际剂量的夸张表述。家庭隔夜菜真正需要警惕的是沙门氏菌等致病菌污染，而非所谓剧毒；4℃密封冷藏、回热中心温度达 70℃ 以上可规避绝大多数风险。”
+            </div>
+            <div class="evidence-footer">
+              <span>出处平台：国家疾控中心健康传播中心</span>
+              <a href="#" class="evidence-link">查阅官方预防指引 ↗</a>
+            </div>
+          </div>
+
+          <!-- 证据 3 -->
+          <div class="evidence-dossier-card">
+            <div class="evidence-header">
+              <div class="source-authority">
+                <span class="org-badge">同济医学院</span>
+                <span class="doc-title">《蔬菜存放时间与亚硝酸盐含量变化量效实验》</span>
+              </div>
+              <span class="stance-label stance-refute">实验佐证</span>
+            </div>
+            <div class="evidence-quote">
+              “冷藏 24 小时后的熟绿叶蔬菜中，亚硝酸盐平均含量仅上升至 3.6 mg/kg，远低于国家《食品中污染物限量》（GB 2762-2022）中腌渍蔬菜 20 mg/kg 的上限。”
+            </div>
+            <div class="evidence-footer">
+              <span>出处平台：临床营养与卫生学报</span>
+              <a href="#" class="evidence-link">查看实验对比图表 ↗</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="critique-box" data-critique>
+        <span class="critique-tag">改良点 2</span>
+        <b>消灭“命题”这类冷门 NLP 术语：</b>
+        将原版的“原句被拆成了这些命题”换成普通读者能瞬间理解的<b>“核心争议要点逐项对照”</b>。每项清楚列出结论，不搞深奥的学术名词。
+      </div>
+
+      <!-- 争议要点逐条对照 -->
+      <section class="cross-examination-section">
+        <div class="evidence-section-title">
+          <span>核心争议要点逐项对照</span>
+        </div>
+
+        <div class="point-card">
+          <div class="point-title-bar">
+            <div class="point-name">
+              <span class="point-num">01</span>
+              <span>隔夜菜会直接导致癌症？</span>
+            </div>
+            <span class="stance-label stance-refute">已被科学证据否定</span>
+          </div>
+          <div class="point-desc">
+            无直接因果关联。蔬菜内天然存在的硝酸盐虽然在细菌作用下转化为亚硝酸盐，但在常规冷藏环境下生成量极微，不足以诱发细胞癌变。
+          </div>
+        </div>
+
+        <div class="point-card">
+          <div class="point-title-bar">
+            <div class="point-name">
+              <span class="point-num">02</span>
+              <span>食用隔夜菜等于吃毒药？</span>
+            </div>
+            <span class="stance-label stance-refute">严重夸大失实</span>
+          </div>
+          <div class="point-desc">
+            脱离剂量的毒性表述均不成立。除非置于高温高湿环境发酵变质或存放超过数日，否则规范加热后不会造成急性食物中毒。
+          </div>
+        </div>
+
+        <div class="point-card">
+          <div class="point-title-bar">
+            <div class="point-name">
+              <span class="point-num">03</span>
+              <span>只要放入冰箱冷藏就绝对安全？</span>
+            </div>
+            <span class="stance-label stance-context">存在边界条件</span>
+          </div>
+          <div class="point-desc">
+            冷藏仅能延缓而非完全阻止嗜冷菌（如李斯特菌）生长。建议存放不要超过 48~72 小时，且食用前必须全熟透回热。
+          </div>
+        </div>
+      </section>
+
+      <div class="critique-box" data-critique>
+        <span class="critique-tag">改良点 3</span>
+        <b>深挖追问自然融入文末：</b>
+        替代原本突兀地横在主卡片中间的“调整重点”按钮。用户在通读完整案卷后，自然承接到下一步深挖追问或补充核查。
+      </div>
+
+      <!-- 深入探究建议 -->
+      <section class="deep-dive-section">
+        <div class="deep-dive-title">针对此结论继续深入核查</div>
+        <div class="deep-dive-sub">基于当前已知证据边界，你可以直接展开下一轮核验（将保留当前案卷为第 1 轮记录）：</div>
+
+        <div class="chips-group">
+          <button class="suggest-chip">哪些特定菜品（如菌菇、海鲜）存放风险更高？</button>
+          <button class="suggest-chip">孕妇或儿童等敏感人群的储存建议有何不同？</button>
+          <button class="suggest-chip">冷冻（-18℃）能保存更久吗？营养会破坏多少？</button>
+        </div>
+
+        <div class="custom-ask-box">
+          <input type="text" class="ask-input" placeholder="输入你想在此案卷上继续深入的问题...">
+          <button class="ask-submit-btn">继续深挖补查</button>
+        </div>
+      </section>
+
+    </div>
+
+
+    <!-- ==========================================
+         视图二：调查规程（进行态）
+         ========================================== -->
+    <div class="view-investigating" id="view-investigating">
+
+      <div class="critique-box" data-critique>
+        <span class="critique-tag">改良点 4</span>
+        <b>清晰展示核查焦点与用户控制：</b>
+        在调查刚开始的窗口期清晰陈列核查要点，并提供温和的“调整本轮重心”，而不是事后在已完成报告上突兀地常驻此按钮。
+      </div>
+
+      <!-- 本轮核对重心与优先级 -->
+      <section class="scope-panel">
+        <div class="scope-header">
+          <div class="scope-title">本轮优先核实以下争议焦点</div>
+          <button class="scope-adjust-btn">调整重点</button>
+        </div>
+
+        <div class="focus-points-list">
+          <div class="focus-point-item in-progress">
+            <div class="focus-left">
+              <span class="focus-idx">01</span>
+              <span class="focus-text">隔夜菜与直接致癌的流行病学证据</span>
+            </div>
+            <span class="focus-badge badge-amber">信源调取中 (6篇)</span>
+          </div>
+
+          <div class="focus-point-item">
+            <div class="focus-left">
+              <span class="focus-idx">02</span>
+              <span class="focus-text">“吃毒药”夸大性量效与亚硝酸盐阈值</span>
+            </div>
+            <span class="focus-badge badge-good">队列排期中</span>
+          </div>
+        </div>
+      </section>
+
+      <div class="critique-box" data-critique>
+        <span class="critique-tag">改良点 5</span>
+        <b>沉静的信源发现雷达替代原始日志流水账：</b>
+        删除了 `找出处 带回材料：...`、`作判断 形成判断：...` 这类把 AI 内部 Tool Calls 当 UI 的粗糙日志，转为清爽的“实时接入权威文献卡片”，平复用户焦虑。
+      </div>
+
+      <!-- 信源雷达卡片（替代 raw log 刷屏） -->
+      <section class="source-radar">
+        <div class="radar-header">
+          <div class="radar-title">
+            <span class="live-pulse"></span>
+            <span>已实时接入权威文献与公开说明 (6 条有效证据)</span>
+          </div>
+          <span style="font-size:12px; color:var(--ink-tertiary);">按权威度与量效权重排序</span>
+        </div>
+
+        <div class="sources-cards-grid">
+          <div class="source-stream-card">
+            <div class="stream-meta">
+              <span class="stream-tag">国际公报</span>
+              <span>who.int</span>
+            </div>
+            <div class="stream-headline">世卫组织：食品安全与亚硝胺致癌风险官方澄清</div>
+            <div class="stream-conclusion">结论：否定常规储存与致癌因果</div>
+          </div>
+
+          <div class="source-stream-card">
+            <div class="stream-meta">
+              <span class="stream-tag">国家疾控</span>
+              <span>chinacdc.cn</span>
+            </div>
+            <div class="stream-headline">中国疾控中心：日常冷藏熟食细菌繁殖与防护常识</div>
+            <div class="stream-conclusion">结论：主要风险在杂菌污染，非剧毒</div>
+          </div>
+
+          <div class="source-stream-card">
+            <div class="stream-meta">
+              <span class="stream-tag">学术期刊</span>
+              <span>cqvip.com</span>
+            </div>
+            <div class="stream-headline">常见蔬菜烹饪后冷藏 24h 亚硝酸盐变化测定</div>
+            <div class="stream-conclusion">数据：远在国标安全线内 (3.6mg/kg)</div>
+          </div>
+
+          <div class="source-stream-card">
+            <div class="stream-meta">
+              <span class="stream-tag">辟谣平台</span>
+              <span>piyao.org.cn</span>
+            </div>
+            <div class="stream-headline">“隔夜菜等于毒药”科学评测：剂量与毒理分析</div>
+            <div class="stream-conclusion">评定：典型的断章取义与概念偷换</div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+  </main>
+
+  <script>
+    let critiqueVisible = true;
+
+    function setRolesState(mode) {
+      const q = document.getElementById('card-role-question');
+      const s = document.getElementById('card-role-source');
+      const c = document.getElementById('card-role-context');
+      const j = document.getElementById('card-role-judgment');
+      const stateDisp = document.getElementById('roles-state-display');
+
+      if (mode === 'complete') {
+        // 完成态：四人全部完成并打勾
+        [q, s, c, j].forEach(el => {
+          el.className = 'role-card state-done';
+        });
+        document.getElementById('text-role-question').textContent = '已拆解 2 项争议';
+        document.getElementById('text-role-source').textContent = '已归档 6 份出处';
+        document.getElementById('text-role-context').textContent = '已完成量效核对';
+        document.getElementById('text-role-judgment').textContent = '已完成定谳出具';
+        document.getElementById('text-role-source').style.color = 'var(--ink-secondary)';
+        document.getElementById('text-role-source').style.fontWeight = 'normal';
+        document.getElementById('source-count-badge').textContent = '6 份';
+        stateDisp.textContent = 'PIPELINE: settled | STATUS: completed';
+      } else {
+        // 调查进行态：拆问题已完成，找出处雷达搜索中，后两人待命
+        q.className = 'role-card state-done';
+        s.className = 'role-card state-active';
+        c.className = 'role-card state-idle';
+        j.className = 'role-card state-idle';
+
+        document.getElementById('text-role-question').textContent = '已拆出 2 项核心要点';
+        document.getElementById('text-role-source').textContent = '调取权威公报中...';
+        document.getElementById('text-role-source').style.color = 'var(--brand)';
+        document.getElementById('text-role-source').style.fontWeight = '600';
+        document.getElementById('text-role-context').textContent = '等待交叉比对量效';
+        document.getElementById('text-role-judgment').textContent = '等待终审定谳';
+        document.getElementById('source-count-badge').textContent = '+6 篇';
+        stateDisp.textContent = 'PIPELINE: investigating | EVENT: evidence_ingested (6/6)';
+      }
+    }
+
+    function switchView(viewName) {
+      document.getElementById('view-complete').classList.remove('active');
+      document.getElementById('view-investigating').classList.remove('active');
+      document.getElementById('btn-show-complete').classList.remove('active');
+      document.getElementById('btn-show-investigating').classList.remove('active');
+
+      if (viewName === 'complete') {
+        document.getElementById('view-complete').classList.add('active');
+        document.getElementById('btn-show-complete').classList.add('active');
+        setRolesState('complete');
+      } else {
+        document.getElementById('view-investigating').classList.add('active');
+        document.getElementById('btn-show-investigating').classList.add('active');
+        setRolesState('investigating');
+      }
+    }
+
+    function toggleCritique() {
+      critiqueVisible = !critiqueVisible;
+      const boxes = document.querySelectorAll('[data-critique]');
+      boxes.forEach(box => {
+        if (critiqueVisible) {
+          box.classList.add('show');
+        } else {
+          box.classList.remove('show');
+        }
+      });
+      const btn = document.getElementById('btn-toggle-critique');
+      btn.innerHTML = critiqueVisible ? '<span>💡 隐藏改良点批注</span>' : '<span>💡 显示改良点批注</span>';
+    }
+
+    // 初始化
+    toggleCritique();
+    setRolesState('complete');
+  </script>
+</body>
+</html>

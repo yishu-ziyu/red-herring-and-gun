@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { leftoverGapSentence, leftoverClaimTexts, isCompleteEmptyShell, uncoveredOriginalClauses, leftoverTextsForCanvas } from "./leftoverClaims";
+import { isMetaQuestionFragment, leftoverGapSentence, leftoverClaimTexts, isCompleteEmptyShell, uncoveredOriginalClauses, leftoverTextsForCanvas } from "./leftoverClaims";
 import type { InvestigationClaim } from "../lib/investigation";
 
 function claim(partial: Partial<InvestigationClaim> & { id: string; text: string }): InvestigationClaim {
@@ -122,5 +122,14 @@ describe("leftoverClaims", () => {
     expect(texts.join("、")).toContain("10克");
     expect(texts).toContain("蜿蜒于群山");
     expect(leftoverGapSentence(texts)).toContain("结论没有拿它们当依据");
+  });
+
+  it("末尾『真的假的 / 是真的吗』只是对前句的核实请求，不生成独立 leftover", () => {
+    const original = "https://weibo.com/status/50891234 隔夜菜亚硝酸盐超标百倍直接致癌？真的假的？";
+    const claims = ["隔夜菜中亚硝酸盐含量超标百倍", "隔夜菜亚硝酸盐超标会直接致癌"];
+    const leftover = uncoveredOriginalClauses(original, claims);
+    expect(isMetaQuestionFragment("真的假的")).toBe(true);
+    expect(isMetaQuestionFragment("这是真的吗？")).toBe(true);
+    expect(leftover.some((text) => text.includes("真的假的"))).toBe(false);
   });
 });

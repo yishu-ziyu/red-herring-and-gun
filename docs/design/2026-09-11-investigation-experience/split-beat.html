@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>过程放在哪</title>
+  <style>
+    :root {
+      --gp-bg: #f6f4ef;
+      --gp-ink: #252723;
+      --gp-ink-2: #62665e;
+      --gp-line: #dedcd4;
+      --gp-accent: #a13734;
+      --gp-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --gp-motion-ui: 240ms;
+      --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Segoe UI", sans-serif;
+      --serif: "Noto Serif SC", "Songti SC", "Source Han Serif SC", serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--gp-bg); color: var(--gp-ink); font-family: var(--font); }
+    body { padding: 24px 28px 72px; }
+    .bar { display: flex; gap: 8px; margin-bottom: 14px; }
+    .bar button {
+      font: inherit; font-size: 13px; padding: 7px 12px; border: 1px solid var(--gp-line);
+      background: transparent; border-radius: 999px; cursor: pointer; color: var(--gp-ink);
+    }
+    .stage { max-width: 720px; border-top: 1px solid var(--gp-line); padding: 28px 8px 8px; }
+    .kicker { font-size: 13px; color: var(--gp-ink-2); margin: 0 0 10px; }
+    .quote {
+      margin: 0 0 28px; padding-left: 14px; border-left: 2px solid var(--gp-ink);
+      font-family: var(--serif); font-size: 22px; font-weight: 500; line-height: 1.45;
+    }
+    .person { display: flex; align-items: center; gap: 14px; }
+    .person img {
+      width: 64px; height: 64px; border-radius: 50%; object-fit: cover;
+      border: 3px solid var(--gp-accent); background: #eeece5;
+    }
+    .person.is-done img { border-color: var(--gp-line); }
+    .person.is-done { opacity: 0.72; }
+    .person strong { display: block; font-size: 15px; }
+    .shimmer {
+      display: inline-block; font-size: 13.5px; color: var(--gp-ink-2);
+      background: linear-gradient(90deg, #8a8d84 0%, #252723 45%, #8a8d84 90%);
+      background-size: 200% 100%;
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      animation: shim 1.4s linear infinite;
+    }
+    @keyframes shim { to { background-position: -200% 0; } }
+    .reason {
+      margin: 10px 0 0 78px;
+      font-size: 13.5px; color: var(--gp-ink-2); line-height: 1.55;
+    }
+    .reason button {
+      font: inherit; font-size: 13.5px; color: var(--gp-ink-2);
+      border: 0; background: none; padding: 0; cursor: pointer;
+    }
+    .reason button[aria-expanded="true"] { color: var(--gp-ink); }
+    .cuts { margin: 8px 0 0; padding: 0; list-style: none; }
+    .cuts li { padding: 4px 0; }
+    .qs { margin: 22px 0 0; padding: 0; list-style: none; }
+    .qs li {
+      padding: 14px 0; border-top: 1px solid var(--gp-line);
+      font-size: 16px; line-height: 1.45;
+    }
+    .enter { animation: emerge var(--gp-motion-ui) var(--gp-ease-out) both; }
+    @keyframes emerge {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: none; }
+    }
+    .wrong {
+      margin: 16px 0 0 78px; padding: 12px 14px;
+      background: #fff; border: 1px solid var(--gp-line); border-radius: 14px;
+      font-size: 14px; color: var(--gp-ink-2);
+    }
+    .wrong code { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; display: block; margin-top: 8px; }
+    @media (prefers-reduced-motion: reduce) {
+      .shimmer { animation: none; color: var(--gp-ink-2); }
+      .enter { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <button type="button" id="replay">重放</button>
+  </div>
+  <div class="stage" id="stage"></div>
+  <script>
+    const AVATAR = "../../../apps/public/agents/rumor-detector.png";
+    const CUTS = ["争夺咖啡", "古代", "非常多的战争"];
+    const QUESTIONS = [
+      "古代有没有因争夺咖啡而起的战争？",
+      "材料里的「战争」是史实，还是比喻？",
+      "「古代」指哪个时期、哪些地方？",
+    ];
+    const stage = document.getElementById("stage");
+    let timers = [];
+    const later = (ms, fn) => timers.push(setTimeout(fn, ms));
+    const clear = () => { timers.forEach(clearTimeout); timers = []; };
+
+    function paint() {
+      clear();
+      stage.innerHTML = `
+        <p class="kicker">你调查的说法</p>
+        <p class="quote">“因为咖啡的争夺，在古代产生了非常多的战争。”</p>
+        <div class="person" id="who">
+          <img src="${AVATAR}" alt="" width="64" height="64">
+          <div>
+            <strong>拆问题</strong>
+            <span class="shimmer" id="shim">拆分问题中</span>
+          </div>
+        </div>
+        <div class="reason" id="reason">
+          <ul class="cuts" id="cuts"></ul>
+        </div>
+        <ul class="qs" id="qs"></ul>
+      `;
+      const cuts = document.getElementById("cuts");
+      CUTS.forEach((text, i) => {
+        later(220 + i * 160, () => {
+          const li = document.createElement("li");
+          li.className = "enter";
+          li.textContent = "「" + text + "」";
+          cuts.appendChild(li);
+        });
+      });
+      later(220 + CUTS.length * 160 + 640, () => {
+        document.getElementById("who").classList.add("is-done");
+        const shim = document.getElementById("shim");
+        shim.className = "";
+        shim.textContent = "已拆出问题";
+        const reason = document.getElementById("reason");
+        reason.innerHTML = "";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.setAttribute("aria-expanded", "false");
+        btn.textContent = "拆开的几截";
+        const list = document.createElement("ul");
+        list.className = "cuts";
+        list.hidden = true;
+        CUTS.forEach((text) => {
+          const li = document.createElement("li");
+          li.textContent = "「" + text + "」";
+          list.appendChild(li);
+        });
+        btn.addEventListener("click", () => {
+          const open = list.hidden;
+          list.hidden = !open;
+          btn.setAttribute("aria-expanded", String(open));
+        });
+        reason.appendChild(btn);
+        reason.appendChild(list);
+        const qs = document.getElementById("qs");
+        QUESTIONS.forEach((text, i) => {
+          later(i * 70, () => {
+            const li = document.createElement("li");
+            li.className = "enter";
+            li.textContent = text;
+            qs.appendChild(li);
+          });
+        });
+      });
+    }
+    document.getElementById("replay").addEventListener("click", paint);
+    paint();
+  </script>
+</body>
+</html>

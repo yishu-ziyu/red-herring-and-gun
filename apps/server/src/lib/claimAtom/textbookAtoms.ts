@@ -42,9 +42,11 @@ export function extractLeapAtoms(claim: string): string[] {
   if (!text) return [];
   const match = text.match(LEAP_MARK);
   if (!match || match.index == null) return [];
-  const after = text.slice(match.index + match[0].length).replace(/^[，,、\s]+/, "");
-  if (after.length < 6) return [];
-  return after
+  const mark = match[0];
+  const rest = text.slice(match.index + mark.length).replace(/^[，,、\s]+/, "");
+  if (rest.length < 6) return [];
+  // 连词留在第一条跳跃上，避免总答/判词对不上原句里的「所以 / 因此」。
+  return (mark + rest)
     .split(/[。；;]/)
     .flatMap((chunk) => chunk.split(/，(?=[^，]{8,})/))
     .map((part) => part.replace(/^[，,、\s]+|[。．.\s]+$/g, "").trim())
@@ -55,7 +57,8 @@ function atomCoversLeap(atom: string, leap: string): boolean {
   const a = atom.replace(/\s+/g, "");
   const b = leap.replace(/\s+/g, "");
   if (!a || !b) return false;
-  return a.includes(b) || b.includes(a);
+  const core = b.replace(/^(所以说|所以|因此|于是|由此可见)/, "").replace(/^[，,、]+/, "");
+  return a.includes(b) || b.includes(a) || (core.length >= 4 && a.includes(core));
 }
 
 /**
@@ -72,16 +75,21 @@ export function ensureLeapAtoms(claim: string, atoms: string[]): string[] {
     seen.add(key);
     out.push(text);
   };
-  for (const leap of leaps) push(leap);
+  // 模型已经给出带主语的完整主张时，优先保留完整主张，不再额外制造
+  // 「所以可以中和酸」这类脱离主语的跳跃残句。真正漏掉的 leap 仍优先补入。
+  const coveringAtoms = atoms.filter((atom) => leaps.some((leap) => atomCoversLeap(atom, leap)));
+  const missingLeaps = leaps.filter((leap) => !coveringAtoms.some((atom) => atomCoversLeap(atom, leap)));
+  for (const atom of coveringAtoms) push(atom);
+  for (const leap of missingLeaps) push(leap);
   for (const atom of atoms) {
-    if (leaps.some((leap) => atomCoversLeap(atom, leap))) continue;
+    if (coveringAtoms.includes(atom)) continue;
     push(atom);
   }
   if (out.length <= SEARCH_ATOM_BUDGET) return out;
-  const leapKeys = new Set(leaps.map((leap) => claimAtomKey(leap)));
-  const keptLeaps = out.filter((atom) => leapKeys.has(claimAtomKey(atom)));
-  const rest = out.filter((atom) => !leapKeys.has(claimAtomKey(atom)));
-  return [...keptLeaps, ...rest].slice(0, SEARCH_ATOM_BUDGET);
+  const priorityKeys = new Set([...coveringAtoms, ...missingLeaps].map((item) => claimAtomKey(item)));
+  const prioritized = out.filter((atom) => priorityKeys.has(claimAtomKey(atom)));
+  const rest = out.filter((atom) => !priorityKeys.has(claimAtomKey(atom)));
+  return [...prioritized, ...rest].slice(0, SEARCH_ATOM_BUDGET);
 }
 
 function compact(text: string): string {

@@ -13,7 +13,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { fetchWithTimeout } from "../httpUtils.js";
+import { withExecutionBudget, type ExecutionBudget } from "../executionBudget.js";
 import type {
   ImagePayload,
   ReverseImageHit,
@@ -152,32 +152,37 @@ export function parse360ReverseHits(data: unknown): ReverseImageHit[] {
  * 对每张图走一遍 360 图搜；任一张失败只跳过该图，不阻断。
  * 生产要生效需配 QIHOO_360_API_KEY 与 PUBLIC_BASE_URL。
  */
-export function makeSearch360ReverseImage(env: Record<string, string>): ReverseImageSearchFn | undefined {
+export function makeSearch360ReverseImage(env: Record<string, string>, execution: ExecutionBudget = {}): ReverseImageSearchFn | undefined {
   const apiKey = get360ApiKey(env);
   if (!apiKey || !publicBaseUrl(env)) return undefined;
   return async ({ images }) => {
+    execution.signal?.throwIfAborted();
     const hits: ReverseImageHit[] = [];
     for (const image of images.slice(0, 4)) {
+      execution.signal?.throwIfAborted();
       const imgUrl = await uploadImageForReverseSearch(env, image.dataUrl);
       if (!imgUrl) continue;
       try {
-        const response = await fetchWithTimeout(
-          `${SEARCH360_VENDOR_URL}?q=&ref_prom=${SAAS_REF_PROM}`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ img_url: imgUrl }),
-          },
-          20000,
-          "360 智搜-图搜图"
-        );
-        const data = await response.json().catch(() => null);
-        if (!response.ok) continue;
-        hits.push(...parse360ReverseHits(data));
+        const found = await withExecutionBudget(async (signal) => {
+          const response = await fetch(
+            `${SEARCH360_VENDOR_URL}?q=&ref_prom=${SAAS_REF_PROM}`,
+            {
+              method: "POST",
+              signal,
+              headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ img_url: imgUrl }),
+            }
+          );
+          const data = await response.json().catch(() => null);
+          signal.throwIfAborted();
+          return response.ok ? parse360ReverseHits(data) : [];
+        }, { ...execution, timeoutMs: 20000, label: "360 智搜-图搜图" });
+        hits.push(...found);
       } catch {
+        execution.signal?.throwIfAborted();
         continue;
       }
     }

@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCasePipeline, type PipelineStep } from "./runCasePipeline";
+import { confirmedSourceValidatorStep } from "./testSourceRelationAudit";
 import { closeDatabase } from "../sqliteStore.js";
 import {
   createKnowledgeMemory,
@@ -78,7 +79,7 @@ function makeHarness(options: {
   verdicts: Record<string, VerdictSpec>;
   searchOne: ReturnType<typeof vi.fn>;
 }) {
-  const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+  const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
     if (agentId === "rumor_detector") {
       return {
         agent: "rumor_detector",
@@ -110,7 +111,7 @@ function makeHarness(options: {
       };
     }
     if (agentId === "source_validator") {
-      return { agent: "source_validator", output: { sourceReliability: "medium" } };
+      return confirmedSourceValidatorStep(steps, "medium");
     }
     if (agentId === "report_composer") {
       return {

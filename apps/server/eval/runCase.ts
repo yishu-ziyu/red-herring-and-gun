@@ -54,7 +54,7 @@ function makeRunAgent({ env, codexBin }: EvalEnv, claim: string) {
     const agentInput = buildAgentInput(agentId, claim, steps as never) as Record<string, unknown>;
     if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
       agentInput.search360 = search360Result;
-      if (atomSearchBundle && (agentId === "fact_checker" || agentId === "report_composer")) {
+      if (atomSearchBundle && (agentId === "fact_checker" || agentId === "source_validator" || agentId === "report_composer")) {
         agentInput.atomSearches = (atomSearchBundle as { forAgent?: unknown }).forAgent;
       }
     }

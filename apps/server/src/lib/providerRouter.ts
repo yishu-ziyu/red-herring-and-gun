@@ -13,6 +13,9 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { TSchema } from "typebox";
+import { Value } from "typebox/value";
+import { withExecutionBudget } from "./executionBudget.js";
 import {
   call360ChatAgent,
   callAnthropicAgent,
@@ -490,6 +493,24 @@ export function isAgentJsonParseError(error: unknown): boolean {
   );
 }
 
+export class AgentOutputError extends Error {
+  constructor(message: string) { super(message); this.name = "AgentOutputError"; }
+}
+
+/** Live output must be complete and satisfy the job schema; never guess missing tokens. */
+export function parseValidatedAgentJson(text: string, label: string, schema: object = {}): any {
+  let output: unknown;
+  try {
+    output = JSON.parse(extractJsonObject(stripJsonNoise(text)));
+  } catch {
+    throw new AgentOutputError(`${label} 返回 JSON 无法解析（输出不完整或语法错误）`);
+  }
+  if (!output || typeof output !== "object" || Array.isArray(output) || !Value.Check(schema as TSchema, output)) {
+    throw new AgentOutputError(`${label} 输出字段不符合 responseSchema`);
+  }
+  return output;
+}
+
 // 导出给 orchestrateByo 复用：BYO 接管模式下的 JSON 修复重试与 fallback 链保持同一提示词。
 export function buildJsonRepairUserContent(brokenText: string, originalUserContent: string): string {
   const broken = brokenText.length > 14000 ? `${brokenText.slice(0, 14000)}\n…[truncated]` : brokenText;
@@ -520,6 +541,7 @@ export interface ProviderRouterLogger {
 }
 
 export interface ProviderRouterOptions {
+  signal?: AbortSignal;
   /** 日志回调；缺省 no-op。vite.config.ts 会注入 console 包装 */
   logger?: ProviderRouterLogger;
   /** API key 缺失时的处理：缺省 "error"（push 到 errors 数组），vite 传 "silent"（静默跳过） */
@@ -611,19 +633,6 @@ export function timeoutForProviderModel(
   return fallbackMs;
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeout = setTimeout(() => reject(new Error(`${label} 超时 ${timeoutMs}ms`)), timeoutMs);
-  });
-
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-}
-
 /**
  * 单个 provider 的一次直调（用于 modelOverride 旁路 + 单元测试）
  * - 用传入的 model，不读 env 默认
@@ -642,6 +651,7 @@ export async function dispatchSingleProvider({
   maxTokens,
   codexBin,
   reasoningEffort,
+  signal,
 }: {
   provider: AgentTextProviderId;
   model: string;
@@ -653,18 +663,20 @@ export async function dispatchSingleProvider({
   maxTokens: number;
   codexBin: string;
   reasoningEffort: "low" | "medium" | "high";
+  signal?: AbortSignal;
 }): Promise<{ text: string; model: string; reasoning?: string }> {
+  signal?.throwIfAborted();
   if (provider === "deepseek") {
     const apiKey = envValue(env, "DEEPSEEK_API_KEY");
     if (!apiKey) throw new Error(`未配置 DEEPSEEK_API_KEY`);
     const baseUrl = (envValue(env, "DEEPSEEK_BASE_URL") || "https://api.deepseek.com/v1").replace(/\/$/, "");
-    return await callDeepSeekAgent({ apiKey, baseUrl, model, systemPrompt, userContent, maxTokens });
+    return await callDeepSeekAgent({ apiKey, baseUrl, model, systemPrompt, userContent, maxTokens, signal });
   }
   if (provider === "mimo") {
     const apiKey = envValue(env, "MIMO_API_KEY");
     if (!apiKey) throw new Error(`未配置 MIMO_API_KEY`);
     const baseUrl = (envValue(env, "MIMO_BASE_URL") || "https://token-plan-cn.xiaomimimo.com/anthropic").replace(/\/$/, "");
-    return await callMimoAgent({ baseUrl, apiKey, model, systemPrompt, userContent, maxTokens });
+    return await callMimoAgent({ baseUrl, apiKey, model, systemPrompt, userContent, maxTokens, signal });
   }
   if (provider === "minimax") {
     const apiKey = getMiniMaxApiKey(env);
@@ -678,6 +690,7 @@ export async function dispatchSingleProvider({
       systemPrompt,
       userContent,
       ...miniMaxCallOptions(env, model, maxTokens),
+      signal,
     });
   }
   if (provider === "stepfun") {
@@ -692,13 +705,14 @@ export async function dispatchSingleProvider({
       userContent,
       maxTokens: stepFunMaxTokensForModel(env, model, maxTokens),
       reasoningEffort: stepFunReasoningEffortForModel(env, model, reasoningEffort),
+      signal,
     });
   }
   if (provider === "360") {
     const apiKey = getSearch360ApiKey(env);
     if (!apiKey) throw new Error(`未配置 360 API key`);
     const baseUrl = (envValue(env, "AI360_BASE_URL") || "https://api.360.cn/v1").replace(/\/$/, "");
-    return await call360ChatAgent({ apiKey, baseUrl, model, systemPrompt, userContent, maxTokens });
+    return await call360ChatAgent({ apiKey, baseUrl, model, systemPrompt, userContent, maxTokens, signal });
   }
   if (provider === "anthropic") {
     const anthropicConfig = await loadAnthropicConfig(env);
@@ -712,10 +726,11 @@ export async function dispatchSingleProvider({
       systemPrompt,
       userContent,
       maxTokens,
+      signal,
     });
   }
   if (provider === "codex") {
-    return await callCodexAgent({ codexBin, model, systemPrompt, userContent, responseSchema, maxTokens });
+    return await callCodexAgent({ codexBin, model, systemPrompt, userContent, responseSchema, maxTokens, signal });
   }
   throw new Error(`未知 provider: ${provider}`);
 }
@@ -733,6 +748,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
     options = {},
   } = params;
   const logger = options.logger ?? NOOP_LOGGER;
+  options.signal?.throwIfAborted();
   const onMissing = options.onMissingApiKey ?? "error";
   const traceLabel = `Agent${agentId ? `:${agentId}` : ""}`;
   const providerTimeoutMs = getTimeoutMs(env, "ORCHESTRATE_PROVIDER_TIMEOUT_MS", 45000);
@@ -794,47 +810,42 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   const invokeAndParse = async (
     provider: AgentTextProviderId | string,
     modelName: string,
-    call: (sys: string, user: string) => Promise<{ text: string; model: string; reasoning?: string }>,
+    call: (sys: string, user: string, signal: AbortSignal) => Promise<{ text: string; model: string; reasoning?: string }>,
     timeoutMs: number,
     logTag: string
   ): Promise<CallAgentResult> => {
-    const raw = await withTimeout(call(systemPrompt, userContent), timeoutMs, `${traceLabel} ${provider}:${modelName}`);
-    try {
-      const output = parseAgentJson(raw.text, raw.model);
-      return { output, model: raw.model, latencyMs: Date.now() - startTime, reasoning: raw.reasoning };
-    } catch (parseError) {
-      if (!isAgentJsonParseError(parseError)) throw parseError;
-      const parseMessage = parseError instanceof Error ? parseError.message : "JSON 解析失败";
-      logger.error("[orchestrate-provider] json_parse_error", {
-        agent: traceLabel,
-        provider,
-        model: modelName,
-        message: parseMessage,
-        textChars: raw.text?.length ?? 0,
-      });
+    return withExecutionBudget(async (signal) => {
+      const prompt = `${systemPrompt}\n\n# RESPONSE SCHEMA\n${JSON.stringify(responseSchema)}`;
+      const raw = await call(prompt, userContent, signal);
+      signal.throwIfAborted();
+      try {
+        const output = parseValidatedAgentJson(raw.text, raw.model, responseSchema);
+        return { output, model: raw.model, latencyMs: Date.now() - startTime, reasoning: raw.reasoning };
+      } catch (parseError) {
+        if (!(parseError instanceof AgentOutputError)) throw parseError;
+        signal.throwIfAborted();
+        logger.error("[orchestrate-provider] json_parse_error", {
+          agent: traceLabel, provider, model: modelName,
+          message: parseError.message, textChars: raw.text?.length ?? 0,
+        });
 
-      // Local multi-repair already failed — one model-side rewrite, same provider.
-      logger.info("[orchestrate-provider] json_repair_retry", {
-        agent: traceLabel,
-        provider,
-        model: modelName,
-        tag: logTag,
-      });
-      const repairPrompt = [
-        systemPrompt,
-        "",
-        "# CRITICAL OUTPUT RULE",
-        "Return ONLY one valid JSON object. No markdown fences. No commentary.",
-        "Escape all quotes inside strings. No trailing commas. Complete all braces.",
-      ].join("\n");
-      const repairedRaw = await withTimeout(
-        call(repairPrompt, buildJsonRepairUserContent(raw.text, userContent)),
-        timeoutMs,
-        `${traceLabel} ${provider}:${modelName} json-repair`
-      );
-      const output = parseAgentJson(repairedRaw.text, repairedRaw.model);
-      return { output, model: repairedRaw.model, latencyMs: Date.now() - startTime, reasoning: repairedRaw.reasoning };
-    }
+        // One schema-constrained rewrite, within the same deadline; no guessed JSON completion.
+        logger.info("[orchestrate-provider] json_repair_retry", {
+          agent: traceLabel, provider, model: modelName, tag: logTag,
+        });
+        const repairPrompt = [
+          prompt,
+          "",
+          "# CRITICAL OUTPUT RULE",
+          "Return ONLY one valid JSON object. No markdown fences. No commentary.",
+          "Escape all quotes inside strings. No trailing commas. Complete all braces.",
+        ].join("\n");
+        const repairedRaw = await call(repairPrompt, buildJsonRepairUserContent(raw.text, userContent), signal);
+        signal.throwIfAborted();
+        const output = parseValidatedAgentJson(repairedRaw.text, repairedRaw.model, responseSchema);
+        return { output, model: repairedRaw.model, latencyMs: Date.now() - startTime, reasoning: repairedRaw.reasoning };
+      }
+    }, { signal: options.signal, deadlineMs: stageDeadlineMs, timeoutMs, label: `${traceLabel} ${provider}:${modelName}` });
   };
 
   if (params.modelOverride) {
@@ -862,7 +873,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         const result = await invokeAndParse(
           ovProvider,
           ovModel,
-          (sys, user) =>
+          (sys, user, signal) =>
             dispatchSingleProvider({
               provider: ovProvider,
               model: ovModel,
@@ -874,6 +885,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
               maxTokens,
               codexBin,
               reasoningEffort,
+              signal,
             }),
           ovTimeoutMs,
           "override"
@@ -886,6 +898,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         });
         return result;
       } catch (error) {
+        options.signal?.throwIfAborted();
         const message = error instanceof Error ? error.message : `${ovProvider} 调用失败`;
         logger.error("[orchestrate-provider] error (override)", {
           agent: traceLabel,
@@ -895,8 +908,10 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           timeoutMs: ovTimeoutMs,
           message,
         });
-        noteProviderFailure(ovProvider, message);
-        if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
+        if (!stageBudgetExpired()) {
+          noteProviderFailure(ovProvider, message);
+          if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
+        }
         errors.push(`[${ovProvider}:${ovModel}] ${message}`);
       }
     }
@@ -909,7 +924,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   const runOne = async (
     provider: string,
     modelName: string,
-    call: (sys: string, user: string) => Promise<{ text: string; model: string }>
+    call: (sys: string, user: string, signal: AbortSignal) => Promise<{ text: string; model: string }>
   ): Promise<{ ok: true; result: CallAgentResult } | { ok: false; msg: string }> => {
     const providerStart = Date.now();
     const attemptTimeout = attemptTimeoutMs(
@@ -937,6 +952,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       });
       return { ok: true, result };
     } catch (error) {
+      options.signal?.throwIfAborted();
       const message = error instanceof Error ? error.message : `${provider} 调用失败`;
       logger.error("[orchestrate-provider] error", {
         agent: traceLabel,
@@ -946,13 +962,16 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         timeoutMs: attemptTimeout,
         message,
       });
-      noteProviderFailure(provider, message);
-      if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
+      if (!stageBudgetExpired()) {
+        noteProviderFailure(provider, message);
+        if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
+      }
       return { ok: false, msg: message };
     }
   };
 
   for (const provider of providerOrder) {
+    options.signal?.throwIfAborted();
     if (stageBudgetExpired()) {
       noteStageBudgetExhausted();
       errors.push(
@@ -978,8 +997,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         if (onMissing === "error") errors.push(`[deepseek:${model}] 未配置 DEEPSEEK_API_KEY`);
         continue;
       }
-      const out = await runOne("deepseek", model, (sys, user) =>
-        callDeepSeekAgent({ apiKey, baseUrl, model, systemPrompt: sys, userContent: user, maxTokens })
+      const out = await runOne("deepseek", model, (sys, user, signal) =>
+        callDeepSeekAgent({ apiKey, baseUrl, model, systemPrompt: sys, userContent: user, maxTokens, signal })
       );
       if (out.ok) {
         return out.result;
@@ -1005,8 +1024,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       for (const clusterUrl of clusters) {
         if (isProviderQuotaSkipped("mimo")) break;
         if (stageBudgetExpired()) break;
-        const out = await runOne(`mimo@${clusterUrl}`, model, (sys, user) =>
-          callMimoAgent({ baseUrl: clusterUrl, apiKey, model, systemPrompt: sys, userContent: user, maxTokens })
+        const out = await runOne(`mimo@${clusterUrl}`, model, (sys, user, signal) =>
+          callMimoAgent({ baseUrl: clusterUrl, apiKey, model, systemPrompt: sys, userContent: user, maxTokens, signal })
         );
         if (out.ok) {
           return out.result;
@@ -1028,7 +1047,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       }
       // 填表类调用降温到 0，要稳定的输出；写报告那步保留服务商默认。
       const minimaxTemperature = agentId === "report_composer" ? undefined : 0;
-      const out = await runOne("minimax", model, (sys, user) =>
+      const out = await runOne("minimax", model, (sys, user, signal) =>
         callMiniMaxAgent({
           baseUrl,
           apiKey,
@@ -1038,6 +1057,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           userContent: user,
           ...miniMaxCallOptions(env, model, maxTokens),
           ...(minimaxTemperature !== undefined ? { temperature: minimaxTemperature } : {}),
+          signal,
         })
       );
       if (out.ok) {
@@ -1057,7 +1077,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         if (onMissing === "error") errors.push(`[stepfun:${model}] 未配置 STEPFUN_API_KEY`);
         continue;
       }
-      const out = await runOne("stepfun", model, (sys, user) =>
+      const out = await runOne("stepfun", model, (sys, user, signal) =>
         callStepFunAgent({
           baseUrl,
           apiKey,
@@ -1066,6 +1086,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           userContent: user,
           maxTokens: stepFunMaxTokensForModel(env, model, maxTokens),
           reasoningEffort: stepFunReasoningEffortForModel(env, model, reasoningEffort),
+          signal,
         })
       );
       if (out.ok) {
@@ -1089,8 +1110,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         if (onMissing === "error") errors.push(`[360:${model}] 未配置 360 API key`);
         continue;
       }
-      const out = await runOne("360", model, (sys, user) =>
-        call360ChatAgent({ apiKey, baseUrl, model, systemPrompt: sys, userContent: user, maxTokens })
+      const out = await runOne("360", model, (sys, user, signal) =>
+        call360ChatAgent({ apiKey, baseUrl, model, systemPrompt: sys, userContent: user, maxTokens, signal })
       );
       if (out.ok) {
         return out.result;
@@ -1106,7 +1127,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         if (onMissing === "error") errors.push("[anthropic] 未配置 Anthropic proxy");
         continue;
       }
-      const out = await runOne("anthropic-local", anthropicConfig.model, (sys, user) =>
+      const out = await runOne("anthropic-local", anthropicConfig.model, (sys, user, signal) =>
         callAnthropicAgent({
           baseUrl: anthropicConfig.baseUrl,
           token: anthropicConfig.token,
@@ -1114,6 +1135,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           systemPrompt: sys,
           userContent: user,
           maxTokens,
+          signal,
         })
       );
       if (out.ok) {
@@ -1125,8 +1147,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
 
     if (provider === "codex") {
       const model = envValue(env, "CODEX_LOCAL_MODEL") || "gpt-5.5";
-      const out = await runOne("codex-cli", model, (sys, user) =>
-        callCodexAgent({ codexBin, model, systemPrompt: sys, userContent: user, responseSchema, maxTokens })
+      const out = await runOne("codex-cli", model, (sys, user, signal) =>
+        callCodexAgent({ codexBin, model, systemPrompt: sys, userContent: user, responseSchema, maxTokens, signal })
       );
       if (out.ok) {
         return out.result;

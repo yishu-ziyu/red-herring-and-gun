@@ -104,6 +104,7 @@ it("匿名结果自动留存；重新打开不重新核查", async () => {
   expect(hero.textContent).toContain("原调查的直接回答");
   expect(screen.getByText(/原调查时间/)).toBeInTheDocument();
   expect(requestOrchestrateStream).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls.some(([url, init]) => String(url) === "/api/case" && (init as RequestInit | undefined)?.method === "POST")).toBe(false);
 });
 
 it("同一句原话：先问打开旧调查还是重新核查", async () => {
@@ -240,7 +241,11 @@ it("打开已留存的账户历史不发起新调查、不重复落库", async (
   fireEvent.click(await screen.findByText("账户历史"));
   const hero = await screen.findByLabelText("调查结论");
   expect(hero.textContent).toContain("原调查的直接回答");
+  expect(document.querySelector(".gp-original-time")?.textContent).toContain(
+    new Date(1000).toLocaleString("zh-CN", { hour12: false })
+  );
   expect(fetcher.mock.calls.some(([url]) => String(url) === "/api/case")).toBe(false);
+  expect(fetcher.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "POST")).toBe(false);
   expect(requestOrchestrateStream).not.toHaveBeenCalled();
 });
 
@@ -289,6 +294,14 @@ it.each(["http", "network"] as const)("退出失败（%s）保留账户并允许
   expect(screen.getByText("alice")).toBeInTheDocument();
   fireEvent.click(screen.getByText("退出"));
   await screen.findByText("登录");
+});
+
+it("不存在的分享链接不静默回首页", async () => {
+  stubFetch();
+  window.history.pushState({}, "", "/s/missing-token");
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "分享链接不可用" })).toBeInTheDocument();
+  expect(screen.queryByRole("textbox", { name: "要调查的说法" })).not.toBeInTheDocument();
 });
 
 it("迟到的旧退出成功不覆盖更新的账户操作", async () => {

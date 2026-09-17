@@ -31,8 +31,8 @@ describe("创建之前先看公开字段", () => {
     });
     render(<ShareControl caseId="case-1" />);
     fireEvent.click(screen.getByText("创建分享链接"));
-    await waitFor(() => expect(screen.getByText("原说法")).toBeTruthy());
-    expect(screen.getByText("结论与拆出的问题")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("隔夜菜会致癌")).toBeTruthy());
+    expect(screen.getByText("x")).toBeTruthy();
     expect(screen.getByText(/不会公开：账号邮箱/)).toBeTruthy();
     // 预览阶段还没有链接
     expect(document.querySelector("[data-gp-share-url]")).toBeNull();

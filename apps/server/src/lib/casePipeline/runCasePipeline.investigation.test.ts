@@ -93,7 +93,18 @@ describe("runCasePipeline investigation snapshots", () => {
         };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "medium" } };
+        return {
+          agent: "source_validator",
+          output: {
+            sourceReliability: "medium",
+            claimSourceRelations: [
+              { claimAtom: ATOM_TRUE, url: SUPPORT_URL, relation: "support", reason: "检测报告直接支持该命题" },
+              { claimAtom: ATOM_FALSE, url: REFUTE_URL, relation: "contradict", reason: "官方公告直接反驳该命题" },
+              { claimAtom: ATOM_CONFLICT, url: CONFLICT_SUPPORT_URL, relation: "support", reason: "地方试点支持局部范围" },
+              { claimAtom: ATOM_CONFLICT, url: CONFLICT_REFUTE_URL, relation: "contradict", reason: "全国口径形成反证" },
+            ],
+          },
+        };
       }
       if (agentId === "report_composer") {
         return {
@@ -211,6 +222,84 @@ describe("runCasePipeline investigation snapshots", () => {
     // 完成态 finalReport.investigation 与最后一帧一致
     expect(result.finalReport.investigation).toEqual(completeFrame);
     expect(result.reportStep.output).toBe(result.finalReport);
+  });
+
+  it("第一份 judging 快照已经经过来源方向审计，不会先绿后改", async () => {
+    const claimAtom = "气泡水可以中和酸";
+    const url = "https://news.cnr.cn/native/gd/20230502/t20230502_526238031.shtml";
+    const source = {
+      url,
+      title: "长期戴眼镜会变金鱼眼？未见得",
+      snippet: "流言 喝气泡水可以降尿酸 真相 碳酸氢根有一定中和作用，但是面对人体系统杯水车薪，无法引起人体酸碱变化。",
+    };
+    const frames: Array<ReturnType<typeof validateInvestigationSnapshot>> = [];
+    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+      if (agentId === "rumor_detector") {
+        return {
+          agent: "rumor_detector",
+          output: {
+            claimAtoms: [claimAtom],
+            claimAtomTypes: [{ text: claimAtom, verifiable: true, type: "fact" }],
+          },
+        };
+      }
+      if (agentId === "fact_checker") {
+        return {
+          agent: "fact_checker",
+          output: {
+            factCheckResult: "partial",
+            subclaimVerdicts: [{
+              claimAtom,
+              verdict: "partial",
+              evidence: "理论上有一定作用[1]。",
+              boundary: "实际效果有限",
+              supportingSources: [source],
+              contradictingSources: [],
+              evidenceGaps: [],
+            }],
+          },
+        };
+      }
+      if (agentId === "source_validator") {
+        return {
+          agent: "source_validator",
+          output: {
+            sourceReliability: "high",
+            claimSourceRelations: [{
+              claimAtom,
+              url,
+              relation: "context-only",
+              reason: "来源讲的是降尿酸且明确说明实际效果杯水车薪，不能直接支持这条宽泛命题",
+            }],
+          },
+        };
+      }
+      if (agentId === "report_composer") {
+        return {
+          agent: "report_composer",
+          output: { verdictType: "unverified", conclusion: "现有材料不足以直接支持这句话。" },
+        };
+      }
+      throw new Error(`unexpected ${agentId}`);
+    });
+
+    await runCasePipeline({
+      claim: claimAtom,
+      runAgent,
+      searchOne: async () => ({ answer: "", model: "m", sources: [source] }),
+      callSelfProofModel: async () => ({ output: { results: [{ atom: claimAtom, supported: true, reason: "原句直说" }] }, model: "self" }),
+      runReport: async ({ steps, search360Result, atomSearchBundle }) => runAgent("report_composer", steps, search360Result, atomSearchBundle),
+      evidenceLoop: { enabled: false },
+      crossExam: { enabled: false },
+      citationLiveness: { liveness: new Map([[url, "alive"]]) },
+      hooks: { onInvestigationSnapshot: (snapshot) => frames.push(snapshot) },
+    });
+
+    const firstJudging = frames.find((frame) => frame.phase === "judging")!;
+    const evidence = firstJudging.claims[0]!.evidence;
+    expect(evidence.some((link) => link.role === "support")).toBe(false);
+    expect(evidence.some((link) => link.role === "context-only")).toBe(true);
+    expect(firstJudging.claims[0]!.judgment).toBe("unresolved");
   });
 
   it("拆题失败 fail-open：快照仍按整句可核查继续", async () => {

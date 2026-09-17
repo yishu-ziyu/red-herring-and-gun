@@ -39,6 +39,23 @@ describe("classifyLivenessStatus", () => {
 });
 
 describe("checkSourceLiveness", () => {
+  it("调查预算耗尽不等于来源已失效，也不再发送请求", async () => {
+    let requests = 0;
+    await expect(checkSourceLiveness(["https://alive.example/source"], {
+      deadlineMs: Date.now() - 1,
+      fetchImpl: async () => { requests++; return { status: 200 }; },
+    })).rejects.toThrow("来源探活总预算");
+    expect(requests).toBe(0);
+  });
+
+  it("用户取消不能转成死链结果", async () => {
+    const ac = new AbortController();
+    ac.abort(new Error("user-stop"));
+    await expect(checkSourceLiveness(["https://alive.example/source"], {
+      signal: ac.signal, fetchImpl: fetchReturning({}),
+    })).rejects.toThrow("user-stop");
+  });
+
   it("dedupes urls and maps status per url", async () => {
     const fetchImpl = fetchReturning({
       "https://a.example/x": 200,

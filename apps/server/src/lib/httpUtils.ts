@@ -72,12 +72,14 @@ export async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, lab
 }
 
 export async function fetchWithTimeout(url: string | URL, init: RequestInit, timeoutMs: number, label: string) {
+  init.signal?.throwIfAborted();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal });
   } catch (error) {
+    init.signal?.throwIfAborted();
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(`${label} 超时 ${timeoutMs}ms`);
     }

@@ -164,6 +164,67 @@ describe("Change C：总时限默认值与内部预算不打架", () => {
   });
 });
 
+describe("显式取消、提前断线与重复请求", () => {
+  const longEnv = () => ({ ...env(), ORCHESTRATE_TOTAL_TIMEOUT_MS: "3000" });
+
+  it("未到总超时就刷新不取消调查；最终快照可恢复", async () => {
+    const handlers = createHandlers(longEnv());
+    const { req } = makeRequest(`early-detach-${Date.now()}`);
+    const { res, events, closeConnection } = mockRes();
+    const done = handlers.orchestrateStreamHandler(req, res, vi.fn());
+    await waitFor(() => fixture.gate !== null);
+    const runId = events.find((e) => e.type === "run_started")!.runId;
+    closeConnection();
+    expect(fixture.gate!.input.signal.aborted).toBe(false);
+    fixture.gate!.input.hooks.onInvestigationSnapshot(completeSnapshot());
+    fixture.gate!.resolve(pipelineResult());
+    await done;
+    expect(openRunStore()!.get(runId)!.status).toBe("completed");
+    expect(openRunStore()!.get(runId)!.snapshot?.phase).toBe("complete");
+  });
+
+  it("停止挂起调查立即结束；迟到完成帧不能覆盖取消快照", async () => {
+    const handlers = createHandlers(longEnv());
+    const { req } = makeRequest(`user-cancel-${Date.now()}`);
+    const { res, events } = mockRes();
+    const done = handlers.orchestrateStreamHandler(req, res, vi.fn());
+    await waitFor(() => fixture.gate !== null);
+    const runId = events.find((e) => e.type === "run_started")!.runId;
+    const cancelReq = { method: "POST", params: { runId }, headers: {} };
+    await handlers.cancelInvestigationHandler(cancelReq, mockRes().res, vi.fn());
+    await done;
+    expect(fixture.gate!.input.signal.aborted).toBe(true);
+    expect(openRunStore()!.get(runId)!.status).toBe("cancelled");
+    expect(openRunStore()!.get(runId)!.snapshot?.phase).toBe("interrupted");
+    fixture.gate!.input.hooks.onInvestigationSnapshot(completeSnapshot());
+    fixture.gate!.resolve(pipelineResult());
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(openRunStore()!.get(runId)!.snapshot?.phase).toBe("interrupted");
+    expect(events.some((e) => e.type === "complete" || e.type === "error")).toBe(false);
+    await handlers.cancelInvestigationHandler(cancelReq, mockRes().res, vi.fn());
+    expect(openRunStore()!.get(runId)!.status).toBe("cancelled");
+  });
+
+  it("相同请求编号只订阅原调查，结束时所有流关闭", async () => {
+    const handlers = createHandlers(longEnv());
+    const id = `same-request-${Date.now()}`;
+    const first = mockRes();
+    const done = handlers.orchestrateStreamHandler(makeRequest(id).req, first.res, vi.fn());
+    await waitFor(() => fixture.gate !== null);
+    const gate = fixture.gate;
+    const second = mockRes();
+    await handlers.orchestrateStreamHandler(makeRequest(id).req, second.res, vi.fn());
+    expect(fixture.gate).toBe(gate);
+    const firstId = first.events.find((e) => e.type === "run_started")!.runId;
+    expect(second.events.find((e) => e.type === "run_started")!.runId).toBe(firstId);
+    gate!.input.hooks.onInvestigationSnapshot(completeSnapshot());
+    gate!.resolve(pipelineResult());
+    await done;
+    expect(first.res.writableEnded).toBe(true);
+    expect(second.res.writableEnded).toBe(true);
+  });
+});
+
 describe("Change C：超时后管线晚完成", () => {
   it("run 落 completed，真结论照发，并经刷新恢复通道可取回", async () => {
     const handlers = createHandlers(env());

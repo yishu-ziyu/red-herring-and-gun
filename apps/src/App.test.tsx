@@ -2,8 +2,36 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { requestOrchestrateStream } from "./lib/agentExpansion";
-import { refutedComplete, investigatingUnassessed, REFUTED_CLAIM } from "./goldenPath/fixtures";
+import { refutedComplete, investigatingUnassessed, REFUTED_CLAIM, REFUTED_ATOM } from "./goldenPath/fixtures";
 import type { OrchestrateStreamEvent } from "./lib/agentExpansion";
+import { buildInvestigationSnapshot } from "./lib/investigation";
+
+function judgingAllJudged() {
+  const url = "https://piyao.org.cn/overnight-water";
+  return buildInvestigationSnapshot(
+    {
+      originalClaim: REFUTED_CLAIM,
+      phase: "judging",
+      claimAtoms: [REFUTED_ATOM],
+      claimAtomTypes: [{ text: REFUTED_ATOM, verifiable: true, type: "causal" }],
+      atomSearchBundle: {
+        atomsSearched: [REFUTED_ATOM],
+        byAtomKey: { [REFUTED_ATOM]: [{ url, title: "世卫组织辟谣平台：无此结论", snippet: "官方声明未提及隔夜水致癌" }] },
+      },
+      subclaimVerdicts: [
+        {
+          claimAtom: REFUTED_ATOM,
+          verdict: "false",
+          evidence: "世卫组织辟谣平台声明无此结论[1]。",
+          supportingSources: [],
+          contradictingSources: [{ url, title: "世卫组织辟谣平台：无此结论", snippet: "官方声明未提及隔夜水致癌" }],
+          evidenceGaps: [],
+        },
+      ],
+    },
+    { claimAtomKeyFn: (s) => s.replace(/\u3000/g, " ").trim() }
+  );
+}
 
 vi.mock("./lib/agentExpansion", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./lib/agentExpansion")>();
@@ -214,7 +242,8 @@ describe("调查态与完成态（同画布）", () => {
     fireEvent.input(editor);
     fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
 
-    expect(await screen.findByText("这次调查没有完成")).toBeInTheDocument();
+    expect(await screen.findByText("还没有写成总判断")).toBeInTheDocument();
+    expect(document.querySelector("[data-gp-interrupted]")).toBeTruthy();
     expect(document.querySelector('[data-gp-claim-id="claim-1"]')).toBeTruthy();
     expect(screen.queryByLabelText("调查结论")).toBeNull();
   });
@@ -264,12 +293,11 @@ describe("调查态与完成态（同画布）", () => {
     expect(document.querySelector('[data-gp-timeout-pending]')).toBeNull();
   });
 
-  it("超时后传输层断线：仍说「还在查」，不说成「这次调查没有完成」", async () => {
+  it("timeout_pending 后流结束且没有 complete：不得停在 judging +「还在查」", async () => {
     mockFetch();
     vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
       yield { type: "investigation_snapshot", investigation: investigatingUnassessed() } as OrchestrateStreamEvent;
       yield { type: "timeout_pending" } as OrchestrateStreamEvent;
-      // 之后本地连接断了，但服务端管线还在跑（结论经刷新恢复可取回）
     });
 
     render(<App />);
@@ -278,10 +306,33 @@ describe("调查态与完成态（同画布）", () => {
     fireEvent.input(editor);
     fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
 
-    expect(await screen.findByText("还在查，可以离开页面，稍后回来或刷新能看到结果")).toBeInTheDocument();
-    // 断线不是调查失败：不冒充「没查完」，已获命题照常留着
-    expect(screen.queryByText("这次调查没有完成")).toBeNull();
+    await waitFor(() => {
+      expect(document.querySelector('[data-gp-phase="interrupted"]')).toBeTruthy();
+    });
+    expect(screen.queryByText("还在查，可以离开页面，稍后回来或刷新能看到结果")).toBeNull();
+    expect(document.querySelector("[data-gp-timeout-pending]")).toBeNull();
     expect(document.querySelector('[data-gp-claim-id="claim-1"]')).toBeTruthy();
+  });
+
+  it("timeout_pending 后流结束、分条已齐：黄卡带总答", async () => {
+    mockFetch();
+    vi.mocked(requestOrchestrateStream).mockImplementationOnce(async function* () {
+      yield { type: "investigation_snapshot", investigation: judgingAllJudged() } as OrchestrateStreamEvent;
+      yield { type: "timeout_pending" } as OrchestrateStreamEvent;
+    });
+
+    render(<App />);
+    const editor = await screen.findByRole("textbox", { name: "要调查的说法" });
+    editor.textContent = REFUTED_CLAIM;
+    fireEvent.input(editor);
+    fireEvent.click(screen.getByRole("button", { name: /开始调查/ }));
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-gp-interrupted-answer]")).toBeTruthy();
+    });
+    expect(document.querySelector('[data-gp-phase="interrupted"]')).toBeTruthy();
+    expect(document.querySelector("[data-gp-interrupted-answer]")!.textContent).toMatch(/站得住|站不住|有对有错/);
+    expect(screen.queryByText("还在查，可以离开页面，稍后回来或刷新能看到结果")).toBeNull();
   });
 });
 

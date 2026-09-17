@@ -33,10 +33,14 @@ export type InvestigationBuildInput = {
   claimAtoms?: unknown;
   /** [{ text, verifiable, type }]，拆题类型闸工单。 */
   claimAtomTypes?: unknown;
+  /** Actual retrieval plan, never inferred from unmatched sentence fragments. */
+  scopePlan?: { includedAtoms: readonly string[]; deferredAtoms: readonly string[] };
   /** AtomSearchBundle 形：{ atomsSearched?, byAtomKey? }。 */
   atomSearchBundle?: unknown;
   /** SubclaimVerdict 形数组（合并绑定后或模型原始）。 */
   subclaimVerdicts?: unknown;
+  /** SourceValidator 对 claimAtom + URL 的独立方向核验。只给 EvidenceLink 附元信息，不凭关键词翻桶。 */
+  sourceRelationAudits?: unknown;
   /** [{ text, type }] 立场/不适用原子（legacy 补 types 用）。 */
   nonVerifiableAtoms?: unknown;
   /** { ran?, atoms?: [...] } 质询记录；只用于冲突 reason，不决定冲突是否存在。 */
@@ -97,6 +101,7 @@ function clip(text: string, max: number): string {
 }
 
 const DISPLAY_EXCERPT_MAX = 80;
+const PASSAGE_MAX = 620;
 
 /** 调查中可见摘录：约 80 字，超出打省略号。 */
 function clipExcerpt(text: string): string {
@@ -104,6 +109,44 @@ function clipExcerpt(text: string): string {
   if (!trimmed) return "";
   if (trimmed.length <= DISPLAY_EXCERPT_MAX) return trimmed;
   return `${trimmed.slice(0, DISPLAY_EXCERPT_MAX)}…`;
+}
+
+function cleanPassageText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function claimAnchorIndex(claim: string, passage: string): number {
+  const compactClaim = claim.replace(/[^\u4e00-\u9fffA-Za-z0-9]/g, "");
+  if (!compactClaim || !passage) return -1;
+  for (let size = Math.min(8, compactClaim.length); size >= 2; size -= 1) {
+    for (let start = 0; start + size <= compactClaim.length; start += 1) {
+      const gram = compactClaim.slice(start, start + size);
+      if (/^(所以|因此|这个|一种|可以|能够|就是|已经)$/.test(gram)) continue;
+      const index = passage.indexOf(gram);
+      if (index >= 0) return index;
+    }
+  }
+  return -1;
+}
+
+function sectionTitleFromPassage(text: string, anchor: number): string | undefined {
+  const before = text.slice(0, anchor >= 0 ? Math.min(text.length, anchor + 120) : text.length);
+  const pattern = /(?:流言|谣言|传言|误区)\s*[：:]?\s*([^。！？；\n]{3,80}?)\s*(?=真相|事实|辟谣|解析|解读)/g;
+  let selected = "";
+  for (const match of before.matchAll(pattern)) selected = match[1]?.trim() ?? selected;
+  return selected || undefined;
+}
+
+function passageMeta(claim: string, snippet: string): { passage?: string; sectionTitle?: string } {
+  const text = cleanPassageText(snippet);
+  if (!text) return {};
+  const anchor = claimAnchorIndex(claim, text);
+  const start = anchor > 160 ? anchor - 160 : 0;
+  const passage = text.slice(start, Math.min(text.length, start + PASSAGE_MAX));
+  return {
+    passage: `${start > 0 ? "…" : ""}${passage}${start + PASSAGE_MAX < text.length ? "…" : ""}`,
+    ...(sectionTitleFromPassage(text, anchor) ? { sectionTitle: sectionTitleFromPassage(text, anchor) } : {}),
+  };
 }
 
 /** finding 若整段或其中一句已经写在结论里，就不要再挂到依据。 */
@@ -255,6 +298,11 @@ type VerdictLike = {
   sourcesRelatedOnly: boolean;
 };
 
+type RelationAuditView = {
+  relation: "support" | "contradict" | "context-only" | "unverified";
+  reason: string;
+};
+
 /**
  * 与 claimAtom/merge.ts 的 alignFalseEvidenceBuckets 同向：只按结构化 verdict 改桶。
  * Snapshot 读取兜底，不回写生产数据，不用 finding 文本。
@@ -314,6 +362,27 @@ function readVerdicts(raw: unknown, keyFn: (s: string) => string): Map<string, V
         .filter((g) => g.length > 0)
         .slice(0, 3),
       sourcesRelatedOnly,
+    });
+  }
+  return out;
+}
+
+function readRelationAudits(
+  raw: unknown,
+  keyFn: (s: string) => string,
+): Map<string, RelationAuditView> {
+  const out = new Map<string, RelationAuditView>();
+  for (const item of asArray(raw)) {
+    const rec = asRecord(item);
+    if (!rec) continue;
+    const claimAtom = asString(rec.claimAtom).trim();
+    const url = normalizeInvestigationSourceUrl(asString(rec.url).trim());
+    const relation = asString(rec.relation).trim();
+    if (!claimAtom || !url) continue;
+    if (relation !== "support" && relation !== "contradict" && relation !== "context-only" && relation !== "unverified") continue;
+    out.set(`${keyFn(claimAtom)}\u0000${url}`, {
+      relation,
+      reason: clip(asString(rec.reason), 320),
     });
   }
   return out;
@@ -379,7 +448,7 @@ function readBundle(
           return {
             url: asString(s.url).trim(),
             title: clip(asString(s.title), 200),
-            snippet: clipExcerpt(asString(s.snippet)),
+            snippet: clip(asString(s.snippet), 900),
             ...(reusable && provenance ? { provenance } : {}),
             ...(reusable && asString(s.originDate).trim()
               ? { originDate: clip(asString(s.originDate), 40) }
@@ -490,6 +559,7 @@ export function buildInvestigationSnapshot(
   const types = readAtomTypes(input.claimAtomTypes, input.nonVerifiableAtoms, keyFn);
   const verdicts = readVerdicts(input.subclaimVerdicts, keyFn);
   const bundle = readBundle(input.atomSearchBundle, keyFn);
+  const relationAudits = readRelationAudits(input.sourceRelationAudits, keyFn);
   const crossExamAtoms = readCrossExam(input.crossExam, keyFn);
   const pursuitByAtom = readPursuitHops(input.pursuitHops, keyFn);
   const report = asRecord(input.report);
@@ -518,11 +588,18 @@ export function buildInvestigationSnapshot(
       const out: BundleSource[] = [];
       const seen = new Set<string>();
       for (const s of list) {
-        const url = asString(s.url).trim();
+        const url = normalizeInvestigationSourceUrl(asString(s.url).trim());
         if (!isHttpUrl(url) || seen.has(url)) continue;
-        if (allowed && !allowed.some((a) => a.url === url)) continue; // 幻觉 URL 拦截
+        const canonical = allowed?.find((a) => normalizeInvestigationSourceUrl(a.url) === url);
+        if (allowed && !canonical) continue; // 幻觉 URL 拦截
         seen.add(url);
-        out.push({ url, title: clip(asString(s.title), 200), snippet: clipExcerpt(asString(s.snippet)) });
+        // URL 只证明「模型引用的是本轮拿到的来源」，不能授权模型改写 title/snippet。
+        // 有 bundle 时一律用检索层 canonical metadata；旧历史没有 bundle 才回退模型字段。
+        out.push(canonical ?? {
+          url,
+          title: clip(asString(s.title), 200),
+          snippet: clip(asString(s.snippet), 900),
+        });
       }
       return out;
     };
@@ -593,6 +670,20 @@ export function buildInvestigationSnapshot(
   const claims: InvestigationClaim[] = assemblies.map((a) => {
     const verdict = a.verdict;
     const evidence: InvestigationEvidenceLink[] = [];
+    const evidenceMeta = (source: BundleSource, role: InvestigationEvidenceLink["role"]) => {
+      const url = normalizeInvestigationSourceUrl(source.url);
+      const audit = relationAudits.get(`${a.key}\u0000${url}`);
+      const passage = passageMeta(a.text, source.snippet);
+      const auditMatchesRole =
+        audit &&
+        ((role === "support" && audit.relation === "support") ||
+          (role === "contradict" && audit.relation === "contradict") ||
+          (role === "context-only" && (audit.relation === "context-only" || audit.relation === "unverified")));
+      return {
+        ...passage,
+        ...(auditMatchesRole && audit.reason ? { relationReason: audit.reason } : {}),
+      };
+    };
     if (verdict) {
       const finding = pointFinding(verdict.evidence, conclusionText);
       // 支持位：related-only 的检索填充绝不映射为 support。
@@ -612,6 +703,7 @@ export function buildInvestigationSnapshot(
         evidence.push({
           sourceId,
           role,
+          ...evidenceMeta(s, role),
           ...((role === "support" || role === "context-only") ? takeFinding() : {}),
           ...reuseFieldsOf(s.url),
         });
@@ -623,6 +715,7 @@ export function buildInvestigationSnapshot(
         evidence.push({
           sourceId,
           role: "contradict",
+          ...evidenceMeta(s, "contradict"),
           ...takeFinding(),
           ...reuseFieldsOf(s.url),
         });
@@ -633,6 +726,7 @@ export function buildInvestigationSnapshot(
         evidence.push({
           sourceId: sourceIdByUrl.get(s.url)!,
           role: "context-only",
+          ...evidenceMeta(s, "context-only"),
           ...reuseFieldsOf(s.url),
         });
       }
@@ -642,6 +736,7 @@ export function buildInvestigationSnapshot(
         evidence.push({
           sourceId: sourceIdByUrl.get(s.url)!,
           role: "unassessed",
+          ...evidenceMeta(s, "unassessed"),
           ...reuseFieldsOf(s.url),
         });
       }
@@ -817,6 +912,10 @@ export function buildInvestigationSnapshot(
     ...(conclusion ? { conclusion } : {}),
     ...(checkedAt ? { checkedAt } : {}),
     ...(preClaimWork ? { preClaimWork } : {}),
+    ...(input.scopePlan ? { scope: {
+      includedClaimIds: claims.filter((c) => c.evidence.length > 0 || input.scopePlan!.includedAtoms.some((a) => keyFn(a) === keyFn(c.text))).map((c) => c.id),
+      deferredClaimIds: claims.filter((c) => c.evidence.length === 0 && !input.scopePlan!.includedAtoms.some((a) => keyFn(a) === keyFn(c.text)) && input.scopePlan!.deferredAtoms.some((a) => keyFn(a) === keyFn(c.text))).map((c) => c.id),
+    } } : {}),
   });
 }
 

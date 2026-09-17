@@ -21,6 +21,7 @@
 
 import { deriveOverallVerdict } from "../reportAssembly/assembleFinalReport.js";
 import { listAtomsForSearch } from "../atomSearch.js";
+import { claimAtomKey } from "../claimAtom/index.js";
 import { directAnswer } from "../publicCopy.js";
 import { hasDirectionalBoundHttpUrl } from "../citationBinding.js";
 
@@ -95,6 +96,32 @@ function hasSourcedFalseVerdict(verdicts: unknown[]): boolean {
   );
 }
 
+/**
+ * 每一个可核查原子都已经被带方向绑定来源的 false 判词覆盖时，整句 false
+ * 不需要再证明一个更强的「世界上不存在其它原因」命题。Whole-Claim Audit
+ * 仍可把额外背景列为边界，但不能用它把已经逐条证伪的原句收回 unverified。
+ */
+function allVerifiableAtomsSourcedFalse(
+  verifiableAtoms: readonly string[],
+  nonVerifiableCount: number,
+  verdicts: Array<Record<string, unknown>>
+): boolean {
+  if (verifiableAtoms.length === 0 || nonVerifiableCount > 0) return false;
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const verdict of verdicts) {
+    const key = claimAtomKey(String(verdict.claimAtom ?? ""));
+    if (key) byKey.set(key, verdict);
+  }
+  return verifiableAtoms.every((atom) => {
+    const verdict = byKey.get(claimAtomKey(atom));
+    return Boolean(
+      verdict &&
+      String(verdict.verdict ?? "").trim().toLowerCase() === "false" &&
+      directionalBound("false", verdict)
+    );
+  });
+}
+
 /** 整句收权门：返回（可能降级后的）verdictType 与触发记录。不改判词文本。 */
 export function applyConclusionGate(
   report: Record<string, unknown>,
@@ -161,6 +188,12 @@ export function applyConclusionGate(
   //    （mixed_misleading 两侧都要求绑定来源，保持不变）。
   const auditUnresolved = input.auditUnresolvedGaps?.length ?? 0;
   if (auditUnresolved > 0 && (verdictType === "true" || verdictType === "false")) {
+    if (
+      verdictType === "false" &&
+      allVerifiableAtomsSourcedFalse(listed.verifiable, listed.nonVerifiable.length, verdicts)
+    ) {
+      return { changed: false };
+    }
     return demote("unverified", "audit-unresolved-bridge-gap");
   }
 
@@ -226,10 +259,10 @@ function listUnresolvedCheckableAtoms(value: unknown): Array<{ text: string }> {
   return out;
 }
 
-const STANDING_VERDICTS = new Set(["true", "partial", "exaggerated"]);
+const AFFIRMATIVE_VERDICTS = new Set(["true", "mostly_true", "partial", "exaggerated"]);
 
-function listStandingAtoms(value: unknown): Array<{ text: string }> {
-  const out: Array<{ text: string }> = [];
+function listAffirmativeAtoms(value: unknown): Array<{ text: string; verdict: string }> {
+  const out: Array<{ text: string; verdict: string }> = [];
   if (!Array.isArray(value)) return out;
   for (const item of value) {
     if (!item || typeof item !== "object") continue;
@@ -237,11 +270,27 @@ function listStandingAtoms(value: unknown): Array<{ text: string }> {
     const text = typeof rec.claimAtom === "string" ? rec.claimAtom.trim() : "";
     if (!text) continue;
     const verdict = String(rec.verdict ?? "").trim().toLowerCase();
-    if (STANDING_VERDICTS.has(verdict) && directionalBound("true", rec)) {
-      out.push({ text });
+    if (AFFIRMATIVE_VERDICTS.has(verdict) && directionalBound(verdict, rec)) {
+      out.push({ text, verdict });
     }
   }
   return out;
+}
+
+function affirmativeLead(atom: { text: string; verdict: string }): string {
+  const quoted = `「${clipText(atom.text, 40)}」`;
+  switch (atom.verdict) {
+    case "true":
+      return `${quoted}站得住`;
+    case "mostly_true":
+      return `${quoted}大体站得住，但有边界`;
+    case "partial":
+      return `${quoted}只有一部分站得住`;
+    case "exaggerated":
+      return `${quoted}有事实基础，但表述夸大`;
+    default:
+      return `${quoted}仍需按边界理解`;
+  }
 }
 
 function listSourcedFalseAtoms(value: unknown): Array<{ text: string }> {
@@ -416,9 +465,9 @@ export function needsConstrainedConclusion(
   const hasNonVerifiable = listNonVerifiableAtoms(input.nonVerifiableAtoms).length > 0;
   const hasGaps = (input.auditUnresolvedGaps ?? []).length > 0;
   const unresolvedCheckable = listUnresolvedCheckableAtoms(verdicts);
-  const standing = listStandingAtoms(verdicts);
+  const affirmative = listAffirmativeAtoms(verdicts);
   const falling = listSourcedFalseAtoms(verdicts);
-  const bothSides = standing.length > 0 && falling.length > 0;
+  const bothSides = affirmative.length > 0 && falling.length > 0;
   const hasSourced = verdicts.some((v) =>
     v && typeof v === "object"
       ? directionalBound((v as Record<string, unknown>).verdict, v as Record<string, unknown>)
@@ -470,7 +519,7 @@ export function repairGatedConclusion(
   let gated = gate.to;
   const nonVerifiable = listNonVerifiableAtoms(input.nonVerifiableAtoms).slice(0, 2);
   const unresolvedCheckable = listUnresolvedCheckableAtoms(input.subclaimVerdicts).slice(0, 2);
-  const standing = listStandingAtoms(input.subclaimVerdicts);
+  const affirmative = listAffirmativeAtoms(input.subclaimVerdicts);
   const falling = listSourcedFalseAtoms(input.subclaimVerdicts);
   const sourcedEvidence = listSourcedVerdictEvidence(input.subclaimVerdicts);
   const gaps = (input.auditUnresolvedGaps ?? []).filter((g) => typeof g === "string" && g.trim()).slice(0, 1);
@@ -478,7 +527,7 @@ export function repairGatedConclusion(
   // 计入判断的主张都尚未查清时，不能把整段打成「不支持」再挂「尚未查清」。
   // 短谣辟谣通道（allowUnboundHardFalse）是唯一豁免：检索层已有对题辟谣。
   if (
-    standing.length === 0 &&
+    affirmative.length === 0 &&
     falling.length === 0 &&
     (gated === "false" || gated === "true") &&
     !input.allowUnboundHardFalse
@@ -487,17 +536,20 @@ export function repairGatedConclusion(
     report.verdictType = "unverified";
   }
   // 有据之真 + 有据之假：按条说，不得整段盖「不支持」。
-  if (standing.length > 0 && falling.length > 0) {
+  if (affirmative.length > 0 && falling.length > 0) {
     gated = "mixed_misleading";
     report.verdictType = "mixed_misleading";
   }
 
+  // 整句 unverified（连词未齐 / 桥接缺口）第一句必须是标准待核查直答，
+  // 不得用「站得住」把未证成的合取句说成已站住。按条站得住/站不住只给 mixed。
   const enumerated =
-    standing.length + falling.length > 0 &&
-    standing.length + falling.length + unresolvedCheckable.length > 1;
+    gated !== "unverified" &&
+    affirmative.length + falling.length > 0 &&
+    affirmative.length + falling.length + unresolvedCheckable.length > 1;
   const lead = enumerated
     ? `${[
-        ...standing.map((atom) => `「${clipText(atom.text, 40)}」站得住`),
+        ...affirmative.map(affirmativeLead),
         ...falling.map((atom) => `「${clipText(atom.text, 40)}」站不住`),
       ].join("；")}。`
     : directAnswer(gated);

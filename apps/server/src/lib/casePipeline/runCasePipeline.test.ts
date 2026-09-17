@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { runCasePipeline } from "./runCasePipeline";
 import type { PipelineStep } from "./runCasePipeline";
+import { confirmedSourceValidatorStep } from "./testSourceRelationAudit";
 import { JsonlMemoryCandidateStore } from "../memoryCandidateStore";
 
 describe("runCasePipeline", () => {
@@ -14,7 +15,7 @@ describe("runCasePipeline", () => {
       sources: [{ url: `https://t.test/${encodeURIComponent(atom)}`, title: atom, snippet: "s" }],
     }));
 
-    const runAgent = vi.fn(async (agentId: string, _steps: PipelineStep[]): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -41,7 +42,7 @@ describe("runCasePipeline", () => {
         };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "medium" } };
+        return confirmedSourceValidatorStep(steps, "medium");
       }
       if (agentId === "report_composer") {
         return {
@@ -72,6 +73,8 @@ describe("runCasePipeline", () => {
         },
         model: "selfproof-m",
       }),
+      // This case verifies self-proof/type filtering; evidence pursuit has its own tests below.
+      evidenceLoop: { enabled: false },
       runReport: async ({ steps, search360Result, atomSearchBundle }) =>
         runAgent("report_composer", steps, search360Result, atomSearchBundle),
     });
@@ -106,8 +109,8 @@ describe("runCasePipeline", () => {
     expect(result.runId).toBeTruthy();
   });
 
-  it("类型闸：隔夜菜被标 value 仍检索；规范句与纯骂不检索", async () => {
-    const leftover = "隔夜菜会致癌";
+  it("类型闸：量化超标事实被标 value 仍检索；规范句与纯骂不检索", async () => {
+    const leftover = "隔夜菜亚硝酸盐超标百倍";
     const normative = "政府应该禁止隔夜菜";
     const rant = "这种政策就是不管老百姓死活";
     const searchOne = vi.fn(async (atom: string) => ({
@@ -116,7 +119,7 @@ describe("runCasePipeline", () => {
       sources: [{ url: `https://t.test/${encodeURIComponent(atom)}`, title: atom, snippet: "s" }],
     }));
 
-    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -142,7 +145,7 @@ describe("runCasePipeline", () => {
         };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "medium" } };
+        return confirmedSourceValidatorStep(steps, "medium");
       }
       throw new Error(`unexpected ${agentId}`);
     });
@@ -188,13 +191,13 @@ describe("runCasePipeline", () => {
     const searchOne = vi.fn(async (atom: string) => ({
       sources: [{ url: "https://www.piyao.org.cn/x", title: "辟谣", snippet: "不实" }],
     }));
-    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") throw new Error("quota");
       if (agentId === "fact_checker") {
         return { agent: "fact_checker", output: { factCheckResult: "false", subclaimVerdicts: [] } };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "high" } };
+        return confirmedSourceValidatorStep(steps, "high");
       }
       throw new Error(`unexpected ${agentId}`);
     });
@@ -221,7 +224,7 @@ describe("runCasePipeline", () => {
   });
 
   it("fact_checker 与 source_validator 失败时即使检索有辟谣链接也只能 unverified", async () => {
-    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -268,7 +271,7 @@ describe("runCasePipeline", () => {
   it("检索已有对题辟谣时，把只能信一部分收成不能信", async () => {
     const result = await runCasePipeline({
       claim: "我说我的电瓶车叫谁偷走了，原来送给非洲人去了",
-      runAgent: async (agentId: string): Promise<PipelineStep> => {
+      runAgent: async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
         if (agentId === "rumor_detector") {
           return {
             agent: "rumor_detector",
@@ -284,7 +287,7 @@ describe("runCasePipeline", () => {
           return { agent: "fact_checker", output: { factCheckResult: "partial", subclaimVerdicts: [] } };
         }
         if (agentId === "source_validator") {
-          return { agent: "source_validator", output: { sourceReliability: "medium" } };
+          return confirmedSourceValidatorStep(steps, "medium");
         }
         throw new Error(`unexpected ${agentId}`);
       },
@@ -319,7 +322,7 @@ describe("runCasePipeline", () => {
     const onReportReviewStart = vi.fn();
     const onReportReviewResult = vi.fn();
 
-    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -336,7 +339,7 @@ describe("runCasePipeline", () => {
         };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "low" } };
+        return confirmedSourceValidatorStep(steps, "low");
       }
       throw new Error(`unexpected ${agentId}`);
     });
@@ -383,7 +386,7 @@ describe("runCasePipeline", () => {
       };
     });
     let factRuns = 0;
-    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -397,6 +400,7 @@ describe("runCasePipeline", () => {
       }
       if (agentId === "fact_checker") {
         factRuns += 1;
+        const official = { url: "https://gov.cn/notice-1", title: "官方通报", snippet: "正式口径" };
         return {
           agent: "fact_checker",
           output: {
@@ -405,13 +409,15 @@ describe("runCasePipeline", () => {
               {
                 claimAtom: "某地明天发生7级地震",
                 verdict: factRuns === 1 ? "unverified" : "false",
+                supportingSources: [],
+                contradictingSources: factRuns === 1 ? [] : [official],
               },
             ],
           },
         };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "medium" } };
+        return confirmedSourceValidatorStep(steps, "medium");
       }
       throw new Error(`unexpected ${agentId}`);
     });
@@ -458,7 +464,7 @@ describe("runCasePipeline", () => {
       sources: [{ url: "https://same/1", title: "同一来源", snippet: "s" }],
     }));
     let factRuns = 0;
-    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -476,7 +482,7 @@ describe("runCasePipeline", () => {
         };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "low" } };
+        return confirmedSourceValidatorStep(steps, "low");
       }
       throw new Error(`unexpected ${agentId}`);
     });
@@ -512,7 +518,7 @@ describe("runCasePipeline", () => {
       return { sources: [{ url: "https://blog/old", title: "旧帖", snippet: "旧" }] };
     });
     let factRuns = 0;
-    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -526,16 +532,22 @@ describe("runCasePipeline", () => {
         factRuns += 1;
         // v1/v2 未解决；v3（拿到当事方回应后）翻案为 false
         const verdict = factRuns >= 3 ? "false" : "unverified";
+        const party = { url: "https://party/1", title: "当事方回应", snippet: "回应" };
         return {
           agent: "fact_checker",
           output: {
             factCheckResult: verdict,
-            subclaimVerdicts: [{ claimAtom: atom, verdict }],
+            subclaimVerdicts: [{
+              claimAtom: atom,
+              verdict,
+              supportingSources: [],
+              contradictingSources: factRuns >= 3 ? [party] : [],
+            }],
           },
         };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "medium" } };
+        return confirmedSourceValidatorStep(steps, "medium");
       }
       throw new Error(`unexpected ${agentId}`);
     });
@@ -576,7 +588,7 @@ describe("runCasePipeline", () => {
       return { sources: [{ url: "https://blog/old", title: "旧帖", snippet: "旧" }] };
     });
     let factRuns = 0;
-    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -589,13 +601,22 @@ describe("runCasePipeline", () => {
       if (agentId === "fact_checker") {
         factRuns += 1;
         const verdict = factRuns === 1 ? "unverified" : "false";
+        const official = { url: "https://gov.cn/n2", title: "官方通报", snippet: "口径" };
         return {
           agent: "fact_checker",
-          output: { factCheckResult: verdict, subclaimVerdicts: [{ claimAtom: atom, verdict }] },
+          output: {
+            factCheckResult: verdict,
+            subclaimVerdicts: [{
+              claimAtom: atom,
+              verdict,
+              supportingSources: [],
+              contradictingSources: factRuns === 1 ? [] : [official],
+            }],
+          },
         };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "medium" } };
+        return confirmedSourceValidatorStep(steps, "medium");
       }
       throw new Error(`unexpected ${agentId}`);
     });
@@ -625,7 +646,7 @@ describe("runCasePipeline", () => {
     const searchOne = vi.fn(async (q: string) => ({
       sources: [{ url: `https://t.test/${encodeURIComponent(q)}`, title: q, snippet: "s" }],
     }));
-    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -656,7 +677,7 @@ describe("runCasePipeline", () => {
         };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "medium" } };
+        return confirmedSourceValidatorStep(steps, "medium");
       }
       if (agentId === "alternative_explanation_searcher" || agentId === "counter_evidence_grader") {
         return { agent: agentId, output: {} };
@@ -702,7 +723,7 @@ describe("runCasePipeline", () => {
     const searchOne = vi.fn(async (q: string) => ({
       sources: [{ url: `https://t.test/${encodeURIComponent(q)}`, title: q, snippet: "s" }],
     }));
-    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -730,7 +751,7 @@ describe("runCasePipeline", () => {
         };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "low" } };
+        return confirmedSourceValidatorStep(steps, "low");
       }
       throw new Error(`unexpected ${agentId}`);
     });
@@ -763,7 +784,7 @@ describe("runCasePipeline", () => {
 
   it("cross exam：独立意见没有具体质询时不追加回应、不按分歧降分", async () => {
     const conflictAtom = "某地明天下雪";
-    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -790,7 +811,7 @@ describe("runCasePipeline", () => {
         };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "medium" } };
+        return confirmedSourceValidatorStep(steps, "medium");
       }
       throw new Error(`unexpected ${agentId}`);
     });
@@ -839,7 +860,7 @@ describe("runCasePipeline", () => {
     const onMemoryWriteResult = vi.fn();
 
     try {
-      const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+      const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
         if (agentId === "rumor_detector") {
           return {
             agent: "rumor_detector",
@@ -853,7 +874,7 @@ describe("runCasePipeline", () => {
           return { agent: "fact_checker", output: { factCheckResult: "partial", subclaimVerdicts: [] } };
         }
         if (agentId === "source_validator") {
-          return { agent: "source_validator", output: { sourceReliability: "medium" } };
+          return confirmedSourceValidatorStep(steps, "medium");
         }
         throw new Error(`unexpected ${agentId}`);
       });
@@ -910,7 +931,7 @@ describe("runCasePipeline", () => {
     const searchOne = vi.fn(async (atom: string) => ({
       sources: [{ url: `https://t.test/${encodeURIComponent(atom)}`, title: atom, snippet: "s" }],
     }));
-    const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -934,7 +955,7 @@ describe("runCasePipeline", () => {
         };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "medium" } };
+        return confirmedSourceValidatorStep(steps, "medium");
       }
       throw new Error(`unexpected ${agentId}`);
     });
@@ -1019,6 +1040,70 @@ describe("runCasePipeline abort（B1 僵尸流水线回归）", () => {
   });
 });
 
+describe("runCasePipeline 分条已齐但报告来不及", () => {
+  const ATOM = "喝隔夜水会致癌";
+  const SRC = { url: "https://t.test/refute", title: "辟谣", snippet: "无此结论" };
+
+  it("剩余时间不够一次写报告：不调 LLM runReport，complete 带确定性总答", async () => {
+    const runReport = vi.fn(async () => {
+      throw new Error("不该再调 LLM 写报告");
+    });
+    const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
+      if (agentId === "rumor_detector") {
+        return {
+          agent: "rumor_detector",
+          output: {
+            claimAtoms: [ATOM],
+            claimAtomTypes: [{ text: ATOM, verifiable: true, type: "fact" }],
+          },
+        };
+      }
+      if (agentId === "fact_checker") {
+        return {
+          agent: "fact_checker",
+          output: {
+            factCheckResult: "false",
+            subclaimVerdicts: [
+              {
+                claimAtom: ATOM,
+                verdict: "false",
+                evidence: "无此结论",
+                supportingSources: [],
+                contradictingSources: [SRC],
+                evidenceGaps: [],
+              },
+            ],
+          },
+        };
+      }
+      if (agentId === "source_validator") {
+        return confirmedSourceValidatorStep(steps, "high");
+      }
+      throw new Error(`unexpected ${agentId}`);
+    });
+    const result = await runCasePipeline({
+      claim: "世界卫生组织已经宣布喝隔夜水会致癌。",
+      runAgent,
+      searchOne: async () => ({ answer: "", model: "m", sources: [SRC] }),
+      callSelfProofModel: async () => ({
+        output: { results: [{ atom: ATOM, supported: true, reason: "原句直说" }] },
+        model: "m",
+      }),
+      runReport,
+      evidenceLoop: { enabled: false },
+      deadline: Date.now() + 20_000,
+      hooks: {
+        onInvestigationSnapshot: () => {},
+      },
+    });
+    expect(runReport).not.toHaveBeenCalled();
+    expect(result.finalReport.conclusion).toBeTruthy();
+    expect(result.finalReport.investigation).toMatchObject({ phase: "complete" });
+    expect((result.finalReport.investigation as { conclusion?: { directAnswer?: string } }).conclusion?.directAnswer).toBeTruthy();
+    expect(result.reportStep.model).toBe("fallback:deterministic-report");
+  });
+});
+
 // 首轮与追问轮共用同一入口 runCasePipeline（handlers.ts 的 followUp 只影响 caseId 与关联校验），
 // 所以本组的兜底结论对首轮与追问轮同样成立。
 describe("runCasePipeline self-proof 全丢兜底（主路 P0 Change B）", () => {
@@ -1026,7 +1111,7 @@ describe("runCasePipeline self-proof 全丢兜底（主路 P0 Change B）", () =
   const ATOM_B = "事实B";
 
   function stubRunAgent() {
-    return vi.fn(async (agentId: string): Promise<PipelineStep> => {
+    return vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
       if (agentId === "rumor_detector") {
         return {
           agent: "rumor_detector",
@@ -1043,7 +1128,7 @@ describe("runCasePipeline self-proof 全丢兜底（主路 P0 Change B）", () =
         return { agent: "fact_checker", output: { factCheckResult: "unverified", subclaimVerdicts: [] } };
       }
       if (agentId === "source_validator") {
-        return { agent: "source_validator", output: { sourceReliability: "unverified" } };
+        return confirmedSourceValidatorStep(steps, "unverified");
       }
       throw new Error(`unexpected ${agentId}`);
     });
@@ -1157,7 +1242,7 @@ describe("runCasePipeline self-proof 全丢兜底（主路 P0 Change B）", () =
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const callSelfProofModel = vi.fn(async () => allUnsupported);
-      const runAgent = vi.fn(async (agentId: string): Promise<PipelineStep> => {
+      const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
         if (agentId === "rumor_detector") {
           return {
             agent: "rumor_detector",
@@ -1168,7 +1253,7 @@ describe("runCasePipeline self-proof 全丢兜底（主路 P0 Change B）", () =
           return { agent: "fact_checker", output: { factCheckResult: "unverified", subclaimVerdicts: [] } };
         }
         if (agentId === "source_validator") {
-          return { agent: "source_validator", output: { sourceReliability: "unverified" } };
+          return confirmedSourceValidatorStep(steps, "unverified");
         }
         throw new Error(`unexpected ${agentId}`);
       });

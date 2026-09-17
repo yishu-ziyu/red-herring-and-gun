@@ -72,11 +72,9 @@ export type UiCopy = {
   signOut: string;
   signInAccount: string;
   pointsPrefix: string;
-  addMaterialOrSkill: string;
-  addImage: string;
-  addAttachment: string;
-  skills: string;
-  noSkillMatch: string;
+  addMaterial: string;
+  addImageOrVideo: string;
+  videoFramesOnly: string;
   docTitle: string;
   /* 桌面壳层 */
   historyLabel: string;
@@ -167,11 +165,9 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     signOut: "退出",
     signInAccount: "登录账号",
     pointsPrefix: "点数",
-    addMaterialOrSkill: "添加材料或技能",
-    addImage: "添加图片",
-    addAttachment: "添加附件",
-    skills: "技能",
-    noSkillMatch: "没有匹配的技能",
+    addMaterial: "添加材料",
+    addImageOrVideo: "添加图片或视频",
+    videoFramesOnly: "视频按画面抽帧核查，不读取音轨；暂不支持 PDF、Word。",
     docTitle: "红鲱鱼与枪｜查出处，判断原句哪里站得住",
     historyLabel: "历史卷宗",
     newCheck: "新查一条",
@@ -259,11 +255,9 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     signOut: "Sign out",
     signInAccount: "Sign in",
     pointsPrefix: "Points",
-    addMaterialOrSkill: "Add material or a skill",
-    addImage: "Add image",
-    addAttachment: "Add attachment",
-    skills: "Skills",
-    noSkillMatch: "No matching skills",
+    addMaterial: "Add material",
+    addImageOrVideo: "Add images or videos",
+    videoFramesOnly: "Videos are checked using sampled frames, not audio. PDF and Word files are not supported.",
     docTitle: "Red Herring & Gun | Trace the source, judge what holds up",
     historyLabel: "Past cases",
     newCheck: "New check",

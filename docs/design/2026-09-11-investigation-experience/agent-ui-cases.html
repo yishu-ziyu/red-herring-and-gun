@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent 过程 UI 案例</title>
+  <style>
+    :root {
+      --bg: #f6f4ef; --ink: #252723; --muted: #62665e; --line: #dedcd4; --accent: #a13734;
+      --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 28px 32px 72px; background: var(--bg); color: var(--ink); font-family: var(--font); }
+    h1 { font-size: 18px; font-weight: 650; margin: 0 0 8px; }
+    .lede { margin: 0 0 28px; color: var(--muted); font-size: 14px; max-width: 720px; line-height: 1.55; }
+    .case { max-width: 760px; padding: 20px 0; border-top: 1px solid var(--line); }
+    .case h2 { font-size: 15px; margin: 0 0 6px; }
+    .case a { color: var(--accent); }
+    .case p { margin: 6px 0; font-size: 14px; line-height: 1.55; }
+    .tag { display: inline-block; font-size: 11px; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 4px; }
+    .steal { color: #28705a; }
+    .skip { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <h1>和 AICSS 同类的过程表达</h1>
+  <p class="lede">看的是「思考 / 工具 / 正文」怎么分块，不是把调查做成聊天。对我们：过程贴在拆问题下面、问题列表上面；做完收成一行。</p>
+
+  <article class="case">
+    <div class="tag">你点的原件</div>
+    <h2><a href="https://www.aicss.dev/" target="_blank" rel="noreferrer">AICSS</a></h2>
+    <p>Thinking 是 shimmer 标签。Thinking + Reasoning 工作时展开，结束后收成 “Thought for Ns”，还能点开。工具是单独一张卡（diff、出图），正文是另一块。</p>
+    <p class="steal">拿：分块、做完就折、工具出成果不出口令。</p>
+  </article>
+
+  <article class="case">
+    <div class="tag">Vercel</div>
+    <h2><a href="https://elements.ai-sdk.dev/components/reasoning" target="_blank" rel="noreferrer">AI Elements · Reasoning</a> · <a href="https://elements.ai-sdk.dev/components/chain-of-thought" target="_blank" rel="noreferrer">Chain of Thought</a> · <a href="https://elements.ai-sdk.dev/components/tool" target="_blank" rel="noreferrer">Tool</a></h2>
+    <p>Reasoning 流式时自动打开，结束后自动关上。Chain of Thought 是一步一步的步骤条。Tool 是调用卡，不是聊天气泡。</p>
+    <p class="steal">拿：工作时开、完成后关。几截可以当步骤，不是独白。</p>
+  </article>
+
+  <article class="case">
+    <div class="tag">assistant-ui</div>
+    <h2><a href="https://www.assistant-ui.com/docs/tools" target="_blank" rel="noreferrer">assistant-ui GroupedParts</a></h2>
+    <p>把 reasoning、tool-call、source 收进同一顶「Thinking」，正文留在外面。过程默认一团，答案单独读。</p>
+    <p class="steal">拿：拆开的几截和内部步骤共用一个可折的「过程」，问题列表不进这个折里。</p>
+  </article>
+
+  <article class="case">
+    <div class="tag">产品里的一行</div>
+    <h2><a href="https://scrimui.dev/" target="_blank" rel="noreferrer">Scrim UI</a> · <a href="https://beui.dev/components/agents" target="_blank" rel="noreferrer">beUI Agent Activity</a></h2>
+    <p>工具是一行：search_docs 1.2s，点开才有参数和结果。Reasoning 也是 “Thought 4.1s”。beUI 的 Tool Result 做完收成短状态。Scrim 还有 Agent Console（步骤、费用、取消）——那是运维台。</p>
+    <p class="steal">拿：过程默认一行。 <span class="skip">不拿：费用、token、运行控制台。</span></p>
+  </article>
+
+  <article class="case">
+    <div class="tag">21st / Agent Elements</div>
+    <h2><a href="https://agent-elements.21st.dev/docs/thinking-tool" target="_blank" rel="noreferrer">ThinkingTool</a> · <a href="https://21st.dev/@21st/components/mcp-tool" target="_blank" rel="noreferrer">MCP Tool</a></h2>
+    <p>思考也做成和工具同一排：shimmer「Thinking」→ 完成「Thought」。MCP Tool 有 pending / completed，参数和 JSON 输出可折。</p>
+    <p class="steal">拿：思考和动作同一套行，不要聊天气泡。JSON / search360 只进折里。</p>
+  </article>
+
+  <article class="case">
+    <div class="tag">产品原件，不是组件库</div>
+    <h2>Claude / ChatGPT 的 Thought for Ns · Cursor 的工具行</h2>
+    <p>大家都在抄这一下：思考默认收着，工具是文件 diff、搜索结果这种成果，不是 “tool: skipped”。Cursor 把改文件画成 diff 卡，插在回复前面。</p>
+    <p class="steal">拿：成果当卡。对我们，拆开的几截就是这张卡；问题列表才是回复。</p>
+  </article>
+</body>
+</html>

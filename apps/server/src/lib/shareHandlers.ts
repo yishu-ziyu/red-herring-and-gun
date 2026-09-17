@@ -13,6 +13,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { getCase, type CaseEntry } from "./caseStore.js";
 import { openDatabase } from "./sqliteStore.js";
 import { readEmailAccountOptional } from "./emailSession.js";
+import { followUpQuestionOf } from "./followUpReuse.js";
 
 const TOKEN_BYTES = 24;
 const SHARE_TTL_DAYS = 30;
@@ -48,8 +49,12 @@ function redact(value: unknown, depth = 0): unknown {
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      // Sharing this round does not consent to publishing earlier private rounds/materials.
+      if (key === "investigationThread") continue;
       if (SECRET_KEY_RE.test(key)) continue;
-      const cleaned = redact(item, depth + 1);
+      const field = ["claim", "originalClaim", "claimReviewed"].includes(key) && typeof item === "string"
+        ? followUpQuestionOf(item) : item;
+      const cleaned = redact(field, depth + 1);
       if (cleaned !== undefined) out[key] = cleaned;
     }
     return out;
@@ -76,7 +81,7 @@ export function buildPublicProjection(entry: CaseEntry): PublicShareProjection {
   const checkedAt = stringField(entry.report, "checkedAt");
   return {
     caseId: entry.caseId,
-    claim: entry.claim,
+    claim: followUpQuestionOf(entry.claim),
     report: asPublicRecord(redact(entry.report)),
     claimReview: asPublicRecord(redact(entry.claimReview)),
     credibilityScore: entry.credibilityScore,
@@ -247,10 +252,12 @@ export function buildSharedPageHtml(token: string, projection: PublicShareProjec
   const report = projection.report as Record<string, unknown>;
   const conclusion = typeof report.conclusion === "string" ? report.conclusion : "";
   const verdictLead = typeof report.causalBoundary === "string" ? report.causalBoundary : "";
-  const investigation = report.investigation as { claims?: Array<{ text?: string }>; sources?: Array<{ title?: string; url?: string }> } | undefined;
+  const investigation = report.investigation as { claims?: Array<{ id?: string; text?: string }>; sources?: Array<{ title?: string; url?: string }>; scope?: { includedClaimIds?: string[]; deferredClaimIds?: string[] } } | undefined;
   const claims = Array.isArray(investigation?.claims) ? investigation!.claims! : [];
   const sources = Array.isArray(investigation?.sources) ? investigation!.sources! : [];
   const checkedAt = projection.checkedAt ?? "";
+  const deferredIds = Array.isArray(investigation?.scope?.deferredClaimIds) ? investigation.scope.deferredClaimIds : [];
+  const deferred = claims.filter((claim) => typeof claim.id === "string" && deferredIds.includes(claim.id));
 
   const body = `<main>
   <h1>${escapeHtml(projection.claim)}</h1>
@@ -260,6 +267,8 @@ export function buildSharedPageHtml(token: string, projection: PublicShareProjec
   <article>
     ${conclusion ? `<p class="lead"><strong>${escapeHtml(conclusion)}</strong></p>` : ""}
     ${verdictLead ? `<p>${escapeHtml(verdictLead)}</p>` : ""}
+    <p>回答仅针对本轮列出的核查问题，不代表整份材料已获证实。</p>
+    ${deferred.length ? `<p>本轮未覆盖：${deferred.map((claim) => escapeHtml(claim.text ?? "")).join("；")}</p>` : ""}
     ${claims.length ? `<h2>拆出的问题</h2><ul>${claims.map((claim) => `<li>${escapeHtml(claim.text ?? "")}</li>`).join("")}</ul>` : ""}
     ${
       sources.length

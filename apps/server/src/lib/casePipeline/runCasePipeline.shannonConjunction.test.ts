@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runCasePipeline, type PipelineStep } from "./runCasePipeline";
+import { confirmedSourceValidatorStep } from "./testSourceRelationAudit";
 import { deriveOverallVerdict } from "../reportAssembly/assembleFinalReport";
 import { directAnswer } from "../publicCopy";
 import type { InvestigationSnapshotV1 } from "../investigation/index.js";
@@ -35,10 +36,10 @@ async function execute(kind: Kind | "single", audit: "clean" | "unavailable", re
   const composer = { verdictType: refuted ? "false" : "true", conclusion: refuted ? "两项均不成立。" : "两项均已证实。", subclaimVerdicts: verdicts };
   const result = await runCasePipeline({
     claim: atoms.join("，而且") + "。",
-    runAgent: async (id) => {
+    runAgent: async (id, steps) => {
       if (id === "rumor_detector") return step(id, { claimAtoms: atoms, claimAtomTypes: atoms.map(text => ({ text, type: "fact", verifiable: true })) });
       if (id === "fact_checker") return step(id, { factCheckResult: refuted ? "false" : "true", subclaimVerdicts: verdicts });
-      if (id === "source_validator") return step(id, { sourceReliability: "high" });
+      if (id === "source_validator") return confirmedSourceValidatorStep(steps, "high");
       if (id === "report_composer") return step(id, composer);
       throw new Error(`Unexpected agent ${id}`);
     },

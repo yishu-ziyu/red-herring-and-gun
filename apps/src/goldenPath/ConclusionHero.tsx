@@ -7,7 +7,7 @@ import { useState, useMemo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
-import { JUDGMENT_LABEL } from "./snapshotUi";
+import { JUDGMENT_LABEL, ROLE_LABEL, attachmentsForSource, pickDecisiveEvidence } from "./snapshotUi";
 import { scrubFaceText } from "./scrubFace";
 import { displayFollowUpClaim } from "../lib/composeFollowUpClaim";
 import { PromptKitSource } from "./PromptKitSource";
@@ -46,6 +46,8 @@ type ConclusionHeroProps = {
   originalClaim?: string;
   sources?: InvestigationSource[];
   claims?: InvestigationClaim[];
+  leftoverNote?: string;
+  gapNotes?: string[];
   onSelectSource?: (link: InvestigationEvidenceLink, source: InvestigationSource, claimId: string, trigger: HTMLElement) => void;
 };
 
@@ -66,6 +68,8 @@ export function ConclusionHero({
   originalClaim,
   sources = [],
   claims = [],
+  leftoverNote = "",
+  gapNotes = [],
   onSelectSource,
 }: ConclusionHeroProps) {
   const { lang } = useUiLang();
@@ -75,28 +79,30 @@ export function ConclusionHero({
   const [sourcesExpanded, setSourcesExpanded] = useState(false);
 
   const rawLead = verdictLead && verdictLead.trim() ? verdictLead : directAnswer;
-  let lead = scrubFaceText(rawLead) || rawLead;
-  if (lead.trim() === "这句话里有站住的部分，也有没站住的部分。") {
-    lead = "原句混淆了事实与推论：部分细节属实，但核心断言不能成立。";
-  }
+  const lead = scrubFaceText(rawLead) || rawLead;
 
   const explanation =
     verdictLead && verdictLead.trim() && rationale && rationale.trim() ? scrubFaceText(rationale) : "";
 
-  // 映射各 sourceId 对应的核查立场，用于 PromptKitSource 徽标与染色
-  const sourceRoles = useMemo(() => {
-    const map = new Map<string, InvestigationEvidenceLink["role"]>();
-    for (const claim of claims) {
-      for (const link of claim.evidence ?? []) {
-        if (!map.has(link.sourceId)) {
-          map.set(link.sourceId, link.role);
-        }
-      }
-    }
-    return map;
-  }, [claims]);
-
-  const firstClaimId = claims[0]?.id ?? "claim-1";
+  const sourceRows = useMemo(
+    () =>
+      sources.map((source) => {
+        const attachments = attachmentsForSource(source.id, claims);
+        const seen = new Set<string>();
+        const associated = attachments
+          .filter((row) => {
+            if (seen.has(row.claim.id)) return false;
+            seen.add(row.claim.id);
+            return true;
+          })
+          .map((row) => row.claim);
+        return { source, attachments, associated };
+      }),
+    [sources, claims],
+  );
+  const keyEvidence = useMemo(() => pickDecisiveEvidence(claims, sources), [claims, sources]);
+  const leadGaps = gapNotes.map((note) => note.trim()).filter(Boolean);
+  const showGapLead = Boolean(leftoverNote.trim()) || leadGaps.length > 0 || judgment === "unresolved";
 
   const handleSelectSource = (
     link: InvestigationEvidenceLink,
@@ -144,7 +150,75 @@ export function ConclusionHero({
           ))}
         </motion.p>
 
-        {/* 3. 来源条：默认折叠，挂在结论第一句下面 */}
+        {/* 3. 理由与解释：跟直答同一口气，不插到关键依据后面 */}
+        {explanation ? (
+          <p className="gp-hero-rationale" data-gp-rationale>
+            {explanation}
+          </p>
+        ) : null}
+
+        {/* 4. 1–3 条决定性依据；没有就不凑相关材料 */}
+        {keyEvidence.length > 0 ? (
+          <div className="gp-hero-key-evidence" data-gp-key-evidence>
+            <p className="gp-hero-key-label">关键依据</p>
+            {keyEvidence.map((row) => {
+              const proves =
+                scrubFaceText(row.link.finding ?? "") || `${ROLE_LABEL[row.link.role]}：「${row.claimText}」`;
+              const sourceTitle = row.source.title || row.source.url || row.source.id;
+              return (
+                <button
+                  key={`${row.claimId}:${row.link.sourceId}:${row.link.role}`}
+                  type="button"
+                  className="gp-hero-key-item"
+                  data-gp-key-evidence-item
+                  data-gp-key-claim-id={row.claimId}
+                  data-gp-source-id={row.source.id}
+                  onClick={(event) => handleSelectSource(row.link, row.source, row.claimId, event.currentTarget)}
+                >
+                  <span className="gp-hero-key-proves">{proves}</span>
+                  <span className="gp-hero-key-meta">
+                    {ROLE_LABEL[row.link.role]} · {sourceTitle}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {/* 5. 仍未查清 */}
+        {showGapLead ? (
+          <div className="gp-hero-gaps-lead" data-gp-gaps-lead>
+            {leftoverNote.trim() ? (
+              <p className="gp-note" data-gp-leftover-gap>
+                {leftoverNote}
+              </p>
+            ) : null}
+            {leadGaps.map((note) => (
+              <p key={note} className="gp-note" data-gp-gap-status="open">
+                {note}
+              </p>
+            ))}
+            {judgment === "unresolved" ? (
+              <p className="gp-hero-uncertainty" data-gp-uncertainty>
+                {copy.uncertaintyLine}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* 6. 适用边界 */}
+        {boundaries.length > 0 ? (
+          <div className="gp-hero-boundaries" data-gp-boundaries>
+            {boundaries.map((b, index) => (
+              <p key={b} className="gp-hero-boundary-line">
+                {index === 0 ? <span className="gp-hero-boundary-label">适用边界</span> : null}
+                {b}
+              </p>
+            ))}
+          </div>
+        ) : null}
+
+        {/* 7. 来源目录：折在边界之后，首屏不是胶囊墙 */}
         {sources.length > 0 ? (
           <div className="gp-hero-sources-strip" data-gp-sources-strip>
             <button
@@ -159,7 +233,7 @@ export function ConclusionHero({
                   <path d="M2 8h12M8 2a9 9 0 0 1 0 12M8 2a9 9 0 0 0 0 12" />
                 </svg>
               </span>
-              <span className="gp-hero-sources-label">已查验 {sources.length} 个信息来源</span>
+              <span className="gp-hero-sources-label">{copy.collectedSources(sources.length)}</span>
               <svg
                 className={`gp-hero-sources-chevron ${sourcesExpanded ? "is-expanded" : ""}`}
                 viewBox="0 0 16 16"
@@ -177,50 +251,33 @@ export function ConclusionHero({
             </button>
             {sourcesExpanded ? (
               <div className="gp-hero-sources-list">
-                {sources.map((srcItem, idx) => {
-                  const role = sourceRoles.get(srcItem.id) ?? "unassessed";
-                  const link: InvestigationEvidenceLink = {
-                    sourceId: srcItem.id,
-                    role,
-                  };
+                {sourceRows.map(({ source, attachments, associated }, idx) => {
+                  const primary = attachments[0];
                   return (
-                    <PromptKitSource
-                      key={srcItem.id || idx}
-                      link={link}
-                      source={srcItem}
-                      claimId={firstClaimId}
-                      onSelect={handleSelectSource}
-                    />
+                    <div key={source.id || idx} className="gp-hero-source-item" data-gp-hero-source={source.id}>
+                      {primary ? (
+                        <PromptKitSource
+                          link={primary.link}
+                          source={source}
+                          claimId={primary.claim.id}
+                          onSelect={handleSelectSource}
+                        />
+                      ) : (
+                        <span className="gp-hero-source-unlinked" data-gp-source-unlinked>
+                          {source.title || source.url || source.id}
+                          {source.url ? ` ${source.url}` : ""}
+                        </span>
+                      )}
+                      {associated.length > 0 ? (
+                        <p className="gp-source-claims" data-gp-source-claims>
+                          关联命题：{associated.map((claim) => claim.text).join("；")}
+                        </p>
+                      ) : null}
+                    </div>
                   );
                 })}
               </div>
             ) : null}
-          </div>
-        ) : null}
-
-        {/* 4. 理由与解释 */}
-        {explanation ? (
-          <p className="gp-hero-rationale" data-gp-rationale>
-            {explanation}
-          </p>
-        ) : null}
-
-        {/* 5. 存疑说明 */}
-        {judgment === "unresolved" ? (
-          <p className="gp-hero-uncertainty" data-gp-uncertainty>
-            {copy.uncertaintyLine}
-          </p>
-        ) : null}
-
-        {/* 6. 适用边界与安全提醒（安静脚注：顶线 + 小灰标签，无卡片无图标） */}
-        {boundaries.length > 0 ? (
-          <div className="gp-hero-boundaries" data-gp-boundaries>
-            {boundaries.map((b, index) => (
-              <p key={b} className="gp-hero-boundary-line">
-                {index === 0 ? <span className="gp-hero-boundary-label">适用边界</span> : null}
-                {b}
-              </p>
-            ))}
           </div>
         ) : null}
 

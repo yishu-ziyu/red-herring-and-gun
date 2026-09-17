@@ -42,6 +42,7 @@ type WorkRolesProps = {
   phase?: string;
   /** received 且自证已开始：拆问题还在场，文案改成核对。 */
   preClaimWork?: "splitting" | "checking";
+  sourceCount?: number;
 };
 
 export function WorkRoles({
@@ -49,6 +50,7 @@ export function WorkRoles({
   activeIndex = -1,
   phase,
   preClaimWork,
+  sourceCount = 0,
 }: WorkRolesProps) {
   const visible = WORK_ROLES.slice(0, assembledRoleCount(phase ?? "", compact));
   const assemble = compact && visible.length > 1;
@@ -77,7 +79,14 @@ export function WorkRoles({
             data-gp-role-work={checking ? "checking" : undefined}
             style={entering ? { ["--gp-enter-delay" as string]: `${(index - 1) * ENTER_STAGGER_MS}ms` } : undefined}
           >
-            <img className="gp-role-avatar" src={role.src} alt="" width={74} height={74} />
+            <span className="gp-role-avatar-wrap">
+              <img className="gp-role-avatar" src={role.src} alt="" width={74} height={74} />
+              {compact && done ? <span className="gp-role-badge-check" aria-hidden="true">✓</span> : null}
+              {compact && active && role.id === "source" ? <span className="gp-role-radar-beacon" aria-hidden="true" /> : null}
+              {compact && active && role.id === "source" && sourceCount > 0 ? (
+                <span className="gp-role-count-badge" aria-label={`已吸收 ${sourceCount} 篇材料`}>+{sourceCount} 篇</span>
+              ) : null}
+            </span>
             <strong>{role.name}</strong>
             <small className={active ? "gp-role-shimmer" : undefined}>{caption}</small>
           </div>

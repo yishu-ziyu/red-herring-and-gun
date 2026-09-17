@@ -33,11 +33,23 @@ function compactText(text: string): string {
   return text.replace(/\s+/g, "").replace(/[“”"「」『』'']/g, "");
 }
 
+/**
+ * 用户对前一句的确认/质疑语气，不是新的事实主张。
+ * 这些片段可以表达「请核实上一句」，但不能被当成独立命题再次检索。
+ */
+export function isMetaQuestionFragment(text: string): boolean {
+  const compact = compactText(text)
+    .replace(/[？?！!。；;，,、]+$/g, "")
+    .trim();
+  if (!compact) return true;
+  return /^(?:(?:这|这个|该|这个说法|该说法))?(?:真的假的|是真的吗|真的(?:吗|么|嘛)|是吗|对吗|没错吗|靠谱吗|可信(?:吗|么)|可靠吗|属实吗)$/.test(compact);
+}
+
 function sentencesOf(originalClaim: string): string[] {
   return originalClaim
     .split(SENTENCE_SPLIT)
     .map((part) => part.replace(/\s+/g, " ").trim())
-    .filter((part) => part.length >= 4);
+    .filter((part) => part.length >= 4 && !isMetaQuestionFragment(part));
 }
 
 function commaParts(sentence: string): string[] {
@@ -104,7 +116,7 @@ function mergeLeftover(parts: string[]): string[] {
   const out: string[] = [];
   for (const part of parts) {
     const text = part.trim();
-    if (!text) continue;
+    if (!text || isMetaQuestionFragment(text)) continue;
     if (out.some((existing) => covers(existing, text) || covers(text, existing))) continue;
     out.push(text);
   }

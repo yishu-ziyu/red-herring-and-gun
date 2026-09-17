@@ -153,7 +153,7 @@ describe("Change D：调查过程中渲染争点与「尚缺」", () => {
     expect(landed!.contains(conflict!)).toBe(true);
   });
 
-  it("decomposed 拍挂载、judging 拍补齐：过程中点开命题卡就能看到争点与缺口", () => {
+  it("decomposed 拍挂载、judging 拍补齐：过程中自动展开并直接看到争点与缺口", () => {
     const view = render(canvas(mountSnapshot(), true));
     // 挂载拍内容还是空的：争点与缺口都还没有对象。
     expect(document.querySelector('[data-gp-claim-id="claim-1"] .gp-conflict')).toBeNull();
@@ -172,9 +172,8 @@ describe("Change D：调查过程中渲染争点与「尚缺」", () => {
       />
     );
 
-    // 真实走查第 4 步的动作：用户在调查中点开命题卡。
+    // judging 拍已经有材料；卡片应自动展开，不再要求用户先点一次才能看到证据。
     const head = document.querySelector<HTMLElement>('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
-    fireEvent.click(head);
     expect(head.getAttribute("aria-expanded")).toBe("true");
     expect(document.querySelector('[data-gp-claim-id="claim-1"] .gp-conflict')).toBeTruthy();
     expect(document.querySelector('[data-gp-claim-id="claim-1"] .gp-gaps')!.textContent).toContain(GAP);
@@ -188,6 +187,22 @@ describe("Change D：调查过程中渲染争点与「尚缺」", () => {
 });
 
 describe("Change E：完成态内容补齐后展开生效", () => {
+  it("调查中从 pending 进入 searching 后自动展开一次；用户手动收起后不被下一拍强开", () => {
+    const view = render(canvas(mountSnapshot(), true));
+    const mounted = document.querySelector<HTMLElement>('[data-gp-claim-id="claim-1"]')!;
+    expect(mounted.querySelector(".gp-claim-head")!.getAttribute("aria-expanded")).toBe("false");
+
+    view.rerender(canvas(judgingSnapshot(), true));
+    const head = document.querySelector<HTMLElement>('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
+    expect(head.getAttribute("aria-expanded")).toBe("true");
+    expect(document.querySelector('[data-gp-claim-id="claim-1"] [data-gp-evidence-key]')).toBeTruthy();
+
+    fireEvent.click(head);
+    expect(head.getAttribute("aria-expanded")).toBe("false");
+    view.rerender(canvas(judgingSnapshot(), true));
+    expect(document.querySelector<HTMLElement>('[data-gp-claim-id="claim-1"] .gp-claim-head')!.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("decomposed 拍挂载（内容空、未展开），complete 拍补齐后同一张卡展开", () => {
     const view = render(canvas(mountSnapshot()));
     const mounted = document.querySelector<HTMLElement>('[data-gp-claim-id="claim-1"]')!;

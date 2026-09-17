@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   caseIntakeFailedLinks,
   createCaseIntake,
+  isUrlOnlyClaim,
   extractLinks,
   imageFileToCaseImage,
   type CaseImage,
@@ -25,6 +26,7 @@ import {
   type CheckQuotaView,
 } from "../lib/checkQuota";
 import type { ModelChoiceMap } from "../lib/agentExpansion";
+import { homeCaseCards, type HomeCaseId } from "./homeCases";
 
 type ServiceState = {
   status: "checking" | "available" | "unavailable" | "unknown";
@@ -73,6 +75,15 @@ function showLinkScrapeNotice(text: string, host: HTMLElement | null) {
   }
 
   notice.textContent = text;
+  // 真实 App 提交后会立刻卸载 InputStage，并由 App 的常驻 notice 接管。
+  // 下一帧若输入态 host 已离开 DOM，就撤掉这枚临时 toast，避免两个同文案提示叠在一起。
+  // 单独渲染 InputStage 时 host 仍连接，toast 继续按原 TTL 展示。
+  const sourceHost = host;
+  window.setTimeout(() => {
+    if (!sourceHost || sourceHost.isConnected) return;
+    const current = container.querySelector<HTMLElement>(`.${LINK_SCRAPE_NOTICE_CLASS}`);
+    if (current?.textContent === text) current.remove();
+  }, 250);
   window.setTimeout(() => {
     if (!container.isConnected) return;
     const current = container.querySelector<HTMLElement>(`.${LINK_SCRAPE_NOTICE_CLASS}`);
@@ -85,9 +96,18 @@ type InputStageProps = {
   initialClaim?: string;
   accountEmail?: string | null;
   onNeedLogin?: () => void;
+  onViewHomeCase?: (id: HomeCaseId) => void;
+  onRecheckHomeCase?: (claim: string) => void;
 };
 
-export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, onNeedLogin }: InputStageProps) {
+export function InputStage({
+  onSubmit,
+  initialClaim = "",
+  accountEmail = null,
+  onNeedLogin,
+  onViewHomeCase,
+  onRecheckHomeCase,
+}: InputStageProps) {
   const { lang, copy: legacy } = useUiLang();
   const copy = gpCopyFor(lang);
   const [inputValue, setInputValue] = useState(initialClaim);
@@ -177,6 +197,10 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
           text: text ? `${intake.text}\n\n【链接抓取内容】\n${text}` : intake.text,
         };
         if (caseIntakeFailedLinks(enriched).length > 0) {
+          if (!text && intake.images.length === 0 && isUrlOnlyClaim(intake.text)) {
+            setInputError(lang === "en" ? "The link could not be read. Add the original text or a screenshot; no investigation has started." : "链接打不开，无法确定其中的说法。请补充原文或截图，尚未开始调查。");
+            return;
+          }
           showLinkScrapeNotice(copy.linkUnreachableNotice, rootRef.current);
         }
       } catch (error) {
@@ -191,32 +215,41 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
   }, [blocked, checkQuota, copy.serviceUnavailable, images, inputValue, isScraping, lang, legacy.fillMaterialFirst, legacy.scrapeFailed, onNeedLogin, onSubmit, quotaExhausted]);
 
   const handleAddFiles = useCallback(
-    async (files: File[], kind: "image" | "file") => {
+    async (files: File[]) => {
       if (files.length === 0) return;
       setInputError("");
       try {
         const videoFiles = files.filter((file) => file.type.startsWith("video/"));
         const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+        if (imageFiles.length + videoFiles.length !== files.length) {
+          setInputError(legacy.filesUnsupported);
+          return;
+        }
         if (videoFiles.length > 0) {
           const frames = (await Promise.all(videoFiles.map((file) => extractFramesFromVideo(file)))).flat();
           if (frames.length === 0) {
             setInputError(legacy.videoFrameFailed);
             return;
           }
-          const total = images.reduce((sum, image) => sum + image.size, 0) + frames.reduce((sum, f) => sum + f.size, 0);
+          const incoming = [...await Promise.all(imageFiles.map(imageFileToCaseImage)), ...frames];
+          const total = images.reduce((sum, image) => sum + image.size, 0) + incoming.reduce((sum, f) => sum + f.size, 0);
           if (total > MAX_TOTAL_IMAGE_BYTES) {
             setInputError(legacy.videoFrameTooLarge);
             return;
           }
-          if (images.length + frames.length > MAX_IMAGE_COUNT) {
+          if (images.length + incoming.length > MAX_IMAGE_COUNT) {
             setInputError(legacy.tooManyFrames);
             return;
           }
-          setImages((prev) => [...prev, ...frames].slice(0, MAX_IMAGE_COUNT));
+          setImages((prev) => [...prev, ...incoming]);
           return;
         }
         if (imageFiles.length === 0) {
           setInputError(legacy.filesUnsupported);
+          return;
+        }
+        if (images.length + imageFiles.length > MAX_IMAGE_COUNT) {
+          setInputError(legacy.tooManyImages);
           return;
         }
         const total = images.reduce((sum, image) => sum + image.size, 0) + imageFiles.reduce((sum, file) => sum + file.size, 0);
@@ -247,6 +280,22 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
     setInputError("");
   }, []);
 
+  const recheckHomeCase = useCallback(
+    (claim: string) => {
+      if (quotaExhausted && checkQuota) {
+        setInputError(checksRemainingMessage(checkQuota));
+        if (checkQuota.kind === "guest") onNeedLogin?.();
+        return;
+      }
+      if (blocked) {
+        setInputError(copy.serviceUnavailable);
+        return;
+      }
+      onRecheckHomeCase?.(claim);
+    },
+    [blocked, checkQuota, copy.serviceUnavailable, onNeedLogin, onRecheckHomeCase, quotaExhausted]
+  );
+
   const userHint = (() => {
     if (inputError) return { tone: inputError.includes("抓取失败") ? "muted" : "warning", text: inputError } as const;
     if (service.status === "checking") return { tone: "muted", text: copy.serviceChecking } as const;
@@ -270,7 +319,7 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
         {copy.inputHeadlineA}
         <em>{copy.inputHeadlineAccent}</em>
       </h1>
-      <p className="gp-sub">{copy.inputSub}</p>
+      <p className="gp-sub">{lang === "en" ? "Drop in uncertain information. Get a bounded answer, inspect its evidence, and continue the same investigation when needed." : "把拿不准的内容放进来。先查主要疑问，再看依据、补查缺口，结果留在同一份调查里。"}</p>
 
       <section className="gp-input-card" aria-label={copy.inputLabel}>
         <PromptInput
@@ -329,6 +378,38 @@ export function InputStage({ onSubmit, initialClaim = "", accountEmail = null, o
               >
                 {claim}
               </button>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="gp-home-cases" aria-label={copy.homeCasesLabel}>
+        <p className="gp-examples-label">{copy.homeCasesLabel}</p>
+        <ul className="gp-home-cases-list">
+          {homeCaseCards().map((card) => (
+            <li key={card.id} className="gp-home-case-card" data-gp-home-case={card.id}>
+              <p className="gp-home-case-mark">{card.mark}</p>
+              <p className="gp-home-case-claim">{card.claim}</p>
+              <p className="gp-home-case-finding">{card.finding}</p>
+              <p className="gp-home-case-date">{copy.homeCaseDate(card.dateLabel)}</p>
+              <div className="gp-home-case-actions">
+                <button
+                  type="button"
+                  className="gp-primary-btn"
+                  data-gp-home-case-view
+                  onClick={() => onViewHomeCase?.(card.id)}
+                >
+                  {copy.homeCaseView}
+                </button>
+                <button
+                  type="button"
+                  className="gp-ghost-btn"
+                  data-gp-home-case-recheck
+                  onClick={() => recheckHomeCase(card.claim)}
+                >
+                  {copy.homeCaseRecheck}
+                </button>
+              </div>
             </li>
           ))}
         </ul>

@@ -15,7 +15,8 @@ import type { MemoryCandidateHit } from "./memoryCandidateTypes.js";
 
 import { stringItems } from "./valueCoerce.js";
 
-import { fetchWithTimeout, getTimeoutMs, withTimeout } from "./httpUtils.js";
+import { fetchWithTimeout, getTimeoutMs } from "./httpUtils.js";
+import { withExecutionBudget, type ExecutionBudget } from "./executionBudget.js";
 
 function getSearch360ApiKey(env: Record<string, string>) {
   return env.QIHOO_360_API_KEY || process.env.QIHOO_360_API_KEY || "";
@@ -205,15 +206,17 @@ async function call360AiSearch({
   query,
   model: _model,
   refProm,
+  signal,
 }: {
   env: Record<string, string>;
   query: string;
   model?: string;
   refProm?: string;
+  signal?: AbortSignal;
 }) {
   const apiKey = getSearch360ApiKey(env);
   if (!apiKey) throw new Error("未配置 360 API key");
-  return await call360MWebSearch({ env, apiKey, query, refProm });
+  return await call360MWebSearch({ env, apiKey, query, refProm, signal });
 }
 
 export type SearchProviderId =
@@ -274,36 +277,44 @@ export async function callSearchProvider({
   query,
   model,
   refProm,
+  signal: parentSignal,
+  deadlineMs,
 }: {
   env: Record<string, string>;
   provider: string;
   query: string;
   model?: string;
   refProm?: string;
+  signal?: AbortSignal;
+  deadlineMs?: number;
 }) {
+  parentSignal?.throwIfAborted();
   if (isSearchQuotaSkipped(provider)) {
     throw new Error(`${getProviderLabel(provider)} 额度耗尽，本进程已跳过`);
   }
   try {
-    switch (provider) {
-      case "360_search":
-        return await call360AiSearch({ env, query, model, refProm });
-      case "any_search":
-        return await callAnySearchSearch({ env, query });
-      case "metaso_search":
-        return await callMetasoSearch({ env, query });
-      case "tavily_search":
-        return await callTavilySearch({ env, query });
-      case "exa_search":
-        return await callExaSearch({ env, query });
-      case "minimax_search":
-        return await callMiniMaxCodingPlanSearch({ env, query });
-      case "stepfun_search":
-        return await callStepFunPlanMcpSearch({ env, query });
-      default:
-        throw new Error(`未知搜索 Provider：${provider}`);
-    }
+    return await withExecutionBudget(async (signal) => {
+      switch (provider) {
+        case "360_search":
+          return await call360AiSearch({ env, query, model, refProm, signal });
+        case "any_search":
+          return await callAnySearchSearch({ env, query, signal });
+        case "metaso_search":
+          return await callMetasoSearch({ env, query, signal });
+        case "tavily_search":
+          return await callTavilySearch({ env, query, signal });
+        case "exa_search":
+          return await callExaSearch({ env, query, signal });
+        case "minimax_search":
+          return await callMiniMaxCodingPlanSearch({ env, query, signal });
+        case "stepfun_search":
+          return await callStepFunPlanMcpSearch({ env, query, signal });
+        default:
+          throw new Error(`未知搜索 Provider：${provider}`);
+      }
+    }, { signal: parentSignal, deadlineMs, timeoutMs: getTimeoutMs(env, "SEARCH_PROVIDER_TIMEOUT_MS", 25000), label: getProviderLabel(provider) });
   } catch (reason) {
+    parentSignal?.throwIfAborted();
     const message = reason instanceof Error ? reason.message : String(reason);
     noteSearchFailure(provider, message);
     throw reason;
@@ -316,18 +327,18 @@ async function callSearchProviderWithTimeout({
   query,
   model,
   refProm,
+  signal,
+  deadlineMs,
 }: {
   env: Record<string, string>;
   provider: SearchProviderId;
   query: string;
   model?: string;
   refProm?: string;
+  signal?: AbortSignal;
+  deadlineMs?: number;
 }) {
-  return await withTimeout(
-    callSearchProvider({ env, provider, query, model, refProm }),
-    getTimeoutMs(env, "SEARCH_PROVIDER_TIMEOUT_MS", 25000),
-    getProviderLabel(provider)
-  );
+  return callSearchProvider({ env, provider, query, model, refProm, signal, deadlineMs });
 }
 
 /** 单 Provider 单次查询的调用结果（仅产品字段，无诊断）。 */
@@ -343,6 +354,8 @@ export async function callParallelSearchProviders({
   model,
   refProm,
   onProviderEvent,
+  signal,
+  deadlineMs,
 }: {
   env: Record<string, string>;
   query: string;
@@ -350,17 +363,22 @@ export async function callParallelSearchProviders({
   refProm?: string;
   /** 每个 Provider 的 start/success/failure 实时上报（SSE search_progress 数据源）。 */
   onProviderEvent?: (event: ProviderCallEvent) => void;
+  signal?: AbortSignal;
+  deadlineMs?: number;
 }) {
+  signal?.throwIfAborted();
   const providers: SearchProviderId[] = parallelSearchProviders(env);
   const settled = await Promise.allSettled(
     providers.map(async (provider) => {
       onProviderEvent?.({ provider, status: "running", resultCount: 0 });
       try {
-        const result = await callSearchProviderWithTimeout({ env, provider, query, model, refProm });
+        const result = await callSearchProviderWithTimeout({ env, provider, query, model, refProm, signal, deadlineMs });
+        signal?.throwIfAborted();
         const resultCount = Array.isArray(result?.sources) ? result.sources.length : 0;
         onProviderEvent?.({ provider, status: "completed", resultCount });
         return { provider, result };
       } catch (error) {
+        signal?.throwIfAborted();
         onProviderEvent?.({ provider, status: "failed", resultCount: 0 });
         throw error;
       }
@@ -368,6 +386,7 @@ export async function callParallelSearchProviders({
   );
 
   const successes: Array<{ provider: SearchProviderId; result: any }> = [];
+  signal?.throwIfAborted();
   const failures: string[] = [];
   settled.forEach((item, index) => {
     const provider = providers[index];
@@ -459,8 +478,10 @@ export async function retrieveAtomSources(
   env: Record<string, string>,
   atom: string,
   reuseHits?: MemoryCandidateHit[],
-  onProgress?: (event: SearchProgressEvent) => void
+  onProgress?: (event: SearchProgressEvent) => void,
+  execution: ExecutionBudget = {},
 ) {
+  execution.signal?.throwIfAborted();
   const queries = buildQueriesWithReuse(atom, reuseHits ?? []);
   const queryCount = queries.length;
   const providers = parallelSearchProviders(env);
@@ -483,7 +504,7 @@ export async function retrieveAtomSources(
     phase: SearchProgressEvent["phase"],
     extra?: Pick<SearchProgressEvent, "stats" | "sources">
   ) => {
-    if (!onProgress) return;
+    if (!onProgress || execution.signal?.aborted) return;
     onProgress({
       type: "search_progress",
       atom,
@@ -518,8 +539,9 @@ export async function retrieveAtomSources(
 
   emit("started");
   const settled = await Promise.allSettled(
-    queries.map((query) => callParallelSearchProviders({ env, query, onProviderEvent }))
+    queries.map((query) => callParallelSearchProviders({ env, query, onProviderEvent, ...execution }))
   );
+  execution.signal?.throwIfAborted();
   const ok: Record<string, unknown>[] = [];
   const failures: string[] = [];
   settled.forEach((item, index) => {
@@ -678,9 +700,11 @@ function mcpSearchRows(data: unknown): unknown[] {
 async function callMiniMaxCodingPlanSearch({
   env,
   query,
+  signal,
 }: {
   env: Record<string, string>;
   query: string;
+  signal?: AbortSignal;
 }) {
   const apiKey = getMiniMaxSearchApiKey(env);
   if (!apiKey) throw new Error("未配置 MiniMax API key");
@@ -688,6 +712,7 @@ async function callMiniMaxCodingPlanSearch({
     minimaxCodingPlanSearchUrl(env),
     {
       method: "POST",
+      signal,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
@@ -719,9 +744,11 @@ async function callMiniMaxCodingPlanSearch({
 async function callStepFunPlanMcpSearch({
   env,
   query,
+  signal,
 }: {
   env: Record<string, string>;
   query: string;
+  signal?: AbortSignal;
 }) {
   const apiKey = getStepFunSearchApiKey(env);
   if (!apiKey) throw new Error("未配置阶跃 API key");
@@ -729,6 +756,7 @@ async function callStepFunPlanMcpSearch({
     stepPlanMcpSearchUrl(env),
     {
       method: "POST",
+      signal,
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
@@ -769,13 +797,16 @@ async function callStepFunPlanMcpSearch({
 async function callAnySearchSearch({
   env,
   query,
+  signal,
 }: {
   env: Record<string, string>;
   query: string;
+  signal?: AbortSignal;
 }) {
   const apiKey = getAnySearchApiKey(env);
   const response = await fetchWithTimeout("https://api.anysearch.com/mcp", {
     method: "POST",
+    signal,
     headers: {
       ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
       "Content-Type": "application/json",
@@ -811,15 +842,18 @@ async function callAnySearchSearch({
 async function callTavilySearch({
   env,
   query,
+  signal,
 }: {
   env: Record<string, string>;
   query: string;
+  signal?: AbortSignal;
 }) {
   const apiKey = getTavilyApiKey(env);
   if (!apiKey) throw new Error("未配置 Tavily API key");
 
   const response = await fetchWithTimeout("https://api.tavily.com/search", {
     method: "POST",
+    signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
@@ -847,9 +881,11 @@ async function callTavilySearch({
 async function callMetasoSearch({
   env,
   query,
+  signal,
 }: {
   env: Record<string, string>;
   query: string;
+  signal?: AbortSignal;
 }) {
   const apiKey = getMetasoApiKey(env);
   if (!apiKey) throw new Error("未配置 Metaso API key");
@@ -857,6 +893,7 @@ async function callMetasoSearch({
   const scope = env.METASO_SEARCH_SCOPE || process.env.METASO_SEARCH_SCOPE || "webpage";
   const response = await fetchWithTimeout("https://metaso.cn/api/v1/search", {
     method: "POST",
+    signal,
     headers: {
       Authorization: `Bearer ${apiKey}`,
       Accept: "application/json",
@@ -888,9 +925,11 @@ async function callMetasoSearch({
 async function callExaSearch({
   env,
   query,
+  signal,
 }: {
   env: Record<string, string>;
   query: string;
+  signal?: AbortSignal;
 }) {
   const apiKey = getExaApiKey(env);
   if (!apiKey) throw new Error("未配置 Exa API key");
@@ -898,6 +937,7 @@ async function callExaSearch({
   const type = env.EXA_SEARCH_TYPE || process.env.EXA_SEARCH_TYPE || "auto";
   const response = await fetchWithTimeout("https://api.exa.ai/search", {
     method: "POST",
+    signal,
     headers: {
       "x-api-key": apiKey,
       "Content-Type": "application/json",
@@ -1035,11 +1075,13 @@ async function call360MWebSearch({
   apiKey,
   query,
   refProm,
+  signal,
 }: {
   env: Record<string, string>;
   apiKey: string;
   query: string;
   refProm?: string;
+  signal?: AbortSignal;
 }) {
   const selectedRefProm =
     refProm ||
@@ -1058,6 +1100,7 @@ async function call360MWebSearch({
   url.searchParams.set("exclude_aigc", "true");
 
   const response = await fetchWithTimeout(url, {
+    signal,
     method: "GET",
     headers: {
       Authorization: `Bearer ${apiKey}`,

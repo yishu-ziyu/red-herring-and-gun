@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>职责出场对照</title>
+  <style>
+    :root {
+      --gp-bg: #f6f4ef;
+      --gp-ink: #252723;
+      --gp-ink-2: #62665e;
+      --gp-ink-muted: #8a8d84;
+      --gp-line: #dedcd4;
+      --gp-accent: #a13734;
+      --gp-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --gp-ease-move: cubic-bezier(0.77, 0, 0.175, 1);
+      --gp-motion-ui: 240ms;
+      --font: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Segoe UI", sans-serif;
+      --serif: "Noto Serif SC", "Songti SC", "Source Han Serif SC", serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      background: var(--gp-bg);
+      color: var(--gp-ink);
+      font-family: var(--font);
+    }
+    body { padding: 28px 32px 64px; }
+    h1 {
+      font-size: 15px;
+      font-weight: 650;
+      margin: 0 0 6px;
+      letter-spacing: 0.01em;
+    }
+    .lede {
+      margin: 0 0 22px;
+      font-size: 13.5px;
+      line-height: 1.55;
+      color: var(--gp-ink-2);
+      max-width: 720px;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+    .controls button {
+      font: inherit;
+      font-size: 13px;
+      padding: 7px 12px;
+      border: 1px solid var(--gp-line);
+      background: transparent;
+      color: var(--gp-ink);
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .controls button[aria-pressed="true"] {
+      border-color: var(--gp-accent);
+      color: var(--gp-accent);
+      background: rgba(161, 55, 52, 0.08);
+    }
+    .replay {
+      margin-left: auto;
+      border-color: var(--gp-accent) !important;
+      color: var(--gp-accent) !important;
+    }
+    .note {
+      font-size: 12.5px;
+      color: var(--gp-ink-2);
+      margin: 0 0 18px;
+      min-height: 1.5em;
+      max-width: 760px;
+      line-height: 1.5;
+    }
+    .stage {
+      border-top: 1px solid var(--gp-line);
+      border-bottom: 1px solid var(--gp-line);
+      padding: 28px 8px 8px;
+      max-width: 960px;
+    }
+    .claim-kicker {
+      font-size: 13px;
+      color: var(--gp-ink-2);
+      margin: 0 0 10px;
+    }
+    .quote {
+      margin: 0 0 28px;
+      padding-left: 14px;
+      border-left: 2px solid var(--gp-ink);
+      font-family: var(--serif);
+      font-size: 22px;
+      font-weight: 500;
+      line-height: 1.45;
+    }
+    .roles {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-start;
+      align-items: flex-start;
+      min-height: 118px;
+      padding-bottom: 22px;
+      border-bottom: 1px solid var(--gp-line);
+    }
+    .roles.is-spread { justify-content: space-between; }
+    .role {
+      text-align: center;
+      min-width: 85px;
+      flex: 0 0 auto;
+    }
+    .roles.is-spread .role { flex: 1 1 0; }
+    .avatar {
+      width: 62px;
+      height: 62px;
+      border-radius: 50%;
+      object-fit: cover;
+      display: block;
+      margin: 0 auto;
+      border: 3px solid var(--gp-bg);
+      background: #eeece5;
+    }
+    .slot {
+      width: 62px;
+      height: 62px;
+      border-radius: 50%;
+      margin: 0 auto;
+      border: 1.5px dashed #c9c6bc;
+      background: transparent;
+    }
+    .role strong {
+      display: block;
+      margin-top: 5px;
+      font-size: 14px;
+      font-weight: 650;
+    }
+    .role small {
+      display: block;
+      font-size: 12px;
+      color: var(--gp-ink-2);
+      min-height: 1.2em;
+    }
+    .role.is-active .avatar { border-color: var(--gp-accent); }
+    .role.is-active small { color: var(--gp-accent); }
+    .role.is-idle { opacity: 0.38; }
+    .role.is-done { opacity: 0.7; }
+    .role.is-hidden { display: none; }
+
+    .role.enter-emerge {
+      animation: emerge var(--gp-motion-ui) var(--gp-ease-out) both;
+    }
+    .role.enter-slot {
+      animation: fill-slot 280ms var(--gp-ease-out) both;
+    }
+    .role.shift-left {
+      transition: transform 280ms var(--gp-ease-move);
+    }
+
+    @keyframes emerge {
+      from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.96);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+    @keyframes fill-slot {
+      from {
+        opacity: 0;
+        transform: scale(0.96);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    .log {
+      padding: 18px 0 28px;
+      font-size: 14.5px;
+      color: var(--gp-ink-2);
+    }
+    .log p { margin: 0 0 14px; }
+    .log .now {
+      color: var(--gp-ink);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .bars {
+      display: inline-flex;
+      gap: 2px;
+      color: var(--gp-accent);
+    }
+    .bars span {
+      width: 3px;
+      height: 12px;
+      background: currentColor;
+      animation: eq 900ms ease-in-out infinite;
+    }
+    .bars span:nth-child(2) { animation-delay: 120ms; }
+    .bars span:nth-child(3) { animation-delay: 240ms; }
+    @keyframes eq {
+      0%, 100% { transform: scaleY(0.45); }
+      50% { transform: scaleY(1); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .role.enter-emerge, .role.enter-slot { animation: none; }
+      .bars span { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <h1>调查中：四个人怎么出场</h1>
+  <p class="lede">拆问题进行时，后三人还不该在画面上。拆完之后，他们才从拆问题旁边依次进来。点「重放」看完整拍。</p>
+
+  <div class="controls" role="tablist" aria-label="出场方式">
+    <button type="button" data-mode="now" aria-pressed="true">现在：四人占位，未开始变淡</button>
+    <button type="button" data-mode="slots" aria-pressed="false">空位填入：四个圈先画好</button>
+    <button type="button" data-mode="emerge" aria-pressed="false">推荐：拆完再依次出场</button>
+    <button type="button" class="replay" id="replay">重放这一拍</button>
+  </div>
+  <p class="note" id="note"></p>
+
+  <div class="stage" id="stage">
+    <p class="claim-kicker">你调查的说法</p>
+    <p class="quote">“因为咖啡的争夺，在古代产生了非常多的战争。”</p>
+    <div class="roles" id="roles"></div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <script>
+    const AGENTS = [
+      { id: "question", name: "拆问题", doing: "拆分问题中", done: "已拆出问题", src: "../../../mvp/public/agents/rumor-detector.png" },
+      { id: "source", name: "找出处", doing: "查找出处中", done: "已带回材料", src: "../../../mvp/public/agents/source-validator.png" },
+      { id: "context", name: "核语境", doing: "核对范围中", done: "已核对范围", src: "../../../mvp/public/agents/fact-checker.png" },
+      { id: "judgment", name: "作判断", doing: "形成判断中", done: "已完成判断", src: "../../../mvp/public/agents/report-composer.png" },
+    ];
+
+    const NOTES = {
+      now: "四个位置一开始就铺开。淡化的人仍然占着层级，等于把后三步提前写在纸上。",
+      slots: "空圈还是四个坑。人还没来，结构已经在说「一共四步」。",
+      emerge: "拆问题时只有拆问题。拆完后，后三人从他右侧依次进入：240ms 出场，间隔 70ms。拆问题本人不跳位。",
+    };
+
+    const rolesEl = document.getElementById("roles");
+    const logEl = document.getElementById("log");
+    const noteEl = document.getElementById("note");
+    let mode = "now";
+    let timers = [];
+
+    function clearTimers() {
+      timers.forEach(clearTimeout);
+      timers = [];
+    }
+
+    function later(ms, fn) {
+      const id = setTimeout(fn, ms);
+      timers.push(id);
+    }
+
+    function avatar(role, extraClass, caption, slot) {
+      const wrap = document.createElement("div");
+      wrap.className = "role " + extraClass;
+      wrap.dataset.id = role.id;
+      if (slot) {
+        wrap.innerHTML = `<div class="slot" aria-hidden="true"></div><strong>${role.name}</strong><small></small>`;
+      } else {
+        wrap.innerHTML = `<img class="avatar" src="${role.src}" alt="" width="62" height="62"><strong>${role.name}</strong><small>${caption || ""}</small>`;
+      }
+      return wrap;
+    }
+
+    function setLog(phase) {
+      if (phase === "split") {
+        logEl.innerHTML = `<p>· 已收到这个说法，准备开始。</p><p class="now"><span class="bars" aria-hidden="true"><span></span><span></span><span></span></span>正在拆解这句话…</p>`;
+      } else if (phase === "source") {
+        logEl.innerHTML = `<p>· 已拆出要查的问题。</p><p class="now"><span class="bars" aria-hidden="true"><span></span><span></span><span></span></span>开始查找出处…</p>`;
+      }
+    }
+
+    function playNow() {
+      rolesEl.className = "roles is-spread";
+      rolesEl.innerHTML = "";
+      AGENTS.forEach((role, i) => {
+        const state = i === 0 ? "is-active" : "is-idle";
+        const caption = i === 0 ? role.doing : "";
+        rolesEl.appendChild(avatar(role, state, caption));
+      });
+      setLog("split");
+    }
+
+    function playSlots() {
+      rolesEl.className = "roles is-spread";
+      rolesEl.innerHTML = "";
+      AGENTS.forEach((role, i) => {
+        if (i === 0) rolesEl.appendChild(avatar(role, "is-active", role.doing));
+        else rolesEl.appendChild(avatar(role, "is-idle", "", true));
+      });
+      setLog("split");
+      later(1100, () => {
+        AGENTS.slice(1).forEach((role, i) => {
+          later(i * 160, () => {
+            const node = rolesEl.children[i + 1];
+            const next = avatar(role, "is-idle enter-slot", "");
+            rolesEl.replaceChild(next, node);
+          });
+        });
+        later(480, () => setLog("source"));
+      });
+    }
+
+    function playEmerge() {
+      rolesEl.className = "roles";
+      rolesEl.innerHTML = "";
+      rolesEl.appendChild(avatar(AGENTS[0], "is-active", AGENTS[0].doing));
+      setLog("split");
+      later(1100, () => {
+        const first = rolesEl.children[0];
+        first.classList.remove("is-active");
+        first.classList.add("is-done");
+        first.querySelector("small").textContent = AGENTS[0].done;
+        AGENTS.slice(1).forEach((role, i) => {
+          later(i * 70, () => {
+            const node = avatar(role, i === 0 ? "is-active enter-emerge" : "enter-emerge", i === 0 ? role.doing : "");
+            node.style.animationDelay = "0ms";
+            rolesEl.appendChild(node);
+          });
+        });
+        later(80, () => setLog("source"));
+      });
+    }
+
+    function play() {
+      clearTimers();
+      noteEl.textContent = NOTES[mode];
+      if (mode === "now") playNow();
+      else if (mode === "slots") playSlots();
+      else playEmerge();
+    }
+
+    document.querySelectorAll("[data-mode]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        mode = btn.dataset.mode;
+        document.querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+        play();
+      });
+    });
+    document.getElementById("replay").addEventListener("click", play);
+    play();
+  </script>
+</body>
+</html>

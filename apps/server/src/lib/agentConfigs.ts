@@ -55,6 +55,8 @@ export interface HandoffStep {
   timestamp: number;
   status: "pending" | "running" | "completed" | "failed";
   error?: string;
+  /** Pipeline-internal pre-audit candidates; never part of the public agent output. */
+  relationAuditCandidates?: unknown[];
 }
 
 export interface HandoffResult {
@@ -97,6 +99,12 @@ export interface SourceValidatorOutput {
   questionableSources: string[];
   missingSources: string[];
   verificationNotes: string;
+  claimSourceRelations: Array<{
+    claimAtom: string;
+    url: string;
+    relation: "support" | "contradict" | "context-only" | "unverified";
+    reason: string;
+  }>;
 }
 
 export interface ReportComposerOutput {
@@ -141,6 +149,11 @@ const rumorDetectorSchema = {
   additionalProperties: false,
   properties: {
     claimAtoms: { type: "array", items: { type: "string" } },
+    priorityClaimAtoms: {
+      type: "array",
+      items: { type: "string" },
+      description: "按回答原问题的重要性排列主要主张及必要前提，只能逐字引用 claimAtoms，不改变判断。",
+    },
     claimAtomTypes: {
       type: "array",
       items: {
@@ -246,8 +259,22 @@ const sourceValidatorSchema = {
     questionableSources: { type: "array", items: { type: "string" } },
     missingSources: { type: "array", items: { type: "string" } },
     verificationNotes: { type: "string" },
+    claimSourceRelations: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          claimAtom: { type: "string" },
+          url: { type: "string" },
+          relation: { type: "string", enum: ["support", "contradict", "context-only", "unverified"] },
+          reason: { type: "string" },
+        },
+        required: ["claimAtom", "url", "relation", "reason"],
+      },
+    },
   },
-  required: ["sourceReliability", "verifiedSources", "questionableSources", "missingSources", "verificationNotes"],
+  required: ["sourceReliability", "verifiedSources", "questionableSources", "missingSources", "verificationNotes", "claimSourceRelations"],
 };
 
 const reportComposerSchema = {
@@ -408,6 +435,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     systemPrompt: [
       "你是红鲱鱼与枪的 RumorDetector。",
       "先观察语言痕迹，拆出可验证命题，只记录证据需求，不凭常识补事实。",
+      "填写 priorityClaimAtoms：先列用户主要想确认的主张，再列回答它必须核查的前提。只能逐字选取 claimAtoms 已有条目，不因容易检索而优先背景事实。此字段只决定优先顺序，不表示主张成立，也不表示其他内容已查。",
       "你的任务是分析用户提供的 claim（声明/信息），先拆出可核查的原子命题（claimAtoms），再识别其中可能存在的谣言特征。",
       "",
       "【流传短句 / 微博级谣言 — 强制】",
@@ -583,6 +611,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "2. 信源权威性 — 是否为该领域的权威机构或专家",
       "3. 引用准确性 — 是否断章取义或扭曲原意",
       "4. 可追溯性 — 读者是否能通过公开渠道验证",
+      "5. 命题—段落方向 — 对 atomSearches 中每个 claimAtom 与其来源，判断该来源的完整上下文究竟支持、反驳、仅提供背景，还是上下文不足无法判断。关系属于 claimAtom+URL，不属于整个网站。",
       "",
       "sourceReliability 判定标准：",
       "- high：claim 中的信源均可验证，且权威可靠",
@@ -596,9 +625,12 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "3. 禁止把可疑来源（营销号、匿名信源、AI 生成内容未署名）记入 verifiedSources；必须放进 questionableSources。",
       "4. missingSources 应主动列出关键缺口（原始数据、官方公告、原始论文 DOI 等），不要默认 placeholder。",
       "5. 禁止编造来源 URL、发布日期、机构署名；不在输入中出现的证据不得计入 verifiedSources。",
+      "6. 输入 directionalCandidates 是 FactChecker 准备公开为支持/反驳的候选。claimSourceRelations 至少逐条覆盖 directionalCandidates；只能使用 atomSearches 中真实出现的 claimAtom 和 URL。必须阅读 snippet 的完整转折与限制，不能只看标题或前半句。",
+      "7. support = 来源作者的完整意思直接支持该命题；contradict = 完整意思直接否定该命题；context-only = 主题相关、支持局部机制但不足以支持/反驳整条命题，或对象/指标不同；unverified = 摘要太短、上下文不足。",
+      "8. 「辟谣/流言/但是/杯水车薪」本身不能决定方向。同一 URL 对不同 claimAtom 可以有不同 relation。理论机制成立不等于实际疗效成立。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"sourceReliability\": \"medium\",\n  \"verifiedSources\": [\"可靠来源1\"],\n  \"questionableSources\": [\"可疑来源1\"],\n  \"missingSources\": [\"缺失来源1\"],\n  \"verificationNotes\": \"验证过程说明\"\n}",
+      "{\n  \"sourceReliability\": \"medium\",\n  \"verifiedSources\": [\"可靠来源1\"],\n  \"questionableSources\": [\"可疑来源1\"],\n  \"missingSources\": [\"缺失来源1\"],\n  \"verificationNotes\": \"验证过程说明\",\n  \"claimSourceRelations\": [\n    {\"claimAtom\": \"原子命题\", \"url\": \"https://example.com/source\", \"relation\": \"context-only\", \"reason\": \"来源讨论相关机制，但对象/结果指标不同，不能直接支持该命题\"}\n  ]\n}",
       "",
       "sourceReliability 必须是 'high'、'medium'、'low'、'unverified' 之一。",
     ].join("\n"),
@@ -787,10 +819,37 @@ export function buildAgentInput(
 
     case "source_validator": {
       const prev = previousSteps.find((s) => s.agent === "rumor_detector");
+      const factStep = [...previousSteps].reverse().find((s) => s.agent === "fact_checker");
+      const factCandidates = Array.isArray(factStep?.relationAuditCandidates)
+        ? factStep.relationAuditCandidates
+        : factStep?.output?.subclaimVerdicts;
+      const directionalCandidates = Array.isArray(factCandidates)
+        ? factCandidates.flatMap((raw) => {
+            if (!raw || typeof raw !== "object") return [];
+            const row = raw as Record<string, unknown>;
+            const claimAtom = typeof row.claimAtom === "string" ? row.claimAtom : "";
+            if (!claimAtom) return [];
+            const mapBucket = (value: unknown, intendedRelation: "support" | "contradict") =>
+              Array.isArray(value)
+                ? value.flatMap((source) => {
+                    if (!source || typeof source !== "object") return [];
+                    const url = typeof (source as { url?: unknown }).url === "string"
+                      ? String((source as { url?: unknown }).url).trim()
+                      : "";
+                    return /^https?:\/\//i.test(url) ? [{ claimAtom, url, intendedRelation }] : [];
+                  })
+                : [];
+            return [
+              ...mapBucket(row.supportingSources, "support"),
+              ...mapBucket(row.contradictingSources, "contradict"),
+            ];
+          }).slice(0, 24)
+        : [];
       return {
         claim,
-        task: "验证该 claim 中提到的信源",
+        task: "验证信源可靠性，并逐条核对 claimAtom 与检索来源完整上下文的方向关系",
         claimAtoms: prev?.output?.claimAtoms ?? [],
+        directionalCandidates,
         rumorTypes: prev?.output?.rumorTypes ?? [],
         rumorIndicators: prev?.output?.rumorIndicators ?? [],
         neededEvidence: prev?.output?.neededEvidence ?? [],
@@ -827,7 +886,7 @@ export function buildAgentInput(
     case "report_composer": {
       const rumorStep = previousSteps.find((s) => s.agent === "rumor_detector");
       const factStep = [...previousSteps].reverse().find((s) => s.agent === "fact_checker");
-      const sourceStep = previousSteps.find((s) => s.agent === "source_validator");
+      const sourceStep = [...previousSteps].reverse().find((s) => s.agent === "source_validator");
       const altStep = previousSteps.find((s) => s.agent === "alternative_explanation_searcher");
       const graderStep = previousSteps.find((s) => s.agent === "counter_evidence_grader");
       return {
@@ -878,6 +937,9 @@ export function buildAgentInput(
           questionableSources: compactStrings(sourceStep?.output?.questionableSources, 4, 220),
           missingSources: compactStrings(sourceStep?.output?.missingSources, 4, 220),
           verificationNotes: compactText(sourceStep?.output?.verificationNotes, 420),
+          claimSourceRelations: Array.isArray(sourceStep?.output?.claimSourceRelations)
+            ? sourceStep.output.claimSourceRelations.slice(0, 24)
+            : [],
         },
         // 因果分支：仅当 causal agent 已运行时注入其输出，供 ReportComposer 权衡替代解释与反证
         causalAnalysis: altStep?.output?.alternativeExplanations

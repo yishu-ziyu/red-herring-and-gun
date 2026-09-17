@@ -59,7 +59,7 @@ describe("orchestrate 自证阶段硬预算接线（主路 P1 Change H）", () =
     expect(options.deadlineMs).toBeLessThanOrEqual(Date.now() + 900);
   });
 
-  it("每次自证调用各拿一份新预算（管道重试不会共享同一个 deadline）", async () => {
+  it("同一自证阶段的重试共用 deadline，不会重获完整预算", async () => {
     const adapter = createOrchestrateAdapter({ env: { MINIMAX_API_KEY: "sk-mm" }, codexBin: "/usr/bin/codex" });
     const caller = adapter.makeSelfProofCaller("同一句话", undefined);
     const input = {
@@ -75,6 +75,6 @@ describe("orchestrate 自证阶段硬预算接线（主路 P1 Change H）", () =
     await caller(input);
     const second = optionsOfLastCall().deadlineMs ?? 0;
 
-    expect(second).toBeGreaterThan(first);
+    expect(second).toBe(first);
   });
 });

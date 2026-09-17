@@ -106,7 +106,7 @@ export function hardFilterSources(
     out.push({
       url: canon,
       title: title.slice(0, 200),
-      snippet: snippet.slice(0, 500),
+      snippet: snippet.slice(0, 900),
       credibility: s.credibility,
       providerRank: s.providerRank,
     });

@@ -21,7 +21,7 @@
 }
 
 
-/* editable field — a contentEditable div so skill pills can flow inline */
+/* Plain-text editable material; preserve the existing layout and caret behavior. */
 .editorWrap {
   position: relative;
 }
@@ -61,93 +61,6 @@
   opacity: 0.5;
   pointer-events: none;
 }
-
-/* inline skill pill — Enhance-Prompt dimensions + a blue tint and an × */
-.skillPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  /* shorter than the field's 18px line-height so the pill never expands the
-     line box (middle + 18px height grew the field and jumped the action gap) */
-  height: 16px;
-  padding: 0 0 0 5px;
-  margin: 0 2px;
-  border-radius: 999px;
-  background: rgba(43, 127, 255, 0.12);
-  color: #1f6feb;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: -0.12px;
-  white-space: nowrap;
-  position: relative;
-  top: -1px;
-  vertical-align: baseline;
-  user-select: none;
-}
-/* at the very start of the field: drop the left margin, keep only the right
-   (data-start is set in JS since :first-child ignores leading text nodes) */
-.skillPill[data-start] {
-  margin-left: 0;
-}
-.skillPillLabel {
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.skillPillX {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-  opacity: 0.65;
-  cursor: pointer;
-  transition: opacity 150ms cubic-bezier(0.22, 1, 0.36, 1),
-    background 150ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.skillPillX:hover {
-  opacity: 1;
-  background: rgba(43, 127, 255, 0.16);
-}
-/* leave the same soft way the enhance pill arrives */
-.skillPill[data-exit] {
-  animation: pi-pill-out 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  pointer-events: none;
-}
-
-/* "/" command palette — same container as the + menu, pinned above the field */
-.slashMenu {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  z-index: 25;
-  width: 200px;
-  padding: 3px;
-  background: #ffffff;
-  border: 0.5px solid #e6e8ec;
-  border-radius: 10px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02), 0 1px 1px rgba(0, 0, 0, 0.04);
-  transform-origin: bottom left;
-  animation: pi-menu-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-.slashLabel {
-  padding: 3px 7px;
-  font-size: 11px;
-  font-weight: 425;
-  color: #a1a1a1;
-}
-.slashEmpty {
-  padding: 6px 7px;
-  font-size: 11px;
-  color: #a1a1a1;
-}
-
 
 /* attachment chips — same white surface + hairline outline as the frame */
 .chips {
@@ -402,16 +315,6 @@
 .menuItem:active {
   background: rgba(26, 26, 26, 0.09);
 }
-.menuItem.menuItemActive {
-  background: rgba(26, 26, 26, 0.06);
-}
-.slashMenu[data-keyboard] .menuItem:hover {
-  background: transparent;
-}
-.slashMenu[data-keyboard] .menuItem.menuItemActive,
-.slashMenu[data-keyboard] .menuItem.menuItemActive:hover {
-  background: rgba(26, 26, 26, 0.06);
-}
 .wrap svg {
   stroke-width: 1.5px;
 }
@@ -432,14 +335,9 @@
   color: #1a1a1a;
 }
 
-/* Skills — a side flyout that expands from the "Skills" row */
+/* Demo-only model tooltip anchor. */
 .menuSub {
   position: relative;
-}
-.menuChevron {
-  display: inline-flex;
-  flex: none;
-  color: #a1a1a1;
 }
 /* brand marks keep their own colours; ChatGPT is monochrome so it follows text */
 .menuBrand {
@@ -447,26 +345,13 @@
   flex: none;
   color: #1a1a1a;
 }
-.menuFlyout {
-  position: absolute;
-  top: -3px;
-  left: calc(100% + 6px);
-  width: 168px;
-  padding: 3px;
-  background: #ffffff;
-  border: 0.5px solid #e6e8ec;
-  border-radius: 10px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02), 0 1px 1px rgba(0, 0, 0, 0.04);
-}
-/* invisible bridge across the 6px gap so the hover doesn't drop when the
-   pointer travels from the row into the flyout */
-.menuFlyout::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -7px;
-  width: 7px;
+.materialHint {
+  margin: 3px 7px 5px;
+  color: #676767;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* model info popover — a non-interactive card shown on hover to the right */
@@ -518,7 +403,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .iconBtn::before, .menuItem, .chipRemove, .plusIcon { transition: none; }
-  .chip, .chip[data-exit], .skillPill[data-exit], .menu, .menuFlyout, .menuPopover, .slashMenu { animation: none; }
+  .chip, .chip[data-exit], .menu, .menuPopover { animation: none; }
   .spinner { animation-duration: 1.4s; }
 }
 

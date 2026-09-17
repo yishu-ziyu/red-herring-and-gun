@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>红鲱鱼与枪 · 视觉方案与色板/字体对比实验室</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700;900&family=Newsreader:ital,opsz,wght@0,6..72,400..800;1,6..72,400..800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #121316;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 顶部控制栏 */
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(18, 19, 22, 0.94);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid #27272a;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-tag {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-tag span {
+      background: #dc2626;
+      color: #fff;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .scheme-tabs {
+      display: flex;
+      background: #27272a;
+      padding: 3px;
+      border-radius: 8px;
+      gap: 4px;
+    }
+    .scheme-tab {
+      background: transparent;
+      border: none;
+      color: #a1a1aa;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .scheme-tab.active {
+      background: #3f3f46;
+      color: #ffffff;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: #71717a;
+    }
+    .toggle-split {
+      background: #27272a;
+      border: 1px solid #3f3f46;
+      color: #d4d4d8;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* 方案视口容器 */
+    .lab-container {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr;
+      position: relative;
+    }
+    .lab-container.split-mode {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    /* 独立主题包裹 */
+    .theme-frame {
+      padding: 40px 24px 80px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-y: auto;
+      transition: background-color 0.25s ease;
+      position: relative;
+    }
+    .theme-label-badge {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .mockup-wrap {
+      width: 100%;
+      max-width: 820px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    /* ----------------------------------------------------
+       方案 0：现状（Current - 泥灰暖底 + 默认宋体）
+       ---------------------------------------------------- */
+    .theme-current {
+      background: #f6f4ef;
+      color: #292929;
+    }
+    .theme-current .theme-label-badge {
+      background: #eae7df;
+      color: #666;
+      border: 1px solid #dedcd4;
+    }
+    .theme-current .headline {
+      font-family: "Noto Serif SC", "Songti SC", serif;
+      font-size: 30px;
+      font-weight: 500;
+      color: #292929;
+      text-align: center;
+      letter-spacing: -0.2px;
+    }
+    .theme-current .headline em {
+      color: #a13734;
+      font-style: normal;
+    }
+    .theme-current .subhead {
+      text-align: center;
+      font-size: 13.5px;
+      color: #5d5d5d;
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+    .theme-current .input-card {
+      background: #ffffff;
+      border: 1px solid #dedcd4;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    }
+    .theme-current .case-card {
+      background: #ffffff;
+      border: 1px solid #dedcd4;
+      border-radius: 16px;
+      padding: 20px 24px;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    }
+    .theme-current .btn-primary {
+      background: #a13734;
+      color: #ffffff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .theme-current .btn-secondary {
+      background: #eeece5;
+      color: #292929;
+      border: 1px solid #dedcd4;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    /* ----------------------------------------------------
+       方案 A（推荐）：《纽约时报》/ Readwise
+       当代数字社论纸感（Modern Crisp Paper & Burgundy）
+       - 底色：#FAF9F5 通透微暖极品白纸
+       - 强调色：#8F2D2A 勃艮第深酒红
+       - 字体：Noto Serif SC 700 加重当代宋体 + JetBrains Mono 标牌
+       ---------------------------------------------------- */
+    .theme-editorial {
+      background: #faf9f5;
+      color: #1c1917;
+    }
+    .theme-editorial .theme-label-badge {
+      background: #fff;
+      color: #8f2d2a;
+      border: 1px solid #e7e5e0;
+    }
+    .theme-editorial .headline {
+      font-family: "Noto Serif SC", serif;
+      font-size: 34px;
+      font-weight: 700;
+      color: #1c1917;
+      text-align: center;
+      letter-spacing: -0.6px;
+      line-height: 1.3;
+    }
+    .theme-editorial .headline em {
+      color: #8f2d2a;
+      font-style: normal;
+      position: relative;
+      padding: 0 2px;
+    }
+    .theme-editorial .headline em::after {
+      content: "";
+      position: absolute;
+      bottom: -2px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: rgba(143, 45, 42, 0.25);
+      border-radius: 2px;
+    }
+    .theme-editorial .subhead {
+      text-align: center;
+      font-size: 14px;
+      color: #57534e;
+      margin-top: 10px;
+      line-height: 1.6;
+      max-width: 540px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .theme-editorial .input-card {
+      background: #ffffff;
+      border: 1px solid #e7e5df;
+      border-radius: 12px;
+      padding: 24px 28px;
+      box-shadow: 0 4px 24px -4px rgba(27, 24, 20, 0.04), 0 1px 3px rgba(27, 24, 20, 0.02);
+    }
+    .theme-editorial .case-card {
+      background: #ffffff;
+      border: 1px solid #e7e5df;
+      border-radius: 12px;
+      padding: 22px 28px;
+      box-shadow: 0 2px 12px -2px rgba(27, 24, 20, 0.03);
+      position: relative;
+    }
+    .theme-editorial .case-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: #8f2d2a;
+      background: rgba(143, 45, 42, 0.06);
+      padding: 3px 8px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      letter-spacing: 0.2px;
+    }
+    .theme-editorial .btn-primary {
+      background: #1c1917;
+      color: #faf9f5;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.15s ease;
+    }
+    .theme-editorial .btn-primary:hover {
+      background: #8f2d2a;
+    }
+    .theme-editorial .btn-secondary {
+      background: #f5f4ef;
+      color: #44403c;
+      border: 1px solid #e7e5df;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .theme-editorial .btn-secondary:hover {
+      background: #fff;
+      border-color: #1c1917;
+    }
+
+    /* ----------------------------------------------------
+       方案 B：《金融时报》/ 深度智库
+       无卡片纯净刊物（Financial & Think-Tank Ink）
+       - 底色：#F4EFE6 经典鲑鱼暖砂羊皮纸
+       - 强调色：#991B1B 深绯红 + 极深青灰
+       - 布局：废除浮动白卡，内容如油墨直接印在羊皮纸上，用优雅双线分隔
+       ---------------------------------------------------- */
+    .theme-thinktank {
+      background: #f4efe6;
+      color: #111827;
+    }
+    .theme-thinktank .theme-label-badge {
+      background: #e8e0d2;
+      color: #451a03;
+      border: 1px solid #d5c8b2;
+    }
+    .theme-thinktank .headline {
+      font-family: "Noto Serif SC", serif;
+      font-size: 34px;
+      font-weight: 900;
+      color: #111827;
+      text-align: center;
+      letter-spacing: -0.5px;
+      line-height: 1.25;
+    }
+    .theme-thinktank .headline em {
+      color: #991b1b;
+      font-style: normal;
+    }
+    .theme-thinktank .subhead {
+      text-align: center;
+      font-size: 14px;
+      color: #4b5563;
+      margin-top: 10px;
+      line-height: 1.6;
+    }
+    .theme-thinktank .input-card {
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(8px);
+      border: 1px solid #d9cebc;
+      border-radius: 8px;
+      padding: 24px 28px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    }
+    .theme-thinktank .case-card {
+      background: transparent;
+      border-top: 2px solid #111827;
+      border-bottom: 1px solid #d9cebc;
+      border-left: none;
+      border-right: none;
+      border-radius: 0;
+      padding: 20px 0;
+      box-shadow: none;
+    }
+    .theme-thinktank .case-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: #111827;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .theme-thinktank .btn-primary {
+      background: #111827;
+      color: #f4efe6;
+      border: 1px solid #111827;
+      padding: 7px 16px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+    }
+    .theme-thinktank .btn-secondary {
+      background: transparent;
+      color: #111827;
+      border: 1px solid #b8a994;
+      padding: 7px 14px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    /* ----------------------------------------------------
+       方案 C：瑞士极简 / 线性极简
+       冷白建筑纸感（Swiss Clean Architectural）
+       - 底色：#F8FAFC 极淡冷白
+       - 强调色：#0F172A 纯深石板蓝黑 + #DC2626 点睛
+       - 字体：现代中黑 + 几何无衬线
+       ---------------------------------------------------- */
+    .theme-swiss {
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    .theme-swiss .theme-label-badge {
+      background: #e2e8f0;
+      color: #0f172a;
+      border: 1px solid #cbd5e1;
+    }
+    .theme-swiss .headline {
+      font-family: "Noto Sans SC", -apple-system, sans-serif;
+      font-size: 32px;
+      font-weight: 700;
+      color: #0f172a;
+      text-align: center;
+      letter-spacing: -0.8px;
+      line-height: 1.3;
+    }
+    .theme-swiss .headline em {
+      color: #dc2626;
+      font-style: normal;
+    }
+    .theme-swiss .subhead {
+      text-align: center;
+      font-size: 14px;
+      color: #64748b;
+      margin-top: 8px;
+      line-height: 1.6;
+    }
+    .theme-swiss .input-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 24px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+    .theme-swiss .case-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 20px 24px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    }
+    .theme-swiss .case-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .theme-swiss .btn-primary {
+      background: #0f172a;
+      color: #ffffff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .theme-swiss .btn-secondary {
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid #cbd5e1;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    /* 公共模块组件 */
+    .input-inner {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .input-placeholder {
+      font-size: 15px;
+      color: #9ca3af;
+      height: 48px;
+    }
+    .input-bottom-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 12px;
+      border-top: 1px dashed rgba(0,0,0,0.08);
+    }
+    .plus-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid rgba(0,0,0,0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      color: #6b7280;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .start-btn {
+      padding: 8px 20px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.06);
+      color: #9ca3af;
+      border: none;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: not-allowed;
+    }
+
+    /* 示例 Chips */
+    .chips-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: #9ca3af;
+      margin: 4px 0;
+    }
+    .chips-divider::before, .chips-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: rgba(0,0,0,0.08);
+    }
+    .chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
+    .chip-item {
+      font-size: 13px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(0,0,0,0.08);
+      background: rgba(255,255,255,0.8);
+      color: inherit;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+    }
+
+    /* 案例卡片内容 */
+    .case-title {
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1.45;
+      margin-bottom: 6px;
+    }
+    .case-finding {
+      font-size: 14px;
+      line-height: 1.55;
+      opacity: 0.85;
+      margin-bottom: 12px;
+    }
+    .case-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding-top: 14px;
+      border-top: 1px solid rgba(0,0,0,0.06);
+    }
+    .case-date {
+      font-size: 12px;
+      opacity: 0.6;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .case-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* 色板详细解析板 */
+    .palette-strip {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 10px;
+      margin-top: 16px;
+      padding: 16px;
+      background: rgba(0,0,0,0.02);
+      border-radius: 8px;
+      border: 1px solid rgba(0,0,0,0.05);
+    }
+    .color-chip {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .color-box {
+      height: 36px;
+      border-radius: 6px;
+      border: 1px solid rgba(0,0,0,0.1);
+    }
+    .color-name {
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .color-hex {
+      font-size: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部切换控制台 -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <div class="brand-tag">红鲱鱼与枪 <span>PALETTE LAB</span></div>
+      <div class="scheme-tabs">
+        <button class="scheme-tab active" onclick="switchTheme('editorial')">方案 A：《纽时》通透数字社论（推荐）</button>
+        <button class="scheme-tab" onclick="switchTheme('thinktank')">方案 B：《金融时报》智库羊皮纸</button>
+        <button class="scheme-tab" onclick="switchTheme('swiss')">方案 C：冷白极简建筑纸</button>
+        <button class="scheme-tab" onclick="switchTheme('current')">方案 0：现状对比（泥灰暖底）</button>
+      </div>
+    </div>
+    <div class="toolbar-right">
+      <button class="toggle-split" id="splitBtn" onclick="toggleSplit()">⚡ 对比模式 (Split View)</button>
+    </div>
+  </div>
+
+  <!-- 实验室展示区域 -->
+  <div class="lab-container" id="labContainer">
+
+    <!-- 主视口 -->
+    <div class="theme-frame theme-editorial" id="primaryFrame">
+      <div class="theme-label-badge" id="primaryBadge">SCHEME A · MODERN EDITORIAL PAPER</div>
+
+      <div class="mockup-wrap">
+
+        <!-- 头部标语区 -->
+        <header style="padding: 20px 0 10px;">
+          <h1 class="headline">你听到的说法，<em>真的靠谱吗？</em></h1>
+          <p class="subhead">把拿不准的内容放进来。先查主要疑问，再看依据、补查缺口，结果留在同一份调查里。</p>
+        </header>
+
+        <!-- 主输入卡片 -->
+        <div class="input-card">
+          <div class="input-inner">
+            <div class="input-placeholder">把拿不准的说法放进来…</div>
+            <div class="input-bottom-bar">
+              <button class="plus-btn">+</button>
+              <button class="start-btn">开始调查</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 示例标签 -->
+        <div>
+          <div class="chips-divider">你也可以试试这些例子</div>
+          <div class="chips-row" style="margin-top: 12px;">
+            <div class="chip-item">隔夜菜会致癌，等于吃毒药</div>
+            <div class="chip-item">5G信号塔辐射导致周边居民头晕失眠</div>
+            <div class="chip-item">人民币即将大幅贬值，赶紧换美元</div>
+          </div>
+        </div>
+
+        <!-- 案例列表 -->
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div class="chips-divider">已完成的调查案例</div>
+
+          <!-- 卡片 1 -->
+          <div class="case-card">
+            <div class="case-badge">CASE #0906 · 生产 FIXTURE · 混合说法</div>
+            <h3 class="case-title">维生素C能治感冒，而且每次感冒都应当输液。</h3>
+            <p class="case-finding">只有前半截有依据且被夸大；后半截站不住。</p>
+            <div class="case-footer">
+              <span class="case-date">INVESTIGATED · 2026/09/06</span>
+              <div class="case-actions">
+                <button class="btn-primary">查看这次调查</button>
+                <button class="btn-secondary">用同一说法重新查</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 卡片 2 -->
+          <div class="case-card">
+            <div class="case-badge">CASE #0907 · 生产 FIXTURE · 语境错位</div>
+            <h3 class="case-title">新规要求 2026 年起电动车必须装识别芯片。</h3>
+            <p class="case-finding">该说法把地方试点说成了全国新规。</p>
+            <div class="case-footer">
+              <span class="case-date">INVESTIGATED · 2026/09/07</span>
+              <div class="case-actions">
+                <button class="btn-primary">查看这次调查</button>
+                <button class="btn-secondary">用同一说法重新查</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 色板解析板 -->
+        <div style="margin-top: 10px;">
+          <p style="font-size: 12px; font-weight: 600; opacity: 0.7; margin-bottom: 6px;">DESIGN SPEC · 色板配置细节</p>
+          <div class="palette-strip" id="paletteDetails">
+            <!-- 动态填充 -->
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 分屏对比视口（默认隐藏，点击对比开启） -->
+    <div class="theme-frame theme-current" id="secondaryFrame" style="display: none;">
+      <div class="theme-label-badge">SCHEME 0 · 现状对比 (CURRENT PRODUCTION)</div>
+
+      <div class="mockup-wrap">
+        <header style="padding: 20px 0 10px;">
+          <h1 class="headline">你听到的说法，<em>真的靠谱吗？</em></h1>
+          <p class="subhead">把拿不准的内容放进来。先查主要疑问，再看依据、补查缺口，结果留在同一份调查里。</p>
+        </header>
+
+        <div class="input-card">
+          <div class="input-inner">
+            <div class="input-placeholder">把拿不准的说法放进来…</div>
+            <div class="input-bottom-bar">
+              <button class="plus-btn">+</button>
+              <button class="start-btn">开始调查</button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="chips-divider">你也可以试试这些例子</div>
+          <div class="chips-row" style="margin-top: 12px;">
+            <div class="chip-item">隔夜菜会致癌，等于吃毒药</div>
+            <div class="chip-item">5G信号塔辐射导致周边居民头晕失眠</div>
+            <div class="chip-item">人民币即将大幅贬值，赶紧换美元</div>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div class="chips-divider">已完成的调查案例</div>
+
+          <div class="case-card">
+            <div style="font-size: 12px; color: #666; margin-bottom: 8px;">生产 fixture · 混合说法</div>
+            <h3 class="case-title" style="font-size: 15px; font-weight: 600;">维生素C能治感冒，而且每次感冒都应当输液。</h3>
+            <p class="case-finding" style="font-size: 13.5px; color: #5d5d5d;">只有前半截有依据且被夸大；后半截站不住。</p>
+            <div class="case-footer">
+              <span class="case-date" style="font-size: 12px; color: #9e9e9e;">调查日期：2026/9/6</span>
+              <div class="case-actions">
+                <button class="btn-primary">查看这次调查</button>
+                <button class="btn-secondary">用同一说法重新查</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const SPECS = {
+      editorial: {
+        badge: "SCHEME A · MODERN CRISP PAPER & BURGUNDY (纽时通透数字纸)",
+        class: "theme-editorial",
+        colors: [
+          { name: "底色 (Canvas)", hex: "#FAF9F5", desc: "通透微暖自然纸" },
+          { name: "卡片 (Surface)", hex: "#FFFFFF", desc: "纯白极轻柔光阴影" },
+          { name: "品牌红 (Accent)", hex: "#8F2D2A", desc: "勃艮第内敛深酒红" },
+          { name: "主墨水 (Ink 1)", hex: "#1C1917", desc: "深石炭墨（非死黑）" },
+          { name: "发丝线 (Hairline)", hex: "#E7E5DF", desc: "极细纸边灰线" }
+        ]
+      },
+      thinktank: {
+        badge: "SCHEME B · FINANCIAL & THINK-TANK (金融时报羊皮纸与油墨)",
+        class: "theme-thinktank",
+        colors: [
+          { name: "底色 (Canvas)", hex: "#F4EFE6", desc: "经典金融刊暖羊皮" },
+          { name: "卡片 (Surface)", hex: "TRANSPARENT", desc: "无浮卡/油墨直印" },
+          { name: "重强调 (Heavy)", hex: "#111827", desc: "极深冷灰顶边线" },
+          { name: "品牌红 (Accent)", hex: "#991B1B", desc: "深绯红标" },
+          { name: "分隔线 (Rule)", hex: "#D9CEBC", desc: "古典书脊线" }
+        ]
+      },
+      swiss: {
+        badge: "SCHEME C · SWISS ARCHITECTURAL CLEAN (冷白极简建筑纸)",
+        class: "theme-swiss",
+        colors: [
+          { name: "底色 (Canvas)", hex: "#F8FAFC", desc: "高冷通透极淡白" },
+          { name: "卡片 (Surface)", hex: "#FFFFFF", desc: "精密工业微边框" },
+          { name: "主强调 (Slate)", hex: "#0F172A", desc: "纯石板蓝黑" },
+          { name: "点睛红 (Red)", hex: "#DC2626", desc: "瑞士国际红" },
+          { name: "边框线 (Border)", hex: "#E2E8F0", desc: "冷调金属细线" }
+        ]
+      },
+      current: {
+        badge: "SCHEME 0 · CURRENT PRODUCTION (现状泥灰暖底对比)",
+        class: "theme-current",
+        colors: [
+          { name: "底色 (Canvas)", hex: "#F6F4EF", desc: "偏灰泥感暖底" },
+          { name: "卡片 (Surface)", hex: "#FFFFFF", desc: "浮动圆角白卡" },
+          { name: "品牌红 (Accent)", hex: "#A13734", desc: "原版亮砖红" },
+          { name: "主文字 (Ink)", hex: "#292929", desc: "深灰墨" },
+          { name: "边框线 (Line)", hex: "#DEDCD4", desc: "微重泥灰细线" }
+        ]
+      }
+    };
+
+    let currentScheme = 'editorial';
+    let isSplit = false;
+
+    function renderPalette(key) {
+      const spec = SPECS[key];
+      const el = document.getElementById('paletteDetails');
+      el.innerHTML = spec.colors.map(c => `
+        <div class="color-chip">
+          <div class="color-box" style="background: ${c.hex.startsWith('#') ? c.hex : '#f4efe6'};"></div>
+          <div class="color-name">${c.name}</div>
+          <div class="color-hex">${c.hex} · ${c.desc}</div>
+        </div>
+      `).join('');
+    }
+
+    function switchTheme(key) {
+      currentScheme = key;
+      document.querySelectorAll('.scheme-tab').forEach(t => t.classList.remove('active'));
+      const activeIdx = ['editorial', 'thinktank', 'swiss', 'current'].indexOf(key);
+      document.querySelectorAll('.scheme-tab')[activeIdx].classList.add('active');
+
+      const frame = document.getElementById('primaryFrame');
+      frame.className = 'theme-frame ' + SPECS[key].class;
+      document.getElementById('primaryBadge').innerText = SPECS[key].badge;
+      renderPalette(key);
+    }
+
+    function toggleSplit() {
+      isSplit = !isSplit;
+      const container = document.getElementById('labContainer');
+      const sec = document.getElementById('secondaryFrame');
+      const btn = document.getElementById('splitBtn');
+      if (isSplit) {
+        container.classList.add('split-mode');
+        sec.style.display = 'flex';
+        btn.innerText = '✕ 关闭对比';
+        btn.style.background = '#dc2626';
+        btn.style.borderColor = '#dc2626';
+        btn.style.color = '#fff';
+      } else {
+        container.classList.remove('split-mode');
+        sec.style.display = 'none';
+        btn.innerText = '⚡ 对比模式 (Split View)';
+        btn.style.background = '#27272a';
+        btn.style.borderColor = '#3f3f46';
+        btn.style.color = '#d4d4d8';
+      }
+    }
+
+    // 初始化渲染
+    renderPalette('editorial');
+  </script>
+</body>
+</html>

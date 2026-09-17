@@ -15,6 +15,9 @@ export type ShellCase = {
   claim: string;
   status: "running" | "done" | "interrupted";
   createdAt?: number;
+  threadId?: string;
+  roundCount?: number;
+  report?: Record<string, unknown>;
 };
 
 type ProductShellProps = {
@@ -172,6 +175,9 @@ export function ProductShell({
                 ✕
               </button>
             </header>
+            <p className="gp-drawer-scope" data-gp-history-scope={account ? "account" : "local"}>
+              {account ? copy.historyScopeAccount : copy.historyScopeGuest}
+            </p>
             {!historyReady ? (
               <p className="gp-drawer-empty" role="status">{copy.loadingHistory}</p>
             ) : cases.length === 0 ? (

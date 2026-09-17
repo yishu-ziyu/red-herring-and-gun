@@ -16,6 +16,7 @@ import type { InvestigationSnapshotV1 } from "../investigation/index.js";
 import { buildAgentInput } from "../agentConfigs.js";
 import { directAnswer } from "../publicCopy.js";
 import type { LivenessStatus } from "../citationLiveness.js";
+import { confirmedSourceValidatorStep } from "./testSourceRelationAudit";
 
 const url = (atom: string, tag = "src") => `https://t.test/${encodeURIComponent(atom)}/${tag}`;
 
@@ -75,7 +76,7 @@ async function runHarness(input: {
   const searchPlan = input.searchPlan ?? {};
   let factCallCount = 0;
 
-  const runAgent = vi.fn(async (agentId: string, _steps: PipelineStep[]): Promise<PipelineStep> => {
+  const runAgent = vi.fn(async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
     if (agentId === "rumor_detector") return input.rumor;
     if (agentId === "fact_checker") {
       const output = input.factOutputs[Math.min(factCallCount, input.factOutputs.length - 1)];
@@ -86,7 +87,7 @@ async function runHarness(input: {
       return factStep(output);
     }
     if (agentId === "source_validator") {
-      return { agent: "source_validator", output: { sourceReliability: "medium" }, timestamp: Date.now() };
+      return confirmedSourceValidatorStep(steps, "medium");
     }
     if (agentId === "report_composer") return composerStep(input.composerOutput);
     throw new Error(`unexpected ${agentId}`);

@@ -96,7 +96,8 @@ describe("W3 四处统一裁切：追问只显示用户自己写的那一段", (
 
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     const brief = String(writeText.mock.calls[0][0]);
-    expect(brief).toContain(`原说法：${USER_ASK}`);
+    expect(brief).toContain(`原句：${USER_ASK}`);
+    expect(brief).not.toContain("红鲱鱼与枪");
     for (const leaked of LEAKED) {
       expect(brief).not.toContain(leaked);
     }

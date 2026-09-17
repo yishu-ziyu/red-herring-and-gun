@@ -1632,7 +1632,14 @@ function stubMatchMedia(opts: { mobile?: boolean; reduced?: boolean }) {
   }) as typeof window.matchMedia;
 }
 
+function expandResultClaims() {
+  document.querySelectorAll<HTMLButtonElement>(".gp-claim-head").forEach((head) => {
+    if (head.getAttribute("aria-expanded") === "false") fireEvent.click(head);
+  });
+}
+
 async function openFirstEvidence(role?: string) {
+  expandResultClaims();
   const selector = role ? `.gp-evidence-item[data-gp-role="${role}"]` : ".gp-evidence-item";
   const row = document.querySelector(selector) as HTMLButtonElement;
   expect(row).toBeTruthy();
@@ -1688,6 +1695,8 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
 
     const claimB = document.querySelector('[data-gp-claim-id="claim-2"]') as HTMLElement;
+    const headB = claimB.querySelector(".gp-claim-head") as HTMLButtonElement;
+    if (headB.getAttribute("aria-expanded") === "false") fireEvent.click(headB);
     fireEvent.click(claimB.querySelector('.gp-evidence-item[data-gp-role="contradict"]')!);
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
     expect(within(document.querySelector(".gp-drawer--source") as HTMLElement).getByText(/对这条命题：反驳/)).toBeTruthy();
@@ -1735,6 +1744,10 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     const snap = {
       ...base,
       sources: base.sources.map(({ excerpt: _excerpt, ...source }) => source),
+      claims: base.claims.map((claim) => ({
+        ...claim,
+        evidence: claim.evidence.map(({ passage: _passage, ...link }) => link),
+      })),
     };
     renderCanvas(snap);
     await openFirstEvidence();
@@ -1922,6 +1935,7 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
 
   it("12b. 关闭后焦点回到原来那颗 Evidence DOM 节点（before === after）", async () => {
     renderCanvas(refutedComplete());
+    expandResultClaims();
     const before = document.querySelector(".gp-evidence-item") as HTMLButtonElement;
     expect(before).toBeInstanceOf(HTMLButtonElement);
     before.focus();
@@ -2511,7 +2525,7 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(answer.compareDocumentPosition(judgment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(judgment.classList.contains("gp-chip")).toBe(false);
     expect(hero.querySelector(".gp-hero-kicker")).toBeNull();
-    expect(screen.getByRole("heading", { name: "依据" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "逐条核查详情" })).toBeInTheDocument();
 
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
@@ -2571,6 +2585,7 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
 
   it("M4：证据行左侧关系是文字+符号；整行仍打开抽屉", async () => {
     renderCanvas(refutedComplete());
+    expandResultClaims();
     const row = document.querySelector(".gp-evidence-item") as HTMLButtonElement;
     const relation = row.querySelector("[data-gp-relation]") as HTMLElement;
     expect(relation).toBeTruthy();
@@ -2592,6 +2607,7 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     ];
     mixed.claims[0]!.evidence.push({ sourceId: "src-context", role: "context-only" });
     renderCanvas(mixed);
+    expandResultClaims();
     const row = document.querySelector('.gp-evidence-item[data-gp-role="context-only"]') as HTMLElement;
     expect(row.querySelector(".gp-evidence-relation-label")?.textContent).toBe("相关");
     expect(row.querySelector("[data-gp-evidence-excerpt]")?.textContent).toBe("只提供背景，不单独支撑或反驳。");
@@ -2600,6 +2616,7 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
 
   it("M5：抽屉有摘录时摘录块在前且带强调类；无摘录整节不出现", async () => {
     renderCanvas(refutedComplete());
+    expandResultClaims();
     fireEvent.click(document.querySelector(".gp-evidence-item")!);
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
     const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
@@ -2616,7 +2633,12 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     renderCanvas({
       ...bare,
       sources: bare.sources.map(({ excerpt: _excerpt, ...source }) => source),
+      claims: bare.claims.map((claim) => ({
+        ...claim,
+        evidence: claim.evidence.map(({ passage: _passage, ...link }) => link),
+      })),
     });
+    expandResultClaims();
     fireEvent.click(document.querySelector(".gp-evidence-item")!);
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
     const empty = document.querySelector(".gp-drawer--source") as HTMLElement;

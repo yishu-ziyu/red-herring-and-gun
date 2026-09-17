@@ -14,6 +14,7 @@ import { applyFactDeskPostProcessToReport } from "./factDeskPostProcess.js";
 import { applyPublicCopy } from "./publicCopy.js";
 
 import { stringItems } from "./valueCoerce.js";
+import { withExecutionBudget, type ExecutionBudget } from "./executionBudget.js";
 
 /**
  * ReportComposer 只负责把已有判断写成报告，不能无限期阻塞调查收束。
@@ -22,24 +23,6 @@ import { stringItems } from "./valueCoerce.js";
  */
 export const REPORT_COMPOSER_TIMEOUT_MS_DEFAULT = 75_000;
 
-async function settleReportWithin<T>(inflight: Promise<T>, timeoutMs: number): Promise<T> {
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return inflight;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      inflight,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`ReportComposer 未在 ${timeoutMs}ms 内完成，改用确定性收束`)),
-          timeoutMs,
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
 export async function runReportComposerWithFallback({
   claim,
   steps,
@@ -47,23 +30,27 @@ export async function runReportComposerWithFallback({
   runAgent,
   onFallback,
   timeoutMs = REPORT_COMPOSER_TIMEOUT_MS_DEFAULT,
+  signal,
+  deadlineMs,
 }: {
   claim: string;
   steps: any[];
   search360Result: any;
-  runAgent: (agentId: string, steps: any[], search360Result?: any) => Promise<any>;
+  runAgent: (agentId: string, steps: any[], search360Result?: any, execution?: ExecutionBudget) => Promise<any>;
   onFallback?: (step: any) => void;
   /** ReportComposer 自身的硬预算；到点后用已有事实判断确定性收束。 */
   timeoutMs?: number;
+  signal?: AbortSignal;
+  deadlineMs?: number;
 }) {
   const startedAt = Date.now();
   try {
-    // Promise.race 不会取消在途 provider 请求；显式吸收晚到 rejection，避免 unhandledRejection。
-    // 真正的 provider 取消由底层能力补齐，本层只保证「写作模型不能卡死产品状态机」。
-    const inflight = Promise.resolve().then(() => runAgent("report_composer", steps, search360Result));
-    void inflight.catch(() => {});
-    return await settleReportWithin(inflight, timeoutMs);
+    return await withExecutionBudget(
+      (reportSignal) => runAgent("report_composer", steps, search360Result, { signal: reportSignal, deadlineMs }),
+      { signal, deadlineMs, timeoutMs, label: "ReportComposer" },
+    );
   } catch (error) {
+    signal?.throwIfAborted();
     const message = error instanceof Error ? error.message : "ReportComposer 调用失败";
     const fallbackStep = {
       agent: "report_composer",

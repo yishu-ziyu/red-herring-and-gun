@@ -133,7 +133,8 @@ function asSourceList(result: unknown): FilterableSource[] {
     out.push({
       url,
       title: String(rec.title || rec.name || "").slice(0, 200),
-      snippet: String(rec.snippet || rec.summary || rec.content || "").slice(0, 320),
+      // 关系核验需要看到转折后的限制条件；320 字很容易只留下「虽然」前半句。
+      snippet: String(rec.snippet || rec.summary || rec.content || "").slice(0, 900),
       credibility: typeof rec.credibility === "string" ? rec.credibility : undefined,
       providerRank: i,
     });
@@ -201,8 +202,10 @@ export function listAtomsForSearch(
 /** 按负荷排序再取 MAX_ATOM_SEARCHES。同分保持原句序。 */
 export function selectAtomsToSearch(
   verifiableAtoms: string[],
-  typeByKey?: ReadonlyMap<string, string> | Record<string, string>
+  typeByKey?: ReadonlyMap<string, string> | Record<string, string>,
+  priorityAtoms?: readonly string[],
 ): string[] {
+  const priorityKeys = new Map((priorityAtoms ?? []).map((atom, index) => [claimAtomKey(atom), index]));
   const seen = new Set<string>();
   const unique: string[] = [];
   for (const atom of verifiableAtoms) {
@@ -217,8 +220,9 @@ export function selectAtomsToSearch(
       atom,
       index,
       load: atomSearchLoad(atom, typeOfAtom(atom, typeByKey)),
+      priority: priorityKeys.get(claimAtomKey(atom)) ?? Number.MAX_SAFE_INTEGER,
     }))
-    .sort((a, b) => b.load - a.load || a.index - b.index)
+    .sort((a, b) => a.priority - b.priority || b.load - a.load || a.index - b.index)
     .slice(0, MAX_ATOM_SEARCHES)
     .map((row) => row.atom);
 }
@@ -382,8 +386,18 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
       contradicting: contradictingRaw,
     });
     const bound = bindDualBucketCitations(v.evidence, aligned.supporting, aligned.contradicting, known);
-    let supporting = bound.supportingSources;
-    let contradicting = bound.contradictingSources;
+    const canonicalByUrl = new Map(retrieved.map((source) => [source.url, source]));
+    // A valid URL proves identity only. The model is not allowed to rewrite the
+    // page title/snippet that later appears in reports or drawers.
+    const canonicalize = (sources: typeof bound.supportingSources) =>
+      sources.map((source) => {
+        const canonical = canonicalByUrl.get(source.url);
+        return canonical
+          ? { url: canonical.url, title: canonical.title, snippet: canonical.snippet }
+          : source;
+      });
+    let supporting = canonicalize(bound.supportingSources);
+    let contradicting = canonicalize(bound.contradictingSources);
     let evidence = bound.text;
     // Rebinding cannot promote explicitly related material into directional evidence.
     let sourcesRelatedOnly = v.sourcesRelatedOnly === true;
@@ -474,7 +488,7 @@ export function injectKnowledgeEvidence(
     added.push({
       url,
       title: String(item?.title ?? "").slice(0, 200),
-      snippet: String(item?.snippet ?? "").slice(0, 320),
+      snippet: String(item?.snippet ?? "").slice(0, 900),
       provenance,
       originDate: injection.originDate,
     });
@@ -526,6 +540,9 @@ export function injectKnowledgeEvidence(
 export async function retrieveForAtoms(options: {
   claimAtoms: unknown;
   claimAtomTypes: unknown;
+  /** Priority changes order only; candidates still come from retained checkable atoms. */
+  priorityClaimAtoms?: unknown;
+  onPlan?: (plan: { includedAtoms: string[]; deferredAtoms: string[] }) => void;
   searchOne: SearchOneAtom;
   hooks?: RetrieveForAtomsHooks;
   claimAtomKeyFn?: (s: string) => string;
@@ -591,7 +608,16 @@ export async function retrieveForAtoms(options: {
     injectedKeys.size === 0
       ? listed.verifiable
       : listed.verifiable.filter((atom) => !injectedKeys.has(keyFn(atom)));
-  const atomsToSearch = selectAtomsToSearch(candidates, listed.typeByKey);
+  const priorities = Array.isArray(options.priorityClaimAtoms)
+    ? options.priorityClaimAtoms.filter((atom): atom is string => typeof atom === "string")
+    : [];
+  const atomsToSearch = selectAtomsToSearch(candidates, listed.typeByKey, priorities);
+  const includedAtoms = [...injections.map(({ atom }) => atom), ...atomsToSearch];
+  const includedKeys = new Set(includedAtoms.map((atom) => keyFn(atom)));
+  options.onPlan?.({
+    includedAtoms,
+    deferredAtoms: listed.verifiable.filter((atom) => !includedKeys.has(keyFn(atom))),
+  });
   const mode = options.hooks?.mode ?? "parallel";
   const items: AtomSearchItem[] = [];
   const originPromise = options.lookupImageOrigin

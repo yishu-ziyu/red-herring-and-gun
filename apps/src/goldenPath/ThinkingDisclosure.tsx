@@ -62,7 +62,7 @@ export function ThinkingDisclosure({ snapshot, live }: ThinkingDisclosureProps) 
     }
   }, [splitOut, elapsed]);
 
-  if (!live && !splitOut) return null;
+  if (!live || splitOut) return null;
 
   const displayTime = finalTimeRef.current || `${elapsed.toFixed(1)}s`;
   const waitSeconds = Math.floor(elapsed);

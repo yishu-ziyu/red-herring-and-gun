@@ -13,8 +13,8 @@
 
 import dns from "node:dns/promises";
 
-import { fetchWithTimeout } from "./httpUtils.js";
-import { buildJsonRepairUserContent, parseAgentJson } from "./providerRouter.js";
+import { withExecutionBudget } from "./executionBudget.js";
+import { AgentOutputError, buildJsonRepairUserContent, parseValidatedAgentJson } from "./providerRouter.js";
 
 export interface ByoConfig {
   /** 已去尾斜杠的接口地址（OpenAI 兼容根，例如 https://api.minimaxi.com/v1） */
@@ -210,14 +210,16 @@ async function callByoChatCompletion(
   systemPrompt: string,
   userContent: string,
   maxTokens: number,
-  timeoutMs: number
+  signal: AbortSignal
 ): Promise<{ text: string; reasoning?: string }> {
   let response: Response;
   try {
-    response = await fetchWithTimeout(
+    signal.throwIfAborted();
+    response = await fetch(
       `${byo.baseUrl}/chat/completions`,
       {
         method: "POST",
+        signal,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${byo.apiKey}`,
@@ -230,11 +232,10 @@ async function callByoChatCompletion(
             { role: "user", content: userContent },
           ],
         }),
-      },
-      timeoutMs,
-      byoSafeLabel(byo)
+      }
     );
   } catch (error) {
+    signal.throwIfAborted();
     const message = error instanceof Error ? error.message : String(error);
     console.error(
       `[byo-key] primary model call failed (network) label=${byoSafeLabel(byo)} detail=${sanitizeDetail(message, byo)}`
@@ -255,6 +256,7 @@ async function callByoChatCompletion(
     throw byoHttpError(response.status, undefined, byo);
   }
   const data: unknown = await response.json().catch(() => null);
+  signal.throwIfAborted();
   const message =
     data && typeof data === "object"
       ? (data as { choices?: Array<{ message?: { content?: unknown; reasoning_content?: unknown } }> })
@@ -281,36 +283,42 @@ export async function callByoAgent(params: {
   userContent: string;
   maxTokens: number;
   timeoutMs: number;
+  signal?: AbortSignal;
+  deadlineMs?: number;
+  responseSchema?: object;
 }): Promise<{ output: any; model: string; reasoning?: string }> {
   const { byo } = params;
-  const raw = await callByoChatCompletion(
-    byo,
-    params.systemPrompt,
-    params.userContent,
-    params.maxTokens,
-    params.timeoutMs
-  );
-  const modelLabel = `byo:${byo.modelName}`;
-  try {
-    return { output: parseAgentJson(raw.text, modelLabel), model: modelLabel, reasoning: raw.reasoning };
-  } catch (parseError) {
-    // 输出解析失败不是凭证失败：同端点用用户自己的密钥再修一次（与 fallback 链的 repair 重试同策略）。
-    const repairRaw = await callByoChatCompletion(
-      byo,
-      [
-        params.systemPrompt,
-        "",
-        "# CRITICAL OUTPUT RULE",
-        "Return ONLY one valid JSON object. No markdown fences. No commentary.",
-        "Escape all quotes inside strings. No trailing commas. Complete all braces.",
-      ].join("\n"),
-      buildJsonRepairUserContent(raw.text, params.userContent),
-      params.maxTokens,
-      params.timeoutMs
-    );
-    const output = parseAgentJson(repairRaw.text, modelLabel);
-    return { output, model: modelLabel, reasoning: repairRaw.reasoning };
-  }
+  const prompt = params.responseSchema
+    ? `${params.systemPrompt}\n\n# RESPONSE SCHEMA\n${JSON.stringify(params.responseSchema)}`
+    : params.systemPrompt;
+  return withExecutionBudget(async (signal) => {
+    const raw = await callByoChatCompletion(byo, prompt, params.userContent, params.maxTokens, signal);
+    const modelLabel = `byo:${byo.modelName}`;
+    try {
+      signal.throwIfAborted();
+      return { output: parseValidatedAgentJson(raw.text, modelLabel, params.responseSchema), model: modelLabel, reasoning: raw.reasoning };
+    } catch (parseError) {
+      signal.throwIfAborted();
+      if (!(parseError instanceof AgentOutputError)) throw parseError;
+      // 只用用户的端点修复一次，不回退到平台凭证，也不重置时限。
+      const repairRaw = await callByoChatCompletion(
+        byo,
+        [
+          prompt,
+          "",
+          "# CRITICAL OUTPUT RULE",
+          "Return ONLY one valid JSON object. No markdown fences. No commentary.",
+          "Escape all quotes inside strings. No trailing commas. Complete all braces.",
+        ].join("\n"),
+        buildJsonRepairUserContent(raw.text, params.userContent),
+        params.maxTokens,
+        signal
+      );
+      signal.throwIfAborted();
+      const output = parseValidatedAgentJson(repairRaw.text, modelLabel, params.responseSchema);
+      return { output, model: modelLabel, reasoning: repairRaw.reasoning };
+    }
+  }, { signal: params.signal, deadlineMs: params.deadlineMs, timeoutMs: params.timeoutMs, label: byoSafeLabel(byo) });
 }
 
 // ───────────────────────────────────────────────────────────────

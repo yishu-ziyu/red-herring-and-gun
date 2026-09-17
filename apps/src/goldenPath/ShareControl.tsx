@@ -1,30 +1,53 @@
 /**
  * ShareControl — 显式分享（IMPLEMENTATION_PLAN §3.5）。
  *
- * 顺序是：先看清楚会公开哪些字段 → 再创建 → 复制要等服务器写完 → 可以撤销。
- * 不预览就发链接、复制成功但服务器没写成功，都是假的分享。
+ * 顺序是：先看清楚接收方会看见的内容 → 再创建 → 复制要等服务器写完 → 可以撤销。
+ * 预览只渲染服务端脱敏投影，不在前端用私人调查对象另拼公开版。
  */
 import { useEffect, useState } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 
+type SharePreview = {
+  claim?: unknown;
+  createdAt?: unknown;
+  checkedAt?: unknown;
+  report?: unknown;
+};
+
 type ShareState =
   | { phase: "idle" }
   | { phase: "previewing" }
-  | { phase: "preview"; fields: string[] }
+  | { phase: "preview"; preview: SharePreview }
   | { phase: "creating" }
   | { phase: "created"; url: string; shareId: string }
   | { phase: "revoked" }
   | { phase: "error"; message: string };
 
-/** 公开字段名用产品语义说，不用字段名说。 */
-function publicFieldLabels(preview: Record<string, unknown>): string[] {
-  const labels: string[] = [];
-  if (typeof preview.claim === "string") labels.push("原说法");
-  if (preview.report) labels.push("结论与拆出的问题");
-  if (preview.checkedAt) labels.push("核查完成时间");
-  labels.push("原调查时间");
-  return labels;
+/** 从 GET 公开投影取出接收方页会用的字段。不补私人对象里的内容。 */
+export function sharePreviewContent(preview: SharePreview) {
+  const report = preview.report && typeof preview.report === "object" && !Array.isArray(preview.report)
+    ? (preview.report as Record<string, unknown>)
+    : {};
+  const investigation = report.investigation && typeof report.investigation === "object"
+    ? (report.investigation as { claims?: Array<{ text?: string }>; sources?: Array<{ title?: string; url?: string }> })
+    : undefined;
+  const claims = Array.isArray(investigation?.claims) ? investigation.claims : [];
+  const sources = Array.isArray(investigation?.sources) ? investigation.sources : [];
+  return {
+    claim: typeof preview.claim === "string" ? preview.claim : "",
+    conclusion: typeof report.conclusion === "string" ? report.conclusion : "",
+    verdictLead: typeof report.causalBoundary === "string" ? report.causalBoundary : "",
+    createdAt: typeof preview.createdAt === "number" ? preview.createdAt : null,
+    checkedAt: typeof preview.checkedAt === "string" ? preview.checkedAt : "",
+    claims: claims.map((claim) => (typeof claim.text === "string" ? claim.text : "")).filter(Boolean),
+    sources: sources
+      .map((source) => ({
+        title: typeof source.title === "string" ? source.title : "",
+        url: typeof source.url === "string" ? source.url : "",
+      }))
+      .filter((source) => source.url || source.title),
+  };
 }
 
 export function ShareControl({ caseId }: { caseId: string }) {
@@ -32,10 +55,12 @@ export function ShareControl({ caseId }: { caseId: string }) {
   const copy = gpCopyFor(lang);
   const [state, setState] = useState<ShareState>({ phase: "idle" });
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
 
   useEffect(() => {
     setState({ phase: "idle" });
     setCopied(false);
+    setCopyError("");
   }, [caseId]);
 
   const loadPreview = async () => {
@@ -48,8 +73,8 @@ export function ShareControl({ caseId }: { caseId: string }) {
         setState({ phase: "error", message: copy.shareNeedLogin });
         return;
       }
-      const data = (await response.json()) as { preview?: Record<string, unknown> };
-      setState({ phase: "preview", fields: publicFieldLabels(data.preview ?? {}) });
+      const data = (await response.json()) as { preview?: SharePreview };
+      setState({ phase: "preview", preview: data.preview ?? {} });
     } catch {
       setState({ phase: "error", message: copy.sharePreviewFailed });
     }
@@ -95,10 +120,14 @@ export function ShareControl({ caseId }: { caseId: string }) {
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
+      setCopyError("");
     } catch {
       setCopied(false);
+      setCopyError(copy.shareCopyFailed);
     }
   };
+
+  const previewView = state.phase === "preview" ? sharePreviewContent(state.preview) : null;
 
   return (
     <section className="gp-share" aria-label={copy.shareTitle} data-gp-share-state={state.phase}>
@@ -113,14 +142,42 @@ export function ShareControl({ caseId }: { caseId: string }) {
         {state.phase === "creating" ? <span className="gp-share-hint">{copy.shareCreating}</span> : null}
       </div>
 
-      {state.phase === "preview" ? (
+      {state.phase === "preview" && previewView ? (
         <div className="gp-share-body">
           <p className="gp-share-hint">{copy.sharePreviewLead}</p>
-          <ul className="gp-share-fields">
-            {state.fields.map((field) => (
-              <li key={field}>{field}</li>
-            ))}
-          </ul>
+          <article className="gp-share-preview" data-gp-share-preview>
+            <h3 className="gp-share-preview-claim">{previewView.claim}</h3>
+            <p className="gp-share-preview-meta">
+              {previewView.createdAt
+                ? `原调查时间：${new Date(previewView.createdAt).toLocaleString("zh-CN", { hour12: false })}`
+                : "原调查时间"}
+              {previewView.checkedAt ? ` · 核查完成：${previewView.checkedAt}` : ""}
+            </p>
+            {previewView.conclusion ? <p className="gp-share-preview-lead">{previewView.conclusion}</p> : null}
+            {previewView.verdictLead ? <p>{previewView.verdictLead}</p> : null}
+            {previewView.claims.length ? (
+              <ul data-gp-share-preview-claims>
+                {previewView.claims.map((text) => (
+                  <li key={text}>{text}</li>
+                ))}
+              </ul>
+            ) : null}
+            {previewView.sources.length ? (
+              <ul data-gp-share-preview-sources>
+                {previewView.sources.map((source) => (
+                  <li key={source.url || source.title}>
+                    {source.url ? (
+                      <a href={source.url} rel="noreferrer nofollow">
+                        {source.title || source.url}
+                      </a>
+                    ) : (
+                      source.title
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </article>
           <p className="gp-share-hint">{copy.shareExcluded}</p>
           <div className="gp-share-actions">
             <button type="button" className="gp-primary-btn" data-gp-share-confirm onClick={() => void create()}>
@@ -145,6 +202,11 @@ export function ShareControl({ caseId }: { caseId: string }) {
               {copy.shareRevoke}
             </button>
           </div>
+          {copyError ? (
+            <p className="gp-share-hint is-error" role="alert">
+              {copyError}
+            </p>
+          ) : null}
           <p className="gp-share-hint">{copy.shareRevokeNote}</p>
         </div>
       ) : null}

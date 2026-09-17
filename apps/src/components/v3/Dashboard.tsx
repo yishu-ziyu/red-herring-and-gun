@@ -281,12 +281,16 @@ export function Dashboard({
   }, []);
 
   const handleAddFiles = useCallback(
-    async (files: File[], kind: "image" | "file") => {
+    async (files: File[]) => {
       if (files.length === 0) return;
       setInputError("");
       try {
         const videoFiles = files.filter((file) => file.type.startsWith("video/"));
         const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+        if (imageFiles.length + videoFiles.length !== files.length) {
+          setInputError(copy.filesUnsupported);
+          return;
+        }
         if (videoFiles.length > 0) {
           const frames = (
             await Promise.all(videoFiles.map((file) => extractFramesFromVideo(file)))
@@ -295,8 +299,9 @@ export function Dashboard({
             setInputError(copy.videoFrameFailed);
             return;
           }
-          const nextTotalSize = images.reduce((sum, image) => sum + image.size, 0) + frames.reduce((sum, f) => sum + f.size, 0);
-          const nextCount = images.length + frames.length;
+          const incoming = [...await Promise.all(imageFiles.map(imageFileToCaseImage)), ...frames];
+          const nextTotalSize = images.reduce((sum, image) => sum + image.size, 0) + incoming.reduce((sum, f) => sum + f.size, 0);
+          const nextCount = images.length + incoming.length;
           if (nextTotalSize > MAX_TOTAL_IMAGE_BYTES) {
             setInputError(copy.videoFrameTooLarge);
             return;
@@ -305,22 +310,16 @@ export function Dashboard({
             setInputError(copy.tooManyFrames);
             return;
           }
-          setImages((prev) => [...prev, ...frames].slice(0, MAX_IMAGE_COUNT));
+          setImages((prev) => [...prev, ...incoming]);
           return;
-        }
-        if (kind === "file") {
-          const nonImages = files.filter((file) => !file.type.startsWith("image/"));
-          if (nonImages.length > 0) {
-            setInputError(copy.imagesOnly);
-            return;
-          }
         }
         if (imageFiles.length === 0) {
           setInputError(copy.filesUnsupported);
           return;
         }
-        if (imageFiles.length !== files.length) {
-          setInputError(copy.filesUnsupported);
+        if (images.length + imageFiles.length > MAX_IMAGE_COUNT) {
+          setInputError(copy.tooManyImages);
+          return;
         }
         const nextTotalSize =
           images.reduce((sum, image) => sum + image.size, 0) +
@@ -328,9 +327,6 @@ export function Dashboard({
         if (nextTotalSize > MAX_TOTAL_IMAGE_BYTES) {
           setInputError(copy.imagesTooLarge);
           return;
-        }
-        if (images.length + imageFiles.length > MAX_IMAGE_COUNT) {
-          setInputError(copy.tooManyImages);
         }
         const nextImages = await Promise.all(imageFiles.map(imageFileToCaseImage));
         setImages((prev) => [...prev, ...nextImages].slice(0, MAX_IMAGE_COUNT));

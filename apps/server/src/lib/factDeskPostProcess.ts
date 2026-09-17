@@ -5,7 +5,7 @@
  * Goals:
  * 1. Strip drama / AI self-talk / infrastructure leaks from public prose
  * 2. Keep canSay / cannotSay honest and non-empty
- * 3. Ensure conclusion has claim framing + uncertainty when evidence is thin
+ * 3. Ensure conclusion keeps uncertainty when evidence is thin without prepending the raw claim
  * 4. Never invent sources or facts not already in the report
  *
  * Keep public copy plain and sourced.
@@ -90,29 +90,16 @@ function ensureFaceLead(text: string, _verdictType: unknown, notes: string[], la
   return stripped || text;
 }
 
-function hasClaimFraming(text: string, claim: string): boolean {
-  if (/流传说法|原表述|网传|原说法|该说法|这条说法/.test(text)) return true;
-  if (claim && claim.length >= 6 && text.includes(claim.slice(0, 6))) return true;
-  return false;
-}
-
 function ensureClaimAndUncertainty(
   conclusion: string,
-  claim: string,
+  _claim: string,
   notes: string[],
   verdictType?: unknown,
 ): string {
   let out = conclusion.trim();
   if (!out) {
     notes.push("conclusion: empty → conservative default");
-    return claim
-      ? `公开材料还撑不住判断。流传说法是：「${claim.slice(0, 42)}」。现有证据仍不足以确认。`
-      : "公开材料还撑不住判断。现有证据仍不足以确认该说法。";
-  }
-
-  if (claim && !hasClaimFraming(out, claim)) {
-    notes.push("conclusion: prepended claim framing");
-    out = `流传说法是：「${claim.slice(0, 42)}」。${out}`;
+    return "公开材料还撑不住判断。现有证据仍不足以确认该说法。";
   }
 
   const decisive = verdictType === "true" || verdictType === "false";

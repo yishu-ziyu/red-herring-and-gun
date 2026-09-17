@@ -27,8 +27,8 @@ describe("A13 两次点击内看到决定性依据", () => {
         onBackHome={() => {}}
       />
     );
-    // 第 1 次点击：结果页上的材料行
-    const row = document.querySelector<HTMLElement>(".gp-evidence-item")!;
+    // 第 1 次点击：结论区第一条关键依据
+    const row = document.querySelector<HTMLElement>("[data-gp-key-evidence-item]")!;
     expect(row).toBeTruthy();
     fireEvent.click(row);
     const drawer = document.querySelector("[data-gp-source-layer]")!;

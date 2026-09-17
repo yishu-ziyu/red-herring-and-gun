@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>调查体验全过程推演 · 红鲱鱼与枪</title>
+  <style>
+    :root {
+      --paper: #f8f7f4;
+      --surface: #ffffff;
+      --surface-inset: #f1eee7;
+      --surface-hover: #eae7df;
+      --ink: #1f211d;
+      --ink-2: #42463e;
+      --ink-3: #6e7368;
+      --muted: #969b90;
+      --line: #e3e0d5;
+      --line-strong: #c8c5b9;
+      --hairline: rgba(31, 33, 29, 0.08);
+      --accent: #9e2a2b;
+      --accent-soft: rgba(158, 42, 43, 0.08);
+      --accent-border: rgba(158, 42, 43, 0.22);
+      --support: #236842;
+      --support-soft: rgba(35, 104, 66, 0.08);
+      --support-border: rgba(35, 104, 66, 0.22);
+      --amber: #b45309;
+      --amber-soft: rgba(180, 83, 9, 0.08);
+      --amber-border: rgba(180, 83, 9, 0.24);
+      --blue: #1d4ed8;
+      --blue-soft: rgba(29, 78, 216, 0.08);
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
+      --mono: "SF Mono", Menlo, Monaco, Consolas, monospace;
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+      --shadow-md: 0 4px 14px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
+      --shadow-popover: 0 10px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
+      --shadow-drawer: -8px 0 32px rgba(0,0,0,0.14);
+      --shadow-sheet: 0 -8px 32px rgba(0,0,0,0.16);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--font);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* 原型顶栏控制条 */
+    .proto-bar {
+      position: sticky; top: 0; z-index: 100;
+      background: #1e201b; color: #f8f7f4;
+      padding: 10px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; font-size: 13px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      flex-wrap: wrap;
+    }
+    .proto-left { display: flex; align-items: center; gap: 12px; }
+    .proto-title { font-weight: 600; color: #fff; letter-spacing: 0.02em; }
+    .proto-step-indicator {
+      font-size: 12px; padding: 3px 9px; border-radius: 4px;
+      background: #34382f; color: #d6dacd; font-family: var(--mono);
+    }
+    .proto-btns { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .p-btn {
+      font: inherit; font-size: 12px; padding: 6px 12px;
+      border: 1px solid rgba(255,255,255,0.22); color: #f8f7f4;
+      background: transparent; border-radius: 6px; cursor: pointer;
+      transition: all 150ms var(--ease);
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .p-btn:hover { background: rgba(255,255,255,0.12); }
+    .p-btn.is-active {
+      background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500;
+    }
+    .p-btn.primary {
+      background: #fff; color: #1e201b; border-color: #fff; font-weight: 600;
+    }
+    .p-btn.primary:hover { background: #e5e3db; }
+    .p-btn.danger {
+      border-color: #7f2b2b; color: #fca5a5;
+    }
+
+    /* 过程说明指示横条 */
+    .progress-banner {
+      background: #eeebe3; border-bottom: 1px solid var(--line);
+      padding: 10px 24px; font-size: 13px; color: var(--ink-2);
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .progress-desc { display: flex; align-items: center; gap: 10px; }
+    .progress-badge {
+      font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 3px;
+      background: var(--accent); color: #fff; letter-spacing: 0.03em;
+    }
+
+    /* 视口主容器 */
+    .viewport-wrapper {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 34px 24px 120px;
+      transition: max-width 300ms var(--ease), padding 300ms var(--ease);
+    }
+    .viewport-wrapper.is-mobile-preview {
+      max-width: 414px;
+      padding: 24px 14px 120px;
+      box-shadow: 0 0 0 12px #262923, 0 24px 60px rgba(0,0,0,0.35);
+      border-radius: 38px;
+      margin: 28px auto 100px;
+      background: var(--paper);
+      min-height: 844px;
+      position: relative;
+    }
+
+    /* 原句展示区 (Hero Quote) */
+    .kicker {
+      font-size: 11.5px; font-weight: 600; color: var(--ink-3);
+      text-transform: uppercase; letter-spacing: 0.08em; margin: 0 0 8px;
+    }
+    .quote-box {
+      margin: 0 0 28px;
+      padding: 18px 22px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--accent);
+      border-radius: 0 10px 10px 0;
+      box-shadow: var(--shadow-sm);
+    }
+    .quote-text {
+      margin: 0;
+      font-family: var(--serif); font-size: 21px; font-weight: 500;
+      line-height: 1.55; color: var(--ink);
+    }
+    .quote-text mark {
+      background: none; color: inherit; font: inherit;
+      border-bottom: 2px solid var(--accent-border);
+      padding: 0 2px;
+    }
+
+    /* 角色协同状态栏 (Role Avatars) */
+    .roles-bar {
+      display: flex; align-items: center; gap: 16px;
+      padding: 14px 18px; background: var(--surface);
+      border: 1px solid var(--line); border-radius: 10px;
+      margin-bottom: 24px; overflow-x: auto; box-shadow: var(--shadow-sm);
+    }
+    .role-item {
+      display: flex; align-items: center; gap: 9px;
+      min-width: max-content; opacity: 0.35;
+      transition: opacity 260ms var(--ease);
+    }
+    .role-item.is-active, .role-item.is-done { opacity: 1; }
+    .role-avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      border: 1.5px solid var(--line); object-fit: cover;
+      background: #f1eee7;
+    }
+    .role-item.is-active .role-avatar {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2.5px var(--accent-soft);
+    }
+    .role-item.is-done .role-avatar {
+      border-color: var(--support);
+    }
+    .role-meta { display: flex; flex-direction: column; }
+    .role-name { font-size: 13px; font-weight: 600; line-height: 1.2; color: var(--ink); }
+    .role-sub { font-size: 11.5px; color: var(--ink-3); }
+    .role-sub.shimmer {
+      color: transparent;
+      background: linear-gradient(90deg, #6e7368 0%, #6e7368 30%, #9e2a2b 50%, #6e7368 70%, #6e7368 100%);
+      background-size: 260% 100%;
+      -webkit-background-clip: text; background-clip: text;
+      animation: roleShimmer 2.2s cubic-bezier(0.25, 0.1, 0.25, 1) infinite;
+    }
+    @keyframes roleShimmer {
+      0% { background-position: 100% 0; }
+      100% { background-position: 0 0; }
+    }
+
+    /* 解决问题 1：深度思考折叠与展开组件 (AI Thinking Disclosure) */
+    .thinking-box {
+      margin: 0 0 26px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      transition: all 260ms var(--ease);
+    }
+    .thinking-header {
+      padding: 12px 18px;
+      display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; user-select: none;
+      background: #fdfdfb; border-bottom: 1px solid transparent;
+      transition: background 150ms var(--ease);
+    }
+    .thinking-header:hover { background: #f7f6f1; }
+    .thinking-box.is-open .thinking-header {
+      border-bottom-color: var(--line);
+    }
+    .thinking-left {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; font-weight: 600; color: var(--ink-2);
+    }
+    .thinking-sparkle {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 18px; border-radius: 4px;
+      background: var(--accent-soft); color: var(--accent);
+      font-size: 11px;
+    }
+    .thinking-sparkle.is-spinning {
+      animation: pulseGrow 1.5s ease infinite alternate;
+    }
+    @keyframes pulseGrow {
+      0% { transform: scale(0.92); opacity: 0.7; }
+      100% { transform: scale(1.08); opacity: 1; }
+    }
+    .thinking-timer {
+      font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); font-weight: normal;
+    }
+    .thinking-toggle-btn {
+      font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 4px;
+    }
+    .thinking-body {
+      padding: 16px 20px 18px;
+      font-size: 13.5px; line-height: 1.68; color: var(--ink-2);
+      display: flex; flex-direction: column; gap: 12px;
+      background: #faf9f6;
+    }
+    .thinking-step-row {
+      display: flex; gap: 10px; align-items: flex-start;
+      animation: fadeIn 280ms var(--ease) both;
+    }
+    .thinking-step-badge {
+      flex: none; font-size: 10.5px; font-family: var(--mono); font-weight: 600;
+      padding: 2px 6px; border-radius: 4px;
+      background: #eae7df; color: var(--ink-2); margin-top: 2px;
+    }
+    .thinking-step-text { flex: 1; }
+    .thinking-step-text strong { color: var(--ink); font-weight: 600; }
+    .thinking-cursor {
+      display: inline-block; width: 6px; height: 14px;
+      background: var(--accent); vertical-align: text-bottom;
+      margin-left: 4px; animation: blinkCursor 0.8s infinite;
+    }
+    @keyframes blinkCursor { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+
+    /* 解决问题 3：清爽、克制的活动轨迹 (Activity Stream) */
+    .activity-container {
+      margin: 0 0 28px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 16px 18px;
+      box-shadow: var(--shadow-sm);
+    }
+    .activity-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--hairline);
+    }
+    .activity-title {
+      font-size: 12.5px; font-weight: 600; color: var(--ink-3);
+      letter-spacing: 0.04em; text-transform: uppercase;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .activity-live-indicator {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+      animation: blinkIndicator 1.2s ease infinite alternate;
+    }
+    @keyframes blinkIndicator { from { opacity: 0.3; } to { opacity: 1; } }
+    .activity-list {
+      list-style: none; margin: 0; padding: 0;
+      display: flex; flex-direction: column; gap: 8px;
+      max-height: 170px; overflow-y: auto; overscroll-behavior: contain;
+      padding-right: 6px;
+    }
+    .activity-list::-webkit-scrollbar { width: 4px; }
+    .activity-list::-webkit-scrollbar-thumb { background: #dcd9cf; border-radius: 4px; }
+    .activity-row {
+      display: flex; align-items: baseline; gap: 9px;
+      font-size: 13px; line-height: 1.55; color: var(--ink-2);
+      animation: fadeIn 220ms var(--ease) both;
+    }
+    .activity-role-tag {
+      flex: none; font-size: 11px; font-weight: 600; padding: 1px 6px;
+      border-radius: 3px; background: #eeebe3; color: var(--ink-2);
+    }
+    .activity-role-tag.question { background: #e5e7eb; color: #374151; }
+    .activity-role-tag.source { background: #fef3c7; color: #92400e; }
+    .activity-role-tag.context { background: #e0f2fe; color: #0369a1; }
+    .activity-role-tag.judge { background: #fce7f3; color: #9d174d; }
+    .activity-text-wrapper { flex: 1; min-width: 0; word-break: break-word; }
+    .activity-action-pill {
+      font: inherit; font-size: 12px; font-weight: 500;
+      color: var(--ink); background: #f3f0e8; border: 1px solid var(--line);
+      padding: 1px 7px; border-radius: 4px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px;
+      transition: all 140ms var(--ease);
+    }
+    .activity-action-pill:hover { background: #e8e4da; border-color: var(--line-strong); }
+    .activity-jump-btn {
+      font: inherit; font-size: 12px; font-weight: 600;
+      color: var(--amber); background: var(--amber-soft); border: 1px solid var(--amber-border);
+      padding: 2px 8px; border-radius: 4px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px;
+      transition: all 140ms var(--ease);
+    }
+    .activity-jump-btn:hover { background: #fef3c7; border-color: #d97706; }
+
+    /* 解决问题 2：命题骨架卡片与排版层级 (Claim Section) */
+    .section-headline {
+      font-size: 13px; font-weight: 600; color: var(--ink-3);
+      letter-spacing: 0.04em; text-transform: uppercase; margin: 28px 0 14px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .claim-card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      margin-bottom: 18px;
+      box-shadow: var(--shadow-sm);
+      overflow: visible;
+      transition: border-color 220ms var(--ease), box-shadow 220ms var(--ease);
+    }
+    .claim-card.is-target {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent-soft);
+    }
+    .claim-header {
+      padding: 16px 20px;
+      display: flex; align-items: baseline; gap: 12px;
+      cursor: pointer; user-select: none;
+      border-bottom: 1px solid transparent;
+    }
+    .claim-card.is-open .claim-header {
+      border-bottom-color: #f1eee7;
+    }
+    .claim-id {
+      font-family: var(--mono); font-size: 13.5px; font-weight: 700;
+      color: var(--accent); background: var(--accent-soft);
+      padding: 2px 6px; border-radius: 4px; flex: none;
+    }
+    .claim-title {
+      font-size: 16px; font-weight: 600; color: var(--ink); flex: 1; line-height: 1.45;
+    }
+    .claim-collapse-toggle { font-size: 12px; color: var(--ink-3); flex: none; }
+    .claim-body {
+      padding: 16px 20px 20px;
+    }
+    .claim-sub-label {
+      font-size: 11.5px; font-weight: 600; color: var(--ink-3);
+      text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 10px;
+    }
+
+    /* 解决需求：严格遵照 Prompt-Kit Source 设计规范 (Prompt-Kit Sources) */
+    /* 参考: https://www.prompt-kit.com/docs/source */
+    .sources-row {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+      margin-bottom: 16px;
+    }
+    .source-container {
+      position: relative; display: inline-block;
+    }
+    /* Prompt-Kit: SourceTrigger (Pill) */
+    .source-trigger {
+      display: inline-flex; align-items: center; gap: 6px;
+      height: 28px; padding: 0 10px;
+      background: #fbfaf8; border: 1px solid var(--line);
+      border-radius: 9999px; /* full rounded pill */
+      font-size: 12.5px; color: var(--ink-2);
+      cursor: pointer; user-select: none;
+      transition: all 160ms var(--ease);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+    }
+    .source-trigger:hover, .source-container:focus-within .source-trigger, .source-trigger.is-active {
+      background: #ffffff;
+      border-color: var(--line-strong);
+      box-shadow: var(--shadow-sm);
+      transform: translateY(-1px);
+    }
+    .source-favicon {
+      width: 14px; height: 14px; border-radius: 3px; flex: none; object-fit: contain;
+    }
+    .source-domain-text {
+      font-weight: 500; font-family: var(--font); color: var(--ink);
+    }
+    .source-stance-tag {
+      font-size: 10.5px; font-weight: 600; padding: 1px 5px; border-radius: 9999px;
+      line-height: 1.2;
+    }
+    .source-stance-tag.contradict {
+      background: var(--accent-soft); color: var(--accent);
+    }
+    .source-stance-tag.support {
+      background: var(--support-soft); color: var(--support);
+    }
+
+    /* Prompt-Kit: SourceContent (Hover/Click Popover Card) */
+    .source-popover {
+      position: absolute; top: calc(100% + 8px); left: 0; z-index: 90;
+      width: min(340px, 86vw);
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px 16px;
+      box-shadow: var(--shadow-popover);
+      opacity: 0; pointer-events: none; transform: translateY(-4px) scale(0.98);
+      transition: opacity 180ms var(--ease), transform 180ms var(--ease);
+    }
+    .source-container:hover .source-popover,
+    .source-container:focus-within .source-popover,
+    .source-popover.is-visible {
+      opacity: 1; pointer-events: auto; transform: translateY(0) scale(1);
+    }
+    /* popover caret pointing up to the pill */
+    .source-popover::before {
+      content: ""; position: absolute; bottom: 100%; left: 23px;
+      border: 7px solid transparent; border-bottom-color: var(--line);
+    }
+    .source-popover::after {
+      content: ""; position: absolute; bottom: 100%; left: 24px;
+      border: 6px solid transparent; border-bottom-color: #ffffff;
+    }
+    .source-popover-meta {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 6px; font-size: 11px;
+    }
+    .source-popover-badge {
+      font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 3px;
+    }
+    .source-popover-badge.contradict { background: var(--accent-soft); color: var(--accent); }
+    .source-popover-badge.support { background: var(--support-soft); color: var(--support); }
+    .source-popover-domain { color: var(--ink-3); font-family: var(--mono); }
+    .source-popover-title {
+      margin: 0 0 8px; font-size: 13.5px; font-weight: 600; line-height: 1.4; color: var(--ink);
+    }
+    .source-popover-snippet {
+      margin: 0 0 10px; font-size: 12px; line-height: 1.5; color: var(--ink-2);
+      background: var(--surface-inset); padding: 8px 10px; border-radius: 6px;
+      border-left: 3px solid var(--accent); font-family: var(--serif);
+    }
+    .source-popover-snippet.support { border-left-color: var(--support); }
+    .source-popover-footer {
+      display: flex; align-items: center; justify-content: space-between;
+      padding-top: 8px; border-top: 1px solid var(--hairline);
+    }
+    .source-popover-action {
+      font: inherit; font-size: 12px; font-weight: 600;
+      color: var(--accent); background: none; border: 0; padding: 0;
+      cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+    }
+    .source-popover-action:hover { text-decoration: underline; }
+
+    /* 争点冲突卡片 (Editorial Conflict Box - 无花哨 emoji、层级分明) */
+    .conflict-box {
+      margin-top: 16px;
+      background: #faf8f4;
+      border: 1px solid var(--amber-border);
+      border-left: 4px solid var(--amber);
+      border-radius: 8px;
+      padding: 14px 16px;
+      animation: fadeIn 320ms var(--ease) both;
+    }
+    .conflict-box.is-highlight {
+      background: #fef8eb;
+      animation: pulseConflict 1.6s var(--ease) 2;
+    }
+    @keyframes pulseConflict {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(180, 83, 9, 0.4); }
+      50% { box-shadow: 0 0 0 6px rgba(180, 83, 9, 0.15); }
+    }
+    .conflict-header {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+    }
+    .conflict-tag {
+      font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 3px;
+      background: var(--amber-soft); color: var(--amber); letter-spacing: 0.02em;
+    }
+    .conflict-heading {
+      font-size: 14px; font-weight: 600; color: #78350f; margin: 0; line-height: 1.4;
+    }
+    .conflict-prose {
+      font-size: 13px; line-height: 1.6; color: #5f2f0a; margin: 0 0 12px;
+    }
+    /* 争点双侧材料快速对比 */
+    .conflict-sides-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+      background: #ffffff; border: 1px solid rgba(180, 83, 9, 0.18);
+      border-radius: 6px; padding: 10px 12px;
+    }
+    @media (max-width: 600px) {
+      .conflict-sides-grid { grid-template-columns: 1fr; gap: 8px; }
+    }
+    .conflict-side-col { font-size: 12px; line-height: 1.5; }
+    .conflict-side-title {
+      font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+    }
+    .conflict-side-title.contradict { color: var(--accent); }
+    .conflict-side-title.support { color: var(--support); }
+    .conflict-side-cite { color: var(--ink-2); font-size: 12px; }
+
+    /* 来源抽屉 (SourceDrawer) & 遮罩 */
+    .scrim {
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(24, 26, 22, 0.38);
+      backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+      opacity: 0; pointer-events: none; transition: opacity 220ms var(--ease);
+    }
+    .scrim.is-open { opacity: 1; pointer-events: auto; }
+
+    .source-drawer {
+      position: fixed; z-index: 1001; background: var(--surface);
+      box-shadow: var(--shadow-drawer); display: flex; flex-direction: column;
+      transition: transform 260ms var(--ease);
+    }
+    @media (min-width: 769px) {
+      .source-drawer {
+        top: 0; right: 0; bottom: 0; width: min(460px, 92vw);
+        border-left: 1px solid var(--line); transform: translateX(100%);
+      }
+      .source-drawer.is-open { transform: translateX(0); }
+    }
+    @media (max-width: 768px) {
+      .source-drawer {
+        left: 0; right: 0; bottom: 0; width: 100vw; max-height: 85vh;
+        border-radius: 20px 20px 0 0; border-top: 1px solid var(--line);
+        box-shadow: var(--shadow-sheet); transform: translateY(100%);
+      }
+      .source-drawer.is-open { transform: translateY(0); }
+    }
+
+    /* 模拟手机预览模式下的抽屉居中限制 */
+    .viewport-wrapper.is-mobile-preview ~ .source-drawer {
+      top: auto; left: 50%; right: auto; bottom: -1000px;
+      transform: translateX(-50%); width: 414px; max-height: 720px;
+      border-radius: 22px 22px 0 0;
+      transition: bottom 260ms var(--ease), opacity 220ms var(--ease);
+      opacity: 0; pointer-events: none;
+    }
+    .viewport-wrapper.is-mobile-preview ~ .source-drawer.is-open {
+      bottom: calc(50% - 360px); opacity: 1; pointer-events: auto;
+    }
+
+    .drawer-head {
+      padding: 18px 22px 14px; border-bottom: 1px solid var(--line);
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 12px; flex: none; background: #faf9f6;
+    }
+    .drawer-title-group { flex: 1; min-width: 0; }
+    .drawer-title { font-size: 16px; font-weight: 700; color: var(--ink); line-height: 1.4; margin: 0 0 6px; }
+    .drawer-kicker {
+      font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .drawer-stance-badge {
+      font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px;
+    }
+    .drawer-stance-badge.contradict { background: var(--accent-soft); color: var(--accent); }
+    .drawer-stance-badge.support { background: var(--support-soft); color: var(--support); }
+    .drawer-close {
+      font: inherit; border: 0; background: none; font-size: 18px;
+      cursor: pointer; color: var(--ink-3); padding: 5px; border-radius: 4px; line-height: 1;
+    }
+    .drawer-close:hover { background: var(--surface-inset); color: var(--ink); }
+    .drawer-body {
+      flex: 1; overflow-y: auto; padding: 20px 22px 30px; display: flex; flex-direction: column; gap: 20px;
+    }
+    .drawer-section-label {
+      font-size: 11.5px; font-weight: 600; color: var(--ink-3); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 6px;
+    }
+    .drawer-excerpt {
+      margin: 0; padding: 12px 16px; background: var(--surface-inset);
+      border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0;
+      font-family: var(--serif); font-size: 14.5px; line-height: 1.65; color: var(--ink);
+    }
+    .drawer-claim-box {
+      font-size: 13.5px; color: var(--ink-2); line-height: 1.5; display: flex; gap: 8px; align-items: baseline;
+      background: #fbfaf7; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line);
+    }
+    .drawer-claim-num { font-family: var(--mono); font-weight: 700; color: var(--accent); }
+    .drawer-prose { font-size: 13.5px; line-height: 1.65; color: var(--ink-2); margin: 0; }
+    .drawer-footer {
+      padding: 14px 22px 16px; border-top: 1px solid var(--line);
+      display: flex; justify-content: flex-end; background: #faf9f6;
+    }
+    .drawer-external-link {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;
+      color: var(--accent); text-decoration: none; padding: 7px 14px; border-radius: 6px;
+      border: 1px solid var(--line); background: #fff; box-shadow: var(--shadow-sm);
+    }
+    .drawer-external-link:hover { background: var(--surface-inset); }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(3px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 原型顶栏控制器：推演进度与单步控制 -->
+  <header class="proto-bar">
+    <div class="proto-left">
+      <span class="proto-title">调查全过程推演原型</span>
+      <span class="proto-step-indicator" id="step-indicator">第 1/6 步：收到原句</span>
+    </div>
+    <div class="proto-btns">
+      <button class="p-btn primary" id="btn-next">下一步 ❯</button>
+      <button class="p-btn" id="btn-prev">❮ 上一步</button>
+      <button class="p-btn" id="btn-autoplay">▶ 自动演播</button>
+      <button class="p-btn" id="btn-toggle-mobile">📱 模拟手机端</button>
+      <button class="p-btn danger" id="btn-reset">↺ 重新开始</button>
+    </div>
+  </header>
+
+  <!-- 阶段解释横条 -->
+  <div class="progress-banner">
+    <div class="progress-desc">
+      <span class="progress-badge" id="banner-badge">刚刚收到</span>
+      <span id="banner-text">用户提交待核查说法，准备开始分析结构。</span>
+    </div>
+    <span style="font-size:12px; color:var(--ink-3);" id="banner-tip">按右上「下一步」逐步观察思考展开、来源胶囊与分歧对照</span>
+  </div>
+
+  <!-- 主视图舞台 -->
+  <main class="viewport-wrapper" id="viewport">
+    <p class="kicker">你调查的说法</p>
+    <div class="quote-box">
+      <p class="quote-text" id="quote-box">
+        “因为咖啡的争夺，在古代产生了非常多的战争。”
+      </p>
+    </div>
+
+    <!-- 角色协同条 -->
+    <div class="roles-bar" id="roles-bar"></div>
+
+    <!-- 思考过程披露 (解决反馈 1：告别傻等与空白，呈现真实 Thinking 过程) -->
+    <section class="thinking-box is-open" id="thinking-container" style="display: none;">
+      <div class="thinking-header" id="thinking-header" onclick="toggleThinking()">
+        <div class="thinking-left">
+          <span class="thinking-sparkle is-spinning" id="thinking-sparkle">✦</span>
+          <span id="thinking-title">思考过程 (Thinking Process)</span>
+          <span class="thinking-timer" id="thinking-timer">· 0.8s</span>
+        </div>
+        <div class="thinking-toggle-btn" id="thinking-toggle-btn">收起 ▴</div>
+      </div>
+      <div class="thinking-body" id="thinking-body">
+        <!-- 实时打字推演的思考步骤由 JS 驱动 -->
+      </div>
+    </section>
+
+    <!-- 活动轨迹 (解决反馈 3：移除杂乱下划线与 ⚡，采用克制时序徽标) -->
+    <section class="activity-container" id="activity-panel" style="display: none;" aria-label="核验轨迹">
+      <div class="activity-head">
+        <div class="activity-title">
+          <span class="activity-live-indicator"></span>
+          <span>核验轨迹 (Activity Stream)</span>
+          <span id="activity-count" style="font-size:11.5px; color:var(--ink-3); font-weight:normal;">· 0</span>
+        </div>
+        <span style="font-size:11.5px; color:var(--ink-3);">实时同步中</span>
+      </div>
+      <ul class="activity-list" id="act-list"></ul>
+    </section>
+
+    <!-- 命题与证据骨架 (解决反馈 2：Prompt-Kit Source 胶囊 + 清晰的排版层级) -->
+    <div class="section-headline" id="claims-label" style="display: none;">
+      <span>待核验命题与证据矩阵</span>
+      <span style="font-size:11.5px; color:var(--ink-3); font-weight:normal;">共拆解出 3 个焦点</span>
+    </div>
+    <div id="claims-container"></div>
+  </main>
+
+  <!-- 来源抽屉 (SourceDrawer) & 遮罩 -->
+  <div class="scrim" id="scrim"></div>
+  <aside class="source-drawer" id="source-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" tabindex="-1">
+    <div class="drawer-head">
+      <div class="drawer-title-group">
+        <h2 class="drawer-title" id="drawer-title">剑桥世界历史：古典古代并无咖啡战争记录</h2>
+        <div class="drawer-kicker">
+          <span class="drawer-stance-badge contradict" id="drawer-stance">反驳材料</span>
+          <span id="drawer-domain" style="font-family: var(--mono);">cambridge.org</span>
+        </div>
+      </div>
+      <button type="button" class="drawer-close" id="drawer-close" aria-label="关闭来源详情">✕</button>
+    </div>
+
+    <div class="drawer-body">
+      <div>
+        <div class="drawer-section-label">权威检索片段（原文摘抄）</div>
+        <blockquote class="drawer-excerpt" id="drawer-excerpt"></blockquote>
+      </div>
+
+      <div>
+        <div class="drawer-section-label">所针对命题</div>
+        <div class="drawer-claim-box">
+          <span class="drawer-claim-num" id="drawer-claim-num">01</span>
+          <span id="drawer-claim-text"></span>
+        </div>
+      </div>
+
+      <div>
+        <div class="drawer-section-label">为什么重要（客观核验依据）</div>
+        <p class="drawer-prose" id="drawer-finding"></p>
+      </div>
+
+      <div>
+        <div class="drawer-section-label">局限与边界</div>
+        <p class="drawer-prose" id="drawer-limit"></p>
+      </div>
+    </div>
+
+    <div class="drawer-footer">
+      <a href="https://example.org/source" target="_blank" rel="noopener noreferrer" class="drawer-external-link" id="drawer-link">
+        访问原始文献网页 ↗
+      </a>
+    </div>
+  </aside>
+
+  <script>
+    const AVATARS = {
+      question: "../../../apps/public/agents/rumor-detector.png",
+      source: "../../../apps/public/agents/source-validator.png",
+      context: "../../../apps/public/agents/fact-checker.png",
+      judge: "../../../apps/public/agents/report-composer.png"
+    };
+
+    const ROLES = [
+      { id: "question", name: "拆问题", desc: "问清具体说法", done: "已拆出命题", doing: "拆解思考中" },
+      { id: "source", name: "找出处", desc: "追到材料源头", done: "已带回材料", doing: "检索文献中" },
+      { id: "context", name: "核语境", desc: "核对时间与范围", done: "已核实语境", doing: "比对断代中" },
+      { id: "judge", name: "作判断", desc: "给出证据与边界", done: "已锁定争点", doing: "综合裁决中" }
+    ];
+
+    // 完整的 6 步推演数据
+    const TIMELINE_STEPS = [
+      {
+        step: 0,
+        title: "收到说法",
+        badge: "刚刚收到",
+        desc: "系统已接收原句。调度「拆问题」智能体启动语义分析。",
+        headline: "已收到这个说法，准备开始推演。",
+        quoteMarked: false,
+        visibleRoles: 1,
+        activeRoleIdx: 0,
+        showThinking: false,
+        showActivities: false,
+        showClaims: false,
+        claimEvidences: [[], [], []],
+        hasConflict: false
+      },
+      {
+        step: 1,
+        title: "拆解思考中",
+        badge: "思考推演",
+        desc: "「拆问题」实时展示思考过程（主谓宾、全称量词风险、时空基准），不再让用户面对空白等待。",
+        headline: "正在推演拆解逻辑与证伪边界…",
+        quoteMarked: true,
+        visibleRoles: 1,
+        activeRoleIdx: 0,
+        showThinking: true,
+        thinkingStreaming: true,
+        thinkingDuration: "0.8s",
+        thinkingDone: false,
+        showActivities: false,
+        showClaims: false,
+        claimEvidences: [[], [], []],
+        hasConflict: false
+      },
+      {
+        step: 2,
+        title: "命题骨架确立",
+        badge: "骨架成型",
+        desc: "思考完成并折叠归档。拆出 3 个可独立核验的命题骨架；「找出处」全网检索文献史料。",
+        headline: "已锁定 3 个核验焦点，正在调配权威学术与档案语料库…",
+        quoteMarked: true,
+        visibleRoles: 4,
+        activeRoleIdx: 1,
+        showThinking: true,
+        thinkingStreaming: false,
+        thinkingDuration: "1.4s",
+        thinkingDone: true,
+        showActivities: true,
+        activities: [
+          { kind: "claim_decomposed", role: "question", roleName: "拆问题", text: "已确立 3 条子命题核验议程" },
+          { kind: "search_started", role: "source", roleName: "找出处", text: "启动学术检索：「古代 咖啡 战争 贸易冲突 断代」" }
+        ],
+        showClaims: true,
+        claimEvidences: [[], [], []],
+        hasConflict: false
+      },
+      {
+        step: 3,
+        title: "带回反驳材料",
+        badge: "带回首证",
+        desc: "「找出处」带回剑桥断代史料，Prompt-Kit 来源胶囊落位，直接反驳「古代存在咖啡战争」。",
+        headline: "首篇权威断代史料已入库，正在交由「核语境」做时空锚定…",
+        quoteMarked: true,
+        visibleRoles: 4,
+        activeRoleIdx: 2,
+        showThinking: true,
+        thinkingStreaming: false,
+        thinkingDuration: "1.4s",
+        thinkingDone: true,
+        showActivities: true,
+        activities: [
+          { kind: "claim_decomposed", role: "question", roleName: "拆问题", text: "已确立 3 条子命题核验议程" },
+          { kind: "search_started", role: "source", roleName: "找出处", text: "启动学术检索：「古代 咖啡 战争 贸易冲突 断代」" },
+          { kind: "source_found", role: "source", roleName: "找出处", text: "带回材料：cambridge.org · 剑桥世界历史", claimIdx: 0, sourceIdx: 0 },
+          { kind: "source_checked", role: "context", roleName: "核语境", text: "核对判定：反驳 · 古典古代并无咖啡战争记录", claimIdx: 0, sourceIdx: 0 }
+        ],
+        showClaims: true,
+        claimEvidences: [
+          [
+            {
+              title: "剑桥世界历史：古典古代并无咖啡战争记录",
+              domain: "cambridge.org",
+              role: "contradict",
+              roleText: "反驳",
+              excerpt: "“虽然咖啡在16世纪奥斯曼帝国曾引发地方性禁令与港口摩擦，但在古典古代与中世纪早期，并没有任何以争夺咖啡为主要起因的战争记录。”",
+              finding: "断代史料明确界定了咖啡全球化传播的时间线，直接反驳原句关于‘古代发生非常多战争’的史实断言。",
+              limit: "主要涵盖地中海、近东与阿拉伯半岛现存已公开断代史料。"
+            }
+          ],
+          [],
+          []
+        ],
+        hasConflict: false
+      },
+      {
+        step: 4,
+        title: "带回海事冲突档案",
+        badge: "多方印证",
+        desc: "英国国家海事博物馆档案带回走私交火记录（但属于近代），Prompt-Kit 来源胶囊扩充。",
+        headline: "查到红海港口武装走私摩擦，正在比对冲突等级与历史年代…",
+        quoteMarked: true,
+        visibleRoles: 4,
+        activeRoleIdx: 2,
+        showThinking: true,
+        thinkingStreaming: false,
+        thinkingDuration: "1.4s",
+        thinkingDone: true,
+        showActivities: true,
+        activities: [
+          { kind: "claim_decomposed", role: "question", roleName: "拆问题", text: "已确立 3 条子命题核验议程" },
+          { kind: "search_started", role: "source", roleName: "找出处", text: "启动学术检索：「古代 咖啡 战争 贸易冲突 断代」" },
+          { kind: "source_found", role: "source", roleName: "找出处", text: "带回材料：cambridge.org · 剑桥世界历史", claimIdx: 0, sourceIdx: 0 },
+          { kind: "source_checked", role: "context", roleName: "核语境", text: "核对判定：反驳 · 古典古代并无咖啡战争记录", claimIdx: 0, sourceIdx: 0 },
+          { kind: "source_found", role: "source", roleName: "找出处", text: "带回材料：rmg.co.uk · 英国国家海事博物馆档案", claimIdx: 0, sourceIdx: 1 }
+        ],
+        showClaims: true,
+        claimEvidences: [
+          [
+            {
+              title: "剑桥世界历史：古典古代并无咖啡战争记录",
+              domain: "cambridge.org",
+              role: "contradict",
+              roleText: "反驳",
+              excerpt: "“虽然咖啡在16世纪奥斯曼帝国曾引发地方性禁令与港口摩擦，但在古典古代与中世纪早期，并没有任何以争夺咖啡为主要起因的战争记录。”",
+              finding: "断代史料明确界定了咖啡全球化传播的时间线，直接反驳原句关于‘古代发生非常多战争’的史实断言。",
+              limit: "主要涵盖地中海、近东与阿拉伯半岛现存已公开断代史料。"
+            },
+            {
+              title: "英国国家海事博物馆档案：红海咖啡贸易冲突记录",
+              domain: "rmg.co.uk",
+              role: "support",
+              roleText: "支持",
+              excerpt: "“17-18世纪东印度公司船队曾因摩卡港咖啡走私爆发武装巡逻交火。”",
+              finding: "证实历史上咖啡确曾引发武装流血冲突，但严格属于近代殖民走私交火，并非古代国家间战争。",
+              limit: "属于公司巡逻船与走私商船摩擦，不属于主权国家战争体系。"
+            }
+          ],
+          [],
+          []
+        ],
+        hasConflict: false
+      },
+      {
+        step: 5,
+        title: "发现关键争点",
+        badge: "争点浮出",
+        desc: "同一命题出现「反驳（古代无此战争）」与「支持（近代殖民交火）」。编辑部争点卡片高亮浮现！",
+        headline: "锁定关键争点：近代殖民贸易冲突被混淆为古代战争！",
+        quoteMarked: true,
+        visibleRoles: 4,
+        activeRoleIdx: 3,
+        showThinking: true,
+        thinkingStreaming: false,
+        thinkingDuration: "1.4s",
+        thinkingDone: true,
+        showActivities: true,
+        activities: [
+          { kind: "claim_decomposed", role: "question", roleName: "拆问题", text: "已确立 3 条子命题核验议程" },
+          { kind: "search_started", role: "source", roleName: "找出处", text: "启动学术检索：「古代 咖啡 战争 贸易冲突 断代」" },
+          { kind: "source_found", role: "source", roleName: "找出处", text: "带回材料：cambridge.org · 剑桥世界历史", claimIdx: 0, sourceIdx: 0 },
+          { kind: "source_checked", role: "context", roleName: "核语境", text: "核对判定：反驳 · 古典古代并无咖啡战争记录", claimIdx: 0, sourceIdx: 0 },
+          { kind: "source_found", role: "source", roleName: "找出处", text: "带回材料：rmg.co.uk · 英国国家海事博物馆档案", claimIdx: 0, sourceIdx: 1 },
+          { kind: "conflict_detected", role: "judge", roleName: "作判断", text: "发现核心争点：近代局部殖民走私摩擦 vs 古代国家战争", conflictTarget: "c1" }
+        ],
+        showClaims: true,
+        claimEvidences: [
+          [
+            {
+              title: "剑桥世界历史：古典古代并无咖啡战争记录",
+              domain: "cambridge.org",
+              role: "contradict",
+              roleText: "反驳",
+              excerpt: "“虽然咖啡在16世纪奥斯曼帝国曾引发地方性禁令与港口摩擦，但在古典古代与中世纪早期，并没有任何以争夺咖啡为主要起因的战争记录。”",
+              finding: "断代史料明确界定了咖啡全球化传播的时间线，直接反驳原句关于‘古代发生非常多战争’的史实断言。",
+              limit: "主要涵盖地中海、近东与阿拉伯半岛现存已公开断代史料。"
+            },
+            {
+              title: "英国国家海事博物馆档案：红海咖啡贸易冲突记录",
+              domain: "rmg.co.uk",
+              role: "support",
+              roleText: "支持",
+              excerpt: "“17-18世纪东印度公司船队曾因摩卡港咖啡走私爆发武装巡逻交火。”",
+              finding: "证实历史上咖啡确曾引发武装流血冲突，但严格属于近代殖民走私交火，并非古代国家间战争。",
+              limit: "属于公司巡逻船与走私商船摩擦，不属于主权国家战争体系。"
+            }
+          ],
+          [
+            {
+              title: "全球商品史：关于咖啡贸易战的修辞辨析",
+              domain: "history.ox.ac.uk",
+              role: "support",
+              roleText: "支持",
+              excerpt: "“通俗读物常以‘咖啡战争’代指18世纪欧洲各大商社在红海与荷属东印度的配额争夺战。”",
+              finding: "说明文献中的部分‘战争’实为商战与商业竞争的夸张比喻，并非真枪实弹军事行动。",
+              limit: "主要是商业史与语言学考据角度。"
+            }
+          ],
+          []
+        ],
+        hasConflict: true
+      }
+    ];
+
+    let currentStepIdx = 0;
+    let autoplayTimer = null;
+    let activeTrigger = null;
+
+    // 渲染思考步骤内容
+    function renderThinkingContent(isStreaming, isDone) {
+      const body = document.getElementById("thinking-body");
+      const steps = [
+        { num: "01", label: "结构解析", text: "<strong>提取核心判断与因果链：</strong>主语为「咖啡的争夺」，谓语为「引发战争」，量化修饰语为「非常多」，时空限定为「古代」。" },
+        { num: "02", label: "时空断代", text: "<strong>检视时空合理性：</strong>咖啡的人工栽培与跨区域贸易确立于 15 世纪也门苏菲派圈子，古典古代（公元前至中世纪早期）尚无全球性咖啡流通基础。" },
+        { num: "03", label: "确立议程", text: "<strong>生成可独立证伪的命题骨架：</strong>① 古代到底有无咖啡直接引发的战争；② 文献里所谓的‘战争’是否属于近代商战比喻；③ 实际武装冲突发生的确切时间。" }
+      ];
+
+      if (isStreaming) {
+        body.innerHTML = `
+          <div class="thinking-step-row">
+            <span class="thinking-step-badge">${steps[0].num} ${steps[0].label}</span>
+            <div class="thinking-step-text">${steps[0].text}</div>
+          </div>
+          <div class="thinking-step-row">
+            <span class="thinking-step-badge">${steps[1].num} ${steps[1].label}</span>
+            <div class="thinking-step-text">${steps[1].text}</div>
+          </div>
+          <div class="thinking-step-row">
+            <span class="thinking-step-badge">${steps[2].num} ${steps[2].label}</span>
+            <div class="thinking-step-text"><strong>生成可独立证伪的命题骨架：</strong>正在将高风险全称断言分解为断代史、语义比喻与武装记录 3 个子任务<span class="thinking-cursor"></span></div>
+          </div>
+        `;
+      } else {
+        body.innerHTML = steps.map(s => `
+          <div class="thinking-step-row">
+            <span class="thinking-step-badge">${s.num} ${s.label}</span>
+            <div class="thinking-step-text">${s.text}</div>
+          </div>
+        `).join("");
+      }
+    }
+
+    // 渲染单步状态
+    function renderStep(idx) {
+      currentStepIdx = Math.max(0, Math.min(idx, TIMELINE_STEPS.length - 1));
+      const s = TIMELINE_STEPS[currentStepIdx];
+
+      // 顶部指示
+      document.getElementById("step-indicator").textContent = `第 ${currentStepIdx + 1}/${TIMELINE_STEPS.length} 步：${s.title}`;
+      document.getElementById("banner-badge").textContent = s.badge;
+      document.getElementById("banner-text").textContent = s.desc;
+
+      // 原句高亮
+      document.getElementById("quote-box").innerHTML = s.quoteMarked
+        ? `“因为<mark>咖啡的争夺</mark>，在<mark>古代</mark>产生了<mark>非常多的战争</mark>。”`
+        : `“因为咖啡的争夺，在古代产生了非常多的战争。”`;
+
+      // 角色栏
+      renderRoles(s.visibleRoles, s.activeRoleIdx);
+
+      // 思考卡片 (Thinking Box)
+      const thinkingBox = document.getElementById("thinking-container");
+      const sparkle = document.getElementById("thinking-sparkle");
+      const thinkingTitle = document.getElementById("thinking-title");
+      const thinkingTimer = document.getElementById("thinking-timer");
+      const thinkingToggle = document.getElementById("thinking-toggle-btn");
+
+      if (s.showThinking) {
+        thinkingBox.style.display = "block";
+        thinkingTimer.textContent = `· ${s.thinkingDuration}`;
+        if (s.thinkingDone) {
+          sparkle.classList.remove("is-spinning");
+          sparkle.textContent = "✓";
+          thinkingTitle.textContent = "已拆解完成并归档思考链路";
+          renderThinkingContent(false, true);
+          // 完成后默认自动折叠，保持主界面清爽干净，但随时可点开
+          thinkingBox.classList.remove("is-open");
+          thinkingToggle.textContent = "展开思考 ▾";
+          document.getElementById("thinking-body").style.display = "none";
+        } else {
+          sparkle.classList.add("is-spinning");
+          sparkle.textContent = "✦";
+          thinkingTitle.textContent = "正在思考拆解逻辑与证伪边界…";
+          renderThinkingContent(true, false);
+          // 思考中默认展开，让用户直接看到思考过程
+          thinkingBox.classList.add("is-open");
+          thinkingToggle.textContent = "收起 ▴";
+          document.getElementById("thinking-body").style.display = "flex";
+        }
+      } else {
+        thinkingBox.style.display = "none";
+      }
+
+      // 活动流 (Activity Container)
+      const actPanel = document.getElementById("activity-panel");
+      if (s.showActivities && s.activities) {
+        actPanel.style.display = "block";
+        document.getElementById("activity-count").textContent = `· ${s.activities.length}`;
+        const actList = document.getElementById("act-list");
+        actList.innerHTML = s.activities.map((act) => {
+          let actionContent = `<span>${act.text}</span>`;
+          if (act.kind === "source_found" || act.kind === "source_checked") {
+            actionContent = `
+              <span>${act.text.split("：")[0]}：</span>
+              <button type="button" class="activity-action-pill" onclick="openDrawerFromActivity(${act.claimIdx}, ${act.sourceIdx}, this)">
+                <img src="https://www.google.com/s2/favicons?sz=64&domain_url=${s.claimEvidences[act.claimIdx][act.sourceIdx].domain}" style="width:12px;height:12px;border-radius:2px;" alt="" onerror="this.style.display='none'" />
+                <span>${s.claimEvidences[act.claimIdx][act.sourceIdx].domain}</span>
+                <span>↗</span>
+              </button>
+            `;
+          } else if (act.kind === "conflict_detected") {
+            actionContent = `
+              <span>${act.text}</span>
+              <button type="button" class="activity-jump-btn" onclick="scrollToConflict('${act.conflictTarget}')">
+                定位至争点 ❯
+              </button>
+            `;
+          }
+          return `
+            <li class="activity-row">
+              <span class="activity-role-tag ${act.role}">${act.roleName || act.role}</span>
+              <div class="activity-text-wrapper">${actionContent}</div>
+            </li>
+          `;
+        }).join("");
+      } else {
+        actPanel.style.display = "none";
+      }
+
+      // 命题骨架卡片与 Prompt-Kit Source 胶囊
+      const claimsLabel = document.getElementById("claims-label");
+      const claimsContainer = document.getElementById("claims-container");
+      if (s.showClaims) {
+        claimsLabel.style.display = "flex";
+        const claims = [
+          { num: "01", id: "c1", title: "古代有没有因争夺咖啡而起的国家间战争？", sub: "主断言核查：历史断代与直接战争起因排查" },
+          { num: "02", id: "c2", title: "文献中的「咖啡战争」究竟是军事史实还是修辞比喻？", sub: "修辞学核查：商战公关夸张用法辨析" },
+          { num: "03", id: "c3", title: "原句所称「古代」与咖啡实际全球流通的真实年份对应", sub: "时空界限核对：物种传播与贸易年代学" }
+        ];
+
+        claimsContainer.innerHTML = claims.map((c, cIdx) => {
+          const evis = s.claimEvidences[cIdx] || [];
+          const hasConf = cIdx === 0 && s.hasConflict;
+          return `
+            <div class="claim-card is-open" id="claim-${c.id}">
+              <div class="claim-header" onclick="toggleClaim('${c.id}')">
+                <span class="claim-id">${c.num}</span>
+                <div style="flex: 1;">
+                  <div class="claim-title">${c.title}</div>
+                  <div style="font-size: 12px; color: var(--ink-3); margin-top: 2px;">${c.sub}</div>
+                </div>
+                <span class="claim-collapse-toggle">收起 ▴</span>
+              </div>
+              <div class="claim-body" style="display: block;">
+                <div class="claim-sub-label">权威证据来源（Prompt-Kit Source）</div>
+                <div class="sources-row">
+                  ${evis.length === 0 ? '<span style="color:var(--ink-3); font-size:12.5px;">文献库检索中，暂未带回直接有效证据…</span>' : ''}
+                  ${evis.map((evi, eIdx) => `
+                    <div class="source-container" data-claim="${cIdx}" data-source="${eIdx}">
+                      <!-- Prompt-Kit SourceTrigger: Clean Favicon Pill -->
+                      <div class="source-trigger" tabindex="0" role="button" onclick="openDrawerFromClaim(${cIdx}, ${eIdx}, this)">
+                        <img class="source-favicon" src="https://www.google.com/s2/favicons?sz=64&domain_url=${evi.domain}" alt="" onerror="this.style.display='none'" />
+                        <span class="source-domain-text">${evi.domain}</span>
+                        <span class="source-stance-tag ${evi.role}">${evi.roleText}</span>
+                      </div>
+
+                      <!-- Prompt-Kit SourceContent: Popover Card on Hover/Focus -->
+                      <div class="source-popover" role="tooltip">
+                        <div class="source-popover-meta">
+                          <span class="source-popover-badge ${evi.role}">${evi.roleText}材料</span>
+                          <span class="source-popover-domain">${evi.domain} ↗</span>
+                        </div>
+                        <div class="source-popover-title">${evi.title}</div>
+                        <div class="source-popover-snippet ${evi.role}">${evi.excerpt}</div>
+                        <div class="source-popover-footer">
+                          <span style="font-size:11px; color:var(--ink-3);">点击打开详细档案</span>
+                          <button type="button" class="source-popover-action" onclick="openDrawerFromClaim(${cIdx}, ${eIdx}, this)">
+                            查看完整引文卡片 ❯
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  `).join("")}
+                </div>
+
+                ${hasConf ? `
+                  <div class="conflict-box" id="conflict-c1">
+                    <div class="conflict-header">
+                      <span class="conflict-tag">核心争议焦点</span>
+                      <h4 class="conflict-heading">究竟是「近代局部走私摩擦」，还是「古代跨国战争」？</h4>
+                    </div>
+                    <p class="conflict-prose">
+                      剑桥断代史指出古代无咖啡战争记录；但海事档案证明近代（17-18世纪）东印度公司确曾因走私咖啡爆发过武装交火。原句将近代殖民商业摩擦跨越时空夸张成了古代战争。
+                    </p>
+                    <div class="conflict-sides-grid">
+                      <div class="conflict-side-col">
+                        <div class="conflict-side-title contradict">
+                          <span>●</span> 反驳侧材料（断代史）
+                        </div>
+                        <div class="conflict-side-cite">
+                          剑桥世界历史：古典古代并无以争夺咖啡为起因的战争。
+                        </div>
+                      </div>
+                      <div class="conflict-side-col">
+                        <div class="conflict-side-title support">
+                          <span>●</span> 支持侧材料（海事档案）
+                        </div>
+                        <div class="conflict-side-cite">
+                          海事博物馆：东印度公司在红海因咖啡走私爆发武装巡逻交火。
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        }).join("");
+      } else {
+        claimsLabel.style.display = "none";
+        claimsContainer.innerHTML = "";
+      }
+
+      // 控制按钮状态
+      document.getElementById("btn-prev").disabled = currentStepIdx === 0;
+      document.getElementById("btn-next").disabled = currentStepIdx === TIMELINE_STEPS.length - 1;
+    }
+
+    function renderRoles(visibleCount, activeIdx) {
+      const container = document.getElementById("roles-bar");
+      container.innerHTML = ROLES.map((r, i) => {
+        const isVisible = i < visibleCount;
+        const isActive = i === activeIdx;
+        const isDone = i < activeIdx;
+        const statusClass = isActive ? "is-active" : isDone ? "is-done" : "";
+        const subClass = isActive ? "role-sub shimmer" : "role-sub";
+        const subText = isDone ? r.done : isActive ? r.doing : r.desc;
+        return `
+          <div class="role-item ${statusClass}" style="display: ${isVisible ? 'flex' : 'none'};">
+            <img class="role-avatar" src="${AVATARS[r.id]}" alt="${r.name}">
+            <div class="role-meta">
+              <span class="role-name">${r.name}</span>
+              <span class="${subClass}">${subText}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // 思考卡片折叠交互
+    window.toggleThinking = function() {
+      const box = document.getElementById("thinking-container");
+      const body = document.getElementById("thinking-body");
+      const toggle = document.getElementById("thinking-toggle-btn");
+      const isOpen = box.classList.toggle("is-open");
+      body.style.display = isOpen ? "flex" : "none";
+      toggle.textContent = isOpen ? "收起 ▴" : "展开思考 ▾";
+    };
+
+    window.toggleClaim = function(claimId) {
+      const card = document.getElementById(`claim-${claimId}`);
+      const body = card.querySelector(".claim-body");
+      const toggle = card.querySelector(".claim-collapse-toggle");
+      const isClosed = body.style.display === "none";
+      body.style.display = isClosed ? "block" : "none";
+      toggle.textContent = isClosed ? "收起 ▴" : "展开 ▾";
+      if (isClosed) card.classList.add("is-open");
+      else card.classList.remove("is-open");
+    };
+
+    window.scrollToConflict = function(claimId) {
+      const card = document.getElementById(`conflict-${claimId}`);
+      if (!card) return;
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      card.classList.add("is-highlight");
+      setTimeout(() => card.classList.remove("is-highlight"), 2400);
+    };
+
+    function openDrawerWithData(evi, claimText, claimNum, triggerEl) {
+      activeTrigger = triggerEl;
+      document.getElementById("drawer-title").textContent = evi.title;
+      const stanceBadge = document.getElementById("drawer-stance");
+      stanceBadge.textContent = `${evi.roleText}材料`;
+      stanceBadge.className = `drawer-stance-badge ${evi.role}`;
+      document.getElementById("drawer-domain").textContent = evi.domain;
+      document.getElementById("drawer-excerpt").textContent = evi.excerpt;
+      document.getElementById("drawer-claim-num").textContent = claimNum;
+      document.getElementById("drawer-claim-text").textContent = claimText;
+      document.getElementById("drawer-finding").textContent = evi.finding;
+      document.getElementById("drawer-limit").textContent = evi.limit;
+      document.getElementById("drawer-link").href = `https://${evi.domain}`;
+
+      document.getElementById("scrim").classList.add("is-open");
+      const drawer = document.getElementById("source-drawer");
+      drawer.classList.add("is-open");
+      drawer.focus();
+    }
+
+    window.openDrawerFromActivity = function(cIdx, eIdx, triggerEl) {
+      const s = TIMELINE_STEPS[currentStepIdx];
+      const evi = s.claimEvidences[cIdx][eIdx];
+      const claimTitles = [
+        "古代有没有因争夺咖啡而起的国家间战争？",
+        "文献中的「咖啡战争」究竟是军事史实还是修辞比喻？",
+        "原句所称「古代」与咖啡实际全球流通的真实年份对应"
+      ];
+      openDrawerWithData(evi, claimTitles[cIdx], `0${cIdx + 1}`, triggerEl);
+    };
+
+    window.openDrawerFromClaim = function(cIdx, eIdx, triggerEl) {
+      const s = TIMELINE_STEPS[currentStepIdx];
+      const evi = s.claimEvidences[cIdx][eIdx];
+      const claimTitles = [
+        "古代有没有因争夺咖啡而起的国家间战争？",
+        "文献中的「咖啡战争」究竟是军事史实还是修辞比喻？",
+        "原句所称「古代」与咖啡实际全球流通的真实年份对应"
+      ];
+      openDrawerWithData(evi, claimTitles[cIdx], `0${cIdx + 1}`, triggerEl);
+    };
+
+    function closeDrawer() {
+      document.getElementById("scrim").classList.remove("is-open");
+      document.getElementById("source-drawer").classList.remove("is-open");
+      if (activeTrigger) {
+        activeTrigger.focus();
+        activeTrigger = null;
+      }
+    }
+
+    document.getElementById("drawer-close").addEventListener("click", closeDrawer);
+    document.getElementById("scrim").addEventListener("click", closeDrawer);
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeDrawer();
+    });
+
+    // 顶栏控制
+    document.getElementById("btn-next").addEventListener("click", () => {
+      stopAutoplay();
+      renderStep(currentStepIdx + 1);
+    });
+
+    document.getElementById("btn-prev").addEventListener("click", () => {
+      stopAutoplay();
+      renderStep(currentStepIdx - 1);
+    });
+
+    document.getElementById("btn-reset").addEventListener("click", () => {
+      stopAutoplay();
+      renderStep(0);
+    });
+
+    function stopAutoplay() {
+      if (autoplayTimer) {
+        clearInterval(autoplayTimer);
+        autoplayTimer = null;
+        document.getElementById("btn-autoplay").textContent = "▶ 自动演播";
+        document.getElementById("btn-autoplay").classList.remove("is-active");
+      }
+    }
+
+    document.getElementById("btn-autoplay").addEventListener("click", function() {
+      if (autoplayTimer) {
+        stopAutoplay();
+      } else {
+        this.textContent = "⏸ 暂停演播";
+        this.classList.add("is-active");
+        if (currentStepIdx >= TIMELINE_STEPS.length - 1) {
+          renderStep(0);
+        }
+        autoplayTimer = setInterval(() => {
+          if (currentStepIdx < TIMELINE_STEPS.length - 1) {
+            renderStep(currentStepIdx + 1);
+          } else {
+            stopAutoplay();
+          }
+        }, 2200);
+      }
+    });
+
+    document.getElementById("btn-toggle-mobile").addEventListener("click", function() {
+      const vp = document.getElementById("viewport");
+      const isMobile = vp.classList.toggle("is-mobile-preview");
+      this.textContent = isMobile ? "💻 恢复桌面端" : "📱 模拟手机端";
+    });
+
+    // 默认启动渲染第一步
+    renderStep(0);
+  </script>
+</body>
+</html>

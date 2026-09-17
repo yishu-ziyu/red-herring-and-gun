@@ -48,6 +48,7 @@ import { commitFreeCheck, releaseFreeCheck } from "./lib/checkQuota.js";
 import { applyFactDeskPostProcessToReport } from "./lib/factDeskPostProcess.js";
 
 import { readJson, sendJson, wait, getTimeoutMs, withTimeout } from "./lib/httpUtils.js";
+import { withExecutionBudget, type ExecutionBudget } from "./lib/executionBudget.js";
 
 import { asRecord } from "./lib/valueCoerce.js";
 
@@ -197,19 +198,25 @@ function makeReportRunner(runAgent: RunAgentFn) {
     search360Result,
     atomSearchBundle,
     onFallback,
+    signal,
+    deadlineMs,
   }: {
     claim: string;
     steps: PipelineStep[];
     search360Result: unknown;
     atomSearchBundle: AtomSearchBundle;
     onFallback?: (step: PipelineStep) => void;
+    signal?: AbortSignal;
+    deadlineMs?: number;
   }) =>
     runReportComposerWithFallback({
       claim,
       steps,
       search360Result,
-      runAgent: (agentId, s, search) => runAgent(agentId, s as PipelineStep[], search, atomSearchBundle),
+      runAgent: (agentId, s, search, execution) => runAgent(agentId, s as PipelineStep[], search, atomSearchBundle, execution),
       onFallback,
+      signal,
+      deadlineMs,
     });
 }
 
@@ -562,7 +569,7 @@ export function createHandlers(env: Record<string, string>) {
     const result = runs.cancel(runId);
     if (result.kind === "not-found") return sendJson(res, 404, { message: "没有这次调查" });
     // 立刻把「在停」广播到还开着的流上：客户端不能靠 POST 回执猜流上的状态。
-    runs.publish(runId, { type: "run_state", status: result.run.status, terminal: false, timestamp: Date.now() });
+    runs.publish(runId, { type: "run_state", status: result.run.status, terminal: isTerminalStatus(result.run.status), timestamp: Date.now() });
     return sendJson(res, 200, {
       runId,
       status: result.run.status,
@@ -642,7 +649,10 @@ export function createHandlers(env: Record<string, string>) {
       return;
     }
 
-    const unsubscribe = runs.subscribe(runId, (event) => write(event));
+    const unsubscribe = runs.subscribe(runId, (event) => {
+      write(event);
+      if (event.type === "run_state" && event.terminal === true) close();
+    });
     const heartbeat = setInterval(() => {
       try {
         res.write(": keepalive\n\n");
@@ -685,7 +695,8 @@ export function createHandlers(env: Record<string, string>) {
   // ───────────────────────────────────────────────────────────────
   function makeImageOriginLookup(
     intake: CaseIntakePayload | null,
-    visualExtraction: Record<string, unknown> | undefined
+    visualExtraction: Record<string, unknown> | undefined,
+    execution: ExecutionBudget = {},
   ) {
     if (!intake?.images.length) return undefined;
     const hints = visionHintsFromExtraction(visualExtraction);
@@ -694,7 +705,7 @@ export function createHandlers(env: Record<string, string>) {
       .map((image) => ({ mimeType: image.type, dataUrl: image.dataUrl }));
     // Reverse-image 适配器（360 图搜）：配置了 KEY + PUBLIC_BASE_URL 才启用，
     // 否则 undefined → lookupImageOrigin 自动降级为「原图没查到」，绝不发明图源。
-    const reverseImageSearch = makeSearch360ReverseImage(env);
+    const reverseImageSearch = makeSearch360ReverseImage(env, execution);
     return () =>
       lookupImageOrigin({
         images,
@@ -706,10 +717,12 @@ export function createHandlers(env: Record<string, string>) {
 
   function makeSearchOneAtom(
     onSearchProgress?: (event: SearchProgressEvent) => void,
-    searchEnvOverride: Record<string, string> = env
+    searchEnvOverride: Record<string, string> = env,
+    execution: ExecutionBudget = {},
   ) {
     let reuseHitsPromise: Promise<MemoryCandidateHit[]> | undefined;
     return async (atom: string) => {
+      execution.signal?.throwIfAborted();
       if (!reuseHitsPromise) {
         reuseHitsPromise = getMemoryCandidateStore()
           .searchAccepted(atom)
@@ -718,8 +731,9 @@ export function createHandlers(env: Record<string, string>) {
       const reuseHits = await reuseHitsPromise;
       let result: Record<string, unknown>;
       try {
-        result = await retrieveAtomSources(searchEnvOverride, atom, reuseHits, onSearchProgress);
+        result = await retrieveAtomSources(searchEnvOverride, atom, reuseHits, onSearchProgress, execution);
       } catch (error) {
+        execution.signal?.throwIfAborted();
         const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
         result = build360SearchFailure(atom, message);
       }
@@ -765,17 +779,9 @@ export function createHandlers(env: Record<string, string>) {
     return report;
   }
 
-  /** 合并多个 abort 源：任一触发即以原 reason 中止（Node 版本无关，不依赖 AbortSignal.any）。 */
+  /** Node 22+: native composition keeps the first reason without accumulating listeners. */
   function combineAbortSignals(...sources: AbortSignal[]): AbortSignal {
-    const combined = new AbortController();
-    for (const source of sources) {
-      if (source.aborted) {
-        combined.abort(source.reason);
-        continue;
-      }
-      source.addEventListener("abort", () => combined.abort(source.reason), { once: true });
-    }
-    return combined.signal;
+    return AbortSignal.any(sources);
   }
 
   async function orchestrateStreamHandler(req: any, res: any, next: any) {
@@ -854,9 +860,19 @@ export function createHandlers(env: Record<string, string>) {
         runId: started.existing.runId,
       });
     }
+    if (started.kind === "existing") {
+      releaseFreeCheck(ticket);
+      return investigationEventsHandler({
+        ...req,
+        method: "GET",
+        params: { ...req.params, runId: started.run.runId },
+        url: `/api/investigations/${started.run.runId}/events?after=0`,
+      }, res, next);
+    }
     const runId = started.run.runId;
     if (isFollowUp && priorCaseId) runStore?.markFollowUp(runId, priorCaseId);
     const runSignal = runs.signalFor(runId);
+    const workDeadlineMs = Date.now() + Math.max(1, PIPELINE_TOTAL_TIMEOUT_MS - 10_000);
 
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -866,16 +882,12 @@ export function createHandlers(env: Record<string, string>) {
       "X-Accel-Buffering": "no",
     });
 
-    // B1：客户端断开（关页/刷新/断网）→ abort 流水线，不再僵尸烧 token；
-    // 必须挂 res 而不是 req：body 已被中间件读完，req 的 close 早已发生不会再触发。
-    // 响应已结束后的事件写入一律空操作，避免对已关闭流写数据触发无监听 EPIPE。
-    // 例外（Change C）：总超时之后这条连接不再是管线的生命线——用户按界面提示离开页面时
-    // 不再中止管线，晚完成的结论仍会落 complete 并可经刷新恢复取回。
+    // A subscriber leaving is not a cancellation. The run belongs to its stored runId.
+    // Explicit cancel/BYO failure/deadline remain the only ways to stop the work.
     let detachedFromClient = false;
     const disconnect = new AbortController();
     res.on("close", () => {
-      if (detachedFromClient) return;
-      if (!res.writableEnded) disconnect.abort(new Error("client-disconnected"));
+      if (!res.writableEnded) detachedFromClient = true;
     });
 
     // BYO fail-closed：请求内密钥失败（鉴权/网络）→ 独立 abort 源中止管线，
@@ -903,7 +915,7 @@ export function createHandlers(env: Record<string, string>) {
       try {
         res.write(`data: ${JSON.stringify(toPublicStreamEvent(data))}\n\n`);
       } catch {
-        disconnect.abort(new Error("stream-write-failed"));
+        detachedFromClient = true;
       }
     };
     // 总线是唯一出口：本流、重连的订阅者、取消时补发的状态帧走同一条路，
@@ -931,6 +943,7 @@ export function createHandlers(env: Record<string, string>) {
     // 心跳：report_composer 等阶段可静默 ~50s，SSE 注释帧让中间代理与浏览器
     // 知道流还活着（客户端解析器只认 "data: " 行，注释天然被忽略）。
     const heartbeat = setInterval(() => {
+      if (res.writableEnded || res.destroyed) return;
       try {
         res.write(": keepalive\n\n");
       } catch {
@@ -966,6 +979,7 @@ export function createHandlers(env: Record<string, string>) {
       onActivities: (activities) => runStore?.appendActivities(runId, activities),
     });
     const emitInvestigation = (snapshot: InvestigationSnapshotV1) => {
+      if (pipelineSignal.aborted && snapshot.phase !== "interrupted") return;
       lastInvestigation = snapshot;
       // 运行状态跟着快照阶段走（§5.2：run 状态与快照 phase 有确定映射）。
       if (snapshot.phase === "investigating") runs.advance(runId, "investigating");
@@ -990,7 +1004,10 @@ export function createHandlers(env: Record<string, string>) {
           timestamp: Date.now(),
         });
         try {
-          const visionResult = await callStepFunVisionForIntake({ env, claim, intake });
+          const visionResult = await withExecutionBudget(
+            (signal) => callStepFunVisionForIntake({ env, claim, intake, signal }),
+            { signal: pipelineSignal, deadlineMs: workDeadlineMs, timeoutMs: 60_000, label: "图片解析" },
+          );
           visualExtraction = asRecord(visionResult.output);
           claim = composeClaimWithVision(claim, intake, visualExtraction);
           sendEvent({
@@ -1018,7 +1035,7 @@ export function createHandlers(env: Record<string, string>) {
       }
 
       // BYO 接管的请求内适配器：byo 存在时全部主力调用直调用户端点；不存在时与现状零差异。
-      const byoAdapter = createOrchestrateAdapter({ env, codexBin, byo, onByoFailure });
+      const byoAdapter = createOrchestrateAdapter({ env, codexBin, byo, onByoFailure, signal: pipelineSignal, deadlineMs: workDeadlineMs });
 
       const runAgent = byoAdapter.makeRunAgent({
         claim,
@@ -1033,15 +1050,15 @@ export function createHandlers(env: Record<string, string>) {
       // 整句等于原句的 atom 一律不进知识库、不落观测（原句全文不写盘）。
       const knowledgeBase = createKnowledgeMemory({ runId, claim });
 
-      const pipelinePromise = runCasePipeline({
+      const pipelinePromise = withExecutionBudget((signal) => runCasePipeline({
         claim,
         // 断连与 BYO 密钥失败两个 abort 源合并：任一触发，管线阶段边界立即退出
-        signal: pipelineSignal,
+        signal,
         // 截止 = 总超时 − 10s 收尾余量：补查/复核提前收敛，报告写作不再被总超时截断
-        deadline: Date.now() + PIPELINE_TOTAL_TIMEOUT_MS - 10_000,
+        deadline: workDeadlineMs,
         runAgent,
-        searchOne: makeSearchOneAtom((event) => sendEvent(event), searchEnv),
-        lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction),
+        searchOne: makeSearchOneAtom((event) => sendEvent(event), searchEnv, { signal, deadlineMs: workDeadlineMs }),
+        lookupImageOrigin: makeImageOriginLookup(intake, visualExtraction, { signal, deadlineMs: workDeadlineMs }),
         callSelfProofModel: byoAdapter.makeSelfProofCaller(claim, modelChoice),
         evidenceLoop: { callRewriteModel: makeRewriteQueryCall(byoAdapter.makeRewriteCaller(modelChoice)) },
         crossExam: { callRaw: byoAdapter.makeCrossExamCaller(modelChoice, (data) => sendEvent(data)) },
@@ -1059,7 +1076,7 @@ export function createHandlers(env: Record<string, string>) {
         finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>
           pipelineFinalize(fctx, visualExtraction),
         memoryCandidateStore: getMemoryCandidateStore(),
-      });
+      }), { signal: pipelineSignal, timeoutMs: PIPELINE_TOTAL_TIMEOUT_MS + PIPELINE_LATE_GRACE_MS, label: "整体核查" });
       // withTimeout 是 race：落败方的 rejection 必须被吸收，
       // 否则断连/超时触发的 abort 会变成 unhandledRejection 直接崩进程
       pipelinePromise.catch(() => {});
@@ -1081,9 +1098,10 @@ export function createHandlers(env: Record<string, string>) {
           return await withTimeout(pipelinePromise, PIPELINE_LATE_GRACE_MS, "整体核查");
         }
       })();
+      pipelineSignal.throwIfAborted();
 
       if (detachedFromClient) {
-        console.log(`[orchestrate] 超时后管线晚完成，真结论照常送达 runId=${runId}`);
+        console.log(`[orchestrate] 调查在连接等待结束后完成，结果可恢复 runId=${runId}`);
       }
       console.log(
         `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length} memoryCandidates=${result.memoryCandidates.length}`
@@ -1114,6 +1132,13 @@ export function createHandlers(env: Record<string, string>) {
       commitFreeCheck(res, ticket);
       endResponse();
     } catch (error) {
+      if (runSignal?.aborted) {
+        releaseFreeCheck(ticket);
+        emitInvestigation(interruptedInvestigationSnapshot(lastInvestigation, claim));
+        finishRun("cancelled");
+        endResponse();
+        return;
+      }
       // BYO key fail-closed（Evaluator 3）必须在最前：密钥失败时管线已被 byoFail 中止，
       // 不需要再走断连 abort；先发中断帧与密钥错误帧，再收尾，绝不静默回退 env 密钥重烧。
       if (byo && byoFail.signal.aborted) {

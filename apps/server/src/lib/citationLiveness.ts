@@ -14,6 +14,7 @@ import {
   remapCitationMarkers,
   type CiteSource,
 } from "./citationBinding.js";
+import { withExecutionBudget, ExecutionTimeoutError, type ExecutionBudget } from "./executionBudget.js";
 
 export type LivenessStatus = "alive" | "dead";
 
@@ -28,7 +29,7 @@ const REQUEST_USER_AGENT =
 type MinimalResponse = { status: number; body?: { cancel?: () => Promise<void> } | null };
 type FetchLike = (url: string, init?: Record<string, unknown>) => Promise<MinimalResponse>;
 
-export type LivenessDeps = {
+export type LivenessDeps = ExecutionBudget & {
   fetchImpl?: FetchLike;
   timeoutMs?: number;
   maxUrls?: number;
@@ -47,23 +48,27 @@ export function classifyLivenessStatus(status: number): LivenessStatus {
 export async function checkUrlLiveness(
   url: string,
   fetchImpl: FetchLike,
-  timeoutMs = DEFAULT_TIMEOUT_MS
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  execution: ExecutionBudget = {},
 ): Promise<LivenessStatus> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetchImpl(url, {
-      method: "GET",
-      redirect: "follow",
-      signal: controller.signal,
-      headers: { "user-agent": REQUEST_USER_AGENT },
-    });
-    void Promise.resolve(res.body?.cancel?.()).catch(() => {});
-    return classifyLivenessStatus(res.status);
+    return await withExecutionBudget(async (signal) => {
+      const res = await fetchImpl(url, {
+        method: "GET",
+        redirect: "follow",
+        signal,
+        headers: { "user-agent": REQUEST_USER_AGENT },
+      });
+      void Promise.resolve(res.body?.cancel?.()).catch(() => {});
+      return classifyLivenessStatus(res.status);
+    }, { ...execution, timeoutMs, label: "来源探活" });
   } catch {
+    execution.signal?.throwIfAborted();
+    // Exhausting the investigation's budget is not evidence that this URL is dead.
+    if (execution.deadlineMs !== undefined && Date.now() >= execution.deadlineMs) {
+      throw new ExecutionTimeoutError("来源探活总预算", 0);
+    }
     return "dead";
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -81,8 +86,9 @@ export async function checkSourceLiveness(
   let cursor = 0;
   const workers = Array.from({ length: Math.min(concurrency, unique.length) }, async () => {
     while (cursor < unique.length) {
+      deps.signal?.throwIfAborted();
       const url = unique[cursor++];
-      results.set(url, await checkUrlLiveness(url, fetchImpl, timeoutMs));
+      results.set(url, await checkUrlLiveness(url, fetchImpl, timeoutMs, deps));
     }
   });
   await Promise.all(workers);
@@ -145,6 +151,7 @@ export async function pruneDeadCitations(
   if (candidates.length === 0) return { pruned: false, deadUrls: [] };
 
   const liveness = deps.liveness ?? (await checkSourceLiveness(candidates, deps));
+  deps.signal?.throwIfAborted();
   const deadUrls = [...new Set(candidates.filter((u) => liveness.get(u) === "dead"))];
   if (deadUrls.length === 0) return { pruned: false, deadUrls: [] };
   const aliveSet = new Set(candidates.filter((u) => liveness.get(u) !== "dead"));

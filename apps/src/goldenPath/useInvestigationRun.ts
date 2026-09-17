@@ -93,17 +93,24 @@ const INITIAL_STATE: RunState = {
  * 只认 investigation_snapshot / complete / error / timeout_pending；legacy 事件原样忽略（E2 负向测试的对象）。
  * claim 供 complete 报告缺快照时的确定性重建使用。
  */
+function isTerminalServerStatus(status: string | null): boolean {
+  return status === "completed" || status === "interrupted" || status === "cancelled";
+}
+
 export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: string): RunState {
   if (event.type === "run_started") {
     return { ...prev, runId: typeof event.runId === "string" ? event.runId : prev.runId };
   }
   if (event.type === "run_state") {
     const status = typeof event.status === "string" ? event.status : prev.serverStatus;
+    if (isTerminalServerStatus(prev.serverStatus) && status !== prev.serverStatus) return prev;
     const stopped = status === "cancelled" || status === "cancelling";
+    const terminal = isTerminalServerStatus(status);
     return {
       ...prev,
       serverStatus: status,
-      stop: stopped ? (status === "cancelling" ? "stopping" : "stopped") : prev.stop,
+      stop: stopped ? (status === "cancelling" ? "stopping" : "stopped") : terminal ? "idle" : prev.stop,
+      ...(terminal ? { connection: "ended" as const, timeoutPending: false } : {}),
     };
   }
   if (event.type === "investigation_activity") {
@@ -264,15 +271,18 @@ export function useInvestigationRun() {
   /** 取消：先本地记「正在停」，再等服务端确认；服务端确认不了就不说「已停止」。 */
   const cancel = useCallback(async () => {
     const runId = state.runId;
+    const generation = runIdRef.current;
     if (!runId) return { ok: false as const };
-    setState((prev) => ({ ...prev, stop: "stopping" }));
+    setState((prev) => isTerminalServerStatus(prev.serverStatus) ? prev : { ...prev, stop: "stopping" });
     const result = await cancelInvestigation(runId);
-    setState((prev) => ({
-      ...prev,
-      serverStatus: result.status ?? prev.serverStatus,
-      stop: result.ok ? (result.status === "cancelled" ? "stopped" : "stopping") : prev.stop,
-      ...(result.ok ? {} : { errorMessage: "停止请求没有送达，调查可能还在继续。" }),
-    }));
+    setState((prev) => {
+      // SSE can confirm cancellation before this older HTTP acknowledgement arrives.
+      // Neither that acknowledgement nor an old run may overwrite the current terminal state.
+      if (generation !== runIdRef.current || prev.runId !== runId || isTerminalServerStatus(prev.serverStatus)) return prev;
+      return result.ok
+        ? applyRunEvent(prev, { type: "run_state", status: result.status ?? "cancelling" })
+        : { ...prev, errorMessage: "停止请求没有送达，调查可能还在继续。" };
+    });
     return result;
   }, [state.runId]);
 

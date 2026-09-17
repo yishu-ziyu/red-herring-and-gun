@@ -75,6 +75,7 @@ describe("FollowUpSection 追问组件", () => {
         onFollowUp={handleFollowUp}
         directAnswer="现有证据不支持隔夜菜致癌。"
         originalClaim="隔夜菜会致癌，吃了等于吃毒药。"
+        leftoverTexts={["冷藏隔夜菜还能放多久"]}
       />
     );
 
@@ -94,6 +95,21 @@ describe("FollowUpSection 追问组件", () => {
     fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
     expect(handleFollowUp).toHaveBeenCalledTimes(1);
     expect(handleFollowUp).toHaveBeenCalledWith(question);
+  });
+
+  it("元问句不是事实缺口：『真的假的』不能生成新的检索追问", () => {
+    render(
+      <FollowUpSection
+        directAnswer="原句有真有假。"
+        originalClaim="隔夜菜亚硝酸盐超标百倍直接致癌？真的假的？"
+        leftoverTexts={["真的假的"]}
+      />
+    );
+
+    const chips = screen.queryAllByRole("button").filter((btn) => btn.className.includes("gp-followup-chip"));
+    expect(chips).toHaveLength(0);
+    expect(document.body.textContent).not.toContain("『真的假的』站得住吗");
+    expect(document.body.textContent).not.toContain("「真的假的」站得住吗");
   });
 });
 
@@ -116,6 +132,17 @@ describe("P2-1: 窄屏追问占位整段可见", () => {
 });
 
 describe("InvestigationCanvas 结论页整合", () => {
+  it("文字重合推测的未覆盖片段不能自动生成 URL 或整段原句追问", () => {
+    const snap = refutedComplete();
+    // Paraphrased claims do not prove that the unmatched original sentence was never checked.
+    snap.originalClaim = "https://weibo.com/status/50891234 隔夜菜亚硝酸盐超标百倍直接致癌？真的假的？";
+    snap.claims = snap.claims.map((claim) => ({ ...claim, text: "存放食物中的成分变化是否构成确定风险" }));
+    render(<InvestigationCanvas snapshot={snap} live={false} onReverify={() => {}} onBackHome={() => {}} />);
+    const suggestions = [...document.querySelectorAll(".gp-followup-chip")].map((node) => node.textContent ?? "");
+    expect(suggestions.length).toBeGreaterThan(0);
+    expect(suggestions.join("\n")).not.toMatch(/https?:|weibo|原句里还没查|「真的假的」/);
+  });
+
   it("E1: 完成态正确挂载 ConclusionHero 与 FollowUpSection", () => {
     const snap = refutedComplete();
     const handleFollowUp = vi.fn();

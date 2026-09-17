@@ -87,6 +87,12 @@ export const InvestigationEvidenceLinkSchema = Type.Object(
     role: InvestigationEvidenceRoleSchema,
     finding: Type.Optional(Type.String()),
     limitation: Type.Optional(Type.String()),
+    /** 命中的是合集/长文中的哪一小节。网页真实 title 仍保留在 Source 上。 */
+    sectionTitle: Type.Optional(Type.String()),
+    /** 与当前 claim 最相关的 canonical 检索上下文；不是模型重写的 finding。 */
+    passage: Type.Optional(Type.String()),
+    /** SourceValidator 对 claimAtom + URL 的方向核验理由。 */
+    relationReason: Type.Optional(Type.String()),
     /** 同上：复用的证据条目。字段与来源条目同名。 */
     provenance: Type.Optional(Type.Union([Type.Literal("knowledge"), Type.Literal("prior-round")])),
     originDate: Type.Optional(Type.String()),
@@ -204,6 +210,10 @@ export const InvestigationSnapshotSchema = Type.Object(
     conclusion: Type.Optional(InvestigationConclusionSchema),
     checkedAt: Type.Optional(Type.String()),
     preClaimWork: Type.Optional(InvestigationPreClaimWorkSchema),
+    scope: Type.Optional(Type.Object({
+      includedClaimIds: Type.Array(Type.String()),
+      deferredClaimIds: Type.Array(Type.String()),
+    }, closed)),
   },
   closed,
 );
