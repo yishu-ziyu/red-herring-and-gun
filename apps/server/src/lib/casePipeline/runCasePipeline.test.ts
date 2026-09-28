@@ -370,10 +370,15 @@ describe("runCasePipeline", () => {
     expect(investigation.claims[0].evidence.some((link) => link.role === "contradict")).toBe(true);
   });
 
-  it("多条可核查命题都没查清时，短谣通道不得把整句判成不能信", async () => {
+  // 规则表（docs/evals/2026-09-28-judgment-refactor.md）：主要主张被反驳 → 不能信；其余没查清的只作边界。
+  // 旧规则「多命题一律不放行」把 TINY-003「上海车展上演全武行」等 3 条实机案例压成了证据不足（错误分析 2026-09-28）。
+  it("多条可核查命题：主要主张挂上辟谣后判不能信，其余没查清的写成边界", async () => {
     const result = await runTinyChannel([TINY_ATOM, "维生素C能缩短感冒病程"]);
-    expect(result.finalReport.verdictType).toBe("unverified");
-    expect(String(result.finalReport.conclusion)).not.toMatch(/^公开材料不支持/);
+    expect(result.finalReport.verdictType).toBe("false");
+    const conclusion = String(result.finalReport.conclusion);
+    expect(conclusion).toMatch(/^公开材料不支持这条说法。/);
+    expect(conclusion).toContain(`「${TINY_ATOM}」站不住`);
+    expect(conclusion).toContain("「维生素C能缩短感冒病程」尚未查清");
   });
 
   it("report review hooks emit start/result and repair thin reports", async () => {
@@ -699,7 +704,7 @@ describe("runCasePipeline", () => {
     expect(searchOne.mock.calls.some((c) => c[0].includes("当事方"))).toBe(false);
   });
 
-  it("原子级守门：有据之真 + 假 → mixed 救回（整句判词跟原子走，不跟 LLM 整体字段走）", async () => {
+  it("原子级守门：主要主张被反驳 + 前提为真 → 不能信，真的前提不被一起否掉", async () => {
     const atoms = ["每天喝红酒可以预防心脏病", "法国人喝红酒"];
     const searchOne = vi.fn(async (q: string) => ({
       sources: [{ url: `https://t.test/${encodeURIComponent(q)}`, title: q, snippet: "s" }],
@@ -756,6 +761,10 @@ describe("runCasePipeline", () => {
         agent: "report_composer",
         output: { verdictType: "false", conclusion: "不能信。" },
       }),
+      hooks: { onInvestigationSnapshot: () => {} },
+      citationLiveness: {
+        liveness: new Map(atoms.map((a) => [`https://t.test/${encodeURIComponent(a)}`, "alive" as const])),
+      },
       finalizeReport: ({ factStep }) => {
         finalizeSawFactResult = String(
           (factStep.output as Record<string, unknown>).factCheckResult
@@ -763,10 +772,17 @@ describe("runCasePipeline", () => {
       },
     });
 
-    // 整句救回 mixed：真的部分（法国人喝红酒）不被一起否掉
-    expect(result.finalReport.verdictType).toBe("mixed_misleading");
-    expect(String(result.finalReport.conclusion)).not.toMatch(/^(能信|不能信|只能信一部分|有真有假|部分成立|还查不清)/);
-    expect(result.finalReport.faceVerdict).toBe("有真有假");
+    // 规则表：主要主张（喝红酒预防心脏病）被反驳 → 整句不能信；真的前提（法国人喝红酒）不被一起否掉。
+    // 评测集 RUMOR-011 标注为 mixed_misleading，与规则表冲突，已列入待用户裁决（2026-09-28 错误分析）。
+    expect(result.finalReport.verdictType).toBe("false");
+    const conclusion = String(result.finalReport.conclusion);
+    expect(conclusion).not.toMatch(/^(能信|不能信|只能信一部分|有真有假|部分成立|还查不清)/);
+    expect(conclusion).toContain("「每天喝红酒可以预防心脏病」站不住");
+    expect(conclusion).not.toContain("「法国人喝红酒」站不住");
+    expect(result.finalReport.faceVerdict).toBe("不能信");
+    // 结论卡徽章读规则表的结论，不再因「同时有证实和反驳的命题」自行改成「有对有错」。
+    const investigation = result.finalReport.investigation as { conclusion?: { judgment?: string } };
+    expect(investigation.conclusion?.judgment).toBe("refuted");
     expect(result.finalReport._mixedGuard).toBeTruthy();
     // 公式输入也被纠正为 partial（false → cap 15 不再触发）
     expect((result.factStep.output as Record<string, unknown>).factCheckResult).toBe("partial");

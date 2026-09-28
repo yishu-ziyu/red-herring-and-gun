@@ -54,11 +54,14 @@ const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>([
 /** Process-local: once a provider returns hard quota/balance, skip it for later agents in this process. */
 const quotaExhaustedUntil = new Map<string, number>();
 const timeoutStrikes = new Map<string, number>();
+/** 被跳过的原因：account = 余额 / 额度 / 密钥（服务真不可用）；transient = 空结果 / 超时（只是这会儿不好用）。 */
+const skipReason = new Map<string, "account" | "transient">();
 const QUOTA_SKIP_MS = 10 * 60 * 1000;
 
 export function resetProviderQuotaSkipForTests(): void {
   quotaExhaustedUntil.clear();
   timeoutStrikes.clear();
+  skipReason.clear();
 }
 
 export function isHardProviderQuotaError(message: string): boolean {
@@ -100,13 +103,33 @@ export function isProviderQuotaSkipped(provider: string): boolean {
   return typeof until === "number" && until > Date.now();
 }
 
-function skipProvider(provider: string): void {
-  quotaExhaustedUntil.set(canonicalProviderId(provider), Date.now() + QUOTA_SKIP_MS);
+function skipProvider(provider: string, reason: "account" | "transient"): void {
+  const id = canonicalProviderId(provider);
+  quotaExhaustedUntil.set(id, Date.now() + QUOTA_SKIP_MS);
+  skipReason.set(id, reason);
+}
+
+/** 余额不足、额度用尽、密钥无效：换谁来问都不会好，服务对用户就是不可用。 */
+export function isAccountProviderFailure(message: string): boolean {
+  return isHardProviderQuotaError(message) || isHardProviderAuthError(message);
+}
+
+/** 这家供应商因为账号问题被跳过（不是临时的空结果或超时）。 */
+export function isProviderAccountBlocked(provider: string): boolean {
+  return isProviderQuotaSkipped(provider) && skipReason.get(canonicalProviderId(provider)) === "account";
+}
+
+/** 探活问通了：临时跳过作废，调查可以重新用它。 */
+export function clearProviderSkip(provider: string): void {
+  const id = canonicalProviderId(provider);
+  quotaExhaustedUntil.delete(id);
+  timeoutStrikes.delete(id);
+  skipReason.delete(id);
 }
 
 export function noteProviderFailure(provider: string, message: string): void {
   if (isHardProviderFailure(message)) {
-    skipProvider(provider);
+    skipProvider(provider, isAccountProviderFailure(message) ? "account" : "transient");
     return;
   }
   if (/超时 \d+ms/.test(message)) {
@@ -117,7 +140,7 @@ export function noteProviderFailure(provider: string, message: string): void {
     // MiniMax-M3 默认等 10 分钟：一次挂死才跳过。M2.7 的 90s/180s 超时是慢，不是额度耗尽。
     const minimaxM3Hang =
       /minimax:MiniMax-M3\b/i.test(message) || (id === "minimax" && timeoutMs >= 300_000);
-    if (n >= (minimaxM3Hang ? 1 : 2)) skipProvider(provider);
+    if (n >= (minimaxM3Hang ? 1 : 2)) skipProvider(provider, "transient");
   }
 }
 

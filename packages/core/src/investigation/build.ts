@@ -855,7 +855,19 @@ export function buildInvestigationSnapshot(
       const hasSupported = checkableClaims.some((c) => c.judgment === "supported");
       const hasRefuted = checkableClaims.some((c) => c.judgment === "refuted");
       const overall = asString(report.verdictType).trim().toLowerCase();
-      const overallJudgment: InvestigationJudgment = !hasClaim
+      // 报告已由整句规则表（domain/verdict）决定时，徽章直接读结论，不再自行推算；
+      // 没有这个标记的历史报告仍走下面的旧推算，保持历史记录显示不变。
+      const decidedByRule = Boolean(asRecord(report._verdictDecision));
+      const ruleJudgment: InvestigationJudgment | null = !decidedByRule
+        ? null
+        : overall === "true"
+          ? "supported"
+          : overall === "false"
+            ? "refuted"
+            : overall === "mixed_misleading"
+              ? "mixed"
+              : "unresolved";
+      const overallJudgment: InvestigationJudgment = ruleJudgment && hasCheckable ? ruleJudgment : !hasClaim
         ? "unresolved"
         : !hasCheckable
           ? "not-applicable"

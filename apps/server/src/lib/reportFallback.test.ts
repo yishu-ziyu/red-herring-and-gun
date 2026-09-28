@@ -108,6 +108,7 @@ describe("deterministic final report fallback", () => {
       supportingSources: [],
       contradictingSources: [],
       evidenceGaps: [],
+      notJudgedByModel: true,
     });
     expect(report.subclaimVerdicts.some((r: any) => r.claimAtom === "编造原子")).toBe(false);
 

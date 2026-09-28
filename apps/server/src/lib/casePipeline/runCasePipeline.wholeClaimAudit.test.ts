@@ -1316,7 +1316,8 @@ describe("Review 5128449568 Blocker 1：checkable-unverified 不得被硬结论�
     expect(conclusion).toContain(`「${b}」尚未查清`);
     expect(conclusion).toContain("未计入该判断");
     expect(conclusion).toContain(`「${a}」站不住`);
-    expect(conclusion.startsWith("公开材料不支持这条说法")).toBe(false);
+    // 2026-09-28 用户裁决（NEW-002）：主要主张被反驳时首句直接回答「不支持」，下面逐条写明哪截站不住、哪截没查清。
+    expect(conclusion.startsWith("公开材料不支持这条说法")).toBe(true);
     expect(conclusion).not.toContain("都不成立");
     expect(summary).toContain("尚未查清");
     const complete = snapshots.at(-1)!;

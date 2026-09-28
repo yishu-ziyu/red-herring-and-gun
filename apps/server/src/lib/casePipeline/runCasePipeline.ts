@@ -66,7 +66,6 @@ import {
 import {
   applyCheckabilityRevisions,
   applyConclusionGate,
-  bindTinyRumorDebunks,
   needsConstrainedConclusion,
   repairGatedConclusion,
   resolveQuestionAtomKey,
@@ -85,6 +84,7 @@ import {
 } from "../followUpReuse.js";
 import { applyUnopenedLinkConclusion } from "../publicCopy.js";
 import { buildDeterministicFinalReport } from "../reportFallback.js";
+import { applySentenceVerdict, bindDebunksToPrimaryClaim, listAssessedClaims } from "../sentenceVerdict.js";
 import { MINIMAX_M27_DEFAULT_TIMEOUT_MS } from "../minimaxM3.js";
 import {
   applyClaimSourceRelationAudit,
@@ -1390,17 +1390,8 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const aliveSearchSources = searchSources.filter(
     (s) => !deadUrlSet.has(String(s?.url ?? "").trim())
   );
-  // 短谣通道放行整句 false 的前提：命题层也能说同一件事（唯一可核查命题挂上存活辟谣）。
   const tinyHoldsOnAliveSources =
-    boundTinyRumorVerdict(claim, aliveSearchSources) === "false" &&
-    (finalReport.verdictType !== "false" ||
-      bindTinyRumorDebunks(finalReport, {
-        claimAtoms: rumorStep.output.claimAtoms,
-        claimAtomTypes: rumorStep.output.claimAtomTypes,
-        debunks: aliveSearchSources.filter((s) => isOnTopicDebunk(claim, s)),
-      }));
-  const tinyBoundRepair =
-    tinyHoldsOnAliveSources && finalReport.verdictType === "false" && draftVerdictType !== "false";
+    boundTinyRumorVerdict(claim, aliveSearchSources) === "false";
   const finalGateResult = applyConclusionGate(finalReport, {
     claimAtoms: rumorStep.output.claimAtoms,
     claimAtomTypes: rumorStep.output.claimAtomTypes,
@@ -1419,14 +1410,14 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     earlyGate: earlyGateResult,
     mixedGuardDemoted,
   });
-  if (repairDecision.needed || tinyBoundRepair) {
+  if (repairDecision.needed) {
     repairGatedConclusion(
       finalReport,
       {
         changed: true,
         from: repairDecision.from,
         to: repairDecision.to,
-        rule: repairDecision.needed ? repairDecision.rule : "tiny-rumor-debunk-bound",
+        rule: repairDecision.rule,
       },
       {
         nonVerifiableAtoms: finalReport.nonVerifiableAtoms,
@@ -1440,6 +1431,22 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     // finalReport.imageOrigin 恢复原图出处引用（不断言文本、只读对象）。
     if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
   }
+  // 整句判定唯一决定点：按规则表（domain/verdict）由各命题证据推出，取代上面各关卡改过的 verdictType。
+  const assessedClaims = listAssessedClaims(finalReport, {
+    claimAtoms: rumorStep.output.claimAtoms,
+    claimAtomTypes: rumorStep.output.claimAtomTypes,
+    priorityClaimAtoms: rumorStep.output.priorityClaimAtoms,
+  });
+  const debunkBound =
+    tinyHoldsOnAliveSources &&
+    bindDebunksToPrimaryClaim(
+      finalReport,
+      assessedClaims.find((c) => c.role === "primary"),
+      aliveSearchSources.filter((s) => isOnTopicDebunk(claim, s))
+    );
+  applySentenceVerdict(finalReport, assessedClaims, { auditUnresolvedGaps, debunkBound });
+  normalizeReportCitations(finalReport);
+  if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
   applyFollowUpAnswerLead(finalReport, claim);
   const keptAtomCount = Array.isArray(rumorStep.output.claimAtoms) ? rumorStep.output.claimAtoms.length : 0;
   applyUnopenedLinkConclusion(finalReport, claim, keptAtomCount);

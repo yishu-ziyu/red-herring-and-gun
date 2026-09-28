@@ -200,64 +200,6 @@ export function applyConclusionGate(
   return { changed: false };
 }
 
-/**
- * 短谣存活辟谣通道把整句判成 false 时，让命题层说同一件事（2026-09-28 实机：
- * 整句「不能信」、唯一命题「模型未覆盖」、结论写「尚未查清」、徽章「证据不足」）。
- *
- * 只在恰好一条可核查命题时成立：把存活的对题辟谣挂为该命题的反驳出处并判 false。
- * 多条命题时一条关键词辟谣不能替每条命题作答，返回 false，调用方不得放行无绑定整句 false。
- * 返回值即「本通道是否仍可放行整句 false」。
- */
-export function bindTinyRumorDebunks(
-  report: Record<string, unknown>,
-  input: {
-    claimAtoms?: unknown;
-    claimAtomTypes?: unknown;
-    debunks: ReadonlyArray<{ url?: unknown; title?: unknown; snippet?: unknown }>;
-  }
-): boolean {
-  const listed = listAtomsForSearch(input.claimAtoms, input.claimAtomTypes);
-  if (listed.verifiable.length !== 1) return false;
-  const atom = listed.verifiable[0];
-  const debunks = input.debunks
-    .filter((s) => typeof s.url === "string" && /^https?:\/\//i.test(s.url))
-    .slice(0, 5)
-    .map((s) => ({ url: String(s.url), title: String(s.title ?? ""), snippet: String(s.snippet ?? "") }));
-  if (debunks.length === 0) return false;
-
-  const verdicts = asArray(report.subclaimVerdicts).filter(
-    (v): v is Record<string, unknown> => Boolean(v && typeof v === "object")
-  );
-  const key = claimAtomKey(atom);
-  let entry = verdicts.find((v) => claimAtomKey(String(v.claimAtom ?? "")) === key);
-  if (entry && String(entry.verdict ?? "").trim().toLowerCase() === "false" && directionalBound("false", entry)) {
-    return true;
-  }
-  if (!entry) {
-    entry = { claimAtom: atom };
-    verdicts.push(entry);
-  }
-  const debunkUrls = new Set(debunks.map((s) => s.url));
-  // related-only 的支持桶只是检索填充（兜底报告会把辟谣也放进去），不能留作「支持」。
-  const keptSupport =
-    entry.sourcesRelatedOnly === true
-      ? []
-      : asArray(entry.supportingSources).filter(
-          (s) => !debunkUrls.has(String((s as Record<string, unknown>)?.url ?? ""))
-        );
-  const existingContradict = asArray(entry.contradictingSources).filter(
-    (s) => !debunkUrls.has(String((s as Record<string, unknown>)?.url ?? ""))
-  );
-  entry.verdict = "false";
-  entry.evidence = "检索到针对这句话的辟谣材料，未见对题的支持材料。";
-  entry.boundary = "依据是标题或摘要明确辟谣这句话的材料，没有逐篇核对原文论证。";
-  entry.supportingSources = keptSupport;
-  entry.contradictingSources = [...existingContradict, ...debunks];
-  delete entry.sourcesRelatedOnly;
-  report.subclaimVerdicts = verdicts;
-  return true;
-}
-
 export type GatedConclusionRepairInput = {
   nonVerifiableAtoms?: unknown;
   subclaimVerdicts?: unknown;
@@ -272,7 +214,7 @@ function clipText(value: unknown, max: number): string {
 }
 
 /** 截在 max 以内最后一个句末（连同其后的引号与 [n] 标记）；一句都没说完时补「…」。 */
-function clipSentence(value: unknown, max: number): string {
+export function clipSentence(value: unknown, max: number): string {
   const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
   if (text.length <= max) return text;
   const ends = [...text.slice(0, max).matchAll(/[。！？；](?:["”」』]|\s*\[\d+\])*/g)];
@@ -479,7 +421,6 @@ const GATE_RULE_FINDING: Record<string, string> = {
   "weak-conclusion-audit-alignment": "整句为弱结论：不适用真假判断的表述与未补齐依据只作边界，不计入真假判定。",
   "hard-verdict-with-not-applicable-boundary": "整句结论由有据命题支撑；不适用真假判断的表述未计入该判断，只作边界。",
   "hard-verdict-with-unverified-boundary": "整句结论由有据命题支撑；尚未查清的命题未计入该判断，只作边界。",
-  "tiny-rumor-debunk-bound": "检索到针对这句话的辟谣材料且无对题支持，整句按不成立表述，依据挂在命题的反驳出处上。",
 };
 
 function isHardVerdictType(value: string): boolean {
@@ -611,44 +552,10 @@ export function repairGatedConclusion(
     report.verdictType = "mixed_misleading";
   }
 
-  // 整句 unverified（连词未齐 / 桥接缺口）第一句必须是标准待核查直答，
-  // 不得用「站得住」把未证成的合取句说成已站住。按条站得住/站不住只给 mixed。
-  const enumerated =
-    gated !== "unverified" &&
-    affirmative.length + falling.length > 0 &&
-    affirmative.length + falling.length + unresolvedCheckable.length > 1;
-  const lead = enumerated
-    ? `${[
-        ...affirmative.map(affirmativeLead),
-        ...falling.map((atom) => `「${clipText(atom.text, 40)}」站不住`),
-      ].join("；")}。`
-    : directAnswer(gated);
-
-  const parts = [lead, ...sourcedEvidence];
-  for (const atom of nonVerifiable) {
-    parts.push(`「${clipText(atom.text, 40)}」不适用真假判断，未计入真假结论。`);
-  }
-  for (const atom of unresolvedCheckable) {
-    parts.push(`「${clipText(atom.text, 40)}」尚未查清，未计入该判断。`);
-  }
-  for (const gap of gaps) {
-    parts.push(`仍缺关键依据：${clipText(gap, 120)}`);
-  }
-  report.conclusion = parts.join("").slice(0, 400);
-
-  const summaryParts = [lead];
-  if (nonVerifiable.length > 0) {
-    summaryParts.push(`${nonVerifiable.length}条表述不适用真假判断，未计入结论。`);
-  }
-  if (unresolvedCheckable.length > 0) {
-    summaryParts.push(`${unresolvedCheckable.length}条命题尚未查清，未计入结论。`);
-  }
-  if (gaps.length > 0) {
-    summaryParts.push(`桥接依据仍未补齐：${clipText(gaps[0], 80)}`);
-  }
-  report.summaryForPublic = summaryParts.join("").slice(0, 200);
-  report.recommendation = lead;
-
+  renderVerdictConclusion(report, gated, input, {
+    // 旧收权路径：非 unverified 且多条命题时按条列出站得住 / 站不住。
+    enumerate: gated !== "unverified",
+  });
   const finding = GATE_RULE_FINDING[gate.rule ?? ""] ?? "整句结论已按证据层级收权。";
   const boundaryItems = [
     ...nonVerifiable.map((a) => `「${clipText(a.text, 40)}」不适用真假判断`),
@@ -678,4 +585,69 @@ export function repairGatedConclusion(
     rule: gate.rule ?? prevGate.rule,
     repaired: true,
   };
+}
+
+/**
+ * 按已经定好的整句判定写结论文字。只负责文字，不改 verdictType。
+ * 首句 → 有据的判词说明（带 [n] 引用）→ 不适用 / 尚未查清的部分 → 仍缺的依据。
+ */
+export function renderVerdictConclusion(
+  report: Record<string, unknown>,
+  verdictType: string,
+  input: GatedConclusionRepairInput = {},
+  options: { enumerate?: boolean } = {}
+): void {
+  const nonVerifiable = listNonVerifiableAtoms(input.nonVerifiableAtoms).slice(0, 2);
+  const unresolvedCheckable = listUnresolvedCheckableAtoms(input.subclaimVerdicts).slice(0, 2);
+  const affirmative = listAffirmativeAtoms(input.subclaimVerdicts);
+  const falling = listSourcedFalseAtoms(input.subclaimVerdicts);
+  const sourcedEvidence = listSourcedVerdictEvidence(input.subclaimVerdicts);
+  // 整句已判不能信时，「还缺支持这句话的证据」这类缺口只会让人误以为没查清，不再列出。
+  const gaps =
+    verdictType === "false"
+      ? []
+      : (input.auditUnresolvedGaps ?? []).filter((g) => typeof g === "string" && g.trim()).slice(0, 1);
+
+  const enumerate = options.enumerate ?? verdictType === "mixed_misleading";
+  const enumerated =
+    enumerate &&
+    affirmative.length + falling.length > 0 &&
+    affirmative.length + falling.length + unresolvedCheckable.length > 1;
+  const lead = enumerated
+    ? `${[
+        ...affirmative.map(affirmativeLead),
+        ...falling.map((atom) => `「${clipText(atom.text, 40)}」站不住`),
+      ].join("；")}。`
+    : directAnswer(verdictType);
+  // 判「不能信」而原句不止一截时，点名是哪一截站不住（用户裁决：不能信，逐条写明）。
+  const namesFalling =
+    !enumerated && verdictType === "false" && falling.length > 0 && affirmative.length + unresolvedCheckable.length > 0;
+  const fallingLine = namesFalling
+    ? `${falling.map((atom) => `「${clipText(atom.text, 40)}」站不住`).join("；")}。`
+    : "";
+
+  const parts = [lead, fallingLine, ...sourcedEvidence];
+  for (const atom of nonVerifiable) {
+    parts.push(`「${clipText(atom.text, 40)}」不适用真假判断，未计入真假结论。`);
+  }
+  for (const atom of unresolvedCheckable) {
+    parts.push(`「${clipText(atom.text, 40)}」尚未查清，未计入该判断。`);
+  }
+  for (const gap of gaps) {
+    parts.push(`仍缺关键依据：${clipText(gap, 120)}`);
+  }
+  report.conclusion = parts.join("").slice(0, 400);
+
+  const summaryParts = [lead, fallingLine];
+  if (nonVerifiable.length > 0) {
+    summaryParts.push(`${nonVerifiable.length}条表述不适用真假判断，未计入结论。`);
+  }
+  if (unresolvedCheckable.length > 0) {
+    summaryParts.push(`${unresolvedCheckable.length}条命题尚未查清，未计入结论。`);
+  }
+  if (gaps.length > 0) {
+    summaryParts.push(`桥接依据仍未补齐：${clipText(gaps[0], 80)}`);
+  }
+  report.summaryForPublic = summaryParts.join("").slice(0, 200);
+  report.recommendation = lead;
 }

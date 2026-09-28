@@ -18,6 +18,8 @@ export interface SubclaimVerdict {
   evidenceGaps?: string[];
   /** supportingSources auto-filled from retrieval; not model-cited → no [n] binding */
   sourcesRelatedOnly?: boolean;
+  /** 没有任何模型判定这条命题（区别于模型明确判了 unverified）。 */
+  notJudgedByModel?: boolean;
 }
 
 export type ClaimAtomType =

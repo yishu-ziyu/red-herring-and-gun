@@ -34,7 +34,7 @@ export {
   buildScopedEvidence,
   needsConstrainedConclusion,
   repairGatedConclusion,
-  bindTinyRumorDebunks,
+  renderVerdictConclusion,
   type ConclusionGateInput,
   type ConclusionGateResult,
   type ConstrainedConclusionDecision,

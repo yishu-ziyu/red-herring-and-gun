@@ -135,6 +135,8 @@ export function mergeSubclaimVerdicts(
         supportingSources: [],
         contradictingSources: [],
         evidenceGaps: [],
+        // 结构化标记：这条命题没有任何模型判定（区别于模型判了「查不清」）。
+        notJudgedByModel: true,
       });
     }
   }

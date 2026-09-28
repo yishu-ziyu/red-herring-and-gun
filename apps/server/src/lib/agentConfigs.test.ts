@@ -150,6 +150,7 @@ describe("subclaimVerdicts / claimAtoms 数据契约", () => {
       supportingSources: [],
       contradictingSources: [],
       evidenceGaps: [],
+      notJudgedByModel: true,
     });
     expect(result.some((r) => r.claimAtom === "编造原子")).toBe(false);
   });

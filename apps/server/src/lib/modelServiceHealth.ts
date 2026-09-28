@@ -4,13 +4,14 @@
  * Caps wall-clock so a probe cannot stall the homepage (~8s).
  */
 import {
-  areCloudProvidersHardSkipped,
+  clearProviderSkip,
   envValue,
   getMiniMaxApiKey,
   getSearch360ApiKey,
-  isHardProviderFailure,
+  isAccountProviderFailure,
+  isProviderAccountBlocked,
+  isProviderQuotaSkipped,
   noteProviderFailure,
-  pendingCloudProviders,
   providerHasCredentials,
   type AgentTextProviderId,
 } from "./providerRouter.js";
@@ -90,7 +91,7 @@ async function pingProvider(
       );
       if (ping.ok) return "ok";
       noteProviderFailure(provider, ping.body || `HTTP ${ping.status}`);
-      return isHardProviderFailure(ping.body) ? "hard" : "soft";
+      return isAccountProviderFailure(ping.body) ? "hard" : "soft";
     }
 
     if (provider === "stepfun") {
@@ -115,7 +116,7 @@ async function pingProvider(
       );
       if (ping.ok) return "ok";
       noteProviderFailure(provider, ping.body || `HTTP ${ping.status}`);
-      return isHardProviderFailure(ping.body) ? "hard" : "soft";
+      return isAccountProviderFailure(ping.body) ? "hard" : "soft";
     }
 
     if (provider === "360") {
@@ -140,7 +141,7 @@ async function pingProvider(
       );
       if (ping.ok) return "ok";
       noteProviderFailure(provider, ping.body || `HTTP ${ping.status}`);
-      return isHardProviderFailure(ping.body) ? "hard" : "soft";
+      return isAccountProviderFailure(ping.body) ? "hard" : "soft";
     }
 
     if (provider === "mimo") {
@@ -170,7 +171,7 @@ async function pingProvider(
       );
       if (ping.ok) return "ok";
       noteProviderFailure(provider, ping.body || `HTTP ${ping.status}`);
-      return isHardProviderFailure(ping.body) ? "hard" : "soft";
+      return isAccountProviderFailure(ping.body) ? "hard" : "soft";
     }
 
     if (provider === "minimax") {
@@ -201,7 +202,7 @@ async function pingProvider(
       );
       if (ping.ok) return "ok";
       noteProviderFailure(provider, ping.body || `HTTP ${ping.status}`);
-      return isHardProviderFailure(ping.body) ? "hard" : "soft";
+      return isAccountProviderFailure(ping.body) ? "hard" : "soft";
     }
 
     return "soft";
@@ -209,48 +210,43 @@ async function pingProvider(
     const message = error instanceof Error ? error.message : "probe failed";
     if (error instanceof Error && error.name === "AbortError") return "soft";
     noteProviderFailure(provider, message);
-    return isHardProviderFailure(message) ? "hard" : "soft";
+    return isAccountProviderFailure(message) ? "hard" : "soft";
   }
 }
 
 /**
  * Probe a few configured chat providers with a short timeout.
- * available: at least one ping succeeded.
- * unavailable: skip-map already exhausted, or every attempted ping returned quota/auth.
- * unknown: probes timed out / network failed — do not pretend the service works.
+ * available: at least one ping succeeded (and that provider leaves the temporary skip list).
+ * unavailable: no credentials, or every provider is blocked by quota / balance / auth errors.
+ * unknown: pings timed out or failed for other reasons — do not lock the submit button.
+ *
+ * 路由层的临时跳过（空结果 / 超时）只说明刚才不好用，不能当成服务不可用：
+ * 2026-09-28 并发 4 个调查时这样判，首页对所有人锁了 10 分钟。
  */
 export async function probeModelServiceHealth(env: Record<string, string>): Promise<ModelServiceHealth> {
-  if (!CLOUD_PROBE_CANDIDATES.some((provider) => providerHasCredentials(env, provider))) {
-    return healthFor("unavailable");
-  }
-  if (areCloudProvidersHardSkipped(env)) {
-    return healthFor("unavailable");
-  }
+  const configured = CLOUD_PROBE_CANDIDATES.filter((provider) => providerHasCredentials(env, provider));
+  if (configured.length === 0) return healthFor("unavailable");
+  const usable = configured.filter((provider) => !isProviderAccountBlocked(provider));
+  if (usable.length === 0) return healthFor("unavailable");
 
+  const toTry = [
+    ...usable.filter((provider) => !isProviderQuotaSkipped(provider)),
+    ...usable.filter((provider) => isProviderQuotaSkipped(provider)),
+  ].slice(0, 3);
   const deadline = Date.now() + PROBE_TOTAL_MS;
-  const pending = pendingCloudProviders(env).filter((provider) => CLOUD_PROBE_CANDIDATES.includes(provider));
-  const toTry = (pending.length > 0 ? pending : CLOUD_PROBE_CANDIDATES.filter((p) => providerHasCredentials(env, p))).slice(
-    0,
-    3
-  );
-
   let hard = 0;
   let attempted = 0;
-
   for (const provider of toTry) {
     const remaining = deadline - Date.now();
     if (remaining < 400) break;
     attempted += 1;
     const result = await pingProvider(env, provider, Math.min(PROBE_ONE_MS, remaining));
-    if (result === "ok") return healthFor("available");
+    if (result === "ok") {
+      clearProviderSkip(provider);
+      return healthFor("available");
+    }
     if (result === "hard") hard += 1;
   }
-
-  if (attempted > 0 && hard === attempted && areCloudProvidersHardSkipped(env)) {
-    return healthFor("unavailable");
-  }
-  if (attempted > 0 && hard === attempted) {
-    return healthFor("unavailable");
-  }
+  if (attempted > 0 && hard === attempted) return healthFor("unavailable");
   return healthFor("unknown");
 }
