@@ -17,7 +17,7 @@ Vite 只代理 `/api`。Express 在 `server/`。发布走仓库根 `./ops.sh dep
 |------|------|
 | `src/goldenPath/` | 现行产品：首页、调查中、完成态、来源抽屉 |
 | `src/App.tsx` | 路由与组合 |
-| `src/components/v3/` | 旧三栏壳，只在 `/?legacy=1` |
+| `src/components/v3/` | 账号、登录、模型设置与输入框（沿用旧目录名） |
 | `src/lib/` | 领域再导出。判决不要在这里另写一份 |
 
 ## 判决在哪

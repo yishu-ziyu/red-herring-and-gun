@@ -1,7 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InputStage } from "./InputStage";
-import { Dashboard } from "../components/v3/Dashboard";
 import { extractFramesFromVideo } from "../lib/videoFrames";
 
 vi.mock("../lib/videoFrames", () => ({ extractFramesFromVideo: vi.fn(async () => [
@@ -21,10 +20,10 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 
-describe.each(["default", "legacy"])("%s input media", (surface) => {
+describe("default input media", () => {
   function mount() {
     const submit = vi.fn();
-    render(surface === "default" ? <InputStage onSubmit={submit} /> : <Dashboard onStartAnalysis={submit} />);
+    render(<InputStage onSubmit={submit} />);
     return submit;
   }
 

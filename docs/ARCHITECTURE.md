@@ -16,8 +16,8 @@ Nginx 从 `/opt/red-herring/dist` 发静态、把 `/api/` 与 `/health` 反代�
 
 前端默认路径是 Golden Path（`apps/src/goldenPath/`）：`ProductShell` + `InputStage` →
 同一个 `InvestigationCanvas` 承载调查中与完成态 → `ConclusionHero` + `SourceDrawer`。
-旧三栏壳（AppShell + MissionControl + ResultView）整建制退到 `/?legacy=1`（`legacy/LegacyDesk.tsx`），
-不再承担生产信息架构。
+旧三栏壳（AppShell + MissionControl + ResultView）已于 2026-09-28 删除，
+可从 tag `legacy-desk-final` 找回。
 
 白盒调查数据契约 `InvestigationSnapshotV1`：源文件 `packages/core/src/investigation`，
 生产侧 `apps/server/src/lib/investigation` 是它的字节级镜像（两侧 `mirror.test.ts` 双向守卫），
@@ -69,7 +69,7 @@ tmp-apodex-study/         研究代码克隆，不进 git
 ```
 
 默认内核是含证据循环与有界质询的 `casePipeline`。产品状态只有最新一份 `InvestigationSnapshotV1`。  
-旧三栏壳（AppShell / MissionControl / ResultView / ApodexRunView）只在 `/?legacy=1`。未匹配路径回到首页输入，不当独立产品页。
+未匹配路径（含旧的 `/?legacy=1`）回到首页输入，不当独立产品页。
 
 执行只有 `casePipeline`。`agentLoop` 已删，ADR-006 废止。
 
@@ -95,7 +95,7 @@ HTTP 只该是薄 adapter。`handlers.ts` 不该再往里堆产品规则。
    Vite 只代理 `/api`、`/health`、`/mcp`、`/r`。不要再往 `vite.config.ts` 里写编排。
 
 3. **过程壳**  
-   默认调查中不画旧过程壳。`/?legacy=1` 才是旧三栏。  
+   调查中不画旧过程壳。旧三栏已删除。
    `/demo`、`/shell-preview` 一类路径已经删除；访问未匹配路径回到首页输入。
 
 客户端 `apps/src/lib` 与服务端 `apps/server/src/lib` 还有约 10 个同名文件（部分是有意再导出，部分是历史拷贝）。不要在两边各写一套判决。
@@ -114,7 +114,7 @@ HTTP 只该是薄 adapter。`handlers.ts` 不该再往里堆产品规则。
 ## 历史收敛记录（已完成项，不是当前任务顺序）
 
 1. ~~开发 HTTP 只代理 Express~~（已做）。AgentRuntime 已不在本地 HTTP 上，客户端 eval 已迁到 `apps/server/eval`，剩余类型抽取后即可删。
-2. ~~旧三栏退到 `/?legacy=1`~~（已做）。默认脸是 Golden Path。  
+2. ~~旧三栏退到 `/?legacy=1`~~（已做），2026-09-28 整体删除。默认脸是 Golden Path。
 3. ~~`runAgentLoop` feature-flag 与 `casePipeline` 并列~~（ADR-006，默认关）。直到判断质量不低于现管线之前，不切默认。  
 4. ~~拆 `handlers.ts`~~（已做，2026-08-30）。3793 行 → 1272 行 HTTP adapter + 编排；六个单职责模块进 `apps/server/src/lib/`：`llmGateway`（Canvas 调度类 LLM 调用）、`searchProviders`（并行搜索矩阵 + retrieveAtomSources）、`visionIntake`（材料摄入 + StepFun 视觉）、`reportFallback`（确定性兜底报告）、`formulaScore`（公式评分）、`httpUtils`/`valueCoerce`/`ssrfGuard`（小工具）。同时删除两处与 `agentProviders` 重复的函数（`extractChatCompletionText`、`buildStepFunRequestBody`）和六个零调用 demo fallback 函数；eval 导入改指 lib 模块。`makeRunAgent` 与 orchestrate 接线仍在 handlers.ts，后续里程碑再评估拆分。截图原图闸已进 Case Pipeline（`imageOrigin`）；现网检索适配器还没有以图搜图，所以有图时会写「原图没查到」，不会把 OCR 二手帖当图源。真正能点到更早出处，要等接上以图搜图适配器。`AGENT_LOOP=1` 那条路还没接这道闸。
 

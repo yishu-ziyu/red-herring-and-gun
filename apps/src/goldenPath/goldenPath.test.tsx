@@ -382,14 +382,12 @@ describe("E3 负向扫描：生产 Golden Path 源码无实现层语义", () => 
     expect(violations).toEqual([]);
   });
 
-  it("App.tsx 默认生产路径不渲染 AI Ping / BatchChecker（Dashboard 仅属于 legacy 壳）", async () => {
+  it("App.tsx 默认生产路径不渲染 AI Ping / BatchChecker", async () => {
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
     const app = readFileSync(join(process.cwd(), "src", "App.tsx"), "utf8");
     expect(app).toContain("InputStage");
     expect(app).not.toMatch(/BatchChecker|AI Ping/);
-    const legacy = readFileSync(join(process.cwd(), "src", "legacy", "LegacyDesk.tsx"), "utf8");
-    expect(legacy).toContain("Dashboard");
   });
 });
 

@@ -2,7 +2,7 @@
 
 这是核查产品。不要做成多 Agent 运维界面。
 
-现行生产是 `apps/src/goldenPath/`。活 token 在 `apps/src/goldenPath/golden-path.css` 的 `:root`。改样式先改那份 CSS。旧三栏只在 `/?legacy=1`。
+现行生产是 `apps/src/goldenPath/`。活 token 在 `apps/src/goldenPath/golden-path.css` 的 `:root`。改样式先改那份 CSS。旧三栏壳已于 2026-09-28 删除（tag `legacy-desk-final`）。
 
 **第一屏要回答：** 这句话站不站得住？凭什么？来源在哪？不要用「能信」四字章当第一句。
 

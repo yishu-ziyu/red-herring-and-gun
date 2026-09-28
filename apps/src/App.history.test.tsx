@@ -1,6 +1,6 @@
 /**
  * App.history.test — 生产 Golden Path 的历史/留存行为（Issue #52 第七节）。
- * 旧三栏壳的同类测试在 legacy/LegacyDesk.test.tsx；本文件驱动真实 ProductShell / InputStage / 画布。
+ * 本文件驱动真实 ProductShell / InputStage / 画布。
  */
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";

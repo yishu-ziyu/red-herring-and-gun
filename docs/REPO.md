@@ -56,7 +56,7 @@ ops / scripts  发布与机械活
 ```text
 apps/                     生产 app（脸 + HTTP + 编排）。本地 npm run dev 从这里起。
   src/goldenPath/         现行产品界面
-  src/components/v3/      旧三栏壳，只走 /?legacy=1
+  src/components/v3/      账号、登录、模型设置与输入框（沿用旧目录名）
   src/lib/                前端再导出领域契约，不要在这里另写一份判决
   server/src/             生产 Express、casePipeline、handlers
   server/eval/            生产侧评测入口

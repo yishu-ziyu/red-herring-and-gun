@@ -1,9 +1,7 @@
 /**
- * App — 生产入口（Issue #52）：默认渲染轻量产品壳 + 同画布 Golden Path。
- * 旧三栏壳（AppShell + MissionControl + ResultView）整建制退到 `/?legacy=1`
- * 调试路径（legacy/LegacyDesk.tsx），不再承担生产信息架构。
+ * App — 生产入口（Issue #52）：轻量产品壳 + 同画布 Golden Path。
  */
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ReasoningProvider } from "./store/reasoningStore";
 import {
   rebuildInvestigationFromReport,
@@ -31,10 +29,6 @@ import { composeFollowUpClaim, displayFollowUpClaim, previousAnswerText } from "
 import { visiblePriorRoundFromSnapshot } from "./lib/priorRoundBrief";
 import { appendInvestigationRound, readInvestigationThread, threadSummary, type InvestigationThread, type InvestigationRound } from "./lib/investigationThread";
 import { InvestigationThreadHeader } from "./goldenPath/InvestigationThreadHeader";
-
-const LegacyDesk = lazy(() =>
-  import("./legacy/LegacyDesk").then((module) => ({ default: module.default }))
-);
 
 type ProductMode = "input" | "investigation";
 
@@ -916,14 +910,6 @@ function ProductApp() {
 }
 
 export default function App() {
-  const isLegacyRoute = new URLSearchParams(window.location.search).get("legacy") === "1";
-  if (isLegacyRoute) {
-    return (
-      <Suspense fallback={null}>
-        <LegacyDesk />
-      </Suspense>
-    );
-  }
   return (
     <ReasoningProvider>
       <ProductApp />
