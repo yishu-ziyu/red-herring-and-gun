@@ -721,7 +721,9 @@ export function buildInvestigationSnapshot(
         });
       }
       // 已核查命题：检索垫其余来源只是背景材料，不得残留 unassessed。
+      // 打不开的链接不是材料，不列出来。
       for (const s of bundle.perAtom.get(a.key) ?? []) {
+        if (deadUrls.has(normalizeInvestigationSourceUrl(s.url))) continue;
         if (sourceIdByUrl.get(s.url) && evidence.some((l) => l.sourceId === sourceIdByUrl.get(s.url))) continue;
         evidence.push({
           sourceId: sourceIdByUrl.get(s.url)!,
@@ -774,8 +776,10 @@ export function buildInvestigationSnapshot(
         ...(consequence && gaps.length === 0 ? { consequence } : {}),
       });
     }
-    // 判词没列缺口但证据追索记录了真实 missingAfter：这是一等缺口，如实立对象。
-    if (gaps.length === 0 && pursuit) {
+    // 判词没列缺口但证据追索记录了真实 missingAfter：命题还查不清时这是一等缺口，如实立对象。
+    // 命题已经判定时，检索流程没补到的槽位（当事方、地点……）不是用户需要的缺口。
+    const settled = judgment === "supported" || judgment === "refuted" || judgment === "mixed";
+    if (gaps.length === 0 && pursuit && !settled) {
       gaps.push({
         id: `gap-${a.order + 1}-${gaps.length + 1}`,
         claimId: `claim-${a.order + 1}`,
@@ -783,20 +787,6 @@ export function buildInvestigationSnapshot(
         status: "open",
         ...(consequence ? { consequence } : {}),
       });
-    }
-    for (const link of evidence) {
-      const src = sources.find((s) => s.id === link.sourceId);
-      if (src?.reachable === false) {
-        const description = clip(`来源无法打开：${src.title || src.url}`, 160);
-        if (seenGap.has(description)) continue;
-        seenGap.add(description);
-        gaps.push({
-          id: `gap-${a.order + 1}-${gaps.length + 1}`,
-          claimId: `claim-${a.order + 1}`,
-          description,
-          status: "open",
-        });
-      }
     }
 
     const span = originalClaim.indexOf(a.text);

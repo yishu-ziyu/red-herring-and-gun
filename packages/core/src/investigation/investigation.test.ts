@@ -982,7 +982,8 @@ describe("schema 与不变量", () => {
       phase: "complete",
       claimAtoms: ["某说法"],
       atomSearchBundle: { atomsSearched: ["某说法"], byAtomKey: { 某说法: [src("https://a.example/x", "a", "b")] } },
-      subclaimVerdicts: [{ claimAtom: "某说法", verdict: "true", evidence: "e", supportingSources: [src("https://a.example/x", "a", "b")], contradictingSources: [], evidenceGaps: [] }],
+      // 已判定的命题只保留判词自带的缺口；证据追索的说明挂在这条缺口上（2026-09-28 起不再另立「补查后仍缺」）。
+      subclaimVerdicts: [{ claimAtom: "某说法", verdict: "true", evidence: "e", supportingSources: [src("https://a.example/x", "a", "b")], contradictingSources: [], evidenceGaps: ["缺原始发布时间"] }],
       crossExam: { ran: true, atoms: [{ atom: "某说法", status: "answered", response: "r" }] },
       pursuitHops: [{ hop: 1, atom: "某说法", goal: "找原始发布", purpose: "primary", query: "q", resultKind: "primary", newEvidence: 1, missingAfter: ["原始来源"], gain: 0.4, action: "stop" }],
       report: { conclusion: "成立。", verdictType: "true", causalBoundary: "不推出因果", citationSources: [{ url: "https://a.example/x", title: "a", snippet: "b" }], checkedAt: "2026-09-06T00:00:00.000Z" },

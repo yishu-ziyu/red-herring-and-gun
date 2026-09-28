@@ -90,13 +90,29 @@ function covers(claimText: string, clause: string): boolean {
   return longestCommonLen(claim, piece) >= need;
 }
 
+const FUNCTION_CHARS = new Set("的了是在和与及会能可被将就都也还又而且或把对为从".split(""));
+
+/**
+ * 命题常改写原句措辞（「常穿黑色内衣易患癌」→「频繁穿着黑色内衣会提高患癌概率」），
+ * 连续片段会断开。原句这一段的实词有六成出现在命题里，就算这段被查过。
+ */
+function paraphraseCovers(claimTexts: string[], clause: string): boolean {
+  const pool = new Set(compactText(claimTexts.join("")).split(""));
+  const chars = compactText(clause)
+    .split("")
+    .filter((ch) => /[\p{Script=Han}A-Za-z0-9]/u.test(ch) && !FUNCTION_CHARS.has(ch));
+  if (chars.length === 0) return true;
+  return chars.filter((ch) => pool.has(ch)).length / chars.length >= 0.6;
+}
+
 /** 原句里有、命题列表盖不住的句子。整句都没盖住就整句留下；只有半句被盖住才按逗号拆开。 */
 export function uncoveredOriginalClauses(originalClaim: string, claimTexts: string[]): string[] {
   const texts = claimTexts.map((text) => text.trim()).filter(Boolean);
   const leftover: string[] = [];
+  const isCovered = (clause: string) => texts.some((text) => covers(text, clause)) || paraphraseCovers(texts, clause);
   for (const sentence of sentencesOf(originalClaim)) {
     const parts = commaParts(sentence);
-    const uncoveredParts = parts.filter((part) => !texts.some((text) => covers(text, part)));
+    const uncoveredParts = parts.filter((part) => !isCovered(part));
     // 先看逗号分句：半句被盖住就只留下没盖住的半句，避免整句因前半句 LCS 被当成已覆盖。
     if (parts.length > 1) {
       if (uncoveredParts.length === 0) continue;
@@ -107,7 +123,7 @@ export function uncoveredOriginalClauses(originalClaim: string, claimTexts: stri
       }
       continue;
     }
-    if (!texts.some((text) => covers(text, sentence))) leftover.push(sentence);
+    if (!isCovered(sentence)) leftover.push(sentence);
   }
   return leftover;
 }

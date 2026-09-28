@@ -124,6 +124,13 @@ describe("leftoverClaims", () => {
     expect(leftoverGapSentence(texts)).toContain("结论没有拿它们当依据");
   });
 
+  // 2026-09-28 错误分析 RUMOR-010：命题改写了措辞，整句原话却被说成「这些这次没查」，对用户说了假话。
+  it("命题改写了措辞但盖住了原句：不说这句没查", () => {
+    const original = "常穿黑色内衣易患癌";
+    const claims = ["黑色内衣与患癌风险之间存在因果关联", "频繁穿着黑色内衣会提高患癌概率"];
+    expect(uncoveredOriginalClauses(original, claims)).toEqual([]);
+  });
+
   it("末尾『真的假的 / 是真的吗』只是对前句的核实请求，不生成独立 leftover", () => {
     const original = "https://weibo.com/status/50891234 隔夜菜亚硝酸盐超标百倍直接致癌？真的假的？";
     const claims = ["隔夜菜中亚硝酸盐含量超标百倍", "隔夜菜亚硝酸盐超标会直接致癌"];
