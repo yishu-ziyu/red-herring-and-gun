@@ -2469,6 +2469,18 @@ describe("调查中职责按快照出场", () => {
     expect(screen.getByText("核对范围中")).toBeInTheDocument();
     expect(screen.queryByText("形成判断中")).toBeNull();
   });
+
+  it("judging 已有命题形成判断：作判断在做，核语境已结算（与动态「形成判断」一致）", () => {
+    const base = investigatingUnassessed();
+    renderCanvas({
+      ...base,
+      phase: "judging",
+      claims: base.claims.map((claim, index) => (index === 0 ? { ...claim, judgment: "refuted" } : claim)),
+    });
+    expect(document.querySelector('[data-gp-role="judgment"]')?.getAttribute("data-gp-role-state")).toBe("doing");
+    expect(document.querySelector('[data-gp-role="context"]')?.getAttribute("data-gp-role-state")).toBe("done");
+    expect(screen.getByText("形成判断中")).toBeInTheDocument();
+  });
 });
 
 describe("结果页 P0/P1：调查备忘录视觉", () => {

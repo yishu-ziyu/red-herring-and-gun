@@ -25,7 +25,7 @@ import {
   type SearchOneAtom,
 } from "../atomSearch.js";
 import { assembleFinalReport, deriveOverallVerdict, faceVerdictFor } from "../reportAssembly/index.js";
-import { looksLikePlanOrPrediction, boundTinyRumorVerdict } from "../atomSearchQuery.js";
+import { looksLikePlanOrPrediction, boundTinyRumorVerdict, isOnTopicDebunk } from "../atomSearchQuery.js";
 import { normalizeReportCitations } from "../citationBinding.js";
 import { pruneDeadCitations, type LivenessDeps } from "../citationLiveness.js";
 import {
@@ -66,6 +66,7 @@ import {
 import {
   applyCheckabilityRevisions,
   applyConclusionGate,
+  bindTinyRumorDebunks,
   needsConstrainedConclusion,
   repairGatedConclusion,
   resolveQuestionAtomKey,
@@ -1389,8 +1390,17 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const aliveSearchSources = searchSources.filter(
     (s) => !deadUrlSet.has(String(s?.url ?? "").trim())
   );
+  // 短谣通道放行整句 false 的前提：命题层也能说同一件事（唯一可核查命题挂上存活辟谣）。
   const tinyHoldsOnAliveSources =
-    boundTinyRumorVerdict(claim, aliveSearchSources) === "false";
+    boundTinyRumorVerdict(claim, aliveSearchSources) === "false" &&
+    (finalReport.verdictType !== "false" ||
+      bindTinyRumorDebunks(finalReport, {
+        claimAtoms: rumorStep.output.claimAtoms,
+        claimAtomTypes: rumorStep.output.claimAtomTypes,
+        debunks: aliveSearchSources.filter((s) => isOnTopicDebunk(claim, s)),
+      }));
+  const tinyBoundRepair =
+    tinyHoldsOnAliveSources && finalReport.verdictType === "false" && draftVerdictType !== "false";
   const finalGateResult = applyConclusionGate(finalReport, {
     claimAtoms: rumorStep.output.claimAtoms,
     claimAtomTypes: rumorStep.output.claimAtomTypes,
@@ -1409,14 +1419,14 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     earlyGate: earlyGateResult,
     mixedGuardDemoted,
   });
-  if (repairDecision.needed) {
+  if (repairDecision.needed || tinyBoundRepair) {
     repairGatedConclusion(
       finalReport,
       {
         changed: true,
         from: repairDecision.from,
         to: repairDecision.to,
-        rule: repairDecision.rule,
+        rule: repairDecision.needed ? repairDecision.rule : "tiny-rumor-debunk-bound",
       },
       {
         nonVerifiableAtoms: finalReport.nonVerifiableAtoms,

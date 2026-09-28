@@ -402,7 +402,7 @@ export function InvestigationCanvas({
             <WorkRoles
               compact
               phase={snapshot.phase}
-              activeIndex={roleIndexForPhase(snapshot.phase)}
+              activeIndex={roleIndexForPhase(snapshot.phase, snapshot.claims.some((claim) => Boolean(claim.judgment)))}
               preClaimWork={snapshot.preClaimWork}
               sourceCount={snapshot.sources?.length ?? 0}
             />

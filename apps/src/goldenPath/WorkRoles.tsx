@@ -19,9 +19,10 @@ export const WORK_ROLES: Array<{
   { id: "judgment", name: "作判断", desc: "给出证据与边界", doing: "形成判断中", done: "已完成判断", idle: "尚未开始", src: "/agents/report-composer.png" },
 ];
 
-export function roleIndexForPhase(phase: string): number {
+/** judging 里一旦有命题形成判断（动态出现「形成判断」），当前角色就是作判断。 */
+export function roleIndexForPhase(phase: string, anyClaimJudged = false): number {
   if (phase === "complete") return 4;
-  if (phase === "judging") return 2;
+  if (phase === "judging") return anyClaimJudged ? 3 : 2;
   if (phase === "investigating") return 1;
   if (phase === "decomposed") return 1;
   return 0;

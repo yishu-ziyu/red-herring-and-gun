@@ -39,3 +39,16 @@ describe("W4 gp-global-notice 最小可读样式", () => {
     expect(block).not.toContain("z-index");
   });
 });
+
+describe("同一说法查过的提示有样式（Reset 4A 删掉后裸贴在左上角）", () => {
+  it("App 里用到的 gp-same-claim 类在 CSS 里都有规则", () => {
+    const used = [...new Set(app.match(/gp-same-claim[\w-]*/g) ?? [])];
+    expect(used.length).toBeGreaterThanOrEqual(5);
+    for (const name of used) {
+      expect(css).toMatch(new RegExp(`\\.${name}\\s*\\{`));
+    }
+    const block = css.match(/\.gp-same-claim\s*\{([^}]*)\}/)![1]!;
+    expect(block).toContain("width:");
+    expect(block).toContain("margin: 12px auto 0");
+  });
+});

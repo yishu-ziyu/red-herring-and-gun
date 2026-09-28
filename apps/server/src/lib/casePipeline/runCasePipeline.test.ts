@@ -318,6 +318,64 @@ describe("runCasePipeline", () => {
     expect(result.finalReport.faceVerdict).toBe("不能信");
   });
 
+  // 2026-09-28 实机：整句判「不能信」，唯一命题却是「模型未覆盖」，结论写「尚未查清，未计入该判断」，徽章是证据不足。
+  const TINY_ATOM = "大剂量维生素C有利于预防感冒";
+  const TINY_DEBUNK = {
+    url: "https://piyao.kepuchina.cn/vc",
+    title: "辟谣丨大剂量维生素C能预防感冒？",
+    snippet: "网上流传大剂量维生素C预防感冒的说法不实。",
+  };
+  const runTinyChannel = (atoms: string[]) =>
+    runCasePipeline({
+      claim: `${atoms.join("，")}。`,
+      runAgent: async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
+        if (agentId === "rumor_detector") {
+          return {
+            agent: "rumor_detector",
+            output: {
+              claimAtoms: atoms,
+              claimAtomTypes: atoms.map((text) => ({ text, verifiable: true, type: "fact" })),
+            },
+          };
+        }
+        if (agentId === "fact_checker") {
+          return { agent: "fact_checker", output: { factCheckResult: "unverified", subclaimVerdicts: [] } };
+        }
+        if (agentId === "source_validator") return confirmedSourceValidatorStep(steps, "medium");
+        throw new Error(`unexpected ${agentId}`);
+      },
+      searchOne: async () => ({ sources: [TINY_DEBUNK] }),
+      callSelfProofModel: async () => ({
+        output: { results: atoms.map((atom) => ({ atom, supported: true, reason: "ok" })) },
+        model: "m",
+      }),
+      runReport: async () => ({
+        agent: "report_composer",
+        output: { verdictType: "unverified", conclusion: "还查不清。" },
+      }),
+      citationLiveness: { liveness: new Map([[TINY_DEBUNK.url, "alive"]]) },
+      hooks: { onInvestigationSnapshot: () => {} },
+    });
+
+  it("短谣通道判不能信时，唯一命题同步为站不住并挂上反驳出处，结论不写尚未查清", async () => {
+    const result = await runTinyChannel([TINY_ATOM]);
+    expect(result.finalReport.verdictType).toBe("false");
+    const verdicts = result.finalReport.subclaimVerdicts as Array<Record<string, unknown>>;
+    expect(verdicts).toHaveLength(1);
+    expect(verdicts[0].verdict).toBe("false");
+    expect((verdicts[0].contradictingSources as Array<{ url: string }>).map((s) => s.url)).toContain(TINY_DEBUNK.url);
+    expect(String(result.finalReport.conclusion)).not.toContain("尚未查清");
+    const investigation = result.finalReport.investigation as { claims: Array<{ judgment?: string; evidence: Array<{ role: string }> }> };
+    expect(investigation.claims[0].judgment).toBe("refuted");
+    expect(investigation.claims[0].evidence.some((link) => link.role === "contradict")).toBe(true);
+  });
+
+  it("多条可核查命题都没查清时，短谣通道不得把整句判成不能信", async () => {
+    const result = await runTinyChannel([TINY_ATOM, "维生素C能缩短感冒病程"]);
+    expect(result.finalReport.verdictType).toBe("unverified");
+    expect(String(result.finalReport.conclusion)).not.toMatch(/^公开材料不支持/);
+  });
+
   it("report review hooks emit start/result and repair thin reports", async () => {
     const onReportReviewStart = vi.fn();
     const onReportReviewResult = vi.fn();

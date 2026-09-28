@@ -200,6 +200,64 @@ export function applyConclusionGate(
   return { changed: false };
 }
 
+/**
+ * 短谣存活辟谣通道把整句判成 false 时，让命题层说同一件事（2026-09-28 实机：
+ * 整句「不能信」、唯一命题「模型未覆盖」、结论写「尚未查清」、徽章「证据不足」）。
+ *
+ * 只在恰好一条可核查命题时成立：把存活的对题辟谣挂为该命题的反驳出处并判 false。
+ * 多条命题时一条关键词辟谣不能替每条命题作答，返回 false，调用方不得放行无绑定整句 false。
+ * 返回值即「本通道是否仍可放行整句 false」。
+ */
+export function bindTinyRumorDebunks(
+  report: Record<string, unknown>,
+  input: {
+    claimAtoms?: unknown;
+    claimAtomTypes?: unknown;
+    debunks: ReadonlyArray<{ url?: unknown; title?: unknown; snippet?: unknown }>;
+  }
+): boolean {
+  const listed = listAtomsForSearch(input.claimAtoms, input.claimAtomTypes);
+  if (listed.verifiable.length !== 1) return false;
+  const atom = listed.verifiable[0];
+  const debunks = input.debunks
+    .filter((s) => typeof s.url === "string" && /^https?:\/\//i.test(s.url))
+    .slice(0, 5)
+    .map((s) => ({ url: String(s.url), title: String(s.title ?? ""), snippet: String(s.snippet ?? "") }));
+  if (debunks.length === 0) return false;
+
+  const verdicts = asArray(report.subclaimVerdicts).filter(
+    (v): v is Record<string, unknown> => Boolean(v && typeof v === "object")
+  );
+  const key = claimAtomKey(atom);
+  let entry = verdicts.find((v) => claimAtomKey(String(v.claimAtom ?? "")) === key);
+  if (entry && String(entry.verdict ?? "").trim().toLowerCase() === "false" && directionalBound("false", entry)) {
+    return true;
+  }
+  if (!entry) {
+    entry = { claimAtom: atom };
+    verdicts.push(entry);
+  }
+  const debunkUrls = new Set(debunks.map((s) => s.url));
+  // related-only 的支持桶只是检索填充（兜底报告会把辟谣也放进去），不能留作「支持」。
+  const keptSupport =
+    entry.sourcesRelatedOnly === true
+      ? []
+      : asArray(entry.supportingSources).filter(
+          (s) => !debunkUrls.has(String((s as Record<string, unknown>)?.url ?? ""))
+        );
+  const existingContradict = asArray(entry.contradictingSources).filter(
+    (s) => !debunkUrls.has(String((s as Record<string, unknown>)?.url ?? ""))
+  );
+  entry.verdict = "false";
+  entry.evidence = "检索到针对这句话的辟谣材料，未见对题的支持材料。";
+  entry.boundary = "依据是标题或摘要明确辟谣这句话的材料，没有逐篇核对原文论证。";
+  entry.supportingSources = keptSupport;
+  entry.contradictingSources = [...existingContradict, ...debunks];
+  delete entry.sourcesRelatedOnly;
+  report.subclaimVerdicts = verdicts;
+  return true;
+}
+
 export type GatedConclusionRepairInput = {
   nonVerifiableAtoms?: unknown;
   subclaimVerdicts?: unknown;
@@ -211,6 +269,17 @@ export type GatedConclusionRepairInput = {
 function clipText(value: unknown, max: number): string {
   const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
   return text.length > max ? text.slice(0, max) : text;
+}
+
+/** 截在 max 以内最后一个句末（连同其后的引号与 [n] 标记）；一句都没说完时补「…」。 */
+function clipSentence(value: unknown, max: number): string {
+  const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+  if (text.length <= max) return text;
+  const ends = [...text.slice(0, max).matchAll(/[。！？；](?:["”」』]|\s*\[\d+\])*/g)];
+  const last = ends.at(-1);
+  if (!last || last.index === undefined) return `${text.slice(0, max - 1)}…`;
+  const tail = text.slice(last.index).match(/^[。！？；](?:["”」』]|\s*\[\d+\])*/)![0];
+  return text.slice(0, last.index + tail.length);
 }
 
 function listNonVerifiableAtoms(value: unknown): Array<{ text: string; type: string }> {
@@ -378,7 +447,7 @@ export function buildScopedEvidence(value: unknown): {
     const supporting = collectBucketSources(rec.supportingSources);
     const contradicting = collectBucketSources(rec.contradictingSources);
     if (supporting.length === 0 && contradicting.length === 0) continue;
-    scoped.push({ evidence: clipText(rec.evidence, 120), supporting, contradicting });
+    scoped.push({ evidence: clipSentence(rec.evidence, 120), supporting, contradicting });
     for (const src of [...supporting, ...contradicting]) {
       if (!globalIndex.has(src.url)) {
         globalIndex.set(src.url, globalSources.length + 1);
@@ -410,6 +479,7 @@ const GATE_RULE_FINDING: Record<string, string> = {
   "weak-conclusion-audit-alignment": "整句为弱结论：不适用真假判断的表述与未补齐依据只作边界，不计入真假判定。",
   "hard-verdict-with-not-applicable-boundary": "整句结论由有据命题支撑；不适用真假判断的表述未计入该判断，只作边界。",
   "hard-verdict-with-unverified-boundary": "整句结论由有据命题支撑；尚未查清的命题未计入该判断，只作边界。",
+  "tiny-rumor-debunk-bound": "检索到针对这句话的辟谣材料且无对题支持，整句按不成立表述，依据挂在命题的反驳出处上。",
 };
 
 function isHardVerdictType(value: string): boolean {

@@ -232,6 +232,34 @@ describe("applyConclusionGate（§11 收权门：结构化状态，不读结论�
 describe("repairGatedConclusion（Blocker 1：结构化 repair，不读原文）", () => {
   const src = (url: string) => ({ url, title: "t", snippet: "s" });
 
+  it("有源判词 evidence 过长时截在句号上，不把半句话和下一句拼在一起（2026-09-28 实机：「结论同样显「大剂量…」」）", () => {
+    const first = "中国互联网联合辟谣平台2024年1月23日明确指出：对于维生素C摄入正常的健康人群来说，没有证据表明吃大剂量维生素C可以预防感冒。";
+    const second = "2013年对29项随机试验共11306名参与者的荟萃分析结论同样显示常规补充不能降低普通人群感冒发生率，只在高强度运动人群中观察到预防效果。";
+    const report: Record<string, unknown> = { verdictType: "unverified", conclusion: "x" };
+    repairGatedConclusion(
+      report,
+      { changed: true, from: "false", to: "unverified", rule: "audit-unresolved-bridge-gap" },
+      {
+        subclaimVerdicts: [
+          {
+            claimAtom: "大剂量维生素C有利于预防感冒",
+            verdict: "false",
+            evidence: first + second,
+            supportingSources: [],
+            contradictingSources: [src("https://t.test/piyao")],
+          },
+          { claimAtom: "大剂量存在明确阈值", verdict: "unverified", supportingSources: [], contradictingSources: [] },
+        ],
+        auditUnresolvedGaps: [],
+      }
+    );
+    const conclusion = String(report.conclusion);
+    expect(conclusion).toContain(first);
+    const before = conclusion.slice(0, conclusion.indexOf("「大剂量存在明确阈值」"));
+    expect(before).toMatch(/[。！？；…]$/);
+    expect(conclusion).toContain("「大剂量存在明确阈值」尚未查清");
+  });
+
   it("demote 触发时重建 conclusion：gated lead 开头 + 保留有源判词 evidence + not-applicable 只作边界", () => {
     const report: Record<string, unknown> = {
       verdictType: "mixed_misleading",

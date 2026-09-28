@@ -75,6 +75,14 @@ describe("checkSourceLiveness", () => {
     });
     expect(result.get("https://unreachable.example/")).toBe("dead");
   });
+
+  it("单条请求超时只说明站点慢，不判死链", async () => {
+    const result = await checkSourceLiveness(["https://slow.example/"], {
+      timeoutMs: 20,
+      fetchImpl: () => new Promise(() => {}),
+    });
+    expect(result.get("https://slow.example/")).toBe("alive");
+  });
 });
 
 describe("pruneDeadCitations", () => {

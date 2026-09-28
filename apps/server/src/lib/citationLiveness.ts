@@ -62,12 +62,14 @@ export async function checkUrlLiveness(
       void Promise.resolve(res.body?.cancel?.()).catch(() => {});
       return classifyLivenessStatus(res.status);
     }, { ...execution, timeoutMs, label: "来源探活" });
-  } catch {
+  } catch (error) {
     execution.signal?.throwIfAborted();
     // Exhausting the investigation's budget is not evidence that this URL is dead.
     if (execution.deadlineMs !== undefined && Date.now() >= execution.deadlineMs) {
       throw new ExecutionTimeoutError("来源探活总预算", 0);
     }
+    // A slow site is not a dead link: kepuchina.cn answered 200 in 4.5s yet was pruned as unopenable.
+    if (error instanceof ExecutionTimeoutError) return "alive";
     return "dead";
   }
 }
