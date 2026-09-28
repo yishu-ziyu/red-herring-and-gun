@@ -1,7 +1,7 @@
 /**
  * App — 生产入口（Issue #52）：轻量产品壳 + 同画布 Golden Path。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ReasoningProvider } from "./store/reasoningStore";
 import {
   rebuildInvestigationFromReport,
@@ -189,6 +189,11 @@ function ProductApp() {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
   const [mode, setMode] = useState<ProductMode>("input");
+  // 从首页进入调查时回到页顶：首页滚到案例区再点开，结论不能被沿用的滚动位置挤出视口。
+  // 只看模式切换；追问、保存后换 caseId 都发生在调查态内部，不跳。
+  useLayoutEffect(() => {
+    if (mode === "investigation") window.scrollTo(0, 0);
+  }, [mode]);
   const [active, setActive] = useState<ActiveCase | null>(null);
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = active?.localId ?? null;

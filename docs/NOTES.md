@@ -1,5 +1,7 @@
 # 当前状态
 
+2026-09-28 修复：首页滚到案例区后点「查看这次调查」，结果页沿用首页滚动位置，结论落在视口上方（Ego 实测 -324px）。现在从首页进入调查态时回到页顶；调查态内部（追问、保存后换 caseId）不跳。新增回归先红后绿，apps 全量 **1443 passed / 0 failed / 1 skipped**，构建通过。Ego 脚本两张案例均 scrollY 0、结论 top 143px；Chrome 真人式走查第一屏可见结论。契约 `docs/evals/2026-09-28-case-open-scroll-top.md`。浏览器验收自此分两层（Ego 脚本 + Chrome 走查），写入 `AGENTS.md`。未发布。
+
 2026-09-28 按「代码松散度」复盘后做了两件事（未提交、未发布）。一、删除 `/?legacy=1` 旧三栏壳：前端生产代码 23,666 → 13,853 行，删 61 个文件（含 235 个只测旧壳的测试），`/?legacy=1` 现在显示默认首页（与 `/` 像素一致）；删前打 tag `legacy-desk-final`。apps 全量 **1442 passed / 0 failed / 1 skipped**（删前 1677 / 0 / 1），`apps` 构建与 `git diff --check` 通过。契约 `docs/evals/2026-09-28-remove-legacy-desk.md`。二、暂停 T20：`apps/` 是生产唯一真相，`packages/core` 无守护拷贝不再同步，`investigation/` 字节镜像照旧；`AGENTS.md`、`REPO.md`、`ARCHITECTURE.md`、ADR-007 已改，理由见 `docs/devlog/2026-09-28-pause-t20.md`。
 
 2026-09-22 共享 nginx 的 lcw 路由已修复并防回归：公网 `lcw.yishuziyu.cn` 故障根因不是应用，而是 `scripts/configure-aliyun-ip-api-nginx.sh` 整份重写 `/etc/nginx/conf.d/red-herring-ip-api.conf` 时漏掉 `/lcw/`，导致 Vercel 转发到 `/lcw/*` 后落入默认 8080 服务并返回 404。线上已从 2026-09-18 备份恢复最小 `/lcw/` block，`nginx -t` 与 reload 成功；Docker 8787、nginx 前缀 health、Vercel 公网 health 均 200，公网首页从云主机复验 200 且标题「录成文」。源码 writer 现固定生成 `/lcw/` → `127.0.0.1:8787/`（600s、600m），新增 deploy-pipeline 回归断言先红后绿，定向 6/6 通过。契约 `docs/evals/2026-09-22-shared-nginx-lcw-route.md`。本轮未发布 Red Herring，也未改现有并行工作文件。

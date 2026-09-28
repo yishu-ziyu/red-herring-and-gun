@@ -96,6 +96,17 @@ describe("首页真实案例", () => {
     expect(document.querySelector("[data-gp-phase]")?.getAttribute("data-gp-phase")).toBe("complete");
     expect(document.querySelector("[data-gp-live], .gp-live-pill")).toBeNull();
   });
+
+  it("首页已滚到案例区时点开案例：结果页回到页顶，结论不被沿用的滚动位置挤出视口", async () => {
+    mockFetch();
+    render(<App />);
+    await screen.findByRole("textbox", { name: "要调查的说法" });
+    const scrollTo = vi.mocked(window.scrollTo);
+    scrollTo.mockClear();
+    fireEvent.click(screen.getAllByRole("button", { name: "查看这次调查" })[0]);
+    await screen.findByLabelText("调查结论");
+    expect(scrollTo).toHaveBeenCalledWith(0, 0);
+  });
 });
 
 describe("复制简报", () => {
