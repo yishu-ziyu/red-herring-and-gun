@@ -1,5 +1,7 @@
 # 当前状态
 
+2026-09-29 行为保持重写（分支 `rewrite/behavior-preserving`，基线 `f96a37f`，契约 `docs/evals/2026-09-29-behavior-preserving-rewrite.md`）。Phase 1 逆向完成，未改生产代码：`docs/behavior-spec.md`（现有可观察行为，分 P/D/I/H 四类，含代码与文档冲突表）、`docs/architecture-current.md`（系统地图、处理器十件事、管线阶段链、前端状态归属、不可达代码）、`docs/state-model.md`（状态清单、四个状态机、恢复路径、不变量）、`docs/external-contracts.md`（HTTP、SSE、快照、报告字段、存储格式、外部系统、环境变量）。发现未修的问题记在 `docs/rewrite-issues.md`（R1 MCP 工具调用恒 404 等 8 条）。下一步 Phase 2：录音回放 golden master。
+
 2026-09-28 实机缺陷六处修复（未提交、未发布）。一、调查中右栏空白：高 0 的结论区被网格自动排进右栏第 2 行，把命题区挤到「调查动态」下面；现钉在头像格，Ego 实测头像到命题区间距 230–299px → 23px。二、判断阶段头像卡在「核语境」：有命题形成判断后当前角色改为「作判断」。三、短谣辟谣通道整句判「不能信」而唯一命题是「模型未覆盖」，结论写「尚未查清，未计入该判断」、徽章「证据不足」：现唯一可核查命题时把存活对题辟谣挂为反驳出处并判 false，结论重建为「公开材料不支持这条说法。检索到针对这句话的辟谣材料，未见对题的支持材料。」；多条命题时不再放行无绑定整句 false（收为 unverified）。四、来源探活单条超时被当死链（科普中国 4.5s 返回 200 却标「来源无法打开」）：超时改判存活。五、复验时发现「这条说法查过」提示自 9-06 Reset 4A 起没有样式、裸贴左上角，已恢复。六、复验时发现收权后重建结论把证据硬截 120 字、半句接下一句，改为截在句末。实机复验（15:41–15:47）确认一、二；三本轮没触发（模型拆出两条命题），靠单测。apps 全量 **1447 passed / 0 failed / 1 skipped**，前端构建、server tsc、根工作区测试、`git diff --check` 通过；eval:gate 属 packages/（T20 暂停）未跑。3000 端口 API 是 tsx watch，改动已自动加载。契约 `docs/evals/2026-09-28-live-run-defects.md`。
 
 2026-09-28 修复：首页滚到案例区后点「查看这次调查」，结果页沿用首页滚动位置，结论落在视口上方（Ego 实测 -324px）。现在从首页进入调查态时回到页顶；调查态内部（追问、保存后换 caseId）不跳。新增回归先红后绿，apps 全量 **1443 passed / 0 failed / 1 skipped**，构建通过。Ego 脚本两张案例均 scrollY 0、结论 top 143px；Chrome 真人式走查第一屏可见结论。契约 `docs/evals/2026-09-28-case-open-scroll-top.md`。浏览器验收自此分两层（Ego 脚本 + Chrome 走查），写入 `AGENTS.md`。未发布。
