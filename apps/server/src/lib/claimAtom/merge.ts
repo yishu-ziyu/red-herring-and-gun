@@ -123,6 +123,9 @@ export function mergeSubclaimVerdicts(
       contradictingSources,
       evidenceGaps: guarded.evidenceGaps,
       ...(rec.sourcesRelatedOnly === true ? { sourcesRelatedOnly: true } : {}),
+      // 判定来历跨合并保留：规则层要分清「模型没判 / 模型判了但被降级 / 模型判了查不清」。
+      ...(rec.notJudgedByModel === true ? { notJudgedByModel: true } : {}),
+      ...(typeof rec.demotedFrom === "string" ? { demotedFrom: rec.demotedFrom } : {}),
     });
   }
   for (const atom of atoms) {

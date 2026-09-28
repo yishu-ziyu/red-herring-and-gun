@@ -20,6 +20,8 @@ export interface SubclaimVerdict {
   sourcesRelatedOnly?: boolean;
   /** 没有任何模型判定这条命题（区别于模型明确判了 unverified）。 */
   notJudgedByModel?: boolean;
+  /** 模型原本的判定（true/false），被证据关系审核或出处绑定降成 unverified 时记下。 */
+  demotedFrom?: string;
 }
 
 export type ClaimAtomType =

@@ -435,7 +435,7 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
       contradictingSources: contradicting,
       evidenceGaps: gaps,
       sourcesRelatedOnly,
-      ...(downgradeTrueFalse ? { verdict: "unverified" } : {}),
+      ...(downgradeTrueFalse ? { verdict: "unverified", demotedFrom: verdictNorm } : {}),
     };
   });
 }

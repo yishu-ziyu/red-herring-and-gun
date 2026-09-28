@@ -75,9 +75,10 @@ export function listAssessedClaims(report: Report, input: SentenceVerdictInput):
  */
 export function bindDebunksToPrimaryClaim(report: Report, primary: AssessedClaim | undefined, debunks: readonly Source[]): boolean {
   if (!primary || primary.standing !== "unresolved") return false;
-  // 模型给过判断（包括明确判「查不清」）就不用关键词覆盖它；只补「模型根本没判」的空白。
+  // 模型明确判了「查不清」就不用关键词覆盖它。只补两种空白：模型根本没判；
+  // 模型判了站不住，但出处没通过关系审核或绑定而被降级（方向与辟谣材料一致）。
   const existing = findVerdict(report, primary.text);
-  if (existing && existing.notJudgedByModel !== true) return false;
+  if (existing && existing.notJudgedByModel !== true && existing.demotedFrom !== "false") return false;
   const links = debunks
     .filter((s) => typeof s.url === "string" && /^https?:\/\//i.test(s.url))
     .slice(0, 5)
@@ -99,6 +100,8 @@ export function bindDebunksToPrimaryClaim(report: Report, primary: AssessedClaim
   entry.contradictingSources = [...keep(entry.contradictingSources), ...links];
   entry.relationBasis = "debunk-title";
   delete entry.sourcesRelatedOnly;
+  delete entry.notJudgedByModel;
+  delete entry.demotedFrom;
   report.subclaimVerdicts = verdicts;
   primary.standing = "refuted";
   return true;
