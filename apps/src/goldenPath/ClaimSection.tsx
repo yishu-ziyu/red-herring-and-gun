@@ -15,6 +15,7 @@ import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import {
   CHECKABILITY_HINT,
+  evidenceTitle,
   JUDGMENT_LABEL,
   JUDGMENT_TONE,
   PROGRESS_LABEL,
@@ -319,7 +320,7 @@ export function ClaimSection({
                             className="gp-conflict-side-item"
                             onClick={(event) => onSelectSource(link, source, claim.id, event.currentTarget)}
                           >
-                            {source.title || source.url || link.sourceId}
+                            {evidenceTitle(link, source) || link.sourceId}
                           </button>
                         ))
                       )}

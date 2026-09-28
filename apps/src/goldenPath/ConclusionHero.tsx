@@ -7,7 +7,7 @@ import { useState, useMemo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
-import { JUDGMENT_LABEL, ROLE_LABEL, attachmentsForSource, pickDecisiveEvidence } from "./snapshotUi";
+import { JUDGMENT_LABEL, ROLE_LABEL, attachmentsForSource, evidenceTitle, pickDecisiveEvidence } from "./snapshotUi";
 import { scrubFaceText } from "./scrubFace";
 import { displayFollowUpClaim } from "../lib/composeFollowUpClaim";
 import { PromptKitSource } from "./PromptKitSource";
@@ -164,7 +164,7 @@ export function ConclusionHero({
             {keyEvidence.map((row) => {
               const proves =
                 scrubFaceText(row.link.finding ?? "") || `${ROLE_LABEL[row.link.role]}：「${row.claimText}」`;
-              const sourceTitle = row.source.title || row.source.url || row.source.id;
+              const sourceTitle = evidenceTitle(row.link, row.source);
               return (
                 <button
                   key={`${row.claimId}:${row.link.sourceId}:${row.link.role}`}

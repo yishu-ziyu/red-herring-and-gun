@@ -92,6 +92,20 @@ export function phaseHeadline(snapshot: InvestigationSnapshotV1): string {
   }
 }
 
+/**
+ * 列表和结论卡上的出处标题。辟谣合集里命中某一节时，先写这一节，合集标题作为出处；
+ * 只写合集标题会让人以为拿错了材料（2026-09-28 错误分析 NEW-003）。
+ */
+export function evidenceTitle(
+  link: { sectionTitle?: string },
+  source: { id: string; url?: string; title?: string } | undefined
+): string {
+  const page = source?.title?.trim() || source?.url || source?.id || "";
+  const section = link.sectionTitle?.trim();
+  if (!section || section === source?.title?.trim()) return page;
+  return source?.title?.trim() ? `${section}（出自《${source.title.trim()}》）` : section;
+}
+
 export function domainOf(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");

@@ -5,7 +5,7 @@
  */
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { domainOf, ROLE_LABEL, ROLE_ROW_LABEL, roleGlyph, sourceExcerpt, type EvidenceIdentityKind } from "./snapshotUi";
+import { domainOf, evidenceTitle, ROLE_LABEL, ROLE_ROW_LABEL, roleGlyph, sourceExcerpt, type EvidenceIdentityKind } from "./snapshotUi";
 import type { InvestigationEvidenceLink, InvestigationSource } from "../lib/investigation";
 
 /** 行内引用式域名：灰字小字跟在摘录之后，「— domain ↗」，不再右对齐悬浮。 */
@@ -54,7 +54,7 @@ export function EvidenceItem({
   onSelect,
 }: EvidenceItemProps) {
   const [settling, setSettling] = useState(false);
-  const title = source?.title || source?.url || link.sourceId;
+  const title = evidenceTitle(link, source) || link.sourceId;
   const unreachable = source?.reachable === false;
   const roleLabel = ROLE_LABEL[link.role];
   const rowLabel = ROLE_ROW_LABEL[link.role];
