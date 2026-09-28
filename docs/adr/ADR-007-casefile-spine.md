@@ -6,7 +6,7 @@
 
 ## 状态
 
-已批准。脊柱包（`packages/core|server|web|eval`）已建。生产尚未切换（T20）。当前运行时仍是 `apps/` 的 `runCasePipeline`。
+已批准。脊柱包（`packages/core|server|web|eval`）已建。生产尚未切换；T20 于 2026-09-28 暂停，方向不撤销（`docs/devlog/2026-09-28-pause-t20.md`）。当前运行时仍是 `apps/` 的 `runCasePipeline`。
 与 ADR-001 ～ 006 冲突处以本文为准；它们保留为架构史。T20 之前不要把本文读成「线上已经是 packages/」。
 
 ## 背景

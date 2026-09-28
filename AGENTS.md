@@ -22,7 +22,7 @@ npm run build
 
 可见路径：对原句的直接回答 → 问题点 → 出处。测试绿不算验收。
 
-T20 是生产切到 `packages/` 脊柱。生产壳目录是 `apps/`（由 `mvp/` 改名）。发布走 `./ops.sh`。
+T20（生产切到 `packages/` 脊柱）2026-09-28 起暂停，见 `docs/devlog/2026-09-28-pause-t20.md`。`apps/` 是生产唯一真相（由 `mvp/` 改名），修改只落 `apps/`；`investigation/` 字节镜像照旧两边一起改。发布走 `./ops.sh`。
 
 ## 怎么说
 

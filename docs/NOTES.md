@@ -1,5 +1,7 @@
 # 当前状态
 
+2026-09-28 按「代码松散度」复盘后做了两件事（未提交、未发布）。一、删除 `/?legacy=1` 旧三栏壳：前端生产代码 23,666 → 13,853 行，删 61 个文件（含 235 个只测旧壳的测试），`/?legacy=1` 现在显示默认首页（与 `/` 像素一致）；删前打 tag `legacy-desk-final`。apps 全量 **1442 passed / 0 failed / 1 skipped**（删前 1677 / 0 / 1），`apps` 构建与 `git diff --check` 通过。契约 `docs/evals/2026-09-28-remove-legacy-desk.md`。二、暂停 T20：`apps/` 是生产唯一真相，`packages/core` 无守护拷贝不再同步，`investigation/` 字节镜像照旧；`AGENTS.md`、`REPO.md`、`ARCHITECTURE.md`、ADR-007 已改，理由见 `docs/devlog/2026-09-28-pause-t20.md`。
+
 2026-09-22 共享 nginx 的 lcw 路由已修复并防回归：公网 `lcw.yishuziyu.cn` 故障根因不是应用，而是 `scripts/configure-aliyun-ip-api-nginx.sh` 整份重写 `/etc/nginx/conf.d/red-herring-ip-api.conf` 时漏掉 `/lcw/`，导致 Vercel 转发到 `/lcw/*` 后落入默认 8080 服务并返回 404。线上已从 2026-09-18 备份恢复最小 `/lcw/` block，`nginx -t` 与 reload 成功；Docker 8787、nginx 前缀 health、Vercel 公网 health 均 200，公网首页从云主机复验 200 且标题「录成文」。源码 writer 现固定生成 `/lcw/` → `127.0.0.1:8787/`（600s、600m），新增 deploy-pipeline 回归断言先红后绿，定向 6/6 通过。契约 `docs/evals/2026-09-22-shared-nginx-lcw-route.md`。本轮未发布 Red Herring，也未改现有并行工作文件。
 
 2026-09-18 提交者身份已统一（git filter-repo + mailmap，用户裁决「统一改写署名」）：444 个提交里 7 个作者身份（用户本人 4 种拼写 + `dev@local` 26 条 + DevSpace 2 条 + Cursor Agent 2 条，后三者是真实工作只是环境兜底名）全部归一为 `yishu-ziyu <yishuziyu@gmail.com>`。在全新克隆中改写后 force push main 与两个 tag；**改写前后 main 树哈希逐字节相等**（`1fe963dd`，内容零变化），414 提交数不变，回执 tag 平移。本地工作目录已 reset --soft 对齐，未提交改动原样保留。全量备份在仓库外 `../rhg-pre-identity-rewrite-20260918.bundle`（182M），确认无误后可删。GitHub Contributors 面板缓存最长约 24h 刷新，之后应只剩一个头像（人评待看）。旧 refs/pull/* 引用仍指旧提交，不进 Contributors 统计，GitHub 会自行 GC。防复发：只从配好身份 `yishu-ziyu <yishuziyu@gmail.com>` 的本机提交；DevSpace/Cursor 环境要么配同身份要么不再提交；`yishuziyu@gmail.com` 需挂在 GitHub 账号下头像才会合并。契约 `docs/evals/2026-09-18-contributor-identity-rewrite.md`。**未提交改动（测试契约对齐 + 三份 eval 文档 + NOTES）仍在等用户指示落 commit**。
@@ -77,6 +79,8 @@
 ## 还没做完
 
 - 完整 live eval gate 与最终版本完整真实追问理解质量尚未验收；本轮已分别验证真实运行收束、快照重放和停止链路，不合并宣称整版端到端全绿。
-- T20：生产切到 `packages/` 脊柱。现在发布仍走 `apps/`。
+- T20：生产切到 `packages/` 脊柱。2026-09-28 起暂停，`packages/` 冻结，见 `docs/devlog/2026-09-28-pause-t20.md`。
+- `qa:contracts` 测的是冻结的 `packages/core`，不是生产代码；待定改指 `apps/` 还是移出门禁。
+- `apps/src/lib/v4-ui-e2e.test.ts` 的 framer-motion 检查仍指向不存在的 `mvp/` 路径，永远空跑通过。
 
 更早条目见 `docs/devlog/2026-09-status-archive.md`。不要从 `docs/evals/` 里翻已被取代的「未做」句当现状。

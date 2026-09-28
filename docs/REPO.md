@@ -7,7 +7,7 @@
 这是一个 **npm workspaces 单体仓库（monorepo）**，正在做 **绞杀式迁移（strangler fig）**。
 
 - 单体仓库：一个 git 里放多个包，共用工具和领域代码，不是「一个文件夹一个 git」。
-- 绞杀式迁移：新脊柱（`packages/`）在生产壳旁边长出来。生产壳目录是 `apps/`（由 `mvp/` 改名）。T20 才把发布切到 `packages/`。
+- 绞杀式迁移：新脊柱（`packages/`）在生产壳旁边长出来。生产壳目录是 `apps/`（由 `mvp/` 改名）。T20（把发布切到 `packages/`）2026-09-28 起暂停，`packages/` 冻结，见 `docs/devlog/2026-09-28-pause-t20.md`。
 
 标准软件工程里，成熟形态往往是：
 
@@ -18,7 +18,7 @@ docs/          产品、架构、验收、设计
 ops / scripts  发布与机械活
 ```
 
-生产壳已经放在 `apps/`。T20 是切到 `packages/web` 与 `packages/server`，不是再改一次目录名。
+生产壳已经放在 `apps/`。T20 若恢复，是切到 `packages/web` 与 `packages/server`，不是再改一次目录名。
 
 ## 全栈怎么读：跟着一次请求走
 
@@ -90,7 +90,7 @@ CONTEXT.md                实现层词汇表（Agent、原子、管线），不�
 
 改快照：core 与 apps/server 必须一起改，测镜像，再测黄金路径。只改一边，门禁会红，生产会和测试各活各的。
 
-`publicCopy`、`searchProviders`、`citationBinding` 也有 core / apps/server 两份。有的已经漂移（FACE_WORDS 不完全相同）。新逻辑优先写进两边都会跑到的清洗函数，并加同一条回归。T20 之后镜像消失，只留 packages。
+`publicCopy`、`searchProviders`、`citationBinding`、`agentProviders` 等也有 core / apps/server 两份，没有镜像守护，已经漂移。T20 暂停期间只改 `apps/server` 那份，`packages/core` 的拷贝冻结、不再同步。
 
 ## 不要到这些地方找产品
 
