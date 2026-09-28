@@ -116,15 +116,16 @@ describe("方案二的默认使用路径", () => {
     expect(network.posts).toHaveLength(2);
   });
 
-  it("adjusting the focus stops the active round before starting the replacement question", async () => {
-    const network = installNetwork(); await start(); await followUp();
+  it("adjusting the focus from a finished round starts a follow-up that keeps the result", async () => {
+    const network = installNetwork(); await start();
     fireEvent.click(screen.getByRole("button", { name: "调整核查重点" }));
     fireEvent.change(screen.getByRole("textbox", { name: "你更想确认什么？" }), { target: { value: "请重点核对政策适用日期" } });
+    expect(network.posts).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "按这个重点补查" }));
+    await waitFor(() => expect(document.querySelector('[data-gp-phase="investigating"]')).toBeTruthy());
     expect(network.posts).toHaveLength(2);
-    fireEvent.click(screen.getByRole("button", { name: "停止本轮并调整" }));
-    await waitFor(() => expect(network.posts).toHaveLength(3));
-    expect(String(network.posts[2].claim)).toContain("请重点核对政策适用日期");
-    expect(within(screen.getByRole("navigation", { name: "调查轮次" })).getAllByRole("button")).toHaveLength(3);
+    expect(String(network.posts[1].claim)).toContain("请重点核对政策适用日期");
+    expect(within(screen.getByRole("navigation", { name: "调查轮次" })).getAllByRole("button")).toHaveLength(2);
     network.finish();
     await waitFor(() => expect(document.querySelector('[data-gp-phase="complete"]')).toBeTruthy());
   });

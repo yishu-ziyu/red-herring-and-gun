@@ -71,12 +71,9 @@ describe("思考区等待句跟真实阶段对齐", () => {
     expect(waitSeconds()).toBeGreaterThanOrEqual(before + 2);
   });
 
-  it("命题出现后换成已拆出 N 个待查问题，不再写已等", () => {
-    render(<ThinkingDisclosure snapshot={decomposedOnly()} live={false} />);
-    expect(titleText()).toContain("已拆出 3 个待查问题");
-    expect(titleText()).not.toContain("已等");
-    expect(titleText()).not.toContain(SPLIT);
-    expect(titleText()).not.toContain(CHECK);
-    expect(document.querySelector("[data-gp-thinking-mode]")!.getAttribute("data-gp-thinking-mode")).toBe("split");
+  it("命题出现后等待区整个消失，不再有已等秒数", () => {
+    render(<ThinkingDisclosure snapshot={decomposedOnly()} live />);
+    expect(document.querySelector(".gp-thinking-box")).toBeNull();
+    expect(document.querySelector(".gp-thinking-title")).toBeNull();
   });
 });

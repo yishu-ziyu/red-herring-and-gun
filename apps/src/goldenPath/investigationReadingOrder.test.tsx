@@ -85,7 +85,7 @@ describe("调查中阅读顺序", () => {
     expect(document.querySelector(".gp-thinking-body")!.textContent).toContain("刚拆出的句子正在过一遍");
   });
 
-  it("命题出来后思考折叠，主列只出现一次，活动流不复述拆题", () => {
+  it("命题出来后思考区不再出现，命题只在主列出现一次，活动流不复述拆题", () => {
     const snapshot = decomposedOnly();
     const atom = snapshot.claims[0]!.text;
     render(
@@ -100,8 +100,7 @@ describe("调查中阅读顺序", () => {
       ]),
     );
 
-    expect(document.querySelector(".gp-thinking-box")!.classList.contains("is-closed")).toBe(true);
-    expect(document.querySelector(".gp-thinking-title")!.textContent).toContain("已拆出 3 个待查问题");
+    expect(document.querySelector(".gp-thinking-box")).toBeNull();
     expect(document.querySelector(".gp-claims .gp-section-label")!.textContent).toBe(
       "这句话被拆成了这些命题",
     );
@@ -112,9 +111,6 @@ describe("调查中阅读顺序", () => {
     expect(inClaims.split(atom).length - 1).toBe(1);
     expect(screen.queryByText(`拆出问题：${atom}`)).toBeNull();
     expect(screen.getByText(`开始查找：${atom}`)).toBeTruthy();
-
-    fireEvent.click(document.querySelector<HTMLElement>(".gp-thinking-head")!);
-    expect(document.querySelector(".gp-thinking-body")!.textContent).not.toContain(atom);
   });
 
   it("调查中已开始查找、尚无材料时写正在查找", () => {

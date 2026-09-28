@@ -118,6 +118,11 @@ describe("T2 nginx writers emit SSE and /r/", () => {
       const ip = readFileSync(ipOut, "utf8");
       assertSseAndReportLocations(domain, "domain");
       assertSseAndReportLocations(ip, "ip");
+      expect(ip).toContain("location /lcw/ {");
+      expect(ip).toContain("proxy_pass http://127.0.0.1:8787/;");
+      expect(ip).toContain("proxy_read_timeout 600s;");
+      expect(ip).toContain("proxy_send_timeout 600s;");
+      expect(ip).toContain("client_max_body_size 600m;");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

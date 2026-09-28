@@ -53,22 +53,10 @@ describe("思考区诚实", () => {
     expect(document.querySelector("[data-gp-thinking-state]")!.getAttribute("data-gp-thinking-state")).toBe("active");
   });
 
-  it("命题出现后思考默认折叠，点开不复述命题全文，仍无假三步", () => {
-    render(<ThinkingDisclosure snapshot={decomposedOnly()} live={false} />);
-    expect(document.querySelector(".gp-thinking-title")!.textContent).toContain("3");
-    expect(document.querySelector("[data-gp-thinking-mode]")!.getAttribute("data-gp-thinking-mode")).toBe("split");
-    expect(document.querySelector(".gp-thinking-box")!.classList.contains("is-closed")).toBe(true);
-    expect(document.querySelector(".gp-thinking-body")).toBeNull();
-
-    act(() => {
-      document.querySelector<HTMLElement>(".gp-thinking-head")!.click();
-    });
-    const body = document.querySelector<HTMLElement>(".gp-thinking-body")!;
-    expect(body.textContent).toContain("下方按条核对");
-    expect(body.textContent).not.toContain("咖啡的争夺");
-    expect(body.textContent).not.toContain("结构解析");
-    expect(body.textContent).not.toContain("证伪边界");
-    expect(body.textContent).not.toContain("确立议程");
+  it("命题出现后思考区不再渲染，不与命题列重复", () => {
+    render(<ThinkingDisclosure snapshot={decomposedOnly()} live />);
+    expect(document.querySelector(".gp-thinking-box")).toBeNull();
+    expect(document.querySelector("[data-gp-thinking-mode]")).toBeNull();
   });
 });
 
