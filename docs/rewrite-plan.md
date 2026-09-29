@@ -40,7 +40,7 @@
 | 风险 | 请求发出顺序与内容一变，录音就对不上（miss）。`network` 清单比对能立刻发现 |
 | 结果 | `runCasePipeline.ts` 1,344 → 454 行（其中对外类型约 200 行），函数体只剩阶段顺序。新增 `budget.ts`（阈值与 7 个具名判断，每个判断保留原来的比较方向）、`snapshotTimeline.ts`（5 个里程碑方法，合并语义不变）、`sourceAudit.ts`、`caseState.ts`、`stages/` 8 个文件；`throwIfAborted` 的位置逐个保留。golden 与 `base`、`base-nv` 20/20 相同，外部请求发出顺序与基线一致（g12 关虚拟时钟时基线代码自己也会换序），界面 golden 8/8，apps 全量 1488 passed / 0 failed。变异 8 个（调换阶段、挪动或删掉审计刷新、首份 judging 快照提前、刷新后不重算）：单元测试原来只能发现 1 个，golden 能发现 7 个（其中 1 个只有请求顺序提示能看出，golden 为此加了发出顺序比对）；补了 `runCasePipeline.stageOrder.test.ts`（整条调用与快照序列）与 `sourceAudit.test.ts`（5 条），之后单元测试 8 个全能发现。golden 录音只在本机，这两条测试是仓库里守阶段顺序的东西 |
 
-## Slice C：HTTP 调查处理器 → `http/investigationRun.ts`、`http/sseChannel.ts`、`http/orchestrateStream.ts`
+## Slice C：HTTP 调查处理器 → `http/investigationRun.ts`、`http/runOutcome.ts`、`http/sseChannel.ts` 等（2026-09-29 完成）
 
 | 项 | 内容 |
 |---|---|
@@ -51,6 +51,7 @@
 | 差分 | 系统级 golden；结局表对每个 catch 分支逐条对照写单测 |
 | 删旧 | 删 catch 分支与重复的写帧代码 |
 | 风险 | 帧顺序与额度结算时机；golden 的帧序列与 quota 查询结果能发现 |
+| 结果 | `handlers.ts` 1,337 → 446 行；生命周期、结局与结算、管线事件、公开清洗、SSE 格式各一个文件（见 `architecture-target` 3.2）。旧的 5 个 catch 分支改成「先分类、再按表结算」，每个分支的帧与先后不变；两处 `runSignal?.aborted ? "cancelled" : "interrupted"` 在取消已先判定、中间没有 await 的前提下恒为 interrupted，写进终态表。`runOutcome.test.ts` 7 条逐分支对照。golden 与 `base`、`base-nv` 20/20 相同（g12 关虚拟时钟时的请求换序与基线代码第二次回放一致），界面 golden 8/8，apps 全量 1495 passed / 0 failed。过程中发现接回流不做公开清洗（R11），原样保留 |
 
 ## Slice D：前端产品壳 → `app/use*.ts`
 

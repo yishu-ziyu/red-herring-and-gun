@@ -72,22 +72,28 @@ assemble → mixedGuard → earlyGate → tinyBound → finalizeHook(公式分 �
 1. **结局与额度结算散在 5 个 catch 分支里，分支顺序即语义。** 历史上出过「超时收尾先退还再计费，commit 变空操作，超时等于白嫖」（handlers.ts B2 注释）、「取消后迟到的完成帧覆盖已停止」、「HTTP 回执覆盖 SSE 已停止」。
 2. **一个处理器做十件事**（`architecture-current` 第 4 节），SSE 写帧、心跳、订阅在两个处理器里各写一份。
 
-### 3.2 目标形状
+### 3.2 目标形状（Slice C 已完成）
 
 ```text
-apps/server/src/http/
-  orchestrateStream.ts   解析请求 → 校验（400/409 的判定）→ 建 run → 交给 InvestigationRun
-  investigationRun.ts    一次调查的生命周期：图片解析、管线接线、时限赛跑、结局分类、按结局结算额度与发终态帧
-  sseChannel.ts          帧格式、公开清洗（toPublicStreamEvent）、心跳、订阅总线接线
+apps/server/src/
+  handlers.ts            路由处理器与组装；调查流的请求解析与校验（400/409、额度退还、重复提交转接回）留在这里
+  http/
+    investigationRun.ts  一次调查的生命周期：开流、三个中止源、图片解析、管线接线、两段时限、按结局收场
+    runOutcome.ts        结局枚举、失败分类（顺序即优先级）、额度结算表、run 终态表
+    pipelineEvents.ts    管线事件 → SSE 帧；BYO fail-closed 的报告工厂
+    publicStream.ts      公开流清洗（toPublicStreamEvent、toFriendlyError）
+    sseChannel.ts        SSE 线上格式：响应头、帧、心跳
 ```
 
 | 新模块 | 解决 | 关键设计 |
 |---|---|---|
-| `investigationRun.ts` | 3.1-1 | 结局是封闭枚举：`completed / cancelled / byo-failed / timed-out / client-gone / server-error`；一张表写每种结局发哪些帧、额度 commit 还是 release、run 落什么终态。表的内容逐条照搬现有分支 |
-| `sseChannel.ts` | 3.1-2 | 两个 SSE 端点共用；帧字节不变 |
-| `orchestrateStream.ts` | 3.1-2 | 请求解析是纯函数，返回 `{ok, request}` 或 `{status, body, releaseQuota}` |
+| `runOutcome.ts` | 3.1-1 | 结局是封闭枚举：`completed / cancelled / byo-failed / timed-out / client-gone / server-error`；`classifyFailure` 按原 catch 分支的顺序判定，`QUOTA_SETTLEMENT` 与 `RUN_FINAL_STATUS` 两张表逐条照搬现有分支，每条有单测 |
+| `investigationRun.ts` | 3.1-2 | 依赖显式传入（env、run 服务、时限）；各结局收场时发哪些帧、先后顺序与原分支一字不差，额度一律经结算表 |
+| `pipelineEvents.ts`、`publicStream.ts` | 3.1-2 | 原样搬出 handlers.ts：前者只服务调查流，后者是公开流契约的唯一实现 |
+| `sseChannel.ts` | 3.1-2 | 两个 SSE 端点共用线上格式；接回流仍不做公开清洗（R11，待裁决） |
 
-`handlers.ts` 在切片完成后只剩对这三个模块的组装与其余小处理器。
+请求解析没有抽成纯函数：各个提前返回里，哪些退还额度、哪些不退（缺 claim、modelChoice 非法都不退）是现有行为，拆开反而把这层差异藏进参数里。留在处理器里逐条可读。
+`handlers.ts` 1,337 → 446 行。
 
 ## 4. 前端：产品壳
 
