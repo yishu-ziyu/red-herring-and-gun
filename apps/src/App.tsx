@@ -2,7 +2,6 @@
  * App — 生产入口（Issue #52）：轻量产品壳 + 同画布 Golden Path。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ReasoningProvider } from "./store/reasoningStore";
 import { validateInvestigationSnapshot, type InvestigationSnapshotV1 } from "./lib/investigation";
 import { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot";
 import { ProductShell } from "./goldenPath/ProductShell";
@@ -550,9 +549,5 @@ function ProductApp() {
 }
 
 export default function App() {
-  return (
-    <ReasoningProvider>
-      <ProductApp />
-    </ReasoningProvider>
-  );
+  return <ProductApp />;
 }

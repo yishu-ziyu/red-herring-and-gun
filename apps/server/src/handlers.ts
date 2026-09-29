@@ -51,7 +51,6 @@ export const PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT = 420_000;
 export const PIPELINE_LATE_GRACE_MS_DEFAULT = 120_000;
 
 export function createHandlers(env: Record<string, string>) {
-  const apiKey = env.OPENAI_API_KEY;
   // 运行身份与取消（PR-D）：存储不可用时退化成进程内注册表，不阻塞启动。
   const runStore = openRunStore();
   const runs = createRunService({ store: runStore });
@@ -73,10 +72,7 @@ export function createHandlers(env: Record<string, string>) {
     }
   }
 
-  const baseUrl = (env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-  const model = env.OPENAI_MODEL || "gpt-4.1-mini";
   const codexBin = env.CODEX_BIN || process.env.CODEX_BIN || "/usr/local/bin/codex";
-  const codexModel = env.CODEX_LOCAL_MODEL || process.env.CODEX_LOCAL_MODEL || "gpt-5.5";
 
   /**
    * 取消一次正在跑的调查（IMPLEMENTATION_PLAN §5.5）。

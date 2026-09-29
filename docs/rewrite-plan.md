@@ -66,13 +66,14 @@
 | 风险 | 副作用执行顺序（React effect 顺序跟声明顺序走）；界面 golden 的逐帧 DOM 与 localStorage 能发现 |
 | 结果 | 动手前先补了 4 条界面交互流程 golden（追问两轮、刷新接回、打开本机历史、登录存档追问退出，基线 `ui-flows-base`，三次运行相同）。拆出 3 个 hook 与 3 个纯模块，App.tsx 923 → 558 行，effect 声明顺序不变。界面 golden 8/8 与 4/4 与基线相同；apps 全量 1495 passed / 0 failed（`inputMedia` 偶发失败一次，单独重跑 3 次通过，与改动无关，基线时就有）。浏览器：Ego 脚本 7/7（`outputs/e2e/slice-d/e2e.mjs`，首页 → 提交 → 完成 → 来源抽屉 → 追问 → 刷新后历史重开 → 停止，回放后端 `golden.ts serve`）；Chrome 真人式走查：首页滚到案例区再打开，结论在第一屏，来源抽屉完整在视口内，回首页预填原句 |
 
-## Slice E：死代码与清理
+## Slice E：死代码与清理（2026-09-29 完成）
 
 | 项 | 内容 |
 |---|---|
 | 目标 | `ReasoningProvider` 与 `reasoningStore`（无消费者）、`casePipeline/testSourceRelationAudit.ts` 移到测试目录、`handlers.ts` 的过时注释、确认无用的再导出 |
 | 表征 | 界面 golden；构建；全量测试 |
 | 不在此片 | `styles.css` 的旧壳样式：需要像素对比的视觉 golden，另开一片且要用户看图裁决 |
+| 结果 | 删 `ReasoningProvider` 与 `reasoningStore`（722 行，无消费者，挂载时无副作用、不渲染 DOM）及它自己的 4 条测试；删 `createHandlers` 里从没被读过的 4 个配置变量；更正 R4 的过时注释。`testSourceRelationAudit.ts` 没有搬：它只被测试引用，搬目录要改 10 个测试的导入，收益太小。golden 20/20 × 两种时钟、界面 8/8 与 4/4 与基线相同；apps 全量 1491 passed / 0 failed（四次全量里一次撞上已知偶发的 `inputMedia`，单独重跑通过） |
 
 ## 顺序与依赖
 
