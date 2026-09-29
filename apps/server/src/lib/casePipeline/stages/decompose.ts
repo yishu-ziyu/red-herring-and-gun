@@ -4,8 +4,12 @@
  */
 import {
   collapseNarrativeAtoms,
+  collapseShortSingleClaim,
+  dropUntraceableAtoms,
   ensureLeapAtoms,
+  ensureStanceAtom,
   forceCheckableAtomTypes,
+  markStanceAtoms,
   prefilterClaimAtoms,
   retainAtomTypes,
   runClaimAtomSelfProof,
@@ -127,10 +131,16 @@ export async function decompose(ctx: PipelineContext): Promise<PipelineStep> {
           return { kept: pre.atoms, dropped: pre.dropped, model: "fallback:skip-after-rumor-error" };
         })()
       : await runSelfProofWithRetry(claim, rumorStep?.output?.claimAtoms ?? [], callSelfProofModel);
-    rumorStep.output.claimAtoms = ensureLeapAtoms(
+    const selfProven = ensureLeapAtoms(
       claim,
       collapseFollowUpAtoms(claim, collapseNarrativeAtoms(claim, selfProof.kept)),
     );
+    // 每一部分要对得上原句的一截（编造的丢掉）；短单句不拆。角色标记跟着命题走（在类型表里）。
+    const traced = dropUntraceableAtoms(claim, selfProven, rumorStep.output.claimAtomTypes);
+    const single = collapseShortSingleClaim(claim, traced.atoms, traced.types);
+    const stanced = ensureStanceAtom(claim, single.atoms, single.types, rumorStep.output.stanceClaimType);
+    rumorStep.output.claimAtoms = stanced.atoms;
+    rumorStep.output.claimAtomTypes = stanced.types;
     rumorStep.output.claimAtomSelfProof = {
       kept: rumorStep.output.claimAtoms,
       dropped: selfProof.dropped,
@@ -139,9 +149,8 @@ export async function decompose(ctx: PipelineContext): Promise<PipelineStep> {
     const keptAtoms = Array.isArray(rumorStep.output.claimAtoms)
       ? (rumorStep.output.claimAtoms as string[])
       : [];
-    rumorStep.output.claimAtomTypes = retainAtomTypes(
-      keptAtoms,
-      forceCheckableAtomTypes(rumorStep.output.claimAtomTypes)
+    rumorStep.output.claimAtomTypes = markStanceAtoms(
+      retainAtomTypes(keptAtoms, forceCheckableAtomTypes(rumorStep.output.claimAtomTypes))
     );
     hooks?.onSelfProof?.({ ...selfProof, kept: keptAtoms });
 

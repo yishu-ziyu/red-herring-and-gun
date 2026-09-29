@@ -109,12 +109,12 @@ describe("subclaimVerdicts / claimAtoms 数据契约", () => {
     expect(schema.required).toContain("claimAtoms");
   });
 
-  it("fact_checker schema 应含 subclaimVerdicts（五值 verdict + 四字段 required）", () => {
+  it("fact_checker schema 应含 subclaimVerdicts（六值 verdict + 四字段 required）", () => {
     const schema = getAgentConfig("fact_checker")!.responseSchema as any;
     expect(schema.required).toContain("subclaimVerdicts");
     const item = schema.properties.subclaimVerdicts.items;
     expect(item.additionalProperties).toBe(false);
-    expect(item.properties.verdict.enum).toEqual(["true", "false", "partial", "unverified", "exaggerated"]);
+    expect(item.properties.verdict.enum).toEqual(["true", "false", "partial", "unverified", "exaggerated", "disputed"]);
     expect(item.required).toEqual(["claimAtom", "verdict", "evidence", "boundary"]);
   });
 
@@ -1000,5 +1000,64 @@ describe("原句自证闸门 · rumor_detector prompt 硬约束", () => {
     expect(prompt).toMatch(/限定条件/);
     expect(prompt).toMatch(/无独立含义的碎片/);
     expect(prompt).toMatch(/回读/);
+  });
+});
+describe("整句判定重构：模型只判每一部分，提示词与结构要求（docs/evals/2026-09-28-judgment-refactor.md）", () => {
+  const rumor = getAgentConfig("rumor_detector")!;
+  const fact = getAgentConfig("fact_checker")!;
+
+  it("拆题：每条命题记录角色 / 发文机关标记 / 对应原句片段，schema 与提示词都要求", () => {
+    const item = (rumor.responseSchema as any).properties.claimAtomTypes.items.properties;
+    expect(item.role.enum).toEqual(["main", "premise", "background"]);
+    expect(item.issuer.type).toBe("boolean");
+    expect(item.span.type).toBe("string");
+    for (const pattern of [/主要主张/, /必要前提/, /背景细节/, /span/, /逐字/, /发文机关/]) {
+      expect(rumor.systemPrompt).toMatch(pattern);
+    }
+  });
+
+  it("拆题：主要主张只留原句想让人信的那一句；日期、条件铺垫标背景；发文机关与内容分开拆（基准 v1 的失败形状）", () => {
+    // NEW-102：「延迟退休从 2025 年 1 月起实施，所有人都要干到 65 岁」前半句是背景，不是并列主张。
+    expect(rumor.systemPrompt).toMatch(/日期[^。]*背景细节/);
+    expect(rumor.systemPrompt).toMatch(/只有[^。]*并列[^。]*两条都标 main/);
+    // NEW-407：假设或条件从句不是必要前提。
+    expect(rumor.systemPrompt).toMatch(/假设[^。]*背景细节/);
+    // LOOP-003 / RUMOR-006：说了什么和是谁说的分成两条，issuer 那条只写出处。
+    expect(rumor.systemPrompt).toMatch(/内容与发文机关[^。]*分[^。]*两条/);
+    expect(rumor.systemPrompt).toMatch(/issuer[^。]*只[^。]*出处|出处[^。]*不含[^。]*内容/);
+  });
+
+  it("核查：partial 只在命题本身有一截不成立时用；来源补充的适用条件写进 boundary，仍判 true（NEW-401/403/411 形状）", () => {
+    expect(fact.systemPrompt).toMatch(/partial[^。]*本身[^。]*一(?:截|部分)[^。]*(?:不成立|没有支持)/);
+    expect(fact.systemPrompt).toMatch(/适用(?:范围|条件)[^。]*boundary[^。]*true|true[^。]*适用(?:范围|条件)[^。]*boundary/);
+  });
+
+  it("拆题：整句都是价值判断时 claimAtoms 仍写原句这一条（verifiable=false），不留空", () => {
+    expect(rumor.systemPrompt).toMatch(/整句[^。]*价值[^。]*claimAtoms[^。]*原句[^。]*不[^。]*空/);
+  });
+
+  it("拆题：短单句不拆；价值判断标立场型不当事实查", () => {
+    expect(rumor.systemPrompt).toMatch(/短单句[^。]*不拆/);
+    expect(rumor.systemPrompt).toMatch(/不该[^。]*立场|价值[^。]*立场型/);
+  });
+
+  it("核查：按日常意思理解原句，不因缺限定词降级（「能预防」= 明显降低风险，不是 100%）", () => {
+    expect(fact.systemPrompt).toMatch(/日常/);
+    expect(fact.systemPrompt).toMatch(/能预防[^。]*不是 ?100%/);
+    expect(fact.systemPrompt).toMatch(/不因[^。]*限定词[^。]*降/);
+  });
+
+  it("核查：评分规则 1–6 里属于逐条判断的部分写进提示词", () => {
+    const p = fact.systemPrompt;
+    expect(p).toMatch(/内容属实[^。]*发文机关[^。]*说错/); // 规则 1
+    expect(p).toMatch(/个别[^。]*普遍[^。]*exaggerated/); // 规则 2
+    expect(p).toMatch(/权威来源[^。]*互相(?:矛盾|冲突)[^。]*disputed/); // 规则 3
+    expect(p).toMatch(/不会留下公开记录[^。]*(?:去哪|哪里)[^。]*核实/); // 规则 4
+    expect(p).toMatch(/已经证明[^。]*未(?:经)?证实[^。]*false/); // 规则 6
+    expect(p).toMatch(/只说[^。]*有效果[^。]*unverified/); // 规则 6
+  });
+
+  it("核查：verdict 六值含 disputed", () => {
+    expect(fact.systemPrompt).toMatch(/'disputed'/);
   });
 });

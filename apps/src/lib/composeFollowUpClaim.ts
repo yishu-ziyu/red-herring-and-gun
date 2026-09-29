@@ -76,12 +76,13 @@ export function conclusionMissesFollowUp(lead: string, claim: string): boolean {
 
 export function followUpQuestionLead(
   question: string,
-  judgment: "supported" | "refuted" | "mixed" | "unresolved" | "not-applicable"
+  judgment: "supported" | "refuted" | "mixed" | "disputed" | "unresolved" | "not-applicable"
 ): string {
   const clipped = question.replace(/\s+/g, " ").trim();
   const q = clipped.length > 42 ? `${clipped.slice(0, 42)}…` : clipped;
   if (judgment === "supported") return `这句追问「${q}」站得住。`;
   if (judgment === "refuted") return `这句追问「${q}」站不住。`;
   if (judgment === "mixed") return `这句追问「${q}」有站住的部分，也有没站住的。`;
+  if (judgment === "disputed") return `这句追问「${q}」权威来源之间说法不一致。`;
   return `这句追问「${q}」现有材料还撑不住判断。`;
 }

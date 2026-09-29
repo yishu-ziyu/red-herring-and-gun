@@ -787,13 +787,9 @@ describe("runCasePipeline", () => {
     // 结论卡徽章读规则表的结论，不再因「同时有证实和反驳的命题」自行改成「有对有错」。
     const investigation = result.finalReport.investigation as { conclusion?: { judgment?: string } };
     expect(investigation.conclusion?.judgment).toBe("refuted");
-    expect(result.finalReport._mixedGuard).toBeTruthy();
-    // 公式输入也被纠正为 partial（false → cap 15 不再触发）
-    expect((result.factStep.output as Record<string, unknown>).factCheckResult).toBe("partial");
-    expect((result.factStep.output as Record<string, unknown>)._factCheckResultDerived).toMatchObject(
-      { from: "false", to: "partial" }
-    );
-    expect(finalizeSawFactResult).toBe("partial");
+    // 整句已判不能信：公式分读到的整体判定不再被改成 partial（真实的钩子里 false 会把分数封顶在 15）。
+    expect((result.factStep.output as Record<string, unknown>).factCheckResult).toBe("false");
+    expect(finalizeSawFactResult).toBe("false");
   });
 
   it("原子级守门：真无据不救 → 保持 false（纯谣言不受零星 true 判词干扰）", async () => {
@@ -846,7 +842,7 @@ describe("runCasePipeline", () => {
         agent: "report_composer",
         output: { verdictType: "false", conclusion: "不能信。" },
       }),
-      // 本用例断言 mixedGuard 不救无据之真：反证来源存活是前提，注入 alive 使其 hermetic
+      // 本用例断言规则表不救无据之真：反证来源存活是前提，注入 alive 使其 hermetic
       citationLiveness: {
         liveness: new Map([
           [`https://t.test/${encodeURIComponent(atoms[0])}`, "alive"],
@@ -856,7 +852,7 @@ describe("runCasePipeline", () => {
     });
 
     expect(result.finalReport.verdictType).toBe("false");
-    expect(result.finalReport._mixedGuard).toBeUndefined();
+    expect((result.factStep.output as Record<string, unknown>)._factCheckResultDerived).toBeUndefined();
     expect((result.factStep.output as Record<string, unknown>).factCheckResult).toBe("false");
   });
 

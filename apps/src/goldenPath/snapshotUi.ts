@@ -49,6 +49,7 @@ export const JUDGMENT_LABEL: Record<NonNullable<InvestigationJudgment>, string> 
   supported: "证据支持",
   refuted: "证据反驳",
   mixed: "有对有错",
+  disputed: "有争议",
   unresolved: "证据不足",
   "not-applicable": "立场表达",
 };
@@ -57,6 +58,7 @@ export const JUDGMENT_TONE: Record<NonNullable<InvestigationJudgment>, "positive
   supported: "positive",
   refuted: "negative",
   mixed: "mixed",
+  disputed: "mixed",
   unresolved: "muted",
   "not-applicable": "muted",
 };
@@ -284,7 +286,7 @@ export function pickDecisiveEvidence(
       ? claim.evidence.find((link) => link.role === preferredRole)
       : claim.evidence.find((link) => isDecisiveRole(link.role));
     if (preferred) add(claim, preferred);
-    if (claim.judgment === "mixed") {
+    if (claim.judgment === "mixed" || claim.judgment === "disputed") {
       const other = claim.evidence.find(
         (link) => isDecisiveRole(link.role) && link !== preferred,
       );

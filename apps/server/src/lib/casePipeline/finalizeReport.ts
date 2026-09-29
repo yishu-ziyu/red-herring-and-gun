@@ -4,10 +4,13 @@
  * 顺序即语义（behavior-spec 12.1）：每一步原地改同一份 finalReport，后一步读前一步的结果。
  * finalizeReport 的函数体从上到下就是步骤表；新加一道关卡，只能在这张表里选位置：
  *
- *   1 组装 → 2 原子级守门 → 3 早收权门 → 4 短谣通道 → 5 注入的收尾钩子（公式分 · 口吻清洗 · 截图语境）
- *   → 6 质询记录 → 7 追索记录 → 8 复核（+ 重绑引用 + 原图出处）→ 9 来源探活剔死链
- *   → 10 终收权门 → 11 受限结论重写（+ 重绑 + 原图出处）→ 12 整句判定（+ 重绑 + 原图出处）
- *   → 13 追问直答 → 14 打不开的链接 → 15 徽章 → 16 核查时间
+ *   1 组装 → 2 整句判定（先行，给公式分用）→ 3 注入的收尾钩子（公式分 · 口吻清洗 · 截图语境）
+ *   → 4 质询记录 → 5 追索记录 → 6 复核（+ 重绑引用 + 原图出处）→ 7 来源探活剔死链
+ *   → 8 整句判定（终局，写结论）→ 9 追问直答 → 10 打不开的链接 → 11 徽章 → 12 核查时间
+ *
+ * 整句结论只由规则表（domain/verdict）得出，2 与 8 是同一个纯函数在不同时点的两次求值：
+ * 2 只在调用公式分期间借用结论（分数与最终判定不得互相矛盾），8 在死链剔除之后重新求值并写结论文字。
+ * 除这两处，任何一步都不得改整句的 verdictType（复核可能改，但会被 8 重新决定）。
  *
  * 完成快照、复核结果事件与记忆收尾不在这里：runCasePipeline 在收尾之后做。
  */
@@ -22,10 +25,10 @@ import { compactPursuitHops } from "../evidencePursuit/index.js";
 import { applyFollowUpAnswerLead } from "../followUpReuse.js";
 import { applyImageOriginToReport, type ImageOriginResult } from "../imageOrigin/index.js";
 import { applyUnopenedLinkConclusion } from "../publicCopy.js";
-import { assembleFinalReport, deriveOverallVerdict, faceVerdictFor } from "../reportAssembly/index.js";
+import { assembleFinalReport, faceVerdictFor } from "../reportAssembly/index.js";
 import { reviewAndRepairReport, type ReportReviewResult } from "../reportReviewer.js";
-import { applySentenceVerdict, bindDebunksToPrimaryClaim, listAssessedClaims } from "../sentenceVerdict.js";
-import { applyConclusionGate, needsConstrainedConclusion, repairGatedConclusion } from "../wholeClaimAudit/index.js";
+import { decideSentenceVerdict } from "../../domain/verdict.js";
+import { applySentenceVerdict, bindDebunksToPrimaryClaim, listAssessedClaims, VERDICT_TYPE } from "../sentenceVerdict.js";
 import type { CasePipelineInput, PipelineStep } from "./runCasePipeline.js";
 
 export type FinalizeReportInput = {
@@ -60,6 +63,16 @@ export type FinalizeReportResult = {
   review: ReportReviewResult;
 };
 
+/** 规则表结论 → 公式分读的整体判定（fact_checker 的 factCheckResult 四值）。 */
+const FACT_CHECK_RESULT = {
+  "can-believe": "true",
+  "cannot-believe": "false",
+  "part-true-part-false": "partial",
+  "partly-holds": "partial",
+  disputed: "partial",
+  "not-enough-evidence": "unverified",
+} as const;
+
 export async function finalizeReport(input: FinalizeReportInput): Promise<FinalizeReportResult> {
   const { claim, reportStep, rumorStep, factStep, sourceStep, search360Result, imageOrigin, auditUnresolvedGaps } = input;
   const throwIfAborted = () => input.signal?.throwIfAborted();
@@ -84,61 +97,44 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
     imageOrigin,
   });
 
-  // 2 原子级整句守门（确定性收束）——「分截判决」的收束端：
-  // 整体 factCheckResult / verdictType 是单 LLM 字段，会把「真假交织」漂成 false；
-  // 有据之真（bind 后 supportingSources 带真实 URL）+ 有假 → mixed，救回真的部分。
-  // 最小干预：只救 false→partial 这一方向；tiny-bound 随后仍可按短谣辟谣压回 false。
-  const atomVerdicts = Array.isArray(finalReport.subclaimVerdicts)
-    ? (finalReport.subclaimVerdicts as Array<Record<string, unknown>>)
-    : [];
-  // composer draft 的整句强度：repair 只在结构化降级把它调弱时触发，不碰本来就一致的 draft。
-  const draftVerdictType = String(finalReport.verdictType ?? "");
-  let mixedGuardDemoted = false;
-  if (deriveOverallVerdict(atomVerdicts) === "partial") {
-    const originalOverall = String(factStep?.output?.factCheckResult ?? "").trim();
-    if (originalOverall === "false" && factStep?.output) {
-      factStep.output._factCheckResultDerived = { from: "false", to: "partial", rule: "有据之真 + 假原子" };
-      factStep.output.factCheckResult = "partial";
-    }
-    if (finalReport.verdictType === "false") {
-      finalReport.verdictType = "mixed_misleading";
-      finalReport._mixedGuard = "有据之真 + 假原子 → mixed（原子级守门）";
-      mixedGuardDemoted = true;
-    }
-  }
-
-  // 3 Whole-Claim 收权门（Issue #78 §11）：early + final 两次执行，同一 contract。
-  // early 在 boundTiny 之前先收权并记录；final 在 reviewer / 探活之后做最终兜底。
-  // reviewer 可能先把无源硬判定降级（此时 final gate 看不到 demote），repair 触发看的是
-  // "是否发生过结构化降级"（early / final / mixedGuard 任一），不是只看 final 那一次。
-  const gateProbeInput = {
-    claimAtoms: rumorStep.output.claimAtoms,
-    claimAtomTypes: rumorStep.output.claimAtomTypes,
-    subclaimVerdicts: atomVerdicts,
-    auditUnresolvedGaps,
-  };
-  const earlyGateResult = applyConclusionGate(finalReport, gateProbeInput);
-
-  // 4 legacy 短谣通道：提成 false 之前先用同一 contract 做 probe，
-  // contract 不允许硬 false（not-applicable / 无 sourced-false / audit 缺口未解）
-  // 时不提，免得绕过收权不变量（Review 5127740625 Blocker 2）。
   const searchSources = Array.isArray((search360Result as { sources?: unknown[] } | undefined)?.sources)
     ? ((search360Result as { sources: Array<Record<string, unknown>> }).sources)
     : [];
-  const bound = boundTinyRumorVerdict(claim, searchSources);
-  if (
-    bound === "false" &&
-    (finalReport.verdictType === "mixed_misleading" || finalReport.verdictType === "unverified")
-  ) {
-    const probe: Record<string, unknown> = { ...finalReport, verdictType: "false" };
-    if (!applyConclusionGate(probe, gateProbeInput).changed) {
-      finalReport.verdictType = "false";
-    } else {
-      finalReport._tinyBoundSuppressed = "contract-forbids-hard-false";
-    }
+  const assess = () =>
+    listAssessedClaims(finalReport, {
+      claimAtoms: rumorStep.output.claimAtoms,
+      claimAtomTypes: rumorStep.output.claimAtomTypes,
+      priorityClaimAtoms: rumorStep.output.priorityClaimAtoms,
+    });
+  /**
+   * 短谣辟谣通道：模型没有判定（或判了站不住却被出处审核降级）、检索里又有对题的辟谣时，
+   * 把辟谣挂为主要主张的反驳出处。sources 是当下还活着的检索来源。
+   */
+  const bindTinyDebunk = (sources: Array<Record<string, unknown>>) => {
+    if (boundTinyRumorVerdict(claim, sources) !== "false") return;
+    bindDebunksToPrimaryClaim(
+      finalReport,
+      assess().find((c) => c.role === "main"),
+      sources.filter((s) => isOnTopicDebunk(claim, s))
+    );
+  };
+
+  // 2 整句判定（先行）：同一个规则表，先求一次值给公式分用，免得分数读的是模型漂出来的整句字段
+  // （例如「有据之真 + 假」被写成整句 false，或规则表判了不能信而分数没有封顶）。
+  // 只在调用注入的收尾钩子期间借用这个结论；钩子之后 verdictType 还原成模型草稿交给复核，
+  // 终局由第 8 步在死链剔除之后重新求值。
+  bindTinyDebunk(searchSources);
+  const provisional = decideSentenceVerdict(assess());
+  const draftVerdictType = finalReport.verdictType;
+  finalReport.verdictType = VERDICT_TYPE[provisional.verdict];
+  const originalFactResult = String(factStep?.output?.factCheckResult ?? "").trim();
+  if (factStep?.output && originalFactResult === "false" && FACT_CHECK_RESULT[provisional.verdict] === "partial") {
+    // 模型把「有据之真 + 假」漂成整体 false 时，公式分读到的整体判定跟着规则表走（救回真的部分）。
+    factStep.output._factCheckResultDerived = { from: "false", to: "partial", rule: provisional.rule };
+    factStep.output.factCheckResult = "partial";
   }
 
-  // 5 注入的收尾钩子。
+  // 3 注入的收尾钩子。
   input.finalizeHook?.({
     finalReport,
     claim,
@@ -147,8 +143,9 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
     sourceStep,
     search360Result,
   });
+  finalReport.verdictType = draftVerdictType;
 
-  // 6 保存实际质询记录；意见是否一致不改变报告分数。
+  // 4 保存实际质询记录；意见是否一致不改变报告分数。
   const { crossExam, evidenceLoop } = input;
   if (crossExam) {
     finalReport.crossExam = {
@@ -166,14 +163,14 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
       })),
     };
   }
-  // 7 证据追索记录。
+  // 5 证据追索记录。
   if (evidenceLoop?.pursuitHops && evidenceLoop.pursuitHops.length > 0) {
     finalReport.evidencePursuit = {
       hops: compactPursuitHops(evidenceLoop.pursuitHops),
     };
   }
 
-  // 8 确定性复核（非 LLM）。复核可能补证据链、改写结论：重绑 [n] 与原图出处。
+  // 6 确定性复核（非 LLM）。复核可能补证据链、改写结论：重绑 [n] 与原图出处。
   input.onReviewStart?.();
   const review = reviewAndRepairReport(finalReport, {
     claim,
@@ -183,7 +180,7 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
   normalizeReportCitations(finalReport);
   if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
 
-  // 9 「来源能点开」门：发布前对全局引用真实探活，死链剔除并重绑 [n] 标记。
+  // 7 「来源能点开」门：发布前对全局引用真实探活，死链剔除并重绑 [n] 标记。
   // 探活通道自身故障不阻断主流程——宁可用未剪枝的报告，也不丢结论。
   let deadCitationUrls: string[] = [];
   try {
@@ -194,84 +191,23 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
     console.warn(`[casePipeline] 引用探活失败，跳过死链剔除: ${String(pruneError)}`);
   }
 
-  // 10 最终 Whole-Claim consistency gate（Review 5128022550 Blocker 1）：
-  // final gate 基于 liveness 后的存活证据：死证已剔除仍无支撑的硬 true/false 直接收为
-  // unverified；短谣存活辟谣通道（聚合来源按 deadUrls 过滤后仍成立）是唯一的无绑定 false 豁免。
+  // 8 整句判定（终局）：死链已剔除，按仍然活着的出处重新求值，并写结论首句、摘要与正文。
+  // 死证撑不起的判词回到没查清；短谣辟谣只在还有活着的对题辟谣时才成立。
   const deadUrlSet = new Set(deadCitationUrls);
   throwIfAborted();
-  const aliveSearchSources = searchSources.filter(
-    (s) => !deadUrlSet.has(String(s?.url ?? "").trim())
-  );
-  const tinyHoldsOnAliveSources =
-    boundTinyRumorVerdict(claim, aliveSearchSources) === "false";
-  const finalGateResult = applyConclusionGate(finalReport, {
-    claimAtoms: rumorStep.output.claimAtoms,
-    claimAtomTypes: rumorStep.output.claimAtomTypes,
-    subclaimVerdicts: finalReport.subclaimVerdicts,
-    auditUnresolvedGaps,
-    postLiveness: true,
-    allowUnboundHardFalse: tinyHoldsOnAliveSources,
-  });
-
-  // 11 repair 触发（Review 5128022550 Blocker 3）由最终结构约束决定
-  //（needsConstrainedConclusion），不看是谁降的级、不读结论文本。
-  const repairDecision = needsConstrainedConclusion({
-    draftVerdictType,
-    finalVerdictType: finalReport.verdictType,
-    subclaimVerdicts: finalReport.subclaimVerdicts,
-    nonVerifiableAtoms: finalReport.nonVerifiableAtoms,
-    auditUnresolvedGaps,
-    finalGate: finalGateResult,
-    earlyGate: earlyGateResult,
-    mixedGuardDemoted,
-  });
-  if (repairDecision.needed) {
-    repairGatedConclusion(
-      finalReport,
-      {
-        changed: true,
-        from: repairDecision.from,
-        to: repairDecision.to,
-        rule: repairDecision.rule,
-      },
-      {
-        nonVerifiableAtoms: finalReport.nonVerifiableAtoms,
-        subclaimVerdicts: finalReport.subclaimVerdicts,
-        auditUnresolvedGaps,
-        allowUnboundHardFalse: tinyHoldsOnAliveSources,
-      }
-    );
-    normalizeReportCitations(finalReport);
-    // repair 重建了用户可见文本：把幂等的 origin 落点重放一次，用结构化
-    // finalReport.imageOrigin 恢复原图出处引用（不断言文本、只读对象）。
-    if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
-  }
-
-  // 12 整句判定唯一决定点：按规则表（domain/verdict）由各命题证据推出，取代上面各关卡改过的 verdictType。
-  const assessedClaims = listAssessedClaims(finalReport, {
-    claimAtoms: rumorStep.output.claimAtoms,
-    claimAtomTypes: rumorStep.output.claimAtomTypes,
-    priorityClaimAtoms: rumorStep.output.priorityClaimAtoms,
-  });
-  const debunkBound =
-    tinyHoldsOnAliveSources &&
-    bindDebunksToPrimaryClaim(
-      finalReport,
-      assessedClaims.find((c) => c.role === "primary"),
-      aliveSearchSources.filter((s) => isOnTopicDebunk(claim, s))
-    );
-  applySentenceVerdict(finalReport, assessedClaims, { auditUnresolvedGaps, debunkBound });
+  bindTinyDebunk(searchSources.filter((s) => !deadUrlSet.has(String(s?.url ?? "").trim())));
+  applySentenceVerdict(finalReport, assess(), { auditUnresolvedGaps });
   normalizeReportCitations(finalReport);
   if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
 
-  // 13 追问直答；14 只有打不开的链接时的结论。
+  // 9 追问直答；10 只有打不开的链接时的结论。
   applyFollowUpAnswerLead(finalReport, claim);
   const keptAtomCount = Array.isArray(rumorStep.output.claimAtoms) ? rumorStep.output.claimAtoms.length : 0;
   applyUnopenedLinkConclusion(finalReport, claim, keptAtomCount);
 
-  // 15 徽章跟最终判词走。
+  // 11 徽章跟最终判词走。
   finalReport.faceVerdict = faceVerdictFor(finalReport.verdictType);
-  // 16 结论文本会写「按当前信息」，这里打上实际核查时间；结论时效随来源窗口走。
+  // 12 结论文本会写「按当前信息」，这里打上实际核查时间；结论时效随来源窗口走。
   finalReport.checkedAt = new Date().toISOString();
 
   return { finalReport, deadUrls: deadCitationUrls, review };

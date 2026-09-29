@@ -57,11 +57,13 @@ apps/server/src/lib/casePipeline/
 ### 2.3 收尾链的显式顺序（与现有代码一一对应，不改顺序）
 
 ```text
-assemble → mixedGuard → earlyGate → tinyBound → finalizeHook(公式分 · 口吻清洗 · 截图语境)
+assemble → sentenceVerdict(先行，给公式分用) → finalizeHook(公式分 · 口吻清洗 · 截图语境)
 → attachCrossExam → attachPursuit → review → rebindCitations → imageOrigin → pruneDeadCitations
-→ finalGate → repair(+rebind +imageOrigin) → sentenceVerdict → rebind → imageOrigin
+→ sentenceVerdict(终局，写结论) → rebind → imageOrigin
 → followUpLead → unopenedLink → faceVerdict → checkedAt → completeSnapshot
 ```
+
+2026-09-29 更新：整句判定重构（`docs/evals/2026-09-28-judgment-refactor.md`）删掉了 mixedGuard、earlyGate、tinyBound、finalGate、repair 五道会改整句结论的关卡，整句结论只由 `domain/verdict.ts` 的规则表得出（先行与终局是同一个纯函数的两次求值）。上面这张图是重构后的顺序；下面「一一对应、不改顺序」指的是 2026-09-29 重构前的基线（`f96a37f`）。
 
 每一步读哪些输入、改哪些字段写在步骤表条目里。这张表就是 `behavior-spec` 12.1 的可执行版本。
 

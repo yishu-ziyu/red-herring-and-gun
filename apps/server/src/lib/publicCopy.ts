@@ -4,7 +4,7 @@
  * No tool names, no agent names, no forwarding advice.
  */
 
-export const FACE_WORDS = ["能信", "不能信", "有真有假", "部分成立", "还查不清"] as const;
+export const FACE_WORDS = ["能信", "不能信", "有真有假", "部分成立", "有争议", "还查不清"] as const;
 
 const FACE_BY_TYPE: Record<string, (typeof FACE_WORDS)[number]> = {
   true: "能信",
@@ -12,6 +12,7 @@ const FACE_BY_TYPE: Record<string, (typeof FACE_WORDS)[number]> = {
   mixed_misleading: "有真有假",
   mixed: "有真有假",
   partial: "部分成立",
+  disputed: "有争议",
   unverified: "还查不清",
 };
 
@@ -56,7 +57,7 @@ export function looksLikeResearchMemo(text: string): boolean {
   return paras >= 3 && t.length > 280;
 }
 
-const FACE_ALT = "只能信一部分|有真有假|部分成立|还查不清|不能信|这次没查完|能信";
+const FACE_ALT = "只能信一部分|有真有假|部分成立|有争议|还查不清|不能信|这次没查完|能信";
 const FACE_TOKEN = `(?:\\*\\*)?(?:${FACE_ALT})[。．.]?(?:\\*\\*)?[。．.]?[ \\t]*`;
 const FACE_LEAD_RE = new RegExp(`^${FACE_TOKEN}`);
 const FACE_AFTER_CORE_RE = new RegExp(`(##\\s*核心结论\\s*\\n+)${FACE_TOKEN}`);
@@ -65,7 +66,7 @@ export function startsWithFace(text: string): boolean {
   return Boolean(leadingFaceWord(text));
 }
 
-const STAMP_WORDS = ["只能信一部分", "有真有假", "部分成立", "还查不清", "不能信", "能信"] as const;
+const STAMP_WORDS = ["只能信一部分", "有真有假", "部分成立", "有争议", "还查不清", "不能信", "能信"] as const;
 
 export function leadingFaceWord(text: string): (typeof STAMP_WORDS)[number] | undefined {
   let t = (text ?? "").trim();
@@ -102,6 +103,8 @@ export function directAnswer(verdictType: unknown): string {
       return "这句话里有站住的部分，也有没站住的部分。";
     case "部分成立":
       return "这句话只在有限范围内成立。";
+    case "有争议":
+      return "权威来源之间说法不一致，这句话有争议。";
     default:
       return "公开材料还撑不住判断。";
   }

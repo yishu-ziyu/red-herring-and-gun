@@ -10,7 +10,7 @@ export interface VerdictSource {
 
 export interface SubclaimVerdict {
   claimAtom: string;
-  verdict: "true" | "false" | "partial" | "unverified" | "exaggerated";
+  verdict: "true" | "false" | "partial" | "unverified" | "exaggerated" | "disputed";
   evidence: string;
   boundary: string;
   supportingSources?: VerdictSource[];

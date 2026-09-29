@@ -2,7 +2,7 @@
 
 - 正在做：GitHub Project「红鲱鱼与枪」https://github.com/users/yishu-ziyu/projects/1 ；进行中的 Issue：[#90](https://github.com/yishu-ziyu/red-herring-and-gun/issues/90)、[#96](https://github.com/yishu-ziyu/red-herring-and-gun/issues/96)。
 - 看板：[docs/board/index.html](board/index.html)；数字曲线：[docs/metrics/index.html](metrics/index.html)。
-- 最近一次回答基准（current-v1，40 条）：判定正确 24/37，用时中位 244 秒，兜底报告 14/40。
+- 回答基准（40 条）：重构前 current-v1 判定正确 24/37、用时中位 244 秒、兜底 14/40；整句判定重构后 judge-v1 27/37（把真话判假 1）、judge-v1b 30/37（把真话判假 0、该判不判 0、中位 209 秒、兜底 17/40）。细节 `docs/evals/2026-09-28-judgment-refactor.md`「结果」。
 
 ## 刚落地、仍然有效
 

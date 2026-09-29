@@ -53,7 +53,7 @@ export const UNKNOWN_VERDICT = "unknown";
 
 /**
  * 判词强度阶梯（本模块内的确定性映射）：
- *   false(-1) < unverified(0) < mixed_misleading(1) < true(2)
+ *   false(-1) < unverified(0) < mixed_misleading = partial = disputed(1) < true(2)
  * 上移 = strengthened（这一轮更支持原句），下移 = weakened，同档 = same。
  * 任一侧取不到判词、或落到阶梯之外 → changed：枚举只有四档，无法比较时只能落这里，
  * 它只用来把 fastPathCandidate 挡在门外（契约要求「取不到判词时 fastPathCandidate 恒为 false」）。
@@ -62,6 +62,8 @@ const VERDICT_STRENGTH: Record<string, number> = {
   false: -1,
   unverified: 0,
   mixed_misleading: 1,
+  partial: 1,
+  disputed: 1,
   true: 2,
 };
 

@@ -513,6 +513,8 @@ function verdictToJudgment(verdict: string): InvestigationJudgment | null {
     case "partial":
     case "exaggerated":
       return "mixed";
+    case "disputed":
+      return "disputed";
     case "unverified":
       return "unresolved";
     default:
@@ -854,9 +856,11 @@ export function buildInvestigationSnapshot(
           ? "supported"
           : overall === "false"
             ? "refuted"
-            : overall === "mixed_misleading"
+            : overall === "mixed_misleading" || overall === "partial"
               ? "mixed"
-              : "unresolved";
+              : overall === "disputed"
+                ? "disputed"
+                : "unresolved";
       const overallJudgment: InvestigationJudgment = ruleJudgment && hasCheckable ? ruleJudgment : !hasClaim
         ? "unresolved"
         : !hasCheckable

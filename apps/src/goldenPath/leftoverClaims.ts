@@ -16,7 +16,7 @@ export function isCompleteEmptyShell(claim: InvestigationClaim): boolean {
   if (claim.checkability !== "checkable") return false;
   if (claim.evidence.length > 0) return false;
   if (hasBudgetOrModelLeftover(claim)) return true;
-  if (claim.judgment === "unresolved" || claim.judgment === "supported" || claim.judgment === "refuted" || claim.judgment === "mixed") {
+  if (claim.judgment === "unresolved" || claim.judgment === "supported" || claim.judgment === "refuted" || claim.judgment === "mixed" || claim.judgment === "disputed") {
     return false;
   }
   return true;

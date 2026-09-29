@@ -48,6 +48,7 @@ export const InvestigationJudgmentSchema = Type.Union([
   Type.Literal("supported"),
   Type.Literal("refuted"),
   Type.Literal("mixed"),
+  Type.Literal("disputed"),
   Type.Literal("unresolved"),
   Type.Literal("not-applicable"),
 ]);

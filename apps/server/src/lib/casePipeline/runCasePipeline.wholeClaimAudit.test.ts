@@ -173,9 +173,7 @@ describe("Case 1：纯政策偏好", () => {
     expect(searchQueries).toEqual([]); // 不检索
     expect(result.finalReport.nonVerifiableAtoms).toEqual([{ text: atomText, type: "value" }]);
     expect(result.finalReport.verdictType).toBe("unverified");
-    expect((result.finalReport._conclusionGate as Record<string, unknown>).rule).toBe(
-      "all-atoms-not-applicable"
-    );
+    expect((result.finalReport._verdictDecision as Record<string, unknown>).rule).toBe("no-checkable-claim");
     const complete = snapshots.at(-1)!;
     expect(complete.claims[0]).toMatchObject({ checkability: "not-applicable", judgment: "not-applicable" });
     expect(complete.conclusion?.judgment).toBe("not-applicable");
@@ -504,8 +502,6 @@ describe("Case 5：#78 failure shape", () => {
 
     const gated = String(result.finalReport.verdictType);
     expect(gated).not.toBe("false");
-    // repair 触发标记
-    expect((result.finalReport._conclusionGate as Record<string, unknown>).repaired).toBe(true);
     const complete = snapshots.at(-1)!;
     const finalDirectAnswer = complete.conclusion?.directAnswer ?? "";
     // 1) 最终用户可见文本以 gated verdict 的标准答案开头，与 verdictType 一致
@@ -521,9 +517,6 @@ describe("Case 5：#78 failure shape", () => {
     expect(summary.startsWith(directAnswer(gated))).toBe(true);
     expect(summary).not.toContain("均不成立");
     expect(String(result.finalReport.recommendation ?? "")).toBe(directAnswer(gated));
-    // 6) evidenceChain 有收权边界层
-    const chain = result.finalReport.evidenceChain as Array<Record<string, unknown>>;
-    expect(chain.some((layer) => layer.layer === "结论边界（整句收权）")).toBe(true);
   });
 
   it("Blocker 2 回归：not-applicable + on-topic debunk 来源时 legacy tiny-bound 不得把已收权整句推回 false", async () => {
@@ -975,9 +968,8 @@ describe("Blocker 1A：唯一 supporting 来源死链", () => {
     });
 
     expect(result.finalReport.verdictType).toBe("unverified");
-    expect((result.finalReport._conclusionGate as Record<string, unknown>).rule).toBe(
-      "post-liveness-no-surviving-evidence"
-    );
+    // 死链剔除之后按活着的出处重新求值：主要主张没有出处撑着，回到没查清。
+    expect((result.finalReport._verdictDecision as Record<string, unknown>).rule).toBe("main-unresolved");
     const complete = snapshots.at(-1)!;
     expect(complete.claims[0]).toMatchObject({ judgment: "unresolved" });
     expect(complete.conclusion?.judgment).toBe("unresolved");
@@ -1248,10 +1240,12 @@ describe("Blocker 3B：draft 已是 mixed 但 conclusion 越权", () => {
       citationLiveness: new Map([[url(c1), "alive"]]),
     });
 
-    expect(result.finalReport.verdictType).toBe("mixed_misleading");
+    // 判词是 partial，但来源里没有任何反驳（只是补充说明「仅可能略微缓解」）：这一部分按被证实算，
+    // 整句由规则表判能信；立场句只作边界。原先按 draft 弱判定留在「有真有假」。
+    expect(result.finalReport.verdictType).toBe("true");
     const complete = snapshots.at(-1)!;
     const finalDirectAnswer = complete.conclusion?.directAnswer ?? "";
-    expect(finalDirectAnswer.startsWith(directAnswer("mixed_misleading"))).toBe(true);
+    expect(finalDirectAnswer.startsWith(directAnswer("true"))).toBe(true);
     expect(finalDirectAnswer).not.toContain("均不成立");
     expect(finalDirectAnswer).toContain("不适用真假判断");
     expect(finalDirectAnswer).toContain("仅可能略微缓解症状");
@@ -1387,9 +1381,11 @@ describe("Review 5128449568 Blocker 1：checkable-unverified 不得被硬结论�
     expect(conclusion).toContain(`「${rumor}」站不住`);
     const complete = snapshots.at(-1)!;
     expect(complete.conclusion?.judgment).toBe("mixed");
-    const lead = complete.conclusion?.verdictLead ?? complete.conclusion?.directAnswer ?? "";
-    expect(lead).toContain("站得住");
-    expect(lead).toContain("站不住");
+    // 首句是规则表的结论，紧接着按条写明哪句站得住、哪句站不住。
+    expect(complete.conclusion?.verdictLead).toBe(directAnswer("mixed_misleading"));
+    const answer = complete.conclusion?.directAnswer ?? "";
+    expect(answer).toContain("站得住");
+    expect(answer).toContain("站不住");
   });
 });
 
@@ -1461,7 +1457,7 @@ describe("Review 5128449568 Blocker 2：audit 失败/超预算 fail-closed", () 
     expect(auditArtifact.evaluationStatus).toBe("skipped-budget");
   });
 
-  it("audit 完整成功且 gap=[]：单命题正常硬 verdict 保留，composer 原文不重建（防误伤）", async () => {
+  it("audit 完整成功且 gap=[]：单命题正常硬 verdict 保留（防误伤）；结论文字由规则表写，不沿用 composer 原文", async () => {
     const a = "某市昨天下午下了一场冰雹";
     const { result } = await runHarness({
       claim: `${a}。`,
@@ -1499,7 +1495,7 @@ describe("Review 5128449568 Blocker 2：audit 失败/超预算 fail-closed", () 
     });
     expect(result.wholeClaimAudit.evaluationStatus).toBe("completed");
     expect(result.finalReport.verdictType).toBe("true");
-    expect(result.finalReport.conclusion).toBe("该说法有来源支持。");
+    expect(String(result.finalReport.conclusion).startsWith(directAnswer("true"))).toBe(true);
   });
 });
 
