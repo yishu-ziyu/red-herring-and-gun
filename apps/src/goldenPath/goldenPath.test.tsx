@@ -1756,14 +1756,14 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     expect(drawer.textContent).not.toContain("出处原文摘录");
   });
 
-  it("摘录诚实性：有 excerpt 时抽屉标题标明出处原文摘录", async () => {
+  it("摘录诚实性：未核对的 excerpt 只标为材料摘录", async () => {
     renderCanvas(refutedComplete());
     await openFirstEvidence("contradict");
     const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
     const section = drawer.querySelector('[data-gp-source-section="excerpt"]') as HTMLElement;
     expect(section).toBeTruthy();
     const label = section.querySelector(".gp-source-label") as HTMLElement;
-    expect(label.textContent).toBe("出处原文摘录");
+    expect(label.textContent).toBe("材料摘录");
   });
 
   it("6. reachable=false 说明原链接打不开，不伪造来源结论", async () => {
@@ -2504,6 +2504,18 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(document.querySelector(".gp-point")).toBeNull();
   });
 
+  it("尚未查清的命题不展示旧模型留下的确定解释", () => {
+    const snap = refutedComplete();
+    const unsupported = "这段解释没有原文依据却断言必然有效。";
+    snap.claims[0]!.judgment = "unresolved";
+    snap.claims[0]!.boundary = unsupported;
+    snap.claims[0]!.evidence = snap.claims[0]!.evidence.map((link) => ({
+      ...link, role: "context-only", finding: unsupported,
+    }));
+    renderCanvas(snap);
+    expect(document.body.textContent).not.toContain(unsupported);
+  });
+
   it("完成态丢掉 wholeClaimAudit 整句和 [n]，不把判断再抄进依据", () => {
     const snap = refutedComplete();
     const leaked = "官方已辟谣。但wholeClaimAudit指出的四项桥接缺口仍未补齐[1]。各来源一致。";
@@ -2511,6 +2523,7 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
       ...snap.conclusion!,
       verdictLead: "公开材料不支持这条说法。",
       rationale: leaked,
+      boundaries: ["wholeClaimAudit 已确认无 missingJustifications。", "现有材料针对雷雨天气。"],
     };
     snap.claims[0]!.evidence = snap.claims[0]!.evidence.map((link, index) =>
       index === 0 ? { ...link, finding: leaked } : link,
@@ -2522,6 +2535,7 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(hero.textContent).toContain("公开材料不支持这条说法");
     expect(hero.textContent).toContain("各来源一致");
     expect(hero.textContent).not.toMatch(/桥接缺口/);
+    expect(hero.textContent).toContain("现有材料针对雷雨天气");
     const point = document.querySelector(".gp-point");
     expect(point).toBeNull();
   });
@@ -2669,4 +2683,3 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(css).toMatch(/\.gp-canvas\[data-gp-phase="complete"\] \.gp-evidence-group-head/);
   });
 });
-

@@ -58,6 +58,7 @@ type ClaimSectionProps = {
 };
 
 function claimPoint(claim: InvestigationClaim, conclusionText = ""): string {
+  if (claim.judgment === "unresolved") return "";
   const fromFinding = claim.evidence.map((link) => link.finding?.trim() ?? "").find((text) => text.length > 0) ?? "";
   if (!fromFinding) return "";
   const cleaned = scrubFaceText(fromFinding);
@@ -370,7 +371,7 @@ export function ClaimSection({
             </aside>
           ) : null}
 
-          {asWork || overclaim ? null : claim.boundary ? (
+          {asWork || overclaim || claim.judgment === "unresolved" ? null : claim.boundary ? (
             <p className="gp-boundary">
               {asResult ? claim.boundary : (
                 <>

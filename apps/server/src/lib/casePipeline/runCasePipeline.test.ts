@@ -364,7 +364,7 @@ describe("runCasePipeline", () => {
     expect(verdicts).toHaveLength(1);
     expect(verdicts[0].verdict).toBe("unverified");
     expect(verdicts[0].contradictingSources).toEqual([]);
-    expect(String(result.finalReport.conclusion)).toMatch(/^公开材料还撑不住判断。/);
+    expect(String(result.finalReport.conclusion)).toMatch(/^目前的材料不足以判断。/);
     expect(String(result.finalReport.conclusion)).not.toContain("辟谣材料");
     const investigation = result.finalReport.investigation as { claims: Array<{ judgment?: string }>; conclusion?: { judgment?: string } };
     expect(investigation.claims[0].judgment).toBe("unresolved");
@@ -375,7 +375,7 @@ describe("runCasePipeline", () => {
     const result = await runTinyChannel([TINY_ATOM, "维生素C能缩短感冒病程"]);
     expect(result.finalReport.verdictType).toBe("unverified");
     const conclusion = String(result.finalReport.conclusion);
-    expect(conclusion).toMatch(/^公开材料还撑不住判断。/);
+    expect(conclusion).toMatch(/^目前的材料不足以判断。/);
     expect(conclusion).toContain(`「${TINY_ATOM}」尚未查清`);
     expect(conclusion).toContain("「维生素C能缩短感冒病程」尚未查清");
   });

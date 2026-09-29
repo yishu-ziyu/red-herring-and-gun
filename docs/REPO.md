@@ -61,11 +61,11 @@ apps/                     生产 app（脸 + HTTP + 编排）。本地 npm run d
   server/src/             生产 Express、casePipeline、handlers
   server/eval/            生产侧评测入口
 
-packages/                 脊柱（ADR-007）。根目录 npm test / npm run build 跑这里。
+packages/                 脊柱（ADR-007）。根目录 npm test / npm run build 已改跑生产 apps/。
   core/                   领域：investigation、rules、search、text、llm、stages
   server/                 未来 HTTP。尚未接 ops.sh
   web/                    未来界面。尚未接 ops.sh
-  eval/                   黄金集与门禁
+  eval/                   暂停切换的旧黄金集与门禁
 
 docs/                     产品过程，不是运行时
   PRODUCT_SPEC.md         产品宪法

@@ -252,7 +252,7 @@ describe("首句、徽章、正文、快照读同一个结果", () => {
       judgment: "disputed",
       lead: "权威来源之间说法不一致，这句话有争议。",
     },
-    { name: "证据不足", atoms: [{ text: "甲", role: "main" }], verdicts: [], type: "unverified", face: "还查不清", judgment: "unresolved", lead: "公开材料还撑不住判断。" },
+    { name: "证据不足", atoms: [{ text: "甲", role: "main" }], verdicts: [], type: "unverified", face: "还查不清", judgment: "unresolved", lead: "目前的材料不足以判断。" },
   ];
   for (const c of cases) {
     it(`${c.name}：verdictType、faceVerdict、结论首句、摘要、快照徽章一致`, async () => {

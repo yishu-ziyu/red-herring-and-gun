@@ -8,7 +8,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import { JUDGMENT_LABEL, ROLE_LABEL, attachmentsForSource, evidenceTitle, pickDecisiveEvidence } from "./snapshotUi";
-import { scrubFaceText } from "./scrubFace";
+import { scrubBoundaryText, scrubFaceText } from "./scrubFace";
 import { displayFollowUpClaim } from "../lib/composeFollowUpClaim";
 import { PromptKitSource } from "./PromptKitSource";
 import type { InvestigationEvidenceLink, InvestigationSource, InvestigationClaim } from "../lib/investigation";
@@ -102,6 +102,7 @@ export function ConclusionHero({
   );
   const keyEvidence = useMemo(() => pickDecisiveEvidence(claims, sources), [claims, sources]);
   const leadGaps = gapNotes.map((note) => note.trim()).filter(Boolean);
+  const visibleBoundaries = boundaries.map(scrubBoundaryText).filter(Boolean);
   const showGapLead = Boolean(leftoverNote.trim()) || leadGaps.length > 0 || judgment === "unresolved";
 
   const handleSelectSource = (
@@ -207,9 +208,9 @@ export function ConclusionHero({
         ) : null}
 
         {/* 6. 适用边界 */}
-        {boundaries.length > 0 ? (
+        {visibleBoundaries.length > 0 ? (
           <div className="gp-hero-boundaries" data-gp-boundaries>
-            {boundaries.map((b, index) => (
+            {visibleBoundaries.map((b, index) => (
               <p key={b} className="gp-hero-boundary-line">
                 {index === 0 ? <span className="gp-hero-boundary-label">适用边界</span> : null}
                 {b}
@@ -302,4 +303,3 @@ function formatTime(iso: string): string {
     return iso;
   }
 }
-

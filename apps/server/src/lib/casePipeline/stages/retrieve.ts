@@ -5,6 +5,7 @@
 import { retrieveForAtoms, type AtomSearchBundle } from "../../atomSearch.js";
 import { claimAtomKey } from "../../claimAtom/index.js";
 import { priorRoundLookupOf } from "../../followUpReuse.js";
+import { lookupArchive } from "../../debunkArchive/index.js";
 import type { ImageOriginResult } from "../../imageOrigin/index.js";
 import type { PipelineContext } from "../caseState.js";
 import type { PipelineStep } from "../runCasePipeline.js";
@@ -14,6 +15,12 @@ export type Retrieval = {
   search360Result: unknown;
   imageOrigin?: ImageOriginResult;
 };
+
+function sameStatement(a: string, b: string): boolean {
+  const normalize = (value: string) => value.normalize("NFKC").toLowerCase()
+    .replace(/[\p{P}\p{S}\s]/gu, "");
+  return normalize(a) === normalize(b);
+}
 
 export async function retrieve(ctx: PipelineContext, rumorStep: PipelineStep): Promise<Retrieval> {
   const { input, hooks, reusePlan, snapshots } = ctx;
@@ -25,6 +32,26 @@ export async function retrieve(ctx: PipelineContext, rumorStep: PipelineStep): P
     onPlan: (scopePlan) => { snapshots.setScopePlan(scopePlan); },
     searchOne: input.searchOne,
     claimAtomKeyFn: claimAtomKey,
+    archive: input.archiveEvidence ? {
+      lookup: (atom) => {
+        const hit = lookupArchive(atom, { limit: 5, minScore: 0.55 })
+          .find((candidate) => sameStatement(atom, candidate.matchedStatement) && !candidate.differsOn.length && candidate.fullText?.length >= 80);
+        if (!hit) return null;
+        const quote = hit.keySentences.find((sentence) => hit.fullText.includes(sentence)) ?? "";
+        if (hit.kind === "roundup" && !quote) return null;
+        return {
+          originDate: hit.publishDate,
+          evidence: [{
+            url: hit.url,
+            title: hit.title,
+            snippet: quote || hit.fullText.slice(0, 900),
+            originalText: hit.fullText,
+            ...(hit.kind === "roundup" ? { originalScope: hit.keySentences.filter((sentence) => hit.fullText.includes(sentence)).join(" ") } : {}),
+          }],
+        };
+      },
+    } : undefined,
+    requireOriginalText: input.archiveEvidence,
     lookupImageOrigin: input.lookupImageOrigin,
     knowledge: input.knowledgeBase
       ? {

@@ -7,6 +7,8 @@ export type ClaimSourceRelationAudit = {
   url: string;
   relation: ClaimSourceRelation;
   reason: string;
+  quote?: string;
+  quoteVerified?: boolean;
 };
 
 type SourceLike = { url?: unknown; title?: unknown; snippet?: unknown };
@@ -47,6 +49,7 @@ export function parseClaimSourceRelationAudits(value: unknown): ClaimSourceRelat
       url,
       relation,
       reason: typeof rec.reason === "string" ? rec.reason.trim().slice(0, 320) : "",
+      quote: typeof rec.quote === "string" ? rec.quote.trim().slice(0, 500) : undefined,
     });
   }
   return out;
@@ -126,14 +129,15 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
     const oldGaps = Array.isArray(verdict.evidenceGaps)
       ? verdict.evidenceGaps.filter((gap): gap is string => typeof gap === "string")
       : [];
-    const relationGap = "来源与这条命题的方向关系尚未通过独立核验，暂不作为支持或反驳";
+    const relationGap = "目前的材料不足以判断这句话，还需要能直接支持或反驳它的原文。";
     const gaps = shouldDemote && !oldGaps.includes(relationGap) ? [relationGap, ...oldGaps].slice(0, 3) : oldGaps;
 
     return {
       ...verdict,
       supportingSources: support,
       contradictingSources: contradict,
-      evidence: changed ? stripCitationMarkers(typeof verdict.evidence === "string" ? verdict.evidence : "") : verdict.evidence,
+      evidence: shouldDemote ? "" : changed ? stripCitationMarkers(typeof verdict.evidence === "string" ? verdict.evidence : "") : verdict.evidence,
+      ...(shouldDemote ? { boundary: "" } : {}),
       evidenceGaps: gaps,
       sourcesRelatedOnly: support.length + contradict.length === 0 && hadDirectional ? true : verdict.sourcesRelatedOnly === true,
       ...(shouldDemote ? { verdict: "unverified", demotedFrom: String(verdict.verdict ?? "") } : {}),

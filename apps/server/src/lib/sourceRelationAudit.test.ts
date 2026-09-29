@@ -7,7 +7,7 @@ const cnr = { url: "https://news.cnr.cn/native/gd/20230502/t20230502_526238031.s
 describe("claim-source relation audit", () => {
   it("does not publish FactChecker support when the audit says context-only", () => {
     const [row] = applyClaimSourceRelationAudit([
-      { claimAtom: "气泡水可以中和酸", verdict: "partial", evidence: "理论上有作用[1]。", supportingSources: [cnr], contradictingSources: [], evidenceGaps: [] },
+      { claimAtom: "气泡水可以中和酸", verdict: "partial", evidence: "理论上有作用[1]。", boundary: "能有效中和胃酸", supportingSources: [cnr], contradictingSources: [], evidenceGaps: [] },
     ], [
       { claimAtom: "气泡水可以中和酸", url: cnr.url, relation: "context-only", reason: "讨论的是降尿酸，且正文明确实际作用有限" },
     ], key);
@@ -15,7 +15,9 @@ describe("claim-source relation audit", () => {
     expect(row.contradictingSources).toEqual([]);
     expect(row.verdict).toBe("unverified");
     expect(row.sourcesRelatedOnly).toBe(true);
-    expect(row.evidence).not.toContain("[1]");
+    expect(row.evidence).toBe("");
+    expect(row.boundary).toBe("");
+    expect(row.evidenceGaps).toContain("目前的材料不足以判断这句话，还需要能直接支持或反驳它的原文。");
   });
 
   it("moves a source to the audited direction instead of trusting the original bucket", () => {

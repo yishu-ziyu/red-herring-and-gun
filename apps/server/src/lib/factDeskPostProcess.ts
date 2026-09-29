@@ -17,7 +17,7 @@ import {
   PUBLIC_REPORT_FALLBACK_REASON,
 } from "./reportSanitizer.js";
 import { faceVerdictFor } from "./reportAssembly/index.js";
-import { stripFaceStamp } from "./publicCopy.js";
+import { directAnswer, stripFaceStamp } from "./publicCopy.js";
 
 const BANNED_DRAMA =
   /纯属捏造|纯属子虚乌有|令人啼笑皆非|令人啼笑|可笑至极|震惊全网|铁证如山|毋庸置疑|智慧的网友|作为AI|作为人工智能|速来围观|当帮凶|广大网友务必/g;
@@ -99,7 +99,7 @@ function ensureClaimAndUncertainty(
   let out = conclusion.trim();
   if (!out) {
     notes.push("conclusion: empty → conservative default");
-    return "公开材料还撑不住判断。现有证据仍不足以确认该说法。";
+    return directAnswer("unverified");
   }
 
   const decisive = verdictType === "true" || verdictType === "false";

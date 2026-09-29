@@ -80,7 +80,7 @@ def replay_server(snapshot, out, port=0):
     It also makes the same recording accessible to an independent browser session.
     """
     vite_port = free_port()
-    command = [str(ROOT / 'mvp/node_modules/.bin/vite'), '--host', '127.0.0.1', '--port', str(vite_port), '--strictPort']
+    command = [str(ROOT / 'apps/node_modules/.bin/vite'), '--host', '127.0.0.1', '--port', str(vite_port), '--strictPort']
     pack = json.dumps({'frames': [{'delayMs': 50, 'investigation': snapshot, 'complete': True}]}, ensure_ascii=False).replace('<', '\\u003c')
     inject = f'<script>window.__RHG_REPLAY={pack};</script>'.encode()
     log = (out / 'vite.log').open('w')

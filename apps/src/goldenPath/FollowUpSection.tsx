@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { displayFollowUpClaim } from "../lib/composeFollowUpClaim";
 import type { InvestigationClaim } from "../lib/investigation";
 import { isCompleteEmptyShell, isMetaQuestionFragment } from "./leftoverClaims";
+import { scrubBoundaryText } from "./scrubFace";
 
 type FollowUpSectionProps = {
   onFollowUp?: (question: string) => void;
@@ -101,11 +102,12 @@ export function generateFollowUpSuggestions(
   }
 
   for (const claim of claims) {
-    if (claim.boundary?.trim()) push(`适用边界是「${clipAsk(claim.boundary)}」，还要再查哪一段？`);
+    const boundary = scrubBoundaryText(claim.boundary ?? "");
+    if (claim.judgment !== "unresolved" && boundary) push(`适用边界是「${clipAsk(boundary)}」，还要再查哪一段？`);
   }
 
   if (suggestions.length === 0) {
-    for (const boundary of boundaries) {
+    for (const boundary of boundaries.map(scrubBoundaryText)) {
       if (boundary.trim()) push(`适用边界是「${clipAsk(boundary)}」，还要再查哪一段？`);
     }
   }

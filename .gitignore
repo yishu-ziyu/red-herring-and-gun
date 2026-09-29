@@ -126,3 +126,7 @@ docs/**/*.zip
 
 # 黑客松参赛过程档案（含对手分析），仅本地
 参赛记录/
+
+# Local dependencies and third-party article archive (may be symlinks in a worktree)
+/node_modules
+/data/debunk-archive

@@ -92,6 +92,7 @@ export const InvestigationEvidenceLinkSchema = Type.Object(
     sectionTitle: Type.Optional(Type.String()),
     /** 与当前 claim 最相关的 canonical 检索上下文；不是模型重写的 finding。 */
     passage: Type.Optional(Type.String()),
+    quoteVerified: Type.Optional(Type.Boolean()),
     /** SourceValidator 对 claimAtom + URL 的方向核验理由。 */
     relationReason: Type.Optional(Type.String()),
     /** 同上：复用的证据条目。字段与来源条目同名。 */

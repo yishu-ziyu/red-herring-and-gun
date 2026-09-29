@@ -26,3 +26,7 @@ Vite 只代理 `/api`。Express 在 `server/`。发布走仓库根 `./ops.sh dep
 快照契约的源文件在 `packages/core/src/investigation`，这里的 `server/src/lib/investigation` 是镜像。
 
 更完整的地图：`docs/REPO.md`。T20 是切到 `packages/`，不是删这个目录。
+
+## 验证
+
+仓库根目录的 `npm test` 和 `npm run build` 均运行本目录的生产代码，构建还包含 `server/`。`npm run eval:gate` 固定检查 12 个生产管线与最终判定的离线行为合同；它不调用模型，不代表真实模型质量。`npm run eval:live` 使用真实模型与搜索，对比 `server/eval/baseline.json`；缺基线或 API key 会在模型调用前失败。仅测量可在 `server/` 运行 `npx tsx eval/run.ts`，不会自动生成基线。

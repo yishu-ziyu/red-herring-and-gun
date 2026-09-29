@@ -19,6 +19,7 @@ export type FilterableSource = {
   url: string;
   title: string;
   snippet: string;
+  originalText?: string;
   credibility?: string;
   /** 源内原次序，0 最好；缺省视为靠后 */
   providerRank?: number;
@@ -107,6 +108,7 @@ export function hardFilterSources(
       url: canon,
       title: title.slice(0, 200),
       snippet: snippet.slice(0, 900),
+      originalText: s.originalText,
       credibility: s.credibility,
       providerRank: s.providerRank,
     });

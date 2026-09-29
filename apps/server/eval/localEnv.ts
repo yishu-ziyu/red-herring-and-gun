@@ -2,9 +2,11 @@
  * localEnv.ts — probe 脚本共用：读 .env.local 到 process.env（不覆盖已有值）。
  */
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const CANDIDATES = [".env.local", "server/.env.local", "../.env.local", ".env.local.example"];
+const APPS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const CANDIDATES = [".env.local", "server/.env.local"];
 
 function parseEnvLine(rawLine: string): { key: string; value: string } | null {
   const line = rawLine.trim();
@@ -26,9 +28,8 @@ function applyEnvText(text: string): void {
 }
 
 export function loadLocalEnv(): void {
-  const cwd = process.cwd();
   for (const rel of CANDIDATES) {
-    const path = join(cwd, rel);
+    const path = join(APPS_DIR, rel);
     if (!existsSync(path)) continue;
     applyEnvText(readFileSync(path, "utf8"));
   }

@@ -47,12 +47,15 @@ export type AtomSearchSource = {
   url: string;
   title: string;
   snippet: string;
+  originalText?: string;
+  /** For a roundup article, only this item's sentences may support its claim. */
+  originalScope?: string;
   credibility?: string;
   /**
    * 复用来源标记：知识库是跨案；prior-round 是同一案上一轮。
    * 走联网检索拿到的来源没有这两个字段，两边的下游（快照 / 报告）行为完全一致。
    */
-  provenance?: "knowledge" | "prior-round";
+  provenance?: "knowledge" | "prior-round" | "archive";
   originDate?: string;
 };
 
@@ -60,7 +63,7 @@ export type AtomSearchSource = {
 export type KnowledgeInjection = {
   /** YYYY-MM-DD（条目 lastVerifiedAt 的日期）；进快照 originDate 与活动行。 */
   originDate: string;
-  evidence: Array<{ url: string; title: string; snippet: string }>;
+  evidence: Array<{ url: string; title: string; snippet: string; originalText?: string; originalScope?: string }>;
   /** 上次沉淀的判词；没有就不写，判定拍当普通核查。 */
   priorVerdict?: string;
 };
@@ -136,6 +139,7 @@ function asSourceList(result: unknown): FilterableSource[] {
       // 关系核验需要看到转折后的限制条件；320 字很容易只留下「虽然」前半句。
       snippet: String(rec.snippet || rec.summary || rec.content || "").slice(0, 900),
       credibility: typeof rec.credibility === "string" ? rec.credibility : undefined,
+      originalText: typeof rec.originalText === "string" ? rec.originalText : undefined,
       providerRank: i,
     });
   }
@@ -301,6 +305,7 @@ export function buildAtomSearchBundle(
       url: s.url,
       title: s.title,
       snippet: s.snippet,
+      originalText: s.originalText,
       credibility: s.credibility,
     }));
     byAtomKey[key] = sources;
@@ -472,7 +477,7 @@ export function injectKnowledgeEvidence(
   atom: string,
   injection: KnowledgeInjection,
   claimAtomKeyFn: (s: string) => string,
-  provenance: "knowledge" | "prior-round" = "knowledge"
+  provenance: "knowledge" | "prior-round" | "archive" = "knowledge"
 ): number {
   const key = claimAtomKeyFn(atom);
   const existing = bundle.byAtomKey[key] ?? [];
@@ -489,6 +494,8 @@ export function injectKnowledgeEvidence(
       url,
       title: String(item?.title ?? "").slice(0, 200),
       snippet: String(item?.snippet ?? "").slice(0, 900),
+      originalText: typeof item.originalText === "string" ? item.originalText : undefined,
+      originalScope: typeof item.originalScope === "string" ? item.originalScope : undefined,
       provenance,
       originDate: injection.originDate,
     });
@@ -562,6 +569,9 @@ export async function retrieveForAtoms(options: {
     lookup: (atom: string) => KnowledgeInjection | null;
     onInjected?: (hit: KnowledgeHit) => void;
   };
+  archive?: { lookup: (atom: string) => KnowledgeInjection | null };
+  /** Evidence-first mode: a saved summary alone cannot suppress live retrieval. */
+  requireOriginalText?: boolean;
 }): Promise<{
   atomsToSearch: string[];
   atomSearchBundle: AtomSearchBundle;
@@ -591,8 +601,10 @@ export async function retrieveForAtoms(options: {
         console.warn(`[atomSearch] 复用查库失败，按未命中处理: ${String(error)}`);
         injection = null;
       }
-      if (injection && usableKnowledgeEvidence(injection).length > 0) {
-        out.push({ atom, injection });
+      if (injection) {
+        const evidence = usableKnowledgeEvidence(injection).filter((item) =>
+          !options.requireOriginalText || (typeof item.originalText === "string" && item.originalText.length >= 80));
+        if (evidence.length > 0) out.push({ atom, injection: { ...injection, evidence } });
       }
     }
     return out;
@@ -601,8 +613,10 @@ export async function retrieveForAtoms(options: {
   // 同一案上一轮先于跨案知识库：命中的原子退出联网候选，名额自然让给新问题。
   const priorInjections = collectInjections(listed.verifiable, options.priorRound, new Set());
   const priorKeys = new Set(priorInjections.map(({ atom }) => keyFn(atom)));
-  const knowledgeInjections = collectInjections(listed.verifiable, options.knowledge, priorKeys);
-  const injections = [...priorInjections, ...knowledgeInjections];
+  const archiveInjections = collectInjections(listed.verifiable, options.archive, priorKeys);
+  const archiveKeys = new Set([...priorKeys, ...archiveInjections.map(({ atom }) => keyFn(atom))]);
+  const knowledgeInjections = collectInjections(listed.verifiable, options.knowledge, archiveKeys);
+  const injections = [...priorInjections, ...archiveInjections, ...knowledgeInjections];
   const injectedKeys = new Set(injections.map(({ atom }) => keyFn(atom)));
   const candidates =
     injectedKeys.size === 0
@@ -652,6 +666,9 @@ export async function retrieveForAtoms(options: {
     const hit: KnowledgeHit = { atom, originDate: injection.originDate, sourceCount };
     priorRoundHits.push(hit);
     options.priorRound?.onInjected?.(hit);
+  }
+  for (const { atom, injection } of archiveInjections) {
+    injectKnowledgeEvidence(atomSearchBundle, atom, injection, keyFn, "archive");
   }
   for (const { atom, injection } of knowledgeInjections) {
     const sourceCount = injectKnowledgeEvidence(atomSearchBundle, atom, injection, keyFn, "knowledge");

@@ -11,8 +11,9 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "test:watch": "vitest",
-    "eval": "cd server && npx tsx eval/run.ts",
-    "eval:gate": "cd server && npx tsx eval/run.ts --gate eval/baseline.json"
+    "eval": "npm run eval:live",
+    "eval:gate": "node server/eval/contractGate.mjs",
+    "eval:live": "cd server && npx tsx eval/run.ts --gate eval/baseline.json"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.2",

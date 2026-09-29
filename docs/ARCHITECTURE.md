@@ -5,7 +5,7 @@
 本文件只回答：**代码实际怎么跑、哪一层是真的、哪一层是残骸、下一步往哪收。**
 
 公网 `https://gun.yishuziyu.cn`：Nginx 静态 + `/api` 反代 Express。  
-生产壳本地在 `apps/` 执行 `npm run dev`：Express 管 API，Vite 只代理 `/api`。根目录的 `dev:web` / `dev:server` 启动 `packages/` 脊柱，尚未执行 T20 上线切换。
+生产壳本地在 `apps/` 执行 `npm run dev`：Express 管 API，Vite 只代理 `/api`。根目录的 `dev:web` / `dev:server` 也启动 `apps/` 生产壳；T20 上线切换仍暂停。
 
 ## 当前接线状态（2026-09-11）
 

@@ -36,6 +36,8 @@ export type LivenessDeps = ExecutionBudget & {
   concurrency?: number;
   /** 直接给定探活结果（测试用）；跳过真实网络请求。 */
   liveness?: Map<string, LivenessStatus>;
+  /** Already saved source bodies remain citable when the live page is down. */
+  preservedUrls?: Set<string>;
 };
 
 export function classifyLivenessStatus(status: number): LivenessStatus {
@@ -154,9 +156,9 @@ export async function pruneDeadCitations(
 
   const liveness = deps.liveness ?? (await checkSourceLiveness(candidates, deps));
   deps.signal?.throwIfAborted();
-  const deadUrls = [...new Set(candidates.filter((u) => liveness.get(u) === "dead"))];
+  const deadUrls = [...new Set(candidates.filter((u) => liveness.get(u) === "dead" && !deps.preservedUrls?.has(u)))];
   if (deadUrls.length === 0) return { pruned: false, deadUrls: [] };
-  const aliveSet = new Set(candidates.filter((u) => liveness.get(u) !== "dead"));
+  const aliveSet = new Set(candidates.filter((u) => liveness.get(u) !== "dead" || deps.preservedUrls?.has(u)));
 
   const prunedVerdicts = verdictsIn.map((raw) => {
     if (!raw || typeof raw !== "object") return raw;

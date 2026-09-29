@@ -17,6 +17,7 @@ import {
   AgentTextProviderId,
 } from "./providerRouter.js";
 import { compactSearchResultForAgent, buildReportEvidenceInputs } from "./searchProviders.js";
+import { agentVisibleSearches } from "./originalEvidence.js";
 import { attachKnowledgeDrafts } from "./atomSearch.js";
 import { splitReasoningSentences } from "./reasoningThoughts.js";
 import { getTimeoutMs } from "./httpUtils.js";
@@ -122,7 +123,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
       if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
         agentInput.search360 = compactSearchResultForAgent(search360Result);
         if (atomSearchBundle && (agentId === "fact_checker" || agentId === "source_validator" || agentId === "report_composer")) {
-          agentInput.atomSearches = atomSearchBundle.forAgent;
+          agentInput.atomSearches = agentVisibleSearches(atomSearchBundle);
         }
       }
       if (atomSearchBundle && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {

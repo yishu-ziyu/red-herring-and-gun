@@ -14,12 +14,14 @@ import {
   providerOrderForAgent,
   ProviderFallbackError,
 } from "../src/lib/providerRouter.js";
-import { runCasePipeline, type PipelineStep } from "../src/lib/casePipeline/index.js";
+import { runCasePipeline, type CasePipelineHooks, type PipelineStep } from "../src/lib/casePipeline/index.js";
 import { retrieveAtomSources } from "../src/lib/searchProviders.js";
 import { buildDeterministicFinalReport } from "../src/lib/reportFallback.js";
 import { applyFormulaScoreToReport, computeFormulaScore } from "../src/lib/formulaScore.js";
 import { applyFactDeskPostProcessToReport } from "../src/lib/factDeskPostProcess.js";
 import { makeRewriteQueryCall } from "../src/lib/evidenceLoop/index.js";
+import { agentVisibleSearches } from "../src/lib/originalEvidence.js";
+import type { AtomSearchBundle } from "../src/lib/atomSearch.js";
 import type { ScoreCaseGolden } from "./golden.js";
 
 /** Cross exam 第二意见（G3）：与主判 provider 异源优先，与生产 handlers 同策略。 */
@@ -55,7 +57,7 @@ function makeRunAgent({ env, codexBin }: EvalEnv, claim: string) {
     if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
       agentInput.search360 = search360Result;
       if (atomSearchBundle && (agentId === "fact_checker" || agentId === "source_validator" || agentId === "report_composer")) {
-        agentInput.atomSearches = (atomSearchBundle as { forAgent?: unknown }).forAgent;
+        agentInput.atomSearches = agentVisibleSearches(atomSearchBundle as AtomSearchBundle);
       }
     }
 
@@ -151,7 +153,9 @@ export interface EvalCaseResult {
 
 export async function runCase(
   golden: ScoreCaseGolden,
-  evalEnv: EvalEnv
+  evalEnv: EvalEnv,
+  /** 可选：订阅管线钩子。只有订阅了 onInvestigationSnapshot，管线才会构建 finalReport.investigation（生产 HTTP 路径始终订阅）。 */
+  hooks?: CasePipelineHooks
 ): Promise<{
   steps: PipelineStep[];
   finalReport: Record<string, unknown>;
@@ -164,8 +168,10 @@ export async function runCase(
   try {
     const result = await runCasePipeline({
       claim,
+      ...(hooks ? { hooks } : {}),
       runAgent,
       searchOne: makeSearchOne(evalEnv.env),
+      archiveEvidence: true,
       callSelfProofModel: makeSelfProof(evalEnv),
       // LLM 语义改写（与生产 handlers 同款）：eval 必须跑生产路径
       evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteRaw(evalEnv)) },

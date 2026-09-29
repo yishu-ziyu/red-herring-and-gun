@@ -60,16 +60,15 @@ npm run dev
 
 只要 API：`cd apps/server && npm run dev`（默认 `http://127.0.0.1:3000`）。只要前端、自己已经起了 API：`cd apps && npm run dev:web`。
 
-构建与测试：
+从仓库根目录验证生产 `apps/`（包含前端和 API）：
 
 ```bash
-cd apps
 npm test
 npm run build
-
-cd server
-npm run build
+npm run eval:gate
 ```
+
+`eval:gate` 固定运行 12 个生产管线与最终判定用例，是离线行为合同检查，不调用真实模型，也不代表真实模型质量。`npm run eval:live` 才调用真实模型与搜索并对比 `apps/server/eval/baseline.json`；缺基线或 API key 时会在模型调用前失败。需要重新测量但不做基线门禁时，在 `apps/server` 直接运行 `npx tsx eval/run.ts`；该命令只输出测量结果，不自动写入或覆盖基线。
 
 ## 环境变量
 

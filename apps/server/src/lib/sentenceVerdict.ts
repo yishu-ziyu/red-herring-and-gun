@@ -224,6 +224,15 @@ export function applySentenceVerdict(
     from: before,
     parts: parts.map((p) => ({ text: p.text, role: p.role, standing: p.standing, ...(p.issuerMisattributed ? { issuerMisattributed: true } : {}) })),
   };
+  // 适用条件没有反驳原句时，详情也采用这个决定，不再展示已否定的「部分成立」理由。
+  for (const part of parts) {
+    const assessed = findVerdict(report, part.text);
+    if (part.standing === "supported" && assessed && ["partial", "mixed", "mixed_misleading"].includes(String(assessed.verdict))) {
+      assessed.verdict = "true";
+      delete assessed.boundary;
+      delete assessed.contradictedElement;
+    }
+  }
   renderConclusion(report, verdictType, parts, context);
   return decision;
 }

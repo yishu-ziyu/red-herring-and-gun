@@ -102,7 +102,7 @@ describe("leadWithFace", () => {
 
   it("闸门改判后，用直接回答而不是四字章打头", () => {
     expect(leadWithFace("能信。全市发钱。", "unverified")).toBe(
-      "公开材料还撑不住判断。全市发钱。"
+      "目前的材料不足以判断。全市发钱。"
     );
   });
 });
@@ -111,7 +111,7 @@ describe("constrainRecommendation", () => {
   it("转发建议收成直接回答，不盖四字章", () => {
     expect(constrainRecommendation("先别转发这条。", "false")).toBe("公开材料不支持这条说法。");
     expect(constrainRecommendation("请结合 canSay 再传播。", "unverified")).toBe(
-      "公开材料还撑不住判断。"
+      "目前的材料不足以判断。"
     );
   });
 
@@ -170,7 +170,7 @@ describe("applyPublicCopy", () => {
     expect(report.faceVerdict).toBe("还查不清");
     expect(String(report.conclusion).startsWith("还查不清")).toBe(false);
     expect(String(report.conclusion)).not.toMatch(/ReportComposer|search360/);
-    expect(report.recommendation).toBe("公开材料还撑不住判断。");
+    expect(report.recommendation).toBe("目前的材料不足以判断。");
     expect((report.canSay as string[])[0]).not.toMatch(/FactChecker/);
     expect((report.evidenceChain as Array<{ finding: string }>)[0].finding).not.toMatch(
       /FactChecker/
@@ -213,14 +213,26 @@ describe("applyPublicCopy", () => {
 });
 
 describe("只贴链接打不开", () => {
+  it("适用边界保留实际范围，不把内部审计过程交给用户", () => {
+    const report: Record<string, unknown> = {
+      verdictType: "false", conclusion: "公开材料不支持这条说法。",
+      causalBoundary: "现有材料讨论的是雷雨天气。wholeClaimAudit 已确认无 missingJustifications，claim 为单一命题。",
+    };
+    applyPublicCopy(report);
+    expect(report.causalBoundary).toBe("");
+    report.causalBoundary = "现有材料讨论的是雷雨天气。";
+    applyPublicCopy(report);
+    expect(report.causalBoundary).toBe("现有材料讨论的是雷雨天气。");
+  });
+
   it("原句只是 URL 且 0 命题时，结论说链接打不开，不假装查完", () => {
     expect(looksLikeUrlOnlyClaim("https://weibo.com/1749990115/P3bF9xY1z")).toBe(true);
     expect(looksLikeUrlOnlyClaim("https://weibo.com/x 隔夜菜会致癌吗")).toBe(false);
     const report: Record<string, unknown> = {
       verdictType: "unverified",
-      conclusion: "公开材料还撑不住判断。",
-      summaryForPublic: "公开材料还撑不住判断。",
-      recommendation: "公开材料还撑不住判断。",
+      conclusion: "目前的材料不足以判断。",
+      summaryForPublic: "目前的材料不足以判断。",
+      recommendation: "目前的材料不足以判断。",
       causalBoundary: "无法建立证据链：缺少原句文本，无法拆解原子命题",
     };
     applyUnopenedLinkConclusion(report, "https://weibo.com/1749990115/P3bF9xY1z", 0);
@@ -230,8 +242,8 @@ describe("只贴链接打不开", () => {
   });
 
   it("已经拆出命题时不改结论", () => {
-    const report: Record<string, unknown> = { conclusion: "公开材料还撑不住判断。" };
+    const report: Record<string, unknown> = { conclusion: "目前的材料不足以判断。" };
     applyUnopenedLinkConclusion(report, "https://weibo.com/x", 2);
-    expect(report.conclusion).toBe("公开材料还撑不住判断。");
+    expect(report.conclusion).toBe("目前的材料不足以判断。");
   });
 });

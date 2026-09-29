@@ -8,6 +8,7 @@ import { bindAtomEvidenceToVerdicts, buildAtomSearchBundle } from "../../atomSea
 import { claimAtomKey } from "../../claimAtom/index.js";
 import { mergeSourcesIntoBundle } from "../../evidenceLoop/evidenceLoop.js";
 import { applyClaimSourceRelationAudit } from "../../sourceRelationAudit.js";
+import { groundClaimSourceRelations } from "../sourceAudit.js";
 import {
   resolveQuestionAtomKey,
   runWholeClaimEvaluation,
@@ -116,6 +117,8 @@ export async function evaluateWholeClaim(ctx: PipelineContext, state: CaseState)
                 );
                 steps.push(refreshedSource);
                 state.sourceStep = refreshedSource;
+                if (input.archiveEvidence) refreshedSource.output.claimSourceRelations = groundClaimSourceRelations(
+                  refreshedSource.output.claimSourceRelations, atomSearchBundle);
                 state.sourceAudit.markAudited();
               } catch {
                 // Fail closed below: missing audits strip directional use of the new URLs.

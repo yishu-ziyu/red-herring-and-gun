@@ -278,6 +278,7 @@ function extractSources(result: unknown): AtomSearchSource[] {
       url,
       title: String(rec.title || rec.name || "").slice(0, 200),
       snippet: String(rec.snippet || rec.summary || rec.content || "").slice(0, 320),
+      originalText: typeof rec.originalText === "string" ? rec.originalText : undefined,
       credibility: typeof rec.credibility === "string" ? rec.credibility : undefined,
     });
   }

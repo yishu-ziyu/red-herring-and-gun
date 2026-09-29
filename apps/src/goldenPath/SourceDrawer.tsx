@@ -6,6 +6,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import { ROLE_LABEL, domainOf, identifyEvidenceLinks } from "./snapshotUi";
+import { scrubFaceText } from "./scrubFace";
 import type { InvestigationEvidenceLink, InvestigationSource } from "../lib/investigation";
 
 const FOCUSABLE =
@@ -58,8 +59,16 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
   const num = String(claimIndex + 1).padStart(2, "0");
   const relation = ROLE_LABEL[link.role];
   const excerpt = link.passage?.trim() || source.excerpt?.trim();
+  const verifiedPassage = link.quoteVerified === true ? link.passage?.trim() : undefined;
+  const excerptLabel = verifiedPassage
+    ? copy.sourceExcerpt
+    : (lang === "en" ? "Material excerpt" : "材料摘录");
+  const sourceUrl = source.url.split(":~:")[0];
+  const originalUrl = verifiedPassage
+    ? `${sourceUrl}${sourceUrl.includes("#") ? "" : "#"}:~:text=${encodeURIComponent(verifiedPassage)}`
+    : source.url;
   const sectionTitle = link.sectionTitle?.trim();
-  const relationReason = link.relationReason?.trim();
+  const relationReason = scrubFaceText(link.relationReason ?? "");
   const finding = link.finding?.trim();
   const limitation = link.limitation?.trim();
   const unreachable = source.reachable === false;
@@ -207,7 +216,7 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
               <section className="gp-source-block is-excerpt-lead" data-gp-source-section="excerpt">
                 <div className="gp-source-section-header">
                   <span className="gp-source-section-icon" aria-hidden="true">❝</span>
-                  <h3 className="gp-source-label">{copy.sourceExcerpt}</h3>
+                  <h3 className="gp-source-label">{excerptLabel}</h3>
                 </div>
                 <blockquote className={`gp-source-excerpt is-${link.role}`}>
                   <p className="gp-source-excerpt-text">{excerpt}</p>
@@ -309,7 +318,7 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
               <div className="gp-source-action-row">
                 <a
                   className="gp-source-open"
-                  href={source.url}
+                  href={originalUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

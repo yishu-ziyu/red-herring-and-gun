@@ -28,6 +28,11 @@ export function scrubFaceText(text: string): string {
     .trim();
 }
 
+/** 混入内部推理过程的边界不作为产品解释，避免删词后留下残句。 */
+export function scrubBoundaryText(text: string): string {
+  return INTERNAL_SENTENCE_RE.test(text) ? "" : scrubFaceText(text);
+}
+
 export function tooSimilarTo(candidate: string, corpus: string): boolean {
   const needle = scrubFaceText(candidate).replace(/\s+/g, "");
   const hay = scrubFaceText(corpus).replace(/\s+/g, "");

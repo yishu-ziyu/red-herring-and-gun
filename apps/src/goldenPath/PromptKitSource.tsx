@@ -23,7 +23,7 @@ export function PromptKitSource({ link, source, claimId, onSelect, entering = fa
   const [imgFailed, setImgFailed] = useState(false);
   const domain = domainOf(source.url || "") || "source";
   const title = source.title || source.url || link.sourceId;
-  const excerpt = sourceExcerpt(source);
+  const excerpt = link.passage?.trim() || sourceExcerpt(source);
   const roleLabel = ROLE_LABEL[link.role];
   const displayBadgeLabel = roleLabel.endsWith("材料") ? roleLabel : `${roleLabel}材料`;
   const faviconUrl = `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(domain)}`;

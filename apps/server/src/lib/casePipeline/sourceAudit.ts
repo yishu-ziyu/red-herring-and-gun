@@ -4,9 +4,9 @@
  * 补查、质询、整句审计都可能往检索包里加新来源；每次加完，先刷新审计，再让新来源带方向上屏。
  * 刷新不了（没时间或审计失败）时，新来源一律只作背景（fail-closed），不会闪一下绿色「支持」再被纠正。
  */
-import { bindAtomEvidenceToVerdicts } from "../atomSearch.js";
+import { bindAtomEvidenceToVerdicts, type AtomSearchBundle } from "../atomSearch.js";
 import { claimAtomKey } from "../claimAtom/index.js";
-import { applyClaimSourceRelationAudit, relationAuditCoversDirectionalSources } from "../sourceRelationAudit.js";
+import { applyClaimSourceRelationAudit, parseClaimSourceRelationAudits, relationAuditCoversDirectionalSources } from "../sourceRelationAudit.js";
 import type { CaseState, PipelineContext } from "./caseState.js";
 
 export type SourceAudit = {
@@ -17,6 +17,27 @@ export type SourceAudit = {
   /** 调用方自己刚审过一次（整句审计补查）：记下此刻的检索包。 */
   markAudited: () => void;
 };
+
+/** Validate each model quote against the body for this claim and URL. */
+export function groundClaimSourceRelations(rows: unknown, bundle: AtomSearchBundle): unknown {
+  return parseClaimSourceRelationAudits(rows).map((row) => {
+    if (row.relation !== "support" && row.relation !== "contradict") return row;
+    const source = bundle.byAtomKey[claimAtomKey(row.claimAtom)]
+      ?.find((item) => item.url === row.url);
+    const body = source?.originalText?.replace(/\s+/g, "") ?? "";
+    const quote = row.quote?.replace(/\s+/g, "") ?? "";
+    const scope = source?.originalScope?.replace(/\s+/g, "");
+    if (source && quote.length >= 8 && body.includes(quote) && (!scope || scope.includes(quote))) {
+      return { ...row, quoteVerified: true };
+    }
+    return {
+      ...row,
+      relation: "unverified",
+      quoteVerified: false,
+      reason: "没有取得与这条命题对应且可在正文中核对的原句",
+    };
+  });
+}
 
 export function createSourceAudit(ctx: PipelineContext, state: Omit<CaseState, "sourceAudit">): SourceAudit {
   const { steps, budget } = ctx;
@@ -30,6 +51,10 @@ export function createSourceAudit(ctx: PipelineContext, state: Omit<CaseState, "
 
   const apply = () => {
     const factStep = state.factStep;
+    if (ctx.input.archiveEvidence && state.sourceStep?.output) {
+      state.sourceStep.output.claimSourceRelations = groundClaimSourceRelations(
+        state.sourceStep.output.claimSourceRelations, state.atomSearchBundle);
+    }
     // Never audit an already-demoted public result: fail-closed publication can
     // temporarily strip direction, but a later successful audit must still be
     // able to recover the original FactChecker candidates. Keep those candidates

@@ -224,6 +224,22 @@ describe("整句结论写回：首句、徽章类型、正文都读同一个决�
     expect(String(report.conclusion)).toMatch(/^这句话只在有限范围内成立。/);
   });
 
+  it("原文只补充适用条件时，总答和逐条判断都采纳最终的支持判定", () => {
+    const atom = "没有3C标识的充电宝不让带上飞机了";
+    const evidence = "民航局通知禁止没有3C标识的充电宝乘坐境内航班。";
+    const report = run({ subclaimVerdicts: [{
+      claimAtom: atom, verdict: "partial", evidence,
+      boundary: "原句暗示全部航班，因此夸大范围。",
+      contradictedElement: "原句暗示全部航班",
+      supportingSources: [src("notice")], contradictingSources: [],
+    }] }, [typed(atom, { role: "main" })]);
+    expect(report.verdictType).toBe("true");
+    expect(report.subclaimVerdicts).toEqual([expect.objectContaining({ verdict: "true", evidence })]);
+    const part = (report.subclaimVerdicts as Array<Record<string, unknown>>)[0];
+    expect(part.boundary).toBeUndefined();
+    expect(part.contradictedElement).toBeUndefined();
+  });
+
   it("规则表决定写进报告便于回查", () => {
     const report = run({ verdictType: "x", conclusion: "x", subclaimVerdicts: [TRUE_A] }, [typed("A", { role: "main" })]);
     expect(report._verdictDecision).toMatchObject({ rule: "all-supported", verdict: "can-believe" });

@@ -106,7 +106,7 @@ export function directAnswer(verdictType: unknown): string {
     case "有争议":
       return "权威来源之间说法不一致，这句话有争议。";
     default:
-      return "公开材料还撑不住判断。";
+      return "目前的材料不足以判断。";
   }
 }
 
@@ -380,6 +380,8 @@ export function applyPublicCopy(report: Record<string, unknown>): void {
     report.summaryForPublic = shapeConclusion(rawSummary, verdictType);
   }
   report.recommendation = constrainRecommendation(report.recommendation, verdictType);
+  report.causalBoundary = INTERNAL_SENTENCE_RE.test(String(report.causalBoundary ?? ""))
+    ? "" : scrubPublicText(report.causalBoundary);
   report.faceVerdict = faceWord(verdictType);
 
   const canSay = scrubStringArray(report.canSay);

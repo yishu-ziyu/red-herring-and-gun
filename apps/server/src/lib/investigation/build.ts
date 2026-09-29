@@ -301,6 +301,8 @@ type VerdictLike = {
 type RelationAuditView = {
   relation: "support" | "contradict" | "context-only" | "unverified";
   reason: string;
+  quote?: string;
+  quoteVerified?: boolean;
 };
 
 /**
@@ -383,6 +385,9 @@ function readRelationAudits(
     out.set(`${keyFn(claimAtom)}\u0000${url}`, {
       relation,
       reason: clip(asString(rec.reason), 320),
+      ...(rec.quoteVerified === true && asString(rec.quote).trim()
+        ? { quote: clip(asString(rec.quote).trim(), 500), quoteVerified: true }
+        : {}),
     });
   }
   return out;
@@ -675,7 +680,9 @@ export function buildInvestigationSnapshot(
     const evidenceMeta = (source: BundleSource, role: InvestigationEvidenceLink["role"]) => {
       const url = normalizeInvestigationSourceUrl(source.url);
       const audit = relationAudits.get(`${a.key}\u0000${url}`);
-      const passage = passageMeta(a.text, source.snippet);
+      const verifiedQuote = audit?.quoteVerified === true && audit.quote
+        && (role === "support" || role === "contradict") ? audit.quote : undefined;
+      const passage = verifiedQuote ? { passage: verifiedQuote } : passageMeta(a.text, source.snippet);
       const auditMatchesRole =
         audit &&
         ((role === "support" && audit.relation === "support") ||
@@ -683,6 +690,7 @@ export function buildInvestigationSnapshot(
           (role === "context-only" && (audit.relation === "context-only" || audit.relation === "unverified")));
       return {
         ...passage,
+        ...(verifiedQuote ? { quoteVerified: true } : {}),
         ...(auditMatchesRole && audit.reason ? { relationReason: audit.reason } : {}),
       };
     };

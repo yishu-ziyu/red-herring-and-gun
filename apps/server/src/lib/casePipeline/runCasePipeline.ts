@@ -19,6 +19,7 @@ import type { CrossExamOutcome, CrossExamRawModelCall } from "../crossExam/index
 import type { InvestigationSnapshotV1 } from "../investigation/index.js";
 import type { WholeClaimAuditModelCall, WholeClaimAuditRun } from "../wholeClaimAudit/index.js";
 import { planFollowUpReuse } from "../followUpReuse.js";
+import { withOriginalText } from "../originalEvidence.js";
 import { createBudget } from "./budget.js";
 import type { PipelineContext } from "./caseState.js";
 import { finalizeReport } from "./finalizeReport.js";
@@ -216,6 +217,8 @@ export type CasePipelineInput = {
    * 不传 = 无记忆行为（与旧版逐字节等价）。
    */
   knowledgeBase?: KnowledgeMemoryPort;
+  /** Read saved article text first and require a body-checked quote for directional evidence. */
+  archiveEvidence?: boolean;
   /**
    * 同一案追问快路径（契约 docs/evals/2026-09-13-followup-fast-path.md）。
    * 登录读服务端档案，访客读请求里的上一轮可见材料；没有可用证据时
@@ -254,6 +257,7 @@ const REPORT_REVIEWER_TOOL = "Report Reviewer (proposer-reviewer)";
 const MEMORY_WRITE_TOOL = "Agent Memory Write";
 
 export async function runCasePipeline(input: CasePipelineInput): Promise<CasePipelineResult> {
+  if (input.archiveEvidence) input = { ...input, searchOne: withOriginalText(input.searchOne, input.signal) };
   const { claim, hooks } = input;
   const steps: PipelineStep[] = [];
 
@@ -363,7 +367,14 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
         report,
         input.citationLiveness === false
           ? { liveness: new Map(), signal: input.signal }
-          : { ...input.citationLiveness, signal: input.signal, deadlineMs: input.deadline }
+          : {
+              ...input.citationLiveness,
+              signal: input.signal,
+              deadlineMs: input.deadline,
+              preservedUrls: new Set(Object.values(atomSearchBundle.byAtomKey).flat()
+                .filter((source) => source.provenance === "archive" && source.originalText)
+                .map((source) => source.url)),
+            }
       ),
     signal: input.signal,
   });

@@ -5,16 +5,16 @@
  * 输出 JSON 报告 + 追加到 .ship/evaluation/benchmark-history.jsonl。
  *
  * 运行：
- *   cd mvp/server && npx tsx eval/run.ts            # 正常跑，输出报告
+ *   cd apps/server && npx tsx eval/run.ts            # 仅测量，输出报告
  *   npx tsx eval/run.ts --gate <baseline.json>      # 门禁：相对基线不退化
  *   npx tsx eval/run.ts --ids RUMOR-001,RUMOR-006   # 只跑指定用例
  *   npx tsx eval/run.ts --domain causal             # 只跑指定领域
  *   npx tsx eval/run.ts --repeats 3                 # 每 case 跑 3 次：verdict 多数、credibility 中位
  *
- * 需要真实 API key（从 mvp/.env.local 读取，同 runCasePipeline.real.test.ts）。
+ * 需要真实 API key（从 apps/.env.local 读取）。--gate 缺基线时调用模型前失败。
  */
 
-import { readFileSync, appendFileSync, existsSync, writeFileSync } from "node:fs";
+import { readFileSync, appendFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { goldenDataset, type ScoreCaseGolden } from "./golden.js";
@@ -38,6 +38,7 @@ const hasAnyKey = Boolean(
   process.env.STEPFUN_API_KEY ||
     process.env.DEEPSEEK_API_KEY ||
     process.env.MINIMAX_API_KEY ||
+    process.env.MINIMAX_TOKEN_PLAN_KEY ||
     process.env.MIMO_API_KEY
 );
 
@@ -314,13 +315,28 @@ function logGateCheck(check: { name: string; baseline: number; current: number; 
   );
 }
 
-function maybeRunGate(gatePath: string | undefined, aggregate: AggregateMetrics): void {
-  if (!gatePath) return;
+function readGateBaseline(gatePath: string | undefined): AggregateMetrics | undefined {
+  if (!gatePath) return undefined;
   if (!existsSync(gatePath)) {
-    console.error(`基线文件不存在：${gatePath}`);
+    console.error(`真实模型质量门禁无法运行：基线文件不存在：${gatePath}。未调用模型。`);
     process.exit(1);
   }
-  const baseline = JSON.parse(readFileSync(gatePath, "utf8")) as AggregateMetrics;
+  try {
+    const baseline = JSON.parse(readFileSync(gatePath, "utf8")) as AggregateMetrics;
+    if (!Number.isInteger(baseline.totalCases) || baseline.totalCases < 1 ||
+      [baseline.verdictAccuracy, baseline.routingAccuracy, baseline.reportContractPassRate]
+        .some((metric) => typeof metric !== "number" || !Number.isFinite(metric) || metric < 0 || metric > 1)) {
+      throw new Error("invalid metrics");
+    }
+    return baseline;
+  } catch {
+    console.error(`真实模型质量门禁无法运行：基线文件无效：${gatePath}。未调用模型。`);
+    process.exit(1);
+  }
+}
+
+function maybeRunGate(baseline: AggregateMetrics | undefined, aggregate: AggregateMetrics): void {
+  if (!baseline) return;
   const comparison = compareToBaseline(baseline, aggregate);
   for (const check of comparison.checks) logGateCheck(check);
   if (!comparison.passed) {
@@ -335,23 +351,14 @@ function maybeRunGate(gatePath: string | undefined, aggregate: AggregateMetrics)
   console.log("\n门禁通过。");
 }
 
-function maybeWriteBaseline(
-  args: { gate?: string; ids?: string[]; domain?: string },
-  aggregate: AggregateMetrics
-): void {
-  if (args.gate || args.ids || args.domain) return;
-  const baselinePath = join(__dirname, "baseline.json");
-  writeFileSync(baselinePath, JSON.stringify(aggregate, null, 2));
-  console.log(`\n首次基线已写入 ${baselinePath}（后续 --gate baseline.json 校验）`);
-}
-
 async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const baseline = readGateBaseline(args.gate);
   if (!hasAnyKey) {
-    console.error("未检测到任何 API key（STEPFUN/DEEPSEEK/MINIMAX/MIMO）。请先在 mvp/.env.local 配置。");
+    console.error("真实模型评测无法运行：未检测到 API key（STEPFUN/DEEPSEEK/MINIMAX/MIMO）。请在 apps/.env.local 配置。未调用模型。");
     process.exit(1);
   }
 
-  const args = parseArgs(process.argv.slice(2));
   const cases = filterCases(args);
   const evalEnv: EvalEnv = {
     env: process.env as Record<string, string>,
@@ -376,8 +383,7 @@ async function main() {
   printTinySummary(results);
   printEvidenceLoop(aggregate);
   appendHistory(results, aggregate);
-  maybeRunGate(args.gate, aggregate);
-  maybeWriteBaseline(args, aggregate);
+  maybeRunGate(baseline, aggregate);
 }
 
 main().catch((e) => {

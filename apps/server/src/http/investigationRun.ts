@@ -418,6 +418,7 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       crossExam: { callRaw: byoAdapter.makeCrossExamCaller(modelChoice, (data) => sendEvent(data)) },
       wholeClaimAudit: { callModel: byoAdapter.makeWholeClaimAuditCaller(modelChoice) },
       knowledgeBase,
+      archiveEvidence: true,
       followUpReuse: priorCase
         ? {
             priorReport: priorCase.report,
