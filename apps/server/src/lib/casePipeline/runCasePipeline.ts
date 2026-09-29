@@ -1,82 +1,36 @@
 /**
  * Case Pipeline — production orchestration for one claim case.
- * Depth: rumor → self-proof → per-atom search → fact//source → report → finalizeReport（组装 → 守门 → 复核 → 探活 → 整句判定）.
+ * 阶段：拆题 → 检索 → 核查（+ 来源审计）→ 证据补查 → 质询 → 因果增强 → 整句审计 → 报告写作 → 收尾（finalizeReport）→ 记忆。
+ * 本文件只排阶段顺序；各阶段在 stages/，进行态在 caseState.ts，时间预算在 budget.ts，里程碑快照在 snapshotTimeline.ts。
  * HTTP / SSE are thin adapters; inject runAgent + searchOne + selfProof model.
  */
 
 import { randomUUID } from "node:crypto";
-import {
-  claimAtomKey,
-  collapseNarrativeAtoms,
-  ensureLeapAtoms,
-  forceCheckableAtomTypes,
-  prefilterClaimAtoms,
-  retainAtomTypes,
-  runClaimAtomSelfProof,
-  type SelfProofModelCall,
-} from "../claimAtom/index.js";
-import {
-  retrieveForAtoms,
-  buildAtomSearchBundle,
-  bindAtomEvidenceToVerdicts,
-  type AtomSearchBundle,
-  type KnowledgeHit,
-  type KnowledgeInjection,
-  type SearchOneAtom,
-} from "../atomSearch.js";
-import { looksLikePlanOrPrediction } from "../atomSearchQuery.js";
+import type { SelfProofModelCall } from "../claimAtom/index.js";
+import type { AtomSearchBundle, KnowledgeHit, KnowledgeInjection, SearchOneAtom } from "../atomSearch.js";
 import { pruneDeadCitations, type LivenessDeps } from "../citationLiveness.js";
 import type { ReportReviewIssue } from "../reportReviewer.js";
 import { buildMemoryCandidatesFromRun } from "../memoryCandidateGenerator.js";
 import type { MemoryCandidate } from "../memoryCandidateTypes.js";
 import type { MemoryCandidateStore } from "../memoryCandidateStore.js";
-import {
-  findLoopTargets,
-  runEvidenceLoop,
-  MAX_EVIDENCE_LOOP_PASSES,
-  MAX_EVIDENCE_LOOP_ROUNDS,
-  type EvidenceLoopAtomOutcome,
-  type EvidenceLoopOutcome,
-  type EvidenceLoopHooks,
-  type RewriteQueryModelCall,
-} from "../evidenceLoop/index.js";
-import { mergeSourcesIntoBundle } from "../evidenceLoop/evidenceLoop.js";
-import type { PursuitHop } from "../evidencePursuit/index.js";
+import type { EvidenceLoopOutcome, EvidenceLoopHooks, RewriteQueryModelCall } from "../evidenceLoop/index.js";
 import type { ImageOriginResult } from "../imageOrigin/index.js";
-import {
-  findCrossExamTargets,
-  makeSecondOpinionCall,
-  runCrossExam,
-  type CrossExamOutcome,
-  type CrossExamRawModelCall,
-} from "../crossExam/index.js";
-import {
-  buildInvestigationSnapshot,
-  type InvestigationBuildInput,
-  type InvestigationSnapshotV1,
-} from "../investigation/index.js";
-import {
-  applyCheckabilityRevisions,
-  resolveQuestionAtomKey,
-  runWholeClaimEvaluation,
-  runWholeClaimPlanning,
-  type WholeClaimAuditModelCall,
-  type WholeClaimAuditQuestion,
-  type WholeClaimAuditRun,
-} from "../wholeClaimAudit/index.js";
-import {
-  collapseFollowUpAtoms,
-  planFollowUpReuse,
-  priorRoundLookupOf,
-  reusedAtomKeysOf,
-} from "../followUpReuse.js";
-import { buildDeterministicFinalReport } from "../reportFallback.js";
-import { MINIMAX_M27_DEFAULT_TIMEOUT_MS } from "../minimaxM3.js";
-import {
-  applyClaimSourceRelationAudit,
-  relationAuditCoversDirectionalSources,
-} from "../sourceRelationAudit.js";
+import type { CrossExamOutcome, CrossExamRawModelCall } from "../crossExam/index.js";
+import type { InvestigationSnapshotV1 } from "../investigation/index.js";
+import type { WholeClaimAuditModelCall, WholeClaimAuditRun } from "../wholeClaimAudit/index.js";
+import { planFollowUpReuse } from "../followUpReuse.js";
+import { createBudget } from "./budget.js";
+import type { PipelineContext } from "./caseState.js";
 import { finalizeReport } from "./finalizeReport.js";
+import { createSnapshotTimeline } from "./snapshotTimeline.js";
+import { compose } from "./stages/compose.js";
+import { crossExamine } from "./stages/crossExamine.js";
+import { decompose } from "./stages/decompose.js";
+import { enrichCausal } from "./stages/enrichCausal.js";
+import { evaluateWholeClaim } from "./stages/evaluateWholeClaim.js";
+import { judge } from "./stages/judge.js";
+import { pursueEvidence } from "./stages/pursue.js";
+import { retrieve } from "./stages/retrieve.js";
 
 export type PipelineStep = {
   agent: string;
@@ -299,155 +253,8 @@ export type CasePipelineResult = {
 const REPORT_REVIEWER_TOOL = "Report Reviewer (proposer-reviewer)";
 const MEMORY_WRITE_TOOL = "Agent Memory Write";
 
-function fallbackRumorStep(claim: string, error: unknown): PipelineStep {
-  const text = claim.replace(/\s+/g, " ").trim() || claim;
-  const type = looksLikePlanOrPrediction(text) ? "prediction" : "fact";
-  return {
-    agent: "rumor_detector",
-    agentName: "RumorDetector",
-    output: {
-      claimAtoms: [text],
-      claimAtomTypes: [{ text, verifiable: true, type }],
-      stanceClaimType: {
-        verifiable: true,
-        type,
-        reason: "拆题模型失败，整句按可核查流传说法继续检索",
-      },
-      rumorIndicators: [],
-      severity: "medium",
-      analysis: "拆题服务未完成，已把原句当作一条可核查判断继续检索。",
-      detectedPatterns: [],
-    },
-    status: "completed",
-    error: error instanceof Error ? error.message : "rumor_detector failed",
-    timestamp: Date.now(),
-  };
-}
-
-function fallbackAgentStep(agentId: string, error: unknown, search360Result?: unknown, _claim = ""): PipelineStep {
-  const message = error instanceof Error ? error.message : `${agentId} failed`;
-  const sources = Array.isArray((search360Result as { sources?: unknown[] } | undefined)?.sources)
-    ? ((search360Result as { sources: Array<{ title?: unknown; snippet?: unknown; url?: unknown }> }).sources)
-    : [];
-  const urls = sources
-    .map((s) => String(s.url || "").trim())
-    .filter((u) => /^https?:\/\//i.test(u))
-    .slice(0, 4);
-  if (agentId === "fact_checker") {
-    return {
-      agent: "fact_checker",
-      output: {
-        factCheckResult: "unverified",
-        confidence: "low",
-        sources: urls,
-        keyFindings: ["核查模型未完成，结论只能依据检索到的公开材料。"],
-        counterEvidence: [],
-        subclaimVerdicts: [],
-      },
-      status: "completed",
-      error: message,
-      timestamp: Date.now(),
-    };
-  }
-  return {
-    agent: "source_validator",
-    output: {
-      sourceReliability: "unverified",
-      verifiedSources: [],
-      questionableSources: [],
-      missingSources: ["信源审计模型未完成"],
-      verificationNotes: "信源审计未完成，请直接看来源链接。",
-      claimSourceRelations: [],
-    },
-    status: "completed",
-    error: message,
-    timestamp: Date.now(),
-  };
-}
-
-/**
- * self-proof 全丢兜底（主路 P0 Change B）：模型偶发把全部候选判为不支持时，
- * 先重试一次；仍全丢则 fail-open 保留全部候选继续管道，不让拆题结果凭空归零。
- * 判定标准与拆题候选都不改，只兜「全丢」这一种结局。
- */
-async function runSelfProofWithRetry(
-  claim: string,
-  rawAtoms: unknown,
-  callModel: SelfProofModelCall
-): Promise<Awaited<ReturnType<typeof runClaimAtomSelfProof>>> {
-  const first = await runClaimAtomSelfProof(claim, rawAtoms, callModel);
-  if (first.kept.length > 0) return first;
-  // 候选为空 = 本来就没有可保留的命题，不是「全丢」，不重试也不兜底。
-  const candidates = prefilterClaimAtoms(claim, rawAtoms).atoms;
-  if (candidates.length === 0) return first;
-  const retried = await runClaimAtomSelfProof(claim, rawAtoms, callModel);
-  if (retried.kept.length > 0) return retried;
-  console.warn(
-    `[casePipeline] self-proof 两次均未保留任何候选（候选 ${candidates.length} 条），` +
-      `fail-open 保留全部候选继续管道；被丢弃的候选：${retried.dropped
-        .slice(0, 3)
-        .map((item) => item.text)
-        .join(" / ")}`
-  );
-  // kept 已覆盖全部候选，没有任何候选被这一闸门丢掉。
-  return { kept: candidates, dropped: [], model: retried.model };
-}
-
-function allVerifiableHaveJudgment(rumorStep: PipelineStep, factStep: PipelineStep): boolean {
-  const atoms = Array.isArray(rumorStep.output?.claimAtoms)
-    ? rumorStep.output.claimAtoms.filter((item): item is string => typeof item === "string" && item.trim() !== "")
-    : [];
-  const types = Array.isArray(rumorStep.output?.claimAtomTypes) ? rumorStep.output.claimAtomTypes : [];
-  const verdicts = Array.isArray(factStep.output?.subclaimVerdicts) ? factStep.output.subclaimVerdicts : [];
-  const verifiable = atoms.filter((atom) => {
-    const info = types.find(
-      (row) =>
-        row &&
-        typeof row === "object" &&
-        claimAtomKey(String((row as { text?: unknown }).text ?? "")) === claimAtomKey(atom)
-    ) as { verifiable?: boolean } | undefined;
-    return info?.verifiable !== false;
-  });
-  if (verifiable.length === 0) return false;
-  const judged = new Set(
-    verdicts
-      .filter((row) => row && typeof row === "object" && typeof (row as { verdict?: unknown }).verdict === "string")
-      .map((row) => claimAtomKey(String((row as { claimAtom?: unknown }).claimAtom ?? "")))
-  );
-  return verifiable.every((atom) => judged.has(claimAtomKey(atom)));
-}
-
-function shouldWriteDeterministicReport(args: {
-  rumorStep: PipelineStep;
-  factStep: PipelineStep;
-  timeLeftMs: number;
-  reportWriteMs: number;
-}): boolean {
-  return args.timeLeftMs < args.reportWriteMs && allVerifiableHaveJudgment(args.rumorStep, args.factStep);
-}
-
-function deterministicReportStep(
-  claim: string,
-  steps: PipelineStep[],
-  search360Result: unknown,
-  reason: string
-): PipelineStep {
-  const startedAt = Date.now();
-  return {
-    agent: "report_composer",
-    agentName: "ReportComposer",
-    systemPrompt: "deterministic fallback report",
-    input: { claim, fallbackReason: reason },
-    output: buildDeterministicFinalReport(claim, steps, search360Result, reason),
-    model: "fallback:deterministic-report",
-    latencyMs: Date.now() - startedAt,
-    timestamp: Date.now(),
-    status: "completed",
-  };
-}
-
 export async function runCasePipeline(input: CasePipelineInput): Promise<CasePipelineResult> {
-  const { claim, runAgent, searchOne, callSelfProofModel, runReport, hooks } = input;
+  const { claim, hooks } = input;
   const steps: PipelineStep[] = [];
 
   // 协作式取消：各阶段边界检查一次。fail-open 的 catch 会吞掉 AbortError，
@@ -455,782 +262,86 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const throwIfAborted = () => input.signal?.throwIfAborted();
   throwIfAborted();
 
-  // Investigation Snapshot（Issue #51）：语义里程碑发完整快照；构建失败不阻断管线。
-  let investigationBase: InvestigationBuildInput | undefined;
-  let selectedScopePlan: InvestigationBuildInput["scopePlan"];
-  const searchedAtoms: string[] = [];
-  const emitInvestigation = (patch: Partial<InvestigationBuildInput> & { phase: InvestigationBuildInput["phase"] }): InvestigationSnapshotV1 | null => {
-    throwIfAborted();
-    if (!hooks?.onInvestigationSnapshot) return null;
-    try {
-      investigationBase = { ...(investigationBase ?? {}), ...patch, ...(selectedScopePlan ? { scopePlan: selectedScopePlan } : {}), originalClaim: patch.originalClaim ?? claim } as InvestigationBuildInput;
-      const snapshot = buildInvestigationSnapshot(investigationBase, { claimAtomKeyFn: claimAtomKey });
-      hooks.onInvestigationSnapshot(snapshot);
-      return snapshot;
-    } catch (error) {
-      console.warn(`[casePipeline] investigation snapshot 构建失败: ${String(error)}`);
-      return null;
-    }
-  };
-  emitInvestigation({ phase: "received" });
+  const snapshots = createSnapshotTimeline({ claim, hooks, throwIfAborted });
+  snapshots.received();
 
-  // 时间预算：证据补查/交叉复核/因果增强是「锦上添花」，报告写作是「必须发生」。
-  // 剩余时间不足时提前收敛补查类阶段，把时间让给 ReportComposer。
-  const COMPOSER_RESERVE_MS = 90_000;
-  const CROSS_EXAM_MIN_MS = 45_000;
-  const EVIDENCE_PASS_MIN_MS = 100_000;
-  /** Whole-Claim Audit（Issue #78）：Planning / Evaluation 各自的最低启动余量。 */
-  const AUDIT_MIN_MS = 45_000;
-  /** 每次 Audit 最多提出的高价值问题数（Issue #78 §8）。 */
-  const MAX_AUDIT_QUESTIONS = 3;
-  const timeLeftMs = () =>
-    input.deadline == null ? Number.POSITIVE_INFINITY : input.deadline - Date.now();
-
-  const reusePlan = input.followUpReuse
-    ? planFollowUpReuse({
-        claim,
-        priorReport: input.followUpReuse.priorReport,
-        priorClaim: input.followUpReuse.priorClaim,
-        priorCreatedAt: input.followUpReuse.priorCreatedAt,
-      })
-    : null;
-
-  const wholeClaimAudit: WholeClaimAuditRun = {
-    plan: null,
-    evaluation: null,
-    extraPass: null,
-    model: "",
-    reevaluation: null,
-  };
-  let auditUnresolvedGaps: string[] = [];
-  const auditCallModel = input.wholeClaimAudit?.callModel;
-
-  // Phase 1: RumorDetector — fail-open to the original sentence so search still runs.
-  // 同一案追问且上一轮有可点开证据：不再完整拆题，沿用已核命题（+ 新冒出来的小问题）。
-  let rumorStep: PipelineStep;
-  if (reusePlan) {
-    rumorStep = {
-      agent: "rumor_detector",
-      agentName: "RumorDetector",
-      output: {
-        claimAtoms: reusePlan.atoms,
-        claimAtomTypes: reusePlan.atoms.map((text) => ({ text, verifiable: true, type: "fact" })),
-        claimAtomSelfProof: { kept: reusePlan.atoms, dropped: [], model: "followup-reuse:skip" },
-        stanceClaimType: {
-          verifiable: true,
-          type: "fact",
-          reason: "同一条核查的追问，沿用上一轮已拆命题",
-        },
-        rumorIndicators: [],
-        severity: "medium",
-        analysis: "追问沿用上一轮已拆命题，不再完整拆题。",
-        detectedPatterns: [],
+  const ctx: PipelineContext = {
+    input,
+    claim,
+    hooks,
+    steps,
+    budget: createBudget(input.deadline),
+    snapshots,
+    throwIfAborted,
+    reusePlan: input.followUpReuse
+      ? planFollowUpReuse({
+          claim,
+          priorReport: input.followUpReuse.priorReport,
+          priorClaim: input.followUpReuse.priorClaim,
+          priorCreatedAt: input.followUpReuse.priorCreatedAt,
+        })
+      : null,
+    audit: {
+      callModel: input.wholeClaimAudit?.callModel,
+      run: {
+        plan: null,
+        evaluation: null,
+        extraPass: null,
+        model: "",
+        reevaluation: null,
       },
-      status: "completed",
-      timestamp: Date.now(),
-    };
-    steps.push(rumorStep);
-  } else {
-    try {
-      rumorStep = await runAgent("rumor_detector", steps);
-    } catch (error) {
-      rumorStep = fallbackRumorStep(claim, error);
-    }
-    steps.push(rumorStep);
-
-    throwIfAborted();
-    // 拆题后再自证：长文先抽断言、追问先收成这句追问，避免自证 9 条课文或把 IARC 拆出来顶替。
-    const rawAtoms = Array.isArray(rumorStep?.output?.claimAtoms) ? rumorStep.output.claimAtoms : [];
-    const narrowed = ensureLeapAtoms(claim, collapseFollowUpAtoms(claim, collapseNarrativeAtoms(claim, rawAtoms)));
-    if (!rumorStep.output || typeof rumorStep.output !== "object") {
-      rumorStep.output = {};
-    }
-    rumorStep.output.claimAtoms = narrowed;
-    rumorStep.output.claimAtomTypes = retainAtomTypes(narrowed, rumorStep.output.claimAtomTypes);
-    // 拆题模型已经回来：有命题就立刻上屏，不等自证。没拆出条才停在核对句。
-    if (!rumorStep.error && narrowed.length > 0) {
-      emitInvestigation({ phase: "decomposed", claimAtoms: narrowed });
-    } else if (!rumorStep.error) {
-      emitInvestigation({ phase: "received", preClaimWork: "checking" });
-    }
-    const selfProof = rumorStep.error
-      ? (() => {
-          const pre = prefilterClaimAtoms(claim, rumorStep?.output?.claimAtoms ?? []);
-          return { kept: pre.atoms, dropped: pre.dropped, model: "fallback:skip-after-rumor-error" };
-        })()
-      : await runSelfProofWithRetry(claim, rumorStep?.output?.claimAtoms ?? [], callSelfProofModel);
-    rumorStep.output.claimAtoms = ensureLeapAtoms(
-      claim,
-      collapseFollowUpAtoms(claim, collapseNarrativeAtoms(claim, selfProof.kept)),
-    );
-    rumorStep.output.claimAtomSelfProof = {
-      kept: rumorStep.output.claimAtoms,
-      dropped: selfProof.dropped,
-      model: selfProof.model,
-    };
-    const keptAtoms = Array.isArray(rumorStep.output.claimAtoms)
-      ? (rumorStep.output.claimAtoms as string[])
-      : [];
-    rumorStep.output.claimAtomTypes = retainAtomTypes(
-      keptAtoms,
-      forceCheckableAtomTypes(rumorStep.output.claimAtomTypes)
-    );
-    hooks?.onSelfProof?.({ ...selfProof, kept: keptAtoms });
-
-    if (auditCallModel && timeLeftMs() > AUDIT_MIN_MS) {
-      const planning = await runWholeClaimPlanning({
-        claim,
-        keptAtoms: Array.isArray(rumorStep.output.claimAtoms) ? (rumorStep.output.claimAtoms as string[]) : [],
-        claimAtomTypes: rumorStep.output.claimAtomTypes,
-        stanceClaimType: rumorStep.output.stanceClaimType,
-        callModel: auditCallModel,
-      });
-      if (planning) {
-        const revised = applyCheckabilityRevisions(
-          rumorStep.output.claimAtomTypes,
-          Array.isArray(rumorStep.output.claimAtoms) ? (rumorStep.output.claimAtoms as string[]) : [],
-          planning.plan.checkabilityRevisions
-        );
-        rumorStep.output.claimAtomTypes = revised.claimAtomTypes;
-        wholeClaimAudit.plan = planning.plan;
-        wholeClaimAudit.model = planning.model;
-        rumorStep.output.wholeClaimAuditPlan = {
-          overallQuestion: planning.plan.overallQuestion,
-          checkabilityRevisions: planning.plan.checkabilityRevisions,
-          appliedRevisions: revised.applied,
-          ignoredRevisions: revised.ignored,
-          missingJustifications: planning.plan.missingJustifications,
-          model: planning.model,
-        };
-        auditUnresolvedGaps = [...(planning.plan.missingJustifications ?? [])];
-      }
-    }
-  }
-
-  // 里程碑：拆题完成（self-proof 后保留的原子才是用户主张；dropped 不进 claims）。
-  emitInvestigation({
-    phase: "decomposed",
-    claimAtoms: rumorStep.output.claimAtoms,
-    claimAtomTypes: rumorStep.output.claimAtomTypes,
-  });
-
-  throwIfAborted();
-  // Phase 1b: per-atom retrieval (+ screenshot reverse-image beside searchOne)
-  // 记忆层先查库：命中且新鲜的 atom 用知识库证据替换联网检索（不占 6 个名额），
-  // 命中的原子在 hooks.onKnowledgeHit 里落一条活动行。
-  const { atomSearchBundle, search360Result } = await retrieveForAtoms({
-    claimAtoms: rumorStep.output.claimAtoms,
-    claimAtomTypes: rumorStep.output.claimAtomTypes,
-    priorityClaimAtoms: rumorStep.output.priorityClaimAtoms,
-    onPlan: (scopePlan) => { selectedScopePlan = scopePlan; },
-    searchOne,
-    claimAtomKeyFn: claimAtomKey,
-    lookupImageOrigin: input.lookupImageOrigin,
-    knowledge: input.knowledgeBase
-      ? {
-          lookup: input.knowledgeBase.lookup,
-          onInjected: (hit) => {
-            try {
-              input.knowledgeBase?.markInjected(hit.atom, hit.originDate);
-            } catch (error) {
-              console.error("[casePipeline] 知识库注入记录失败", error);
-            }
-            hooks?.onKnowledgeHit?.(hit);
-          },
-        }
-      : undefined,
-    priorRound: reusePlan
-      ? {
-          lookup: priorRoundLookupOf(reusePlan),
-          onInjected: (hit) => hooks?.onPriorRoundReuse?.(hit),
-        }
-      : undefined,
-    hooks: {
-      mode: hooks?.searchMode ?? "parallel",
-      onAtomStart: (atom) => {
-        // 里程碑：单个原子检索开始（声明该命题进入 searching；来源未返回不预填）。
-        searchedAtoms.push(atom);
-        emitInvestigation({
-          phase: "investigating",
-          claimAtoms: rumorStep.output.claimAtoms,
-          claimAtomTypes: rumorStep.output.claimAtomTypes,
-          atomSearchBundle: { atomsSearched: [...searchedAtoms], byAtomKey: {} },
-        });
-        hooks?.onAtomSearchStart?.(atom);
-      },
-      onAtomResult: hooks?.onAtomSearchResult,
+      unresolvedGaps: [],
     },
-  });
-  const imageOrigin = atomSearchBundle.imageOrigin;
-  // 里程碑：检索返回——来源此时只能是 unassessed（尚未核查）。
-  emitInvestigation({
-    phase: "investigating",
-    claimAtoms: rumorStep.output.claimAtoms,
-    claimAtomTypes: rumorStep.output.claimAtomTypes,
-    atomSearchBundle,
-  });
-
-  throwIfAborted();
-  // Phase 2: FactChecker → SourceValidator.
-  // SourceValidator 必须看见 FactChecker 真正准备发布的方向性 URL，才能对
-  // claimAtom + URL 做独立关系审计；并行各跑各的无法完成这条 P0 门禁。
-  let factStep: PipelineStep;
-  try {
-    factStep = await runAgent("fact_checker", steps, search360Result, atomSearchBundle);
-  } catch (error) {
-    factStep = fallbackAgentStep("fact_checker", error, search360Result, claim);
-  }
-  steps.push(factStep);
-  let sourceStep: PipelineStep;
-  try {
-    sourceStep = await runAgent("source_validator", steps, search360Result, atomSearchBundle);
-  } catch (error) {
-    sourceStep = fallbackAgentStep("source_validator", error, search360Result, claim);
-  }
-  steps.push(sourceStep);
-
-  const sourceBundleSignature = () =>
-    Object.values(atomSearchBundle.byAtomKey)
-      .flatMap((items) => items.map((item) => `${item.url}\u0000${item.snippet ?? ""}`))
-      .sort()
-      .join("\u0001");
-  let sourceAuditSignature = sourceBundleSignature();
-  const applyCurrentSourceAudit = () => {
-    // Never audit an already-demoted public result: fail-closed publication can
-    // temporarily strip direction, but a later successful audit must still be
-    // able to recover the original FactChecker candidates. Keep those candidates
-    // internal and recompute the public verdict from them on every audit refresh.
-    const raw = Array.isArray(factStep?.relationAuditCandidates)
-      ? (factStep.relationAuditCandidates as Array<{ claimAtom: string; [key: string]: unknown }>)
-      : Array.isArray(factStep?.output?.subclaimVerdicts)
-        ? (factStep.output.subclaimVerdicts as Array<{ claimAtom: string; [key: string]: unknown }>)
-      : [];
-    const bound = bindAtomEvidenceToVerdicts(raw, atomSearchBundle.byAtomKey, claimAtomKey);
-    if (!factStep.relationAuditCandidates) {
-      factStep.relationAuditCandidates = bound as Array<Record<string, unknown>>;
-    }
-    factStep.output.subclaimVerdicts = applyClaimSourceRelationAudit(
-      bound,
-      sourceStep?.output?.claimSourceRelations,
-      claimAtomKey,
-    );
   };
-  const refreshSourceAuditIfNeeded = async () => {
-    const nextSignature = sourceBundleSignature();
-    const verdicts = factStep?.output?.subclaimVerdicts;
-    const covered = relationAuditCoversDirectionalSources(
-      verdicts,
-      sourceStep?.output?.claimSourceRelations,
-      claimAtomKey,
-    );
-    if (nextSignature === sourceAuditSignature && covered) return;
-    // If there is no room for another source audit, keep new/unknown material non-directional.
-    // applyCurrentSourceAudit below is fail-closed for uncovered URLs.
-    if (timeLeftMs() <= 20_000) {
-      applyCurrentSourceAudit();
-      return;
-    }
-    try {
-      const refreshed = await runAgent("source_validator", steps, search360Result, atomSearchBundle);
-      steps.push(refreshed);
-      sourceStep = refreshed;
-      sourceAuditSignature = nextSignature;
-    } catch {
-      // Keep the last successful audit. Unknown new URLs stay context-only.
-    }
-    applyCurrentSourceAudit();
-  };
-  applyCurrentSourceAudit();
 
+  const rumorStep = await decompose(ctx);
   throwIfAborted();
-  // 里程碑：核查绑定开始（判词与证据关系出现；来源不再是 unassessed）。
-  emitInvestigation({
-    phase: "judging",
-    claimAtoms: rumorStep.output.claimAtoms,
-    claimAtomTypes: rumorStep.output.claimAtomTypes,
-    atomSearchBundle,
-    subclaimVerdicts: factStep?.output?.subclaimVerdicts,
-    sourceRelationAudits: sourceStep?.output?.claimSourceRelations,
-  });
-  // Phase 2a: Evidence sufficiency loop — ADR-004 + 翻案续期
-  // 提问 → 重判 → 判词仍翻转中且问题仍产证据 → 换策略再问（pass 2+）→ 再重判。
-  // 好问题续命（翻转判词的提问 earns another pass），坏问题判停（整 pass 零新增）。
-  let evidenceLoop: EvidenceLoopOutcome | undefined;
-  const loopAtoms = reusePlan
-    ? atomSearchBundle.atomsSearched.filter((atom) => !reusedAtomKeysOf(reusePlan).has(claimAtomKey(atom)))
-    : atomSearchBundle.atomsSearched;
-  if (input.evidenceLoop?.enabled !== false && loopAtoms.length > 0) {
-    const roundsPerPass = Math.max(
-      1,
-      input.evidenceLoop?.maxRounds ?? MAX_EVIDENCE_LOOP_ROUNDS
-    );
-    const maxPasses = Math.max(
-      1,
-      input.evidenceLoop?.maxPasses ?? MAX_EVIDENCE_LOOP_PASSES
-    );
-    const atomOutcomes = new Map<string, EvidenceLoopAtomOutcome>();
-    const currentVerdicts = () =>
-      Array.isArray(factStep?.output?.subclaimVerdicts)
-        ? (factStep!.output.subclaimVerdicts as Array<Record<string, unknown>>)
-        : [];
-    let totalNewSources = 0;
-    let recheckFactChecker = false;
-    let passes = 0;
-    const pursuitHops: PursuitHop[] = [];
-
-    while (passes < maxPasses) {
-      if (timeLeftMs() < EVIDENCE_PASS_MIN_MS) break;
-      passes += 1;
-      const seedQueriesByAtomKey: Record<string, string[]> = {};
-      for (const [key, outcome] of atomOutcomes) {
-        seedQueriesByAtomKey[key] = outcome.rounds.map((r) => r.query);
-      }
-      const passOutcome = await runEvidenceLoop({
-        claim,
-        bundle: { ...atomSearchBundle, atomsSearched: loopAtoms },
-        factVerdicts: currentVerdicts(),
-        searchOne,
-        claimAtomKeyFn: claimAtomKey,
-        callRewriteModel: input.evidenceLoop?.callRewriteModel,
-        maxRounds: roundsPerPass,
-        startRound: (passes - 1) * roundsPerPass + 1,
-        seedQueriesByAtomKey,
-        needImageOrigin: Boolean(input.lookupImageOrigin),
-        shouldStopEarly: () => timeLeftMs() < COMPOSER_RESERVE_MS,
-        hooks: {
-          onLoopStart: hooks?.onEvidenceLoopStart,
-          onRoundStart: hooks?.onEvidenceLoopRoundStart,
-          onRoundResult: hooks?.onEvidenceLoopRoundResult,
-          onAtomStopped: hooks?.onEvidenceLoopStopped,
-        },
-      });
-      for (const a of passOutcome.atoms) {
-        const prev = atomOutcomes.get(a.atomKey);
-        if (prev) {
-          prev.rounds.push(...a.rounds);
-          prev.stopReason = a.stopReason;
-          prev.trigger = a.trigger;
-        } else {
-          atomOutcomes.set(a.atomKey, { ...a, rounds: [...a.rounds] });
-        }
-      }
-      totalNewSources += passOutcome.totalNewSources;
-      if (passOutcome.pursuitHops?.length) pursuitHops.push(...passOutcome.pursuitHops);
-      // 坏问题停：整 pass 零新增（边际增益判停）
-      if (!passOutcome.recheckFactChecker) break;
-      if (timeLeftMs() < COMPOSER_RESERVE_MS) break;
-      recheckFactChecker = true;
-      // 有新证据 → 重判（判词可能翻转）
-      try {
-        const rechecked = await runAgent("fact_checker", steps, search360Result, atomSearchBundle);
-        steps.push(rechecked);
-        factStep = rechecked;
-        // The evidence loop just added URLs. Before deciding whether the atom
-        // has converged, refresh the independent relation audit; otherwise a
-        // correct recheck would be temporarily demoted and spuriously trigger
-        // another pursuit pass.
-        await refreshSourceAuditIfNeeded();
-      } catch {
-        // 重判失败保留原 factStep；补查证据已入 bundle，报告/溯源仍可见。不再续期。
-        break;
-      }
-      // 问完了：重判后无 unverified / 冲突原子 → 停
-      const remaining = findLoopTargets({
-        atomsSearched: loopAtoms,
-        verdicts: currentVerdicts(),
-        claimAtomKeyFn: claimAtomKey,
-      });
-      if (remaining.length === 0) break;
-      // 仍有未解决原子且上一 pass 问题还在产证据 → 翻案续期（下一 pass 换策略）
-    }
-
-    // 里程碑：证据补查收束（判词可能翻转；缺口与追索目标入快照）。
-    emitInvestigation({
-      phase: "judging",
-      claimAtoms: rumorStep.output.claimAtoms,
-      claimAtomTypes: rumorStep.output.claimAtomTypes,
-      atomSearchBundle,
-      subclaimVerdicts: factStep?.output?.subclaimVerdicts,
-      sourceRelationAudits: sourceStep?.output?.claimSourceRelations,
-      pursuitHops,
-    });
-    if (atomOutcomes.size > 0) {
-      evidenceLoop = {
-        ran: true,
-        atoms: [...atomOutcomes.values()],
-        totalNewSources,
-        recheckFactChecker,
-        passes,
-        pursuitHops,
-      };
-    }
-  }
-
-  // Phase 2b: 最多两条命题，各一次独立质询、定向补查、主调查回应。
-  let crossExam: CrossExamOutcome | undefined;
-  if (
-    input.crossExam?.enabled !== false &&
-    input.crossExam?.callRaw &&
-    timeLeftMs() > CROSS_EXAM_MIN_MS
-  ) {
-    const factVerdicts = Array.isArray(factStep?.output?.subclaimVerdicts)
-      ? (factStep.output.subclaimVerdicts as Array<Record<string, unknown>>)
-      : [];
-    const crossTargets = findCrossExamTargets({
-      verdicts: factVerdicts,
-      bundle: atomSearchBundle,
-      claimAtomKeyFn: claimAtomKey,
-    });
-    {
-      throwIfAborted();
-      crossExam = await runCrossExam({
-        claim,
-        targets: crossTargets,
-        callSecondOpinion: makeSecondOpinionCall(input.crossExam.callRaw),
-        signal: input.signal,
-        deadline: input.deadline,
-        shouldStop: () => timeLeftMs() < COMPOSER_RESERVE_MS,
-        search: async (target, query) => {
-          const result = await searchOne(query);
-          if ((result as { _source?: string } | null)?._source === "tool-error") throw new Error("定向补查失败");
-          const found = buildAtomSearchBundle([{ atom: target.atom, result }], claimAtomKey);
-          const incoming = found.byAtomKey[target.atomKey] ?? [];
-          mergeSourcesIntoBundle(atomSearchBundle, target.atomKey, incoming, claimAtomKey);
-          return incoming.filter(s => (atomSearchBundle.byAtomKey[target.atomKey] ?? []).some(known => known.url === s.url));
-        },
-        respond: async (target, challenge) => {
-          steps.push({ agent: "cross_examiner", output: { kind: "cross_exam", atoms: [challenge] }, timestamp: Date.now() });
-          const rechecked = await runAgent("fact_checker", steps, search360Result, atomSearchBundle);
-          if (rechecked.error || rechecked.status === "failed") throw new Error("回应未完成");
-          const verdicts = Array.isArray(rechecked.output?.subclaimVerdicts) ? rechecked.output.subclaimVerdicts as Array<{ claimAtom: string; [key: string]: unknown }> : [];
-          // 不让一次不完整的回应替换整份调查，也不接受没有回应说明的暗中改判。
-          const previousVerdicts = Array.isArray(factStep?.output?.subclaimVerdicts)
-            ? factStep.output.subclaimVerdicts as Array<{ claimAtom: string }> : [];
-          const expectedKeys = new Set(previousVerdicts.map(v => claimAtomKey(v.claimAtom)));
-          const returnedKeys = new Set(verdicts.filter(v => v && typeof v.claimAtom === "string").map(v => claimAtomKey(v.claimAtom)));
-          const reply = verdicts.find(v => v && typeof v.claimAtom === "string" && claimAtomKey(v.claimAtom) === target.atomKey);
-          if (returnedKeys.size !== verdicts.length || returnedKeys.size !== expectedKeys.size ||
-              [...expectedKeys].some(key => !returnedKeys.has(key)) ||
-              typeof reply?.crossExamResponse !== "string" || !reply.crossExamResponse.trim()) {
-            throw new Error("主调查回应不完整，保留先前调查");
-          }
-          steps.push(rechecked);
-          factStep = rechecked;
-          // Cross-exam can add a new source immediately before this reply.
-          // Audit it before returning finalVerdict to the cross-exam record;
-          // later correction is too late for an already-published relation.
-          await refreshSourceAuditIfNeeded();
-          const verdict = (rechecked.output.subclaimVerdicts as typeof verdicts).find(v => claimAtomKey(v.claimAtom) === target.atomKey);
-          return {
-            response: typeof verdict?.crossExamResponse === "string" ? verdict.crossExamResponse : "",
-            finalVerdict: typeof verdict?.verdict === "string" ? verdict.verdict : undefined,
-            sources: [...(Array.isArray(verdict?.supportingSources) ? verdict.supportingSources : []), ...(Array.isArray(verdict?.contradictingSources) ? verdict.contradictingSources : [])],
-          };
-        },
-      });
-      steps.push({
-        agent: "cross_examiner",
-        agentName: "CrossExaminer",
-        output: {
-          kind: "cross_exam",
-          atoms: crossExam.atoms,
-          confidenceAdjustment: crossExam.confidenceAdjustment,
-          model: crossExam.model,
-        },
-        model: crossExam.model,
-        status: "completed",
-        timestamp: Date.now(),
-      });
-    }
-  } else {
-    crossExam = { ran: false, atoms: [], confidenceAdjustment: 0, model: "", skippedReason: input.crossExam?.enabled === false ? "质询已关闭" : !input.crossExam?.callRaw ? "未接入独立复核" : "质询时间预算不足" };
-  }
+  const retrieval = await retrieve(ctx, rumorStep);
+  throwIfAborted();
+  const state = await judge(ctx, rumorStep, retrieval);
+  await pursueEvidence(ctx, state);
+  await crossExamine(ctx, state);
 
   // Evidence loop / cross-exam may have added URLs. Refresh the independent
   // relation audit once after those bounded searches; until this succeeds,
   // new URLs stay context-only and cannot flash a directional badge.
-  await refreshSourceAuditIfNeeded();
+  await state.sourceAudit.refreshIfNeeded();
 
   // 里程碑：质询收束（冲突 reason 已知/未知如实标注；质询未运行不影响冲突存在性）。
-  emitInvestigation({
-    phase: "judging",
+  snapshots.judging({
     claimAtoms: rumorStep.output.claimAtoms,
     claimAtomTypes: rumorStep.output.claimAtomTypes,
-    atomSearchBundle,
-    subclaimVerdicts: factStep?.output?.subclaimVerdicts,
-    sourceRelationAudits: sourceStep?.output?.claimSourceRelations,
-    crossExam,
-    pursuitHops: evidenceLoop?.pursuitHops,
+    atomSearchBundle: state.atomSearchBundle,
+    subclaimVerdicts: state.factStep?.output?.subclaimVerdicts,
+    sourceRelationAudits: state.sourceStep?.output?.claimSourceRelations,
+    crossExam: state.crossExam,
+    pursuitHops: state.evidenceLoop?.pursuitHops,
   });
 
   if (hooks?.afterFactSource) {
     await hooks.afterFactSource({
       steps,
-      factStep,
-      sourceStep,
-      search360Result,
-      atomSearchBundle,
+      factStep: state.factStep,
+      sourceStep: state.sourceStep,
+      search360Result: state.search360Result,
+      atomSearchBundle: state.atomSearchBundle,
     });
   }
 
-  // Phase 2a: Causal enrichment — 仅当 RumorDetector 拆出的原子含因果断言时，
-  // 并行运行替代解释搜索 + 反证评分，失败可继续（不阻断收束）。
-  const hasCausalAtom = Array.isArray(rumorStep?.output?.claimAtomTypes)
-    && rumorStep.output.claimAtomTypes.some((t) => (t as { type?: string })?.type === "causal");
-  if (hasCausalAtom && timeLeftMs() > COMPOSER_RESERVE_MS) {
-    const causalSteps = await Promise.allSettled([
-      runAgent("alternative_explanation_searcher", steps, search360Result, atomSearchBundle),
-      runAgent("counter_evidence_grader", steps, search360Result, atomSearchBundle),
-    ]);
-    for (const settled of causalSteps) {
-      if (settled.status === "fulfilled") steps.push(settled.value);
-    }
-  }
-
+  await enrichCausal(ctx, state);
   throwIfAborted();
-  // Whole-Claim Evaluation（Issue #78 §7）：初轮核查完成后、报告前。
-  // 回答「原句现在成立到哪里 / 最大缺口 / 下一步查什么」；LM 先验只能生成问题，
-  // 不得成为 Evidence。最多 1 次 audit-driven 补查：只有能映射到真实 kept atom
-  // 的问题才补查（复用 searchOne + bundle 合并 + fact_checker 重判）；纯桥接缺口只记录。
-  // 失败/超预算时保守沿用 Planning 缺口基线（fail-closed，Review 5128449568 Blocker 2）。
-  const writeAuditConservativeArtifact = (status: "failed" | "skipped-budget") => {
-    rumorStep.output.wholeClaimAudit = {
-      supportedWhere: "",
-      biggestGap: "",
-      missingJustifications: auditUnresolvedGaps,
-      model: wholeClaimAudit.model,
-      reevaluated: false,
-      recheckCommitted: false,
-      evaluationStatus: status,
-    };
-  };
-  if (auditCallModel && timeLeftMs() > COMPOSER_RESERVE_MS) {
-    const keptAuditAtoms = Array.isArray(rumorStep.output.claimAtoms)
-      ? (rumorStep.output.claimAtoms as string[])
-      : [];
-    const evaluation = await runWholeClaimEvaluation({
-      claim,
-      keptAtoms: keptAuditAtoms,
-      claimAtomTypes: rumorStep.output.claimAtomTypes,
-      subclaimVerdicts: factStep?.output?.subclaimVerdicts,
-      missingJustificationsFromPlan: wholeClaimAudit.plan?.missingJustifications,
-      callModel: auditCallModel,
-    });
-    if (!evaluation) {
-      wholeClaimAudit.evaluationStatus = "failed";
-      writeAuditConservativeArtifact("failed");
-    }
-    if (evaluation) {
-      wholeClaimAudit.evaluation = evaluation.evaluation;
-      wholeClaimAudit.model = wholeClaimAudit.model || evaluation.model;
-      const keptKeys = new Set(keptAuditAtoms.map((a) => claimAtomKey(a)));
-      const searchables = evaluation.evaluation.nextQuestions
-        .map((q) => ({ question: q, atomKey: resolveQuestionAtomKey(q, keptAuditAtoms) }))
-        .filter((row): row is { question: WholeClaimAuditQuestion; atomKey: string } =>
-          Boolean(row.atomKey && keptKeys.has(row.atomKey))
-        )
-        .slice(0, MAX_AUDIT_QUESTIONS);
-      const newSourcesByAtomKey: Record<string, number> = {};
-      const addedUrlsByAtomKey: Record<string, string[]> = {};
-      let recheckCommitted = false;
-      let newlyBoundEvidenceUrlsByAtomKey: Record<string, string[]> = {};
-      if (searchables.length > 0 && timeLeftMs() > COMPOSER_RESERVE_MS) {
-        for (const { question, atomKey } of searchables) {
-          if (timeLeftMs() <= COMPOSER_RESERVE_MS) break;
-          const query = (question.suggestedQuery || question.question).trim().slice(0, 160);
-          let result: unknown;
-          try {
-            result = await searchOne(query);
-          } catch {
-            continue;
-          }
-          if ((result as { _source?: string } | null)?._source === "tool-error") continue;
-          const found = buildAtomSearchBundle([{ atom: atomKey, result }], claimAtomKey);
-          const beforeUrls = new Set(
-            (atomSearchBundle.byAtomKey[atomKey] ?? []).map((s) => String(s.url ?? ""))
-          );
-          const before = (atomSearchBundle.byAtomKey[atomKey] ?? []).length;
-          mergeSourcesIntoBundle(atomSearchBundle, atomKey, found.byAtomKey[atomKey] ?? [], claimAtomKey);
-          const after = atomSearchBundle.byAtomKey[atomKey] ?? [];
-          const gained = Math.max(0, after.length - before);
-          if (gained > 0) {
-            newSourcesByAtomKey[atomKey] = (newSourcesByAtomKey[atomKey] ?? 0) + gained;
-            const added = after
-              .map((s) => String(s.url ?? ""))
-              .filter((u) => u && !beforeUrls.has(u));
-            addedUrlsByAtomKey[atomKey] = [...(addedUrlsByAtomKey[atomKey] ?? []), ...added];
-          }
-        }
-        // 拿到有效新证据才重判（同 evidence loop 纪律）；重判失败保留原判词。
-        // 提交判定（Review 5128022550 Blocker 2）：只有重判成功返回合法目标 atom
-        // 判词、经 bind 形成非 related-only 的 support/contradict relation、且实际
-        // 引用了本次新 URL，才算 committed；否则第二次 Evaluation 无权关闭旧 gap。
-        if (Object.keys(newSourcesByAtomKey).length > 0) {
-          try {
-            const rechecked = await runAgent("fact_checker", steps, search360Result, atomSearchBundle);
-            const recheckedVerdicts = rechecked?.output?.subclaimVerdicts;
-            if (!rechecked.error && rechecked.status !== "failed" && Array.isArray(recheckedVerdicts) && recheckedVerdicts.length > 0) {
-              let audited = bindAtomEvidenceToVerdicts(
-                recheckedVerdicts as Array<{ claimAtom: string; [key: string]: unknown }>,
-                atomSearchBundle.byAtomKey,
-                claimAtomKey
-              );
-              // New audit-driven sources have not been direction-checked yet. Refresh the
-              // independent audit before they are allowed to close a whole-claim gap.
-              try {
-                const refreshedSource = await runAgent(
-                  "source_validator",
-                  [...steps, rechecked],
-                  search360Result,
-                  atomSearchBundle,
-                );
-                steps.push(refreshedSource);
-                sourceStep = refreshedSource;
-                sourceAuditSignature = sourceBundleSignature();
-              } catch {
-                // Fail closed below: missing audits strip directional use of the new URLs.
-              }
-              audited = applyClaimSourceRelationAudit(
-                audited,
-                sourceStep?.output?.claimSourceRelations,
-                claimAtomKey,
-              );
-              rechecked.output.subclaimVerdicts = audited;
-              const gainedKeys = Object.keys(newSourcesByAtomKey);
-              const boundByKey: Record<string, string[]> = {};
-              const committed = gainedKeys.every((atomKey) => {
-                const verdict = (audited as Array<Record<string, unknown>>).find(
-                  (v) => v && typeof v.claimAtom === "string" && claimAtomKey(v.claimAtom) === atomKey
-                );
-                if (!verdict || verdict.sourcesRelatedOnly === true) return false;
-                const added = new Set(addedUrlsByAtomKey[atomKey] ?? []);
-                const bucketUrls = [
-                  ...(Array.isArray(verdict.supportingSources) ? verdict.supportingSources : []),
-                  ...(Array.isArray(verdict.contradictingSources) ? verdict.contradictingSources : []),
-                ].map((s) =>
-                  s && typeof s === "object" ? String((s as { url?: unknown }).url ?? "") : ""
-                );
-                const referenced = [...new Set(bucketUrls.filter((u) => u && added.has(u)))];
-                boundByKey[atomKey] = referenced;
-                return referenced.length > 0;
-              });
-              if (committed) {
-                recheckCommitted = true;
-                newlyBoundEvidenceUrlsByAtomKey = boundByKey;
-                steps.push(rechecked);
-                factStep = rechecked;
-              }
-              // 未提交：保留原 factStep（旧判词），补查证据仍在 bundle，报告 / 溯源可见。
-            }
-          } catch {
-            // 补查证据已入 bundle，报告 / 溯源仍可见。
-          }
-        }
-      }
-      // 结算（Review 5127740625 Blocker 3 + 5128022550 Blocker 2）：只有重判真正
-      // 提交（新 URL 进 bind 后的非 related-only relation）时，才跑 bounded
-      // re-evaluation 并以第二次 Evaluation 为准关闭旧 gap；否则保守沿用第一次。
-      let finalSupportedWhere = evaluation.evaluation.supportedWhere;
-      let finalBiggestGap = evaluation.evaluation.biggestGap;
-      let reevaluated = false;
-      if (recheckCommitted && timeLeftMs() > COMPOSER_RESERVE_MS) {
-        const reevaluation = await runWholeClaimEvaluation({
-          claim,
-          keptAtoms: keptAuditAtoms,
-          claimAtomTypes: rumorStep.output.claimAtomTypes,
-          subclaimVerdicts: factStep?.output?.subclaimVerdicts,
-          missingJustificationsFromPlan: wholeClaimAudit.plan?.missingJustifications,
-          callModel: auditCallModel,
-        });
-        if (reevaluation) {
-          wholeClaimAudit.reevaluation = reevaluation.evaluation;
-          finalSupportedWhere = reevaluation.evaluation.supportedWhere;
-          finalBiggestGap = reevaluation.evaluation.biggestGap;
-          reevaluated = true;
-          const unresolvedAfterReeval = new Set<string>();
-          for (const q of reevaluation.evaluation.nextQuestions) unresolvedAfterReeval.add(q.question);
-          for (const gap of reevaluation.evaluation.missingJustifications) unresolvedAfterReeval.add(gap);
-          auditUnresolvedGaps = [...unresolvedAfterReeval];
-        }
-      }
-      if (!reevaluated) {
-        // 无 target 的桥接问题 + 补查没取得新来源的问题 + eval 缺口 → 未解决，
-        // 交给收权门限制整句结论强度（§11）。
-        const resolvedKeys = new Set(Object.keys(newSourcesByAtomKey));
-        const unresolved = new Set<string>();
-        for (const q of evaluation.evaluation.nextQuestions) {
-          const atomKey = resolveQuestionAtomKey(q, keptAuditAtoms);
-          if (!atomKey || !keptKeys.has(atomKey) || !resolvedKeys.has(atomKey)) unresolved.add(q.question);
-        }
-        for (const gap of evaluation.evaluation.missingJustifications) unresolved.add(gap);
-        auditUnresolvedGaps = [...unresolved];
-      }
-      wholeClaimAudit.extraPass = {
-        ran: searchables.length > 0,
-        questionsSearched: searchables.length,
-        newSourcesByAtomKey,
-        unresolvedQuestions: auditUnresolvedGaps,
-        reevaluated,
-        recheckCommitted,
-        newlyBoundEvidenceUrlsByAtomKey,
-      };
-      wholeClaimAudit.evaluationStatus = "completed";
-      rumorStep.output.wholeClaimAudit = {
-        supportedWhere: finalSupportedWhere,
-        biggestGap: finalBiggestGap,
-        missingJustifications: auditUnresolvedGaps,
-        model: evaluation.model,
-        reevaluated,
-        recheckCommitted,
-        evaluationStatus: "completed",
-      };
-      // 里程碑：audit 补查可能新增来源 / 翻转判词，快照同步一次。
-      emitInvestigation({
-        phase: "judging",
-        claimAtoms: rumorStep.output.claimAtoms,
-        claimAtomTypes: rumorStep.output.claimAtomTypes,
-        atomSearchBundle,
-        subclaimVerdicts: factStep?.output?.subclaimVerdicts,
-        sourceRelationAudits: sourceStep?.output?.claimSourceRelations,
-      });
-    }
-  } else if (auditCallModel) {
-    // 预算不足未启动 Evaluation：保守沿用 Planning 缺口基线，不留静默空档。
-    wholeClaimAudit.evaluationStatus = "skipped-budget";
-    writeAuditConservativeArtifact("skipped-budget");
-  }
+  await evaluateWholeClaim(ctx, state);
 
   // Whole-claim audit may add another bounded search pass after the earlier
   // source audit. Refresh once more if needed; otherwise keep any new URL
   // non-directional rather than letting ReportComposer inherit an unaudited bucket.
-  await refreshSourceAuditIfNeeded();
+  await state.sourceAudit.refreshIfNeeded();
 
-  // Phase 3: ReportComposer（+ adapter 兜底）。分条已齐且不够一次写报告
-  // （窗口约 90s，MiniMax 单次默认 180s）时跳过 LLM，走确定性报告再 complete。
-  const reportWriteMs = Math.max(COMPOSER_RESERVE_MS, MINIMAX_M27_DEFAULT_TIMEOUT_MS);
-  throwIfAborted();
-  const reportStep = shouldWriteDeterministicReport({
-    rumorStep,
-    factStep,
-    timeLeftMs: timeLeftMs(),
-    reportWriteMs,
-  })
-    ? deterministicReportStep(
-        claim,
-        steps,
-        search360Result,
-        "剩余时间不够写完整报告，按已有分条判断收束。"
-      )
-    : await runReport({
-        claim,
-        steps,
-        search360Result,
-        atomSearchBundle,
-        signal: input.signal,
-        deadlineMs: input.deadline,
-      });
-  throwIfAborted();
-  steps.push(reportStep);
+  const reportStep = await compose(ctx, state);
+  const { atomSearchBundle, search360Result, imageOrigin, evidenceLoop, crossExam } = state;
+  const { factStep, sourceStep } = state;
+  const auditUnresolvedGaps = ctx.audit.unresolvedGaps;
+  const wholeClaimAudit = ctx.audit.run;
 
   const { finalReport, deadUrls: deadCitationUrls, review } = await finalizeReport({
     claim,
@@ -1257,8 +368,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     signal: input.signal,
   });
   // 里程碑（完成）：finalReport.investigation = 稳定快照；报告 + 复核 + 探活后构建。
-  const finalInvestigation = emitInvestigation({
-    phase: "complete",
+  const finalInvestigation = snapshots.complete({
     claimAtoms: rumorStep.output.claimAtoms,
     claimAtomTypes: rumorStep.output.claimAtomTypes,
     atomSearchBundle,

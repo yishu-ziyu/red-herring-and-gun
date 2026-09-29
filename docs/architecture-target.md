@@ -22,14 +22,15 @@
 3. **时间预算散在函数体各处。** 90s、45s、100s、45s、20s 五个阈值，外加「报告写作需要 max(90s, 180s)」。慢调查为什么跳过了报告写作（golden g01 真实运行就是这样收束的），要把整个函数读完才知道。
 4. **里程碑快照靠 patch 累积。** `emitInvestigation` 把每次的 patch 合进 `investigationBase` 再整份重建，外加 `selectedScopePlan` 的旁路赋值。快照顺序本身是产品行为（首份 judging 快照必须已经过来源审计，`behavior-spec` 4.8）。
 
-### 2.2 目标形状
+### 2.2 目标形状（Slice A、B 已完成）
 
 ```text
 apps/server/src/lib/casePipeline/
   runCasePipeline.ts        只剩阶段顺序与「这一阶段跑不跑」的判断；对外签名不变
-  caseState.ts              显式的进行态：命题与类型、检索包、核查与审计步骤、审计缺口、追索与质询记录
-  budget.ts                 时间预算：阈值常量与具名判断（canPursueEvidence / canCrossExamine / mustWriteDeterministicReport …）
+  caseState.ts              显式的进行态：调查上下文（输入、步骤记录、预算、快照、整句审计）+ 核查开始后的进行态
+  budget.ts                 时间预算：阈值常量与具名判断（canCrossExamine / mustYieldToComposer / hasComposerHeadroom …）
   snapshotTimeline.ts       里程碑快照：received / decomposed / investigating / judging / complete 各一个方法
+  sourceAudit.ts            来源关系审计的刷新：检索包签名、刷新条件、没时间或失败时 fail-closed
   stages/
     decompose.ts            拆题 → 收窄 → 自证（含重试与 fail-open）→ 类型闸 → 整句审计规划
     retrieve.ts             逐命题检索（知识库与上一轮复用），不改检索策略
@@ -39,16 +40,17 @@ apps/server/src/lib/casePipeline/
     enrichCausal.ts         因果增强
     evaluateWholeClaim.ts   整句审计评估 → 补查 → 提交判定 → 重评
     compose.ts              报告：LLM 或确定性兜底
-  finalizeReport.ts         收尾链的唯一出口：函数体从上到下就是有序步骤表（Slice A 已完成）
+  finalizeReport.ts         收尾链的唯一出口：函数体从上到下就是有序步骤表
 ```
 
 | 新模块 | 解决 2.1 的哪一条 | 深度（接口小、实现多） |
 |---|---|---|
 | `finalizeReport.ts` | 1 | 输入：报告写作步骤 + 进行态 + 注入的收尾钩子 + 探活端口；输出：终态报告、死链、复核结果。16 步写成一个函数里的 16 段，每段带编号与出处注释；不做步骤框架（步骤之间靠局部常量传值，TypeScript 能查出先后错位） |
-| `caseState.ts` | 2 | 各阶段只通过进行态读写；字段名就是事实名（`factVerdicts`、`sourceAudit`、`auditGaps`），一个事实只有一个家 |
+| `caseState.ts` | 2 | 各阶段只通过进行态读写；字段名就是事实名（`factStep` 是当前生效的核查、`sourceStep` 是当前生效的审计、`audit.unresolvedGaps` 是整句缺口），一个事实只有一个家 |
 | `budget.ts` | 3 | 所有「剩余时间够不够」的判断集中；阈值数值不变 |
 | `snapshotTimeline.ts` | 4 | 快照累积与发出在一处；阶段只调具名方法，顺序可测 |
-| `stages/*` | 2 | 每个阶段是一个函数：`(state, deps) → Promise<void>`；阶段内逻辑原样搬，不重写算法 |
+| `sourceAudit.ts` | 2 | 补查、质询、整句审计三处都要「加了新来源先刷新审计」；刷新条件与签名原来是三个闭包加一个可变变量，现在是一个对象的三个方法 |
+| `stages/*` | 2 | 每个阶段是一个函数：拆题、检索返回结果，核查建出进行态，之后的阶段是 `(ctx, state) → Promise<void>`；阶段内逻辑原样搬，不重写算法 |
 
 不新增：阶段插件机制、通用 pipeline 框架、事件总线。阶段是固定的八个，写成八个函数调用就够了。
 

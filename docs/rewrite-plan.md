@@ -27,7 +27,7 @@
 | 风险 | 原地修改的对象引用：`reportStep.output` 与 `finalReport` 是同一对象，`factStep.output` 在守门里被改（`_factCheckResultDerived`）。新实现必须保留这些副作用，差分要比对 `factStep.output` |
 | 结果 | 差分 116 条输入全部逐字段相同：单元测试 82 条、golden 17 条 × 两种时钟（其中 44 条有死链剔除、1 条探活通道出错、7 条原子级守门救回 mixed、12 条短谣通道被收权门拦下）。开着影子跑的 golden 与基线 20/20 相同。变异 12 个（调换或删掉一步）：追问直答、打不开的链接、整句判定后的重绑这三处原来没有任何测试或 golden 能发现，补了 `finalizeReport.test.ts`（7 条，含副作用顺序与探活端口失败语义），并在短谣通道用例里加了命题条目与全局引用的断言；之后单元测试 + golden 能发现 10 个，剩下 2 个（复核后不重绑、质询记录挪到复核之后）只改复核结果里不外露的报告副本，用户可见输出不变。换上新实现后 golden 与 `base`、`base-nv` 20/20 相同，界面 golden 与 `ui-base` 8/8 相同，apps 全量 1482 passed / 0 failed。`runCasePipeline.ts` 1,541 → 1,344 行 |
 
-## Slice B：管线阶段与进行态 → `stages/*`、`caseState.ts`、`budget.ts`、`snapshotTimeline.ts`
+## Slice B：管线阶段与进行态 → `stages/*`、`caseState.ts`、`budget.ts`、`snapshotTimeline.ts`（2026-09-29 完成）
 
 | 项 | 内容 |
 |---|---|
@@ -38,6 +38,7 @@
 | 差分 | 系统级 golden（录音保证同一输入）；模块级复用现有 fake 驱动的测试 |
 | 删旧 | 旧函数体整体替换，不留并存路径 |
 | 风险 | 请求发出顺序与内容一变，录音就对不上（miss）。`network` 清单比对能立刻发现 |
+| 结果 | `runCasePipeline.ts` 1,344 → 454 行（其中对外类型约 200 行），函数体只剩阶段顺序。新增 `budget.ts`（阈值与 7 个具名判断，每个判断保留原来的比较方向）、`snapshotTimeline.ts`（5 个里程碑方法，合并语义不变）、`sourceAudit.ts`、`caseState.ts`、`stages/` 8 个文件；`throwIfAborted` 的位置逐个保留。golden 与 `base`、`base-nv` 20/20 相同，外部请求发出顺序与基线一致（g12 关虚拟时钟时基线代码自己也会换序），界面 golden 8/8，apps 全量 1488 passed / 0 failed。变异 8 个（调换阶段、挪动或删掉审计刷新、首份 judging 快照提前、刷新后不重算）：单元测试原来只能发现 1 个，golden 能发现 7 个（其中 1 个只有请求顺序提示能看出，golden 为此加了发出顺序比对）；补了 `runCasePipeline.stageOrder.test.ts`（整条调用与快照序列）与 `sourceAudit.test.ts`（5 条），之后单元测试 8 个全能发现。golden 录音只在本机，这两条测试是仓库里守阶段顺序的东西 |
 
 ## Slice C：HTTP 调查处理器 → `http/investigationRun.ts`、`http/sseChannel.ts`、`http/orchestrateStream.ts`
 

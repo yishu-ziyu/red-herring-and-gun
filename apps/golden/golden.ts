@@ -7,7 +7,7 @@
  *   npx tsx golden/golden.ts compare <标签A> <标签B> [场景…]  逐场景比对 normalized.json，有差异退出码 1
  *
  * 比对规则：客户端消费的帧、HTTP 回复、落库、落盘文件、外部请求清单逐项相等才算通过；
- * 客户端忽略的过程帧只比多重集合，它们的到达顺序变化记为提示，不算失败。
+ * 客户端忽略的过程帧只比多重集合，它们的到达顺序变化记为提示，不算失败；外部请求的发出顺序同样记为提示。
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -62,6 +62,25 @@ function compareScenario(labelA: string, labelB: string, name: string): { failur
     if (seqA && seqB && JSON.stringify(seqA) !== JSON.stringify(seqB)) {
       warnings.push(`steps[${i}] ${String(stepsA[i]!.label)}：帧到达顺序不同（过程帧顺序不是契约）`);
     }
+  }
+  // 外部请求清单按指纹比多重集合（上面）；发出顺序另作提示：同一份代码两次回放的顺序是稳定的，
+  // 重排阶段时顺序一变就说明调用时序动了，要先查清再往下走。
+  const netOrder = (label: string) => {
+    const file = join(OUT, "runs", label, name, "net.jsonl");
+    if (!existsSync(file)) return null;
+    return readFileSync(file, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const entry = JSON.parse(line) as { mode?: string; key?: string; n?: number };
+        return `${entry.mode} ${entry.key} ${entry.n ?? ""}`;
+      });
+  };
+  const orderA = netOrder(labelA);
+  const orderB = netOrder(labelB);
+  if (orderA && orderB && JSON.stringify(orderA) !== JSON.stringify(orderB)) {
+    const at = orderA.findIndex((line, i) => line !== orderB[i]);
+    warnings.push(`外部请求发出顺序不同（第 ${at < 0 ? Math.min(orderA.length, orderB.length) : at + 1} 条起）`);
   }
   const failures: Diff[] = [];
   diffValues(strip(a), strip(b), "", failures, 40);
