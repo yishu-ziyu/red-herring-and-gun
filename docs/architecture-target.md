@@ -101,18 +101,20 @@ apps/server/src/
 
 `App.tsx` 一个组件 923 行，15 个 `useState`、5 个副作用互相读写：账户、历史、落库、进行中指针、刷新接回、追问、调整重点都在里面。出过的事：从首页进入调查不回页顶（9-28）、换案件后迟到的保存结果改错了状态（`isCurrent` 守卫）、登出后迟到的旧响应渲染出来（`scopeVersion`）。这些守卫都是对的，但散在各处，很难看出哪个状态被谁保护。
 
-### 4.2 目标形状
+### 4.2 目标形状（Slice D 已完成）
 
 ```text
 apps/src/
-  App.tsx                         路由分支 + 组合下面四个 hook + 布局（不再持有业务状态）
-  app/useAccountSession.ts        me / 登录后水合 / 登出；持有 scopeVersion 与 accountEmailRef
-  app/useCaseHistory.ts           历史列表：水合与合并、落库（本机 + 服务端）、打开历史、同句守卫
-  app/useRunPointer.ts            进行中指针的读写与刷新接回
-  app/useActiveInvestigation.ts   当前案件：开跑、追问、调整重点、重查、回首页
+  App.tsx                         路由分支、操作（开跑、追问、调整重点、重查、打开历史、登出）与布局
+  app/useAccountSession.ts        me / 服务端列表 / 本机留存的水合；持有 scopeVersion 与 accountEmailRef
+  app/useRunPointer.ts            刷新接回（只跑一次）与进行中座标的读写
+  app/useResultPersistence.ts     结果落库（本机 → 服务端）、保存状态、重试同步、isCurrent 守卫
+  app/runPointer.ts  caseViews.ts  notices.ts   座标存储、案件形状与纯函数、提示文案
 ```
 
 每个 hook 只拥有自己那部分状态，守卫跟着它保护的状态走。`useInvestigationRun` 与纯 reducer `applyRunEvent` 已经是好形状，不动。
+原计划的 `useCaseHistory` 与 `useActiveInvestigation` 没有拆：打开历史、开跑、追问、调整重点同时读写当前案件、轮次选择、调查流与历史列表，拆开要在 hook 之间来回传十几个 setter，比留在 App 里更难读。
+effect 的声明顺序与拆之前一致（滚到页顶 → 水合 → 接回 → 座标 → 开发固定装置 → 落库 → 调整重点）。App.tsx 923 → 558 行。
 
 ## 5. 依赖方向
 

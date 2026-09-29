@@ -53,7 +53,7 @@
 | 风险 | 帧顺序与额度结算时机；golden 的帧序列与 quota 查询结果能发现 |
 | 结果 | `handlers.ts` 1,337 → 446 行；生命周期、结局与结算、管线事件、公开清洗、SSE 格式各一个文件（见 `architecture-target` 3.2）。旧的 5 个 catch 分支改成「先分类、再按表结算」，每个分支的帧与先后不变；两处 `runSignal?.aborted ? "cancelled" : "interrupted"` 在取消已先判定、中间没有 await 的前提下恒为 interrupted，写进终态表。`runOutcome.test.ts` 7 条逐分支对照。golden 与 `base`、`base-nv` 20/20 相同（g12 关虚拟时钟时的请求换序与基线代码第二次回放一致），界面 golden 8/8，apps 全量 1495 passed / 0 failed。过程中发现接回流不做公开清洗（R11），原样保留 |
 
-## Slice D：前端产品壳 → `app/use*.ts`
+## Slice D：前端产品壳 → `app/use*.ts`（2026-09-29 完成）
 
 | 项 | 内容 |
 |---|---|
@@ -64,6 +64,7 @@
 | 差分 | 界面 golden 基线 `ui-base` 对比；浏览器端到端（Ego 脚本，数值断言） |
 | 删旧 | App 内联状态整体移走 |
 | 风险 | 副作用执行顺序（React effect 顺序跟声明顺序走）；界面 golden 的逐帧 DOM 与 localStorage 能发现 |
+| 结果 | 动手前先补了 4 条界面交互流程 golden（追问两轮、刷新接回、打开本机历史、登录存档追问退出，基线 `ui-flows-base`，三次运行相同）。拆出 3 个 hook 与 3 个纯模块，App.tsx 923 → 558 行，effect 声明顺序不变。界面 golden 8/8 与 4/4 与基线相同；apps 全量 1495 passed / 0 failed（`inputMedia` 偶发失败一次，单独重跑 3 次通过，与改动无关，基线时就有）。浏览器：Ego 脚本 7/7（`outputs/e2e/slice-d/e2e.mjs`，首页 → 提交 → 完成 → 来源抽屉 → 追问 → 刷新后历史重开 → 停止，回放后端 `golden.ts serve`）；Chrome 真人式走查：首页滚到案例区再打开，结论在第一屏，来源抽屉完整在视口内，回首页预填原句 |
 
 ## Slice E：死代码与清理
 

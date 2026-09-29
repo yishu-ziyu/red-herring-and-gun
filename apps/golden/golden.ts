@@ -5,13 +5,14 @@
  *   npx tsx golden/golden.ts record <场景…> [--jobs 3]     真实联网，录音写 outputs/golden/tapes/<world>
  *   npx tsx golden/golden.ts replay <标签> [场景…] [--jobs 4]  回放，结果写 outputs/golden/runs/<标签>/<场景>
  *   npx tsx golden/golden.ts compare <标签A> <标签B> [场景…]  逐场景比对 normalized.json，有差异退出码 1
+ *   npx tsx golden/golden.ts serve <录音…> [--port 3917] [--hold 子串]  浏览器端到端用的回放后端（一直跑）
  *
  * 比对规则：客户端消费的帧、HTTP 回复、落库、落盘文件、外部请求清单逐项相等才算通过；
  * 客户端忽略的过程帧只比多重集合，它们的到达顺序变化记为提示，不算失败；外部请求的发出顺序同样记为提示。
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { OUT, digest, runScenario } from "./harness";
+import { OUT, digest, runScenario, serveReplay } from "./harness";
 import { scenarios } from "./scenarios";
 
 type Diff = { path: string; a: unknown; b: unknown };
@@ -170,7 +171,16 @@ async function main() {
     if (failed > 0) process.exitCode = 1;
     return;
   }
-  console.log("用法：list | record <场景…> | replay <标签> [场景…] | compare <标签A> <标签B> [场景…]");
+  if (command === "serve") {
+    const port = flag(args, "--port", 3917);
+    const holdIndex = args.indexOf("--hold");
+    const hold = holdIndex >= 0 ? args.splice(holdIndex, 2)[1] : undefined;
+    const worlds = args.length ? args : ["g01-mixed"];
+    console.log(`serving replay of ${worlds.join(" + ")} on http://127.0.0.1:${port}${hold ? `（扣住含「${hold}」的请求）` : ""}`);
+    await serveReplay({ worlds, port, label: `serve-${port}`, hold });
+    return;
+  }
+  console.log("用法：list | record <场景…> | replay <标签> [场景…] | compare <标签A> <标签B> [场景…] | serve <录音…> [--port N] [--hold 子串]");
   process.exitCode = 2;
 }
 

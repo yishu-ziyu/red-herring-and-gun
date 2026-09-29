@@ -543,6 +543,48 @@ export async function runScenario(name: string, scenario: Scenario, mode: Mode, 
   return { capture, runDir };
 }
 
+/**
+ * 浏览器端到端用的回放后端：真实服务进程 + 若干份录音，外部请求一律回放、不联网。
+ * hold 与场景里的扣住同义：匹配的请求一直不回复，直到调用方中止（用来测「停止」）。
+ * 一直跑到调用方结束进程。
+ */
+export async function serveReplay(options: { worlds: string[]; port: number; label: string; hold?: string }): Promise<void> {
+  if (existsSync("/usr/local/bin/codex")) {
+    throw new Error("本机存在 /usr/local/bin/codex：provider 链可能落到本地 codex。先移开或给 harness 加隔离。");
+  }
+  const runDir = join(OUT, "serve", options.label);
+  rmSync(runDir, { recursive: true, force: true });
+  const workDir = join(runDir, "work");
+  const dataDir = join(runDir, "data");
+  const replayTape = join(runDir, "tape");
+  mkdirSync(workDir, { recursive: true });
+  mkdirSync(dataDir, { recursive: true });
+  const manifest = JSON.parse(readFileSync(join(tapeDir(options.worlds[0] ?? "g01-mixed"), "_env.json"), "utf8")) as Record<string, string>;
+  for (const world of options.worlds) prepareReplayTape(world, replayTape);
+  const env: Record<string, string> = {
+    PATH: process.env.PATH ?? "",
+    LANG: process.env.LANG ?? "en_US.UTF-8",
+    TMPDIR: mkdtempSync(join(tmpdir(), "rhgs-")),
+    HOME: workDir,
+    ...replayEnv(manifest),
+    DATA_DIR: dataDir,
+    RHG_DB_FILE: join(dataDir, "rhg.sqlite"),
+    RHG_DATA_DIR: dataDir,
+    UPLOAD_DIR: join(workDir, "uploads"),
+    RHG_NET_LOG: join(runDir, "net.jsonl"),
+    RHG_NET_REPLAY: replayTape,
+    ...(options.hold ? { RHG_NET_HOLD: JSON.stringify({ match: options.hold, releaseFile: join(runDir, "release") }) } : {}),
+    PORT: String(options.port),
+  };
+  delete env.NODE_ENV;
+  const proc = spawn(process.execPath, ["--import", TSX_LOADER, "--import", TAPE_URL, SERVER_ENTRY], {
+    cwd: workDir,
+    env,
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  await new Promise<void>((resolveExit) => proc.on("exit", () => resolveExit()));
+}
+
 export function digest(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 }

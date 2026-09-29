@@ -3,13 +3,9 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ReasoningProvider } from "./store/reasoningStore";
-import {
-  rebuildInvestigationFromReport,
-  validateInvestigationSnapshot,
-  type InvestigationSnapshotV1,
-} from "./lib/investigation";
+import { validateInvestigationSnapshot, type InvestigationSnapshotV1 } from "./lib/investigation";
 import { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot";
-import { ProductShell, type ShellCase } from "./goldenPath/ProductShell";
+import { ProductShell } from "./goldenPath/ProductShell";
 import { InputStage } from "./goldenPath/InputStage";
 import { InvestigationCanvas } from "./goldenPath/InvestigationCanvas";
 import { useInvestigationRun, type StartOptions } from "./goldenPath/useInvestigationRun";
@@ -19,171 +15,25 @@ import { LoginView } from "./components/v3/auth/LoginView";
 import { AccountView } from "./components/v3/auth/AccountView";
 import { ModelProviderSettingsPreview } from "./components/v3/settings/ModelProviderSettingsPreview";
 import { ApiKeySettings } from "./components/v3/settings/ApiKeySettings";
-import type { AccountProfile } from "./components/v3/auth/accountTypes";
-import { accountDisplayName } from "./lib/accountIdentity";
 import { caseIntakeFailedLinks, caseIntakePrimaryText, createCaseIntake, type CaseIntake } from "./lib/caseIntake";
 import { homeCaseSnapshot, type HomeCaseId } from "./goldenPath/homeCases";
 import { createKnowledgeBase, normalizeHistoryClaim } from "./lib/knowledgeBase";
-import type { KnowledgeBaseEntry } from "./lib/schemas";
 import { composeFollowUpClaim, displayFollowUpClaim, previousAnswerText } from "./lib/composeFollowUpClaim";
 import { visiblePriorRoundFromSnapshot } from "./lib/priorRoundBrief";
-import { appendInvestigationRound, readInvestigationThread, threadSummary, type InvestigationThread, type InvestigationRound } from "./lib/investigationThread";
+import type { InvestigationThread, InvestigationRound } from "./lib/investigationThread";
 import { InvestigationThreadHeader } from "./goldenPath/InvestigationThreadHeader";
-
-type ProductMode = "input" | "investigation";
-
-type ActiveCase = {
-  localId: string;
-  claim: string;
-  intake: CaseIntake | null;
-  /** Completed earlier rounds; the current round remains live until it settles. */
-  thread?: InvestigationThread;
-  roundId?: string;
-  roundKind?: InvestigationRound["kind"];
-  /** 服务端存档 id：只有它存在时才谈得上分享（分享是服务端投影）。 */
-  serverCaseId?: string | null;
-  /** 历史/旧调查打开：直接渲染落库快照，不发起调查。 */
-  restored?: {
-    snapshot: InvestigationSnapshotV1;
-    report: Record<string, unknown> | null;
-    at?: number;
-  } | null;
-};
-
-type ServerCaseItem = {
-  caseId: string;
-  claim: string;
-  status?: "done" | "interrupted";
-  createdAt?: number;
-  threadId?: string;
-  threadClaim?: string;
-  roundCount?: number;
-};
-
-/** 进行中那条 run 在本地留的座标：刷新后靠它接回去，而不是重开一次调查。 */
-type SaveStatus = "idle" | "local" | "syncing" | "synced" | "failed";
-
-type StoredRunPointer = {
-  runId: string;
-  claim: string;
-  intake: CaseIntake | null;
-  lastSeq: number;
-  at: number;
-  localId?: string;
-  roundId?: string;
-  roundKind?: InvestigationRound["kind"];
-  thread?: InvestigationThread;
-  accountScope?: string | null;
-};
-
-const RUN_POINTER_KEY = "rhg:active-run";
-
-function readRunPointer(): StoredRunPointer | null {
-  try {
-    const raw = window.localStorage.getItem(RUN_POINTER_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as StoredRunPointer;
-    if (!parsed || typeof parsed.runId !== "string" || !parsed.runId) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeRunPointer(value: StoredRunPointer | null): void {
-  try {
-    if (value) window.localStorage.setItem(RUN_POINTER_KEY, JSON.stringify(value));
-    else window.localStorage.removeItem(RUN_POINTER_KEY);
-  } catch {
-    /* 隐私模式下写不了就不写，不影响调查本身 */
-  }
-}
-
-/**
- * 超时不再一锤定音时的提示（契约 docs/evals/2026-09-12-mainpath-p0.md Change C）。
- * 服务端总超时之后管线仍在跑，这时等结果是可选的：人还在就继续跟着看，
- * 离开或刷新也能从同一条 run 取回同一份结论。
- */
-const TIMEOUT_PENDING_NOTICE = {
-  zh: "还在查，可以离开页面，稍后回来或刷新能看到结果",
-  en: "Still investigating. You can leave this page — come back later or refresh to see the result.",
-};
-
-/**
- * 打开历史条目失败时的提示（契约 docs/evals/2026-09-12-mainpath-p1.md Change G）。
- * 服务端 404/报错、网络中断、旧记录读不出可用快照，这三种都是「点了没反应」，
- * 必须说出来；条目本身的状态不动，用户还能再试。
- */
-const HISTORY_OPEN_FAILED_NOTICE = {
-  zh: "这条历史暂时打不开，条目还留在列表里，可以稍后重试。",
-  en: "This saved check can't be opened right now. It stays in your list; try again later.",
-};
-
-/** 浏览器把接口进程死掉写成 Failed to fetch，不能原样摊在首页主区。 */
-function publicTransportError(message: string, fallback: string): string {
-  if (!message || /failed to fetch|networkerror|load failed|network request failed/i.test(message)) {
-    return fallback;
-  }
-  return message;
-}
-
-/** 从落库 finalReport 确定性取回 Snapshot：优先保存的 investigation，旧数据客户端重建（零模型零搜索）。 */
-function snapshotFromReport(report: Record<string, unknown> | null | undefined): InvestigationSnapshotV1 | undefined {
-  if (!report || typeof report !== "object") return undefined;
-  const embedded = (report as Record<string, unknown>).investigation;
-  if (embedded) {
-    try {
-      return validateInvestigationSnapshot(embedded);
-    } catch {
-      /* 损坏对象走重建 */
-    }
-  }
-  try {
-    return rebuildInvestigationFromReport({ report, claim: typeof report.claim === "string" ? report.claim : "" });
-  } catch {
-    return undefined;
-  }
-}
-
-function toShellCases(items: ServerCaseItem[]): ShellCase[] {
-  return items.map((item) => ({
-    id: item.caseId,
-    claim: item.threadClaim ?? item.claim,
-    threadId: item.threadId,
-    roundCount: item.roundCount,
-    status: item.status === "interrupted" ? "interrupted" : item.status === "done" ? "done" : "running",
-    createdAt: item.createdAt,
-  }));
-}
-
-function groupThreadCases(items: ShellCase[]): ShellCase[] {
-  const latest = new Map<string, ShellCase>();
-  for (const item of items) {
-    const key = item.threadId ?? item.id;
-    const previous = latest.get(key);
-    if (!previous || (item.roundCount ?? 0) > (previous.roundCount ?? 0) ||
-        ((item.roundCount ?? 0) === (previous.roundCount ?? 0) && (item.createdAt ?? 0) > (previous.createdAt ?? 0))) latest.set(key, item);
-  }
-  return [...latest.values()].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
-}
-
-function threadForRound(active: ActiveCase, snapshot: InvestigationSnapshotV1): InvestigationThread {
-  const thread = active.thread ?? { version: 1 as const, id: active.roundId ?? active.localId, originalClaim: active.claim, rounds: [] };
-  if (snapshot.phase !== "complete" && snapshot.phase !== "interrupted") return thread;
-  return appendInvestigationRound(thread, {
-    id: active.roundId ?? active.localId,
-    kind: active.roundKind ?? "initial",
-    question: displayFollowUpClaim(active.claim),
-    snapshot,
-  });
-}
-
-function restoredThreadFields(report: unknown): Pick<ActiveCase, "thread" | "roundId" | "roundKind"> {
-  const saved = readInvestigationThread(report);
-  if (!saved?.rounds.length) return {};
-  const last = saved.rounds[saved.rounds.length - 1];
-  return { thread: { ...saved, rounds: saved.rounds.slice(0, -1) }, roundId: last.id, roundKind: last.kind };
-}
+import {
+  restoredThreadFields,
+  snapshotFromReport,
+  threadForRound,
+  type ActiveCase,
+  type ProductMode,
+} from "./app/caseViews";
+import { HISTORY_OPEN_FAILED_NOTICE, publicTransportError, TIMEOUT_PENDING_NOTICE } from "./app/notices";
+import { writeRunPointer } from "./app/runPointer";
+import { useAccountSession } from "./app/useAccountSession";
+import { useResultPersistence } from "./app/useResultPersistence";
+import { useRunPointer } from "./app/useRunPointer";
 
 function ProductApp() {
   const { lang } = useUiLang();
@@ -197,137 +47,22 @@ function ProductApp() {
   const [active, setActive] = useState<ActiveCase | null>(null);
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = active?.localId ?? null;
-  const [cases, setCases] = useState<ShellCase[]>([]);
-  const [historyReady, setHistoryReady] = useState(false);
   const [historyNotice, setHistoryNotice] = useState("");
-  const [account, setAccount] = useState<AccountProfile | null>(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [sameClaim, setSameClaim] = useState<{ id: string; claim: string; at?: number; intake: CaseIntake } | null>(null);
-  /** 保存状态：独立于结果存在与否显示，不把失败藏在 console。 */
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
-  const scopeVersion = useRef(0);
-  const accountEmailRef = useRef<string | null>(null);
   const run = useInvestigationRun();
   const [draftClaim, setDraftClaim] = useState("");
   const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
   const [pendingFocus, setPendingFocus] = useState<{ question: string; runId: string } | null>(null);
-  const persistedRoundRef = useRef<string | null>(null);
-  const [initialRunPointer] = useState(readRunPointer);
 
   const isModelSettingsPreviewRoute = import.meta.env.DEV && window.location.pathname === "/model-settings-preview";
   const isApiKeySettingsRoute = window.location.pathname === "/settings/api-key";
 
-  // 与旧壳同一纪律：不用 AbortSignal（/me /cases 是幂等 GET，重复结果幂等）。
-  const hydrateAccountCases = useCallback(async () => {
-    const version = ++scopeVersion.current;
-    setHistoryReady(false);
-    try {
-      const me = await fetch("/api/auth/email/me", { credentials: "include" });
-      if (version !== scopeVersion.current) return;
-      if (!me.ok) {
-        setAccount(null);
-        accountEmailRef.current = null;
-      } else {
-        const data = (await me.json()) as Partial<AccountProfile> & { authenticated?: boolean; email?: string };
-        if (version !== scopeVersion.current) return;
-        if (data.authenticated && typeof data.email === "string") {
-          setAccount({
-            email: data.email,
-            displayName: typeof data.displayName === "string" ? data.displayName : "",
-            name: typeof data.name === "string" ? data.name : accountDisplayName(data.email, data.displayName),
-            createdAt: typeof data.createdAt === "number" ? data.createdAt : Date.now(),
-            loginCount: typeof data.loginCount === "number" ? data.loginCount : 1,
-            lastLoginAt: typeof data.lastLoginAt === "number" ? data.lastLoginAt : Date.now(),
-          });
-          accountEmailRef.current = data.email;
-        } else {
-          setAccount(null);
-          accountEmailRef.current = null;
-        }
-      }
-      const listRes = await fetch("/api/cases", { credentials: "include" });
-      if (listRes.ok && version === scopeVersion.current) {
-        const list = (await listRes.json()) as { cases?: ServerCaseItem[] };
-        setCases(groupThreadCases(toShellCases(Array.isArray(list.cases) ? list.cases : [])));
-      }
-      const local = await createKnowledgeBase(accountEmailRef.current).listCases();
-      if (version !== scopeVersion.current) return;
-      setCases((prev) => {
-        const localItems: ShellCase[] = local.map((entry) => ({
-          id: entry.id,
-          claim: threadSummary(entry.finalReport).threadClaim ?? entry.claim,
-          ...threadSummary(entry.finalReport),
-          status: (entry.finalReport as Record<string, unknown>)._source === "error-boundary" ? "interrupted" as const : "done" as const,
-          createdAt: entry.timestamp,
-          report: entry.finalReport as Record<string, unknown>,
-        }));
-        const ids = new Set(localItems.map((item) => item.id));
-        return groupThreadCases([...localItems, ...prev.filter((item) => !ids.has(item.id))]);
-      });
-      setHistoryReady(true);
-    } catch {
-      if (version === scopeVersion.current) setHistoryReady(true);
-    }
-  }, []);
+  // 账户与历史水合（挂载即跑一次；登录成功后再跑）。
+  const { account, setAccount, accountEmailRef, scopeVersion, cases, setCases, historyReady, hydrateAccountCases } = useAccountSession();
 
-  useEffect(() => {
-    void hydrateAccountCases();
-  }, [hydrateAccountCases]);
-
-  // 刷新恢复：本地留过一条没跑完的 run，就接回去读它的状态与已有材料。
-  // 不重开调查，也不重复扣额。只跑一次。
-  const resumedRef = useRef(false);
-  useEffect(() => {
-    if (resumedRef.current || !historyReady) return;
-    resumedRef.current = true;
-    const pointer = initialRunPointer;
-    if (!pointer) return;
-    if ((pointer.accountScope ?? null) !== accountEmailRef.current) { writeRunPointer(null); return; }
-    setActive({ localId: pointer.localId ?? `case-${pointer.at}`, roundId: pointer.roundId, roundKind: pointer.roundKind, thread: readInvestigationThread({ investigationThread: pointer.thread }), claim: pointer.claim, intake: pointer.intake, restored: null });
-    setMode("investigation");
-    run.resume(pointer.runId, pointer.lastSeq, pointer.claim);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyReady]);
-
-  // 记录进行中那条 run 的座标；终态或回首页时清掉。
-  // 接不回去且还没有任何材料：清座标、回输入页。否则刷新会反复钉在「连接中断」。
-  useEffect(() => {
-    if (mode !== "investigation" || active?.restored) {
-      writeRunPointer(null);
-      return;
-    }
-    if (run.state.connection === "failed" && !run.state.snapshot) {
-      writeRunPointer(null);
-      // 刚提交、链接打不开、调查已开始：留下调查态和链接提示。
-      // 连接中断是空流/无快照的副作用，不能盖掉这次提交自己的提示。
-      if (active && caseIntakeFailedLinks(active.intake).length > 0) {
-        return;
-      }
-      setHistoryNotice(publicTransportError(run.state.errorMessage, copy.connectionLost));
-      setActive(null);
-      setMode("input");
-      return;
-    }
-    const runId = run.state.runId;
-    if (!runId || !active) return;
-    if (run.state.connection === "ended" || run.state.stop === "stopped") {
-      writeRunPointer(null);
-      return;
-    }
-    writeRunPointer({
-      runId,
-      claim: active.claim,
-      intake: active.intake,
-      lastSeq: run.state.lastActivitySeq,
-      at: Date.now(),
-      localId: active.localId,
-      roundId: active.roundId,
-      roundKind: active.roundKind,
-      thread: active.thread,
-      accountScope: accountEmailRef.current,
-    });
-  }, [mode, active, copy.connectionLost, run.state.runId, run.state.lastActivitySeq, run.state.connection, run.state.stop, run.state.snapshot, run.state.errorMessage]);
+  const { resumedRef } = useRunPointer({ historyReady, mode, active, run, accountEmailRef, copy, setActive, setMode, setHistoryNotice });
 
   // DEV 固定装置：/?fixture=investigating|judging|complete|conflict|interrupted|image-found|image-missing|mixed|nospan|settling|source-audit|replay
   // 用脚本化快照驱动真实组件树（截图与走查）。生产构建 dead-code eliminated。
@@ -347,118 +82,18 @@ function ProductApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /**
-   * 落库一次：先本地，再（已登录时）服务端。
-   * 抽成 useCallback 是为了让「同步失败，重试」真的有得点——说得出就必须点得到。
-   */
-  const persistResult = useCallback(
-    async (report: Record<string, unknown>, localId: string, claim: string) => {
-      const doneAt = Date.now();
-      const ownerEmail = accountEmailRef.current;
-      const isCurrent = () => activeIdRef.current === localId && accountEmailRef.current === ownerEmail;
-      if (isCurrent()) setSaveStatus("syncing");
-      const knowledgeBase = createKnowledgeBase(ownerEmail);
-      const existing = await knowledgeBase.getCase(localId).catch(() => null);
-      const entry: KnowledgeBaseEntry = {
-        id: localId,
-        claim,
-        rumorType: "深度核查",
-        diagnosis: { mixedJudgments: [], ambiguousTerms: [], risk: "", whyNotDirectFactCheck: "" },
-        finalReport: report,
-        handoffSteps: [],
-        credibilityScore: typeof report.credibilityScore === "number" ? report.credibilityScore : 50,
-        timestamp: existing?.timestamp ?? doneAt,
-        tags: ["golden-path"],
-      };
-      try {
-        await knowledgeBase.saveCase(entry);
-      } catch (error) {
-        console.error("[cases] 案例写入本地知识库失败", error);
-        setHistoryNotice("调查自动保存失败，刷新后可能无法找回。请先保留当前报告。");
-        if (isCurrent()) setSaveStatus("failed");
-        return;
-      }
-      if (accountEmailRef.current !== ownerEmail) return;
-      if (isCurrent()) setSaveStatus("local");
-      if (!ownerEmail) return;
-      try {
-        const res = await fetch("/api/case", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            claim,
-            report,
-            credibilityScore: typeof report.credibilityScore === "number" ? report.credibilityScore : 50,
-          }),
-        });
-        if (!res.ok) {
-          console.error(`[cases] 服务端存档失败 HTTP ${res.status}`);
-          setHistoryNotice(copy.historySyncFailed);
-          if (isCurrent()) setSaveStatus("failed");
-          return;
-        }
-        if (accountEmailRef.current !== ownerEmail) return;
-        if (isCurrent()) setSaveStatus("synced");
-        const data = (await res.json()) as { caseId?: string };
-        if (!data.caseId) return;
-        const saved = await knowledgeBase.getCase(localId);
-        if (saved && saved.id !== data.caseId) {
-          await knowledgeBase.saveCase({ ...saved, id: data.caseId });
-        }
-        setCases((prev) => prev.map((item) => (item.id === localId ? { ...item, id: data.caseId as string } : item)));
-        setActive((prev) =>
-          prev && prev.localId === localId
-            ? { ...prev, localId: data.caseId ?? prev.localId, serverCaseId: data.caseId ?? null }
-            : prev
-        );
-      } catch (error) {
-        console.error("[cases] 服务端存档异常", error);
-        setHistoryNotice(copy.historySyncFailed);
-        if (isCurrent()) setSaveStatus("failed");
-      }
-    },
-    [copy.historySyncFailed]
-  );
-
-  /** 重试同步：用当前这份结果再走一遍，不重新调查。 */
-  const retrySave = useCallback(() => {
-    const report = active?.restored?.report ?? run.state.finalReport;
-    if (!report || !active) return;
-    const snapshot = snapshotFromReport(report);
-    void persistResult(snapshot ? { ...report, investigationThread: threadForRound(active, snapshot) } : report, active.localId, active.claim);
-  }, [active, persistResult, run.state.finalReport]);
-
   // 完成：本地留存 +（已登录）服务端落库。保存失败不挡结果，但必须可见。
-  useEffect(() => {
-    if (mode !== "investigation" || !active || active.restored) return;
-    const terminalConnection = run.state.connection === "ended" || run.state.connection === "failed";
-    const interrupted = run.state.snapshot?.phase === "interrupted" && terminalConnection;
-    const restoredCompletion = run.state.snapshot?.phase === "complete" && terminalConnection;
-    const report = run.state.finalReport ?? (interrupted || restoredCompletion ? {
-      _source: interrupted ? "error-boundary" : "restored-snapshot",
-      conclusion: run.state.snapshot?.conclusion?.directAnswer ?? "",
-      investigation: run.state.snapshot,
-      ...(run.state.snapshot?.checkedAt ? { checkedAt: run.state.snapshot.checkedAt } : {}),
-    } : null);
-    if (!report) return;
-    const persistedKey = `${active.roundId ?? active.localId}:${run.state.finalReport || restoredCompletion ? "report" : "interrupted"}`;
-    if (persistedRoundRef.current === persistedKey) return;
-    persistedRoundRef.current = persistedKey;
-    const doneAt = Date.now();
-    const localId = active.localId;
-    const claim = active.claim;
-    const savedSnapshot = snapshotFromReport(report);
-    const durable = savedSnapshot ? { ...report, investigationThread: threadForRound(active, savedSnapshot) } : report;
-    const summary = threadSummary(durable);
-    setCases((prev) => groupThreadCases([
-      { id: localId, claim: summary.threadClaim ?? claim, ...summary, report: durable, status: report._source === "error-boundary" ? ("interrupted" as const) : ("done" as const), createdAt: doneAt },
-      ...prev.filter((item) => item.id !== localId),
-    ]));
-    void persistResult(durable, localId, claim);
-    // 只在 finalReport 首次出现时执行一次。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run.state.finalReport, run.state.snapshot, run.state.connection, active, mode, persistResult]);
+  const { saveStatus, setSaveStatus, retrySave } = useResultPersistence({
+    mode,
+    active,
+    run,
+    accountEmailRef,
+    activeIdRef,
+    copy,
+    setCases,
+    setActive,
+    setHistoryNotice,
+  });
 
   /** 无守卫直接开跑：同句守卫的「重新核查」与普通提交共用。 */
   const beginRun = useCallback(
