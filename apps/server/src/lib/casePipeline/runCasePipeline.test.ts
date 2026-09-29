@@ -364,6 +364,10 @@ describe("runCasePipeline", () => {
     expect(verdicts).toHaveLength(1);
     expect(verdicts[0].verdict).toBe("false");
     expect((verdicts[0].contradictingSources as Array<{ url: string }>).map((s) => s.url)).toContain(TINY_DEBUNK.url);
+    // 整句判定之后还要重绑一次引用：命题条目与全局引用也跟着挂上这条辟谣，不留「模型未覆盖」的旧条目。
+    const items = result.finalReport.claimItems as Array<{ verdict?: Record<string, unknown> }>;
+    expect(items[0].verdict?.verdict).toBe("false");
+    expect((result.finalReport.citationSources as Array<{ url: string }>).map((s) => s.url)).toContain(TINY_DEBUNK.url);
     expect(String(result.finalReport.conclusion)).not.toContain("尚未查清");
     const investigation = result.finalReport.investigation as { claims: Array<{ judgment?: string; evidence: Array<{ role: string }> }> };
     expect(investigation.claims[0].judgment).toBe("refuted");

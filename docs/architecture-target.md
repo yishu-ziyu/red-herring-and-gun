@@ -39,13 +39,12 @@ apps/server/src/lib/casePipeline/
     enrichCausal.ts         因果增强
     evaluateWholeClaim.ts   整句审计评估 → 补查 → 提交判定 → 重评
     compose.ts              报告：LLM 或确定性兜底
-  finalize/
-    finalizeReport.ts       收尾链的唯一出口：一张有序步骤表
+  finalizeReport.ts         收尾链的唯一出口：函数体从上到下就是有序步骤表（Slice A 已完成）
 ```
 
 | 新模块 | 解决 2.1 的哪一条 | 深度（接口小、实现多） |
 |---|---|---|
-| `finalize/finalizeReport.ts` | 1 | 输入：组装后的报告 + 进行态 + 探活端口；输出：终态报告。内部 20 步按表顺序执行，每步一个具名条目，顺序在一处可读、可测 |
+| `finalizeReport.ts` | 1 | 输入：报告写作步骤 + 进行态 + 注入的收尾钩子 + 探活端口；输出：终态报告、死链、复核结果。16 步写成一个函数里的 16 段，每段带编号与出处注释；不做步骤框架（步骤之间靠局部常量传值，TypeScript 能查出先后错位） |
 | `caseState.ts` | 2 | 各阶段只通过进行态读写；字段名就是事实名（`factVerdicts`、`sourceAudit`、`auditGaps`），一个事实只有一个家 |
 | `budget.ts` | 3 | 所有「剩余时间够不够」的判断集中；阈值数值不变 |
 | `snapshotTimeline.ts` | 4 | 快照累积与发出在一处；阶段只调具名方法，顺序可测 |
@@ -113,7 +112,7 @@ apps/src/
 flowchart TD
   IDX[index.ts 组装] --> HTTP[http/ 适配层]
   HTTP --> CP[casePipeline 编排]
-  CP --> ST[stages/ 与 finalize/]
+  CP --> ST[stages/ 与 finalizeReport]
   ST --> LIB[lib 领域模块：claimAtom atomSearch citationBinding wholeClaimAudit publicCopy …]
   LIB --> DOM[domain/ 纯规则]
   ST --> INV[investigation 快照契约 镜像]
@@ -121,7 +120,7 @@ flowchart TD
   WEB[前端 App 与 goldenPath] --> INV
 ```
 
-规则：`domain/` 不引用任何外部模块（已有边界测试）；`stages/` 与 `finalize/` 不引用 `http/`；`http/` 不写判决规则。
+规则：`domain/` 不引用任何外部模块（已有边界测试）；`stages/` 与 `finalizeReport.ts` 不引用 `http/`；`http/` 不写判决规则。
 
 ## 6. 完成判定
 

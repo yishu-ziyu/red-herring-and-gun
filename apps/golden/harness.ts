@@ -311,6 +311,8 @@ export async function runScenario(name: string, scenario: Scenario, mode: Mode, 
     UPLOAD_DIR: join(workDir, "uploads"),
     RHG_NET_LOG: netLog,
     ...(process.env.RHG_NET_VCLOCK ? { RHG_NET_VCLOCK: process.env.RHG_NET_VCLOCK } : {}),
+    // 重写切片的模块级差分：旧实现旁边跑新实现，比对结果写进这个目录（每个场景一个子目录）。
+    ...(process.env.RHG_DIFF_DIR ? { RHG_DIFF_DIR: join(process.env.RHG_DIFF_DIR, name) } : {}),
     ...(mode === "record"
       ? { RHG_NET_RECORD: tapeDir(world), ...(scenario.bases?.length ? { RHG_NET_BASE: scenario.bases.map(tapeDir).join(":") } : {}) }
       : { RHG_NET_REPLAY: replayTape }),

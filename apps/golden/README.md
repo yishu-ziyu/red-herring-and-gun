@@ -28,6 +28,9 @@ $TSX golden/golden.ts replay base2 && $TSX golden/golden.ts compare base base2  
 # 改代码后
 $TSX golden/golden.ts replay after && $TSX golden/golden.ts compare base after
 
+# 切片期间的模块级差分（影子运行，见 docs/rewrite-plan.md）：服务进程拿到 RHG_DIFF_DIR/<场景>，比对结果写在那里
+RHG_DIFF_DIR=$PWD/../outputs/golden/capture/<切片> $TSX golden/golden.ts replay <标签>
+
 GOLDEN_UI=record  GOLDEN_FRAMES=base GOLDEN_UI_LABEL=ui-base npx vitest run golden/ui.golden.test.tsx
 GOLDEN_UI=compare GOLDEN_FRAMES=base GOLDEN_UI_LABEL=ui-after GOLDEN_UI_BASE=ui-base npx vitest run golden/ui.golden.test.tsx
 ```
