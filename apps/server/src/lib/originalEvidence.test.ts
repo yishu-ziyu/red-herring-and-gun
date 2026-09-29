@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({ lookup: vi.fn(), request: vi.fn() }));
 vi.mock("node:dns/promises", () => ({ default: { lookup: mocks.lookup } }));
 vi.mock("node:https", () => ({ default: { request: mocks.request } }));
 
-import { fetchOriginalText } from "./originalEvidence.js";
+import { fetchOriginalText, withOriginalText } from "./originalEvidence.js";
 
 describe("original page retrieval", () => {
   it("pins a validated DNS address and sets its family so Node does not request an invalid lookupAll result", async () => {
@@ -30,4 +30,14 @@ describe("original page retrieval", () => {
     expect(text).toContain("逐字核对");
     expect(mocks.request).toHaveBeenCalledTimes(1);
   });
+});
+
+
+it("搜索供应商声称的正文与适用片段不能冒充实际抓取的原文", async () => {
+  const search = withOriginalText(async () => ({ sources: [{
+    url: "https://example.com/article", originalText: "伪造正文", originalScope: "伪造范围", snippet: "摘要",
+  }] }), undefined, async () => "实际抓取正文");
+  const result = await search("核查") as { sources: Array<Record<string, unknown>> };
+  expect(result.sources[0]).toMatchObject({ originalText: "实际抓取正文", snippet: "摘要" });
+  expect(result.sources[0]?.originalScope).toBeUndefined();
 });

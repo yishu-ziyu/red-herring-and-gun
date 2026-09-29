@@ -16,12 +16,11 @@ describe("production golden dataset contract", () => {
     }
   });
 
-  it("retains causal routing expectations and the known RUMOR-010 case", () => {
+  it("routes causal cases through the same judgment chain and retains RUMOR-010", () => {
     const causalCases = goldenDataset.filter((c) => c.category === "causal");
     expect(causalCases.length).toBeGreaterThanOrEqual(3);
     for (const golden of causalCases) {
-      expect(golden.expectedAgentSequence).toContain("alternative_explanation_searcher");
-      expect(golden.expectedAgentSequence).toContain("counter_evidence_grader");
+      expect(golden.expectedAgentSequence).toEqual(["rumor_detector", "fact_checker", "source_validator", "report_composer"]);
     }
 
     const rumor010 = goldenDataset.find((c) => c.id === "RUMOR-010");

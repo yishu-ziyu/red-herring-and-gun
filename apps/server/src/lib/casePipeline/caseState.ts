@@ -9,7 +9,6 @@ import type { CrossExamOutcome } from "../crossExam/index.js";
 import type { EvidenceLoopOutcome } from "../evidenceLoop/index.js";
 import type { FollowUpReusePlan } from "../followUpReuse.js";
 import type { ImageOriginResult } from "../imageOrigin/index.js";
-import type { WholeClaimAuditModelCall, WholeClaimAuditRun } from "../wholeClaimAudit/index.js";
 import type { Budget } from "./budget.js";
 import type { CasePipelineHooks, CasePipelineInput, PipelineStep } from "./runCasePipeline.js";
 import type { SnapshotTimeline } from "./snapshotTimeline.js";
@@ -27,16 +26,6 @@ export type PipelineContext = {
   throwIfAborted: () => void;
   /** 同一案追问且上一轮有可点开证据时的复用计划；否则为 null。 */
   reusePlan: FollowUpReusePlan | null;
-  audit: WholeClaimAuditState;
-};
-
-/** Whole-Claim Audit（Issue #78）：整句在拆题后继续作为被审计对象。 */
-export type WholeClaimAuditState = {
-  /** 未注入时保持 legacy 行为（fail-open）。 */
-  callModel?: WholeClaimAuditModelCall;
-  run: WholeClaimAuditRun;
-  /** 仍未解决的整句缺口：交给收权门限制整句结论强度（§11）。 */
-  unresolvedGaps: string[];
 };
 
 export type CaseState = {

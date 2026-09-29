@@ -135,6 +135,19 @@ export const InvestigationClaimSchema = Type.Object(
     checkability: InvestigationCheckabilitySchema,
     progress: InvestigationProgressSchema,
     judgment: Type.Union([InvestigationJudgmentSchema, Type.Null()]),
+    /** Only a current formal result may provide a narrower user-facing term. Old snapshots omit it. */
+    displayStanding: Type.Optional(Type.Union([
+      Type.Literal("属实"),
+      Type.Literal("基本属实"),
+      Type.Literal("说过头了"),
+      Type.Literal("言过其实"),
+      Type.Literal("不属实"),
+      Type.Literal("有争议"),
+      Type.Literal("立场，不判真假"),
+      Type.Literal("暂时无法判断"),
+    ])),
+    rawVerdict: Type.Optional(Type.String()),
+    issuerMisattributed: Type.Optional(Type.Boolean()),
     /** 判断透明补充（审计新增）：该命题「仍不能推出什么」，来自生产 boundary 字段。 */
     boundary: Type.Optional(Type.String()),
     evidence: Type.Array(InvestigationEvidenceLinkSchema),

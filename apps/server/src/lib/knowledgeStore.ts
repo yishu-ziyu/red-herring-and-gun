@@ -1,12 +1,12 @@
 /**
  * knowledgeStore — 证据库第一版（把调查过的证据沉淀下来，下次相命题免于重复联网）。
  *
- * 介质：本地 SQLite（`node:sqlite`，见 sqliteStore.ts）的 `knowledge_entries` 表（3 号迁移，
+ * 介质：本地 SQLite（`node:sqlite`，见 sqliteStore.ts）的命题与去重正文表（3/4 号迁移，
  * 幂等）。没有可用 sqlite 时退化为进程内缓存：知识库是加速层，不是用户数据，
  * 丢了只影响速度（首次会记一条 console.warn，不静默）。
  *
  * 存什么：命题规范化文本（atomNorm，唯一键）+ 命题文本 + 判词 + 该命题当时绑定的
- * 真实来源（URL/标题/摘要/立场）+ 产生它的 runId + 时间 + 命中次数。
+ * 真实来源（URL/标题/摘要/立场，以及实际取得的原文与适用片段）+ 产生它的 runId + 时间 + 命中次数。
  * **不写用户原句全文、不写用户名**：整句等于原句的 atom 一律不进这个层（见
  * `isSameAsUserClaim`），调用方也不许把账号信息传进来。
  *
@@ -16,10 +16,12 @@
  * - **没证据不出结论**：来源为空或没有真实 http(s) URL 的 atom 不沉淀（注入材料必须能点开）。
  * - **不静默继承**：入口的匹配闸门在 knowledgeMatch.ts（阈值 + 人物/日期/链接冲突判不匹配）。
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import type { AtomSearchBundle } from "./atomSearch.js";
+import { claimAtomKey } from "./claimAtom/index.js";
 import { dataDir, openDatabase } from "./sqliteStore.js";
 import {
   classifyKnowledgeMatch,
@@ -37,6 +39,10 @@ export type KnowledgeEvidenceItem = {
   title: string;
   snippet: string;
   stance: KnowledgeStance;
+  /** 来自抓取或档案的正文；模型输出中的同名字段不接收。 */
+  originalText?: string;
+  originalTextId?: string;
+  originalScope?: string;
 };
 
 export type KnowledgeEntry = {
@@ -112,7 +118,7 @@ export type KnowledgeMemory = {
   /** 注入过的 atom 若最终判 unverified/证据不足 → 记 downgraded（补查由证据循环完成）。 */
   conclude: (verdicts: unknown) => void;
   /** 收尾沉淀：可核查且判词非 unverified 的 atom → upsert。 */
-  settle: (input: { claim: string; verdicts: unknown }) => void;
+  settle: (input: { claim: string; verdicts: unknown; sourceBundle?: Pick<AtomSearchBundle, "byAtomKey"> }) => void;
 };
 
 // ── SQLite / 进程内缓存 ────────────────────────────────────────────────────
@@ -131,6 +137,7 @@ type KnowledgeRow = {
 
 /** 没有 sqlite 时的降级：进程内 Map（键 = atomNorm），不落盘。 */
 const memory = new Map<string, KnowledgeEntry>();
+const sourceTexts = new Map<string, string>();
 let db: DatabaseSync | null | undefined;
 let warnedNoSqlite = false;
 
@@ -162,9 +169,40 @@ function sanitizeEvidence(items: readonly KnowledgeEvidenceItem[]): KnowledgeEvi
       title: String(item?.title ?? "").trim().slice(0, 200),
       snippet: String(item?.snippet ?? "").trim().slice(0, 320),
       stance: item?.stance === "contradict" ? "contradict" : "support",
+      ...(typeof item.originalText === "string" && item.originalText.length >= 80
+        ? { originalText: item.originalText.slice(0, 80_000) } : {}),
+      ...(typeof item.originalTextId === "string" && /^[a-f0-9]{64}$/.test(item.originalTextId)
+        ? { originalTextId: item.originalTextId } : {}),
+      ...(typeof item.originalScope === "string" ? { originalScope: item.originalScope.slice(0, 80_000) } : {}),
     });
   }
   return out.slice(0, 24);
+}
+
+/** 正文按 URL+内容去重；命题记录只留引用，匹配阶段不读取全篇。 */
+function storeSourceTexts(items: KnowledgeEvidenceItem[]): KnowledgeEvidenceItem[] {
+  const instance = database();
+  return items.map(({ originalText, ...item }) => {
+    if (!originalText) return item;
+    const id = createHash("sha256").update(item.url).update("\0").update(originalText).digest("hex");
+    if (instance) instance.prepare("INSERT OR IGNORE INTO knowledge_source_texts (id, url, body) VALUES (?, ?, ?)")
+      .run(id, item.url, originalText);
+    else sourceTexts.set(id, originalText);
+    return { ...item, originalTextId: id };
+  });
+}
+
+function withSourceTexts(items: KnowledgeEvidenceItem[]): KnowledgeEvidenceItem[] {
+  const instance = database();
+  return items.map((item) => {
+    const body = item.originalTextId
+      ? instance
+        ? (instance.prepare("SELECT body FROM knowledge_source_texts WHERE id = ? AND url = ?")
+          .get(item.originalTextId, item.url) as { body: string } | undefined)?.body
+        : sourceTexts.get(item.originalTextId)
+      : item.originalText;
+    return body ? { ...item, originalText: body } : { ...item };
+  });
 }
 
 function parseEvidence(raw: unknown): KnowledgeEvidenceItem[] {
@@ -199,8 +237,9 @@ export function upsertKnowledgeEntry(draft: KnowledgeEntryDraft): KnowledgeEntry
   const atomText = String(draft?.atomText ?? "").trim();
   const atomNorm = normalizeKnowledgeAtom(atomText);
   const verdict = knowledgeVerdictOf(draft?.verdict);
-  const evidence = sanitizeEvidence(draft?.evidence ?? []);
-  if (!atomNorm || !verdict || evidence.length === 0) return null;
+  const cleaned = sanitizeEvidence(draft?.evidence ?? []);
+  if (!atomNorm || !verdict || cleaned.length === 0) return null;
+  const evidence = storeSourceTexts(cleaned);
   const now = draft.now ?? Date.now();
   const instance = database();
   if (!instance) {
@@ -312,6 +351,7 @@ export function appendKnowledgeObservation(rec: {
 /** 测试 / 维护用：清空进程内缓存并放下 sqlite 句柄（下次重新打开）。 */
 export function __resetKnowledgeStoreForTests(): void {
   memory.clear();
+  sourceTexts.clear();
   db = undefined;
   warnedNoSqlite = false;
 }
@@ -320,9 +360,10 @@ export function clearKnowledgeEntries(): void {
   const instance = database();
   if (!instance) {
     memory.clear();
+    sourceTexts.clear();
     return;
   }
-  instance.exec("DELETE FROM knowledge_entries");
+  instance.exec("DELETE FROM knowledge_entries; DELETE FROM knowledge_source_texts");
 }
 
 // ── 记忆端口 ───────────────────────────────────────────────────────────────
@@ -469,7 +510,12 @@ export function createKnowledgeMemory(options: {
       observe(atomNorm, "hit");
       return {
         originDate,
-        evidence: classification.entry.evidence.map((item) => ({ ...item })),
+        evidence: classification.entry.evidence.map((item) => {
+          // 相似材料仍可召回；只有同一命题的原文能免去本轮检索。
+          if (classification.entry.atomNorm === atomNorm) return withSourceTexts([item])[0]!;
+          const { originalText: _text, originalScope: _scope, ...summary } = item;
+          return summary;
+        }),
         priorVerdict: classification.entry.verdict,
       };
     },
@@ -501,7 +547,7 @@ export function createKnowledgeMemory(options: {
       }
     },
 
-    settle({ claim, verdicts }) {
+    settle({ claim, verdicts, sourceBundle }) {
       if (!runId) return;
       const settleClaimNorm = normalizeKnowledgeAtom(claim ?? "") || claimNorm;
       const byAtom = verdictsByAtom(verdicts);
@@ -514,7 +560,11 @@ export function createKnowledgeMemory(options: {
           observe(atomNorm, "deduped");
           continue;
         }
-        const evidence = evidenceOfVerdict(verdict);
+        const sources = sourceBundle?.byAtomKey[claimAtomKey(String(verdict.claimAtom ?? ""))] ?? [];
+        const evidence = evidenceOfVerdict(verdict).map((item) => {
+          const source = sources.find((candidate) => candidate.url === item.url);
+          return { ...item, originalText: source?.originalText, originalScope: source?.originalScope };
+        });
         if (evidence.length === 0) continue;
         try {
           const entry = upsertKnowledgeEntry({

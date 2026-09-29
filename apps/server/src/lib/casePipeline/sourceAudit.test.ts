@@ -51,6 +51,21 @@ const supportOf = (state: CaseState) =>
   ((state.factStep.output.subclaimVerdicts as Array<{ supportingSources: Array<{ url: string; title: string }> }>)[0]!.supportingSources);
 
 describe("sourceAudit", () => {
+  it("同 URL 新取得正文后刷新审计，原文引句可恢复方向性判断", async () => {
+    const quote = "胰岛素可以降低血糖水平";
+    const { ctx, state, runAgent } = setup({ runAgent: async () => ({
+      agent: "source_validator",
+      output: { claimSourceRelations: [{ claimAtom: ATOM, url: OLD.url, relation: "support", quote, reason: "正文直接支持" }] },
+    }) });
+    ctx.input.archiveEvidence = true;
+    state.atomSearchBundle.byAtomKey[claimAtomKey(ATOM)]![0] = {
+      ...OLD, originalText: `研究原文写明：${quote}。`,
+    };
+    await state.sourceAudit.refreshIfNeeded();
+    expect(runAgent).toHaveBeenCalledTimes(1);
+    expect((state.sourceStep.output.claimSourceRelations as Array<{ quoteVerified?: boolean }>)[0]?.quoteVerified).toBe(true);
+    expect((state.factStep.output.subclaimVerdicts as Array<{ verdict: string }>)[0]?.verdict).toBe("true");
+  });
   it("检索包没变、审计也覆盖了全部方向性来源：不再审", async () => {
     const { state, runAgent } = setup();
     await state.sourceAudit.refreshIfNeeded();

@@ -201,9 +201,9 @@ export function stripSourceAliases(text: string): string {
     .trim();
 }
 
-/** 模型把 schema 词写进解释：`claim中「…」`。先删「claim中」再删孤立 claim。 */
-const SCHEMA_ZH_RE = /claim中/gi;
-const SCHEMA_WORD_RE = /\b(?:claimAtom|subclaim|verdictType|atomSearches|claim)\b/gi;
+/** 模型把 schema 词写进解释：`claim中「…」`。将 claim 译成说法，避免删词后留下残句。 */
+const SCHEMA_ZH_RE = /\s*\b(?:claimAtom|subclaim|claim)\b\s*/gi;
+const SCHEMA_WORD_RE = /\b(?:verdictType|atomSearches)\b/gi;
 /** 400 字截断留下的半截拉丁残字，紧贴下一段引号。完整 IARC（4 字母）不动。 */
 const TRUNCATED_LATIN_BEFORE_QUOTE_RE = /[A-Za-z]{1,3}(?=「)/g;
 
@@ -211,7 +211,7 @@ export function scrubPublicText(value: unknown): string {
   if (typeof value !== "string") return "";
   let text = dropInternalSentences(value);
   text = text.replace(JARGON_RE, "");
-  text = text.replace(SCHEMA_ZH_RE, "");
+  text = text.replace(SCHEMA_ZH_RE, "说法");
   text = text.replace(SCHEMA_WORD_RE, "");
   text = stripSourceAliases(text);
   text = text.replace(TRUNCATED_LATIN_BEFORE_QUOTE_RE, "");

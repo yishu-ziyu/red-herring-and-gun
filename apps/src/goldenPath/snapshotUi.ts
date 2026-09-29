@@ -297,6 +297,16 @@ export function pickDecisiveEvidence(
   return items;
 }
 
+/** 完成态主列只放有原文、方向明确且能找到来源的 link；保留同方向多条原句。 */
+export function resultQuoteRows(claim: InvestigationClaim, sources: InvestigationSource[]) {
+  return claim.evidence.flatMap((link, index) => {
+    if ((link.role !== "support" && link.role !== "contradict") || link.quoteVerified !== true) return [];
+    const passage = link.passage?.trim();
+    const source = sources.find((item) => item.id === link.sourceId);
+    return passage && source ? [{ link, index, source, passage }] : [];
+  });
+}
+
 /** 完成态下是否有任何可下钻的来源。 */
 export function hasDrilldownSource(snapshot: InvestigationSnapshotV1): boolean {
   return snapshot.sources.some((s) => Boolean(s.url));

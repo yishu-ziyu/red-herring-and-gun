@@ -57,10 +57,10 @@ describe("golden case 1：明确错误（complete）", () => {
 
     const claim = document.querySelector('[data-gp-claim-id="claim-1"]')!;
     expect(within(claim as HTMLElement).getByText("证据反驳")).toBeTruthy();
-    const contradictGroup = claim.querySelector('[data-gp-role="contradict"]')!;
-    expect(within(contradictGroup as HTMLElement).getByText("世卫组织辟谣平台：无此结论")).toBeTruthy();
-
-    fireEvent.click(within(contradictGroup as HTMLElement).getByText("世卫组织辟谣平台：无此结论"));
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
+    const contradictGroup = document.querySelector('.gp-result-material-link[data-gp-role="contradict"]')!;
+    expect(contradictGroup.getAttribute("data-gp-evidence-claim")).toBe("claim-1");
+    fireEvent.click(contradictGroup);
     const drawer = document.querySelector(".gp-drawer--source")!;
     const link = drawer.querySelector('a[href="https://piyao.org.cn/overnight-water"]');
     expect(link).toBeTruthy();
@@ -72,7 +72,8 @@ describe("golden case 2：基本正确（complete）", () => {
     renderCanvas(supportedComplete());
     expect(screen.getByLabelText("调查结论").getAttribute("data-gp-conclusion-judgment")).toBe("supported");
     const claim = document.querySelector('[data-gp-claim-id="claim-1"]')!;
-    expect(claim.querySelector('[data-gp-role="support"]')).toBeTruthy();
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
+    expect(document.querySelector('.gp-result-material-link[data-gp-role="support"][data-gp-evidence-claim="claim-1"]')).toBeTruthy();
   });
 });
 
@@ -100,12 +101,14 @@ describe("golden case 4：证据不足（complete）", () => {
 describe("golden case 5：真实冲突（complete）", () => {
   it("known reason：展示争点原因", () => {
     renderCanvas(conflictKnownReason());
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
     const conflict = document.querySelector("[data-gp-conflict-id]")!;
     expect(within(conflict as HTMLElement).getByText(/分歧来自适用范围/)).toBeTruthy();
   });
 
   it("unknown reason：如实未知，不渲染虚构原因", () => {
     renderCanvas(conflictUnknownReason());
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
     const conflict = document.querySelector("[data-gp-conflict-id]")!;
     expect(within(conflict as HTMLElement).getByText("双方材料并存，分歧的原因目前还不清楚。")).toBeTruthy();
     expect(conflict.textContent).not.toContain("分歧来自适用范围");
@@ -115,21 +118,22 @@ describe("golden case 5：真实冲突（complete）", () => {
 describe("争议双方各自可点（A15）", () => {
   it("E1 两侧各自成组，不合并成一个按钮", () => {
     renderCanvas(conflictKnownReason());
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
     const conflict = document.querySelector("[data-gp-conflict-id]")!;
     const support = conflict.querySelector('[data-gp-conflict-side="support"]');
     const contradict = conflict.querySelector('[data-gp-conflict-side="contradict"]');
     expect(support).toBeTruthy();
     expect(contradict).toBeTruthy();
-    expect(support!.querySelectorAll("button").length).toBeGreaterThan(0);
-    expect(contradict!.querySelectorAll("button").length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.gp-result-material-link[data-gp-role="support"]').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.gp-result-material-link[data-gp-role="contradict"]').length).toBeGreaterThan(0);
   });
 
   it("E2 点支持侧打开支持侧来源", () => {
     const snapshot = conflictKnownReason();
     const support = snapshot.sources.find((s) => s.url.includes("gov.example"))!;
     renderCanvas(snapshot);
-    const conflict = document.querySelector("[data-gp-conflict-id]")!;
-    fireEvent.click(conflict.querySelector<HTMLElement>('[data-gp-conflict-side="support"] button')!);
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
+    fireEvent.click(document.querySelector('.gp-result-material-link[data-gp-role="support"]')!);
     const drawer = document.querySelector("[data-gp-source-layer]")!;
     expect(drawer.querySelector("[data-gp-source-id]")?.getAttribute("data-gp-source-id")).toBe(support.id);
   });
@@ -139,8 +143,8 @@ describe("争议双方各自可点（A15）", () => {
     const support = snapshot.sources.find((s) => s.url.includes("gov.example"))!;
     const refute = snapshot.sources.find((s) => s.url.includes("fact.example"))!;
     renderCanvas(snapshot);
-    const conflict = document.querySelector("[data-gp-conflict-id]")!;
-    fireEvent.click(conflict.querySelector<HTMLElement>('[data-gp-conflict-side="contradict"] button')!);
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
+    fireEvent.click(document.querySelector('.gp-result-material-link[data-gp-role="contradict"]')!);
     const panel = document.querySelector("[data-gp-source-layer]")!.querySelector("[data-gp-source-id]")!;
     expect(panel.getAttribute("data-gp-source-id")).toBe(refute.id);
     expect(panel.getAttribute("data-gp-source-id")).not.toBe(support.id);
@@ -148,17 +152,18 @@ describe("争议双方各自可点（A15）", () => {
 
   it("E4 一侧有 N 份材料就列出 N 行", () => {
     renderCanvas(conflictMultiSource());
-    const conflict = document.querySelector("[data-gp-conflict-id]")!;
-    expect(conflict.querySelectorAll('[data-gp-conflict-side="support"] button').length).toBe(2);
-    expect(conflict.querySelectorAll('[data-gp-conflict-side="contradict"] button').length).toBe(1);
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
+    expect(document.querySelectorAll('.gp-result-material-link[data-gp-role="support"]').length).toBe(2);
+    expect(document.querySelectorAll('.gp-result-material-link[data-gp-role="contradict"]').length).toBe(1);
   });
 
   it("E5 来源查不到时不渲染死按钮", () => {
     const snapshot = conflictKnownReason();
     const refute = snapshot.sources.find((s) => s.url.includes("fact.example"))!;
     renderCanvas({ ...snapshot, sources: snapshot.sources.filter((s) => s.id !== refute.id) });
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
     const conflict = document.querySelector("[data-gp-conflict-id]")!;
-    expect(conflict.querySelectorAll('[data-gp-conflict-side="contradict"] button').length).toBe(0);
+    expect(document.querySelectorAll('.gp-result-material-link[data-gp-role="contradict"]').length).toBe(0);
     expect(conflict.querySelector('[data-gp-conflict-side="contradict"]')!.textContent).toContain("材料暂缺");
   });
 });
@@ -430,7 +435,7 @@ describe("Issue #64 [Reset 4D] Conclusion Emergence", () => {
     });
   }
 
-  it("1–5、8–10：persistent region 同一引用；不换壳；不抢焦点；不滚动；Drawer 不关", () => {
+  it("persistent region 与原句同一引用；完成态换成逐条阅读，Drawer 不关", () => {
     const { investigating, complete } = completeFromInvestigating();
     const view = render(
       <InvestigationCanvas snapshot={investigating} live onReverify={() => {}} onBackHome={() => {}} />
@@ -470,7 +475,8 @@ describe("Issue #64 [Reset 4D] Conclusion Emergence", () => {
     expect(after).toBe(region);
     expect(document.querySelector(".gp-canvas")).toBe(canvas);
     expect(document.querySelector(".gp-original")).toBe(original);
-    expect(document.querySelector('[data-gp-claim-id="claim-1"]')).toBe(claim);
+    expect(document.querySelector('[data-gp-claim-id="claim-1"]')).not.toBe(claim);
+    expect(document.querySelector('[data-gp-claim-id="claim-1"]')).toHaveClass("gp-result-claim");
     expect(document.querySelector(".gp-drawer--source")).toBe(drawer);
 
     expect(after!.getAttribute("data-gp-conclusion-state")).toBe("complete");
@@ -486,7 +492,7 @@ describe("Issue #64 [Reset 4D] Conclusion Emergence", () => {
     scrollSpy.mockRestore();
   });
 
-  it("Evidence A 已 focus：investigating → complete 后同一节点仍在，焦点不被结论抢走", () => {
+  it("Evidence A 已 focus：调查转完成后焦点落到对应逐条判断", () => {
     const { investigating, complete } = completeFromInvestigating();
     const view = render(
       <InvestigationCanvas snapshot={investigating} live onReverify={() => {}} onBackHome={() => {}} />
@@ -495,19 +501,13 @@ describe("Issue #64 [Reset 4D] Conclusion Emergence", () => {
     expect(evidence).toBeInstanceOf(HTMLButtonElement);
     evidence.focus();
     expect(document.activeElement).toBe(evidence);
-    const claim = document.querySelector('[data-gp-claim-id="claim-1"]');
-    const board = document.querySelector(".gp-evidence-board");
-
     view.rerender(
       <InvestigationCanvas snapshot={complete} live={false} onReverify={() => {}} onBackHome={() => {}} />
     );
 
-    const after = document.querySelector('[data-gp-claim-id="claim-1"] [data-source-id]') as HTMLButtonElement;
-    expect(after).toBe(evidence);
-    expect(document.querySelector('[data-gp-claim-id="claim-1"]')).toBe(claim);
-    expect(document.querySelector(".gp-evidence-board")).toBe(board);
-    expect(document.activeElement).toBe(evidence);
-    expect(evidence.getAttribute("data-gp-identity")).toBe("stable");
+    const after = document.querySelector('[data-gp-claim-id="claim-1"]') as HTMLElement;
+    expect(after).toHaveClass("gp-result-claim");
+    expect(document.activeElement).toBe(after);
     expect(document.activeElement?.closest("[data-gp-direct-answer]")).toBeNull();
     expect(document.activeElement?.closest("[data-gp-conclusion-region]")).toBeNull();
   });
@@ -549,7 +549,7 @@ describe("Issue #64 [Reset 4D] Conclusion Emergence", () => {
     expect(document.activeElement?.closest("[data-gp-conclusion-region]")).toBeNull();
     expect(document.querySelector(".gp-canvas")).toBe(canvas);
     expect(document.querySelector(".gp-original")).toBe(original);
-    expect(document.querySelector(".gp-evidence-board")).toBe(board);
+    expect(document.querySelector(".gp-evidence-board")).toBeNull();
     expect(document.querySelector("[data-gp-conclusion-region]")).toBe(region);
     expect(focusSpy).not.toHaveBeenCalled();
     expect(scrollSpy).not.toHaveBeenCalled();
@@ -633,12 +633,12 @@ describe("Issue #64 [Reset 4D] Conclusion Emergence", () => {
     expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')?.textContent).toBe(MIXED_ATOM_A);
     expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')?.textContent).toBe(MIXED_ATOM_B);
 
-    fireEvent.mouseLeave(document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!);
-    fireEvent.mouseEnter(document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!);
+    fireEvent.mouseLeave(document.querySelector('[data-gp-claim-id="claim-1"] .gp-result-claim-heading')!);
+    fireEvent.mouseEnter(document.querySelector('[data-gp-claim-id="claim-2"] .gp-result-claim-heading')!);
     expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')?.getAttribute("data-gp-trace-active")).toBe("true");
     expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')?.getAttribute("data-gp-trace-active")).toBe("false");
 
-    fireEvent.focus(document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!);
+    fireEvent.focus(document.querySelector('[data-gp-claim-id="claim-1"] .gp-result-claim-heading')!);
     expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')?.getAttribute("data-gp-trace-active")).toBe("true");
     expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')?.getAttribute("data-gp-trace-active")).toBe("false");
   });
@@ -791,7 +791,7 @@ describe("结论两层（短判断 + 解释）E4–E6", () => {
     expect(box.textContent).toContain(topBoundary);
 
     // 命题级 boundary 继续只在命题内部展示，信息不丢
-    const claimBoundaries = [...document.querySelectorAll(".gp-boundary")];
+    const claimBoundaries = [...document.querySelectorAll(".gp-result-boundary")];
     expect(claimBoundaries.length).toBeGreaterThan(0);
     expect(claimBoundaries.map((n) => n.textContent).join(" ")).toContain("只覆盖声明发布时间前的公开记录");
 
@@ -810,7 +810,7 @@ describe("结论两层（短判断 + 解释）E4–E6", () => {
 
   it("E13：完成态命题边界只留限制句，不出现「边界」表单标签", () => {
     renderCanvas(layeredCompleteLede());
-    const claimBoundaries = [...document.querySelectorAll(".gp-boundary")];
+    const claimBoundaries = [...document.querySelectorAll(".gp-result-boundary")];
     expect(claimBoundaries.length).toBeGreaterThan(0);
     expect(claimBoundaries.map((n) => n.textContent).join(" ")).toContain("只覆盖声明发布时间前的公开记录");
     expect(claimBoundaries.every((n) => !n.textContent?.startsWith("边界"))).toBe(true);
@@ -1011,7 +1011,7 @@ describe("Issue #62 Claim Trace", () => {
 
   it("7 hover Claim 01 → 只激活 Claim 01 短语", () => {
     renderCanvas(mixed);
-    const head = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
+    const head = document.querySelector('[data-gp-claim-id="claim-1"] .gp-result-claim-heading')!;
     fireEvent.mouseEnter(head);
     expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("true");
     expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.classList.contains("is-active")).toBe(true);
@@ -1021,7 +1021,7 @@ describe("Issue #62 Claim Trace", () => {
 
   it("8 keyboard focus → 同样激活", () => {
     renderCanvas(mixed);
-    const head = document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!;
+    const head = document.querySelector('[data-gp-claim-id="claim-2"] .gp-result-claim-heading')!;
     fireEvent.focus(head);
     expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("true");
     expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("false");
@@ -1029,7 +1029,7 @@ describe("Issue #62 Claim Trace", () => {
 
   it("9 blur / mouseleave → 恢复", () => {
     renderCanvas(mixed);
-    const head = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
+    const head = document.querySelector('[data-gp-claim-id="claim-1"] .gp-result-claim-heading')!;
     fireEvent.mouseEnter(head);
     expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("true");
     fireEvent.mouseLeave(head);
@@ -1042,8 +1042,8 @@ describe("Issue #62 Claim Trace", () => {
 
   it("click/focus Claim 01 → mouseEnter Claim 02 → 只激活 Claim 02", () => {
     renderCanvas(mixed);
-    const head1 = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
-    const head2 = document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!;
+    const head1 = document.querySelector('[data-gp-claim-id="claim-1"] .gp-result-claim-heading')!;
+    const head2 = document.querySelector('[data-gp-claim-id="claim-2"] .gp-result-claim-heading')!;
     fireEvent.click(head1);
     fireEvent.focus(head1);
     expect(document.querySelector('mark[data-gp-trace-claim="claim-1"]')!.getAttribute("data-gp-trace-active")).toBe("true");
@@ -1055,8 +1055,8 @@ describe("Issue #62 Claim Trace", () => {
 
   it("mouseLeave Claim 02 → Claim 01 仍 focus → 恢复 Claim 01", () => {
     renderCanvas(mixed);
-    const head1 = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
-    const head2 = document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!;
+    const head1 = document.querySelector('[data-gp-claim-id="claim-1"] .gp-result-claim-heading')!;
+    const head2 = document.querySelector('[data-gp-claim-id="claim-2"] .gp-result-claim-heading')!;
     fireEvent.focus(head1);
     fireEvent.mouseEnter(head2);
     expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("true");
@@ -1068,8 +1068,8 @@ describe("Issue #62 Claim Trace", () => {
 
   it("先前 hover Claim 02 → keyboard focus Claim 01 → 激活 Claim 01", () => {
     renderCanvas(mixed);
-    const head1 = document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
-    const head2 = document.querySelector('[data-gp-claim-id="claim-2"] .gp-claim-head')!;
+    const head1 = document.querySelector('[data-gp-claim-id="claim-1"] .gp-result-claim-heading')!;
+    const head2 = document.querySelector('[data-gp-claim-id="claim-2"] .gp-result-claim-heading')!;
     fireEvent.mouseEnter(head2);
     expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("true");
     fireEvent.focus(head1);
@@ -1078,22 +1078,14 @@ describe("Issue #62 Claim Trace", () => {
     expect(document.querySelector('mark[data-gp-trace-claim="claim-2"]')!.getAttribute("data-gp-trace-active")).toBe("false");
   });
 
-  it("10 expand/collapse 不回归", () => {
+  it("10 点原句片段定位对应逐条判断，原句文字保持不变", () => {
     renderCanvas(mixed);
-    const claim = document.querySelector('[data-gp-claim-id="claim-1"]')!;
-    const head = claim.querySelector(".gp-claim-head")!;
-    expect(head.getAttribute("aria-expanded")).toBe("true");
-    expect(claim.querySelector(".gp-claim-detail")).toBeTruthy();
-    expect(within(claim as HTMLElement).getByText("有对有错")).toBeTruthy();
-    fireEvent.click(head);
-    expect(head.getAttribute("aria-expanded")).toBe("false");
-    expect(claim.querySelector(".gp-claim-detail")).toBeNull();
-    fireEvent.click(head);
-    expect(head.getAttribute("aria-expanded")).toBe("true");
-    expect(claim.querySelector('[data-gp-role="support"]')).toBeTruthy();
-    const claimBNode = document.querySelector('[data-gp-claim-id="claim-2"]')!;
-    expect(claimBNode.querySelector(".gp-claim-head")!.getAttribute("aria-expanded")).toBe("true");
-    expect(within(claimBNode as HTMLElement).getByText("证据反驳")).toBeTruthy();
+    const original = document.querySelector(".gp-original-text")!;
+    expect(original.textContent).toBe(MIXED_CLAIM);
+    fireEvent.click(original.querySelector('.gp-trace-link[aria-label="查看第2条判断"]')!);
+    expect(document.activeElement?.closest('[data-gp-claim-id="claim-2"]')).toBeTruthy();
+    expect(document.activeElement?.closest('[data-gp-claim-id="claim-1"]')).toBeNull();
+    expect(original.textContent).toBe(MIXED_CLAIM);
   });
 
   it("生产源码没有第二套 token / phrase map", async () => {
@@ -1631,14 +1623,14 @@ function stubMatchMedia(opts: { mobile?: boolean; reduced?: boolean }) {
 }
 
 function expandResultClaims() {
-  document.querySelectorAll<HTMLButtonElement>(".gp-claim-head").forEach((head) => {
-    if (head.getAttribute("aria-expanded") === "false") fireEvent.click(head);
-  });
+  const details = document.querySelector<HTMLDetailsElement>("[data-gp-result-remainder]");
+  if (details && !details.open) fireEvent.click(details.querySelector("summary")!);
 }
 
 async function openFirstEvidence(role?: string) {
   expandResultClaims();
-  const selector = role ? `.gp-evidence-item[data-gp-role="${role}"]` : ".gp-evidence-item";
+  const rowClass = document.querySelector("[data-gp-result-remainder]") ? ".gp-result-material-link" : ".gp-evidence-item";
+  const selector = role ? `${rowClass}[data-gp-role="${role}"]` : rowClass;
   const row = document.querySelector(selector) as HTMLButtonElement;
   expect(row).toBeTruthy();
   row.focus();
@@ -1692,10 +1684,7 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
     fireEvent.click(document.querySelector("[data-gp-source-close]")!);
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
 
-    const claimB = document.querySelector('[data-gp-claim-id="claim-2"]') as HTMLElement;
-    const headB = claimB.querySelector(".gp-claim-head") as HTMLButtonElement;
-    if (headB.getAttribute("aria-expanded") === "false") fireEvent.click(headB);
-    fireEvent.click(claimB.querySelector('.gp-evidence-item[data-gp-role="contradict"]')!);
+    fireEvent.click(document.querySelector('.gp-result-material-link[data-gp-evidence-claim="claim-2"][data-gp-role="contradict"]')!);
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
     expect(within(document.querySelector(".gp-drawer--source") as HTMLElement).getByText(/对这条命题：反驳/)).toBeTruthy();
     fireEvent.click(document.querySelector("[data-gp-source-close]")!);
@@ -1934,14 +1923,14 @@ describe("Issue #65 Source Drawer / Bottom Sheet 可审计下钻", () => {
   it("12b. 关闭后焦点回到原来那颗 Evidence DOM 节点（before === after）", async () => {
     renderCanvas(refutedComplete());
     expandResultClaims();
-    const before = document.querySelector(".gp-evidence-item") as HTMLButtonElement;
+    const before = document.querySelector(".gp-result-material-link") as HTMLButtonElement;
     expect(before).toBeInstanceOf(HTMLButtonElement);
     before.focus();
     fireEvent.click(before);
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeNull());
-    const after = document.querySelector(".gp-evidence-item") as HTMLButtonElement;
+    const after = document.querySelector(".gp-result-material-link") as HTMLButtonElement;
     expect(after).toBe(before);
     await waitFor(() => expect(document.activeElement).toBe(before));
   });
@@ -2549,7 +2538,7 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(answer.compareDocumentPosition(judgment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(judgment.classList.contains("gp-chip")).toBe(false);
     expect(hero.querySelector(".gp-hero-kicker")).toBeNull();
-    expect(screen.getByRole("heading", { name: "逐条核查详情" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "逐条判断与出处" })).toBeInTheDocument();
 
     const { readFileSync } = await import("node:fs");
     const { join } = await import("node:path");
@@ -2560,44 +2549,30 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(answerRule![1]).toContain("font-weight: 500");
     expect(answerRule![1]).toContain("var(--gp-ink-primary)");
     expect(answerRule![1]).not.toMatch(/background:\s*(?!transparent)/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-section-label\s*\{[^}]*margin: 28px 0 12px/);
-    expect(css).not.toMatch(/data-gp-phase="complete"\] \.gp-section-label\s*\{[^}]*font-size: 24px/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-claim-text\s*\{[^}]*font-size: 14px/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-title\s*\{[^}]*font-size: 14px/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-excerpt\s*\{[^}]*font-size: 14px/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-excerpt\s*\{[^}]*var\(--gp-serif\)/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-excerpt\s*\{[^}]*order:\s*-1/);
-    expect(css).toMatch(/data-gp-hero-meta="claims"[\s\S]*display:\s*none/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-original\s*\{[^}]*display:\s*none/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-claim-head\s*\{[^}]*display:\s*none/);
-    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-evidence-relation\s*\{[^}]*display:\s*none/);
-    expect(css).toContain("gp-role-emerge");
-    expect(css).toContain("--gp-enter-delay");
-    expect(css).toMatch(/prefers-reduced-motion: reduce[\s\S]*\.gp-role\.is-enter/);
-    const point = document.querySelector(".gp-point");
-    if (point) {
-      expect(point.compareDocumentPosition(document.querySelector("[data-gp-evidence-excerpt]")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    }
+    expect(css).toMatch(/\.gp-result-claim-title\s*\{[^}]*var\(--gp-serif\)/);
+    expect(css).toMatch(/\.gp-result-quote blockquote\s*\{[^}]*var\(--gp-serif\)/);
+    expect(css).toMatch(/data-gp-phase="complete"\] \.gp-original\s*\{[^}]*var\(--gp-surface\)/);
+    const original = document.querySelector(".gp-original")!;
+    expect(original.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("M3：有 excerpt 默认展示原字段；无 excerpt 不编造、不留空壳", () => {
+  it("M3：未核 excerpt 只在折叠区标材料摘录；无摘录不编造", () => {
     const withExcerpt = refutedComplete();
     expect(withExcerpt.sources[0]?.excerpt).toBe("官方声明未提及隔夜水致癌");
     renderCanvas(withExcerpt);
-    const excerpt = document.querySelector("[data-gp-evidence-excerpt]") as HTMLElement;
-    expect(excerpt).toBeTruthy();
-    expect(excerpt.textContent).toBe("官方声明未提及隔夜水致癌");
-    expect(excerpt.textContent).not.toMatch(/根据模型|可以认为|总结来说/);
+    expect(document.querySelector(".gp-claims")?.textContent).not.toContain("官方声明未提及隔夜水致癌");
+    const excerpt = document.querySelector("[data-gp-result-remainder] li p") as HTMLElement;
+    expect(excerpt.textContent).toBe("材料摘录：官方声明未提及隔夜水致癌");
     cleanup();
 
     const bare = {
       ...withExcerpt,
       sources: withExcerpt.sources.map(({ excerpt: _excerpt, ...source }) => source),
+      claims: withExcerpt.claims.map((claim) => ({ ...claim, evidence: claim.evidence.map(({ passage: _passage, ...link }) => link) })),
     };
     renderCanvas(bare);
-    expect(document.querySelector("[data-gp-evidence-excerpt]")).toBeNull();
-    expect(document.querySelector(".gp-evidence-excerpt")).toBeNull();
-    expect(document.querySelector(".gp-evidence-title")?.textContent).toContain("世卫组织辟谣平台");
+    expect(document.querySelector("[data-gp-result-remainder] li p")).toBeNull();
+    expect(document.querySelector("[data-gp-result-remainder]")?.textContent).toContain("世卫组织辟谣平台");
   });
 
   it("sourceExcerpt 只回传已有摘录，空白当缺失", () => {
@@ -2607,15 +2582,11 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(sourceExcerpt(undefined)).toBe("");
   });
 
-  it("M4：证据行左侧关系是文字+符号；整行仍打开抽屉", async () => {
+  it("M4：折叠材料保留关系文字，点击仍打开对应抽屉", async () => {
     renderCanvas(refutedComplete());
     expandResultClaims();
-    const row = document.querySelector(".gp-evidence-item") as HTMLButtonElement;
-    const relation = row.querySelector("[data-gp-relation]") as HTMLElement;
-    expect(relation).toBeTruthy();
-    expect(relation.classList.contains("gp-chip")).toBe(false);
-    expect(relation.textContent).toMatch(/●\s*反驳/);
-    expect(row.querySelector(".gp-evidence-relation-label")?.textContent).toBe("反驳");
+    const row = document.querySelector('.gp-result-material-link[data-gp-role="contradict"]') as HTMLButtonElement;
+    expect(row.textContent).toContain("反驳");
     fireEvent.click(row);
     await waitFor(() => {
       expect(document.querySelector(".gp-drawer--source")).toBeTruthy();
@@ -2623,7 +2594,7 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     expect(document.querySelector(".gp-drawer--source")?.getAttribute("data-gp-role")).toBe("contradict");
   });
 
-  it("相关行左侧写「相关」，分组标题仍是「相关材料」", () => {
+  it("相关材料仅进折叠区，标为相关而不冒充原文", () => {
     const mixed = mixedComplete();
     mixed.sources = [
       ...mixed.sources,
@@ -2632,16 +2603,16 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     mixed.claims[0]!.evidence.push({ sourceId: "src-context", role: "context-only" });
     renderCanvas(mixed);
     expandResultClaims();
-    const row = document.querySelector('.gp-evidence-item[data-gp-role="context-only"]') as HTMLElement;
-    expect(row.querySelector(".gp-evidence-relation-label")?.textContent).toBe("相关");
-    expect(row.querySelector("[data-gp-evidence-excerpt]")?.textContent).toBe("只提供背景，不单独支撑或反驳。");
-    expect(document.querySelector('[data-gp-group-role="context-only"]')?.textContent).toContain("相关材料");
+    const row = document.querySelector('.gp-result-material-link[data-gp-role="context-only"]') as HTMLElement;
+    expect(row.textContent).toContain("相关材料");
+    expect(row.closest("li")?.textContent).toContain("材料摘录：只提供背景，不单独支撑或反驳。");
+    expect(document.querySelector(".gp-claims")?.textContent).not.toContain("只提供背景，不单独支撑或反驳。");
   });
 
   it("M5：抽屉有摘录时摘录块在前且带强调类；无摘录整节不出现", async () => {
     renderCanvas(refutedComplete());
     expandResultClaims();
-    fireEvent.click(document.querySelector(".gp-evidence-item")!);
+    fireEvent.click(document.querySelector(".gp-result-material-link")!);
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
     const drawer = document.querySelector(".gp-drawer--source") as HTMLElement;
     const excerpt = drawer.querySelector('[data-gp-source-section="excerpt"]') as HTMLElement;
@@ -2663,7 +2634,7 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
       })),
     });
     expandResultClaims();
-    fireEvent.click(document.querySelector(".gp-evidence-item")!);
+    fireEvent.click(document.querySelector(".gp-result-material-link")!);
     await waitFor(() => expect(document.querySelector(".gp-drawer--source")).toBeTruthy());
     const empty = document.querySelector(".gp-drawer--source") as HTMLElement;
     expect(empty.querySelector('[data-gp-source-section="excerpt"]')).toBeNull();
@@ -2680,6 +2651,7 @@ describe("结果页 P0/P1：调查备忘录视觉", () => {
     const item = css.match(/\.gp-evidence-item\s*\{([^}]*)\}/);
     expect(item![1]).toMatch(/min-height:\s*44px/);
     expect(css).not.toMatch(/\.gp-hero-answer[^{]*\{[^}]*background:\s*(linear-gradient|#)/);
-    expect(css).toMatch(/\.gp-canvas\[data-gp-phase="complete"\] \.gp-evidence-group-head/);
+    expect(css).toMatch(/\.gp-result-quote-role\.is-support\s*\{[^}]*--gp-semantic-support/);
+    expect(css).toMatch(/\.gp-result-quote-role\.is-contradict\s*\{[^}]*--gp-semantic-contradict/);
   });
 });

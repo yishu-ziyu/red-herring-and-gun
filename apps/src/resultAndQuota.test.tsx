@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 describe("A13 两次点击内看到决定性依据", () => {
-  it("一次点击材料行就打开来源，片段与出处都在里面", () => {
+  it("旧摘要材料在两次点击内打开来源，片段与出处都在里面", () => {
     render(
       <InvestigationCanvas
         snapshot={refutedComplete()}
@@ -27,8 +27,9 @@ describe("A13 两次点击内看到决定性依据", () => {
         onBackHome={() => {}}
       />
     );
-    // 第 1 次点击：结论区第一条关键依据
-    const row = document.querySelector<HTMLElement>("[data-gp-key-evidence-item]")!;
+    // 旧记录无已核引句：展开其余材料后点击对应来源，共两次。
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
+    const row = document.querySelector<HTMLElement>("[data-gp-result-remainder] [data-gp-evidence-claim]")!;
     expect(row).toBeTruthy();
     fireEvent.click(row);
     const drawer = document.querySelector("[data-gp-source-layer]")!;

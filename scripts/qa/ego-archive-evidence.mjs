@@ -1,7 +1,7 @@
 // Run: ego-browser nodejs < scripts/qa/ego-archive-evidence.mjs
 // Set these two values to the existing Ego TaskSpace and completed case Page.
-const spaceId = 1;
-const pageLabel = 'p3';
+const spaceId = 3;
+const pageLabel = 'p1';
 // Uses the ego-browser runtime; does not start an investigation or call a model.
 const task = await taskSpace(spaceId);
 const page = task.page(pageLabel);
@@ -21,7 +21,9 @@ assert.ok(result.answer?.trim());
 assert.ok(result.answerTop >= 0 && result.answerTop < result.viewportHeight);
 assert.ok(result.overflow <= 1);
 assert.equal(result.internalWords, false);
-await page.click('loc=css:[data-gp-key-evidence-item] >> nth=0');
+assert.equal(await page.evaluate(() => Boolean(document.querySelector('[data-gp-result-remainder]')?.hasAttribute('open'))), false);
+assert.equal(await page.evaluate(() => document.querySelectorAll('[data-gp-key-evidence-item]').length), 0);
+await page.click('loc=css:[data-gp-verified-quote] button >> nth=0');
 await page.waitForSelector('[data-gp-source-section="excerpt"]', { state: 'visible' });
 const source = await page.evaluate(() => ({
   label: document.querySelector('[data-gp-source-section="excerpt"] .gp-source-label')?.textContent,
@@ -33,3 +35,7 @@ assert.ok(source.quote?.trim());
 assert.equal(decodeURIComponent(source.href.split(':~:text=')[1]), source.quote.trim());
 console.log({ result, source });
 console.log(await page.snapshot());
+
+await page.keyboard.press('Escape');
+assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), '查看来源');
+console.log('已核引句、来源定位、折叠材料、焦点返回通过。');

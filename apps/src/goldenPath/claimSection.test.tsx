@@ -179,10 +179,11 @@ describe("Change D：调查过程中渲染争点与「尚缺」", () => {
     expect(document.querySelector('[data-gp-claim-id="claim-1"] .gp-gaps')!.textContent).toContain(GAP);
   });
 
-  it("完成态争点与缺口不回退：都还在，只是换成完成态措辞", () => {
+  it("完成态争点进折叠区，未解决缺口仍在对应逐条判断", () => {
     render(canvas(completeSnapshot()));
-    expect(document.querySelector('[data-gp-claim-id="claim-1"] .gp-conflict')).toBeTruthy();
-    expect(document.querySelector('[data-gp-claim-id="claim-1"] .gp-gaps')).toBeTruthy();
+    expect(document.querySelector('[data-gp-claim-id="claim-1"] .gp-result-gap')?.textContent).toContain(GAP);
+    const more = document.querySelector("[data-gp-result-remainder]")!;
+    expect(more.querySelector("[data-gp-conflict-id]")).toBeTruthy();
   });
 });
 
@@ -203,7 +204,7 @@ describe("Change E：完成态内容补齐后展开生效", () => {
     expect(document.querySelector<HTMLElement>('[data-gp-claim-id="claim-1"] .gp-claim-head')!.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("decomposed 拍挂载（内容空、未展开），complete 拍补齐后同一张卡展开", () => {
+  it("decomposed 拍挂载，complete 拍改成直接可读的逐条判断", () => {
     const view = render(canvas(mountSnapshot()));
     const mounted = document.querySelector<HTMLElement>('[data-gp-claim-id="claim-1"]')!;
     expect(mounted.querySelector(".gp-claim-head")!.getAttribute("aria-expanded")).toBe("false");
@@ -211,14 +212,13 @@ describe("Change E：完成态内容补齐后展开生效", () => {
 
     view.rerender(canvas(completeSnapshot()));
     const after = document.querySelector<HTMLElement>('[data-gp-claim-id="claim-1"]')!;
-    expect(after).toBe(mounted);
-    expect(after.querySelector(".gp-claim-head")!.getAttribute("aria-expanded")).toBe("true");
-    expect(after.querySelector(".gp-claim-detail")).toBeTruthy();
-    expect(after.querySelector('[data-gp-role="support"]')).toBeTruthy();
-    expect(after.querySelector(".gp-gaps")!.textContent).toContain(GAP);
+    expect(after).not.toBe(mounted);
+    expect(after.classList.contains("gp-result-claim")).toBe(true);
+    expect(after.textContent).toContain(ATOM);
+    expect(after.querySelector(".gp-result-gap")!.textContent).toContain(GAP);
   });
 
-  it("过程里手动收起的卡，完成态补齐内容后按完成态默认展开（明细可达优先）", () => {
+  it("过程里手动收起的卡，完成态逐条判断仍直接可读", () => {
     const view = render(canvas(judgingSnapshot(), true));
     const head = document.querySelector<HTMLElement>('[data-gp-claim-id="claim-1"] .gp-claim-head')!;
     expect(head.getAttribute("aria-expanded")).toBe("true");
@@ -226,9 +226,9 @@ describe("Change E：完成态内容补齐后展开生效", () => {
     expect(head.getAttribute("aria-expanded")).toBe("false");
 
     view.rerender(canvas(completeSnapshot()));
-    expect(
-      document.querySelector('[data-gp-claim-id="claim-1"] .gp-claim-head')!.getAttribute("aria-expanded")
-    ).toBe("true");
+    const result = document.querySelector('[data-gp-claim-id="claim-1"]')!;
+    expect(result.classList.contains("gp-result-claim")).toBe(true);
+    expect(result.textContent).toContain(ATOM);
   });
 
   it("完成态：多主张都尚未查清时标签不是证据反驳，空壳折进一条尚缺", () => {

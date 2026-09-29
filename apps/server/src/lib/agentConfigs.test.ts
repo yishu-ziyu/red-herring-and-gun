@@ -40,14 +40,12 @@ const REQUIRED_PATTERNS_SOURCE_VALIDATOR = [
 ];
 
 describe("AGENT_CONFIGS · P0-1 Grounding 硬约束", () => {
-  it("应暴露 6 个 Agent 配置（含因果分支 alternative_explanation_searcher / counter_evidence_grader）", () => {
+  it("正式链只保留拆题、核查、来源审计、报告四个角色", () => {
     expect(AGENT_CONFIGS.map((a) => a.id)).toEqual([
       "rumor_detector",
       "fact_checker",
       "source_validator",
       "report_composer",
-      "alternative_explanation_searcher",
-      "counter_evidence_grader",
     ]);
   });
 
@@ -69,18 +67,17 @@ describe("AGENT_CONFIGS · P0-1 Grounding 硬约束", () => {
 
   it("ReportComposer 用户可见字禁止工具名与转发建议", () => {
     const prompt = getAgentConfig("report_composer")!.systemPrompt;
-    expect(prompt).toMatch(/能信 \/ 不能信 \/ 只能信一部分 \/ 还查不清/);
-    expect(prompt).toMatch(/不要写转不转|先别转发/);
-    expect(prompt).toMatch(/禁止出现：FactChecker|search360|工具调用/);
-    expect(prompt).toMatch(/模型记忆不是出处/);
+    expect(prompt).toMatch(/不再核查或改变真假/);
+    expect(prompt).toMatch(/不要输出 verdictType、subclaimVerdicts/);
+    expect(prompt).toMatch(/不得写模型记忆中的事实、行动建议、工具名/);
   });
 
   it("FactChecker 与 ReportComposer 禁止把 S1 写进用户正文", () => {
     const fc = getAgentConfig("fact_checker")!.systemPrompt;
     const rc = getAgentConfig("report_composer")!.systemPrompt;
     expect(fc).toMatch(/禁止写 S1/);
-    expect(rc).toMatch(/禁止写 S1/);
-    expect(rc).not.toMatch(/来源编号/);
+    expect(rc).toMatch(/已核原句/);
+    expect(rc).not.toMatch(/S1/);
   });
 
   it("两个 Agent prompt 都应包含禁止编造的硬约束（来源/日期/专家名）", () => {
@@ -118,10 +115,11 @@ describe("subclaimVerdicts / claimAtoms 数据契约", () => {
     expect(item.required).toEqual(["claimAtom", "verdict", "evidence", "boundary"]);
   });
 
-  it("report_composer schema 应含 subclaimVerdicts 并在 required 中", () => {
+  it("report_composer schema 只要求解释文本，不允许输出判词和分条判断", () => {
     const schema = getAgentConfig("report_composer")!.responseSchema as any;
-    expect(schema.properties.subclaimVerdicts).toBeDefined();
-    expect(schema.required).toContain("subclaimVerdicts");
+    expect(schema.properties.verdictType).toBeUndefined();
+    expect(schema.properties.subclaimVerdicts).toBeUndefined();
+    expect(schema.required).toContain("explanation");
   });
 
   it("mergeSubclaimVerdicts：覆盖不全补 unverified + 幻觉拦截 + 非法 verdict 回退", () => {
@@ -191,7 +189,7 @@ describe("subclaimVerdicts / claimAtoms 数据契约", () => {
     expect(b?.contradictingSources ?? []).toHaveLength(1);
   });
 
-  it("buildAgentInput：fact_checker 透传 claimAtoms，report_composer 透传 merge 后的 subclaimVerdicts", () => {
+  it("buildAgentInput：fact_checker 透传 claimAtoms，report_composer 只读正式判断", () => {
     const previousSteps = [
       {
         agent: "rumor_detector",
@@ -208,11 +206,10 @@ describe("subclaimVerdicts / claimAtoms 数据契约", () => {
     const fcInput = buildAgentInput("fact_checker", "claim", previousSteps);
     expect(fcInput.claimAtoms).toEqual(["原子A", "原子B"]);
 
-    const rcInput = buildAgentInput("report_composer", "claim", previousSteps);
-    const factCheck = rcInput.factCheck as any;
-    expect(factCheck.subclaimVerdicts).toHaveLength(2);
-    expect(factCheck.subclaimVerdicts.find((r: any) => r.claimAtom === "原子A").verdict).toBe("unverified");
-    expect(factCheck.subclaimVerdicts.find((r: any) => r.claimAtom === "原子B").verdict).toBe("unverified");
+    const judgment = { verdictType: "unverified", subclaimVerdicts: [{ claimAtom: "原子A", verdict: "unverified" }] };
+    const rcInput = buildAgentInput("report_composer", "claim", [...previousSteps, { agent: "formal_judgment", output: judgment }]);
+    expect(rcInput.judgment).toEqual(judgment);
+    expect(rcInput).not.toHaveProperty("factCheck");
   });
 });
 
@@ -270,101 +267,13 @@ describe("buildAgentInput · 富化 handoff 字段", () => {
     expect(input.neededEvidence).toEqual(["官方通报", "原始研究"]);
   });
 
-  it("report_composer 富化 rumorAnalysis / factCheck / sourceValidation 并保留 merge 路径", () => {
-    const input = buildAgentInput("report_composer", "claim", previousSteps);
-    const rumor = input.rumorAnalysis as any;
-    expect(rumor.claimAtoms).toEqual(["原子A", "原子B"]);
-    expect(rumor.rumorTypes).toEqual(["健康", "社会"]);
-    expect(rumor.indicators).toEqual(["绝对化表述", "匿名信源"]);
-    expect(rumor.severity).toBe("high");
-    expect(rumor.analysis).toBe("分析说明");
-    expect(rumor.neededEvidence).toEqual(["官方通报", "原始研究"]);
-
-    const fact = input.factCheck as any;
-    expect(fact.result).toBe("partial");
-    expect(fact.confidence).toBe("medium");
-    expect(fact.sources).toEqual(["https://a.example.com", "https://b.example.com"]);
-    expect(fact.supportingEvidence).toEqual(["支持证据1"]);
-    expect(fact.contradictingSources).toEqual(["反方来源1"]);
-    expect(fact.keyFindings).toEqual(["发现1"]);
-    expect(fact.counterEvidence).toEqual(["反证1"]);
-    expect(fact.unresolvedEvidenceGaps).toEqual(["缺口1"]);
-    expect(fact.logicRisks).toEqual(["因果倒置风险"]);
-    expect(fact.subclaimVerdicts).toHaveLength(2);
-    expect(fact.subclaimVerdicts.find((r: any) => r.claimAtom === "原子A").verdict).toBe("unverified");
-    expect(fact.subclaimVerdicts.find((r: any) => r.claimAtom === "原子B").verdict).toBe("unverified");
-
-    const source = input.sourceValidation as any;
-    expect(source.reliability).toBe("medium");
-    expect(source.verifiedSources).toEqual(["可靠来源A"]);
-    expect(source.questionableSources).toEqual(["可疑来源B"]);
-    expect(source.missingSources).toEqual(["缺失来源C"]);
-    expect(source.verificationNotes).toBe("核验备注");
-  });
-
-  it("compactStrings 截断超长文本与条数", () => {
-    const long = "长".repeat(500);
-    const steps = [
-      {
-        agent: "rumor_detector",
-        output: {
-          claimAtoms: Array.from({ length: 10 }, (_, i) => `原子${i}`),
-          rumorIndicators: [long],
-          analysis: long,
-          neededEvidence: [long],
-        },
-      },
-      {
-        agent: "fact_checker",
-        output: {
-          sources: Array.from({ length: 10 }, (_, i) => `src${i}`),
-          keyFindings: [long],
-          subclaimVerdicts: [],
-        },
-      },
-      {
-        agent: "source_validator",
-        output: {
-          verificationNotes: long,
-          verifiedSources: [],
-          questionableSources: [],
-          missingSources: [],
-        },
-      },
-    ] as any;
-
-    const input = buildAgentInput("report_composer", "claim", steps);
-    const rumor = input.rumorAnalysis as any;
-    expect(rumor.claimAtoms).toHaveLength(10);
-    expect(rumor.indicators[0].endsWith("…")).toBe(true);
-    expect(rumor.indicators[0].length).toBe(121); // 120 + ellipsis
-    expect(rumor.analysis.endsWith("…")).toBe(true);
-    expect(rumor.analysis.length).toBe(361);
-
-    const fact = input.factCheck as any;
-    expect(fact.sources).toHaveLength(6);
-    expect(fact.keyFindings[0].length).toBe(261);
-
-    const source = input.sourceValidation as any;
-    expect(source.verificationNotes.length).toBe(421);
-    expect(source.verificationNotes.endsWith("…")).toBe(true);
-  });
-
-  it("causal agent 输入 builder 可用（即使 server AGENT_CONFIGS 尚未注册）", () => {
-    const alt = buildAgentInput("alternative_explanation_searcher", "claim", previousSteps);
-    expect(alt.task).toBe("为当前因果断言生成替代解释");
-    expect(alt.claimAtoms).toEqual(["原子A", "原子B"]);
-    expect(alt.factCheckResult).toBe("partial");
-    expect(alt.supportingEvidence).toEqual(["支持证据1"]);
-    expect(alt.contradictingSources).toEqual(["反方来源1"]);
-
-    const grader = buildAgentInput("counter_evidence_grader", "claim", previousSteps);
-    expect(grader.task).toBe("评估反证和证据缺口对结论的影响");
-    expect(grader.factCheckResult).toBe("partial");
-    expect(grader.confidence).toBe("medium");
-    expect(grader.counterEvidence).toEqual(["反证1"]);
-    expect(grader.unresolvedEvidenceGaps).toEqual(["缺口1"]);
-    expect(grader.contradictingSources).toEqual(["反方来源1"]);
+  it("report_composer 不读取旧角色输出，只消费 formal_judgment", () => {
+    const judgment = { verdictType: "false", verifiedQuotes: [{ quote: "已核原文" }] };
+    const input = buildAgentInput("report_composer", "claim", [...previousSteps,
+      { agent: "formal_judgment", output: judgment }]);
+    expect(input.judgment).toEqual(judgment);
+    expect(JSON.stringify(input)).not.toContain("分析说明");
+    expect(JSON.stringify(input)).not.toContain("发现1");
   });
 
   it("rumor_detector task 文案对齐拆题语义", () => {
@@ -392,34 +301,14 @@ describe("判定可追溯 · per-verdict 结构化来源", () => {
     expect(item.required).not.toContain("evidenceGaps");
   });
 
-  it("report_composer schema 的 subclaimVerdicts item 同样含三个新字段 structures", () => {
-    const schema = getAgentConfig("report_composer")!.responseSchema as any;
-    const item = schema.properties.subclaimVerdicts.items;
-    expect(item.properties.supportingSources).toBeDefined();
-    expect(item.properties.contradictingSources).toBeDefined();
-    expect(item.properties.evidenceGaps).toBeDefined();
-  });
-
-  it("fact_checker / report_composer prompt 与 schema 要求句内 [n] 与 supportingSources 顺序对应", () => {
-    const fc = getAgentConfig("fact_checker")!;
+  it("report_composer 仅写解释，引用只能来自正式判断中的已核来源", () => {
     const rc = getAgentConfig("report_composer")!;
-    expect(fc.systemPrompt).toContain("句内引用编号");
-    expect(fc.systemPrompt).toContain("supportingSources");
-    expect(fc.systemPrompt).toMatch(/\[n\]/);
-    expect(rc.systemPrompt).toContain("句内引用编号");
-    expect(rc.systemPrompt).toContain("全局编号");
-    expect(rc.systemPrompt).toMatch(/\[n\]/);
-
-    const fcEvidence = (fc.responseSchema as any).properties.subclaimVerdicts.items.properties.evidence;
-    expect(fcEvidence.description).toMatch(/\[n\]/);
-    expect(fcEvidence.description).toMatch(/supportingSources/);
-    expect(fc.systemPrompt).not.toContain("contradictingSources 不参与");
-    expect(fc.systemPrompt).toContain("不得为了句内 [n] 把反驳材料写入 supportingSources");
-
-    const rcConclusion = (rc.responseSchema as any).properties.conclusion;
-    expect(rcConclusion.description).toMatch(/\[n\]/);
-    const chainEvidence = (rc.responseSchema as any).properties.evidenceChain.items.properties.evidence;
-    expect(chainEvidence.description).toMatch(/sourceRefs/);
+    const schema = rc.responseSchema as any;
+    expect(schema.properties.verdictType).toBeUndefined();
+    expect(schema.properties.subclaimVerdicts).toBeUndefined();
+    expect(schema.properties.explanation).toBeDefined();
+    expect(rc.systemPrompt).toMatch(/verifiedQuotes/);
+    expect(rc.systemPrompt).toMatch(/sourceRefs/);
   });
 
   it("mergeSubclaimVerdicts：URL 幻觉拦截——编造 URL 丢弃、真实 URL 保留", () => {
@@ -797,21 +686,17 @@ describe("排除层 · splitVerifiableAtoms 确定性拆分", () => {
     expect(prompt).not.toMatch(/value\/prediction\/normative 的 verifiable 必须为 false/);
   });
 
-  it("fact_checker / report_composer 对预测只查现在时抓手，不把未来写成已发生", () => {
+  it("fact_checker 对预测只查现在时抓手，不把未来写成已发生", () => {
     const fc = getAgentConfig("fact_checker")!.systemPrompt;
-    const rc = getAgentConfig("report_composer")!.systemPrompt;
     expect(fc).toMatch(/现在时抓手|公开承诺/);
     expect(fc).toMatch(/不得把原子改写成/);
     expect(fc).toMatch(/Search-first|模型记忆不是核查/);
     expect(fc).toMatch(/知识库初稿/);
     expect(fc).toMatch(/人物、日期、链接/);
     expect(fc).toMatch(/不得沿用初稿/);
-    expect(fc).toMatch(/无证据 ≠ 假|无证据 ≠ 假/);
-    expect(rc).toMatch(/不得把未来写成已经发生/);
-    expect(rc).toMatch(/能信 \/ 不能信 \/ 只能信一部分 \/ 还查不清/);
-    expect(rc).toMatch(/按条说哪几句站住/);
-    expect(rc).toMatch(/同一条核查的追问/);
+    expect(fc).toMatch(/无证据 ≠ 假/);
   });
+
 });
 
 describe("排除层 · nonVerifiableAtoms / stanceClaimType 契约", () => {

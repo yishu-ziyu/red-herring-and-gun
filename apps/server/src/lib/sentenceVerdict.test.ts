@@ -50,10 +50,10 @@ describe("每部分的角色与状态（listAssessedClaims）", () => {
     expect(standing(verdicts({ contradictingSources: contradicting, contradictedElement: "补贴金额每年5000元" }))).toBe("supported");
     // 逐字引用原句里的要素 + 有反驳出处 → 部分成立
     expect(standing(verdicts({ contradictingSources: contradicting, contradictedElement: "一直发到3岁" }))).toBe("partial");
-    // 只有反驳、没有任何支持，也没有要素 → 没查清
+    // 只有反驳、没有任何支持 → 不凭 partial 标签编出成立的一面
     expect(
       standing({ subclaimVerdicts: [{ claimAtom: atom, verdict: "partial", contradictingSources: contradicting }] })
-    ).toBe("unresolved");
+    ).toBe("refuted");
     // 引用了要素却没有反驳出处 → 被证实（没有来源反驳它）
     expect(standing(verdicts({ contradictedElement: "一直发到3岁" }))).toBe("supported");
   });

@@ -34,8 +34,6 @@ type EvidenceItemProps = {
   order: number;
   layoutEnabled: boolean;
   groupLabelId: string;
-  /** 完成态：片段是收据，标题是出处。调查中仍按「找到了哪页」来读。 */
-  asResult?: boolean;
   asWork?: boolean;
   onSelect: (link: InvestigationEvidenceLink, source: InvestigationSource, trigger: HTMLElement) => void;
 };
@@ -49,7 +47,6 @@ export function EvidenceItem({
   order,
   layoutEnabled,
   groupLabelId,
-  asResult = false,
   asWork = false,
   onSelect,
 }: EvidenceItemProps) {
@@ -60,7 +57,7 @@ export function EvidenceItem({
   const rowLabel = ROLE_ROW_LABEL[link.role];
   const excerpt = sourceExcerpt(source);
   const named = excerpt || title;
-  const receipt = asResult || asWork;
+  const receipt = asWork;
 
   return (
     <motion.button

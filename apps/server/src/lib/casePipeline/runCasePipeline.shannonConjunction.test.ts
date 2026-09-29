@@ -8,7 +8,6 @@ import { runCasePipeline, type PipelineStep } from "./runCasePipeline";
 import { confirmedSourceValidatorStep } from "./testSourceRelationAudit";
 import { decideSentenceVerdict } from "../../domain/verdict";
 import { listAssessedClaims } from "../sentenceVerdict";
-import { directAnswer } from "../publicCopy";
 import type { InvestigationSnapshotV1 } from "../investigation/index.js";
 
 const A = "甲馆于周二开放";
@@ -29,12 +28,12 @@ const bVerdict = (kind: Kind) => ({
   contradictingSources: [], ...(kind === "related-only" ? { sourcesRelatedOnly: true } : {}),
 });
 
-async function execute(kind: Kind | "single", audit: "clean" | "unavailable", refuted = false) {
+async function execute(kind: Kind | "single", refuted = false) {
   const atoms = kind === "single" ? [A] : [A, B];
   const verdicts = kind === "single" ? [aVerdict(refuted)] : [aVerdict(refuted), bVerdict(kind)];
   const snapshots: InvestigationSnapshotV1[] = [];
   const step = (agent: string, output: Record<string, unknown>): PipelineStep => ({ agent, output, status: "completed", timestamp: Date.now() });
-  const composer = { verdictType: refuted ? "false" : "true", conclusion: refuted ? "两项均不成立。" : "两项均已证实。", subclaimVerdicts: verdicts };
+  const composer = { verdictType: refuted ? "false" : "true", explanation: refuted ? "两项均不成立。" : "两项均已证实。", subclaimVerdicts: verdicts };
   const result = await runCasePipeline({
     claim: atoms.join("，而且") + "。",
     runAgent: async (id, steps) => {
@@ -46,12 +45,6 @@ async function execute(kind: Kind | "single", audit: "clean" | "unavailable", re
     },
     searchOne: async (query) => ({ answer: "", model: "synthetic-search", sources: query.includes(A) ? [SA] : query.includes(B) && (kind === "related-only" || kind === "supported") ? [SB] : [] }),
     callSelfProofModel: async () => ({ model: "synthetic-selfproof", output: { results: atoms.map(atom => ({ atom, supported: true, reason: "输入明确列出该命题" })) } }),
-    wholeClaimAudit: { callModel: async ({ systemPrompt }) => {
-      if (audit === "unavailable") throw new Error("synthetic audit unavailable");
-      return { model: "synthetic-audit", output: systemPrompt.includes("整句证据评估器")
-        ? { supportedWhere: "", biggestGap: "", missingJustifications: [], nextQuestions: [] }
-        : { overallQuestion: atoms.join("，而且"), checkabilityRevisions: [], missingJustifications: [], auditQuestions: [] } };
-    } },
     citationLiveness: { liveness: new Map([[SA.url, "alive"], [SB.url, "alive"]]) },
     runReport: async () => step("report_composer", composer),
     hooks: { onInvestigationSnapshot: snapshot => { snapshots.push(snapshot); } },
@@ -59,7 +52,7 @@ async function execute(kind: Kind | "single", audit: "clean" | "unavailable", re
   const artifactDir = process.env.RHG_SHANNON_ARTIFACT_DIR;
   if (artifactDir) {
     mkdirSync(artifactDir, { recursive: true });
-    writeFileSync(join(artifactDir, `${kind}-${audit}-${refuted ? "false" : "true"}.json`), JSON.stringify({ evidenceKind: "synthetic-pipeline", isolation: "logical-only", report: result.finalReport, snapshots }, null, 2) + "\n");
+    writeFileSync(join(artifactDir, `${kind}-${refuted ? "false" : "true"}.json`), JSON.stringify({ evidenceKind: "synthetic-pipeline", isolation: "logical-only", report: result.finalReport, snapshots }, null, 2) + "\n");
   }
   return { report: result.finalReport, snapshot: snapshots.at(-1)! };
 }
@@ -107,44 +100,71 @@ describe("Shannon independent function contract", () => {
 });
 
 describe("Shannon real pipeline to final Snapshot/directAnswer", () => {
-  for (const audit of ["clean", "unavailable"] as const) {
-    for (const kind of ["unverified", "missing", "related-only"] as const) {
-      it(`A supported, B ${kind}, audit ${audit}, composer true`, async () => {
-        const { report, snapshot } = await execute(kind, audit);
-        expect.soft(report.verdictType).toBe("unverified");
-        expect.soft(snapshot.conclusion?.judgment).toBe("unresolved");
-        expect.soft(snapshot.claims.find(c => c.text === A)?.judgment).toBe("supported");
-        expect.soft(snapshot.claims.find(c => c.text === B)?.judgment).toBe("unresolved");
-        const answer = snapshot.conclusion?.directAnswer ?? "";
-        expect.soft(answer.startsWith(directAnswer("unverified"))).toBe(true);
-        expect.soft(answer).toContain(B);
-        expect.soft(answer).toMatch(/尚未查清|未核实|无法确认|缺少/);
-        expect.soft(answer).not.toContain("两项均已证实");
-        assertSourceBinding(snapshot, A, SA.url, "support");
-        assertPublishedCitation(report, snapshot);
-      });
-    }
-    for (const kind of ["single", "supported"] as const) {
-      it(`positive ${kind}, audit ${audit} preserves supported`, async () => {
-        const { report, snapshot } = await execute(kind, audit);
-        expect(report.verdictType).toBe("true");
-        expect(snapshot.conclusion?.judgment).toBe("supported");
-        expect(snapshot.claims.every(c => c.judgment === "supported")).toBe(true);
-        assertSourceBinding(snapshot, A, SA.url, "support");
-        if (kind === "supported") assertSourceBinding(snapshot, B, SB.url, "support");
-      });
-    }
-    it(`A refuted, B unknown, audit ${audit} preserves false without accusing B`, async () => {
-      const { report, snapshot } = await execute("unverified", audit, true);
-      expect(report.verdictType).toBe("false");
-      expect(snapshot.conclusion?.judgment).toBe("refuted");
-      expect(snapshot.claims.find(c => c.text === A)?.judgment).toBe("refuted");
+  it("A和B有原文支持，但推论跳跃C未核：整句与快照不能写成已经证实", async () => {
+    const C = "全国所有场馆周二开放";
+    const atoms = [A, B, C];
+    const snapshots: InvestigationSnapshotV1[] = [];
+    const result = await runCasePipeline({
+      claim: `${A}，${B}，所以${C}。`,
+      runAgent: async (agent, steps) => {
+        if (agent === "rumor_detector") return { agent, output: { claimAtoms: atoms,
+          claimAtomTypes: [
+            { text: A, verifiable: true, type: "fact", role: "premise" },
+            { text: B, verifiable: true, type: "fact", role: "premise" },
+            { text: C, verifiable: true, type: "causal", role: "main" },
+          ] } };
+        if (agent === "fact_checker") return { agent, output: { factCheckResult: "partial", subclaimVerdicts: [
+          aVerdict(), bVerdict("supported"), { claimAtom: C, verdict: "unverified", evidenceGaps: ["缺少从甲馆和乙馆推广到所有场馆的依据"] },
+        ] } };
+        if (agent === "source_validator") return confirmedSourceValidatorStep(steps, "high");
+        throw new Error(`unexpected ${agent}`);
+      },
+      searchOne: async (query) => ({ sources: query.includes(A) ? [SA] : query.includes(B) ? [SB] : [] }),
+      callSelfProofModel: async () => ({ model: "self", output: { results: atoms.map((atom) => ({ atom, supported: true })) } }),
+      evidenceLoop: { enabled: false }, citationLiveness: false,
+      runReport: async () => ({ agent: "report_composer", output: { verdictType: "true", explanation: "甲馆和乙馆都开放，因此全国场馆都开放。" } }),
+      hooks: { onInvestigationSnapshot: (snapshot) => snapshots.push(snapshot) },
+    });
+    expect(result.finalReport.verdictType).toBe("unverified");
+    expect(Object.fromEntries((result.finalReport.subclaimVerdicts as Array<{ claimAtom: string; verdict: string }>).map((row) => [row.claimAtom, row.verdict]))).toMatchObject({
+      [A]: "true", [B]: "true", [C]: "unverified",
+    });
+    expect(snapshots.at(-1)?.claims.find((item) => item.text === C)?.judgment).toBe("unresolved");
+    expect(snapshots.at(-1)?.conclusion?.judgment).toBe("unresolved");
+    expect(String(result.finalReport.conclusion)).not.toContain("因此全国场馆都开放");
+    expect(String(result.finalReport.summaryForPublic)).not.toContain("因此全国场馆都开放");
+    expect(String(result.finalReport.conclusion)).toContain(C);
+    expect(String(result.finalReport.conclusion)).toMatch(/尚未查清|还缺|仍缺/);
+  });
+  for (const kind of ["unverified", "missing", "related-only"] as const) {
+    it(`A supported, B ${kind} cannot prove the conjunction`, async () => {
+      const { report, snapshot } = await execute(kind);
+      expect(report.verdictType).toBe("unverified");
+      expect(snapshot.conclusion?.judgment).toBe("unresolved");
+      expect(snapshot.claims.find(c => c.text === A)?.judgment).toBe("supported");
       expect(snapshot.claims.find(c => c.text === B)?.judgment).toBe("unresolved");
-      expect(snapshot.conclusion?.directAnswer).not.toContain("两项均不成立");
       expect(snapshot.conclusion?.directAnswer).toContain(B);
-      expect(snapshot.conclusion?.directAnswer).toMatch(/尚未查清|未核实|无法确认|缺少/);
-      assertSourceBinding(snapshot, A, SA.url, "contradict");
+      expect(snapshot.conclusion?.directAnswer).not.toContain("两项均已证实");
+      assertSourceBinding(snapshot, A, SA.url, "support");
       assertPublishedCitation(report, snapshot);
     });
   }
+  for (const kind of ["single", "supported"] as const) {
+    it(`positive ${kind} retains supported`, async () => {
+      const { report, snapshot } = await execute(kind);
+      expect(report.verdictType).toBe("true");
+      expect(snapshot.conclusion?.judgment).toBe("supported");
+      expect(snapshot.claims.every(c => c.judgment === "supported")).toBe(true);
+    });
+  }
+  it("A refuted, B unknown remains false without accusing B", async () => {
+    const { report, snapshot } = await execute("unverified", true);
+    expect(report.verdictType).toBe("false");
+    expect(snapshot.claims.find(c => c.text === B)?.judgment).toBe("unresolved");
+    expect(snapshot.conclusion?.directAnswer).toContain(B);
+    expect(String(report.conclusion)).not.toContain("两项均不成立");
+    expect(String(report.summaryForPublic)).not.toContain("两项均不成立");
+    expect(String(report.conclusion)).toMatch(/尚未查清|还缺|仍缺/);
+    assertSourceBinding(snapshot, A, SA.url, "contradict");
+  });
 });

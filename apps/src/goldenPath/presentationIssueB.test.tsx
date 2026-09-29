@@ -1,6 +1,6 @@
 /**
  * 契约 docs/evals/2026-09-15-presentation-issue-b.md
- * 完成态阅读顺序：原句 → 直答 → 关键依据 → 缺口/边界 → 命题详情 → 追问 → 案卷。
+ * 完成态阅读顺序：原句 → 直答 → 逐条判断 → 其余材料/经历 → 追问。
  */
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -34,31 +34,26 @@ function follows(earlier: Element, later: Element) {
 }
 
 describe("Issue B 完成态阅读顺序", () => {
-  it("DOM 顺序：原句 → 直答 → 关键依据 → 缺口或边界 → 命题 → 追问 → 案卷", () => {
+  it("DOM 顺序：原句 → 直答 → 逐条判断 → 折叠材料 → 追问", () => {
     renderCanvas(mixedComplete());
-    const query = document.querySelector("[data-gp-hero-query]")!;
+    const query = document.querySelector(".gp-original")!;
     const answer = document.querySelector("[data-gp-direct-answer]")!;
-    const key = document.querySelector("[data-gp-key-evidence]")!;
-    const firstKey = document.querySelector("[data-gp-key-evidence-item]")!;
     const boundary = document.querySelector("[data-gp-boundaries]");
     const claims = document.querySelector(".gp-claims")!;
     const followup = document.querySelector(".gp-followup")!;
-    const dossier = document.querySelector("[data-gp-dossier]")!;
-    const sources = document.querySelector("[data-gp-sources-strip]")!;
+    const more = document.querySelector("[data-gp-result-remainder]") as HTMLDetailsElement;
 
     expect(query).toBeTruthy();
     expect(answer).toBeTruthy();
-    expect(key).toBeTruthy();
-    expect(firstKey).toBeTruthy();
     expect(follows(query, answer)).toBe(true);
-    expect(follows(answer, key)).toBe(true);
-    expect(follows(key, firstKey)).toBe(true);
-    expect(follows(key, claims)).toBe(true);
+    expect(follows(answer, claims)).toBe(true);
+    expect(claims.querySelectorAll(".gp-result-claim")).toHaveLength(2);
+    expect(follows(claims, more)).toBe(true);
+    expect(more.open).toBe(false);
     expect(follows(claims, followup)).toBe(true);
-    expect(follows(followup, dossier)).toBe(true);
-    expect(follows(key, sources)).toBe(true);
-    expect(sources.querySelector(".gp-hero-sources-list")).toBeNull();
-    if (boundary) expect(follows(key, boundary)).toBe(true);
+    expect(document.querySelector("[data-gp-key-evidence]")).toBeNull();
+    expect(document.querySelector("[data-gp-sources-strip]")).toBeNull();
+    if (boundary) expect(follows(answer, boundary)).toBe(true);
     expect(document.body.textContent).not.toMatch(/能信|不能信|置信/);
   });
 
@@ -67,16 +62,17 @@ describe("Issue B 完成态阅读顺序", () => {
     expect(document.querySelector("[data-gp-key-evidence]")).toBeNull();
     expect(document.querySelector("[data-gp-key-evidence-item]")).toBeNull();
     const answer = document.querySelector("[data-gp-direct-answer]")!;
-    const gap = document.querySelector("[data-gp-gaps-lead]")!;
+    const gap = document.querySelector(".gp-result-claim .gp-result-gap")!;
     expect(gap.textContent).toContain("待补证");
     expect(follows(answer, gap)).toBe(true);
     expect(document.body.textContent).not.toContain("相关材料");
   });
 
-  it("点第一条关键依据一次打开对应原文，claimId 对上", async () => {
+  it("首条摘要材料在折叠区打开对应来源，claimId 对上", async () => {
     renderCanvas(refutedComplete());
-    const item = document.querySelector("[data-gp-key-evidence-item]") as HTMLButtonElement;
-    expect(item.getAttribute("data-gp-key-claim-id")).toBe("claim-1");
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
+    const item = document.querySelector('[data-gp-evidence-claim="claim-1"].gp-result-material-link') as HTMLButtonElement;
+    expect(item).toBeTruthy();
     fireEvent.click(item);
     const drawer = await waitFor(() => {
       const el = document.querySelector(".gp-drawer--source") as HTMLElement | null;
@@ -87,9 +83,10 @@ describe("Issue B 完成态阅读顺序", () => {
     expect(drawer.querySelector('a[href="https://piyao.org.cn/overnight-water"]')).toBeTruthy();
   });
 
-  it("点第二条关键依据保留真实 claimId，不超过两次站内操作", async () => {
+  it("第二条摘要材料仍保留真实 claimId，不串到第一条", async () => {
     renderCanvas(mixedComplete());
-    const second = document.querySelector('[data-gp-key-evidence-item][data-gp-key-claim-id="claim-2"]') as HTMLButtonElement;
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
+    const second = document.querySelector('[data-gp-evidence-claim="claim-2"].gp-result-material-link') as HTMLButtonElement;
     expect(second).toBeTruthy();
     fireEvent.click(second);
     const drawer = await waitFor(() => {
@@ -136,7 +133,7 @@ describe("Issue B 不把相关材料当关键依据", () => {
     expect(pickDecisiveEvidence(snap.claims, snap.sources)).toEqual([]);
     renderCanvas(snap);
     expect(document.querySelector("[data-gp-key-evidence]")).toBeNull();
-    expect(document.querySelector("[data-gp-gaps-lead]")?.textContent).toContain("缺一手测量");
+    expect(document.querySelector(".gp-result-claim .gp-result-gap")?.textContent).toContain("缺一手测量");
   });
 });
 

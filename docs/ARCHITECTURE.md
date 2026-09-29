@@ -25,8 +25,10 @@ Nginx 从 `/opt/red-herring/dist` 发静态、把 `/api/` 与 `/health` 反代�
 服务端在 received → decomposed → investigating → judging → complete 八个语义里程碑发完整快照，
 SSE 事件 `investigation_snapshot`；`GET /api/case/:id` 对旧历史做确定性重建。
 
-默认执行引擎 `runCasePipeline` 含有界质询：真实证据 → 独立意见 → 可选补查 → 主调查回应 →
-最新完整调查进入报告；最多两个争点各一轮，真实记录写入 `finalReport.crossExam`。分歧本身不扣分。
+默认执行引擎 `runCasePipeline`：拆题 → 档案/正文检索 → 核查与来源审计 → 实际冲突时的只读独立意见 → 唯一证据补查 → 正式判断 → 模型写报告。
+补查只有获得新材料才重判；第二意见的问题进入同一个补查入口，不另开搜索与回应链。正式判断在写作前确定，报告只组织解释，不能改分条结论和证据方向。旧整句审计与因果评分支线已退出生产。
+
+跨案证据仍存现有 `knowledge_entries`，正文在同库knowledge_source_texts表按URL与内容散列去重保存，命题证据只留正文引用和适用片段；匹配命中后才读取正文。旧摘要仍可读，但不能跳过原文检索；只有同一命题且在30天新鲜度内的正文可以复用，最终仍由本轮核查。私人历史与公共证据不合并。
 
 每日免费核查闸门：未登录访客 2 条/人/天，登录 3 条；来源 IP 另有天花板（20）只防「清 cookie 无限刷」，
 不当单人额度。`/api/models/health` 是可用性探针，**不计额度**（计额度端点集合收在

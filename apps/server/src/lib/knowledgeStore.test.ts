@@ -9,6 +9,8 @@ import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDatabase, openDatabase } from "./sqliteStore.js";
+import { retrieveForAtoms } from "./atomSearch.js";
+import { claimAtomKey } from "./claimAtom/index.js";
 import { normalizeKnowledgeAtom } from "./knowledgeMatch.js";
 import {
   appendKnowledgeObservation,
@@ -68,9 +70,9 @@ function rawDb(path: string): DatabaseSync {
 }
 
 describe("knowledge_entries 迁移", () => {
-  it("新库建表 + 唯一索引；版本号 1/2/3 各一条", () => {
+  it("新库建表 + 唯一索引；版本号 1/2/3/4 各一条", () => {
     const db = openDatabase(process.env.RHG_DB_FILE!)!;
-    expect(schemaVersions(db)).toEqual([1, 2, 3]);
+    expect(schemaVersions(db)).toEqual([1, 2, 3, 4]);
     const columns = (db.prepare("PRAGMA table_info(knowledge_entries)").all() as Array<{ name?: unknown }>).map(
       (row) => String(row.name)
     );
@@ -96,26 +98,26 @@ describe("knowledge_entries 迁移", () => {
     __resetKnowledgeStoreForTests();
 
     const second = openDatabase(process.env.RHG_DB_FILE!)!;
-    expect(schemaVersions(second)).toEqual([1, 2, 3]);
+    expect(schemaVersions(second)).toEqual([1, 2, 3, 4]);
     expect(listKnowledgeEntries()).toHaveLength(1);
 
     // 再关再开一次（模拟第三次启动）仍不重复
     closeDatabase();
     __resetKnowledgeStoreForTests();
     const third = openDatabase(process.env.RHG_DB_FILE!)!;
-    expect(schemaVersions(third)).toEqual([1, 2, 3]);
+    expect(schemaVersions(third)).toEqual([1, 2, 3, 4]);
     expect(third.prepare("SELECT COUNT(*) AS n FROM knowledge_entries").get()).toEqual({ n: 1 });
   });
 
   it("崩在建表与版本号之间：表在版本缺（或表没建成）→ 重跑补上、不重复", () => {
     const db = openDatabase(process.env.RHG_DB_FILE!)!;
     db.exec("DROP TABLE knowledge_entries");
-    db.exec("DELETE FROM schema_version WHERE version = 3");
+    db.exec("DELETE FROM schema_version WHERE version >= 3");
     closeDatabase();
     __resetKnowledgeStoreForTests();
 
     const reopened = openDatabase(process.env.RHG_DB_FILE!)!;
-    expect(schemaVersions(reopened)).toEqual([1, 2, 3]);
+    expect(schemaVersions(reopened)).toEqual([1, 2, 3, 4]);
     expect(listKnowledgeEntries()).toEqual([]);
   });
 
@@ -129,7 +131,7 @@ describe("knowledge_entries 迁移", () => {
     legacy.close();
 
     const db = openDatabase(process.env.RHG_DB_FILE!)!;
-    expect(schemaVersions(db)).toEqual([1, 2, 3]);
+    expect(schemaVersions(db)).toEqual([1, 2, 3, 4]);
     expect(listKnowledgeEntries()).toEqual([]);
   });
 });
@@ -455,6 +457,84 @@ describe("createKnowledgeMemory（记忆端口）", () => {
     seed();
     expect(listKnowledgeEntries()).toHaveLength(1);
     clearKnowledgeEntries();
+    expect(listKnowledgeEntries()).toEqual([]);
+  });
+});
+
+
+describe("原文随证据复用", () => {
+  const body = "公开研究正文：冷藏并及时食用的隔夜菜，亚硝酸盐通常远低于限值。".repeat(4);
+  const settle = (memory: ReturnType<typeof createKnowledgeMemory>, claim = USER_CLAIM) => memory.settle({
+    claim,
+    verdicts: [{ claimAtom: ATOM, verdict: "false", contradictingSources: EVIDENCE }],
+    sourceBundle: { byAtomKey: { [claimAtomKey(ATOM)]: [{ ...EVIDENCE[0]!, originalText: body, originalScope: "冷藏并及时食用的隔夜菜，亚硝酸盐通常远低于限值。" }] } },
+  });
+
+  it("收尾保存实际取得的原文，重启后同一命题可复用正文及限定片段", () => {
+    settle(createKnowledgeMemory({ runId: "run-1", claim: USER_CLAIM, now: () => NOW }));
+    closeDatabase();
+    __resetKnowledgeStoreForTests();
+    const next = createKnowledgeMemory({ runId: "run-2", claim: "另一个问题", now: () => NOW + DAY });
+    expect(next.lookup(ATOM)?.evidence[0]).toMatchObject({ originalText: body, originalScope: "冷藏并及时食用的隔夜菜，亚硝酸盐通常远低于限值。" });
+  });
+
+  it("相同正文跨命题只存一次，扫描记录不带全文；网页变化保留独立内容版本", () => {
+    const scope = "冷藏并及时食用的隔夜菜，亚硝酸盐通常远低于限值。";
+    for (const atomText of [ATOM, "另一条公开命题"]) upsertKnowledgeEntry({
+      atomText, verdict: "false", sourceRunId: "seed", now: NOW,
+      evidence: [{ ...EVIDENCE[0]!, originalText: body, originalScope: scope }],
+    });
+    const db = openDatabase(process.env.RHG_DB_FILE!)!;
+    expect(db.prepare("SELECT COUNT(*) AS n FROM knowledge_source_texts").get()).toEqual({ n: 1 });
+    expect(listKnowledgeEntries().every(entry => entry.evidence.every(item => item.originalText === undefined))).toBe(true);
+    const updated = body + "新补充。";
+    upsertKnowledgeEntry({ atomText: ATOM, verdict: "false", sourceRunId: "new", now: NOW,
+      evidence: [{ ...EVIDENCE[0]!, originalText: updated }] });
+    expect(db.prepare("SELECT COUNT(*) AS n FROM knowledge_source_texts").get()).toEqual({ n: 2 });
+    const next = createKnowledgeMemory({ runId: "next", claim: "私人提问", now: () => NOW });
+    expect(next.lookup(ATOM)?.evidence[0]?.originalText).toBe(updated);
+    expect(next.lookup("另一条公开命题")?.evidence[0]?.originalText).toBe(body);
+  });
+
+  it("新正文跳过检索但旧摘要继续检索", async () => {
+    const searchCalls: string[] = [];
+    const retrieve = async () => retrieveForAtoms({
+      claimAtoms: [ATOM], claimAtomTypes: [{ text: ATOM, type: "checkable" }],
+      requireOriginalText: true,
+      knowledge: createKnowledgeMemory({ runId: "next", claim: "另一个问题", now: () => NOW }),
+      searchOne: async (query) => { searchCalls.push(query); return { sources: [] }; },
+    });
+    upsertKnowledgeEntry({ atomText: ATOM, verdict: "false", evidence: EVIDENCE, sourceRunId: "legacy", now: NOW });
+    await retrieve();
+    expect(searchCalls).toHaveLength(1);
+    settle(createKnowledgeMemory({ runId: "run-1", claim: USER_CLAIM, now: () => NOW }));
+    const reused = await retrieve();
+    expect(searchCalls).toHaveLength(1);
+    expect(reused.knowledgeHits).toHaveLength(1);
+    expect(reused.atomSearchBundle.byAtomKey[claimAtomKey(ATOM)]![0]?.originalText).toBe(body);
+  });
+
+  it("相似说法可以召回材料，但不能凭它的旧正文跳过当前命题的检索", () => {
+    settle(createKnowledgeMemory({ runId: "run-1", claim: USER_CLAIM, now: () => NOW }));
+    const next = createKnowledgeMemory({ runId: "run-2", claim: "另一个问题", now: () => NOW });
+    const evidence = next.lookup("隔夜菜里的亚硝酸盐含量超过了标准")?.evidence;
+    expect(evidence).toHaveLength(1);
+    expect(evidence![0]?.originalText).toBeUndefined();
+  });
+
+  it("旧摘要仍可读取；判词里伪造的正文不落入证据库", () => {
+    createKnowledgeMemory({ runId: "run-1", claim: USER_CLAIM, now: () => NOW }).settle({
+      claim: USER_CLAIM,
+      verdicts: [{ claimAtom: ATOM, verdict: "false", contradictingSources: [{ ...EVIDENCE[0], originalText: body }] }],
+    });
+    expect(listKnowledgeEntries()[0]?.evidence[0]?.originalText).toBeUndefined();
+  });
+
+  it("过期正文不注入；用户原句也不因有正文而写进公共库", () => {
+    settle(createKnowledgeMemory({ runId: "run-1", claim: USER_CLAIM, now: () => NOW }));
+    expect(createKnowledgeMemory({ runId: "run-2", claim: "别的问题", now: () => NOW + 31 * DAY }).lookup(ATOM)).toBeNull();
+    clearKnowledgeEntries();
+    settle(createKnowledgeMemory({ runId: "private", claim: ATOM, now: () => NOW }), ATOM);
     expect(listKnowledgeEntries()).toEqual([]);
   });
 });

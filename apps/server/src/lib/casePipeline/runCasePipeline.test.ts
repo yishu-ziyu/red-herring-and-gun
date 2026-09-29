@@ -99,8 +99,7 @@ describe("runCasePipeline", () => {
     expect(result.finalReport._review).toEqual(
       expect.objectContaining({ reviewer: "deterministic-report-reviewer" })
     );
-    expect(Array.isArray(result.finalReport.evidenceChain)).toBe(true);
-    expect((result.finalReport.evidenceChain as unknown[]).length).toBeGreaterThanOrEqual(3);
+    expect(result.finalReport.evidenceChain).toBeUndefined();
     expect(result.reportStep.output).toBe(result.finalReport);
     // memory candidates proposed from final report (at least case_pattern)
     expect(result.memoryCandidates.length).toBeGreaterThanOrEqual(1);
@@ -428,11 +427,11 @@ describe("runCasePipeline", () => {
     expect(onReportReviewStart).toHaveBeenCalledOnce();
     expect(onReportReviewResult).toHaveBeenCalledOnce();
     const reviewPayload = onReportReviewResult.mock.calls[0][0];
-    expect(reviewPayload.passed).toBe(false);
-    expect(reviewPayload.issues.some((i: { code: string }) => i.code === "overclaim")).toBe(true);
+    expect(reviewPayload.passed).toBe(true);
+    expect(reviewPayload.issues.some((i: { code: string }) => i.code === "overclaim")).toBe(false);
     expect(result.finalReport.verdictType).toBe("unverified");
-    expect(result.finalReport.credibilityScore).toBeLessThanOrEqual(45);
-    expect((result.finalReport.evidenceChain as unknown[]).length).toBeGreaterThanOrEqual(3);
+    expect(result.finalReport.credibilityScore).toBeUndefined();
+    expect(result.finalReport.evidenceChain).toBeUndefined();
   });
 
   it("evidence loop：unverified 原子补查命中新证据后重跑一次 fact_checker（ADR-004）", async () => {
@@ -917,7 +916,7 @@ describe("runCasePipeline", () => {
     expect(result.crossExam?.confidenceAdjustment).toBe(0);
     expect(result.steps.some((s) => s.agent === "cross_examiner")).toBe(true);
     expect(result.finalReport.crossExam).toMatchObject({ adjustment: 0, model: "MiniMax-M3" });
-    expect(result.finalReport.credibilityScore).toBe(72);
+    expect(result.finalReport.credibilityScore).not.toBe(72);
     // 判词不被重写
     expect(result.factStep.output.factCheckResult).toBe("true");
   });

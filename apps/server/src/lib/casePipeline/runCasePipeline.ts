@@ -1,14 +1,17 @@
 /**
  * Case Pipeline — production orchestration for one claim case.
- * 阶段：拆题 → 检索 → 核查（+ 来源审计）→ 证据补查 → 质询 → 因果增强 → 整句审计 → 报告写作 → 收尾（finalizeReport）→ 记忆。
+ * 阶段：拆题 → 检索 → 核查与来源审计 → 冲突质询 → 唯一补查 → 正式判定 → 报告写作 → 收尾 → 记忆。
  * 本文件只排阶段顺序；各阶段在 stages/，进行态在 caseState.ts，时间预算在 budget.ts，里程碑快照在 snapshotTimeline.ts。
  * HTTP / SSE are thin adapters; inject runAgent + searchOne + selfProof model.
  */
 
 import { randomUUID } from "node:crypto";
 import type { SelfProofModelCall } from "../claimAtom/index.js";
+import { claimAtomKey } from "../claimAtom/index.js";
 import type { AtomSearchBundle, KnowledgeHit, KnowledgeInjection, SearchOneAtom } from "../atomSearch.js";
 import { pruneDeadCitations, type LivenessDeps } from "../citationLiveness.js";
+import { assembleFinalReport } from "../reportAssembly/index.js";
+import { applySentenceVerdict, listAssessedClaims, settleClaimVerdicts } from "../sentenceVerdict.js";
 import type { ReportReviewIssue } from "../reportReviewer.js";
 import { buildMemoryCandidatesFromRun } from "../memoryCandidateGenerator.js";
 import type { MemoryCandidate } from "../memoryCandidateTypes.js";
@@ -17,7 +20,6 @@ import type { EvidenceLoopOutcome, EvidenceLoopHooks, RewriteQueryModelCall } fr
 import type { ImageOriginResult } from "../imageOrigin/index.js";
 import type { CrossExamOutcome, CrossExamRawModelCall } from "../crossExam/index.js";
 import type { InvestigationSnapshotV1 } from "../investigation/index.js";
-import type { WholeClaimAuditModelCall, WholeClaimAuditRun } from "../wholeClaimAudit/index.js";
 import { planFollowUpReuse } from "../followUpReuse.js";
 import { withOriginalText } from "../originalEvidence.js";
 import { createBudget } from "./budget.js";
@@ -27,8 +29,6 @@ import { createSnapshotTimeline } from "./snapshotTimeline.js";
 import { compose } from "./stages/compose.js";
 import { crossExamine } from "./stages/crossExamine.js";
 import { decompose } from "./stages/decompose.js";
-import { enrichCausal } from "./stages/enrichCausal.js";
-import { evaluateWholeClaim } from "./stages/evaluateWholeClaim.js";
 import { judge } from "./stages/judge.js";
 import { pursueEvidence } from "./stages/pursue.js";
 import { retrieve } from "./stages/retrieve.js";
@@ -74,7 +74,7 @@ export type KnowledgeMemoryPort = {
   /** 注入过的 atom 最终仍 unverified / 证据不足 → 记 downgraded。 */
   conclude: (verdicts: unknown) => void;
   /** 收尾沉淀：可核查且判词非 unverified 的 atom → upsert 一条。 */
-  settle: (input: { claim: string; verdicts: unknown }) => void;
+  settle: (input: { claim: string; verdicts: unknown; sourceBundle?: Pick<AtomSearchBundle, "byAtomKey"> }) => void;
 };
 
 export type CasePipelineHooks = {
@@ -141,6 +141,8 @@ export type CasePipelineInput = {
     steps: PipelineStep[];
     search360Result: unknown;
     atomSearchBundle: AtomSearchBundle;
+    judgment: Record<string, unknown>;
+    verifiedQuotes: Array<Record<string, unknown>>;
     signal?: AbortSignal;
     deadlineMs?: number;
   }) => Promise<PipelineStep>;
@@ -195,14 +197,6 @@ export type CasePipelineInput = {
    */
   memoryCandidateStore?: MemoryCandidateStore;
   /**
-   * Whole-Claim Audit（Issue #78）：整句在拆题后继续作为被审计对象。
-   * Planning（检索前，可核查性语义修订）→ Evaluation（初轮后，≤1 次 audit 补查）。
-   * 未注入 callModel 时保持 legacy 行为（fail-open）。
-   */
-  wholeClaimAudit?: {
-    callModel?: WholeClaimAuditModelCall;
-  };
-  /**
    * Screenshot reverse-image lookup (P2 origin gate). Beside searchOne.
    * OCR/text hits must not become image origin.
    */
@@ -246,8 +240,6 @@ export type CasePipelineResult = {
   evidenceLoop?: EvidenceLoopOutcome;
   /** cross exam outcome — G3/P1（未开启 / 无冲突 / 无注入时为 undefined） */
   crossExam?: CrossExamOutcome;
-  /** Whole-Claim Audit outcome — Issue #78（未注入模型时 plan/evaluation 为 null） */
-  wholeClaimAudit: WholeClaimAuditRun;
   runId: string;
   /** Screenshot origin from reverse-image; absent when the case has no image. */
   imageOrigin?: ImageOriginResult;
@@ -285,17 +277,6 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
           priorCreatedAt: input.followUpReuse.priorCreatedAt,
         })
       : null,
-    audit: {
-      callModel: input.wholeClaimAudit?.callModel,
-      run: {
-        plan: null,
-        evaluation: null,
-        extraPass: null,
-        model: "",
-        reevaluation: null,
-      },
-      unresolvedGaps: [],
-    },
   };
 
   const rumorStep = await decompose(ctx);
@@ -303,8 +284,8 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const retrieval = await retrieve(ctx, rumorStep);
   throwIfAborted();
   const state = await judge(ctx, rumorStep, retrieval);
-  await pursueEvidence(ctx, state);
   await crossExamine(ctx, state);
+  await pursueEvidence(ctx, state);
 
   // Evidence loop / cross-exam may have added URLs. Refresh the independent
   // relation audit once after those bounded searches; until this succeeds,
@@ -332,50 +313,56 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     });
   }
 
-  await enrichCausal(ctx, state);
-  throwIfAborted();
-  await evaluateWholeClaim(ctx, state);
-
-  // Whole-claim audit may add another bounded search pass after the earlier
-  // source audit. Refresh once more if needed; otherwise keep any new URL
-  // non-directional rather than letting ReportComposer inherit an unaudited bucket.
-  await state.sourceAudit.refreshIfNeeded();
-
-  const reportStep = await compose(ctx, state);
+  const judgment = {} as Record<string, unknown>;
+  assembleFinalReport({
+    finalReport: judgment,
+    rumorStep,
+    verdicts: state.factStep.output.subclaimVerdicts,
+    atomSearchBundle: state.atomSearchBundle,
+  });
+  const preservedUrls = new Set(Object.values(state.atomSearchBundle.byAtomKey).flat()
+    .filter((source) => source.originalText)
+    .map((source) => source.url));
+  let deadCitationUrls: string[] = [];
+  try {
+    const pruned = await pruneDeadCitations(judgment, input.citationLiveness === false
+      ? { liveness: new Map(), signal: input.signal }
+      : { ...input.citationLiveness, signal: input.signal, deadlineMs: input.deadline, preservedUrls });
+    deadCitationUrls = pruned.deadUrls;
+  } catch (error) {
+    throwIfAborted();
+    console.warn(`[casePipeline] 引用探活失败，沿用已审材料: ${String(error)}`);
+  }
+  settleClaimVerdicts(judgment);
+  applySentenceVerdict(judgment, listAssessedClaims(judgment, {
+    claimAtoms: rumorStep.output.claimAtoms,
+    claimAtomTypes: rumorStep.output.claimAtomTypes,
+    priorityClaimAtoms: rumorStep.output.priorityClaimAtoms,
+  }));
+  const verifiedQuotes = Array.isArray(state.sourceStep.output.claimSourceRelations)
+    ? (state.sourceStep.output.claimSourceRelations as Array<Record<string, unknown>>)
+        .filter((row) => row.quoteVerified === true && typeof row.quote === "string")
+        .map((row) => ({ ...row,
+          originalScope: state.atomSearchBundle.byAtomKey[claimAtomKey(String(row.claimAtom ?? ""))]
+            ?.find((source) => source.url === row.url)?.originalScope,
+        }))
+    : [];
+  const reportStep = await compose(ctx, state, judgment, verifiedQuotes);
   const { atomSearchBundle, search360Result, imageOrigin, evidenceLoop, crossExam } = state;
   const { factStep, sourceStep } = state;
-  const auditUnresolvedGaps = ctx.audit.unresolvedGaps;
-  const wholeClaimAudit = ctx.audit.run;
-
-  const { finalReport, deadUrls: deadCitationUrls, review } = await finalizeReport({
+  const { finalReport, review } = await finalizeReport({
     claim,
     reportStep,
     rumorStep,
     factStep,
     sourceStep,
-    steps,
     search360Result,
-    atomSearchBundle,
     imageOrigin,
-    auditUnresolvedGaps,
     crossExam,
     evidenceLoop,
+    judgment,
     finalizeHook: input.finalizeReport,
     onReviewStart: () => hooks?.onReportReviewStart?.({ toolName: REPORT_REVIEWER_TOOL, query: claim }),
-    pruneCitations: (report) =>
-      pruneDeadCitations(
-        report,
-        input.citationLiveness === false
-          ? { liveness: new Map(), signal: input.signal }
-          : {
-              ...input.citationLiveness,
-              signal: input.signal,
-              deadlineMs: input.deadline,
-              preservedUrls: new Set(Object.values(atomSearchBundle.byAtomKey).flat()
-                .filter((source) => source.provenance === "archive" && source.originalText)
-                .map((source) => source.url)),
-            }
-      ),
     signal: input.signal,
   });
   // 里程碑（完成）：finalReport.investigation = 稳定快照；报告 + 复核 + 探活后构建。
@@ -415,7 +402,8 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     throwIfAborted();
     try {
       input.knowledgeBase.conclude(finalReport.subclaimVerdicts);
-      input.knowledgeBase.settle({ claim, verdicts: finalReport.subclaimVerdicts });
+      input.knowledgeBase.settle({ claim, verdicts: finalReport.subclaimVerdicts,
+        sourceBundle: { byAtomKey: atomSearchBundle.byAtomKey } });
     } catch (error) {
       console.error("[casePipeline] 知识库收尾失败", error);
     }
@@ -458,7 +446,6 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     memoryCandidates,
     evidenceLoop,
     crossExam,
-    wholeClaimAudit,
     runId,
     imageOrigin,
   };

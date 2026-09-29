@@ -26,7 +26,7 @@ export const MAX_EVIDENCE_LOOP_TARGETS = 3;
 const MAX_QUERIES_PER_ROUND = 2;
 const MAX_SOURCES_PER_ATOM = 8;
 
-export type EvidenceLoopTrigger = "unverified" | "conflict";
+export type EvidenceLoopTrigger = "unverified" | "conflict" | "gap";
 
 export type EvidenceLoopStopReason =
   | "evidence-found"
@@ -39,6 +39,7 @@ export type EvidenceLoopTarget = {
   atom: string;
   atomKey: string;
   trigger: EvidenceLoopTrigger;
+  gap?: string;
 };
 
 export type EvidenceLoopRoundLog = {
@@ -255,12 +256,17 @@ export function findLoopTargets(input: {
       .toLowerCase();
     if (UNVERIFIED_STATUSES.has(status)) {
       targets.push({ atom, atomKey: key, trigger: "unverified" });
+      continue;
+    }
+    const gap = Array.isArray(verdict.evidenceGaps)
+      ? verdict.evidenceGaps.find((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : undefined;
+    if (gap) {
+      targets.push({ atom, atomKey: key, trigger: "gap", gap: gap.trim() });
     }
   }
-  targets.sort((a, b) => {
-    if (a.trigger === b.trigger) return 0;
-    return a.trigger === "conflict" ? -1 : 1;
-  });
+  const priority = { conflict: 0, unverified: 1, gap: 2 };
+  targets.sort((a, b) => priority[a.trigger] - priority[b.trigger]);
   return targets.slice(0, cap);
 }
 
@@ -279,6 +285,7 @@ function extractSources(result: unknown): AtomSearchSource[] {
       title: String(rec.title || rec.name || "").slice(0, 200),
       snippet: String(rec.snippet || rec.summary || rec.content || "").slice(0, 320),
       originalText: typeof rec.originalText === "string" ? rec.originalText : undefined,
+      originalScope: typeof rec.originalScope === "string" ? rec.originalScope : undefined,
       credibility: typeof rec.credibility === "string" ? rec.credibility : undefined,
     });
   }
@@ -296,16 +303,24 @@ export function mergeSourcesIntoBundle(
   claimAtomKeyFn: (s: string) => string
 ): number {
   const existing = bundle.byAtomKey[atomKey] ?? [];
-  const seen = new Set(existing.map((s) => s.url));
   const aggregateSeen = new Set(
     bundle.aggregate.sources.map((s) => String((s as { url?: unknown }).url ?? ""))
   );
   const next = [...existing];
   let added = 0;
   for (const src of incoming) {
+    if (!src?.url) continue;
+    const sameUrl = next.findIndex((known) => known.url === src.url);
+    if (sameUrl >= 0) {
+      const known = next[sameUrl];
+      if (!known.originalText && src.originalText) {
+        next[sameUrl] = { ...known, originalText: src.originalText,
+          originalScope: src.originalScope ?? known.originalScope };
+        added += 1;
+      }
+      continue;
+    }
     if (next.length >= MAX_SOURCES_PER_ATOM) break;
-    if (!src?.url || seen.has(src.url)) continue;
-    seen.add(src.url);
     next.push(src);
     added += 1;
     if (!aggregateSeen.has(src.url)) {
@@ -370,6 +385,10 @@ async function planRoundQueries(
     supportingCount: sideCounts.supportingCount,
     contradictingCount: sideCounts.contradictingCount,
   });
+  if (target.trigger === "gap" && round === 1 && target.gap) {
+    return { queries: [`${target.atom} ${target.gap}`.slice(0, 160)], purpose: "exact",
+      goal: "核对判词写出的具体缺口", missing: [target.gap] };
+  }
   if (options.needImageOrigin && options.bundle?.imageOrigin?.status !== "found") {
     const originQs = fallbackRewriteQueries(target.atom, round, { needImageOrigin: true }).filter(
       (q) => !priorQueries.has(q)
@@ -442,6 +461,8 @@ export async function runEvidenceLoop(options: {
   startRound?: number;
   /** atomKey → 已问过的查询（续期 pass 注入，避免重复问法）。 */
   seedQueriesByAtomKey?: Record<string, string[]>;
+  /** Independent opinion may suggest one question for the same bounded search entry. */
+  suggestedQueriesByAtomKey?: Record<string, string>;
   /** Screenshot case: prefer 原图/首发 queries; never promote text hits to imageOrigin. */
   needImageOrigin?: boolean;
   /** 每轮/每原子开工前问一次；true 时以 time-budget 收敛，把剩余时间让给报告写作。 */
@@ -493,14 +514,12 @@ export async function runEvidenceLoop(options: {
         break;
       }
       const existing = options.bundle.byAtomKey[target.atomKey] ?? [];
-      const plan = await planRoundQueries(
-        options,
-        target,
-        round,
-        priorQueries,
-        existing,
-        sideCounts
-      );
+      const suggested = round === startRound
+        ? options.suggestedQueriesByAtomKey?.[target.atomKey]?.replace(/\s+/g, " ").trim().slice(0, 160)
+        : undefined;
+      const plan = suggested && !priorQueries.has(suggested)
+        ? { queries: [suggested], purpose: "refutation" as QueryPurpose, goal: "核对独立意见提出的冲突", missing: [] }
+        : await planRoundQueries(options, target, round, priorQueries, existing, sideCounts);
       const fresh = plan.queries.filter((q) => !priorQueries.has(q));
       if (fresh.length === 0) {
         stopReason = "rewrite-empty";
@@ -579,12 +598,17 @@ export async function runEvidenceLoop(options: {
           supportingCount: sideCounts.supportingCount,
           contradictingCount: sideCounts.contradictingCount,
         });
-        const { gain } = computeInformationGain({
+        const measured = computeInformationGain({
           existing: existingNow,
           incoming,
           gapBefore,
           gapAfter,
         });
+        const bodyUpgraded = incoming.some((source) => {
+          const old = existingNow.find((known) => known.url === source.url);
+          return old && !old.originalText && source.originalText;
+        });
+        const gain = bodyUpgraded ? Math.max(measured.gain, GAIN_STOP_THRESHOLD) : measured.gain;
         const resultKind = classifyResultKind(incoming, existingNow, target.atom);
         const enough = gain >= GAIN_STOP_THRESHOLD;
         const action: PursuitAction = enough ? "stop" : "continue";

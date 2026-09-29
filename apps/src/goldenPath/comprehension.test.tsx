@@ -41,7 +41,7 @@ describe("看不看得懂 · 机器可检", () => {
     expect(lead.length).toBeGreaterThan(0);
     expect(lead).toMatch(/原句站不住|没有发布过|世界卫生组织/);
     expect(lead).not.toMatch(FOUR_HATS);
-    const query = document.querySelector("[data-gp-hero-query]");
+    const query = document.querySelector(".gp-original-text");
     expect(query?.textContent).toContain("世界卫生组织已经宣布喝隔夜水会致癌");
   });
 
@@ -55,7 +55,7 @@ describe("看不看得懂 · 机器可检", () => {
 
   it("E2：原句可见，解释或问题点可见", () => {
     renderComplete(refutedComplete());
-    expect(document.querySelector("[data-gp-hero-query]")?.textContent).toContain("隔夜水");
+    expect(document.querySelector(".gp-original-text")?.textContent).toContain("隔夜水");
     const rationale = document.querySelector("[data-gp-rationale]");
     const claim = document.querySelector("[data-gp-claim-id]");
     expect(Boolean(rationale?.textContent?.trim()) || Boolean(claim?.textContent?.trim())).toBe(true);
@@ -65,7 +65,8 @@ describe("看不看得懂 · 机器可检", () => {
     renderComplete(refutedComplete());
     const hero = screen.getByLabelText("调查结论");
     expect(within(hero).getByText(/原句站不住/)).toBeTruthy();
-    fireEvent.click(document.querySelector("[data-gp-key-evidence-item]") as HTMLButtonElement);
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
+    fireEvent.click(document.querySelector(".gp-result-material-link") as HTMLButtonElement);
     const drawer = document.querySelector(".gp-drawer--source")!;
     const link = drawer.querySelector('a[href="https://piyao.org.cn/overnight-water"]');
     expect(link).toBeTruthy();

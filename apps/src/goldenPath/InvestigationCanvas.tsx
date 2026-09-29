@@ -4,7 +4,7 @@
  * 原始说法与命题保持原位。不抢焦点、不滚动、不关闭已打开的 Drawer。
  * interrupted：保留已获真实数据、无伪结论、可重试。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { InlineLoader } from "generative-loaders";
 import type {
   InvestigationEvidenceLink,
@@ -20,12 +20,13 @@ import { phaseHeadline, readImageOrigin, type ImageOriginView } from "./snapshot
 import { buildClaimTraceSegments } from "./claimTrace";
 import { leftoverClaimTexts, leftoverGapSentence, leftoverTextsForCanvas, isCompleteEmptyShell } from "./leftoverClaims";
 import { ClaimSection } from "./ClaimSection";
+import { ResultClaim } from "./ResultClaim";
+import { ResultRemainder } from "./ResultRemainder";
 import { ActivityFeed } from "./ActivityFeed";
 import { ShareControl } from "./ShareControl";
 import { ConclusionHero } from "./ConclusionHero";
 import { FollowUpSection } from "./FollowUpSection";
 import { InvestigationScope } from "./InvestigationScope";
-import { InvestigationDossier } from "./InvestigationDossier";
 import { WorkRoles, roleIndexForPhase } from "./WorkRoles";
 import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { useEnteringIds } from "./useEnteringIds";
@@ -102,7 +103,6 @@ export function InvestigationCanvas({
   const [expandedTraceClaimId, setExpandedTraceClaimId] = useState<string | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [suggestedQuestion, setSuggestedQuestion] = useState("");
-  const evidenceRef = useRef<HTMLElement | null>(null);
   const followUpRef = useRef<HTMLDivElement | null>(null);
   const prepareFollowUp = (question = "") => {
     setSuggestedQuestion(question);
@@ -115,6 +115,8 @@ export function InvestigationCanvas({
   const tracedClaimId = hoverClaimId ?? focusClaimId ?? expandedTraceClaimId;
   const triggerRef = useRef<HTMLElement | null>(null);
   const lastConfirmedRef = useRef<{ identity: string; view: SourceDrawerView } | null>(null);
+  const lastFocusedClaimIdRef = useRef<string | null>(null);
+  const wasCompleteRef = useRef(false);
 
   const handleHeaderHover = (claimId: string | null) => {
     setHoverClaimId(claimId);
@@ -166,13 +168,6 @@ export function InvestigationCanvas({
   const leftoverTexts =
     complete || interrupted ? leftoverTextsForCanvas(snapshot.originalClaim, snapshot.claims) : [];
   const leftoverSentence = leftoverTexts.length > 0 ? leftoverGapSentence(leftoverTexts) : "";
-  const gapNotes = complete
-    ? resultClaims.flatMap((claim) =>
-        claim.gaps
-          .map((gap) => gap.description.trim())
-          .filter((note) => note && !note.includes("检索预算未覆盖") && !note.includes("模型未覆盖")),
-      )
-    : [];
   const claimIds = snapshot.claims.map((claim) => claim.id);
   const claimEnter = useEnteringIds(claimIds, live && !complete && !interrupted);
   const openSource = (
@@ -208,6 +203,10 @@ export function InvestigationCanvas({
     window.setTimeout(() => el.classList.remove("is-target-highlight"), 2400);
   }, []);
 
+  const jumpToClaim = useCallback((claimId: string) => {
+    document.querySelector<HTMLElement>(`[data-gp-claim-id="${claimId}"]`)?.focus();
+  }, []);
+
   const liveView = drawer
     ? resolveSourceDrawerView(snapshot.claims, snapshot.sources, drawer.claimId, drawer.identity)
     : null;
@@ -220,72 +219,24 @@ export function InvestigationCanvas({
       : drawer?.initialView ?? null;
   const drawerView = liveView ?? heldView;
 
+  useLayoutEffect(() => {
+    if (complete && !wasCompleteRef.current && document.activeElement === document.body && lastFocusedClaimIdRef.current) {
+      document.querySelector<HTMLElement>(`[data-gp-claim-id="${lastFocusedClaimIdRef.current}"]`)?.focus();
+    }
+    wasCompleteRef.current = complete;
+  }, [complete]);
+
   return (
     <div
       className="gp-canvas"
+      onFocusCapture={(event) => {
+        const claim = (event.target as HTMLElement).closest<HTMLElement>("[data-gp-claim-id]");
+        if (claim) lastFocusedClaimIdRef.current = claim.dataset.gpClaimId ?? null;
+      }}
       data-gp-phase={snapshot.phase}
       data-gp-single-claim={snapshot.claims.length === 1 ? "true" : undefined}
     >
       <div className="gp-canvas-inner">
-        <section
-          className={complete ? "gp-conclusion-region is-complete" : "gp-conclusion-region is-pending"}
-          data-gp-conclusion-region
-          data-gp-conclusion-state={complete ? "complete" : "pending"}
-          aria-hidden={complete ? undefined : true}
-        >
-          {complete && conclusion ? (
-            <ConclusionHero
-              directAnswer={displayDirectAnswer}
-              verdictLead={displayVerdictLead}
-              rationale={conclusion.rationale}
-              judgment={conclusion.judgment}
-              boundaries={conclusion.boundaries}
-              claimCount={snapshot.claims.length}
-              sourceCount={snapshot.sources.length}
-              checkedAt={snapshot.checkedAt}
-              originalClaim={snapshot.originalClaim}
-              sources={snapshot.sources}
-              claims={snapshot.claims}
-              leftoverNote={leftoverSentence}
-              gapNotes={gapNotes}
-              onSelectSource={openSource}
-            />
-          ) : null}
-        </section>
-
-        {complete ? <div className="gp-reading-actions" aria-label={lang === "en" ? "Read or investigate further" : "查看依据或继续补查"}>
-          {resultClaims.length > 0 ? <button type="button" className="gp-ghost-btn" data-gp-read-existing onClick={() => {
-            evidenceRef.current?.focus();
-          }}>{snapshot.sources.length ? (lang === "en" ? "Read existing evidence" : "查看已有依据") : (lang === "en" ? "Read investigation details" : "查看核查详情")}</button> : null}
-          {!readOnly && onFollowUp ? <button type="button" className="gp-ghost-btn" onClick={() => prepareFollowUp()}>{lang === "en" ? "Investigate further" : "继续补查"}</button> : null}
-          <p>{lang === "en" ? "Reading evidence does not start another investigation." : "查看依据不会重新调查；补查需明确发送问题。"}</p>
-        </div> : null}
-
-        {complete || interrupted ? <InvestigationScope snapshot={snapshot} onAsk={readOnly || !complete ? undefined : prepareFollowUp} onAdjustFocus={readOnly ? undefined : onAdjustFocus} adjusting={adjustingFocus} /> : null}
-
-        {interrupted ? (
-          <section className="gp-interrupted" role="alert" data-gp-interrupted>
-            <strong>{interruptedAnswer ? copy.interruptedPartialTitle : copy.interruptedTitle}</strong>
-            <p>
-              {interruptedAnswer ? copy.interruptedPartialBody : copy.interruptedBody}
-              {interruptedHasJudgments ? ` ${copy.interruptedHasJudgments}` : ""}
-            </p>
-            {interruptedAnswer ? (
-              <p className="gp-interrupted-answer" data-gp-interrupted-answer>
-                {interruptedAnswer}
-              </p>
-            ) : null}
-            <div className="gp-interrupted-actions" hidden={readOnly}>
-              <button type="button" className="gp-primary-btn" onClick={onReverify}>
-                {copy.interruptedRetry}
-              </button>
-              <button type="button" className="gp-ghost-btn" onClick={onBackHome}>
-                {copy.backHome}
-              </button>
-            </div>
-          </section>
-        ) : null}
-
         <section className="gp-original" aria-label={copy.canvasOriginalLabel}>
           <div className="gp-original-meta">
             <span className="gp-original-label">{copy.canvasOriginalLabel}</span>
@@ -355,11 +306,56 @@ export function InvestigationCanvas({
               style={{ overflowWrap: "anywhere" }}
               data-gp-traced-claim={tracedClaimId ?? ""}
             >
-              {renderOriginalClaim(snapshot, tracedClaimId)}
+              {renderOriginalClaim(snapshot, tracedClaimId, complete ? jumpToClaim : undefined)}
             </span>
             <span className="gp-quote-close" aria-hidden="true">”</span>
           </blockquote>
         </section>
+
+        <section
+          className={complete ? "gp-conclusion-region is-complete" : "gp-conclusion-region is-pending"}
+          data-gp-conclusion-region
+          data-gp-conclusion-state={complete ? "complete" : "pending"}
+          aria-hidden={complete ? undefined : true}
+        >
+          {complete && conclusion ? (
+            <ConclusionHero
+              directAnswer={displayDirectAnswer}
+              verdictLead={displayVerdictLead}
+              rationale={conclusion.rationale}
+              judgment={conclusion.judgment}
+              boundaries={conclusion.boundaries}
+              checkedAt={snapshot.checkedAt}
+              leftoverNote={leftoverSentence}
+            />
+          ) : null}
+        </section>
+
+        {interrupted ? <InvestigationScope snapshot={snapshot} onAdjustFocus={readOnly ? undefined : onAdjustFocus} adjusting={adjustingFocus} /> : null}
+
+        {interrupted ? (
+          <section className="gp-interrupted" role="alert" data-gp-interrupted>
+            <strong>{interruptedAnswer ? copy.interruptedPartialTitle : copy.interruptedTitle}</strong>
+            <p>
+              {interruptedAnswer ? copy.interruptedPartialBody : copy.interruptedBody}
+              {interruptedHasJudgments ? ` ${copy.interruptedHasJudgments}` : ""}
+            </p>
+            {interruptedAnswer ? (
+              <p className="gp-interrupted-answer" data-gp-interrupted-answer>
+                {interruptedAnswer}
+              </p>
+            ) : null}
+            <div className="gp-interrupted-actions" hidden={readOnly}>
+              <button type="button" className="gp-primary-btn" onClick={onReverify}>
+                {copy.interruptedRetry}
+              </button>
+              <button type="button" className="gp-ghost-btn" onClick={onBackHome}>
+                {copy.backHome}
+              </button>
+            </div>
+          </section>
+        ) : null}
+
 
         {!complete && !interrupted ? (
           <ActivityFeed
@@ -412,14 +408,12 @@ export function InvestigationCanvas({
         ) : null}
 
         {resultClaims.length > 0 || (!complete && leftoverSentence) ? (
-          <section className="gp-claims" aria-label={copy.canvasEvidenceLabel} ref={evidenceRef} tabIndex={-1}>
-            {!complete ? (
-              <h3 className="gp-section-label">{copy.canvasClaimsLabel}</h3>
-            ) : (
-              <h2 className="gp-section-label">逐条核查详情</h2>
-            )}
+          <section className="gp-claims" aria-label={copy.canvasEvidenceLabel} tabIndex={-1}>
+            {!complete ? <h3 className="gp-section-label">{copy.canvasClaimsLabel}</h3> : <h2 className="gp-section-label">逐条判断与出处</h2>}
             <div className="gp-claim-list">
-              {resultClaims.map((claim, index) => (
+              {complete ? resultClaims.map((claim, index) => (
+                <ResultClaim key={claim.id} claim={claim} index={index} originalClaim={snapshot.originalClaim} sources={snapshot.sources} onSelectSource={openSource} onHeaderHover={handleHeaderHover} onHeaderFocus={handleHeaderFocus} />
+              )) : resultClaims.map((claim, index) => (
                 <ClaimSection
                   key={claim.id}
                   claim={claim}
@@ -440,13 +434,7 @@ export function InvestigationCanvas({
                   onHeaderHover={handleHeaderHover}
                   onHeaderFocus={handleHeaderFocus}
                   onExpandedTrace={setExpandedTraceClaimId}
-                  asResult={complete}
-                  asWork={!complete && !interrupted}
-                  conclusionText={
-                    complete && conclusion
-                      ? `${conclusion.directAnswer ?? ""}${conclusion.verdictLead ?? ""}${conclusion.rationale ?? ""}`
-                      : ""
-                  }
+                  asWork={!interrupted}
                 />
               ))}
             </div>
@@ -486,6 +474,8 @@ export function InvestigationCanvas({
 
         {complete && conclusion ? (
           <>
+            <ResultRemainder snapshot={snapshot} activities={activities} onSelectSource={openSource} onSelectConflict={jumpToConflict} />
+            <InvestigationScope snapshot={snapshot} onAsk={readOnly ? undefined : prepareFollowUp} onAdjustFocus={readOnly ? undefined : onAdjustFocus} adjusting={adjustingFocus} />
             {!readOnly ? <div ref={followUpRef} className="gp-followup-target">
             <FollowUpSection
               suggestedQuestion={suggestedQuestion}
@@ -506,12 +496,6 @@ export function InvestigationCanvas({
               ).filter((url): url is string => Boolean(url))}
             />
             </div> : null}
-            <InvestigationDossier
-              snapshot={snapshot}
-              activities={activities}
-              onSelectSource={openSource}
-              onSelectConflict={jumpToConflict}
-            />
             {shareCaseId ? <ShareControl caseId={shareCaseId} /> : null}
           </>
         ) : null}
@@ -534,22 +518,28 @@ export function InvestigationCanvas({
 }
 
 /** 「你调查的说法」区渲染的原文：追问轮只留用户自己写的部分（裁切规则在 lib 里，四处显示同一份）。 */
-function renderOriginalClaim(snapshot: InvestigationSnapshotV1, tracedClaimId: string | null) {
+function renderOriginalClaim(snapshot: InvestigationSnapshotV1, tracedClaimId: string | null, onJumpToClaim?: (claimId: string) => void) {
   const segments = buildClaimTraceSegments(displayFollowUpClaim(snapshot.originalClaim), snapshot.claims);
   return segments.map((segment, index) => {
     if (!segment.traceable || !segment.claimId || segment.text.length === 0) {
       return <span key={`plain-${index}`}>{segment.text}</span>;
     }
     const active = tracedClaimId === segment.claimId;
-    return (
+    const mark = (
       <mark
-        key={`trace-${segment.claimId}-${index}`}
         className={`gp-trace-mark${active ? " is-active" : ""}`}
         data-gp-trace-claim={segment.claimId}
         data-gp-trace-active={active ? "true" : "false"}
       >
         {segment.text}
       </mark>
+    );
+    if (onJumpToClaim) {
+      const claimIndex = snapshot.claims.findIndex((claim) => claim.id === segment.claimId);
+      return <a key={`trace-${segment.claimId}-${index}`} href={`#gp-claim-${segment.claimId}`} className="gp-trace-link" data-gp-index={claimIndex + 1} onClick={(event) => { event.preventDefault(); onJumpToClaim(segment.claimId!); }} aria-label={`查看第${claimIndex + 1}条判断`}>{mark}</a>;
+    }
+    return (
+      <span key={`trace-${segment.claimId}-${index}`}>{mark}</span>
     );
   });
 }

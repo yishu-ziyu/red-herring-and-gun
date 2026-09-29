@@ -6,20 +6,19 @@
  *
  * 断开连接不是取消：run 属于它的 runId，用户离开页面后照常跑完，结论经刷新接回取回。
  */
-import { runCasePipeline, type PipelineStep } from "../lib/casePipeline/index.js";
+import { runCasePipeline } from "../lib/casePipeline/index.js";
 import { commitFreeCheck, releaseFreeCheck, type CheckTicket } from "../lib/checkQuota.js";
 import { applyContextCrossCheckToReport } from "../lib/contextCrossCheck.js";
 import { getCase, type CaseEntry } from "../lib/caseStore.js";
 import { makeRewriteQueryCall } from "../lib/evidenceLoop/index.js";
 import { withExecutionBudget, type ExecutionBudget } from "../lib/executionBudget.js";
-import { applyFactDeskPostProcessToReport } from "../lib/factDeskPostProcess.js";
 import { followUpReuseFromClientBrief } from "../lib/followUpReuse.js";
 import {
   appendFollowUpObservation,
   buildFollowUpObservation,
   type FollowUpObservationStats,
 } from "../lib/followupObservation.js";
-import { applyFormulaScoreToReport, computeFormulaScore } from "../lib/formulaScore.js";
+import { scoreReport } from "../lib/casePipeline/scoreReport.js";
 import { withTimeout } from "../lib/httpUtils.js";
 import { lookupImageOrigin, visionHintsFromExtraction } from "../lib/imageOrigin/index.js";
 import { interruptedInvestigationSnapshot } from "../lib/interruptedSnapshot.js";
@@ -166,30 +165,6 @@ function makeSearchOneAtom(
     }
     return result;
   };
-}
-
-function pipelineFinalize(
-  ctx: {
-    finalReport: Record<string, unknown>;
-    claim: string;
-    rumorStep: PipelineStep;
-    factStep: PipelineStep;
-    sourceStep: PipelineStep;
-    search360Result: unknown;
-  },
-  visualExtraction?: Record<string, unknown>
-) {
-  applyFormulaScoreToReport(
-    ctx.finalReport,
-    computeFormulaScore(
-      ctx.rumorStep.output,
-      ctx.factStep.output,
-      ctx.sourceStep.output,
-      ctx.search360Result
-    )
-  );
-  applyFactDeskPostProcessToReport(ctx.finalReport, ctx.claim);
-  applyContextCrossCheckToReport(ctx.finalReport, { claim: ctx.claim, visualExtraction });
 }
 
 /**
@@ -416,7 +391,6 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       callSelfProofModel: byoAdapter.makeSelfProofCaller(claim, modelChoice),
       evidenceLoop: { callRewriteModel: makeRewriteQueryCall(byoAdapter.makeRewriteCaller(modelChoice)) },
       crossExam: { callRaw: byoAdapter.makeCrossExamCaller(modelChoice, (data) => sendEvent(data)) },
-      wholeClaimAudit: { callModel: byoAdapter.makeWholeClaimAuditCaller(modelChoice) },
       knowledgeBase,
       archiveEvidence: true,
       followUpReuse: priorCase
@@ -428,8 +402,7 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
         : clientFollowUpReuse ?? undefined,
       runReport: makeRunReport(runAgent, byo, byoFail, sendEvent),
       hooks: makePipelineHooks({ claim, sendEvent, emitInvestigation, emitter, searchesCounter }),
-      finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>
-        pipelineFinalize(fctx, visualExtraction),
+      finalizeReport: scoreReport,
       memoryCandidateStore: getMemoryCandidateStore(),
     }), { signal: pipelineSignal, timeoutMs: PIPELINE_TOTAL_TIMEOUT_MS + PIPELINE_LATE_GRACE_MS, label: TIMEOUT_LABEL });
     // withTimeout 是 race：落败方的 rejection 必须被吸收，

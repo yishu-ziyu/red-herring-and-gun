@@ -214,15 +214,22 @@ describe("原句没进命题的尚缺与过头之处", () => {
     }
   });
 
-  it("mixed 无反驳时过头之处在命题卡正文", () => {
+  it("mixed 但没有正式程度判词时只用中性边界说明", () => {
     render(canvas(mixedComplete(), [], false));
     const card = document.querySelector('[data-gp-claim-id="claim-1"]');
     expect(card).toBeTruthy();
-    const overclaim = card!.querySelector("[data-gp-overclaim]");
-    expect(overclaim).toBeTruthy();
-    expect(overclaim!.textContent).toContain("过头之处");
-    expect(overclaim!.textContent).toContain("不覆盖重症");
-    expect(card!.querySelector(".gp-boundary")).toBeNull();
+    expect(card!.querySelector("[data-gp-overclaim]")).toBeNull();
+    expect(card!.querySelector(".gp-result-boundary")?.textContent).toContain("需要注意");
+    expect(card!.querySelector(".gp-result-boundary")?.textContent).toContain("不覆盖重症");
+  });
+
+  it("只有正式程度判词写说过头了时才标过头之处", () => {
+    const snapshot = mixedComplete();
+    snapshot.claims[0]!.displayStanding = "说过头了";
+    render(canvas(snapshot, [], false));
+    const card = document.querySelector('[data-gp-claim-id="claim-1"]')!;
+    expect(card.querySelector("[data-gp-judgment]")?.textContent).toBe("说过头了");
+    expect(card.querySelector("[data-gp-overclaim]")?.textContent).toContain("不覆盖重症");
   });
 });
 

@@ -2,9 +2,9 @@
 
 const INTERNAL_SENTENCE_RE = /wholeClaimAudit|whole_claim_auditor|WholeClaimAudit|wholeClaimAuditPlan|\bAgent:\w+/i;
 const SOURCE_ALIAS_RE = /\b[SC]\d+(?:\s*[/、,，]\s*[SC]\d+)*(?:将|把|中)?/g;
-/** 模型把 schema 词写进解释：`claim中「…」`；先删「claim中」再删孤立 claim，避免留下「中「」。 */
-const SCHEMA_ZH_RE = /claim中/gi;
-const SCHEMA_WORD_RE = /\b(?:claimAtom|subclaim|verdictType|atomSearches|claim)\b/gi;
+/** 模型把 schema 词写进解释：`claim中「…」`；将 claim 译成说法，避免删词后留下残句。 */
+const SCHEMA_ZH_RE = /\s*\b(?:claimAtom|subclaim|claim)\b\s*/gi;
+const SCHEMA_WORD_RE = /\b(?:verdictType|atomSearches)\b/gi;
 /** 400 字截断留下的半截拉丁残字，紧贴下一段引号：`IA「「微波炉`。完整 IARC（4 字母）不动。 */
 const TRUNCATED_LATIN_BEFORE_QUOTE_RE = /[A-Za-z]{1,3}(?=「)/g;
 
@@ -14,7 +14,7 @@ export function scrubFaceText(text: string): string {
     .split(/(?<=[。！？；\n])/)
     .filter((part) => !INTERNAL_SENTENCE_RE.test(part))
     .join("")
-    .replace(SCHEMA_ZH_RE, "")
+    .replace(SCHEMA_ZH_RE, "说法")
     .replace(SCHEMA_WORD_RE, "")
     .replace(/\[\d+\]/g, "")
     .replace(SOURCE_ALIAS_RE, "")

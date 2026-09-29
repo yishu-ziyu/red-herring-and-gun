@@ -16,7 +16,7 @@ import {
   providerOrderForAgent,
   AgentTextProviderId,
 } from "./providerRouter.js";
-import { compactSearchResultForAgent, buildReportEvidenceInputs } from "./searchProviders.js";
+import { compactSearchResultForAgent } from "./searchProviders.js";
 import { agentVisibleSearches } from "./originalEvidence.js";
 import { attachKnowledgeDrafts } from "./atomSearch.js";
 import { splitReasoningSentences } from "./reasoningThoughts.js";
@@ -117,20 +117,19 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
       opts.onStart?.(agentId, agentConfig);
       const stepStart = Date.now();
       const agentInput = buildAgentInput(agentId, opts.claim, steps as any);
-      if (opts.intakeMetadata) agentInput.intake = opts.intakeMetadata;
-      if (opts.visualExtraction) agentInput.visualExtraction = opts.visualExtraction;
-      if (opts.clientMemoryRecall) agentInput.memoryRecall = opts.clientMemoryRecall;
-      if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
+      if (agentId !== "report_composer") {
+        if (opts.intakeMetadata) agentInput.intake = opts.intakeMetadata;
+        if (opts.visualExtraction) agentInput.visualExtraction = opts.visualExtraction;
+        if (opts.clientMemoryRecall) agentInput.memoryRecall = opts.clientMemoryRecall;
+      }
+      if (search360Result && ["fact_checker", "source_validator"].includes(agentId)) {
         agentInput.search360 = compactSearchResultForAgent(search360Result);
-        if (atomSearchBundle && (agentId === "fact_checker" || agentId === "source_validator" || agentId === "report_composer")) {
+        if (atomSearchBundle) {
           agentInput.atomSearches = agentVisibleSearches(atomSearchBundle);
         }
       }
-      if (atomSearchBundle && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
+      if (atomSearchBundle && ["fact_checker", "source_validator"].includes(agentId)) {
         attachKnowledgeDrafts(agentInput, atomSearchBundle);
-      }
-      if (agentId === "report_composer") {
-        agentInput.evidenceInputs = buildReportEvidenceInputs(steps as any, search360Result);
       }
 
       // Book Ch.2：状态栏 + 按需 Skills
@@ -152,7 +151,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
       });
       agentInput.agentStatusBar = statusBar.text;
       agentInput.agentStatusFields = statusBar.fields;
-      const skills = selectAgentSkills({ agentId, claimType, maxSkills: 3 });
+      const skills = agentId === "report_composer" ? [] : selectAgentSkills({ agentId, claimType, maxSkills: 3 });
       const systemPrompt = `${agentConfig.systemPrompt}${formatSkillsForPrompt(skills)}`;
       agentInput.loadedSkills = skills.map((s) => s.id);
       const userContent = `${statusBar.text}\n\n${JSON.stringify(agentInput, null, 2)}`;
@@ -431,29 +430,5 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
     };
   }
 
-  /** Whole-Claim Audit（Issue #78）：整句审计规划/评估的裸模型调用。实现层静默，不进 SSE Agent 日志。 */
-  function makeWholeClaimAuditCaller(modelChoice: any) {
-    return (input: {
-      systemPrompt: string;
-      userContent: string;
-      responseSchema: object;
-      maxTokens: number;
-    }) => {
-      if (byo) return callByoPrimary(input).then((r) => ({ output: r.output, model: r.model }));
-      return callAgentWithFallback({
-        agentId: "whole_claim_auditor",
-        systemPrompt: input.systemPrompt,
-        userContent: input.userContent,
-        responseSchema: input.responseSchema,
-        maxTokens: input.maxTokens,
-        env,
-        codexBin,
-        reasoningEffort: "low",
-        modelOverride: modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
-        options: requestOptions(),
-      }).then((r) => ({ output: r.output, model: r.model }));
-    };
-  }
-
-  return { makeRunAgent, makeSelfProofCaller, makeRewriteCaller, makeCrossExamCaller, makeWholeClaimAuditCaller };
+  return { makeRunAgent, makeSelfProofCaller, makeRewriteCaller, makeCrossExamCaller };
 }

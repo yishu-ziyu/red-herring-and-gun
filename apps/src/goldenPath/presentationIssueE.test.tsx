@@ -176,8 +176,9 @@ describe("提交 → 依据 → 保存 → 重开", () => {
     expect(document.querySelector('[data-gp-claim-id="claim-2"]')?.textContent).toContain(MIXED_ATOM_B);
     expect(document.body.textContent).toContain("不覆盖重症");
 
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
     const keyTwo = document.querySelector(
-      '[data-gp-key-evidence-item][data-gp-key-claim-id="claim-2"]',
+      '[data-gp-evidence-claim="claim-2"].gp-result-material-link',
     ) as HTMLButtonElement;
     expect(keyTwo).toBeTruthy();
     fireEvent.click(keyTwo);
@@ -325,7 +326,8 @@ describe("五类输入里机器能覆盖的", () => {
     const hero = await screen.findByLabelText("调查结论");
     expect(hero.textContent).toContain("公开标准大气成分表显示氧气约占 20.9%");
     expect(document.querySelector('[data-gp-claim-id="claim-1"]')?.textContent).toContain(SUPPORTED_ATOM);
-    const key = document.querySelector("[data-gp-key-evidence-item]") as HTMLButtonElement;
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
+    const key = document.querySelector(".gp-result-material-link") as HTMLButtonElement;
     fireEvent.click(key);
     const drawer = await waitFor(() => {
       const el = document.querySelector(".gp-drawer--source") as HTMLElement | null;
@@ -348,7 +350,7 @@ describe("五类输入里机器能覆盖的", () => {
     const hero = await screen.findByLabelText("调查结论");
     expect(hero.textContent).toContain("公开材料还撑不住这条说法，异味来源仍未查清。");
     expect(document.querySelector("[data-gp-key-evidence]")).toBeNull();
-    expect(document.querySelector("[data-gp-gaps-lead]")?.textContent).toContain("待补证");
+    expect(document.querySelector(".gp-result-claim .gp-result-gap")?.textContent).toContain("待补证");
     expect(document.querySelector('[data-gp-claim-id="claim-1"]')?.textContent).toContain(
       "某小区本月的自来水异味来自新增消毒工艺",
     );

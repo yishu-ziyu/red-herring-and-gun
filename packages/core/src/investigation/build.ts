@@ -673,6 +673,12 @@ export function buildInvestigationSnapshot(
   }
 
   const conclusionText = asString(report?.conclusion);
+  const formalParts = new Map(
+    asArray(asRecord(report?._verdictDecision)?.parts)
+      .map(asRecord)
+      .filter((part): part is Record<string, unknown> => part !== null)
+      .map((part) => [keyFn(asString(part.text)), part] as const)
+  );
 
   const claims: InvestigationClaim[] = assemblies.map((a) => {
     const verdict = a.verdict;
@@ -800,6 +806,18 @@ export function buildInvestigationSnapshot(
     }
 
     const span = originalClaim.indexOf(a.text);
+    const hasFormalDecision = phase === "complete" && Boolean(asRecord(report?._verdictDecision));
+    const formalPart = hasFormalDecision ? formalParts.get(a.key) : undefined;
+    const issuerMisattributed = formalPart?.issuerMisattributed === true;
+    const displayStanding = !hasFormalDecision ? undefined
+      : a.checkability === "not-applicable" ? "立场，不判真假"
+      : !formalPart ? undefined
+      : judgment === "unresolved" ? "暂时无法判断"
+      : issuerMisattributed && judgment === "supported" ? "基本属实"
+      : judgment === "supported" ? "属实"
+      : judgment === "refuted" && verdict?.verdict === "false" ? "不属实"
+      : judgment === "disputed" ? "有争议"
+      : undefined;
     return {
       id: `claim-${a.order + 1}`,
       text: a.text,
@@ -808,6 +826,9 @@ export function buildInvestigationSnapshot(
       checkability: a.checkability,
       progress: progressFor(phase, bundle.searchedKeys.has(a.key), judgment !== null),
       judgment,
+      ...(displayStanding ? { displayStanding } : {}),
+      ...(formalPart && verdict ? { rawVerdict: verdict.verdict } : {}),
+      ...(issuerMisattributed ? { issuerMisattributed: true } : {}),
       ...(verdict?.boundary ? { boundary: verdict.boundary } : {}),
       evidence,
       gaps,

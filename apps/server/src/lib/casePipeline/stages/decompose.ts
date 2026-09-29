@@ -17,7 +17,6 @@ import {
 } from "../../claimAtom/index.js";
 import { looksLikePlanOrPrediction } from "../../atomSearchQuery.js";
 import { collapseFollowUpAtoms } from "../../followUpReuse.js";
-import { applyCheckabilityRevisions, runWholeClaimPlanning } from "../../wholeClaimAudit/index.js";
 import type { PipelineContext } from "../caseState.js";
 import type { PipelineStep } from "../runCasePipeline.js";
 
@@ -75,7 +74,7 @@ async function runSelfProofWithRetry(
 }
 
 export async function decompose(ctx: PipelineContext): Promise<PipelineStep> {
-  const { claim, steps, hooks, reusePlan, audit, budget, snapshots, throwIfAborted } = ctx;
+  const { claim, steps, hooks, reusePlan, snapshots, throwIfAborted } = ctx;
   const { runAgent, callSelfProofModel } = ctx.input;
 
   // Phase 1: RumorDetector — fail-open to the original sentence so search still runs.
@@ -154,35 +153,6 @@ export async function decompose(ctx: PipelineContext): Promise<PipelineStep> {
     );
     hooks?.onSelfProof?.({ ...selfProof, kept: keptAtoms });
 
-    // Whole-Claim Audit Planning（Issue #78）：检索前做可核查性语义修订，记下整句缺口基线。
-    if (audit.callModel && budget.canPlanWholeClaim()) {
-      const planning = await runWholeClaimPlanning({
-        claim,
-        keptAtoms: Array.isArray(rumorStep.output.claimAtoms) ? (rumorStep.output.claimAtoms as string[]) : [],
-        claimAtomTypes: rumorStep.output.claimAtomTypes,
-        stanceClaimType: rumorStep.output.stanceClaimType,
-        callModel: audit.callModel,
-      });
-      if (planning) {
-        const revised = applyCheckabilityRevisions(
-          rumorStep.output.claimAtomTypes,
-          Array.isArray(rumorStep.output.claimAtoms) ? (rumorStep.output.claimAtoms as string[]) : [],
-          planning.plan.checkabilityRevisions
-        );
-        rumorStep.output.claimAtomTypes = revised.claimAtomTypes;
-        audit.run.plan = planning.plan;
-        audit.run.model = planning.model;
-        rumorStep.output.wholeClaimAuditPlan = {
-          overallQuestion: planning.plan.overallQuestion,
-          checkabilityRevisions: planning.plan.checkabilityRevisions,
-          appliedRevisions: revised.applied,
-          ignoredRevisions: revised.ignored,
-          missingJustifications: planning.plan.missingJustifications,
-          model: planning.model,
-        };
-        audit.unresolvedGaps = [...(planning.plan.missingJustifications ?? [])];
-      }
-    }
   }
 
   // 里程碑：拆题完成（self-proof 后保留的原子才是用户主张；dropped 不进 claims）。

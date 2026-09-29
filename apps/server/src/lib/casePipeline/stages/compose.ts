@@ -3,7 +3,6 @@
  * 分条已齐且剩余时间不够写一次完整报告（窗口约 90s，MiniMax 单次默认 180s）时跳过 LLM，走确定性报告再收尾。
  */
 import { claimAtomKey } from "../../claimAtom/index.js";
-import { buildDeterministicFinalReport } from "../../reportFallback.js";
 import { REPORT_WRITE_MS } from "../budget.js";
 import type { CaseState, PipelineContext } from "../caseState.js";
 import type { PipelineStep } from "../runCasePipeline.js";
@@ -43,8 +42,7 @@ function shouldWriteDeterministicReport(args: {
 
 function deterministicReportStep(
   claim: string,
-  steps: PipelineStep[],
-  search360Result: unknown,
+  judgment: Record<string, unknown>,
   reason: string
 ): PipelineStep {
   const startedAt = Date.now();
@@ -53,7 +51,7 @@ function deterministicReportStep(
     agentName: "ReportComposer",
     systemPrompt: "deterministic fallback report",
     input: { claim, fallbackReason: reason },
-    output: buildDeterministicFinalReport(claim, steps, search360Result, reason),
+    output: { ...judgment, whyHardToVerify: [reason], _source: "deterministic-report" },
     model: "fallback:deterministic-report",
     latencyMs: Date.now() - startedAt,
     timestamp: Date.now(),
@@ -61,7 +59,34 @@ function deterministicReportStep(
   };
 }
 
-export async function compose(ctx: PipelineContext, state: CaseState): Promise<PipelineStep> {
+/** Only settled claims and their directional sources enter the writer context. */
+function writingJudgment(judgment: Record<string, unknown>): Record<string, unknown> {
+  const verdicts = Array.isArray(judgment.subclaimVerdicts) ? judgment.subclaimVerdicts : [];
+  return {
+    verdictType: judgment.verdictType,
+    directAnswer: judgment.conclusion,
+    nonVerifiableAtoms: judgment.nonVerifiableAtoms,
+    subclaimVerdicts: verdicts.map((raw) => {
+      const verdict = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+      const sourcesRelatedOnly = verdict.sourcesRelatedOnly === true;
+      return {
+        claimAtom: verdict.claimAtom,
+        verdict: verdict.verdict,
+        boundary: verdict.boundary,
+        evidenceGaps: verdict.evidenceGaps,
+        supportingSources: sourcesRelatedOnly ? [] : verdict.supportingSources,
+        contradictingSources: sourcesRelatedOnly ? [] : verdict.contradictingSources,
+      };
+    }),
+  };
+}
+
+export async function compose(
+  ctx: PipelineContext,
+  state: CaseState,
+  judgment: Record<string, unknown>,
+  verifiedQuotes: Array<Record<string, unknown>>,
+): Promise<PipelineStep> {
   const { input, claim, steps, budget, throwIfAborted } = ctx;
   const { rumorStep, search360Result, atomSearchBundle } = state;
   throwIfAborted();
@@ -73,8 +98,7 @@ export async function compose(ctx: PipelineContext, state: CaseState): Promise<P
   })
     ? deterministicReportStep(
         claim,
-        steps,
-        search360Result,
+        judgment,
         "剩余时间不够写完整报告，按已有分条判断收束。"
       )
     : await input.runReport({
@@ -82,6 +106,8 @@ export async function compose(ctx: PipelineContext, state: CaseState): Promise<P
         steps,
         search360Result,
         atomSearchBundle,
+        judgment: writingJudgment(judgment),
+        verifiedQuotes,
         signal: input.signal,
         deadlineMs: input.deadline,
       });

@@ -16,8 +16,6 @@ export type CrossExamTarget = {
   contradicting: AtomSearchSource[];
   evidence?: AtomSearchSource[];
   evidenceGaps?: string[];
-  /** 知识库初稿：只供复核，不是结论。 */
-  priorDraft?: { originDate: string; priorVerdict: string };
 };
 
 export type CrossExamAtomResult = {
@@ -60,7 +58,6 @@ export type CrossExamRawModelCall = (input: {
 export const CROSS_EXAM_SYSTEM_PROMPT = [
   "你是独立复核员。检查所给证据中的冲突或明确缺口。",
   "只依据给出的证据独立判断，不看主模型结论。不引入外部记忆的事实。",
-  "若输入含「上次核查初稿」，那是可复核草稿，不是结论：必须对照本轮所给证据复核；人物/日期/链接变了必须当新命题；没证据不得沿用初稿。",
   "输出 JSON：{\"verdict\": \"true|false|unverified\", \"reason\": \"一句话理由\", \"boundary\": \"证据能/不能支持什么\"}。",
   "证据不足以裁决时必须给 unverified，不要勉强站队。",
   "若有具体疑问，输出 challenge（可回答的质询）、sources（相关证据 URL）、query（最多一个定向补查问题）。没有疑问时 challenge 和 query 留空，不强行对抗。引用只能来自所给证据。",
@@ -100,9 +97,8 @@ export function findCrossExamTargets(input: {
     const supporting = v.sourcesRelatedOnly ? [] : bindSources(v.supportingSources, evidence);
     const contradicting = bindSources(v.contradictingSources, evidence);
     const evidenceGaps = Array.isArray(v.evidenceGaps) ? v.evidenceGaps.filter((g): g is string => typeof g === "string" && !!g.trim()) : [];
-    if (!(supporting.length && contradicting.length) && !evidenceGaps.length) continue;
+    if (!(supporting.length && contradicting.length)) continue;
     seen.add(key);
-    const draft = (input.bundle.knowledgeDrafts ?? []).find((item) => input.claimAtomKeyFn(item.claimAtom) === key);
     targets.push({
       atom,
       atomKey: key,
@@ -111,9 +107,6 @@ export function findCrossExamTargets(input: {
       contradicting,
       evidence: evidence.filter(s => isHttp(s.url)),
       evidenceGaps,
-      ...(draft
-        ? { priorDraft: { originDate: draft.originDate, priorVerdict: draft.priorVerdict } }
-        : {}),
     });
   }
   return targets;
@@ -137,11 +130,6 @@ export function buildCrossExamUserContent(input: {
     "其他已检索材料（未判定支持或反对）：",
     fmt(input.target.evidence ?? []),
     `明确证据缺口：${(input.target.evidenceGaps ?? []).join("；")}`,
-    ...(input.target.priorDraft
-      ? [
-          `上次核查初稿（只供复核，不是结论）：判词 ${input.target.priorDraft.priorVerdict}，已核日期 ${input.target.priorDraft.originDate}。人物/日期/链接变了必须当新命题。没证据不得沿用初稿。`,
-        ]
-      : []),
     "只根据以上证据判断该说法。",
   ].join("\n");
 }
@@ -174,12 +162,6 @@ export function compareVerdicts(primary: string, second: string): CrossExamRelat
   return "disagree";
 }
 
-export function crossExamConfidenceAdjustment(atoms: CrossExamAtomResult[]): number {
-  const disagreements = atoms.filter((a) => a.relation === "disagree").length;
-  if (disagreements === 0) return 0;
-  return Math.max(-20, -10 * disagreements);
-}
-
 /** 第二意见语义调用（prompt/解析都在域内）；失败向上抛，由调用方决定跳过。 */
 export function makeSecondOpinionCall(callRaw: CrossExamRawModelCall) {
   return async (input: { claim: string; target: CrossExamTarget }) => {
@@ -193,10 +175,7 @@ export function makeSecondOpinionCall(callRaw: CrossExamRawModelCall) {
   };
 }
 
-/**
- * 每个命题最多一次质询、一次补查、一次回应。失败停止追加调用，保留未解决记录。
- * 未提供 respond 的旧调用者仍可读取单次第二意见及旧调整字段。
- */
+/** Read-only independent opinion on an already audited source conflict. */
 export async function runCrossExam(options: {
   claim: string;
   targets: CrossExamTarget[];
@@ -204,66 +183,46 @@ export async function runCrossExam(options: {
   signal?: AbortSignal;
   deadline?: number;
   shouldStop?: () => boolean;
-  search?: (target: CrossExamTarget, query: string) => Promise<AtomSearchSource[]>;
-  respond?: (target: CrossExamTarget, challenge: CrossExamAtomResult) => Promise<{ response: string; finalVerdict?: string; sources?: AtomSearchSource[] }>;
 }): Promise<CrossExamOutcome> {
   const atoms: CrossExamAtomResult[] = [];
   let model = "";
   let attempted = false;
-  let stopped = false;
-  const shouldStop = () => stopped || !!options.signal?.aborted || (options.deadline != null && Date.now() >= options.deadline) || !!options.shouldStop?.();
+  const shouldStop = () => !!options.signal?.aborted ||
+    (options.deadline != null && Date.now() >= options.deadline) || !!options.shouldStop?.();
   for (const target of options.targets.slice(0, MAX_CROSS_EXAM_ATOMS)) {
-    const atom: CrossExamAtomResult = { atom: target.atom, primaryVerdict: target.primaryVerdict, initialVerdict: target.primaryVerdict, secondVerdict: "unverified", secondReason: "", secondModel: "", relation: "inconclusive", status: "unresolved", sources: [], searchStatus: "not_run" };
-    atoms.push(atom);
-    if (shouldStop()) { atom.stopReason = "质询已停止或时间预算不足"; continue; }
+    if (shouldStop()) break;
+    attempted = true;
     try {
-      attempted = true;
       const second = await options.callSecondOpinion({ claim: options.claim, target });
       model = model || second.model;
-      Object.assign(atom, {
+      atoms.push({
+        atom: target.atom,
+        primaryVerdict: target.primaryVerdict,
+        initialVerdict: target.primaryVerdict,
         secondVerdict: second.verdict,
         secondReason: second.reason,
         secondModel: second.model,
         relation: compareVerdicts(target.primaryVerdict, second.verdict),
         challenge: second.challenge,
+        query: second.query,
         boundary: second.boundary,
         sources: bindSources(second.sources, target.evidence ?? [...target.supporting, ...target.contradicting]),
+        status: "unresolved",
+        searchStatus: "not_run",
       });
-      if (!atom.challenge) { atom.stopReason = "独立复核未提出具体质询"; continue; }
-      if (shouldStop()) { atom.stopReason = "质询后时间预算不足或已取消，未回应"; continue; }
-      if (second.query && options.search) {
-        atom.query = second.query;
-        try {
-          atom.searchSources = await options.search(target, second.query);
-          atom.searchStatus = "completed";
-        } catch {
-          atom.searchStatus = "failed";
-          atom.stopReason = "定向补查未完成，未追加回应";
-          stopped = true;
-          continue;
-        }
-      }
-      if (shouldStop()) { atom.stopReason = "回应前时间预算不足或已取消"; continue; }
-      if (!options.respond) { atom.stopReason = "未接入主调查回应"; continue; }
-      const response = await options.respond(target, atom);
-      atom.response = response.response;
-      atom.finalVerdict = response.finalVerdict;
-      atom.sources = bindSources([...(atom.sources ?? []), ...(response.sources ?? [])], [...(target.evidence ?? [...target.supporting, ...target.contradicting]), ...(atom.searchSources ?? [])]);
-      atom.status = response.response ? "answered" : "unresolved";
-      if (!response.response) atom.stopReason = "主调查未返回针对该质询的回应";
     } catch {
-      atom.status = atom.challenge ? "unresolved" : "failed";
-      atom.stopReason = atom.challenge ? "主调查回应未完成" : "独立复核失败";
-      if (!atom.challenge) atom.secondReason = "复核失败";
-      stopped = true;
+      atoms.push({ atom: target.atom, primaryVerdict: target.primaryVerdict,
+        secondVerdict: "unverified", secondReason: "复核失败", secondModel: "",
+        relation: "inconclusive", status: "failed", searchStatus: "not_run" });
+      break;
     }
   }
   return {
     ran: attempted,
     atoms,
-    confidenceAdjustment: options.respond ? 0 : crossExamConfidenceAdjustment(atoms),
+    confidenceAdjustment: 0,
     model,
-    ...(!attempted ? { skippedReason: atoms.length ? "质询已停止或时间预算不足" : "没有已绑定的证据冲突或明确证据缺口" } : {}),
+    ...(!attempted ? { skippedReason: "没有已绑定的证据冲突或时间预算不足" } : {}),
   };
 }
 

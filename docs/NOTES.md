@@ -1,8 +1,8 @@
 # 当前状态
 
-- 正在做：[#131](https://github.com/yishu-ziyu/red-herring-and-gun/issues/131) 单一判断链与证据优先结果页；生产验证入口已收口。#129三例实机通过，#128工具暂停，#130分支收束完成；未合并/发布。
+- 正在做：[#131](https://github.com/yishu-ziyu/red-herring-and-gun/issues/131) 已完成本地收束与验收，保留rewrite/evidence-first供评审；#129原文接线已完成，#128工具暂停，#130分支收束完成。未合并/发布。
 - 看板：[docs/board/index.html](board/index.html)；数字曲线：[docs/metrics/index.html](metrics/index.html)。
-- 回答基准（40 条）：重构前 current-v1 判定正确 24/37、用时中位 244 秒、兜底 14/40；整句判定重构后 judge-v1 27/37（把真话判假 1）、judge-v1b 30/37（把真话判假 0、该判不判 0、中位 209 秒、兜底 17/40）；第二轮（删短谣辟谣通道、partial 按要素判）在错例子集 17 条上答对 15，把真话判假 0。细节 `docs/evals/2026-09-28-judgment-refactor.md`「结果」。
+- 最近数字：生产测试1533通过/13跳过，离线合同12/12；三例真实运行78/147/326秒，其中苏打水末次规则修正用真实输出重放验收；记录见[本次验收](evals/2026-09-30-single-investigation-result.md)。
 
 ## 刚落地、仍然有效
 
@@ -32,7 +32,7 @@
 
 - 完整 live eval gate 与最终版本完整真实追问理解质量尚未验收；本轮已分别验证真实运行收束、快照重放和停止链路，不合并宣称整版端到端全绿。
 - T20：生产切到 `packages/` 脊柱。2026-09-28 起暂停，`packages/` 冻结，见 `docs/devlog/2026-09-28-pause-t20.md`。
-- `qa:contracts` 测的是冻结的 `packages/core`，不是生产代码；待定改指 `apps/` 还是移出门禁。
+- `qa:contracts` 已指向apps生产离线行为合同；真实模型质量评测为单独的eval:live。
 - `apps/src/lib/v4-ui-e2e.test.ts` 的 framer-motion 检查仍指向不存在的 `mvp/` 路径，永远空跑通过。
 
 更早条目见 `docs/devlog/2026-09-status-archive.md`。不要从 `docs/evals/` 里翻已被取代的「未做」句当现状。

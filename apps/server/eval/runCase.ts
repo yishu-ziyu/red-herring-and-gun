@@ -17,8 +17,7 @@ import {
 import { runCasePipeline, type CasePipelineHooks, type PipelineStep } from "../src/lib/casePipeline/index.js";
 import { retrieveAtomSources } from "../src/lib/searchProviders.js";
 import { buildDeterministicFinalReport } from "../src/lib/reportFallback.js";
-import { applyFormulaScoreToReport, computeFormulaScore } from "../src/lib/formulaScore.js";
-import { applyFactDeskPostProcessToReport } from "../src/lib/factDeskPostProcess.js";
+import { scoreReport } from "../src/lib/casePipeline/scoreReport.js";
 import { makeRewriteQueryCall } from "../src/lib/evidenceLoop/index.js";
 import { agentVisibleSearches } from "../src/lib/originalEvidence.js";
 import type { AtomSearchBundle } from "../src/lib/atomSearch.js";
@@ -54,9 +53,9 @@ function makeRunAgent({ env, codexBin }: EvalEnv, claim: string) {
     if (!agentConfig) throw new Error(`Unknown agent: ${agentId}`);
 
     const agentInput = buildAgentInput(agentId, claim, steps as never) as Record<string, unknown>;
-    if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
+    if (search360Result && ["fact_checker", "source_validator"].includes(agentId)) {
       agentInput.search360 = search360Result;
-      if (atomSearchBundle && (agentId === "fact_checker" || agentId === "source_validator" || agentId === "report_composer")) {
+      if (atomSearchBundle) {
         agentInput.atomSearches = agentVisibleSearches(atomSearchBundle as AtomSearchBundle);
       }
     }
@@ -176,14 +175,15 @@ export async function runCase(
       // LLM 语义改写（与生产 handlers 同款）：eval 必须跑生产路径
       evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteRaw(evalEnv)) },
       crossExam: { callRaw: makeCrossExamRaw(evalEnv) },
-      runReport: async ({ claim: reportClaim, steps, search360Result, atomSearchBundle }) => {
+      runReport: async ({ claim: reportClaim, judgment, verifiedQuotes }) => {
+        const writerSteps: PipelineStep[] = [{ agent: "formal_judgment", output: { ...judgment, verifiedQuotes } }];
         try {
-          return await runAgent("report_composer", steps, search360Result, atomSearchBundle);
+          return await runAgent("report_composer", writerSteps);
         } catch (error) {
           const message = error instanceof Error ? error.message : "report_composer failed";
           return {
             agent: "report_composer",
-            output: buildDeterministicFinalReport(reportClaim, steps, search360Result, message),
+            output: buildDeterministicFinalReport(reportClaim, writerSteps, undefined, message),
             model: "fallback:deterministic-report",
             status: "completed",
             error: message,
@@ -191,19 +191,7 @@ export async function runCase(
           };
         }
       },
-      // 复用生产评分公式，保证评测分数 = 生产分数（eval 不绕过公式）
-      finalizeReport: ({ finalReport, claim: reportClaim, rumorStep, factStep, sourceStep, search360Result }) => {
-        applyFormulaScoreToReport(
-          finalReport,
-          computeFormulaScore(
-            rumorStep.output,
-            factStep.output,
-            sourceStep.output,
-            search360Result
-          )
-        );
-        applyFactDeskPostProcessToReport(finalReport, reportClaim);
-      },
+      finalizeReport: scoreReport,
     });
     return {
       steps: result.steps,

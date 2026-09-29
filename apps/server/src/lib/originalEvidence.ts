@@ -91,7 +91,7 @@ export function withOriginalText(searchOne: SearchOneAtom, signal?: AbortSignal,
     const sources = await Promise.all(record.sources.map(async (source, index) => {
       if (!source || typeof source !== "object") return source;
       const item = source as Record<string, unknown>;
-      const { originalText: _providerClaim, ...safe } = item;
+      const { originalText: _providerClaim, originalScope: _providerScope, ...safe } = item;
       if (index >= 5) return safe;
       const url = typeof item.url === "string" ? item.url : typeof item.link === "string" ? item.link : "";
       return { ...safe, originalText: url ? await fetchText(url, signal) : undefined };

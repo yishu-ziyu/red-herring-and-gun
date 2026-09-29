@@ -162,6 +162,15 @@ function migrate(db: DatabaseSync): void {
       new Date().toISOString()
     );
   }
+  if (current < 4) {
+    db.exec(`CREATE TABLE IF NOT EXISTS knowledge_source_texts (
+      id TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      body TEXT NOT NULL
+    )`);
+    db.prepare("INSERT OR IGNORE INTO schema_version (version, appliedAt) VALUES (4, ?)").run(new Date().toISOString());
+  }
+
 }
 
 /** 测试/维护用：关掉当前实例，下次 openDatabase 重新打开。 */

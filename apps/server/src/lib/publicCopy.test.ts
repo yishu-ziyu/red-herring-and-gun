@@ -247,3 +247,8 @@ describe("只贴链接打不开", () => {
     expect(report.conclusion).toBe("目前的材料不足以判断。");
   });
 });
+
+
+it("说明里的 claim 换成人话，不能删成残句", () => {
+  expect(scrubPublicText("该 claim 完全不成立。claim中提到的条件仍需核对。")).toBe("该说法完全不成立。说法中提到的条件仍需核对。");
+});

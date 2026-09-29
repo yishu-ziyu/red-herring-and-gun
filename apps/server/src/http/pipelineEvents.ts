@@ -53,6 +53,8 @@ export function makeRunReport(
   return async (args) => {
     const reportStep = await makeReportRunner(runAgent)({
       ...args,
+      steps: [{ agent: "formal_judgment", output: { ...args.judgment, verifiedQuotes: args.verifiedQuotes } }],
+      search360Result: undefined,
       onFallback: (step) => {
         sendEvent({
           type: "agent_complete",

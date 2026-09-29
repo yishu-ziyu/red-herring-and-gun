@@ -263,7 +263,7 @@ export function isOfficialSource(s: { url?: string; title?: string; snippet?: st
 export function assessEvidenceGap(input: {
   atom: string;
   sources: Array<{ url: string; title?: string; snippet?: string }>;
-  trigger?: "unverified" | "conflict";
+  trigger?: "unverified" | "conflict" | "gap";
   supportingCount?: number;
   contradictingCount?: number;
 }): EvidenceGap {

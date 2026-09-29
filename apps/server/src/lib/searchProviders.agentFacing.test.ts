@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildReportEvidenceInputs, compactSearchResultForAgent } from "./searchProviders";
+import { compactSearchResultForAgent } from "./searchProviders";
 
 const searchResult = {
   sources: [
@@ -25,11 +25,5 @@ describe("写作输入不带来源序号", () => {
     expect(compact.sources[0]!.url).toBe("https://digitaling.com/a");
   });
 
-  it("buildReportEvidenceInputs 同样不带 S1", () => {
-    const inputs = buildReportEvidenceInputs([], searchResult);
-    const blob = JSON.stringify(inputs.searchSummary.sources);
-    expect(blob).not.toMatch(/"S\d+"/);
-    expect(inputs.searchSummary.sources[0]).not.toHaveProperty("ref");
-    expect(inputs.searchSummary.sources[0]!.title).toBe("咖啡与茶的千年战争");
-  });
+
 });

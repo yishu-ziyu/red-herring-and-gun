@@ -37,6 +37,21 @@ function snapshotWith(sources: Array<Record<string, unknown>>) {
 }
 
 describe("快照透传 provenance / originDate", () => {
+  it("新正式结果给逐条明确措辞，旧历史不臆测八档", () => {
+    const legacy = snapshotWith([{ url: SEARCHED_URL, title: "科普", snippet: "远低于限值" }]);
+    expect(legacy.claims[0]?.displayStanding).toBeUndefined();
+    const formal = buildInvestigationSnapshot({
+      originalClaim: ATOM,
+      phase: "complete",
+      claimAtoms: [ATOM],
+      claimAtomTypes: [{ text: ATOM, verifiable: true, type: "fact" }],
+      atomSearchBundle: { atomsSearched: [ATOM], byAtomKey: { [ATOM]: [{ url: SEARCHED_URL, title: "科普", snippet: "远低于限值" }] } },
+      subclaimVerdicts: [{ claimAtom: ATOM, verdict: "false", contradictingSources: [{ url: SEARCHED_URL, title: "科普", snippet: "远低于限值" }] }],
+      report: { verdictType: "false", conclusion: "原文反驳了超标说法。",
+        _verdictDecision: { parts: [{ text: ATOM, role: "main", standing: "refuted" }] } },
+    }, { claimAtomKeyFn: (s) => s.trim() });
+    expect(formal.claims[0]).toMatchObject({ displayStanding: "不属实", rawVerdict: "false" });
+  });
   it("知识库来源：来源条目与证据条目都带两个字段", () => {
     const snapshot = snapshotWith([
       { url: KB_URL, title: "知识库条目", snippet: "已核证据", provenance: "knowledge", originDate: "2026-09-11" },

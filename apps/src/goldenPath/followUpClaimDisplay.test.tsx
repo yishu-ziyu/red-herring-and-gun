@@ -6,7 +6,7 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InvestigationCanvas } from "./InvestigationCanvas";
-import { ConclusionHero } from "./ConclusionHero";
+import { refutedComplete } from "./fixtures";
 import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { FollowUpSection } from "./FollowUpSection";
 import { buildInvestigationSnapshot } from "../lib/investigation";
@@ -46,20 +46,14 @@ describe("W3 四处统一裁切：追问只显示用户自己写的那一段", (
     expectOnlyUserAsk(document.querySelector<HTMLElement>(".gp-original-text")!.textContent!);
   });
 
-  it("2 结论卡「待核查说法」（ConclusionHero）", () => {
-    render(
-      <ConclusionHero
-        directAnswer="现有证据不支持「隔夜菜致癌」。"
-        judgment="refuted"
-        boundaries={[]}
-        claimCount={1}
-        sourceCount={0}
-        originalClaim={COMPOSED}
-      />
-    );
+  it("2 完成态原句不在结论卡重复，仍只显示用户追问", () => {
+    const snapshot = refutedComplete();
+    snapshot.originalClaim = COMPOSED;
+    render(<InvestigationCanvas snapshot={snapshot} live={false} onReverify={() => {}} onBackHome={() => {}} />);
 
-    const shown = document.querySelector<HTMLElement>(".gp-hero-query-text")!;
-    expect(shown.textContent).toBe(`“${USER_ASK}”`);
+    const shown = document.querySelector<HTMLElement>(".gp-original-text")!;
+    expectOnlyUserAsk(shown.textContent!);
+    expect(document.querySelector("[data-gp-hero-query]")).toBeNull();
     for (const leaked of LEAKED) {
       expect(shown.textContent).not.toContain(leaked);
     }
@@ -103,18 +97,11 @@ describe("W3 四处统一裁切：追问只显示用户自己写的那一段", (
     }
   });
 
-  it("非追问的原文四处都不改写", () => {
+  it("非追问的原文在完成态不改写", () => {
     const plain = "隔夜菜会致癌，吃了等于吃毒药。";
-    render(
-      <ConclusionHero
-        directAnswer="现有证据不支持。"
-        judgment="refuted"
-        boundaries={[]}
-        claimCount={1}
-        sourceCount={0}
-        originalClaim={plain}
-      />
-    );
-    expect(document.querySelector<HTMLElement>(".gp-hero-query-text")!.textContent).toBe(`“${plain}”`);
+    const snapshot = refutedComplete();
+    snapshot.originalClaim = plain;
+    render(<InvestigationCanvas snapshot={snapshot} live={false} onReverify={() => {}} onBackHome={() => {}} />);
+    expect(document.querySelector<HTMLElement>(".gp-original-text")!.textContent).toBe(plain);
   });
 });

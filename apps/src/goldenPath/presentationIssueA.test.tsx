@@ -78,10 +78,11 @@ describe("Issue A 完成态展示", () => {
     expect(document.body.textContent).not.toContain("核心断言不能成立");
   });
 
-  it("顶部入口打开第二条命题专属来源，对上第二条 finding/limitation", async () => {
+  it("其余材料打开第二条命题专属来源，对上第二条 finding/limitation", async () => {
     renderCanvas(stampExclusiveFindings(mixedComplete()));
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
     const claim2Key = document.querySelector(
-      '[data-gp-key-evidence-item][data-gp-key-claim-id="claim-2"]',
+      '[data-gp-evidence-claim="claim-2"].gp-result-material-link',
     ) as HTMLButtonElement;
     expect(claim2Key).toBeTruthy();
     expect(claim2Key.textContent).not.toContain("维生素C能治感冒");
@@ -89,10 +90,12 @@ describe("Issue A 完成态展示", () => {
     await expectDrawerIsClaimTwo();
   });
 
-  it("命题卡打开第二条命题专属来源，对上第二条 finding/limitation", async () => {
+  it("逐条标题与第二条命题来源对齐", async () => {
     renderCanvas(stampExclusiveFindings(mixedComplete()));
-    const claimB = document.querySelector('.gp-claim[data-gp-claim-id="claim-2"]') as HTMLElement;
-    fireEvent.click(claimB.querySelector(".gp-evidence-item") as HTMLButtonElement);
+    const claimB = document.querySelector('.gp-result-claim[data-gp-claim-id="claim-2"]') as HTMLElement;
+    expect(claimB.textContent).toContain("每次感冒都应当输液");
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
+    fireEvent.click(document.querySelector('[data-gp-evidence-claim="claim-2"].gp-result-material-link')!);
     await expectDrawerIsClaimTwo();
   });
 
@@ -100,7 +103,7 @@ describe("Issue A 完成态展示", () => {
     renderCanvas(conflictKnownReason());
     const text = document.body.textContent ?? "";
     expect(text).not.toMatch(/疾控|1\.4s|15\.2s|23\.4s|永久保留|权威材料|思考全链条|前往官方原文核验/);
-    expect(text).toContain("收集到的来源");
+    expect(text).toContain("其余材料");
     expect(text).not.toContain("已查验");
   });
 });

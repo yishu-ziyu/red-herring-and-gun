@@ -34,13 +34,13 @@ describe("selectAgentSkills", () => {
     expect(formatSkillsForPrompt(skills)).toContain("On-demand Skills");
   });
 
-  it("loads causal skill only when claimType matches", () => {
+  it("writer receives safety guidance without a second causal judgment skill", () => {
     const causal = selectAgentSkills({
       agentId: "report_composer",
       claimType: "causal",
       maxSkills: 4,
     });
-    expect(causal.some((skill) => skill.id === "skill.causal-boundary")).toBe(true);
+    expect(causal.map((skill) => skill.id)).toEqual(["skill.no-prompt-injection"]);
 
     const nonCausal = selectAgentSkills({
       agentId: "report_composer",

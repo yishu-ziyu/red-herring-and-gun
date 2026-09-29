@@ -4,6 +4,7 @@
  * 补查、质询、整句审计都可能往检索包里加新来源；每次加完，先刷新审计，再让新来源带方向上屏。
  * 刷新不了（没时间或审计失败）时，新来源一律只作背景（fail-closed），不会闪一下绿色「支持」再被纠正。
  */
+import { createHash } from "node:crypto";
 import { bindAtomEvidenceToVerdicts, type AtomSearchBundle } from "../atomSearch.js";
 import { claimAtomKey } from "../claimAtom/index.js";
 import { applyClaimSourceRelationAudit, parseClaimSourceRelationAudits, relationAuditCoversDirectionalSources } from "../sourceRelationAudit.js";
@@ -42,11 +43,11 @@ export function groundClaimSourceRelations(rows: unknown, bundle: AtomSearchBund
 export function createSourceAudit(ctx: PipelineContext, state: Omit<CaseState, "sourceAudit">): SourceAudit {
   const { steps, budget } = ctx;
   const { runAgent } = ctx.input;
-  const bundleSignature = () =>
-    Object.values(state.atomSearchBundle.byAtomKey)
-      .flatMap((items) => items.map((item) => `${item.url}\u0000${item.snippet ?? ""}`))
-      .sort()
-      .join("\u0001");
+  const bundleSignature = () => createHash("sha256")
+    .update(JSON.stringify(Object.values(state.atomSearchBundle.byAtomKey)
+      .flatMap((items) => items.map((item) => [item.url, item.snippet, item.originalText, item.originalScope]))
+      .sort((left, right) => String(left[0]).localeCompare(String(right[0])))))
+    .digest("hex");
   let auditedSignature = bundleSignature();
 
   const apply = () => {

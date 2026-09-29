@@ -41,6 +41,11 @@ export async function pursueEvidence(ctx: PipelineContext, state: CaseState): Pr
   let recheckFactChecker = false;
   let passes = 0;
   const pursuitHops: PursuitHop[] = [];
+  const suggestedQueriesByAtomKey = Object.fromEntries(
+    (state.crossExam?.atoms ?? [])
+      .filter((atom) => typeof atom.query === "string" && atom.query.trim())
+      .map((atom) => [claimAtomKey(atom.atom), atom.query!.trim()])
+  );
 
   while (passes < maxPasses) {
     if (budget.tooLateForEvidencePass()) break;
@@ -59,6 +64,7 @@ export async function pursueEvidence(ctx: PipelineContext, state: CaseState): Pr
       maxRounds: roundsPerPass,
       startRound: (passes - 1) * roundsPerPass + 1,
       seedQueriesByAtomKey,
+      suggestedQueriesByAtomKey,
       needImageOrigin: Boolean(input.lookupImageOrigin),
       shouldStopEarly: () => budget.mustYieldToComposer(),
       hooks: {
@@ -87,6 +93,16 @@ export async function pursueEvidence(ctx: PipelineContext, state: CaseState): Pr
     // 有新证据 → 重判（判词可能翻转）
     try {
       const rechecked = await runAgent("fact_checker", steps, search360Result, atomSearchBundle);
+      const previous = currentVerdicts();
+      const next = Array.isArray(rechecked.output?.subclaimVerdicts)
+        ? rechecked.output.subclaimVerdicts as Array<{ claimAtom?: unknown }>
+        : [];
+      const expected = new Set(previous.map((row) => claimAtomKey(String(row.claimAtom ?? ""))));
+      const received = new Set(next.map((row) => claimAtomKey(String(row.claimAtom ?? ""))));
+      if (rechecked.error || rechecked.status === "failed" || next.length !== expected.size ||
+          received.size !== expected.size || [...expected].some((key) => !received.has(key))) {
+        break;
+      }
       steps.push(rechecked);
       state.factStep = rechecked;
       // The evidence loop just added URLs. Before deciding whether the atom

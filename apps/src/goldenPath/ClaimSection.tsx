@@ -24,7 +24,6 @@ import {
 import { EvidenceBoard } from "./EvidenceBoard";
 import { isPriorRoundLink, knowledgeOriginDay } from "./knowledgeMark";
 import { PromptKitSource } from "./PromptKitSource";
-import { scrubFaceText, tooSimilarTo } from "./scrubFace";
 import type { InvestigationConflictSide } from "../lib/investigation";
 
 /** 快照的 position 允许 other；other 不冒充支持或反驳。 */
@@ -52,27 +51,11 @@ type ClaimSectionProps = {
   onHeaderHover?: (claimId: string | null) => void;
   onHeaderFocus?: (claimId: string | null) => void;
   onExpandedTrace?: (claimId: string | null) => void;
-  asResult?: boolean;
   asWork?: boolean;
-  conclusionText?: string;
 };
 
-function claimPoint(claim: InvestigationClaim, conclusionText = ""): string {
-  if (claim.judgment === "unresolved") return "";
-  const fromFinding = claim.evidence.map((link) => link.finding?.trim() ?? "").find((text) => text.length > 0) ?? "";
-  if (!fromFinding) return "";
-  const cleaned = scrubFaceText(fromFinding);
-  if (!cleaned) return "";
-  if (tooSimilarTo(cleaned, conclusionText)) return "";
-  return cleaned;
-}
-
 function isMixedOverclaim(claim: InvestigationClaim): boolean {
-  return (
-    claim.judgment === "mixed" &&
-    Boolean(claim.boundary?.trim()) &&
-    !claim.evidence.some((link) => link.role === "contradict")
-  );
+  return claim.displayStanding === "说过头了" || claim.displayStanding === "言过其实";
 }
 
 function usesExpandedTrace(): boolean {
@@ -81,7 +64,7 @@ function usesExpandedTrace(): boolean {
 
 /**
  * 知识库标记的样式内联：一是本批 golden-path.css 归收尾分身，二是不借 .gp-chip——
- * 它在调查阶段被 display:none、完成阶段被改写成无边框正文，借来会看不见或不成胶囊。
+ * 它在调查阶段被 display:none，借来会看不见或不成胶囊。
  */
 const knowledgeEntryStyle: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6 };
 const knowledgeMarkStyle: CSSProperties = {
@@ -107,9 +90,7 @@ export function ClaimSection({
   onHeaderHover,
   onHeaderFocus,
   onExpandedTrace,
-  asResult = false,
   asWork = false,
-  conclusionText = "",
   entering = false,
   enterDelayMs = 0,
   enterLive = false,
@@ -118,29 +99,24 @@ export function ClaimSection({
   const copy = gpCopyFor(lang);
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [showRelated, setShowRelated] = useState(false);
-  const previousAsResult = useRef(asResult);
   const previousDefaultExpanded = useRef(defaultExpanded);
   // 卡片通常在 decomposed 时先以 pending 折叠挂载。进入 searching 后，父级会把
   // defaultExpanded 从 false 翻成 true；此时自动展开一次，让刚到的证据真正可见。
   // 用户随后手动收起时 defaultExpanded 不再变化，因此不会被下一拍强行打开。
-  // 进入完成态仍按完成态默认重决议一次，确保结果明细可达。
   useEffect(() => {
-    const enteredResult = asResult && !previousAsResult.current;
     const becameExpandableDuringWork = asWork && defaultExpanded && !previousDefaultExpanded.current;
-    if (enteredResult || becameExpandableDuringWork) setExpanded(defaultExpanded);
-    previousAsResult.current = asResult;
+    if (becameExpandableDuringWork) setExpanded(defaultExpanded);
     previousDefaultExpanded.current = defaultExpanded;
-  }, [asResult, asWork, defaultExpanded]);
+  }, [asWork, defaultExpanded]);
   const claimConflicts = conflicts.filter((c) => c.claimId === claim.id);
   const judgment = claim.judgment;
   const relatedLinks = claim.evidence.filter((link) => link.role === "context-only");
   const hasPrimary = claim.evidence.some((link) => link.role === "support" || link.role === "contradict");
-  const hideRelated = !asResult && !showRelated && hasPrimary;
+  const hideRelated = !showRelated && hasPrimary;
   const visiblePills = hideRelated
     ? claim.evidence.filter((link) => link.role !== "context-only")
     : claim.evidence;
   const showStatusChip = claim.progress === "searching" || claim.progress === "interrupted" || judgment !== null;
-  const point = asResult ? claimPoint(claim, conclusionText) : "";
   const overclaim = isMixedOverclaim(claim) ? claim.boundary!.trim() : "";
   const num = String(index + 1).padStart(2, "0");
   const pillIds = claim.evidence.map((link, idx) => `${link.sourceId}:${link.role}:${idx}`);
@@ -197,7 +173,6 @@ export function ClaimSection({
 
       {expanded ? (
         <div className="gp-claim-detail">
-          {point ? <p className="gp-point">{point}</p> : null}
 
           {overclaim ? (
             <p className="gp-overclaim" data-gp-overclaim>
@@ -243,7 +218,7 @@ export function ClaimSection({
             </div>
           ) : null}
 
-          {relatedLinks.length > 0 && !asResult ? (
+          {relatedLinks.length > 0 ? (
             <button
               type="button"
               className="gp-related-toggle"
@@ -261,7 +236,6 @@ export function ClaimSection({
               <EvidenceBoard
                 claim={claim}
                 sources={sources}
-                asResult={asResult}
                 asWork={asWork}
                 onSelect={(l, s, trigger) => onSelectSource(l, s, claim.id, trigger)}
               />
@@ -278,21 +252,11 @@ export function ClaimSection({
 
           {claimConflicts.map((conflict) => (
             <section key={conflict.id} className="gp-conflict" data-gp-conflict-id={conflict.id}>
-              {asResult ? (
-                <p className="gp-note">
-                  {conflict.reasonStatus === "known" && conflict.reason
-                    ? conflict.reason
-                    : copy.conflictReasonUnknown}
-                </p>
-              ) : (
-                <>
-                  <div className="gp-conflict-head">
-                    <span className="gp-conflict-tag" aria-hidden="true">争点</span>
-                    <h4 className="gp-conflict-label">{copy.conflictLabel}</h4>
-                  </div>
-                  <p className="gp-conflict-summary">{conflict.summary}</p>
-                </>
-              )}
+              <div className="gp-conflict-head">
+                <span className="gp-conflict-tag" aria-hidden="true">争点</span>
+                <h4 className="gp-conflict-label">{copy.conflictLabel}</h4>
+              </div>
+              <p className="gp-conflict-summary">{conflict.summary}</p>
 
               <div className="gp-conflict-sides">
                 {conflict.sides.map((side) => {
@@ -330,55 +294,39 @@ export function ClaimSection({
                 })}
               </div>
 
-              {asResult ? null : (
-                <div className="gp-conflict-reason-wrap">
-                  <strong className="gp-conflict-reason-lead">{copy.conflictReasonKnown}：</strong>
-                  {conflict.reasonStatus === "known" && conflict.reason ? (
-                    <span className="gp-conflict-reason">{conflict.reason}</span>
-                  ) : (
-                    <span className="gp-conflict-reason is-unknown">{copy.conflictReasonUnknown}</span>
-                  )}
-                </div>
-              )}
+              <div className="gp-conflict-reason-wrap">
+                <strong className="gp-conflict-reason-lead">{copy.conflictReasonKnown}：</strong>
+                {conflict.reasonStatus === "known" && conflict.reason ? (
+                  <span className="gp-conflict-reason">{conflict.reason}</span>
+                ) : (
+                  <span className="gp-conflict-reason is-unknown">{copy.conflictReasonUnknown}</span>
+                )}
+              </div>
             </section>
           ))}
 
           {claim.gaps.length > 0 ? (
             <aside className="gp-gaps" aria-label={copy.gapLabel}>
-              {asResult ? (
-                claim.gaps.map((gap) => (
-                  <p key={gap.id} className="gp-note" data-gp-gap-status={gap.status}>
-                    {gap.description}
-                  </p>
-                ))
-              ) : (
-                <>
-                  <div className="gp-gaps-head">
-                    <h4 className="gp-gaps-label">{copy.gapLabel}</h4>
-                    <span className="gp-gaps-count">· {claim.gaps.length}</span>
-                  </div>
-                  {claim.gaps.length > 0 && <p className="gp-gaps-hint">{copy.gapHint}</p>}
-                  <ul className="gp-gaps-list">
-                    {claim.gaps.map((gap) => (
-                      <li key={gap.id} data-gp-gap-status={gap.status} className="gp-gap-item">
-                        <strong className="gp-gap-desc">{gap.description}</strong>
-                        {gap.consequence ? <span className="gp-gap-consequence">{gap.consequence}</span> : null}
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
+              <div className="gp-gaps-head">
+                <h4 className="gp-gaps-label">{copy.gapLabel}</h4>
+                <span className="gp-gaps-count">· {claim.gaps.length}</span>
+              </div>
+              {claim.gaps.length > 0 && <p className="gp-gaps-hint">{copy.gapHint}</p>}
+              <ul className="gp-gaps-list">
+                {claim.gaps.map((gap) => (
+                  <li key={gap.id} data-gp-gap-status={gap.status} className="gp-gap-item">
+                    <strong className="gp-gap-desc">{gap.description}</strong>
+                    {gap.consequence ? <span className="gp-gap-consequence">{gap.consequence}</span> : null}
+                  </li>
+                ))}
+              </ul>
             </aside>
           ) : null}
 
           {asWork || overclaim || claim.judgment === "unresolved" ? null : claim.boundary ? (
             <p className="gp-boundary">
-              {asResult ? claim.boundary : (
-                <>
-                  <strong>{copy.boundaryLabel}</strong>
-                  {claim.boundary}
-                </>
-              )}
+              <strong>{copy.boundaryLabel}</strong>
+              {claim.boundary}
             </p>
           ) : null}
         </div>

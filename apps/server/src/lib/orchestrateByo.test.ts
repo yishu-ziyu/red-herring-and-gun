@@ -195,7 +195,7 @@ describe("接管测试：BYO 存在时主力模型调用收到用户凭证", () 
     expect(step.output.claimAtoms).toEqual(["测试说法"]);
   });
 
-  it("自证 / 改写 / 交叉质询 / 整句审计在 BYO 下都只打用户端点", async () => {
+  it("自证 / 改写 / 冲突意见在 BYO 下都只打用户端点", async () => {
     const { calls } = installFetchStub(() => openAiJsonResponse('{"ok":true}'));
     const adapter = createOrchestrateAdapter({
       env: { ...ENV_KEYS },
@@ -213,13 +213,11 @@ describe("接管测试：BYO 存在时主力模型调用收到用户凭证", () 
     const crossExam = adapter.makeCrossExamCaller(undefined);
     expect(crossExam).toBeTruthy();
     const cross = await crossExam!(input);
-    const audit = await adapter.makeWholeClaimAuditCaller(undefined)(input);
 
     expect(selfProof.model).toBe(`byo:${BYO.modelName}`);
     expect(rewrite.model).toBe(`byo:${BYO.modelName}`);
     expect(cross.model).toBe(`byo:${BYO.modelName}`);
-    expect(audit.model).toBe(`byo:${BYO.modelName}`);
-    expect(calls.length).toBe(4);
+    expect(calls.length).toBe(3);
     expect(calls.every((c) => c.url === `${BYO.baseUrl}/chat/completions`)).toBe(true);
     expect(
       calls.every((c) => c.init.headers.Authorization === `Bearer ${BYO.apiKey}`)

@@ -87,6 +87,13 @@ describe("findLoopTargets", () => {
     expect(targets).toEqual([]);
   });
 
+  it("已有单侧结论但留下具体适用范围缺口 → 进入同一补查入口", () => {
+    const targets = findLoopTargets({ atomsSearched: [atom], verdicts: [
+      { claimAtom: atom, verdict: "true", supportingSources: [{ url: "https://study.test/adult" }], evidenceGaps: ["年龄范围"] },
+    ], claimAtomKeyFn: claimAtomKey });
+    expect(targets).toEqual([{ atom, atomKey: key, trigger: "gap", gap: "年龄范围" }]);
+  });
+
   it("上限 maxTargets 截断，保持原句顺序", () => {
     const atoms = ["原子一", "原子二", "原子三", "原子四"];
     const targets = findLoopTargets({
@@ -141,6 +148,23 @@ describe("mergeSourcesIntoBundle", () => {
     expect(bundle.byAtomKey[key]).toHaveLength(2);
     expect(bundle.aggregate.sources).toHaveLength(2);
     expect(bundle.forAgent.find((f) => f.claimAtom === atom)?.sources).toHaveLength(2);
+  });
+
+  it("同 URL 从摘要升级成正文只计一次新证据，重复正文不再计", async () => {
+    const atom = "原子A";
+    const key = claimAtomKey(atom);
+    const url = "https://gov.cn/a";
+    const bundle = mkBundle([atom], { [key]: [{ url, title: "公告", snippet: "摘要" }] });
+    const searchOne = vi.fn(async () => ({ sources: [{ url, title: "公告", snippet: "摘要", originalText: "公告原文明确说明该命题。" }] }));
+    const options = { claim: atom, bundle, factVerdicts: [{ claimAtom: atom, verdict: "unverified" }],
+      searchOne, claimAtomKeyFn: claimAtomKey, maxRounds: 1 };
+    const first = await runEvidenceLoop(options);
+    expect(first.recheckFactChecker).toBe(true);
+    expect(first.totalNewSources).toBe(1);
+    expect(bundle.byAtomKey[key][0]?.originalText).toContain("公告原文");
+    const second = await runEvidenceLoop(options);
+    expect(second.recheckFactChecker).toBe(false);
+    expect(second.totalNewSources).toBe(0);
   });
 });
 

@@ -78,7 +78,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 describe("方案二的默认使用路径", () => {
   it("reading makes no request; follow-up retains the first round; history restores both dates", async () => {
     const network = installNetwork(); await start();
-    fireEvent.click(screen.getByRole("button", { name: "查看已有依据" }));
+    fireEvent.click(document.querySelector("[data-gp-result-remainder] summary")!);
     expect(network.posts).toHaveLength(1);
     await followUp();
     expect(network.posts).toHaveLength(2);

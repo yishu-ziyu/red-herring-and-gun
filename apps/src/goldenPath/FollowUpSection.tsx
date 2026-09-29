@@ -56,18 +56,10 @@ function clipAsk(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-function hasTwoSidedEvidence(claims: InvestigationClaim[]): boolean {
-  return claims.some(
-    (claim) =>
-      claim.evidence.some((link) => link.role === "support") &&
-      claim.evidence.some((link) => link.role === "contradict"),
-  );
-}
-
 /** 只从真实缺口、未覆盖原句、未解决争点生成；没有就不给建议。 */
 export function generateFollowUpSuggestions(
   _originalClaim = "",
-  boundaries: string[] = [],
+  _boundaries: string[] = [],
   claims: InvestigationClaim[] = [],
   leftoverTexts: string[] = [],
 ): string[] {
@@ -94,21 +86,6 @@ export function generateFollowUpSuggestions(
   for (const claim of claims) {
     if (claim.judgment === "unresolved" && claim.text.trim()) {
       push(`「${clipAsk(claim.text)}」还缺什么才能判断？`);
-    }
-  }
-
-  if (hasTwoSidedEvidence(claims) && suggestions.length === 0) {
-    push("支持与反驳双方的核心分歧究竟在何处？");
-  }
-
-  for (const claim of claims) {
-    const boundary = scrubBoundaryText(claim.boundary ?? "");
-    if (claim.judgment !== "unresolved" && boundary) push(`适用边界是「${clipAsk(boundary)}」，还要再查哪一段？`);
-  }
-
-  if (suggestions.length === 0) {
-    for (const boundary of boundaries.map(scrubBoundaryText)) {
-      if (boundary.trim()) push(`适用边界是「${clipAsk(boundary)}」，还要再查哪一段？`);
     }
   }
 
@@ -182,9 +159,9 @@ export function FollowUpSection({
               <path d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 0 1-4.083-.98L2 17l1.138-3.415C2.422 12.484 2 11.282 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </span>
-          <h3 className="gp-followup-title">基于当前缺口继续查证</h3>
+          <h3 className="gp-followup-title">{suggestions.length ? "基于当前缺口继续查证" : "继续追问"}</h3>
         </div>
-        <p className="gp-followup-subtitle">点一个推荐问题，它会填入下方输入框；确认后再发出追查。本轮结果会保留，补查仍在同一份调查里。</p>
+        <p className="gp-followup-subtitle">{suggestions.length ? "点一个推荐问题，它会填入下方输入框；确认后再发出追查。本轮结果会保留。" : "有新的问题可以继续查，本轮结果会保留。"}</p>
       </div>
 
       {suggestions.length > 0 ? (

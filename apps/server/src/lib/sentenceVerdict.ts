@@ -8,9 +8,9 @@
 import { decideSentenceVerdict, type PartRole, type PartStanding, type SentencePart, type SentenceVerdict } from "../domain/verdict.js";
 import { listAtomsForSearch } from "./atomSearch.js";
 import { claimAtomKey } from "./claimAtom/index.js";
-import { hasDirectionalBoundHttpUrl } from "./citationBinding.js";
+import { hasDirectionalBoundHttpUrl, normalizeReportCitations } from "./citationBinding.js";
 import { directAnswer } from "./publicCopy.js";
-import { buildScopedEvidence, clipSentence } from "./wholeClaimAudit/scopedEvidence.js";
+import { buildScopedEvidence, clipSentence } from "./scopedEvidence.js";
 
 type Report = Record<string, unknown>;
 
@@ -70,6 +70,8 @@ export function standingOf(verdict: Report | undefined): PartStanding {
   if (v === "exaggerated") return bound("exaggerated") || bound("partial") ? "refuted" : "unresolved";
   if (v === "partial" || v === "mixed" || v === "mixed_misleading") {
     if (!bound(v)) return "unresolved";
+    // 没有任何支持原文，就没有可保留的成立部分；反驳某个要素不自动证明其余部分。
+    if (records(verdict.supportingSources).length === 0 && records(verdict.contradictingSources).length > 0) return "refuted";
     // 部分成立只在有来源明确反驳了原句里某个具体要素（数字、日期、范围、主体、因果关系），并且逐字引出那个要素时才算。
     // 用词不精确、缺细节、来源补充的适用条件（仅境内航班、需办手续、从某日起）、只是「不是 100%」都不反驳原句：
     // 命题按日常意思成立（基准 v1：只有支持、没有反驳的真话被判成有真有假 / 部分成立）。
@@ -89,6 +91,23 @@ export function standingOf(verdict: Report | undefined): PartStanding {
       : "unresolved";
   }
   return "unresolved";
+}
+
+/** Citation availability is settled before the writer; a claim without directional evidence cannot keep a hard label. */
+export function settleClaimVerdicts(report: Report): void {
+  if (!Array.isArray(report.subclaimVerdicts)) return;
+  report.subclaimVerdicts = records(report.subclaimVerdicts).map((verdict) => {
+    const standing = standingOf(verdict);
+    if (standing === "refuted" && ["partial", "mixed", "mixed_misleading"].includes(String(verdict.verdict))) {
+      return { ...verdict, verdict: "false", evidence: "" };
+    }
+    if (String(verdict.verdict ?? "") === "unverified" || standing !== "unresolved") return verdict;
+    const oldGaps = Array.isArray(verdict.evidenceGaps) ? verdict.evidenceGaps.filter((gap): gap is string => typeof gap === "string") : [];
+    const gap = "目前缺少仍可引用、能直接支持或反驳该命题的原文。";
+    return { ...verdict, verdict: "unverified", evidence: "", boundary: "",
+      evidenceGaps: oldGaps.includes(gap) ? oldGaps : [gap, ...oldGaps].slice(0, 3) };
+  });
+  normalizeReportCitations(report);
 }
 
 const ROLES: Record<string, PartRole> = { main: "main", premise: "premise", background: "background" };

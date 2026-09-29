@@ -3,7 +3,7 @@
  * 新增 priorCaseId / isFollowUp 两列；迁移幂等（重复启动不炸），老行保持 NULL / 0。
  *
  * 3 号迁移（证据库 knowledge_entries，契约 docs/evals/2026-09-12-evidence-base.md）
- * 落地后，这里的版本号断言跟到 [1, 2, 3]：迁移只增不改。
+ * 落地后，这里的版本号断言跟到 [1, 2, 3, 4]：迁移只增不改。
  *
  * 用真库文件跑，不打桩：先手工造一个 v1 时代的库，再用生产迁移打开它。
  */
@@ -85,7 +85,7 @@ describe("runs 表追问两列迁移", () => {
     const db = openDatabase(dbPath)!;
     expect(db).not.toBeNull();
     expect(columnNames(db)).toEqual(expect.arrayContaining(["priorCaseId", "isFollowUp"]));
-    expect(schemaVersionRows(db).map((row) => row.version)).toEqual([1, 2, 3]);
+    expect(schemaVersionRows(db).map((row) => row.version)).toEqual([1, 2, 3, 4]);
 
     const runs = createRunStore(db);
     const created = runs.create({ runId: "run-new", caseId: "case-new", ownerHash: "owner-a" });
@@ -102,7 +102,7 @@ describe("runs 表追问两列迁移", () => {
   it("老库补列：老行保持 NULL / 0，追问行写得进、读得出", () => {
     writeLegacyDatabase(dbPath);
     const db = openDatabase(dbPath)!;
-    expect(schemaVersionRows(db).map((row) => row.version)).toEqual([1, 2, 3]);
+    expect(schemaVersionRows(db).map((row) => row.version)).toEqual([1, 2, 3, 4]);
     expect(columnNames(db)).toEqual(expect.arrayContaining(["priorCaseId", "isFollowUp"]));
 
     const runs = createRunStore(db);
@@ -129,7 +129,7 @@ describe("runs 表追问两列迁移", () => {
 
     const second = openDatabase(dbPath)!;
     expect(columnNames(second)).toEqual(expect.arrayContaining(["priorCaseId", "isFollowUp"]));
-    expect(schemaVersionRows(second).map((row) => row.version)).toEqual([1, 2, 3]);
+    expect(schemaVersionRows(second).map((row) => row.version)).toEqual([1, 2, 3, 4]);
     const row = second.prepare("SELECT priorCaseId, isFollowUp FROM runs WHERE runId = ?").get("run-a") as {
       priorCaseId: string | null;
       isFollowUp: number;
@@ -146,7 +146,7 @@ describe("runs 表追问两列迁移", () => {
 
     const reopened = openDatabase(dbPath)!;
     expect(columnNames(reopened)).toEqual(expect.arrayContaining(["priorCaseId", "isFollowUp"]));
-    expect(schemaVersionRows(reopened).map((row) => row.version)).toEqual([1, 2, 3]);
+    expect(schemaVersionRows(reopened).map((row) => row.version)).toEqual([1, 2, 3, 4]);
     const v2 = reopened
       .prepare("SELECT COUNT(*) AS n FROM schema_version WHERE version = 2")
       .get() as { n: number };

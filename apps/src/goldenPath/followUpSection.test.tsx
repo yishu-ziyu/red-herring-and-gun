@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 describe("FollowUpSection 追问组件", () => {
-  it("E2: 渲染追问输入框与推荐追问建议胶囊", () => {
+  it("E2: 只有适用边界时保留自由追问，不虚构推荐追问", () => {
     render(
       <FollowUpSection
         directAnswer="现有证据不支持隔夜菜致癌。"
@@ -27,8 +27,7 @@ describe("FollowUpSection 追问组件", () => {
     expect(screen.getByRole("button", { name: "发送追问" })).toBeInTheDocument();
 
     const chips = screen.getAllByRole("button").filter((btn) => btn.className.includes("gp-followup-chip"));
-    expect(chips.length).toBeGreaterThan(0);
-    expect(chips[0]?.textContent).toMatch(/蔬菜|冷藏|加热|限量/);
+    expect(chips).toHaveLength(0);
   });
 
   it("E3: 追问输入框支持键入并通过点击追问按钮触发回调", () => {
@@ -139,7 +138,7 @@ describe("InvestigationCanvas 结论页整合", () => {
     snap.claims = snap.claims.map((claim) => ({ ...claim, text: "存放食物中的成分变化是否构成确定风险" }));
     render(<InvestigationCanvas snapshot={snap} live={false} onReverify={() => {}} onBackHome={() => {}} />);
     const suggestions = [...document.querySelectorAll(".gp-followup-chip")].map((node) => node.textContent ?? "");
-    expect(suggestions.length).toBeGreaterThan(0);
+    expect(suggestions).toHaveLength(0);
     expect(suggestions.join("\n")).not.toMatch(/https?:|weibo|原句里还没查|「真的假的」/);
   });
 
@@ -165,8 +164,9 @@ describe("InvestigationCanvas 结论页整合", () => {
     // 追问区存在
     expect(screen.getByRole("region", { name: "针对结论追问" })).toBeInTheDocument();
 
-    // 推荐追问存在
+    // 该 fixture 没有未解决缺口，不凭边界自动推荐追问。
     const chips = screen.getAllByRole("button").filter((btn) => btn.className.includes("gp-followup-chip"));
-    expect(chips.length).toBeGreaterThan(0);
+    expect(chips).toHaveLength(0);
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 });
