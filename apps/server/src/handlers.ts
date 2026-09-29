@@ -33,6 +33,7 @@ export { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot.js";
  */
 export const FOLLOW_UP_CASE_MISSING_MESSAGE = "追问关联的案件不存在或无权访问";
 
+import { toPublicStreamEvent } from "./http/publicStream.js";
 export { toFriendlyError, toPublicStreamEvent, type FriendlyErrorInfo } from "./http/publicStream.js";
 
 
@@ -143,10 +144,10 @@ export function createHandlers(env: Record<string, string>) {
     const after = Number.isFinite(afterRaw) && afterRaw > 0 ? Math.floor(afterRaw) : 0;
 
     openSse(res);
-    // 接回流直接写总线原始事件，不经 toPublicStreamEvent（与首次提交的流不同，见 rewrite-issues R11）。
+    // 接回流与重复提交的订阅同首次提交的流一样，每帧先过公开清洗再写出（rewrite-issues R11）。
     const write = (event: object) => {
       try {
-        res.write(sseFrame(event));
+        res.write(sseFrame(toPublicStreamEvent(event)));
       } catch {
         /* 客户端已断开，由 close 收尾 */
       }
@@ -223,6 +224,11 @@ export function createHandlers(env: Record<string, string>) {
     lateGraceMs: PIPELINE_LATE_GRACE_MS,
   };
 
+  /** 建 run 之前的提前拒绝：退还额度闸发的名额（没有票据时什么也不做；重复退还由 settled 挡住）。 */
+  function releaseEarlyTicket(req: any) {
+    if (req.checkTicket) releaseFreeCheck(req.checkTicket);
+  }
+
   async function orchestrateStreamHandler(req: any, res: any, next: any) {
     if (req.method !== "POST") return next();
 
@@ -230,25 +236,27 @@ export function createHandlers(env: Record<string, string>) {
     try {
       payload = await readJson(req);
     } catch {
+      releaseEarlyTicket(req);
       return sendJson(res, 400, { message: "无法解析请求 JSON" });
     }
 
     const claim = payload.claim;
     if (!claim || typeof claim !== "string") {
+      releaseEarlyTicket(req);
       return sendJson(res, 400, { message: "缺少 claim 参数" });
     }
     // BYO key 接管：请求携带合法 byoKey 时，调查管线主力模型调用与命中家的检索改用请求内凭证；
     // 未携带时 byo=undefined，行为与现状零差异。携带但畸形 → 400 拒绝（先退还本次核查名额）。
     const byoParsed = await parseByoConfig(payload.byoKey);
     if (!byoParsed.ok) {
-      const earlyTicket = req.checkTicket;
-      if (earlyTicket) releaseFreeCheck(earlyTicket);
+      releaseEarlyTicket(req);
       return sendJson(res, 400, { message: byoParsed.error });
     }
     const byo = byoParsed.config;
     const modelChoice = payload.modelChoice;
     const mcValidation = validateModelChoice(env, modelChoice);
     if (!mcValidation.ok) {
+      releaseEarlyTicket(req);
       return sendJson(res, 400, { message: mcValidation.error || "modelChoice 非法" });
     }
     const ticket = req.checkTicket;
