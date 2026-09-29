@@ -6,7 +6,7 @@
 
 ```text
 服务端 golden   同一份录音 → 真实服务进程（HTTP + SSE + SQLite + 落盘）→ 归一化 → 逐项比对      20 个场景
-界面 golden     服务端录下的 SSE 帧 → 真实 <App/>（jsdom，假时钟）→ 每帧 DOM + localStorage + 请求   8 个场景
+界面 golden     服务端录下的 SSE 帧 → 真实 <App/>（jsdom，假时钟）→ 每帧 DOM + localStorage + 请求   8 个场景 + 4 条交互流程
 现有测试        apps/ 152 个测试文件 1,476 条（单元 + 组件），按模块守行为细节                          照跑
 ```
 
@@ -21,6 +21,7 @@
 | 服务端：基线代码对同一录音回放两次（虚拟时钟开） | 20/20 逐项相同 |
 | 服务端：虚拟时钟关（外部回复瞬间到达），回放两次 | 20/20 逐项相同 |
 | 界面：同一串帧驱动三次 | 8/8 逐项相同 |
+| 界面交互流程：同一串帧与操作驱动三次（2026-09-29 补） | 4/4 逐项相同 |
 
 两种服务端变体都保留：虚拟时钟开的变体更接近真实运行走过的路径（按剩余时间做的取舍与真实运行一致）；关的变体对「请求发出时序」不敏感。重写后两种都要通过；只有一种不过时，先查是不是时间预算的临界取舍被新代码的调用时序推过了线。
 
@@ -51,7 +52,16 @@
 | g19-mcp | 错误 | 无录音 | MCP 信息、握手、列表；调用恒返回 HTTP 404（R1） | R1 R2 |
 | g20-bad-requests | 错误 | 无录音 | 缺 claim、modelChoice 非法、追问 caseId 不存在、未知 run、匿名写案件、分享不存在、反馈 | 6.3 |
 
-界面 golden 覆盖 g01–g06、g13、g15（纯文字首轮）。g07（截图上传）、g08（追问交互）、g09（登录）在界面层由现有组件测试守（`App.progressiveThread`、`App.followUpLink`、`materialAndAccount`、`inputMedia` 等），后续切片若动到这些交互再补界面 golden。
+界面 golden 覆盖 g01–g06、g13、g15（纯文字首轮）。Slice D 要动前端产品壳，动手前补了 4 条交互流程（基线 `ui-flows-base`）：
+
+| 流程 | 用到的服务端帧 | 走的路径 |
+|---|---|---|
+| flow-g08-followup | g08 三轮 | 访客首轮 → 追问两次 → 回看首轮 → 返回当前轮 → 新调查（输入框预填原句） |
+| flow-g11-resume | g11 接回流 | 本机留着进行中 run 的座标 → 打开页面自动接回 → 收到终态 |
+| flow-local-history | g01 完成帧 | 本机知识库有一条旧调查 → 打开历史 → 打开条目（零调查请求）→ 新调查 |
+| flow-g09-account | g09 首轮与追问 | 已登录 → 调查 → 服务端存档拿到 caseId → 带 caseId 追问 → 再存档 → 打开账号菜单 → 退出 |
+
+g07（截图上传）仍由组件测试守（`inputMedia` 等）。界面 golden 读的是服务端原始帧（服务端分配的 caseId 每次回放都不同），所以前端切片一律用 `GOLDEN_FRAMES=base` 比对，不用新服务端的回放。
 
 ## 4. 回放与真实运行的差距（如实记录）
 
@@ -77,8 +87,9 @@ cd apps
 TSX=server/node_modules/.bin/tsx
 $TSX golden/golden.ts replay after            && $TSX golden/golden.ts compare base after
 RHG_NET_VCLOCK=0 $TSX golden/golden.ts replay after-nv && $TSX golden/golden.ts compare base-nv after-nv
-GOLDEN_UI=compare GOLDEN_FRAMES=base GOLDEN_UI_LABEL=ui-after GOLDEN_UI_BASE=ui-base npx vitest run golden/ui.golden.test.tsx
+GOLDEN_UI=compare GOLDEN_FRAMES=base GOLDEN_UI_LABEL=ui-after GOLDEN_UI_BASE=ui-base npx vitest run golden/ui.golden.test.tsx -t "^界面 golden（"
+GOLDEN_UI=compare GOLDEN_FRAMES=base GOLDEN_UI_LABEL=ui-flows-after GOLDEN_UI_BASE=ui-flows-base npx vitest run golden/ui.golden.test.tsx -t "flow-"
 npm test && npm run build && (cd server && npx tsc --noEmit)
 ```
 
-基线标签：服务端 `base`、`base-nv`，界面 `ui-base`。基线只在基线代码上生成；重写中不重录、不改基线。
+基线标签：服务端 `base`、`base-nv`，界面 `ui-base`、`ui-flows-base`。基线只在基线代码上生成；重写中不重录、不改基线。
