@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  boundTinyRumorVerdict,
   buildAtomSearchQueries,
   enRumorQueries,
   isOffTopicSource,
@@ -114,15 +113,6 @@ describe("atomSearchQuery", () => {
       },
     ]);
     expect((merged.sources as Array<{ url: string }>)[0].url).toBe("https://www.piyao.org.cn/hefei");
-  });
-
-  it("对题辟谣且无对题支持时把短谣收成不能信", () => {
-    expect(
-      boundTinyRumorVerdict("电瓶车被偷送到非洲", [
-        { title: "合肥警方：P图编造电瓶车被偷至非洲", snippet: "不实 辟谣", url: "https://www.piyao.org.cn/x" },
-        { title: "用OpenClaw登录微信被刷走600块不实", snippet: "今日辟谣", url: "https://gov.example/jrpy" },
-      ])
-    ).toBe("false");
   });
 
   it("截图句至少一路追原图出处，且带官方辟谣站点直查", () => {

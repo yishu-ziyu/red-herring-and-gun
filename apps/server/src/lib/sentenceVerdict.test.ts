@@ -1,42 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySentenceVerdict, bindDebunksToPrimaryClaim, listAssessedClaims } from "./sentenceVerdict";
-
-const ATOM = "常穿黑色内衣易患癌";
-const DEBUNK = { url: "https://piyao.example/black", title: "常穿黑色内衣易患癌？谣言", snippet: "没有科学依据" };
-
-function primaryOf(report: Record<string, unknown>) {
-  const claims = listAssessedClaims(report, { claimAtoms: [ATOM], claimAtomTypes: [{ text: ATOM, verifiable: true, type: "causal" }] });
-  return claims.find((c) => c.role === "main");
-}
-
-describe("关键词辟谣只补模型判定的空白", () => {
-  it("模型没判：挂上辟谣，主要主张站不住", () => {
-    const report = { subclaimVerdicts: [{ claimAtom: ATOM, verdict: "unverified", notJudgedByModel: true }] };
-    const primary = primaryOf(report);
-    expect(bindDebunksToPrimaryClaim(report, primary, [DEBUNK])).toBe(true);
-    expect(primary?.standing).toBe("refuted");
-  });
-
-  // 2026-09-28 改后实测 RUMOR-010：模型判了站不住，关系审核失败把它降成 unverified。
-  it("模型判了站不住但被降级：挂上辟谣", () => {
-    const report = { subclaimVerdicts: [{ claimAtom: ATOM, verdict: "unverified", demotedFrom: "false", sourcesRelatedOnly: true }] };
-    const primary = primaryOf(report);
-    expect(bindDebunksToPrimaryClaim(report, primary, [DEBUNK])).toBe(true);
-    const entry = (report.subclaimVerdicts as Array<Record<string, unknown>>)[0]!;
-    expect(entry.verdict).toBe("false");
-    expect(entry.demotedFrom).toBeUndefined();
-  });
-
-  it("模型明确判了查不清：不用关键词覆盖", () => {
-    const report = { subclaimVerdicts: [{ claimAtom: ATOM, verdict: "unverified" }] };
-    expect(bindDebunksToPrimaryClaim(report, primaryOf(report), [DEBUNK])).toBe(false);
-  });
-
-  it("模型判了成立却被降级：方向与辟谣相反，不绑定", () => {
-    const report = { subclaimVerdicts: [{ claimAtom: ATOM, verdict: "unverified", demotedFrom: "true" }] };
-    expect(bindDebunksToPrimaryClaim(report, primaryOf(report), [DEBUNK])).toBe(false);
-  });
-});
+import { applySentenceVerdict, listAssessedClaims } from "./sentenceVerdict";
 
 type Src = { url: string; title: string; snippet: string };
 const src = (n: string): Src => ({ url: `https://example.gov.cn/${n}`, title: n, snippet: n });
@@ -71,21 +34,28 @@ describe("每部分的角色与状态（listAssessedClaims）", () => {
     expect(assess(report, [typed("A")]).map((c) => c.standing)).toEqual(["refuted"]);
   });
 
-  it("部分成立要有一截被反驳的出处；来源只是补充适用条件、没有任何反驳（基准 v1：NEW-401/403/406/407/411 形状）按被证实算", () => {
-    const report = {
-      subclaimVerdicts: [
-        { claimAtom: "A", verdict: "partial", supportingSources: [src("a")], contradictingSources: [] },
-        { claimAtom: "B", verdict: "partial", supportingSources: [src("b1")], contradictingSources: [src("b2")] },
-        { claimAtom: "C", verdict: "partial", supportingSources: [], contradictingSources: [src("c")] },
-        { claimAtom: "D", verdict: "partial", supportingSources: [] },
-      ],
-    };
-    expect(assess(report, ["A", "B", "C", "D"].map((t) => typed(t))).map((c) => c.standing)).toEqual([
-      "supported",
-      "partial",
-      "partial",
-      "unresolved",
-    ]);
+  it("部分成立（基准 v1：NEW-401/403/405/411 形状）：只有来源明确反驳了原句里某个具体要素、并逐字引出那个要素才算；其余一律按被证实", () => {
+    const atom = "国家现在每个孩子每年发3600元育儿补贴，一直发到3岁";
+    const supporting = [src("s")];
+    const contradicting = [src("c")];
+    const verdicts = (extra: Record<string, unknown>) => ({
+      subclaimVerdicts: [{ claimAtom: atom, verdict: "partial", supportingSources: supporting, ...extra }],
+    });
+    const standing = (report: Record<string, unknown>) => assess(report, [typed(atom)])[0]?.standing;
+    // 只有支持出处：补充的适用条件（户籍、审核、从某日起）不反驳原句 → 被证实
+    expect(standing(verdicts({ contradictingSources: [] }))).toBe("supported");
+    // 有反驳出处，但没有说被反驳的是哪个要素 → 被证实（不是部分成立）
+    expect(standing(verdicts({ contradictingSources: contradicting }))).toBe("supported");
+    // 说了要素，但要素不是原句里的话（模型自己编的说法）→ 被证实
+    expect(standing(verdicts({ contradictingSources: contradicting, contradictedElement: "补贴金额每年5000元" }))).toBe("supported");
+    // 逐字引用原句里的要素 + 有反驳出处 → 部分成立
+    expect(standing(verdicts({ contradictingSources: contradicting, contradictedElement: "一直发到3岁" }))).toBe("partial");
+    // 只有反驳、没有任何支持，也没有要素 → 没查清
+    expect(
+      standing({ subclaimVerdicts: [{ claimAtom: atom, verdict: "partial", contradictingSources: contradicting }] })
+    ).toBe("unresolved");
+    // 引用了要素却没有反驳出处 → 被证实（没有来源反驳它）
+    expect(standing(verdicts({ contradictedElement: "一直发到3岁" }))).toBe("supported");
   });
 
   it("规则2：夸大只有反驳方向的出处（没有支持方向）也算被反驳；没有任何出处仍是没查清", () => {
@@ -241,7 +211,14 @@ describe("整句结论写回：首句、徽章类型、正文都读同一个决�
   });
 
   it("部分成立：主要主张只成立一部分", () => {
-    const partial = { claimAtom: "A", verdict: "partial", evidence: "只在小范围内成立[1]，超出的部分被否认[2]。", supportingSources: [src("a")], contradictingSources: [src("a2")] };
+    const partial = {
+      claimAtom: "A",
+      verdict: "partial",
+      evidence: "只在小范围内成立[1]，超出的部分被否认[2]。",
+      contradictedElement: "A",
+      supportingSources: [src("a")],
+      contradictingSources: [src("a2")],
+    };
     const report = run({ verdictType: "true", conclusion: "x", subclaimVerdicts: [partial] }, [typed("A", { role: "main" })]);
     expect(report.verdictType).toBe("partial");
     expect(String(report.conclusion)).toMatch(/^这句话只在有限范围内成立。/);

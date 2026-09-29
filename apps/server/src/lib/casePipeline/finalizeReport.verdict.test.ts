@@ -140,17 +140,27 @@ describe("被删关卡当年防的失败（现在由整句规则表 + 收尾链�
     expect(finalReport.verdictType).toBe("unverified");
   });
 
-  it("短谣通道：模型没判，检索里有对题的辟谣 → 不能信（不是被收成证据不足）", async () => {
+  it("辟谣材料不绕过规则表（基准 v1 的 NEW-406）：模型没有判这一条时，检索里标题带「辟谣」的材料不能直接把整句判成不能信", async () => {
+    // 原先的短谣通道会把检索里的「辟谣」标题挂成反驳出处、整句返回 false（「检索到针对这句话的辟谣材料，未见对题的支持材料」），
+    // 即使这些材料说的是别的事。辟谣要走逐条的关系判断：模型没判、没有通过关系审核的出处，这一条只能是没查清。
+    const claim = "从9月1日起，AI生成的内容必须加标识";
+    const debunks = [
+      { url: "https://piyao.example/ai1", title: "AI生成的内容被造谣：从9月1日起要加标识说法不实？辟谣", snippet: "辟谣 不实 内容加标识" },
+      { url: "https://piyao.example/ai2", title: "网传AI生成内容加标识是谣言 辟谣", snippet: "谣言 AI生成 标识" },
+    ];
+    const { finalReport } = await finalizeReport(
+      caseInput({ claim, atoms: [{ text: claim, role: "main" }], verdicts: [], draft: { verdictType: "unverified" }, searchSources: debunks }),
+    );
+    expect(finalReport.verdictType).toBe("unverified");
+    expect(String(finalReport.conclusion)).not.toContain("检索到针对这句话的辟谣材料");
+  });
+
+  it("辟谣走正常路径才算数：模型逐条判了站不住并给了反驳出处 → 不能信", async () => {
     const claim = "常穿黑色内衣易患癌";
     const debunk = { url: "https://piyao.example/black", title: "常穿黑色内衣易患癌？谣言", snippet: "没有科学依据，这是谣言" };
+    const judged = { claimAtom: claim, verdict: "false", evidence: "辟谣平台明确这是谣言[1]。", contradictingSources: [debunk] };
     const { finalReport } = await finalizeReport(
-      caseInput({
-        claim,
-        atoms: [{ text: claim, role: "main" }],
-        verdicts: [],
-        draft: { verdictType: "unverified" },
-        searchSources: [debunk],
-      }),
+      caseInput({ claim, atoms: [{ text: claim, role: "main" }], verdicts: [judged], draft: { verdictType: "unverified" }, searchSources: [debunk] }),
     );
     expect(finalReport.verdictType).toBe("false");
   });
@@ -176,6 +186,39 @@ describe("被删关卡当年防的失败（现在由整句规则表 + 收尾链�
   });
 });
 
+describe("部分支持按要素严格判（基准 v1：NEW-401 / 403 / 405 / 411 的模型判词形状）", () => {
+  // 三条都是真话：模型给了 partial，边界里写的是并不反驳原句的适用条件或「不是 100%」，来源全是支持方向。
+  const fixtures = [
+    { name: "NEW-403", atom: "没有3C标识的充电宝不让带上飞机了", boundary: "仅适用于境内航班；国际航班不受此限制" },
+    { name: "NEW-405", atom: "打HPV疫苗能预防宫颈癌", boundary: "预防不是100%；接种后仍需按建议筛查" },
+    { name: "NEW-401", atom: "国家现在每个孩子每年发3600元育儿补贴，一直发到3岁", boundary: "需本地户籍并经审核；政策从2025年1月1日起实施" },
+  ];
+  for (const f of fixtures) {
+    it(`${f.name}：partial 但没有来源反驳原句里的任何要素 → 被证实，整句能信`, async () => {
+      const verdict = { claimAtom: f.atom, verdict: "partial", evidence: "权威来源明确证实[1]。", boundary: f.boundary, supportingSources: [src(f.name)] };
+      const { finalReport } = await finalizeReport(
+        caseInput({ atoms: [{ text: f.atom, role: "main" }], verdicts: [verdict], draft: { verdictType: "mixed_misleading" } }),
+      );
+      expect(finalReport.verdictType).toBe("true");
+      expect(String(finalReport.conclusion)).toMatch(/^公开材料撑得住这条说法。/);
+    });
+  }
+
+  it("来源明确反驳了原句里的数字，并逐字引出：仍是部分成立", async () => {
+    const atom = "国家现在每个孩子每年发3600元育儿补贴";
+    const verdict = {
+      claimAtom: atom,
+      verdict: "partial",
+      evidence: "补贴制度存在[1]，但金额是每年3600元只适用于3岁以下[2]。",
+      contradictedElement: "每年发3600元",
+      supportingSources: [src("s")],
+      contradictingSources: [src("c")],
+    };
+    const { finalReport } = await finalizeReport(caseInput({ atoms: [{ text: atom, role: "main" }], verdicts: [verdict] }));
+    expect(finalReport.verdictType).toBe("partial");
+  });
+});
+
 describe("首句、徽章、正文、快照读同一个结果", () => {
   const cases: Array<{ name: string; atoms: AtomSpec[]; verdicts: Array<Record<string, unknown>>; type: string; face: string; judgment: string; lead: string }> = [
     { name: "能信", atoms: [{ text: "甲", role: "main" }], verdicts: [TRUE_A()], type: "true", face: "能信", judgment: "supported", lead: "公开材料撑得住这条说法。" },
@@ -192,7 +235,9 @@ describe("首句、徽章、正文、快照读同一个结果", () => {
     {
       name: "部分成立",
       atoms: [{ text: "甲", role: "main" }],
-      verdicts: [{ claimAtom: "甲", verdict: "partial", evidence: "只在小范围成立[1]，超出的部分被否认[2]。", supportingSources: [src("p")], contradictingSources: [src("p2")] }],
+      verdicts: [
+        { claimAtom: "甲", verdict: "partial", evidence: "只在小范围成立[1]，超出的部分被否认[2]。", contradictedElement: "甲", supportingSources: [src("p")], contradictingSources: [src("p2")] },
+      ],
       type: "partial",
       face: "部分成立",
       judgment: "mixed",

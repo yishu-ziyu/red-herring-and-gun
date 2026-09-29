@@ -119,6 +119,9 @@ export function mergeSubclaimVerdicts(
       verdict: guarded.verdict,
       evidence: compactText(bound.text, 240),
       boundary: compactText(rec.boundary, 200),
+      ...(typeof rec.contradictedElement === "string" && rec.contradictedElement.trim()
+        ? { contradictedElement: compactText(rec.contradictedElement.trim(), 120) }
+        : {}),
       supportingSources,
       contradictingSources,
       evidenceGaps: guarded.evidenceGaps,

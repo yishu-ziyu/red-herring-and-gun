@@ -13,7 +13,6 @@ import { directAnswer } from "./publicCopy.js";
 import { buildScopedEvidence, clipSentence } from "./wholeClaimAudit/scopedEvidence.js";
 
 type Report = Record<string, unknown>;
-type Source = { url?: unknown; title?: unknown; snippet?: unknown };
 
 export type AssessedPart = SentencePart;
 
@@ -44,6 +43,13 @@ function findVerdict(report: Report, atom: string): Report | undefined {
   return records(report.subclaimVerdicts).find((v) => claimAtomKey(String(v.claimAtom ?? "")) === key);
 }
 
+/** 被反驳的要素必须是原句里的话（空白不计）；模型自己编的说法不算。 */
+function quotesClaim(element: unknown, claimAtom: unknown): boolean {
+  const quote = typeof element === "string" ? element.replace(/\s+/g, "") : "";
+  const atom = typeof claimAtom === "string" ? claimAtom.replace(/\s+/g, "") : "";
+  return quote.length > 0 && atom.includes(quote);
+}
+
 /**
  * 判词 → 这一部分的状态。只认方向一致、能点开的出处；
  * 夸大（评分规则 2：把个别现象说成普遍）按被反驳算，属实的一截在正文里另说。
@@ -64,9 +70,15 @@ export function standingOf(verdict: Report | undefined): PartStanding {
   if (v === "exaggerated") return bound("exaggerated") || bound("partial") ? "refuted" : "unresolved";
   if (v === "partial" || v === "mixed" || v === "mixed_misleading") {
     if (!bound(v)) return "unresolved";
-    // 部分成立要有一截被反驳的出处。来源只是补充适用条件（仅境内航班、需办手续、从某日起）、没有任何反驳时，
-    // 命题按日常意思成立（基准 v1：只有支持、0 条反驳的真话被判成有真有假 / 部分成立）。
-    return records(verdict.contradictingSources).length === 0 && verdict.sourcesRelatedOnly !== true ? "supported" : "partial";
+    // 部分成立只在有来源明确反驳了原句里某个具体要素（数字、日期、范围、主体、因果关系），并且逐字引出那个要素时才算。
+    // 用词不精确、缺细节、来源补充的适用条件（仅境内航班、需办手续、从某日起）、只是「不是 100%」都不反驳原句：
+    // 命题按日常意思成立（基准 v1：只有支持、没有反驳的真话被判成有真有假 / 部分成立）。
+    const contradicted =
+      records(verdict.contradictingSources).length > 0 &&
+      verdict.sourcesRelatedOnly !== true &&
+      quotesClaim(verdict.contradictedElement, verdict.claimAtom);
+    if (contradicted) return "partial";
+    return records(verdict.supportingSources).length > 0 ? "supported" : "unresolved";
   }
   if (v === "disputed") {
     // 有争议要两边都有能点开的出处；只有一边是没查清（一边的出处撑不起「权威互相矛盾」）。
@@ -108,45 +120,6 @@ export function listAssessedClaims(report: Report, input: SentenceVerdictInput):
       ...(contentTrue && issuers[index] && standing === "refuted" ? { issuerMisattributed: true } : {}),
     };
   });
-}
-
-/**
- * 证据关系的降级手段：没有模型判定时，检索里明确辟谣这句话、又没有对题支持的材料，
- * 作为主要主张的反驳出处（标明依据来自标题摘要，不是逐篇审核）。
- * 只在模型没有判定主要主张时使用（兜底报告里的「模型未覆盖」）。
- */
-export function bindDebunksToPrimaryClaim(report: Report, primary: AssessedPart | undefined, debunks: readonly Source[]): boolean {
-  if (!primary || primary.standing !== "unresolved") return false;
-  // 模型明确判了「查不清」就不用关键词覆盖它。只补两种空白：模型根本没判；
-  // 模型判了站不住，但出处没通过关系审核或绑定而被降级（方向与辟谣材料一致）。
-  const existing = findVerdict(report, primary.text);
-  if (existing && existing.notJudgedByModel !== true && existing.demotedFrom !== "false") return false;
-  const links = debunks
-    .filter((s) => typeof s.url === "string" && /^https?:\/\//i.test(s.url))
-    .slice(0, 5)
-    .map((s) => ({ url: String(s.url), title: String(s.title ?? ""), snippet: String(s.snippet ?? "") }));
-  if (links.length === 0) return false;
-  const verdicts = records(report.subclaimVerdicts);
-  let entry = findVerdict(report, primary.text);
-  if (!entry) {
-    entry = { claimAtom: primary.text };
-    verdicts.push(entry);
-  }
-  const urls = new Set(links.map((s) => s.url));
-  const keep = (list: unknown) => records(list).filter((s) => !urls.has(String(s.url ?? "")));
-  entry.verdict = "false";
-  entry.evidence = "检索到针对这句话的辟谣材料，未见对题的支持材料。";
-  entry.boundary = "依据是标题或摘要明确辟谣这句话的材料，没有逐篇核对原文论证。";
-  // related-only 的支持桶只是检索填充（兜底报告会把辟谣也放进去），不能留作「支持」。
-  entry.supportingSources = entry.sourcesRelatedOnly === true ? [] : keep(entry.supportingSources);
-  entry.contradictingSources = [...keep(entry.contradictingSources), ...links];
-  entry.relationBasis = "debunk-title";
-  delete entry.sourcesRelatedOnly;
-  delete entry.notJudgedByModel;
-  delete entry.demotedFrom;
-  report.subclaimVerdicts = verdicts;
-  primary.standing = "refuted";
-  return true;
 }
 
 function clip(text: string, max: number): string {

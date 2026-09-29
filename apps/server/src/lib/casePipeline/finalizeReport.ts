@@ -16,7 +16,6 @@
  */
 
 import type { AtomSearchBundle } from "../atomSearch.js";
-import { boundTinyRumorVerdict, isOnTopicDebunk } from "../atomSearchQuery.js";
 import { normalizeReportCitations } from "../citationBinding.js";
 import type { PruneResult } from "../citationLiveness.js";
 import type { CrossExamOutcome } from "../crossExam/index.js";
@@ -28,7 +27,7 @@ import { applyUnopenedLinkConclusion } from "../publicCopy.js";
 import { assembleFinalReport, faceVerdictFor } from "../reportAssembly/index.js";
 import { reviewAndRepairReport, type ReportReviewResult } from "../reportReviewer.js";
 import { decideSentenceVerdict } from "../../domain/verdict.js";
-import { applySentenceVerdict, bindDebunksToPrimaryClaim, listAssessedClaims, VERDICT_TYPE } from "../sentenceVerdict.js";
+import { applySentenceVerdict, listAssessedClaims, VERDICT_TYPE } from "../sentenceVerdict.js";
 import type { CasePipelineInput, PipelineStep } from "./runCasePipeline.js";
 
 export type FinalizeReportInput = {
@@ -97,33 +96,16 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
     imageOrigin,
   });
 
-  const searchSources = Array.isArray((search360Result as { sources?: unknown[] } | undefined)?.sources)
-    ? ((search360Result as { sources: Array<Record<string, unknown>> }).sources)
-    : [];
   const assess = () =>
     listAssessedClaims(finalReport, {
       claimAtoms: rumorStep.output.claimAtoms,
       claimAtomTypes: rumorStep.output.claimAtomTypes,
       priorityClaimAtoms: rumorStep.output.priorityClaimAtoms,
     });
-  /**
-   * 短谣辟谣通道：模型没有判定（或判了站不住却被出处审核降级）、检索里又有对题的辟谣时，
-   * 把辟谣挂为主要主张的反驳出处。sources 是当下还活着的检索来源。
-   */
-  const bindTinyDebunk = (sources: Array<Record<string, unknown>>) => {
-    if (boundTinyRumorVerdict(claim, sources) !== "false") return;
-    bindDebunksToPrimaryClaim(
-      finalReport,
-      assess().find((c) => c.role === "main"),
-      sources.filter((s) => isOnTopicDebunk(claim, s))
-    );
-  };
-
   // 2 整句判定（先行）：同一个规则表，先求一次值给公式分用，免得分数读的是模型漂出来的整句字段
   // （例如「有据之真 + 假」被写成整句 false，或规则表判了不能信而分数没有封顶）。
   // 只在调用注入的收尾钩子期间借用这个结论；钩子之后 verdictType 还原成模型草稿交给复核，
   // 终局由第 8 步在死链剔除之后重新求值。
-  bindTinyDebunk(searchSources);
   const provisional = decideSentenceVerdict(assess());
   const draftVerdictType = finalReport.verdictType;
   finalReport.verdictType = VERDICT_TYPE[provisional.verdict];
@@ -192,10 +174,8 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
   }
 
   // 8 整句判定（终局）：死链已剔除，按仍然活着的出处重新求值，并写结论首句、摘要与正文。
-  // 死证撑不起的判词回到没查清；短谣辟谣只在还有活着的对题辟谣时才成立。
-  const deadUrlSet = new Set(deadCitationUrls);
+  // 死证撑不起的判词回到没查清。辟谣材料只有经过逐条判词与关系审核才算反驳，没有绕过规则表的捷径。
   throwIfAborted();
-  bindTinyDebunk(searchSources.filter((s) => !deadUrlSet.has(String(s?.url ?? "").trim())));
   applySentenceVerdict(finalReport, assess(), { auditUnresolvedGaps });
   normalizeReportCitations(finalReport);
   if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);

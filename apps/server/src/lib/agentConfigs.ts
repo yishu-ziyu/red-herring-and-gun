@@ -229,6 +229,11 @@ const subclaimVerdictsSchema = {
           "Evidence prose for this atom. [n] is 1-based over supportingSources then contradictingSources. If supportingSources is empty and contradictingSources is not, [1] is the first contradicting source. Do not invent numbers.",
       },
       boundary: { type: "string" },
+      contradictedElement: {
+        type: "string",
+        description:
+          "verdict=partial 时必填：来源明确反驳的原句里那个具体要素（数字、日期、范围、主体、因果关系），逐字取自这条命题的原文。写不出来就不是 partial。其他 verdict 省略。",
+      },
       crossExamResponse: { type: "string", description: "收到 crossExam 时，直接回应该命题的具体质询；未收到时省略。" },
       // 判定可追溯：三个新字段不强制（兜底可为空数组），但结构明确
       supportingSources: {
@@ -601,7 +606,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "1. 按日常意思理解原句：「能预防」是明显降低风险，不是 100% 预防；「有效」是通常有用，不是人人有效；不要要求原句自带限定词。不因原句没写「大概」「在一定范围内」这类限定词降级：权威来源支持日常意思上的说法，就判 true，把「不是 100%」这类边界写进 boundary。",
       "2. 内容属实、只是原句把发文机关或出处说错了（例如生育津贴直接发到个人卡属实，但发文的是国家医保局，原句说成人社部）：内容那条判 true；拆题标了 issuer 的那条判 false，evidence 里写清实际的发文机关或出处，contradictingSources 放能证明的来源。",
       "3. 把个别现象说成普遍、把小范围说成全部、把一部分说成整体（个别运动员自带床垫，说成「自带 300 多个空调」）：判 exaggerated，boundary 写明属实的那一截和被夸大的那一截。",
-      "3a. partial 只在命题本身有一截不成立或没有支持时用。命题按日常意思成立、只是来源补充了适用范围或办理条件（仅境内航班、需办手续、需本地户籍、政策从某日起实施）：判 true，适用范围与条件写进 boundary；不要判 partial。",
+      "3a. partial 只在有来源明确反驳了这条命题里某个具体要素（数字、日期、范围、主体、因果关系）时使用；把被反驳的那个要素逐字引用原句写进 contradictedElement，反驳它的来源放进 contradictingSources。写不出这个要素就不是 partial。用词不精确、缺细节、来源补充了并不反驳原句的适用条件（仅境内航班、需办手续、需本地户籍、政策从某日起实施）、只是「不是 100%」：都不是 partial，判 true，条件与细节写进 boundary。",
       "4. 权威来源之间互相矛盾（例如维生素 C 对普通人与剧烈运动人群结论不同）：判 disputed，supportingSources 与 contradictingSources 都要有真实 URL，evidence 写清两边各说了什么、各在什么人群或条件下成立；只有一边有出处时不判 disputed。",
       "5. 按常理不会留下公开记录的传言（公司下周被收购、某小区物业费已定涨一倍）：判 unverified，evidenceGaps 写明缺什么（公司名、公告、业主表决结果）和该去哪里核实（交易所公告、业委会通知、当地疾控通报）。",
       "6. 原句断言「已经证明」某功效，而权威来源明确说该功效未经证实：判 false，来源放 contradictingSources；原句只说「有效果」，而来源只说「未证实、证据不足」：判 unverified，不判 false。",

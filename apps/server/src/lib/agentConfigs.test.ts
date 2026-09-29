@@ -1027,9 +1027,15 @@ describe("整句判定重构：模型只判每一部分，提示词与结构要�
     expect(rumor.systemPrompt).toMatch(/issuer[^。]*只[^。]*出处|出处[^。]*不含[^。]*内容/);
   });
 
-  it("核查：partial 只在命题本身有一截不成立时用；来源补充的适用条件写进 boundary，仍判 true（NEW-401/403/411 形状）", () => {
-    expect(fact.systemPrompt).toMatch(/partial[^。]*本身[^。]*一(?:截|部分)[^。]*(?:不成立|没有支持)/);
-    expect(fact.systemPrompt).toMatch(/适用(?:范围|条件)[^。]*boundary[^。]*true|true[^。]*适用(?:范围|条件)[^。]*boundary/);
+  it("核查：partial 只在来源明确反驳了原句里某个具体要素时用，要逐字引出那个要素（基准 v1 的 NEW-401/403/405/411 形状）", () => {
+    const p = fact.systemPrompt;
+    expect(p).toMatch(/partial[^。]*明确反驳[^。]*(?:数字|日期)[^。]*(?:范围|主体|因果)/);
+    expect(p).toMatch(/逐字[^。]*contradictedElement|contradictedElement[^。]*逐字/);
+    // 不算 partial 的四种：用词不精确、缺细节、并不反驳的适用条件、只是「不是 100%」。
+    expect(p).toMatch(/用词不精确[^。]*缺细节[^。]*适用条件[^。]*不是 ?100%[^。]*(?:true|被支持|不是 partial)/);
+    expect(p).toMatch(/条件[^。]*boundary/);
+    const item = (fact.responseSchema as any).properties.subclaimVerdicts.items.properties;
+    expect(item.contradictedElement.type).toBe("string");
   });
 
   it("拆题：整句都是价值判断时 claimAtoms 仍写原句这一条（verifiable=false），不留空", () => {
