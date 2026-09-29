@@ -1,0 +1,1 @@
+{"label":"current-v1","date":"2026-09-29","commit":"88a42a4","cases":40,"accuracy":{"overall":0.6486486486486487,"byLabel":{"不能信":0.8,"能信":0.3333333333333333,"证据不足":1,"立场型":0}},"trueToFalse":0,"shouldJudgeButDidnt":3,"wrongSupport":8,"fallbackRate":0.35,"secondsMedian":243.811,"secondsMax":613.876,"modelCallsMean":13.275,"searchCallsMean":47.825}

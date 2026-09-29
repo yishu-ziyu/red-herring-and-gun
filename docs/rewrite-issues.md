@@ -1,3 +1,5 @@
+> 正在做什么见 GitHub Project「红鲱鱼与枪」：https://github.com/users/yishu-ziyu/projects/1 。未修项已各开 Issue；下表为归档，只记证据与处置。
+
 # 重写期间发现、未修的问题
 
 行为保持重写不顺手改行为。下列问题原样保留，等用户裁决要不要修、要不要发 GitHub issue。
@@ -13,7 +15,7 @@
 | R6 | `RunStatus.extracting` 从不写入 | 死枚举值 | `runStore.ts RUN_STATUSES` | 无 | 保留：`RUN_STATUSES` 同时用来校验落库的 run 状态，删掉会让读旧库的判定跟着变，收益不值这个风险 |
 | R7 | 共识帧人为延时 | `afterFactSource` 每帧 `wait(220)`，客户端全部忽略 | `handlers.ts makePipelineHooks` | 每次有共识记录的调查白等几百毫秒 | 待裁决（删延时会改变帧时序，属行为变化） |
 | R9 | 重启前 5 秒内的会话与额度变化会丢 | 账号、会话、额度桶只在 5 秒周期里进待写队列；SIGTERM 时的 flush 只写队列里已有的，最近一次周期之后的登录与扣额不落盘 | `jsonSnapshot.ts flushSnapshots startSnapshotLoop`；golden `g17-legacy-data` 登录后立刻重启，`list-after-restart` 返回空（会话丢了） | 发布或崩溃重启时，刚登录的用户被登出、刚用掉的额度被退回 | 待裁决 |
-| R10 | 本机配置下截图调查必然失败 | 图片解析请求 `${STEPFUN_BASE_URL}/chat/completions`；本机 `STEPFUN_BASE_URL` 指向 step_plan（Anthropic 协议端点），拼出 `step_plan/chat/completions` 返回 404；`handlers.ts` 在图片解析失败时直接抛出，整次调查按服务端错误收尾 | golden `g07-image` 真实录音：6 秒内以「这次核查没能完成，请稍后重试」结束；`/api/models/health` 探针也打同一个 404 地址 | 带截图的调查一律失败，而不是跳过图片、按文字继续查。线上配置是否相同未知 | 待裁决（线上配置需确认） |
+| R10 | 本机配置下截图调查必然失败 | 图片解析请求 `${STEPFUN_BASE_URL}/chat/completions`；本机 `STEPFUN_BASE_URL` 指向 step_plan（Anthropic 协议端点），拼出 `step_plan/chat/completions` 返回 404；`handlers.ts` 在图片解析失败时直接抛出，整次调查按服务端错误收尾 | golden `g07-image` 真实录音：6 秒内以「这次核查没能完成，请稍后重试」结束；`/api/models/health` 探针也打同一个 404 地址 | 带截图的调查一律失败，而不是跳过图片、按文字继续查。线上配置是否相同未知 | 已修（2026-09-29，未提交；契约 `docs/evals/2026-09-29-r10-image.md`）：图片解析与 StepFun 健康探针改用 `stepFunChatCompletionsUrl`（step_plan 基础地址 → `/v1/chat/completions`；本机真实截图读出中文，9 秒）；图片仍读不出来时，有文字则发 `notice` 帧「图片没能读出来，已按你输入的文字继续」、前端常驻显示、调查照常完成并计费，只有图片则以专用文案结束并退还额度。线上 `STEPFUN_BASE_URL` 是否同样指向 step_plan 仍未确认，两种写法都已覆盖 |
 | R11 | 接回与重复提交的流不做公开清洗 | 首次提交的流每帧经 `toPublicStreamEvent`（去掉模型 ID、`latencyMs`、`systemPrompt`/`userContent`、原始诊断，工具错误改成通用文案）；`GET /api/investigations/:runId/events` 与「同一 clientRequestId 重复提交」走的订阅直接写总线原始事件 | `handlers.ts investigationEventsHandler` 的 `write(event)`；golden `g12-duplicate` 重复提交那条流：2 帧带 `latencyMs`、1 帧带 `systemPrompt`、2 帧带 `minimax:` 形状的模型引用、3 帧工具错误是原始报错文本，首次提交的流一帧都没有 | 调查还在跑时刷新接回或重复提交，浏览器网络面板能看到模型 ID、内部提示词与原始报错；界面本身不显示这些字段 | 已修（2026-09-29，提交 `fix: scrub resumed investigation streams and release quota on rejected requests`）：接回与重复提交的订阅写帧前同样过 `toPublicStreamEvent`；golden `g12-duplicate` 相对 `base` 只少了 `latencyMs`、`systemPrompt`、`model` 字段 |
 | R12 | 被拒绝的请求也占掉访客当天的免费次数 | 调查流处理器里，缺 claim、modelChoice 非法、JSON 解析失败三种 400 不退还额度闸发的名额（前两种已实测，第三种读代码同理；坏 byoKey、追问案件不存在、409、重复提交会退还） | `handlers.ts orchestrateStreamHandler` 的提前返回；2026-09-29 生产模式（访客每天 2 次）临时探针：缺 claim 的 400 之后 `remaining` 2 → 1，modelChoice 非法的 400 之后 1 → 0，第三个请求直接 429「今天的免费核查用完了」，一次调查都没跑 | 前端正常使用时不会发出这类请求；直接调用接口或前端出错时，访客会被自己的坏请求耗尽当天次数 | 已修（2026-09-29，同上提交）：三种 400 返回前退还名额（`releaseEarlyTicket`）；测试 `handlers.earlyRejectQuota.test.ts` |
 | R8 | 已提交代码引用未提交的文档 | `domain/verdict.ts` 注释指向 `docs/evals/2026-09-28-judgment-refactor.md`，该文件在 main 工作区未跟踪 | `git status` | 规则表出处在仓库里找不到 | 由用户决定是否提交该文件 |
