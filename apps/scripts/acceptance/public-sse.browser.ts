@@ -3,7 +3,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import express from "express";
+import { createRequire } from "node:module";
+const express = createRequire(resolve("server/package.json"))("express");
 import { describe, expect, it, vi } from "vitest";
 const fixture = vi.hoisted(() => {
   const fs = require("node:fs"), path = require("node:path"), os = require("node:os");
