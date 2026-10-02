@@ -43,3 +43,10 @@
 - 最小修复只对整个 JSON 响应套现有公开清洗器，不改权限、runId、状态、内部存储；避免直接清洗单个 activity 误删公开 detail。
 - 同一真实 HTTP 回归断言 JSON 无内部标记，同时 runId、snapshot 原句、activity.text 与合法 activity.detail 保留。修复后两个文件 10/10 通过，server build 通过；全量门禁本轮重新运行中。
 - 新增 Chromium 生产前端与三个真实 SSE 入口验收，契约 `2026-10-03-public-sse-browser.md`；本地脚本真实启动后因 Chromium 不存在失败，正通过 GitHub Ubuntu CI 验证，尚未声称通过。真实供应商和 Ego/Claude 两层走查仍未运行。
+
+
+### 最新验证收尾
+
+JSON 最小修复后定向两文件 10/10 通过，公开 source URL/title/snippet 和 activity.detail 保留、未登录 owner 404 独立复验通过。本轮 apps 全量 1497 passed / 13 skipped / 0 failed；根完整重跑 832 passed；根/apps/server build 与 diff check 通过。根并发初跑一个未改 packages deadline 时序失败保留记录，单文件 10/10 和完整重跑通过，未改断言。
+
+真实 Chromium CI 37051816745 SUCCESS，精确已验证代码 c948d9d3dcc2d58e97b1b3934dda34d7398e09b9 / tree e469c16525c71626ee5e179a5de3f78dfdbfc9c6；同一脚本历史三流真实泄漏，新树三流保持公开结论/终态且无内部诊断，详见浏览器契约。真实供应商门禁、Ego/Claude 两层走查仍未完成，PR 继续草稿，未合并/未部署。

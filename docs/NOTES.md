@@ -1,4 +1,5 @@
-2026-10-03 安全 #132 / PR #134 续查：真实 HTTP 已复现 JSON 恢复出口也泄漏存储中的内部提示词/输入/模型诊断；最小改动在整个 JSON 响应套现有公开清洗，保留权限、身份、状态与 activity.detail。修复后真实 HTTP/原 handler 定向 10/10 与 server build 通过，全量重跑中。新增真实 Chromium + apps/dist + HTTP 三 SSE 入口脚本、固定 Playwright 工具锁和只读固定 action CI，待 Ubuntu 实际结果；本地已真实尝试，缺 Chromium 失败。浏览器脚本不等同 Ego/Claude 真人走查，真实供应商仍缺 API key；PR 保持草稿，不合并、不部署。契约 `docs/evals/2026-10-03-public-sse-browser.md`。
+2026-10-03 安全 #132 / PR #134 续查完成：相邻 GET JSON 恢复出口真实 HTTP 旧头泄漏已复现，最小外层公开清洗后保留原句/出处、activity.detail 与 owner 未登录 404；定向 10/10、apps 全量 1497 passed / 13 skipped / 0 failed、根完整重跑 832 passed、根/apps/server build 通过。真实 Chromium 145.0.7632.6 生产前端三 SSE 入口 CI 37051816745 SUCCESS：旧 7110c85 同脚本三个流均实泄漏；修复代码 c948d9d3dcc2d58e97b1b3934dda34d7398e09b9 / tree e469c16525c71626ee5e179a5de3f78dfdbfc9c6 三流无诊断、同一 runId、模型只跑一次、seq=1、终态 unverified/结论/EOF 保留且首屏可见。artifact 11246986275 及原始帧/截图已独立复算。并发初跑的一个 packages deadline 时序失败原样记录，未改代码/断言，独立文件与完整根重跑通过。真实供应商缺 API key，Ego/Claude 两层走查仍未运行；Playwright 合成模型验收不等同它们，PR 保持草稿，未合并、未部署，#127 全量审计保持开放。契约 `docs/evals/2026-10-03-public-sse-browser.md`。
+
 
 
 
