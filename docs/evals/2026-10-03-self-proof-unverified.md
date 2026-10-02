@@ -30,3 +30,8 @@
 - 根测试 832 通过；根构建、apps 前端构建、server TypeScript 构建通过。
 - `npm run eval:gate` 实际执行后退出 1：tsx 创建 `/tmp/tsx-0/31.pipe` 时被运行环境拒绝（EPERM），未进入供应商阶段。未读取本地凭据、未运行真实供应商 eval，也未用 fake 结果代替 gate。该门禁属于暂停的 packages 脊柱，不覆盖 apps 生产实现。
 - apps 全量 155 files 通过、2 files skipped；1496 tests 通过、13 skipped、0 failed（118.00s）。完整机器运行日志位于 `/tmp/red-verdict-gates/`。未部署、未合并；本轮无新增浏览器验收。
+
+
+## 续查补充
+
+同等 `node --import tsx` 入口已绕过原 tsx CLI IPC 限制。冻结 packages 和生产 apps runner 均实际进入启动检查，均因缺真实 API key 退出 1。未用 fake 跑分或改基线；真实供应商门禁仍未通过。公开 SSE 另补真实 localhost HTTP 三连接回归，详见公开出口契约；不将其算作浏览器走查。

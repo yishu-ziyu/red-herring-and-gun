@@ -1,4 +1,5 @@
-2026-10-03 安全修复 #132：生产公开 SSE 的接回和重复提交统一清洗，超深载荷截断为 null，搜索 tool-error 对象不再下发原始诊断（含 traceText 与 unresolvedEvidenceGaps）。首次/接回/重复 HTTP SSE 和对象/数组深度回归 9/9 通过；根测试 832 通过、根/apps/server 构建通过；apps 全量 1494 通过 / 1 失败 / 13 skipped，唯一 self-proof 判词预存失败在 main 独立 worktree 复现并另开 #133。机器未全绿，修复仅待审，不合并。根 npm 11.9.0 ci 缺锁中的 esbuild linux-ppc64@0.28.2，补单一条目后 ci 通过。`investigation/` 镜像未涉及。`docs/security-checklist.md` 恢复，#127 全量安全审计保留开放；未部署，真实供应商 eval 未运行。契约 `docs/evals/2026-10-03-public-sse-egress.md`。
+2026-10-03 安全修复 #132 / PR #134 续查：新增真实 localhost HTTP SSE 三连接回归（首次 POST / GET 接回 / 重复 POST），使用生产 handler/runService/store、仅供应商管线离线夹具。旧 `7110c85` 同测试实际抓到三个入口泄漏；修复树定向 10/10 通过，apps 全量 1497 通过 / 13 skipped / 0 failed，server build 与 diff check 通过。原测试是 handler + 模拟 req/res，不是 TCP 验收。packages 和生产 apps 的同等 `node --import tsx` eval gate 启动成功但均因缺 API key 退出 1，未调用供应商。Ego/Claude for Chrome 两层浏览器走查仍未运行；PR 继续草稿、未部署。#127 全量审计保持开放。契约 `docs/evals/2026-10-03-public-sse-egress.md`。
+
 
 # 当前状态
 
