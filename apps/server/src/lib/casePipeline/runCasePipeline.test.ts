@@ -1213,11 +1213,16 @@ describe("runCasePipeline self-proof 全丢兜底（主路 P0 Change B）", () =
   }
 
   const makeSearchOne = () =>
-    vi.fn(async (atom: string) => ({
-      answer: atom,
-      model: "m",
-      sources: [{ url: `https://t.test/${encodeURIComponent(atom)}`, title: atom, snippet: "s" }],
-    }));
+    vi.fn(async (query: string) => {
+      // searchOne 接收原句和扩展查询；扩展查询里的「辟谣」不是来源标题。
+      // 固定每条命题的中性来源，不能把搜索意图伪造为已检索到的反证。
+      const atom = query.startsWith(ATOM_A) ? ATOM_A : ATOM_B;
+      return {
+        answer: query,
+        model: "m",
+        sources: [{ url: `https://t.test/${encodeURIComponent(atom)}`, title: atom, snippet: "s" }],
+      };
+    });
 
   const stubRunReport = async (): Promise<PipelineStep> => ({
     agent: "report_composer",
@@ -1314,6 +1319,47 @@ describe("runCasePipeline self-proof 全丢兜底（主路 P0 Change B）", () =
 
     expect(callSelfProofModel).toHaveBeenCalledTimes(1);
     expect(result.rumorStep.output.claimAtoms).toEqual([ATOM_A, ATOM_B]);
+  });
+
+  it("检索查询与 answer 含辟谣词、中性来源没有反证时不下 false（不经过 self-proof）", async () => {
+    // 独立于 self-proof 夹具：query、URL、answer 都可含「辟谣」，
+    // 只有来源真实标题/摘要能提供辟谣依据。
+    const searchOne = vi.fn(async (query: string) => ({
+      answer: `检索查询：${query}。辟谣检索仍未查清。`,
+      model: "neutral-search-fixture",
+      sources: [{
+        url: `https://neutral.test/${encodeURIComponent(query)}`,
+        title: "事实A与事实B资料索引",
+        snippet: "只列出相关资料，未确认或反驳任何说法。",
+      }],
+    }));
+    const result = await runCasePipeline({
+      claim: `原句同时说了${ATOM_A}和${ATOM_B}`,
+      runAgent: stubRunAgent(),
+      searchOne,
+      runReport: stubRunReport,
+      citationLiveness: false,
+    });
+
+    expect(searchOne.mock.calls.some(([query]) => /辟谣|不实|谣言/.test(query))).toBe(true);
+    const searchPayload = result.search360Result as { answer: string; sources: unknown[] };
+    expect(String(searchPayload?.answer)).toMatch(/辟谣/);
+    expect(searchPayload.sources.length).toBeGreaterThan(0);
+    expect(searchPayload.sources.every((source) =>
+      (source as Record<string, unknown>).title === "事实A与事实B资料索引"
+    )).toBe(true);
+    expect(searchPayload.sources.some((source) =>
+      decodeURIComponent(String((source as Record<string, unknown>).url)).includes("辟谣")
+    )).toBe(true);
+    expect(result.finalReport.verdictType).toBe("unverified");
+    expect(result.finalReport.subclaimVerdicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ claimAtom: ATOM_A, verdict: "unverified" }),
+      expect.objectContaining({ claimAtom: ATOM_B, verdict: "unverified" }),
+    ]));
+    for (const verdict of result.finalReport.subclaimVerdicts as Array<Record<string, unknown>>) {
+      expect(verdict.contradictingSources).toEqual([]);
+      expect(verdict.relationBasis).not.toBe("debunk-title");
+    }
   });
 
   it("拆题候选为空时不重试也不兜底（不凭空造出命题）", async () => {
