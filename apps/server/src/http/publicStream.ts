@@ -29,14 +29,17 @@ const PROVIDER_NAME_RE = /minimax|stepfun|deepseek|360gpt|ai360|mimo|anthropic|o
 const MODEL_REF_RE = /^[a-z0-9_-]+:[A-Za-z0-9._-]+$/;
 
 function scrubProviderDiagnostics(value: unknown, depth = 0): unknown {
-  if (depth > 8) return value;
+  // 超深子树无法证明已清洗，截断而不是把原始值直接公开。
+  if (depth > 8) return null;
   if (Array.isArray(value)) return value.map((item) => scrubProviderDiagnostics(item, depth + 1));
   if (value && typeof value === "object") {
+    // 搜索失败对象含原始诊断，连 evidenceGaps 都可混入报错。公开层只保留失败标记。
+    if ((value as Record<string, unknown>)._source === "tool-error") return { _source: "tool-error" };
     const out: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
       // systemPrompt / userContent 是内部工程文本（含 provider 名与规则清单），
       // 前端过程层不读取，剥离后顺带大幅减小公开载荷。
-      if (key === "latencyMs" || key === "systemPrompt" || key === "userContent") continue;
+      if (key === "latencyMs" || key === "systemPrompt" || key === "userContent" || key === "traceText" || key === "providerErrors") continue;
       if (
         typeof item === "string" &&
         PROVIDER_NAME_RE.test(item) &&

@@ -23,6 +23,7 @@ import {
 import { followUpReuseFromClientBrief } from "./lib/followUpReuse.js";
 import { runInvestigation, type InvestigationRunDeps } from "./http/investigationRun.js";
 import { openSse, sseFrame, SSE_KEEPALIVE_FRAME, SSE_KEEPALIVE_MS } from "./http/sseChannel.js";
+import { toPublicStreamEvent } from "./http/publicStream.js";
 import { baseUrlTargetsPrivateNetwork, isLocalHttpUrl, parseByoConfig } from "./lib/orchestrateByo.js";
 
 export { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot.js";
@@ -114,7 +115,7 @@ export function createHandlers(env: Record<string, string>) {
     if (run.ownerHash && run.ownerHash !== (account?.hash ?? null)) {
       return sendJson(res, 404, { message: "没有这次调查" });
     }
-    return sendJson(res, 200, {
+    return sendJson(res, 200, toPublicStreamEvent({
       runId: run.runId,
       caseId: run.caseId,
       status: run.status,
@@ -123,7 +124,7 @@ export function createHandlers(env: Record<string, string>) {
       snapshot: run.snapshot,
       activities: runs.replayActivities(runId, 0),
       updatedAt: run.updatedAt,
-    });
+    }));
   }
 
   /**
@@ -143,10 +144,10 @@ export function createHandlers(env: Record<string, string>) {
     const after = Number.isFinite(afterRaw) && afterRaw > 0 ? Math.floor(afterRaw) : 0;
 
     openSse(res);
-    // 接回流直接写总线原始事件，不经 toPublicStreamEvent（与首次提交的流不同，见 rewrite-issues R11）。
+    // 接回补发与直播使用首次提交相同的公开清洗边界（Issue #132 / R11）。
     const write = (event: object) => {
       try {
-        res.write(sseFrame(event));
+        res.write(sseFrame(toPublicStreamEvent(event)));
       } catch {
         /* 客户端已断开，由 close 收尾 */
       }
