@@ -1,0 +1,1 @@
+{"name":"rhg-browser-acceptance-tools","private":true,"version":"1.0.0","dependencies":{"playwright":"1.58.2"}}

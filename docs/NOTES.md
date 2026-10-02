@@ -1,4 +1,5 @@
-2026-10-03 安全修复 #132 / PR #134 续查：新增真实 localhost HTTP SSE 三连接回归（首次 POST / GET 接回 / 重复 POST），使用生产 handler/runService/store、仅供应商管线离线夹具。旧 `7110c85` 同测试实际抓到三个入口泄漏；修复树定向 10/10 通过，apps 全量 1497 通过 / 13 skipped / 0 failed，server build 与 diff check 通过。原测试是 handler + 模拟 req/res，不是 TCP 验收。packages 和生产 apps 的同等 `node --import tsx` eval gate 启动成功但均因缺 API key 退出 1，未调用供应商。Ego/Claude for Chrome 两层浏览器走查仍未运行；PR 继续草稿、未部署。#127 全量审计保持开放。契约 `docs/evals/2026-10-03-public-sse-egress.md`。
+2026-10-03 安全 #132 / PR #134 续查：真实 HTTP 已复现 JSON 恢复出口也泄漏存储中的内部提示词/输入/模型诊断；最小改动在整个 JSON 响应套现有公开清洗，保留权限、身份、状态与 activity.detail。修复后真实 HTTP/原 handler 定向 10/10 与 server build 通过，全量重跑中。新增真实 Chromium + apps/dist + HTTP 三 SSE 入口脚本、固定 Playwright 工具锁和只读固定 action CI，待 Ubuntu 实际结果；本地已真实尝试，缺 Chromium 失败。浏览器脚本不等同 Ego/Claude 真人走查，真实供应商仍缺 API key；PR 保持草稿，不合并、不部署。契约 `docs/evals/2026-10-03-public-sse-browser.md`。
+
 
 
 # 当前状态

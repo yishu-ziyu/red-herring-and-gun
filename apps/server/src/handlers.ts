@@ -115,7 +115,7 @@ export function createHandlers(env: Record<string, string>) {
     if (run.ownerHash && run.ownerHash !== (account?.hash ?? null)) {
       return sendJson(res, 404, { message: "没有这次调查" });
     }
-    return sendJson(res, 200, {
+    return sendJson(res, 200, toPublicStreamEvent({
       runId: run.runId,
       caseId: run.caseId,
       status: run.status,
@@ -124,7 +124,7 @@ export function createHandlers(env: Record<string, string>) {
       snapshot: run.snapshot,
       activities: runs.replayActivities(runId, 0),
       updatedAt: run.updatedAt,
-    });
+    }));
   }
 
   /**

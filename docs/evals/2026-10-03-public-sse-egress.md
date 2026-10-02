@@ -35,3 +35,11 @@
 - 此 localhost 回归不等同浏览器验收；Ego / Claude for Chrome 两层走查仍未运行。PR 继续草稿，不合并、不部署。
 
 - 新测试后的 apps 全量：155 files passed / 2 skipped，1497 tests passed / 13 skipped / 0 failed（89.47s）；server TypeScript build 与 git diff --check 通过。根 832 tests 及其他构建沿用前轮同产品实现的通过记录，本轮没有产品代码改动。
+
+
+## 03:30 截止前续查：JSON 恢复出口
+
+- `GET /api/investigations/:runId` 也返回同一内部存储快照与活动；在前一修复头真实 localhost HTTP 重现：响应包含 synthetic systemPrompt/userContent/model/latencyMs，负向断言实际失败。
+- 最小修复只对整个 JSON 响应套现有公开清洗器，不改权限、runId、状态、内部存储；避免直接清洗单个 activity 误删公开 detail。
+- 同一真实 HTTP 回归断言 JSON 无内部标记，同时 runId、snapshot 原句、activity.text 与合法 activity.detail 保留。修复后两个文件 10/10 通过，server build 通过；全量门禁本轮重新运行中。
+- 新增 Chromium 生产前端与三个真实 SSE 入口验收，契约 `2026-10-03-public-sse-browser.md`；本地脚本真实启动后因 Chromium 不存在失败，正通过 GitHub Ubuntu CI 验证，尚未声称通过。真实供应商和 Ego/Claude 两层走查仍未运行。

@@ -30,7 +30,8 @@ describe("Issue #132: real loopback HTTP SSE boundary", () => {
           await done;
         } else {
           req.params = { runId: new URL(req.url, "http://localhost").pathname.split("/")[3] };
-          await handlers.investigationEventsHandler(req, res, next);
+          if (req.url.includes("/events")) await handlers.investigationEventsHandler(req, res, next);
+          else await handlers.getInvestigationHandler(req, res, next);
         }
       } catch (error) { next(error); }
     });
@@ -69,8 +70,18 @@ describe("Issue #132: real loopback HTTP SSE boundary", () => {
       const runId = events(first.wire).find(e => e.type === "run_started").runId;
       const gate = fixture.gate;
       const internal = { systemPrompt: "INTERNAL_SOCKET_PROMPT", userContent: "INTERNAL_SOCKET_INPUT", model: "minimax:socket", latencyMs: 20 };
-      openRunStore()!.appendActivities(runId, [{ id: "socket-activity", seq: 1, kind: "search_started", createdAt: 1, text: "公开活动", timestamp: 1, ...internal }] as any);
-      openRunStore()!.saveSnapshot(runId, { schemaVersion: 1, originalClaim: "公开说法", phase: "judging", claims: [], sources: [], conflicts: [], ...internal } as any);
+      openRunStore()!.appendActivities(runId, [{ id: "socket-activity", seq: 1, kind: "search_started", createdAt: 1, text: "公开活动", detail: "公开活动补充说明", timestamp: 1, ...internal }] as any);
+      openRunStore()!.saveSnapshot(runId, { schemaVersion: 1, originalClaim: "公开说法", phase: "judging", claims: [], sources: [{ id: "public-source", url: "https://example.org/source", title: "公开出处", snippet: "公开资料摘要" }], conflicts: [], ...internal } as any);
+      const summaryResponse = await fetch(`${base}/api/investigations/${runId}`);
+      expect(summaryResponse.status).toBe(200);
+      const summaryWire = await summaryResponse.text();
+      expect.soft(summaryWire, "GET JSON summary").not.toMatch(/INTERNAL_SOCKET_|RAW_SOCKET_|minimax|systemPrompt|userContent|latencyMs/);
+      const summary = JSON.parse(summaryWire);
+      expect(summary.runId).toBe(runId);
+      expect(summary.snapshot.originalClaim).toBe("公开说法");
+      expect(summary.snapshot.sources).toEqual([{ id: "public-source", url: "https://example.org/source", title: "公开出处", snippet: "公开资料摘要" }]);
+      expect(summary.activities[0].text).toBe("公开活动");
+      expect(summary.activities[0].detail).toBe("公开活动补充说明");
       const reconnect = await connect(`/api/investigations/${runId}/events?after=0`);
       const duplicate = await connect("/api/agent/orchestrate-stream", true);
       await vi.waitFor(() => {
