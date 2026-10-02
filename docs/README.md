@@ -13,6 +13,7 @@
 | 这一次算不算做完 | 动手前写 [evals/](evals/) 里一份新契约；旧契约以 NOTES 和代码为准 |
 | 为什么选这条实现 | [adr/](adr/)（ADR-006 已废止） |
 | 方向为什么变了 | [devlog/](devlog/) |
+| 安全审计现状与缺口 | [security-checklist.md](security-checklist.md)（#127 保持开放） |
 | 怎么发布、门禁 | [PRODUCT_RELEASE_GATE.md](PRODUCT_RELEASE_GATE.md) |
 
 `evals/` 是某次任务的完成尺度，不是百科。做完以代码和 NOTES 为准；里面写着「未做 / 未 commit / mvp/」而 NOTES 已经改口的，当废纸。走查截图、实验室 HTML 不进现行规则。

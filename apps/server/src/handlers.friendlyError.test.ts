@@ -84,3 +84,25 @@ describe("toFriendlyError — 顶层 error 出口收口", () => {
     expect((event.finalReport as Record<string, unknown>).verdictType).toBe("false");
   });
 });
+
+
+describe("public stream depth boundary", () => {
+  it("preserves public pursuit detail and sources while removing failed-search diagnostics", () => {
+    const source = { title: "公开出处", url: "https://evidence.test/a" };
+    const publicEvent = { type: "tool_result", result: { kind: "evidence_pursuit", detail: "补查后仍缺原始出处", sources: [source] } };
+    expect(toPublicStreamEvent(publicEvent)).toEqual(publicEvent);
+    expect(toPublicStreamEvent({ type: "tool_error", result: { _source: "tool-error", traceText: "RAW_MARKER", unresolvedEvidenceGaps: ["RAW_MARKER"] } }).result).toEqual({ _source: "tool-error" });
+  });
+  it.each(["object", "array"])("truncates deep %s branches without mutating the input", (shape) => {
+    let branch: any = { systemPrompt: "SECRET_DEPTH", userContent: "SECRET_USER", model: "minimax:test", latencyMs: 99 };
+    for (let i = 0; i < 12; i++) branch = shape === "array" ? [branch] : { nested: branch };
+    const input = { type: "complete", result: branch, conclusion: "保留的公开结论", sources: [{ title: "公开来源" }] };
+    const before = JSON.stringify(input);
+    const output = toPublicStreamEvent(input);
+    expect(JSON.stringify(output)).not.toMatch(/SECRET_|minimax|latencyMs|systemPrompt|userContent/);
+    expect(JSON.stringify(output)).toContain("null");
+    expect(output.conclusion).toBe("保留的公开结论");
+    expect(output.sources).toEqual([{ title: "公开来源" }]);
+    expect(JSON.stringify(input)).toBe(before);
+  });
+});
