@@ -12,7 +12,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "eval": "cd server && npx tsx eval/run.ts",
-    "eval:gate": "cd server && npx tsx eval/run.ts --gate eval/baseline.json"
+    "eval:gate": "cd server && npx tsx eval/run.ts --gate eval/baseline.json",
+    "e2e:live": "node e2e/e2e.mjs --mode live",
+    "e2e:record": "node e2e/e2e.mjs --mode record",
+    "e2e:replay": "node e2e/e2e.mjs --mode replay"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.2",

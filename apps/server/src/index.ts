@@ -5,6 +5,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { createHandlers } from "./handlers.js";
+import { installNetTape } from "./netTape.js";
 import {
   buildAuthorizeUrl,
   clearSessionCookie,
@@ -36,6 +37,8 @@ import { readEmailAccountOptional } from "./lib/emailSession.js";
 dotenv.config();
 dotenv.config({ path: resolve(process.cwd(), ".env.local") });
 dotenv.config({ path: resolve(process.cwd(), "../.env.local") });
+// 端到端测试的外部世界替身：只在这一个组装点、只在设置了环境变量时安装。
+installNetTape();
 
 if (process.env.NODE_ENV === "production" && !(process.env.AIPING_SESSION_SECRET ?? "").trim()) {
   console.error("AIPING_SESSION_SECRET is required in production");

@@ -1,0 +1,199 @@
+[
+ {
+  "id": "RUMOR-001",
+  "claim": "数字人民币平台正在发放数字资产红利",
+  "expected": "false",
+  "difficulty": "medium",
+  "category": "event"
+ },
+ {
+  "id": "RUMOR-002",
+  "claim": "扫码可领2024年个人劳动补贴，逾期视为弃权",
+  "expected": "false",
+  "difficulty": "medium",
+  "category": "event"
+ },
+ {
+  "id": "RUMOR-003",
+  "claim": "车票退票不再收手续费了",
+  "expected": "false",
+  "difficulty": "easy",
+  "category": "event"
+ },
+ {
+  "id": "RUMOR-004",
+  "claim": "京沪高速公路停止收费了",
+  "expected": "false",
+  "difficulty": "medium",
+  "category": "event"
+ },
+ {
+  "id": "RUMOR-005",
+  "claim": "点早安晚安图片手机会中毒，个人信息会被盗",
+  "expected": "false",
+  "difficulty": "easy",
+  "category": "event"
+ },
+ {
+  "id": "RUMOR-006",
+  "claim": "浙大研究发现：冷冻馒头不能吃，冷冻超过两天会长黄曲霉素",
+  "expected": "false",
+  "difficulty": "medium",
+  "category": "causal"
+ },
+ {
+  "id": "RUMOR-007",
+  "claim": "张华银，你的录取通知书丢了，爱心接力请转发",
+  "expected": "false",
+  "difficulty": "easy",
+  "category": "event"
+ },
+ {
+  "id": "RUMOR-008",
+  "claim": "中国体育代表团出征奥运会自带300多个空调和床垫",
+  "expected": "mixed_misleading",
+  "difficulty": "hard",
+  "category": "event"
+ },
+ {
+  "id": "RUMOR-009",
+  "claim": "春运抢票可提前90天预约",
+  "expected": "false",
+  "difficulty": "easy",
+  "category": "event"
+ },
+ {
+  "id": "RUMOR-010",
+  "claim": "常穿黑色内衣易患癌",
+  "expected": "false",
+  "difficulty": "medium",
+  "category": "causal"
+ },
+ {
+  "id": "RUMOR-011",
+  "claim": "每天喝红酒可以预防心脏病，因为法国人喝红酒且心脏病少",
+  "expected": "mixed_misleading",
+  "difficulty": "trap",
+  "category": "causal"
+ },
+ {
+  "id": "RUMOR-012",
+  "claim": "孩子打疫苗后发烧，说明疫苗导致了自闭症",
+  "expected": "false",
+  "difficulty": "trap",
+  "category": "causal"
+ },
+ {
+  "id": "RUMOR-013",
+  "claim": "某地推广某保健品后癌症死亡率下降，证明该保健品能防癌",
+  "expected": "mixed_misleading",
+  "difficulty": "trap",
+  "category": "causal"
+ },
+ {
+  "id": "RUMOR-014",
+  "claim": "医院里死亡率比家里高，所以去医院看病反而更危险",
+  "expected": "false",
+  "difficulty": "trap",
+  "category": "causal"
+ },
+ {
+  "id": "TINY-001",
+  "claim": "甘南宣布重要通知，甘南所有景点一律免费，6月17日起至7月31日免票",
+  "expected": "false",
+  "difficulty": "easy",
+  "category": "event"
+ },
+ {
+  "id": "TINY-002",
+  "claim": "新疆喀什要建地铁，喀什市域1号线南延段前期研究已启动",
+  "expected": "false",
+  "difficulty": "medium",
+  "category": "event"
+ },
+ {
+  "id": "TINY-003",
+  "claim": "上海车展上演全武行，展台前有人打架",
+  "expected": "false",
+  "difficulty": "medium",
+  "category": "event"
+ },
+ {
+  "id": "TINY-004",
+  "claim": "台风天上海LV巨轮旁边洪水滔滔，船体漏水了",
+  "expected": "false",
+  "difficulty": "easy",
+  "category": "event"
+ },
+ {
+  "id": "TINY-005",
+  "claim": "群里那张P图配的侮辱性文字说的是真的",
+  "expected": "false",
+  "difficulty": "hard",
+  "category": "event"
+ },
+ {
+  "id": "TINY-006",
+  "claim": "短视频里说的某某婚内出轨是真的",
+  "expected": "false",
+  "difficulty": "hard",
+  "category": "event"
+ },
+ {
+  "id": "TINY-007",
+  "claim": "我说我的电瓶车叫谁偷走了，原来送给非洲人去了",
+  "expected": "false",
+  "difficulty": "easy",
+  "category": "event"
+ },
+ {
+  "id": "LOOP-001",
+  "claim": "听说电动车都被集中拉去国外销毁了，一批一批装船运走",
+  "expected": "false",
+  "difficulty": "hard",
+  "category": "event"
+ },
+ {
+  "id": "LOOP-002",
+  "claim": "网上那张公安局发的悬赏公告图片说是真的，扫码就能领线索费",
+  "expected": "false",
+  "difficulty": "hard",
+  "category": "event"
+ },
+ {
+  "id": "LOOP-003",
+  "claim": "人社部发文说生育津贴直接打到个人卡里了，不用再走单位",
+  "expected": "mixed_misleading",
+  "difficulty": "medium",
+  "category": "event"
+ },
+ {
+  "id": "EVAL-UNVERIFIED-001",
+  "claim": "同事群里说我们公司下周一会被收购，没有公告也没有监管披露",
+  "expected": "unverified",
+  "difficulty": "hard",
+  "category": "event"
+ },
+ {
+  "id": "EVAL-TYPEGATE-001",
+  "claim": "隔夜菜会致癌",
+  "expected": "false",
+  "difficulty": "medium",
+  "category": "causal"
+ },
+ {
+  "id": "NEW-001",
+  "claim": "大剂量维生素C有利于预防感冒。",
+  "expected": "false"
+ },
+ {
+  "id": "NEW-002",
+  "claim": "维生素C能预防感冒，还能美白皮肤。",
+  "expected": "false"
+ },
+ {
+  "id": "NEW-003",
+  "claim": "喝气泡水可以中和胃酸，胃不舒服喝苏打水就够了。",
+  "expected": "false"
+ }
+]
