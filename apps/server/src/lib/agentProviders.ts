@@ -181,6 +181,17 @@ export function buildStepFunRequestBody({
   return body;
 }
 
+/**
+ * StepFun 的 OpenAI 兼容聊天补全地址。
+ * Token Plan 基础地址（.../step_plan，Anthropic 协议文字调用用它）下 OpenAI 兼容路径是 /v1/chat/completions，
+ * 直接拼 /chat/completions 会 404（R10）；普通基础地址（.../v1）本身已带 /v1。
+ */
+export function stepFunChatCompletionsUrl(baseUrl: string): string {
+  const base = baseUrl.replace(/\/+$/, "");
+  if (base.includes("/step_plan")) return `${base.replace(/\/v1$/, "")}/v1/chat/completions`;
+  return `${base}/chat/completions`;
+}
+
 export async function callStepFunAgent({
   baseUrl,
   apiKey,

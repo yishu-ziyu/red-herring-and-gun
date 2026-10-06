@@ -445,6 +445,8 @@ function ProductApp() {
           <p className="gp-global-notice" role="alert">
             {copy.linkUnreachableNotice}
           </p>
+        ) : run.state.notice && mode === "investigation" ? (
+          <p className="gp-global-notice" role="alert">{run.state.notice}</p>
         ) : historyNotice ? (
           <p className="gp-global-notice" role="alert">{historyNotice}</p>
         ) : null}

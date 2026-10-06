@@ -3,7 +3,7 @@
  * 只做 OCR 与线索提取，不判断真假。
  */
 
-import { buildStepFunRequestBody, extractChatCompletionText } from "./agentProviders.js";
+import { buildStepFunRequestBody, extractChatCompletionText, stepFunChatCompletionsUrl } from "./agentProviders.js";
 
 import { extractJsonObject } from "./anthropicParse.js";
 
@@ -173,7 +173,7 @@ export async function callStepFunVisionForIntake({
     });
   }
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const response = await fetch(stepFunChatCompletionsUrl(baseUrl), {
     method: "POST",
     signal,
     headers: {

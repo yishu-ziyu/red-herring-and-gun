@@ -84,3 +84,12 @@ describe("toFriendlyError — 顶层 error 出口收口", () => {
     expect((event.finalReport as Record<string, unknown>).verdictType).toBe("false");
   });
 });
+
+describe("R10 图片读不出来的专用错误文案", () => {
+  it("code=image_unreadable 的 error 保留原文案；无 code 的 error 仍是通用文案", () => {
+    const own = toPublicStreamEvent({ type: "error", code: "image_unreadable", message: "图片没能读出来，这次没法核查。" });
+    expect(own.message).toBe("图片没能读出来，这次没法核查。");
+    const other = toPublicStreamEvent({ type: "error", message: "StepFun 404" });
+    expect(other.message).toBe("这次核查没能完成，请稍后重试");
+  });
+});
