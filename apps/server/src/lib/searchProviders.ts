@@ -1150,15 +1150,17 @@ function estimateSourceCredibility(url: string): string {
 function mapProviderSources(
   items: any[],
   titleFallback: (index: number) => string
-): Array<{ title: string; url: string; snippet: string; credibility: string; publishedAt?: string }> {
-  const out: Array<{ title: string; url: string; snippet: string; credibility: string; publishedAt?: string }> = [];
+): Array<{ title: string; url: string; snippet: string; credibility: string; publishedAt?: string; publisher?: string }> {
+  const out: Array<{ title: string; url: string; snippet: string; credibility: string; publishedAt?: string; publisher?: string }> = [];
   for (let index = 0; index < items.length && out.length < 8; index += 1) {
     const source = items[index];
     if (!source || typeof source !== "object") continue;
     const url = String(source?.url || source?.link || source?.href || source?.web_url || source?.display_url || "").trim();
     if (!url || !/^https?:\/\//i.test(url)) continue; // 无有效 URL = 不可追溯，直接丢
     const publishedAt = String(source?.publishedAt || source?.date || source?.time || "").trim();
-    const row: { title: string; url: string; snippet: string; credibility: string; publishedAt?: string } = {
+    // 发布者只取 provider 实际返回的字段；拿不到就是缺失，不用站点名或抓取信息补造。
+    const publisher = String(source?.publisher || source?.siteName || source?.site_name || source?.site || "").trim();
+    const row: { title: string; url: string; snippet: string; credibility: string; publishedAt?: string; publisher?: string } = {
       title: String(source?.title || source?.name || source?.site_name || titleFallback(out.length + 1)).slice(0, 200),
       url,
       snippet: String(
@@ -1174,6 +1176,7 @@ function mapProviderSources(
       credibility: estimateSourceCredibility(url),
     };
     if (publishedAt) row.publishedAt = publishedAt;
+    if (publisher) row.publisher = publisher;
     out.push(row);
   }
   return out;

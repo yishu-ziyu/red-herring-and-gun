@@ -55,9 +55,12 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
   const [placement] = useState<"sheet" | "drawer">(isSheetPlacement() ? "sheet" : "drawer");
   const [imgFailed, setImgFailed] = useState(false);
   const { source, link, claimText, claimIndex } = view;
-  const num = String(claimIndex + 1).padStart(2, "0");
+  // claimIndex < 0 = 用户材料视图：这条来源还没挂到任何命题上，不显示命题编号。
+  const num = claimIndex >= 0 ? String(claimIndex + 1).padStart(2, "0") : null;
   const relation = ROLE_LABEL[link.role];
-  const excerpt = link.passage?.trim() || source.excerpt?.trim();
+  // 摘录与标签/日期/取得时间必须出自同一份材料：有 source.excerpt 就用它
+  // （excerptKind 标注的正是这份内容），只在来源没有摘录时才回退命题定位 passage。
+  const excerpt = source.excerpt?.trim() || link.passage?.trim();
   const sectionTitle = link.sectionTitle?.trim();
   const relationReason = link.relationReason?.trim();
   const finding = link.finding?.trim();
@@ -65,7 +68,26 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
   const unreachable = source.reachable === false;
   const published = source.publishedAt?.trim();
   const retrieved = source.retrievedAt?.trim();
+  const publisher = source.publisher?.trim();
+  const fetchStatus = source.fetchStatus;
+  const fetchNote = source.fetchNote?.trim();
   const domain = domainOf(source.url) || "source";
+  const excerptLabel =
+    source.excerptKind === "page-excerpt"
+      ? copy.sourceExcerptPage
+      : source.excerptKind === "search-snippet"
+        ? copy.sourceExcerptSnippet
+        : copy.sourceExcerpt;
+  const fetchStatusText =
+    fetchStatus === "snippet-only"
+      ? copy.sourceFetchSnippetOnly
+      : fetchStatus === "failed"
+        ? copy.sourceFetchFailed
+        : fetchStatus === "restricted"
+          ? copy.sourceFetchRestricted
+          : fetchStatus === "truncated"
+            ? copy.sourceFetchTruncated
+            : "";
   // 关联来源 chips：排除当前正在查看的来源（它的完整信息就在本抽屉里），
   // idx 保留在 relatedSources 里的原位置，让 [n] 角标编号与 chips 标注一致。
   const relatedChips = (view.relatedSources ?? [])
@@ -207,7 +229,7 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
               <section className="gp-source-block is-excerpt-lead" data-gp-source-section="excerpt">
                 <div className="gp-source-section-header">
                   <span className="gp-source-section-icon" aria-hidden="true">❝</span>
-                  <h3 className="gp-source-label">{copy.sourceExcerpt}</h3>
+                  <h3 className="gp-source-label">{excerptLabel}</h3>
                 </div>
                 <blockquote className={`gp-source-excerpt is-${link.role}`}>
                   <p className="gp-source-excerpt-text">{excerpt}</p>
@@ -217,11 +239,15 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
 
             <section className="gp-source-block gp-source-claim-block" data-gp-source-section="claim">
               <div className="gp-source-claim-card">
-                <span className="gp-source-claim-tag">{copy.sourceAgainstClaim}</span>
-                <span className="gp-source-claim-num" aria-hidden="true">
-                  {num}
+                <span className="gp-source-claim-tag">
+                  {claimIndex >= 0 ? copy.sourceAgainstClaim : lang === "en" ? "Your material" : "你提交的材料"}
                 </span>
-                <p className="gp-source-claim-text">{claimText}</p>
+                {num ? (
+                  <span className="gp-source-claim-num" aria-hidden="true">
+                    {num}
+                  </span>
+                ) : null}
+                {claimText ? <p className="gp-source-claim-text">{claimText}</p> : null}
                 {relationReason ? (
                   <p className="gp-source-relation-reason" data-gp-source-relation-reason>
                     {lang === "en" ? "Why this relation" : "为什么是这个关系"}：{relationReason}
@@ -283,27 +309,32 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
               </section>
             ) : null}
 
-            {(published || retrieved || unreachable) ? (
-              <section className="gp-source-block gp-source-meta-block" data-gp-source-section="status">
-                <div className="gp-source-meta-row">
-                  {published ? (
-                    <span className="gp-source-time">
-                      {copy.sourcePublished} {published}
-                    </span>
-                  ) : null}
-                  {retrieved ? (
-                    <span className="gp-source-time">
-                      {copy.sourceRetrieved} {retrieved}
-                    </span>
-                  ) : null}
-                </div>
-                {unreachable ? (
-                  <p className="gp-source-unreachable" role="status">
-                    {copy.sourceUnreachable}
-                  </p>
+            <section className="gp-source-block gp-source-meta-block" data-gp-source-section="status">
+              <div className="gp-source-meta-row">
+                <span className="gp-source-time">
+                  {copy.sourcePublished} {published || copy.sourceDateUnknown}
+                </span>
+                <span className="gp-source-time">
+                  {copy.sourceRetrieved} {retrieved || copy.sourceDateUnknown}
+                </span>
+                {publisher ? (
+                  <span className="gp-source-time">
+                    {copy.sourcePublisher} {publisher}
+                  </span>
                 ) : null}
-              </section>
-            ) : null}
+              </div>
+              {fetchStatusText || fetchNote ? (
+                <p className="gp-source-fetch-status" data-gp-source-fetch-status role="status">
+                  {fetchStatusText}
+                  {fetchNote ? ` ${fetchNote}` : ""}
+                </p>
+              ) : null}
+              {unreachable ? (
+                <p className="gp-source-unreachable" role="status">
+                  {copy.sourceUnreachable}
+                </p>
+              ) : null}
+            </section>
 
             {source.url ? (
               <div className="gp-source-action-row">
@@ -386,6 +417,25 @@ export function resolveSourceDrawerView(
   claimId: string,
   identity: string,
 ): SourceDrawerView | null {
+  // source-only 身份（material:<sourceId>）：用户材料入口不挂命题，
+  // 也按当前快照里的 source 解析，抽屉随新快照更新而不是停在打开时的对象。
+  if (identity.startsWith("material:")) {
+    const sourceId = identity.slice("material:".length);
+    const source = sources.find((s) => s.id === sourceId && s.material === "user-intake");
+    if (!source) return null;
+    return {
+      claimId: "",
+      claimIndex: -1,
+      claimText: "",
+      source,
+      link: {
+        sourceId: source.id,
+        role: "context-only",
+        relationReason: "你提交的材料；未关联到具体命题，不作为支持或反驳依据",
+      },
+      relatedSources: [source],
+    };
+  }
   const claimIndex = claims.findIndex((c) => c.id === claimId);
   const claim = claimIndex >= 0 ? claims[claimIndex] : undefined;
   if (!claim || !identity) return null;
