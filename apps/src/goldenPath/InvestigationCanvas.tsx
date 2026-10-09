@@ -12,6 +12,7 @@ import type {
   InvestigationSource,
   PublicActivity,
 } from "../lib/investigation";
+import { judgmentToLabel } from "../lib/investigation";
 import { useUiLang } from "../lib/useUiLang";
 import { displayFollowUpClaim, conclusionMissesFollowUp, followUpQuestionLead } from "../lib/composeFollowUpClaim";
 import { isUrlOnlyClaim, type CaseImage } from "../lib/caseIntake";
@@ -252,6 +253,8 @@ export function InvestigationCanvas({
               verdictLead={displayVerdictLead}
               rationale={conclusion.rationale}
               judgment={conclusion.judgment}
+              label={conclusion.label ?? judgmentToLabel(conclusion.judgment)}
+              reason={followUpRewrite || unopenedEmpty ? undefined : conclusion.reason}
               boundaries={conclusion.boundaries}
               claimCount={snapshot.claims.length}
               sourceCount={snapshot.sources.length}

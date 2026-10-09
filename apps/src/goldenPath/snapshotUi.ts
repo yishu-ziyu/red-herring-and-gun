@@ -11,6 +11,7 @@ import type {
   InvestigationSnapshotV1,
   InvestigationSource,
 } from "../lib/investigation";
+import { LABEL_TEXT, LABEL_TONE, judgmentToLabel, type LabelKey } from "../lib/investigation";
 
 export type EvidenceRole = InvestigationEvidenceLink["role"];
 
@@ -45,23 +46,23 @@ export const ROLE_TONE: Record<EvidenceRole, "positive" | "negative" | "neutral"
   "context-only": "neutral",
 };
 
+/** judgment 对应的标签词（9 个标签之一，见 domain/labels）。活动流等只有 judgment 的地方用它。 */
 export const JUDGMENT_LABEL: Record<NonNullable<InvestigationJudgment>, string> = {
-  supported: "证据支持",
-  refuted: "证据反驳",
-  mixed: "有对有错",
-  disputed: "有争议",
-  unresolved: "证据不足",
-  "not-applicable": "立场表达",
+  supported: LABEL_TEXT[judgmentToLabel("supported")],
+  refuted: LABEL_TEXT[judgmentToLabel("refuted")],
+  mixed: LABEL_TEXT[judgmentToLabel("mixed")],
+  disputed: LABEL_TEXT[judgmentToLabel("disputed")],
+  unresolved: LABEL_TEXT[judgmentToLabel("unresolved")],
+  "not-applicable": LABEL_TEXT[judgmentToLabel("not-applicable")],
 };
 
-export const JUDGMENT_TONE: Record<NonNullable<InvestigationJudgment>, "positive" | "negative" | "mixed" | "muted"> = {
-  supported: "positive",
-  refuted: "negative",
-  mixed: "mixed",
-  disputed: "mixed",
-  unresolved: "muted",
-  "not-applicable": "muted",
-};
+export { LABEL_TEXT, LABEL_TONE, type LabelKey };
+
+/** 这一截显示的标签：快照带了就用；改版前的快照只有 judgment，按它推出（此时没有理由）。 */
+export function claimLabel(claim: Pick<InvestigationClaim, "label" | "judgment">): LabelKey | null {
+  if (claim.label) return claim.label;
+  return claim.judgment ? judgmentToLabel(claim.judgment) : null;
+}
 
 export const PROGRESS_LABEL: Record<InvestigationProgress, string> = {
   pending: "待查",

@@ -7,6 +7,7 @@
  */
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
+import type { LABEL_KEYS } from "../../domain/labels.js";
 
 const closed = { additionalProperties: false } as const;
 
@@ -44,6 +45,24 @@ export const InvestigationJudgmentSchema = Type.Union([
   Type.Literal("not-applicable"),
 ]);
 export type InvestigationJudgment = Static<typeof InvestigationJudgmentSchema>;
+
+/** 9 个判断标签（domain/labels）。改版前的快照没有这个字段，显示时由 judgment 推出。 */
+export const InvestigationLabelSchema = Type.Union([
+  Type.Literal("true"),
+  Type.Literal("mostly-true"),
+  Type.Literal("partly-true"),
+  Type.Literal("exaggerated"),
+  Type.Literal("false"),
+  Type.Literal("unresolved"),
+  Type.Literal("uncheckable"),
+  Type.Literal("disputed"),
+  Type.Literal("opinion"),
+]);
+// 与 domain/labels 的 LABEL_KEYS 必须一致：少一个这里就编译不过。
+const _labelsMatch: Static<typeof InvestigationLabelSchema> extends (typeof LABEL_KEYS)[number]
+  ? (typeof LABEL_KEYS)[number] extends Static<typeof InvestigationLabelSchema> ? true : never
+  : never = true;
+void _labelsMatch;
 
 export const InvestigationEvidenceRoleSchema = Type.Union([
   Type.Literal("unassessed"),
@@ -153,6 +172,9 @@ export const InvestigationClaimSchema = Type.Object(
     checkability: InvestigationCheckabilitySchema,
     progress: InvestigationProgressSchema,
     judgment: Type.Union([InvestigationJudgmentSchema, Type.Null()]),
+    /** 这一截的标签与一句理由（#140）；有判断才有。 */
+    label: Type.Optional(InvestigationLabelSchema),
+    reason: Type.Optional(Type.String()),
     /** 判断透明补充（审计新增）：该命题「仍不能推出什么」，来自生产 boundary 字段。 */
     boundary: Type.Optional(Type.String()),
     evidence: Type.Array(InvestigationEvidenceLinkSchema),
@@ -198,6 +220,9 @@ export const InvestigationConclusionSchema = Type.Object(
     /** 结论第一句判断句（含结尾标点）；缺失时前端回退，只渲染 directAnswer。 */
     verdictLead: Type.Optional(Type.String()),
     judgment: InvestigationJudgmentSchema,
+    /** 整句标签（规则表推出）与一句理由（模型写）：结论第一句（#140）。 */
+    label: Type.Optional(InvestigationLabelSchema),
+    reason: Type.Optional(Type.String()),
     /** 判断句之后的解释文本；为空则不输出该字段（前端不渲染解释层）。 */
     rationale: Type.Optional(Type.String()),
     boundaries: Type.Array(Type.String()),

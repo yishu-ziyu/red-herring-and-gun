@@ -9,12 +9,21 @@ import { decideSentenceVerdict, type PartRole, type PartStanding, type SentenceP
 import { listAtomsForSearch } from "./atomSearch.js";
 import { claimAtomKey } from "./claimAtom/index.js";
 import { hasDirectionalBoundHttpUrl } from "./citationBinding.js";
-import { directAnswer } from "./publicCopy.js";
+import {
+  FALLBACK_PART_REASON,
+  LABEL_TEXT,
+  isLabelKey,
+  nonCheckableLabel,
+  partLabelFor,
+  wholeLabelFor,
+  type LabelKey,
+} from "../domain/labels.js";
 import { buildScopedEvidence, clipSentence } from "./wholeClaimAudit/scopedEvidence.js";
 
 type Report = Record<string, unknown>;
 
-export type AssessedPart = SentencePart;
+/** 一截的显示标签与理由：标签由证据状态定、模型标签细分（domain/labels.partLabelFor）。 */
+export type AssessedPart = SentencePart & { label?: LabelKey; reason?: string };
 
 export type SentenceVerdictInput = {
   claimAtoms: unknown;
@@ -113,10 +122,18 @@ export function listAssessedClaims(report: Report, input: SentenceVerdictInput):
   return verifiable.map((atom, index) => {
     const standing = standings[index]!;
     const role: PartRole = anyMain ? (declared[index] ?? "premise") : atom === fallbackMain ? "main" : (declared[index] ?? "premise");
+    const verdict = findVerdict(report, atom);
+    const modelLabel = isLabelKey(verdict?.label) ? verdict.label : undefined;
+    const label = partLabelFor(standing, modelLabel);
+    const modelReason = typeof verdict?.reason === "string" ? verdict.reason.trim() : "";
+    // 代码改了模型的标签时，模型那句理由说的是另一个标签，不能留。
+    const reason = label === modelLabel && modelReason ? modelReason : FALLBACK_PART_REASON[label];
     return {
       text: atom,
       role,
       standing,
+      label,
+      reason,
       ...(contentTrue && issuers[index] && standing === "refuted" ? { issuerMisattributed: true } : {}),
     };
   });
@@ -130,18 +147,23 @@ function clip(text: string, max: number): string {
 function partLine(part: AssessedPart): string {
   const quoted = `「${clip(part.text, 40)}」`;
   if (part.issuerMisattributed) return `${quoted}的内容属实，只是原句把发文机关或出处说错了`;
-  switch (part.standing) {
-    case "supported":
-      return `${quoted}站得住`;
-    case "refuted":
-      return `${quoted}站不住`;
-    case "partial":
-      return `${quoted}只有一部分站得住`;
-    case "conflicting":
-      return `${quoted}权威来源之间说法不一致`;
-    default:
-      return `${quoted}尚未查清，未计入该判断`;
-  }
+  // 用和这一截标签相同的词，结论和标签不会说成两样。
+  return `${quoted}${LABEL_TEXT[part.label ?? partLabelFor(part.standing, undefined)]}`;
+}
+
+/** 立场 / 预测条目（不可查）的标签，供「没有可核查部分」时定整句标签。 */
+function nonCheckableLabels(report: Report, nonVerifiableAtoms: unknown): LabelKey[] {
+  return records(nonVerifiableAtoms ?? report.nonVerifiableAtoms).map((atom) => nonCheckableLabel(String(atom.type ?? "")));
+}
+
+/** 模型写的整句理由；没有时（确定性报告、模型没给）用各截标签拼一句。 */
+function wholeReasonOf(report: Report, parts: readonly AssessedPart[], label: LabelKey, factCheckReason?: unknown): string {
+  // 报告写作那一步的理由优先；时间不够跳过报告写作时，用核查那一步写的理由（两步都是模型写的）。
+  const pick = (value: unknown) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "");
+  const model = pick(report.verdictReason) || pick(factCheckReason);
+  if (model) return /[。！？]$/.test(model) ? model : `${model}。`;
+  if (parts.length > 0) return `${parts.map(partLine).join("；")}。`;
+  return FALLBACK_PART_REASON[label];
 }
 
 /** 这一部分的判词说明（带能点开出处的 [n]，编号已映射到全局）。没有出处的判词不出文字。 */
@@ -177,15 +199,19 @@ function renderConclusion(
   report: Report,
   verdictType: string,
   parts: readonly AssessedPart[],
-  context: { nonVerifiableAtoms?: unknown; auditUnresolvedGaps?: readonly string[] }
+  context: { nonVerifiableAtoms?: unknown; auditUnresolvedGaps?: readonly string[] },
+  whole: { label: LabelKey; reason: string }
 ) {
-  const lead = directAnswer(verdictType);
+  // 结论第一句 = 整句标签 + 一句理由（#140）。
+  const lead = `${LABEL_TEXT[whole.label]}。${whole.reason}`;
   const stance = records(context.nonVerifiableAtoms ?? report.nonVerifiableAtoms)
     .map((atom) => String(atom.text ?? "").trim())
     .filter(Boolean)
     .slice(0, 2);
 
-  const enumerated = parts.length > 1 ? `${parts.map(partLine).join("；")}。` : "";
+  const partsLine = parts.length > 1 ? `${parts.map(partLine).join("；")}。` : "";
+  // 理由已经逐截列过时不再列第二遍。
+  const enumerated = whole.reason.startsWith(partsLine) ? "" : partsLine;
   // 出处说错的那一处一定要写出来：答案得说清实际是谁（评分规则 1）。
   const ordered = [...parts].sort(
     (a, b) => Number(Boolean(b.issuerMisattributed)) - Number(Boolean(a.issuerMisattributed)) || DECISIVE_FIRST[a.standing] - DECISIVE_FIRST[b.standing]
@@ -212,18 +238,33 @@ function renderConclusion(
 export function applySentenceVerdict(
   report: Report,
   parts: AssessedPart[],
-  context: { nonVerifiableAtoms?: unknown; auditUnresolvedGaps?: readonly string[] } = {}
+  context: { nonVerifiableAtoms?: unknown; auditUnresolvedGaps?: readonly string[]; factCheckReason?: unknown } = {}
 ) {
   const decision = decideSentenceVerdict(parts);
   const before = String(report.verdictType ?? "");
   const verdictType = VERDICT_TYPE[decision.verdict];
   report.verdictType = verdictType;
+  const label = wholeLabelFor(
+    decision.rule,
+    parts.map((p) => ({ role: p.role, standing: p.standing, label: p.label ?? partLabelFor(p.standing, undefined) })),
+    nonCheckableLabels(report, context.nonVerifiableAtoms)
+  );
+  const reason = wholeReasonOf(report, parts, label, context.factCheckReason);
   report._verdictDecision = {
     verdict: decision.verdict,
     rule: decision.rule,
     from: before,
-    parts: parts.map((p) => ({ text: p.text, role: p.role, standing: p.standing, ...(p.issuerMisattributed ? { issuerMisattributed: true } : {}) })),
+    label,
+    reason,
+    parts: parts.map((p) => ({
+      text: p.text,
+      role: p.role,
+      standing: p.standing,
+      ...(p.label ? { label: p.label } : {}),
+      ...(p.reason ? { reason: p.reason } : {}),
+      ...(p.issuerMisattributed ? { issuerMisattributed: true } : {}),
+    })),
   };
-  renderConclusion(report, verdictType, parts, context);
+  renderConclusion(report, verdictType, parts, context, { label, reason });
   return decision;
 }

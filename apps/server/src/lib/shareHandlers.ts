@@ -19,6 +19,7 @@ import type { RunRecord } from "./runStore.js";
 import { GUEST_DAILY_SHARES, IP_DAILY_SHARES, shanghaiDayKey } from "../../../src/lib/checkQuota.js";
 import { scrubFaceText } from "../../../src/lib/scrubFace.js";
 import { conclusionMissesFollowUp, followUpQuestionLead } from "../../../src/lib/composeFollowUpClaim.js";
+import { LABEL_TEXT, LABEL_TONE, isLabelKey, judgmentToLabel, type LabelKey } from "../domain/labels.js";
 
 const TOKEN_BYTES = 24;
 const SHARE_TTL_DAYS = 30;
@@ -31,11 +32,14 @@ export type PublicShareProjection = {
   claim: string;
   /** 结论句：和结果页大字显示的那句一致。 */
   answer: string;
+  /** 整句标签与一句理由（#140）。改版前存下的分享没有这两个字段。 */
+  label?: LabelKey;
+  reason?: string;
   rationale?: string;
   boundaries: string[];
   checkedAt?: string;
   createdAt: number;
-  claims: Array<{ text: string; judgment: string | null; evidence: Array<{ role: string; sourceId: string; quote?: string; finding?: string }> }>;
+  claims: Array<{ text: string; judgment: string | null; label?: LabelKey; reason?: string; evidence: Array<{ role: string; sourceId: string; quote?: string; finding?: string }> }>;
   deferredClaims: string[];
   sources: Array<{ id: string; title: string; url: string; publishedAt?: string }>;
 };
@@ -71,6 +75,15 @@ function publicAnswer(snapshot: Record<string, unknown>, conclusion: Record<stri
   return scrubFaceText(raw) || raw;
 }
 
+const JUDGMENTS = ["supported", "refuted", "mixed", "disputed", "unresolved", "not-applicable"] as const;
+
+/** 快照带了标签就用；改版前的快照只有 judgment，按它推出。 */
+function labelOf(label: unknown, judgment: unknown): LabelKey | undefined {
+  if (isLabelKey(label)) return label;
+  const j = str(judgment);
+  return (JUDGMENTS as readonly string[]).includes(j) ? judgmentToLabel(j as (typeof JUDGMENTS)[number]) : undefined;
+}
+
 /** 从一轮调查的快照造公开内容。只读快照，不读任何浏览器发来的东西。 */
 export function projectionFromSnapshot(snapshotValue: unknown, createdAt: number): PublicShareProjection {
   const snapshot = rec(snapshotValue);
@@ -80,10 +93,16 @@ export function projectionFromSnapshot(snapshotValue: unknown, createdAt: number
   const deferredIds = new Set(arr(scope.deferredClaimIds).map(str));
   const rationale = str(conclusion.verdictLead) ? scrubFaceText(str(conclusion.rationale)) : "";
   const checkedAt = str(snapshot.checkedAt);
+  const answer = publicAnswer(snapshot, conclusion);
+  const label = labelOf(conclusion.label, conclusion.judgment);
+  // 追问改写换掉了首句时，结论的理由不再是显示出来的那句，不单独给。
+  const reason = str(conclusion.reason) && answer === (scrubFaceText(str(conclusion.reason)) || str(conclusion.reason)) ? answer : "";
   return {
     version: 2,
     claim: publicClaim(str(snapshot.originalClaim)),
-    answer: publicAnswer(snapshot, conclusion),
+    answer,
+    ...(label ? { label } : {}),
+    ...(reason ? { reason } : {}),
     ...(rationale ? { rationale } : {}),
     boundaries: arr(conclusion.boundaries).map(str).filter(Boolean),
     ...(checkedAt ? { checkedAt } : {}),
@@ -93,6 +112,8 @@ export function projectionFromSnapshot(snapshotValue: unknown, createdAt: number
       .map((claim) => ({
         text: str(claim.text),
         judgment: str(claim.judgment) || null,
+        ...(isLabelKey(claim.label) ? { label: claim.label } : {}),
+        ...(isLabelKey(claim.label) && str(claim.reason) ? { reason: scrubFaceText(str(claim.reason)) } : {}),
         evidence: arr(claim.evidence)
           .map(rec)
           .filter((link) => ["support", "contradict", "context-only"].includes(str(link.role)))
@@ -262,7 +283,8 @@ const SHARE_PAGE_STYLE = `
   h2 { font-size: 1rem; margin: 1.6rem 0 .5rem; }
   .meta { color: #62665e; font-size: .85rem; margin: .25rem 0 1.5rem; }
   .lead { font-size: 1.08rem; }
-  .judgment { color: #62665e; font-size: .85rem; margin-left: .4rem; }
+  .label { display: inline-block; border: 1px solid currentColor; border-radius: 4px; padding: 0 .4rem; font-size: .8rem; font-weight: 500; margin-right: .4rem; }
+  .reason { display: block; color: #3d403a; font-size: .9rem; }
   blockquote { margin: .3rem 0 .3rem .2rem; padding-left: .7rem; border-left: 3px solid #dedcd4; color: #3d403a; font-size: .92rem; }
   article { background: #fff; border: 1px solid #dedcd4; border-radius: 12px; padding: 1.1rem 1.25rem; }
   ul { padding-left: 1.1rem; }
@@ -271,14 +293,13 @@ const SHARE_PAGE_STYLE = `
   footer { margin-top: 2rem; font-size: .85rem; color: #62665e; }
 `;
 
-const JUDGMENT_LABEL: Record<string, string> = {
-  supported: "证据支持",
-  refuted: "证据反驳",
-  mixed: "有对有错",
-  disputed: "有争议",
-  unresolved: "证据不足",
-  "not-applicable": "立场表达",
-};
+const LABEL_COLOR: Record<string, string> = { positive: "#15803d", mixed: "#92400e", negative: "#b91c1c", muted: "#62665e" };
+
+/** 标签小块：文字一直显示，颜色只做辅助。 */
+function labelChip(label: LabelKey | undefined, attr: string): string {
+  if (!label) return "";
+  return `<span class="label" ${attr}="${label}" style="color:${LABEL_COLOR[LABEL_TONE[label]]}">${escapeHtml(LABEL_TEXT[label])}</span>`;
+}
 const ROLE_LABEL: Record<string, string> = { support: "支持", contradict: "反驳", "context-only": "背景" };
 
 function escapeHtml(value: unknown): string {
@@ -335,8 +356,9 @@ export function buildSharedPageHtml(lookup: ShareLookup): string {
         })
         .filter(Boolean)
         .join("");
-      const judgment = claim.judgment ? `<span class="judgment">${escapeHtml(JUDGMENT_LABEL[claim.judgment] ?? "")}</span>` : "";
-      return `<li data-share-claim>${escapeHtml(claim.text)}${judgment}${evidence ? `<ul>${evidence}</ul>` : ""}</li>`;
+      const label = labelOf(claim.label, claim.judgment);
+      const reason = claim.label && claim.reason ? `<span class="reason" data-share-claim-reason>${escapeHtml(claim.reason)}</span>` : "";
+      return `<li data-share-claim>${labelChip(label, "data-share-claim-label")}${escapeHtml(claim.text)}${reason}${evidence ? `<ul>${evidence}</ul>` : ""}</li>`;
     })
     .join("");
   const body = `<main>
@@ -345,7 +367,7 @@ export function buildSharedPageHtml(lookup: ShareLookup): string {
     p.checkedAt ? ` · 核查完成：${escapeHtml(p.checkedAt)}` : ""
   }</p>
   <article>
-    <p class="lead" data-share-conclusion><strong>${escapeHtml(p.answer)}</strong></p>
+    <p class="lead" data-share-conclusion>${labelChip(p.label, "data-share-label")} <strong>${escapeHtml(p.answer)}</strong></p>
     ${p.rationale ? `<p>${escapeHtml(p.rationale)}</p>` : ""}
     ${p.boundaries.length ? `<p>必要边界：${p.boundaries.map(escapeHtml).join("；")}</p>` : ""}
     <p>回答仅针对本轮列出的核查问题，不代表整份材料已获证实。</p>

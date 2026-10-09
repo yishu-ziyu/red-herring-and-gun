@@ -172,7 +172,7 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
   // 8 整句判定（终局）：死链已剔除，按仍然活着的出处重新求值，并写结论首句、摘要与正文。
   // 死证撑不起的判词回到没查清。辟谣材料只有经过逐条判词与关系审核才算反驳，没有绕过规则表的捷径。
   throwIfAborted();
-  applySentenceVerdict(finalReport, assess(), { auditUnresolvedGaps });
+  applySentenceVerdict(finalReport, assess(), { auditUnresolvedGaps, factCheckReason: factStep?.output?.verdictReason });
   normalizeReportCitations(finalReport);
 
   // 9 追问直答；10 只有打不开的链接时的结论。

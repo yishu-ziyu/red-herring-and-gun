@@ -1,3 +1,5 @@
+import type { LabelKey } from "../../domain/labels.js";
+
 /**
  * Claim-atom domain types (deep module surface for atom keys, exclusion, verdicts).
  */
@@ -24,6 +26,10 @@ export interface SubclaimVerdict {
   notJudgedByModel?: boolean;
   /** 模型原本的判定（true/false），被证据关系审核或出处绑定降成 unverified 时记下。 */
   demotedFrom?: string;
+  /** 模型给这一截的标签（9 选 1，domain/labels）；verdict 由它推出。显示用的标签另由证据状态定。 */
+  label?: LabelKey;
+  /** 模型写的一句理由。 */
+  reason?: string;
 }
 
 export type ClaimAtomType =

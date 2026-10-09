@@ -15,9 +15,10 @@ import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import {
   CHECKABILITY_HINT,
+  claimLabel,
   evidenceTitle,
-  JUDGMENT_LABEL,
-  JUDGMENT_TONE,
+  LABEL_TEXT,
+  LABEL_TONE,
   PROGRESS_LABEL,
   ROLE_LABEL,
 } from "./snapshotUi";
@@ -136,6 +137,7 @@ export function ClaimSection({
   }, [asResult, asWork, defaultExpanded]);
   const claimConflicts = conflicts.filter((c) => c.claimId === claim.id);
   const judgment = claim.judgment;
+  const label = claimLabel(claim);
   const relatedLinks = claim.evidence.filter((link) => link.role === "context-only");
   const hasPrimary = claim.evidence.some((link) => link.role === "support" || link.role === "contradict");
   const hideRelated = !asResult && !showRelated && hasPrimary;
@@ -175,14 +177,19 @@ export function ClaimSection({
         <span className="gp-claim-num" aria-hidden="true">{num}</span>
         <span className="gp-claim-body">
           <strong className="gp-claim-text">{claim.text}</strong>
-          {claim.checkability !== "checkable" ? (
+          {claim.checkability !== "checkable" && !claim.reason ? (
             <em className="gp-claim-checkability">{CHECKABILITY_HINT[claim.checkability]}</em>
+          ) : null}
+          {label && claim.reason ? (
+            <span className="gp-claim-reason" data-gp-claim-reason>
+              {claim.reason}
+            </span>
           ) : null}
         </span>
         <span className="gp-claim-side">
-          {judgment ? (
-            <span className={`gp-chip gp-chip--${JUDGMENT_TONE[judgment]}`} data-gp-judgment={judgment}>
-              {JUDGMENT_LABEL[judgment]}
+          {label ? (
+            <span className={`gp-chip gp-chip--${LABEL_TONE[label]}`} data-gp-judgment={judgment ?? undefined} data-gp-claim-label={label}>
+              {LABEL_TEXT[label]}
             </span>
           ) : showStatusChip ? (
             <span className={`gp-chip gp-chip--${claim.progress === "searching" ? "live" : "muted"}`}>

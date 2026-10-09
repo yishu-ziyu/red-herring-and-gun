@@ -12,6 +12,7 @@ import {
   type SubclaimVerdict,
   type VerdictSource,
 } from "./claimAtom/index.js";
+import { LABEL_KEYS } from "../domain/labels.js";
 
 export type { ClaimAtomType, SubclaimVerdict, VerdictSource };
 export {
@@ -220,7 +221,16 @@ const subclaimVerdictsSchema = {
     additionalProperties: false,
     properties: {
       claimAtom: { type: "string" },
-      verdict: { type: "string", enum: ["true", "false", "partial", "unverified", "exaggerated", "disputed"] },
+      verdict: {
+        type: "string",
+        enum: [...LABEL_KEYS],
+        description:
+          "Label for this atom: true=属实, mostly-true=基本属实, partly-true=部分属实, exaggerated=夸大了, false=不属实, unresolved=还查不清, uncheckable=无法核对, disputed=说法不一, opinion=是观点，不分对错.",
+      },
+      reason: {
+        type: "string",
+        description: "一句中文理由，说明为什么是这个标签；只用本轮材料，不写 [n]，不写标签词本身。",
+      },
       evidence: {
         type: "string",
         description:
@@ -248,7 +258,7 @@ const subclaimVerdictsSchema = {
       },
       evidenceGaps: { type: "array", items: { type: "string" } },
     },
-    required: ["claimAtom", "verdict", "evidence", "boundary"],
+    required: ["claimAtom", "verdict", "reason", "evidence", "boundary"],
   },
 };
 
@@ -262,8 +272,13 @@ const factCheckerSchema = {
     keyFindings: { type: "array", items: { type: "string" } },
     counterEvidence: { type: "array", items: { type: "string" } },
     subclaimVerdicts: subclaimVerdictsSchema,
+    verdictReason: {
+      type: "string",
+      description:
+        "一句中文：各截的判断怎么合成整句判断。不写标签词，不重复某一截的 reason，只用本轮材料，不写 [n]。",
+    },
   },
-  required: ["factCheckResult", "confidence", "sources", "keyFindings", "counterEvidence", "subclaimVerdicts"],
+  required: ["factCheckResult", "confidence", "sources", "keyFindings", "counterEvidence", "subclaimVerdicts", "verdictReason"],
 };
 
 const sourceValidatorSchema = {
@@ -298,6 +313,11 @@ const reportComposerSchema = {
   additionalProperties: false,
   properties: {
     verdictType: { type: "string", enum: ["true", "false", "mixed_misleading", "unverified"] },
+    verdictReason: {
+      type: "string",
+      description:
+        "结论第一句标签后面的那句理由：一句中文，说明各截的判断怎么合成整句判断。不写标签词，不重复某一截的理由，只用本轮材料，不写 [n]。",
+    },
     conclusion: {
       type: "string",
       description:
@@ -368,6 +388,7 @@ const reportComposerSchema = {
   },
   required: [
     "verdictType",
+    "verdictReason",
     "conclusion",
     "recommendation",
     "summaryForPublic",
@@ -580,14 +601,17 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "【逐条判定 / subclaimVerdicts — 强制】",
       "1. subclaimVerdicts 必须覆盖输入 claimAtoms 中的每个原子命题，逐条给出 verdict。",
       "2. 每条 claimAtom 必须能回溯到原句，只能取输入 claimAtoms 中真实存在的原子，不得引入原句未声称的信息或编造不存在的原子。",
-      "3. verdict 六值：true（证据支持）、false（证据否定）、partial（部分成立）、exaggerated（夸大/断章取义）、disputed（权威来源之间互相矛盾）、unverified（无法判定，待补证）。",
-      "4. 每条必须写 evidence（证据）与 boundary（边界/不能推出的部分）。",
+      "3. verdict 是这一截的标签，只能取下面 9 个之一：",
+      "   true=属实（公开资料证实了）；mostly-true=基本属实（主要内容对，细节有出入）；partly-true=部分属实（一部分对，一部分错）；exaggerated=夸大了（有一部分道理，但说得太重）；false=不属实（公开资料说的是相反的事）；",
+      "   unresolved=还查不清（能查，查了，但公开资料不够下结论）；uncheckable=无法核对（按性质现在查不了：还没发生、也没有现在能查的依据的预测，没有公开记录的私下的事）；disputed=说法不一（权威来源之间互相矛盾）；opinion=是观点，不分对错（价值判断，不是事实）。",
+      "   没有依据可查的预测判 uncheckable，不判 opinion：预测是关于事实的说法，只是事实还没发生。",
+      "4. 每条必须写 reason：一句中文理由，说明为什么是这个标签，只能用本轮材料，不写 [n]，不写标签词本身。每条还必须写 evidence（证据）与 boundary（边界/不能推出的部分）。",
       "若输入含 crossExam，针对其中具体 challenge 在相应 subclaimVerdicts.crossExamResponse 中回应一次。使用本轮实际材料，可保留或修改原判词；必须仍输出所有命题。补查未运行或无新增时不得声称已补查成功，不按第二意见票数改结论。",
-      "5. verdict 为 true / partial / exaggerated 时，supportingSources 必须给出真实 URL（来自该原子检索结果）；",
-      "   给不出 URL 的不得判肯定值，改判 unverified 并在 evidenceGaps 写明待补证。",
+      "5. verdict 为 true / mostly-true / partly-true / exaggerated 时，supportingSources 必须给出真实 URL（来自该原子检索结果）；",
+      "   给不出 URL 的不得判肯定值，改判 unresolved 并在 evidenceGaps 写明待补证。",
       "6. supportingSources 只放支持该原子命题本身的来源；contradictingSources 只放反驳该原子命题本身的来源。",
       "   verdict=false 时，引用的来源必须写入 contradictingSources，不得为了句内 [n] 把反驳材料写入 supportingSources；",
-      "   给不出反证 URL 的不得判 false，改判 unverified 并在 evidenceGaps 写明待补证。",
+      "   给不出反证 URL 的不得判 false，改判 unresolved 并在 evidenceGaps 写明待补证。",
       "",
       "【逐条判定来源绑定 / 判定可追溯 — 强制】",
       "1. 输入可能含 atomSearches：每项 { claimAtom, sources[] }，表示该原子定向检索结果。优先从对应 claimAtom 的 sources 中引用 supportingSources / contradictingSources。",
@@ -597,18 +621,22 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "",
       "【怎么理解原句、怎么判每一条 — 强制】",
       "你只判每一条命题；整句最后是能信、不能信还是有真有假，由系统按各条判词推出，你不用也不要在判词里替整句下结论。",
-      "1. 按日常意思理解原句：「能预防」是明显降低风险，不是 100% 预防；「有效」是通常有用，不是人人有效；不要要求原句自带限定词。不因原句没写「大概」「在一定范围内」这类限定词降级：权威来源支持日常意思上的说法，就判 true，把「不是 100%」这类边界写进 boundary。",
+      "1. 按日常意思理解原句：「能预防」是明显降低风险，不是 100% 预防；「有效」是通常有用，不是人人有效；不要要求原句自带限定词。不因原句没写「大概」「在一定范围内」这类限定词降级：权威来源支持日常意思上的说法，就判 true，把「不是 100%」这类边界写进 boundary。主要内容被证实、只有次要细节（数字、日期的小出入）对不上时判 mostly-true。",
       "2. 内容属实、只是原句把发文机关或出处说错了（例如生育津贴直接发到个人卡属实，但发文的是国家医保局，原句说成人社部）：内容那条判 true；拆题标了 issuer 的那条判 false，evidence 里写清实际的发文机关或出处，contradictingSources 放能证明的来源。",
       "3. 把个别现象说成普遍、把小范围说成全部、把一部分说成整体（个别运动员自带床垫，说成「自带 300 多个空调」）：判 exaggerated，boundary 写明属实的那一截和被夸大的那一截。",
-      "3a. partial 只在有来源明确反驳了这条命题里某个具体要素（数字、日期、范围、主体、因果关系）时使用；把被反驳的那个要素逐字引用原句写进 contradictedElement，反驳它的来源放进 contradictingSources。写不出这个要素就不是 partial。用词不精确、缺细节、来源补充了并不反驳原句的适用条件（仅境内航班、需办手续、需本地户籍、政策从某日起实施）、只是「不是 100%」：都不是 partial，判 true，条件与细节写进 boundary。",
+      "3a. partly-true 只在有来源明确反驳了这条命题里某个具体要素（数字、日期、范围、主体、因果关系）时使用；把被反驳的那个要素逐字引用原句写进 contradictedElement，反驳它的来源放进 contradictingSources。写不出这个要素就不是 partly-true。用词不精确、缺细节、来源补充了并不反驳原句的适用条件（仅境内航班、需办手续、需本地户籍、政策从某日起实施）、只是「不是 100%」：都不是 partly-true，判 true，条件与细节写进 boundary。",
       "4. 权威来源之间互相矛盾（例如维生素 C 对普通人与剧烈运动人群结论不同）：判 disputed，supportingSources 与 contradictingSources 都要有真实 URL，evidence 写清两边各说了什么、各在什么人群或条件下成立；只有一边有出处时不判 disputed。",
-      "5. 按常理不会留下公开记录的传言（公司下周被收购、某小区物业费已定涨一倍）：判 unverified，evidenceGaps 写明缺什么（公司名、公告、业主表决结果）和该去哪里核实（交易所公告、业委会通知、当地疾控通报）。",
-      "6. 原句断言「已经证明」某功效，而权威来源明确说该功效未经证实：判 false，来源放 contradictingSources；原句只说「有效果」，而来源只说「未证实、证据不足」：判 unverified，不判 false。",
+      "5. 按常理不会留下公开记录的传言（公司下周被收购、某小区物业费已定涨一倍）：判 unresolved，evidenceGaps 写明缺什么（公司名、公告、业主表决结果）和该去哪里核实（交易所公告、业委会通知、当地疾控通报）。",
+      "6. 原句断言「已经证明」某功效，而权威来源明确说该功效未经证实：判 false，来源放 contradictingSources；原句只说「有效果」，而来源只说「未证实、证据不足」：判 unresolved，不判 false。",
+      "",
+      "【整句理由 verdictReason — 强制】",
+      "整句标签由系统按各截标签推出，显示在结论开头；你写标签后面那一句理由 verdictReason：一句中文，说明各截的判断怎么合成整句判断（例如：主要说法被权威辟谣反驳；另一截只在某条件下有一点道理，说得太重）。只有一截时，说明这一截为什么决定了整句。",
+      "不写任何标签词，不重复某一截 reason 的原话，只用本轮输入里的材料，不凭记忆补充事实，不写 [n]。",
       "",
       "【预测原子 / 现在时抓手 — 强制】",
       "若某 claimAtom 指向未来（type 为 prediction，或断言含将/会/未来）：只核查当下能点开的出处——公开承诺、正式文件、已发布预测、已经作出的决定。",
       "有抓手：verdict 最多覆盖「说过 / 有文件」；boundary 必须写明不能推出未来一定发生。不得把「将发生」判成已经发生的 true/false。",
-      "无抓手：verdict=unverified，禁止仅因尚未发生就判 false。不得把原子改写成「作出过承诺」等原句未声称的命题。",
+      "无抓手：verdict=uncheckable，禁止仅因尚未发生就判 false，也不判 opinion。不得把原子改写成「作出过承诺」等原句未声称的命题。",
       "",
       "【句内引用编号 / Inline citations — 强制】",
       "1. evidence [n] 按 supportingSources 再 contradictingSources 的合并顺序编号（第 1 条 → [1]）。",
@@ -618,11 +646,11 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "5. 两桶都空时，evidence 不得出现任何 [n]。不得把反驳材料改塞进 supportingSources 只为了能写 [n]。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"factCheckResult\": \"partial\",\n  \"confidence\": \"medium\",\n  \"sources\": [\"https://example.com/a\"],\n  \"keyFindings\": [\"发现1\", \"发现2\"],\n  \"counterEvidence\": [\"反驳证据1\", \"反驳证据2\"],\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子命题1\", \"verdict\": \"true\", \"evidence\": \"官方通报不支持该绝对化表述[1]。\", \"boundary\": \"边界\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"来源标题\", \"snippet\": \"摘要\"}], \"contradictingSources\": [], \"evidenceGaps\": []},\n    {\"claimAtom\": \"原子命题2\", \"verdict\": \"unverified\", \"evidence\": \"\", \"boundary\": \"暂无可靠证据\", \"supportingSources\": [], \"contradictingSources\": [], \"evidenceGaps\": [\"缺少官方公告\"]}\n  ]\n}",
+      "{\n  \"factCheckResult\": \"partial\",\n  \"confidence\": \"medium\",\n  \"sources\": [\"https://example.com/a\"],\n  \"keyFindings\": [\"发现1\", \"发现2\"],\n  \"counterEvidence\": [\"反驳证据1\", \"反驳证据2\"],\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子命题1\", \"verdict\": \"true\", \"reason\": \"国家卫健委通报证实了这一点。\", \"evidence\": \"官方通报不支持该绝对化表述[1]。\", \"boundary\": \"边界\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"来源标题\", \"snippet\": \"摘要\"}], \"contradictingSources\": [], \"evidenceGaps\": []},\n    {\"claimAtom\": \"原子命题2\", \"verdict\": \"unresolved\", \"reason\": \"这次只找到转述，没有找到官方公告。\", \"evidence\": \"\", \"boundary\": \"暂无可靠证据\", \"supportingSources\": [], \"contradictingSources\": [], \"evidenceGaps\": [\"缺少官方公告\"]}\n  ]\n}",
       "",
       "factCheckResult 必须是 'true'、'false'、'partial'、'unverified' 之一。",
       "confidence 必须是 'low'、'medium'、'high' 之一。",
-      "subclaimVerdicts 的 verdict 必须是 'true'、'false'、'partial'、'unverified'、'exaggerated'、'disputed' 之一。",
+      "subclaimVerdicts 的 verdict 必须是 'true'、'mostly-true'、'partly-true'、'exaggerated'、'false'、'unresolved'、'uncheckable'、'disputed'、'opinion' 之一。",
     ].join("\n"),
     responseSchema: factCheckerSchema,
   },
@@ -723,6 +751,12 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "4. verdictType 只能由 subclaimVerdicts 中有绑定来源的判定支撑：没有带来源的 false 判词不得写整句 false；没有带来源的 true 判词不得写整句 true。",
       "5. 原句含多条可独立核查的主张时，conclusion 第一句必须按条说哪几句站住、哪几句站不住、哪几句这次没查到。禁止把整段打成「公开材料不支持这条说法」而下面又写若干条「尚未查清」。有的主张是背景事实、有的是流传说法时，不得用流传说法的真假给整段盖章。计入判断的主张都尚未查清时，verdictType 只能是 unverified，禁止 false。",
       "",
+      "【整句理由 verdictReason — 强制】",
+      "整句的标签由系统按各截标签推出（属实、基本属实、部分属实、夸大了、不属实、还查不清、无法核对、说法不一、是观点，不分对错），显示在结论第一句开头；你只写标签后面那一句理由 verdictReason。",
+      "1. 一句中文，说明各截的判断怎么合成整句判断（例如：主要说法被权威辟谣反驳；另一截只在某条件下有一点道理，说得太重）。",
+      "2. 不写任何标签词，不重复某一截的 reason 原话，具体证据留在每一截下面。",
+      "3. 只用本轮输入里的材料，不凭记忆补充事实；不写 [n]。",
+      "",
       "预测类原子：结论只能写现在能点开的出处撑到哪；不得把未来写成已经发生；没有公开承诺或正式文件时写还查不清，不写假。",
       "",
       "【句内引用编号 / Inline citations — 强制】",
@@ -740,7 +774,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "5. verdictType 用 true/false/mixed_misleading/unverified。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"conclusion\": \"该说法部分成立：A 有公开记录支持[1]，B 仍无法证实。\",\n  \"recommendation\": \"给用户的行动建议\",\n  \"summaryForPublic\": \"面向公众的简化版结论（1-2 句话）\",\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子A\", \"verdict\": \"true\", \"evidence\": \"公开记录支持该点[1]。\", \"boundary\": \"不能推出全局\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"来源A\", \"snippet\": \"摘要\"}], \"contradictingSources\": [], \"evidenceGaps\": []}\n  ],\n  \"evidenceChain\": [\n    {\"layer\": \"搜索来源\", \"finding\": \"找到公开记录\", \"evidence\": \"材料支持原子A[1]。\", \"boundary\": \"不能推出B\", \"sourceRefs\": [\"https://example.com/a\"]}\n  ],\n  \"confidenceDimensions\": [\n    {\"dimension\": \"source_reliability\", \"label\": \"来源可靠性\", \"score\": 62, \"threshold\": 70, \"passed\": false, \"reason\": \"有部分来源但权威性不足\"},\n    {\"dimension\": \"evidence_completeness\", \"label\": \"证据完整度\", \"score\": 58, \"threshold\": 60, \"passed\": false, \"reason\": \"仍缺少原始材料\"},\n    {\"dimension\": \"consistency\", \"label\": \"逻辑一致性\", \"score\": 75, \"threshold\": 75, \"passed\": true, \"reason\": \"结论与前序 Agent 输出一致\"},\n    {\"dimension\": \"recency\", \"label\": \"信息时效性\", \"score\": 55, \"threshold\": 50, \"passed\": true, \"reason\": \"搜索线索可用于近期核查\"},\n    {\"dimension\": \"authority\", \"label\": \"权威匹配度\", \"score\": 60, \"threshold\": 65, \"passed\": false, \"reason\": \"尚需更权威来源确认\"}\n  ]\n}",
+      "{\n  \"verdictReason\": \"A 有公开记录支持，B 这次没有找到能核对的材料。\",\n  \"conclusion\": \"该说法部分成立：A 有公开记录支持[1]，B 仍无法证实。\",\n  \"recommendation\": \"给用户的行动建议\",\n  \"summaryForPublic\": \"面向公众的简化版结论（1-2 句话）\",\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子A\", \"verdict\": \"true\", \"evidence\": \"公开记录支持该点[1]。\", \"boundary\": \"不能推出全局\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"来源A\", \"snippet\": \"摘要\"}], \"contradictingSources\": [], \"evidenceGaps\": []}\n  ],\n  \"evidenceChain\": [\n    {\"layer\": \"搜索来源\", \"finding\": \"找到公开记录\", \"evidence\": \"材料支持原子A[1]。\", \"boundary\": \"不能推出B\", \"sourceRefs\": [\"https://example.com/a\"]}\n  ],\n  \"confidenceDimensions\": [\n    {\"dimension\": \"source_reliability\", \"label\": \"来源可靠性\", \"score\": 62, \"threshold\": 70, \"passed\": false, \"reason\": \"有部分来源但权威性不足\"},\n    {\"dimension\": \"evidence_completeness\", \"label\": \"证据完整度\", \"score\": 58, \"threshold\": 60, \"passed\": false, \"reason\": \"仍缺少原始材料\"},\n    {\"dimension\": \"consistency\", \"label\": \"逻辑一致性\", \"score\": 75, \"threshold\": 75, \"passed\": true, \"reason\": \"结论与前序 Agent 输出一致\"},\n    {\"dimension\": \"recency\", \"label\": \"信息时效性\", \"score\": 55, \"threshold\": 50, \"passed\": true, \"reason\": \"搜索线索可用于近期核查\"},\n    {\"dimension\": \"authority\", \"label\": \"权威匹配度\", \"score\": 60, \"threshold\": 65, \"passed\": false, \"reason\": \"尚需更权威来源确认\"}\n  ]\n}",
       "必须同时输出 verdictType、whyHardToVerify、evidenceChain、causalBoundary、closureActions。",
       "",
       "confidenceDimensions 必须包含 source_reliability、evidence_completeness、consistency、recency、authority 五项。",

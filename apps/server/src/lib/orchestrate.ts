@@ -10,6 +10,7 @@ import {
   buildAgentInput,
 } from "./agentConfigs.js";
 import { buildAgentStatusBar } from "./contextStatusBar.js";
+import { isLabelKey, verdictForLabel } from "../domain/labels.js";
 import { formatSkillsForPrompt, selectAgentSkills } from "./agentSkills.js";
 import {
   callAgentWithFallback,
@@ -21,6 +22,22 @@ import { attachKnowledgeDrafts } from "./atomSearch.js";
 import { splitReasoningSentences } from "./reasoningThoughts.js";
 import { getTimeoutMs } from "./httpUtils.js";
 import type { RunAgentFn } from "./casePipeline/index.js";
+
+
+/**
+ * 模型给每一截的 verdict 现在是 9 个标签之一（domain/labels）。流水线里读 verdict 的地方
+ * （补查、质询、引用绑定、规则表）仍按旧判词工作：这里把标签挪到 label，verdict 换成旧判词。
+ */
+function withLegacyVerdicts(output: Record<string, unknown>): Record<string, unknown> {
+  if (!output || !Array.isArray(output.subclaimVerdicts)) return output;
+  output.subclaimVerdicts = output.subclaimVerdicts.map((item: unknown) => {
+    if (!item || typeof item !== "object") return item;
+    const rec = item as Record<string, unknown>;
+    if (!isLabelKey(rec.verdict)) return rec;
+    return { ...rec, label: rec.verdict, verdict: verdictForLabel(rec.verdict) };
+  });
+  return output;
+}
 
 export interface OrchestrateAdapterDeps {
   signal?: AbortSignal;
@@ -124,7 +141,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
           reasoningEffort: "high",
           options: { logger: console, signal, deadlineMs: deadlineFor(execution.deadlineMs) },
         });
-        output = result.output;
+        output = withLegacyVerdicts(result.output);
         signal?.throwIfAborted();
         modelUsed = result.model;
         reasoning = result.reasoning;

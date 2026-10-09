@@ -7,7 +7,7 @@ import { useState, useMemo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
-import { JUDGMENT_LABEL, ROLE_LABEL, attachmentsForSource, evidenceTitle, pickDecisiveEvidence } from "./snapshotUi";
+import { LABEL_TEXT, LABEL_TONE, ROLE_LABEL, attachmentsForSource, evidenceTitle, pickDecisiveEvidence, type LabelKey } from "./snapshotUi";
 import { scrubFaceText } from "../lib/scrubFace";
 import { displayFollowUpClaim } from "../lib/composeFollowUpClaim";
 import { PromptKitSource } from "./PromptKitSource";
@@ -39,6 +39,10 @@ type ConclusionHeroProps = {
   /** 判断句之后的解释文本；缺失时不渲染解释层。 */
   rationale?: string;
   judgment: "supported" | "refuted" | "mixed" | "disputed" | "unresolved" | "not-applicable";
+  /** 整句标签：结论第一句的开头。改版前的快照由 judgment 推出。 */
+  label: LabelKey;
+  /** 标签后的一句理由；改版前的快照没有，此时 verdictLead 仍是旧首句。 */
+  reason?: string;
   boundaries: string[];
   claimCount: number;
   sourceCount: number;
@@ -61,6 +65,8 @@ export function ConclusionHero({
   verdictLead,
   rationale,
   judgment,
+  label,
+  reason,
   boundaries,
   claimCount,
   sourceCount,
@@ -143,11 +149,16 @@ export function ConclusionHero({
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: reduce ? 0 : EMERGE_S, ease: EMERGE_EASE }}
         >
-          {answerBreakSegments(lead).map((segment, index) => (
-            <span key={index} className={isShortSegment(segment) ? "is-nowrap" : undefined}>
-              {segment}
-            </span>
-          ))}
+          <span className={`gp-chip gp-chip--${LABEL_TONE[label]} gp-hero-label`} data-gp-conclusion-label={label}>
+            {LABEL_TEXT[label]}
+          </span>{" "}
+          <span data-gp-conclusion-reason={reason ? "" : undefined}>
+            {answerBreakSegments(lead).map((segment, index) => (
+              <span key={index} className={isShortSegment(segment) ? "is-nowrap" : undefined}>
+                {segment}
+              </span>
+            ))}
+          </span>
         </motion.p>
 
         {/* 3. 理由与解释：跟直答同一口气，不插到关键依据后面 */}
@@ -283,9 +294,6 @@ export function ConclusionHero({
 
         {/* 7. 元信息行（判断标签 + 计数 + 查验时间） */}
         <p className="gp-hero-meta">
-          <span className="gp-hero-judgment" data-gp-judgment={judgment}>
-            {JUDGMENT_LABEL[judgment]}
-          </span>
           <span className="gp-hero-meta-item" data-gp-hero-meta="claims">{copy.claimCount(claimCount)}</span>
           <span className="gp-hero-meta-item" data-gp-hero-meta="sources">{copy.sourceCount(sourceCount)}</span>
           {checkedAt ? <span className="gp-hero-meta-item" data-gp-hero-meta="time">{copy.checkedAt(formatTime(checkedAt))}</span> : null}

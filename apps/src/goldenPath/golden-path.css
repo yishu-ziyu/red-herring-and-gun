@@ -2451,6 +2451,22 @@ button.gp-save-state {
   color: var(--gp-ink-3);
 }
 
+/* 每一截标签后的一句理由（#140）：折叠时也看得见。 */
+.gp-claim-reason {
+  display: block;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--gp-ink-2);
+  font-weight: 400;
+}
+
+/* 结论第一句开头的整句标签。 */
+.gp-hero-label {
+  font-family: var(--gp-sans, inherit);
+  font-size: 14px;
+  vertical-align: 0.25em;
+}
+
 .gp-claim-side {
   display: flex;
   align-items: center;

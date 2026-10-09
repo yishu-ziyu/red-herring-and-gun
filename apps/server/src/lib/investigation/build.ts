@@ -24,6 +24,19 @@ import type {
   InvestigationSource,
 } from "./schema.js";
 import { validateInvestigationSnapshot } from "./schema.js";
+import { decideSentenceVerdict, type PartRole, type PartStanding } from "../../domain/verdict.js";
+import {
+  FALLBACK_PART_REASON,
+  LABEL_TEXT,
+  isLabelKey,
+  judgmentToLabel,
+  labelBackedByEvidence,
+  labelToJudgment,
+  nonCheckableLabel,
+  standingForLabel,
+  wholeLabelFor,
+  type LabelKey,
+} from "../../domain/labels.js";
 import { investigationSourceId, normalizeInvestigationSourceUrl } from "./sourceIdentity.js";
 
 export type InvestigationBuildInput = {
@@ -313,6 +326,9 @@ type VerdictLike = {
   contradictingSources: VerdictSourceLike[];
   evidenceGaps: string[];
   sourcesRelatedOnly: boolean;
+  /** 模型给的标签与理由（改版前的记录没有）。 */
+  label?: LabelKey;
+  reason?: string;
 };
 
 type RelationAuditView = {
@@ -379,9 +395,38 @@ function readVerdicts(raw: unknown, keyFn: (s: string) => string): Map<string, V
         .filter((g) => g.length > 0)
         .slice(0, 3),
       sourcesRelatedOnly,
+      ...(isLabelKey(rec.label) ? { label: rec.label } : {}),
+      ...(asString(rec.reason).trim() ? { reason: clip(asString(rec.reason), 160) } : {}),
     });
   }
   return out;
+}
+
+type DecidedPart = { key: string; text: string; role: PartRole; standing: PartStanding; label?: LabelKey; reason?: string; issuerMisattributed?: boolean };
+
+/** 整句规则表（sentenceVerdict.applySentenceVerdict）写进报告的决定：各截标签与整句标签。 */
+function readVerdictDecision(report: Record<string, unknown> | null, keyFn: (s: string) => string) {
+  const decision = asRecord(report?._verdictDecision);
+  if (!decision) return null;
+  const parts: DecidedPart[] = asArray(decision.parts)
+    .map(asRecord)
+    .filter((p): p is Record<string, unknown> => p !== null && asString(p.text).trim() !== "")
+    .map((p) => ({
+      key: keyFn(asString(p.text).trim()),
+      text: asString(p.text).trim(),
+      role: (["main", "premise", "background"].includes(asString(p.role)) ? asString(p.role) : "premise") as PartRole,
+      standing: (["supported", "refuted", "partial", "unresolved", "conflicting"].includes(asString(p.standing))
+        ? asString(p.standing)
+        : "unresolved") as PartStanding,
+      ...(isLabelKey(p.label) ? { label: p.label } : {}),
+      ...(asString(p.reason).trim() ? { reason: asString(p.reason).trim() } : {}),
+      ...(p.issuerMisattributed === true ? { issuerMisattributed: true } : {}),
+    }));
+  return {
+    label: isLabelKey(decision.label) ? decision.label : undefined,
+    reason: asString(decision.reason).trim(),
+    parts,
+  };
 }
 
 function readRelationAudits(
@@ -598,6 +643,10 @@ export function buildInvestigationSnapshot(
   const pursuitByAtom = readPursuitHops(input.pursuitHops, keyFn);
   const report = asRecord(input.report);
   const deadUrls = new Set(asArray(input.reachability?.deadUrls).map((u) => asString(u)));
+  const verdictDecision = readVerdictDecision(report, keyFn);
+  const decidedPartByKey = new Map((verdictDecision?.parts ?? []).map((p) => [p.key, p]));
+  // 改版前的报告（模型没给标签、规则表没写标签）不写标签和理由：显示时由 judgment 推出标签，不显示理由。
+  const labeled = Boolean(verdictDecision?.label) || [...verdicts.values()].some((v) => v.label);
 
   // 判词纪律兜底（与生产 demoteUnsourcedTrueFalse 同向）：true/false 无已绑定来源 → unresolved。
   // 先算链接再定判词，所以分两步：先收集每条 claim 的原始来源引用，再统一装配。
@@ -916,6 +965,42 @@ export function buildInvestigationSnapshot(
       judgment = null;
     }
 
+    // 标签 + 一句理由（#140）。整句规则表已经定了这一截的标签就用它；调查进行中按判词推出。
+    // 标签必须有证据撑着，撑不住降为还查不清；judgment 跟着标签走，两者不矛盾。
+    let label: LabelKey | undefined;
+    let reason: string | undefined;
+    if (!labeled) {
+      // 旧报告：保持原样。
+    } else if (a.checkability === "not-applicable") {
+      label = nonCheckableLabel(types.get(a.key)?.type ?? "");
+      reason = FALLBACK_PART_REASON[label];
+    } else if (verdict && judgment) {
+      const decided = decidedPartByKey.get(a.key);
+      if (decided?.label) {
+        label = decided.label;
+        reason = decided.reason;
+      } else {
+        const modelLabel = verdict.label;
+        label = modelLabel && labelToJudgment(modelLabel) === judgment
+          ? modelLabel
+          : judgment === "mixed" && verdict.verdict === "exaggerated"
+            ? "exaggerated"
+            : judgmentToLabel(judgment);
+        reason = label === modelLabel ? verdict.reason : undefined;
+      }
+      const backed = labelBackedByEvidence(
+        label,
+        evidence.filter((l) => l.role === "support").length,
+        evidence.filter((l) => l.role === "contradict").length
+      );
+      if (backed !== label) {
+        label = backed;
+        reason = undefined;
+      }
+      reason = reason || FALLBACK_PART_REASON[label];
+      judgment = labelToJudgment(label);
+    }
+
     const gaps: InvestigationGap[] = [];
     const pursuit = pursuitByAtom.get(a.key);
     let consequence: string | undefined;
@@ -957,6 +1042,7 @@ export function buildInvestigationSnapshot(
       checkability: a.checkability,
       progress: progressFor(phase, bundle.searchedKeys.has(a.key), judgment !== null),
       judgment,
+      ...(label ? { label, reason: reason ?? FALLBACK_PART_REASON[label] } : {}),
       ...(verdict?.boundary ? { boundary: verdict.boundary } : {}),
       evidence,
       gaps,
@@ -1044,12 +1130,45 @@ export function buildInvestigationSnapshot(
       const boundaries: string[] = [];
       const causal = clip(asString(report.causalBoundary), 200);
       if (causal) boundaries.push(causal);
-      const layers = splitConclusionLayers(conclusionText, originalClaim);
+      let layers = splitConclusionLayers(conclusionText, originalClaim);
+      // 结论第一句 = 整句标签 + 一句理由（#140）。标签单独存，不靠切句子取（切句会把「不属实。」切成一句）。
+      let wholeLabel: LabelKey | undefined;
+      let wholeReason = "";
+      if (verdictDecision?.label) {
+        wholeLabel = verdictDecision.label;
+        wholeReason = verdictDecision.reason;
+        const prefix = `${LABEL_TEXT[verdictDecision.label]}。${verdictDecision.reason}`;
+        const textHasLead = Boolean(verdictDecision.reason) && conclusionText.startsWith(prefix);
+        // 上面按证据把某一截降成还查不清时，整句按显示出来的标签重新过一遍规则表，结论和各截标签不能矛盾。
+        const claimByKey = new Map(assemblies.map((a, i) => [a.key, claims[i]!]));
+        const shown = verdictDecision.parts.map((p) => {
+          const shownLabel = claimByKey.get(p.key)?.label ?? p.label;
+          return shownLabel ? { ...p, label: shownLabel, standing: standingForLabel(shownLabel) } : p;
+        });
+        if (shown.some((p, i) => p.label !== verdictDecision.parts[i]!.label)) {
+          const redo = decideSentenceVerdict(shown);
+          const relabel = wholeLabelFor(redo.rule, shown.map((p) => ({ role: p.role, standing: p.standing, label: p.label ?? "unresolved" })));
+          if (relabel !== wholeLabel) {
+            wholeLabel = relabel;
+            wholeReason = `${shown.map((p) => `「${clip(p.text, 40)}」${LABEL_TEXT[p.label ?? "unresolved"]}`).join("；")}。`;
+          }
+        }
+        if (textHasLead) {
+          const rest = conclusionText.slice(prefix.length).trim();
+          layers = { verdictLead: wholeReason, ...(rest ? { rationale: rest } : {}) };
+        } else {
+          // 追问改写等把首句换掉了：只给标签，不配一句对不上的理由。
+          wholeReason = "";
+        }
+      }
+      const shownJudgment = wholeLabel ? labelToJudgment(wholeLabel) : overallJudgment;
       conclusion = {
         directAnswer,
         ...(layers.verdictLead ? { verdictLead: layers.verdictLead } : {}),
         ...(layers.rationale ? { rationale: layers.rationale } : {}),
-        judgment: overallJudgment,
+        judgment: shownJudgment,
+        ...(wholeLabel ? { label: wholeLabel } : {}),
+        ...(wholeLabel && wholeReason ? { reason: wholeReason } : {}),
         boundaries,
         claimIds: claims.map((c) => c.id),
         sourceIds: sources.filter((s) => citedUrls.has(s.url)).map((s) => s.id),

@@ -17,7 +17,13 @@ const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const out = resolve(process.env.E2E_OUT || `../out/e2e/${stamp}`);
 mkdirSync(out, { recursive: true });
 
+// The nine labels (#140, docs/PRODUCT.md). The text must match apps/server/src/domain/labels.ts exactly.
+const LABELS = ["属实", "基本属实", "部分属实", "夸大了", "不属实", "还查不清", "无法核对", "说法不一", "是观点，不分对错"];
+// The six labels used before #140. None of them may appear on the result page any more.
+const OLD_LABELS = ["证据支持", "证据反驳", "有对有错", "有争议", "证据不足", "立场表达"];
+
 const started = Date.now();
+const shown = { conclusionLabel: "", partLabels: [] };
 const checks = [];
 const record = (name, pass, detail) => {
   checks.push({ name, pass, detail, atSeconds: Math.round((Date.now() - started) / 1000) });
@@ -58,8 +64,7 @@ async function run() {
 
   const answer = (await page.locator("[data-gp-direct-answer]").first().innerText().catch(() => "")).trim();
   record("conclusion answers the claim", answer.length > 0, answer.slice(0, 80));
-  const judged = await page.locator("[data-gp-judgment]").count();
-  record("claims have judgments", judged > 0, `judgments=${judged}`);
+  await checkLabels();
 
   await checkShare(answer);
 
@@ -90,6 +95,45 @@ async function run() {
   return answer;
 }
 
+// Every claim part shows one label and a reason; the conclusion starts with a label and a reason; no old label words.
+async function checkLabels() {
+  const parts = await page.locator("article[data-gp-claim-id]").evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      text: node.querySelector(".gp-claim-text")?.textContent?.trim() ?? "",
+      labels: [...node.querySelectorAll("[data-gp-claim-label]")].map((el) => el.textContent.trim()),
+      reason: node.querySelector("[data-gp-claim-reason]")?.textContent?.trim() ?? "",
+    }))
+  );
+  shown.partLabels = parts.map((p) => p.labels[0] ?? "");
+  const badParts = parts.filter((p) => p.labels.length !== 1 || !LABELS.includes(p.labels[0]) || !p.reason);
+  record(
+    "every claim part shows one of the 9 labels and a reason",
+    parts.length > 0 && badParts.length === 0,
+    parts.map((p) => `${p.labels.join("/") || "NO LABEL"}｜${p.text.slice(0, 20)}｜${p.reason.slice(0, 60) || "NO REASON"}`).join(" ‖ ")
+  );
+  const lead = page.locator("[data-gp-direct-answer]").first();
+  const conclusionLabel = (await lead.locator("[data-gp-conclusion-label]").first().textContent().catch(() => "")).trim();
+  const conclusionReason = (await lead.locator("[data-gp-conclusion-reason]").first().textContent().catch(() => "")).trim();
+  const leadText = (await lead.innerText().catch(() => "")).trim();
+  shown.conclusionLabel = conclusionLabel;
+  record(
+    "conclusion starts with one of the 9 labels and a reason",
+    LABELS.includes(conclusionLabel) && leadText.startsWith(conclusionLabel) && conclusionReason.length > 0,
+    `${conclusionLabel || "NO LABEL"}｜${conclusionReason.slice(0, 100) || "NO REASON"}`
+  );
+  // textContent, not innerText: text that is rendered but scrolled away or folded still counts.
+  const pageText = await page.evaluate(() => {
+    const body = document.body.cloneNode(true);
+    body.querySelectorAll("script, style").forEach((el) => el.remove());
+    return body.textContent ?? "";
+  }).catch(() => "");
+  const oldHits = OLD_LABELS.filter((word) => pageText.includes(word)).map((word) => {
+    const at = pageText.indexOf(word);
+    return `${word}: …${pageText.slice(Math.max(0, at - 20), at + 20).replace(/\s+/g, " ")}…`;
+  });
+  record("result page shows none of the 6 old label words", oldHits.length === 0, oldHits.join(" ‖ "));
+}
+
 // Share this round, open the link as a stranger (new context, no cookies), revoke it, open it again.
 async function checkShare(answer) {
   const normalize = (text) => text.replace(/\s+/g, "").trim();
@@ -108,6 +152,20 @@ async function checkShare(answer) {
     record("share link shows the same conclusion to a stranger", shared.length > 0 && normalize(shared) === normalize(answer), shared.slice(0, 80));
     const source = await viewer.content();
     record("share page does not contain the internal image prompt", !source.includes("请核查用户上传"));
+    const sharedLabel = (await viewer.locator("[data-share-label]").first().textContent().catch(() => "")).trim();
+    const sharedParts = await viewer.locator("[data-share-claim]").evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        label: node.querySelector("[data-share-claim-label]")?.textContent?.trim() ?? "",
+        reason: node.querySelector("[data-share-claim-reason]")?.textContent?.trim() ?? "",
+      }))
+    );
+    record(
+      "share page shows the same labels, each part with a reason",
+      sharedLabel === shown.conclusionLabel &&
+        JSON.stringify(sharedParts.map((p) => p.label)) === JSON.stringify(shown.partLabels) &&
+        sharedParts.every((p) => p.reason),
+      `${sharedLabel} | ${sharedParts.map((p) => p.label).join("/")}`
+    );
 
     await page.locator("[data-gp-share-revoke]").first().click();
     await page.locator("[data-gp-share-revoked]").first().waitFor({ timeout: 15_000 }).catch(() => {});
