@@ -297,6 +297,9 @@ export function pickDecisiveEvidence(
   return items;
 }
 
+/** 所有来源共用的本地图标：不向第三方图标服务透露用户在看哪些网站。 */
+export const SOURCE_ICON_URL = "/source-icon.svg";
+
 /** 完成态下是否有任何可下钻的来源。 */
 export function hasDrilldownSource(snapshot: InvestigationSnapshotV1): boolean {
   return snapshot.sources.some((s) => Boolean(s.url));

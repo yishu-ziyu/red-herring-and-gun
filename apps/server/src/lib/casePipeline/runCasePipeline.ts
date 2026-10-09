@@ -91,6 +91,11 @@ export type CasePipelineHooks = {
 export type CasePipelineInput = {
   claim: string;
   /**
+   * 快照里「你调查的说法」显示的文字。claim 可能带着给模型看的材料说明（例如图片的视觉提取），
+   * 用户不能看到那部分；不传时与 claim 相同。
+   */
+  displayClaim?: string;
+  /**
    * 用户提交的链接材料（规范化 intake.links）：客户端既有抓取链路读过正文。
    * 只透传进调查快照登记来源，管线阶段不读它、不据此发起新抓取。
    */
@@ -205,7 +210,8 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const throwIfAborted = () => input.signal?.throwIfAborted();
   throwIfAborted();
 
-  const snapshots = createSnapshotTimeline({ claim, hooks, throwIfAborted });
+  const displayClaim = input.displayClaim ?? claim;
+  const snapshots = createSnapshotTimeline({ claim: displayClaim, hooks, throwIfAborted });
   snapshots.received();
 
   const ctx: PipelineContext = {
@@ -319,7 +325,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       intakeLinks: input.intakeLinks,
       checkedAt: typeof finalReport.checkedAt === "string" ? finalReport.checkedAt : undefined,
     },
-    { interrupted: runIncomplete, claim }
+    { interrupted: runIncomplete, claim: displayClaim }
   );
   if (finalInvestigation) {
     finalReport.investigation = finalInvestigation;

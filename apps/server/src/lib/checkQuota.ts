@@ -361,15 +361,9 @@ export function releaseFreeCheck(ticket: CheckTicket) {
 
 export async function gateFreeCheck(req: any, res: any): Promise<CheckTicket | null> {
   const result = await beginFreeCheck(req, res);
-  if (result.ok) {
-    const ticket = result.ticket;
-    if (typeof req?.on === "function") {
-      req.on("close", () => {
-        if (!ticket.settled) commitFreeCheck(res, ticket);
-      });
-    }
-    return ticket;
-  }
+  // 名额由拿到票据的处理器结算（handlers.ts 与 http/runOutcome.ts），这里不挂连接关闭监听：
+  // 请求体读完之后才挂的 close 监听，触不触发取决于时序（#117）。
+  if (result.ok) return result.ticket;
   writeJson(res, 429, {
     error: "checks_exhausted",
     message: checksExhaustedMessage(result.kind),

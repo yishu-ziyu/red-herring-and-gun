@@ -2165,6 +2165,24 @@ button.gp-save-state {
   color: var(--gp-ink);
 }
 
+/* 用户这次上传的图片缩略图（「你调查的说法」下面） */
+.gp-intake-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.gp-intake-images img {
+  display: block;
+  max-width: 200px;
+  max-height: 120px;
+  object-fit: contain;
+  border: 1px solid var(--gp-hairline);
+  border-radius: var(--gp-radius-card);
+  background: var(--gp-surface-inset);
+}
+
 /* 命题章节（Claim Section） */
 .gp-claims {
   display: flex;
@@ -4237,11 +4255,6 @@ a.gp-finding-cite-badge:hover {
   border-radius: 3px;
   flex: none;
   object-fit: contain;
-}
-
-.gp-source-favicon-fallback {
-  font-size: 12px;
-  line-height: 1;
 }
 
 .gp-source-domain {

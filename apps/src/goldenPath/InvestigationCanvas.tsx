@@ -14,7 +14,7 @@ import type {
 } from "../lib/investigation";
 import { useUiLang } from "../lib/useUiLang";
 import { displayFollowUpClaim, conclusionMissesFollowUp, followUpQuestionLead } from "../lib/composeFollowUpClaim";
-import { isUrlOnlyClaim } from "../lib/caseIntake";
+import { isUrlOnlyClaim, type CaseImage } from "../lib/caseIntake";
 import { gpCopyFor } from "./copy";
 import { phaseHeadline } from "./snapshotUi";
 import { buildClaimTraceSegments } from "./claimTrace";
@@ -28,6 +28,7 @@ import { InvestigationScope } from "./InvestigationScope";
 import { InvestigationDossier } from "./InvestigationDossier";
 import { WorkRoles, roleIndexForPhase } from "./WorkRoles";
 import { ThinkingDisclosure } from "./ThinkingDisclosure";
+import { IntakeImages } from "./IntakeImages";
 import { useEnteringIds } from "./useEnteringIds";
 import {
   SourceDrawer,
@@ -60,6 +61,8 @@ type InvestigationCanvasProps = {
   /** 这次提交的链接抓取失败（登录墙/空页）：调查全程都要看见，不能只亮 12 秒。 */
   linkUnreachable?: boolean;
   readOnly?: boolean;
+  /** 这次上传的图片：显示在「你调查的说法」下面。历史回看没有。 */
+  images?: CaseImage[];
   onAdjustFocus?: (question: string) => void;
   adjustingFocus?: boolean;
 };
@@ -87,6 +90,7 @@ export function InvestigationCanvas({
   onFollowUp,
   linkUnreachable = false,
   readOnly = false,
+  images,
   onAdjustFocus,
   adjustingFocus = false,
 }: InvestigationCanvasProps) {
@@ -360,6 +364,7 @@ export function InvestigationCanvas({
             </span>
             <span className="gp-quote-close" aria-hidden="true">”</span>
           </blockquote>
+          <IntakeImages images={images} />
         </section>
 
         {!complete && !interrupted ? (

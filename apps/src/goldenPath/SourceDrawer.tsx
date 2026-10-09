@@ -5,7 +5,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
-import { ROLE_LABEL, domainOf, identifyEvidenceLinks } from "./snapshotUi";
+import { ROLE_LABEL, SOURCE_ICON_URL, domainOf, identifyEvidenceLinks } from "./snapshotUi";
 import type { InvestigationEvidenceLink, InvestigationSource } from "../lib/investigation";
 
 const FOCUSABLE =
@@ -53,7 +53,6 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
   const reduced = prefersReducedMotion();
   const [openClass, setOpenClass] = useState(reduced);
   const [placement] = useState<"sheet" | "drawer">(isSheetPlacement() ? "sheet" : "drawer");
-  const [imgFailed, setImgFailed] = useState(false);
   const { source, link, claimText, claimIndex } = view;
   // claimIndex < 0 = 用户材料视图：这条来源还没挂到任何命题上，不显示命题编号。
   const num = claimIndex >= 0 ? String(claimIndex + 1).padStart(2, "0") : null;
@@ -93,7 +92,6 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
   const relatedChips = (view.relatedSources ?? [])
     .map((s, idx) => ({ source: s, idx }))
     .filter(({ source: s }) => s.id !== source.id);
-  const faviconUrl = `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(domain)}`;
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => setOpenClass(true));
@@ -189,17 +187,7 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
                 </span>
               </span>
               <span className="gp-source-domain-tag">
-                {!imgFailed ? (
-                  <img
-                    src={faviconUrl}
-                    alt=""
-                    className="gp-source-head-favicon"
-                    onError={() => setImgFailed(true)}
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <span aria-hidden="true">🌐</span>
-                )}
+                <img src={SOURCE_ICON_URL} alt="" className="gp-source-head-favicon" aria-hidden="true" />
                 <span className="gp-source-domain">{domain}</span>
               </span>
             </div>
@@ -275,7 +263,6 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
                     <div className="gp-finding-sources-chips">
                       {relatedChips.map(({ source: s, idx }) => {
                         const sDomain = domainOf(s.url);
-                        const sFavicon = `https://www.google.com/s2/favicons?sz=64&domain_url=${encodeURIComponent(sDomain)}`;
                         const isCurrent = s.id === source.id;
                         return (
                           <a
@@ -287,7 +274,7 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
                             title={`${s.title || sDomain} (${sDomain})`}
                           >
                             <span className="gp-finding-source-index">[{idx + 1}]</span>
-                            <img src={sFavicon} alt="" className="gp-finding-source-fav" aria-hidden="true" />
+                            <img src={SOURCE_ICON_URL} alt="" className="gp-finding-source-fav" aria-hidden="true" />
                             <span className="gp-finding-source-title">{s.title || sDomain}</span>
                             <span className="gp-finding-source-arrow" aria-hidden="true">↗</span>
                           </a>

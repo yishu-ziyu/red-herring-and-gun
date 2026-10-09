@@ -12,7 +12,7 @@ import { gpCopyFor } from "./goldenPath/copy";
 import { useUiLang } from "./lib/useUiLang";
 import { LoginView } from "./components/v3/auth/LoginView";
 import { AccountView } from "./components/v3/auth/AccountView";
-import { caseIntakeFailedLinks, caseIntakePrimaryText, createCaseIntake, type CaseIntake } from "./lib/caseIntake";
+import { caseIntakeDisplayText, caseIntakeFailedLinks, caseIntakeIsImageOnly, caseIntakePrimaryText, createCaseIntake, type CaseIntake } from "./lib/caseIntake";
 import { homeCaseSnapshot, type HomeCaseId } from "./goldenPath/homeCases";
 import { createKnowledgeBase, normalizeHistoryClaim } from "./lib/knowledgeBase";
 import { composeFollowUpClaim, displayFollowUpClaim, previousAnswerText } from "./lib/composeFollowUpClaim";
@@ -106,7 +106,7 @@ function ProductApp() {
       setHistoryNotice("");
       setSameClaim(null);
       setDraftClaim("");
-      const claim = caseIntakePrimaryText(intake);
+      const claim = caseIntakeDisplayText(intake);
       const localId = `case-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const thread = previousThread ?? { version: 1 as const, id: localId, originalClaim: claim, rounds: [] };
       setActive({ localId, roundId: localId, roundKind, claim, intake, thread });
@@ -164,14 +164,30 @@ function ProductApp() {
   );
 
   const handleBackHome = useCallback(() => {
-    // 从调查/旧报告返回首页时预填原句，方便改完再查（与旧壳一致）。
-    setDraftClaim((prev) => active?.thread?.originalClaim ?? active?.claim ?? prev);
+    // 从调查/旧报告返回首页时预填原句，方便改完再查（与旧壳一致）。只交了图片时没有可预填的原句。
+    setDraftClaim((prev) => (caseIntakeIsImageOnly(active?.intake) ? "" : active?.thread?.originalClaim ?? active?.claim ?? prev));
     setSelectedRoundId(null);
     setPendingFocus(null);
     run.reset();
     setActive(null);
     setMode("input");
-  }, [active?.claim, run]);
+  }, [active?.claim, active?.intake, run]);
+
+  // 只交了图片：读出图里的文字之后，历史标题和轮次标题都换成这段文字（快照里的原文），不显示请求句。
+  const imageOnlyText = !active?.restored && caseIntakeIsImageOnly(active?.intake) ? run.state.snapshot?.originalClaim : undefined;
+  useEffect(() => {
+    if (!active || !imageOnlyText || active.claim === imageOnlyText) return;
+    const localId = active.localId;
+    setActive((prev) => prev && prev.localId === localId
+      ? {
+          ...prev,
+          claim: imageOnlyText,
+          thread: prev.thread && prev.thread.rounds.length === 0 ? { ...prev.thread, originalClaim: imageOnlyText } : prev.thread,
+        }
+      : prev);
+    setCases((prev) => prev.map((item) => (item.id === localId ? { ...item, claim: imageOnlyText } : item)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageOnlyText, active?.localId]);
 
   const handleRetry = useCallback(() => {
     if (!active) {
@@ -518,6 +534,7 @@ function ProductApp() {
               onBackHome={handleBackHome}
               onFollowUp={archivedRound ? undefined : handleFollowUp}
               linkUnreachable={caseIntakeFailedLinks(active.intake).length > 0}
+              images={archivedRound || active.restored ? undefined : active.intake?.images}
             />
           </>
         ) : showTimeoutPending ? (

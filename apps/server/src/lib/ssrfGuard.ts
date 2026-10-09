@@ -1,5 +1,6 @@
 /**
- * ssrfGuard.ts — 拦截内网 / 元数据服务 / 特殊 IPv6 的 LLM 测试端点
+ * ssrfGuard.ts — 服务端替别人访问外部网址之前，拦截内网、元数据服务和特殊 IPv6 地址。
+ * 只看网址里写的主机名和 IP，不做 DNS 解析：解析到内网 IP 的公网域名拦不住。
  */
 
 function ipv4OctetsFromHostname(hostname: string): number[] | "blocked" | null {
@@ -41,7 +42,7 @@ function ipv4FromMappedIpv6(host: string): number[] | null {
   return [(high >> 8) & 0xff, high & 0xff, (low >> 8) & 0xff, low & 0xff];
 }
 
-export function isBlockedTestLlmUrl(raw: string): boolean {
+export function isBlockedUrl(raw: string): boolean {
   let parsed: URL;
   try {
     parsed = new URL(raw);
@@ -66,7 +67,7 @@ export function isBlockedTestLlmUrl(raw: string): boolean {
     if (mapped) return isBlockedPrivateIpv4(mapped);
     const tail = host.slice("::ffff:".length);
     // 点分写法（未经 URL 规范化的那一种）
-    if (/^[\d.]+$/.test(tail)) return isBlockedTestLlmUrl(`https://${tail}`);
+    if (/^[\d.]+$/.test(tail)) return isBlockedUrl(`https://${tail}`);
     // 其余映射形态按内网处理：宁可拦错，不可放过
     return true;
   }

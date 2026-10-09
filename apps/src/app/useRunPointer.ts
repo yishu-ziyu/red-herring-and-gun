@@ -40,13 +40,15 @@ export function useRunPointer(args: {
   }, [historyReady]);
 
   // 记录进行中那条 run 的座标；终态或回首页时清掉。
-  // 接不回去且还没有任何材料：清座标、回输入页。否则刷新会反复钉在「连接中断」。
+  // 接不回去且还没有任何材料：清座标、回输入页，在输入框上方说明原因（例如图片读不出来），用户可以直接重新提交。
+  // 否则刷新会反复钉在「连接中断」，页面也会一直停在「正在拆解」。流已结束却既没有快照也没有结果，同样按失败处理。
   useEffect(() => {
     if (mode !== "investigation" || active?.restored) {
       writeRunPointer(null);
       return;
     }
-    if (run.state.connection === "failed" && !run.state.snapshot) {
+    const endedEmpty = run.state.connection === "ended" && !run.state.finalReport;
+    if ((run.state.connection === "failed" || endedEmpty) && !run.state.snapshot) {
       writeRunPointer(null);
       // 刚提交、链接打不开、调查已开始：留下调查态和链接提示。
       // 连接中断是空流/无快照的副作用，不能盖掉这次提交自己的提示。
@@ -76,7 +78,7 @@ export function useRunPointer(args: {
       thread: active.thread,
       accountScope: accountEmailRef.current,
     });
-  }, [mode, active, copy.connectionLost, run.state.runId, run.state.lastActivitySeq, run.state.connection, run.state.stop, run.state.snapshot, run.state.errorMessage]);
+  }, [mode, active, copy.connectionLost, run.state.runId, run.state.lastActivitySeq, run.state.connection, run.state.stop, run.state.snapshot, run.state.errorMessage, run.state.finalReport]);
 
   /** 用户已经自己开了一次调查：之后不再接回旧座标。 */
   return { resumedRef };

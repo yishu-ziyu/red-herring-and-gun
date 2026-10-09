@@ -107,6 +107,20 @@ export function caseIntakePrimaryText(intake: CaseIntake) {
   return "";
 }
 
+/** 只交了图片：没有文字，也没有链接。 */
+export function caseIntakeIsImageOnly(intake: Pick<CaseIntake, "text" | "links" | "images"> | null | undefined): boolean {
+  return Boolean(intake && !intake.text.trim() && intake.links.length === 0 && intake.images.length > 0);
+}
+
+/**
+ * 界面上代表这份材料的文字（历史标题、轮次标题）。只交图片时，caseIntakePrimaryText 是发给服务端的请求句，
+ * 不给用户看；先显示图片张数，读出图里的文字后由调查快照里的原文替换。
+ */
+export function caseIntakeDisplayText(intake: CaseIntake): string {
+  if (caseIntakeIsImageOnly(intake)) return `${intake.images.length} 张图片`;
+  return caseIntakePrimaryText(intake);
+}
+
 export function caseIntakeSummary(intake: CaseIntake) {
   const parts = [];
   if (intake.text.trim()) parts.push("文字");

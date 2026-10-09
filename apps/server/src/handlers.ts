@@ -198,7 +198,22 @@ export function createHandlers(env: Record<string, string>) {
     if (req.checkTicket) releaseFreeCheck(req.checkTicket);
   }
 
+  /**
+   * 建 run 之前任何一步抛错（读账号、建 run、存储出错）：退还名额并回 500，不让名额悬空。
+   * 进入 runInvestigation 之后由它按结局结算（http/runOutcome.ts）。
+   */
   async function orchestrateStreamHandler(req: any, res: any, next: any) {
+    try {
+      return await startOrchestrateStream(req, res, next);
+    } catch (error) {
+      console.error("[orchestrate] 调查请求处理出错", error);
+      releaseEarlyTicket(req);
+      if (!res.headersSent) return sendJson(res, 500, { message: "这次核查没能开始，请稍后重试" });
+      if (!res.writableEnded) res.end();
+    }
+  }
+
+  async function startOrchestrateStream(req: any, res: any, next: any) {
     if (req.method !== "POST") return next();
 
     let payload: any;

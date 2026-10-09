@@ -15,6 +15,7 @@ import {
   type CiteSource,
 } from "./citationBinding.js";
 import { withExecutionBudget, ExecutionTimeoutError, type ExecutionBudget } from "./executionBudget.js";
+import { isBlockedUrl } from "./ssrfGuard.js";
 
 export type LivenessStatus = "alive" | "dead";
 
@@ -23,10 +24,15 @@ const DEAD_HTTP_STATUSES = new Set([404, 408, 410]);
 const DEFAULT_TIMEOUT_MS = 6000;
 const DEFAULT_MAX_URLS = 16;
 const DEFAULT_CONCURRENCY = 5;
+const MAX_REDIRECTS = 5;
 const REQUEST_USER_AGENT =
   "Mozilla/5.0 (compatible; RedHerringGun/1.0; citation-liveness-check)";
 
-type MinimalResponse = { status: number; body?: { cancel?: () => Promise<void> } | null };
+type MinimalResponse = {
+  status: number;
+  headers?: { get(name: string): string | null };
+  body?: { cancel?: () => Promise<void> } | null;
+};
 type FetchLike = (url: string, init?: Record<string, unknown>) => Promise<MinimalResponse>;
 
 export type LivenessDeps = ExecutionBudget & {
@@ -44,7 +50,15 @@ export function classifyLivenessStatus(status: number): LivenessStatus {
   return "alive";
 }
 
-/** GET 到响应头即断开：不拉正文，也能覆盖禁用 HEAD 的站点。 */
+/** 只探 http(s) 公网地址：内网、元数据服务、本机一律不访问，按打不开处理。 */
+function isProbeAllowed(url: string): boolean {
+  return /^https?:\/\//i.test(url) && !isBlockedUrl(url);
+}
+
+/**
+ * GET 到响应头即断开：不拉正文，也能覆盖禁用 HEAD 的站点。
+ * 跳转自己跟：每一跳访问前都过 ssrfGuard，公网地址跳到内网地址也拦得住。
+ */
 export async function checkUrlLiveness(
   url: string,
   fetchImpl: FetchLike,
@@ -53,14 +67,21 @@ export async function checkUrlLiveness(
 ): Promise<LivenessStatus> {
   try {
     return await withExecutionBudget(async (signal) => {
-      const res = await fetchImpl(url, {
-        method: "GET",
-        redirect: "follow",
-        signal,
-        headers: { "user-agent": REQUEST_USER_AGENT },
-      });
-      void Promise.resolve(res.body?.cancel?.()).catch(() => {});
-      return classifyLivenessStatus(res.status);
+      let current = url;
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+        if (!isProbeAllowed(current)) return "dead";
+        const res = await fetchImpl(current, {
+          method: "GET",
+          redirect: "manual",
+          signal,
+          headers: { "user-agent": REQUEST_USER_AGENT },
+        });
+        void Promise.resolve(res.body?.cancel?.()).catch(() => {});
+        const location = res.status >= 300 && res.status < 400 ? res.headers?.get("location") : null;
+        if (!location) return classifyLivenessStatus(res.status);
+        current = new URL(location, current).href;
+      }
+      return "dead";
     }, { ...execution, timeoutMs, label: "来源探活" });
   } catch (error) {
     execution.signal?.throwIfAborted();

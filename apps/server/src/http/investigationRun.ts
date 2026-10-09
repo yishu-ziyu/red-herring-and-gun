@@ -36,6 +36,7 @@ import { asRecord } from "../lib/valueCoerce.js";
 import {
   callStepFunVisionForIntake,
   composeClaimWithVision,
+  imageTextForDisplay,
   type buildCaseIntakeMetadata,
   type CaseIntakeImagePayload,
   type CaseIntakePayload,
@@ -170,6 +171,18 @@ function combineAbortSignals(...sources: AbortSignal[]): AbortSignal {
 }
 
 export async function runInvestigation(deps: InvestigationRunDeps, request: InvestigationRequest, res: any): Promise<void> {
+  try {
+    await runInvestigationToEnd(deps, request, res);
+  } finally {
+    // 每条结局都已显式结算；走到这里还没结算，说明收尾途中出了没预料到的异常：按服务端失败退还。
+    if (!request.ticket.settled) {
+      console.error(`[quota] run 结束时名额未结算，按服务端失败退还 runId=${request.run.runId}`);
+      releaseFreeCheck(request.ticket);
+    }
+  }
+}
+
+async function runInvestigationToEnd(deps: InvestigationRunDeps, request: InvestigationRequest, res: any): Promise<void> {
   const { env, runs, runStore } = deps;
   const PIPELINE_TOTAL_TIMEOUT_MS = deps.totalTimeoutMs;
   const PIPELINE_LATE_GRACE_MS = deps.lateGraceMs;
@@ -185,6 +198,8 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
     run,
   } = request;
   let claim = request.claim;
+  // 用户看到的「你调查的说法」。claim 读图之后会拼上给模型看的视觉提取，这部分不能出现在界面上。
+  let displayClaim = request.claim;
   let visualExtraction: Record<string, unknown> | undefined;
   const settleQuota = (outcome: RunOutcome) => {
     if (QUOTA_SETTLEMENT[outcome] === "commit") commitFreeCheck(res, ticket);
@@ -306,12 +321,20 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
         timestamp: Date.now(),
       });
       try {
-        const visionResult = await withExecutionBudget(
+        const readImage = () => withExecutionBudget(
           (signal) => callStepFunVisionForIntake({ env, claim, intake, signal }),
           { signal: pipelineSignal, deadlineMs: workDeadlineMs, timeoutMs: 60_000, label: "图片解析" },
         );
+        // 视觉模型偶尔失败一次：重试一次再算读不出来。取消、断连、总时限到了不重试。
+        const visionResult = await readImage().catch((error) => {
+          pipelineSignal.throwIfAborted();
+          if (Date.now() >= workDeadlineMs) throw error;
+          console.warn(`[vision] 图片解析失败，重试一次 runId=${run.runId}: ${error instanceof Error ? error.message : String(error)}`);
+          return readImage();
+        });
         visualExtraction = asRecord(visionResult.output);
         claim = composeClaimWithVision(claim, intake, visualExtraction);
+        if (!intake.text.trim()) displayClaim = imageTextForDisplay(visualExtraction);
         sendEvent({
           type: "tool_result",
           toolName: "StepFun Vision",
@@ -358,6 +381,7 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
 
     const pipelinePromise = withExecutionBudget((signal) => runCasePipeline({
       claim,
+      displayClaim,
       // 断连与取消两个 abort 源合并：任一触发，管线阶段边界立即退出
       signal,
       // 截止 = 总超时 − 10s 收尾余量：补查/复核提前收敛，报告写作不再被总超时截断
@@ -413,7 +437,7 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
 
     sendEvent({
       type: "complete",
-      claim,
+      claim: displayClaim,
       steps: result.steps,
       finalReport: result.finalReport,
       timestamp: Date.now(),
@@ -446,7 +470,7 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
     });
     if (outcome === "cancelled") {
       settleQuota(outcome);
-      emitInvestigation(interruptedInvestigationSnapshot(lastInvestigation, claim));
+      emitInvestigation(interruptedInvestigationSnapshot(lastInvestigation, displayClaim));
       finishRun(RUN_FINAL_STATUS[outcome]);
       endResponse();
       return;
@@ -459,16 +483,16 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
     }
     // 宽限期也过了、管线仍不回来 → 才按超时中断收尾：给「还没查完」的中间结论，不发 error。
     if (outcome === "timed-out") {
-      const interrupted = interruptedInvestigationSnapshot(lastInvestigation, claim);
+      const interrupted = interruptedInvestigationSnapshot(lastInvestigation, displayClaim);
       emitInvestigation(interrupted);
-      const timedOut = buildTimedOutReport(claim);
+      const timedOut = buildTimedOutReport(displayClaim);
       timedOut.investigation = interrupted;
       applyContextCrossCheckToReport(timedOut, { claim, visualExtraction });
       // B2：先计费再收尾（原先 release 在前把 settled 置真，这里的 commit 变空操作 → 超时=白嫖）
       settleQuota(outcome);
       sendEvent({
         type: "complete",
-        claim,
+        claim: displayClaim,
         steps: [],
         finalReport: timedOut,
         timestamp: Date.now(),
@@ -489,7 +513,7 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
     }
     const { message } = toFriendlyError(error, "这次核查没能完成，请稍后重试");
     // 中断帧先行：前端拿到 phase=interrupted 的真实部分数据，再收 error 提示。
-    emitInvestigation(interruptedInvestigationSnapshot(lastInvestigation, claim));
+    emitInvestigation(interruptedInvestigationSnapshot(lastInvestigation, displayClaim));
     sendEvent({
       type: "error",
       message,

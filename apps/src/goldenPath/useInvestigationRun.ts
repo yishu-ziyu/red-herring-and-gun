@@ -109,7 +109,8 @@ export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, cla
       ...prev,
       serverStatus: status,
       stop: stopped ? (status === "cancelling" ? "stopping" : "stopped") : terminal ? "idle" : prev.stop,
-      ...(terminal ? { connection: "ended" as const, timeoutPending: false } : {}),
+      // 失败已经定了（error 事件先到）：服务端随后补发的终态不能把它改回「已结束」，否则页面会一直等。
+      ...(terminal ? { connection: prev.connection === "failed" ? ("failed" as const) : ("ended" as const), timeoutPending: false } : {}),
     };
   }
   if (event.type === "investigation_activity") {

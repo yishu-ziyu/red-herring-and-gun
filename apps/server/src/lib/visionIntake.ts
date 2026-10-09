@@ -207,6 +207,21 @@ export async function callStepFunVisionForIntake({
   };
 }
 
+/**
+ * 只有图片、没有文字时，「你调查的说法」显示图里读出的文字。
+ * 读不出文字就用画面说明；都没有时给一个中性的名字，不显示给模型的提示词。
+ */
+export function imageTextForDisplay(visualExtraction: Record<string, unknown> | undefined): string {
+  const list = (value: unknown) =>
+    Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()) : [];
+  const ocr = list(visualExtraction?.ocrTexts);
+  if (ocr.length) return ocr.join("\n");
+  const claims = list(visualExtraction?.extractedClaims);
+  if (claims.length) return claims.join("\n");
+  const summary = typeof visualExtraction?.visualSummary === "string" ? visualExtraction.visualSummary.trim() : "";
+  return summary || "上传的图片";
+}
+
 export function composeClaimWithVision(claim: string, intake: CaseIntakePayload, visualExtraction: Record<string, unknown>) {
   const links = intake.links.map((link) => link.scrapedContent
     ? `链接：${link.url}\n抓取正文摘录：${link.scrapedContent.slice(0, 4000)}`

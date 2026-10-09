@@ -31,7 +31,11 @@ export function classifyFailure(error: unknown, state: { cancelled: boolean }): 
   return "server-error";
 }
 
-/** 额度结算：commit 计入今天的次数，release 退还。 */
+/**
+ * 额度结算：commit 计入今天的次数，release 退还。
+ * 这张表只管进入 runInvestigation 之后的结局。之前的路径：请求体读不完或不是 JSON 时还没占名额；
+ * 占了名额之后的提前拒绝和异常一律退还（handlers.ts）；收尾途中没预料到的异常也按服务端失败退还。
+ */
 export const QUOTA_SETTLEMENT: Record<RunOutcome, "commit" | "release"> = {
   completed: "commit",
   cancelled: "release",
