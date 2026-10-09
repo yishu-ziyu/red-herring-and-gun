@@ -20,6 +20,7 @@ import { GUEST_DAILY_SHARES, IP_DAILY_SHARES, shanghaiDayKey } from "../../../sr
 import { scrubFaceText } from "../../../src/lib/scrubFace.js";
 import { conclusionMissesFollowUp, followUpQuestionLead } from "../../../src/lib/composeFollowUpClaim.js";
 import { LABEL_TEXT, LABEL_TONE, isLabelKey, judgmentToLabel, type LabelKey } from "../domain/labels.js";
+import { normalizePublishedDate } from "./investigation/sourceDate.js";
 
 const TOKEN_BYTES = 24;
 const SHARE_TTL_DAYS = 30;
@@ -343,13 +344,18 @@ export function buildSharedPageHtml(lookup: ShareLookup): string {
   }
 
   const p = lookup.record.projection;
+  // 发布日期：老分享里存的是原样日期，显示时按同一规则读；读不出就照实说没取到。
+  const publishedTag = (raw: string | undefined) => {
+    const day = normalizePublishedDate(raw);
+    return `<span data-share-published="${day ?? ""}">${day ?? "发布日期未取到"}</span>`;
+  };
   const sourceById = new Map(p.sources.map((source) => [source.id, source]));
   const claimItems = p.claims
     .map((claim) => {
       const evidence = claim.evidence
         .map((link) => {
           const source = sourceById.get(link.sourceId);
-          const label = `${ROLE_LABEL[link.role] ?? ""}${source ? ` · ${escapeHtml(source.title)}` : ""}`;
+          const label = `${ROLE_LABEL[link.role] ?? ""}${source ? ` · ${escapeHtml(source.title)} ${publishedTag(source.publishedAt)}` : ""}`;
           const quote = link.quote ? `<blockquote>${escapeHtml(link.quote)}</blockquote>` : "";
           const finding = link.finding ? `<div>${escapeHtml(link.finding)}</div>` : "";
           return quote || finding ? `<li><small>${label}</small>${quote}${finding}</li>` : "";
@@ -378,9 +384,7 @@ export function buildSharedPageHtml(lookup: ShareLookup): string {
         ? `<h2>用到的材料</h2><ul>${p.sources
             .map(
               (source) =>
-                `<li><a href="${escapeHtml(source.url)}" rel="noreferrer nofollow">${escapeHtml(source.title)}</a>${
-                  source.publishedAt ? ` <small>${escapeHtml(source.publishedAt)}</small>` : ""
-                }</li>`
+                `<li><a href="${escapeHtml(source.url)}" rel="noreferrer nofollow">${escapeHtml(source.title)}</a> <small>${publishedTag(source.publishedAt)}</small></li>`
             )
             .join("")}</ul>`
         : ""

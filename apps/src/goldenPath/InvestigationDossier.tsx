@@ -4,7 +4,7 @@ import type {
   InvestigationSource,
   PublicActivity,
 } from "../lib/investigation";
-import { attachmentsForSource } from "./snapshotUi";
+import { attachmentsForSource, publishedDay, PUBLISHED_UNKNOWN } from "./snapshotUi";
 import { ActivityFeed } from "./ActivityFeed";
 
 type InvestigationDossierProps = {
@@ -88,7 +88,10 @@ export function InvestigationDossier({
                       </button>
                     ) : (
                       <span>{title}</span>
-                    )}
+                    )}{" "}
+                    <span className="gp-published" data-gp-published={publishedDay(source) ?? ""}>
+                      {publishedDay(source) ?? PUBLISHED_UNKNOWN}
+                    </span>
                     {associated.length > 0 ? (
                       <p className="gp-source-claims" data-gp-source-claims>
                         关联命题：{associated.map((row) => row.claim.text).join("；")}

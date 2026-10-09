@@ -11,7 +11,7 @@ import type {
   InvestigationSnapshotV1,
   InvestigationSource,
 } from "../lib/investigation";
-import { LABEL_TEXT, LABEL_TONE, judgmentToLabel, type LabelKey } from "../lib/investigation";
+import { LABEL_TEXT, LABEL_TONE, judgmentToLabel, normalizePublishedDate, type LabelKey } from "../lib/investigation";
 
 export type EvidenceRole = InvestigationEvidenceLink["role"];
 
@@ -31,6 +31,39 @@ export const ROLE_ROW_LABEL: Record<EvidenceRole, string> = {
   unassessed: "待核对",
   "context-only": "相关",
 };
+
+export const PUBLISHED_UNKNOWN = "发布日期未取到";
+
+/** 来源发布日期 YYYY-MM-DD；老快照里的原样日期也按同一规则读，读不出就是 null。不拿取得时间顶替。 */
+export function publishedDay(source: Pick<InvestigationSource, "publishedAt"> | undefined): string | null {
+  return normalizePublishedDate(source?.publishedAt) ?? null;
+}
+
+// 文本片段匹配要求两端落在词边界：只取两侧都是原文标点的整段，不在中间截断。
+const CLAUSE_SPLIT = /[。｡！？!?；;，,、：:“”「」『』（）()《》\n]|\.(?=\s|$)/;
+// 这些字符多半是我们或检索方加进去的（省略号、markdown、链接、引用角标），原网页里找不到。
+const INSERTED_MARKS = /…|\.\.\.|[#*[\]<>|_`\\]|https?:|　|\s{2,}/;
+// 中文里的空格、句首的序号，多半是抽取正文时把几个网页元素拼在一起留下的。
+const JOINED_ELEMENTS = /[一-鿿].*\s|\s.*[一-鿿]|^\d/;
+
+/**
+ * 原文链接 + 文本片段（#:~:text=），浏览器打开后跳到摘录里的那一句。
+ * 片段取摘录里一段两侧都是原文标点的完整短句（8–30 字）；找不到安全的就返回原链接。
+ */
+export function quoteFragmentUrl(url: string, quote: string | undefined): string {
+  if (!/^https?:\/\//i.test(url) || url.includes(":~:")) return url;
+  const text = (quote ?? "").replace(/\r/g, "");
+  const parts = text.split(CLAUSE_SPLIT);
+  // 第一段和最后一段可能被摘录截断（两侧不是原文标点），不用。
+  const candidates = parts
+    .slice(1, -1)
+    .map((p) => p.trim())
+    .filter((p) => p.length >= 8 && p.length <= 30 && !INSERTED_MARKS.test(p) && !JOINED_ELEMENTS.test(p) && text.includes(p));
+  const pick = candidates.sort((a, b) => b.length - a.length)[0];
+  if (!pick) return url;
+  const encoded = encodeURIComponent(pick).replace(/-/g, "%2D");
+  return url.includes("#") ? `${url}:~:text=${encoded}` : `${url}#:~:text=${encoded}`;
+}
 
 /** 只回传来源已有摘录，不编造。 */
 export function sourceExcerpt(source: InvestigationSource | undefined): string {

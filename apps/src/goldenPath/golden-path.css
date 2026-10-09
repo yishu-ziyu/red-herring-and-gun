@@ -2721,6 +2721,16 @@ button.gp-save-state {
   flex: none;
 }
 
+/* 来源发布日期（#140）：跟在来源名后面的小字，不另起一行。 */
+.gp-published {
+  font-family: var(--gp-mono);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--gp-ink-3);
+  white-space: nowrap;
+  margin-left: 6px;
+}
+
 .gp-evidence-domain {
   font-family: var(--gp-mono);
   font-size: 12px;

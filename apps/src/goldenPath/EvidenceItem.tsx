@@ -5,7 +5,7 @@
  */
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { domainOf, evidenceTitle, ROLE_LABEL, ROLE_ROW_LABEL, roleGlyph, sourceExcerpt, type EvidenceIdentityKind } from "./snapshotUi";
+import { domainOf, evidenceTitle, publishedDay, PUBLISHED_UNKNOWN, ROLE_LABEL, ROLE_ROW_LABEL, roleGlyph, sourceExcerpt, type EvidenceIdentityKind } from "./snapshotUi";
 import type { InvestigationEvidenceLink, InvestigationSource } from "../lib/investigation";
 
 /** 行内引用式域名：灰字小字跟在摘录之后，「— domain ↗」，不再右对齐悬浮。 */
@@ -61,6 +61,7 @@ export function EvidenceItem({
   const excerpt = sourceExcerpt(source);
   const named = excerpt || title;
   const receipt = asResult || asWork;
+  const day = publishedDay(source);
 
   return (
     <motion.button
@@ -80,6 +81,7 @@ export function EvidenceItem({
       data-gp-source-id={link.sourceId}
       data-gp-evidence-claim={claimId}
       data-gp-evidence-key={evidenceKey}
+      data-gp-evidence-row
       data-gp-identity={identity}
       data-gp-settling={settling ? "1" : undefined}
       aria-describedby={groupLabelId}
@@ -101,6 +103,7 @@ export function EvidenceItem({
         ) : null}
         <div className="gp-evidence-header">
           <strong className="gp-evidence-title">{title}</strong>
+          <span className="gp-published" data-gp-published={day ?? ""}>{day ?? PUBLISHED_UNKNOWN}</span>
           {unreachable ? <em className="gp-evidence-dead">（打不开）</em> : null}
           {source?.url && !excerpt ? <DomainCite url={source.url} /> : null}
         </div>

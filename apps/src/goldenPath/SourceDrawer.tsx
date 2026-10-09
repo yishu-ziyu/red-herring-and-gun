@@ -5,7 +5,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
-import { ROLE_LABEL, SOURCE_ICON_URL, domainOf, identifyEvidenceLinks } from "./snapshotUi";
+import { PUBLISHED_UNKNOWN, ROLE_LABEL, SOURCE_ICON_URL, domainOf, identifyEvidenceLinks, publishedDay, quoteFragmentUrl } from "./snapshotUi";
 import type { InvestigationEvidenceLink, InvestigationSource } from "../lib/investigation";
 
 const FOCUSABLE =
@@ -65,7 +65,7 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
   const finding = link.finding?.trim();
   const limitation = link.limitation?.trim();
   const unreachable = source.reachable === false;
-  const published = source.publishedAt?.trim();
+  const published = publishedDay(source);
   const retrieved = source.retrievedAt?.trim();
   const publisher = source.publisher?.trim();
   const fetchStatus = source.fetchStatus;
@@ -299,7 +299,8 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
             <section className="gp-source-block gp-source-meta-block" data-gp-source-section="status">
               <div className="gp-source-meta-row">
                 <span className="gp-source-time">
-                  {copy.sourcePublished} {published || copy.sourceDateUnknown}
+                  {copy.sourcePublished}{" "}
+                  <span className="gp-published" data-gp-published={published ?? ""}>{published ?? PUBLISHED_UNKNOWN}</span>
                 </span>
                 <span className="gp-source-time">
                   {copy.sourceRetrieved} {retrieved || copy.sourceDateUnknown}
@@ -327,7 +328,8 @@ export function SourceDrawer({ view, resolveState = "live", onClose }: SourceDra
               <div className="gp-source-action-row">
                 <a
                   className="gp-source-open"
-                  href={source.url}
+                  data-gp-source-open
+                  href={quoteFragmentUrl(source.url, excerpt)}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

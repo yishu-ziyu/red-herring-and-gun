@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import type { SelfProofModelCall } from "../claimAtom/index.js";
 import type { AtomSearchBundle, KnowledgeHit, SearchOneAtom } from "../atomSearch.js";
 import { pruneDeadCitations, type LivenessDeps } from "../citationLiveness.js";
+import { readSourcePageDates } from "../sourcePageDates.js";
 import type { ReportReviewIssue } from "../reportReviewer.js";
 import type { EvidenceLoopOutcome, EvidenceLoopHooks, RewriteQueryModelCall } from "../evidenceLoop/index.js";
 import type { CrossExamOutcome, CrossExamRawModelCall } from "../crossExam/index.js";
@@ -309,6 +310,15 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   // 中断帧在 emit 之前成形（stream / 存库 snapshot / run 状态三者同一终态），
   // 不能先发 complete 帧再事后换 interrupted，否则广播与终态不一致。
   const runIncomplete = finalReport._source === "error-boundary";
+  // 检索方没给发布日期的来源，读网页自己的发布元数据（#140）。
+  const intakeUrls = (Array.isArray(input.intakeLinks) ? input.intakeLinks : [])
+    .map((link) => String((link as { url?: unknown } | null)?.url ?? ""))
+    .filter(Boolean);
+  const pageDates = await readSourcePageDates(atomSearchBundle, intakeUrls, {
+    signal: input.signal,
+    deadlineMs: input.deadline,
+  });
+  throwIfAborted();
   // 里程碑（完成）：finalReport.investigation = 稳定快照；报告 + 复核 + 探活后构建。
   const finalInvestigation = snapshots.complete(
     {
@@ -322,6 +332,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       pursuitHops: evidenceLoop?.pursuitHops,
       report: finalReport,
       reachability: { deadUrls: deadCitationUrls },
+      pageDates,
       intakeLinks: input.intakeLinks,
       checkedAt: typeof finalReport.checkedAt === "string" ? finalReport.checkedAt : undefined,
     },

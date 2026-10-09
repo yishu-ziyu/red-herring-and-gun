@@ -7,7 +7,7 @@ import { useState, useMemo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
-import { LABEL_TEXT, LABEL_TONE, ROLE_LABEL, attachmentsForSource, evidenceTitle, pickDecisiveEvidence, type LabelKey } from "./snapshotUi";
+import { LABEL_TEXT, LABEL_TONE, ROLE_LABEL, attachmentsForSource, evidenceTitle, pickDecisiveEvidence, publishedDay, PUBLISHED_UNKNOWN, type LabelKey } from "./snapshotUi";
 import { scrubFaceText } from "../lib/scrubFace";
 import { displayFollowUpClaim } from "../lib/composeFollowUpClaim";
 import { PromptKitSource } from "./PromptKitSource";
@@ -182,13 +182,17 @@ export function ConclusionHero({
                   type="button"
                   className="gp-hero-key-item"
                   data-gp-key-evidence-item
+                  data-gp-evidence-row
                   data-gp-key-claim-id={row.claimId}
                   data-gp-source-id={row.source.id}
                   onClick={(event) => handleSelectSource(row.link, row.source, row.claimId, event.currentTarget)}
                 >
                   <span className="gp-hero-key-proves">{proves}</span>
                   <span className="gp-hero-key-meta">
-                    {ROLE_LABEL[row.link.role]} · {sourceTitle}
+                    {ROLE_LABEL[row.link.role]} · {sourceTitle}{" "}
+                    <span className="gp-published" data-gp-published={publishedDay(row.source) ?? ""}>
+                      {publishedDay(row.source) ?? PUBLISHED_UNKNOWN}
+                    </span>
                   </span>
                 </button>
               );
@@ -276,7 +280,10 @@ export function ConclusionHero({
                       ) : (
                         <span className="gp-hero-source-unlinked" data-gp-source-unlinked>
                           {source.title || source.url || source.id}
-                          {source.url ? ` ${source.url}` : ""}
+                          {source.url ? ` ${source.url}` : ""}{" "}
+                          <span className="gp-published" data-gp-published={publishedDay(source) ?? ""}>
+                            {publishedDay(source) ?? PUBLISHED_UNKNOWN}
+                          </span>
                         </span>
                       )}
                       {associated.length > 0 ? (

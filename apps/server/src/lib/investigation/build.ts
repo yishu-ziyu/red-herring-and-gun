@@ -38,6 +38,7 @@ import {
   type LabelKey,
 } from "../../domain/labels.js";
 import { investigationSourceId, normalizeInvestigationSourceUrl } from "./sourceIdentity.js";
+import { dateFromUrl, normalizePublishedDate } from "./sourceDate.js";
 
 export type InvestigationBuildInput = {
   originalClaim: string;
@@ -64,6 +65,8 @@ export type InvestigationBuildInput = {
   report?: unknown;
   /** 引用探活死链（pruneDeadCitations.deadUrls）：死链来源标 reachable=false。 */
   reachability?: { deadUrls?: readonly string[] };
+  /** 从网页自己的发布元数据读到的日期（URL → YYYY-MM-DD）；只在检索方没给日期时使用。 */
+  pageDates?: Readonly<Record<string, string>>;
   /**
    * 用户提交的链接材料（CaseIntakeLinkPayload[]）：客户端既有抓取链路读过正文
    * （scrapeStatus/scrapedContent/scrapedAt）。登记为来源——真读到正文才标
@@ -744,7 +747,7 @@ export function buildInvestigationSnapshot(
       // 检索摘要不回写正文来源，避免摘要顶原文。
       const src = sources.find((item) => item.id === existing);
       if (src) {
-        if (s.publishedAt && !src.publishedAt) src.publishedAt = s.publishedAt;
+        if (!normalizePublishedDate(src.publishedAt) && normalizePublishedDate(s.publishedAt)) src.publishedAt = s.publishedAt;
         if (s.publisher && !src.publisher) src.publisher = s.publisher;
         if (s.material && !src.material) src.material = s.material;
         // fetchNote 状态语义：记录这段来源遇到的限制与抓取尝试历史（追加去重），
@@ -871,6 +874,14 @@ export function buildInvestigationSnapshot(
         ...(status ? { fetchNote: `抓取状态未知（${status}），未取得正文` } : {}),
       });
     }
+  }
+
+  // 发布日期只认三处，按顺序：检索方给的 → 网页发布元数据 → URL 里的日期。都没有就不写。
+  for (const src of sources) {
+    const day =
+      normalizePublishedDate(src.publishedAt) ?? input.pageDates?.[src.url] ?? dateFromUrl(src.url);
+    if (day) src.publishedAt = day;
+    else delete src.publishedAt;
   }
 
   const conclusionText = asString(report?.conclusion);

@@ -70,6 +70,7 @@ async function run() {
 
   // "Key evidence" is empty by design when evidence is insufficient, so open a source from the source list.
   await page.getByRole("button", { name: /收集到的来源/ }).first().click().catch(() => {});
+  await checkDatesAndQuoteLinks();
   const sourcePill = page.locator("[data-gp-source-pill] button").first();
   if (record("source list opens", await sourcePill.isVisible({ timeout: 5_000 }).catch(() => false))) {
     await sourcePill.click();
@@ -140,6 +141,38 @@ async function checkLabels() {
   record("result page shows none of the 6 old label words", oldHits.length === 0, oldHits.join(" ‖ "));
 }
 
+// #140: every evidence row shows a publish date or says it is missing; some source has a real date;
+// the original-page link opened from an evidence row jumps to a sentence of that row's quote.
+async function checkDatesAndQuoteLinks() {
+  const DATE = /^\d{4}-\d{2}-\d{2}$/;
+  const rows = await page.locator("[data-gp-evidence-row]").evaluateAll((nodes) =>
+    nodes.map((node) => node.querySelector("[data-gp-published]")?.textContent?.trim() ?? "NO DATE"));
+  const bad = rows.filter((text) => !DATE.test(text) && text !== "发布日期未取到");
+  record("every evidence row shows a publish date or 发布日期未取到", rows.length > 0 && bad.length === 0, `rows=${rows.length} bad=${bad.join("/")}`);
+  const bySource = await page.locator("[data-gp-source-pill]").evaluateAll((nodes) =>
+    Object.fromEntries(nodes.map((node) => [node.getAttribute("data-gp-source-pill"), node.querySelector("[data-gp-published]")?.getAttribute("data-gp-published") ?? ""])));
+  const dated = Object.values(bySource).filter((day) => DATE.test(day)).length;
+  record("at least one source has a real publish date", dated > 0, `dated ${dated}/${Object.keys(bySource).length}`);
+
+  const quoted = page.locator("[data-gp-evidence-key]:has([data-gp-evidence-excerpt])");
+  const tried = [];
+  let hit = null;
+  for (let i = 0; i < Math.min(await quoted.count(), 8) && !hit; i += 1) {
+    const row = quoted.nth(i);
+    const quote = (await row.locator("[data-gp-evidence-excerpt]").first().textContent().catch(() => "")) ?? "";
+    await row.scrollIntoViewIfNeeded().catch(() => {});
+    await row.click().catch(() => {});
+    const href = (await page.getByRole("dialog").locator("[data-gp-source-open]").first().getAttribute("href", { timeout: 5_000 }).catch(() => null)) ?? "";
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog").waitFor({ state: "detached", timeout: 5_000 }).catch(() => {});
+    const at = href.indexOf("#:~:text=") >= 0 ? href.indexOf("#:~:text=") + 9 : href.indexOf(":~:text=") >= 0 ? href.indexOf(":~:text=") + 8 : -1;
+    const text = at >= 0 ? decodeURIComponent(href.slice(at)) : "";
+    tried.push(text || href.slice(0, 60));
+    if (href.includes("#:~:text=") && text && quote.includes(text)) hit = href;
+  }
+  record("an evidence link jumps to a sentence of its quote", Boolean(hit), hit || `tried: ${tried.join(" ‖ ")}`);
+}
+
 // Share this round, open the link as a stranger (new context, no cookies), revoke it, open it again.
 async function checkShare(answer) {
   const normalize = (text) => text.replace(/\s+/g, "").trim();
@@ -156,6 +189,12 @@ async function checkShare(answer) {
     await viewer.goto(shareUrl, { waitUntil: "domcontentloaded" });
     const shared = (await viewer.locator("[data-share-conclusion]").first().innerText().catch(() => "")).trim();
     record("share link shows the same conclusion to a stranger", shared.length > 0 && normalize(shared) === normalize(answer), shared.slice(0, 80));
+    const sharedDates = await viewer.locator("[data-share-published]").allTextContents();
+    record(
+      "share page shows a publish date or 发布日期未取到 for each source",
+      sharedDates.length > 0 && sharedDates.every((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.trim()) || t.trim() === "发布日期未取到"),
+      `dates=${sharedDates.filter((t) => /\d/.test(t)).length}/${sharedDates.length}`
+    );
     const source = await viewer.content();
     record("share page does not contain the internal image prompt", !source.includes("请核查用户上传"));
     const sharedLabel = (await viewer.locator("[data-share-label]").first().textContent().catch(() => "")).trim();

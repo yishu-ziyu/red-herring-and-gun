@@ -8,7 +8,7 @@
  */
 import type { CSSProperties } from "react";
 import type { InvestigationEvidenceLink, InvestigationSource } from "../lib/investigation";
-import { domainOf, ROLE_LABEL, SOURCE_ICON_URL, sourceExcerpt } from "./snapshotUi";
+import { domainOf, publishedDay, PUBLISHED_UNKNOWN, ROLE_LABEL, SOURCE_ICON_URL, sourceExcerpt } from "./snapshotUi";
 
 type PromptKitSourceProps = {
   link: InvestigationEvidenceLink;
@@ -24,6 +24,7 @@ export function PromptKitSource({ link, source, claimId, onSelect, entering = fa
   const title = source.title || source.url || link.sourceId;
   const excerpt = sourceExcerpt(source);
   const roleLabel = ROLE_LABEL[link.role];
+  const day = publishedDay(source);
   const displayBadgeLabel = roleLabel.endsWith("材料") ? roleLabel : `${roleLabel}材料`;
 
   return (
@@ -43,6 +44,7 @@ export function PromptKitSource({ link, source, claimId, onSelect, entering = fa
       >
         <img src={SOURCE_ICON_URL} alt="" className="gp-source-favicon" aria-hidden="true" />
         <span className="gp-source-domain">{domain}</span>
+        <span className="gp-published" data-gp-published={day ?? ""}>{day ?? PUBLISHED_UNKNOWN}</span>
         <span className={`gp-source-stance-tag is-${link.role}`}>{roleLabel}</span>
       </button>
 
