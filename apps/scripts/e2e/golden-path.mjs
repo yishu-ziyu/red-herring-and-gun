@@ -3,6 +3,7 @@
  * Real end-to-end check of the main user path: real browser, real server, real models and search.
  * Needs the app running (`npm run dev`) with real keys in apps/.env.local. One run takes about 7 minutes.
  * Do not edit server files during a run: the dev server restarts on save and kills the investigation.
+ * E2E_FULL=1 also checks a follow-up question and an image-only investigation (about 20 minutes in total).
  */
 import { chromium } from "playwright";
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
@@ -33,6 +34,11 @@ page.on("request", (req) => {
   if (req.method() === "POST" && req.url().includes("/api/agent/orchestrate-stream")) investigationPosts.push(req.url());
 });
 const shot = (name) => page.screenshot({ path: `${out}/${name}.png` });
+const finished = () => page.locator('[data-gp-phase="complete"], [data-gp-phase="interrupted"], [data-gp-phase="stopped"]').first();
+async function waitForFinish() {
+  await finished().waitFor({ timeout: timeoutMs }).catch(() => {});
+  return finished().getAttribute("data-gp-phase").catch(() => null);
+}
 
 async function run() {
   await page.goto(baseUrl, { waitUntil: "networkidle" });
@@ -44,9 +50,7 @@ async function run() {
   await page.getByRole("button", { name: "开始调查" }).click();
   await shot("1-submitted");
 
-  const end = page.locator('[data-gp-phase="complete"], [data-gp-phase="interrupted"], [data-gp-phase="stopped"]').first();
-  await end.waitFor({ timeout: timeoutMs }).catch(() => {});
-  const phase = await end.getAttribute("data-gp-phase").catch(() => null);
+  const phase = await waitForFinish();
   await shot("2-finished");
   if (!record("investigation completes", phase === "complete", `phase=${phase}`)) return;
   record("exactly one investigation request", investigationPosts.length === 1, `posts=${investigationPosts.length}`);
@@ -80,10 +84,51 @@ async function run() {
   await shot("4-reopened");
   record("reopened investigation shows the same conclusion", reopenedAnswer === answer, reopenedAnswer.slice(0, 80));
   record("reopening does not start a new investigation", investigationPosts.length === 1, `posts=${investigationPosts.length}`);
+  return answer;
+}
+
+// Follow-up on the reopened investigation, then an image-only investigation.
+async function runFull(firstAnswer) {
+  const question = page.getByPlaceholder(/针对此结论追问/);
+  if (!record("follow-up box is shown", await question.isVisible({ timeout: 10_000 }).catch(() => false))) return;
+  await question.fill("隔夜菜在冰箱里放一天，还能吃吗？");
+  await page.getByRole("button", { name: "发送追问" }).click();
+  await page.locator('[data-gp-phase="complete"]').first().waitFor({ state: "detached", timeout: 60_000 }).catch(() => {});
+  const followPhase = await waitForFinish();
+  await shot("5-follow-up");
+  if (!record("follow-up completes", followPhase === "complete", `phase=${followPhase}`)) return;
+  record("follow-up starts exactly one more investigation", investigationPosts.length === 2, `posts=${investigationPosts.length}`);
+  const rounds = page.getByRole("navigation", { name: "调查轮次" });
+  const hasRounds = (await rounds.getByRole("button", { name: /首次核查/ }).count()) === 1
+    && (await rounds.getByRole("button", { name: /第 2 轮/ }).count()) === 1;
+  record("follow-up stays in the same investigation as round 2", hasRounds);
+  if (hasRounds) {
+    await rounds.getByRole("button", { name: /首次核查/ }).click();
+    const earlier = (await page.locator("[data-gp-direct-answer]").first().innerText().catch(() => "")).trim();
+    record("round 1 keeps its original conclusion", earlier === firstAnswer, earlier.slice(0, 80));
+  }
+
+  // The image is rendered at run time, so no binary fixture lives in the repo.
+  const imagePath = `${out}/rumor-image.png`;
+  const renderer = await browser.newPage({ viewport: { width: 900, height: 360 } });
+  await renderer.setContent('<body style="margin:0;display:grid;place-items:center;height:100vh;background:#fff;font:600 44px sans-serif">网传：喝柠檬水能治愈癌症</body>');
+  await renderer.screenshot({ path: imagePath });
+  await renderer.close();
+
+  await page.goto(baseUrl, { waitUntil: "networkidle" });
+  await page.locator('input[type="file"]').first().setInputFiles(imagePath);
+  await page.getByRole("button", { name: "开始调查" }).click();
+  const imagePhase = await waitForFinish();
+  await shot("6-image");
+  if (!record("image-only investigation completes", imagePhase === "complete", `phase=${imagePhase}`)) return;
+  record("image investigation is one new request", investigationPosts.length === 3, `posts=${investigationPosts.length}`);
+  const claimsText = (await page.locator("[data-gp-claim-id]").allInnerTexts().catch(() => [])).join(" ");
+  record("claims come from the text in the image", claimsText.includes("柠檬"), claimsText.slice(0, 80));
 }
 
 try {
-  await run();
+  const firstAnswer = await run();
+  if (process.env.E2E_FULL === "1" && firstAnswer) await runFull(firstAnswer);
 } catch (error) {
   record("script ran without crashing", false, String(error?.message || error).slice(0, 300));
   await shot("crash").catch(() => {});
