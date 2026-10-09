@@ -22,6 +22,10 @@ export type FilterableSource = {
   credibility?: string;
   /** 源内原次序，0 最好；缺省视为靠后 */
   providerRank?: number;
+  /** 来源自身发布日期；检索方给出才填。 */
+  publishedAt?: string;
+  /** 发布者/站点名；检索方给出才填。 */
+  publisher?: string;
 };
 
 export type FilterMeta = {
@@ -109,6 +113,8 @@ export function hardFilterSources(
       snippet: snippet.slice(0, 900),
       credibility: s.credibility,
       providerRank: s.providerRank,
+      ...(s.publishedAt ? { publishedAt: s.publishedAt } : {}),
+      ...(s.publisher ? { publisher: s.publisher } : {}),
     });
   }
   return out;

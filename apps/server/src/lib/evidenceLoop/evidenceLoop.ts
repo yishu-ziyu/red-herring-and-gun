@@ -274,11 +274,20 @@ function extractSources(result: unknown): AtomSearchSource[] {
     if (!rec || typeof rec !== "object") continue;
     const url = String(rec.url || rec.link || "").trim();
     if (!/^https?:\/\//i.test(url)) continue;
+    // 证据可追溯：补查来源与检索入口同一装配口径——provider 实际给到的
+    // 发布日期/发布者透传，取得时间取本次检索时刻，类型标检索摘要；没给的不补造。
+    const publishedAt = String(rec.publishedAt || rec.date || rec.time || rec.publishDate || "").trim();
+    const publisher = String(rec.publisher || rec.siteName || rec.site || "").trim();
     out.push({
       url,
       title: String(rec.title || rec.name || "").slice(0, 200),
       snippet: String(rec.snippet || rec.summary || rec.content || "").slice(0, 320),
       credibility: typeof rec.credibility === "string" ? rec.credibility : undefined,
+      ...(publishedAt ? { publishedAt } : {}),
+      ...(publisher ? { publisher } : {}),
+      retrievedAt: new Date().toISOString(),
+      excerptKind: "search-snippet",
+      fetchStatus: "snippet-only",
     });
   }
   return out;
@@ -314,6 +323,12 @@ export function mergeSourcesIntoBundle(
         title: src.title,
         snippet: src.snippet,
         ...(src.credibility ? { credibility: src.credibility } : {}),
+        ...(src.publishedAt ? { publishedAt: src.publishedAt } : {}),
+        ...(src.publisher ? { publisher: src.publisher } : {}),
+        ...(src.retrievedAt ? { retrievedAt: src.retrievedAt } : {}),
+        ...(src.excerptKind ? { excerptKind: src.excerptKind } : {}),
+        ...(src.fetchStatus ? { fetchStatus: src.fetchStatus } : {}),
+        ...(src.fetchNote ? { fetchNote: src.fetchNote } : {}),
       });
     }
   }

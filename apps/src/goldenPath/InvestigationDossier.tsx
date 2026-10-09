@@ -64,6 +64,28 @@ export function InvestigationDossier({
                       >
                         {title}
                       </button>
+                    ) : source.material === "user-intake" && onSelectSource ? (
+                      // 用户提交的材料：没有 claim 关联也给入口，关系标 context-only，
+                      // 不冒充支持或反驳依据。
+                      <button
+                        type="button"
+                        className="gp-dossier-item-btn"
+                        data-gp-dossier-material="user-intake"
+                        onClick={(event) =>
+                          onSelectSource(
+                            {
+                              sourceId: source.id,
+                              role: "context-only",
+                              relationReason: "你提交的材料；未关联到具体命题，不作为支持或反驳依据",
+                            },
+                            source,
+                            "",
+                            event.currentTarget
+                          )
+                        }
+                      >
+                        {title}
+                      </button>
                     ) : (
                       <span>{title}</span>
                     )}

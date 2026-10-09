@@ -431,6 +431,7 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       signal,
       // 截止 = 总超时 − 10s 收尾余量：补查/复核提前收敛，报告写作不再被总超时截断
       deadline: workDeadlineMs,
+      intakeLinks: intake?.links,
       runAgent,
       searchOne: makeSearchOneAtom((event) => sendEvent(event), searchEnv, { signal, deadlineMs: workDeadlineMs }),
       lookupImageOrigin: makeImageOriginLookup(env, intake, visualExtraction, { signal, deadlineMs: workDeadlineMs }),
@@ -490,7 +491,13 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       memoryCandidates: result.memoryCandidates,
       timestamp: Date.now(),
     });
-    finishRun(RUN_FINAL_STATUS.completed);
+    // run 终态与快照终态一致：核查步骤内部失败（error-boundary）的 run 是
+    // interrupted，不是 completed——pipeline 已在快照 emit 前定了中断帧。
+    finishRun(
+      result.finalReport._source === "error-boundary"
+        ? RUN_FINAL_STATUS["server-error"]
+        : RUN_FINAL_STATUS.completed
+    );
     // 追问观测：报告已 finalize、响应还没结束——写一行计数与判词标签就完事。
     // 只在追问轮写；写不进去也不改这次 run 的结局（recordFollowUpObservation 内部兜住）。
     if (isFollowUp && priorCaseId) {

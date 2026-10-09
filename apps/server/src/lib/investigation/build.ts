@@ -51,6 +51,12 @@ export type InvestigationBuildInput = {
   report?: unknown;
   /** 引用探活死链（pruneDeadCitations.deadUrls）：死链来源标 reachable=false。 */
   reachability?: { deadUrls?: readonly string[] };
+  /**
+   * 用户提交的链接材料（CaseIntakeLinkPayload[]）：客户端既有抓取链路读过正文
+   * （scrapeStatus/scrapedContent/scrapedAt）。登记为来源——真读到正文才标
+   * page-excerpt；抓取失败保留 failed + 原因，不新增公网读取能力。
+   */
+  intakeLinks?: unknown;
   checkedAt?: string;
   /**
    * received 且命题尚未出现：正在拆原句，或正在核对这些拆出来的说法。
@@ -281,6 +287,18 @@ type BundleSource = {
   snippet: string;
   provenance?: ReuseProvenance;
   originDate?: string;
+  /** 检索层实际得到的发表日（YYYY-MM-DD 或 ISO）；拿不到就是没有，旧数据缺省。 */
+  publishedAt?: string;
+  /** 检索方实际给出的站点/发布者名；拿不到就是没有。 */
+  publisher?: string;
+  /** 本次检索命中时刻（ISO）。 */
+  retrievedAt?: string;
+  /** 摘录来历：search-snippet=检索摘要；page-excerpt=真读过正文。 */
+  excerptKind?: "search-snippet" | "page-excerpt";
+  /** 获取状态：snippet-only/fetched/truncated/restricted/failed。 */
+  fetchStatus?: "snippet-only" | "fetched" | "truncated" | "restricted" | "failed";
+  /** 获取限制说明（截断/受限/失败原因）。 */
+  fetchNote?: string;
 };
 
 function reuseProvenanceOf(value: unknown): ReuseProvenance | undefined {
@@ -445,6 +463,15 @@ function readBundle(
           // 复用标记只在真带 knowledge / prior-round 时透传；老快照 / 普通检索来源没有。
           const provenance = reuseProvenanceOf(s.provenance);
           const reusable = Boolean(provenance) && isHttpUrl(asString(s.url).trim());
+          const publishedAt = asString(s.publishedAt).trim();
+          const publisher = clip(asString(s.publisher), 80);
+          const retrievedAt = asString(s.retrievedAt).trim();
+          const excerptKind = s.excerptKind === "search-snippet" || s.excerptKind === "page-excerpt" ? s.excerptKind : undefined;
+          const fetchStatus =
+            s.fetchStatus === "snippet-only" || s.fetchStatus === "fetched" ||
+            s.fetchStatus === "truncated" || s.fetchStatus === "restricted" || s.fetchStatus === "failed"
+              ? s.fetchStatus : undefined;
+          const fetchNote = clip(asString(s.fetchNote), 200);
           return {
             url: asString(s.url).trim(),
             title: clip(asString(s.title), 200),
@@ -453,6 +480,12 @@ function readBundle(
             ...(reusable && asString(s.originDate).trim()
               ? { originDate: clip(asString(s.originDate), 40) }
               : {}),
+            ...(publishedAt ? { publishedAt: clip(publishedAt, 40) } : {}),
+            ...(publisher ? { publisher } : {}),
+            ...(retrievedAt ? { retrievedAt: clip(retrievedAt, 40) } : {}),
+            ...(excerptKind ? { excerptKind } : {}),
+            ...(fetchStatus ? { fetchStatus } : {}),
+            ...(fetchNote ? { fetchNote } : {}),
           };
         })
         .filter((s) => isHttpUrl(s.url));
@@ -642,10 +675,71 @@ export function buildInvestigationSnapshot(
     if (!meta) return {};
     return { provenance: meta.provenance, ...(meta.originDate ? { originDate: meta.originDate } : {}) };
   };
-  const registerSource = (s: { url: string; title: string; snippet: string }): string => {
+  const registerSource = (s: {
+    url: string;
+    title: string;
+    snippet: string;
+    publishedAt?: string;
+    publisher?: string;
+    retrievedAt?: string;
+    excerptKind?: "search-snippet" | "page-excerpt";
+    fetchStatus?: "snippet-only" | "fetched" | "truncated" | "restricted" | "failed";
+    fetchNote?: string;
+    material?: "user-intake";
+  }): string => {
     const key = normalizeInvestigationSourceUrl(s.url);
     const existing = sourceIdByUrl.get(key);
-    if (existing) return existing;
+    if (existing) {
+      // 同 URL 先到先得丢信息：这里按材料合并——
+      // 真读到正文（page-excerpt）才升级摘录/类型/取得时间；
+      // 明确失败的尝试写进 fetchNote（有摘要时状态仍是它的真实口径，不冒充失败）；
+      // 检索摘要不回写正文来源，避免摘要顶原文。
+      const src = sources.find((item) => item.id === existing);
+      if (src) {
+        if (s.publishedAt && !src.publishedAt) src.publishedAt = s.publishedAt;
+        if (s.publisher && !src.publisher) src.publisher = s.publisher;
+        if (s.material && !src.material) src.material = s.material;
+        // fetchNote 状态语义：记录这段来源遇到的限制与抓取尝试历史（追加去重），
+        // 不是单值状态——既有失败记录不被后续成功吞掉，已有正文也不因新失败被伪装。
+        const appendFetchNote = (existing: string | undefined, note: string | undefined): string | undefined => {
+          const trimmed = note?.trim();
+          if (!trimmed) return existing;
+          if (!existing?.trim()) return trimmed;
+          if (existing.includes(trimmed)) return existing;
+          return `${existing}；${trimmed}`;
+        };
+        if (s.excerptKind === "page-excerpt" && src.excerptKind !== "page-excerpt" && s.snippet) {
+          src.excerpt = clipExcerpt(s.snippet);
+          src.excerptKind = "page-excerpt";
+          src.fetchStatus = s.fetchStatus;
+          // 既有 fetchNote（例如此前一次抓取失败）标为历史：用户看到
+          // 「此前读取失败…本次已取得正文」，不会误当成本次又失败。
+          const priorNote = src.fetchNote;
+          src.fetchNote = appendFetchNote(
+            // 中性标注：priorNote 可能是失败/受限/截断说明，不武断写成「失败」。
+            priorNote ? `此前获取记录：${priorNote}；本次已取得正文` : undefined,
+            s.fetchNote
+          );
+          // 取得时间必须与展示的正文出自同一份材料：用本次正文取得时间；
+          // scrapedAt 缺失（旧数据/可选字段）则清空显示未知，不沿用检索时刻冒充正文取得时间。
+          if (s.retrievedAt) src.retrievedAt = s.retrievedAt;
+          else delete src.retrievedAt;
+          return existing;
+        }
+        if (s.fetchStatus === "failed") {
+          const note = s.fetchNote || "抓取失败，未能读取正文";
+          if (src.excerptKind === "page-excerpt") {
+            // 已有正文保留（excerpt/retrievedAt 属于那次成功取得的材料），
+            // 但如实记录这次更新的抓取尝试失败，不把旧正文伪装为最新成功。
+            src.fetchNote = appendFetchNote(src.fetchNote, `再次抓取失败：${note}`);
+          } else {
+            src.fetchNote = appendFetchNote(src.fetchNote, note);
+            if (!src.fetchStatus) src.fetchStatus = "failed";
+          }
+        }
+      }
+      return existing;
+    }
     const id = investigationSourceId(key);
     sourceIdByUrl.set(key, id);
     sources.push({
@@ -653,6 +747,13 @@ export function buildInvestigationSnapshot(
       url: key,
       title: s.title,
       ...(s.snippet ? { excerpt: clipExcerpt(s.snippet) } : {}),
+      ...(s.publishedAt ? { publishedAt: s.publishedAt } : {}),
+      ...(s.publisher ? { publisher: s.publisher } : {}),
+      ...(s.retrievedAt ? { retrievedAt: s.retrievedAt } : {}),
+      ...(s.excerptKind ? { excerptKind: s.excerptKind } : {}),
+      ...(s.fetchStatus ? { fetchStatus: s.fetchStatus } : {}),
+      ...(s.fetchNote ? { fetchNote: s.fetchNote } : {}),
+      ...(s.material ? { material: s.material } : {}),
       ...(deadUrls.has(key) ? { reachable: false } : {}),
       ...reuseFieldsOf(key),
     });
@@ -665,6 +766,63 @@ export function buildInvestigationSnapshot(
   }
   for (const a of assemblies) {
     for (const s of bundle.perAtom.get(a.key) ?? []) registerSource(s);
+  }
+
+  // 用户提交的链接材料：既有客户端抓取链路已经读过正文（scrapeStatus/scrapedContent），
+  // 登记为来源。真读到正文才标 page-excerpt；同 URL 已有检索摘要来源时升级为正文摘录；
+  // 抓取失败保留 failed + 原因（fetchNote），不伪造正文。
+  for (const rawLink of asArray(input.intakeLinks)) {
+    const link = asRecord(rawLink);
+    const url = normalizeInvestigationSourceUrl(asString(link?.url).trim());
+    if (!isHttpUrl(url)) continue;
+    const hostname = asString(link?.hostname).trim() || url;
+    const scrapedAt = link?.scrapedAt;
+    const retrievedAt =
+      typeof scrapedAt === "number" && Number.isFinite(scrapedAt) && scrapedAt > 0 && scrapedAt < 4e15
+        ? new Date(scrapedAt).toISOString()
+        : undefined;
+    const status = asString(link?.scrapeStatus);
+    const content = asString(link?.scrapedContent);
+    if (status === "success" && content.trim()) {
+      // 真读到正文：标 page-excerpt + material。截断判定与卡片实际展示的
+      // 摘录上限（DISPLAY_EXCERPT_MAX）用同一把尺，不再写与实际不符的 1200。
+      registerSource({
+        url,
+        title: hostname,
+        snippet: content,
+        ...(retrievedAt ? { retrievedAt } : {}),
+        publisher: hostname,
+        material: "user-intake",
+        excerptKind: "page-excerpt",
+        fetchStatus: content.length > DISPLAY_EXCERPT_MAX ? "truncated" : "fetched",
+        ...(content.length > DISPLAY_EXCERPT_MAX
+          ? { fetchNote: `正文共 ${content.length} 字，来源卡只展示开头 ${DISPLAY_EXCERPT_MAX} 字摘录` }
+          : {}),
+      });
+    } else if (status === "error") {
+      // 明确抓取失败才标 failed；原因保留进 fetchNote。
+      registerSource({
+        url,
+        title: hostname,
+        snippet: "",
+        ...(retrievedAt ? { retrievedAt } : {}),
+        publisher: hostname,
+        material: "user-intake",
+        fetchStatus: "failed",
+        fetchNote: asString(link?.scrapeError).trim() || "抓取失败，未能读取正文",
+      });
+    } else {
+      // 状态未知/未抓取：登记为用户材料但不标失败，保持获取状态未知。
+      registerSource({
+        url,
+        title: hostname,
+        snippet: "",
+        ...(retrievedAt ? { retrievedAt } : {}),
+        publisher: hostname,
+        material: "user-intake",
+        ...(status ? { fetchNote: `抓取状态未知（${status}），未取得正文` } : {}),
+      });
+    }
   }
 
   const conclusionText = asString(report?.conclusion);

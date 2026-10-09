@@ -14,6 +14,7 @@ import {
   type InvestigationSnapshotV1,
 } from "../investigation/index.js";
 import type { CasePipelineHooks } from "./runCasePipeline.js";
+import { interruptedInvestigationSnapshot } from "../interruptedSnapshot.js";
 
 type Phase = InvestigationBuildInput["phase"];
 type Patch = Partial<InvestigationBuildInput> & { phase: Phase };
@@ -26,8 +27,12 @@ export type SnapshotTimeline = {
   decomposed: (fields: Fields) => void;
   investigating: (fields: Fields) => void;
   judging: (fields: Fields) => void;
-  /** 完成快照：作为 finalReport.investigation 存下来；没有订阅者或构建失败时为 null。 */
-  complete: (fields: Fields) => InvestigationSnapshotV1 | null;
+  /** 完成快照：作为 finalReport.investigation 存下来；没有订阅者或构建失败时为 null。
+   *  opts.interrupted=true 时在 emit 之前把完成帧改包成中断帧——stream / 存库 / run 状态同一终态。 */
+  complete: (
+    fields: Fields,
+    opts?: { interrupted?: boolean; claim?: string }
+  ) => InvestigationSnapshotV1 | null;
   /** 检索规划选定了本轮纳入 / 未覆盖的范围：之后每一份快照都带上。 */
   setScopePlan: (plan: InvestigationBuildInput["scopePlan"]) => void;
 };
@@ -41,12 +46,17 @@ export function createSnapshotTimeline(args: {
   const { claim, hooks, throwIfAborted } = args;
   let base: InvestigationBuildInput | undefined;
   let scopePlan: InvestigationBuildInput["scopePlan"];
-  const emit = (patch: Patch): InvestigationSnapshotV1 | null => {
+  const emit = (
+    patch: Patch,
+    opts?: { interrupted?: boolean; claim?: string }
+  ): InvestigationSnapshotV1 | null => {
     throwIfAborted();
     if (!hooks?.onInvestigationSnapshot) return null;
     try {
       base = { ...(base ?? {}), ...patch, ...(scopePlan ? { scopePlan } : {}), originalClaim: patch.originalClaim ?? claim } as InvestigationBuildInput;
-      const snapshot = buildInvestigationSnapshot(base, { claimAtomKeyFn: claimAtomKey });
+      let snapshot = buildInvestigationSnapshot(base, { claimAtomKeyFn: claimAtomKey });
+      // 终态先定后发：核查失败的 run 直接广播中断帧，不先发 complete 再换帧。
+      if (opts?.interrupted) snapshot = interruptedInvestigationSnapshot(snapshot, opts.claim ?? claim);
       hooks.onInvestigationSnapshot(snapshot);
       return snapshot;
     } catch (error) {
@@ -70,7 +80,7 @@ export function createSnapshotTimeline(args: {
     judging: (fields) => {
       emit({ phase: "judging", ...fields });
     },
-    complete: (fields) => emit({ phase: "complete", ...fields }),
+    complete: (fields, opts) => emit({ phase: "complete", ...fields }, opts),
     setScopePlan: (plan) => {
       scopePlan = plan;
     },

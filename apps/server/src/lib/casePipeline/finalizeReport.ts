@@ -190,5 +190,20 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
   // 12 结论文本会写「按当前信息」，这里打上实际核查时间；结论时效随来源窗口走。
   finalReport.checkedAt = new Date().toISOString();
 
+  // 13 运行失败态：核查/信源审计/报告写作步骤内部出错 → 本次核查未完成。
+  // 这些失败是运行事件不是认识论结果，不能留着「公开材料还撑不住判断」的结论文字——
+  // 那句话的意思是「查过了但材料不够」，而这里是「核查本身没跑成」。标记沿用
+  // error-boundary（重建/列表/复核都把这份报告按中断处理），结论换成未完成的真实说明。
+  const failedSteps = [rumorStep, factStep, sourceStep, reportStep]
+    .map((step) => (typeof step?.error === "string" && step.error.trim() ? step.agent : null))
+    .filter((agent): agent is string => Boolean(agent));
+  if (failedSteps.length > 0) {
+    finalReport._source = "error-boundary";
+    finalReport.incompleteSteps = failedSteps;
+    finalReport.conclusion = "本次核查没能完成，判断还没写成。已找到的公开材料保留在来源里，可以重新调查。";
+    finalReport.summaryForPublic = "本次核查没能完成，判断还没写成。";
+    finalReport.recommendation = "本次核查没能完成，请重新调查后再看判断。";
+  }
+
   return { finalReport, deadUrls: deadCitationUrls, review };
 }

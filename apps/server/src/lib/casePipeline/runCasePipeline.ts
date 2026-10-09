@@ -17,6 +17,7 @@ import type { EvidenceLoopOutcome, EvidenceLoopHooks, RewriteQueryModelCall } fr
 import type { ImageOriginResult } from "../imageOrigin/index.js";
 import type { CrossExamOutcome, CrossExamRawModelCall } from "../crossExam/index.js";
 import type { InvestigationSnapshotV1 } from "../investigation/index.js";
+import { interruptedInvestigationSnapshot } from "../interruptedSnapshot.js";
 import type { WholeClaimAuditModelCall, WholeClaimAuditRun } from "../wholeClaimAudit/index.js";
 import { planFollowUpReuse } from "../followUpReuse.js";
 import { createBudget } from "./budget.js";
@@ -131,6 +132,11 @@ export type CasePipelineHooks = {
 
 export type CasePipelineInput = {
   claim: string;
+  /**
+   * 用户提交的链接材料（规范化 intake.links）：客户端既有抓取链路读过正文。
+   * 只透传进调查快照登记来源，管线阶段不读它、不据此发起新抓取。
+   */
+  intakeLinks?: unknown;
   runAgent: RunAgentFn;
   searchOne: SearchOneAtom;
   callSelfProofModel: SelfProofModelCall;
@@ -367,20 +373,28 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
       ),
     signal: input.signal,
   });
+  // 核查步骤内部失败 → 本次核查未完成：先定终态再发快照，
+  // 中断帧在 emit 之前成形（stream / 存库 snapshot / run 状态三者同一终态），
+  // 不能先发 complete 帧再事后换 interrupted，否则广播与终态不一致。
+  const runIncomplete = finalReport._source === "error-boundary";
   // 里程碑（完成）：finalReport.investigation = 稳定快照；报告 + 复核 + 探活后构建。
-  const finalInvestigation = snapshots.complete({
-    claimAtoms: rumorStep.output.claimAtoms,
-    claimAtomTypes: rumorStep.output.claimAtomTypes,
-    atomSearchBundle,
-    subclaimVerdicts: finalReport.subclaimVerdicts,
-    sourceRelationAudits: sourceStep?.output?.claimSourceRelations,
-    nonVerifiableAtoms: finalReport.nonVerifiableAtoms,
-    crossExam: finalReport.crossExam,
-    pursuitHops: evidenceLoop?.pursuitHops,
-    report: finalReport,
-    reachability: { deadUrls: deadCitationUrls },
-    checkedAt: typeof finalReport.checkedAt === "string" ? finalReport.checkedAt : undefined,
-  });
+  const finalInvestigation = snapshots.complete(
+    {
+      claimAtoms: rumorStep.output.claimAtoms,
+      claimAtomTypes: rumorStep.output.claimAtomTypes,
+      atomSearchBundle,
+      subclaimVerdicts: finalReport.subclaimVerdicts,
+      sourceRelationAudits: sourceStep?.output?.claimSourceRelations,
+      nonVerifiableAtoms: finalReport.nonVerifiableAtoms,
+      crossExam: finalReport.crossExam,
+      pursuitHops: evidenceLoop?.pursuitHops,
+      report: finalReport,
+      reachability: { deadUrls: deadCitationUrls },
+      intakeLinks: input.intakeLinks,
+      checkedAt: typeof finalReport.checkedAt === "string" ? finalReport.checkedAt : undefined,
+    },
+    { interrupted: runIncomplete, claim }
+  );
   if (finalInvestigation) {
     finalReport.investigation = finalInvestigation;
   }
@@ -404,7 +418,12 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     throwIfAborted();
     try {
       input.knowledgeBase.conclude(finalReport.subclaimVerdicts);
-      input.knowledgeBase.settle({ claim, verdicts: finalReport.subclaimVerdicts });
+      // run 级失败隔离：任何核查步骤报错（error-boundary）→ 整次不写可信知识，
+      // 不能只靠 settle 内部 verdict 过滤——部分步骤失败但 fact 仍有真/假结果时
+      // 过滤会放行，必须把失败 run 整体隔离在可信知识之外。
+      if (!runIncomplete) {
+        input.knowledgeBase.settle({ claim, verdicts: finalReport.subclaimVerdicts });
+      }
     } catch (error) {
       console.error("[casePipeline] 知识库收尾失败", error);
     }
