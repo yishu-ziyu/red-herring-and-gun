@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "eval": "cd server && npx tsx eval/run.ts",
-    "eval:gate": "cd server && npx tsx eval/run.ts --gate eval/baseline.json"
+    "eval:gate": "cd server && npx tsx eval/run.ts --gate eval/baseline.json",
+    "e2e": "node scripts/e2e/golden-path.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.2",
@@ -36,6 +37,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "jsdom": "^29.1.1",
+    "playwright": "^1.58.2",
     "vitest": "^4.1.7"
   }
 }
