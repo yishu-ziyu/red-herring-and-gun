@@ -209,7 +209,11 @@ const verdictSourceSchema = {
   properties: {
     url: { type: "string" },
     title: { type: "string" },
-    snippet: { type: "string" },
+    snippet: {
+      type: "string",
+      description:
+        "The one sentence from this source's snippet text that supports or refutes this atom, copied character for character (max 80 chars). No paraphrase, no ellipsis, no joining of two sentences.",
+    },
   },
   required: ["url", "title", "snippet"],
 };
@@ -616,6 +620,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "【逐条判定来源绑定 / 判定可追溯 — 强制】",
       "1. 输入可能含 atomSearches：每项 { claimAtom, sources[] }，表示该原子定向检索结果。优先从对应 claimAtom 的 sources 中引用 supportingSources / contradictingSources。",
       "2. 若无 atomSearches，则回退到 search360.sources。url / title / snippet 必须来自输入中真实存在的来源，不得编造。",
+      "2a. supportingSources / contradictingSources 每项的 snippet 只写一句话：从该来源输入 snippet 里逐字复制、真正支持或反驳这条命题的那一句（或那一个分句），不超过 80 字。不改写、不概括、不加省略号、不把两句拼成一句、不写只交代背景或机制的句子。",
       "3. 某来源若不在该原子 sources（或 search360.sources）中，不得写入；宁可留空数组，也不编造。",
       "4. evidenceGaps 列出该条尚未找到的证据；该原子检索为空时须在 boundary 或 evidenceGaps 写明未能证实/待补证，禁止仅因无结果就判 false。",
       "",
@@ -646,7 +651,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "5. 两桶都空时，evidence 不得出现任何 [n]。不得把反驳材料改塞进 supportingSources 只为了能写 [n]。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"factCheckResult\": \"partial\",\n  \"confidence\": \"medium\",\n  \"sources\": [\"https://example.com/a\"],\n  \"keyFindings\": [\"发现1\", \"发现2\"],\n  \"counterEvidence\": [\"反驳证据1\", \"反驳证据2\"],\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子命题1\", \"verdict\": \"true\", \"reason\": \"国家卫健委通报证实了这一点。\", \"evidence\": \"官方通报不支持该绝对化表述[1]。\", \"boundary\": \"边界\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"来源标题\", \"snippet\": \"摘要\"}], \"contradictingSources\": [], \"evidenceGaps\": []},\n    {\"claimAtom\": \"原子命题2\", \"verdict\": \"unresolved\", \"reason\": \"这次只找到转述，没有找到官方公告。\", \"evidence\": \"\", \"boundary\": \"暂无可靠证据\", \"supportingSources\": [], \"contradictingSources\": [], \"evidenceGaps\": [\"缺少官方公告\"]}\n  ]\n}",
+      "{\n  \"factCheckResult\": \"partial\",\n  \"confidence\": \"medium\",\n  \"sources\": [\"https://example.com/a\"],\n  \"keyFindings\": [\"发现1\", \"发现2\"],\n  \"counterEvidence\": [\"反驳证据1\", \"反驳证据2\"],\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子命题1\", \"verdict\": \"true\", \"reason\": \"国家卫健委通报证实了这一点。\", \"evidence\": \"官方通报不支持该绝对化表述[1]。\", \"boundary\": \"边界\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"来源标题\", \"snippet\": \"从该来源原文逐字复制的那一句\"}], \"contradictingSources\": [], \"evidenceGaps\": []},\n    {\"claimAtom\": \"原子命题2\", \"verdict\": \"unresolved\", \"reason\": \"这次只找到转述，没有找到官方公告。\", \"evidence\": \"\", \"boundary\": \"暂无可靠证据\", \"supportingSources\": [], \"contradictingSources\": [], \"evidenceGaps\": [\"缺少官方公告\"]}\n  ]\n}",
       "",
       "factCheckResult 必须是 'true'、'false'、'partial'、'unverified' 之一。",
       "confidence 必须是 'low'、'medium'、'high' 之一。",
@@ -774,7 +779,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "5. verdictType 用 true/false/mixed_misleading/unverified。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"verdictReason\": \"A 有公开记录支持，B 这次没有找到能核对的材料。\",\n  \"conclusion\": \"该说法部分成立：A 有公开记录支持[1]，B 仍无法证实。\",\n  \"recommendation\": \"给用户的行动建议\",\n  \"summaryForPublic\": \"面向公众的简化版结论（1-2 句话）\",\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子A\", \"verdict\": \"true\", \"evidence\": \"公开记录支持该点[1]。\", \"boundary\": \"不能推出全局\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"来源A\", \"snippet\": \"摘要\"}], \"contradictingSources\": [], \"evidenceGaps\": []}\n  ],\n  \"evidenceChain\": [\n    {\"layer\": \"搜索来源\", \"finding\": \"找到公开记录\", \"evidence\": \"材料支持原子A[1]。\", \"boundary\": \"不能推出B\", \"sourceRefs\": [\"https://example.com/a\"]}\n  ],\n  \"confidenceDimensions\": [\n    {\"dimension\": \"source_reliability\", \"label\": \"来源可靠性\", \"score\": 62, \"threshold\": 70, \"passed\": false, \"reason\": \"有部分来源但权威性不足\"},\n    {\"dimension\": \"evidence_completeness\", \"label\": \"证据完整度\", \"score\": 58, \"threshold\": 60, \"passed\": false, \"reason\": \"仍缺少原始材料\"},\n    {\"dimension\": \"consistency\", \"label\": \"逻辑一致性\", \"score\": 75, \"threshold\": 75, \"passed\": true, \"reason\": \"结论与前序 Agent 输出一致\"},\n    {\"dimension\": \"recency\", \"label\": \"信息时效性\", \"score\": 55, \"threshold\": 50, \"passed\": true, \"reason\": \"搜索线索可用于近期核查\"},\n    {\"dimension\": \"authority\", \"label\": \"权威匹配度\", \"score\": 60, \"threshold\": 65, \"passed\": false, \"reason\": \"尚需更权威来源确认\"}\n  ]\n}",
+      "{\n  \"verdictReason\": \"A 有公开记录支持，B 这次没有找到能核对的材料。\",\n  \"conclusion\": \"该说法部分成立：A 有公开记录支持[1]，B 仍无法证实。\",\n  \"recommendation\": \"给用户的行动建议\",\n  \"summaryForPublic\": \"面向公众的简化版结论（1-2 句话）\",\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子A\", \"verdict\": \"true\", \"evidence\": \"公开记录支持该点[1]。\", \"boundary\": \"不能推出全局\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"来源A\", \"snippet\": \"从该来源原文逐字复制的那一句\"}], \"contradictingSources\": [], \"evidenceGaps\": []}\n  ],\n  \"evidenceChain\": [\n    {\"layer\": \"搜索来源\", \"finding\": \"找到公开记录\", \"evidence\": \"材料支持原子A[1]。\", \"boundary\": \"不能推出B\", \"sourceRefs\": [\"https://example.com/a\"]}\n  ],\n  \"confidenceDimensions\": [\n    {\"dimension\": \"source_reliability\", \"label\": \"来源可靠性\", \"score\": 62, \"threshold\": 70, \"passed\": false, \"reason\": \"有部分来源但权威性不足\"},\n    {\"dimension\": \"evidence_completeness\", \"label\": \"证据完整度\", \"score\": 58, \"threshold\": 60, \"passed\": false, \"reason\": \"仍缺少原始材料\"},\n    {\"dimension\": \"consistency\", \"label\": \"逻辑一致性\", \"score\": 75, \"threshold\": 75, \"passed\": true, \"reason\": \"结论与前序 Agent 输出一致\"},\n    {\"dimension\": \"recency\", \"label\": \"信息时效性\", \"score\": 55, \"threshold\": 50, \"passed\": true, \"reason\": \"搜索线索可用于近期核查\"},\n    {\"dimension\": \"authority\", \"label\": \"权威匹配度\", \"score\": 60, \"threshold\": 65, \"passed\": false, \"reason\": \"尚需更权威来源确认\"}\n  ]\n}",
       "必须同时输出 verdictType、whyHardToVerify、evidenceChain、causalBoundary、closureActions。",
       "",
       "confidenceDimensions 必须包含 source_reliability、evidence_completeness、consistency、recency、authority 五项。",

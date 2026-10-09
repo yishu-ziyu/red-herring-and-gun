@@ -409,12 +409,14 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
     const canonicalByUrl = new Map(retrieved.map((source) => [source.url, source]));
     // A valid URL proves identity only. The model is not allowed to rewrite the
     // page title/snippet that later appears in reports or drawers.
+    // The model's snippet is the sentence it copied from this source; keep it as `quote`.
+    // The snapshot stores it only after checking it against the canonical text.
     const canonicalize = (sources: typeof bound.supportingSources) =>
       sources.map((source) => {
         const canonical = canonicalByUrl.get(source.url);
-        return canonical
-          ? { ...canonical, url: canonical.url, title: canonical.title, snippet: canonical.snippet }
-          : source;
+        if (!canonical) return source;
+        const quote = source.quote ?? (source.snippet !== canonical.snippet ? source.snippet : "");
+        return { ...canonical, url: canonical.url, title: canonical.title, snippet: canonical.snippet, ...(quote ? { quote } : {}) };
       });
     let supporting = canonicalize(bound.supportingSources);
     let contradicting = canonicalize(bound.contradictingSources);

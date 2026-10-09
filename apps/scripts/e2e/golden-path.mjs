@@ -201,6 +201,16 @@ async function checkDatesAndQuoteLinks() {
       quote: node.querySelector("[data-gp-evidence-quote]")?.textContent ?? "",
       href: node.querySelector("a[href]")?.getAttribute("href") ?? "",
     })));
+  // #141 part c: a quoted row shows one sentence from the source, not a paragraph.
+  const notOneSentence = quoted.filter(({ quote }) => {
+    const text = quote.trim();
+    return !text || text.length > 100 || /…|\.\.\./.test(text) || /[。！？!?]/.test(text.slice(0, -1));
+  });
+  record(
+    "every quoted evidence row shows one sentence of at most 100 characters",
+    quoted.length > 0 && notOneSentence.length === 0,
+    `quoted ${quoted.length}; bad: ${notOneSentence.map((q) => `${q.quote.length}字 ${q.quote.slice(0, 30)}`).join(" ‖ ") || "none"}`
+  );
   const tried = [];
   let hit = null;
   for (const { quote, href } of quoted) {

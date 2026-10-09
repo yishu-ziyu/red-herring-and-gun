@@ -21,6 +21,7 @@ import { scrubFaceText } from "../../../src/lib/scrubFace.js";
 import { conclusionMissesFollowUp, followUpQuestionLead } from "../../../src/lib/composeFollowUpClaim.js";
 import { LABEL_TEXT, LABEL_TONE, isLabelKey, judgmentToLabel, type LabelKey } from "../domain/labels.js";
 import { normalizePublishedDate } from "./investigation/sourceDate.js";
+import { quoteLinkUrl } from "./investigation/quote.js";
 
 const TOKEN_BYTES = 24;
 const SHARE_TTL_DAYS = 30;
@@ -40,7 +41,7 @@ export type PublicShareProjection = {
   boundaries: string[];
   checkedAt?: string;
   createdAt: number;
-  claims: Array<{ text: string; judgment: string | null; label?: LabelKey; reason?: string; evidence: Array<{ role: string; sourceId: string; quote?: string; finding?: string }> }>;
+  claims: Array<{ text: string; judgment: string | null; label?: LabelKey; reason?: string; evidence: Array<{ role: string; sourceId: string; sentence?: string; note?: string; finding?: string }> }>;
   deferredClaims: string[];
   sources: Array<{ id: string; title: string; url: string; publishedAt?: string }>;
 };
@@ -121,7 +122,9 @@ export function projectionFromSnapshot(snapshotValue: unknown, createdAt: number
           .map((link) => ({
             role: str(link.role),
             sourceId: str(link.sourceId),
-            ...(str(link.passage) ? { quote: str(link.passage) } : {}),
+            // 与结果页同一规则：引号里只放已核对的那一句；没有就给我们的概括。
+            // 老分享存的 quote 是整段 passage，显示时不再读。
+            ...(str(link.quote) ? { sentence: str(link.quote) } : str(link.relationReason) ? { note: scrubFaceText(str(link.relationReason)) } : {}),
             ...(str(link.finding) ? { finding: scrubFaceText(str(link.finding)) } : {}),
           })),
       })),
@@ -356,9 +359,12 @@ export function buildSharedPageHtml(lookup: ShareLookup): string {
         .map((link) => {
           const source = sourceById.get(link.sourceId);
           const label = `${ROLE_LABEL[link.role] ?? ""}${source ? ` · ${escapeHtml(source.title)} ${publishedTag(source.publishedAt)}` : ""}`;
-          const quote = link.quote ? `<blockquote>${escapeHtml(link.quote)}</blockquote>` : "";
+          const quote = link.sentence ? `<blockquote data-share-quote>${escapeHtml(link.sentence)}</blockquote>` : "";
+          const note = !quote && link.note ? `<div data-share-note>我们的概括：${escapeHtml(link.note)}</div>` : "";
           const finding = link.finding ? `<div>${escapeHtml(link.finding)}</div>` : "";
-          return quote || finding ? `<li><small>${label}</small>${quote}${finding}</li>` : "";
+          const href = source ? quoteLinkUrl(source.url, link.sentence) : "";
+          const open = href ? ` <a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">原文 ↗</a>` : "";
+          return quote || note || finding ? `<li><small>${label}${open}</small>${quote}${note}${finding}</li>` : "";
         })
         .filter(Boolean)
         .join("");

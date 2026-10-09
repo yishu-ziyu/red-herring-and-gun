@@ -106,8 +106,10 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
         changed = true;
         return;
       }
-      if (audit.relation === "support") support.push(source);
-      else contradict.push(source);
+      // The quoted sentence was picked for the other direction; it does not belong to the moved row.
+      const placed = audit.relation === original ? source : { ...source, quote: "" };
+      if (audit.relation === "support") support.push(placed);
+      else contradict.push(placed);
       if (audit.relation !== original) changed = true;
     };
     for (const source of sourceList(verdict.supportingSources)) place(source, "support");

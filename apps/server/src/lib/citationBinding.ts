@@ -11,6 +11,8 @@ export type CiteSource = {
   url: string;
   title: string;
   snippet: string;
+  /** 模型从这个来源逐字抄下、支持或反驳这一截的那一句；空串表示这一句不能用。 */
+  quote?: string;
 };
 
 export type BoundCitation = {
@@ -62,6 +64,7 @@ export function filterSourcesWithRemap(
       url,
       title: typeof rec.title === "string" ? rec.title.slice(0, 200) : "",
       snippet: typeof rec.snippet === "string" ? rec.snippet.slice(0, 320) : "",
+      ...(typeof rec.quote === "string" ? { quote: rec.quote } : {}),
     });
     urlToNew.set(url, next);
     remap.set(oldN, next);

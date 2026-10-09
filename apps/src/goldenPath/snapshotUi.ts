@@ -69,27 +69,6 @@ function fragmentClause(quote: string | undefined): string {
   return candidates.sort((a, b) => b.length - a.length)[0] ?? "";
 }
 
-const QUOTE_WINDOW = 160;
-
-/**
- * 证据行上显示的原文：取跳转片段所在的那一整句，链接打开后高亮的就是这句里的字。
- * 段落里找不到可跳转的片段时，显示段落开头一截。
- */
-export function quoteSentence(passage: string): string {
-  const text = passage.replace(/\r/g, "").replace(/^…+|…+$/g, "").trim();
-  const clause = fragmentClause(passage);
-  if (!clause) return text.length > QUOTE_WINDOW ? `${text.slice(0, QUOTE_WINDOW)}…` : text;
-  const sentences = text.split(/(?<=[。！？!?；;\n])/).map((s) => s.trim()).filter(Boolean);
-  const index = Math.max(0, sentences.findIndex((s) => s.includes(clause)));
-  const found = sentences[index] ?? clause;
-  // 段落本身被截断时，首句和末句也是截断的，用省略号说明。
-  const sentence = `${index === 0 && passage.trim().startsWith("…") ? "…" : ""}${found}${index === sentences.length - 1 && passage.trim().endsWith("…") ? "…" : ""}`;
-  if (sentence.length <= QUOTE_WINDOW) return sentence;
-  const at = Math.max(0, sentence.indexOf(clause) - 60);
-  const cut = sentence.slice(at, at + QUOTE_WINDOW);
-  return `${at > 0 ? "…" : ""}${cut}${at + QUOTE_WINDOW < sentence.length ? "…" : ""}`;
-}
-
 /** 只回传来源已有摘录，不编造。 */
 export function sourceExcerpt(source: InvestigationSource | undefined): string {
   const text = source?.excerpt?.trim();

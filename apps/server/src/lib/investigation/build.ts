@@ -39,6 +39,7 @@ import {
 } from "../../domain/labels.js";
 import { investigationSourceId, normalizeInvestigationSourceUrl } from "./sourceIdentity.js";
 import { dateFromUrl, normalizePublishedDate } from "./sourceDate.js";
+import { verbatimQuote } from "./quote.js";
 
 export type InvestigationBuildInput = {
   originalClaim: string;
@@ -287,7 +288,7 @@ function splitConclusionLayers(
   return rationale ? { verdictLead, rationale } : { verdictLead };
 }
 
-type VerdictSourceLike = { url?: unknown; title?: unknown; snippet?: unknown };
+type VerdictSourceLike = { url?: unknown; title?: unknown; snippet?: unknown; quote?: unknown };
 
 /**
  * 检索/注入进 bundle 的来源（build 侧读取形状）。
@@ -300,6 +301,8 @@ type BundleSource = {
   url: string;
   title: string;
   snippet: string;
+  /** 核查模型从这个来源抄下的那一句，还没核对；只在判定引用里有。 */
+  quote?: string;
   provenance?: ReuseProvenance;
   originDate?: string;
   /** 检索层实际得到的发表日（YYYY-MM-DD 或 ISO）；拿不到就是没有，旧数据缺省。 */
@@ -373,11 +376,11 @@ function readVerdicts(raw: unknown, keyFn: (s: string) => string): Map<string, V
     const supportingRaw = asArray(rec.supportingSources)
       .map(asRecord)
       .filter((s): s is Record<string, unknown> => s !== null)
-      .map((s) => ({ url: s.url, title: s.title, snippet: s.snippet }));
+      .map((s) => ({ url: s.url, title: s.title, snippet: s.snippet, quote: s.quote }));
     const contradictingRaw = asArray(rec.contradictingSources)
       .map(asRecord)
       .filter((s): s is Record<string, unknown> => s !== null)
-      .map((s) => ({ url: s.url, title: s.title, snippet: s.snippet }));
+      .map((s) => ({ url: s.url, title: s.title, snippet: s.snippet, quote: s.quote }));
     const sourcesRelatedOnly = rec.sourcesRelatedOnly === true;
     const verdict = asString(rec.verdict).trim().toLowerCase();
     const aligned = alignFalseEvidenceBuckets({
@@ -658,8 +661,8 @@ export function buildInvestigationSnapshot(
     text: string;
     order: number;
     checkability: InvestigationCheckability;
-    support: Array<{ url: string; title: string; snippet: string }>;
-    contradict: Array<{ url: string; title: string; snippet: string }>;
+    support: BundleSource[];
+    contradict: BundleSource[];
     relatedOnly: boolean;
     verdict: VerdictLike | undefined;
   };
@@ -681,10 +684,12 @@ export function buildInvestigationSnapshot(
         seen.add(url);
         // URL 只证明「模型引用的是本轮拿到的来源」，不能授权模型改写 title/snippet。
         // 有 bundle 时一律用检索层 canonical metadata；旧历史没有 bundle 才回退模型字段。
-        out.push(canonical ?? {
+        const quote = asString(s.quote);
+        out.push(canonical ? { ...canonical, ...(quote ? { quote } : {}) } : {
           url,
           title: clip(asString(s.title), 200),
           snippet: clip(asString(s.snippet), 900),
+          ...(quote ? { quote } : {}),
         });
       }
       return out;
@@ -898,8 +903,11 @@ export function buildInvestigationSnapshot(
         ((role === "support" && audit.relation === "support") ||
           (role === "contradict" && audit.relation === "contradict") ||
           (role === "context-only" && (audit.relation === "context-only" || audit.relation === "unverified")));
+      // 只有支持/反驳行引用原文；这一句必须逐字出自本轮拿到的来源文字。
+      const quote = role === "support" || role === "contradict" ? verbatimQuote(source.quote, source.snippet) : "";
       return {
         ...passage,
+        ...(quote ? { quote } : {}),
         ...(auditMatchesRole && audit.reason ? { relationReason: audit.reason } : {}),
       };
     };

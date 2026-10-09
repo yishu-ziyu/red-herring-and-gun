@@ -4,6 +4,7 @@
  */
 import { useState } from "react";
 import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSnapshotV1, InvestigationSource } from "../lib/investigation";
+import { quoteLinkUrl } from "../lib/investigation";
 import {
   CHECKABILITY_HINT,
   claimLabel,
@@ -12,10 +13,7 @@ import {
   LABEL_TONE,
   publishedDay,
   PUBLISHED_UNKNOWN,
-  quoteFragmentUrl,
-  quoteSentence,
   ROLE_LABEL,
-  sourceExcerpt,
   type LabelKey,
 } from "./snapshotUi";
 import { ShareControl } from "./ShareControl";
@@ -170,11 +168,10 @@ function PartCard({ claim, index, sources }: { claim: InvestigationClaim; index:
 }
 
 function EvidenceRow({ claimId, link, source }: { claimId: string; link: InvestigationEvidenceLink; source: InvestigationSource }) {
-  const passage = link.passage?.trim() ?? "";
-  // #135：只有和这一截绑定的段落才当原文引用；只有整篇摘要时照实标「来源摘要」。
-  const quote = passage ? quoteSentence(passage) : "";
-  const summary = quote ? "" : sourceExcerpt(source);
-  const href = source.url ? (quote ? quoteFragmentUrl(source.url, passage) : source.url) : "";
+  // 引号里只放核查时挑出、已核对逐字出自原文的那一句（quote.ts）；没有这一句就写我们的概括，不拿别的句子顶替。
+  const quote = link.quote?.trim() ?? "";
+  const summary = quote ? "" : link.relationReason?.trim() ?? "";
+  const href = source.url ? quoteLinkUrl(source.url, quote) : "";
   const day = publishedDay(source);
   return (
     <li className="gp-ev" data-gp-evidence-row data-gp-role={link.role} data-gp-evidence-claim={claimId} data-gp-source-id={source.id}>
@@ -183,7 +180,7 @@ function EvidenceRow({ claimId, link, source }: { claimId: string; link: Investi
         <q className="gp-ev-quote" data-gp-evidence-quote>{quote}</q>
       ) : summary ? (
         <span className="gp-ev-summary" data-gp-evidence-summary>
-          <span className="gp-ev-summary-label">来源摘要</span>
+          <span className="gp-ev-summary-label">我们的概括</span>
           {summary}
         </span>
       ) : null}
