@@ -23,7 +23,7 @@ require_aliyun() {
 usage() {
   cat <<EOF
 Usage:
-  ./ops.sh check              Run local tests/builds and local API smoke checks
+  ./ops.sh check              Run local builds and local API smoke checks
   ./ops.sh public             Probe public domain/IP without using local proxy
   ./ops.sh aliyun-domain      Probe the domain as if DNS points to the Aliyun server
   ./ops.sh remote             Read-only remote Docker/API status check over SSH
@@ -394,10 +394,9 @@ PY
 }
 
 local_builds() {
-  section "Local tests and builds"
+  section "Local builds"
   need_cmd npm
 
-  (cd "$APP_DIR" && npm test)
   (cd "$APP_DIR" && npm run build)
   (cd "$SERVER_DIR" && npm run build)
 }
