@@ -1,6 +1,4 @@
-import { resolve, join } from "node:path";
-import { tmpdir } from "node:os";
-import { readdir, rm, stat as statFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -53,38 +51,6 @@ app.use(
   })
 );
 app.use(express.json({ limit: "10mb" }));
-
-// 临时图床：以图搜图适配器把用户图片落盘到 UPLOAD_DIR（默认系统临时目录），
-// 通过 /uploads 静态暴露给 reverse-image vendor 抓取。生产需 Nginx 转发 /uploads 并设 PUBLIC_BASE_URL。
-app.use(
-  "/uploads",
-  express.static(join(process.env.UPLOAD_DIR || tmpdir(), "rhg-uploads"), {
-    maxAge: "1h",
-    index: false,
-  })
-);
-
-// 有界清扫：启动时删掉 24h 前的临时上传图。一次性、无常驻任务；
-// 图搜图回调只需几分钟内的可访问窗口，长跑进程不再无界累积。
-const uploadRoot = join(process.env.UPLOAD_DIR || tmpdir(), "rhg-uploads");
-void readdir(uploadRoot)
-  .then((files) => {
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    return Promise.all(
-      files.map(async (name) => {
-        const filePath = join(uploadRoot, name);
-        try {
-          const info = await statFile(filePath);
-          if (info.mtimeMs < cutoff) await rm(filePath, { force: true });
-        } catch {
-          /* 单个文件失败不影响启动与其余文件 */
-        }
-      })
-    );
-  })
-  .catch(() => {
-    /* 目录不存在 = 没有历史文件 */
-  });
 
 const env = process.env as Record<string, string>;
 const handlers = createHandlers(env);

@@ -343,7 +343,7 @@ export function PromptInput({
       <input
         ref={fileRef}
         type="file"
-        accept="image/*,video/*"
+        accept="image/*"
         multiple
         hidden
         onChange={(e) => {
@@ -436,14 +436,14 @@ export function PromptInput({
                   role="menuitem"
                   className={styles.menuItem}
                   onClick={openPicker}
-                  title={uiCopy.videoFramesOnly}
+                  title={uiCopy.unsupportedMaterials}
                 >
                   <span className={styles.menuIcon}>
                     <Icon name="image" size={14} />
                   </span>
-                  <span className={styles.menuName}>{uiCopy.addImageOrVideo}</span>
+                  <span className={styles.menuName}>{uiCopy.addImage}</span>
                 </button>
-                <p className={styles.materialHint}>{uiCopy.videoFramesOnly}</p>
+                <p className={styles.materialHint}>{uiCopy.unsupportedMaterials}</p>
                 {showModelMenu ? (
                   <>
                     <div className={styles.menuDivider} />

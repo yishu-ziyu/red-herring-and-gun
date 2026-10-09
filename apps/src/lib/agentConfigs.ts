@@ -119,8 +119,6 @@ export interface SourceValidatorOutput {
 export interface ReportComposerOutput {
   verdictType: "true" | "false" | "mixed_misleading" | "unverified";
   conclusion: string;
-  credibilityScore: number;
-  credibilityLabel: string;
   recommendation: string;
   summaryForPublic: string;
   whyHardToVerify: string[];
@@ -457,8 +455,6 @@ const reportComposerSchema = {
       description:
         "Verdict prose. When the report has cited web sources, insert [n] markers. n is 1-based global order: unique URLs from subclaimVerdicts.supportingSources then contradictingSources in claim order (first-seen). No [n] without a matching source.",
     },
-    credibilityScore: { type: "number" },
-    credibilityLabel: { type: "string" },
     recommendation: { type: "string" },
     summaryForPublic: { type: "string" },
     whyHardToVerify: { type: "array", items: { type: "string" } },
@@ -570,7 +566,7 @@ const reportComposerSchema = {
       },
     },
   },
-  required: ["verdictType", "conclusion", "credibilityScore", "credibilityLabel", "recommendation", "summaryForPublic", "whyHardToVerify", "subclaimVerdicts", "evidenceChain", "causalBoundary", "canSay", "cannotSay", "closureActions", "confidenceDimensions"],
+  required: ["verdictType", "conclusion", "recommendation", "summaryForPublic", "whyHardToVerify", "subclaimVerdicts", "evidenceChain", "causalBoundary", "canSay", "cannotSay", "closureActions", "confidenceDimensions"],
 };
 
 const alternativeExplanationSearcherSchema = {
@@ -797,20 +793,8 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "输出要求：严格 JSON，不要 Markdown，不要代码块。字段必须符合 schema。",
       "字段长度控制：whyHardToVerify 2-3 条；evidenceChain 恰好 3 层；closureActions 3 条；每个中文字符串尽量控制在 90 字以内，conclusion 可到 180 字。",
       "",
-      "credibilityScore 是 0-100 的整数，表示原始信息本身的可信度，不是“判定为谣言的置信度”。",
-      "credibilityScore 越高表示越可信，越低表示越不实；如果 verdictType 是 false 或 credibilityLabel 是“谣言”，credibilityScore 必须在 0-19。",
-      "不要输出“verdictType=false 但 credibilityScore=80-100”这类互相矛盾的结果；如果你想表达判假把握很高，应降低 credibilityScore，而不是提高它。",
-      "credibilityLabel 必须是以下之一：可信、基本可信、部分可信、高度可疑、谣言。",
-      "当 verdictType 是 mixed_misleading 时，credibilityLabel 通常应为“部分可信”或“高度可疑”，不能写成“可信”。",
       "confidenceDimensions 必须包含 source_reliability、evidence_completeness、consistency、recency、authority 五项。",
       "如果存在逻辑风险，confidenceDimensions 中 consistency 的分数必须降低，并在 reason 中解释。",
-      "",
-      "评分参考：",
-      "- 80-100：可信 — 无明显谣言特征，事实核查通过，信源可靠",
-      "- 60-79：基本可信 — 少量谣言特征，核心事实基本成立",
-      "- 40-59：部分可信 — 存在谣言特征，部分事实不成立或夸大",
-      "- 20-39：高度可疑 — 多个谣言特征，核心事实存疑，信源可疑",
-      "- 0-19：谣言 — 大量谣言特征，核心事实错误，信源无法验证",
     ].join("\n")),
     responseSchema: reportComposerSchema,
   },

@@ -59,10 +59,6 @@ export type UiCopy = {
   fillMaterialFirst: string;
   scrapeFailed: string;
   imageReadFailed: string;
-  videoFrameFailed: string;
-  videoFrameTooLarge: string;
-  tooManyFrames: string;
-  imagesOnly: string;
   filesUnsupported: string;
   imagesTooLarge: string;
   tooManyImages: string;
@@ -72,8 +68,8 @@ export type UiCopy = {
   signInAccount: string;
   pointsPrefix: string;
   addMaterial: string;
-  addImageOrVideo: string;
-  videoFramesOnly: string;
+  addImage: string;
+  unsupportedMaterials: string;
   docTitle: string;
   /* 桌面壳层 */
   historyLabel: string;
@@ -150,11 +146,7 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     fillMaterialFirst: "请先填写待核查材料。",
     scrapeFailed: "链接抓取失败",
     imageReadFailed: "图片读取失败",
-    videoFrameFailed: "视频抽帧失败，请换一个短视频文件。",
-    videoFrameTooLarge: "视频抽帧后图片总大小超过 6MB，请换更短视频。",
-    tooManyFrames: "同一次最多核查 4 张图（视频抽帧也算）。",
-    imagesOnly: "当前仅支持图片附件（聊天截图 / 网页截图 / 短视频）。",
-    filesUnsupported: "只支持图片和视频文件。",
+    filesUnsupported: "只支持图片文件，不收视频、PDF、Word。",
     imagesTooLarge: "图片总大小不能超过 6MB。",
     tooManyImages: "最多支持 4 张图片附件，超出部分未添加。",
     accountChecking: "账号检测中",
@@ -163,8 +155,8 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     signInAccount: "登录账号",
     pointsPrefix: "点数",
     addMaterial: "添加材料",
-    addImageOrVideo: "添加图片或视频",
-    videoFramesOnly: "视频按画面抽帧核查，不读取音轨；暂不支持 PDF、Word。",
+    addImage: "添加图片",
+    unsupportedMaterials: "只收图片，不收视频、PDF、Word。",
     docTitle: "红鲱鱼与枪｜查出处，判断原句哪里站得住",
     historyLabel: "历史卷宗",
     newCheck: "新查一条",
@@ -238,11 +230,7 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     fillMaterialFirst: "Add something to check first.",
     scrapeFailed: "Could not fetch the link",
     imageReadFailed: "Could not read the image",
-    videoFrameFailed: "Frame extraction failed — try a shorter video clip.",
-    videoFrameTooLarge: "Extracted frames exceed 6MB — use a shorter clip.",
-    tooManyFrames: "Up to 4 images per check (video frames included).",
-    imagesOnly: "Only image attachments are supported (chat / web screenshots, short videos).",
-    filesUnsupported: "Only image and video files are supported.",
+    filesUnsupported: "Only image files are supported. Video, PDF and Word files are not accepted.",
     imagesTooLarge: "Total image size must stay under 6MB.",
     tooManyImages: "Up to 4 image attachments — extras were dropped.",
     accountChecking: "Checking account",
@@ -251,8 +239,8 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     signInAccount: "Sign in",
     pointsPrefix: "Points",
     addMaterial: "Add material",
-    addImageOrVideo: "Add images or videos",
-    videoFramesOnly: "Videos are checked using sampled frames, not audio. PDF and Word files are not supported.",
+    addImage: "Add images",
+    unsupportedMaterials: "Images only. Video, PDF and Word files are not accepted.",
     docTitle: "Red Herring & Gun | Trace the source, judge what holds up",
     historyLabel: "Past cases",
     newCheck: "New check",

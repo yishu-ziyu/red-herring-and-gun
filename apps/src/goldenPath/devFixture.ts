@@ -169,8 +169,6 @@ export type FixtureName =
   | "complete"
   | "interrupted"
   | "conflict"
-  | "image-found"
-  | "image-missing"
   | "mixed"
   | "nospan"
   | "settling"
@@ -324,21 +322,15 @@ export function getDevFixture(
       at(60, () => emitSnapshot("investigating"));
       at(360, () => emitWithActivity(interruptedSnapshot()));
     } else {
-      // complete / conflict / image-found / image-missing：完整走完三段。
+      // complete / conflict：完整走完三段。
       at(60, () => emitSnapshot("investigating"));
       at(360, () => emitSnapshot("judging"));
       at(900, () => {
         emitSnapshot("complete");
-        const extra: Record<string, unknown> = {};
-        if (name === "image-found") {
-          extra.imageOrigin = { status: "found", channel: "reverse-image", url: "https://weibo.example.com/first-post-2023", title: "最早发布：某美食博主 2023 年帖子", label: "原图出处" };
-        } else if (name === "image-missing") {
-          extra.imageOrigin = { status: "not_found", channel: "none", label: "原图出处未查到" };
-        }
         at(120, () =>
           emit({
             type: "complete",
-            finalReport: { conclusion: "见调查结论。", ...extra, investigation: staged("complete") } as Record<string, unknown>,
+            finalReport: { conclusion: "见调查结论。", investigation: staged("complete") } as Record<string, unknown>,
             timestamp: Date.now(),
           })
         );

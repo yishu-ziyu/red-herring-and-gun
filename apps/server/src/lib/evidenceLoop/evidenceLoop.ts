@@ -5,7 +5,6 @@
  * 无证据 ≠ 假：循环只补证据，判决仍由 fact_checker / 报告收束负责。
  */
 import type { AtomSearchBundle, AtomSearchSource, SearchOneAtom } from "../atomSearch.js";
-import { IMAGE_ORIGIN_NOT_FOUND, attachImageOriginToBundle } from "../imageOrigin/index.js";
 import {
   assessEvidenceGap,
   classifyResultKind,
@@ -197,17 +196,8 @@ export function makeRewriteQueryCall(callRaw: RewriteRawModelCall): RewriteQuery
 const UNVERIFIED_STATUSES = new Set(["unverified", "unknown", "cannot_verify", ""]);
 
 /** 确定性改写兜底：round 1 官方来源词，round 2 原文语境，round ≥3 当事方与原始数据（续期策略）。 */
-export function fallbackRewriteQueries(
-  atom: string,
-  round: number,
-  opts?: { needImageOrigin?: boolean }
-): string[] {
+export function fallbackRewriteQueries(atom: string, round: number): string[] {
   const a = atom.replace(/\s+/g, " ").trim();
-  if (opts?.needImageOrigin) {
-    if (round <= 1) return [`${a} 原图 出处`, `${a} 首发`];
-    if (round === 2) return [`${a} 原图 首发`, `${a} 出处`];
-    return [`${a} 原图 首发`, `${a} 当事方 回应`];
-  }
   if (round <= 1) return [`${a} 官方通报`, `${a} 辟谣`];
   if (round === 2) return [`${a} 原文 出处`, `${a} 数据来源`];
   return [`${a} 当事方 回应`, `${a} 原始数据 发布`];
@@ -368,8 +358,6 @@ async function planRoundQueries(
   options: {
     claim: string;
     callRewriteModel?: RewriteQueryModelCall;
-    needImageOrigin?: boolean;
-    bundle?: Pick<AtomSearchBundle, "imageOrigin">;
   },
   target: EvidenceLoopTarget,
   round: number,
@@ -384,22 +372,6 @@ async function planRoundQueries(
     supportingCount: sideCounts.supportingCount,
     contradictingCount: sideCounts.contradictingCount,
   });
-  if (options.needImageOrigin && options.bundle?.imageOrigin?.status !== "found") {
-    const originQs = fallbackRewriteQueries(target.atom, round, { needImageOrigin: true }).filter(
-      (q) => !priorQueries.has(q)
-    );
-    if (originQs.length > 0) {
-      const missing = gap.missingEvidence.includes("原图出处")
-        ? gap.missingEvidence
-        : [...gap.missingEvidence, "原图出处"].slice(0, 6);
-      return {
-        queries: originQs.slice(0, MAX_QUERIES_PER_ROUND),
-        purpose: gap.nextPurpose,
-        goal: "查原图出处",
-        missing,
-      };
-    }
-  }
   const strategy = round <= 1 ? "官方来源词" : round === 2 ? "原文语境" : "当事方与原始数据";
   if (options.callRewriteModel) {
     try {
@@ -430,7 +402,7 @@ async function planRoundQueries(
     round,
   });
   const queries = (
-    driven.length > 0 ? driven : fallbackRewriteQueries(target.atom, round, { needImageOrigin: options.needImageOrigin })
+    driven.length > 0 ? driven : fallbackRewriteQueries(target.atom, round)
   ).slice(0, MAX_QUERIES_PER_ROUND);
   return { queries, purpose: gap.nextPurpose, goal: gap.goalLabel, missing: gap.missingEvidence };
 }
@@ -456,8 +428,6 @@ export async function runEvidenceLoop(options: {
   startRound?: number;
   /** atomKey → 已问过的查询（续期 pass 注入，避免重复问法）。 */
   seedQueriesByAtomKey?: Record<string, string[]>;
-  /** Screenshot case: prefer 原图/首发 queries; never promote text hits to imageOrigin. */
-  needImageOrigin?: boolean;
   /** 每轮/每原子开工前问一次；true 时以 time-budget 收敛，把剩余时间让给报告写作。 */
   shouldStopEarly?: () => boolean;
   hooks?: EvidenceLoopHooks;
@@ -669,17 +639,6 @@ export async function runEvidenceLoop(options: {
 
     atoms.push({ atom: target.atom, atomKey: target.atomKey, trigger: target.trigger, rounds, stopReason });
     options.hooks?.onAtomStopped?.({ atom: target.atom, rounds: rounds.length, reason: stopReason });
-  }
-
-  if (options.needImageOrigin) {
-    const origin = options.bundle.imageOrigin;
-    if (!origin || origin.status !== "found") {
-      attachImageOriginToBundle(options.bundle, origin ?? {
-        status: "not_found",
-        channel: "none",
-        label: IMAGE_ORIGIN_NOT_FOUND,
-      });
-    }
   }
 
   return {

@@ -65,7 +65,7 @@ export async function buildLocalMemoryRecall(
     id: entry.id,
     claim: entry.claim,
     score: calculateClaimSimilarity(claim, entry.claim),
-    verdict: finalReportText(entry.finalReport, "credibilityLabel") || finalReportText(entry.finalReport, "verdictType"),
+    verdict: finalReportText(entry.finalReport, "verdictType"),
     tags: entry.tags.slice(0, 5),
     sourceUrls: extractSourceUrlsFromCase(entry).slice(0, 5),
   }));

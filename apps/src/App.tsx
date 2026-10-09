@@ -58,7 +58,7 @@ function ProductApp() {
 
   const { resumedRef } = useRunPointer({ historyReady, mode, active, run, accountEmailRef, copy, setActive, setMode, setHistoryNotice });
 
-  // DEV 固定装置：/?fixture=investigating|judging|complete|conflict|interrupted|image-found|image-missing|mixed|nospan|settling|source-audit|replay
+  // DEV 固定装置：/?fixture=investigating|judging|complete|conflict|interrupted|mixed|nospan|settling|source-audit|replay
   // 用脚本化快照驱动真实组件树（截图与走查）。生产构建 dead-code eliminated。
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -513,7 +513,6 @@ function ProductApp() {
               saveStatus={saveStatus}
               onRetrySave={retrySave}
               shareCaseId={archivedRound ? null : active.serverCaseId ?? null}
-              finalReport={archivedRound ? null : active.restored ? active.restored.report : run.state.finalReport}
               restoredAt={active.restored?.at}
               onReverify={handleRetry}
               onBackHome={handleBackHome}

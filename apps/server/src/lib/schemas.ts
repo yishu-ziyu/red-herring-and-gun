@@ -146,7 +146,6 @@ export interface KnowledgeBaseEntry {
   diagnosis: ClaimDiagnosis;
   finalReport: FinalReport | Record<string, unknown>;
   handoffSteps: HandoffStep[];
-  credibilityScore: number;
   verificationResult?: VerificationResult;
   timestamp: number;
   tags: string[];

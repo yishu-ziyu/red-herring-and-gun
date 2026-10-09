@@ -3079,52 +3079,6 @@ button.gp-save-state {
   font-size: 12px;
 }
 
-/* 原图出处（Content Layer annotation，不是独立卡片） */
-.gp-image-origin {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  border-top: 1px solid var(--gp-hairline);
-  border-left: 2px solid var(--gp-ink-3);
-  padding: 16px 0 4px 12px;
-  margin-top: 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.gp-image-origin.is-missing {
-  border-left-color: var(--gp-semantic-gap);
-}
-
-.gp-image-origin h4 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--gp-ink-primary);
-}
-
-.gp-image-origin p {
-  margin: 0;
-  font-size: 12px;
-  color: var(--gp-ink-3);
-}
-
-.gp-image-origin a {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 13px;
-  color: var(--gp-accent);
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.gp-image-origin a:hover {
-  text-decoration: underline;
-}
-
 /* ---------- 通用元件（Common UI Elements） ---------- */
 
 .gp-chip {

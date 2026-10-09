@@ -1,11 +1,7 @@
 /**
  * reportFallback.ts — ReportComposer 失败/超时时的确定性兜底报告与共识辩论构建。
- * 结构完整、不撒谎、不空白；分数走公式路径。
+ * 结构完整、不撒谎、不空白。
  */
-
-import { computeFormulaScore } from "./formulaScore.js";
-
-import { labelForScore } from "./credibilityScore.js";
 
 import { applyExclusionLayerToReport } from "./reportAssembly/index.js";
 
@@ -95,25 +91,6 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
         : factResult === "partial" || hasCounterEvidence
           ? "mixed_misleading"
           : "unverified";
-  // 审查 P2-2 修复：fallback 路径也调用 computeFormulaScore，
-  // 让 rumor severity / missingSources / search evidence 等分量真正生效；
-  // label 统一引用 labelForScore（基于 SCORE_LABELS），与公式路径一致。
-  // computeFormulaScore 失败返回 null 时再退回 verdictType→固定分数兜底。
-  const fallbackFormula = computeFormulaScore(
-    rumorStep?.output,
-    factStep?.output,
-    sourceStep?.output,
-    searchResult
-  );
-  const credibilityScore = fallbackFormula
-    ? fallbackFormula.score
-    : verdictType === "true" ? 72 :
-      verdictType === "false" ? 18 :
-      verdictType === "mixed_misleading" ? 45 :
-      36;
-  const credibilityLabel = fallbackFormula
-    ? fallbackFormula.label
-    : labelForScore(credibilityScore);
   const firstFinding = keyFindings[0] || String(searchResult?.answer || "").slice(0, 160) || "当前证据不足以直接确认原始说法。";
   const missingText = [...missingSources, ...searchGaps].slice(0, 2).join("；") || "仍需要更权威或原始来源复核。";
   const conclusion =
@@ -128,8 +105,6 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
   const report: Record<string, unknown> = {
     verdictType,
     conclusion,
-    credibilityScore,
-    credibilityLabel,
     recommendation: hasMissingSources
       ? "先把出处补上，再判断这句话站不站得住。"
       : "按现有证据判断原句站不站得住，并标出查不清的部分。",
@@ -205,12 +180,6 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
       buildConfidenceDimension("authority", "权威匹配度", verifiedSources.length > 0 ? 62 : 38, 65, verifiedSources.length > 0, verifiedSources[0] || "缺少明确权威来源"),
     ],
     _fallbackReason: reason,
-    ...(fallbackFormula
-      ? {
-          _scoreSource: "formula",
-          _scoreBreakdown: fallbackFormula.breakdown,
-        }
-      : {}),
   };
 
   // 排除层落库闸门：subclaimVerdicts 只覆盖可核查原子，不可核查原子单独进 nonVerifiableAtoms

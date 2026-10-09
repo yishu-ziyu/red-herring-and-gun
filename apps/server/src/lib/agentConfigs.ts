@@ -110,8 +110,6 @@ export interface SourceValidatorOutput {
 export interface ReportComposerOutput {
   verdictType: "true" | "false" | "mixed_misleading" | "unverified";
   conclusion: string;
-  credibilityScore: number;
-  credibilityLabel: string;
   recommendation: string;
   summaryForPublic: string;
   whyHardToVerify: string[];
@@ -305,8 +303,6 @@ const reportComposerSchema = {
       description:
         "Verdict prose. When the report has cited web sources, insert [n] markers. n is 1-based global order: unique URLs from subclaimVerdicts.supportingSources then contradictingSources in claim order (first-seen). No [n] without a matching source.",
     },
-    credibilityScore: { type: "number" },
-    credibilityLabel: { type: "string" },
     recommendation: { type: "string" },
     summaryForPublic: { type: "string" },
     whyHardToVerify: { type: "array", items: { type: "string" } },
@@ -373,8 +369,6 @@ const reportComposerSchema = {
   required: [
     "verdictType",
     "conclusion",
-    "credibilityScore",
-    "credibilityLabel",
     "recommendation",
     "summaryForPublic",
     "whyHardToVerify",
@@ -743,22 +737,13 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "2. 每层必须写 finding、evidence、boundary；sourceRefs 只能引用输入里出现过的来源标题或 URL；优先完整 URL。",
       "3. 不要写调度过程空话；直接展示查到了什么、来自哪里、它能支持什么、不能推出什么。",
       "4. 如果搜索失败或来源不足，也要在 evidenceChain 中明确写出缺口，而不是省略证据链。",
-      "5. verdictType 用 true/false/mixed_misleading/unverified；credibilityScore 表示原信息可信度，越高越可信。",
+      "5. verdictType 用 true/false/mixed_misleading/unverified。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"conclusion\": \"该说法部分成立：A 有公开记录支持[1]，B 仍无法证实。\",\n  \"credibilityScore\": 45,\n  \"credibilityLabel\": \"部分可信\",\n  \"recommendation\": \"给用户的行动建议\",\n  \"summaryForPublic\": \"面向公众的简化版结论（1-2 句话）\",\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子A\", \"verdict\": \"true\", \"evidence\": \"公开记录支持该点[1]。\", \"boundary\": \"不能推出全局\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"来源A\", \"snippet\": \"摘要\"}], \"contradictingSources\": [], \"evidenceGaps\": []}\n  ],\n  \"evidenceChain\": [\n    {\"layer\": \"搜索来源\", \"finding\": \"找到公开记录\", \"evidence\": \"材料支持原子A[1]。\", \"boundary\": \"不能推出B\", \"sourceRefs\": [\"https://example.com/a\"]}\n  ],\n  \"confidenceDimensions\": [\n    {\"dimension\": \"source_reliability\", \"label\": \"来源可靠性\", \"score\": 62, \"threshold\": 70, \"passed\": false, \"reason\": \"有部分来源但权威性不足\"},\n    {\"dimension\": \"evidence_completeness\", \"label\": \"证据完整度\", \"score\": 58, \"threshold\": 60, \"passed\": false, \"reason\": \"仍缺少原始材料\"},\n    {\"dimension\": \"consistency\", \"label\": \"逻辑一致性\", \"score\": 75, \"threshold\": 75, \"passed\": true, \"reason\": \"结论与前序 Agent 输出一致\"},\n    {\"dimension\": \"recency\", \"label\": \"信息时效性\", \"score\": 55, \"threshold\": 50, \"passed\": true, \"reason\": \"搜索线索可用于近期核查\"},\n    {\"dimension\": \"authority\", \"label\": \"权威匹配度\", \"score\": 60, \"threshold\": 65, \"passed\": false, \"reason\": \"尚需更权威来源确认\"}\n  ]\n}",
+      "{\n  \"conclusion\": \"该说法部分成立：A 有公开记录支持[1]，B 仍无法证实。\",\n  \"recommendation\": \"给用户的行动建议\",\n  \"summaryForPublic\": \"面向公众的简化版结论（1-2 句话）\",\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子A\", \"verdict\": \"true\", \"evidence\": \"公开记录支持该点[1]。\", \"boundary\": \"不能推出全局\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"来源A\", \"snippet\": \"摘要\"}], \"contradictingSources\": [], \"evidenceGaps\": []}\n  ],\n  \"evidenceChain\": [\n    {\"layer\": \"搜索来源\", \"finding\": \"找到公开记录\", \"evidence\": \"材料支持原子A[1]。\", \"boundary\": \"不能推出B\", \"sourceRefs\": [\"https://example.com/a\"]}\n  ],\n  \"confidenceDimensions\": [\n    {\"dimension\": \"source_reliability\", \"label\": \"来源可靠性\", \"score\": 62, \"threshold\": 70, \"passed\": false, \"reason\": \"有部分来源但权威性不足\"},\n    {\"dimension\": \"evidence_completeness\", \"label\": \"证据完整度\", \"score\": 58, \"threshold\": 60, \"passed\": false, \"reason\": \"仍缺少原始材料\"},\n    {\"dimension\": \"consistency\", \"label\": \"逻辑一致性\", \"score\": 75, \"threshold\": 75, \"passed\": true, \"reason\": \"结论与前序 Agent 输出一致\"},\n    {\"dimension\": \"recency\", \"label\": \"信息时效性\", \"score\": 55, \"threshold\": 50, \"passed\": true, \"reason\": \"搜索线索可用于近期核查\"},\n    {\"dimension\": \"authority\", \"label\": \"权威匹配度\", \"score\": 60, \"threshold\": 65, \"passed\": false, \"reason\": \"尚需更权威来源确认\"}\n  ]\n}",
       "必须同时输出 verdictType、whyHardToVerify、evidenceChain、causalBoundary、closureActions。",
       "",
-      "credibilityScore 是 0-100 的整数。",
-      "credibilityLabel 必须是以下之一：可信、基本可信、部分可信、高度可疑、疑似谣言。",
       "confidenceDimensions 必须包含 source_reliability、evidence_completeness、consistency、recency、authority 五项。",
-      "",
-      "评分参考：",
-      "- 80-100：可信 — 无明显谣言特征，事实核查通过，信源可靠",
-      "- 60-79：基本可信 — 少量谣言特征，核心事实基本成立",
-      "- 40-59：部分可信 — 存在谣言特征，部分事实不成立或夸大",
-      "- 20-39：高度可疑 — 多个谣言特征，核心事实存疑，信源可疑",
-      "- 0-19：疑似谣言 — 大量谣言特征，核心事实错误，信源无法验证",
     ].join("\n"),
     responseSchema: reportComposerSchema,
   },

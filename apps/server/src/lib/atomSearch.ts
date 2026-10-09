@@ -20,12 +20,6 @@ import {
   bindRelatedSourcesOnly,
   stripCitationMarkers,
 } from "./citationBinding.js";
-import {
-  attachImageOriginToBundle,
-  safeLookupImageOrigin,
-  type ImageOriginResult,
-} from "./imageOrigin/index.js";
-
 export const MAX_ATOM_SEARCHES = 6;
 /** @deprecated 用 claimAtom.MAX_CLAIM_ATOMS */
 export const MAX_CLAIM_ATOMS_LISTED = MAX_CLAIM_ATOMS;
@@ -130,8 +124,6 @@ export type AtomSearchBundle = {
     perAtom: Record<string, FilterMeta>;
     totals: FilterMeta;
   };
-  /** Screenshot origin — reverse-image only; never filled from OCR/text hits. */
-  imageOrigin?: ImageOriginResult;
 };
 
 function asSourceList(result: unknown): FilterableSource[] {
@@ -573,8 +565,6 @@ export async function retrieveForAtoms(options: {
   searchOne: SearchOneAtom;
   hooks?: RetrieveForAtomsHooks;
   claimAtomKeyFn?: (s: string) => string;
-  /** Screenshot reverse-image lookup, beside searchOne. OCR/text hits must not fill origin. */
-  lookupImageOrigin?: () => Promise<ImageOriginResult>;
   /** 同一案上一轮证据（契约 docs/evals/2026-09-13-followup-fast-path.md）。 */
   priorRound?: {
     lookup: (atom: string) => KnowledgeInjection | null;
@@ -584,7 +574,6 @@ export async function retrieveForAtoms(options: {
   atomsToSearch: string[];
   atomSearchBundle: AtomSearchBundle;
   search360Result: AtomSearchBundle["aggregate"];
-  imageOrigin?: ImageOriginResult;
   /** 复用同一案上一轮证据的原子。 */
   priorRoundHits: KnowledgeHit[];
 }> {
@@ -631,9 +620,6 @@ export async function retrieveForAtoms(options: {
   });
   const mode = options.hooks?.mode ?? "parallel";
   const items: AtomSearchItem[] = [];
-  const originPromise = options.lookupImageOrigin
-    ? safeLookupImageOrigin(options.lookupImageOrigin)
-    : Promise.resolve(undefined);
 
   if (mode === "sequential") {
     for (const atom of atomsToSearch) {
@@ -663,13 +649,10 @@ export async function retrieveForAtoms(options: {
     priorRoundHits.push(hit);
     options.priorRound?.onInjected?.(hit);
   }
-  const imageOrigin = await originPromise;
-  if (imageOrigin) attachImageOriginToBundle(atomSearchBundle, imageOrigin);
   return {
     atomsToSearch,
     atomSearchBundle,
     search360Result: atomSearchBundle.aggregate,
-    imageOrigin: atomSearchBundle.imageOrigin,
     priorRoundHits,
   };
 }

@@ -10,7 +10,8 @@
  *
  * 路由规则不变：
  *   - caseId = 8 字符 base36 hash
- *   - 存 claim / report / credibilityScore / createdAt / ownerHash
+ *   - 存 claim / report / createdAt / ownerHash
+ *   - cases.credibilityScore 列是已删除的 0–100 可信度分数留下的（NOT NULL DEFAULT 0），新记录不写，读的时候不取。
  *   - cases.claimReview 列是已删除的 /r/ 报告页留下的（NOT NULL），新记录写 '{}'，读的时候不再取。
  */
 import type { FinalReport } from "./schemas.js";
@@ -28,7 +29,6 @@ export interface CaseEntry {
   caseId: string;
   claim: string;
   report: FinalReport;
-  credibilityScore: number;
   createdAt: number;
   /** 旧记录没存时间：createdAt 保持 0，不拿当前时间冒充原调查时间。 */
   createdAtUnknown?: boolean;
@@ -45,7 +45,6 @@ type CaseRow = {
   caseId: string;
   claim: string;
   report: string;
-  credibilityScore: number;
   createdAt: number | null;
   createdAtUnknown: number;
   ownerHash: string | null;
@@ -64,7 +63,6 @@ function rowToEntry(row: CaseRow): CaseEntry {
     caseId: row.caseId,
     claim: row.claim,
     report: JSON.parse(row.report) as FinalReport,
-    credibilityScore: row.credibilityScore,
     createdAt: row.createdAt ?? 0,
     ...(row.createdAtUnknown ? { createdAtUnknown: true } : {}),
     ...(row.ownerHash ? { ownerHash: row.ownerHash } : {}),
@@ -121,8 +119,8 @@ export function importLegacyCases(databaseInstance: DatabaseSync): { imported: n
 
   const insert = databaseInstance.prepare(
     `INSERT OR REPLACE INTO cases
-     (caseId, claim, report, claimReview, credibilityScore, createdAt, createdAtUnknown, ownerHash, feedback, migratedFrom)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     (caseId, claim, report, claimReview, createdAt, createdAtUnknown, ownerHash, feedback, migratedFrom)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   let imported = 0;
   for (const raw of parsed as Array<Record<string, unknown>>) {
@@ -133,7 +131,6 @@ export function importLegacyCases(databaseInstance: DatabaseSync): { imported: n
       typeof raw.claim === "string" ? raw.claim : "",
       JSON.stringify(raw.report ?? {}),
       JSON.stringify(raw.claimReview ?? {}),
-      typeof raw.credibilityScore === "number" ? raw.credibilityScore : 0,
       hasCreatedAt ? (raw.createdAt as number) : null,
       hasCreatedAt ? 0 : 1,
       typeof raw.ownerHash === "string" ? raw.ownerHash : null,
@@ -172,14 +169,13 @@ export function putCase(entry: Omit<CaseEntry, "caseId" | "createdAt"> & { caseI
   databaseInstance
     .prepare(
       `INSERT OR REPLACE INTO cases
-       (caseId, claim, report, claimReview, credibilityScore, createdAt, createdAtUnknown, ownerHash, feedback, migratedFrom)
-       VALUES (?, ?, ?, '{}', ?, ?, 0, ?, ?, NULL)`
+       (caseId, claim, report, claimReview, createdAt, createdAtUnknown, ownerHash, feedback, migratedFrom)
+       VALUES (?, ?, ?, '{}', ?, 0, ?, ?, NULL)`
     )
     .run(
       caseId,
       full.claim,
       JSON.stringify(full.report),
-      full.credibilityScore,
       full.createdAt,
       full.ownerHash ?? null,
       JSON.stringify(full.feedback ?? [])

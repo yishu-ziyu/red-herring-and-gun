@@ -59,7 +59,6 @@ export async function pursueEvidence(ctx: PipelineContext, state: CaseState): Pr
       maxRounds: roundsPerPass,
       startRound: (passes - 1) * roundsPerPass + 1,
       seedQueriesByAtomKey,
-      needImageOrigin: Boolean(input.lookupImageOrigin),
       shouldStopEarly: () => budget.mustYieldToComposer(),
       hooks: {
         onLoopStart: hooks?.onEvidenceLoopStart,

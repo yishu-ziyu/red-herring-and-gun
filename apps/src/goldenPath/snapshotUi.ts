@@ -301,26 +301,3 @@ export function pickDecisiveEvidence(
 export function hasDrilldownSource(snapshot: InvestigationSnapshotV1): boolean {
   return snapshot.sources.some((s) => Boolean(s.url));
 }
-
-/** imageOrigin（finalReport 临时 side-channel）的只读视图。 */
-export type ImageOriginView =
-  | { status: "found"; url: string; title: string; label: string }
-  | { status: "not_found"; label: string };
-
-export function readImageOrigin(report: Record<string, unknown> | null | undefined): ImageOriginView | undefined {
-  if (!report || typeof report !== "object") return undefined;
-  const raw = (report as Record<string, unknown>).imageOrigin;
-  if (!raw || typeof raw !== "object") return undefined;
-  const rec = raw as Record<string, unknown>;
-  const label = typeof rec.label === "string" ? rec.label : "";
-  const url = typeof rec.url === "string" && rec.url.trim() ? rec.url.trim() : "";
-  if (rec.status === "found" && url) {
-    return {
-      status: "found",
-      url,
-      title: typeof rec.title === "string" && rec.title.trim() ? rec.title.trim() : url,
-      label: label || "原图出处",
-    };
-  }
-  return { status: "not_found", label: label || "原图出处未查到" };
-}

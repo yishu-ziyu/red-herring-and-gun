@@ -8,7 +8,6 @@ import type { AtomSearchBundle } from "../atomSearch.js";
 import type { CrossExamOutcome } from "../crossExam/index.js";
 import type { EvidenceLoopOutcome } from "../evidenceLoop/index.js";
 import type { FollowUpReusePlan } from "../followUpReuse.js";
-import type { ImageOriginResult } from "../imageOrigin/index.js";
 import type { WholeClaimAuditModelCall, WholeClaimAuditRun } from "../wholeClaimAudit/index.js";
 import type { Budget } from "./budget.js";
 import type { CasePipelineHooks, CasePipelineInput, PipelineStep } from "./runCasePipeline.js";
@@ -44,8 +43,6 @@ export type CaseState = {
   /** 逐命题检索包：追索、质询、整句审计补查都往里合并新来源。 */
   atomSearchBundle: AtomSearchBundle;
   search360Result: unknown;
-  /** 截图的以图搜图结果；没有截图时为空。 */
-  imageOrigin?: ImageOriginResult;
   /** 当前生效的核查结果：重判被接受后换成新的一步。 */
   factStep: PipelineStep;
   /** 当前生效的来源关系审计。 */

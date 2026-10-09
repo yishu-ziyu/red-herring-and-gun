@@ -5,7 +5,7 @@
  * finalizeReport 的函数体从上到下就是步骤表；新加一道关卡，只能在这张表里选位置：
  *
  *   1 组装 → 2 整句判定（先行，给公式分用）→ 3 注入的收尾钩子（公式分 · 口吻清洗 · 截图语境）
- *   → 4 质询记录 → 5 追索记录 → 6 复核（+ 重绑引用 + 原图出处）→ 7 来源探活剔死链
+ *   → 4 质询记录 → 5 追索记录 → 6 复核（+ 重绑引用）→ 7 来源探活剔死链
  *   → 8 整句判定（终局，写结论）→ 9 追问直答 → 10 打不开的链接 → 11 徽章 → 12 核查时间
  *
  * 整句结论只由规则表（domain/verdict）得出，2 与 8 是同一个纯函数在不同时点的两次求值：
@@ -22,7 +22,6 @@ import type { CrossExamOutcome } from "../crossExam/index.js";
 import type { EvidenceLoopOutcome } from "../evidenceLoop/index.js";
 import { compactPursuitHops } from "../evidencePursuit/index.js";
 import { applyFollowUpAnswerLead } from "../followUpReuse.js";
-import { applyImageOriginToReport, type ImageOriginResult } from "../imageOrigin/index.js";
 import { applyUnopenedLinkConclusion } from "../publicCopy.js";
 import { assembleFinalReport, faceVerdictFor } from "../reportAssembly/index.js";
 import { reviewAndRepairReport, type ReportReviewResult } from "../reportReviewer.js";
@@ -42,7 +41,6 @@ export type FinalizeReportInput = {
   steps: PipelineStep[];
   search360Result: unknown;
   atomSearchBundle: AtomSearchBundle;
-  imageOrigin?: ImageOriginResult;
   auditUnresolvedGaps: string[];
   crossExam?: CrossExamOutcome;
   evidenceLoop?: EvidenceLoopOutcome;
@@ -73,7 +71,7 @@ const FACT_CHECK_RESULT = {
 } as const;
 
 export async function finalizeReport(input: FinalizeReportInput): Promise<FinalizeReportResult> {
-  const { claim, reportStep, rumorStep, factStep, sourceStep, search360Result, imageOrigin, auditUnresolvedGaps } = input;
+  const { claim, reportStep, rumorStep, factStep, sourceStep, search360Result, auditUnresolvedGaps } = input;
   const throwIfAborted = () => input.signal?.throwIfAborted();
 
   const finalReport =
@@ -93,7 +91,6 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
     verdicts: verdictSource,
     searchSources: (search360Result as { sources?: Array<{ url?: unknown }> })?.sources,
     atomSearchBundle: input.atomSearchBundle,
-    imageOrigin,
   });
 
   const assess = () =>
@@ -152,7 +149,7 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
     };
   }
 
-  // 6 确定性复核（非 LLM）。复核可能补证据链、改写结论：重绑 [n] 与原图出处。
+  // 6 确定性复核（非 LLM）。复核可能补证据链、改写结论：重绑 [n]。
   input.onReviewStart?.();
   const review = reviewAndRepairReport(finalReport, {
     claim,
@@ -160,7 +157,6 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
   });
   Object.assign(finalReport, review.repaired);
   normalizeReportCitations(finalReport);
-  if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
 
   // 7 「来源能点开」门：发布前对全局引用真实探活，死链剔除并重绑 [n] 标记。
   // 探活通道自身故障不阻断主流程——宁可用未剪枝的报告，也不丢结论。
@@ -178,7 +174,6 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
   throwIfAborted();
   applySentenceVerdict(finalReport, assess(), { auditUnresolvedGaps });
   normalizeReportCitations(finalReport);
-  if (imageOrigin) applyImageOriginToReport(finalReport, imageOrigin);
 
   // 9 追问直答；10 只有打不开的链接时的结论。
   applyFollowUpAnswerLead(finalReport, claim);

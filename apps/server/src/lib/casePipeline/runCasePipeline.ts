@@ -11,7 +11,6 @@ import type { AtomSearchBundle, KnowledgeHit, SearchOneAtom } from "../atomSearc
 import { pruneDeadCitations, type LivenessDeps } from "../citationLiveness.js";
 import type { ReportReviewIssue } from "../reportReviewer.js";
 import type { EvidenceLoopOutcome, EvidenceLoopHooks, RewriteQueryModelCall } from "../evidenceLoop/index.js";
-import type { ImageOriginResult } from "../imageOrigin/index.js";
 import type { CrossExamOutcome, CrossExamRawModelCall } from "../crossExam/index.js";
 import type { InvestigationSnapshotV1 } from "../investigation/index.js";
 import { interruptedInvestigationSnapshot } from "../interruptedSnapshot.js";
@@ -161,11 +160,6 @@ export type CasePipelineInput = {
     callModel?: WholeClaimAuditModelCall;
   };
   /**
-   * Screenshot reverse-image lookup (P2 origin gate). Beside searchOne.
-   * OCR/text hits must not become image origin.
-   */
-  lookupImageOrigin?: () => Promise<ImageOriginResult>;
-  /**
    * 引用探活依赖（「来源能点开」门）。默认真实网络探活；
    * `false` 关闭；测试传 { liveness: Map } 注入结果避免触网。
    */
@@ -198,8 +192,6 @@ export type CasePipelineResult = {
   /** Whole-Claim Audit outcome — Issue #78（未注入模型时 plan/evaluation 为 null） */
   wholeClaimAudit: WholeClaimAuditRun;
   runId: string;
-  /** Screenshot origin from reverse-image; absent when the case has no image. */
-  imageOrigin?: ImageOriginResult;
 };
 
 const REPORT_REVIEWER_TOOL = "Report Reviewer (proposer-reviewer)";
@@ -279,7 +271,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   await state.sourceAudit.refreshIfNeeded();
 
   const reportStep = await compose(ctx, state);
-  const { atomSearchBundle, search360Result, imageOrigin, evidenceLoop, crossExam } = state;
+  const { atomSearchBundle, search360Result, evidenceLoop, crossExam } = state;
   const { factStep, sourceStep } = state;
   const auditUnresolvedGaps = ctx.audit.unresolvedGaps;
   const wholeClaimAudit = ctx.audit.run;
@@ -293,7 +285,6 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     steps,
     search360Result,
     atomSearchBundle,
-    imageOrigin,
     auditUnresolvedGaps,
     crossExam,
     evidenceLoop,
@@ -359,6 +350,5 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     crossExam,
     wholeClaimAudit,
     runId,
-    imageOrigin,
   };
 }

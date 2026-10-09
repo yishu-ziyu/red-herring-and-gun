@@ -178,19 +178,6 @@ export function reviewAndRepairReport(
     });
   }
 
-  // 6) credibilityScore 范围
-  const score = repaired.credibilityScore;
-  checks.scoreInRange =
-    typeof score === "number" && Number.isFinite(score) && score >= 0 && score <= 100;
-  if (!checks.scoreInRange) {
-    issues.push({
-      code: "bad_score",
-      severity: "error",
-      message: "credibilityScore 非法，重置为 50",
-    });
-    repaired.credibilityScore = 50;
-  }
-
   // 7) empty / conflicting prior factCheck vs hard true
   const prevText = JSON.stringify(opts?.previousOutputs ?? []).toLowerCase();
   const hardTrue =
@@ -205,9 +192,6 @@ export function reviewAndRepairReport(
       message: "前序 factCheck 未支持 true，却给出 true；降级为 unverified",
     });
     repaired.verdictType = "unverified";
-    if (typeof repaired.credibilityScore === "number") {
-      repaired.credibilityScore = Math.min(repaired.credibilityScore as number, 45);
-    }
   }
 
   // 7b) 整句 true/false 必须有非 related-only 绑定 URL。

@@ -9,7 +9,7 @@
  *   npx tsx eval/run.ts --gate <baseline.json>      # 门禁：相对基线不退化
  *   npx tsx eval/run.ts --ids RUMOR-001,RUMOR-006   # 只跑指定用例
  *   npx tsx eval/run.ts --domain causal             # 只跑指定领域
- *   npx tsx eval/run.ts --repeats 3                 # 每 case 跑 3 次：verdict 多数、credibility 中位
+ *   npx tsx eval/run.ts --repeats 3                 # 每 case 跑 3 次：verdict 取多数
  *
  * 需要真实 API key（从 apps/.env.local 读取，同 runCasePipeline.real.test.ts）。
  */
@@ -122,16 +122,12 @@ function oneRepeat(
   runIndex: number
 ): { run: RepeatRun; detail: Record<string, unknown> } {
   const verdict = error ? "ERROR" : String(finalReport.verdictType ?? "?");
-  const cred =
-    error || typeof finalReport.credibilityScore !== "number" ? 50 : (finalReport.credibilityScore as number);
   return {
-    run: { verdict, credibility: cred, error },
+    run: { verdict, error },
     detail: {
       run: runIndex,
       verdict,
-      credibility: error ? null : finalReport.credibilityScore,
       error: error ?? null,
-      scoreBreakdown: finalReport._scoreBreakdown ?? null,
       agents: steps.map((s) => s.agent),
     },
   };
@@ -140,13 +136,12 @@ function oneRepeat(
 function writeCaseProgress(
   repeats: number,
   verdict: string,
-  cred: number | string,
   searchMeta: ReturnType<typeof summarizeSearch>,
   ms: number
 ): void {
   const searchBit = `search=${searchMeta.searched ? "yes" : "no"} urls=${searchMeta.urlCount} face=${searchMeta.face} (${ms}ms)\n`;
   process.stdout.write(
-    repeats > 1 ? `→ majority=${verdict} medianCred=${cred} ${searchBit}` : `verdict=${verdict} credibility=${cred} ${searchBit}`
+    repeats > 1 ? `→ majority=${verdict} ${searchBit}` : `verdict=${verdict} ${searchBit}`
   );
 }
 
@@ -170,7 +165,7 @@ async function collectRepeats(golden: ScoreCaseGolden, evalEnv: EvalEnv, repeats
     repeatRuns.push(run);
     perRunDetails.push(detail);
     if (repeats > 1) {
-      process.stdout.write(`r${r + 1}=${run.verdict}/${error ? "-" : finalReport.credibilityScore} `);
+      process.stdout.write(`r${r + 1}=${run.verdict} `);
     }
   }
 
@@ -180,16 +175,13 @@ async function collectRepeats(golden: ScoreCaseGolden, evalEnv: EvalEnv, repeats
 function scoreCollected(golden: ScoreCaseGolden, collected: Awaited<ReturnType<typeof collectRepeats>>) {
   const agg = aggregateRepeats(collected.repeatRuns);
   const verdict = agg.error ? "ERROR" : agg.verdict;
-  const cred = agg.error ? "-" : agg.credibility;
   const scoredReport: Record<string, unknown> = {
     ...collected.lastReport,
     verdictType: verdict === "ERROR" ? collected.lastReport.verdictType : verdict,
-    credibilityScore: typeof cred === "number" ? cred : collected.lastReport.credibilityScore,
   };
   return {
     agg,
     verdict,
-    cred,
     searchMeta: summarizeSearch(collected.lastBundle, collected.lastReport),
     score: scoreCase({
       case: {
@@ -198,7 +190,6 @@ function scoreCollected(golden: ScoreCaseGolden, collected: Awaited<ReturnType<t
         category: golden.category,
         difficulty: golden.difficulty,
         expectedVerdictType: golden.expectedVerdictType,
-        expectedCredibilityRange: golden.expectedCredibilityRange,
         expectedAgentSequence: golden.expectedAgentSequence,
         expectsEvidenceLoop: golden.expectsEvidenceLoop,
         expectedAtoms: golden.expectedAtoms,
@@ -219,22 +210,20 @@ async function evaluateGolden(golden: ScoreCaseGolden, evalEnv: EvalEnv, repeats
   const collected = await collectRepeats(golden, evalEnv, repeats);
   const scored = scoreCollected(golden, collected);
   const ms = Date.now() - t0;
-  writeCaseProgress(repeats, scored.verdict, scored.cred, scored.searchMeta, ms);
+  writeCaseProgress(repeats, scored.verdict, scored.searchMeta, ms);
   return {
     score: scored.score,
     row: {
       id: golden.id,
       claim: golden.claim,
       verdict: scored.verdict,
-      credibility: scored.cred,
       error: scored.agg.error ?? collected.lastError,
       latencyMs: ms,
       agents: collected.lastSteps.map((s) => s.agent),
       search: scored.searchMeta,
       evidenceLoop: collected.lastLoop ?? undefined,
-      scoreBreakdown: collected.lastReport._scoreBreakdown ?? null,
       repeats: repeats > 1
-        ? { n: repeats, votes: scored.agg.verdictVotes, samples: scored.agg.credibilitySamples, runs: collected.perRunDetails }
+        ? { n: repeats, votes: scored.agg.verdictVotes, runs: collected.perRunDetails }
         : undefined,
     },
   };
@@ -356,7 +345,7 @@ async function main() {
 
   const repeats = args.repeats;
   console.log(
-    `跑 ${cases.length} 个 golden case（含真实模型 + 真实搜索）${repeats > 1 ? `，每 case ×${repeats} 次（verdict 多数 / credibility 中位）` : ""}...`
+    `跑 ${cases.length} 个 golden case（含真实模型 + 真实搜索）${repeats > 1 ? `，每 case ×${repeats} 次（verdict 取多数）` : ""}...`
   );
   const results = [];
   const scores = [];

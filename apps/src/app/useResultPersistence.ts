@@ -47,7 +47,6 @@ export function useResultPersistence(args: {
         diagnosis: { mixedJudgments: [], ambiguousTerms: [], risk: "", whyNotDirectFactCheck: "" },
         finalReport: report,
         handoffSteps: [],
-        credibilityScore: typeof report.credibilityScore === "number" ? report.credibilityScore : 50,
         timestamp: existing?.timestamp ?? doneAt,
         tags: ["golden-path"],
       };
@@ -70,7 +69,6 @@ export function useResultPersistence(args: {
           body: JSON.stringify({
             claim,
             report,
-            credibilityScore: typeof report.credibilityScore === "number" ? report.credibilityScore : 50,
           }),
         });
         if (!res.ok) {

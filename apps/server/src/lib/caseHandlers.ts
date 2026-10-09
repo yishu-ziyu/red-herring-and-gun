@@ -19,7 +19,6 @@ import { threadSummary } from "./investigationThread.js";
 interface PostCaseBody {
   claim?: string;
   report?: FinalReport;
-  credibilityScore?: number;
   caseId?: string;
 }
 
@@ -76,7 +75,6 @@ function toListItem(entry: ReturnType<typeof getCase>) {
     caseId: entry.caseId,
     claim: entry.claim,
     createdAt: entry.createdAt,
-    credibilityScore: entry.credibilityScore,
     status: caseStatus(entry.report),
     ...threadSummary(entry.report),
   };
@@ -166,7 +164,6 @@ export async function postCaseHandler(req: any, res: any): Promise<void> {
     caseId,
     claim,
     report: body.report,
-    credibilityScore: typeof body.credibilityScore === "number" ? body.credibilityScore : 50,
     ownerHash: account.hash,
   });
   sendJson(res, 200, { caseId: entry.caseId, createdAt: entry.createdAt });

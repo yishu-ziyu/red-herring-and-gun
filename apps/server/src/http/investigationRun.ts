@@ -19,15 +19,12 @@ import {
   buildFollowUpObservation,
   type FollowUpObservationStats,
 } from "../lib/followupObservation.js";
-import { applyFormulaScoreToReport, computeFormulaScore } from "../lib/formulaScore.js";
 import { withTimeout } from "../lib/httpUtils.js";
-import { lookupImageOrigin, visionHintsFromExtraction } from "../lib/imageOrigin/index.js";
 import { interruptedInvestigationSnapshot } from "../lib/interruptedSnapshot.js";
 import type { InvestigationSnapshotV1 } from "../lib/investigation/index.js";
 import { createInvestigationEmitter } from "../lib/investigationEmitter.js";
 import { createOrchestrateAdapter } from "../lib/orchestrate.js";
 import { buildDeterministicFinalReport } from "../lib/reportFallback.js";
-import { makeSearch360ReverseImage } from "../lib/reverseImage/search360ReverseImage.js";
 import type { RunService } from "../lib/runService.js";
 import type { RunStore } from "../lib/runStore.js";
 import {
@@ -112,29 +109,6 @@ function recordFollowUpObservation(input: {
   }
 }
 
-function makeImageOriginLookup(
-  env: Record<string, string>,
-  intake: CaseIntakePayload | null,
-  visualExtraction: Record<string, unknown> | undefined,
-  execution: ExecutionBudget = {},
-) {
-  if (!intake?.images.length) return undefined;
-  const hints = visionHintsFromExtraction(visualExtraction);
-  const images = intake.images
-    .filter((image): image is CaseIntakeImagePayload & { dataUrl: string } => typeof image.dataUrl === "string")
-    .map((image) => ({ mimeType: image.type, dataUrl: image.dataUrl }));
-  // Reverse-image 适配器（360 图搜）：配置了 KEY + PUBLIC_BASE_URL 才启用，
-  // 否则 undefined → lookupImageOrigin 自动降级为「原图没查到」，绝不发明图源。
-  const reverseImageSearch = makeSearch360ReverseImage(env, execution);
-  return () =>
-    lookupImageOrigin({
-      images,
-      ocrTexts: hints.ocrTexts,
-      sourceHints: hints.sourceHints,
-      reverseImageSearch,
-    });
-}
-
 function makeSearchOneAtom(
   onSearchProgress: ((event: SearchProgressEvent) => void) | undefined,
   searchEnv: Record<string, string>,
@@ -165,15 +139,6 @@ function pipelineFinalize(
   },
   visualExtraction?: Record<string, unknown>
 ) {
-  applyFormulaScoreToReport(
-    ctx.finalReport,
-    computeFormulaScore(
-      ctx.rumorStep.output,
-      ctx.factStep.output,
-      ctx.sourceStep.output,
-      ctx.search360Result
-    )
-  );
   applyFactDeskPostProcessToReport(ctx.finalReport, ctx.claim);
   applyContextCrossCheckToReport(ctx.finalReport, { claim: ctx.claim, visualExtraction });
 }
@@ -400,7 +365,6 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       intakeLinks: intake?.links,
       runAgent,
       searchOne: makeSearchOneAtom((event) => sendEvent(event), env, { signal, deadlineMs: workDeadlineMs }),
-      lookupImageOrigin: makeImageOriginLookup(env, intake, visualExtraction, { signal, deadlineMs: workDeadlineMs }),
       callSelfProofModel: adapter.makeSelfProofCaller(),
       evidenceLoop: { callRewriteModel: makeRewriteQueryCall(adapter.makeRewriteCaller()) },
       crossExam: { callRaw: adapter.makeCrossExamCaller((data) => sendEvent(data)) },

@@ -13,7 +13,6 @@ export interface CaseResult {
     category: string;
     difficulty: string;
     expectedVerdictType: string;
-    expectedCredibilityRange: [number, number];
     expectedAgentSequence: string[];
     expectsEvidenceLoop?: boolean;
     expectedAtoms?: Array<{
@@ -44,7 +43,6 @@ export interface MetricScores {
   difficulty: string;
   routingCorrect: boolean;
   verdictCorrect: boolean;
-  credibilityInRange: boolean;
   hallucinationDetected: boolean;
   reportContractPass: boolean;
   reportReviewScore: number;
@@ -63,7 +61,6 @@ export interface AggregateMetrics {
   failed: number;
   routingAccuracy: number;
   verdictAccuracy: number;
-  credibilityAccuracy: number;
   hallucinationRate: number;
   reportContractPassRate: number;
   avgReportReviewScore: number;
@@ -77,12 +74,6 @@ export interface AggregateMetrics {
 
 function extractVerdict(report: Record<string, unknown>): string {
   return typeof report.verdictType === "string" ? report.verdictType : "unknown";
-}
-
-function extractCredibility(report: Record<string, unknown>): number {
-  const score = report.credibilityScore;
-  if (typeof score === "number" && Number.isFinite(score)) return score;
-  return 50;
 }
 
 /** 幻觉 = 系统给出确定判定，但 golden 认为应更谨慎。语义与前端 isHallucination 对齐。 */
@@ -182,7 +173,6 @@ function failedCaseScores(golden: CaseResult["case"], loopExpected: boolean): Me
     difficulty: golden.difficulty,
     routingCorrect: false,
     verdictCorrect: false,
-    credibilityInRange: false,
     hallucinationDetected: false,
     reportContractPass: false,
     reportReviewScore: 0,
@@ -234,11 +224,7 @@ export function scoreCase(result: CaseResult): MetricScores {
   const actualAgents = result.steps.map((s) => s.agent).filter(Boolean) as string[];
   const routingCorrect = routingIsCorrect(golden.category, actualAgents);
   const actualVerdict = extractVerdict(result.finalReport);
-  const actualCredibility = extractCredibility(result.finalReport);
   const verdictCorrect = actualVerdict === golden.expectedVerdictType;
-  const credibilityInRange =
-    actualCredibility >= golden.expectedCredibilityRange[0] &&
-    actualCredibility <= golden.expectedCredibilityRange[1];
   const hallucinationDetected = isHallucination(golden.expectedVerdictType, actualVerdict);
   const atomMatchPass = scoreAtomMatch(golden.expectedAtoms, result.finalReport);
   const mustSearchPass = scoreMustSearch(golden.mustSearch, result.atomSearchBundle);
@@ -246,7 +232,6 @@ export function scoreCase(result: CaseResult): MetricScores {
   const overallPass =
     routingCorrect &&
     verdictCorrect &&
-    credibilityInRange &&
     !hallucinationDetected &&
     reportContractPass &&
     atomMatchPass &&
@@ -259,7 +244,6 @@ export function scoreCase(result: CaseResult): MetricScores {
     difficulty: golden.difficulty,
     routingCorrect,
     verdictCorrect,
-    credibilityInRange,
     hallucinationDetected,
     reportContractPass,
     reportReviewScore,
@@ -275,35 +259,29 @@ export function scoreCase(result: CaseResult): MetricScores {
 /** 多次重复跑同一 case 后的聚合输入（每轮一次）。 */
 export interface RepeatRun {
   verdict: string;
-  credibility: number;
   error?: string;
 }
 
 /**
  * 对同一 case 的多次结果做稳定聚合：
  * - verdict：多数票（并列时取字典序最小，保证确定性）
- * - credibility：中位数（抗单次极端值）
  * - error：仅当全部轮次都 error 时保留
  */
 export function aggregateRepeats(runs: RepeatRun[]): {
   verdict: string;
-  credibility: number;
   error?: string;
   verdictVotes: Record<string, number>;
-  credibilitySamples: number[];
 } {
   if (runs.length === 0) {
-    return { verdict: "unknown", credibility: 50, error: "no runs", verdictVotes: {}, credibilitySamples: [] };
+    return { verdict: "unknown", error: "no runs", verdictVotes: {} };
   }
 
   const ok = runs.filter((r) => !r.error);
   if (ok.length === 0) {
     return {
       verdict: "ERROR",
-      credibility: 50,
       error: runs[0]?.error ?? "all repeats failed",
       verdictVotes: {},
-      credibilitySamples: [],
     };
   }
 
@@ -316,16 +294,9 @@ export function aggregateRepeats(runs: RepeatRun[]): {
     return a[0].localeCompare(b[0]);
   })[0][0];
 
-  const samples = ok.map((r) => r.credibility).sort((a, b) => a - b);
-  const mid = Math.floor(samples.length / 2);
-  const median =
-    samples.length % 2 === 1 ? samples[mid] : Math.round((samples[mid - 1] + samples[mid]) / 2);
-
   return {
     verdict: majorityVerdict,
-    credibility: median,
     verdictVotes: votes,
-    credibilitySamples: samples,
   };
 }
 
@@ -350,7 +321,6 @@ function failureReason(s: MetricScores): string {
   return [
     !s.routingCorrect && "routing wrong",
     !s.verdictCorrect && "verdict mismatch",
-    !s.credibilityInRange && "credibility out of range",
     s.hallucinationDetected && "hallucination detected",
     !s.reportContractPass && `report contract fail (score ${s.reportReviewScore})`,
     !s.atomMatchPass && "atom verdict mismatch",
@@ -372,7 +342,6 @@ export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
     failed: total - passed,
     routingAccuracy: share(scores.filter((s) => s.routingCorrect).length, total),
     verdictAccuracy: share(scores.filter((s) => s.verdictCorrect).length, total),
-    credibilityAccuracy: share(scores.filter((s) => s.credibilityInRange).length, total),
     hallucinationRate: share(scores.filter((s) => s.hallucinationDetected).length, total),
     reportContractPassRate: share(scores.filter((s) => s.reportContractPass).length, total),
     avgReportReviewScore: share(scores.reduce((acc, s) => acc + s.reportReviewScore, 0), total),

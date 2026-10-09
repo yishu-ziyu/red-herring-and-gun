@@ -95,13 +95,6 @@ function sortByTimestamp<T extends { timestamp: number }>(items: T[]) {
   return [...items].sort((a, b) => b.timestamp - a.timestamp);
 }
 
-function inferCredibilityFromScore(score?: number): ScoreLevel {
-  if (typeof score !== "number") return "中";
-  if (score >= 70) return "高";
-  if (score >= 40) return "中";
-  return "低";
-}
-
 export function createKnowledgeBase(accountEmail?: string | null): KnowledgeBase {
   // 未传参数仅供旧数据的显式恢复；生产调用必须传账户或 null。
   const suffix = accountEmail === undefined ? "" : `:v2:${accountEmail === null ? "anonymous" : `account:${encodeURIComponent(accountEmail)}`}`;
@@ -117,33 +110,6 @@ export function createKnowledgeBase(accountEmail?: string | null): KnowledgeBase
       };
       const deduped = entries.filter((item) => item.id !== entry.id && item.claim !== entry.claim);
       writeList(CASES_KEY, [nextEntry, ...deduped].slice(0, MAX_CASES));
-
-      const evidenceEntries = nextEntry.handoffSteps.flatMap((step) => {
-        const rawSources = [
-          ...(Array.isArray(step.output.sources) ? step.output.sources : []),
-          ...(Array.isArray(step.output.verifiedSources) ? step.output.verifiedSources : []),
-          ...(Array.isArray(step.output.questionableSources) ? step.output.questionableSources : []),
-        ].filter((source): source is string => typeof source === "string" && source.trim().length > 0);
-
-        return rawSources.map<EvidenceLibraryEntry>((source, index) => ({
-          id: `${nextEntry.id}-evidence-${step.agent}-${index}`,
-          title: source.slice(0, 80),
-          source,
-          sourceUrl: source.match(/https?:\/\/\S+/)?.[0],
-          summary: `${step.agentName} 输出的来源线索`,
-          role: step.agent === "source_validator" ? "线索" : "背景",
-          relatedClaimIds: [nextEntry.id],
-          credibility: inferCredibilityFromScore(nextEntry.credibilityScore),
-          timestamp: nextEntry.timestamp,
-        }));
-      });
-
-      if (evidenceEntries.length > 0) {
-        const existingEvidence = readList<EvidenceLibraryEntry>(EVIDENCE_KEY);
-        const evidenceKeys = new Set(evidenceEntries.map((item) => `${item.title}-${item.sourceUrl ?? item.source}`));
-        const dedupedEvidence = existingEvidence.filter((item) => !evidenceKeys.has(`${item.title}-${item.sourceUrl ?? item.source}`));
-        writeList(EVIDENCE_KEY, [...evidenceEntries, ...dedupedEvidence].slice(0, MAX_EVIDENCE));
-      }
     },
 
     async getCase(id) {

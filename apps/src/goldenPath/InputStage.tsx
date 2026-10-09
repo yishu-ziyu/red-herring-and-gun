@@ -13,7 +13,6 @@ import {
   type CaseImage,
   type CaseIntake,
 } from "../lib/caseIntake";
-import { extractFramesFromVideo } from "../lib/videoFrames";
 import { formatScrapedContent, scrapeLinks } from "../lib/linkScraper";
 import { PromptInput, type PromptAttachment } from "../components/v3/promptInput/PromptInput";
 import { WorkRoles } from "./WorkRoles";
@@ -183,32 +182,8 @@ export function InputStage({
       if (files.length === 0) return;
       setInputError("");
       try {
-        const videoFiles = files.filter((file) => file.type.startsWith("video/"));
         const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-        if (imageFiles.length + videoFiles.length !== files.length) {
-          setInputError(legacy.filesUnsupported);
-          return;
-        }
-        if (videoFiles.length > 0) {
-          const frames = (await Promise.all(videoFiles.map((file) => extractFramesFromVideo(file)))).flat();
-          if (frames.length === 0) {
-            setInputError(legacy.videoFrameFailed);
-            return;
-          }
-          const incoming = [...await Promise.all(imageFiles.map(imageFileToCaseImage)), ...frames];
-          const total = images.reduce((sum, image) => sum + image.size, 0) + incoming.reduce((sum, f) => sum + f.size, 0);
-          if (total > MAX_TOTAL_IMAGE_BYTES) {
-            setInputError(legacy.videoFrameTooLarge);
-            return;
-          }
-          if (images.length + incoming.length > MAX_IMAGE_COUNT) {
-            setInputError(legacy.tooManyFrames);
-            return;
-          }
-          setImages((prev) => [...prev, ...incoming]);
-          return;
-        }
-        if (imageFiles.length === 0) {
+        if (imageFiles.length === 0 || imageFiles.length !== files.length) {
           setInputError(legacy.filesUnsupported);
           return;
         }

@@ -3,7 +3,7 @@
  *
  * 产品 state 只有两样：
  *  1. 最新一份通过 schema 校验的 InvestigationSnapshotV1（来自 investigation_snapshot）；
- *  2. 连接状态与最终 finalReport（complete 事件，仅用于 imageOrigin side-channel 与落库）。
+ *  2. 连接状态与最终 finalReport（complete 事件，用于落库）。
  *
  * raw Agent / tool / search / planner 事件在此被显式忽略——
  * 删掉它们之后生产 Golden Path 仍必须完整工作（见 goldenPath/run.test.tsx 负向测试）。
@@ -47,7 +47,7 @@ export type RunState = {
   snapshot: InvestigationSnapshotV1 | null;
   connection: ConnectionPhase;
   errorMessage: string;
-  /** complete 事件的 finalReport（imageOrigin side-channel 与父层落库用）。 */
+  /** complete 事件的 finalReport（父层落库用）。 */
   finalReport: Record<string, unknown> | null;
   /**
    * 公共活动：按 seq 累计、按 id 去重。只由 investigation_activity 事件写入；

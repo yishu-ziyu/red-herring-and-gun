@@ -1,46 +1,18 @@
-/* 离线壳：只缓存应用外壳，API 走网络（核查结果不缓存，避免把旧判断当新）。 */
-const CACHE = "rhg-shell-v4";
-
-function remember(request, resp) {
-  const copy = resp.clone();
-  caches.open(CACHE).then((c) => c.put(request, copy)).catch(() => undefined);
-  return resp;
-}
-
-self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/manifest.webmanifest"])));
+/*
+ * Self-unregistering service worker. The offline cache was removed (#139).
+ * Browsers that installed the old worker still check this URL for updates; this version
+ * deletes every cache it owns and unregisters itself. It does not reload open pages:
+ * the next normal page load goes straight to the network.
+ */
+self.addEventListener("install", () => {
   self.skipWaiting();
 });
+
 self.addEventListener("activate", (event) => {
-  event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))));
-  self.clients.claim();
-});
-self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-  if (event.request.method !== "GET") return;
-  // 谷歌字体等跨源请求不能进这个缓存：离线壳一旦代发，CORS 头会丢，
-  // 浏览器拒收字体文件，中文就会变成方块或错字。
-  if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith("/api")) return;
-  if (url.pathname === "/health") return;
-  // Vite 开发模块无内容 hash，缓存优先会永久遮蔽更新 — 直连网络
-  if (url.pathname.startsWith("/@") || url.pathname.startsWith("/src/") || url.pathname.startsWith("/node_modules/")) return;
-  // 页面入口网络优先，离线回落缓存 — 部署新版后不会停在旧壳
-  if (url.pathname === "/") {
-    event.respondWith(
-      // cache: "reload" 显式绕过浏览器 HTTP 缓存：只写 network-first 还不够，
-      // fetch() 默认仍会命中 HTTP 缓存里的旧 index.html（2026-09-11 实测）。
-      fetch(event.request, { cache: "reload" })
-        .then((resp) => remember(event.request, resp))
-        .catch(() => caches.match(event.request).then((hit) => hit || Response.error()))
-    );
-    return;
-  }
-  event.respondWith(
-    caches.match(event.request).then(
-      (hit) =>
-        hit ||
-        fetch(event.request).then((resp) => remember(event.request, resp))
-    )
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+      .then(() => self.registration.unregister())
   );
 });

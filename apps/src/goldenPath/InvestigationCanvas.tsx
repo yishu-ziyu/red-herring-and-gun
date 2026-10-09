@@ -4,7 +4,7 @@
  * 原始说法与命题保持原位。不抢焦点、不滚动、不关闭已打开的 Drawer。
  * interrupted：保留已获真实数据、无伪结论、可重试。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { InlineLoader } from "generative-loaders";
 import type {
   InvestigationEvidenceLink,
@@ -16,7 +16,7 @@ import { useUiLang } from "../lib/useUiLang";
 import { displayFollowUpClaim, conclusionMissesFollowUp, followUpQuestionLead } from "../lib/composeFollowUpClaim";
 import { isUrlOnlyClaim } from "../lib/caseIntake";
 import { gpCopyFor } from "./copy";
-import { phaseHeadline, readImageOrigin, type ImageOriginView } from "./snapshotUi";
+import { phaseHeadline } from "./snapshotUi";
 import { buildClaimTraceSegments } from "./claimTrace";
 import { leftoverClaimTexts, leftoverGapSentence, leftoverTextsForCanvas, isCompleteEmptyShell } from "./leftoverClaims";
 import { ClaimSection } from "./ClaimSection";
@@ -52,8 +52,6 @@ type InvestigationCanvasProps = {
   onRetrySave?: () => void;
   /** 有服务端 caseId 才谈得上分享：没有对象就没有分享。 */
   shareCaseId?: string | null;
-  /** 完成态 finalReport（imageOrigin side-channel）。 */
-  finalReport?: Record<string, unknown> | null;
   restoredAt?: number;
   onReverify: () => void;
   onBackHome: () => void;
@@ -83,7 +81,6 @@ export function InvestigationCanvas({
   saveStatus = "idle",
   onRetrySave,
   shareCaseId = null,
-  finalReport,
   restoredAt,
   onReverify,
   onBackHome,
@@ -133,10 +130,6 @@ export function InvestigationCanvas({
     else if (snapshot.phase === "complete") setAnnounce("");
   }, [snapshot.phase, copy.canvasClaimsLabel]);
 
-  const imageOrigin = useMemo<ImageOriginView | undefined>(
-    () => (snapshot.phase === "complete" || snapshot.phase === "interrupted" ? readImageOrigin(finalReport) : undefined),
-    [snapshot.phase, finalReport]
-  );
 
   const conclusion = snapshot.conclusion;
   const complete = snapshot.phase === "complete" && Boolean(conclusion);
@@ -470,26 +463,6 @@ export function InvestigationCanvas({
           <div className="gp-waiting-area" role="status">
             <span style={{ display: "none" }}>正在拆解这句话…</span>
           </div>
-        ) : null}
-
-        {imageOrigin ? (
-          imageOrigin.status === "found" ? (
-            <section className="gp-image-origin" aria-label={copy.imageOriginTitle}>
-              <h4>{copy.imageOriginTitle}</h4>
-              <p>{copy.imageOriginHint}</p>
-              <a href={imageOrigin.url} target="_blank" rel="noreferrer">
-                {imageOrigin.title}
-                <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6">
-                  <path d="M4 12 12 4M6 4h6v6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </a>
-            </section>
-          ) : (
-            <section className="gp-image-origin is-missing" aria-label={copy.imageOriginNotFound}>
-              <h4>{copy.imageOriginNotFound}</h4>
-              <p>{copy.imageOriginHint}</p>
-            </section>
-          )
         ) : null}
 
         {complete && conclusion ? (

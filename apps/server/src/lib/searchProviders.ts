@@ -131,7 +131,7 @@ function agentFacingSource(source: any) {
     domain,
     snippet: String(source?.snippet || source?.summary || source?.content || ""),
     role: source?.evidenceRole || source?.role || "线索",
-    credibility: source?.credibility || source?.credibilityScore || "",
+    credibility: source?.credibility || "",
   };
 }
 

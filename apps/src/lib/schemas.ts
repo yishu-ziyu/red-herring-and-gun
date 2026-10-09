@@ -184,7 +184,7 @@ export interface FinalReport {
   };
   nextEvidenceNeeded: string[];
   evidenceQualitySummary?: EvidenceQualitySummary;
-  // P0-1 Grounding：衍生信号；不进 credibilityScore，仅作展示
+  // P0-1 Grounding：衍生信号，仅作展示
   insufficientEvidence?: boolean;
   groundingRationale?: string;
   logicRiskItems?: BiasAuditFinding[];
@@ -338,7 +338,6 @@ export interface KnowledgeBaseEntry {
   diagnosis: ClaimDiagnosis;
   finalReport: FinalReport | Record<string, unknown>;
   handoffSteps: HandoffStep[];
-  credibilityScore: number;
   verificationResult?: VerificationResult;
   timestamp: number;
   tags: string[];
@@ -376,7 +375,6 @@ export interface KnowledgeBaseStats {
 
 export interface SourceQualityAssessment {
   sourceType: CandidateMaterial["sourceType"] | "未知";
-  credibilityScore: number;
   freshnessScore: number;
   diversityKey: string;
   tier: number;
@@ -423,7 +421,7 @@ export interface SourceHit {
   matchedKeywords: string[];
   factCheckResult?: "true" | "false" | "partial" | "unverified";
   evidenceRole?: EvidenceRole;
-  sourceQuality?: Pick<Search360Source, "sourceType" | "credibilityScore" | "sourceTier" | "freshnessScore" | "domain">;
+  sourceQuality?: Pick<Search360Source, "sourceType" | "sourceTier" | "freshnessScore" | "domain">;
   summary: string;
 }
 
@@ -444,7 +442,6 @@ export interface Search360Source {
   snippet: string;
   credibility?: ScoreLevel;
   sourceType?: SearchSourceType;
-  credibilityScore?: number;
   sourceTier?: number;
   freshnessScore?: number;
   domain?: string;
@@ -570,7 +567,6 @@ export interface SearchResultSource {
   domain: string;
   publishedAt?: string;
   sourceType: SearchSourceType;
-  credibilityScore?: number;
   sourceTier?: number;
   freshnessScore?: number;
   evidenceRole?: EvidenceRole;

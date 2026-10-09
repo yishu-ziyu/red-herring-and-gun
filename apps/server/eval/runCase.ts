@@ -17,7 +17,6 @@ import {
 import { runCasePipeline, type CasePipelineHooks, type PipelineStep } from "../src/lib/casePipeline/index.js";
 import { retrieveAtomSources } from "../src/lib/searchProviders.js";
 import { buildDeterministicFinalReport } from "../src/lib/reportFallback.js";
-import { applyFormulaScoreToReport, computeFormulaScore } from "../src/lib/formulaScore.js";
 import { applyFactDeskPostProcessToReport } from "../src/lib/factDeskPostProcess.js";
 import { makeRewriteQueryCall } from "../src/lib/evidenceLoop/index.js";
 import type { ScoreCaseGolden } from "./golden.js";
@@ -184,17 +183,7 @@ export async function runCase(
           };
         }
       },
-      // 复用生产评分公式，保证评测分数 = 生产分数（eval 不绕过公式）
-      finalizeReport: ({ finalReport, claim: reportClaim, rumorStep, factStep, sourceStep, search360Result }) => {
-        applyFormulaScoreToReport(
-          finalReport,
-          computeFormulaScore(
-            rumorStep.output,
-            factStep.output,
-            sourceStep.output,
-            search360Result
-          )
-        );
+      finalizeReport: ({ finalReport, claim: reportClaim }) => {
         applyFactDeskPostProcessToReport(finalReport, reportClaim);
       },
     });

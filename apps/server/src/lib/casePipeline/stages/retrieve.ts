@@ -1,18 +1,16 @@
 /**
- * 阶段 2 检索：逐命题检索（+ 截图以图搜图）。同一案追问的已核命题沿用上一轮证据（不占检索名额），
+ * 阶段 2 检索：逐命题检索。同一案追问的已核命题沿用上一轮证据（不占检索名额），
  * 复用的命题各落一条活动行；其余命题一律联网检索。
  */
 import { retrieveForAtoms, type AtomSearchBundle } from "../../atomSearch.js";
 import { claimAtomKey } from "../../claimAtom/index.js";
 import { priorRoundLookupOf } from "../../followUpReuse.js";
-import type { ImageOriginResult } from "../../imageOrigin/index.js";
 import type { PipelineContext } from "../caseState.js";
 import type { PipelineStep } from "../runCasePipeline.js";
 
 export type Retrieval = {
   atomSearchBundle: AtomSearchBundle;
   search360Result: unknown;
-  imageOrigin?: ImageOriginResult;
 };
 
 export async function retrieve(ctx: PipelineContext, rumorStep: PipelineStep): Promise<Retrieval> {
@@ -25,7 +23,6 @@ export async function retrieve(ctx: PipelineContext, rumorStep: PipelineStep): P
     onPlan: (scopePlan) => { snapshots.setScopePlan(scopePlan); },
     searchOne: input.searchOne,
     claimAtomKeyFn: claimAtomKey,
-    lookupImageOrigin: input.lookupImageOrigin,
     priorRound: reusePlan
       ? {
           lookup: priorRoundLookupOf(reusePlan),
@@ -47,12 +44,11 @@ export async function retrieve(ctx: PipelineContext, rumorStep: PipelineStep): P
       onAtomResult: hooks?.onAtomSearchResult,
     },
   });
-  const imageOrigin = atomSearchBundle.imageOrigin;
   // 里程碑：检索返回——来源此时只能是 unassessed（尚未核查）。
   snapshots.investigating({
     claimAtoms: rumorStep.output.claimAtoms,
     claimAtomTypes: rumorStep.output.claimAtomTypes,
     atomSearchBundle,
   });
-  return { atomSearchBundle, search360Result, imageOrigin };
+  return { atomSearchBundle, search360Result };
 }
