@@ -97,13 +97,7 @@ apps/apodex-replica/
 skills-lock.json
 
 # CaseFile spine packages
-packages/*/dist
-packages/*/node_modules
 .data/
-# packages/eval/baseline.json 是对照成绩单，跟踪在 git 里。runs 是逐题事件 dump，不进库。
-packages/eval/runs/
-packages/web/output/
-packages/core/output/
 
 # Local prototype scratch (selected review sources are explicitly tracked)
 .context/compound-engineering/
