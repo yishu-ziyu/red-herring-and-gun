@@ -1,19 +1,10 @@
 /**
- * caseStore.ts — caseId 的生成，以及分享投影用的案件形状。
+ * caseStore.ts — caseId 的生成。
  *
  * 服务端不再保存用户的调查结果：原来只有登录用户的结果会写进 SQLite 的 cases 表，
  * 登录和账号在 #142 part a 删除后，这张表不再读写。表本身保留，旧数据库照常能打开。
  * 用户的历史只在他自己的浏览器里。
  */
-import type { FinalReport } from "./schemas.js";
-
-export interface CaseEntry {
-  caseId: string;
-  claim: string;
-  report: FinalReport;
-  createdAt: number;
-}
-
 const CASE_ID_LENGTH = 8;
 
 /**

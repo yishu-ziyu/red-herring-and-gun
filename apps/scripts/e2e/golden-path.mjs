@@ -2,6 +2,7 @@
 /**
  * Real end-to-end check of the main user path: real browser, real server, real models and search.
  * Needs the app running (`npm run dev`) with real keys in apps/.env.local. One run takes about 7 minutes.
+ * The main run also shares the finished round, opens the link in a cookie-less context, revokes it and opens it again.
  * Do not edit server files during a run: the dev server restarts on save and kills the investigation.
  * E2E_FULL=1 also checks a follow-up question and an image-only investigation (about 20 minutes in total).
  */
@@ -60,6 +61,8 @@ async function run() {
   const judged = await page.locator("[data-gp-judgment]").count();
   record("claims have judgments", judged > 0, `judgments=${judged}`);
 
+  await checkShare(answer);
+
   // "Key evidence" is empty by design when evidence is insufficient, so open a source from the source list.
   await page.getByRole("button", { name: /收集到的来源/ }).first().click().catch(() => {});
   const sourcePill = page.locator("[data-gp-source-pill] button").first();
@@ -85,6 +88,37 @@ async function run() {
   record("reopened investigation shows the same conclusion", reopenedAnswer === answer, reopenedAnswer.slice(0, 80));
   record("reopening does not start a new investigation", investigationPosts.length === 1, `posts=${investigationPosts.length}`);
   return answer;
+}
+
+// Share this round, open the link as a stranger (new context, no cookies), revoke it, open it again.
+async function checkShare(answer) {
+  const normalize = (text) => text.replace(/\s+/g, "").trim();
+  await page.locator("[data-gp-share-start]").first().click();
+  const urlBox = page.locator("[data-gp-share-url]").first();
+  await urlBox.waitFor({ timeout: 15_000 }).catch(() => {});
+  const shareUrl = (await urlBox.innerText().catch(() => "")).trim();
+  await shot("2b-share-created");
+  if (!record("share creates a link", /\/s\/[\w-]+$/.test(shareUrl), shareUrl)) return;
+
+  const stranger = await browser.newContext({ viewport });
+  const viewer = await stranger.newPage();
+  try {
+    await viewer.goto(shareUrl, { waitUntil: "domcontentloaded" });
+    const shared = (await viewer.locator("[data-share-conclusion]").first().innerText().catch(() => "")).trim();
+    record("share link shows the same conclusion to a stranger", shared.length > 0 && normalize(shared) === normalize(answer), shared.slice(0, 80));
+    const source = await viewer.content();
+    record("share page does not contain the internal image prompt", !source.includes("请核查用户上传"));
+
+    await page.locator("[data-gp-share-revoke]").first().click();
+    await page.locator("[data-gp-share-revoked]").first().waitFor({ timeout: 15_000 }).catch(() => {});
+    await viewer.reload({ waitUntil: "domcontentloaded" });
+    const revoked = await viewer.locator("[data-share-revoked]").count();
+    const stillShows = await viewer.locator("[data-share-conclusion]").count();
+    await viewer.screenshot({ path: `${out}/2c-share-revoked.png` });
+    record("revoked link shows the revoked page, not the content", revoked === 1 && stillShows === 0, `revoked=${revoked} content=${stillShows}`);
+  } finally {
+    await stranger.close();
+  }
 }
 
 // Follow-up on the reopened investigation, then an image-only investigation.

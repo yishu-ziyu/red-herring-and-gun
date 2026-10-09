@@ -5,6 +5,8 @@ export type InvestigationRound = {
   question: string;
   kind: "initial" | "follow-up" | "recheck";
   snapshot: InvestigationSnapshotV1;
+  /** 服务端这一轮调查的编号；分享靠它。老记录没有。 */
+  runId?: string;
 };
 
 /** Each round keeps its original public snapshot, never a recursively nested report. */
@@ -34,7 +36,13 @@ export function readInvestigationThread(report: unknown): InvestigationThread | 
         !isInvestigationSnapshot(round.snapshot) ||
         !["complete", "interrupted"].includes(round.snapshot.phase)) return undefined;
     ids.add(round.id);
-    rounds.push({ id: round.id, question: round.question, kind: round.kind as InvestigationRound["kind"], snapshot: round.snapshot });
+    rounds.push({
+      id: round.id,
+      question: round.question,
+      kind: round.kind as InvestigationRound["kind"],
+      snapshot: round.snapshot,
+      ...(typeof round.runId === "string" && round.runId ? { runId: round.runId } : {}),
+    });
   }
   return { version: 1, id: data.id, originalClaim: data.originalClaim, rounds };
 }

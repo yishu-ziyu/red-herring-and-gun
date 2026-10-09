@@ -21,6 +21,8 @@ export type ActiveCase = {
   thread?: InvestigationThread;
   roundId?: string;
   roundKind?: InvestigationRound["kind"];
+  /** 重新打开的历史：当前这一轮在服务端的调查编号（老记录没有）。正在跑的一轮用 run.state.runId。 */
+  runId?: string;
   /** 历史/旧调查打开：直接渲染落库快照，不发起调查。 */
   restored?: {
     snapshot: InvestigationSnapshotV1;
@@ -61,7 +63,7 @@ export function groupThreadCases(items: ShellCase[]): ShellCase[] {
   return [...latest.values()].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
 }
 
-export function threadForRound(active: ActiveCase, snapshot: InvestigationSnapshotV1): InvestigationThread {
+export function threadForRound(active: ActiveCase, snapshot: InvestigationSnapshotV1, runId?: string | null): InvestigationThread {
   const thread = active.thread ?? { version: 1 as const, id: active.roundId ?? active.localId, originalClaim: active.claim, rounds: [] };
   if (snapshot.phase !== "complete" && snapshot.phase !== "interrupted") return thread;
   return appendInvestigationRound(thread, {
@@ -69,12 +71,19 @@ export function threadForRound(active: ActiveCase, snapshot: InvestigationSnapsh
     kind: active.roundKind ?? "initial",
     question: displayFollowUpClaim(active.claim),
     snapshot,
+    ...(runId ? { runId } : {}),
   });
 }
 
-export function restoredThreadFields(report: unknown): Pick<ActiveCase, "thread" | "roundId" | "roundKind"> {
+/** 当前这一轮的服务端调查编号：重新打开的历史读存下的，正在跑的读 run。 */
+export function currentRunId(active: ActiveCase | null, liveRunId: string | null): string | undefined {
+  if (!active) return undefined;
+  return active.restored ? active.runId : liveRunId ?? undefined;
+}
+
+export function restoredThreadFields(report: unknown): Pick<ActiveCase, "thread" | "roundId" | "roundKind" | "runId"> {
   const saved = readInvestigationThread(report);
   if (!saved?.rounds.length) return {};
   const last = saved.rounds[saved.rounds.length - 1];
-  return { thread: { ...saved, rounds: saved.rounds.slice(0, -1) }, roundId: last.id, roundKind: last.kind };
+  return { thread: { ...saved, rounds: saved.rounds.slice(0, -1) }, roundId: last.id, roundKind: last.kind, runId: last.runId };
 }

@@ -342,6 +342,34 @@ export async function checksQuotaHandler(req: any, res: any) {
   writeJson(res, 200, quota);
 }
 
+/**
+ * 访客身份：分享靠它认「同一个浏览器」。cookie 已有就沿用里面的 id，不改写（改写会把访客当天的核查用量清零）；
+ * 没有或读不出时发一个新的。`preferredId` 是额度闸门在这次响应里刚发出的 id，用它免得一次响应里出现两个不同 id。
+ */
+export function ensureGuestId(req: any, res: any, preferredId?: string): string {
+  const cookie = readGuestCookie(req);
+  if (cookie?.id) return cookie.id;
+  if (preferredId) return preferredId;
+  const id = crypto.randomBytes(12).toString("hex");
+  writeGuestCookie(res, { id, day: shanghaiDayKey(), used: 0 });
+  return id;
+}
+
+/** 请求里已有的访客 id；没有 cookie 就是 null（不发新的）。 */
+export function guestIdFromRequest(req: any): string | null {
+  return readGuestCookie(req)?.id ?? null;
+}
+
+/** 存进 runs.ownerHash 的值：访客 id 的哈希，库里不放 id 原文。 */
+export function guestOwnerHash(guestId: string): string {
+  return crypto.createHash("sha256").update(`guest-owner|${guestId}`, "utf8").digest("hex").slice(0, 32);
+}
+
+/** 来源 IP 的哈希（加了服务端密钥），给分享限额用。 */
+export function clientIpKey(req: any): string {
+  return hashIp(clientIp(req));
+}
+
 export function resetCheckQuotaForTests() {
   guests.clear();
   guestsByIp.clear();

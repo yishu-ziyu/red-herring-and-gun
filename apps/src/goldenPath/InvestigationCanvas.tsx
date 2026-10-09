@@ -22,7 +22,8 @@ import { leftoverClaimTexts, leftoverGapSentence, leftoverTextsForCanvas, isComp
 import { ClaimSection } from "./ClaimSection";
 import { ActivityFeed } from "./ActivityFeed";
 import { ConclusionHero } from "./ConclusionHero";
-import { FollowUpSection } from "./FollowUpSection";
+import { FollowUpSection, buildConclusionBrief } from "./FollowUpSection";
+import { ShareControl } from "./ShareControl";
 import { InvestigationScope } from "./InvestigationScope";
 import { InvestigationDossier } from "./InvestigationDossier";
 import { WorkRoles, roleIndexForPhase } from "./WorkRoles";
@@ -60,6 +61,8 @@ type InvestigationCanvasProps = {
   readOnly?: boolean;
   /** 这次上传的图片：显示在「你调查的说法」下面。历史回看没有。 */
   images?: CaseImage[];
+  /** 这一轮在服务端的调查编号：有才显示「分享」（老历史没有）。 */
+  shareRunId?: string;
   onAdjustFocus?: (question: string) => void;
   adjustingFocus?: boolean;
 };
@@ -87,6 +90,7 @@ export function InvestigationCanvas({
   linkUnreachable = false,
   readOnly = false,
   images,
+  shareRunId,
   onAdjustFocus,
   adjustingFocus = false,
 }: InvestigationCanvasProps) {
@@ -151,6 +155,14 @@ export function InvestigationCanvas({
     : followUpRewrite || conclusion?.verdictLead;
   // 用户点过停止就不再把它读成「中断」：同一次事故不该有两种说法。
   // 分条已齐的总答仍要看见，不能跟着黄卡一起藏掉。
+  // 结论简报的「核查范围」和「关键来源」：追问区的复制按钮与分享区的复制按钮用同一份。
+  const coverageNote = snapshot.scope
+    ? `${lang === "en" ? "Scope: " : "核查范围："}${snapshot.claims.filter((c) => snapshot.scope!.includedClaimIds.includes(c.id)).map((c) => c.text).join("；")}${snapshot.scope.deferredClaimIds.length ? `${lang === "en" ? ". Not covered: " : "。本轮未覆盖："}${snapshot.claims.filter((c) => snapshot.scope!.deferredClaimIds.includes(c.id)).map((c) => c.text).join("；")}` : ""}`
+    : undefined;
+  const briefSourceUrls = (conclusion?.sourceIds.length
+    ? conclusion.sourceIds.map((id) => snapshot.sources.find((source) => source.id === id)?.url)
+    : snapshot.sources.map((source) => source.url)
+  ).filter((url): url is string => Boolean(url));
   const interrupted = snapshot.phase === "interrupted" && stop !== "stopped";
   const closedAnswer = snapshot.phase === "interrupted" ? snapshot.conclusion?.directAnswer?.trim() ?? "" : "";
   const interruptedAnswer = interrupted ? closedAnswer : "";
@@ -465,7 +477,7 @@ export function InvestigationCanvas({
             {!readOnly ? <div ref={followUpRef} className="gp-followup-target">
             <FollowUpSection
               suggestedQuestion={suggestedQuestion}
-              coverageNote={snapshot.scope ? `${lang === "en" ? "Scope: " : "核查范围："}${snapshot.claims.filter((c) => snapshot.scope!.includedClaimIds.includes(c.id)).map((c) => c.text).join("；")}${snapshot.scope.deferredClaimIds.length ? `${lang === "en" ? ". Not covered: " : "。本轮未覆盖："}${snapshot.claims.filter((c) => snapshot.scope!.deferredClaimIds.includes(c.id)).map((c) => c.text).join("；")}` : ""}` : undefined}
+              coverageNote={coverageNote}
               onFollowUp={onFollowUp}
               onReverify={onReverify}
               directAnswer={displayDirectAnswer}
@@ -476,12 +488,22 @@ export function InvestigationCanvas({
               // Automatic follow-ups use explicit missing claims/gaps, never URL-prefixed raw fragments.
               leftoverTexts={leftoverClaimTexts(snapshot.claims)}
               checkedAt={snapshot.checkedAt}
-              sourceUrls={(conclusion.sourceIds.length
-                ? conclusion.sourceIds.map((id) => snapshot.sources.find((source) => source.id === id)?.url)
-                : snapshot.sources.map((source) => source.url)
-              ).filter((url): url is string => Boolean(url))}
+              sourceUrls={briefSourceUrls}
             />
             </div> : null}
+            {shareRunId ? (
+              <ShareControl
+                runId={shareRunId}
+                brief={buildConclusionBrief({
+                  originalClaim: snapshot.originalClaim,
+                  directAnswer: displayDirectAnswer,
+                  boundaries: conclusion.boundaries,
+                  checkedAt: snapshot.checkedAt,
+                  sourceUrls: briefSourceUrls,
+                  coverageNote,
+                })}
+              />
+            ) : null}
             <InvestigationDossier
               snapshot={snapshot}
               activities={activities}

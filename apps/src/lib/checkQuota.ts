@@ -9,6 +9,10 @@
 export const GUEST_DAILY_CHECKS = 2;
 export const IP_DAILY_CHECKS = 20;
 
+/** 分享链接：每个访客每天最多建几条、整条来源 IP 每天最多建几条。建分享不花模型钱，只防有人批量刷链接。 */
+export const GUEST_DAILY_SHARES = 20;
+export const IP_DAILY_SHARES = 100;
+
 export type CheckQuotaKind = "guest";
 
 export type CheckQuotaView = {

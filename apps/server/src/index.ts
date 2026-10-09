@@ -60,14 +60,13 @@ app.post(
 
 app.get("/api/checks/quota", (req, res, next) => checksQuotaHandler(req, res).catch(next));
 
-import { createShareHandler, previewShareHandler, revokeShareHandler, renderShareHtmlHandler } from "./lib/shareHandlers.js";
+import { renderShareHtmlHandler } from "./lib/shareHandlers.js";
 
 app.get("/api/investigations/:runId/events", (req, res, next) => handlers.investigationEventsHandler(req, res, next));
 app.get("/api/investigations/:runId", (req, res, next) => handlers.getInvestigationHandler(req, res, next));
 app.post("/api/investigations/:runId/cancel", (req, res, next) => handlers.cancelInvestigationHandler(req, res, next));
-app.get("/api/cases/:caseId/share-preview", (req, res, next) => previewShareHandler(req, res).catch(next));
-app.post("/api/cases/:caseId/shares", (req, res, next) => createShareHandler(req, res).catch(next));
-app.delete("/api/cases/:caseId/shares/:shareId", (req, res, next) => revokeShareHandler(req, res).catch(next));
+app.post("/api/investigations/:runId/shares", (req, res, next) => handlers.createShareHandler(req, res).catch(next));
+app.delete("/api/investigations/:runId/shares/:shareId", (req, res, next) => handlers.revokeShareHandler(req, res).catch(next));
 app.get("/s/:shareId", (req, res, next) => renderShareHtmlHandler(req, res).catch(next));
 
 app.listen(PORT, "0.0.0.0", () => {

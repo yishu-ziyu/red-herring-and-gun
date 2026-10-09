@@ -10,7 +10,7 @@ import type { useInvestigationRun } from "../goldenPath/useInvestigationRun";
 import { createKnowledgeBase } from "../lib/knowledgeBase";
 import { threadSummary } from "../lib/investigationThread";
 import type { KnowledgeBaseEntry } from "../lib/schemas";
-import { groupThreadCases, snapshotFromReport, threadForRound, type ActiveCase, type ProductMode, type SaveStatus } from "./caseViews";
+import { currentRunId, groupThreadCases, snapshotFromReport, threadForRound, type ActiveCase, type ProductMode, type SaveStatus } from "./caseViews";
 
 export function useResultPersistence(args: {
   mode: ProductMode;
@@ -63,8 +63,8 @@ export function useResultPersistence(args: {
     const report = active?.restored?.report ?? run.state.finalReport;
     if (!report || !active) return;
     const snapshot = snapshotFromReport(report);
-    void persistResult(snapshot ? { ...report, investigationThread: threadForRound(active, snapshot) } : report, active.localId, active.claim);
-  }, [active, persistResult, run.state.finalReport]);
+    void persistResult(snapshot ? { ...report, investigationThread: threadForRound(active, snapshot, currentRunId(active, run.state.runId)) } : report, active.localId, active.claim);
+  }, [active, persistResult, run.state.finalReport, run.state.runId]);
 
   // 完成：留存到本机。保存失败不挡结果，但必须可见。
   useEffect(() => {
@@ -86,7 +86,7 @@ export function useResultPersistence(args: {
     const localId = active.localId;
     const claim = active.claim;
     const savedSnapshot = snapshotFromReport(report);
-    const durable = savedSnapshot ? { ...report, investigationThread: threadForRound(active, savedSnapshot) } : report;
+    const durable = savedSnapshot ? { ...report, investigationThread: threadForRound(active, savedSnapshot, run.state.runId) } : report;
     const summary = threadSummary(durable);
     setCases((prev) => groupThreadCases([
       { id: localId, claim: summary.threadClaim ?? claim, ...summary, report: durable, status: report._source === "error-boundary" ? ("interrupted" as const) : ("done" as const), createdAt: doneAt },

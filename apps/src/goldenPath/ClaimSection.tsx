@@ -23,7 +23,7 @@ import {
 } from "./snapshotUi";
 import { EvidenceBoard } from "./EvidenceBoard";
 import { PromptKitSource } from "./PromptKitSource";
-import { scrubFaceText, tooSimilarTo } from "./scrubFace";
+import { scrubFaceText, tooSimilarTo } from "../lib/scrubFace";
 import type { InvestigationConflictSide } from "../lib/investigation";
 
 /** 快照的 position 允许 other；other 不冒充支持或反驳。 */

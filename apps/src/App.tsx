@@ -17,6 +17,7 @@ import { visiblePriorRoundFromSnapshot } from "./lib/priorRoundBrief";
 import type { InvestigationThread, InvestigationRound } from "./lib/investigationThread";
 import { InvestigationThreadHeader } from "./goldenPath/InvestigationThreadHeader";
 import {
+  currentRunId,
   restoredThreadFields,
   snapshotFromReport,
   threadForRound,
@@ -185,8 +186,8 @@ function ProductApp() {
     }
     const snapshot = active.restored?.snapshot ?? run.state.snapshot;
     beginRun(active.intake ?? createCaseIntake(active.claim, []), undefined, undefined,
-      snapshot ? threadForRound(active, snapshot) : active.thread, "recheck");
-  }, [active, beginRun, handleBackHome, run.state.snapshot]);
+      snapshot ? threadForRound(active, snapshot, currentRunId(active, run.state.runId)) : active.thread, "recheck");
+  }, [active, beginRun, handleBackHome, run.state.snapshot, run.state.runId]);
 
   const handleSelectCase = useCallback(
     async (id: string) => {
@@ -291,7 +292,7 @@ function ProductApp() {
         },
         undefined,
         { priorRound: visiblePriorRoundFromSnapshot(snapshot) },
-        snapshot ? threadForRound(active, snapshot) : active.thread,
+        snapshot ? threadForRound(active, snapshot, currentRunId(active, run.state.runId)) : active.thread,
         "follow-up",
       );
   }
@@ -409,6 +410,7 @@ function ProductApp() {
               onFollowUp={archivedRound ? undefined : handleFollowUp}
               linkUnreachable={caseIntakeFailedLinks(active.intake).length > 0}
               images={archivedRound || active.restored ? undefined : active.intake?.images}
+              shareRunId={archivedRound ? archivedRound.runId : currentRunId(active, run.state.runId)}
             />
           </>
         ) : showTimeoutPending ? (

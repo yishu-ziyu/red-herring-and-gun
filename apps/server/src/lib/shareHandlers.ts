@@ -1,205 +1,258 @@
 /**
- * shareHandlers — 显式分享（IMPLEMENTATION_PLAN §3.5、§5.3）。
+ * shareHandlers — 不登录也能分享一轮调查（#142 part b）。
  *
- * 三条规矩：
- *   1. 分享是用户明确创建的一次只读投影，不是把私有记录默认公开。
- *   2. 链接令牌随机、不可由 caseId 猜出；库里只存令牌的哈希，不存令牌本身。
- *   3. 撤销之后链接读不到任何正文；但不承诺抹掉别人已经下载的副本。
+ * 规矩：
+ *   1. 分享只含一轮调查，内容只取服务端为这一轮（run）存下的快照，不收浏览器发来的任何正文。
+ *      所以没人能借分享发布自己写的任意文字。只有跑完（completed）的一轮能分享。
+ *   2. 只有建这轮调查的浏览器（同一个访客 cookie）能建、能撤这一轮的分享。
+ *   3. 链接令牌随机、猜不出；库里只存令牌的哈希。撤销之后链接只显示「已撤销」，不显示正文；
+ *      但不承诺抹掉别人已经存下的副本。
  *
- * 投影用白名单构造，不用黑名单过滤：将来 report 里多了字段，默认不出去。
+ * 公开内容按白名单逐字段构造：快照里将来多了字段，默认不出去。
  */
 import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { CaseEntry } from "./caseStore.js";
 import { openDatabase } from "./sqliteStore.js";
 import { followUpQuestionOf } from "./followUpReuse.js";
+import { clientIpKey, guestIdFromRequest, guestOwnerHash } from "./checkQuota.js";
+import type { RunRecord } from "./runStore.js";
+import { GUEST_DAILY_SHARES, IP_DAILY_SHARES, shanghaiDayKey } from "../../../src/lib/checkQuota.js";
+import { scrubFaceText } from "../../../src/lib/scrubFace.js";
+import { conclusionMissesFollowUp, followUpQuestionLead } from "../../../src/lib/composeFollowUpClaim.js";
 
 const TOKEN_BYTES = 24;
 const SHARE_TTL_DAYS = 30;
+/** 只交图片时发给服务端的请求句开头（见 src/lib/caseIntake.ts）。它是内部提示词，公开页里不能出现。 */
+const IMAGE_REQUEST_PREFIX = "请核查用户上传的";
 
-export type ShareRecord = {
-  shareId: string;
-  caseId: string;
-  projection: PublicShareProjection;
-  createdAt: number;
-  revokedAt: number | null;
-};
-
-/** 公开页只读到的字段。白名单就是这份类型。 */
+/** 公开页显示的全部内容。白名单就是这份类型。 */
 export type PublicShareProjection = {
-  caseId: string;
+  version: 2;
   claim: string;
-  report: Record<string, unknown>;
-  createdAt: number;
+  /** 结论句：和结果页大字显示的那句一致。 */
+  answer: string;
+  rationale?: string;
+  boundaries: string[];
   checkedAt?: string;
+  createdAt: number;
+  claims: Array<{ text: string; judgment: string | null; evidence: Array<{ role: string; sourceId: string; quote?: string; finding?: string }> }>;
+  deferredClaims: string[];
+  sources: Array<{ id: string; title: string; url: string; publishedAt?: string }>;
 };
 
-/** 递归丢掉任何名字像秘密的键：投影里宁可少一个字段，也不多一个。 */
-const SECRET_KEY_RE = /(apikey|api_key|secret|token|password|byokey|authorization|cookie|email|ownerhash|upload|memoryrecall|thought|trace|debug|systemprompt)/i;
+type ShareRecord = { shareId: string; runId: string | null; projection: PublicShareProjection; createdAt: number; revokedAt: number | null };
 
-function redact(value: unknown, depth = 0): unknown {
-  if (depth > 12) return undefined;
-  if (Array.isArray(value)) {
-    const out = value.map((item) => redact(item, depth + 1)).filter((item) => item !== undefined);
-    return out;
-  }
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      // Sharing this round does not consent to publishing earlier private rounds/materials.
-      if (key === "investigationThread") continue;
-      if (SECRET_KEY_RE.test(key)) continue;
-      const field = ["claim", "originalClaim", "claimReviewed"].includes(key) && typeof item === "string"
-        ? followUpQuestionOf(item) : item;
-      const cleaned = redact(field, depth + 1);
-      if (cleaned !== undefined) out[key] = cleaned;
-    }
-    return out;
-  }
-  if (typeof value === "function" || typeof value === "symbol" || typeof value === "undefined") return undefined;
-  return value;
+export type ShareLookup =
+  | { state: "ok"; record: ShareRecord }
+  | { state: "revoked" }
+  | { state: "missing" };
+
+const str = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+const arr = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+const rec = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+
+/** 公开页上的说法：追问轮只留用户写的那句；内部请求句换成中性的名字。 */
+function publicClaim(originalClaim: string): string {
+  const claim = followUpQuestionOf(originalClaim);
+  return claim.startsWith(IMAGE_REQUEST_PREFIX) ? "上传的图片" : claim;
 }
 
-function asPublicRecord(value: unknown): Record<string, unknown> {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  return {};
+/** 结论句的取法与结果页一致（InvestigationCanvas + ConclusionHero）。 */
+function publicAnswer(snapshot: Record<string, unknown>, conclusion: Record<string, unknown>): string {
+  const originalClaim = str(snapshot.originalClaim);
+  const verdictLead = str(conclusion.verdictLead);
+  const directAnswer = str(conclusion.directAnswer);
+  const judgment = str(conclusion.judgment) as Parameters<typeof followUpQuestionLead>[1];
+  const rewrite = conclusionMissesFollowUp(verdictLead || directAnswer, originalClaim)
+    ? followUpQuestionLead(followUpQuestionOf(originalClaim), judgment)
+    : "";
+  const raw = rewrite || verdictLead || directAnswer;
+  return scrubFaceText(raw) || raw;
 }
 
-function stringField(value: unknown, key: string): string | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === "string" ? field : undefined;
-}
-
-/** 从 case 造公开投影。ownerHash、feedback 一律不进。 */
-export function buildPublicProjection(entry: CaseEntry): PublicShareProjection {
-  const checkedAt = stringField(entry.report, "checkedAt");
+/** 从一轮调查的快照造公开内容。只读快照，不读任何浏览器发来的东西。 */
+export function projectionFromSnapshot(snapshotValue: unknown, createdAt: number): PublicShareProjection {
+  const snapshot = rec(snapshotValue);
+  const conclusion = rec(snapshot.conclusion);
+  const claims = arr(snapshot.claims).map(rec);
+  const scope = rec(snapshot.scope);
+  const deferredIds = new Set(arr(scope.deferredClaimIds).map(str));
+  const rationale = str(conclusion.verdictLead) ? scrubFaceText(str(conclusion.rationale)) : "";
+  const checkedAt = str(snapshot.checkedAt);
   return {
-    caseId: entry.caseId,
-    claim: followUpQuestionOf(entry.claim),
-    report: asPublicRecord(redact(entry.report)),
-    createdAt: entry.createdAt,
+    version: 2,
+    claim: publicClaim(str(snapshot.originalClaim)),
+    answer: publicAnswer(snapshot, conclusion),
+    ...(rationale ? { rationale } : {}),
+    boundaries: arr(conclusion.boundaries).map(str).filter(Boolean),
     ...(checkedAt ? { checkedAt } : {}),
+    createdAt,
+    claims: claims
+      .filter((claim) => !deferredIds.has(str(claim.id)) && str(claim.text))
+      .map((claim) => ({
+        text: str(claim.text),
+        judgment: str(claim.judgment) || null,
+        evidence: arr(claim.evidence)
+          .map(rec)
+          .filter((link) => ["support", "contradict", "context-only"].includes(str(link.role)))
+          .map((link) => ({
+            role: str(link.role),
+            sourceId: str(link.sourceId),
+            ...(str(link.passage) ? { quote: str(link.passage) } : {}),
+            ...(str(link.finding) ? { finding: scrubFaceText(str(link.finding)) } : {}),
+          })),
+      })),
+    deferredClaims: claims.filter((claim) => deferredIds.has(str(claim.id))).map((claim) => str(claim.text)).filter(Boolean),
+    sources: arr(snapshot.sources)
+      .map(rec)
+      .filter((source) => /^https?:\/\//.test(str(source.url)))
+      .map((source) => ({
+        id: str(source.id),
+        title: str(source.title) || str(source.url),
+        url: str(source.url),
+        ...(str(source.publishedAt) ? { publishedAt: str(source.publishedAt) } : {}),
+      })),
   };
+}
+
+/** 登录时代存下的老分享（{claim, report, createdAt}）按同一套白名单重新取一遍再显示。 */
+function readStoredProjection(raw: string): PublicShareProjection | null {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = rec(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+  if (parsed.version === 2) return parsed as unknown as PublicShareProjection;
+  const report = rec(parsed.report);
+  const createdAt = typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now();
+  const projection = projectionFromSnapshot({ ...rec(report.investigation), originalClaim: str(parsed.claim) }, createdAt);
+  if (!projection.answer) projection.answer = scrubFaceText(str(report.conclusion));
+  return projection;
 }
 
 export function hashShareToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function newShareToken(): string {
-  return randomBytes(TOKEN_BYTES).toString("base64url");
-}
-
-type ShareRow = {
-  shareId: string;
-  caseId: string;
-  projection: string;
-  createdAt: number;
-  revokedAt: number | null;
-};
+type ShareRow = { shareId: string; runId: string | null; projection: string; createdAt: number; revokedAt: number | null };
 
 export type ShareStore = ReturnType<typeof createShareStore>;
 
 export function createShareStore(db: DatabaseSync | null) {
-  const memory = new Map<string, ShareRecord>();
+  const memory = new Map<string, ShareRow>();
+  const find = (shareId: string): ShareRow | undefined =>
+    db ? (db.prepare("SELECT shareId, runId, projection, createdAt, revokedAt FROM shares WHERE shareId = ?").get(shareId) as ShareRow | undefined) : memory.get(shareId);
 
   return {
     /** 建分享：返回**明文令牌**，库里只落哈希。 */
-    create(
-      entry: CaseEntry,
-      options: { now?: number; ttlDays?: number } = {}
-    ): { shareId: string; createdAt: number; expiresAt: number; projection: PublicShareProjection } {
-      const token = newShareToken();
+    create(run: RunRecord, projection: PublicShareProjection, now = Date.now()): { token: string } {
+      const token = randomBytes(TOKEN_BYTES).toString("base64url");
       const shareId = hashShareToken(token);
-      const now = options.now ?? Date.now();
-      const ttlDays = options.ttlDays ?? SHARE_TTL_DAYS;
-      const projection = buildPublicProjection(entry);
-      if (!db) {
-        memory.set(shareId, { shareId, caseId: entry.caseId, projection, createdAt: now, revokedAt: null });
-        return { shareId: token, createdAt: now, expiresAt: now + ttlDays * 86_400_000, projection };
-      }
-      db.prepare("INSERT INTO shares (shareId, caseId, projection, createdAt, revokedAt) VALUES (?, ?, ?, ?, NULL)").run(
-        shareId,
-        entry.caseId,
-        JSON.stringify(projection),
-        now
-      );
-      return { shareId: token, createdAt: now, expiresAt: now + ttlDays * 86_400_000, projection };
+      const row: ShareRow = { shareId, runId: run.runId, projection: JSON.stringify(projection), createdAt: now, revokedAt: null };
+      if (!db) memory.set(shareId, row);
+      else
+        db.prepare("INSERT INTO shares (shareId, caseId, runId, projection, createdAt, revokedAt) VALUES (?, ?, ?, ?, ?, NULL)").run(
+          shareId,
+          run.caseId,
+          run.runId,
+          row.projection,
+          now
+        );
+      return { token };
     },
 
-    /** 按令牌找分享。过期、撤销、找不到都返回 null——对外只有「不可读」一种说法。 */
-    read(token: string, now = Date.now()): ShareRecord | null {
-      const shareId = hashShareToken(token);
-      let record: ShareRecord | null = null;
-      if (!db) {
-        record = memory.get(shareId) ?? null;
-      } else {
-        const row = db.prepare("SELECT * FROM shares WHERE shareId = ?").get(shareId) as ShareRow | undefined;
-        if (row) {
-          let projection: PublicShareProjection | null = null;
-          try {
-            projection = JSON.parse(row.projection) as PublicShareProjection;
-          } catch {
-            projection = null;
-          }
-          record = projection
-            ? { shareId: row.shareId, caseId: row.caseId, projection, createdAt: row.createdAt, revokedAt: row.revokedAt ?? null }
-            : null;
-        }
-      }
-      if (!record) return null;
-      if (record.revokedAt) return null;
-      if (now - record.createdAt > SHARE_TTL_DAYS * 86_400_000) return null;
-      return record;
+    /** 按令牌找分享。撤销单独报出来；过期和找不到对外是同一种「不可用」。 */
+    read(token: string, now = Date.now()): ShareLookup {
+      const row = find(hashShareToken(token));
+      if (!row) return { state: "missing" };
+      if (row.revokedAt) return { state: "revoked" };
+      if (now - row.createdAt > SHARE_TTL_DAYS * 86_400_000) return { state: "missing" };
+      const projection = readStoredProjection(row.projection);
+      if (!projection) return { state: "missing" };
+      return { state: "ok", record: { shareId: row.shareId, runId: row.runId, projection, createdAt: row.createdAt, revokedAt: null } };
     },
 
-    /** 撤销：只标记，不删行（审计要看得出曾经分享过）。幂等。 */
-    revoke(token: string, now = Date.now()): { ok: boolean; alreadyRevoked: boolean } {
+    /** 撤销：只标记，不删行。只撤属于这一轮的分享；幂等。 */
+    revoke(token: string, runId: string, now = Date.now()): boolean {
       const shareId = hashShareToken(token);
-      if (!db) {
-        const record = memory.get(shareId);
-        if (!record) return { ok: false, alreadyRevoked: false };
-        const already = Boolean(record.revokedAt);
-        memory.set(shareId, { ...record, revokedAt: record.revokedAt ?? now });
-        return { ok: true, alreadyRevoked: already };
-      }
-      const row = db.prepare("SELECT revokedAt FROM shares WHERE shareId = ?").get(shareId) as
-        | { revokedAt: number | null }
-        | undefined;
-      if (!row) return { ok: false, alreadyRevoked: false };
-      if (row.revokedAt) return { ok: true, alreadyRevoked: true };
-      db.prepare("UPDATE shares SET revokedAt = ? WHERE shareId = ?").run(now, shareId);
-      return { ok: true, alreadyRevoked: false };
-    },
-
-    /** 主人视角：这条 case 现在有几个还没撤销的分享。 */
-    listActive(caseId: string): Array<{ shareId: string; createdAt: number }> {
-      if (!db) {
-        return [...memory.values()]
-          .filter((record) => record.caseId === caseId && !record.revokedAt)
-          .map((record) => ({ shareId: record.shareId, createdAt: record.createdAt }));
-      }
-      const rows = db
-        .prepare("SELECT shareId, createdAt FROM shares WHERE caseId = ? AND revokedAt IS NULL ORDER BY createdAt DESC")
-        .all(caseId) as Array<{ shareId: string; createdAt: number }>;
-      return rows;
+      const row = find(shareId);
+      if (!row || row.runId !== runId) return false;
+      if (row.revokedAt) return true;
+      if (!db) memory.set(shareId, { ...row, revokedAt: now });
+      else db.prepare("UPDATE shares SET revokedAt = ? WHERE shareId = ?").run(now, shareId);
+      return true;
     },
   };
 }
 
 let cachedStore: ShareStore | null = null;
 
-export function shareStore(): ShareStore {
+function shareStore(): ShareStore {
   if (!cachedStore) cachedStore = createShareStore(openDatabase());
   return cachedStore;
 }
 
-/** 测试用：换一份存储。 */
-export function __setShareStoreForTests(store: ShareStore | null): void {
-  cachedStore = store;
+// ── 建分享限额：按访客、按来源 IP，每天各算各的。只在进程内计数，重启清零。──
+const sharesByGuest = new Map<string, { day: string; used: number }>();
+const sharesByIp = new Map<string, { day: string; used: number }>();
+
+function usedToday(map: Map<string, { day: string; used: number }>, key: string, day: string): number {
+  const bucket = map.get(key);
+  return bucket && bucket.day === day ? bucket.used : 0;
+}
+
+function countShare(map: Map<string, { day: string; used: number }>, key: string, day: string): void {
+  map.set(key, { day, used: usedToday(map, key, day) + 1 });
+}
+
+function sendJson(res: any, status: number, body: unknown): void {
+  res.status(status).json(body);
+}
+
+/** 这一轮调查是不是这个浏览器建的。老 run 的 ownerHash 是 null，谁都不认。 */
+function ownsRun(req: any, run: RunRecord): string | null {
+  const guestId = guestIdFromRequest(req);
+  if (!guestId || !run.ownerHash || guestOwnerHash(guestId) !== run.ownerHash) return null;
+  return guestId;
+}
+
+export function createShareHandlers(deps: { getRun: (runId: string) => RunRecord | null }) {
+  /** POST /api/investigations/:runId/shares — 请求体一律不读。 */
+  async function createShareHandler(req: any, res: any): Promise<void> {
+    const runId = String(req.params?.runId ?? "").trim();
+    const run = runId ? deps.getRun(runId) : null;
+    if (!run) return sendJson(res, 404, { message: "没有这次调查" });
+    const guestId = ownsRun(req, run);
+    if (!guestId) return sendJson(res, 403, { message: "只有发起这次调查的浏览器能分享它" });
+    const snapshot = run.snapshot;
+    if (run.status !== "completed" || !snapshot || snapshot.phase !== "complete" || !snapshot.conclusion) {
+      return sendJson(res, 409, { message: "这次调查还没有查完，查完才能分享" });
+    }
+    const day = shanghaiDayKey();
+    const ipKey = clientIpKey(req);
+    if (usedToday(sharesByGuest, guestId, day) >= GUEST_DAILY_SHARES || usedToday(sharesByIp, ipKey, day) >= IP_DAILY_SHARES) {
+      return sendJson(res, 429, { message: "今天建的分享链接太多了，明天再试" });
+    }
+    const { token } = shareStore().create(run, projectionFromSnapshot(snapshot, run.createdAt));
+    countShare(sharesByGuest, guestId, day);
+    countShare(sharesByIp, ipKey, day);
+    return sendJson(res, 201, { shareId: token, url: `/s/${token}` });
+  }
+
+  /** DELETE /api/investigations/:runId/shares/:shareId */
+  async function revokeShareHandler(req: any, res: any): Promise<void> {
+    const runId = String(req.params?.runId ?? "").trim();
+    const token = String(req.params?.shareId ?? "").trim();
+    const run = runId ? deps.getRun(runId) : null;
+    if (!run || !token) return sendJson(res, 404, { message: "没有这个分享" });
+    if (!ownsRun(req, run)) return sendJson(res, 403, { message: "只有发起这次调查的浏览器能撤销分享" });
+    if (!shareStore().revoke(token, run.runId)) return sendJson(res, 404, { message: "没有这个分享" });
+    return sendJson(res, 200, { revoked: true });
+  }
+
+  return { createShareHandler, revokeShareHandler };
 }
 
 const SHARE_PAGE_STYLE = `
@@ -209,12 +262,24 @@ const SHARE_PAGE_STYLE = `
   h2 { font-size: 1rem; margin: 1.6rem 0 .5rem; }
   .meta { color: #62665e; font-size: .85rem; margin: .25rem 0 1.5rem; }
   .lead { font-size: 1.08rem; }
+  .judgment { color: #62665e; font-size: .85rem; margin-left: .4rem; }
+  blockquote { margin: .3rem 0 .3rem .2rem; padding-left: .7rem; border-left: 3px solid #dedcd4; color: #3d403a; font-size: .92rem; }
   article { background: #fff; border: 1px solid #dedcd4; border-radius: 12px; padding: 1.1rem 1.25rem; }
   ul { padding-left: 1.1rem; }
   li { margin: .3rem 0; }
   a { color: #a13734; }
   footer { margin-top: 2rem; font-size: .85rem; color: #62665e; }
 `;
+
+const JUDGMENT_LABEL: Record<string, string> = {
+  supported: "证据支持",
+  refuted: "证据反驳",
+  mixed: "有对有错",
+  disputed: "有争议",
+  unresolved: "证据不足",
+  "not-applicable": "立场表达",
+};
+const ROLE_LABEL: Record<string, string> = { support: "支持", contradict: "反驳", "context-only": "背景" };
 
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
@@ -225,108 +290,95 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
-/** 只用投影渲染公开页；读不到就一种 404，不区分「不存在 / 已撤销 / 已过期」。 */
-export function buildSharedPageHtml(token: string, projection: PublicShareProjection | null): string {
-  const shell = (title: string, body: string) =>
-    `<!DOCTYPE html>
+function shell(title: string, body: string, indexable: boolean): string {
+  return `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="robots" content="${projection ? "index,follow" : "noindex"}">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="${indexable ? "index,follow" : "noindex"}">
 <title>${escapeHtml(title)}</title>
 <style>${SHARE_PAGE_STYLE}</style>
 </head><body>${body}</body></html>`;
+}
 
-  if (!projection) {
+/** 只用公开内容渲染分享页。 */
+export function buildSharedPageHtml(lookup: ShareLookup): string {
+  if (lookup.state === "revoked") {
+    return shell(
+      "分享链接已撤销 · 红鲱鱼与枪",
+      `<main data-share-revoked><h1>这个分享链接已被撤销</h1>
+<p>创建者撤销了这个链接，这里不再显示调查内容。</p>
+<p><a href="/">回到红鲱鱼与枪</a></p></main>`,
+      false
+    );
+  }
+  if (lookup.state === "missing") {
     return shell(
       "分享链接不可用 · 红鲱鱼与枪",
-      `<main><h1>分享链接不可用</h1>
-<p>这个链接不存在、已被撤销，或已经过期。分享由创建者控制，撤销之后就读不到了。</p>
-<p><a href="/">回到红鲱鱼与枪</a></p></main>`
+      `<main data-share-missing><h1>分享链接不可用</h1>
+<p>这个链接不存在，或已经过期。</p>
+<p><a href="/">回到红鲱鱼与枪</a></p></main>`,
+      false
     );
   }
 
-  const report = projection.report as Record<string, unknown>;
-  const conclusion = typeof report.conclusion === "string" ? report.conclusion : "";
-  const verdictLead = typeof report.causalBoundary === "string" ? report.causalBoundary : "";
-  const investigation = report.investigation as { claims?: Array<{ id?: string; text?: string }>; sources?: Array<{ title?: string; url?: string }>; scope?: { includedClaimIds?: string[]; deferredClaimIds?: string[] } } | undefined;
-  const claims = Array.isArray(investigation?.claims) ? investigation!.claims! : [];
-  const sources = Array.isArray(investigation?.sources) ? investigation!.sources! : [];
-  const checkedAt = projection.checkedAt ?? "";
-  const deferredIds = Array.isArray(investigation?.scope?.deferredClaimIds) ? investigation.scope.deferredClaimIds : [];
-  const deferred = claims.filter((claim) => typeof claim.id === "string" && deferredIds.includes(claim.id));
-
+  const p = lookup.record.projection;
+  const sourceById = new Map(p.sources.map((source) => [source.id, source]));
+  const claimItems = p.claims
+    .map((claim) => {
+      const evidence = claim.evidence
+        .map((link) => {
+          const source = sourceById.get(link.sourceId);
+          const label = `${ROLE_LABEL[link.role] ?? ""}${source ? ` · ${escapeHtml(source.title)}` : ""}`;
+          const quote = link.quote ? `<blockquote>${escapeHtml(link.quote)}</blockquote>` : "";
+          const finding = link.finding ? `<div>${escapeHtml(link.finding)}</div>` : "";
+          return quote || finding ? `<li><small>${label}</small>${quote}${finding}</li>` : "";
+        })
+        .filter(Boolean)
+        .join("");
+      const judgment = claim.judgment ? `<span class="judgment">${escapeHtml(JUDGMENT_LABEL[claim.judgment] ?? "")}</span>` : "";
+      return `<li data-share-claim>${escapeHtml(claim.text)}${judgment}${evidence ? `<ul>${evidence}</ul>` : ""}</li>`;
+    })
+    .join("");
   const body = `<main>
-  <h1>${escapeHtml(projection.claim)}</h1>
-  <p class="meta">原调查时间：${escapeHtml(new Date(projection.createdAt).toLocaleString("zh-CN", { hour12: false }))}${
-    checkedAt ? ` · 核查完成：${escapeHtml(checkedAt)}` : ""
+  <h1>${escapeHtml(p.claim)}</h1>
+  <p class="meta">原调查时间：${escapeHtml(new Date(p.createdAt).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" }))}${
+    p.checkedAt ? ` · 核查完成：${escapeHtml(p.checkedAt)}` : ""
   }</p>
   <article>
-    ${conclusion ? `<p class="lead"><strong>${escapeHtml(conclusion)}</strong></p>` : ""}
-    ${verdictLead ? `<p>${escapeHtml(verdictLead)}</p>` : ""}
+    <p class="lead" data-share-conclusion><strong>${escapeHtml(p.answer)}</strong></p>
+    ${p.rationale ? `<p>${escapeHtml(p.rationale)}</p>` : ""}
+    ${p.boundaries.length ? `<p>必要边界：${p.boundaries.map(escapeHtml).join("；")}</p>` : ""}
     <p>回答仅针对本轮列出的核查问题，不代表整份材料已获证实。</p>
-    ${deferred.length ? `<p>本轮未覆盖：${deferred.map((claim) => escapeHtml(claim.text ?? "")).join("；")}</p>` : ""}
-    ${claims.length ? `<h2>拆出的问题</h2><ul>${claims.map((claim) => `<li>${escapeHtml(claim.text ?? "")}</li>`).join("")}</ul>` : ""}
+    ${p.deferredClaims.length ? `<p>本轮未覆盖：${p.deferredClaims.map(escapeHtml).join("；")}</p>` : ""}
+    ${claimItems ? `<h2>拆出的问题</h2><ul>${claimItems}</ul>` : ""}
     ${
-      sources.length
-        ? `<h2>用到的材料</h2><ul>${sources
-            .map((source) =>
-              source.url
-                ? `<li><a href="${escapeHtml(source.url)}" rel="noreferrer nofollow">${escapeHtml(source.title ?? source.url)}</a></li>`
-                : `<li>${escapeHtml(source.title ?? "")}</li>`
+      p.sources.length
+        ? `<h2>用到的材料</h2><ul>${p.sources
+            .map(
+              (source) =>
+                `<li><a href="${escapeHtml(source.url)}" rel="noreferrer nofollow">${escapeHtml(source.title)}</a>${
+                  source.publishedAt ? ` <small>${escapeHtml(source.publishedAt)}</small>` : ""
+                }</li>`
             )
             .join("")}</ul>`
         : ""
     }
   </article>
   <footer>
-    <p>这份页面是创建者当时公开的只读快照，不会随后续修改变化。撤销之后本页即不可读。</p>
+    <p>这份页面是创建者当时公开的一轮调查的只读快照，不会随后续修改变化。创建者撤销之后本页即不可读。</p>
     <p><a href="/">用红鲱鱼与枪查自己的说法</a></p>
   </footer>
 </main>`;
-
-  return shell(`${projection.claim.slice(0, 40)} · 红鲱鱼与枪`, body);
+  return shell(`${p.claim.slice(0, 40)} · 红鲱鱼与枪`, body, true);
 }
 
-/**
- * 创建、预览、撤销分享暂时关闭：原来只有登录用户能分享，登录已删除（#142 part a）。
- * part b 会把分享改成不需要登录；在那之前这三个端点一律 404。已建好的 /s/:shareId 链接照常可读。
- */
-function sharingUnavailable(res: any): void {
-  res.status(404).json({ error: "sharing unavailable" });
-}
-
-/** GET /api/cases/:caseId/share-preview */
-export async function previewShareHandler(_req: any, res: any): Promise<void> {
-  sharingUnavailable(res);
-}
-
-/** POST /api/cases/:caseId/shares */
-export async function createShareHandler(_req: any, res: any): Promise<void> {
-  sharingUnavailable(res);
-}
-
-/** DELETE /api/cases/:caseId/shares/:shareId */
-export async function revokeShareHandler(_req: any, res: any): Promise<void> {
-  sharingUnavailable(res);
-}
-
-/** GET /s/:shareId — 只查分享投影，不读私有 case。 */
+/** GET /s/:shareId — 只查分享里存的公开内容，不读 run。 */
 export async function renderShareHtmlHandler(req: any, res: any): Promise<void> {
   const token = String(req.params?.shareId ?? "").trim();
-  const record = token ? shareStore().read(token) : null;
-  const html = buildSharedPageHtml(token, record?.projection ?? null);
-  if (typeof res.set === "function") {
-    res.set("Content-Type", "text/html; charset=utf-8");
-    res.set("Cache-Control", "no-cache");
-    res.set("X-Robots-Tag", record ? "all" : "noindex");
-  } else {
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache");
-  }
-  res.statusCode = record ? 200 : 404;
-  if (typeof res.status === "function") res.status(record ? 200 : 404);
-  if (typeof res.send === "function") {
-    res.send(html);
-    return;
-  }
-  res.end(html);
+  const lookup: ShareLookup = token ? shareStore().read(token) : { state: "missing" };
+  const status = lookup.state === "ok" ? 200 : lookup.state === "revoked" ? 410 : 404;
+  res.set("Content-Type", "text/html; charset=utf-8");
+  res.set("Cache-Control", "no-cache");
+  res.set("X-Robots-Tag", lookup.state === "ok" ? "all" : "noindex");
+  res.status(status).send(buildSharedPageHtml(lookup));
 }

@@ -146,6 +146,17 @@ function migrate(db: DatabaseSync): void {
       new Date().toISOString()
     );
   }
+  if (current < 4) {
+    // 分享改成按一轮调查（run）建，不再按登录用户的 case 建（#142 part b）。老分享行的 runId 保持 NULL。
+    const columns = new Set(
+      (db.prepare("PRAGMA table_info(shares)").all() as Array<{ name?: unknown }>).map((row) => String(row.name))
+    );
+    if (!columns.has("runId")) db.exec("ALTER TABLE shares ADD COLUMN runId TEXT");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_shares_run ON shares(runId)");
+    db.prepare("INSERT OR IGNORE INTO schema_version (version, appliedAt) VALUES (4, ?)").run(
+      new Date().toISOString()
+    );
+  }
 }
 
 /** 测试/维护用：关掉当前实例，下次 openDatabase 重新打开。 */

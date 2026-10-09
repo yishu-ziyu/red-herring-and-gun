@@ -9,7 +9,8 @@
 import { createRunService, hashRunInput } from "./lib/runService.js";
 import { isTerminalStatus, openRunStore } from "./lib/runStore.js";
 import { generateCaseId } from "./lib/caseStore.js";
-import { releaseFreeCheck } from "./lib/checkQuota.js";
+import { ensureGuestId, guestOwnerHash, releaseFreeCheck } from "./lib/checkQuota.js";
+import { createShareHandlers } from "./lib/shareHandlers.js";
 import { readJson, sendJson } from "./lib/httpUtils.js";
 import {
   normalizeCaseIntake,
@@ -209,6 +210,8 @@ export function createHandlers(env: Record<string, string>) {
     // 追问：服务端没有用户档案，上一轮可见材料由浏览器放在 priorRound 里带来。
     // 首轮与 legacy 路径不传 followUp（caseId 仍按老规矩当本次 case 用）。
     const isFollowUp = payload.followUp === true;
+    // 分享只认创建这次调查的浏览器：记下访客 id 的哈希（没有访客 cookie 就在这次响应里发一个）。
+    const ownerHash = guestOwnerHash(ensureGuestId(req, res, ticket.guestId));
     const clientFollowUpReuse = isFollowUp ? followUpReuseFromClientBrief(payload.priorRound) : null;
 
     const started = runs.start({
@@ -219,7 +222,7 @@ export function createHandlers(env: Record<string, string>) {
         : typeof payload.caseId === "string" && payload.caseId
           ? payload.caseId
           : generateCaseId(claim),
-      ownerHash: null,
+      ownerHash,
       clientRequestId,
       inputHash: hashRunInput(claim, { intake: intakeMetadata }),
     });
@@ -251,6 +254,7 @@ export function createHandlers(env: Record<string, string>) {
   }
 
   return {
+    ...createShareHandlers({ getRun: (runId) => runs.get(runId) }),
     orchestrateStreamHandler,
     cancelInvestigationHandler,
     getInvestigationHandler,

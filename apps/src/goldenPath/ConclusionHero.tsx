@@ -8,7 +8,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import { JUDGMENT_LABEL, ROLE_LABEL, attachmentsForSource, evidenceTitle, pickDecisiveEvidence } from "./snapshotUi";
-import { scrubFaceText } from "./scrubFace";
+import { scrubFaceText } from "../lib/scrubFace";
 import { displayFollowUpClaim } from "../lib/composeFollowUpClaim";
 import { PromptKitSource } from "./PromptKitSource";
 import type { InvestigationEvidenceLink, InvestigationSource, InvestigationClaim } from "../lib/investigation";
