@@ -1,6 +1,6 @@
 /**
  * 四个工作职责头像：人物代表分工，不代表专家资质或证据。
- * 素材复用 mvp/public/agents 既有像素头像，不把交接包概念图当已批准品牌。
+ * 素材复用 apps/public/agents 既有像素头像，不把交接包概念图当已批准品牌。
  */
 export type WorkRoleId = "question" | "source" | "context" | "judgment";
 

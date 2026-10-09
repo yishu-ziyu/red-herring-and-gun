@@ -1,6 +1,6 @@
 /**
  * Probe production retrieveAtomSources without LLM.
- *   cd mvp/server && ./node_modules/.bin/tsx eval/probeSearch.ts
+ *   cd apps/server && ./node_modules/.bin/tsx eval/probeSearch.ts
  */
 import { retrieveAtomSources } from "../src/lib/searchProviders.js";
 import { buildAtomSearchQueries } from "../src/lib/atomSearchQuery.js";

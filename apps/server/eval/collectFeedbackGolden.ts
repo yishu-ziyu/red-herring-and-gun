@@ -1,8 +1,8 @@
 /**
  * collectFeedbackGolden.ts — 用户纠错反馈 → eval golden 草稿（半自动）。
  * 读取 RHG_DATA_DIR/rhg-feedback.jsonl，把「claim + 用户异议」输出为 golden case 草稿，
- * 供人工复核后合入 mvp/server/eval/golden.ts。
- * 用法：cd mvp/server && npx tsx eval/collectFeedbackGolden.ts [--json]
+ * 供人工复核后合入 apps/server/eval/golden.ts。
+ * 用法：cd apps/server && npx tsx eval/collectFeedbackGolden.ts [--json]
  */
 import { readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";

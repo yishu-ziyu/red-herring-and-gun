@@ -11,8 +11,6 @@
  * 没有可归属对象的事件只能描述动作（引用数组留空）。
  * `InvestigationEvidenceLink` 没有稳定 id，故本契约不设 `evidenceIds`——
  * 编一个 id 就是改快照 schema，等 run 内证据 id 落地再加。
- *
- * 镜像约束：本文件与 `packages/core/src/investigation/activity.ts` 字节一致。
  */
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";

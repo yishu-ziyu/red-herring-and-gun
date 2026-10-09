@@ -571,7 +571,7 @@ export interface ProviderRouterOptions {
   onMissingApiKey?: "silent" | "log" | "error";
   /**
    * 阶段级硬预算（主路 P1 Change H）：绝对时间戳，本次调用含全部 provider 尝试合计不得超过它。
-   * 到点不再开下一次尝试，已开的那次用剩余时长封顶。术语与 packages/core 的 callJob.deadlineMs 对齐。
+   * 到点不再开下一次尝试，已开的那次用剩余时长封顶。
    */
   deadlineMs?: number;
   /**

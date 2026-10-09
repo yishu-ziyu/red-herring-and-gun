@@ -2,8 +2,7 @@
  * knowledgeMatch — 知识库条目的确定性语义匹配（证据库第一版）。
  *
  * 匹配算法不在这里重新发明：同义词组桥接 + 汉字 Dice + bigram Jaccard 直接调
- * `semanticRecall.ts`（SSOT 在 `packages/core/src/text/semanticRecall.ts`，
- * server 侧同内容镜像）。本模块只加三件确定性的事：
+ * `semanticRecall.ts`。本模块只加三件确定性的事：
  *   1. 规范化（trim / 压缩空白 / 全半角与大小写统一 / 去句末标点）；
  *   2. 相似度阈值；
  *   3. 30 天新鲜度窗口与判词可注入性。

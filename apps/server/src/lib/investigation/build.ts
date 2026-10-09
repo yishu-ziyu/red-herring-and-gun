@@ -174,9 +174,7 @@ function pointFinding(evidence: string | undefined, conclusionText: string): str
 }
 
 /**
- * 结论分层用的确定性切句：与 `text/publicCopy` 的 splitSentences 同规则
- * （按 。！？ 切、去空白、丢空段）。不 import 是因为 build.ts 是 core / server
- * 的字节镜像，两侧 publicCopy 路径不同，import 会让镜像漂移。
+ * 结论分层用的确定性切句：按 。！？ 切、去空白、丢空段。
  */
 function splitConclusionSentences(text: string): string[] {
   return text

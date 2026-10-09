@@ -4,15 +4,6 @@
  * 用户语义契约：原始说法 → 拆分命题 → 出处及其与命题的关系 → 尚缺什么 →
  * 是否存在实质争议 → 当前/最终判断。实现层（Agent / provider / tool / token /
  * 内部 verdict enum）不出现在本契约。
- *
- * 语义与 `../casefile` 对齐：Claim(text/order/span) ↔ casefile Claim；
- * Source ↔ casefile Evidence（url/title/excerpt/reachable）；EvidenceLink.role ↔
- * casefile Stance.stance（support/refute/context-only）；judgment ↔ ClaimVerdict.verdict。
- * CaseFile 未覆盖的语义（Evidence Gap / Conflict / phase / conclusion）为本契约一等对象。
- *
- * 镜像约束：本目录（schema.ts / build.ts / invariants.ts / sourceIdentity.ts / index.ts）
- * 被整份镜像到生产 `apps/server/src/lib/investigation/`（部署只打包 apps/，server 不能
- * 运行时依赖工作区包）。两侧由 drift-guard 测试做字节级一致校验；改动必须两侧同步。
  */
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";

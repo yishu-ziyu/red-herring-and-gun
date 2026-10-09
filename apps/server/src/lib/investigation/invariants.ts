@@ -1,5 +1,5 @@
 /**
- * Investigation Snapshot 结构不变量（对应 casefile/invariants 的角色）。
+ * Investigation Snapshot 结构不变量。
  * 引用必须可解析；supported/refuted 必须有对应证据位；完成态不得残留 unassessed。
  * builder 输出与生产接线都应通过；测试与 GET 重建路径用它做守门。
  */

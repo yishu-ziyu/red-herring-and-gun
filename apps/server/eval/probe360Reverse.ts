@@ -1,6 +1,6 @@
 /**
  * Probe 360 图搜接口真实响应（开发工具，不进生产）。用法：
- *   cd mvp/server && npx tsx eval/probe360Reverse.ts
+ *   cd apps/server && npx tsx eval/probe360Reverse.ts
  * 若接口可用，输出命中数与首条 JSON；不可用则输出错误结构。
  */
 import { loadLocalEnv } from "./localEnv.js";

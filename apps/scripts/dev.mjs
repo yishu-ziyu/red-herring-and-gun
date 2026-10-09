@@ -57,7 +57,7 @@ let apiChild = null;
 if (await apiHealthy()) {
   console.log(`[dev] reusing API at ${apiOrigin}`);
 } else {
-  const tsx = requireBin(serverDir, "tsx", "[dev] server deps missing. Run: cd mvp/server && npm install");
+  const tsx = requireBin(serverDir, "tsx", "[dev] server deps missing. Run: cd apps/server && npm install");
   apiChild = spawn(tsx, ["watch", "src/index.ts"], {
     cwd: serverDir,
     stdio: "inherit",

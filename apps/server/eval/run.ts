@@ -5,13 +5,13 @@
  * 输出 JSON 报告 + 追加到 .ship/evaluation/benchmark-history.jsonl。
  *
  * 运行：
- *   cd mvp/server && npx tsx eval/run.ts            # 正常跑，输出报告
+ *   cd apps/server && npx tsx eval/run.ts            # 正常跑，输出报告
  *   npx tsx eval/run.ts --gate <baseline.json>      # 门禁：相对基线不退化
  *   npx tsx eval/run.ts --ids RUMOR-001,RUMOR-006   # 只跑指定用例
  *   npx tsx eval/run.ts --domain causal             # 只跑指定领域
  *   npx tsx eval/run.ts --repeats 3                 # 每 case 跑 3 次：verdict 多数、credibility 中位
  *
- * 需要真实 API key（从 mvp/.env.local 读取，同 runCasePipeline.real.test.ts）。
+ * 需要真实 API key（从 apps/.env.local 读取，同 runCasePipeline.real.test.ts）。
  */
 
 import { readFileSync, appendFileSync, existsSync, writeFileSync } from "node:fs";
@@ -347,7 +347,7 @@ function maybeWriteBaseline(
 
 async function main() {
   if (!hasAnyKey) {
-    console.error("未检测到任何 API key（STEPFUN/DEEPSEEK/MINIMAX/MIMO）。请先在 mvp/.env.local 配置。");
+    console.error("未检测到任何 API key（STEPFUN/DEEPSEEK/MINIMAX/MIMO）。请先在 apps/.env.local 配置。");
     process.exit(1);
   }
 
