@@ -30,16 +30,21 @@ function folded(text: string): { chars: string; at: number[] } {
 export function verbatimQuote(quote: unknown, sourceText: unknown): string {
   const text = typeof quote === "string" ? quote.replace(/\s+/g, " ").trim() : "";
   const source = typeof sourceText === "string" ? sourceText : "";
-  if (text.length < 6 || text.length > QUOTE_MAX) return "";
-  if (/…|\.\.\./.test(text)) return "";
+  // 2026-10-10 真实运行里大多数句子被拒绝，原因不明：记下被拒的句子和比对的来源开头，下次运行就能看出是模型改写了还是比对太严。
+  const reject = (reason: string) => {
+    if (text) console.warn(`[quote] rejected (${reason}) quote=${JSON.stringify(text.slice(0, 120))} source=${JSON.stringify(source.replace(/\s+/g, " ").slice(0, 160))}`);
+    return "";
+  };
+  if (text.length < 6 || text.length > QUOTE_MAX) return reject("length");
+  if (/…|\.\.\./.test(text)) return reject("ellipsis");
   // 一句话：句末标点只能出现在最后。
-  if (/[。｡！？!?]/.test(text.slice(0, -1))) return "";
+  if (/[。｡！？!?]/.test(text.slice(0, -1))) return reject("more than one sentence");
   const needle = folded(text).chars;
   const hay = folded(source);
   const start = hay.chars.indexOf(needle);
-  if (!needle || start < 0) return "";
+  if (!needle || start < 0) return reject("not in source text");
   const original = source.slice(hay.at[start], hay.at[start + needle.length - 1]! + 1).replace(/\s+/g, " ").trim();
-  return original.length <= QUOTE_MAX ? original : "";
+  return original.length <= QUOTE_MAX ? original : reject("source span too long");
 }
 
 /** 原文链接 + 文本片段（#:~:text=），浏览器打开后高亮这一句。 */

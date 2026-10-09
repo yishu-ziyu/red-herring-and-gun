@@ -232,7 +232,7 @@ export async function runWholeClaimPlanning(input: {
       systemPrompt: WHOLE_CLAIM_PLANNING_SYSTEM_PROMPT,
       userContent: buildPlanningUserContent(input),
       responseSchema: wholeClaimPlanningSchema,
-      maxTokens: 800,
+      maxTokens: 2000,
     });
     const plan = parseWholeClaimPlan(result?.output);
     return plan ? { plan, model: result?.model ?? "" } : null;

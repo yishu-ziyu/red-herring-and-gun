@@ -125,6 +125,11 @@ async function checkLabels() {
   const conclusionReason = (await lead.locator("[data-gp-conclusion-reason]").first().textContent().catch(() => "")).trim();
   const leadText = (await lead.innerText().catch(() => "")).trim();
   shown.conclusionLabel = conclusionLabel;
+  // The default claim is a debunked rumor. On 2026-10-10 a run decomposed 「会致癌」 into the weaker 「会产生致癌物」
+  // and the page said 属实. A different E2E_CLAIM skips this check.
+  if (!process.env.E2E_CLAIM) {
+    record("the debunked default claim is not judged true", !["属实", "基本属实"].includes(conclusionLabel), conclusionLabel);
+  }
   record(
     "conclusion starts with one of the 9 labels and a reason",
     LABELS.includes(conclusionLabel) && leadText.startsWith(conclusionLabel) && conclusionReason.length > 0,
@@ -206,9 +211,10 @@ async function checkDatesAndQuoteLinks() {
     const text = quote.trim();
     return !text || text.length > 100 || /…|\.\.\./.test(text) || /[。！？!?]/.test(text.slice(0, -1));
   });
+  record("at least one evidence row shows a verified quote", quoted.length > 0, `quoted ${quoted.length}`);
   record(
     "every quoted evidence row shows one sentence of at most 100 characters",
-    quoted.length > 0 && notOneSentence.length === 0,
+    notOneSentence.length === 0,
     `quoted ${quoted.length}; bad: ${notOneSentence.map((q) => `${q.quote.length}字 ${q.quote.slice(0, 30)}`).join(" ‖ ") || "none"}`
   );
   const tried = [];

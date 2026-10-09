@@ -185,7 +185,7 @@ export async function callStepFunVisionForIntake({
           { role: "system", content: "你是红鲱鱼与枪的视觉材料预处理 Agent。只做 OCR、图像描述和可核查声明提取；只返回 JSON。" },
           { role: "user", content },
         ],
-        maxTokens: 1200,
+        maxTokens: 3000,
         responseFormat: { type: "json_object" },
         temperature: 0.1,
       })

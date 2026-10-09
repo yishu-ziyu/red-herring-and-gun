@@ -40,6 +40,7 @@ export interface AgentConfig {
   description: string;
   systemPrompt: string;
   responseSchema: object;
+  /** 含推理模型的思考过程：给少了，模型想完就没额度写正文，返回被截断的 JSON（2026-10-10 日志里核查一步约一半调用如此）。 */
   maxTokens: number;
   model?: string;
 }
@@ -468,7 +469,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     name: "RumorDetector",
     icon: "🚨",
     description: "谣言特征检测",
-    maxTokens: 1000,
+    maxTokens: 2500,
     systemPrompt: [
       "你是红鲱鱼与枪的 RumorDetector。",
       "先观察语言痕迹，拆出可验证命题，只记录证据需求，不凭常识补事实。",
@@ -556,7 +557,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     name: "FactChecker",
     icon: "🔍",
     description: "事实核查",
-    maxTokens: 1400,
+    maxTokens: 4000,
     systemPrompt: [
       "你是红鲱鱼与枪的 FactChecker。",
       "每个判断都必须追到材料、反证或未解缺口，不把搜索摘要当最终事实。",
@@ -664,7 +665,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     name: "SourceValidator",
     icon: "📋",
     description: "信源验证",
-    maxTokens: 900,
+    maxTokens: 3000,
     systemPrompt: [
       "你是红鲱鱼与枪的 SourceValidator。",
       "先问来源是谁、是否原始、是否可追溯，再决定能不能进入证据链。",
@@ -706,7 +707,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     name: "ReportComposer",
     icon: "📝",
     description: "报告生成",
-    maxTokens: 1800,
+    maxTokens: 3000,
     systemPrompt: [
       "你是红鲱鱼与枪的 ReportComposer。",
       "只写证据已经许可的判断，把证据、反证、缺口和不能推出的边界全部摆出来。",

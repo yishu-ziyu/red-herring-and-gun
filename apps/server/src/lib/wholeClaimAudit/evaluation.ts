@@ -204,7 +204,7 @@ export async function runWholeClaimEvaluation(input: {
       systemPrompt: WHOLE_CLAIM_EVALUATION_SYSTEM_PROMPT,
       userContent: buildEvaluationUserContent(input),
       responseSchema: wholeClaimEvaluationSchema,
-      maxTokens: 800,
+      maxTokens: 2000,
     });
     const evaluation = parseWholeClaimEvaluation(result?.output);
     return evaluation ? { evaluation, model: result?.model ?? "" } : null;

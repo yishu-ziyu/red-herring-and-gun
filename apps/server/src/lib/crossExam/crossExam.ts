@@ -187,7 +187,7 @@ export function makeSecondOpinionCall(callRaw: CrossExamRawModelCall) {
       systemPrompt: CROSS_EXAM_SYSTEM_PROMPT,
       userContent: buildCrossExamUserContent(input),
       responseSchema: crossExamSchema as object,
-      maxTokens: 800,
+      maxTokens: 2000,
     });
     return { ...parseSecondOpinion(result?.output), model: result?.model ?? "" };
   };
