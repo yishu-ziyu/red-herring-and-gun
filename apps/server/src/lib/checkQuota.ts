@@ -19,7 +19,8 @@ import { cookieOptions, decodeSignedJson, encodeSignedJson, getServerSecret, par
 import { loadSnapshot, registerSnapshotSource } from "./jsonSnapshot.js";
 
 export const GUEST_CHECKS_COOKIE = "v3_guest_checks";
-const GUEST_COOKIE_TTL_SECONDS = 2 * 24 * 60 * 60;
+// 也是分享的所有者凭证：要比分享有效期（30 天）长，否则分享者撤销不了自己的链接。
+const GUEST_COOKIE_TTL_SECONDS = 60 * 24 * 60 * 60;
 
 /** 非负整数环境变量；未设置或非法时回落到默认值。 */
 function envInt(name: string, fallback: number): number {

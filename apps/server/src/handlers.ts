@@ -9,7 +9,7 @@
 import { createRunService, hashRunInput } from "./lib/runService.js";
 import { isTerminalStatus, openRunStore } from "./lib/runStore.js";
 import { generateCaseId } from "./lib/caseStore.js";
-import { ensureGuestId, guestOwnerHash, releaseFreeCheck } from "./lib/checkQuota.js";
+import { ensureGuestId, guestIdFromRequest, guestOwnerHash, releaseFreeCheck } from "./lib/checkQuota.js";
 import { createShareHandlers } from "./lib/shareHandlers.js";
 import { readJson, sendJson } from "./lib/httpUtils.js";
 import {
@@ -57,6 +57,11 @@ export function createHandlers(env: Record<string, string>) {
     if (!runId) return sendJson(res, 400, { message: "缺少 runId" });
     const run = runs.get(runId);
     if (!run) return sendJson(res, 404, { message: "没有这次调查" });
+    // 只有发起调查的浏览器能停它；没有归属的旧调查照旧。
+    if (run.ownerHash) {
+      const guestId = guestIdFromRequest(req);
+      if (!guestId || guestOwnerHash(guestId) !== run.ownerHash) return sendJson(res, 403, { message: "不能停止别人的调查" });
+    }
     const result = runs.cancel(runId);
     if (result.kind === "not-found") return sendJson(res, 404, { message: "没有这次调查" });
     // 立刻把「在停」广播到还开着的流上：客户端不能靠 POST 回执猜流上的状态。
