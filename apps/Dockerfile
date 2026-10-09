@@ -9,7 +9,7 @@ RUN npm ci
 
 COPY server/tsconfig.json ./
 COPY server/src ./src
-# 服务端引用的前端共享 lib（checkQuota / accountIdentity / reasoningThoughts）
+# 服务端引用的前端共享 lib（例如 checkQuota）
 COPY src/lib /app/src/lib
 RUN npm run build
 

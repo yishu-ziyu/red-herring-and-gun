@@ -2,7 +2,6 @@
  * App — 生产入口（Issue #52）：轻量产品壳 + 同画布 Golden Path。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { validateInvestigationSnapshot, type InvestigationSnapshotV1 } from "./lib/investigation";
 import { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot";
 import { ProductShell } from "./goldenPath/ProductShell";
 import { InputStage } from "./goldenPath/InputStage";
@@ -10,8 +9,6 @@ import { InvestigationCanvas } from "./goldenPath/InvestigationCanvas";
 import { useInvestigationRun, type StartOptions } from "./goldenPath/useInvestigationRun";
 import { gpCopyFor } from "./goldenPath/copy";
 import { useUiLang } from "./lib/useUiLang";
-import { LoginView } from "./components/v3/auth/LoginView";
-import { AccountView } from "./components/v3/auth/AccountView";
 import { caseIntakeDisplayText, caseIntakeFailedLinks, caseIntakeIsImageOnly, caseIntakePrimaryText, createCaseIntake, type CaseIntake } from "./lib/caseIntake";
 import { homeCaseSnapshot, type HomeCaseId } from "./goldenPath/homeCases";
 import { createKnowledgeBase, normalizeHistoryClaim } from "./lib/knowledgeBase";
@@ -27,8 +24,7 @@ import {
   type ProductMode,
 } from "./app/caseViews";
 import { HISTORY_OPEN_FAILED_NOTICE, publicTransportError, TIMEOUT_PENDING_NOTICE } from "./app/notices";
-import { writeRunPointer } from "./app/runPointer";
-import { useAccountSession } from "./app/useAccountSession";
+import { useLocalHistory } from "./app/useLocalHistory";
 import { useResultPersistence } from "./app/useResultPersistence";
 import { useRunPointer } from "./app/useRunPointer";
 
@@ -45,18 +41,16 @@ function ProductApp() {
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = active?.localId ?? null;
   const [historyNotice, setHistoryNotice] = useState("");
-  const [loginOpen, setLoginOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
   const [sameClaim, setSameClaim] = useState<{ id: string; claim: string; at?: number; intake: CaseIntake } | null>(null);
   const run = useInvestigationRun();
   const [draftClaim, setDraftClaim] = useState("");
   const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
   const [pendingFocus, setPendingFocus] = useState<{ question: string; runId: string } | null>(null);
 
-  // 账户与历史水合（挂载即跑一次；登录成功后再跑）。
-  const { account, setAccount, accountEmailRef, scopeVersion, cases, setCases, historyReady, hydrateAccountCases } = useAccountSession();
+  // 本机历史（挂载即读一次）。
+  const { cases, setCases, historyReady } = useLocalHistory();
 
-  const { resumedRef } = useRunPointer({ historyReady, mode, active, run, accountEmailRef, copy, setActive, setMode, setHistoryNotice });
+  const { resumedRef } = useRunPointer({ historyReady, mode, active, run, copy, setActive, setMode, setHistoryNotice });
 
   // DEV 固定装置：/?fixture=investigating|judging|complete|conflict|interrupted|mixed|nospan|settling|source-audit|replay
   // 用脚本化快照驱动真实组件树（截图与走查）。生产构建 dead-code eliminated。
@@ -76,16 +70,13 @@ function ProductApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 完成：本地留存 +（已登录）服务端落库。保存失败不挡结果，但必须可见。
+  // 完成：留存到本机。保存失败不挡结果，但必须可见。
   const { saveStatus, setSaveStatus, retrySave } = useResultPersistence({
     mode,
     active,
     run,
-    accountEmailRef,
     activeIdRef,
-    copy,
     setCases,
-    setActive,
     setHistoryNotice,
   });
 
@@ -94,8 +85,8 @@ function ProductApp() {
     (
       intake: CaseIntake,
       fixture?: NonNullable<Parameters<ReturnType<typeof useInvestigationRun>["start"]>[1]>["fixture"],
-      // 追问：登录带 caseId；访客带上一轮可见材料。首轮不传。
-      followUp?: Pick<StartOptions, "priorCaseId" | "priorRound">,
+      // 追问：带上一轮可见材料。首轮不传。
+      followUp?: Pick<StartOptions, "priorRound">,
       previousThread?: InvestigationThread,
       roundKind: InvestigationRound["kind"] = "initial",
     ) => {
@@ -113,9 +104,7 @@ function ProductApp() {
       setCases((prev) => [{ id: localId, claim: thread.originalClaim, threadId: thread.id, roundCount: thread.rounds.length + 1, status: "running" as const }, ...prev.filter((item) => item.id !== localId && item.threadId !== thread.id)]);
       setMode("investigation");
       run.start(intake, {
-        accountEmail: accountEmailRef.current,
         fixture,
-        priorCaseId: followUp?.priorCaseId,
         priorRound: followUp?.priorRound,
       });
     },
@@ -210,135 +199,29 @@ function ProductApp() {
         setMode("investigation");
         return;
       }
-      const version = scopeVersion.current;
-      // 1) 本地 KB 优先（匿名留存 / 登录后镜像）：零网络、零模型。
       try {
-        const entry = await createKnowledgeBase(accountEmailRef.current).getCase(id);
-        if (version !== scopeVersion.current) return;
-        if (entry) {
-          const snapshot = snapshotFromReport(entry.finalReport as Record<string, unknown>);
-          if (snapshot) {
-            run.reset();
-            setActive({
-              localId: id,
-              claim: entry.claim,
-              ...restoredThreadFields(entry.finalReport),
-              intake: null,
-              restored: { snapshot, report: entry.finalReport as Record<string, unknown>, at: entry.timestamp },
-            });
-            setMode("investigation");
-            return;
-          }
-        }
-      } catch {
-        /* 本地未命中走服务端 */
-      }
-      // 2) 服务端旧调查（/api/case/:id 自带确定性重建的 investigation）。
-      try {
-        const res = await fetch(`/api/case/${encodeURIComponent(id)}`, { credentials: "include" });
-        if (version !== scopeVersion.current) return;
-        // 404/报错不能点了没反应：提示可见，条目状态不动（Change G）。
-        if (!res.ok) {
-          setHistoryNotice(HISTORY_OPEN_FAILED_NOTICE[lang]);
-          return;
-        }
-        const data = (await res.json()) as {
-          claim?: string;
-          report?: Record<string, unknown>;
-          investigation?: InvestigationSnapshotV1;
-          createdAt?: number;
-        };
-        let snapshot = data.investigation
-          ? (() => {
-              try {
-                return validateInvestigationSnapshot(data.investigation);
-              } catch {
-                return undefined;
-              }
-            })()
-          : snapshotFromReport(data.report);
-        if (!snapshot) {
-          // 无快照且重建失败：不伪造，保持原列表；但读不出内容同样是打开失败，要说出来。
+        const entry = await createKnowledgeBase(null).getCase(id);
+        const snapshot = entry ? snapshotFromReport(entry.finalReport as Record<string, unknown>) : undefined;
+        // 读不到或读不出内容不能点了没反应：提示可见，条目状态不动（Change G）。
+        if (!entry || !snapshot) {
           setHistoryNotice(HISTORY_OPEN_FAILED_NOTICE[lang]);
           return;
         }
         run.reset();
         setActive({
           localId: id,
-          claim: data.claim ?? item.claim,
-          ...restoredThreadFields(data.report),
+          claim: entry.claim,
+          ...restoredThreadFields(entry.finalReport),
           intake: null,
-          // 从服务端读回来的记录：分享的对象就是它。
-          serverCaseId: id,
-          restored: { snapshot, report: data.report ?? null, at: data.createdAt ?? item.createdAt },
+          restored: { snapshot, report: entry.finalReport as Record<string, unknown>, at: entry.timestamp },
         });
         setMode("investigation");
       } catch {
-        // 网络中断/响应不可解析：同上，给反应而不是静默吞掉。
         setHistoryNotice(HISTORY_OPEN_FAILED_NOTICE[lang]);
-        return;
       }
     },
     [active?.localId, cases, lang, run]
   );
-
-  const handleLogout = useCallback(async () => {
-    const version = ++scopeVersion.current;
-    try {
-      const res = await fetch("/api/auth/email/logout", { method: "POST", credentials: "include" });
-      if (!res.ok) {
-        setHistoryNotice("退出失败，仍保留当前账户。请重试退出。");
-        return;
-      }
-    } catch {
-      setHistoryNotice("退出失败，仍保留当前账户。请重试退出。");
-      return;
-    }
-    if (version !== scopeVersion.current) return;
-    setAccount(null);
-    accountEmailRef.current = null;
-    run.reset();
-    setActive(null);
-    setSelectedRoundId(null);
-    setPendingFocus(null);
-    setMode("input");
-    writeRunPointer(null);
-    const local = await createKnowledgeBase(null).listCases();
-    if (version !== scopeVersion.current) return;
-    setCases(local.map((entry) => ({ id: entry.id, claim: entry.claim, status: "done" as const, createdAt: entry.timestamp, report: entry.finalReport as Record<string, unknown> })));
-    setAccountOpen(false);
-    setLoginOpen(false);
-  }, []);
-
-  const loginOverlay = loginOpen && !account ? (
-    <div className="app-login-overlay">
-      <LoginView
-        onSuccess={() => {
-          setLoginOpen(false);
-          void hydrateAccountCases();
-        }}
-        onCancel={() => setLoginOpen(false)}
-      />
-    </div>
-  ) : null;
-
-  const accountOverlay = accountOpen && account ? (
-    <div className="app-login-overlay">
-      <AccountView
-        account={account}
-        onClose={() => setAccountOpen(false)}
-        onSaved={setAccount}
-        onDeleted={() => {
-          setAccount(null);
-          accountEmailRef.current = null;
-          setAccountOpen(false);
-          void createKnowledgeBase(null).listCases().then((local) => {
-            setCases(local.map((entry) => ({ id: entry.id, claim: entry.claim, status: "done" as const, createdAt: entry.timestamp })));
-          });
-        }}
-      />
-    </div>
-  ) : null;
 
   useEffect(() => {
     if (!pendingFocus || pendingFocus.runId !== run.state.runId) return;
@@ -407,9 +290,7 @@ function ProductApp() {
           createdAt: Date.now(),
         },
         undefined,
-        active.serverCaseId
-          ? { priorCaseId: active.serverCaseId }
-          : { priorRound: visiblePriorRoundFromSnapshot(snapshot) },
+        { priorRound: visiblePriorRoundFromSnapshot(snapshot) },
         snapshot ? threadForRound(active, snapshot) : active.thread,
         "follow-up",
       );
@@ -440,10 +321,6 @@ function ProductApp() {
         historyReady={historyReady}
         onNewCase={handleBackHome}
         onSelectCase={(id) => void handleSelectCase(id)}
-        account={account}
-        onLoginClick={() => setLoginOpen(true)}
-        onAccountClick={() => setAccountOpen(true)}
-        onLogout={() => void handleLogout()}
         viewingInvestigation={mode === "investigation"}
       >
         {showLinkUnreachable ? (
@@ -503,8 +380,6 @@ function ProductApp() {
             <InputStage
               onSubmit={handleStart}
               initialClaim={draftClaim}
-              accountEmail={account?.email ?? null}
-              onNeedLogin={() => setLoginOpen(true)}
               onViewHomeCase={handleViewHomeCase}
               onRecheckHomeCase={handleRecheckHomeCase}
             />
@@ -528,7 +403,6 @@ function ProductApp() {
               onStop={archivedRound || active.restored || !run.state.runId ? undefined : () => void run.cancel()}
               saveStatus={saveStatus}
               onRetrySave={retrySave}
-              shareCaseId={archivedRound ? null : active.serverCaseId ?? null}
               restoredAt={active.restored?.at}
               onReverify={handleRetry}
               onBackHome={handleBackHome}
@@ -549,8 +423,6 @@ function ProductApp() {
           </p>
         )}
       </ProductShell>
-      {loginOverlay}
-      {accountOverlay}
     </>
   );
 }

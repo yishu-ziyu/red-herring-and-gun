@@ -21,8 +21,6 @@ export type ActiveCase = {
   thread?: InvestigationThread;
   roundId?: string;
   roundKind?: InvestigationRound["kind"];
-  /** 服务端存档 id：只有它存在时才谈得上分享（分享是服务端投影）。 */
-  serverCaseId?: string | null;
   /** 历史/旧调查打开：直接渲染落库快照，不发起调查。 */
   restored?: {
     snapshot: InvestigationSnapshotV1;
@@ -31,18 +29,8 @@ export type ActiveCase = {
   } | null;
 };
 
-export type ServerCaseItem = {
-  caseId: string;
-  claim: string;
-  status?: "done" | "interrupted";
-  createdAt?: number;
-  threadId?: string;
-  threadClaim?: string;
-  roundCount?: number;
-};
-
 /** 保存状态：独立于结果存在与否显示，不把失败藏在 console。 */
-export type SaveStatus = "idle" | "local" | "syncing" | "synced" | "failed";
+export type SaveStatus = "idle" | "local" | "failed";
 
 /** 从落库 finalReport 确定性取回 Snapshot：优先保存的 investigation，旧数据客户端重建（零模型零搜索）。 */
 export function snapshotFromReport(report: Record<string, unknown> | null | undefined): InvestigationSnapshotV1 | undefined {
@@ -60,17 +48,6 @@ export function snapshotFromReport(report: Record<string, unknown> | null | unde
   } catch {
     return undefined;
   }
-}
-
-export function toShellCases(items: ServerCaseItem[]): ShellCase[] {
-  return items.map((item) => ({
-    id: item.caseId,
-    claim: item.threadClaim ?? item.claim,
-    threadId: item.threadId,
-    roundCount: item.roundCount,
-    status: item.status === "interrupted" ? "interrupted" : item.status === "done" ? "done" : "running",
-    createdAt: item.createdAt,
-  }));
 }
 
 export function groupThreadCases(items: ShellCase[]): ShellCase[] {

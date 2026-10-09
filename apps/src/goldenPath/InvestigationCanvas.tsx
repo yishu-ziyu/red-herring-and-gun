@@ -21,7 +21,6 @@ import { buildClaimTraceSegments } from "./claimTrace";
 import { leftoverClaimTexts, leftoverGapSentence, leftoverTextsForCanvas, isCompleteEmptyShell } from "./leftoverClaims";
 import { ClaimSection } from "./ClaimSection";
 import { ActivityFeed } from "./ActivityFeed";
-import { ShareControl } from "./ShareControl";
 import { ConclusionHero } from "./ConclusionHero";
 import { FollowUpSection } from "./FollowUpSection";
 import { InvestigationScope } from "./InvestigationScope";
@@ -48,11 +47,9 @@ type InvestigationCanvasProps = {
   stop?: "idle" | "stopping" | "stopped";
   onStop?: () => void;
   /** 保存状态：独立于结果存在与否，不把失败藏在 console。 */
-  saveStatus?: "idle" | "local" | "syncing" | "synced" | "failed";
-  /** 同步失败要真的能点重试，不能只写「重试」两个字。 */
+  saveStatus?: "idle" | "local" | "failed";
+  /** 保存失败要真的能点重试，不能只写「重试」两个字。 */
   onRetrySave?: () => void;
-  /** 有服务端 caseId 才谈得上分享：没有对象就没有分享。 */
-  shareCaseId?: string | null;
   restoredAt?: number;
   onReverify: () => void;
   onBackHome: () => void;
@@ -83,7 +80,6 @@ export function InvestigationCanvas({
   onStop,
   saveStatus = "idle",
   onRetrySave,
-  shareCaseId = null,
   restoredAt,
   onReverify,
   onBackHome,
@@ -323,13 +319,7 @@ export function InvestigationCanvas({
                   </button>
                 ) : (
                   <span className={`gp-save-state is-${saveStatus}`} data-gp-save-status={saveStatus}>
-                    {saveStatus === "synced"
-                      ? copy.saveSynced
-                      : saveStatus === "syncing"
-                        ? copy.saveSyncing
-                        : saveStatus === "failed"
-                          ? copy.saveFailed
-                          : copy.saveLocal}
+                    {saveStatus === "failed" ? copy.saveFailed : copy.saveLocal}
                   </span>
                 )
               ) : null}
@@ -498,7 +488,6 @@ export function InvestigationCanvas({
               onSelectSource={openSource}
               onSelectConflict={jumpToConflict}
             />
-            {shareCaseId ? <ShareControl caseId={shareCaseId} /> : null}
           </>
         ) : null}
       </div>

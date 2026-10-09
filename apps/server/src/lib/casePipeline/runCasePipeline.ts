@@ -171,7 +171,7 @@ export type CasePipelineInput = {
   citationLiveness?: LivenessDeps | false;
   /**
    * 同一案追问快路径（契约 docs/evals/2026-09-13-followup-fast-path.md）。
-   * 登录读服务端档案，访客读请求里的上一轮可见材料；没有可用证据时
+   * 读请求里浏览器带来的上一轮可见材料；没有可用证据时
    * 分类器返回 null，本函数仍走完整管道。
    */
   followUpReuse?: {

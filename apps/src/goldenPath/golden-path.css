@@ -259,70 +259,6 @@
   color: var(--gp-ink-primary);
 }
 
-.gp-account-wrap {
-  position: relative;
-}
-
-.gp-account-btn {
-  padding: 4px 10px 4px 6px;
-}
-
-.gp-avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--gp-ink-primary);
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 500;
-  display: grid;
-  place-items: center;
-}
-
-.gp-account-name {
-  font-weight: 500;
-  color: var(--gp-ink-primary);
-  max-width: 96px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.gp-menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 8px);
-  min-width: 168px;
-  background: var(--gp-surface);
-  border: 1px solid var(--gp-hairline);
-  border-radius: var(--gp-radius-card);
-  box-shadow: var(--gp-elevation-menu);
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  z-index: 60;
-}
-
-.gp-menu a,
-.gp-menu button {
-  text-align: left;
-  border: 0;
-  background: none;
-  font-family: inherit;
-  font-size: 13px;
-  color: var(--gp-ink-primary);
-  padding: 8px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  text-decoration: none;
-  transition: background-color var(--gp-motion-fast) var(--gp-ease-out);
-}
-
-.gp-menu a:hover,
-.gp-menu button:hover {
-  background: var(--gp-surface-inset);
-}
-
 .gp-main {
   flex: 1;
   display: flex;
@@ -725,16 +661,6 @@
   color: var(--gp-semantic-contradict);
   border-color: rgba(185, 28, 28, 0.35);
   background: #fff;
-}
-
-.gp-hint-link {
-  border: 0;
-  background: none;
-  color: var(--gp-accent);
-  font: inherit;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
 .gp-roles {
@@ -3698,9 +3624,6 @@ a.gp-finding-cite-badge:hover {
     min-height: 69px;
   }
   .gp-brand-tagline, .gp-brand-divider {
-    display: none;
-  }
-  .gp-account-name {
     display: none;
   }
   .gp-icon-btn {

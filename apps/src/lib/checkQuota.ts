@@ -1,5 +1,5 @@
 /**
- * 免费核查：未登录访客每天 2 条，登录后每天 3 条。按完成的核查计，不按 Token。
+ * 免费核查：每个访客每天 2 条。按完成的核查计，不按 Token。
  *
  * `IP_DAILY_CHECKS` 是整条来源 IP 的当日天花板，**不是**单人额度：同一出口 IP 是共享的
  * （办公室、活动 wifi、运营商 CGNAT），所以它只用来挡住「清 cookie 无限刷」，数值远高于单人额度。
@@ -8,9 +8,8 @@
 
 export const GUEST_DAILY_CHECKS = 2;
 export const IP_DAILY_CHECKS = 20;
-export const ACCOUNT_DAILY_CHECKS = 3;
 
-export type CheckQuotaKind = "guest" | "account";
+export type CheckQuotaKind = "guest";
 
 export type CheckQuotaView = {
   remaining: number;
@@ -21,19 +20,14 @@ export type CheckQuotaView = {
   enforced: boolean;
 };
 
-export function checksExhaustedMessage(kind: CheckQuotaKind): string {
-  return kind === "guest"
-    ? "今天的免费核查用完了。登录后每天可查 3 条。"
-    : "今天的 3 条免费核查用完了。明天再来。";
+export function checksExhaustedMessage(): string {
+  return "今天的免费核查用完了。明天再来。";
 }
 
 export function checksRemainingMessage(view: CheckQuotaView): string {
   if (!view.enforced) return "";
-  if (view.remaining <= 0) return checksExhaustedMessage(view.kind);
-  if (view.kind === "guest") {
-    return view.remaining === 1 ? "今天还能免费查 1 条" : `今天还能免费查 ${view.remaining} 条`;
-  }
-  return `今天还能查 ${view.remaining} 条`;
+  if (view.remaining <= 0) return checksExhaustedMessage();
+  return `今天还能免费查 ${view.remaining} 条`;
 }
 
 export function quotaIsExhausted(view: CheckQuotaView | null | undefined): boolean {
@@ -42,13 +36,13 @@ export function quotaIsExhausted(view: CheckQuotaView | null | undefined): boole
 
 export function isChecksExhaustedMessage(message: string | undefined): boolean {
   if (!message) return false;
-  return message === checksExhaustedMessage("guest") || message === checksExhaustedMessage("account");
+  return message === checksExhaustedMessage();
 }
 
 export function parseCheckQuota(data: unknown): CheckQuotaView | null {
   if (!data || typeof data !== "object") return null;
   const row = data as Record<string, unknown>;
-  const kind = row.kind === "account" ? "account" : row.kind === "guest" ? "guest" : null;
+  const kind = row.kind === "guest" ? "guest" : null;
   const remaining = asNonNegInt(row.remaining);
   const total = asNonNegInt(row.total);
   const used = asNonNegInt(row.used);

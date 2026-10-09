@@ -1,5 +1,5 @@
 /**
- * 免费核查闸门。未登录访客每天 2 条，登录后每天 3 条。
+ * 免费核查闸门。每个访客每天 2 条。
  * 开始时占位，出判断才扣；我们自己失败则放回；用户中途取消仍计一次。
  *
  * 额度分两个独立维度：访客桶（按 cookie id）与 IP 桶（整条来源 IP 的聚合）。
@@ -8,7 +8,6 @@
 
 import crypto from "node:crypto";
 import {
-  ACCOUNT_DAILY_CHECKS,
   GUEST_DAILY_CHECKS,
   IP_DAILY_CHECKS,
   checksExhaustedMessage,
@@ -16,16 +15,7 @@ import {
   type CheckQuotaKind,
   type CheckQuotaView,
 } from "../../../src/lib/checkQuota.js";
-import {
-  beginAccountCheck,
-  commitAccountCheck,
-  getAccountByHash,
-  getAccountChecks,
-  releaseAccountCheck,
-  type EmailAccount,
-} from "./accountStore.js";
-import { decodeSignedJson, emailCookieOptions, encodeSignedJson, parseCookies } from "./signedCookie.js";
-import { getServerSecret, readEmailAccountOptional } from "./emailSession.js";
+import { cookieOptions, decodeSignedJson, encodeSignedJson, getServerSecret, parseCookies } from "./signedCookie.js";
 import { loadSnapshot, registerSnapshotSource } from "./jsonSnapshot.js";
 
 export const GUEST_CHECKS_COOKIE = "v3_guest_checks";
@@ -101,7 +91,6 @@ function snapshotQuota() {
 export type CheckTicket = {
   kind: CheckQuotaKind;
   day: string;
-  accountHash?: string;
   guestId?: string;
   ipKey?: string;
   settled: boolean;
@@ -197,9 +186,9 @@ function remainingOf(used: number, inflight: number, total: number) {
   return Math.max(0, total - used - inflight);
 }
 
-function bypassQuotaView(kind: CheckQuotaKind): CheckQuotaView {
-  const total = kind === "account" ? ACCOUNT_DAILY_CHECKS : guestDailyLimit();
-  return { remaining: total, total, used: 0, kind, enforced: false };
+function bypassQuotaView(): CheckQuotaView {
+  const total = guestDailyLimit();
+  return { remaining: total, total, used: 0, kind: "guest", enforced: false };
 }
 
 /** 访客桶比单人额度，IP 桶比 IP 天花板；两者独立，任一触顶即拦。 */
@@ -241,7 +230,7 @@ function writeGuestCookie(
 ) {
   if (res.headersSent) return;
   const token = encodeSignedJson(payload, getServerSecret());
-  appendSetCookie(res, buildSetCookie(GUEST_CHECKS_COOKIE, token, emailCookieOptions(GUEST_COOKIE_TTL_SECONDS)));
+  appendSetCookie(res, buildSetCookie(GUEST_CHECKS_COOKIE, token, cookieOptions(GUEST_COOKIE_TTL_SECONDS)));
 }
 
 function writeJson(res: any, status: number, body: unknown) {
@@ -260,15 +249,8 @@ function writeJson(res: any, status: number, body: unknown) {
 export async function peekCheckQuota(
   req: { headers?: { cookie?: unknown; [key: string]: unknown }; socket?: { remoteAddress?: string } }
 ): Promise<CheckQuotaView> {
-  const account = await readEmailAccountOptional(req);
-  if (hasOpsCheckBypass(req)) return bypassQuotaView(account ? "account" : "guest");
-  if (!isCheckQuotaEnforced()) {
-    return bypassQuotaView(account ? "account" : "guest");
-  }
-  if (account) {
-    const checks = getAccountChecks(account);
-    return { remaining: checks.remaining, total: checks.total, used: checks.used, kind: "account", enforced: true };
-  }
+  if (hasOpsCheckBypass(req)) return bypassQuotaView();
+  if (!isCheckQuotaEnforced()) return bypassQuotaView();
   const { memory, ip } = guestState(req);
   // used 只报访客自己的用量；remaining 取「访客剩余」与「IP 剩余」的较小值，
   // 这样 IP 触顶时界面不会谎报还有额度。
@@ -288,22 +270,8 @@ export async function beginFreeCheck(
   req: any,
   res: any
 ): Promise<{ ok: true; ticket: CheckTicket } | { ok: false; kind: CheckQuotaKind }> {
-  const account: EmailAccount | null = await readEmailAccountOptional(req);
-  if (hasOpsCheckBypass(req)) {
+  if (hasOpsCheckBypass(req) || !isCheckQuotaEnforced()) {
     return { ok: true, ticket: { kind: "guest", day: shanghaiDayKey(), settled: true } };
-  }
-  if (!isCheckQuotaEnforced()) {
-    return {
-      ok: true,
-      ticket: { kind: account ? "account" : "guest", day: shanghaiDayKey(), settled: true },
-    };
-  }
-  if (account) {
-    const day = shanghaiDayKey();
-    if (!beginAccountCheck(account)) {
-      return { ok: false, kind: "account" };
-    }
-    return { ok: true, ticket: { kind: "account", day, accountHash: account.hash, settled: false } };
   }
 
   const { id, day, memory, ip, ipKey } = guestState(req);
@@ -320,11 +288,6 @@ export async function beginFreeCheck(
 export function commitFreeCheck(res: any, ticket: CheckTicket) {
   if (ticket.settled) return;
   ticket.settled = true;
-  if (ticket.kind === "account" && ticket.accountHash) {
-    const account = getAccountByHash(ticket.accountHash);
-    if (account) commitAccountCheck(account);
-    return;
-  }
   if (!ticket.guestId) return;
   const bucket = guests.get(ticket.guestId);
   if (bucket) {
@@ -344,11 +307,6 @@ export function commitFreeCheck(res: any, ticket: CheckTicket) {
 export function releaseFreeCheck(ticket: CheckTicket) {
   if (ticket.settled) return;
   ticket.settled = true;
-  if (ticket.kind === "account" && ticket.accountHash) {
-    const account = getAccountByHash(ticket.accountHash);
-    if (account) releaseAccountCheck(account);
-    return;
-  }
   if (ticket.guestId) {
     const bucket = guests.get(ticket.guestId);
     if (bucket && bucket.inflight > 0) bucket.inflight -= 1;
@@ -366,7 +324,7 @@ export async function gateFreeCheck(req: any, res: any): Promise<CheckTicket | n
   if (result.ok) return result.ticket;
   writeJson(res, 429, {
     error: "checks_exhausted",
-    message: checksExhaustedMessage(result.kind),
+    message: checksExhaustedMessage(),
   });
   return null;
 }

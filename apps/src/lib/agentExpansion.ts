@@ -196,39 +196,24 @@ export interface OrchestrateStreamEvent {
 }
 
 export type OrchestrateFollowUpLink = {
-  priorCaseId?: string;
   priorRound?: VisiblePriorRound | null;
 };
-
-function asFollowUpLink(link?: string | OrchestrateFollowUpLink): OrchestrateFollowUpLink {
-  if (!link) return {};
-  if (typeof link === "string") return { priorCaseId: link };
-  return link;
-}
 
 export async function* requestOrchestrateStream(
   input: string | CaseIntake,
   memoryRecall?: Record<string, unknown>,
   /** 幂等键（PR-D）：同一身份下同一个键只建一条 run，双击不会开两条管线。 */
   clientRequestId?: string,
-  /**
-   * 追问：登录传 caseId；访客无 caseId 时传上一轮可见材料。
-   * 字符串仍当 priorCaseId（旧调用）。首轮不传，payload 不出现这些字段。
-   */
-  followUpLink?: string | OrchestrateFollowUpLink
+  /** 追问：传上一轮可见材料。首轮不传，payload 不出现这些字段。 */
+  followUpLink?: OrchestrateFollowUpLink
 ): AsyncGenerator<OrchestrateStreamEvent> {
   const claim = typeof input === "string" ? input : caseIntakePrimaryText(input);
   const payload: Record<string, unknown> = typeof input === "string" ? { claim } : { claim, intake: input };
   if (memoryRecall) payload.memoryRecall = memoryRecall;
   if (clientRequestId) payload.clientRequestId = clientRequestId;
-  const followUp = asFollowUpLink(followUpLink);
-  const priorCaseId = typeof followUp.priorCaseId === "string" ? followUp.priorCaseId.trim() : "";
-  if (priorCaseId) {
-    payload.caseId = priorCaseId;
+  if (followUpLink?.priorRound) {
     payload.followUp = true;
-  } else if (followUp.priorRound) {
-    payload.followUp = true;
-    payload.priorRound = followUp.priorRound;
+    payload.priorRound = followUpLink.priorRound;
   }
   if (typeof window !== "undefined") {
     try {
@@ -281,7 +266,7 @@ export async function* requestOrchestrateStream(
       const data = (await response.json().catch(() => ({}))) as { message?: string };
       const message = isChecksExhaustedMessage(data.message)
         ? data.message
-        : checksExhaustedMessage("guest");
+        : checksExhaustedMessage();
       yield { type: "error", code: "checks_exhausted", message };
       return;
     }

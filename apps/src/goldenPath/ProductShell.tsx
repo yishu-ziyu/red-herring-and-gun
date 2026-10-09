@@ -1,13 +1,11 @@
 /**
  * ProductShell — 生产产品壳（Issue #52 第二节）：轻量 Chrome。
- * 顶部只有品牌 / 新调查 / 历史 / 账号；历史与账号走 drawer，不再占固定栏位。
+ * 顶部只有品牌 / 新调查 / 历史；历史走 drawer，不再占固定栏位。
  * 主内容就是一张调查画布。
  */
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { accountInitial } from "../lib/accountIdentity";
+import { useEffect, useState, type ReactNode } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
-import type { AccountProfile } from "../components/v3/auth/accountTypes";
 import "./golden-path.css";
 
 export type ShellCase = {
@@ -26,10 +24,6 @@ type ProductShellProps = {
   historyReady: boolean;
   onNewCase: () => void;
   onSelectCase: (id: string) => void;
-  account: AccountProfile | null;
-  onLoginClick: () => void;
-  onAccountClick: () => void;
-  onLogout: () => void;
   /** 正在看一次调查/旧结果：只有这时品牌才作为「回到空白输入」的入口。 */
   viewingInvestigation: boolean;
   topRightExtra?: ReactNode;
@@ -48,10 +42,6 @@ export function ProductShell({
   historyReady,
   onNewCase,
   onSelectCase,
-  account,
-  onLoginClick,
-  onAccountClick,
-  onLogout,
   viewingInvestigation,
   topRightExtra,
   children,
@@ -59,24 +49,6 @@ export function ProductShell({
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
-  const accountRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!accountOpen) return;
-    const onPointer = (event: MouseEvent) => {
-      if (!accountRef.current?.contains(event.target as Node)) setAccountOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setAccountOpen(false);
-    };
-    document.addEventListener("mousedown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [accountOpen]);
 
   useEffect(() => {
     if (!historyOpen) return;
@@ -86,37 +58,6 @@ export function ProductShell({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [historyOpen]);
-
-  const accountChip = account ? (
-    <div className="gp-account-wrap" ref={accountRef}>
-      <button
-        type="button"
-        className="gp-icon-btn gp-account-btn"
-        aria-haspopup="menu"
-        aria-expanded={accountOpen}
-        aria-label={copy.accountLabel}
-        onClick={() => setAccountOpen((open) => !open)}
-      >
-        <span className="gp-avatar" aria-hidden="true">{accountInitial(account.name)}</span>
-        <span className="gp-account-name">{account.name}</span>
-      </button>
-      {accountOpen ? (
-        <div className="gp-menu" role="menu">
-          <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); onAccountClick(); }}>
-            {copy.accountMenu}
-          </button>
-          {/* 退出失败时菜单保持打开以便重试；成功由父层 handleLogout 关闭。 */}
-          <button type="button" role="menuitem" onClick={() => onLogout()}>
-            {copy.signOut}
-          </button>
-        </div>
-      ) : null}
-    </div>
-  ) : (
-    <button type="button" className="gp-icon-btn" onClick={onLoginClick}>
-      {copy.signIn}
-    </button>
-  );
 
   return (
     <div className="gp-shell">
@@ -154,7 +95,6 @@ export function ProductShell({
               </svg>
               {copy.historyLabel}
             </button>
-            {accountChip}
           </nav>
         </div>
       </header>
@@ -174,8 +114,8 @@ export function ProductShell({
                 ✕
               </button>
             </header>
-            <p className="gp-drawer-scope" data-gp-history-scope={account ? "account" : "local"}>
-              {account ? copy.historyScopeAccount : copy.historyScopeGuest}
+            <p className="gp-drawer-scope" data-gp-history-scope="local">
+              {copy.historyScopeLocal}
             </p>
             {!historyReady ? (
               <p className="gp-drawer-empty" role="status">{copy.loadingHistory}</p>

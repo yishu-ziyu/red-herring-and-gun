@@ -1,5 +1,5 @@
 /**
- * signedCookie — 签名 cookie 的编码、解码与会话密钥。邮箱登录会话和访客额度 cookie 共用。
+ * signedCookie — 签名 cookie 的编码、解码与会话密钥。现在只有访客额度 cookie 在用。
  *
  * 会话密钥读 SESSION_SECRET；没有设时回退读旧名 AIPING_SESSION_SECRET，
  * 这样已部署的环境不用改配置。AI Ping 登录已在 2026-10-09 删除，旧名只为兼容保留。
@@ -8,6 +8,15 @@ import crypto from "node:crypto";
 
 export function sessionSecretFromEnv(): string {
   return (process.env.SESSION_SECRET || process.env.AIPING_SESSION_SECRET || "").trim();
+}
+
+export function getServerSecret() {
+  const secret = sessionSecretFromEnv();
+  // 生产环境密钥过短等于可伪造 cookie；空密钥长度是 0，也会被拦住。
+  if (process.env.NODE_ENV === "production" && secret.length < 16) {
+    throw new Error("SESSION_SECRET must be at least 16 characters in production");
+  }
+  return secret;
 }
 
 function base64url(input: Buffer | string) {
@@ -57,7 +66,7 @@ export function parseCookies(cookieHeader: string | undefined) {
   return cookies;
 }
 
-export function emailCookieOptions(maxAgeSeconds: number) {
+export function cookieOptions(maxAgeSeconds: number) {
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

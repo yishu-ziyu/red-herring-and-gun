@@ -2,7 +2,7 @@
  * 刷新接回：本机留着一条没跑完的 run，就在历史读好之后接回去（只跑一次，不重开调查、不重复扣额）；
  * 进行中持续记下它的座标，终态或回首页时清掉。
  */
-import { useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { useInvestigationRun } from "../goldenPath/useInvestigationRun";
 import { caseIntakeFailedLinks } from "../lib/caseIntake";
 import { readInvestigationThread } from "../lib/investigationThread";
@@ -15,13 +15,12 @@ export function useRunPointer(args: {
   mode: ProductMode;
   active: ActiveCase | null;
   run: ReturnType<typeof useInvestigationRun>;
-  accountEmailRef: MutableRefObject<string | null>;
   copy: { connectionLost: string };
   setActive: Dispatch<SetStateAction<ActiveCase | null>>;
   setMode: Dispatch<SetStateAction<ProductMode>>;
   setHistoryNotice: Dispatch<SetStateAction<string>>;
 }) {
-  const { historyReady, mode, active, run, accountEmailRef, copy, setActive, setMode, setHistoryNotice } = args;
+  const { historyReady, mode, active, run, copy, setActive, setMode, setHistoryNotice } = args;
   const [initialRunPointer] = useState(readRunPointer);
   const resumedRef = useRef(false);
 
@@ -32,7 +31,6 @@ export function useRunPointer(args: {
     resumedRef.current = true;
     const pointer = initialRunPointer;
     if (!pointer) return;
-    if ((pointer.accountScope ?? null) !== accountEmailRef.current) { writeRunPointer(null); return; }
     setActive({ localId: pointer.localId ?? `case-${pointer.at}`, roundId: pointer.roundId, roundKind: pointer.roundKind, thread: readInvestigationThread({ investigationThread: pointer.thread }), claim: pointer.claim, intake: pointer.intake, restored: null });
     setMode("investigation");
     run.resume(pointer.runId, pointer.lastSeq, pointer.claim);
@@ -76,7 +74,6 @@ export function useRunPointer(args: {
       roundId: active.roundId,
       roundKind: active.roundKind,
       thread: active.thread,
-      accountScope: accountEmailRef.current,
     });
   }, [mode, active, copy.connectionLost, run.state.runId, run.state.lastActivitySeq, run.state.connection, run.state.stop, run.state.snapshot, run.state.errorMessage, run.state.finalReport]);
 

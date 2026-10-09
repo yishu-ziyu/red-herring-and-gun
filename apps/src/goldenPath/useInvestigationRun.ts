@@ -180,14 +180,12 @@ export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, cla
 }
 
 export type StartOptions = {
-  accountEmail?: string | null;
   /** DEV 固定装置：不走网络，按脚本回放快照（仅 import.meta.env.DEV）。 */
   fixture?: (emit: (event: OrchestrateStreamEvent) => void) => () => void;
   /**
-   * 追问：登录带刚完成案件的 caseId；访客无 caseId 时带上一轮可见材料。
+   * 追问：带上一轮可见材料。
    * 不带时请求体与现状完全一致（首轮、重试、legacy 都不带）。
    */
-  priorCaseId?: string;
   priorRound?: VisiblePriorRound | null;
 };
 
@@ -236,7 +234,7 @@ export function useInvestigationRun() {
         let memoryRecall: Record<string, unknown> | undefined;
         try {
           memoryRecall = (await buildLocalMemoryRecall(
-            createKnowledgeBase(options.accountEmail ?? null),
+            createKnowledgeBase(null),
             typeof intake === "string" ? intake : intake.text
           )) as unknown as Record<string, unknown>;
         } catch {
@@ -246,7 +244,7 @@ export function useInvestigationRun() {
           intake,
           memoryRecall,
           clientRequestId,
-          { priorCaseId: options.priorCaseId, priorRound: options.priorRound }
+          { priorRound: options.priorRound }
         )) {
           if (runIdRef.current !== runId) return;
           if (IGNORED_LEGACY_EVENT_TYPES.has(event.type)) continue;

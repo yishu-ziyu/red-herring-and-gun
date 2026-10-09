@@ -1,7 +1,7 @@
 /**
  * runStore — 运行记录、活动与分享令牌的持久化（IMPLEMENTATION_PLAN §5.4）。
  *
- * 与 caseStore 分开：caseStore 管「查到过什么」，这里管「一次调查跑到哪了」。
+ * 这里管「一次调查跑到哪了」。
  * 存储介质由 sqliteStore 提供；没有可用 sqlite 时本模块不可用，调用方回退到进程内状态。
  *
  * 不变量：
@@ -215,21 +215,6 @@ export function createRunStore(db: DatabaseSync) {
         .prepare("SELECT * FROM runs WHERE caseId = ? ORDER BY createdAt DESC LIMIT 1")
         .get(caseId) as RunRow | undefined;
       return row ? toRecord(row) : null;
-    },
-
-    /**
-     * 记一次追问：写上一轮 caseId 并置 isFollowUp。
-     * run 不存在返回 false；重复写同样的值无副作用（幂等）。
-     */
-    markFollowUp(runId: string, priorCaseId: string, now = Date.now()): boolean {
-      const row = selectRun.get(runId) as RunRow | undefined;
-      if (!row) return false;
-      db.prepare("UPDATE runs SET priorCaseId = ?, isFollowUp = 1, updatedAt = ? WHERE runId = ?").run(
-        priorCaseId,
-        now,
-        runId
-      );
-      return true;
     },
   };
 }

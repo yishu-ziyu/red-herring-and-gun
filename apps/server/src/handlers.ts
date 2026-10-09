@@ -7,9 +7,8 @@
  */
 
 import { createRunService, hashRunInput } from "./lib/runService.js";
-import { readEmailAccountOptional } from "./lib/emailSession.js";
 import { isTerminalStatus, openRunStore } from "./lib/runStore.js";
-import { getCase, generateCaseId, type CaseEntry } from "./lib/caseStore.js";
+import { generateCaseId } from "./lib/caseStore.js";
 import { releaseFreeCheck } from "./lib/checkQuota.js";
 import { readJson, sendJson } from "./lib/httpUtils.js";
 import {
@@ -23,12 +22,6 @@ import { openSse, sseFrame, SSE_KEEPALIVE_FRAME, SSE_KEEPALIVE_MS } from "./http
 import { toPublicStreamEvent } from "./http/publicStream.js";
 
 export { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot.js";
-
-/**
- * 追问关联失败只说这一句：不区分「案件不存在」与「不是你的案件」，
- * 否则拿别人的 caseId 试一次就能问出它存不存在。三种失败共用同一文案。
- */
-export const FOLLOW_UP_CASE_MISSING_MESSAGE = "追问关联的案件不存在或无权访问";
 
 export { toFriendlyError, toPublicStreamEvent, type FriendlyErrorInfo } from "./http/publicStream.js";
 
@@ -54,24 +47,8 @@ export function createHandlers(env: Record<string, string>) {
   runs.markInterruptedOnBoot();
 
   /**
-   * 追问关联校验（阶段 3）：案件必须存在，且 ownerHash 与请求者一致。
-   * 无归属的老 case 与匿名请求（ownerHash 为空）一律视为无权——案件只在登录后才写入。
-   * 读库出错也按「不存在或无权访问」处理：宁可 400，也不把名额留在半空、不建 run。
-   */
-  function readOwnedCase(caseId: string, ownerHash: string | null): CaseEntry | null {
-    if (!caseId || !ownerHash) return null;
-    try {
-      const entry = getCase(caseId);
-      return entry && entry.ownerHash === ownerHash ? entry : null;
-    } catch (error) {
-      console.error(`[followup] 读上一轮案件失败 caseId=${caseId}`, error);
-      return null;
-    }
-  }
-
-  /**
    * 取消一次正在跑的调查（IMPLEMENTATION_PLAN §5.5）。
-   * 幂等：终态再调无副作用。有归属的 run 只给主人取消；匿名 run 靠不可猜的 runId 当能力凭证。
+   * 幂等：终态再调无副作用。不可猜的 runId 就是能力凭证。
    */
   async function cancelInvestigationHandler(req: any, res: any, next: any) {
     if (req.method !== "POST") return next();
@@ -79,11 +56,6 @@ export function createHandlers(env: Record<string, string>) {
     if (!runId) return sendJson(res, 400, { message: "缺少 runId" });
     const run = runs.get(runId);
     if (!run) return sendJson(res, 404, { message: "没有这次调查" });
-    const account = await readEmailAccountOptional(req);
-    const requester = account?.hash ?? null;
-    if (run.ownerHash && run.ownerHash !== requester) {
-      return sendJson(res, 404, { message: "没有这次调查" });
-    }
     const result = runs.cancel(runId);
     if (result.kind === "not-found") return sendJson(res, 404, { message: "没有这次调查" });
     // 立刻把「在停」广播到还开着的流上：客户端不能靠 POST 回执猜流上的状态。
@@ -97,7 +69,7 @@ export function createHandlers(env: Record<string, string>) {
 
   /**
    * GET /api/investigations/:runId — 刷新恢复（IMPLEMENTATION_PLAN §5.3）。
-   * 只给本人（或拿得到不可猜 runId 的匿名访客）；不跑模型、不检索、不扣额。
+   * 只给拿得到不可猜 runId 的人；不跑模型、不检索、不扣额。
    */
   async function getInvestigationHandler(req: any, res: any, next: any) {
     if (req.method !== "GET") return next();
@@ -105,10 +77,6 @@ export function createHandlers(env: Record<string, string>) {
     if (!runId) return sendJson(res, 400, { message: "缺少 runId" });
     const run = runs.get(runId);
     if (!run) return sendJson(res, 404, { message: "没有这次调查" });
-    const account = await readEmailAccountOptional(req);
-    if (run.ownerHash && run.ownerHash !== (account?.hash ?? null)) {
-      return sendJson(res, 404, { message: "没有这次调查" });
-    }
     return sendJson(res, 200, toPublicStreamEvent({
       runId: run.runId,
       caseId: run.caseId,
@@ -130,10 +98,6 @@ export function createHandlers(env: Record<string, string>) {
     const runId = String(req.params?.runId ?? "").trim();
     const run = runId ? runs.get(runId) : null;
     if (!run) return sendJson(res, 404, { message: "没有这次调查" });
-    const account = await readEmailAccountOptional(req);
-    if (run.ownerHash && run.ownerHash !== (account?.hash ?? null)) {
-      return sendJson(res, 404, { message: "没有这次调查" });
-    }
     const afterRaw = Number(new URL(req.url ?? "/", "http://localhost").searchParams.get("after") ?? 0);
     const after = Number.isFinite(afterRaw) && afterRaw > 0 ? Math.floor(afterRaw) : 0;
 
@@ -199,7 +163,7 @@ export function createHandlers(env: Record<string, string>) {
   }
 
   /**
-   * 建 run 之前任何一步抛错（读账号、建 run、存储出错）：退还名额并回 500，不让名额悬空。
+   * 建 run 之前任何一步抛错（建 run、存储出错）：退还名额并回 500，不让名额悬空。
    * 进入 runInvestigation 之后由它按结局结算（http/runOutcome.ts）。
    */
   async function orchestrateStreamHandler(req: any, res: any, next: any) {
@@ -241,31 +205,21 @@ export function createHandlers(env: Record<string, string>) {
       typeof payload.clientRequestId === "string" && payload.clientRequestId.trim()
         ? payload.clientRequestId.trim().slice(0, 120)
         : null;
-    const ownerAccount = await readEmailAccountOptional(req);
-    const ownerHash = ownerAccount?.hash ?? null;
 
-    // 追问关联：followUp=true 且带了 caseId → 必须是本人名下案件。
-    // 访客没有服务端档案：不带 caseId，把上一轮可见材料放在 priorRound；校验放在建 run 与额度扣除之前。
-    // 首轮与 legacy 路径不传 followUp，行为与现状完全一致（caseId 仍按老规矩当本次 case 用）。
+    // 追问：服务端没有用户档案，上一轮可见材料由浏览器放在 priorRound 里带来。
+    // 首轮与 legacy 路径不传 followUp（caseId 仍按老规矩当本次 case 用）。
     const isFollowUp = payload.followUp === true;
-    const priorCaseId = typeof payload.caseId === "string" ? payload.caseId.trim() : "";
-    const priorCase = isFollowUp && priorCaseId ? readOwnedCase(priorCaseId, ownerHash) : null;
-    if (isFollowUp && priorCaseId && !priorCase) {
-      releaseFreeCheck(ticket);
-      return sendJson(res, 400, { message: FOLLOW_UP_CASE_MISSING_MESSAGE });
-    }
-    const clientFollowUpReuse =
-      isFollowUp && !priorCase ? followUpReuseFromClientBrief(payload.priorRound) : null;
+    const clientFollowUpReuse = isFollowUp ? followUpReuseFromClientBrief(payload.priorRound) : null;
 
     const started = runs.start({
-      // 追问轮是新一轮调查：caseId 另生成一个，上一轮的 caseId 记在 priorCaseId 上，
+      // 追问轮是新一轮调查：caseId 另生成一个，
       // 不拿上一轮的 caseId 当本轮的 caseId（那会让两轮共用同一个案件坐标）。
       caseId: isFollowUp
         ? generateCaseId(claim)
         : typeof payload.caseId === "string" && payload.caseId
           ? payload.caseId
           : generateCaseId(claim),
-      ownerHash,
+      ownerHash: null,
       clientRequestId,
       inputHash: hashRunInput(claim, { intake: intakeMetadata }),
     });
@@ -291,9 +245,6 @@ export function createHandlers(env: Record<string, string>) {
       intake,
       intakeMetadata,
       clientMemoryRecall,
-      isFollowUp,
-      priorCaseId,
-      priorCase,
       clientFollowUpReuse,
       run: { runId: started.run.runId, caseId: started.run.caseId },
     }, res);

@@ -62,10 +62,6 @@ export type UiCopy = {
   filesUnsupported: string;
   imagesTooLarge: string;
   tooManyImages: string;
-  accountChecking: string;
-  signedIn: string;
-  signOut: string;
-  signInAccount: string;
   pointsPrefix: string;
   addMaterial: string;
   addImage: string;
@@ -79,9 +75,6 @@ export type UiCopy = {
   statusRunning: string;
   statusInterrupted: string;
   statusDone: string;
-  signIn: string;
-  accountNavLabel: string;
-  accountMenu: string;
   dossierLabel: string;
   dossierTitle: string;
   collapse: string;
@@ -149,10 +142,6 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     filesUnsupported: "只支持图片文件，不收视频、PDF、Word。",
     imagesTooLarge: "图片总大小不能超过 6MB。",
     tooManyImages: "最多支持 4 张图片附件，超出部分未添加。",
-    accountChecking: "账号检测中",
-    signedIn: "已登录",
-    signOut: "退出",
-    signInAccount: "登录账号",
     pointsPrefix: "点数",
     addMaterial: "添加材料",
     addImage: "添加图片",
@@ -165,9 +154,6 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     statusRunning: "核查中",
     statusInterrupted: "没查完",
     statusDone: "已有判断",
-    signIn: "登录",
-    accountNavLabel: "账号与设置",
-    accountMenu: "账户",
     dossierLabel: "核查卷宗",
     dossierTitle: "核查卷宗",
     collapse: "收起",
@@ -233,10 +219,6 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     filesUnsupported: "Only image files are supported. Video, PDF and Word files are not accepted.",
     imagesTooLarge: "Total image size must stay under 6MB.",
     tooManyImages: "Up to 4 image attachments — extras were dropped.",
-    accountChecking: "Checking account",
-    signedIn: "Signed in",
-    signOut: "Sign out",
-    signInAccount: "Sign in",
     pointsPrefix: "Points",
     addMaterial: "Add material",
     addImage: "Add images",
@@ -249,9 +231,6 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     statusRunning: "Checking",
     statusInterrupted: "Interrupted",
     statusDone: "Verdict ready",
-    signIn: "Sign in",
-    accountNavLabel: "Account & settings",
-    accountMenu: "Account",
     dossierLabel: "Case file",
     dossierTitle: "Case file",
     collapse: "Collapse",

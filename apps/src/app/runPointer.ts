@@ -14,7 +14,6 @@ export type StoredRunPointer = {
   roundId?: string;
   roundKind?: InvestigationRound["kind"];
   thread?: InvestigationThread;
-  accountScope?: string | null;
 };
 
 const RUN_POINTER_KEY = "rhg:active-run";

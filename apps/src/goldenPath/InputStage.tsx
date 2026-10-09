@@ -1,6 +1,6 @@
 /**
  * InputStage — 输入态（Issue #52 第三节）：5 秒内看懂「放什么、会得到什么、下一步」。
- * 只有用户级状态（服务不可用 / 次数用尽 / 登录引导 / 链接抓取失败）；
+ * 只有用户级状态（服务不可用 / 次数用尽 / 链接抓取失败）；
  * 实现层品牌、积分、批量工具与模型供应商控制一律不在默认首页（E3 扫描对象）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -88,8 +88,6 @@ function showLinkScrapeNotice(text: string, host: HTMLElement | null) {
 type InputStageProps = {
   onSubmit: (intake: CaseIntake) => void;
   initialClaim?: string;
-  accountEmail?: string | null;
-  onNeedLogin?: () => void;
   onViewHomeCase?: (id: HomeCaseId) => void;
   onRecheckHomeCase?: (claim: string) => void;
 };
@@ -97,8 +95,6 @@ type InputStageProps = {
 export function InputStage({
   onSubmit,
   initialClaim = "",
-  accountEmail = null,
-  onNeedLogin,
   onViewHomeCase,
   onRecheckHomeCase,
 }: InputStageProps) {
@@ -133,12 +129,11 @@ export function InputStage({
     return () => {
       cancelled = true;
     };
-  }, [accountEmail]);
+  }, []);
 
   const handleStart = useCallback(async () => {
     if (quotaExhausted && checkQuota) {
       setInputError(checksRemainingMessage(checkQuota));
-      if (checkQuota.kind === "guest") onNeedLogin?.();
       return;
     }
     if (isScraping) return;
@@ -175,7 +170,7 @@ export function InputStage({
       }
     }
     onSubmit(enriched);
-  }, [checkQuota, images, inputValue, isScraping, lang, legacy.fillMaterialFirst, legacy.scrapeFailed, onNeedLogin, onSubmit, quotaExhausted]);
+  }, [checkQuota, images, inputValue, isScraping, lang, legacy.fillMaterialFirst, legacy.scrapeFailed, onSubmit, quotaExhausted]);
 
   const handleAddFiles = useCallback(
     async (files: File[]) => {
@@ -223,22 +218,18 @@ export function InputStage({
     (claim: string) => {
       if (quotaExhausted && checkQuota) {
         setInputError(checksRemainingMessage(checkQuota));
-        if (checkQuota.kind === "guest") onNeedLogin?.();
         return;
       }
       onRecheckHomeCase?.(claim);
     },
-    [checkQuota, onNeedLogin, onRecheckHomeCase, quotaExhausted]
+    [checkQuota, onRecheckHomeCase, quotaExhausted]
   );
 
   const userHint = (() => {
     if (inputError) return { tone: inputError.includes("抓取失败") ? "muted" : "warning", text: inputError } as const;
     if (checkQuota?.enforced) {
       if (quotaExhausted) {
-        return {
-          tone: "warning",
-          text: checkQuota.kind === "guest" ? copy.quotaExhaustedGuest : copy.quotaExhaustedUser,
-        } as const;
+        return { tone: "warning", text: copy.quotaExhausted } as const;
       }
       return { tone: "muted", text: checksRemainingMessage(checkQuota) } as const;
     }
@@ -286,14 +277,6 @@ export function InputStage({
           <p className={`gp-hint gp-hint--${userHint.tone}`} role={userHint.tone === "warning" ? "alert" : "status"}>
             <span className="gp-hint-badge" aria-hidden="true">{userHint.tone === "warning" ? "!" : "•"}</span>
             <span className="gp-hint-text">{userHint.text}</span>
-            {userHint.tone === "warning" && quotaExhausted && checkQuota?.kind === "guest" && onNeedLogin ? (
-              <>
-                {" "}
-                <button type="button" className="gp-hint-link" onClick={onNeedLogin}>
-                  {legacy.signIn}
-                </button>
-              </>
-            ) : null}
           </p>
         ) : null}
       </section>

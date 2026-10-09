@@ -9,16 +9,10 @@
 import { runCasePipeline, type PipelineStep } from "../lib/casePipeline/index.js";
 import { commitFreeCheck, releaseFreeCheck, type CheckTicket } from "../lib/checkQuota.js";
 import { applyContextCrossCheckToReport } from "../lib/contextCrossCheck.js";
-import { getCase, type CaseEntry } from "../lib/caseStore.js";
 import { makeRewriteQueryCall } from "../lib/evidenceLoop/index.js";
 import { withExecutionBudget, type ExecutionBudget } from "../lib/executionBudget.js";
 import { applyFactDeskPostProcessToReport } from "../lib/factDeskPostProcess.js";
 import { followUpReuseFromClientBrief } from "../lib/followUpReuse.js";
-import {
-  appendFollowUpObservation,
-  buildFollowUpObservation,
-  type FollowUpObservationStats,
-} from "../lib/followupObservation.js";
 import { withTimeout } from "../lib/httpUtils.js";
 import { interruptedInvestigationSnapshot } from "../lib/interruptedSnapshot.js";
 import type { InvestigationSnapshotV1 } from "../lib/investigation/index.js";
@@ -64,51 +58,9 @@ export type InvestigationRequest = {
   intake: CaseIntakePayload | null;
   intakeMetadata: ReturnType<typeof buildCaseIntakeMetadata>;
   clientMemoryRecall: ReturnType<typeof normalizeClientMemoryRecall>;
-  isFollowUp: boolean;
-  priorCaseId: string;
-  priorCase: CaseEntry | null;
   clientFollowUpReuse: ReturnType<typeof followUpReuseFromClientBrief>;
   run: { runId: string; caseId: string };
 };
-
-/**
- * 追问观测记录（阶段 3）：报告 finalize 后写一行计数与判词标签到 JSONL。
- * 三件事都不许发生：阻断 run、把失败透给用户、把 claim 文本或 URL 写进文件。
- * 上一轮案件读不到（被删 / 报告缺失）→ 静默跳过；写文件真出异常 → 记一笔日志后跳过。
- */
-function recordFollowUpObservation(input: {
-  runId: string;
-  caseId: string;
-  priorCaseId: string;
-  report: Record<string, unknown>;
-  snapshot: InvestigationSnapshotV1 | undefined;
-  atomsSearched: number;
-  searchesTotal: number;
-}): void {
-  try {
-    const priorCase = getCase(input.priorCaseId);
-    if (!priorCase) return;
-    const claims = input.snapshot?.claims ?? [];
-    const stats: FollowUpObservationStats = {
-      atomsTotal: claims.length || input.atomsSearched,
-      atomsSearched: input.atomsSearched,
-      // 完成态里判词 unresolved / 尚未给判词的命题，都是这轮没查出定论的命题。
-      atomsUnverified: claims.filter((claim) => claim.judgment === "unresolved" || claim.judgment === null).length,
-      searchesTotal: input.searchesTotal,
-    };
-    const record = buildFollowUpObservation({
-      priorReport: priorCase.report,
-      report: input.report,
-      stats,
-      runId: input.runId,
-      caseId: input.caseId,
-      priorCaseId: input.priorCaseId,
-    });
-    if (record) appendFollowUpObservation(record);
-  } catch (error) {
-    console.error(`[followup-observation] 观测记录未写入 runId=${input.runId}`, error);
-  }
-}
 
 function makeSearchOneAtom(
   onSearchProgress: ((event: SearchProgressEvent) => void) | undefined,
@@ -191,9 +143,6 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
     intake,
     intakeMetadata,
     clientMemoryRecall,
-    isFollowUp,
-    priorCaseId,
-    priorCase,
     clientFollowUpReuse,
     run,
   } = request;
@@ -207,7 +156,6 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
   };
 
   const runId = run.runId;
-  if (isFollowUp && priorCaseId) runStore?.markFollowUp(runId, priorCaseId);
   const runSignal = runs.signalFor(runId);
   const workDeadlineMs = Date.now() + Math.max(1, PIPELINE_TOTAL_TIMEOUT_MS - 10_000);
 
@@ -393,13 +341,7 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
       evidenceLoop: { callRewriteModel: makeRewriteQueryCall(adapter.makeRewriteCaller()) },
       crossExam: { callRaw: adapter.makeCrossExamCaller((data) => sendEvent(data)) },
       wholeClaimAudit: { callModel: adapter.makeWholeClaimAuditCaller() },
-      followUpReuse: priorCase
-        ? {
-            priorReport: priorCase.report,
-            priorClaim: priorCase.claim,
-            priorCreatedAt: priorCase.createdAt,
-          }
-        : clientFollowUpReuse ?? undefined,
+      followUpReuse: clientFollowUpReuse ?? undefined,
       runReport: makeRunReport(runAgent, sendEvent),
       hooks: makePipelineHooks({ claim, sendEvent, emitInvestigation, emitter, searchesCounter }),
       finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>
@@ -449,19 +391,6 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
         ? RUN_FINAL_STATUS["server-error"]
         : RUN_FINAL_STATUS.completed
     );
-    // 追问观测：报告已 finalize、响应还没结束——写一行计数与判词标签就完事。
-    // 只在追问轮写；写不进去也不改这次 run 的结局（recordFollowUpObservation 内部兜住）。
-    if (isFollowUp && priorCaseId) {
-      recordFollowUpObservation({
-        runId,
-        caseId: run.caseId,
-        priorCaseId,
-        report: result.finalReport,
-        snapshot: lastInvestigation,
-        atomsSearched: result.atomSearchBundle.atomsSearched.length,
-        searchesTotal: searchesCounter.current,
-      });
-    }
     settleQuota("completed");
     endResponse();
   } catch (error) {

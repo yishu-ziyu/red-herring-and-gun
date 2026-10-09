@@ -1,8 +1,8 @@
 /**
- * 结果落库：先本机，再（已登录时）服务端；保存状态独立可见，失败给「同步失败，重试」。
+ * 结果落库：只存本机（localStorage）；保存状态独立可见，失败给「保存失败，重试」。
  *
- * isCurrent 守卫：落库是异步的，期间用户可能换了案件或换了账户，迟到的结果只改它自己那条，
- * 不改当前界面的保存状态。服务端给了 caseId 之后，本机条目与当前案件一起换成服务端 id。
+ * isCurrent 守卫：落库是异步的，期间用户可能换了案件，迟到的结果只改它自己那条，
+ * 不改当前界面的保存状态。
  */
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { ShellCase } from "../goldenPath/ProductShell";
@@ -16,29 +16,24 @@ export function useResultPersistence(args: {
   mode: ProductMode;
   active: ActiveCase | null;
   run: ReturnType<typeof useInvestigationRun>;
-  accountEmailRef: MutableRefObject<string | null>;
   activeIdRef: MutableRefObject<string | null>;
-  copy: { historySyncFailed: string };
   setCases: Dispatch<SetStateAction<ShellCase[]>>;
-  setActive: Dispatch<SetStateAction<ActiveCase | null>>;
   setHistoryNotice: Dispatch<SetStateAction<string>>;
 }) {
-  const { mode, active, run, accountEmailRef, activeIdRef, copy, setCases, setActive, setHistoryNotice } = args;
+  const { mode, active, run, activeIdRef, setCases, setHistoryNotice } = args;
   /** 保存状态：独立于结果存在与否显示，不把失败藏在 console。 */
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const persistedRoundRef = useRef<string | null>(null);
 
   /**
-   * 落库一次：先本地，再（已登录时）服务端。
-   * 抽成 useCallback 是为了让「同步失败，重试」真的有得点——说得出就必须点得到。
+   * 落库一次（本机）。
+   * 抽成 useCallback 是为了让「保存失败，重试」真的有得点——说得出就必须点得到。
    */
   const persistResult = useCallback(
     async (report: Record<string, unknown>, localId: string, claim: string) => {
       const doneAt = Date.now();
-      const ownerEmail = accountEmailRef.current;
-      const isCurrent = () => activeIdRef.current === localId && accountEmailRef.current === ownerEmail;
-      if (isCurrent()) setSaveStatus("syncing");
-      const knowledgeBase = createKnowledgeBase(ownerEmail);
+      const isCurrent = () => activeIdRef.current === localId;
+      const knowledgeBase = createKnowledgeBase(null);
       const existing = await knowledgeBase.getCase(localId).catch(() => null);
       const entry: KnowledgeBaseEntry = {
         id: localId,
@@ -58,49 +53,12 @@ export function useResultPersistence(args: {
         if (isCurrent()) setSaveStatus("failed");
         return;
       }
-      if (accountEmailRef.current !== ownerEmail) return;
       if (isCurrent()) setSaveStatus("local");
-      if (!ownerEmail) return;
-      try {
-        const res = await fetch("/api/case", {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            claim,
-            report,
-          }),
-        });
-        if (!res.ok) {
-          console.error(`[cases] 服务端存档失败 HTTP ${res.status}`);
-          setHistoryNotice(copy.historySyncFailed);
-          if (isCurrent()) setSaveStatus("failed");
-          return;
-        }
-        if (accountEmailRef.current !== ownerEmail) return;
-        if (isCurrent()) setSaveStatus("synced");
-        const data = (await res.json()) as { caseId?: string };
-        if (!data.caseId) return;
-        const saved = await knowledgeBase.getCase(localId);
-        if (saved && saved.id !== data.caseId) {
-          await knowledgeBase.saveCase({ ...saved, id: data.caseId });
-        }
-        setCases((prev) => prev.map((item) => (item.id === localId ? { ...item, id: data.caseId as string } : item)));
-        setActive((prev) =>
-          prev && prev.localId === localId
-            ? { ...prev, localId: data.caseId ?? prev.localId, serverCaseId: data.caseId ?? null }
-            : prev
-        );
-      } catch (error) {
-        console.error("[cases] 服务端存档异常", error);
-        setHistoryNotice(copy.historySyncFailed);
-        if (isCurrent()) setSaveStatus("failed");
-      }
     },
-    [copy.historySyncFailed]
+    []
   );
 
-  /** 重试同步：用当前这份结果再走一遍，不重新调查。 */
+  /** 重试保存：用当前这份结果再走一遍，不重新调查。 */
   const retrySave = useCallback(() => {
     const report = active?.restored?.report ?? run.state.finalReport;
     if (!report || !active) return;
@@ -108,7 +66,7 @@ export function useResultPersistence(args: {
     void persistResult(snapshot ? { ...report, investigationThread: threadForRound(active, snapshot) } : report, active.localId, active.claim);
   }, [active, persistResult, run.state.finalReport]);
 
-  // 完成：本地留存 +（已登录）服务端落库。保存失败不挡结果，但必须可见。
+  // 完成：留存到本机。保存失败不挡结果，但必须可见。
   useEffect(() => {
     if (mode !== "investigation" || !active || active.restored) return;
     const terminalConnection = run.state.connection === "ended" || run.state.connection === "failed";

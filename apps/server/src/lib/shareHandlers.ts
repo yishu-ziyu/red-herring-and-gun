@@ -10,9 +10,8 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { getCase, type CaseEntry } from "./caseStore.js";
+import type { CaseEntry } from "./caseStore.js";
 import { openDatabase } from "./sqliteStore.js";
-import { readEmailAccountOptional } from "./emailSession.js";
 import { followUpQuestionOf } from "./followUpReuse.js";
 
 const TOKEN_BYTES = 24;
@@ -288,68 +287,26 @@ export function buildSharedPageHtml(token: string, projection: PublicShareProjec
 }
 
 /**
- * GET /api/cases/:caseId/share-preview — 创建之前先看到会公开哪些字段。
- * 只看不写：这个端点不产生链接。
+ * 创建、预览、撤销分享暂时关闭：原来只有登录用户能分享，登录已删除（#142 part a）。
+ * part b 会把分享改成不需要登录；在那之前这三个端点一律 404。已建好的 /s/:shareId 链接照常可读。
  */
-export async function previewShareHandler(req: any, res: any): Promise<void> {
-  const caseId = String(req.params?.caseId ?? "").trim();
-  const entry = caseId ? getCase(caseId) : null;
-  if (!entry || !entry.ownerHash) {
-    res.status(404).json({ error: "case not found" });
-    return;
-  }
-  const account = await readEmailAccountOptional(req);
-  if (!account || account.hash !== entry.ownerHash) {
-    res.status(404).json({ error: "case not found" });
-    return;
-  }
-  res.status(200).json({ preview: buildPublicProjection(entry) });
+function sharingUnavailable(res: any): void {
+  res.status(404).json({ error: "sharing unavailable" });
 }
 
-/** POST /api/cases/:caseId/shares — 只有主人能建；返回明文令牌一次。 */
-export async function createShareHandler(req: any, res: any): Promise<void> {
-  const caseId = String(req.params?.caseId ?? "").trim();
-  const entry = caseId ? getCase(caseId) : null;
-  if (!entry || !entry.ownerHash) {
-    res.status(404).json({ error: "case not found" });
-    return;
-  }
-  const account = await readEmailAccountOptional(req);
-  if (!account || account.hash !== entry.ownerHash) {
-    res.status(404).json({ error: "case not found" });
-    return;
-  }
-  const created = shareStore().create(entry);
-  res.status(201).json({
-    shareId: created.shareId,
-    url: `/s/${created.shareId}`,
-    createdAt: created.createdAt,
-    expiresAt: created.expiresAt,
-    // 创建前就能看到的公开字段：就是这份投影本身。
-    preview: created.projection,
-  });
+/** GET /api/cases/:caseId/share-preview */
+export async function previewShareHandler(_req: any, res: any): Promise<void> {
+  sharingUnavailable(res);
 }
 
-/** DELETE /api/cases/:caseId/shares/:shareId — 只有主人能撤销。 */
-export async function revokeShareHandler(req: any, res: any): Promise<void> {
-  const caseId = String(req.params?.caseId ?? "").trim();
-  const token = String(req.params?.shareId ?? "").trim();
-  const entry = caseId ? getCase(caseId) : null;
-  if (!entry || !entry.ownerHash) {
-    res.status(404).json({ error: "case not found" });
-    return;
-  }
-  const account = await readEmailAccountOptional(req);
-  if (!account || account.hash !== entry.ownerHash) {
-    res.status(404).json({ error: "case not found" });
-    return;
-  }
-  const result = shareStore().revoke(token);
-  if (!result.ok) {
-    res.status(404).json({ error: "share not found" });
-    return;
-  }
-  res.status(200).json({ revoked: true, alreadyRevoked: result.alreadyRevoked });
+/** POST /api/cases/:caseId/shares */
+export async function createShareHandler(_req: any, res: any): Promise<void> {
+  sharingUnavailable(res);
+}
+
+/** DELETE /api/cases/:caseId/shares/:shareId */
+export async function revokeShareHandler(_req: any, res: any): Promise<void> {
+  sharingUnavailable(res);
 }
 
 /** GET /s/:shareId — 只查分享投影，不读私有 case。 */

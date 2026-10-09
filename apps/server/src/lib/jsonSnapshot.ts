@@ -61,7 +61,7 @@ export function saveSnapshotDebounced(file: string, value: unknown): void {
 type SnapshotSource = { file: string; serialize: () => unknown };
 const sources: SnapshotSource[] = [];
 
-/** 变更点分散的存储（账号/配额）注册为快照源，由周期循环统一落盘 */
+/** 变更点分散的存储（配额）注册为快照源，由周期循环统一落盘 */
 export function registerSnapshotSource(file: string, serialize: () => unknown): void {
   sources.push({ file, serialize });
 }
