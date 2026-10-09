@@ -92,6 +92,18 @@ async function run() {
   return answer;
 }
 
+// A conclusion reason is one sentence of at most 80 characters, without internal terms,
+// and names no judgment other than its own label (2026-10-10: label 不属实 with reason 「整句为部分属实」).
+// A part's label right after its quoted text (「…」还查不清) is that part's judgment, not a contradiction.
+function reasonProblems(reason, label) {
+  const problems = [];
+  if (reason.split(/[。！？]/).filter((x) => x.trim()).length !== 1) problems.push("not one sentence");
+  if (reason.length > 81) problems.push("too long");
+  if (/原子|命题|判定为|判词|整句为|整句是/.test(reason)) problems.push("internal terms");
+  if (/部分属实|基本属实|不属实|属实|夸大|还查不清|无法核对|说法不一|是观点/.test(reason.replace(/」(部分属实|基本属实|不属实|属实|夸大了|还查不清|无法核对|说法不一|是观点，不分对错)/g, "」").split(label).join(""))) problems.push("other judgment word");
+  return problems;
+}
+
 // Every claim part shows one label and a reason; the conclusion starts with a label and a reason; no old label words.
 async function checkLabels() {
   const parts = await page.locator("article[data-gp-claim-id]").evaluateAll((nodes) =>
@@ -118,11 +130,10 @@ async function checkLabels() {
     LABELS.includes(conclusionLabel) && leadText.startsWith(conclusionLabel) && conclusionReason.length > 0,
     `${conclusionLabel || "NO LABEL"}｜${conclusionReason.slice(0, 100) || "NO REASON"}`
   );
-  const sentences = conclusionReason.split(/[。！？]/).filter((x) => x.trim()).length;
   record(
-    "conclusion reason is one sentence without internal terms",
-    sentences === 1 && !/原子|命题|判定为|判词/.test(conclusionReason),
-    conclusionReason.slice(0, 100)
+    "conclusion reason is one short sentence that does not contradict the label",
+    reasonProblems(conclusionReason, conclusionLabel).length === 0,
+    `${reasonProblems(conclusionReason, conclusionLabel).join(",")}｜${conclusionReason.slice(0, 100)}`
   );
   // An old label renders as its own element (a chip or a heading), so look for elements whose whole text is
   // an old word. Whole-page substring search failed on source quotes that happen to say 「有争议」.

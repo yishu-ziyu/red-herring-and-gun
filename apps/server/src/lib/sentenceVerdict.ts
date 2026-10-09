@@ -158,10 +158,19 @@ function nonCheckableLabels(report: Report, nonVerifiableAtoms: unknown): LabelK
 }
 
 /** 模型有时写成好几句、带内部用语：只留第一句；第一句仍带内部用语就不用，改用各截标签拼的句子。 */
-const INTERNAL_TERMS = /原子|命题|判定为|判词|Agent|模型|置信/;
-function firstSentence(text: string): string {
+const INTERNAL_TERMS = /原子|命题|判定为|判词|整句为|整句是|Agent|模型|置信/;
+/** 理由超过这个长度就不是「一句理由」了，读者在结论处读不完。 */
+const MAX_REASON_CHARS = 80;
+/**
+ * 模型写的理由只在三种情况下不用：带内部用语；太长；提到了和整句标签不同的判断词
+ * （例：标签「不属实」，理由却说「整句为部分属实」——理由先于标签写出，会和代码定的标签矛盾）。
+ */
+function firstSentence(text: string, label: LabelKey): string {
   const first = (text.match(/^[^。！？]*[。！？]?/)?.[0] ?? "").trim();
-  if (!first || INTERNAL_TERMS.test(first)) return "";
+  if (!first || INTERNAL_TERMS.test(first) || first.length > MAX_REASON_CHARS) return "";
+  const own = LABEL_TEXT[label];
+  const rest = first.split(own).join("");
+  if (/部分属实|基本属实|不属实|属实|夸大|还查不清|无法核对|说法不一|是观点/.test(rest)) return "";
   return /[。！？]$/.test(first) ? first : `${first}。`;
 }
 
@@ -169,7 +178,7 @@ function firstSentence(text: string): string {
 function wholeReasonOf(report: Report, parts: readonly AssessedPart[], label: LabelKey, factCheckReason?: unknown): string {
   // 报告写作那一步的理由优先；时间不够跳过报告写作时，用核查那一步写的理由（两步都是模型写的）。
   const pick = (value: unknown) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "");
-  const model = firstSentence(pick(report.verdictReason)) || firstSentence(pick(factCheckReason));
+  const model = firstSentence(pick(report.verdictReason), label) || firstSentence(pick(factCheckReason), label);
   if (model) return model;
   if (parts.length > 0) return `${parts.map(partLine).join("；")}。`;
   return FALLBACK_PART_REASON[label];
