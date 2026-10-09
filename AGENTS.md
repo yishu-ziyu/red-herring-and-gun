@@ -16,11 +16,11 @@
 ## 能合并
 
 ```bash
-npm test
-npm run build
+cd apps && npm run build
+cd apps && npm run e2e   # 需先 npm run dev，且 apps/.env.local 有真实密钥
 ```
 
-行为变更再跑 `npm run eval:gate`。生产壳是 `apps/`，另跑 `cd apps && npm test`。
+本仓库不写单元测试和集成测试（2026-10-09 用户裁决，已全部删除），只保留真实端到端测试。行为变更再跑 `npm run eval:gate`。
 
 可见路径：对原句的直接回答 → 问题点 → 出处。测试绿不算验收。
 

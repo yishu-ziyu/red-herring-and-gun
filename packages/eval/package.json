@@ -11,7 +11,6 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run",
     "eval": "tsx src/run.ts",
     "eval:gate": "tsx src/run.ts --gate ./baseline.json"
   },

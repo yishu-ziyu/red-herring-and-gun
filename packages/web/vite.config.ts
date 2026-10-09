@@ -1,4 +1,3 @@
-/// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
@@ -29,9 +28,5 @@ export default defineConfig({
       },
     },
     ...(fixtureName ? { open: `/cases/fx-${fixtureName}` } : {}),
-  },
-  test: {
-    environment: "jsdom",
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
   },
 });

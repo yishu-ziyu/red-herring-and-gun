@@ -8,7 +8,7 @@
  *   npx tsx eval/answerBenchRun.ts --label current-full            # resumes: done ids are skipped
  *   npx tsx eval/answerBenchRun.ts --label x --replay [--tapes-from current-pilot]  # replay recorded tapes, no network
  *
- * Each case runs in its own child process (`node --import tsx --import golden/tape.mjs ... --worker`),
+ * Each case runs in its own child process (`node --import tsx --import eval/tape.mjs ... --worker`),
  * so the tape records that case's external responses into
  * outputs/answer-bench/tapes/<label>/<id>, and the case's model/search call counts and token usage come
  * from a fetch wrapper inside that process. Real providers; keys come from apps/.env.local and are never printed.
@@ -38,7 +38,7 @@ const REPO = resolve(APPS, "..");
 const OUT_ROOT = join(REPO, "outputs", "answer-bench");
 const BENCH = join(HERE, "answerBench.json");
 const TSX_LOADER = pathToFileURL(join(SERVER, "node_modules", "tsx", "dist", "loader.mjs")).href;
-const TAPE_URL = pathToFileURL(join(APPS, "golden", "tape.mjs")).href;
+const TAPE_URL = pathToFileURL(join(HERE, "tape.mjs")).href;
 
 /* ------------------------------------------------------------------ adapters */
 

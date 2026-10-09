@@ -5,7 +5,7 @@
  * Do not edit server files during a run: the dev server restarts on save and kills the investigation.
  */
 import { chromium } from "playwright";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const baseUrl = process.env.E2E_BASE_URL || "http://127.0.0.1:5173/";
@@ -23,8 +23,11 @@ const record = (name, pass, detail) => {
   return pass;
 };
 
+// Always headless (no window steals focus); every run is recorded to run.webm in the evidence folder.
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const viewport = { width: 1440, height: 900 };
+const context = await browser.newContext({ viewport, recordVideo: { dir: out, size: viewport } });
+const page = await context.newPage();
 const investigationPosts = [];
 page.on("request", (req) => {
   if (req.method() === "POST" && req.url().includes("/api/agent/orchestrate-stream")) investigationPosts.push(req.url());
@@ -85,7 +88,10 @@ try {
   record("script ran without crashing", false, String(error?.message || error).slice(0, 300));
   await shot("crash").catch(() => {});
 } finally {
+  const video = page.video();
+  await context.close(); // flushes the video file
   await browser.close();
+  if (video) renameSync(await video.path(), `${out}/run.webm`);
 }
 
 const pass = checks.length > 0 && checks.every((c) => c.pass);

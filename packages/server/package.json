@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc",
-    "test": "vitest run"
+    "build": "tsc"
   },
   "dependencies": {
     "@rhg/core": "*",
