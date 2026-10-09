@@ -1,82 +1,52 @@
 # 红鲱鱼与枪
 
-可检查的信息调查工具。丢进来一句话、截图或链接，系统把说法拆成可核查命题，追查公开证据，并展示每个判断如何从证据与证据缺口中形成：哪些站得住、哪些有问题、哪些还查不清。来源能点开。
+可检查的信息调查工具。用户交进来一句说法、一张截图或一个链接，产品把说法拆成几截，分别找公开证据，告诉用户哪一截成立、哪一截有问题、哪一截还查不清，每个判断都能点开出处。
 
-产品定义、产品宪法与唯一主路径：`docs/PRODUCT_SPEC.md`。
+- 产品定义：`docs/PRODUCT.md`
+- 产品和方向决定：`docs/DECISIONS.md`
+- 给 AI 助手的工作规则：`AGENTS.md`
 
-公网入口：<https://gun.yishuziyu.cn>
+线上：`https://gun.yishuziyu.cn`。2026-10-09 起显示维护页，因为原服务器已到期，产品正在重做（#146）。
 
-赛道：「词元工坊」黑客松 · AI Agent · 信息真相猎人。有技术含量的是溯源，不是话术。
+## 目录
 
-```text
-输入一句话 / 截图 / 链接
-  → 拆成要分别核查的命题
-  → 证据汇入（支持 / 反驳 / 仅相关 / 尚缺）
-  → 冲突与缺口
-  → 判断（第一句直接回答原句）
-  → 来源下钻
-```
+- `apps/`：产品本身，前端和后端都在这里。只改这里。
+- `packages/`：放弃的迁移计划留下的旧代码，不在线上运行，将在 #139 删除。
+- `docs/`：`PRODUCT.md` 和 `DECISIONS.md` 描述现在；`history/`、`evals/`、`devlog/`、`adr/`、`design/`、`tasks/` 是历史记录，记录的是当时的情况，可能和现在的代码不一致。
+- `ops.sh`：旧的发布脚本，发布目标是已到期的服务器，现在不能用（#146）。
 
-白盒展示的是判断为什么成立（命题 / 证据 / 判断三层透明），不是 Agent 日志。Agent、provider、工具调用、管线状态属实现层，一律不出现在用户界面（见 `PRODUCT_SPEC.md` 第二节「默认隐藏」）。
-
-## 它做什么
-
-- 对着公开材料核，不靠模型编造来源或命题。
-- 一句话里真假缝在一起时，分开判：哪一截站得住、哪一截站不住。
-- 查不清就说查不清；没搜到不等于假。
-- 可信度 0–100 由公式计算，不让模型直接打分；只是辅助信号，不替代证据解释。
-
-## 技术栈
-
-- 前端：React + Vite + TypeScript
-- 后端：Express + TypeScript
-- 测试：Vitest
-- 部署：Nginx + Docker + 阿里云
-- 模型与搜索源：国产模型、360 搜索等按环境接入，属实现层，provider 名字不出现在用户界面。
-
-## 项目结构
-
-这是一个 npm workspaces 单体仓库。生产 app 是 `apps/`；`packages/` 是领域脊柱，T20 才会切到线上。地图：`docs/REPO.md`。文档入口：`docs/README.md`。
-
-```text
-apps/                 生产：脸（goldenPath）+ Express + casePipeline
-  src/goldenPath/     现行界面
-  server/src/         生产 API 与编排
-packages/             脊柱：core（领域）/ server / web / eval（尚未切生产）
-docs/                 产品、架构、验收、设计
-ops.sh                唯一发布入口
-```
-
-## 本地运行
-
-一次起前端和 API（Vite 把 `/api` 代理到 Express）：
+## 在本机运行
 
 ```bash
 cd apps
 npm install
 npm --prefix server install
+cp .env.local.example .env.local   # 然后填入真实的模型和搜索密钥
 npm run dev
 ```
 
-只要 API：`cd apps/server && npm run dev`（默认 `http://127.0.0.1:3000`）。只要前端、自己已经起了 API：`cd apps && npm run dev:web`。
+打开 `http://127.0.0.1:5173/`。没有真实密钥时，页面能打开，但调查会失败。
 
-构建与测试：
+`.env.local` 不会提交到仓库。不要把密钥写进任何会提交的文件。
+
+## 测试
+
+本项目没有单元测试和集成测试，只有一个真实端到端测试：真实浏览器、真实后端、真实模型和搜索，走一遍用户的主路径。
 
 ```bash
 cd apps
-npm test
-npm run build
-
-cd server
-npm run build
+npm run dev    # 另开一个终端，保持运行
+npm run e2e
 ```
 
-## 环境变量
+一次大约 7 分钟，会产生模型和搜索费用。测试在后台运行，不弹出窗口；每次在 `out/e2e/<时间>/` 留下结果文件、截图和录屏 `run.webm`。测试运行期间不要改后端文件，因为开发服务器保存文件时会重启，正在进行的调查会被打断。
 
-示例见 `apps/.env.local.example`。常用：`DEEPSEEK_API_KEY`、`MIMO_API_KEY`、`STEPFUN_API_KEY`、`AIPING_*`、`PUBLIC_BASE_URL=https://gun.yishuziyu.cn`。不要把真实密钥提交进仓库。
+构建：
 
-## 部署
+```bash
+cd apps && npm run build
+```
 
-域名 `gun.yishuziyu.cn`，DNS 为 A → `121.89.90.68`。Nginx 服务静态资源，`/api/` 与 `/health` 代理到本机 Express。唯一发布入口：`./ops.sh deploy --yes`（不要跑 `scripts/retired/deploy-to-aliyun.sh` 或 `apps/deploy.sh`）。发布门禁见 `docs/PRODUCT_RELEASE_GATE.md`。
+## 许可
 
-Vercel 已于 2026-09-11 退场：它的 `/api` rewrite 指向自身域名会 508 自环，且国内可用性不可靠（`PRODUCT_RELEASE_GATE.md` 第二节）。仓库里不再保留 `vercel.json`；要恢复必须先读 `docs/tasks/2026-09-11-deploy/vercel-retirement.md`，那里写了三个必须同时满足的条件。
+MIT，见 `LICENSE`。
