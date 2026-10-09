@@ -121,6 +121,12 @@ async function checkLabels() {
     LABELS.includes(conclusionLabel) && leadText.startsWith(conclusionLabel) && conclusionReason.length > 0,
     `${conclusionLabel || "NO LABEL"}｜${conclusionReason.slice(0, 100) || "NO REASON"}`
   );
+  const sentences = conclusionReason.split(/[。！？]/).filter((x) => x.trim()).length;
+  record(
+    "conclusion reason is one sentence without internal terms",
+    sentences === 1 && !/原子|命题|判定为|判词/.test(conclusionReason),
+    conclusionReason.slice(0, 100)
+  );
   // textContent, not innerText: text that is rendered but scrolled away or folded still counts.
   const pageText = await page.evaluate(() => {
     const body = document.body.cloneNode(true);

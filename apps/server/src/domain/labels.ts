@@ -132,7 +132,7 @@ export function partLabelFor(standing: PartStanding, modelLabel: LabelKey | unde
     case "supported":
       return modelLabel === "mostly-true" || modelLabel === "partly-true" ? "mostly-true" : "true";
     case "refuted":
-      return modelLabel === "exaggerated" ? "exaggerated" : "false";
+      return "false";
     case "partial":
       return modelLabel === "exaggerated" ? "exaggerated" : "partly-true";
     case "conflicting":
@@ -149,9 +149,9 @@ export function standingForLabel(label: LabelKey): PartStanding {
     case "mostly-true":
       return "supported";
     case "false":
-    case "exaggerated":
       return "refuted";
     case "partly-true":
+    case "exaggerated":
       return "partial";
     case "disputed":
       return "conflicting";

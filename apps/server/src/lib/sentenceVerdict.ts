@@ -75,8 +75,9 @@ export function standingOf(verdict: Report | undefined): PartStanding {
     });
   if (v === "false") return bound("false") ? "refuted" : "unresolved";
   if (v === "true") return bound("true") ? "supported" : "unresolved";
-  // 夸大：模型有时把说明夸大的出处放进反驳桶，任一方向有出处都算。
-  if (v === "exaggerated") return bound("exaggerated") || bound("partial") ? "refuted" : "unresolved";
+  // 夸大：有一部分道理，按部分成立处理（#140：主要说法夸大 → 整句「夸大了」，不是「不属实」）。
+  // 模型有时把说明夸大的出处放进反驳桶，任一方向有出处都算。
+  if (v === "exaggerated") return bound("exaggerated") || bound("partial") ? "partial" : "unresolved";
   if (v === "partial" || v === "mixed" || v === "mixed_misleading") {
     if (!bound(v)) return "unresolved";
     // 部分成立只在有来源明确反驳了原句里某个具体要素（数字、日期、范围、主体、因果关系），并且逐字引出那个要素时才算。
@@ -156,12 +157,20 @@ function nonCheckableLabels(report: Report, nonVerifiableAtoms: unknown): LabelK
   return records(nonVerifiableAtoms ?? report.nonVerifiableAtoms).map((atom) => nonCheckableLabel(String(atom.type ?? "")));
 }
 
+/** 模型有时写成好几句、带内部用语：只留第一句；第一句仍带内部用语就不用，改用各截标签拼的句子。 */
+const INTERNAL_TERMS = /原子|命题|判定为|判词|Agent|模型|置信/;
+function firstSentence(text: string): string {
+  const first = (text.match(/^[^。！？]*[。！？]?/)?.[0] ?? "").trim();
+  if (!first || INTERNAL_TERMS.test(first)) return "";
+  return /[。！？]$/.test(first) ? first : `${first}。`;
+}
+
 /** 模型写的整句理由；没有时（确定性报告、模型没给）用各截标签拼一句。 */
 function wholeReasonOf(report: Report, parts: readonly AssessedPart[], label: LabelKey, factCheckReason?: unknown): string {
   // 报告写作那一步的理由优先；时间不够跳过报告写作时，用核查那一步写的理由（两步都是模型写的）。
   const pick = (value: unknown) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "");
-  const model = pick(report.verdictReason) || pick(factCheckReason);
-  if (model) return /[。！？]$/.test(model) ? model : `${model}。`;
+  const model = firstSentence(pick(report.verdictReason)) || firstSentence(pick(factCheckReason));
+  if (model) return model;
   if (parts.length > 0) return `${parts.map(partLine).join("；")}。`;
   return FALLBACK_PART_REASON[label];
 }
