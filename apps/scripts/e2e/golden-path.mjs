@@ -128,16 +128,15 @@ async function checkLabels() {
     sentences === 1 && !/原子|命题|判定为|判词/.test(conclusionReason),
     conclusionReason.slice(0, 100)
   );
-  // textContent, not innerText: text that is rendered but scrolled away or folded still counts.
-  const pageText = await page.evaluate(() => {
-    const body = document.body.cloneNode(true);
-    body.querySelectorAll("script, style").forEach((el) => el.remove());
-    return body.textContent ?? "";
-  }).catch(() => "");
-  const oldHits = OLD_LABELS.filter((word) => pageText.includes(word)).map((word) => {
-    const at = pageText.indexOf(word);
-    return `${word}: …${pageText.slice(Math.max(0, at - 20), at + 20).replace(/\s+/g, " ")}…`;
-  });
+  // An old label renders as its own element (a chip or a heading), so look for elements whose whole text is
+  // an old word. Whole-page substring search failed on source quotes that happen to say 「有争议」.
+  // textContent, not innerText: elements that are rendered but folded still count.
+  const oldHits = await page.evaluate((words) => {
+    const norm = (t) => (t ?? "").replace(/[\s·:：|｜,，。]/g, "");
+    return [...document.body.querySelectorAll("*")]
+      .filter((el) => !["SCRIPT", "STYLE"].includes(el.tagName) && words.includes(norm(el.textContent)))
+      .map((el) => `${norm(el.textContent)} <${el.tagName.toLowerCase()} class="${el.className}">`);
+  }, OLD_LABELS).catch(() => []);
   record("result page shows none of the 6 old label words", oldHits.length === 0, oldHits.join(" ‖ "));
 }
 
