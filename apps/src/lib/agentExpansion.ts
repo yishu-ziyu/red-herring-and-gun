@@ -1,6 +1,5 @@
 import { caseIntakePrimaryText, type CaseIntake } from "./caseIntake";
 import { readSavedByoKey } from "./byoKeyRequest";
-import type { MemoryCandidate, MemoryCandidateStatus } from "./memoryCandidateTypes";
 import type { AgentEvidenceBundle } from "./schemas";
 import type { AgentContract } from "./agentConfigs";
 import { getTraceCollector, type TraceStatus } from "./reasoningTrace";
@@ -11,13 +10,10 @@ import {
 import type { InvestigationSnapshotV1, PublicActivity } from "./investigation";
 import type { VisiblePriorRound } from "./priorRoundBrief";
 import type {
-  ConsensusDebateUpdate,
   ExecutionDagPlan,
   SpeculativeRelayUpdate,
 } from "./agentOrchestrationTypes";
 export type {
-  ConsensusDebateRound,
-  ConsensusDebateUpdate,
   ExecutionDagClaimType,
   ExecutionDagEdge,
   ExecutionDagNode,
@@ -135,8 +131,6 @@ export interface OrchestrateStreamEvent {
     | "search_progress"
     | "planner_update"
     | "speculative_update"
-    | "consensus_debate_round"
-    | "consensus_debate_final"
     | "agent_start"
     | "agent_complete"
     | "agent_error"
@@ -196,9 +190,7 @@ export interface OrchestrateStreamEvent {
   };
   plan?: ExecutionDagPlan;
   relay?: SpeculativeRelayUpdate;
-  debate?: ConsensusDebateUpdate;
   followUpQueue?: unknown[];
-  memoryCandidates?: MemoryCandidate[];
   totalLatencyMs?: number;
   sessionId?: string;
   claim?: string;
@@ -419,21 +411,4 @@ export async function* requestOrchestrateStream(
     });
     yield { type: "error", message };
   }
-}
-
-export async function updateMemoryCandidateStatus(
-  id: string,
-  status: MemoryCandidateStatus,
-  reason?: string
-): Promise<MemoryCandidate> {
-  const response = await fetch(`${API_BASE}/api/agent/memory-candidates`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action: "setStatus", id, status, reason }),
-  });
-  const data = (await response.json().catch(() => null)) as { candidate?: MemoryCandidate; message?: string } | null;
-  if (!response.ok || !data?.candidate) {
-    throw new Error(data?.message ?? `Memory Candidate API 失败：HTTP ${response.status}`);
-  }
-  return data.candidate;
 }

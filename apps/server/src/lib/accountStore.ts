@@ -14,6 +14,7 @@
 import crypto from "node:crypto";
 import { ACCOUNT_DAILY_CHECKS, shanghaiDayKey } from "../../../src/lib/checkQuota.js";
 import { loadSnapshot, registerSnapshotSource } from "./jsonSnapshot.js";
+import { sessionSecretFromEnv } from "./signedCookie.js";
 
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 min
 const RATE_WINDOW_MS = 60 * 1000; // 1 min
@@ -137,7 +138,7 @@ export async function verifyAndCreate(
   rawCode: string,
   serverSecret: string
 ): Promise<VerifyResult> {
-  if (!(serverSecret ?? "").trim() || !(process.env.AIPING_SESSION_SECRET ?? "").trim()) {
+  if (!(serverSecret ?? "").trim() || !sessionSecretFromEnv()) {
     return { ok: false, error: "invalid_code" };
   }
 

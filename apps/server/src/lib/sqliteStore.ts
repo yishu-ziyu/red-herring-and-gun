@@ -140,24 +140,8 @@ function migrate(db: DatabaseSync): void {
     );
   }
   if (current < 3) {
-    // 证据库（契约 docs/evals/2026-09-12-evidence-base.md）：调查 finalize 后沉淀的
-    // 命题级核查知识。atomNorm 是规范化命题文本，唯一索引决定「同一命题只一条」；
-    // 时间列与 cases / runs 一致用 epoch ms。CREATE TABLE/INDEX IF NOT EXISTS 幂等，
-    // 版本号用 INSERT OR IGNORE：崩在中间重跑不会炸、也不会重复建。
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS knowledge_entries (
-        id TEXT PRIMARY KEY,
-        atomNorm TEXT NOT NULL,
-        atomText TEXT NOT NULL,
-        verdict TEXT NOT NULL,
-        evidence TEXT NOT NULL DEFAULT '[]',
-        sourceRunId TEXT NOT NULL,
-        createdAt INTEGER NOT NULL,
-        lastVerifiedAt INTEGER NOT NULL,
-        hitCount INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_knowledge_entries_atom_norm ON knowledge_entries(atomNorm);
-    `);
+    // 版本 3 曾建 knowledge_entries（证据库）。证据库已在 2026-10-09 删除：新库不再建这张表，
+    // 老库里已有的表与数据原样留着、不再读写。版本号照常记 3，下一条迁移从 4 开始。
     db.prepare("INSERT OR IGNORE INTO schema_version (version, appliedAt) VALUES (3, ?)").run(
       new Date().toISOString()
     );

@@ -248,7 +248,6 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
       { id: "llm_report_synthesis", name: "LLM 报告合成", kind: "llm", description: "将多 Agent 输出合成为结构化核查报告。" },
       { id: "fire_confidence", name: "FIRE 置信度评估", kind: "report", description: "按来源、完整度、一致性、时效、权威五维调制置信度。" },
       { id: "closure_actions", name: "收束", kind: "report", description: "生成核查摘要、存疑归档、分享文案。" },
-      { id: "memory_write", name: "Agent Memory 写入", kind: "memory", description: "把核查报告、证据和搜索策略沉淀为可复用案例。" },
     ],
     memory: {
       reads: ["前序 Agent 输出", "相似案例结论", "证据质量摘要"],

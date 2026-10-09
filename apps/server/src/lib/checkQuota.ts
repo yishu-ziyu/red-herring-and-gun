@@ -24,7 +24,7 @@ import {
   releaseAccountCheck,
   type EmailAccount,
 } from "./accountStore.js";
-import { decodeSignedJson, emailCookieOptions, encodeSignedJson, parseCookies } from "./aipingAuth.js";
+import { decodeSignedJson, emailCookieOptions, encodeSignedJson, parseCookies } from "./signedCookie.js";
 import { getServerSecret, readEmailAccountOptional } from "./emailSession.js";
 import { loadSnapshot, registerSnapshotSource } from "./jsonSnapshot.js";
 

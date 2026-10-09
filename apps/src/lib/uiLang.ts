@@ -66,7 +66,6 @@ export type UiCopy = {
   filesUnsupported: string;
   imagesTooLarge: string;
   tooManyImages: string;
-  accountStateLabel: string;
   accountChecking: string;
   signedIn: string;
   signOut: string;
@@ -159,7 +158,6 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     filesUnsupported: "只支持图片和视频文件。",
     imagesTooLarge: "图片总大小不能超过 6MB。",
     tooManyImages: "最多支持 4 张图片附件，超出部分未添加。",
-    accountStateLabel: "AI Ping 账号状态",
     accountChecking: "账号检测中",
     signedIn: "已登录",
     signOut: "退出",
@@ -249,7 +247,6 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     filesUnsupported: "Only image and video files are supported.",
     imagesTooLarge: "Total image size must stay under 6MB.",
     tooManyImages: "Up to 4 image attachments — extras were dropped.",
-    accountStateLabel: "AI Ping account status",
     accountChecking: "Checking account",
     signedIn: "Signed in",
     signOut: "Sign out",

@@ -1,14 +1,13 @@
 /**
- * 管线事件 → SSE 帧：agent 四帧、检索与追索、共识、复核与记忆写入，以及 BYO fail-closed 的报告工厂。
+ * 管线事件 → SSE 帧：agent 四帧、检索与追索、复核，以及 BYO fail-closed 的报告工厂。
  * 事件名与载荷字节级不变。
  */
 import type { AtomSearchBundle } from "../lib/atomSearch.js";
 import type { CasePipelineHooks, CasePipelineInput, PipelineStep, RunAgentFn } from "../lib/casePipeline/index.js";
 import type { InvestigationSnapshotV1 } from "../lib/investigation/index.js";
 import type { createInvestigationEmitter } from "../lib/investigationEmitter.js";
-import { wait } from "../lib/httpUtils.js";
 import { ByoKeyError } from "../lib/orchestrateByo.js";
-import { buildConsensusDebate, runReportComposerWithFallback } from "../lib/reportFallback.js";
+import { runReportComposerWithFallback } from "../lib/reportFallback.js";
 import { getSearchToolName } from "../lib/searchProviders.js";
 import { toFriendlyError } from "./publicStream.js";
 
@@ -159,12 +158,6 @@ export function makePipelineHooks(ctx: {
       sendEvent({ type: "tool_start", toolName: "Atom Search", query: atom, timestamp: Date.now() });
       emitter.emitSearchStarted(atom);
     },
-    // 命中知识库 → 活动流一行「命中知识库（YYYY-MM-DD 已核），免于本次检索」。
-    // 动作类活动：引用数组为空（该命题这次没有检索，也就没有可取的对象）；
-    // 日期走 payload.originDate，读侧不从文案里猜时间。
-    onKnowledgeHit: (hit) => {
-      emitter.emitKnowledgeHit(hit.originDate);
-    },
     onPriorRoundReuse: (hit) => {
       emitter.emitPriorRoundReuse(hit.originDate);
     },
@@ -251,33 +244,6 @@ export function makePipelineHooks(ctx: {
         timestamp: Date.now(),
       });
     },
-    afterFactSource: async ({ factStep, sourceStep, search360Result }) => {
-      const debate = buildConsensusDebate(factStep, sourceStep, search360Result);
-      if (debate.status !== "not_needed") {
-        sendEvent({
-          type: "consensus_debate_round",
-          phase: "handoff",
-          debate: { ...debate, status: "running", rounds: [], finalConsensus: "事实核查与溯源还在对证据，先不写结论。" },
-          timestamp: Date.now(),
-        });
-        await wait(220);
-        for (let index = 0; index < debate.rounds.length; index += 1) {
-          sendEvent({
-            type: "consensus_debate_round",
-            phase: "handoff",
-            debate: {
-              ...debate,
-              status: "running",
-              rounds: debate.rounds.slice(0, index + 1),
-              finalConsensus: "正在根据两边的证据收紧：哪些能信，哪些不能信。",
-            },
-            timestamp: Date.now(),
-          });
-          await wait(220);
-        }
-      }
-      sendEvent({ type: "consensus_debate_final", phase: "handoff", debate, timestamp: Date.now() });
-    },
     onReportReviewStart: (info) => {
       sendEvent({ type: "tool_start", toolName: info.toolName, query: info.query, timestamp: Date.now() });
     },
@@ -287,18 +253,6 @@ export function makePipelineHooks(ctx: {
         toolName: info.toolName,
         query: info.query,
         result: { passed: info.passed, score: info.score, issues: info.issues, checks: info.checks },
-        timestamp: Date.now(),
-      });
-    },
-    onMemoryWriteStart: (info) => {
-      sendEvent({ type: "tool_start", toolName: info.toolName, query: info.query, timestamp: Date.now() });
-    },
-    onMemoryWriteResult: (info) => {
-      sendEvent({
-        type: "tool_result",
-        toolName: info.toolName,
-        query: info.query,
-        result: { proposedCandidateCount: info.proposedCandidateCount },
         timestamp: Date.now(),
       });
     },

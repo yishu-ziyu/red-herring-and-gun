@@ -5,7 +5,7 @@
  *  1. 最新一份通过 schema 校验的 InvestigationSnapshotV1（来自 investigation_snapshot）；
  *  2. 连接状态与最终 finalReport（complete 事件，仅用于 imageOrigin side-channel 与落库）。
  *
- * raw Agent / tool / search / consensus / planner 事件在此被显式忽略——
+ * raw Agent / tool / search / planner 事件在此被显式忽略——
  * 删掉它们之后生产 Golden Path 仍必须完整工作（见 goldenPath/run.test.tsx 负向测试）。
  */
 import { useCallback, useRef, useState } from "react";
@@ -29,8 +29,6 @@ const IGNORED_LEGACY_EVENT_TYPES: ReadonlySet<OrchestrateStreamEvent["type"]> = 
   "search_progress",
   "planner_update",
   "speculative_update",
-  "consensus_debate_round",
-  "consensus_debate_final",
   "agent_start",
   "agent_complete",
   "agent_error",

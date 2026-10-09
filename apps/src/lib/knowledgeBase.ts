@@ -6,7 +6,6 @@ import type {
   ScoreLevel,
   SearchStrategyMemory,
 } from "./schemas";
-import type { MemoryCandidate, MemoryCandidateKind, MemoryCandidateStatus } from "./memoryCandidateTypes";
 import { semanticClaimSimilarity } from "./semanticRecall";
 
 export interface KnowledgeBase {
@@ -18,14 +17,11 @@ export interface KnowledgeBase {
   findEvidence(query: string, options?: { role?: EvidenceRole; limit?: number }): Promise<EvidenceLibraryEntry[]>;
   getSearchStrategy(rumorType: string): Promise<SearchStrategyMemory | null>;
   updateSearchStrategy(rumorType: string, updates: Partial<SearchStrategyMemory>): Promise<void>;
-  saveMemoryCandidate(candidate: MemoryCandidate): Promise<void>;
-  listMemoryCandidates(filter?: { status?: MemoryCandidateStatus; kind?: MemoryCandidateKind }): Promise<MemoryCandidate[]>;
   getStats(): Promise<KnowledgeBaseStats>;
 }
 
 const MAX_CASES = 80;
 const MAX_EVIDENCE = 240;
-const MAX_MEMORY_CANDIDATES = 240;
 
 function canUseStorage() {
   try {
@@ -112,7 +108,6 @@ export function createKnowledgeBase(accountEmail?: string | null): KnowledgeBase
   const CASES_KEY = `red-herring-knowledge-cases${suffix}`;
   const EVIDENCE_KEY = `red-herring-evidence-library${suffix}`;
   const STRATEGY_KEY = `red-herring-search-strategies${suffix}`;
-  const MEMORY_CANDIDATES_KEY = `red-herring-memory-candidates${suffix}`;
   return {
     async saveCase(entry) {
       const entries = readList<KnowledgeBaseEntry>(CASES_KEY);
@@ -216,19 +211,6 @@ export function createKnowledgeBase(accountEmail?: string | null): KnowledgeBase
         useCount: updates.useCount ?? (existing?.useCount ?? 0) + 1,
       };
       writeList(STRATEGY_KEY, [nextEntry, ...entries.filter((entry) => entry.rumorType !== rumorType)]);
-    },
-
-    async saveMemoryCandidate(candidate) {
-      const entries = readList<MemoryCandidate>(MEMORY_CANDIDATES_KEY);
-      const deduped = entries.filter((entry) => entry.id !== candidate.id);
-      writeList(MEMORY_CANDIDATES_KEY, [candidate, ...deduped].slice(0, MAX_MEMORY_CANDIDATES));
-    },
-
-    async listMemoryCandidates(filter) {
-      return readList<MemoryCandidate>(MEMORY_CANDIDATES_KEY)
-        .filter((candidate) => !filter?.status || candidate.status === filter.status)
-        .filter((candidate) => !filter?.kind || candidate.kind === filter.kind)
-        .sort((a, b) => b.provenance.createdAt - a.provenance.createdAt);
     },
 
     async getStats() {

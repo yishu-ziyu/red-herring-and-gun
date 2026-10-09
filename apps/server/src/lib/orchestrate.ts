@@ -135,7 +135,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
       // Book Ch.2：状态栏 + 按需 Skills
       const claimType = inferClaimTypeForSkills(steps as any) ?? "mixed";
       const memoryRecall = opts.clientMemoryRecall as
-        | { hitCount?: number; acceptedCandidateCount?: number }
+        | { hitCount?: number }
         | undefined;
       const statusBar = buildAgentStatusBar({
         agentId,
@@ -146,7 +146,6 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         totalStepsHint: 4,
         tools: [],
         memoryHitCount: memoryRecall?.hitCount ?? 0,
-        acceptedCandidateCount: memoryRecall?.acceptedCandidateCount ?? 0,
         searchReady: Boolean(search360Result),
       });
       agentInput.agentStatusBar = statusBar.text;

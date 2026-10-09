@@ -22,7 +22,6 @@ import {
   ROLE_LABEL,
 } from "./snapshotUi";
 import { EvidenceBoard } from "./EvidenceBoard";
-import { isPriorRoundLink, knowledgeOriginDay } from "./knowledgeMark";
 import { PromptKitSource } from "./PromptKitSource";
 import { scrubFaceText, tooSimilarTo } from "./scrubFace";
 import type { InvestigationConflictSide } from "../lib/investigation";
@@ -78,12 +77,17 @@ function usesExpandedTrace(): boolean {
   return typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches === true;
 }
 
+/** 同一案上一轮复用的证据条目。老快照没有 provenance 字段，按普通证据渲染。 */
+function isPriorRoundLink(link: InvestigationEvidenceLink): boolean {
+  return link.provenance === "prior-round";
+}
+
 /**
- * 知识库标记的样式内联：一是本批 golden-path.css 归收尾分身，二是不借 .gp-chip——
+ * 「依据来自刚才那一轮」标记的样式内联：不借 .gp-chip——
  * 它在调查阶段被 display:none、完成阶段被改写成无边框正文，借来会看不见或不成胶囊。
  */
-const knowledgeEntryStyle: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6 };
-const knowledgeMarkStyle: CSSProperties = {
+const priorRoundEntryStyle: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6 };
+const priorRoundMarkStyle: CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   border: "1px solid var(--gp-hairline)",
@@ -211,7 +215,6 @@ export function ClaimSection({
                 const source = sources.find((s) => s.id === link.sourceId);
                 if (!source) return null;
                 const key = `pill-${claim.id}-${link.sourceId}-${link.role}-${idx}`;
-                const knowledgeDay = knowledgeOriginDay(link);
                 const priorRound = isPriorRoundLink(link);
                 const pillId = `${link.sourceId}:${link.role}:${idx}`;
                 const pillProps = {
@@ -222,19 +225,18 @@ export function ClaimSection({
                   entering: pillEnter.isEntering(pillId),
                   enterDelayMs: pillEnter.delayMs(pillId),
                 };
-                if (knowledgeDay === null && !priorRound) {
+                if (!priorRound) {
                   return <PromptKitSource key={key} {...pillProps} />;
                 }
                 return (
-                  <span key={key} style={knowledgeEntryStyle}>
+                  <span key={key} style={priorRoundEntryStyle}>
                     <PromptKitSource {...pillProps} />
                     <span
-                      className="gp-knowledge-mark"
-                      style={knowledgeMarkStyle}
-                      data-gp-knowledge-mark={priorRound ? "prior-round" : knowledgeDay}
-                      data-gp-prior-round-mark={priorRound || undefined}
+                      className="gp-prior-round-mark"
+                      style={priorRoundMarkStyle}
+                      data-gp-prior-round-mark
                     >
-                      {priorRound ? copy.evidencePriorRoundMark : copy.evidenceKnowledgeMark(knowledgeDay ?? "")}
+                      {copy.evidencePriorRoundMark}
                     </span>
                   </span>
                 );

@@ -5,13 +5,9 @@
 
 import { randomUUID } from "node:crypto";
 
-import { buildQueriesWithReuse } from "./queryReuse.js";
-
-import { mergeParallelSearchPayloads } from "./atomSearchQuery.js";
+import { buildAtomSearchQueries, mergeParallelSearchPayloads } from "./atomSearchQuery.js";
 
 import { canonicalizeUrl } from "./retrievalFilter.js";
-
-import type { MemoryCandidateHit } from "./memoryCandidateTypes.js";
 
 import { stringItems } from "./valueCoerce.js";
 
@@ -473,16 +469,15 @@ function publicProgressSources(
   return [...byKey.values()];
 }
 
-/** Production per-atom search: recipe + accepted reuse query, then merge URLs. */
+/** Production per-atom search: query recipe, then merge URLs. */
 export async function retrieveAtomSources(
   env: Record<string, string>,
   atom: string,
-  reuseHits?: MemoryCandidateHit[],
   onProgress?: (event: SearchProgressEvent) => void,
   execution: ExecutionBudget = {},
 ) {
   execution.signal?.throwIfAborted();
-  const queries = buildQueriesWithReuse(atom, reuseHits ?? []);
+  const queries = buildAtomSearchQueries(atom);
   const queryCount = queries.length;
   const providers = parallelSearchProviders(env);
 

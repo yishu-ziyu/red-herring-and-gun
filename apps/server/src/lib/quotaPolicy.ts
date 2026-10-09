@@ -11,7 +11,6 @@
 import { gateFreeCheck } from "./checkQuota.js";
 
 export const QUOTA_GATED_PATHS = [
-  "/mcp",
   "/api/agent/orchestrate-stream",
   "/api/agent/test-llm",
 ] as const;

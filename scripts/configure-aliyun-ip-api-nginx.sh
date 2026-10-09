@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Route bare-IP /api, /health, /r/ and orchestrate-stream to red-herring API;
+# Route bare-IP /api, /health and orchestrate-stream to red-herring API;
 # keep the shared /lcw/ gateway for podcast-to-essay; leave other IP paths for bb-roleplay.
 # NGINX_CONF_OUT: dump the conf the script would write and exit (no /etc, no reload).
 set -euo pipefail
@@ -44,15 +44,6 @@ server {
         proxy_set_header X-Forwarded-For \$remote_addr;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_read_timeout 300s;
-    }
-
-    location /r/ {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$remote_addr;
-        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     location = /health {

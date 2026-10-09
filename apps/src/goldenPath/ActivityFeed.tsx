@@ -9,7 +9,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor, type GpCopy } from "./copy";
-import { knowledgeHitDay } from "./knowledgeMark";
 import { JUDGMENT_LABEL, domainOf, ROLE_LABEL } from "./snapshotUi";
 import type {
   InvestigationEvidenceLink,
@@ -36,7 +35,6 @@ function pulseColorFor(activity: PublicActivity): string {
     case "evidence_assessed":
     case "judgment_revised":
       return "var(--gp-accent)";
-    case "knowledge_hit":
     case "prior_round_reuse":
       // 复用既有语义色：复用材料不是支持也不是反驳，走 context 的中性色，不染成证据立场。
       return "var(--gp-semantic-context)";
@@ -67,8 +65,6 @@ export function activityLine(activity: PublicActivity, copy: GpCopy): string {
       return copy.activityConflictDetected(payload.summary ?? "");
     case "gap_identified":
       return copy.activityGapIdentified(payload.description ?? "");
-    case "knowledge_hit":
-      return copy.activityKnowledgeHit(knowledgeHitDay(activity));
     case "prior_round_reuse":
       return copy.activityPriorRoundReuse;
     case "run_completed":

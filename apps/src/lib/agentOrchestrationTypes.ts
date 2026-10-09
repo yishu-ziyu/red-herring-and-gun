@@ -38,20 +38,3 @@ export interface SpeculativeRelayUpdate {
   savedReason: string;
   confidence: "low" | "medium" | "high";
 }
-
-export interface ConsensusDebateRound {
-  challenger: string;
-  respondent: string;
-  challenge: string;
-  response: string;
-}
-
-export interface ConsensusDebateUpdate {
-  id: string;
-  status: "not_needed" | "running" | "resolved";
-  title: string;
-  conflictCount: number;
-  rounds: ConsensusDebateRound[];
-  finalConsensus: string;
-  confidenceAdjustment: number;
-}

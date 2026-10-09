@@ -78,7 +78,6 @@ pack_mvp_archive() {
     --exclude='.git' \
     --exclude='.vercel' \
     --exclude='server/dist' \
-    --exclude='.agent-memory' \
     --exclude='server/.data' \
     --exclude='.superpowers' \
     --exclude='multi-agent-viz-research' \
@@ -128,17 +127,14 @@ if [ "$app_dist" != "$nginx_dist" ]; then
   cp -a "$APP_DIR/dist/." "$NGINX_DIST/"
 fi
 
-mkdir -p "$MIGRATE_DIR/data" "$MIGRATE_DIR/memory"
+mkdir -p "$MIGRATE_DIR/data"
 if docker ps -q -f name=red-herring-api | grep -q .; then
   docker cp red-herring-api:/app/server/.data/. "$MIGRATE_DIR/data/" 2>/dev/null || true
-  docker cp red-herring-api:/app/server/.agent-memory/. "$MIGRATE_DIR/memory/" 2>/dev/null || true
   echo "-- pre-migration counts"
   echo "cases: $(find "$MIGRATE_DIR/data" -type f 2>/dev/null | wc -l | tr -d ' ')"
-  echo "memory: $(find "$MIGRATE_DIR/memory" -type f 2>/dev/null | wc -l | tr -d ' ')"
 else
   echo "-- pre-migration counts"
   echo "cases: 0"
-  echo "memory: 0"
   echo "pre-migration empty (no running container)"
 fi
 
@@ -176,7 +172,6 @@ copy_if_dest_empty() {
 }
 
 copy_if_dest_empty /app/server/.data "$MIGRATE_DIR/data"
-copy_if_dest_empty /app/server/.agent-memory "$MIGRATE_DIR/memory"
 rm -rf "$MIGRATE_DIR"
 
 docker compose ps
@@ -557,7 +552,7 @@ deploy_current_mvp() {
 
   print_remote_deploy "$remote_dir" | ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=yes "$SSH_TARGET" bash
 
-  section "Apply host nginx (SSE unbuffered + /r/)"
+  section "Apply host nginx (SSE unbuffered)"
   apply_host_nginx
 
   rm -f "$archive"

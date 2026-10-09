@@ -14,7 +14,6 @@ export interface AgentStatusBarInput {
   totalStepsHint?: number;
   tools: Array<{ id: string; name: string; kind?: string }>;
   memoryHitCount?: number;
-  acceptedCandidateCount?: number;
   searchReady?: boolean;
   steeringCount?: number;
   failurePolicy?: string;
@@ -59,7 +58,6 @@ export function buildAgentStatusBar(input: AgentStatusBarInput): AgentStatusBar 
     `claim="${claimPreview}"`,
     `tools=[${toolNames.join(", ") || "none"}]`,
     `memoryHits=${input.memoryHitCount ?? 0}`,
-    `acceptedSkills=${input.acceptedCandidateCount ?? 0}`,
     `searchReady=${input.searchReady ? "yes" : "no"}`,
     `steering=${input.steeringCount ?? 0}`,
   ].filter(Boolean);
@@ -82,7 +80,6 @@ export function buildAgentStatusBar(input: AgentStatusBarInput): AgentStatusBar 
       stepIndex: input.stepIndex,
       claimType: input.claimType ?? "unknown",
       memoryHitCount: input.memoryHitCount ?? 0,
-      acceptedCandidateCount: input.acceptedCandidateCount ?? 0,
       searchReady: Boolean(input.searchReady),
       steeringCount: input.steeringCount ?? 0,
       toolCount: toolNames.length,

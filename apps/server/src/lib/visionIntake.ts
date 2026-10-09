@@ -33,10 +33,8 @@ export interface CaseIntakePayload {
 export interface ClientMemoryRecallPayload {
   policy: string;
   hitCount: number;
-  acceptedCandidateCount: number;
   evidenceCount: number;
   hits: unknown[];
-  acceptedCandidates: unknown[];
   sources: unknown[];
   relatedQuestions: string[];
   traceText: string;
@@ -75,15 +73,12 @@ export function normalizeCaseIntake(raw: any): CaseIntakePayload | null {
 export function normalizeClientMemoryRecall(raw: any): ClientMemoryRecallPayload | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const hitCount = safeInteger(raw.hitCount);
-  const acceptedCandidateCount = safeInteger(raw.acceptedCandidateCount);
   const evidenceCount = safeInteger(raw.evidenceCount);
   return {
-    policy: "历史案件和记忆候选只能作为检索线索、来源经验和风险提醒；不得把旧案结论直接当作本案证据。",
+    policy: "历史案件和本地证据只能作为检索线索、来源经验和风险提醒；不得把旧案结论直接当作本案证据。",
     hitCount,
-    acceptedCandidateCount,
     evidenceCount,
     hits: safeArray(raw.hits).slice(0, 4).map((hit) => compactJsonValue(hit, 900)),
-    acceptedCandidates: safeArray(raw.acceptedCandidates).slice(0, 4).map((candidate) => compactJsonValue(candidate, 700)),
     sources: safeArray(raw.sources).slice(0, 6).map((source) => compactJsonValue(source, 700)),
     relatedQuestions: safeArray(raw.relatedQuestions).filter((item): item is string => typeof item === "string").slice(0, 6),
     traceText: typeof raw.traceText === "string" ? raw.traceText.slice(0, 500) : "",

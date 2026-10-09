@@ -25,9 +25,6 @@ import { lookupImageOrigin, visionHintsFromExtraction } from "../lib/imageOrigin
 import { interruptedInvestigationSnapshot } from "../lib/interruptedSnapshot.js";
 import type { InvestigationSnapshotV1 } from "../lib/investigation/index.js";
 import { createInvestigationEmitter } from "../lib/investigationEmitter.js";
-import { createKnowledgeMemory } from "../lib/knowledgeStore.js";
-import { getMemoryCandidateStore } from "../lib/memoryCandidateHandlers.js";
-import type { MemoryCandidateHit } from "../lib/memoryCandidateTypes.js";
 import { createOrchestrateAdapter } from "../lib/orchestrate.js";
 import { ByoKeyError, searchEnvWithByoCredentials, type ByoConfig } from "../lib/orchestrateByo.js";
 import { buildDeterministicFinalReport } from "../lib/reportFallback.js";
@@ -147,18 +144,11 @@ function makeSearchOneAtom(
   searchEnvOverride: Record<string, string>,
   execution: ExecutionBudget = {},
 ) {
-  let reuseHitsPromise: Promise<MemoryCandidateHit[]> | undefined;
   return async (atom: string) => {
     execution.signal?.throwIfAborted();
-    if (!reuseHitsPromise) {
-      reuseHitsPromise = getMemoryCandidateStore()
-        .searchAccepted(atom)
-        .catch(() => []);
-    }
-    const reuseHits = await reuseHitsPromise;
     let result: Record<string, unknown>;
     try {
-      result = await retrieveAtomSources(searchEnvOverride, atom, reuseHits, onSearchProgress, execution);
+      result = await retrieveAtomSources(searchEnvOverride, atom, onSearchProgress, execution);
     } catch (error) {
       execution.signal?.throwIfAborted();
       const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
@@ -421,10 +411,6 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       ...makeRunAgentCallbacks(sendEvent),
     });
 
-    // 证据库（Part 1 · 记忆复用）：每次调查一份端口。claim 传进去是为了隐私闸门——
-    // 整句等于原句的 atom 一律不进知识库、不落观测（原句全文不写盘）。
-    const knowledgeBase = createKnowledgeMemory({ runId, claim });
-
     const pipelinePromise = withExecutionBudget((signal) => runCasePipeline({
       claim,
       // 断连与 BYO 密钥失败两个 abort 源合并：任一触发，管线阶段边界立即退出
@@ -439,7 +425,6 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       evidenceLoop: { callRewriteModel: makeRewriteQueryCall(byoAdapter.makeRewriteCaller(modelChoice)) },
       crossExam: { callRaw: byoAdapter.makeCrossExamCaller(modelChoice, (data) => sendEvent(data)) },
       wholeClaimAudit: { callModel: byoAdapter.makeWholeClaimAuditCaller(modelChoice) },
-      knowledgeBase,
       followUpReuse: priorCase
         ? {
             priorReport: priorCase.report,
@@ -451,7 +436,6 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       hooks: makePipelineHooks({ claim, sendEvent, emitInvestigation, emitter, searchesCounter }),
       finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>
         pipelineFinalize(fctx, visualExtraction),
-      memoryCandidateStore: getMemoryCandidateStore(),
     }), { signal: pipelineSignal, timeoutMs: PIPELINE_TOTAL_TIMEOUT_MS + PIPELINE_LATE_GRACE_MS, label: TIMEOUT_LABEL });
     // withTimeout 是 race：落败方的 rejection 必须被吸收，
     // 否则断连/超时触发的 abort 会变成 unhandledRejection 直接崩进程
@@ -480,7 +464,7 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       console.log(`[orchestrate] 调查在连接等待结束后完成，结果可恢复 runId=${runId}`);
     }
     console.log(
-      `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length} memoryCandidates=${result.memoryCandidates.length}`
+      `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length}`
     );
 
     sendEvent({
@@ -488,7 +472,6 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       claim,
       steps: result.steps,
       finalReport: result.finalReport,
-      memoryCandidates: result.memoryCandidates,
       timestamp: Date.now(),
     });
     // run 终态与快照终态一致：核查步骤内部失败（error-boundary）的 run 是
@@ -573,7 +556,6 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
         claim,
         steps: [],
         finalReport: timedOut,
-        memoryCandidates: [],
         timestamp: Date.now(),
       });
       finishRun(RUN_FINAL_STATUS[outcome]);

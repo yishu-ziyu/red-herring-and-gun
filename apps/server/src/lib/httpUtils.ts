@@ -7,10 +7,6 @@ export function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 // 与 express.json 上限一致：兜底路径同样要有界，防止无上限累积打爆内存
 const READ_JSON_MAX_BYTES = 10 * 1024 * 1024;
 

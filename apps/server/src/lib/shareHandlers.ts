@@ -31,7 +31,6 @@ export type PublicShareProjection = {
   caseId: string;
   claim: string;
   report: Record<string, unknown>;
-  claimReview: Record<string, unknown>;
   credibilityScore: number;
   createdAt: number;
   checkedAt?: string;
@@ -83,7 +82,6 @@ export function buildPublicProjection(entry: CaseEntry): PublicShareProjection {
     caseId: entry.caseId,
     claim: followUpQuestionOf(entry.claim),
     report: asPublicRecord(redact(entry.report)),
-    claimReview: asPublicRecord(redact(entry.claimReview)),
     credibilityScore: entry.credibilityScore,
     createdAt: entry.createdAt,
     ...(checkedAt ? { checkedAt } : {}),

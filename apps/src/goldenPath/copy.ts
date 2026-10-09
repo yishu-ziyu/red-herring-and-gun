@@ -90,7 +90,6 @@ export const GP_COPY = {
     sourceFetchRestricted: "原文受限没能取到。",
     sourceFetchTruncated: "原文被截断，只保留了部分内容。",
     sourceClose: "关闭",
-    evidenceKnowledgeMark: (date: string) => (date ? `知识库 · ${date} 已核` : "知识库 · 已核"),
     evidencePriorRoundMark: "依据来自刚才那一轮",
     gapLabel: "尚缺",
     gapHint: "缺这些材料，所以暂时给不出更强的判断。",
@@ -137,8 +136,6 @@ export const GP_COPY = {
       from && to ? `判断改变：${from} → ${to}` : "判断有修正",
     activityConflictDetected: (summary: string) => (summary ? `发现分歧：${summary}` : "发现分歧"),
     activityGapIdentified: (description: string) => (description ? `还缺：${description}` : "还有材料没拿到"),
-    activityKnowledgeHit: (date: string) =>
-      date ? `命中知识库（${date} 已核），免于本次检索` : "命中知识库（已核），免于本次检索",
     activityPriorRoundReuse: "依据来自刚才那一轮，不再检索已核过的命题",
     activityRunCompleted: "调查完成",
     stopInvestigation: "停止调查",
@@ -253,8 +250,6 @@ export const GP_COPY = {
     sourceFetchRestricted: "The page was access-restricted and could not be read.",
     sourceFetchTruncated: "The page was truncated; only part of it was kept.",
     sourceClose: "Close",
-    evidenceKnowledgeMark: (date: string) =>
-      date ? `Knowledge base · verified ${date}` : "Knowledge base · verified",
     evidencePriorRoundMark: "Based on the previous round",
     gapLabel: "Still missing",
     gapHint: "Without these, a stronger verdict isn't possible yet.",
@@ -301,10 +296,6 @@ export const GP_COPY = {
       from && to ? `Judgment revised: ${from} → ${to}` : "Judgment revised",
     activityConflictDetected: (summary: string) => (summary ? `Conflict found: ${summary}` : "Conflict found"),
     activityGapIdentified: (description: string) => (description ? `Still missing: ${description}` : "Something is still missing"),
-    activityKnowledgeHit: (date: string) =>
-      date
-        ? `Reused the knowledge base (verified ${date}) — no search needed this time`
-        : "Reused the knowledge base (verified) — no search needed this time",
     activityPriorRoundReuse: "Based on the previous round — already checked statements were not searched again",
     activityRunCompleted: "Investigation complete",
     stopInvestigation: "Stop",

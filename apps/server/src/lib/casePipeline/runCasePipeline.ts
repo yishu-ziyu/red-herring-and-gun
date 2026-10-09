@@ -1,18 +1,15 @@
 /**
  * Case Pipeline — production orchestration for one claim case.
- * 阶段：拆题 → 检索 → 核查（+ 来源审计）→ 证据补查 → 质询 → 因果增强 → 整句审计 → 报告写作 → 收尾（finalizeReport）→ 记忆。
+ * 阶段：拆题 → 检索 → 核查（+ 来源审计）→ 证据补查 → 质询 → 因果增强 → 整句审计 → 报告写作 → 收尾（finalizeReport）。
  * 本文件只排阶段顺序；各阶段在 stages/，进行态在 caseState.ts，时间预算在 budget.ts，里程碑快照在 snapshotTimeline.ts。
  * HTTP / SSE are thin adapters; inject runAgent + searchOne + selfProof model.
  */
 
 import { randomUUID } from "node:crypto";
 import type { SelfProofModelCall } from "../claimAtom/index.js";
-import type { AtomSearchBundle, KnowledgeHit, KnowledgeInjection, SearchOneAtom } from "../atomSearch.js";
+import type { AtomSearchBundle, KnowledgeHit, SearchOneAtom } from "../atomSearch.js";
 import { pruneDeadCitations, type LivenessDeps } from "../citationLiveness.js";
 import type { ReportReviewIssue } from "../reportReviewer.js";
-import { buildMemoryCandidatesFromRun } from "../memoryCandidateGenerator.js";
-import type { MemoryCandidate } from "../memoryCandidateTypes.js";
-import type { MemoryCandidateStore } from "../memoryCandidateStore.js";
 import type { EvidenceLoopOutcome, EvidenceLoopHooks, RewriteQueryModelCall } from "../evidenceLoop/index.js";
 import type { ImageOriginResult } from "../imageOrigin/index.js";
 import type { CrossExamOutcome, CrossExamRawModelCall } from "../crossExam/index.js";
@@ -57,44 +54,14 @@ export type RunAgentFn = (
   execution?: { signal?: AbortSignal; deadlineMs?: number }
 ) => Promise<PipelineStep>;
 
-/**
- * 证据库端口（服务端实现见 `knowledgeStore.createKnowledgeMemory`，测试可注入内存实现）。
- *
- * 宪法边界（写死在这里）：
- * - **记忆只加速、不代替核查**：lookup 只给「上次核过这条命题时绑过的证据」，
- *   判词仍由本轮 fact_checker 重新判；绑定失败 / 判 unverified → settle 前的
- *   evidenceLoop 会自动对该 atom 联网补查。
- * - **没证据不出结论**：注入证据必须带真实 URL，空来源一律当没命中（在 atomSearch 里再兜一道）。
- * - **不静默继承**：匹配闸门在 knowledgeMatch.ts；人物/日期/链接换了就匹配不上 → 正常联网。
- * 不传这个端口 = 整条管线与没有记忆时逐字节等价（老行为）。
- */
-export type KnowledgeMemoryPort = {
-  lookup: (atom: string) => KnowledgeInjection | null;
-  markInjected: (atom: string, originDate: string) => void;
-  /** 注入过的 atom 最终仍 unverified / 证据不足 → 记 downgraded。 */
-  conclude: (verdicts: unknown) => void;
-  /** 收尾沉淀：可核查且判词非 unverified 的 atom → upsert 一条。 */
-  settle: (input: { claim: string; verdicts: unknown }) => void;
-};
-
 export type CasePipelineHooks = {
   /** after self-proof written on rumor step */
   onSelfProof?: (info: { kept: string[]; dropped: unknown[]; model: string }) => void;
   /** atom search lifecycle (SSE) */
   onAtomSearchStart?: (atom: string) => void;
   onAtomSearchResult?: (atom: string, result: unknown) => void;
-  /** 命中知识库、免于本次检索（活动流 knowledge_hit 行） */
-  onKnowledgeHit?: (hit: KnowledgeHit) => void;
   /** 同一案上一轮证据够用、不再检索已核命题（活动流 prior_round_reuse 行） */
   onPriorRoundReuse?: (hit: KnowledgeHit) => void;
-  /** between fact//source and report (e.g. consensus debate SSE) */
-  afterFactSource?: (ctx: {
-    steps: PipelineStep[];
-    factStep: PipelineStep;
-    sourceStep: PipelineStep;
-    search360Result: unknown;
-    atomSearchBundle: AtomSearchBundle;
-  }) => Promise<void>;
   searchMode?: "parallel" | "sequential";
   /** evidence sufficiency loop — ADR-004（SSE：tool_start / tool_result 风格） */
   onEvidenceLoopStart?: (targets: Array<{ atom: string; trigger: string }>) => void;
@@ -111,14 +78,6 @@ export type CasePipelineHooks = {
     score: number;
     issues: ReportReviewIssue[];
     checks: Record<string, boolean>;
-  }) => void;
-  /** memory candidate propose — tool_start style (SSE) */
-  onMemoryWriteStart?: (info: { toolName: string; query: string }) => void;
-  /** memory candidate propose — tool_result style (SSE) */
-  onMemoryWriteResult?: (info: {
-    toolName: string;
-    query: string;
-    proposedCandidateCount: number;
   }) => void;
   /**
    * Investigation Snapshot 语义里程碑（SSE investigation_snapshot）：
@@ -159,7 +118,7 @@ export type CasePipelineInput = {
     sourceStep: PipelineStep;
     search360Result: unknown;
   }) => void;
-  /** stable id for memory provenance; default randomUUID */
+  /** stable run id; default randomUUID */
   runId?: string;
   /**
    * 管线截止时间（epoch ms）：报告写作前的补查/复核/增强在此前必须收敛。
@@ -194,12 +153,6 @@ export type CasePipelineInput = {
     callRaw?: CrossExamRawModelCall;
   };
   /**
-   * When set, proposed candidates are persisted after the run.
-   * Handlers should pass the shared JsonlMemoryCandidateStore.
-   * When omitted, candidates are still built and returned (no I/O).
-   */
-  memoryCandidateStore?: MemoryCandidateStore;
-  /**
    * Whole-Claim Audit（Issue #78）：整句在拆题后继续作为被审计对象。
    * Planning（检索前，可核查性语义修订）→ Evaluation（初轮后，≤1 次 audit 补查）。
    * 未注入 callModel 时保持 legacy 行为（fail-open）。
@@ -217,11 +170,6 @@ export type CasePipelineInput = {
    * `false` 关闭；测试传 { liveness: Map } 注入结果避免触网。
    */
   citationLiveness?: LivenessDeps | false;
-  /**
-   * 证据库（Part 1 · 记忆复用）：逐 atom 联网前查库、命中免检索、finalize 后沉淀。
-   * 不传 = 无记忆行为（与旧版逐字节等价）。
-   */
-  knowledgeBase?: KnowledgeMemoryPort;
   /**
    * 同一案追问快路径（契约 docs/evals/2026-09-13-followup-fast-path.md）。
    * 登录读服务端档案，访客读请求里的上一轮可见材料；没有可用证据时
@@ -243,8 +191,6 @@ export type CasePipelineResult = {
   factStep: PipelineStep;
   sourceStep: PipelineStep;
   reportStep: PipelineStep;
-  /** proposed memory candidates (same shape as AgentRuntime) */
-  memoryCandidates: MemoryCandidate[];
   /** evidence sufficiency loop outcome — ADR-004（未开启或无触发时为 undefined） */
   evidenceLoop?: EvidenceLoopOutcome;
   /** cross exam outcome — G3/P1（未开启 / 无冲突 / 无注入时为 undefined） */
@@ -257,7 +203,6 @@ export type CasePipelineResult = {
 };
 
 const REPORT_REVIEWER_TOOL = "Report Reviewer (proposer-reviewer)";
-const MEMORY_WRITE_TOOL = "Agent Memory Write";
 
 export async function runCasePipeline(input: CasePipelineInput): Promise<CasePipelineResult> {
   const { claim, hooks } = input;
@@ -323,16 +268,6 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     crossExam: state.crossExam,
     pursuitHops: state.evidenceLoop?.pursuitHops,
   });
-
-  if (hooks?.afterFactSource) {
-    await hooks.afterFactSource({
-      steps,
-      factStep: state.factStep,
-      sourceStep: state.sourceStep,
-      search360Result: state.search360Result,
-      atomSearchBundle: state.atomSearchBundle,
-    });
-  }
 
   await enrichCausal(ctx, state);
   throwIfAborted();
@@ -408,51 +343,8 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     checks: review.checks,
   });
 
-  // Phase 3b2: 证据库收尾（Part 1 · 记忆复用）。
-  // 到这里判词已经是最终值（复核 / 探活 / 收权门 / repair 全部走过）：
-  //  - conclude：注入过的 atom 若最终仍 unverified/证据不足 → 记 downgraded
-  //    （它的联网补查已经由上面的 evidenceLoop 做过，此处只观测，不改判词）；
-  //  - settle：可核查且判词非 unverified 的 atom → 沉淀进知识库。
-  // 记忆层失败不得改这次调查的结局：端口实现内部兜住并记服务端日志。
-  if (input.knowledgeBase) {
-    throwIfAborted();
-    try {
-      input.knowledgeBase.conclude(finalReport.subclaimVerdicts);
-      // run 级失败隔离：任何核查步骤报错（error-boundary）→ 整次不写可信知识，
-      // 不能只靠 settle 内部 verdict 过滤——部分步骤失败但 fact 仍有真/假结果时
-      // 过滤会放行，必须把失败 run 整体隔离在可信知识之外。
-      if (!runIncomplete) {
-        input.knowledgeBase.settle({ claim, verdicts: finalReport.subclaimVerdicts });
-      }
-    } catch (error) {
-      console.error("[casePipeline] 知识库收尾失败", error);
-    }
-  }
-
-  // Phase 3c: propose memory candidates (same as AgentRuntime memory write)
   const runId = input.runId ?? randomUUID();
   throwIfAborted();
-  hooks?.onMemoryWriteStart?.({
-    toolName: MEMORY_WRITE_TOOL,
-    query: claim,
-  });
-  const memoryCandidates = buildMemoryCandidatesFromRun({
-    runId,
-    claim,
-    steps,
-    finalReport,
-    searchResult: search360Result as Parameters<typeof buildMemoryCandidatesFromRun>[0]["searchResult"],
-  });
-  if (input.memoryCandidateStore && memoryCandidates.length > 0) {
-    throwIfAborted();
-    await input.memoryCandidateStore.propose(memoryCandidates);
-  }
-  throwIfAborted();
-  hooks?.onMemoryWriteResult?.({
-    toolName: MEMORY_WRITE_TOOL,
-    query: claim,
-    proposedCandidateCount: memoryCandidates.length,
-  });
 
   return {
     steps,
@@ -463,7 +355,6 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     factStep,
     sourceStep,
     reportStep,
-    memoryCandidates,
     evidenceLoop,
     crossExam,
     wholeClaimAudit,

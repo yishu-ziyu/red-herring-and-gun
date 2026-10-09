@@ -1,6 +1,6 @@
 /**
- * 阶段 2 检索：逐命题检索（+ 截图以图搜图）。记忆层先查库：命中且新鲜的命题用知识库证据替换联网检索（不占 6 个名额），
- * 同一案追问的已核命题沿用上一轮证据。命中的命题各落一条活动行。
+ * 阶段 2 检索：逐命题检索（+ 截图以图搜图）。同一案追问的已核命题沿用上一轮证据（不占检索名额），
+ * 复用的命题各落一条活动行；其余命题一律联网检索。
  */
 import { retrieveForAtoms, type AtomSearchBundle } from "../../atomSearch.js";
 import { claimAtomKey } from "../../claimAtom/index.js";
@@ -26,19 +26,6 @@ export async function retrieve(ctx: PipelineContext, rumorStep: PipelineStep): P
     searchOne: input.searchOne,
     claimAtomKeyFn: claimAtomKey,
     lookupImageOrigin: input.lookupImageOrigin,
-    knowledge: input.knowledgeBase
-      ? {
-          lookup: input.knowledgeBase.lookup,
-          onInjected: (hit) => {
-            try {
-              input.knowledgeBase?.markInjected(hit.atom, hit.originDate);
-            } catch (error) {
-              console.error("[casePipeline] 知识库注入记录失败", error);
-            }
-            hooks?.onKnowledgeHit?.(hit);
-          },
-        }
-      : undefined,
     priorRound: reusePlan
       ? {
           lookup: priorRoundLookupOf(reusePlan),

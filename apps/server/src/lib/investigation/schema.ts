@@ -63,7 +63,10 @@ export const InvestigationSourceSchema = Type.Object(
     publishedAt: Type.Optional(Type.String()),
     retrievedAt: Type.Optional(Type.String()),
     reachable: Type.Optional(Type.Boolean()),
-    /** 材料复用来源：知识库是跨案；prior-round 是同一案上一轮。老快照无此字段，照常渲染。 */
+    /**
+     * 材料复用来源：prior-round 是同一案上一轮。老快照无此字段，照常渲染。
+     * knowledge 来自已删除的证据库（2026-10-09），不再产生；只为让存下来的老快照仍能通过校验。
+     */
     provenance: Type.Optional(Type.Union([Type.Literal("knowledge"), Type.Literal("prior-round")])),
     /** 复用条目的已核日期（YYYY-MM-DD）；只有带 provenance 时才有意义。 */
     originDate: Type.Optional(Type.String()),

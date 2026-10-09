@@ -16,7 +16,7 @@ import {
   type EmailAccount,
 } from "./accountStore.js";
 import { accountDisplayName, normalizeAccountName } from "../../../src/lib/accountIdentity.js";
-import { emailCookieOptions, encodeSignedJson } from "./aipingAuth.js";
+import { emailCookieOptions, encodeSignedJson } from "./signedCookie.js";
 import {
   EMAIL_SESSION_COOKIE,
   EMAIL_SESSION_TTL_SECONDS,

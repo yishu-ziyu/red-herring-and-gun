@@ -275,7 +275,8 @@ type VerdictSourceLike = { url?: unknown; title?: unknown; snippet?: unknown };
 
 /**
  * 检索/注入进 bundle 的来源（build 侧读取形状）。
- * provenance/originDate 是复用来源的两个可选字段：知识库或同一案上一轮。
+ * provenance/originDate 是复用来源的两个可选字段。现在只有同一案上一轮（prior-round）会产生；
+ * knowledge 是已删除的证据库留下的值，只为老数据重建时原样带过。
  */
 type ReuseProvenance = "knowledge" | "prior-round";
 

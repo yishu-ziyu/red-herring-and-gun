@@ -19,7 +19,7 @@ export type PipelineContext = {
   input: CasePipelineInput;
   claim: string;
   hooks?: CasePipelineHooks;
-  /** 各阶段按时间顺序追加的步骤记录；报告写作、复核、记忆候选都读它。 */
+  /** 各阶段按时间顺序追加的步骤记录；报告写作、复核都读它。 */
   steps: PipelineStep[];
   budget: Budget;
   snapshots: SnapshotTimeline;

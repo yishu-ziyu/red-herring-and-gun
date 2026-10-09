@@ -1,5 +1,5 @@
 /**
- * caseStore.ts — 调查结果存档（Plan Item 2 · 报告 URL `/r/:caseId`）。
+ * caseStore.ts — 调查结果存档。
  *
  * 介质：本地 SQLite（`node:sqlite`，见 sqliteStore.ts）。原来的 Map + cases.json
  * 落盘在首次启动时一次性导入并留备份，之后只读。
@@ -10,10 +10,10 @@
  *
  * 路由规则不变：
  *   - caseId = 8 字符 base36 hash
- *   - 存 claim / report / claimReview / credibilityScore / createdAt / ownerHash
+ *   - 存 claim / report / credibilityScore / createdAt / ownerHash
+ *   - cases.claimReview 列是已删除的 /r/ 报告页留下的（NOT NULL），新记录写 '{}'，读的时候不再取。
  */
 import type { FinalReport } from "./schemas.js";
-import type { ClaimReviewJsonLd } from "./claimReview.js";
 import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { dataDir, openDatabase } from "./sqliteStore.js";
@@ -28,7 +28,6 @@ export interface CaseEntry {
   caseId: string;
   claim: string;
   report: FinalReport;
-  claimReview: ClaimReviewJsonLd;
   credibilityScore: number;
   createdAt: number;
   /** 旧记录没存时间：createdAt 保持 0，不拿当前时间冒充原调查时间。 */
@@ -46,7 +45,6 @@ type CaseRow = {
   caseId: string;
   claim: string;
   report: string;
-  claimReview: string;
   credibilityScore: number;
   createdAt: number | null;
   createdAtUnknown: number;
@@ -66,7 +64,6 @@ function rowToEntry(row: CaseRow): CaseEntry {
     caseId: row.caseId,
     claim: row.claim,
     report: JSON.parse(row.report) as FinalReport,
-    claimReview: JSON.parse(row.claimReview) as ClaimReviewJsonLd,
     credibilityScore: row.credibilityScore,
     createdAt: row.createdAt ?? 0,
     ...(row.createdAtUnknown ? { createdAtUnknown: true } : {}),
@@ -176,13 +173,12 @@ export function putCase(entry: Omit<CaseEntry, "caseId" | "createdAt"> & { caseI
     .prepare(
       `INSERT OR REPLACE INTO cases
        (caseId, claim, report, claimReview, credibilityScore, createdAt, createdAtUnknown, ownerHash, feedback, migratedFrom)
-       VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, NULL)`
+       VALUES (?, ?, ?, '{}', ?, ?, 0, ?, ?, NULL)`
     )
     .run(
       caseId,
       full.claim,
       JSON.stringify(full.report),
-      JSON.stringify(full.claimReview),
       full.credibilityScore,
       full.createdAt,
       full.ownerHash ?? null,
