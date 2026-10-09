@@ -23,6 +23,7 @@ import {
 import { followUpReuseFromClientBrief } from "./lib/followUpReuse.js";
 import { runInvestigation, type InvestigationRunDeps } from "./http/investigationRun.js";
 import { openSse, sseFrame, SSE_KEEPALIVE_FRAME, SSE_KEEPALIVE_MS } from "./http/sseChannel.js";
+import { toPublicStreamEvent } from "./http/publicStream.js";
 import { baseUrlTargetsPrivateNetwork, isLocalHttpUrl, parseByoConfig } from "./lib/orchestrateByo.js";
 
 export { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot.js";
@@ -33,7 +34,6 @@ export { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot.js";
  */
 export const FOLLOW_UP_CASE_MISSING_MESSAGE = "追问关联的案件不存在或无权访问";
 
-import { toPublicStreamEvent } from "./http/publicStream.js";
 export { toFriendlyError, toPublicStreamEvent, type FriendlyErrorInfo } from "./http/publicStream.js";
 
 
@@ -115,7 +115,7 @@ export function createHandlers(env: Record<string, string>) {
     if (run.ownerHash && run.ownerHash !== (account?.hash ?? null)) {
       return sendJson(res, 404, { message: "没有这次调查" });
     }
-    return sendJson(res, 200, {
+    return sendJson(res, 200, toPublicStreamEvent({
       runId: run.runId,
       caseId: run.caseId,
       status: run.status,
@@ -124,7 +124,7 @@ export function createHandlers(env: Record<string, string>) {
       snapshot: run.snapshot,
       activities: runs.replayActivities(runId, 0),
       updatedAt: run.updatedAt,
-    });
+    }));
   }
 
   /**
@@ -144,7 +144,7 @@ export function createHandlers(env: Record<string, string>) {
     const after = Number.isFinite(afterRaw) && afterRaw > 0 ? Math.floor(afterRaw) : 0;
 
     openSse(res);
-    // 接回流与重复提交的订阅同首次提交的流一样，每帧先过公开清洗再写出（rewrite-issues R11）。
+    // 接回补发与直播使用首次提交相同的公开清洗边界（Issue #132 / R11）。
     const write = (event: object) => {
       try {
         res.write(sseFrame(toPublicStreamEvent(event)));
