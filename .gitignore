@@ -91,9 +91,6 @@ apps/apodex-replica/
 .cursor/
 /.serena/
 /.v2c/
-.grok/*
-!.grok/hooks/
-!.grok/hooks/**
 skills-lock.json
 
 # CaseFile spine packages
