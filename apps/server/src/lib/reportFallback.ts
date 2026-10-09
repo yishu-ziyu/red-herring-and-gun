@@ -151,7 +151,8 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
         sourceRefs: ["FallbackReport"],
       },
     ],
-    causalBoundary: "本次核查只能判断公开材料对原命题的支持程度，不能推出未被来源覆盖的因果、医学或政策结论。",
+    // 不写每次都一样的通用免责话（#141）；每一截自己的「不能推出」在 subclaimVerdicts.boundary 里。
+    causalBoundary: "",
     closureActions: [
       {
         type: "archive_doubt",

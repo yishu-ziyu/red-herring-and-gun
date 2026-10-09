@@ -3,6 +3,7 @@
  * Real end-to-end check of the main user path: real browser, real server, real models and search.
  * Needs the app running (`npm run dev`) with real keys in apps/.env.local. One run takes about 7 minutes.
  * The main run also shares the finished round, opens the link in a cookie-less context, revokes it and opens it again.
+ * It saves full-page screenshots of the finished result at 1440 and 390 px width (result-1440.png, result-390.png).
  * Do not edit server files during a run: the dev server restarts on save and kills the investigation.
  * E2E_FULL=1 also checks a follow-up question and an image-only investigation (about 20 minutes in total).
  */
@@ -21,6 +22,11 @@ mkdirSync(out, { recursive: true });
 const LABELS = ["属实", "基本属实", "部分属实", "夸大了", "不属实", "还查不清", "无法核对", "说法不一", "是观点，不分对错"];
 // The six labels used before #140. None of them may appear on the result page any more.
 const OLD_LABELS = ["证据支持", "证据反驳", "有对有错", "有争议", "证据不足", "立场表达"];
+// Labels that claim the sources decided the part, so the part must show at least one supporting or contradicting row.
+const DECISIVE_LABELS = ["属实", "基本属实", "部分属实", "夸大了", "不属实", "说法不一"];
+// Blocks removed from the result page in #141. Their words must not come back.
+const DELETED_BLOCKS = ["查看已有依据", "继续补查", "本轮核查范围", "调查案卷", "收集到的来源"];
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const started = Date.now();
 const shown = { conclusionLabel: "", partLabels: [] };
@@ -66,21 +72,11 @@ async function run() {
   record("conclusion answers the claim", answer.length > 0, answer.slice(0, 80));
   await checkLabels();
 
-  await checkShare(answer);
-
-  // "Key evidence" is empty by design when evidence is insufficient, so open a source from the source list.
-  await page.getByRole("button", { name: /收集到的来源/ }).first().click().catch(() => {});
+  await checkResultLayout();
   await checkDatesAndQuoteLinks();
-  const sourcePill = page.locator("[data-gp-source-pill] button").first();
-  if (record("source list opens", await sourcePill.isVisible({ timeout: 5_000 }).catch(() => false))) {
-    await sourcePill.click();
-    const drawer = page.getByRole("dialog");
-    const link = drawer.getByRole("link", { name: /打开原文/ }).first();
-    const href = await link.getAttribute("href", { timeout: 10_000 }).catch(() => null);
-    await shot("3-source-drawer");
-    record("source drawer links to the original page", /^https?:\/\//.test(href || ""), href || "no link");
-    await page.keyboard.press("Escape");
-  }
+  await checkMobileWidth();
+
+  await checkShare(answer);
 
   await page.reload({ waitUntil: "networkidle" });
   await page.getByRole("button", { name: "历史记录" }).click();
@@ -100,7 +96,7 @@ async function run() {
 async function checkLabels() {
   const parts = await page.locator("article[data-gp-claim-id]").evaluateAll((nodes) =>
     nodes.map((node) => ({
-      text: node.querySelector(".gp-claim-text")?.textContent?.trim() ?? "",
+      text: node.querySelector("[data-gp-part-text]")?.textContent?.trim() ?? "",
       labels: [...node.querySelectorAll("[data-gp-claim-label]")].map((el) => el.textContent.trim()),
       reason: node.querySelector("[data-gp-claim-reason]")?.textContent?.trim() ?? "",
     }))
@@ -140,36 +136,83 @@ async function checkLabels() {
   record("result page shows none of the 6 old label words", oldHits.length === 0, oldHits.join(" ‖ "));
 }
 
+// #141: the result page is conclusion, part cards with their evidence, and three actions. Nothing else.
+async function checkResultLayout() {
+  const pageText = (await page.locator("body").textContent().catch(() => "")) ?? "";
+  const leftovers = DELETED_BLOCKS.filter((word) => pageText.includes(word));
+  const oldNodes = await page.locator("[data-gp-source-pill], [data-gp-dossier], [data-gp-scope], [data-gp-key-evidence], [role=dialog]").count();
+  record("deleted blocks are absent (查看已有依据, 继续补查, 本轮核查范围, 调查案卷, 收集到的来源)", leftovers.length === 0 && oldNodes === 0, `words=${leftovers.join("/")} nodes=${oldNodes}`);
+
+  const parts = await page.locator("[data-gp-result] article[data-gp-claim-id]").evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      text: node.querySelector("[data-gp-part-text]")?.textContent?.trim() ?? "",
+      label: node.querySelector("[data-gp-claim-label]")?.textContent?.trim() ?? "",
+      rows: [...node.querySelectorAll("[data-gp-evidence-row]")].map((row) => ({
+        href: row.querySelector("a[href]")?.getAttribute("href") ?? "",
+        date: row.querySelector("[data-gp-published]")?.textContent?.trim() ?? "",
+      })),
+    }))
+  );
+  const rows = parts.flatMap((p) => p.rows);
+  const badRows = rows.filter((r) => !/^https?:\/\//.test(r.href) || !(DATE.test(r.date) || r.date === "发布日期未取到"));
+  const bareParts = parts.filter((p) => DECISIVE_LABELS.includes(p.label) && p.rows.length === 0);
+  record(
+    "each part card shows its evidence rows with a link to the page and a date",
+    parts.length > 0 && rows.length > 0 && badRows.length === 0 && bareParts.length === 0,
+    `rows per part ${parts.map((p) => `${p.label}:${p.rows.length}`).join(" ")}; bad rows ${badRows.length}; decisive parts without a row: ${bareParts.map((p) => p.text.slice(0, 20)).join("/") || "none"}`
+  );
+
+  const buttons = await page.locator("[data-gp-result] button").evaluateAll((nodes) =>
+    nodes.filter((n) => n.getClientRects().length > 0).map((n) => n.textContent.trim()));
+  const fields = await page.locator("[data-gp-result] textarea, [data-gp-result] input").count();
+  const ask = await page.locator("[data-gp-result]").getByPlaceholder(/针对这份调查继续问/).count();
+  record(
+    "result actions are exactly the 追问 input, 分享 and 新调查",
+    JSON.stringify(buttons) === JSON.stringify(["追问", "分享", "新调查"]) && fields === 1 && ask === 1,
+    `buttons=${buttons.join("/")} fields=${fields}`
+  );
+  await page.screenshot({ path: `${out}/result-1440.png`, fullPage: true });
+}
+
 // #140: every evidence row shows a publish date or says it is missing; some source has a real date;
-// the original-page link opened from an evidence row jumps to a sentence of that row's quote.
+// the link on a quoted evidence row jumps to a sentence of that quote.
 async function checkDatesAndQuoteLinks() {
-  const DATE = /^\d{4}-\d{2}-\d{2}$/;
   const rows = await page.locator("[data-gp-evidence-row]").evaluateAll((nodes) =>
     nodes.map((node) => node.querySelector("[data-gp-published]")?.textContent?.trim() ?? "NO DATE"));
   const bad = rows.filter((text) => !DATE.test(text) && text !== "发布日期未取到");
   record("every evidence row shows a publish date or 发布日期未取到", rows.length > 0 && bad.length === 0, `rows=${rows.length} bad=${bad.join("/")}`);
-  const bySource = await page.locator("[data-gp-source-pill]").evaluateAll((nodes) =>
-    Object.fromEntries(nodes.map((node) => [node.getAttribute("data-gp-source-pill"), node.querySelector("[data-gp-published]")?.getAttribute("data-gp-published") ?? ""])));
-  const dated = Object.values(bySource).filter((day) => DATE.test(day)).length;
-  record("at least one source has a real publish date", dated > 0, `dated ${dated}/${Object.keys(bySource).length}`);
+  const days = await page.locator("[data-gp-result] [data-gp-published]").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("data-gp-published") ?? ""));
+  const dated = days.filter((day) => DATE.test(day)).length;
+  record("at least one source has a real publish date", dated > 0, `dated ${dated}/${days.length}`);
 
-  const quoted = page.locator("[data-gp-evidence-key]:has([data-gp-evidence-excerpt])");
+  const quoted = await page.locator("[data-gp-evidence-row]:has([data-gp-evidence-quote])").evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      quote: node.querySelector("[data-gp-evidence-quote]")?.textContent ?? "",
+      href: node.querySelector("a[href]")?.getAttribute("href") ?? "",
+    })));
   const tried = [];
   let hit = null;
-  for (let i = 0; i < Math.min(await quoted.count(), 8) && !hit; i += 1) {
-    const row = quoted.nth(i);
-    const quote = (await row.locator("[data-gp-evidence-excerpt]").first().textContent().catch(() => "")) ?? "";
-    await row.scrollIntoViewIfNeeded().catch(() => {});
-    await row.click().catch(() => {});
-    const href = (await page.getByRole("dialog").locator("[data-gp-source-open]").first().getAttribute("href", { timeout: 5_000 }).catch(() => null)) ?? "";
-    await page.keyboard.press("Escape");
-    await page.getByRole("dialog").waitFor({ state: "detached", timeout: 5_000 }).catch(() => {});
-    const at = href.indexOf("#:~:text=") >= 0 ? href.indexOf("#:~:text=") + 9 : href.indexOf(":~:text=") >= 0 ? href.indexOf(":~:text=") + 8 : -1;
-    const text = at >= 0 ? decodeURIComponent(href.slice(at)) : "";
+  for (const { quote, href } of quoted) {
+    const at = href.indexOf("#:~:text=");
+    const text = at >= 0 ? decodeURIComponent(href.slice(at + 9)) : "";
     tried.push(text || href.slice(0, 60));
-    if (href.includes("#:~:text=") && text && quote.includes(text)) hit = href;
+    if (text && quote.includes(text)) { hit = href; break; }
   }
-  record("an evidence link jumps to a sentence of its quote", Boolean(hit), hit || `tried: ${tried.join(" ‖ ")}`);
+  record("an evidence link jumps to a sentence of its quote", Boolean(hit), hit || `tried: ${tried.slice(0, 8).join(" ‖ ")}`);
+}
+
+// #141: the phone layout must not scroll sideways.
+async function checkMobileWidth() {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(500);
+  const size = await page.evaluate(() => ({
+    doc: document.documentElement.scrollWidth,
+    body: document.body.scrollWidth,
+    view: document.documentElement.clientWidth,
+  }));
+  await page.screenshot({ path: `${out}/result-390.png`, fullPage: true });
+  record("at 390px width the result page has no horizontal scroll", Math.max(size.doc, size.body) <= size.view, JSON.stringify(size));
+  await page.setViewportSize(viewport);
 }
 
 // Share this round, open the link as a stranger (new context, no cookies), revoke it, open it again.
@@ -225,10 +268,10 @@ async function checkShare(answer) {
 
 // Follow-up on the reopened investigation, then an image-only investigation.
 async function runFull(firstAnswer) {
-  const question = page.getByPlaceholder(/针对此结论追问/);
+  const question = page.getByPlaceholder(/针对这份调查继续问/);
   if (!record("follow-up box is shown", await question.isVisible({ timeout: 10_000 }).catch(() => false))) return;
   await question.fill("隔夜菜在冰箱里放一天，还能吃吗？");
-  await page.getByRole("button", { name: "发送追问" }).click();
+  await page.getByRole("button", { name: "追问", exact: true }).click();
   await page.locator('[data-gp-phase="complete"]').first().waitFor({ state: "detached", timeout: 60_000 }).catch(() => {});
   const followPhase = await waitForFinish();
   await shot("5-follow-up");
@@ -242,6 +285,13 @@ async function runFull(firstAnswer) {
     await rounds.getByRole("button", { name: /首次核查/ }).click();
     const earlier = (await page.locator("[data-gp-direct-answer]").first().innerText().catch(() => "")).trim();
     record("round 1 keeps its original conclusion", earlier === firstAnswer, earlier.slice(0, 80));
+    const roundParts = await page.locator("[data-gp-result] article[data-gp-claim-id]").count();
+    const roundButtons = await page.locator("[data-gp-result] button").allTextContents();
+    record(
+      "round 1 uses the same result layout, without the 追问 input",
+      roundParts > 0 && JSON.stringify(roundButtons.map((t) => t.trim())) === JSON.stringify(["分享", "新调查"]),
+      `parts=${roundParts} buttons=${roundButtons.join("/")}`
+    );
   }
 
   // The image is rendered at run time, so no binary fixture lives in the repo.

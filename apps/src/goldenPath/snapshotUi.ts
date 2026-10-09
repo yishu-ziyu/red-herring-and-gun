@@ -52,6 +52,13 @@ const JOINED_ELEMENTS = /[一-鿿].*\s|\s.*[一-鿿]|^\d/;
  */
 export function quoteFragmentUrl(url: string, quote: string | undefined): string {
   if (!/^https?:\/\//i.test(url) || url.includes(":~:")) return url;
+  const pick = fragmentClause(quote);
+  if (!pick) return url;
+  const encoded = encodeURIComponent(pick).replace(/-/g, "%2D");
+  return url.includes("#") ? `${url}:~:text=${encoded}` : `${url}#:~:text=${encoded}`;
+}
+
+function fragmentClause(quote: string | undefined): string {
   const text = (quote ?? "").replace(/\r/g, "");
   const parts = text.split(CLAUSE_SPLIT);
   // 第一段和最后一段可能被摘录截断（两侧不是原文标点），不用。
@@ -59,10 +66,28 @@ export function quoteFragmentUrl(url: string, quote: string | undefined): string
     .slice(1, -1)
     .map((p) => p.trim())
     .filter((p) => p.length >= 8 && p.length <= 30 && !INSERTED_MARKS.test(p) && !JOINED_ELEMENTS.test(p) && text.includes(p));
-  const pick = candidates.sort((a, b) => b.length - a.length)[0];
-  if (!pick) return url;
-  const encoded = encodeURIComponent(pick).replace(/-/g, "%2D");
-  return url.includes("#") ? `${url}:~:text=${encoded}` : `${url}#:~:text=${encoded}`;
+  return candidates.sort((a, b) => b.length - a.length)[0] ?? "";
+}
+
+const QUOTE_WINDOW = 160;
+
+/**
+ * 证据行上显示的原文：取跳转片段所在的那一整句，链接打开后高亮的就是这句里的字。
+ * 段落里找不到可跳转的片段时，显示段落开头一截。
+ */
+export function quoteSentence(passage: string): string {
+  const text = passage.replace(/\r/g, "").replace(/^…+|…+$/g, "").trim();
+  const clause = fragmentClause(passage);
+  if (!clause) return text.length > QUOTE_WINDOW ? `${text.slice(0, QUOTE_WINDOW)}…` : text;
+  const sentences = text.split(/(?<=[。！？!?；;\n])/).map((s) => s.trim()).filter(Boolean);
+  const index = Math.max(0, sentences.findIndex((s) => s.includes(clause)));
+  const found = sentences[index] ?? clause;
+  // 段落本身被截断时，首句和末句也是截断的，用省略号说明。
+  const sentence = `${index === 0 && passage.trim().startsWith("…") ? "…" : ""}${found}${index === sentences.length - 1 && passage.trim().endsWith("…") ? "…" : ""}`;
+  if (sentence.length <= QUOTE_WINDOW) return sentence;
+  const at = Math.max(0, sentence.indexOf(clause) - 60);
+  const cut = sentence.slice(at, at + QUOTE_WINDOW);
+  return `${at > 0 ? "…" : ""}${cut}${at + QUOTE_WINDOW < sentence.length ? "…" : ""}`;
 }
 
 /** 只回传来源已有摘录，不编造。 */
@@ -268,67 +293,6 @@ export function roleGlyph(role: EvidenceRole): string {
 
 export function sourceById(snapshot: InvestigationSnapshotV1, id: string): InvestigationSource | undefined {
   return snapshot.sources.find((s) => s.id === id);
-}
-
-/** 某条来源真正挂在哪些命题上：保留原始 EvidenceLink，不按 sourceId 首次遇见或 claims[0] 重建。 */
-export function attachmentsForSource(
-  sourceId: string,
-  claims: InvestigationClaim[],
-): Array<{ claim: InvestigationClaim; link: InvestigationEvidenceLink }> {
-  const rows: Array<{ claim: InvestigationClaim; link: InvestigationEvidenceLink }> = [];
-  for (const claim of claims) {
-    for (const link of claim.evidence ?? []) {
-      if (link.sourceId === sourceId) rows.push({ claim, link });
-    }
-  }
-  return rows;
-}
-
-export type DecisiveEvidenceItem = {
-  claimId: string;
-  claimText: string;
-  link: InvestigationEvidenceLink;
-  source: InvestigationSource;
-};
-
-function isDecisiveRole(role: EvidenceRole): role is "support" | "contradict" {
-  return role === "support" || role === "contradict";
-}
-
-/** 1–3 条决定性依据。只取支持/反驳，不拿相关材料凑数。 */
-export function pickDecisiveEvidence(
-  claims: InvestigationClaim[],
-  sources: InvestigationSource[],
-): DecisiveEvidenceItem[] {
-  const items: DecisiveEvidenceItem[] = [];
-  const seen = new Set<string>();
-
-  const add = (claim: InvestigationClaim, link: InvestigationEvidenceLink) => {
-    if (items.length >= 3 || !isDecisiveRole(link.role)) return;
-    const source = sources.find((item) => item.id === link.sourceId);
-    if (!source) return;
-    const key = `${claim.id}\0${link.sourceId}\0${link.role}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    items.push({ claimId: claim.id, claimText: claim.text, link, source });
-  };
-
-  for (const claim of claims) {
-    const preferredRole =
-      claim.judgment === "refuted" ? "contradict" : claim.judgment === "supported" ? "support" : null;
-    const preferred = preferredRole
-      ? claim.evidence.find((link) => link.role === preferredRole)
-      : claim.evidence.find((link) => isDecisiveRole(link.role));
-    if (preferred) add(claim, preferred);
-    if (claim.judgment === "mixed" || claim.judgment === "disputed") {
-      const other = claim.evidence.find(
-        (link) => isDecisiveRole(link.role) && link !== preferred,
-      );
-      if (other) add(claim, other);
-    }
-  }
-
-  return items;
 }
 
 /** 所有来源共用的本地图标：不向第三方图标服务透露用户在看哪些网站。 */

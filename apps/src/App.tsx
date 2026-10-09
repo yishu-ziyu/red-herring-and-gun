@@ -46,7 +46,6 @@ function ProductApp() {
   const run = useInvestigationRun();
   const [draftClaim, setDraftClaim] = useState("");
   const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
-  const [pendingFocus, setPendingFocus] = useState<{ question: string; runId: string } | null>(null);
 
   // 本机历史（挂载即读一次）。
   const { cases, setCases, historyReady } = useLocalHistory();
@@ -93,7 +92,6 @@ function ProductApp() {
     ) => {
       resumedRef.current = true;
       setSelectedRoundId(null);
-      setPendingFocus(null);
       setSaveStatus("idle");
       setHistoryNotice("");
       setSameClaim(null);
@@ -157,7 +155,6 @@ function ProductApp() {
     // 从调查/旧报告返回首页时预填原句，方便改完再查（与旧壳一致）。只交了图片时没有可预填的原句。
     setDraftClaim((prev) => (caseIntakeIsImageOnly(active?.intake) ? "" : active?.thread?.originalClaim ?? active?.claim ?? prev));
     setSelectedRoundId(null);
-    setPendingFocus(null);
     run.reset();
     setActive(null);
     setMode("input");
@@ -194,7 +191,6 @@ function ProductApp() {
       const item = cases.find((entry) => entry.id === id);
       if (!item) return;
       setSelectedRoundId(null);
-      setPendingFocus(null);
       // 本地在跑的那条：直接回到当前画布，不重新请求。
       if (item.status === "running" && active?.localId === id) {
         setMode("investigation");
@@ -223,15 +219,6 @@ function ProductApp() {
     },
     [active?.localId, cases, lang, run]
   );
-
-  useEffect(() => {
-    if (!pendingFocus || pendingFocus.runId !== run.state.runId) return;
-    if (!["cancelled", "completed", "interrupted"].includes(run.state.serverStatus ?? "")) return;
-    setPendingFocus(null);
-    handleFollowUp(pendingFocus.question);
-    // A focus change waits for the server terminal state, never just the POST acknowledgement.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingFocus, run.state.runId, run.state.serverStatus]);
 
   if (window.location.pathname.startsWith("/s/")) {
     return (
@@ -299,21 +286,6 @@ function ProductApp() {
 
   const archivedRound = selectedRoundId ? active?.thread?.rounds.find((round) => round.id === selectedRoundId) : undefined;
   const displaySnapshot = archivedRound?.snapshot ?? snapshot;
-  const adjustFocus = (question: string) => {
-    if (active?.restored || snapshot?.phase === "complete" || run.state.connection === "ended" || run.state.connection === "failed") {
-      handleFollowUp(question);
-      return;
-    }
-    if (!run.state.runId || pendingFocus) return;
-    setPendingFocus({ question, runId: run.state.runId });
-    void run.cancel().then((result) => {
-      if (!result.ok) {
-        setPendingFocus(null);
-        setHistoryNotice("停止请求未送达，尚未开始按新重点核查。");
-      }
-    });
-  };
-
   return (
     <>
       <ProductShell
@@ -396,8 +368,6 @@ function ProductApp() {
               key={archivedRound?.id ?? active.roundId ?? active.localId}
               snapshot={displaySnapshot}
               readOnly={Boolean(archivedRound)}
-              onAdjustFocus={archivedRound ? undefined : adjustFocus}
-              adjustingFocus={Boolean(pendingFocus)}
               live={archivedRound || active.restored ? false : run.state.connection === "connecting" || run.state.connection === "live"}
               activities={archivedRound || active.restored ? [] : run.state.activities}
               stop={archivedRound || active.restored ? "idle" : run.state.stop}

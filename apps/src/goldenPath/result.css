@@ -1,0 +1,313 @@
+/* 查完的一轮（#141）。版式照 2026-10-09 用户确认的草稿：暖纸底、判断句和摘录用衬线、标签颜色只做辅助。 */
+
+.gp-result {
+  --gp-tone-positive: #20604c;
+  --gp-tone-positive-bg: rgba(32, 96, 76, 0.08);
+  --gp-tone-negative: #8f2d2a;
+  --gp-tone-negative-bg: rgba(143, 45, 42, 0.08);
+  --gp-tone-mixed: #855f1a;
+  --gp-tone-mixed-bg: rgba(133, 95, 26, 0.1);
+  --gp-tone-muted: #57534e;
+  --gp-tone-muted-bg: rgba(87, 83, 78, 0.08);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--gp-ink);
+  animation: gp-result-in var(--gp-motion-emerge) var(--gp-ease-out) both;
+}
+
+@keyframes gp-result-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gp-result { animation: none; }
+}
+
+.gp-label {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+  padding: 1px 10px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+.gp-label--positive { color: var(--gp-tone-positive); background: var(--gp-tone-positive-bg); }
+.gp-label--negative { color: var(--gp-tone-negative); background: var(--gp-tone-negative-bg); }
+.gp-label--mixed { color: var(--gp-tone-mixed); background: var(--gp-tone-mixed-bg); }
+.gp-label--muted { color: var(--gp-tone-muted); background: var(--gp-tone-muted-bg); }
+
+.gp-result-verdict,
+.gp-part,
+.gp-result-actions {
+  background: var(--gp-surface);
+  border: 1px solid var(--gp-line);
+  border-radius: 14px;
+  min-width: 0;
+}
+
+.gp-result-verdict {
+  margin: 28px 0 8px;
+  padding: 24px;
+}
+
+.gp-result-headline {
+  margin: 10px 0 0;
+  font-family: var(--gp-serif);
+  font-size: 24px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.gp-result-note {
+  margin: 12px 0 0;
+  font-size: 14px;
+  color: var(--gp-ink-2);
+}
+
+.gp-result-meta {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--gp-ink-3);
+}
+
+.gp-result-heading {
+  margin: 36px 0 10px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--gp-ink-3);
+}
+
+.gp-part {
+  padding: 20px 24px;
+  margin-bottom: 14px;
+}
+
+.gp-part-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.gp-part-title {
+  min-width: 0;
+}
+
+.gp-part-no {
+  margin-right: 8px;
+  font-size: 16px;
+  color: var(--gp-ink-3);
+}
+
+.gp-part-text {
+  min-width: 0;
+  font-family: var(--gp-serif);
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.gp-part-reason {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.gp-part-empty {
+  margin: 12px 0 0;
+  font-size: 14px;
+  color: var(--gp-ink-3);
+}
+
+.gp-part-evidence {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+  border-top: 1px solid var(--gp-line-subtle);
+}
+
+.gp-ev {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--gp-line-subtle);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.gp-ev-role {
+  margin-right: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.gp-ev-role.is-contradict { color: var(--gp-tone-negative); }
+.gp-ev-role.is-support { color: var(--gp-tone-positive); }
+
+.gp-ev-quote {
+  font-family: var(--gp-serif);
+  quotes: "「" "」";
+}
+
+.gp-ev-summary {
+  color: var(--gp-ink-2);
+}
+
+.gp-ev-summary-label {
+  margin-right: 6px;
+  padding: 0 6px;
+  font-size: 12px;
+  border: 1px solid var(--gp-line);
+  border-radius: 6px;
+  color: var(--gp-ink-3);
+}
+
+.gp-ev-src {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--gp-ink-3);
+}
+
+.gp-ev-src a {
+  color: var(--gp-ink-2);
+  min-width: 0;
+}
+
+.gp-ev-date {
+  color: var(--gp-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.gp-ev-date.is-unknown { color: var(--gp-ink-3); }
+
+.gp-part-related {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--gp-ink-2);
+}
+
+.gp-part-related summary {
+  cursor: pointer;
+  color: var(--gp-ink-3);
+}
+
+.gp-part-related ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  overflow-wrap: anywhere;
+}
+
+.gp-part-related a {
+  color: inherit;
+}
+
+.gp-part-boundary {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--gp-ink-3);
+}
+
+.gp-result-actions {
+  margin-top: 36px;
+  padding: 18px 20px;
+}
+
+.gp-result-ask {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+
+.gp-result-ask textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 46px;
+  font: inherit;
+  color: var(--gp-ink);
+  background: var(--gp-surface-inset);
+  border: 1px solid var(--gp-line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.gp-btn {
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  border-radius: 10px;
+  padding: 9px 16px;
+  cursor: pointer;
+  border: 1px solid var(--gp-line);
+  background: var(--gp-surface);
+  color: var(--gp-ink);
+  white-space: nowrap;
+}
+
+.gp-btn--primary {
+  background: var(--gp-ink);
+  color: var(--gp-bg);
+  border-color: var(--gp-ink);
+}
+
+.gp-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.gp-btn:focus-visible,
+.gp-result-ask textarea:focus-visible,
+.gp-result a:focus-visible,
+.gp-part-related summary:focus-visible {
+  outline: none;
+  box-shadow: var(--gp-focus-ring);
+}
+
+/* 分享按钮和新调查并排，分享建好的链接另起一行。 */
+.gp-result-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.gp-result-row .gp-share {
+  display: contents;
+}
+
+.gp-result-row .gp-share-head { order: 0; }
+.gp-result-row .gp-result-new { order: 1; }
+.gp-result-row .gp-share-body,
+.gp-result-row .gp-share > .gp-share-hint {
+  order: 2;
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.gp-result-row .gp-share-body {
+  margin: 0;
+  padding: 14px;
+  background: var(--gp-surface-inset);
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.gp-result-row .gp-share-actions {
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+@media (max-width: 560px) {
+  .gp-result-verdict,
+  .gp-part {
+    padding: 18px 16px;
+  }
+  .gp-result-headline {
+    font-size: 21px;
+  }
+  .gp-result-ask {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

@@ -13,20 +13,18 @@ import type {
   PublicActivity,
 } from "../lib/investigation";
 import { judgmentToLabel } from "../lib/investigation";
+import { scrubFaceText } from "../lib/scrubFace";
 import { useUiLang } from "../lib/useUiLang";
 import { displayFollowUpClaim, conclusionMissesFollowUp, followUpQuestionLead } from "../lib/composeFollowUpClaim";
 import { isUrlOnlyClaim, type CaseImage } from "../lib/caseIntake";
 import { gpCopyFor } from "./copy";
 import { phaseHeadline } from "./snapshotUi";
 import { buildClaimTraceSegments } from "./claimTrace";
-import { leftoverClaimTexts, leftoverGapSentence, leftoverTextsForCanvas, isCompleteEmptyShell } from "./leftoverClaims";
+import { leftoverGapSentence, leftoverTextsForCanvas, isCompleteEmptyShell } from "./leftoverClaims";
 import { ClaimSection } from "./ClaimSection";
 import { ActivityFeed } from "./ActivityFeed";
-import { ConclusionHero } from "./ConclusionHero";
-import { FollowUpSection, buildConclusionBrief } from "./FollowUpSection";
-import { ShareControl } from "./ShareControl";
-import { InvestigationScope } from "./InvestigationScope";
-import { InvestigationDossier } from "./InvestigationDossier";
+import { ResultView } from "./ResultView";
+import { buildConclusionBrief } from "./ShareControl";
 import { WorkRoles, roleIndexForPhase } from "./WorkRoles";
 import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { IntakeImages } from "./IntakeImages";
@@ -64,8 +62,6 @@ type InvestigationCanvasProps = {
   images?: CaseImage[];
   /** 这一轮在服务端的调查编号：有才显示「分享」（老历史没有）。 */
   shareRunId?: string;
-  onAdjustFocus?: (question: string) => void;
-  adjustingFocus?: boolean;
 };
 
 type DrawerSession = {
@@ -92,8 +88,6 @@ export function InvestigationCanvas({
   readOnly = false,
   images,
   shareRunId,
-  onAdjustFocus,
-  adjustingFocus = false,
 }: InvestigationCanvasProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
@@ -103,16 +97,6 @@ export function InvestigationCanvas({
   const [focusClaimId, setFocusClaimId] = useState<string | null>(null);
   const [expandedTraceClaimId, setExpandedTraceClaimId] = useState<string | null>(null);
   const [isPaused, setIsPaused] = useState(false);
-  const [suggestedQuestion, setSuggestedQuestion] = useState("");
-  const evidenceRef = useRef<HTMLElement | null>(null);
-  const followUpRef = useRef<HTMLDivElement | null>(null);
-  const prepareFollowUp = (question = "") => {
-    setSuggestedQuestion(question);
-    window.requestAnimationFrame(() => {
-      const input = followUpRef.current?.querySelector<HTMLTextAreaElement>("textarea");
-      input?.focus();
-    });
-  };
   // Pointer hover wins. Keyboard focus clears stale hover so a parked pointer cannot hijack Tab. Touch uses expanded-active.
   const tracedClaimId = hoverClaimId ?? focusClaimId ?? expandedTraceClaimId;
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -154,6 +138,9 @@ export function InvestigationCanvas({
   const displayVerdictLead = unopenedEmpty
     ? copy.linkUnreachableVerdict
     : followUpRewrite || conclusion?.verdictLead;
+  // 结论第一句：标签后面那一句，和分享页同一份（服务端 publicAnswer）。
+  const rawLead = displayVerdictLead?.trim() ? displayVerdictLead : displayDirectAnswer;
+  const displayLead = scrubFaceText(rawLead) || rawLead;
   // 用户点过停止就不再把它读成「中断」：同一次事故不该有两种说法。
   // 分条已齐的总答仍要看见，不能跟着黄卡一起藏掉。
   // 结论简报的「核查范围」和「关键来源」：追问区的复制按钮与分享区的复制按钮用同一份。
@@ -172,13 +159,6 @@ export function InvestigationCanvas({
   const leftoverTexts =
     complete || interrupted ? leftoverTextsForCanvas(snapshot.originalClaim, snapshot.claims) : [];
   const leftoverSentence = leftoverTexts.length > 0 ? leftoverGapSentence(leftoverTexts) : "";
-  const gapNotes = complete
-    ? resultClaims.flatMap((claim) =>
-        claim.gaps
-          .map((gap) => gap.description.trim())
-          .filter((note) => note && !note.includes("检索预算未覆盖") && !note.includes("模型未覆盖")),
-      )
-    : [];
   const claimIds = snapshot.claims.map((claim) => claim.id);
   const claimEnter = useEnteringIds(claimIds, live && !complete && !interrupted);
   const openSource = (
@@ -241,44 +221,6 @@ export function InvestigationCanvas({
       data-gp-single-claim={snapshot.claims.length === 1 ? "true" : undefined}
     >
       <div className="gp-canvas-inner">
-        <section
-          className={complete ? "gp-conclusion-region is-complete" : "gp-conclusion-region is-pending"}
-          data-gp-conclusion-region
-          data-gp-conclusion-state={complete ? "complete" : "pending"}
-          aria-hidden={complete ? undefined : true}
-        >
-          {complete && conclusion ? (
-            <ConclusionHero
-              directAnswer={displayDirectAnswer}
-              verdictLead={displayVerdictLead}
-              rationale={conclusion.rationale}
-              judgment={conclusion.judgment}
-              label={conclusion.label ?? judgmentToLabel(conclusion.judgment)}
-              reason={followUpRewrite || unopenedEmpty ? undefined : conclusion.reason}
-              boundaries={conclusion.boundaries}
-              claimCount={snapshot.claims.length}
-              sourceCount={snapshot.sources.length}
-              checkedAt={snapshot.checkedAt}
-              originalClaim={snapshot.originalClaim}
-              sources={snapshot.sources}
-              claims={snapshot.claims}
-              leftoverNote={leftoverSentence}
-              gapNotes={gapNotes}
-              onSelectSource={openSource}
-            />
-          ) : null}
-        </section>
-
-        {complete ? <div className="gp-reading-actions" aria-label={lang === "en" ? "Read or investigate further" : "查看依据或继续补查"}>
-          {resultClaims.length > 0 ? <button type="button" className="gp-ghost-btn" data-gp-read-existing onClick={() => {
-            evidenceRef.current?.focus();
-          }}>{snapshot.sources.length ? (lang === "en" ? "Read existing evidence" : "查看已有依据") : (lang === "en" ? "Read investigation details" : "查看核查详情")}</button> : null}
-          {!readOnly && onFollowUp ? <button type="button" className="gp-ghost-btn" onClick={() => prepareFollowUp()}>{lang === "en" ? "Investigate further" : "继续补查"}</button> : null}
-          <p>{lang === "en" ? "Reading evidence does not start another investigation." : "查看依据不会重新调查；补查需明确发送问题。"}</p>
-        </div> : null}
-
-        {complete || interrupted ? <InvestigationScope snapshot={snapshot} onAsk={readOnly || !complete ? undefined : prepareFollowUp} onAdjustFocus={readOnly ? undefined : onAdjustFocus} adjusting={adjustingFocus} /> : null}
-
         {interrupted ? (
           <section className="gp-interrupted" role="alert" data-gp-interrupted>
             <strong>{interruptedAnswer ? copy.interruptedPartialTitle : copy.interruptedTitle}</strong>
@@ -372,6 +314,29 @@ export function InvestigationCanvas({
           <IntakeImages images={images} />
         </section>
 
+        {complete && conclusion ? (
+          <ResultView
+            snapshot={snapshot}
+            claims={resultClaims}
+            label={conclusion.label ?? judgmentToLabel(conclusion.judgment)}
+            lead={displayLead}
+            hasReason={Boolean(conclusion.reason) && !followUpRewrite && !unopenedEmpty}
+            leftoverNote={leftoverSentence}
+            readOnly={readOnly}
+            onFollowUp={onFollowUp}
+            onNewInvestigation={onBackHome}
+            shareRunId={shareRunId}
+            brief={buildConclusionBrief({
+              originalClaim: snapshot.originalClaim,
+              directAnswer: displayDirectAnswer,
+              boundaries: conclusion.boundaries,
+              checkedAt: snapshot.checkedAt,
+              sourceUrls: briefSourceUrls,
+              coverageNote,
+            })}
+          />
+        ) : null}
+
         {!complete && !interrupted ? (
           <ActivityFeed
             activities={activities}
@@ -422,13 +387,9 @@ export function InvestigationCanvas({
           </>
         ) : null}
 
-        {resultClaims.length > 0 || (!complete && leftoverSentence) ? (
-          <section className="gp-claims" aria-label={copy.canvasEvidenceLabel} ref={evidenceRef} tabIndex={-1}>
-            {!complete ? (
-              <h3 className="gp-section-label">{copy.canvasClaimsLabel}</h3>
-            ) : (
-              <h2 className="gp-section-label">逐条核查详情</h2>
-            )}
+        {!complete && (resultClaims.length > 0 || leftoverSentence) ? (
+          <section className="gp-claims" aria-label={copy.canvasEvidenceLabel}>
+            <h3 className="gp-section-label">{copy.canvasClaimsLabel}</h3>
             <div className="gp-claim-list">
               {resultClaims.map((claim, index) => (
                 <ClaimSection
@@ -440,24 +401,12 @@ export function InvestigationCanvas({
                   entering={claimEnter.isEntering(claim.id)}
                   enterDelayMs={claimEnter.delayMs(claim.id)}
                   enterLive={live && !complete && !interrupted}
-                  defaultExpanded={
-                    complete
-                      ? claim.evidence.length > 0 || Boolean(claim.judgment) || claim.gaps.length > 0
-                      : interrupted
-                        ? true
-                        : claim.progress !== "pending"
-                  }
+                  defaultExpanded={interrupted ? true : claim.progress !== "pending"}
                   onSelectSource={openSource}
                   onHeaderHover={handleHeaderHover}
                   onHeaderFocus={handleHeaderFocus}
                   onExpandedTrace={setExpandedTraceClaimId}
-                  asResult={complete}
-                  asWork={!complete && !interrupted}
-                  conclusionText={
-                    complete && conclusion
-                      ? `${conclusion.directAnswer ?? ""}${conclusion.verdictLead ?? ""}${conclusion.rationale ?? ""}`
-                      : ""
-                  }
+                  asWork={!interrupted}
                 />
               ))}
             </div>
@@ -475,46 +424,6 @@ export function InvestigationCanvas({
           </div>
         ) : null}
 
-        {complete && conclusion ? (
-          <>
-            {!readOnly ? <div ref={followUpRef} className="gp-followup-target">
-            <FollowUpSection
-              suggestedQuestion={suggestedQuestion}
-              coverageNote={coverageNote}
-              onFollowUp={onFollowUp}
-              onReverify={onReverify}
-              directAnswer={displayDirectAnswer}
-              originalClaim={snapshot.originalClaim}
-              boundaries={conclusion.boundaries}
-              claims={snapshot.claims}
-              // Text overlap is only a display hint, not proof of an uninvestigated claim.
-              // Automatic follow-ups use explicit missing claims/gaps, never URL-prefixed raw fragments.
-              leftoverTexts={leftoverClaimTexts(snapshot.claims)}
-              checkedAt={snapshot.checkedAt}
-              sourceUrls={briefSourceUrls}
-            />
-            </div> : null}
-            {shareRunId ? (
-              <ShareControl
-                runId={shareRunId}
-                brief={buildConclusionBrief({
-                  originalClaim: snapshot.originalClaim,
-                  directAnswer: displayDirectAnswer,
-                  boundaries: conclusion.boundaries,
-                  checkedAt: snapshot.checkedAt,
-                  sourceUrls: briefSourceUrls,
-                  coverageNote,
-                })}
-              />
-            ) : null}
-            <InvestigationDossier
-              snapshot={snapshot}
-              activities={activities}
-              onSelectSource={openSource}
-              onSelectConflict={jumpToConflict}
-            />
-          </>
-        ) : null}
       </div>
 
       <p className="gp-announcer" role="status" aria-live="polite">
