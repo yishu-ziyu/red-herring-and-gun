@@ -294,26 +294,3 @@ export function isOffTopicSource(atom: string, rec: Record<string, unknown>): bo
   }
   return false;
 }
-
-/** On-topic 辟谣 and no on-topic support → circulating sentence is not believable. */
-export function boundTinyRumorVerdict(
-  atom: string,
-  sources: Array<Record<string, unknown>>
-): "false" | null {
-  let debunk = 0;
-  let support = 0;
-  for (const rec of sources) {
-    if (!rec || typeof rec !== "object") continue;
-    if (topicOverlap(atom, rec) <= 0) continue;
-    if (debunkHint(rec)) debunk += 1;
-    else if (/(属实|证实|确实发生|官方确认|已开通|已建成)/.test(`${rec.title || ""} ${rec.snippet || rec.summary || ""}`)) {
-      support += 1;
-    }
-  }
-  if (debunk > 0 && support === 0) return "false";
-  return null;
-}
-
-export function isOnTopicDebunk(atom: string, rec: Record<string, unknown>): boolean {
-  return topicOverlap(atom, rec) > 0 && debunkHint(rec) > 0;
-}

@@ -16,7 +16,7 @@ import {
   selectAtomsToSearch,
   type AtomSearchBundle,
 } from "../atomSearch.js";
-import { normalizeReportCitations, hasDirectionalBoundHttpUrl } from "../citationBinding.js";
+import { normalizeReportCitations } from "../citationBinding.js";
 import { applyPublicCopy } from "../publicCopy.js";
 import { applyImageOriginToReport, type ImageOriginResult } from "../imageOrigin/index.js";
 
@@ -26,78 +26,13 @@ export const FACE_VERDICT: Record<string, string> = {
   mixed_misleading: "有真有假",
   mixed: "有真有假",
   partial: "部分成立",
+  disputed: "有争议",
   unverified: "还查不清",
 };
 
 export function faceVerdictFor(verdictType: unknown): string {
   const key = typeof verdictType === "string" ? verdictType.trim() : "";
   return FACE_VERDICT[key] || "还查不清";
-}
-
-/** 肯定为真侧的原子判词（exaggerated 有真实内核，计入真侧）。 */
-const TRUEISH_VERDICTS = new Set(["true", "partial", "mostly_true", "exaggerated"]);
-
-type DeriveVerdictInput = {
-  verdict?: unknown;
-  supportingSources?: unknown;
-  contradictingSources?: unknown;
-  sourcesRelatedOnly?: unknown;
-};
-
-/**
- * 方向专属「有据」（Review 5128449568 Blocker 3）：true/trueish 由 supportingSources
- * 支撑、false 由 contradictingSources 支撑、related-only 永远不算。共享契约定义在
- * citationBinding.hasDirectionalBoundHttpUrl，与 merge guard / conclusion gate / Snapshot 同向。
- */
-function isSourcedTrueishVerdict(v: DeriveVerdictInput): boolean {
-  const verdict = String(v?.verdict ?? "").trim().toLowerCase();
-  return (
-    TRUEISH_VERDICTS.has(verdict) &&
-    hasDirectionalBoundHttpUrl({
-      verdict: "true",
-      supportingSources: v?.supportingSources,
-      contradictingSources: v?.contradictingSources,
-      sourcesRelatedOnly: v?.sourcesRelatedOnly,
-    })
-  );
-}
-
-function isSourcedFalseVerdict(v: DeriveVerdictInput): boolean {
-  return (
-    String(v?.verdict ?? "").trim().toLowerCase() === "false" &&
-    hasDirectionalBoundHttpUrl({
-      verdict: v?.verdict,
-      supportingSources: v?.supportingSources,
-      contradictingSources: v?.contradictingSources,
-      sourcesRelatedOnly: v?.sourcesRelatedOnly,
-    })
-  );
-}
-
-/**
- * 原子级整句推导（确定性收束）——「分截判决」的收束端。
- * fact_checker 的整体 factCheckResult 是单 LLM 字段，会把「真假交织」漂成 false；
- * 原子判词 + 绑定证据才是依据：
- * - 有据之真 + 有据之假 → partial（mixed_misleading 的公式载体，救回真的部分）；
- * - 单独有据之假 → false（无据之假不撑整句；短谣 boundTiny 不在本函数）；
- * - 每个必要原子均为 true 且各自有支持方向证据 → true；
- * - 仅 partial/exaggerated → partial；无肯定判词 → null（保留 LLM 整体字段）。
- */
-export function deriveOverallVerdict(
-  verdicts: Array<DeriveVerdictInput>
-): "true" | "false" | "partial" | null {
-  if (!Array.isArray(verdicts) || verdicts.length === 0) return null;
-  const norms = verdicts.map((v) => String(v?.verdict ?? "").trim().toLowerCase());
-  const hasSourcedFalse = verdicts.some((v) => isSourcedFalseVerdict(v));
-  const hasSourcedTrueish = verdicts.some((v) => isSourcedTrueishVerdict(v));
-  if (hasSourcedFalse && hasSourcedTrueish) return "partial";
-  if (hasSourcedFalse) return "false";
-  const affirmative = norms.filter((n) => TRUEISH_VERDICTS.has(n));
-  if (affirmative.length === 0) return null;
-  if (affirmative.every((n) => n === "true")) {
-    return verdicts.every((v, index) => norms[index] === "true" && isSourcedTrueishVerdict(v)) ? "true" : null;
-  }
-  return "partial";
 }
 
 export type AssembleFinalReportInput = {

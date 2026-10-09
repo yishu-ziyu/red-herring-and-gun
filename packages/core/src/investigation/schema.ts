@@ -48,6 +48,7 @@ export const InvestigationJudgmentSchema = Type.Union([
   Type.Literal("supported"),
   Type.Literal("refuted"),
   Type.Literal("mixed"),
+  Type.Literal("disputed"),
   Type.Literal("unresolved"),
   Type.Literal("not-applicable"),
 ]);
@@ -75,6 +76,31 @@ export const InvestigationSourceSchema = Type.Object(
     provenance: Type.Optional(Type.Union([Type.Literal("knowledge"), Type.Literal("prior-round")])),
     /** 复用条目的已核日期（YYYY-MM-DD）；只有带 provenance 时才有意义。 */
     originDate: Type.Optional(Type.String()),
+    /** 发布者/站点名；检索方实际给出才填，缺省按「未知」显示。 */
+    publisher: Type.Optional(Type.String()),
+    /**
+     * excerpt 的真实来历：search-snippet=检索返回的摘要；page-excerpt=实际读到正文后摘的片段。
+     * 只有实际读取过正文才允许标 page-excerpt——摘要不得冒充原文。旧数据缺省按未知显示。
+     */
+    excerptKind: Type.Optional(Type.Union([Type.Literal("search-snippet"), Type.Literal("page-excerpt")])),
+    /**
+     * 获取状态：snippet-only=只有检索摘要；fetched=读到正文；truncated=正文被截断；
+     * restricted=访问受限拿不到正文；failed=获取失败。
+     */
+    fetchStatus: Type.Optional(
+      Type.Union([
+        Type.Literal("snippet-only"),
+        Type.Literal("fetched"),
+        Type.Literal("truncated"),
+        Type.Literal("restricted"),
+        Type.Literal("failed"),
+      ]),
+    ),
+    /** 获取限制说明（受限原因/截断位置等）；拿不到正文时必须保留原因。 */
+    fetchNote: Type.Optional(Type.String()),
+    // 用户主动提交的原始材料（intake 链接）：与核查检索来源区分，
+    // 只表示「这是用户给的」，不代表支持或反驳任何命题。
+    material: Type.Optional(Type.Literal("user-intake")),
   },
   closed,
 );

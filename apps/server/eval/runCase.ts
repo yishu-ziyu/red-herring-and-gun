@@ -14,7 +14,7 @@ import {
   providerOrderForAgent,
   ProviderFallbackError,
 } from "../src/lib/providerRouter.js";
-import { runCasePipeline, type PipelineStep } from "../src/lib/casePipeline/index.js";
+import { runCasePipeline, type CasePipelineHooks, type PipelineStep } from "../src/lib/casePipeline/index.js";
 import { retrieveAtomSources } from "../src/lib/searchProviders.js";
 import { buildDeterministicFinalReport } from "../src/lib/reportFallback.js";
 import { applyFormulaScoreToReport, computeFormulaScore } from "../src/lib/formulaScore.js";
@@ -151,7 +151,9 @@ export interface EvalCaseResult {
 
 export async function runCase(
   golden: ScoreCaseGolden,
-  evalEnv: EvalEnv
+  evalEnv: EvalEnv,
+  /** 可选：订阅管线钩子。只有订阅了 onInvestigationSnapshot，管线才会构建 finalReport.investigation（生产 HTTP 路径始终订阅）。 */
+  hooks?: CasePipelineHooks
 ): Promise<{
   steps: PipelineStep[];
   finalReport: Record<string, unknown>;
@@ -164,6 +166,7 @@ export async function runCase(
   try {
     const result = await runCasePipeline({
       claim,
+      ...(hooks ? { hooks } : {}),
       runAgent,
       searchOne: makeSearchOne(evalEnv.env),
       callSelfProofModel: makeSelfProof(evalEnv),

@@ -157,7 +157,7 @@ function listHasHttpUrl(list: unknown[]): boolean {
  * - related-only 永远不算；
  * - partial 按 Snapshot 的 mixed 判词映射，两侧材料都算；
  * - 错桶 URL 不是该方向的证据。
- * merge guard（demoteUnsourcedTrueFalse）、deriveOverallVerdict、applyConclusionGate
+ * merge guard（demoteUnsourcedTrueFalse）、整句规则表的部分状态（sentenceVerdict.standingOf）
  * 与 publication repair 同用此语义，保证 Claim 判词与整句 Conclusion 同向。
  */
 export function hasDirectionalBoundHttpUrl(input: {

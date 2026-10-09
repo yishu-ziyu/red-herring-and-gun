@@ -72,6 +72,8 @@ export type RunState = {
    * complete（真结果到了）或 error（最终失败）时翻回 false。
    */
   timeoutPending: boolean;
+  /** 服务端的常驻提示（如图片没读出来、已按文字继续）。不影响连接与快照。 */
+  notice?: string;
 };
 
 const INITIAL_STATE: RunState = {
@@ -138,6 +140,9 @@ export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, cla
       // 契约外快照不进产品 state：宁可停留上一份，也不渲染未校验数据。
       return prev;
     }
+  }
+  if (event.type === "notice") {
+    return typeof event.message === "string" && event.message ? { ...prev, notice: event.message } : prev;
   }
   if (event.type === "timeout_pending") {
     // 超时只改「等结果要不要必须」这一件事：连接还是活的，快照照来，别的一概不动。

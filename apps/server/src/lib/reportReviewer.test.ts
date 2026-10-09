@@ -113,7 +113,7 @@ describe("reviewAndRepairReport (server)", () => {
     expect(result.issues.some((i) => i.code === "unsourced_hard_verdict")).toBe(true);
   });
 
-  it("false 仅 related-only 且对题辟谣 → 仍 false（boundTiny）", () => {
+  it("false 仅 related-only（哪怕检索垫里有对题辟谣）→ 不放行，降为 unverified：辟谣要走逐条关系判断，不走短谣捷径", () => {
     const result = reviewAndRepairReport(
       {
         verdictType: "false",
@@ -152,8 +152,8 @@ describe("reviewAndRepairReport (server)", () => {
       { claim: "电瓶车被偷送到非洲" }
     );
 
-    expect(result.repaired.verdictType).toBe("false");
-    expect(result.issues.some((i) => i.code === "unsourced_hard_verdict")).toBe(false);
+    expect(result.repaired.verdictType).toBe("unverified");
+    expect(result.issues.some((i) => i.code === "unsourced_hard_verdict")).toBe(true);
   });
 
   it("false 仅 related-only 但对题辟谣不成立 → unverified", () => {

@@ -3,6 +3,7 @@
  * Does not expose provider names, model IDs, or quota details.
  * Caps wall-clock so a probe cannot stall the homepage (~8s).
  */
+import { stepFunChatCompletionsUrl } from "./agentProviders.js";
 import {
   clearProviderSkip,
   envValue,
@@ -99,7 +100,7 @@ async function pingProvider(
       const baseUrl = (envValue(env, "STEPFUN_BASE_URL") || "https://api.stepfun.com/v1").replace(/\/$/, "");
       const model = envValue(env, "STEPFUN_MODEL") || "step-2-mini";
       const ping = await pingWithTimeout(
-        `${baseUrl}/chat/completions`,
+        stepFunChatCompletionsUrl(baseUrl),
         {
           method: "POST",
           headers: {

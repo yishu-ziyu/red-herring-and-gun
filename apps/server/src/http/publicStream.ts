@@ -63,7 +63,8 @@ export function toPublicStreamEvent(data: object): Record<string, unknown> {
   if (
     event.type === "error" &&
     event.code !== "checks_exhausted" &&
-    event.code !== "byo_key_failed"
+    event.code !== "byo_key_failed" &&
+    event.code !== "image_unreadable"
   ) {
     event.message = "这次核查没能完成，请稍后重试";
     delete event.error;

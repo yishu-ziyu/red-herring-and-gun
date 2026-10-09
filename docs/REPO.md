@@ -81,8 +81,13 @@ docs/                     产品过程，不是运行时
 ops.sh                    唯一发布入口。打包 `apps/`
 scripts/                  截图、QA、nginx
   retired/                退役部署脚本，不要从这里发布
+.worktrees/rhg-fix/        本机修复副本；fix/error-analysis-round2，保留未提交工作
 CONTEXT.md                实现层词汇表（Agent、原子、管线），不是产品词
 ```
+
+原独立目录 `rhg-fix` 已归入 `.worktrees/rhg-fix/`，共享主项目 Git 历史及依赖，
+不单独作为产品入口。使用 `git worktree list` 查看注册位置，进入该目录继续修复。
+迁移校验见 [本机修复副本整理验收](evals/2026-10-06-rhg-fix-worktree-location.md)。
 
 ## 两份相同代码是怎么回事
 

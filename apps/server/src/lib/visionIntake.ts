@@ -3,7 +3,7 @@
  * 只做 OCR 与线索提取，不判断真假。
  */
 
-import { buildStepFunRequestBody, extractChatCompletionText } from "./agentProviders.js";
+import { buildStepFunRequestBody, extractChatCompletionText, stepFunChatCompletionsUrl } from "./agentProviders.js";
 
 import { extractJsonObject } from "./anthropicParse.js";
 
@@ -13,6 +13,8 @@ export interface CaseIntakeLinkPayload {
   scrapedContent?: string;
   scrapeStatus?: "success" | "error";
   scrapeError?: string;
+  /** 客户端真实抓取时刻（epoch ms）；证据追溯的「取得时间」只能用它，不得用抓取日替代发布日。 */
+  scrapedAt?: number;
 }
 
 export interface CaseIntakeImagePayload {
@@ -53,6 +55,7 @@ export function normalizeCaseIntake(raw: any): CaseIntakePayload | null {
             scrapedContent: typeof link.scrapedContent === "string" ? link.scrapedContent.slice(0, 12000) : undefined,
             scrapeStatus: link.scrapeStatus === "success" || link.scrapeStatus === "error" ? link.scrapeStatus : undefined,
             scrapeError: typeof link.scrapeError === "string" ? link.scrapeError : undefined,
+            scrapedAt: typeof link.scrapedAt === "number" && Number.isFinite(link.scrapedAt) ? link.scrapedAt : undefined,
           }))
       : [],
     images: Array.isArray(raw.images)
@@ -173,7 +176,7 @@ export async function callStepFunVisionForIntake({
     });
   }
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const response = await fetch(stepFunChatCompletionsUrl(baseUrl), {
     method: "POST",
     signal,
     headers: {

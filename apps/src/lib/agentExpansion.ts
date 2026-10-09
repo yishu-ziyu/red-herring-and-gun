@@ -147,6 +147,8 @@ export interface OrchestrateStreamEvent {
     | "complete"
     /** 超时后管线仍在跑（契约 2026-09-12-mainpath-p0 Change C）：这条连接等不到头了，但调查没失败。 */
     | "timeout_pending"
+    /** 服务端常驻提示（code=image_unreadable：图片没读出来，已按文字继续）。 */
+    | "notice"
     | "error";
   /**
    * investigation_snapshot：完整 InvestigationSnapshotV1（Issue #51 契约）。

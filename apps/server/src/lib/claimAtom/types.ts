@@ -10,9 +10,11 @@ export interface VerdictSource {
 
 export interface SubclaimVerdict {
   claimAtom: string;
-  verdict: "true" | "false" | "partial" | "unverified" | "exaggerated";
+  verdict: "true" | "false" | "partial" | "unverified" | "exaggerated" | "disputed";
   evidence: string;
   boundary: string;
+  /** verdict=partial 时：来源明确反驳的原句里那个具体要素，逐字取自命题原文。 */
+  contradictedElement?: string;
   supportingSources?: VerdictSource[];
   contradictingSources?: VerdictSource[];
   evidenceGaps?: string[];

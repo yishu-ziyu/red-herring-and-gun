@@ -54,6 +54,17 @@ export type AtomSearchSource = {
    */
   provenance?: "knowledge" | "prior-round";
   originDate?: string;
+  /** 来源自身发布日期（检索方给出才填；没有就是缺省，不可用抓取日顶替）。 */
+  publishedAt?: string;
+  /** 发布者/站点名；检索方实际给出才填。 */
+  publisher?: string;
+  /** 本次取得这份材料的时间（ISO）；复用/旧数据缺省按未知显示。 */
+  retrievedAt?: string;
+  /** snippet 字段的真实来历：目前检索路径只拿到摘要，标 search-snippet；读到正文才可标 page-excerpt。 */
+  excerptKind?: "search-snippet" | "page-excerpt";
+  /** 获取状态：检索路径只有摘要 → snippet-only；拿不到正文的原因进 fetchNote。 */
+  fetchStatus?: "snippet-only" | "fetched" | "truncated" | "restricted" | "failed";
+  fetchNote?: string;
 };
 
 /** 知识库注入材料：条目的已核日期 + 该条目当时绑定的真实来源。 */
@@ -130,6 +141,8 @@ function asSourceList(result: unknown): FilterableSource[] {
     const rec = raw as Record<string, unknown>;
     const url = String(rec.url || rec.link || "").trim();
     if (!url) continue;
+    const publishedAt = String(rec.publishedAt || rec.date || rec.time || rec.publishDate || "").trim();
+    const publisher = String(rec.publisher || rec.siteName || rec.site || "").trim();
     out.push({
       url,
       title: String(rec.title || rec.name || "").slice(0, 200),
@@ -137,6 +150,8 @@ function asSourceList(result: unknown): FilterableSource[] {
       snippet: String(rec.snippet || rec.summary || rec.content || "").slice(0, 900),
       credibility: typeof rec.credibility === "string" ? rec.credibility : undefined,
       providerRank: i,
+      ...(publishedAt ? { publishedAt } : {}),
+      ...(publisher ? { publisher } : {}),
     });
   }
   return out;
@@ -283,6 +298,8 @@ export function buildAtomSearchBundle(
   const atomsSearched: string[] = [];
   const perAtomMeta: Record<string, FilterMeta> = {};
   const totals: FilterMeta = { before: 0, afterFilter: 0, afterDedupe: 0, afterTopK: 0 };
+  // 本轮材料实际取得时间：bundle 组装时刻，即这批检索结果到手的时间。
+  const retrievedAt = new Date().toISOString();
 
   for (const item of items) {
     if (!item || typeof item.atom !== "string") continue;
@@ -302,6 +319,12 @@ export function buildAtomSearchBundle(
       title: s.title,
       snippet: s.snippet,
       credibility: s.credibility,
+      ...(s.publishedAt ? { publishedAt: s.publishedAt } : {}),
+      ...(s.publisher ? { publisher: s.publisher } : {}),
+      // 本轮实际取得材料的时间；检索路径只拿到摘要，不是原文。
+      retrievedAt,
+      excerptKind: "search-snippet" as const,
+      fetchStatus: "snippet-only" as const,
     }));
     byAtomKey[key] = sources;
     forAgent.push({ claimAtom: atom, sources });
@@ -320,6 +343,8 @@ export function buildAtomSearchBundle(
         url: s.url,
         snippet: s.snippet,
         credibility: s.credibility || "",
+        ...(s.publishedAt ? { publishedAt: s.publishedAt } : {}),
+        ...(s.publisher ? { publisher: s.publisher } : {}),
         forClaimAtom: atom,
       });
     }
@@ -393,7 +418,7 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
       sources.map((source) => {
         const canonical = canonicalByUrl.get(source.url);
         return canonical
-          ? { url: canonical.url, title: canonical.title, snippet: canonical.snippet }
+          ? { ...canonical, url: canonical.url, title: canonical.title, snippet: canonical.snippet }
           : source;
       });
     let supporting = canonicalize(bound.supportingSources);

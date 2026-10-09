@@ -5,7 +5,6 @@
  * contract fields, evidence chain, boundary language, minimal repair.
  */
 
-import { boundTinyRumorVerdict } from "./atomSearchQuery.js";
 import { applyPublicCopy, directAnswer, findFuzzyQuantifiers } from "./publicCopy.js";
 
 export interface ReportReviewIssue {
@@ -59,17 +58,6 @@ function reportHasBoundHttpUrl(report: Record<string, unknown>): boolean {
     if (listSourceRecords(rec.contradictingSources).some(sourceHasHttpUrl)) return true;
   }
   return false;
-}
-
-function collectReportSources(report: Record<string, unknown>): Record<string, unknown>[] {
-  const out: Record<string, unknown>[] = [];
-  for (const item of asArray(report.subclaimVerdicts)) {
-    if (!item || typeof item !== "object") continue;
-    const rec = item as Record<string, unknown>;
-    out.push(...listSourceRecords(rec.supportingSources), ...listSourceRecords(rec.contradictingSources));
-  }
-  out.push(...listSourceRecords(report.citationSources));
-  return out;
 }
 
 /**
@@ -222,12 +210,9 @@ export function reviewAndRepairReport(
     }
   }
 
-  // 7b) 整句 true/false 必须有非 related-only 绑定 URL；短谣 related-only 对题辟谣除外。
+  // 7b) 整句 true/false 必须有非 related-only 绑定 URL。
   const hardType = asString(repaired.verdictType);
-  const keepBoundTinyFalse =
-    hardType === "false" && boundTinyRumorVerdict(asString(opts?.claim), collectReportSources(repaired)) === "false";
-  const unsourcedHard =
-    (hardType === "true" || hardType === "false") && !reportHasBoundHttpUrl(repaired) && !keepBoundTinyFalse;
+  const unsourcedHard = (hardType === "true" || hardType === "false") && !reportHasBoundHttpUrl(repaired);
   checks.noUnsourcedHardVerdict = !unsourcedHard;
   if (unsourcedHard) {
     issues.push({

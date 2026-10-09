@@ -29,15 +29,4 @@ export {
   runWholeClaimEvaluation,
   resolveQuestionAtomKey,
 } from "./evaluation.js";
-export {
-  applyConclusionGate,
-  buildScopedEvidence,
-  needsConstrainedConclusion,
-  repairGatedConclusion,
-  renderVerdictConclusion,
-  type ConclusionGateInput,
-  type ConclusionGateResult,
-  type ConstrainedConclusionDecision,
-  type ConstrainedConclusionInput,
-  type GatedConclusionRepairInput,
-} from "./conclusionGate.js";
+export { buildScopedEvidence, clipSentence } from "./scopedEvidence.js";

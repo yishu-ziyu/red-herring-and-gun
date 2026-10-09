@@ -38,7 +38,7 @@ type ConclusionHeroProps = {
   verdictLead?: string;
   /** 判断句之后的解释文本；缺失时不渲染解释层。 */
   rationale?: string;
-  judgment: "supported" | "refuted" | "mixed" | "unresolved" | "not-applicable";
+  judgment: "supported" | "refuted" | "mixed" | "disputed" | "unresolved" | "not-applicable";
   boundaries: string[];
   claimCount: number;
   sourceCount: number;

@@ -8,6 +8,7 @@
  * 没有可点开的 URL 就不算已核、计划为 null（没证据不出结论，不假装快路径）。
  */
 import { claimAtomKey } from "./claimAtom/index.js";
+import { directAnswer } from "./publicCopy.js";
 import {
   hasTokenConflict,
   isKnowledgeVerdictInjectable,
@@ -334,6 +335,7 @@ function followUpVerdictPhrase(verdictType: unknown): string {
   if (v === "mixed_misleading" || v === "partial" || v === "mixed") {
     return "有站住的部分，也有没站住的";
   }
+  if (v === "disputed") return "权威来源之间说法不一致";
   return "现有材料还撑不住判断";
 }
 
@@ -370,14 +372,19 @@ export function conclusionMissesFollowUp(conclusion: string, claim: string): boo
  */
 export function applyFollowUpAnswerLead(report: Record<string, unknown>, claim: string): void {
   if (!report || typeof report !== "object") return;
-  if (!conclusionMissesFollowUp(String(report.conclusion ?? ""), claim)) return;
+  // 整句结论由规则表写成通用首句（「公开材料不支持这条说法。」）时，「这条说法」指不明，换成追问本身。
+  const generic = directAnswer(report.verdictType);
+  const startsGeneric = String(claim).includes(FOLLOW_UP_MARKER) && String(report.conclusion ?? "").startsWith(generic);
+  if (!startsGeneric && !conclusionMissesFollowUp(String(report.conclusion ?? ""), claim)) return;
   const question = followUpQuestionOf(claim);
   if (!question) return;
   const lead = `这句追问「${clipFollowUp(question)}」${followUpVerdictPhrase(report.verdictType)}。`;
   const rest = String(report.conclusion ?? "").trim();
-  report.conclusion = `${lead}${rest}`.slice(0, 400);
+  report.conclusion = `${lead}${startsGeneric ? rest.slice(generic.length) : rest}`.slice(0, 480);
   const summary = String(report.summaryForPublic ?? "").trim();
-  if (conclusionMissesFollowUp(summary, claim)) {
+  if (startsGeneric && summary.startsWith(generic)) {
+    report.summaryForPublic = `${lead}${summary.slice(generic.length)}`.slice(0, 200);
+  } else if (conclusionMissesFollowUp(summary, claim)) {
     report.summaryForPublic = `${lead}${summary}`.slice(0, 200);
   }
   if (!String(report.recommendation ?? "").includes(clipFollowUp(question, 20))) {

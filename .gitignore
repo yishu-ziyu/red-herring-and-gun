@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 .env.local
 .env.local.*
@@ -89,6 +89,8 @@ apps/apodex-replica/
 # Local agent / IDE scratch
 .agents/
 .cursor/
+/.serena/
+/.v2c/
 .grok/*
 !.grok/hooks/
 !.grok/hooks/**
@@ -126,3 +128,6 @@ docs/**/*.zip
 
 # 黑客松参赛过程档案（含对手分析），仅本地
 参赛记录/
+
+# Third-party debunk archive (fetched, not ours to redistribute)
+data/debunk-archive/

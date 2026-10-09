@@ -202,6 +202,17 @@ function buildTimedOutReport(c: string): Record<string, unknown> {
   return report;
 }
 
+const IMAGE_UNREADABLE_NOTICE = "图片没能读出来，已按你输入的文字继续";
+const IMAGE_UNREADABLE_ONLY_MESSAGE = "图片没能读出来，这次没法核查。请换一张更清晰的图，或把图里的文字打出来再试。";
+
+/** 只有图片、图片又没读出来：没有可核查的内容。 */
+class ImageUnreadableError extends Error {
+  constructor() {
+    super("image-unreadable");
+    this.name = "ImageUnreadableError";
+  }
+}
+
 /** Node 22+: native composition keeps the first reason without accumulating listeners. */
 function combineAbortSignals(...sources: AbortSignal[]): AbortSignal {
   return AbortSignal.any(sources);
@@ -384,7 +395,17 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
           error: message,
           timestamp: Date.now(),
         });
-        throw error;
+        // 取消、断连、BYO 失败仍走各自的结局，不当成「图片读不出来」。
+        pipelineSignal.throwIfAborted();
+        // R10：图片没读出来不拖垮整次调查。有文字就按文字继续并留常驻提示；没有文字就明说，不假装查过。
+        const hasText = intake.text.trim().length > 0 || intake.links.some((link) => Boolean(link.scrapedContent?.trim()));
+        if (!hasText) throw new ImageUnreadableError();
+        sendEvent({
+          type: "notice",
+          code: "image_unreadable",
+          message: IMAGE_UNREADABLE_NOTICE,
+          timestamp: Date.now(),
+        });
       }
     }
 
@@ -410,6 +431,7 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       signal,
       // 截止 = 总超时 − 10s 收尾余量：补查/复核提前收敛，报告写作不再被总超时截断
       deadline: workDeadlineMs,
+      intakeLinks: intake?.links,
       runAgent,
       searchOne: makeSearchOneAtom((event) => sendEvent(event), searchEnv, { signal, deadlineMs: workDeadlineMs }),
       lookupImageOrigin: makeImageOriginLookup(env, intake, visualExtraction, { signal, deadlineMs: workDeadlineMs }),
@@ -469,7 +491,13 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       memoryCandidates: result.memoryCandidates,
       timestamp: Date.now(),
     });
-    finishRun(RUN_FINAL_STATUS.completed);
+    // run 终态与快照终态一致：核查步骤内部失败（error-boundary）的 run 是
+    // interrupted，不是 completed——pipeline 已在快照 emit 前定了中断帧。
+    finishRun(
+      result.finalReport._source === "error-boundary"
+        ? RUN_FINAL_STATUS["server-error"]
+        : RUN_FINAL_STATUS.completed
+    );
     // 追问观测：报告已 finalize、响应还没结束——写一行计数与判词标签就完事。
     // 只在追问轮写；写不进去也不改这次 run 的结局（recordFollowUpObservation 内部兜住）。
     if (isFollowUp && priorCaseId) {
@@ -555,6 +583,13 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
     // 客户端主动断开（刷新/关页/写失败）→ 照常计费，放弃不能变成免费重试入口；
     // 服务端真失败 → 退还这次核查
     settleQuota(outcome);
+    if (error instanceof ImageUnreadableError) {
+      // 只有图片且没读出来：没有任何东西可核查，不发中断快照，直接说明原因（额度已按 server-error 退还）。
+      sendEvent({ type: "error", code: "image_unreadable", message: IMAGE_UNREADABLE_ONLY_MESSAGE, timestamp: Date.now() });
+      finishRun(RUN_FINAL_STATUS[outcome]);
+      res.end();
+      return;
+    }
     const { message } = toFriendlyError(error, "这次核查没能完成，请稍后重试");
     // 中断帧先行：前端拿到 phase=interrupted 的真实部分数据，再收 error 提示。
     emitInvestigation(interruptedInvestigationSnapshot(lastInvestigation, claim));

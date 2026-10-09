@@ -182,9 +182,17 @@ export function InvestigationCanvas({
     trigger: HTMLElement,
   ) => {
     const claim = snapshot.claims.find((item) => item.id === claimId);
-    const initialView = buildSourceDrawerViewFromClick(snapshot.claims, claimId, source, link, snapshot.sources);
+    // 用户材料（material=user-intake）没有命题关联也能打开：用一个无命题的
+    // material 视图（claimIndex=-1），relation 标 context-only。
+    const initialView = claim
+      ? buildSourceDrawerViewFromClick(snapshot.claims, claimId, source, link, snapshot.sources)
+      : source.material === "user-intake"
+        ? { claimId: "", claimIndex: -1, claimText: "", source, link, relatedSources: [source] }
+        : null;
     if (!initialView) return;
-    const identity = sourceDrawerSessionIdentity(claimId, claim?.evidence ?? [], link);
+    const identity = claim
+      ? sourceDrawerSessionIdentity(claimId, claim?.evidence ?? [], link)
+      : `material:${source.id}`;
     triggerRef.current = trigger;
     lastConfirmedRef.current = { identity, view: initialView };
     setDrawer({ identity, claimId, sourceId: source.id, role: link.role, initialView });

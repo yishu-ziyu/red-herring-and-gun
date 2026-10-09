@@ -6,7 +6,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runCasePipeline, type PipelineStep } from "./runCasePipeline";
 import { confirmedSourceValidatorStep } from "./testSourceRelationAudit";
-import { deriveOverallVerdict } from "../reportAssembly/assembleFinalReport";
+import { decideSentenceVerdict } from "../../domain/verdict";
+import { listAssessedClaims } from "../sentenceVerdict";
 import { directAnswer } from "../publicCopy";
 import type { InvestigationSnapshotV1 } from "../investigation/index.js";
 
@@ -78,20 +79,30 @@ function assertPublishedCitation(report: Record<string, unknown>, snapshot: Inve
   expect(sources[Number(marker![1]) - 1]?.url).toBe(SA.url);
 }
 
+/** 整句规则表对一组判词的结论（第一条是主要主张，其余是必要前提）。 */
+function overall(verdicts: Array<Record<string, unknown>>) {
+  const atoms = verdicts.map((v) => String(v.claimAtom));
+  const parts = listAssessedClaims(
+    { subclaimVerdicts: verdicts },
+    { claimAtoms: atoms, claimAtomTypes: atoms.map((text) => ({ text, type: "fact", verifiable: true })) }
+  );
+  return decideSentenceVerdict(parts).verdict;
+}
+
 describe("Shannon independent function contract", () => {
   for (const kind of ["unverified", "missing", "related-only"] as const) {
     it(`A supported + B ${kind} cannot prove conjunction, either order`, () => {
       const values = [aVerdict(), bVerdict(kind)];
-      expect(deriveOverallVerdict(values)).not.toBe("true");
-      expect(deriveOverallVerdict([...values].reverse())).not.toBe("true");
+      expect(overall(values)).not.toBe("can-believe");
+      expect(overall([...values].reverse())).not.toBe("can-believe");
     });
   }
   it("contradict-only partial contributes no true side", () => {
-    expect(deriveOverallVerdict([aVerdict(true), { ...bVerdict("unverified"), verdict: "partial", contradictingSources: [SB] }])).toBe("false");
+    expect(overall([aVerdict(true), { ...bVerdict("unverified"), verdict: "partial", contradictingSources: [SB] }])).toBe("cannot-believe");
   });
   it("positive single and two fully supported claims retain true", () => {
-    expect(deriveOverallVerdict([aVerdict()])).toBe("true");
-    expect(deriveOverallVerdict([aVerdict(), bVerdict("supported")])).toBe("true");
+    expect(overall([aVerdict()])).toBe("can-believe");
+    expect(overall([aVerdict(), bVerdict("supported")])).toBe("can-believe");
   });
 });
 

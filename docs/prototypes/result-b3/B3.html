@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>隔夜菜会致癌 · 核查台 — 红鲱鱼与枪</title>
+<style>
+/* Noto Sans SC — SIL OFL 1.1 (fonts/NotoSansSC-OFL.txt), subset to the glyphs used on this page */
+@font-face{font-family:"Noto Sans SC";src:url("fonts/NotoSansSC-subset-wght.woff2") format("woff2");font-weight:100 900;font-display:block}
+/* Design language: rss.qiaomu.ai (QMReader) — tokens verbatim from its :root */
+:root{
+  --bg-0:#f7f7f6; --bg-1:#fff; --bg-2:#f2f2f1; --bg-3:#e8e8e6;
+  --surface:#fff; --border:#e2e2df; --border-subtle:rgba(18,18,18,.075);
+  --text-0:#171717; --text-1:#4f4f4a; --text-2:#8a8a84;
+  --accent:#111; --accent-soft:#e8e8e6;
+  --green:#2f6f4e; --blue:#3e6383; --amber:#7b642f; --red:#d14b4b;
+  --focus-ring:#2f5f9f; --focus-halo:rgba(47,95,159,.16);
+  --shadow:rgba(0,0,0,.06);
+  --radius-sm:6px; --radius-md:8px; --radius-lg:10px;
+  --control-h:34px; --control-h-sm:30px;
+  --sidebar-width:232px; --list-width:320px; --agent-width:304px;
+  --reader-size:16.5px; --reader-lh:1.88;
+  --font-ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Noto Sans SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --ease-out-strong:cubic-bezier(.23,1,.32,1);
+  --ease-in-out-strong:cubic-bezier(.77,0,.175,1);
+  /* semantic tints, mixed the way QMReader mixes annotation cards */
+  --sup:var(--green); --con:var(--red); --gap:var(--amber); --ctx:var(--blue);
+  --sup-soft:color-mix(in srgb,var(--green) 9%,var(--bg-1));
+  --con-soft:color-mix(in srgb,var(--red) 9%,var(--bg-1));
+  --gap-soft:color-mix(in srgb,var(--amber) 11%,var(--bg-1));
+  --ctx-soft:color-mix(in srgb,var(--blue) 9%,var(--bg-1));
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--font-ui);color:var(--text-0);background:var(--bg-0);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;overflow:hidden;text-wrap:pretty;line-break:strict}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+a{color:inherit;text-decoration:none}
+:focus-visible{outline:2px solid var(--focus-ring);outline-offset:2px;border-radius:6px}
+svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.app{display:flex;height:100vh}
+
+/* ---------- sidebar ---------- */
+.sidebar{width:var(--sidebar-width);flex:none;background:var(--bg-0);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:10px;padding:14px 14px 8px}
+.mark{width:28px;height:28px;border-radius:8px;background:var(--accent);color:#fff;display:grid;place-items:center;font-weight:800;font-size:14px;flex:none}
+.brand b{font-size:15px;font-weight:800;flex:1;letter-spacing:.01em}
+.icon-btn{color:var(--text-2);padding:5px 6px;border-radius:7px;display:inline-flex;align-items:center;gap:5px;transition:background .16s var(--ease-out-strong),color .16s var(--ease-out-strong)}
+.icon-btn:hover{background:var(--bg-2);color:var(--text-0)}
+.submit{margin:8px 10px 6px;height:var(--control-h);border-radius:var(--radius-md);background:var(--accent);color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;transition:transform .16s var(--ease-out-strong),background .16s}
+.submit:hover{background:#2a2a2a}.submit:active{transform:scale(.98)}
+.side-label{display:flex;justify-content:space-between;padding:16px 18px 6px;font-size:11.5px;color:var(--text-2);font-weight:600}
+.side-scroll{flex:1;overflow:auto;padding:0 8px;display:flex;flex-direction:column;gap:2px}
+.case{display:flex;flex-wrap:wrap;column-gap:8px;padding:8px 10px;border-radius:8px;text-align:left;width:100%;color:var(--text-1);transition:background .16s var(--ease-out-strong),color .16s}
+.case:hover{background:var(--bg-2);color:var(--text-0)}
+.case .c{flex:1;min-width:0;font-size:13px;font-weight:560;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.case .f{width:100%;font-size:11.5px;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.case .d{font-size:11.5px;color:var(--text-2);font-variant-numeric:tabular-nums}
+.case.active{background:var(--accent-soft);color:var(--accent)}
+.case.active .c{font-weight:700}
+.case.active .f{color:var(--text-1)}
+.account{margin:8px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--bg-1);display:flex;align-items:center;gap:10px;padding:8px 10px;transition:border-color .16s}
+.account:hover{border-color:var(--text-2)}
+.account .av{width:26px;height:26px;border-radius:7px;background:var(--bg-2);border:1px solid var(--border);display:grid;place-items:center;color:var(--text-2)}
+.account b{font-size:12.5px;font-weight:700;display:block}
+.account span{font-size:11px;color:var(--text-2)}
+
+/* ---------- entry list (claim parts) ---------- */
+.list{width:var(--list-width);flex:none;overflow:hidden;transition:width .38s var(--ease-out-strong),border-color .2s;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--bg-0)}
+.list-head{padding:16px 16px 0;display:flex;align-items:center;justify-content:space-between}
+.list-head b{font-size:13px;font-weight:700}
+.list-head a{font-size:12px;color:var(--text-2);display:inline-flex;gap:4px;align-items:center;transition:color .16s}
+.list-head a:hover{color:var(--text-0)}
+.pill-tabs{display:flex;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border)}
+.pill-tab{flex:1;height:var(--control-h);border-radius:var(--radius-md);border:1px solid var(--border);background:var(--bg-2);color:var(--text-1);font-weight:700;font-size:12.5px;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .18s var(--ease-out-strong)}
+.pill-tab .n{color:var(--text-2);font-weight:600}
+.pill-tab:not(.on):hover{color:var(--text-0)}
+.pill-tab.on{background:var(--bg-1);color:var(--text-0);box-shadow:0 1px 2px var(--shadow)}
+.pill-tab.on .n{color:var(--text-0)}
+.entry-list{flex:1;overflow:auto;padding:10px 10px 18px}
+.entry-card{display:flex;gap:10px;padding:11px 12px;border-radius:10px;border:1px solid transparent;cursor:pointer;margin-bottom:6px;transition:background .18s var(--ease-out-strong),border-color .18s,box-shadow .18s,transform .18s var(--ease-out-strong)}
+.entry-card:hover{background:var(--bg-1)}
+.entry-card:active{transform:scale(.995)}
+.entry-card.active{background:var(--bg-1);border-color:var(--border);box-shadow:0 2px 8px var(--shadow)}
+.dot{width:6px;height:6px;border-radius:50%;flex:none;margin-top:8px}
+.d-con{background:var(--con)}.d-gap{background:var(--gap)}.d-sup{background:var(--sup)}.d-ctx{background:var(--ctx)}.d-open{background:transparent;box-shadow:inset 0 0 0 1.5px var(--text-2)}
+.entry-main{min-width:0;flex:1}
+.entry-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.entry-top .v{font-weight:700}
+.entry-time{font-size:11.5px;color:var(--text-2);font-variant-numeric:tabular-nums}
+.entry-title{margin-top:3px;color:var(--text-0);font-size:14px;font-weight:780;line-height:1.42}
+.entry-summary{margin-top:4px;color:var(--text-2);font-size:12.4px;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.entry-stats{margin-top:8px;color:var(--text-2);font-size:11.3px;display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.mini{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 7px;border-radius:999px;border:1px solid var(--border);background:var(--bg-1);font-size:11px;font-weight:650;color:var(--text-1)}
+.mini i{width:5px;height:5px;border-radius:50%}
+.c-con{color:var(--con)}.c-gap{color:var(--gap)}.c-sup{color:var(--sup)}.c-ctx{color:var(--ctx)}.c-mute{color:var(--text-2)}
+.fav{width:14px;height:14px;border-radius:4px;display:grid;place-items:center;font-size:9px;font-weight:800;color:#fff;flex:none}
+
+/* ---------- reader ---------- */
+.reader{flex:1;min-width:0;background:var(--bg-1);display:flex;flex-direction:column}
+.reader-bar{height:48px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid transparent;transition:border-color .2s}
+.reader-bar.scrolled{border-bottom-color:var(--border-subtle)}
+.bar-title{font-size:12.5px;font-weight:700;color:var(--text-1);opacity:0;transform:translateY(4px);transition:opacity .2s var(--ease-out-strong),transform .2s var(--ease-out-strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%}
+.reader-bar.scrolled .bar-title{opacity:1;transform:none}
+.drawer-btn{height:30px;padding:0 10px 0 8px;border-radius:8px;border:1px solid var(--border);display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--text-1);transition:border-color .16s,color .16s,background .16s}
+.drawer-btn:hover{border-color:var(--text-2);color:var(--text-0)}
+.drawer-btn[aria-expanded=true]{background:var(--accent-soft);border-color:transparent;color:var(--text-0)}
+.drawer-btn .n{min-width:18px;height:18px;border-radius:999px;background:var(--bg-2);font-size:11px;display:grid;place-items:center;padding:0 5px;color:var(--text-2)}
+.reader-scroll{flex:1;overflow:auto}
+.reader-inner{max-width:808px;padding:20px 48px 96px;margin:0 auto}
+.reader-meta-row{display:flex;align-items:center;flex-wrap:wrap;gap:10px;color:var(--text-2);font-size:12.3px}
+.status-pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px 0 8px;border-radius:6px;background:var(--gap-soft);color:var(--gap);font-weight:750;font-size:12px;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--amber) 22%,transparent)}
+.status-pill i{width:7px;height:7px;border-radius:2px;background:currentColor}
+.sep{width:3px;height:3px;border-radius:50%;background:var(--text-2);opacity:.6}
+.reader h1{margin-top:16px;font-size:clamp(25px,2.2vw,31px);line-height:1.32;font-weight:820;letter-spacing:0;word-break:keep-all;overflow-wrap:anywhere}
+.reader h1 mark{color:inherit;background:linear-gradient(transparent 66%,color-mix(in srgb,var(--amber) 24%,transparent) 66%);padding:0 1px}
+.subtitle{margin-top:10px;font-size:15px;line-height:1.5;font-weight:700;color:var(--text-1)}
+.subtitle span{color:var(--text-2);font-weight:600}
+/* verdict meter: one segment per claim part */
+.meter{margin-top:22px;display:flex;gap:4px}
+.seg{flex:1;min-width:0;text-align:left;padding-top:10px;position:relative;font-size:12px;line-height:1.4;border-radius:4px}
+.seg::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;border-radius:2px;background:currentColor;transform-origin:left;transition:height .18s var(--ease-out-strong),opacity .18s}
+.seg b{display:block;font-weight:750;font-size:12px;color:currentColor}
+.seg.c-mute b{color:var(--text-1)}
+.seg span{display:block;color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px}
+.seg.c-mute::before{background:repeating-linear-gradient(90deg,var(--text-2) 0 6px,transparent 6px 10px);opacity:.6}
+.seg:hover::before,.seg.on::before{height:5px}
+.seg:hover span{color:var(--text-1)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.pill{min-height:34px;display:inline-flex;align-items:center;gap:7px;border:1px solid var(--border);border-radius:8px;background:var(--bg-1);color:var(--text-1);padding:5px 11px 5px 9px;font-size:12.5px;font-weight:750;transition:border-color .16s var(--ease-out-strong),color .16s,background .16s,transform .16s var(--ease-out-strong)}
+.pill:hover{border-color:var(--text-2);color:var(--text-0)}
+.pill:active{transform:scale(.98)}
+.pill.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.pill.primary:hover{background:#2a2a2a}
+.hint{margin-top:9px;font-size:12px;color:var(--text-2)}
+.divider{height:1px;background:var(--border-subtle);margin:24px 0 16px}
+.segmented{display:flex;padding:3px;border-radius:10px;background:var(--bg-2);border:1px solid var(--border-subtle);position:relative}
+.segmented .thumb{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);border-radius:8px;background:var(--bg-1);box-shadow:0 1px 2px var(--shadow),0 0 0 1px var(--border-subtle);transition:transform .32s var(--ease-out-strong)}
+.segmented[data-v=dossier] .thumb{transform:translateX(100%)}
+.segmented button{flex:1;height:30px;border-radius:8px;font-size:12.5px;font-weight:700;color:var(--text-2);position:relative;transition:color .18s}
+.segmented button.on{color:var(--text-0)}
+.view{animation:enter .34s var(--ease-out-strong)}
+@keyframes enter{from{opacity:0;transform:translateX(14px)}}
+.lede{margin:24px 0 26px;font-size:var(--reader-size);line-height:var(--reader-lh);color:var(--text-0)}
+
+/* part cards — QMReader annotation-card edge tint for colour coding */
+.card{--tone:var(--text-2);border:1px solid var(--border);border-radius:10px;background:linear-gradient(90deg,color-mix(in srgb,var(--tone) 22%,transparent),transparent 6px),var(--bg-1);margin-bottom:14px;scroll-margin-top:16px;transition:border-color .24s var(--ease-out-strong),box-shadow .24s var(--ease-out-strong)}
+.card.t-con{--tone:var(--con)}.card.t-gap{--tone:var(--gap)}.card.t-open{--tone:var(--text-2)}
+.card.target{border-color:color-mix(in srgb,var(--accent) 48%,var(--border));box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent)}
+.card-head{display:flex;align-items:center;gap:10px;padding:13px 16px 0 18px}
+.card-head .no{font-size:11.5px;color:var(--text-2);font-variant-numeric:tabular-nums;font-weight:700}
+.card-head b{font-size:14px;font-weight:780;flex:1;min-width:0}
+.tag{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:999px;font-size:11.5px;font-weight:700;flex:none}
+.tag i{width:6px;height:6px;border-radius:50%;background:currentColor}
+.tag.c-con{background:var(--con-soft)}.tag.c-gap{background:var(--gap-soft)}.tag.c-mute{background:var(--bg-2)}
+.card-body{padding:6px 16px 14px 18px}
+.card-body > p{font-size:14.5px;line-height:1.8;color:var(--text-1)}
+/* flat evidence rows with hairlines */
+.ev{margin:10px -16px 0 -18px;border-top:1px solid var(--border-subtle)}
+.ev a{display:flex;align-items:flex-start;gap:10px;padding:10px 16px 10px 18px;border-bottom:1px solid var(--border-subtle);transition:background .16s var(--ease-out-strong)}
+.ev a:hover{background:var(--bg-0)}
+.ev .st{width:72px;flex:none;font-size:12px;font-weight:750;display:flex;align-items:center;gap:6px;height:20px}
+.ev .st i{width:6px;height:6px;border-radius:50%;background:currentColor}
+.ev .body{flex:1;min-width:0}
+.ev .tt{font-size:13.5px;font-weight:720;line-height:1.5;color:var(--text-0)}
+.ev .sn{display:block;font-size:12.4px;line-height:1.55;color:var(--text-1);margin-top:1px}
+.ev .dm{display:block;font-size:11.5px;color:var(--text-2);margin-top:2px}
+.ev .go{opacity:0;transform:translate(-3px,3px);transition:opacity .18s var(--ease-out-strong),transform .18s var(--ease-out-strong);color:var(--text-2);margin-top:2px;width:14px;height:14px}
+.ev a:hover .go{opacity:1;transform:none}
+.ev a:hover .tt{text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--text-2) 58%,transparent);text-underline-offset:.16em}
+.foot{padding-top:10px;font-size:12.4px;line-height:1.65;color:var(--text-2);display:flex;gap:8px}
+.foot b{color:var(--text-1);font-weight:700;flex:none}
+.card-body > p + .foot{padding-top:8px}
+/* gap card: QMReader amber annotation-item surface */
+.card.gapcard{--tone:var(--gap);border-color:color-mix(in srgb,var(--amber) 24%,var(--border));background:color-mix(in srgb,var(--surface) 94%,var(--amber) 6%)}
+.gap-row{display:flex;gap:10px;padding:9px 0;border-top:1px solid var(--border-subtle);font-size:13.5px;line-height:1.65;color:var(--text-1)}
+.gap-row:first-child{border-top:0;padding-top:2px}
+.gap-row .k{width:64px;flex:none;color:var(--gap);font-size:12px;font-weight:750;padding-top:2px}
+.btn-sm{height:var(--control-h-sm);padding:0 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg-1);font-size:12.5px;font-weight:700;color:var(--text-0);transition:border-color .16s}
+.btn-sm:hover{border-color:var(--text-2)}
+.timeline{list-style:none;margin:4px 0 0 4px;border-left:1px solid var(--border)}
+.timeline li{position:relative;padding:4px 0 10px 16px;font-size:13px;line-height:1.6;color:var(--text-1)}
+.timeline li::before{content:"";position:absolute;left:-4px;top:11px;width:7px;height:7px;border-radius:50%;background:var(--bg-1);border:1.5px solid var(--text-2)}
+.timeline li b{color:var(--text-0);font-weight:750;margin-right:6px}
+.timeline li.done::before{background:var(--text-0);border-color:var(--text-0)}
+.hidden{display:none!important}
+
+/* ---------- right drawer ---------- */
+.agent{width:0;flex:none;overflow:hidden;border-left:1px solid transparent;transition:width .38s var(--ease-out-strong),border-color .2s}
+.app.drawer-open .agent{width:var(--agent-width);border-left-color:var(--border)}
+.agent-in{width:var(--agent-width);height:100%;display:flex;flex-direction:column;background:linear-gradient(to bottom,color-mix(in srgb,var(--bg-2) 42%,transparent),transparent 132px),var(--surface);opacity:0;transform:translateX(16px);transition:opacity .22s var(--ease-out-strong),transform .38s var(--ease-out-strong)}
+.app.drawer-open .agent-in{opacity:1;transform:none;transition-delay:.06s}
+.agent-tabs{display:flex;align-items:center;gap:6px;padding:9px 10px;border-bottom:1px solid var(--border);height:48px}
+.agent-tab{height:30px;padding:0 13px;border-radius:8px;font-size:12.5px;font-weight:700;color:var(--text-2);display:inline-flex;align-items:center;gap:6px;transition:all .18s var(--ease-out-strong)}
+.agent-tab .badge{min-width:18px;height:18px;border-radius:999px;background:var(--bg-2);font-size:11px;display:grid;place-items:center;padding:0 5px;color:var(--text-2)}
+.agent-tab.on{background:var(--bg-1);color:var(--text-0);box-shadow:0 0 0 1px var(--border)}
+.agent-tab:not(.on):hover{color:var(--text-0)}
+.ctx{margin:10px 12px 0;height:34px;border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12.3px;color:var(--text-1);font-weight:600;background:var(--bg-1)}
+.ctx svg{color:var(--gap)}
+.agent-body{flex:1;overflow:auto;padding:12px}
+.empty{text-align:center;padding:30px 8px 0}
+.empty .em{width:34px;height:34px;border-radius:50%;margin:0 auto 14px;border:1px solid var(--border);display:grid;place-items:center;font-weight:800;font-size:12px;background:var(--bg-1)}
+.empty b{display:block;font-size:14px;font-weight:780}
+.empty p{margin-top:8px;font-size:12.3px;line-height:1.65;color:var(--text-2)}
+.src-item{display:flex;gap:10px;padding:10px 8px;border-bottom:1px solid var(--border-subtle);transition:background .16s var(--ease-out-strong)}
+.src-item:last-child{border-bottom:0}
+.src-item:hover{background:var(--bg-2);border-radius:8px}
+.src-item .fav{margin-top:3px}
+.src-item .tt{font-size:12.8px;font-weight:720;line-height:1.45}
+.src-item .dm{font-size:11.5px;color:var(--text-2);margin-top:2px;line-height:1.5}
+.agent-form{padding:8px 12px 12px;display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.prompts{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0}
+.prompts .agent-prompt{max-width:100%}
+.agent-prompt{min-height:28px;border-radius:999px;background:var(--bg-0);border:1px solid var(--border);color:var(--text-1);font-size:11.5px;padding:4px 11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;transition:all .16s var(--ease-out-strong)}
+.agent-prompt:hover{background:var(--bg-1);color:var(--text-0);border-color:var(--text-2)}
+.agent-composer{display:grid;gap:8px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-0);padding:8px;transition:border-color .16s,box-shadow .16s}
+.agent-composer:focus-within{border-color:var(--focus-ring);box-shadow:0 0 0 3px var(--focus-halo)}
+.agent-composer textarea{border:0;background:transparent;resize:none;height:54px;font:13px/1.55 var(--font-ui);color:var(--text-0);outline:none}
+.agent-composer-actions{display:flex;justify-content:space-between;align-items:center}
+.agent-composer-hint{font-size:10.8px;font-weight:720;color:var(--text-2)}
+.send{height:28px;padding:0 10px;border-radius:7px;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:5px}
+
+@media (min-width:721px) and (max-width:1679px){
+  .list>*{min-width:var(--list-width);transition:opacity .2s var(--ease-out-strong)}
+  .app.drawer-open .list{width:0;border-right-color:transparent}
+  .app.drawer-open .list>*{opacity:0}
+}
+/* sidebar collapse (desktop) */
+.sidebar{overflow:hidden;transition:width .38s var(--ease-out-strong),border-color .2s}
+.sidebar>.brand,.sidebar>.side-label,.sidebar>.side-scroll{min-width:var(--sidebar-width)}
+.sidebar>.submit,.sidebar>.account{min-width:calc(var(--sidebar-width) - 18px)}
+.app.side-collapsed .sidebar{width:0;border-right-color:transparent}
+.open-side{display:none}
+.app.side-collapsed .open-side{display:inline-flex}
+.x-ico{display:none}
+
+/* ---------- entrance (quiet hero moment) ---------- */
+.hero > *{animation:rise .6s var(--ease-out-strong) both}
+.hero > :nth-child(2){animation-delay:.04s}.hero > :nth-child(3){animation-delay:.08s}.hero > :nth-child(4){animation-delay:.12s}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}}
+.meter .seg::before{animation:grow .8s var(--ease-out-strong) both}
+.meter .seg:nth-child(2)::before{animation-delay:.08s}.meter .seg:nth-child(3)::before{animation-delay:.16s}
+@keyframes grow{from{transform:scaleX(0)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.mtop,.scrim{display:none}
+
+/* ---------- mobile ---------- */
+@media (max-width:720px){
+  body{overflow:auto}
+  .app{display:block;height:auto}
+  .mtop{display:flex;position:sticky;top:0;z-index:20;height:52px;align-items:center;gap:10px;padding:0 10px;background:color-mix(in srgb,var(--bg-1) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border-subtle)}
+  .mtop b{font-size:14.5px;font-weight:800;flex:1}
+  .mtop .mark{width:24px;height:24px;font-size:12px;border-radius:7px}
+  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:40;width:280px;transform:translateX(-102%);transition:transform .38s var(--ease-out-strong);box-shadow:8px 0 24px rgba(0,0,0,.08)}
+  .app.menu-open .sidebar{transform:none}
+  .scrim{display:block;position:fixed;inset:0;z-index:30;background:rgba(17,17,17,.18);opacity:0;pointer-events:none;transition:opacity .3s var(--ease-out-strong)}
+  .app.menu-open .scrim,.app.drawer-open .scrim{opacity:1;pointer-events:auto}
+  .list{display:none}
+  .reader-bar{display:none}
+  .reader-scroll{overflow:visible}
+  .reader-inner{padding:18px 18px 56px}
+  .reader h1{font-size:25px;margin-top:12px}
+  .subtitle{font-size:14px}
+  .reader-meta-row .opt{display:none}
+  .meter .seg span{display:none}
+  .actions .pill:nth-child(n+3){display:none}
+  .agent{position:fixed;right:0;top:0;bottom:0;z-index:40;width:min(320px,86vw)!important;transform:translateX(102%);transition:transform .38s var(--ease-out-strong);border-left:0;box-shadow:-8px 0 24px rgba(0,0,0,.08)}
+  .app.drawer-open .agent{transform:none}
+  .agent-in{width:100%;opacity:1;transform:none}
+  .ev a{flex-direction:column;gap:3px}
+  .ev .go{display:none}
+  .card-head{flex-wrap:wrap}
+  .lede{font-size:16px}
+  .sidebar>*{min-width:0}
+  .pl-ico{display:none}.x-ico{display:block}
+}
+</style>
+</head>
+<body>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-panel-r" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></symbol>
+  <symbol id="i-panel-l" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19V5"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="m4 12 16-8-6 16-2-7z"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+</svg>
+
+<div class="app" id="app">
+  <header class="mtop">
+    <button class="icon-btn" id="menuBtn" aria-label="菜单" aria-expanded="false"><svg><use href="#i-menu"/></svg></button>
+    <span class="mark">红</span><b>红鲱鱼与枪</b>
+    <button class="drawer-btn" data-drawer="src" aria-expanded="false"><svg><use href="#i-book"/></svg>来源<span class="n">6</span></button>
+  </header>
+  <div class="scrim" id="scrim"></div>
+
+  <!-- sidebar: real history cases -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><span class="mark">红</span><b>红鲱鱼与枪</b><button class="icon-btn" id="sideBtn" aria-label="收起侧栏"><svg class="pl-ico"><use href="#i-panel-l"/></svg><svg class="x-ico"><use href="#i-x"/></svg></button></div>
+    <button class="submit"><svg><use href="#i-plus"/></svg><span>新调查</span></button>
+    <div class="side-label"><span>历史记录</span><span>4</span></div>
+    <nav class="side-scroll">
+      <a class="case active" href="#" aria-current="page"><span class="c">隔夜菜会致癌，吃了等于吃毒药。</span><span class="d">9/6</span><span class="f">现有证据不支持「隔夜菜会直接致癌、吃了等于吃毒药」。</span></a>
+      <a class="case" href="#"><span class="c">维生素C能治感冒，而且每次感冒都应当输液。</span><span class="d">9/6</span><span class="f">只有前半截有依据且被夸大；后半截站不住。</span></a>
+      <a class="case" href="#"><span class="c">新规要求 2026 年起电动车必须装识别芯片。</span><span class="d">9/7</span><span class="f">该说法把地方试点说成了全国新规。</span></a>
+      <a class="case" href="#"><span class="c">某小区本月的自来水异味来自新增消毒工艺。</span><span class="d">9/8</span><span class="f">公开材料还撑不住这条说法，异味来源仍未查清。</span></a>
+    </nav>
+    <a class="account" href="#"><span class="av"><svg style="width:14px;height:14px"><use href="#i-user"/></svg></span><div><b>登录</b><span>RED HERRING &amp; GUN</span></div></a>
+  </aside>
+
+  <!-- entry list: claim parts -->
+  <section class="list">
+    <div class="list-head"><b>识别到的核查问题</b><a href="#"><svg style="width:13px;height:13px"><use href="#i-sliders"/></svg>调整核查重点</a></div>
+    <div class="pill-tabs">
+      <button class="pill-tab on" data-list="parts">核查问题 <span class="n">3</span></button>
+      <button class="pill-tab" data-list="sources">收集到的来源 <span class="n">6</span></button>
+    </div>
+    <div class="entry-list" id="list-parts">
+      <div class="entry-card" data-go="p1" tabindex="0"><span class="dot d-con"></span><div class="entry-main">
+        <div class="entry-top"><span class="v c-con">证据反驳</span><span class="entry-time">01</span></div>
+        <div class="entry-title">隔夜菜会直接致癌</div>
+        <div class="entry-summary">多方权威机构与研究指出，正常储存的隔夜菜本身不会直接导致癌症。</div>
+        <div class="entry-stats"><span class="mini"><i class="d-con"></i>反驳 1</span><span class="mini"><i class="d-open"></i>相关材料 1</span></div></div></div>
+      <div class="entry-card" data-go="p2" tabindex="0"><span class="dot d-gap"></span><div class="entry-main">
+        <div class="entry-top"><span class="v c-gap">夸大</span><span class="entry-time">02</span></div>
+        <div class="entry-title">隔夜菜会产生大量有害物质，等于吃毒药</div>
+        <div class="entry-summary">不当储存确实可能产生有害物质，但「等于吃毒药」夸大了常规食用风险。</div>
+        <div class="entry-stats"><span class="mini"><i class="d-sup"></i>支持 1</span><span class="mini"><i class="d-con"></i>反驳 1</span><span class="mini"><i class="d-open"></i>相关材料 1</span></div></div></div>
+      <div class="entry-card" data-go="p3" tabindex="0"><span class="dot d-open"></span><div class="entry-main">
+        <div class="entry-top"><span class="v c-mute">尚未查清</span><span class="entry-time">03</span></div>
+        <div class="entry-title">只要冷藏保存，隔夜菜就一定安全</div>
+        <div class="entry-summary">膳食指南：隔夜菜冷藏期限与回热建议 — 冷藏超过 3 天或反复回热仍有风险</div>
+        <div class="entry-stats"><span class="mini"><i class="d-ctx"></i>待核对 1</span></div></div></div>
+      <div class="entry-card" data-go="gap" tabindex="0"><span class="dot d-gap"></span><div class="entry-main">
+        <div class="entry-top"><span class="v c-gap">缺口</span><span class="entry-time"></span></div>
+        <div class="entry-title">基于当前缺口继续查证</div>
+        <div class="entry-summary">缺少对常温存放 24 小时以上样本的定向检测数据</div></div></div>
+    </div>
+    <div class="entry-list hidden" id="list-sources"></div>
+  </section>
+
+  <!-- reader -->
+  <main class="reader">
+    <div class="reader-bar" id="readerBar"><button class="icon-btn open-side" id="openSide" aria-label="展开侧栏"><svg><use href="#i-panel-l"/></svg></button><span class="bar-title">现有证据不支持「隔夜菜会直接致癌、吃了等于吃毒药」。</span><span></span>
+      <button class="drawer-btn" data-drawer="src" aria-expanded="false"><svg><use href="#i-panel-r"/></svg>来源<span class="n">6</span></button></div>
+    <div class="reader-scroll" id="readerScroll"><div class="reader-inner">
+      <div class="hero">
+        <div class="reader-meta-row"><span class="status-pill"><i></i>有对有错</span><span class="opt">核查台</span><span class="sep opt"></span><span>完成于 2026/9/6 17:30:00</span><span class="sep"></span><span>收集到的来源 6</span></div>
+        <h1>现有证据<mark>不支持</mark>「隔夜菜会直接致癌、吃了等于吃毒药」。</h1>
+        <div class="subtitle"><span>待核查说法</span>　隔夜菜会致癌，吃了等于吃毒药。</div>
+        <div class="meter">
+          <button class="seg c-con" data-go="p1"><b>证据反驳</b><span>01 隔夜菜会直接致癌</span></button>
+          <button class="seg c-gap" data-go="p2"><b>夸大</b><span>02 隔夜菜会产生大量有害物质，等于吃毒药</span></button>
+          <button class="seg c-mute" data-go="p3"><b>尚未查清</b><span>03 只要冷藏保存，隔夜菜就一定安全</span></button>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="pill primary" data-drawer="src"><svg><use href="#i-book"/></svg>查看已有依据</button>
+        <button class="pill" data-drawer="ask"><svg><use href="#i-target"/></svg>继续补查</button>
+        <button class="pill"><svg><use href="#i-copy"/></svg>复制结论简报</button>
+        <button class="pill"><svg><use href="#i-redo"/></svg>重新调查</button>
+      </div>
+      <div class="hint">查看依据不会重新调查；补查需明确发送问题。</div>
+      <div class="divider"></div>
+      <div class="segmented" id="seg" data-v="judge"><span class="thumb"></span><button class="on" data-view="judge">判断与依据</button><button data-view="dossier">调查案卷</button></div>
+
+      <div id="view-judge" class="view">
+        <p class="lede">不当储存确有风险，但常规冷藏并彻底回热的隔夜菜，风险远低于说法描述；「一定安全」也不成立，冷藏超过三天仍应丢弃。</p>
+
+        <article class="card t-con" id="p1"><div class="card-head"><span class="no">01</span><b>隔夜菜会直接致癌</b><span class="tag c-con"><i></i>证据反驳</span></div>
+          <div class="card-body"><p>多方权威机构与研究指出，正常储存的隔夜菜本身不会直接导致癌症。</p>
+            <div class="ev">
+              <a href="#"><span class="st c-con"><i></i>反驳</span><span class="body"><span class="tt">世卫组织辟谣平台：无「隔夜菜致癌」结论</span><span class="sn">官方声明未提及隔夜菜直接致癌</span><span class="dm">piyao.example.org</span></span><svg class="go"><use href="#i-arrow"/></svg></a>
+              <a href="#"><span class="st c-mute"><i></i>相关材料</span><span class="body"><span class="tt">食品科学解读：亚硝酸盐与致癌的量效关系</span><span class="sn">正常冷藏隔夜菜亚硝酸盐远低于中毒剂量</span><span class="dm">nutrition.example.cn</span></span><svg class="go"><use href="#i-arrow"/></svg></a>
+            </div>
+            <div class="foot"><b>适用边界</b><span>不适用于已明显变质、被霉菌污染的食物</span></div>
+          </div></article>
+
+        <article class="card t-gap" id="p2"><div class="card-head"><span class="no">02</span><b>隔夜菜会产生大量有害物质，等于吃毒药</b><span class="tag c-gap"><i></i>夸大</span></div>
+          <div class="card-body"><p>不当储存确实可能产生有害物质，但「等于吃毒药」夸大了常规食用风险。</p>
+            <div class="ev">
+              <a href="#"><span class="st c-sup"><i></i>支持</span><span class="body"><span class="tt">疾控中心：家庭食品储存与致病菌预防</span><span class="sn">不当储存可能滋生致病菌</span><span class="dm">cdc.example.cn</span></span><svg class="go"><use href="#i-arrow"/></svg></a>
+              <a href="#"><span class="st c-con"><i></i>反驳</span><span class="body"><span class="tt">科普：什么是「毒药」——剂量决定毒性</span><span class="sn">脱离剂量的毒性表述不成立</span><span class="dm">course.example.org</span></span><svg class="go"><use href="#i-arrow"/></svg></a>
+              <a href="#"><span class="st c-mute"><i></i>相关材料</span><span class="body"><span class="tt">临床营养研究：不同人群的风险阈值与摄入量</span><span class="sn">合理加热与冷藏下风险较低</span><span class="dm">pkuph.example.org</span></span><svg class="go"><use href="#i-arrow"/></svg></a>
+            </div>
+            <div class="foot"><b>分歧</b><span>分歧来自剂量与储存条件：疾控提醒的是不当储存风险，而常温短存放不构成「毒药」级危害。</span></div>
+          </div></article>
+
+        <article class="card t-open" id="p3"><div class="card-head"><span class="no">03</span><b>只要冷藏保存，隔夜菜就一定安全</b><span class="tag c-mute"><i></i>尚未查清</span></div>
+          <div class="card-body">
+            <div class="ev">
+              <a href="#"><span class="st c-ctx"><i></i>待核对</span><span class="body"><span class="tt">膳食指南：隔夜菜冷藏期限与回热建议</span><span class="sn">冷藏超过 3 天或反复回热仍有风险</span><span class="dm">diet.example.cn</span></span><svg class="go"><use href="#i-arrow"/></svg></a>
+            </div>
+            <div class="foot">回答只覆盖这些问题，不代表整份材料已获证实；纳入核查也不等于已有定论。</div>
+          </div></article>
+
+        <article class="card gapcard" id="gap"><div class="card-head"><b>缺口</b><button class="btn-sm" data-drawer="ask">继续补查</button></div>
+          <div class="card-body">
+            <div class="gap-row"><span class="k">还缺</span><span>缺少对常温存放 24 小时以上样本的定向检测数据</span></div>
+            <div class="gap-row"><span class="k">适用边界</span><span>该说法把「不当储存的风险」夸大成了「吃就中毒」，不能由证据推出</span></div>
+          </div></article>
+      </div>
+
+      <div id="view-dossier" class="view hidden">
+        <article class="card" style="margin-top:24px"><div class="card-head"><b>调查经历</b><span class="tag c-mute">调查完成</span></div>
+          <div class="card-body"><ol class="timeline">
+            <li><b>找出处</b>带回材料：世卫组织辟谣平台：无「隔夜菜致癌」结论 · piyao.example.org</li>
+            <li><b>找出处</b>带回材料：疾控中心：家庭食品储存与致病菌预防 · cdc.example.cn</li>
+            <li><b>作判断</b>判定这条材料：反驳｜世卫组织辟谣平台：无「隔夜菜致癌」结论</li>
+            <li><b>作判断</b>形成判断：证据反驳</li>
+            <li><b>作判断</b>形成判断：有对有错</li>
+            <li><b>核语境</b>还缺：缺少对常温存放 24 小时以上样本的定向检测数据</li>
+            <li><b>核语境</b>发现分歧：同一命题同时存在支持与反驳证据：支持 1 条、反驳 1 条</li>
+            <li class="done"><b>调查完成</b></li>
+          </ol></div></article>
+      </div>
+    </div></div>
+  </main>
+
+  <!-- right drawer: follow-up + sources -->
+  <aside class="agent" id="agent" aria-hidden="true"><div class="agent-in">
+    <div class="agent-tabs"><button class="agent-tab on" data-pane="src">来源 <span class="badge">6</span></button><button class="agent-tab" data-pane="ask">追问</button><span style="flex:1"></span><button class="icon-btn" id="drawerClose" aria-label="收起"><svg><use href="#i-x"/></svg></button></div>
+    <div class="ctx"><svg><use href="#i-target"/></svg>基于当前缺口继续查证</div>
+    <div class="agent-body" id="pane-src"></div>
+    <div class="agent-body hidden" id="pane-ask">
+      <div class="empty"><div class="em">?</div><b>推荐追问</b><p>点一个推荐问题，它会填入下方输入框；确认后再发出追查。本轮结果会保留，补查仍在同一份调查里。</p></div>
+    </div>
+    <div class="agent-form">
+      <div class="prompts">
+        <button class="agent-prompt">还没查清：缺少对常温存放 24 小时以上样本的定向检测数据</button>
+        <button class="agent-prompt">适用边界是「不适用于已明显变质、被霉菌污染的食物」，还要再查哪一段？</button>
+      </div>
+      <div class="agent-composer"><textarea id="ask" aria-label="追问"></textarea>
+        <div class="agent-composer-actions"><span class="agent-composer-hint">支持快捷键 Enter 直接提交追问</span><button class="send"><svg style="width:13px;height:13px"><use href="#i-send"/></svg>追问</button></div></div>
+    </div>
+  </div></aside>
+</div>
+
+<script>
+const SRC=[
+ ['piyao.example.org','世卫组织辟谣平台：无「隔夜菜致癌」结论','隔夜菜会直接致癌','con','反驳'],
+ ['nutrition.example.cn','食品科学解读：亚硝酸盐与致癌的量效关系','隔夜菜会直接致癌','mute','相关材料'],
+ ['cdc.example.cn','疾控中心：家庭食品储存与致病菌预防','隔夜菜会产生大量有害物质，等于吃毒药','sup','支持'],
+ ['course.example.org','科普：什么是「毒药」——剂量决定毒性','隔夜菜会产生大量有害物质，等于吃毒药','con','反驳'],
+ ['pkuph.example.org','临床营养研究：不同人群的风险阈值与摄入量','隔夜菜会产生大量有害物质，等于吃毒药','mute','相关材料'],
+ ['diet.example.cn','膳食指南：隔夜菜冷藏期限与回热建议','只要冷藏保存，隔夜菜就一定安全','ctx','待核对'],
+];
+const COL={con:'#d14b4b',sup:'#2f6f4e',ctx:'#3e6383',mute:'#8a8a84'};
+document.getElementById('pane-src').innerHTML=SRC.map(([d,t,c,k,r])=>`<div class="src-item"><span class="fav" style="background:${COL[k]}">${d[0].toUpperCase()}</span><div><div class="tt">${t}</div><div class="dm"><b class="c-${k}" style="font-weight:700">${r}</b> · ${d}<br>关联命题：${c}</div></div></div>`).join('');
+document.getElementById('list-sources').innerHTML=SRC.map(([d,t,c,k,r])=>`<div class="entry-card"><span class="dot d-${k==='mute'?'open':k}"></span><div class="entry-main"><div class="entry-top"><span class="v c-${k}">${r}</span><span class="entry-time">${d}</span></div><div class="entry-title">${t}</div><div class="entry-summary">关联命题：${c}</div></div></div>`).join('');
+
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const app=$('#app'), rs=$('#readerScroll'), mobile=()=>matchMedia('(max-width:720px)').matches;
+
+// drawer
+function pane(p){$$('.agent-tab').forEach(b=>b.classList.toggle('on',b.dataset.pane===p));$('#pane-src').classList.toggle('hidden',p!=='src');$('#pane-ask').classList.toggle('hidden',p!=='ask')}
+function setDrawer(open,p){if(p)pane(p);app.classList.toggle('drawer-open',open);$('#agent').setAttribute('aria-hidden',!open);$$('[data-drawer]').forEach(b=>b.matches('.drawer-btn')&&b.setAttribute('aria-expanded',open));if(open)app.classList.remove('menu-open')}
+$$('[data-drawer]').forEach(b=>b.addEventListener('click',()=>{const p=b.dataset.drawer;const isToggle=b.matches('.drawer-btn');if(isToggle&&app.classList.contains('drawer-open'))return setDrawer(false);setDrawer(true,p);if(p==='ask')setTimeout(()=>$('#ask').focus({preventScroll:true}),380)}));
+$('#drawerClose').onclick=()=>setDrawer(false);
+$$('.agent-tab').forEach(b=>b.onclick=()=>pane(b.dataset.pane));
+$$('.agent-prompt').forEach(b=>b.onclick=()=>{const t=$('#ask');t.value=b.textContent;t.focus()});
+// mobile menu
+$('#menuBtn').onclick=()=>{const o=!app.classList.contains('menu-open');app.classList.toggle('menu-open',o);$('#menuBtn').setAttribute('aria-expanded',o)};
+$('#sideBtn').onclick=()=>{if(mobile()){app.classList.remove('menu-open');$('#menuBtn').setAttribute('aria-expanded',false)}else app.classList.add('side-collapsed')};
+$('#openSide').onclick=()=>app.classList.remove('side-collapsed');
+$('#scrim').onclick=()=>{app.classList.remove('menu-open');setDrawer(false)};
+addEventListener('keydown',e=>{if(e.key==='Escape'){app.classList.remove('menu-open');setDrawer(false)}});
+
+// eased scroll (QMReader ease-out-strong) for part selection
+const ease=t=>1-Math.pow(1-t,4);
+function glide(el,to,ms=620){const sc=el===window?document.scrollingElement:el;const from=sc.scrollTop,t0=performance.now();return new Promise(r=>{(function f(now){const k=Math.min(1,(now-t0)/ms);sc.scrollTop=from+(to-from)*ease(k);k<1?requestAnimationFrame(f):r()})(t0)})}
+function select(id,{scroll=true}={}){
+  $$('.entry-card[data-go]').forEach(c=>c.classList.toggle('active',c.dataset.go===id));
+  $$('.seg').forEach(s=>s.classList.toggle('on',s.dataset.go===id));
+  if(!scroll)return;
+  if(!$('#view-dossier').classList.contains('hidden'))switchView('judge');
+  const card=document.getElementById(id);
+  const to=mobile()?card.getBoundingClientRect().top+scrollY-64:card.offsetTop-16;
+  glide(mobile()?window:rs,to).then(()=>{card.classList.add('target');setTimeout(()=>card.classList.remove('target'),1100)});
+}
+$$('[data-go]').forEach(c=>c.addEventListener('click',()=>select(c.dataset.go)));
+$$('.entry-card[data-go]').forEach(c=>c.addEventListener('keydown',e=>{if(e.key==='Enter')select(c.dataset.go)}));
+// scroll-spy keeps the list selection in sync with reading position
+const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting)select(e.target.id,{scroll:false})})},{root:mobile()?null:rs,rootMargin:'-20% 0px -70% 0px'});
+$$('#view-judge .card').forEach(c=>io.observe(c));
+rs.addEventListener('scroll',()=>$('#readerBar').classList.toggle('scrolled',rs.scrollTop>150));
+
+// views
+function switchView(v){$('#seg').dataset.v=v;$$('#seg button').forEach(b=>b.classList.toggle('on',b.dataset.view===v));
+  ['judge','dossier'].forEach(n=>{const el=$('#view-'+n);const show=n===v;el.classList.toggle('hidden',!show);if(show){el.style.animation='none';el.offsetHeight;el.style.animation=''}})}
+$$('#seg button').forEach(b=>b.onclick=()=>switchView(b.dataset.view));
+// list tabs
+$$('.pill-tab').forEach(b=>b.onclick=()=>{$$('.pill-tab').forEach(x=>x.classList.toggle('on',x===b));$('#list-parts').classList.toggle('hidden',b.dataset.list!=='parts');$('#list-sources').classList.toggle('hidden',b.dataset.list!=='sources')});
+select('p1',{scroll:false});
+if(location.hash==='#drawer')setDrawer(true,'src');
+if(location.hash==='#menu')app.classList.add('menu-open');
+</script>
+</body>
+</html>

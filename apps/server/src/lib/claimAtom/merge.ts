@@ -2,7 +2,7 @@ import type { SubclaimVerdict, VerdictSource } from "./types.js";
 import { claimAtomKey, compactStrings, compactText, MAX_CLAIM_ATOMS } from "./text.js";
 import { bindDualBucketCitations, hasDirectionalBoundHttpUrl } from "../citationBinding.js";
 
-const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated"];
+const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated", "disputed"];
 
 function allowedUrlSet(searchSources?: Array<{ url?: unknown }>): Set<string> | null {
   if (!searchSources) return null;
@@ -25,7 +25,7 @@ function demoteUnsourcedTrueFalse(
   }
   // 方向专属契约（Review 5128449568 Blocker 3）：true 只认支撑桶、false 只认反证桶
   // （alignFalseEvidenceBuckets 已先行改桶）；错桶 URL 不算该方向的证据，
-  // 与 deriveOverallVerdict / applyConclusionGate / Snapshot 判词映射同向。
+  // 与整句规则表（sentenceVerdict.standingOf）/ Snapshot 判词映射同向。
   if (
     hasDirectionalBoundHttpUrl({
       verdict,
@@ -119,6 +119,9 @@ export function mergeSubclaimVerdicts(
       verdict: guarded.verdict,
       evidence: compactText(bound.text, 240),
       boundary: compactText(rec.boundary, 200),
+      ...(typeof rec.contradictedElement === "string" && rec.contradictedElement.trim()
+        ? { contradictedElement: compactText(rec.contradictedElement.trim(), 120) }
+        : {}),
       supportingSources,
       contradictingSources,
       evidenceGaps: guarded.evidenceGaps,

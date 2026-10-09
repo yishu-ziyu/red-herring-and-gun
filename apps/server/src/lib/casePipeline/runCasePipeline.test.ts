@@ -268,7 +268,7 @@ describe("runCasePipeline", () => {
     expect(result.sourceStep.output.verifiedSources).toEqual([]);
   });
 
-  it("检索已有对题辟谣时，把只能信一部分收成不能信", async () => {
+  it("检索里有对题辟谣、但核查模型没有逐条判定：不走短谣捷径，整句只能是证据不足", async () => {
     const result = await runCasePipeline({
       claim: "我说我的电瓶车叫谁偷走了，原来送给非洲人去了",
       runAgent: async (agentId: string, steps: PipelineStep[]): Promise<PipelineStep> => {
@@ -310,15 +310,15 @@ describe("runCasePipeline", () => {
         agent: "report_composer",
         output: { verdictType: "mixed_misleading", conclusion: "只能信一部分。" },
       }),
-      // 本用例断言 tiny-bound 短谣通道：辟谣来源存活是前提，注入 alive 使其 hermetic
       citationLiveness: { liveness: new Map([["https://www.piyao.org.cn/ebike", "alive"]]) },
     });
 
-    expect(result.finalReport.verdictType).toBe("false");
-    expect(result.finalReport.faceVerdict).toBe("不能信");
+    // 2026-09-29 起短谣辟谣通道已删除：辟谣必须经过逐条判词与关系审核才算反驳（基准 v1 的 NEW-406 就是这条捷径判错的）。
+    expect(result.finalReport.verdictType).toBe("unverified");
+    expect(result.finalReport.faceVerdict).toBe("还查不清");
   });
 
-  // 2026-09-28 实机：整句判「不能信」，唯一命题却是「模型未覆盖」，结论写「尚未查清，未计入该判断」，徽章是证据不足。
+  // 2026-09-28 实机：整句判「不能信」，唯一命题却是「模型未覆盖」，结论写「尚未查清」，徽章不一致。当时的修法是短谣通道（2026-09-29 删除）；现在整句、命题、结论都读同一个规则表结果，不会再不一致。
   const TINY_ATOM = "大剂量维生素C有利于预防感冒";
   const TINY_DEBUNK = {
     url: "https://piyao.kepuchina.cn/vc",
@@ -357,31 +357,26 @@ describe("runCasePipeline", () => {
       hooks: { onInvestigationSnapshot: () => {} },
     });
 
-  it("短谣通道判不能信时，唯一命题同步为站不住并挂上反驳出处，结论不写尚未查清", async () => {
+  it("辟谣材料不绕过规则表：模型没判、检索里有辟谣，唯一命题保持没查清，整句、命题、结论三处一致", async () => {
     const result = await runTinyChannel([TINY_ATOM]);
-    expect(result.finalReport.verdictType).toBe("false");
+    expect(result.finalReport.verdictType).toBe("unverified");
     const verdicts = result.finalReport.subclaimVerdicts as Array<Record<string, unknown>>;
     expect(verdicts).toHaveLength(1);
-    expect(verdicts[0].verdict).toBe("false");
-    expect((verdicts[0].contradictingSources as Array<{ url: string }>).map((s) => s.url)).toContain(TINY_DEBUNK.url);
-    // 整句判定之后还要重绑一次引用：命题条目与全局引用也跟着挂上这条辟谣，不留「模型未覆盖」的旧条目。
-    const items = result.finalReport.claimItems as Array<{ verdict?: Record<string, unknown> }>;
-    expect(items[0].verdict?.verdict).toBe("false");
-    expect((result.finalReport.citationSources as Array<{ url: string }>).map((s) => s.url)).toContain(TINY_DEBUNK.url);
-    expect(String(result.finalReport.conclusion)).not.toContain("尚未查清");
-    const investigation = result.finalReport.investigation as { claims: Array<{ judgment?: string; evidence: Array<{ role: string }> }> };
-    expect(investigation.claims[0].judgment).toBe("refuted");
-    expect(investigation.claims[0].evidence.some((link) => link.role === "contradict")).toBe(true);
+    expect(verdicts[0].verdict).toBe("unverified");
+    expect(verdicts[0].contradictingSources).toEqual([]);
+    expect(String(result.finalReport.conclusion)).toMatch(/^公开材料还撑不住判断。/);
+    expect(String(result.finalReport.conclusion)).not.toContain("辟谣材料");
+    const investigation = result.finalReport.investigation as { claims: Array<{ judgment?: string }>; conclusion?: { judgment?: string } };
+    expect(investigation.claims[0].judgment).toBe("unresolved");
+    expect(investigation.conclusion?.judgment).toBe("unresolved");
   });
 
-  // 规则表（docs/evals/2026-09-28-judgment-refactor.md）：主要主张被反驳 → 不能信；其余没查清的只作边界。
-  // 旧规则「多命题一律不放行」把 TINY-003「上海车展上演全武行」等 3 条实机案例压成了证据不足（错误分析 2026-09-28）。
-  it("多条可核查命题：主要主张挂上辟谣后判不能信，其余没查清的写成边界", async () => {
+  it("多条可核查命题：模型都没判时同样只是证据不足，两条都写成尚未查清", async () => {
     const result = await runTinyChannel([TINY_ATOM, "维生素C能缩短感冒病程"]);
-    expect(result.finalReport.verdictType).toBe("false");
+    expect(result.finalReport.verdictType).toBe("unverified");
     const conclusion = String(result.finalReport.conclusion);
-    expect(conclusion).toMatch(/^公开材料不支持这条说法。/);
-    expect(conclusion).toContain(`「${TINY_ATOM}」站不住`);
+    expect(conclusion).toMatch(/^公开材料还撑不住判断。/);
+    expect(conclusion).toContain(`「${TINY_ATOM}」尚未查清`);
     expect(conclusion).toContain("「维生素C能缩短感冒病程」尚未查清");
   });
 
@@ -787,13 +782,9 @@ describe("runCasePipeline", () => {
     // 结论卡徽章读规则表的结论，不再因「同时有证实和反驳的命题」自行改成「有对有错」。
     const investigation = result.finalReport.investigation as { conclusion?: { judgment?: string } };
     expect(investigation.conclusion?.judgment).toBe("refuted");
-    expect(result.finalReport._mixedGuard).toBeTruthy();
-    // 公式输入也被纠正为 partial（false → cap 15 不再触发）
-    expect((result.factStep.output as Record<string, unknown>).factCheckResult).toBe("partial");
-    expect((result.factStep.output as Record<string, unknown>)._factCheckResultDerived).toMatchObject(
-      { from: "false", to: "partial" }
-    );
-    expect(finalizeSawFactResult).toBe("partial");
+    // 整句已判不能信：公式分读到的整体判定不再被改成 partial（真实的钩子里 false 会把分数封顶在 15）。
+    expect((result.factStep.output as Record<string, unknown>).factCheckResult).toBe("false");
+    expect(finalizeSawFactResult).toBe("false");
   });
 
   it("原子级守门：真无据不救 → 保持 false（纯谣言不受零星 true 判词干扰）", async () => {
@@ -846,7 +837,7 @@ describe("runCasePipeline", () => {
         agent: "report_composer",
         output: { verdictType: "false", conclusion: "不能信。" },
       }),
-      // 本用例断言 mixedGuard 不救无据之真：反证来源存活是前提，注入 alive 使其 hermetic
+      // 本用例断言规则表不救无据之真：反证来源存活是前提，注入 alive 使其 hermetic
       citationLiveness: {
         liveness: new Map([
           [`https://t.test/${encodeURIComponent(atoms[0])}`, "alive"],
@@ -856,7 +847,7 @@ describe("runCasePipeline", () => {
     });
 
     expect(result.finalReport.verdictType).toBe("false");
-    expect(result.finalReport._mixedGuard).toBeUndefined();
+    expect((result.factStep.output as Record<string, unknown>)._factCheckResultDerived).toBeUndefined();
     expect((result.factStep.output as Record<string, unknown>).factCheckResult).toBe("false");
   });
 

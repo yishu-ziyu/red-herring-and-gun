@@ -1,0 +1,4140 @@
+[
+ {
+  "id": "RUMOR-001",
+  "claim": "数字人民币平台正在发放数字资产红利",
+  "domain": "finance",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "不会，这是冒用名义的假公告。",
+  "keyFact": "数字货币研究所声明从未发布过此类信息，也从未组织登记、认购「数字资产」或发放「红利」。",
+  "keySources": [
+   {
+    "url": "https://m.gmw.cn/2024-10/10/content_1303867139.htm",
+    "title": "辟谣！“数字人民币平台发放数字资产红利”系谣言",
+    "sourceChecked": true,
+    "note": "抓取确认：公告、平台均系伪造，研究所从未发布。"
+   },
+   {
+    "url": "https://news.cnr.cn/native/gd/kx/20241027/t20241027_526954499.shtml",
+    "title": "数字人民币平台发红利？谣言 - 央广网",
+    "sourceChecked": false,
+    "note": "搜索结果中看到；抓取页乱码，未能确认正文。"
+   }
+  ],
+  "reasoning": "官方机构点名辟谣，两位盲评一致判不能信。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "数字人民币平台正在发放数字资产红利",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://m.gmw.cn/2024-10/10/content_1303867139.htm",
+      "title": "辟谣！“数字人民币平台发放数字资产红利”系谣言",
+      "quote": "数字货币研究所从未发布过上述信息，从未组织登记或认购“数字资产”、发放“数字资产红利”等。",
+      "fetched": true
+     },
+     {
+      "url": "https://news.cnr.cn/native/gd/kx/20241027/t20241027_526954499.shtml",
+      "title": "数字人民币平台发红利？谣言 - 央广网",
+      "quote": "数字货币研究所未发布过上述信息，未组织登记或认购“数字资产”、发放“数字资产红利”等。",
+      "fetched": true
+     },
+     {
+      "url": "http://www.news.cn/fortune/20241027/2448bae65f9b44839b6b4ed1dfc38ac2/c.html",
+      "title": "数字人民币平台发红利？谣言-新华网",
+      "quote": "经查，此类“公告”及“平台”系伪造，相关信息均不属实。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "数字人民币平台正在发放数字资产红利",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://m.gmw.cn/2024-10/10/content_1303867139.htm",
+        "title": "辟谣！“数字人民币平台发放数字资产红利”系谣言",
+        "quote": "数字货币研究所从未发布过上述信息，从未组织登记或认购“数字资产”、发放“数字资产红利”等。",
+        "fetched": true
+       },
+       {
+        "url": "https://news.cnr.cn/native/gd/kx/20241027/t20241027_526954499.shtml",
+        "title": "数字人民币平台发红利？谣言 - 央广网",
+        "quote": "数字货币研究所未发布过上述信息，未组织登记或认购“数字资产”、发放“数字资产红利”等。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "数字人民币平台正在发放数字资产红利",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "http://www.news.cn/fortune/20241027/2448bae65f9b44839b6b4ed1dfc38ac2/c.html",
+        "title": "数字人民币平台发红利？谣言-新华网",
+        "quote": "经查，此类“公告”及“平台”系伪造，相关信息均不属实。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "RUMOR-002",
+  "claim": "扫码可领2024年个人劳动补贴，逾期视为弃权",
+  "domain": "policy",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "不能信，这是诈骗邮件。",
+  "keyFact": "人社部提示此类「个人劳动补贴领取通知」邮件为不实信息且涉嫌诈骗，扫码会骗取钱财。",
+  "keySources": [
+   {
+    "url": "https://www.piyao.org.cn/20240514/a0dfad51818c46e0980e40a94fbe212a/c.html",
+    "title": "今日辟谣（2024年5月14日）",
+    "sourceChecked": true,
+    "note": "抓取确认：上述邮件为不实信息且涉嫌诈骗。"
+   },
+   {
+    "url": "https://www.gov.cn/yaowen/liebiao/202405/content_6952339.htm",
+    "title": "中国政府网转载人社部提示",
+    "sourceChecked": false,
+    "note": "盲评员给出；本环境抓取该站失败，未确认。"
+   }
+  ],
+  "reasoning": "人社部与辟谣平台明确辟谣；9-28 曾被判成证据不足，是该判不判的典型。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "扫码可领2024年个人劳动补贴，逾期视为弃权",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.piyao.org.cn/20240514/a0dfad51818c46e0980e40a94fbe212a/c.html",
+      "title": "今日辟谣（2024年5月14日）",
+      "quote": "人力资源和社会保障部表示，从未发放过所谓的“个人劳动补贴”，上述邮件为不实信息且涉嫌诈骗。",
+      "fetched": true
+     },
+     {
+      "url": "https://news.qq.com/rain/a/20240515A011SI00",
+      "title": "扫码可领“2024劳动补贴”? 假的!（北京青年报）",
+      "quote": "人力资源社会保障部 从未发放过所谓的“个人劳动补贴” 上述邮件为不实信息 且涉嫌诈骗",
+      "fetched": true
+     },
+     {
+      "url": "https://news.qq.com/rain/a/20240515A011SI00",
+      "title": "扫码可领“2024劳动补贴”? 假的!（北京青年报）",
+      "quote": "“2024年个人劳动补贴”是假的！",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "扫码可领2024年个人劳动补贴，逾期视为弃权",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.piyao.org.cn/20240514/a0dfad51818c46e0980e40a94fbe212a/c.html",
+        "title": "今日辟谣（2024年5月14日）",
+        "quote": "人力资源和社会保障部表示，从未发放过所谓的“个人劳动补贴”，上述邮件为不实信息且涉嫌诈骗。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "gov.cn 转载页本机无法抓取，未使用。"
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "扫码可领2024年个人劳动补贴",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://news.qq.com/rain/a/20240515A011SI00",
+        "title": "扫码可领“2024劳动补贴”? 假的!（北京青年报）",
+        "quote": "人力资源社会保障部 从未发放过所谓的“个人劳动补贴” 上述邮件为不实信息 且涉嫌诈骗",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "逾期视为弃权",
+      "role": "背景细节",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://news.qq.com/rain/a/20240515A011SI00",
+        "title": "扫码可领“2024劳动补贴”? 假的!（北京青年报）",
+        "quote": "“2024年个人劳动补贴”是假的！",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "“逾期视为弃权”是骗局话术，随整封邮件一并被否定，单独无出处。"
+   }
+  }
+ },
+ {
+  "id": "RUMOR-003",
+  "claim": "车票退票不再收手续费了",
+  "domain": "transport",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "不对，退票费照常收，只有早退才免。",
+  "keyFact": "国铁集团现行规则：开车前8天以上不收退票费，48小时至8天收5%，24至48小时收10%，不足24小时收20%。",
+  "keySources": [
+   {
+    "url": "https://kyfw.12306.cn/otn/gonggao/deliveryPrice_4.html",
+    "title": "国铁集团关于明确退票改签收费有关事项的通知",
+    "sourceChecked": true,
+    "note": "抓取确认梯次退票费标准仍在。"
+   }
+  ],
+  "reasoning": "退票费梯次标准仍在执行，「不再收」不成立；「8天以上不收」是这句话容易被误传的来源。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "车票退票不再收手续费了",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://kyfw.12306.cn/otn/gonggao/deliveryPrice_4.html",
+      "title": "国铁集团关于明确退票改签收费有关事项的通知",
+      "quote": "一、退票费按如下梯次标准核收：距票面乘车站开车前8天以上的不收退票费；",
+      "fetched": true
+     },
+     {
+      "url": "https://kyfw.12306.cn/otn/gonggao/deliveryPrice_4.html",
+      "title": "国铁集团关于明确退票改签收费有关事项的通知",
+      "quote": "开车前不足24小时的，按票面价格20%计。",
+      "fetched": true
+     },
+     {
+      "url": "https://news.cnr.cn/rebang/20231201/t20231201_526504717.shtml",
+      "title": "火车票退票不扣手续费了？12306回应",
+      "quote": "12306铁路客服回应，关于车票退订产生的手续费，仍按照现行退票费标准执行，目前没有新规出台。",
+      "fetched": true
+     },
+     {
+      "url": "https://kyfw.12306.cn/otn/gonggao/windowRefund.html",
+      "title": "火车票售票窗口退票",
+      "quote": "票面乘车站开车时间前48小时以上的按票价5%计，24小时以上、不足48小时的按票价10%计，不足24小时的按票价20%计。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "车票退票不再收手续费了",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://kyfw.12306.cn/otn/gonggao/deliveryPrice_4.html",
+        "title": "国铁集团关于明确退票改签收费有关事项的通知",
+        "quote": "一、退票费按如下梯次标准核收：距票面乘车站开车前8天以上的不收退票费；",
+        "fetched": true
+       },
+       {
+        "url": "https://kyfw.12306.cn/otn/gonggao/deliveryPrice_4.html",
+        "title": "国铁集团关于明确退票改签收费有关事项的通知",
+        "quote": "开车前不足24小时的，按票面价格20%计。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "通知文号铁客〔2021〕15号，页面上未见废止说明；本次未另查是否有更新版本。"
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "车票退票不再收手续费了",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://news.cnr.cn/rebang/20231201/t20231201_526504717.shtml",
+        "title": "火车票退票不扣手续费了？12306回应",
+        "quote": "12306铁路客服回应，关于车票退订产生的手续费，仍按照现行退票费标准执行，目前没有新规出台。",
+        "fetched": true
+       },
+       {
+        "url": "https://kyfw.12306.cn/otn/gonggao/windowRefund.html",
+        "title": "火车票售票窗口退票",
+        "quote": "票面乘车站开车时间前48小时以上的按票价5%计，24小时以上、不足48小时的按票价10%计，不足24小时的按票价20%计。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "央广页是2023年底的客服回应，日期较早；12306 窗口退票说明为现行页面。"
+   }
+  }
+ },
+ {
+  "id": "RUMOR-004",
+  "claim": "京沪高速公路停止收费了",
+  "domain": "transport",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "没有，京沪高速仍在收费。",
+  "keyFact": "中国互联网联合辟谣平台向主管部门核实：京沪高速并未终止收费，文章内容不实。",
+  "keySources": [
+   {
+    "url": "https://www.piyao.org.cn/20240327/ab1b79de8f31432786ba39c5648f9206/c.html",
+    "title": "京沪高速公路停止收费？谣言",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "辟谣平台经主管部门核实。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "京沪高速公路停止收费了",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.piyao.org.cn/20240327/ab1b79de8f31432786ba39c5648f9206/c.html",
+      "title": "京沪高速公路停止收费？",
+      "quote": "经中国互联网联合辟谣平台向有关主管部门核实查证，京沪高速公路并未终止收费，该文章内容属不实信息。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.chinanews.com/sh/2024/03-28/10188593.shtml",
+      "title": "京沪高速公路停止收费？官方辟谣（中新网）",
+      "quote": "经中国互联网联合辟谣平台向有关主管部门核实查证，京沪高速公路并未终止收费，该文章内容属不实信息。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "京沪高速公路停止收费了",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.piyao.org.cn/20240327/ab1b79de8f31432786ba39c5648f9206/c.html",
+        "title": "京沪高速公路停止收费？",
+        "quote": "经中国互联网联合辟谣平台向有关主管部门核实查证，京沪高速公路并未终止收费，该文章内容属不实信息。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "京沪高速公路停止收费了",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.chinanews.com/sh/2024/03-28/10188593.shtml",
+        "title": "京沪高速公路停止收费？官方辟谣（中新网）",
+        "quote": "经中国互联网联合辟谣平台向有关主管部门核实查证，京沪高速公路并未终止收费，该文章内容属不实信息。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "RUMOR-005",
+  "claim": "点早安晚安图片手机会中毒，个人信息会被盗",
+  "domain": "tech",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "不会，正常图片不会让手机中毒。",
+  "keyFact": "直接显示的图片、视频、表情包不含攻击程序，可放心查看转发；要防的是诱导点链接、扫码的骗局。",
+  "keySources": [
+   {
+    "url": "https://www.peopleapp.com/rmharticle/30026453724",
+    "title": "微信发早安图片会被窃取个人信息？谣言！但要当心的是…",
+    "sourceChecked": true,
+    "note": "抓取确认：手机不会中毒。"
+   }
+  ],
+  "reasoning": "多家官方与媒体辟谣；边界是图片里夹带的链接或二维码。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "点早安晚安图片手机会中毒，个人信息会被盗",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.peopleapp.com/rmharticle/30026453724",
+      "title": "微信发早安图片会被窃取个人信息？",
+      "quote": "所以，对用户而言，如果是直接显示的图片、视频、表情包等， 并不会藏有攻击程序 ，可以放心浏览、转发，手机不会中毒。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.piyao.org.cn/2020-01/18/c_1210442489.htm",
+      "title": "微信发“早安”图片会被盗取个人信息？",
+      "quote": "当时，高雄警方已对此进行辟谣，称网传信息“请不要再传早安或节庆之类的图片、视频，已经有好多人报案……”系谣言，网上转发的问候图片、视频无法携带病毒",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "点早安晚安图片手机会中毒，个人信息会被盗",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.peopleapp.com/rmharticle/30026453724",
+        "title": "微信发早安图片会被窃取个人信息？",
+        "quote": "所以，对用户而言，如果是直接显示的图片、视频、表情包等， 并不会藏有攻击程序 ，可以放心浏览、转发，手机不会中毒。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "点早安晚安图片手机会中毒，个人信息会被盗",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.piyao.org.cn/2020-01/18/c_1210442489.htm",
+        "title": "微信发“早安”图片会被盗取个人信息？",
+        "quote": "当时，高雄警方已对此进行辟谣，称网传信息“请不要再传早安或节庆之类的图片、视频，已经有好多人报案……”系谣言，网上转发的问候图片、视频无法携带病毒",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "RUMOR-006",
+  "claim": "浙大研究发现：冷冻馒头不能吃，冷冻超过两天会长黄曲霉素",
+  "domain": "health",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "原句站不住，浙大没做过这项研究。",
+  "keyFact": "浙大食品学院副院长表示没做过冷冻馒头产生黄曲霉毒素的研究；冷冻室温度和湿度不满足产毒条件。",
+  "keySources": [
+   {
+    "url": "https://news.sciencenet.cn/htmlnews/2024/11/534528.shtm",
+    "title": "馒头冷冻两天长黄曲霉素？浙大辟谣“没有相关研究”",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "来源归属与科学结论两处都被推翻；例外是馒头本身已发霉。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "浙大研究发现",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://news.sciencenet.cn/htmlnews/2024/11/534528.shtm",
+      "title": "浙大辟谣“没有相关研究”",
+      "quote": "但是浙江大学没有做过冷冻馒头产生黄曲霉毒素的研究。",
+      "fetched": true
+     },
+     {
+      "url": "http://m.ce.cn/lv/gd/202411/28/t20241128_39217514.shtml",
+      "title": "浙大辟谣“浙大研究”_中国经济网",
+      "quote": "浙江大学没有做过冷冻馒头产生黄曲霉毒素的研究。",
+      "fetched": true
+     },
+     {
+      "url": "https://cbgc.scol.com.cn/news/5674480",
+      "title": "浙大研究发现：馒头冷冻会长黄曲霉素？",
+      "quote": "专家介绍，通常食物的温度和湿度要达到一定的条件，才会产生黄曲霉素，冷冻或冷藏的环境都不适宜黄曲霉素的生长。",
+      "fetched": true
+     }
+    ]
+   },
+   {
+    "text": "冷冻馒头不能吃，冷冻超过两天会长黄曲霉素",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://news.sciencenet.cn/htmlnews/2024/11/534528.shtm",
+      "title": "浙大辟谣“没有相关研究”",
+      "quote": "专家介绍，通常食物的温度和湿度要达到一定的条件，才会产生黄曲霉素，冷冻或冷藏的环境都不适宜黄曲霉素的生长。",
+      "fetched": true
+     },
+     {
+      "url": "http://m.ce.cn/lv/gd/202411/28/t20241128_39217514.shtml",
+      "title": "浙大辟谣“浙大研究”_中国经济网",
+      "quote": "浙江大学没有做过冷冻馒头产生黄曲霉毒素的研究。",
+      "fetched": true
+     },
+     {
+      "url": "https://cbgc.scol.com.cn/news/5674480",
+      "title": "浙大研究发现：馒头冷冻会长黄曲霉素？",
+      "quote": "专家介绍，通常食物的温度和湿度要达到一定的条件，才会产生黄曲霉素，冷冻或冷藏的环境都不适宜黄曲霉素的生长。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "浙大研究发现",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://news.sciencenet.cn/htmlnews/2024/11/534528.shtm",
+        "title": "浙大辟谣“没有相关研究”",
+        "quote": "但是浙江大学没有做过冷冻馒头产生黄曲霉毒素的研究。",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "冷冻馒头不能吃，冷冻超过两天会长黄曲霉素",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://news.sciencenet.cn/htmlnews/2024/11/534528.shtm",
+        "title": "浙大辟谣“没有相关研究”",
+        "quote": "专家介绍，通常食物的温度和湿度要达到一定的条件，才会产生黄曲霉素，冷冻或冷藏的环境都不适宜黄曲霉素的生长。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "浙大研究发现：冷冻馒头不能吃，冷冻超过两天会长黄曲霉素",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "http://m.ce.cn/lv/gd/202411/28/t20241128_39217514.shtml",
+        "title": "浙大辟谣“浙大研究”_中国经济网",
+        "quote": "浙江大学没有做过冷冻馒头产生黄曲霉毒素的研究。",
+        "fetched": true
+       },
+       {
+        "url": "https://cbgc.scol.com.cn/news/5674480",
+        "title": "浙大研究发现：馒头冷冻会长黄曲霉素？",
+        "quote": "专家介绍，通常食物的温度和湿度要达到一定的条件，才会产生黄曲霉素，冷冻或冷藏的环境都不适宜黄曲霉素的生长。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "RUMOR-009",
+  "claim": "春运抢票可提前90天预约",
+  "domain": "transport",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "不对，火车票只提前15天发售。",
+  "keyFact": "12306公告：第三方平台「最早可提前90天预约」纯属营销炒作，车票预售期为15天。",
+  "keySources": [
+   {
+    "url": "https://www.12306.cn/mormhweb/zxdt/202412/t20241211_43192.html",
+    "title": "12306 公告（2024-12-11）",
+    "sourceChecked": true,
+    "note": "抓取确认：营销炒作，预售期15天。"
+   }
+  ],
+  "reasoning": "12306 官方公告直接否定。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "春运抢票可提前90天预约",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.12306.cn/mormhweb/zxdt/202412/t20241211_43192.html",
+      "title": "12306公告",
+      "quote": "近日，某第三方平台公开宣称 “ 春运抢票开始 ”“ 最早可提前 90 天预约 ” ，纯属平台营销炒作，与铁路 12306 平台无关。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.12306.cn/mormhweb/zxdt/202412/t20241211_43192.html",
+      "title": "12306公告",
+      "quote": "按照目前火车票提前 15 天开始发售的规则",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "春运抢票可提前90天预约",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.12306.cn/mormhweb/zxdt/202412/t20241211_43192.html",
+        "title": "12306公告",
+        "quote": "近日，某第三方平台公开宣称 “ 春运抢票开始 ”“ 最早可提前 90 天预约 ” ，纯属平台营销炒作，与铁路 12306 平台无关。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.12306.cn/mormhweb/zxdt/202412/t20241211_43192.html",
+        "title": "12306公告",
+        "quote": "按照目前火车票提前 15 天开始发售的规则",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "春运抢票可提前90天预约",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.12306.cn/mormhweb/zxdt/202412/t20241211_43192.html",
+        "title": "12306公告",
+        "quote": "近日，某第三方平台公开宣称 “ 春运抢票开始 ”“ 最早可提前 90 天预约 ” ，纯属平台营销炒作，与铁路 12306 平台无关。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "RUMOR-010",
+  "claim": "常穿黑色内衣易患癌",
+  "domain": "health",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "不会，合格的黑色衣物是安全的。",
+  "keyFact": "合规染料无毒，可分解致癌芳香胺染料已被国家标准禁用，致癌与颜色无关。",
+  "keySources": [
+   {
+    "url": "https://www.piyao.org.cn/20240227/ed6b174e9a2441a3b54138eae665afb0/c.html",
+    "title": "常穿黑色内衣易患癌？真相是……",
+    "sourceChecked": true,
+    "note": "抓取确认：质量合格的黑色衣物是安全无害的。"
+   }
+  ],
+  "reasoning": "辟谣平台引专家意见。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "常穿黑色内衣易患癌",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.piyao.org.cn/20240227/ed6b174e9a2441a3b54138eae665afb0/c.html",
+      "title": "常穿黑色内衣易患癌？",
+      "quote": "不过，这部分偶氮染料已经被包括我国在内的大部分国家禁止使用。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.piyao.org.cn/20240227/ed6b174e9a2441a3b54138eae665afb0/c.html",
+      "title": "常穿黑色内衣易患癌？",
+      "quote": "该类染料本身没有毒性。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.chinanews.com.cn/life/2024/02-27/10170328.shtml",
+      "title": "常穿黑色内衣易患癌？别信，假的！",
+      "quote": "“偶氮染料本身无毒，可是一小部分偶氮染料会与人体代谢产物在一定条件下发生还原反应，释放致癌芳香胺类物质，损害人体健康。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.chinanews.com.cn/life/2024/02-27/10170328.shtml",
+      "title": "常穿黑色内衣易患癌？别信，假的！",
+      "quote": "我国国家强制标准《国家纺织产品基本安全技术规范》(GB 18401-2010)明确规定“禁用可分解致癌芳香胺染料”。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "常穿黑色内衣易患癌",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.piyao.org.cn/20240227/ed6b174e9a2441a3b54138eae665afb0/c.html",
+        "title": "常穿黑色内衣易患癌？",
+        "quote": "不过，这部分偶氮染料已经被包括我国在内的大部分国家禁止使用。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.piyao.org.cn/20240227/ed6b174e9a2441a3b54138eae665afb0/c.html",
+        "title": "常穿黑色内衣易患癌？",
+        "quote": "该类染料本身没有毒性。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "常穿黑色内衣易患癌",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.chinanews.com.cn/life/2024/02-27/10170328.shtml",
+        "title": "常穿黑色内衣易患癌？别信，假的！",
+        "quote": "“偶氮染料本身无毒，可是一小部分偶氮染料会与人体代谢产物在一定条件下发生还原反应，释放致癌芳香胺类物质，损害人体健康。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.chinanews.com.cn/life/2024/02-27/10170328.shtml",
+        "title": "常穿黑色内衣易患癌？别信，假的！",
+        "quote": "我国国家强制标准《国家纺织产品基本安全技术规范》(GB 18401-2010)明确规定“禁用可分解致癌芳香胺染料”。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "RUMOR-012",
+  "claim": "孩子打疫苗后发烧，说明疫苗导致了自闭症",
+  "domain": "health",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "不成立，疫苗不会导致自闭症。",
+  "keyFact": "世卫组织2025年12月分析31项研究，结论是疫苗与自闭症谱系障碍之间不存在因果关系；打完发烧是常见反应，与自闭症无关。",
+  "keySources": [
+   {
+    "url": "https://www.who.int/zh/news/item/11-12-2025-who-expert-group-s-new-analysis-reaffirms-there-is-no-link-between-vaccines-and-autism",
+    "title": "世卫组织专家组的新分析重申疫苗与自闭症之间没有关联",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "属因果谬误型；没有单独核对「发烧是常见接种反应」的出处。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "孩子打疫苗后发烧，说明疫苗导致了自闭症",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.who.int/zh/news/item/11-12-2025-who-expert-group-s-new-analysis-reaffirms-there-is-no-link-between-vaccines-and-autism",
+      "title": "世卫组织专家组的新分析重申疫苗与自闭症之间没有关联",
+      "quote": "关于疫苗安全问题的世卫组织全球专家委员会提出的新分析发现，根据现有证据，疫苗与自闭症谱系障碍之间不存在因果关系。",
+      "fetched": true
+     },
+     {
+      "url": "https://news.un.org/zh/story/2025/12/1141283",
+      "title": "世卫组织专家组：最新分析再次确认疫苗与自闭症无关（联合国新闻）",
+      "quote": "委员会审阅的自2010年至2025年涵盖多国数据的31项研究显示，儿童期接种的疫苗及妊娠期孕妇所接种的疫苗安全性良好，与自闭症无因果关联。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "孩子打疫苗后发烧，说明疫苗导致了自闭症",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.who.int/zh/news/item/11-12-2025-who-expert-group-s-new-analysis-reaffirms-there-is-no-link-between-vaccines-and-autism",
+        "title": "世卫组织专家组的新分析重申疫苗与自闭症之间没有关联",
+        "quote": "关于疫苗安全问题的世卫组织全球专家委员会提出的新分析发现，根据现有证据，疫苗与自闭症谱系障碍之间不存在因果关系。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "孩子打疫苗后发烧，说明疫苗导致了自闭症",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://news.un.org/zh/story/2025/12/1141283",
+        "title": "世卫组织专家组：最新分析再次确认疫苗与自闭症无关（联合国新闻）",
+        "quote": "委员会审阅的自2010年至2025年涵盖多国数据的31项研究显示，儿童期接种的疫苗及妊娠期孕妇所接种的疫苗安全性良好，与自闭症无因果关联。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "RUMOR-014",
+  "claim": "医院里死亡率比家里高，所以去医院看病反而更危险",
+  "domain": "health",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "推不出来，重病的人才去医院。",
+  "keyFact": "医院收治的本来就是重症患者，原始死亡率不能拿来比较；要比的是病情相同的人住院与否。",
+  "keySources": [
+   {
+    "url": "https://www.mdweekly.com.cn/index/article/detail?id=12610",
+    "title": "医师报：区别对待“死亡率”指标",
+    "sourceChecked": false,
+    "note": "搜索结果中看到，说明高水平医院收治更重的病人；抓取失败，未确认全文。"
+   }
+  ],
+  "reasoning": "选择偏差与因果倒置。找不到专门辟谣此句的权威页面，出处偏弱。",
+  "confidence": "medium",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "标签一致但分截不同",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "医院里死亡率比家里高，所以去医院看病反而更危险",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.rmzxw.com.cn/c/2014-07-28/356020.shtml",
+      "title": "“住院死亡率”有几分“能力”关联？（人民政协网）",
+      "quote": "不否认这些数据的真实性，但是这数据因为缺少可比性的前提，使得制定的统一标准本身没有任何科学性。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.rmzxw.com.cn/c/2014-07-28/356020.shtml",
+      "title": "“住院死亡率”有几分“能力”关联？（人民政协网）",
+      "quote": "更关键的是，患者在医疗中死亡本不可避免的，是不可逆的自然规律，也是医疗与生俱来的部分，相当部分与医疗技术与能力没有关系。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "医院里死亡率比家里高",
+      "role": "必要前提",
+      "status": "查不到",
+      "quotes": []
+     },
+     {
+      "text": "所以去医院看病反而更危险",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.rmzxw.com.cn/c/2014-07-28/356020.shtml",
+        "title": "“住院死亡率”有几分“能力”关联？",
+        "quote": "这个结果是医疗资源越雄厚、医疗水平越高的医院，相关的死亡率就越高。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.rmzxw.com.cn/c/2014-07-28/356020.shtml",
+        "title": "“住院死亡率”有几分“能力”关联？",
+        "quote": "尤其是当下的医疗资源呈现倒金字塔配置结构，危重病人向大医院集中早已是不争的事实",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "给定出处 mdweekly 本机抓取超时，改用人民政协网评论；该文谈的是医院间比较，对“比家里”只是间接。"
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "医院里死亡率比家里高，所以去医院看病反而更危险",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.rmzxw.com.cn/c/2014-07-28/356020.shtml",
+        "title": "“住院死亡率”有几分“能力”关联？（人民政协网）",
+        "quote": "不否认这些数据的真实性，但是这数据因为缺少可比性的前提，使得制定的统一标准本身没有任何科学性。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.rmzxw.com.cn/c/2014-07-28/356020.shtml",
+        "title": "“住院死亡率”有几分“能力”关联？（人民政协网）",
+        "quote": "更关键的是，患者在医疗中死亡本不可避免的，是不可逆的自然规律，也是医疗与生俱来的部分，相当部分与医疗技术与能力没有关系。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "该文谈医院之间比较，对“医院对家里”只是间接；给定出处 mdweekly 本机抓取超时。"
+   }
+  },
+  "disagreement": [
+   "A「医院里死亡率比家里高」查不到 ≠ B「医院里死亡率比家里高，所以去医院看病反而更危险」被反驳",
+   "B「医院里死亡率比家里高，所以去医院看病反而更危险」被反驳 ≠ A「医院里死亡率比家里高」查不到"
+  ],
+  "resolvedBy": "user-2026-09-29: 整句当一截（B 读法）"
+ },
+ {
+  "id": "TINY-001",
+  "claim": "甘南宣布重要通知，甘南所有景点一律免费，6月17日起至7月31日免票",
+  "domain": "policy",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "没有，甘南没发过这个通知。",
+  "keyFact": "甘南州文旅局从未发布过「所有景点一律免费」的通知，网传时间段和政策均系旅行社或个人账号杜撰。",
+  "keySources": [
+   {
+    "url": "https://www.piyao.org.cn/20260623/83834bead6d5472982c83166753fe426/c.html",
+    "title": "辟谣：甘南景区免票是假消息",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "官方辟谣；另有针对特定人群的首道门票减免，容易被夸大。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "甘南所有景点一律免费，6月17日起至7月31日免票",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.piyao.org.cn/20260623/83834bead6d5472982c83166753fe426/c.html",
+      "title": "辟谣：甘南景区免票是假消息",
+      "quote": "甘南州文旅局从未发布过“甘南所有景点一律免费”的通知",
+      "fetched": true
+     },
+     {
+      "url": "https://www.news.cn/20260626/34f166eee5204f94b7ddea66e3188043/c.html",
+      "title": "网传“甘南所有景点免费”为假消息 门票减免有限定-新华网",
+      "quote": "据介绍，甘南州文旅局监测到虚假信息后，随即发布声明辟谣澄清，明确表示此乃个别旅行社和个人账号杜撰。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "甘南所有景点一律免费，6月17日起至7月31日免票",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.piyao.org.cn/20260623/83834bead6d5472982c83166753fe426/c.html",
+        "title": "辟谣：甘南景区免票是假消息",
+        "quote": "甘南州文旅局从未发布过“甘南所有景点一律免费”的通知",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "甘南宣布重要通知，甘南所有景点一律免费，6月17日起至7月31日免票",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.news.cn/20260626/34f166eee5204f94b7ddea66e3188043/c.html",
+        "title": "网传“甘南所有景点免费”为假消息 门票减免有限定-新华网",
+        "quote": "据介绍，甘南州文旅局监测到虚假信息后，随即发布声明辟谣澄清，明确表示此乃个别旅行社和个人账号杜撰。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.piyao.org.cn/20260623/83834bead6d5472982c83166753fe426/c.html",
+        "title": "辟谣：甘南景区免票是假消息",
+        "quote": "甘南州文旅局从未发布过“甘南所有景点一律免费”的通知",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "TINY-003",
+  "claim": "上海车展上演全武行，展台前有人打架",
+  "domain": "social",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "不是上海车展的事。",
+  "keyFact": "视频拍摄于外省市车展；博主明知不是上海车展仍配文，被警方行政拘留。",
+  "keySources": [
+   {
+    "url": "https://m.gmw.cn/2025-04/24/content_1304022669.htm",
+    "title": "“上海车展上演全武行”系编造，涉事自媒体博主已被行政拘留",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "警方通报直接认定。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "上海车展上演全武行，展台前有人打架",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://m.gmw.cn/2025-04/24/content_1304022669.htm",
+      "title": "“上海车展上演全武行”系编造，涉事自媒体博主已被行政拘留",
+      "quote": "据警方调查，当天，自媒体博主孙某在一车友群内，刷到了一条外省市车展上发生肢体冲突的视频。",
+      "fetched": true
+     },
+     {
+      "url": "https://m.gmw.cn/2025-04/24/content_1304022669.htm",
+      "title": "“上海车展上演全武行”系编造，涉事自媒体博主已被行政拘留",
+      "quote": "孙某已被青浦警方行政拘留（警方供图）",
+      "fetched": true
+     },
+     {
+      "url": "https://finance.sina.com.cn/jjxw/2025-04-24/doc-ineuhpwp8782729.shtml",
+      "title": "“上海车展上演全武行”系编造，涉事自媒体博主已被行政拘留（新浪财经）",
+      "quote": "据警方调查，当天，自媒体博主孙某在一车友群内，刷到了一条外省市车展上发生肢体冲突的视频。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "上海车展上演全武行，展台前有人打架",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://m.gmw.cn/2025-04/24/content_1304022669.htm",
+        "title": "“上海车展上演全武行”系编造，涉事自媒体博主已被行政拘留",
+        "quote": "据警方调查，当天，自媒体博主孙某在一车友群内，刷到了一条外省市车展上发生肢体冲突的视频。",
+        "fetched": true
+       },
+       {
+        "url": "https://m.gmw.cn/2025-04/24/content_1304022669.htm",
+        "title": "“上海车展上演全武行”系编造，涉事自媒体博主已被行政拘留",
+        "quote": "孙某已被青浦警方行政拘留（警方供图）",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "上海车展上演全武行，展台前有人打架",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://finance.sina.com.cn/jjxw/2025-04-24/doc-ineuhpwp8782729.shtml",
+        "title": "“上海车展上演全武行”系编造，涉事自媒体博主已被行政拘留（新浪财经）",
+        "quote": "据警方调查，当天，自媒体博主孙某在一车友群内，刷到了一条外省市车展上发生肢体冲突的视频。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "TINY-004",
+  "claim": "台风天上海LV巨轮旁边洪水滔滔，船体漏水了",
+  "domain": "social",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "没有，视频是合成的。",
+  "keyFact": "上海辟谣平台核实：网传「洪水滔滔、巨轮漏水」视频是软件合成的伪造内容。",
+  "keySources": [
+   {
+    "url": "https://www.piyao.org.cn/20250730/4ff24c7e85ee4335831f13b7974a4bb3/c.html",
+    "title": "上海LV“巨轮”在台风天乘风破浪？假的！现场照片来了",
+    "sourceChecked": true,
+    "note": "抓取确认：视频系合成伪造。"
+   }
+  ],
+  "reasoning": "官方现场核实。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "台风天上海LV巨轮旁边洪水滔滔，船体漏水了",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.piyao.org.cn/20250730/4ff24c7e85ee4335831f13b7974a4bb3/c.html",
+      "title": "上海LV“巨轮”在台风天乘风破浪？",
+      "quote": "另从公安部门获悉，经初步核实，上述网传视频为合成伪造内容。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.piyao.org.cn/20250730/4ff24c7e85ee4335831f13b7974a4bb3/c.html",
+      "title": "上海LV“巨轮”在台风天乘风破浪？",
+      "quote": "经实地走访，LV“巨轮”一切正常，周边道路没有出现明显积水。",
+      "fetched": true
+     },
+     {
+      "url": "https://m.gmw.cn/toutiao/2025-07/30/content_1304097497.htm",
+      "title": "上海台风天，LV巨轮“启航”了？（光明网）",
+      "quote": "记者另从公安部门获悉，经初步核实，上述网传视频为合成伪造内容。",
+      "fetched": true
+     },
+     {
+      "url": "https://m.gmw.cn/toutiao/2025-07/30/content_1304097497.htm",
+      "title": "上海台风天，LV巨轮“启航”了？（光明网）",
+      "quote": "包括LV旗舰店周边的石门一路、南京西路等路段均无明显积水情况，“路易号”安然无恙。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "台风天上海LV巨轮旁边洪水滔滔，船体漏水了",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.piyao.org.cn/20250730/4ff24c7e85ee4335831f13b7974a4bb3/c.html",
+        "title": "上海LV“巨轮”在台风天乘风破浪？",
+        "quote": "另从公安部门获悉，经初步核实，上述网传视频为合成伪造内容。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.piyao.org.cn/20250730/4ff24c7e85ee4335831f13b7974a4bb3/c.html",
+        "title": "上海LV“巨轮”在台风天乘风破浪？",
+        "quote": "经实地走访，LV“巨轮”一切正常，周边道路没有出现明显积水。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "台风天上海LV巨轮旁边洪水滔滔，船体漏水了",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://m.gmw.cn/toutiao/2025-07/30/content_1304097497.htm",
+        "title": "上海台风天，LV巨轮“启航”了？（光明网）",
+        "quote": "记者另从公安部门获悉，经初步核实，上述网传视频为合成伪造内容。",
+        "fetched": true
+       },
+       {
+        "url": "https://m.gmw.cn/toutiao/2025-07/30/content_1304097497.htm",
+        "title": "上海台风天，LV巨轮“启航”了？（光明网）",
+        "quote": "包括LV旗舰店周边的石门一路、南京西路等路段均无明显积水情况，“路易号”安然无恙。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "RUMOR-007",
+  "claim": "张华银，你的录取通知书丢了，爱心接力请转发",
+  "domain": "social",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "不用转，这是流传多年的老谣言。",
+  "keyFact": "这条消息自2019年起反复流传，只换姓名和公交线路，多地警方和媒体已多次辟谣。",
+  "keySources": [
+   {
+    "url": "https://www.sohu.com/a/795204843_118783",
+    "title": "他的录取通知书丢了？阜阳微信群疯传！",
+    "sourceChecked": true,
+    "note": "抓取确认：「不折不扣的老谣言」。"
+   }
+  ],
+  "reasoning": "转发型谣言；出处为媒体报道而非官方，故置信度中等偏高。",
+  "confidence": "high",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "你的录取通知书丢了，爱心接力请转发",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.sohu.com/a/795204843_118783",
+      "title": "他的录取通知书丢了？",
+      "quote": "多地网警和权威媒体已辟谣",
+      "fetched": true
+     },
+     {
+      "url": "https://www.sohu.com/a/795204843_118783",
+      "title": "他的录取通知书丢了？",
+      "quote": "也早就 被多地警方辟谣",
+      "fetched": true
+     },
+     {
+      "url": "https://www.yynews.com.cn/17007/202401/t20240125_3676064.shtml",
+      "title": "朋友圈又疯传！假的！（余姚新闻网）",
+      "quote": "这条所谓“张华银录取通知书丢失事件”的信息 从2022年就在网络上传播 考生名字、文案都是一模一样",
+      "fetched": true
+     },
+     {
+      "url": "https://www.yynews.com.cn/17007/202401/t20240125_3676064.shtml",
+      "title": "朋友圈又疯传！假的！（余姚新闻网）",
+      "quote": "这又是一则谣言",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "你的录取通知书丢了，爱心接力请转发",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.sohu.com/a/795204843_118783",
+        "title": "他的录取通知书丢了？",
+        "quote": "多地网警和权威媒体已辟谣",
+        "fetched": true
+       },
+       {
+        "url": "https://www.sohu.com/a/795204843_118783",
+        "title": "他的录取通知书丢了？",
+        "quote": "也早就 被多地警方辟谣",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "搜狐页正文只剩零碎标题式短句，未见“自2019年起反复流传”一句，只能支持“已被多地辟谣”。"
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "张华银，你的录取通知书丢了，爱心接力请转发",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.yynews.com.cn/17007/202401/t20240125_3676064.shtml",
+        "title": "朋友圈又疯传！假的！（余姚新闻网）",
+        "quote": "这条所谓“张华银录取通知书丢失事件”的信息 从2022年就在网络上传播 考生名字、文案都是一模一样",
+        "fetched": true
+       },
+       {
+        "url": "https://www.yynews.com.cn/17007/202401/t20240125_3676064.shtml",
+        "title": "朋友圈又疯传！假的！（余姚新闻网）",
+        "quote": "这又是一则谣言",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "该页未提及警方；只见媒体辟谣。"
+   }
+  }
+ },
+ {
+  "id": "NEW-001",
+  "claim": "大剂量维生素C有利于预防感冒。",
+  "domain": "health",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "对普通人不成立。",
+  "keyFact": "Cochrane 综述（29项对比、11306人）：常规补充维生素C对普通人群的感冒发生率没有影响。",
+  "keySources": [
+   {
+    "url": "https://www.cochrane.org/evidence/CD000980_vitamin-c-preventing-and-treating-common-cold",
+    "title": "Cochrane: Vitamin C for preventing and treating the common cold",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "例外是马拉松运动员等极端体力应激人群，可降低约一半发生率；对普通人应判不能信但需带边界。",
+  "confidence": "medium",
+  "legacyLabel": "不能信",
+  "derivedLabel": null,
+  "status": "agreed",
+  "classification": "来源冲突(边界题)",
+  "boundary": true,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "大剂量维生素C有利于预防感冒",
+    "role": "主要主张",
+    "status": "来源冲突",
+    "quotes": [
+     {
+      "url": "https://www.cochrane.org/evidence/CD000980_vitamin-c-preventing-and-treating-common-cold",
+      "title": "Vitamin C for preventing and treating the common cold | Cochrane",
+      "quote": "The failure of vitamin C supplementation to reduce the incidence of colds in the general population",
+      "fetched": true
+     },
+     {
+      "url": "https://www.cochrane.org/evidence/CD000980_vitamin-c-preventing-and-treating-common-cold",
+      "title": "Vitamin C for preventing and treating the common cold | Cochrane",
+      "quote": "vitamin C may be useful for people exposed to brief periods of severe physical exercise",
+      "fetched": true
+     },
+     {
+      "url": "https://www.thepaper.cn/newsDetail_forward_25932470",
+      "title": "对于成人普通感冒，是否可以用维生素C预防和治疗（澎湃号·湃客）",
+      "quote": "对于生活在亚寒带马拉松运动员、滑雪者和士兵等经常参加剧烈运动人群，VC可有效预防感冒（RR=0.48），对于普通人群则没有预防作用（RR=0.97）。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.thepaper.cn/newsDetail_forward_25932470",
+      "title": "对于成人普通感冒，是否可以用维生素C预防和治疗（澎湃号·湃客）",
+      "quote": "结果显示：VC可预防军事训练中新兵感冒，每天补充VC 6g（与不额外补充比较），可降低感冒风险（RR=0.8）",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "有争议",
+    "parts": [
+     {
+      "text": "大剂量维生素C有利于预防感冒",
+      "role": "主要主张",
+      "status": "来源冲突",
+      "quotes": [
+       {
+        "url": "https://www.cochrane.org/evidence/CD000980_vitamin-c-preventing-and-treating-common-cold",
+        "title": "Vitamin C for preventing and treating the common cold | Cochrane",
+        "quote": "The failure of vitamin C supplementation to reduce the incidence of colds in the general population",
+        "fetched": true
+       },
+       {
+        "url": "https://www.cochrane.org/evidence/CD000980_vitamin-c-preventing-and-treating-common-cold",
+        "title": "Vitamin C for preventing and treating the common cold | Cochrane",
+        "quote": "vitamin C may be useful for people exposed to brief periods of severe physical exercise",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "同一 Cochrane 综述：普通人群无预防作用，但剧烈运动短期暴露人群可能有用；结论随人群不同。"
+   },
+   "B": {
+    "derivedLabel": "部分成立",
+    "parts": [
+     {
+      "text": "大剂量维生素C有利于预防感冒",
+      "role": "主要主张",
+      "status": "部分支持",
+      "quotes": [
+       {
+        "url": "https://www.thepaper.cn/newsDetail_forward_25932470",
+        "title": "对于成人普通感冒，是否可以用维生素C预防和治疗（澎湃号·湃客）",
+        "quote": "对于生活在亚寒带马拉松运动员、滑雪者和士兵等经常参加剧烈运动人群，VC可有效预防感冒（RR=0.48），对于普通人群则没有预防作用（RR=0.97）。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.thepaper.cn/newsDetail_forward_25932470",
+        "title": "对于成人普通感冒，是否可以用维生素C预防和治疗（澎湃号·湃客）",
+        "quote": "结果显示：VC可预防军事训练中新兵感冒，每天补充VC 6g（与不额外补充比较），可降低感冒风险（RR=0.8）",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "按2023版临床指南摘录：普通人群无预防作用，剧烈运动人群和新兵有；是否成立取决于人群，本人按“部分支持”记，而不是两个来源互相矛盾。"
+   }
+  },
+  "resolvedBy": "用户规则3（docs/evals/2026-09-29-answer-benchmark.md 「评分规则」）",
+  "acceptIf": "点明成立与否取决于人群：普通人群常规补充对预防感冒基本无效（Cochrane：RR 0.97），短期剧烈运动或严寒环境人群可能有用（RR 约 0.48）；不把它说成对所有人有效或对所有人无效。"
+ },
+ {
+  "id": "NEW-002",
+  "claim": "维生素C能预防感冒，还能美白皮肤。",
+  "domain": "health",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "原句站不住。",
+  "keyFact": "前半句被 Cochrane 综述否定（普通人群无预防作用）；美白说法缺少可靠证据。",
+  "keySources": [
+   {
+    "url": "https://www.cochrane.org/evidence/CD000980_vitamin-c-preventing-and-treating-common-cold",
+    "title": "Cochrane: Vitamin C for preventing and treating the common cold",
+    "sourceChecked": true,
+    "note": "只支持前半句（预防感冒）；美白半句未找到并核对权威出处。"
+   }
+  ],
+  "reasoning": "两个断言都不成立时整句为不能信；美白部分出处未核对，故中等置信度。",
+  "confidence": "medium",
+  "legacyLabel": "不能信",
+  "derivedLabel": null,
+  "status": "agreed",
+  "classification": "来源冲突(边界题)",
+  "boundary": true,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "维生素C能预防感冒",
+    "role": "主要主张",
+    "status": "来源冲突",
+    "quotes": [
+     {
+      "url": "https://www.cochrane.org/evidence/CD000980_vitamin-c-preventing-and-treating-common-cold",
+      "title": "Vitamin C for preventing and treating the common cold | Cochrane",
+      "quote": "The failure of vitamin C supplementation to reduce the incidence of colds in the general population",
+      "fetched": true
+     },
+     {
+      "url": "https://www.cochrane.org/evidence/CD000980_vitamin-c-preventing-and-treating-common-cold",
+      "title": "Vitamin C for preventing and treating the common cold | Cochrane",
+      "quote": "vitamin C may be useful for people exposed to brief periods of severe physical exercise",
+      "fetched": true
+     },
+     {
+      "url": "http://www.cn-healthcare.com/api/third/article/520016",
+      "title": "维生素C能预防感冒吗？（健康界）",
+      "quote": "哈佛大学最新发表的一篇文章表明，对于一些在严苛环境做大运动量的人来说，维C能预防感冒，但对于普通人来说，并没有什么作用。",
+      "fetched": true
+     }
+    ]
+   },
+   {
+    "text": "还能美白皮肤",
+    "role": "主要主张",
+    "status": "查不到",
+    "quotes": [
+     {
+      "url": "https://www.cn-healthcare.com/articlewm/20220712/content-1398947.html",
+      "title": "常吃维C能变白，但我劝你不要常吃！（健康界）",
+      "quote": "从理论上来说长期服用维c有美白效果，但不建议尝试以防坏血病出现。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "证据不足",
+    "parts": [
+     {
+      "text": "维生素C能预防感冒",
+      "role": "主要主张",
+      "status": "来源冲突",
+      "quotes": [
+       {
+        "url": "https://www.cochrane.org/evidence/CD000980_vitamin-c-preventing-and-treating-common-cold",
+        "title": "Vitamin C for preventing and treating the common cold | Cochrane",
+        "quote": "The failure of vitamin C supplementation to reduce the incidence of colds in the general population",
+        "fetched": true
+       },
+       {
+        "url": "https://www.cochrane.org/evidence/CD000980_vitamin-c-preventing-and-treating-common-cold",
+        "title": "Vitamin C for preventing and treating the common cold | Cochrane",
+        "quote": "vitamin C may be useful for people exposed to brief periods of severe physical exercise",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "还能美白皮肤",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": []
+     }
+    ],
+    "notes": "预防感冒一截同 NEW-001；美白一截未找到可读出处。"
+   },
+   "B": {
+    "derivedLabel": "证据不足",
+    "parts": [
+     {
+      "text": "维生素C能预防感冒",
+      "role": "主要主张",
+      "status": "部分支持",
+      "quotes": [
+       {
+        "url": "http://www.cn-healthcare.com/api/third/article/520016",
+        "title": "维生素C能预防感冒吗？（健康界）",
+        "quote": "哈佛大学最新发表的一篇文章表明，对于一些在严苛环境做大运动量的人来说，维C能预防感冒，但对于普通人来说，并没有什么作用。",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "还能美白皮肤",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": [
+       {
+        "url": "https://www.cn-healthcare.com/articlewm/20220712/content-1398947.html",
+        "title": "常吃维C能变白，但我劝你不要常吃！（健康界）",
+        "quote": "从理论上来说长期服用维c有美白效果，但不建议尝试以防坏血病出现。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "美白：只找到“理论上有效”的科普，没有临床证据，所以查不到而不是被支持。"
+   }
+  },
+  "resolvedBy": "用户规则3（docs/evals/2026-09-29-answer-benchmark.md 「评分规则」）",
+  "acceptIf": "预防感冒一截同 NEW-001（分人群说明，不说满）；「美白皮肤」一截如实说明未找到可靠证据，不当成已证实或已证伪。"
+ },
+ {
+  "id": "NEW-003",
+  "claim": "喝气泡水可以中和胃酸，胃不舒服喝苏打水就够了。",
+  "domain": "health",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "不够，别指望它。",
+  "keyFact": "市售苏打水碳酸氢钠浓度很低，中和胃酸作用不大，大量喝还可能刺激胃酸分泌；胃痛反复要就医。",
+  "keySources": [
+   {
+    "url": "https://www.chinanews.com.cn/life/2024/06-18/10235731.shtml",
+    "title": "喝苏打水，真的能中和胃酸吗？",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "各家科普对无气苏打水「有轻微缓解」略有分歧，「就够了」不成立；也可能有人判成部分成立。",
+  "confidence": "medium",
+  "legacyLabel": "不能信",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "喝气泡水可以中和胃酸",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.chinanews.com.cn/life/2024/06-18/10235731.shtml",
+      "title": "喝苏打水，真的能中和胃酸吗？",
+      "quote": "市面上多数含糖的苏打水饮料，不仅对中和胃酸的作用有限，甚至可能适得其反，刺激胃酸分泌。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.163.com/dy/article/FHB0P8IV0534HUAG.html",
+      "title": "辟谣丨苏打水可以中和胃酸、治疗胃食管反流，真相是这样吗？（网易）",
+      "quote": "所以由此看来，苏打水的“中和胃酸”能力并不突出。",
+      "fetched": true
+     }
+    ]
+   },
+   {
+    "text": "胃不舒服喝苏打水就够了",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.chinanews.com.cn/life/2024/06-18/10235731.shtml",
+      "title": "喝苏打水，真的能中和胃酸吗？",
+      "quote": "但市面上，一般小苏打饮品碳酸氢钠的浓度非常低，帮助中和胃酸的作用并不大。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.chinanews.com.cn/life/2024/06-18/10235731.shtml",
+      "title": "喝苏打水，真的能中和胃酸吗？",
+      "quote": "但专家强调，如果调整生活方式后胃泛酸症状改善不佳，建议及时就医",
+      "fetched": true
+     },
+     {
+      "url": "https://www.163.com/dy/article/FHB0P8IV0534HUAG.html",
+      "title": "辟谣丨苏打水可以中和胃酸、治疗胃食管反流，真相是这样吗？（网易）",
+      "quote": "摄入较多的咖啡、茶或苏打水的人更容易引起胃食管反流的发病，而牛奶、水和果汁则影响不大。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "喝气泡水可以中和胃酸",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.chinanews.com.cn/life/2024/06-18/10235731.shtml",
+        "title": "喝苏打水，真的能中和胃酸吗？",
+        "quote": "市面上多数含糖的苏打水饮料，不仅对中和胃酸的作用有限，甚至可能适得其反，刺激胃酸分泌。",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "胃不舒服喝苏打水就够了",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.chinanews.com.cn/life/2024/06-18/10235731.shtml",
+        "title": "喝苏打水，真的能中和胃酸吗？",
+        "quote": "但市面上，一般小苏打饮品碳酸氢钠的浓度非常低，帮助中和胃酸的作用并不大。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.chinanews.com.cn/life/2024/06-18/10235731.shtml",
+        "title": "喝苏打水，真的能中和胃酸吗？",
+        "quote": "但专家强调，如果调整生活方式后胃泛酸症状改善不佳，建议及时就医",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "出处谈的是苏打水，原句说气泡水；两者不完全等同，这里按同类处理。纯小苏打粉兑水浓度高，有中和作用。"
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "喝气泡水可以中和胃酸",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.163.com/dy/article/FHB0P8IV0534HUAG.html",
+        "title": "辟谣丨苏打水可以中和胃酸、治疗胃食管反流，真相是这样吗？（网易）",
+        "quote": "所以由此看来，苏打水的“中和胃酸”能力并不突出。",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "胃不舒服喝苏打水就够了",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.163.com/dy/article/FHB0P8IV0534HUAG.html",
+        "title": "辟谣丨苏打水可以中和胃酸、治疗胃食管反流，真相是这样吗？（网易）",
+        "quote": "摄入较多的咖啡、茶或苏打水的人更容易引起胃食管反流的发病，而牛奶、水和果汁则影响不大。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "出处谈苏打水，原句说气泡水，按同类处理。"
+   }
+  }
+ },
+ {
+  "id": "RUMOR-008",
+  "claim": "中国体育代表团出征奥运会自带300多个空调和床垫",
+  "domain": "social",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "只有个别床垫是真的，空调和全团自带不实。",
+  "keyFact": "代表团秘书长回应：带300多台空调不实；个别人带床垫属实，被演绎成全团自带不实。",
+  "keySources": [
+   {
+    "url": "https://news.cctv.com/2024/07/25/ARTIo0N8X5UeNeSxVEZcu8Xx240725.shtml",
+    "title": "央视：代表团回应网传空调、床垫",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "旧标注为有真有假，两位盲评把整句判成不能信；这里保留有真有假，需用户裁决。",
+  "confidence": "low",
+  "legacyLabel": "有真有假",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "标签一致但分截不同",
+  "boundary": false,
+  "legacyMismatch": true,
+  "parts": [
+   {
+    "text": "中国体育代表团出征奥运会自带300多个空调",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://news.cctv.com/2024/07/25/ARTIo0N8X5UeNeSxVEZcu8Xx240725.shtml",
+      "title": "中国队辟谣“自带空调”等传闻",
+      "quote": "网上有说我们带了300多台空调，应该说是不实的，奥运村可以提供移动空调租赁服务",
+      "fetched": true
+     },
+     {
+      "url": "https://m.gmw.cn/2024-07/25/content_1303801463.htm",
+      "title": "中国体育代表团辟谣“自带空调床垫”等传闻",
+      "quote": "网上有说我们带了300多台空调，应该说是不实的，奥运村可以提供移动空调租赁服务",
+      "fetched": true
+     }
+    ]
+   },
+   {
+    "text": "床垫",
+    "role": "主要主张",
+    "status": "部分支持",
+    "quotes": [
+     {
+      "url": "https://news.cctv.com/2024/07/25/ARTIo0N8X5UeNeSxVEZcu8Xx240725.shtml",
+      "title": "中国队辟谣“自带空调”等传闻",
+      "quote": "网上自媒体看到一个床垫，就演绎成整个代表团都自带床垫，也是属于不实报道。",
+      "fetched": true
+     },
+     {
+      "url": "https://news.cctv.com/2024/07/25/ARTIo0N8X5UeNeSxVEZcu8Xx240725.shtml",
+      "title": "中国队辟谣“自带空调”等传闻",
+      "quote": "关于自带床垫情况，张新说，有个别运动员或工作人员，可能有自己的睡眠习惯",
+      "fetched": true
+     },
+     {
+      "url": "https://m.gmw.cn/2024-07/25/content_1303801463.htm",
+      "title": "中国体育代表团辟谣“自带空调床垫”等传闻",
+      "quote": "整个代表团自带床垫也是不实的。",
+      "fetched": true
+     },
+     {
+      "url": "https://m.gmw.cn/2024-07/25/content_1303801463.htm",
+      "title": "中国体育代表团辟谣“自带空调床垫”等传闻",
+      "quote": "关于自带床垫情况，张新说，有个别运动员或工作人员，可能有自己的睡眠习惯",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "中国体育代表团出征奥运会自带300多个空调",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://news.cctv.com/2024/07/25/ARTIo0N8X5UeNeSxVEZcu8Xx240725.shtml",
+        "title": "中国队辟谣“自带空调”等传闻",
+        "quote": "网上有说我们带了300多台空调，应该说是不实的，奥运村可以提供移动空调租赁服务",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "床垫",
+      "role": "主要主张",
+      "status": "部分支持",
+      "quotes": [
+       {
+        "url": "https://news.cctv.com/2024/07/25/ARTIo0N8X5UeNeSxVEZcu8Xx240725.shtml",
+        "title": "中国队辟谣“自带空调”等传闻",
+        "quote": "网上自媒体看到一个床垫，就演绎成整个代表团都自带床垫，也是属于不实报道。",
+        "fetched": true
+       },
+       {
+        "url": "https://news.cctv.com/2024/07/25/ARTIo0N8X5UeNeSxVEZcu8Xx240725.shtml",
+        "title": "中国队辟谣“自带空调”等传闻",
+        "quote": "关于自带床垫情况，张新说，有个别运动员或工作人员，可能有自己的睡眠习惯",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "个别人带床垫属实，说成全团自带不实。"
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "自带300多个空调",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://m.gmw.cn/2024-07/25/content_1303801463.htm",
+        "title": "中国体育代表团辟谣“自带空调床垫”等传闻",
+        "quote": "网上有说我们带了300多台空调，应该说是不实的，奥运村可以提供移动空调租赁服务",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "床垫",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://m.gmw.cn/2024-07/25/content_1303801463.htm",
+        "title": "中国体育代表团辟谣“自带空调床垫”等传闻",
+        "quote": "整个代表团自带床垫也是不实的。",
+        "fetched": true
+       },
+       {
+        "url": "https://m.gmw.cn/2024-07/25/content_1303801463.htm",
+        "title": "中国体育代表团辟谣“自带空调床垫”等传闻",
+        "quote": "关于自带床垫情况，张新说，有个别运动员或工作人员，可能有自己的睡眠习惯",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "个别人带床垫属实，被说成全团自带。"
+   }
+  },
+  "resolvedBy": "用户规则2（docs/evals/2026-09-29-answer-benchmark.md 「评分规则」）",
+  "mustMention": "属实的一截：个别运动员或工作人员会自备床垫（张新答记者问）；不实的是「自带300多台空调」和「整个代表团自带床垫」。"
+ },
+ {
+  "id": "RUMOR-011",
+  "claim": "每天喝红酒可以预防心脏病，因为法国人喝红酒且心脏病少",
+  "domain": "health",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "法国人心脏病少可能是真的，但不是红酒的功劳。",
+  "keyFact": "归因于地中海饮食等因素，红酒里的白藜芦醇剂量太低；世卫组织认为任何饮酒量对健康都不安全。",
+  "keySources": [
+   {
+    "url": "https://www.thepaper.cn/newsDetail_forward_16573357",
+    "title": "适量饮酒真的有益健康吗（上）？",
+    "sourceChecked": true,
+    "note": "抓取确认：法国人心血管病少与地中海饮食有关，红酒功效不明。"
+   }
+  ],
+  "reasoning": "前半是观察到的相关现象，后半是因果推断。来源是澎湃转载科普文章，不是一手研究。",
+  "confidence": "medium",
+  "legacyLabel": "有真有假",
+  "derivedLabel": null,
+  "status": "agreed",
+  "classification": "来源冲突(边界题)",
+  "boundary": true,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "每天喝红酒可以预防心脏病",
+    "role": "主要主张",
+    "status": "来源冲突",
+    "quotes": [
+     {
+      "url": "https://www.mayoclinic.org/diseases-conditions/heart-disease/in-depth/red-wine/art-20048281",
+      "title": "Red wine and resveratrol: Good for your heart? (Mayo Clinic)",
+      "quote": "Many studies have shown that drinking regular, limited amounts of any type of alcohol helps the heart.",
+      "fetched": true
+     },
+     {
+      "url": "https://www.kexinzhongxin.com/html/huati/3398.html",
+      "title": "法国人喝红酒所以心血管病少？（科信食品与健康信息交流中心）",
+      "quote": "综合以上，如果你本来不喝酒，不建议你为了健康而去喝酒（包括红酒），",
+      "fetched": true
+     }
+    ]
+   },
+   {
+    "text": "法国人喝红酒且心脏病少",
+    "role": "必要前提",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.kexinzhongxin.com/html/huati/3398.html",
+      "title": "法国人喝红酒所以心血管病少？（科信食品与健康信息交流中心）",
+      "quote": "上世纪90年代，美国媒体在报道中提出，法国心血管疾病比美国少的主要原因是红酒，这引起了科学界的关注。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "每天喝红酒可以预防心脏病",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.thepaper.cn/newsDetail_forward_16573357",
+        "title": "红酒有益健康？（澎湃新闻）",
+        "quote": "结果发现，与体内白藜芦醇含量较低的人群相比，摄入白藜芦醇较多人群的死亡率、心血管疾病的发生率以及癌症发生率并没有显著降低。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.thepaper.cn/newsDetail_forward_16573357",
+        "title": "红酒有益健康？（澎湃新闻）",
+        "quote": "酒精根本不存在所谓的“安全摄入量”，无论摄入量高低，饮酒对身体都是有害的。",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "法国人喝红酒且心脏病少",
+      "role": "必要前提",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.thepaper.cn/newsDetail_forward_16573357",
+        "title": "红酒有益健康？（澎湃新闻）",
+        "quote": "美国《健康》杂志的记者Edward Dolnick指出：这是由于法国人的饮食习惯，特别是常喝红酒（葡萄酒），使他们得心血管疾病的风险远远低于美国人。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "“法国人心脏病少”属事实描述，“因为红酒”这一因果被文中否定：有研究者提出与地中海饮食习惯有关，与红酒关系不密切。"
+   },
+   "B": {
+    "derivedLabel": "有争议",
+    "parts": [
+     {
+      "text": "每天喝红酒可以预防心脏病",
+      "role": "主要主张",
+      "status": "来源冲突",
+      "quotes": [
+       {
+        "url": "https://www.mayoclinic.org/diseases-conditions/heart-disease/in-depth/red-wine/art-20048281",
+        "title": "Red wine and resveratrol: Good for your heart? (Mayo Clinic)",
+        "quote": "Many studies have shown that drinking regular, limited amounts of any type of alcohol helps the heart.",
+        "fetched": true
+       },
+       {
+        "url": "https://www.kexinzhongxin.com/html/huati/3398.html",
+        "title": "法国人喝红酒所以心血管病少？（科信食品与健康信息交流中心）",
+        "quote": "综合以上，如果你本来不喝酒，不建议你为了健康而去喝酒（包括红酒），",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "法国人喝红酒且心脏病少",
+      "role": "必要前提",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.kexinzhongxin.com/html/huati/3398.html",
+        "title": "法国人喝红酒所以心血管病少？（科信食品与健康信息交流中心）",
+        "quote": "上世纪90年代，美国媒体在报道中提出，法国心血管疾病比美国少的主要原因是红酒，这引起了科学界的关注。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "Mayo（2026-01 更新）称适量饮酒（不限红酒）对心脏有益；国内科普与世卫立场不建议为健康饮酒。前提“法国人心脏病少”成立，但“因为红酒”被科信文章否定。"
+   }
+  },
+  "disagreement": [
+   "A「每天喝红酒可以预防心脏病」被反驳 ≠ B「每天喝红酒可以预防心脏病」来源冲突",
+   "B「每天喝红酒可以预防心脏病」来源冲突 ≠ A「每天喝红酒可以预防心脏病」被反驳"
+  ],
+  "resolvedBy": "user-2026-09-29 规则3：权威来源冲突 → 边界题",
+  "acceptIf": "说清适量饮酒对心脏是否有益存在权威分歧（世卫：没有安全饮酒量，不建议为健康饮酒），没有把话说满",
+  "mustMention": [
+   "法国人心脏病少不能归因于红酒（饮食习惯等）"
+  ]
+ },
+ {
+  "id": "RUMOR-013",
+  "claim": "某地推广某保健品后癌症死亡率下降，证明该保健品能防癌",
+  "domain": "health",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "数字可能是真的，但证明不了它能防癌。",
+  "keyFact": "保健食品不是药品，法律不允许宣传预防疾病功效；前后对比不能证明因果。",
+  "keySources": [
+   {
+    "url": "https://m.gmw.cn/2026-09/29/content_1304569627.htm",
+    "title": "保健食品≠药品！中消协提醒：远离这三类营销套路",
+    "sourceChecked": true,
+    "note": "抓取确认：保健食品不能宣传疾病预防、治疗功能。"
+   }
+  ],
+  "reasoning": "该句是抽象的因果谬误题；出处说明规则，不针对具体保健品。",
+  "confidence": "medium",
+  "legacyLabel": "有真有假",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "标签不一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "某地推广某保健品后癌症死亡率下降",
+    "role": "必要前提",
+    "status": "查不到",
+    "quotes": []
+   },
+   {
+    "text": "证明该保健品能防癌",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.piyao.org.cn/2019-03/04/c_1210072661.htm",
+      "title": "保健品能“抗癌”？（中国互联网联合辟谣平台）",
+      "quote": "保健品爱好者看过来，保健品“抗癌”功效并未得到药监部门的证实。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.piyao.org.cn/2019-03/04/c_1210072661.htm",
+      "title": "保健品能“抗癌”？（中国互联网联合辟谣平台）",
+      "quote": "张洪涛强调说，药监局等单位明确指出，保健品没有可以证实的“抗癌”功效",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "证据不足",
+    "parts": [
+     {
+      "text": "某地推广某保健品后癌症死亡率下降",
+      "role": "背景细节",
+      "status": "查不到",
+      "quotes": []
+     },
+     {
+      "text": "证明该保健品能防癌",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": [
+       {
+        "url": "https://m.gmw.cn/2026-09/29/content_1304569627.htm",
+        "title": "保健食品≠药品！",
+        "quote": "根据《中华人民共和国食品安全法》，食品、保健食品不能宣传疾病预防、治疗功能。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "句子没说地点和产品，无从查。该出处只讲保健食品不得宣传预防疾病，没有回应“前后对比能否证明因果”，故不判被反驳。"
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "某地推广某保健品后癌症死亡率下降",
+      "role": "必要前提",
+      "status": "查不到",
+      "quotes": []
+     },
+     {
+      "text": "证明该保健品能防癌",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.piyao.org.cn/2019-03/04/c_1210072661.htm",
+        "title": "保健品能“抗癌”？（中国互联网联合辟谣平台）",
+        "quote": "保健品爱好者看过来，保健品“抗癌”功效并未得到药监部门的证实。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.piyao.org.cn/2019-03/04/c_1210072661.htm",
+        "title": "保健品能“抗癌”？（中国互联网联合辟谣平台）",
+        "quote": "张洪涛强调说，药监局等单位明确指出，保健品没有可以证实的“抗癌”功效",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "地点、产品没说，前一截查不到；后一截按“保健品没有经证实的抗癌功效”判被反驳，出处讲的是抗癌而不是逐字的“防癌”，也没有逐字回应“前后对比不能证明因果”。"
+   }
+  },
+  "disagreement": [
+   "A「证明该保健品能防癌」查不到 ≠ B「证明该保健品能防癌」被反驳",
+   "B「证明该保健品能防癌」被反驳 ≠ A「证明该保健品能防癌」查不到"
+  ],
+  "resolvedBy": "user-2026-09-29 规则6：原句断言「证明」，官方说未证实 → 被反驳",
+  "mustMention": [
+   "保健品没有经证实的防癌/抗癌功效",
+   "前后对比不能证明因果"
+  ]
+ },
+ {
+  "id": "LOOP-003",
+  "claim": "人社部发文说生育津贴直接打到个人卡里了，不用再走单位",
+  "domain": "policy",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "直接发到个人是真的，但发文的是国家医保局，不是人社部。",
+  "keyFact": "国家医保局2026年2月6日宣布，全国已实现生育津贴直接发放至个人。",
+  "keySources": [
+   {
+    "url": "https://www.news.cn/politics/20260206/20bf2441ceeb4190a8931d56a37fca2e/c.html",
+    "title": "新华鲜报丨暖心！全国实现生育津贴直达个人",
+    "sourceChecked": true,
+    "note": "抓取确认：国家医保局宣布。"
+   }
+  ],
+  "reasoning": "政策内容属实，部门张冠李戴；也可能被判成部分成立。",
+  "confidence": "medium",
+  "legacyLabel": "有真有假",
+  "derivedLabel": "能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": true,
+  "parts": [
+   {
+    "text": "生育津贴直接打到个人卡里了，不用再走单位",
+    "role": "主要主张",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.news.cn/politics/20260206/20bf2441ceeb4190a8931d56a37fca2e/c.html",
+      "title": "全国实现生育津贴直达个人-新华网",
+      "quote": "记者2月6日从国家医保局获悉，全国范围内已实现生育津贴直接发放至个人，生育保障红利直达群众手中。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.news.cn/politics/20260206/20bf2441ceeb4190a8931d56a37fca2e/c.html",
+      "title": "全国实现生育津贴直达个人-新华网",
+      "quote": "此前，生育津贴一般由医保经办机构发放给用人单位，再由用人单位支付给个人。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.stcn.com/article/detail/3632422.html",
+      "title": "全国实现生育津贴直接发放个人（证券时报）",
+      "quote": "2026年2月6日，国家医保局宣布，全国范围内已实现生育津贴直接发放至个人。",
+      "fetched": true
+     }
+    ]
+   },
+   {
+    "text": "人社部发文说",
+    "role": "背景细节",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.news.cn/politics/20260206/20bf2441ceeb4190a8931d56a37fca2e/c.html",
+      "title": "全国实现生育津贴直达个人-新华网",
+      "quote": "记者2月6日从国家医保局获悉，全国范围内已实现生育津贴直接发放至个人，生育保障红利直达群众手中。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.stcn.com/article/detail/3632422.html",
+      "title": "全国实现生育津贴直接发放个人（证券时报）",
+      "quote": "2026年2月6日，国家医保局宣布，全国范围内已实现生育津贴直接发放至个人。",
+      "fetched": true
+     }
+    ],
+    "issuerMisattributed": true
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "生育津贴直接打到个人卡里了，不用再走单位",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.news.cn/politics/20260206/20bf2441ceeb4190a8931d56a37fca2e/c.html",
+        "title": "全国实现生育津贴直达个人-新华网",
+        "quote": "记者2月6日从国家医保局获悉，全国范围内已实现生育津贴直接发放至个人，生育保障红利直达群众手中。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.news.cn/politics/20260206/20bf2441ceeb4190a8931d56a37fca2e/c.html",
+        "title": "全国实现生育津贴直达个人-新华网",
+        "quote": "此前，生育津贴一般由医保经办机构发放给用人单位，再由用人单位支付给个人。",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "人社部发文说",
+      "role": "背景细节",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.news.cn/politics/20260206/20bf2441ceeb4190a8931d56a37fca2e/c.html",
+        "title": "全国实现生育津贴直达个人-新华网",
+        "quote": "记者2月6日从国家医保局获悉，全国范围内已实现生育津贴直接发放至个人，生育保障红利直达群众手中。",
+        "fetched": true
+       }
+      ],
+      "issuerMisattributed": true
+     }
+    ],
+    "notes": "内容属实，发布方是国家医保局，不是人社部。"
+   },
+   "B": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "生育津贴直接打到个人卡里了，不用再走单位",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.stcn.com/article/detail/3632422.html",
+        "title": "全国实现生育津贴直接发放个人（证券时报）",
+        "quote": "2026年2月6日，国家医保局宣布，全国范围内已实现生育津贴直接发放至个人。",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "人社部发文说",
+      "role": "背景细节",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.stcn.com/article/detail/3632422.html",
+        "title": "全国实现生育津贴直接发放个人（证券时报）",
+        "quote": "2026年2月6日，国家医保局宣布，全国范围内已实现生育津贴直接发放至个人。",
+        "fetched": true
+       }
+      ],
+      "issuerMisattributed": true
+     }
+    ],
+    "notes": "发布方是国家医保局，不是人社部；内容属实。"
+   }
+  },
+  "ruleApplied": "用户规则1",
+  "requiredCorrection": "答案必须写明发布方是国家医保局（2026-02-06 宣布全国实现生育津贴直接发放至个人），而不是人社部。"
+ },
+ {
+  "id": "NEW-101",
+  "claim": "电动自行车新国标9月1日起实施，已经买的旧国标电动车一律要淘汰，不许上路",
+  "domain": "transport",
+  "origin": "new",
+  "expectedLead": "只有前半句对，旧车不会被强制淘汰。",
+  "keyFact": "GB 17761-2024 自2025年9月1日实施；已购买的旧标准车辆不会被强制淘汰，鼓励以旧换新。",
+  "keySources": [
+   {
+    "url": "https://www.nbd.com.cn/articles/2025-01-13/3720204.html",
+    "title": "电动自行车“新国标”公布，将于9月1日起正式实施，消费者已购买的“旧国标”车辆不会被强制淘汰",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "前半句与官方一致，后半句被官方明确否定。",
+  "confidence": "high",
+  "legacyLabel": "部分成立",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": true,
+  "parts": [
+   {
+    "text": "电动自行车新国标9月1日起实施",
+    "role": "背景细节",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.nbd.com.cn/articles/2025-01-13/3720204.html",
+      "title": "电动自行车“新国标”公布，将于9月1日起正式实施",
+      "quote": "电动自行车“新国标”公布，将于9月1日起正式实施，消费者已购买的“旧国标”车辆不会被强制淘汰",
+      "fetched": true
+     },
+     {
+      "url": "https://www.nbd.com.cn/articles/2025-01-13/3720204.html",
+      "title": "电动自行车“新国标”公布，将于9月1日起正式实施",
+      "quote": "新的强制性国家标准将于2025年9月1日实施",
+      "fetched": true
+     }
+    ]
+   },
+   {
+    "text": "已经买的旧国标电动车一律要淘汰，不许上路",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.nbd.com.cn/articles/2025-01-13/3720204.html",
+      "title": "电动自行车“新国标”公布，将于9月1日起正式实施",
+      "quote": "消费者已购买的不符合新标准的车辆不会被强制淘汰",
+      "fetched": true
+     },
+     {
+      "url": "http://www.xinhuanet.com/fortune/20251201/2395ce45abc7446ea2fa419dda062a4a/c.html",
+      "title": "新国标今日全面落地！你的“小电驴”要注意这些变化-新华网",
+      "quote": "已经购买上牌的不符合新国标的车辆不会被强制淘汰；",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "电动自行车新国标9月1日起实施",
+      "role": "背景细节",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.nbd.com.cn/articles/2025-01-13/3720204.html",
+        "title": "电动自行车“新国标”公布，将于9月1日起正式实施",
+        "quote": "电动自行车“新国标”公布，将于9月1日起正式实施，消费者已购买的“旧国标”车辆不会被强制淘汰",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "已经买的旧国标电动车一律要淘汰，不许上路",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.nbd.com.cn/articles/2025-01-13/3720204.html",
+        "title": "电动自行车“新国标”公布，将于9月1日起正式实施",
+        "quote": "消费者已购买的不符合新标准的车辆不会被强制淘汰",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "电动自行车新国标9月1日起实施",
+      "role": "必要前提",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.nbd.com.cn/articles/2025-01-13/3720204.html",
+        "title": "电动自行车“新国标”公布，将于9月1日起正式实施",
+        "quote": "新的强制性国家标准将于2025年9月1日实施",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "已经买的旧国标电动车一律要淘汰，不许上路",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "http://www.xinhuanet.com/fortune/20251201/2395ce45abc7446ea2fa419dda062a4a/c.html",
+        "title": "新国标今日全面落地！你的“小电驴”要注意这些变化-新华网",
+        "quote": "已经购买上牌的不符合新国标的车辆不会被强制淘汰；",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  },
+  "resolvedBy": "user-2026-09-29 规则5：被反驳的是主要主张 → 不能信"
+ },
+ {
+  "id": "NEW-102",
+  "claim": "延迟退休从2025年1月起开始实施，所有人都要干到65岁才能退休",
+  "domain": "policy",
+  "origin": "new",
+  "expectedLead": "开始时间对，65岁不对。",
+  "keyFact": "2025年1月1日起用15年时间，男职工60岁延至63岁，女职工50岁、55岁分别延至55岁、58岁。",
+  "keySources": [
+   {
+    "url": "https://www.news.cn/politics/20250101/9ad9cbe4c7724c03a60a9be2336989b5/c.html",
+    "title": "新华社权威快报丨2025年起实施！弹性退休办法来了",
+    "sourceChecked": true,
+    "note": "抓取确认：男63、女55/58，文中没有65岁。"
+   }
+  ],
+  "reasoning": "起点正确，数字错误。",
+  "confidence": "high",
+  "legacyLabel": "部分成立",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": true,
+  "parts": [
+   {
+    "text": "延迟退休从2025年1月起开始实施",
+    "role": "必要前提",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.news.cn/politics/20250101/9ad9cbe4c7724c03a60a9be2336989b5/c.html",
+      "title": "延迟法定退休年龄新华网",
+      "quote": "根据《全国人民代表大会常务委员会关于实施渐进式延迟法定退休年龄的决定》，从2025年1月1日起，我国将用15年时间",
+      "fetched": true
+     },
+     {
+      "url": "https://www.news.cn/politics/20240913/fb547fc824734641a53b3ee5d73a123b/c.html",
+      "title": "解读延迟退休改革文件-新华网",
+      "quote": "根据决定，从2025年1月1日起，用15年时间，逐步将男职工的法定退休年龄从原60周岁延迟到63周岁",
+      "fetched": true
+     }
+    ]
+   },
+   {
+    "text": "所有人都要干到65岁才能退休",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.news.cn/politics/20250101/9ad9cbe4c7724c03a60a9be2336989b5/c.html",
+      "title": "延迟法定退休年龄新华网",
+      "quote": "逐步将男职工的法定退休年龄从原60周岁延迟到63周岁，将女职工的法定退休年龄从原50周岁、55周岁，分别延迟到55周岁、58周岁。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.news.cn/politics/20240913/fb547fc824734641a53b3ee5d73a123b/c.html",
+      "title": "解读延迟退休改革文件-新华网",
+      "quote": "将女职工的法定退休年龄从原50周岁、55周岁，分别延迟到55周岁、58周岁。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "延迟退休从2025年1月起开始实施",
+      "role": "必要前提",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.news.cn/politics/20250101/9ad9cbe4c7724c03a60a9be2336989b5/c.html",
+        "title": "延迟法定退休年龄新华网",
+        "quote": "根据《全国人民代表大会常务委员会关于实施渐进式延迟法定退休年龄的决定》，从2025年1月1日起，我国将用15年时间",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "所有人都要干到65岁才能退休",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.news.cn/politics/20250101/9ad9cbe4c7724c03a60a9be2336989b5/c.html",
+        "title": "延迟法定退休年龄新华网",
+        "quote": "逐步将男职工的法定退休年龄从原60周岁延迟到63周岁，将女职工的法定退休年龄从原50周岁、55周岁，分别延迟到55周岁、58周岁。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "延迟退休从2025年1月起开始实施",
+      "role": "必要前提",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.news.cn/politics/20240913/fb547fc824734641a53b3ee5d73a123b/c.html",
+        "title": "解读延迟退休改革文件-新华网",
+        "quote": "根据决定，从2025年1月1日起，用15年时间，逐步将男职工的法定退休年龄从原60周岁延迟到63周岁",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "所有人都要干到65岁才能退休",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.news.cn/politics/20240913/fb547fc824734641a53b3ee5d73a123b/c.html",
+        "title": "解读延迟退休改革文件-新华网",
+        "quote": "将女职工的法定退休年龄从原50周岁、55周岁，分别延迟到55周岁、58周岁。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  },
+  "resolvedBy": "user-2026-09-29 规则5：被反驳的是主要主张 → 不能信"
+ },
+ {
+  "id": "NEW-103",
+  "claim": "世卫组织把香肠火腿列为一类致癌物，吃加工肉就跟抽烟一样危险",
+  "domain": "health",
+  "origin": "new",
+  "expectedLead": "分类是真的，但不等于跟抽烟一样危险。",
+  "keyFact": "加工肉与吸烟同属 IARC 第1组致癌物，但分类依据的是证据强度，风险大小差别很大：每天50克加工肉使结直肠癌风险约增加18%。",
+  "keySources": [
+   {
+    "url": "https://www.cfs.gov.hk/sc_chi/multimedia/multimedia_pub/multimedia_pub_fsf_114_02.html",
+    "title": "第1组食物致癌物：加工肉类与香烟一样危险？",
+    "sourceChecked": true,
+    "note": "抓取确认：同组致癌物风险程度可以差别很大。"
+   }
+  ],
+  "reasoning": "经典的半真半假；出处为香港食安中心，非世卫原文。",
+  "confidence": "high",
+  "legacyLabel": "部分成立",
+  "derivedLabel": "不能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": true,
+  "parts": [
+   {
+    "text": "世卫组织把香肠火腿列为一类致癌物",
+    "role": "必要前提",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.cfs.gov.hk/sc_chi/multimedia/multimedia_pub/multimedia_pub_fsf_114_02.html",
+      "title": "第1组食物致癌物 ─ 加工肉类与香烟一样危险?",
+      "quote": "国际癌症研究机构（IARC）于二零一五年十月把加工肉类归类为第1组致癌物(\"令人类致癌\")",
+      "fetched": true
+     },
+     {
+      "url": "https://www.thepaper.cn/newsDetail_forward_1390399",
+      "title": "世卫组织回应质疑：加工肉制品每年或致3.4万人患癌症死亡（澎湃）",
+      "quote": "加工肉类被归为“人类致癌物”（1类）",
+      "fetched": true
+     }
+    ]
+   },
+   {
+    "text": "吃加工肉就跟抽烟一样危险",
+    "role": "主要主张",
+    "status": "被反驳",
+    "quotes": [
+     {
+      "url": "https://www.cfs.gov.hk/sc_chi/multimedia/multimedia_pub/multimedia_pub_fsf_114_02.html",
+      "title": "第1组食物致癌物 ─ 加工肉类与香烟一样危险?",
+      "quote": "吸烟、黄曲霉毒素、石棉、酒精饮品、加工肉类虽然同属第1组，但它们的危险程度其实是不同的。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.cfs.gov.hk/sc_chi/multimedia/multimedia_pub/multimedia_pub_fsf_114_02.html",
+      "title": "第1组食物致癌物 ─ 加工肉类与香烟一样危险?",
+      "quote": "而每天食用50克加工肉类，患大肠癌的风险将增加18%。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.thepaper.cn/newsDetail_forward_1390399",
+      "title": "世卫组织回应质疑：加工肉制品每年或致3.4万人患癌症死亡（澎湃）",
+      "quote": "另外，加工肉制品的“1类”分类也并不表明其同一类别的“吸烟”和“石棉”等具有同样的危险性。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "世卫组织把香肠火腿列为一类致癌物",
+      "role": "必要前提",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.cfs.gov.hk/sc_chi/multimedia/multimedia_pub/multimedia_pub_fsf_114_02.html",
+        "title": "第1组食物致癌物 ─ 加工肉类与香烟一样危险?",
+        "quote": "国际癌症研究机构（IARC）于二零一五年十月把加工肉类归类为第1组致癌物(\"令人类致癌\")",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "吃加工肉就跟抽烟一样危险",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.cfs.gov.hk/sc_chi/multimedia/multimedia_pub/multimedia_pub_fsf_114_02.html",
+        "title": "第1组食物致癌物 ─ 加工肉类与香烟一样危险?",
+        "quote": "吸烟、黄曲霉毒素、石棉、酒精饮品、加工肉类虽然同属第1组，但它们的危险程度其实是不同的。",
+        "fetched": true
+       },
+       {
+        "url": "https://www.cfs.gov.hk/sc_chi/multimedia/multimedia_pub/multimedia_pub_fsf_114_02.html",
+        "title": "第1组食物致癌物 ─ 加工肉类与香烟一样危险?",
+        "quote": "而每天食用50克加工肉类，患大肠癌的风险将增加18%。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "“香肠火腿”属加工肉类；IARC 是世卫组织下属机构。"
+   },
+   "B": {
+    "derivedLabel": "不能信",
+    "parts": [
+     {
+      "text": "世卫组织把香肠火腿列为一类致癌物",
+      "role": "必要前提",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.thepaper.cn/newsDetail_forward_1390399",
+        "title": "世卫组织回应质疑：加工肉制品每年或致3.4万人患癌症死亡（澎湃）",
+        "quote": "加工肉类被归为“人类致癌物”（1类）",
+        "fetched": true
+       }
+      ]
+     },
+     {
+      "text": "吃加工肉就跟抽烟一样危险",
+      "role": "主要主张",
+      "status": "被反驳",
+      "quotes": [
+       {
+        "url": "https://www.thepaper.cn/newsDetail_forward_1390399",
+        "title": "世卫组织回应质疑：加工肉制品每年或致3.4万人患癌症死亡（澎湃）",
+        "quote": "另外，加工肉制品的“1类”分类也并不表明其同一类别的“吸烟”和“石棉”等具有同样的危险性。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  },
+  "resolvedBy": "user-2026-09-29 规则5：被反驳的是主要主张 → 不能信"
+ },
+ {
+  "id": "EVAL-UNVERIFIED-001",
+  "claim": "同事群里说我们公司下周一会被收购，没有公告也没有监管披露",
+  "domain": "finance",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "查不到，目前没有公开依据。",
+  "keyFact": "没有公告或监管披露，公开渠道查不到；上市公司如有收购传闻，应通过交易所公告核实。",
+  "keySources": [
+   {
+    "url": "https://www.sse.com.cn/disclosure/listedinfo/announcement/",
+    "title": "上海证券交易所：上市公司公告",
+    "sourceChecked": true,
+    "note": "抓取确认是官方公告入口；页面不证明原句，仅指出应去哪里核实。"
+   }
+  ],
+  "reasoning": "内部消息类传言没有公开记录，既不能证实也不能证伪。",
+  "confidence": "medium",
+  "legacyLabel": "证据不足",
+  "derivedLabel": "证据不足",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "我们公司下周一会被收购",
+    "role": "主要主张",
+    "status": "查不到",
+    "quotes": [
+     {
+      "url": "https://www.sse.com.cn/disclosure/listedinfo/announcement/",
+      "title": "上海证券交易所最新公告",
+      "quote": "",
+      "fetched": false
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "证据不足",
+    "parts": [
+     {
+      "text": "我们公司下周一会被收购",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": [
+       {
+        "url": "https://www.sse.com.cn/disclosure/listedinfo/announcement/",
+        "title": "上海证券交易所最新公告",
+        "quote": "",
+        "fetched": false
+       }
+      ]
+     }
+    ],
+    "notes": "公司名未给，公告列表页无可引句子；按常理这类传言不会先有公开记录。"
+   },
+   "B": {
+    "derivedLabel": "证据不足",
+    "parts": [
+     {
+      "text": "同事群里说我们公司下周一会被收购，没有公告也没有监管披露",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": []
+     }
+    ],
+    "notes": "没有公司名；按常理这类传言没有公开记录，只能建议去交易所公告或公司正式通知核实。"
+   }
+  },
+  "ruleApplied": "用户规则4",
+  "mustMention": "缺什么：没有公司名，没有公告、监管披露或公司正式通知；该去哪核实：上市公司看交易所公告，其他看公司官方通知或管理层说明。"
+ },
+ {
+  "id": "TINY-005",
+  "claim": "群里那张P图配的侮辱性文字说的是真的",
+  "domain": "social",
+  "origin": "error-analysis-2026-09-28",
+  "expectedLead": "没法查，原句没说是哪张图、哪个人。",
+  "keyFact": "原句没有指明图片、对象和文字内容，公开渠道无法核实。",
+  "keySources": [
+   {
+    "url": "https://www.piyao.org.cn/20260429/695b80f27c3f4a8d82e645362b0c8140/c.html",
+    "title": "“有图无真相”时代，我们如何看到真相",
+    "sourceChecked": true,
+    "note": "抓取确认：背景类文章，说明图片可被伪造；不证明原句。"
+   }
+  ],
+  "reasoning": "缺少可核实对象；两位盲评一致给证据不足。",
+  "confidence": "medium",
+  "legacyLabel": "证据不足",
+  "derivedLabel": "证据不足",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "群里那张P图配的侮辱性文字说的是真的",
+    "role": "主要主张",
+    "status": "查不到",
+    "quotes": []
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "证据不足",
+    "parts": [
+     {
+      "text": "群里那张P图配的侮辱性文字说的是真的",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": []
+     }
+    ],
+    "notes": "原句没有指明图片、对象、文字，无从查。"
+   },
+   "B": {
+    "derivedLabel": "证据不足",
+    "parts": [
+     {
+      "text": "群里那张P图配的侮辱性文字说的是真的",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": []
+     }
+    ],
+    "notes": "没有指明图、人、文字，无从核对；未找到可引出处。"
+   }
+  },
+  "ruleApplied": "用户规则4",
+  "mustMention": "缺什么：原句没有说明是哪张图、涉及谁、文字是什么；需要补充图片来源与原始出处，再向发布平台或当地网警核实。"
+ },
+ {
+  "id": "NEW-201",
+  "claim": "听说我们小区有人确诊了猴痘，物业压着没通报",
+  "domain": "health",
+  "origin": "new",
+  "expectedLead": "没法证实，没有公开记录。",
+  "keyFact": "猴痘是乙类传染病，全国数据由疾控部门按月公布，但不会披露到某个小区；个别小区的说法没有公开记录可查。",
+  "keySources": [
+   {
+    "url": "https://www.chinacdc.cn/jksj/jksj01/202501/t20250109_303772.html",
+    "title": "中国疾控中心：我国发现一起猴痘病毒Ib亚分支聚集性疫情",
+    "sourceChecked": false,
+    "note": "搜索结果中看到；抓取返回405。仅说明官方公开渠道公布的范围。"
+   }
+  ],
+  "reasoning": "天然无公开记录：既没法证实也没法否定。建议出处只作为「该去哪里问」。",
+  "confidence": "medium",
+  "legacyLabel": "证据不足",
+  "derivedLabel": "证据不足",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "小区有人确诊了猴痘",
+    "role": "主要主张",
+    "status": "查不到",
+    "quotes": [
+     {
+      "url": "https://www.chinacdc.cn/jksj/jksj01/202501/t20250109_303772.html",
+      "title": "中国疾控中心猴痘月报",
+      "quote": "",
+      "fetched": false
+     }
+    ]
+   },
+   {
+    "text": "物业压着没通报",
+    "role": "主要主张",
+    "status": "查不到",
+    "quotes": []
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "证据不足",
+    "parts": [
+     {
+      "text": "小区有人确诊了猴痘",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": [
+       {
+        "url": "https://www.chinacdc.cn/jksj/jksj01/202501/t20250109_303772.html",
+        "title": "中国疾控中心猴痘月报",
+        "quote": "",
+        "fetched": false
+       }
+      ]
+     },
+     {
+      "text": "物业压着没通报",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": []
+     }
+    ],
+    "notes": "疾控网站本机抓取失败（连接被重置），只记录尝试；即使抓到，月报也不到小区一级。"
+   },
+   "B": {
+    "derivedLabel": "证据不足",
+    "parts": [
+     {
+      "text": "小区有人确诊了猴痘",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": []
+     },
+     {
+      "text": "物业压着没通报",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": []
+     }
+    ],
+    "notes": "公开渠道只有全国月报，不到小区；未找到任何相关公开记录。物业不是法定疫情报告主体这一点搜索结果给出但本次没有抓到可逐字引用的原文。"
+   }
+  },
+  "ruleApplied": "用户规则4",
+  "mustMention": "缺什么：该小区的病例记录；该去哪核实：当地疾控或卫健部门通报（全国只按月公布汇总数据，不到小区）。"
+ },
+ {
+  "id": "NEW-202",
+  "claim": "业主群里说物业下个月要把物业费涨一倍，已经定了",
+  "domain": "social",
+  "origin": "new",
+  "expectedLead": "没法确认，得看有没有正式公告和业主表决。",
+  "keyFact": "调整物业费需经业主「双过半」表决，物业公司不能单方涨价；具体某小区是否通过要看公示和表决结果。",
+  "keySources": [
+   {
+    "url": "https://xinwen.bjd.com.cn/content/s5fb25392e4b0b07668027d18.html",
+    "title": "业主大会同意物业费涨价，小区业主可以拒缴么？法院这么判",
+    "sourceChecked": true,
+    "note": "抓取确认：需业主「双过半」表决。"
+   }
+  ],
+  "reasoning": "群聊传闻无公开记录；规则可查，但「已经定了」查不到。有人可能认为应判不能信。",
+  "confidence": "low",
+  "legacyLabel": "证据不足",
+  "derivedLabel": "证据不足",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "物业下个月要把物业费涨一倍",
+    "role": "主要主张",
+    "status": "查不到",
+    "quotes": []
+   },
+   {
+    "text": "已经定了",
+    "role": "必要前提",
+    "status": "查不到",
+    "quotes": [
+     {
+      "url": "https://xinwen.bjd.com.cn/content/s5fb25392e4b0b07668027d18.html",
+      "title": "业主大会同意物业费涨价，小区业主可以拒缴么？",
+      "quote": "经业主大会“双过半”业主表决同意上调物业费，小区个别业主对此有异议而拒绝按新的标准缴纳，这样可以么？",
+      "fetched": true
+     },
+     {
+      "url": "https://guangzhouns.jcy.gov.cn/mfdxc/30656.jhtml",
+      "title": "物业公司单方涨价，小区业主有权说“不”！（广州南沙检察）",
+      "quote": "物业公司单方涨价，小区业主有权说“不”！",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "证据不足",
+    "parts": [
+     {
+      "text": "物业下个月要把物业费涨一倍",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": []
+     },
+     {
+      "text": "已经定了",
+      "role": "必要前提",
+      "status": "查不到",
+      "quotes": [
+       {
+        "url": "https://xinwen.bjd.com.cn/content/s5fb25392e4b0b07668027d18.html",
+        "title": "业主大会同意物业费涨价，小区业主可以拒缴么？",
+        "quote": "经业主大会“双过半”业主表决同意上调物业费，小区个别业主对此有异议而拒绝按新的标准缴纳，这样可以么？",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "该出处只说明涨价需业主大会表决，不说明这个小区是否已通过。"
+   },
+   "B": {
+    "derivedLabel": "证据不足",
+    "parts": [
+     {
+      "text": "物业下个月要把物业费涨一倍",
+      "role": "主要主张",
+      "status": "查不到",
+      "quotes": []
+     },
+     {
+      "text": "已经定了",
+      "role": "必要前提",
+      "status": "查不到",
+      "quotes": [
+       {
+        "url": "https://guangzhouns.jcy.gov.cn/mfdxc/30656.jhtml",
+        "title": "物业公司单方涨价，小区业主有权说“不”！（广州南沙检察）",
+        "quote": "物业公司单方涨价，小区业主有权说“不”！",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "该出处只说明物业不能单方涨价，不说明具体小区的表决结果。"
+   }
+  },
+  "ruleApplied": "用户规则4",
+  "mustMention": "缺什么：该小区的调价方案与业主表决结果；该去哪核实：小区公示、业主大会或业委会通知、物业服务合同。物业费调整须经业主表决（双过半），物业不能单方涨价。"
+ },
+ {
+  "id": "NEW-301",
+  "claim": "小区里就不该允许养大型犬",
+  "domain": "social",
+  "origin": "new",
+  "expectedLead": "这是价值判断，没有对错，只能说各地规定不同。",
+  "keyFact": "北京重点管理区规定不得养烈性犬和成年体高超过35厘米的犬，其他区域规定不同。",
+  "keySources": [
+   {
+    "url": "https://xinwen.bjd.com.cn/content/s652dfe89e4b0ec2b81ce3682.html",
+    "title": "北京重点管理区禁止饲养这些犬！相关规定看这里",
+    "sourceChecked": true,
+    "note": "抓取确认：北京重点管理区禁养体高超35厘米的犬；仅说明规定，不能裁决「该不该」。"
+   }
+  ],
+  "reasoning": "「不该」是价值判断；只能给出事实背景，不判真假。",
+  "confidence": "high",
+  "legacyLabel": "立场型",
+  "derivedLabel": "立场型",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "小区里就不该允许养大型犬",
+    "role": "主要主张",
+    "status": "不适用",
+    "quotes": [
+     {
+      "url": "https://xinwen.bjd.com.cn/content/s652dfe89e4b0ec2b81ce3682.html",
+      "title": "北京养犬规定",
+      "quote": "在重点管理区内，每户只准养一只犬，不得养烈性犬、大型犬。",
+      "fetched": true
+     },
+     {
+      "url": "https://zgj.wuhan.gov.cn/xxgk/zcfgyjd_1/zcwd/202204/t20220415_1956506.shtml",
+      "title": "在住宅小区养狗应当遵守哪些规定？（武汉市住房和城市更新局）",
+      "quote": "小区养狗应当遵守《武汉市养犬管理条例》和小区管理规约规定，不得饲养国家禁止的大型犬",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "立场型",
+    "parts": [
+     {
+      "text": "小区里就不该允许养大型犬",
+      "role": "主要主张",
+      "status": "不适用",
+      "quotes": [
+       {
+        "url": "https://xinwen.bjd.com.cn/content/s652dfe89e4b0ec2b81ce3682.html",
+        "title": "北京养犬规定",
+        "quote": "在重点管理区内，每户只准养一只犬，不得养烈性犬、大型犬。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "立场句；引句只是背景规定。"
+   },
+   "B": {
+    "derivedLabel": "立场型",
+    "parts": [
+     {
+      "text": "小区里就不该允许养大型犬",
+      "role": "主要主张",
+      "status": "不适用",
+      "quotes": [
+       {
+        "url": "https://zgj.wuhan.gov.cn/xxgk/zcfgyjd_1/zcwd/202204/t20220415_1956506.shtml",
+        "title": "在住宅小区养狗应当遵守哪些规定？（武汉市住房和城市更新局）",
+        "quote": "小区养狗应当遵守《武汉市养犬管理条例》和小区管理规约规定，不得饲养国家禁止的大型犬",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "应不应该是价值判断；引句只是各地规定不同的背景。"
+   }
+  }
+ },
+ {
+  "id": "NEW-401",
+  "claim": "国家现在每个孩子每年发3600元育儿补贴，一直发到3岁",
+  "domain": "policy",
+  "origin": "new",
+  "expectedLead": "是真的。",
+  "keyFact": "2025年7月《育儿补贴制度实施方案》公布：自2025年1月1日起，每孩每年3600元，发到3周岁。",
+  "keySources": [
+   {
+    "url": "https://www.gov.cn/zhengce/202507/content_7034139.htm",
+    "title": "国家育儿补贴方案公布！3周岁前每娃每年3600元",
+    "sourceChecked": false,
+    "note": "搜索结果中看到并被多家政府网站转载；本环境抓取 gov.cn 失败，未确认。"
+   }
+  ],
+  "reasoning": "官方政策文件；置信度高但出处未抓取核实。",
+  "confidence": "high",
+  "legacyLabel": "能信",
+  "derivedLabel": "能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "国家现在每个孩子每年发3600元育儿补贴，一直发到3岁",
+    "role": "主要主张",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.yicai.com/news/102745987.html",
+      "title": "国家育儿补贴方案发布：一二三孩每孩年补3600元",
+      "quote": "2025年1月1日起，无论一孩、二孩、三孩，每年均可领取3600元补贴，直至年满3周岁。",
+      "fetched": true
+     },
+     {
+      "url": "https://hsc.beijing.gov.cn/hsc/ywdt8/rdzz37/743721815/index.shtml",
+      "title": "每孩每年3600元，中央财政预算约900亿元（新华社，北京市卫健委转载）",
+      "quote": "明确从2025年1月1日起，无论一孩、二孩、三孩，每年均可领取3600元补贴，直至年满3周岁。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "国家现在每个孩子每年发3600元育儿补贴，一直发到3岁",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.yicai.com/news/102745987.html",
+        "title": "国家育儿补贴方案发布：一二三孩每孩年补3600元",
+        "quote": "2025年1月1日起，无论一孩、二孩、三孩，每年均可领取3600元补贴，直至年满3周岁。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "gov.cn 原文本机抓取失败，改用第一财经转述。"
+   },
+   "B": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "国家现在每个孩子每年发3600元育儿补贴，一直发到3岁",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://hsc.beijing.gov.cn/hsc/ywdt8/rdzz37/743721815/index.shtml",
+        "title": "每孩每年3600元，中央财政预算约900亿元（新华社，北京市卫健委转载）",
+        "quote": "明确从2025年1月1日起，无论一孩、二孩、三孩，每年均可领取3600元补贴，直至年满3周岁。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "NEW-402",
+  "claim": "今年秋季开始，幼儿园大班不用交保教费了",
+  "domain": "policy",
+  "origin": "new",
+  "expectedLead": "是真的，但只是学前一年的保教费。",
+  "keyFact": "国办意见：自2025年秋季学期起免除公办幼儿园学前一年保育教育费，不含伙食费等；民办按公办水平减免。",
+  "keySources": [
+   {
+    "url": "https://www.yicai.com/news/102758905.html",
+    "title": "国家免一年幼儿园保教费，惠及千万儿童，央地财政共担",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "官方政策；注意「保教费」不含伙食费。",
+  "confidence": "high",
+  "legacyLabel": "能信",
+  "derivedLabel": "能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "今年秋季开始，幼儿园大班不用交保教费了",
+    "role": "主要主张",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.yicai.com/news/102758905.html",
+      "title": "2025年秋季起，幼儿园大班免一年保育教育费",
+      "quote": "国务院办公厅发布《关于逐步推行免费学前教育的意见》（下称《意见》），明确从2025年秋季学期起，免除公办幼儿园学前一年在园儿童保育教育费",
+      "fetched": true
+     },
+     {
+      "url": "https://www.21jingji.com/article/20250805/herald/8f047265cc112b3599b8e1d6d58a9168.html",
+      "title": "免费学前教育政策定了！一年可免多少钱？（21经济网）",
+      "quote": "《意见》提出，从2025年秋季学期起，免除公办幼儿园学前一年在园儿童保育教育费，不含伙食费、住宿费、杂费等。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "今年秋季开始，幼儿园大班不用交保教费了",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.yicai.com/news/102758905.html",
+        "title": "2025年秋季起，幼儿园大班免一年保育教育费",
+        "quote": "国务院办公厅发布《关于逐步推行免费学前教育的意见》（下称《意见》），明确从2025年秋季学期起，免除公办幼儿园学前一年在园儿童保育教育费",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "“今年”指2025年时成立；若按今天（2026年）读，则是去年起开始。按2025年语境判。"
+   },
+   "B": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "今年秋季开始，幼儿园大班不用交保教费了",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.21jingji.com/article/20250805/herald/8f047265cc112b3599b8e1d6d58a9168.html",
+        "title": "免费学前教育政策定了！一年可免多少钱？（21经济网）",
+        "quote": "《意见》提出，从2025年秋季学期起，免除公办幼儿园学前一年在园儿童保育教育费，不含伙食费、住宿费、杂费等。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "“今年”若指2025年则成立。民办园只是参照公办水平减免，可能仍需补差额；本次不因此降级。"
+   }
+  }
+ },
+ {
+  "id": "NEW-403",
+  "claim": "没有3C标识的充电宝不让带上飞机了",
+  "domain": "transport",
+  "origin": "new",
+  "expectedLead": "是真的，6月28日起执行。",
+  "keyFact": "民航局通知：自2025年6月28日起，无3C标识、标识不清晰、被召回型号或批次的充电宝禁止带上境内航班。",
+  "keySources": [
+   {
+    "url": "https://www.news.cn/legal/20250703/cefc82e38aaa4da09ed49b228da945b9/c.html",
+    "title": "无3C标识不能登机 充电宝安全新规的背后",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   },
+   {
+    "url": "https://www.caac.gov.cn/XWZX/MHYW/202506/t20250626_227805.html",
+    "title": "民航局：禁止旅客携带无3C标识及被召回的充电宝乘坐境内航班",
+    "sourceChecked": false,
+    "note": "搜索结果中看到民航局原文；抓取失败，未确认。"
+   }
+  ],
+  "reasoning": "民航局官方通知。",
+  "confidence": "high",
+  "legacyLabel": "能信",
+  "derivedLabel": "能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "没有3C标识的充电宝不让带上飞机了",
+    "role": "主要主张",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.news.cn/legal/20250703/cefc82e38aaa4da09ed49b228da945b9/c.html",
+      "title": "无3C标识不能登机 充电宝安全新规的背后",
+      "quote": "6月28日起，民航局充电宝新规全面实施：没有3C标识、3C标识不清晰、被召回型号或批次的充电宝，禁止携带乘坐境内航班。",
+      "fetched": true
+     },
+     {
+      "url": "https://china.cnr.cn/gdgg/20250627/t20250627_527231400.shtml",
+      "title": "民航局新规28日起实施：无3C认证或召回批次充电宝禁止登机（央广网）",
+      "quote": "民航局26日发布通知，自6月28日起，禁止旅客携带没有3C标识、3C标识不清晰、被召回型号或批次的充电宝乘坐境内航班。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "没有3C标识的充电宝不让带上飞机了",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.news.cn/legal/20250703/cefc82e38aaa4da09ed49b228da945b9/c.html",
+        "title": "无3C标识不能登机 充电宝安全新规的背后",
+        "quote": "6月28日起，民航局充电宝新规全面实施：没有3C标识、3C标识不清晰、被召回型号或批次的充电宝，禁止携带乘坐境内航班。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "没有3C标识的充电宝不让带上飞机了",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://china.cnr.cn/gdgg/20250627/t20250627_527231400.shtml",
+        "title": "民航局新规28日起实施：无3C认证或召回批次充电宝禁止登机（央广网）",
+        "quote": "民航局26日发布通知，自6月28日起，禁止旅客携带没有3C标识、3C标识不清晰、被召回型号或批次的充电宝乘坐境内航班。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "NEW-404",
+  "claim": "一岁以内的婴儿不能吃蜂蜜",
+  "domain": "health",
+  "origin": "new",
+  "expectedLead": "是真的。",
+  "keyFact": "1岁以内婴儿肠道菌群不稳定，蜂蜜中可能有肉毒杆菌芽孢，可致婴儿肉毒中毒。",
+  "keySources": [
+   {
+    "url": "https://www.piyao.org.cn/2021-03/03/c_1211048552.htm",
+    "title": "吃蜂蜜有助儿童止咳吗？",
+    "sourceChecked": true,
+    "note": "抓取确认：1岁以前的婴儿不能食用蜂蜜。"
+   }
+  ],
+  "reasoning": "国内外权威机构一致意见。",
+  "confidence": "high",
+  "legacyLabel": "能信",
+  "derivedLabel": "能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "一岁以内的婴儿不能吃蜂蜜",
+    "role": "主要主张",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.piyao.org.cn/2021-03/03/c_1211048552.htm",
+      "title": "吃蜂蜜有助儿童止咳吗？",
+      "quote": "目前，国内和国际权威健康机构的一致意见是1岁以前的婴儿不能食用蜂蜜",
+      "fetched": true
+     },
+     {
+      "url": "https://m.dxy.com/article/31456",
+      "title": "1 岁以下的宝宝不能吃蜂蜜？（丁香医生）",
+      "quote": "1 岁以下的婴儿确实不应该进食蜂蜜， 这是因为蜂蜜中可能含有肉毒杆菌及其芽孢，其分泌的肉毒素可能对宝宝造成致命的威胁。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "一岁以内的婴儿不能吃蜂蜜",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.piyao.org.cn/2021-03/03/c_1211048552.htm",
+        "title": "吃蜂蜜有助儿童止咳吗？",
+        "quote": "目前，国内和国际权威健康机构的一致意见是1岁以前的婴儿不能食用蜂蜜",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "一岁以内的婴儿不能吃蜂蜜",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://m.dxy.com/article/31456",
+        "title": "1 岁以下的宝宝不能吃蜂蜜？（丁香医生）",
+        "quote": "1 岁以下的婴儿确实不应该进食蜂蜜， 这是因为蜂蜜中可能含有肉毒杆菌及其芽孢，其分泌的肉毒素可能对宝宝造成致命的威胁。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "NEW-405",
+  "claim": "打HPV疫苗能预防宫颈癌",
+  "domain": "health",
+  "origin": "new",
+  "expectedLead": "能，这是世卫组织的明确结论。",
+  "keyFact": "世卫组织：9至14岁女孩接种HPV疫苗能高效预防感染、宫颈癌和其他HPV相关癌症；接种后仍需按建议筛查。",
+  "keySources": [
+   {
+    "url": "https://www.who.int/news-room/fact-sheets/detail/cervical-cancer",
+    "title": "WHO: Cervical cancer",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "一手来源；「预防」不是100%，可在回答里带边界。",
+  "confidence": "high",
+  "legacyLabel": "能信",
+  "derivedLabel": "能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "打HPV疫苗能预防宫颈癌",
+    "role": "主要主张",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.who.int/news-room/fact-sheets/detail/cervical-cancer",
+      "title": "Cervical cancer (WHO)",
+      "quote": "Cervical cancer is largely preventable through HPV vaccination and regular screening",
+      "fetched": true
+     },
+     {
+      "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC11160490/",
+      "title": "Linkage of individual-patient data confirm protection of prophylactic HPV vaccination against invasive cervical cancer",
+      "quote": "demonstrates excellent protection against invasive cervical cancer among girls immunized at the age of 12 to 13 years",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "打HPV疫苗能预防宫颈癌",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.who.int/news-room/fact-sheets/detail/cervical-cancer",
+        "title": "Cervical cancer (WHO)",
+        "quote": "Cervical cancer is largely preventable through HPV vaccination and regular screening",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "出处说“largely preventable”，并要求接种后仍按建议筛查。"
+   },
+   "B": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "打HPV疫苗能预防宫颈癌",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC11160490/",
+        "title": "Linkage of individual-patient data confirm protection of prophylactic HPV vaccination against invasive cervical cancer",
+        "quote": "demonstrates excellent protection against invasive cervical cancer among girls immunized at the age of 12 to 13 years",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "保护效果在12-13岁接种的人群最明显，评论文章，非试验本身。"
+   }
+  }
+ },
+ {
+  "id": "NEW-406",
+  "claim": "从9月1日起，AI生成的内容必须加标识",
+  "domain": "tech",
+  "origin": "new",
+  "expectedLead": "是真的，2025年9月1日起施行。",
+  "keyFact": "国家网信办等四部门《人工智能生成合成内容标识办法》自2025年9月1日起施行，要求对AI生成合成内容添加显式和隐式标识。",
+  "keySources": [
+   {
+    "url": "https://www.news.cn/legal/20250901/a12108b0b10249e5bae4435269e40c91/c.html",
+    "title": "9月1日起 AI生成合成内容必须添加标识",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "官方办法；日期以 2025-09-01 为准。",
+  "confidence": "high",
+  "legacyLabel": "能信",
+  "derivedLabel": "能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "从9月1日起，AI生成的内容必须加标识",
+    "role": "主要主张",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.news.cn/legal/20250901/a12108b0b10249e5bae4435269e40c91/c.html",
+      "title": "9月1日起 AI生成合成内容必须添加标识",
+      "quote": "《人工智能生成合成内容标识办法》，9月1日起正式施行",
+      "fetched": true
+     },
+     {
+      "url": "https://news.cctv.com/2025/09/01/ARTI3ZlXK7MyM39Pm3PuZ5Hm250901.shtml",
+      "title": "9月1日起 AI生成合成内容必须添加标识（央视网）",
+      "quote": "国家网信办等四部门联合发布的《人工智能生成合成内容标识办法》，9月1日起正式施行",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "从9月1日起，AI生成的内容必须加标识",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.news.cn/legal/20250901/a12108b0b10249e5bae4435269e40c91/c.html",
+        "title": "9月1日起 AI生成合成内容必须添加标识",
+        "quote": "《人工智能生成合成内容标识办法》，9月1日起正式施行",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "从9月1日起，AI生成的内容必须加标识",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://news.cctv.com/2025/09/01/ARTI3ZlXK7MyM39Pm3PuZ5Hm250901.shtml",
+        "title": "9月1日起 AI生成合成内容必须添加标识（央视网）",
+        "quote": "国家网信办等四部门联合发布的《人工智能生成合成内容标识办法》，9月1日起正式施行",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "NEW-407",
+  "claim": "银行倒闭了，存款50万以内可以全额赔",
+  "domain": "finance",
+  "origin": "new",
+  "expectedLead": "是真的，本金加利息合计50万以内全额偿付。",
+  "keyFact": "《存款保险条例》：最高偿付限额50万元，同一存款人在同一家投保机构的本金和利息合并计算。",
+  "keySources": [
+   {
+    "url": "https://www.boc.cn/custserv/dilogo/202011/t20201127_18693492.html",
+    "title": "存款保险 - 中国银行",
+    "sourceChecked": true,
+    "note": "抓取确认（银行转述条例条文）。"
+   }
+  ],
+  "reasoning": "出处为银行页面转述条例条文，非条例原文；没抓取到条例原文。",
+  "confidence": "high",
+  "legacyLabel": "能信",
+  "derivedLabel": "能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "银行倒闭了，存款50万以内可以全额赔",
+    "role": "主要主张",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.boc.cn/custserv/dilogo/202011/t20201127_18693492.html",
+      "title": "存款保险（中国银行）",
+      "quote": "根据存款保险条例，存款保险实行限额偿付，最高偿付限额为人民币50万元。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.psbc.com/cn/fhpd/xndq/ynsfh/fxdt_1235/202312/t20231201_223180.html",
+      "title": "存款保险知识（中国邮政储蓄银行）",
+      "quote": "同一存款人在同一家机构在存款本息合计金额在人民币50万元以内，存款保险实行全额偿付。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "银行倒闭了，存款50万以内可以全额赔",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.boc.cn/custserv/dilogo/202011/t20201127_18693492.html",
+        "title": "存款保险（中国银行）",
+        "quote": "根据存款保险条例，存款保险实行限额偿付，最高偿付限额为人民币50万元。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "本金加利息合计计入50万，本页未展开。"
+   },
+   "B": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "银行倒闭了，存款50万以内可以全额赔",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.psbc.com/cn/fhpd/xndq/ynsfh/fxdt_1235/202312/t20231201_223180.html",
+        "title": "存款保险知识（中国邮政储蓄银行）",
+        "quote": "同一存款人在同一家机构在存款本息合计金额在人民币50万元以内，存款保险实行全额偿付。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "NEW-408",
+  "claim": "2026年起买新能源车，购置税不是全免了，改成减半征收",
+  "domain": "policy",
+  "origin": "new",
+  "expectedLead": "是真的，2026年、2027年减半征收。",
+  "keyFact": "2026年1月1日至2027年12月31日购置的新能源汽车减半征收车辆购置税，每辆乘用车减税额不超过1.5万元。",
+  "keySources": [
+   {
+    "url": "https://www.yicai.com/news/102819401.html",
+    "title": "2026年买新能源车减半征收车购税",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "官方公告；具体车型须在目录内。",
+  "confidence": "high",
+  "legacyLabel": "能信",
+  "derivedLabel": "能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "2026年起买新能源车，购置税不是全免了，改成减半征收",
+    "role": "主要主张",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.yicai.com/news/102819401.html",
+      "title": "2026年买新能源车减半征收车购税",
+      "quote": "对购置日期在2026年1月1日至2027年12月31日期间的新能源汽车减半征收车辆购置税",
+      "fetched": true
+     },
+     {
+      "url": "https://fgk.chinatax.gov.cn/zcfgk/c102416/c5207352/content.html",
+      "title": "关于延续和优化新能源汽车车辆购置税减免政策的公告（国家税务总局）",
+      "quote": "对购置日期在2026年1月1日至2027年12月31日期间的新能源汽车减半征收车辆购置税，其中，每辆新能源乘用车减税额不超过1.5万元。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "2026年起买新能源车，购置税不是全免了，改成减半征收",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.yicai.com/news/102819401.html",
+        "title": "2026年买新能源车减半征收车购税",
+        "quote": "对购置日期在2026年1月1日至2027年12月31日期间的新能源汽车减半征收车辆购置税",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "2026年起买新能源车，购置税不是全免了，改成减半征收",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://fgk.chinatax.gov.cn/zcfgk/c102416/c5207352/content.html",
+        "title": "关于延续和优化新能源汽车车辆购置税减免政策的公告（国家税务总局）",
+        "quote": "对购置日期在2026年1月1日至2027年12月31日期间的新能源汽车减半征收车辆购置税，其中，每辆新能源乘用车减税额不超过1.5万元。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "NEW-409",
+  "claim": "12306现在火车票是提前15天开售的",
+  "domain": "transport",
+  "origin": "new",
+  "expectedLead": "是真的，预售期15天。",
+  "keyFact": "12306公告写明车票提前15天发售。",
+  "keySources": [
+   {
+    "url": "https://www.12306.cn/mormhweb/zxdt/202412/t20241211_43192.html",
+    "title": "12306 公告（2024-12-11）",
+    "sourceChecked": true,
+    "note": "抓取确认：提前15天发售。"
+   }
+  ],
+  "reasoning": "现行规则；如未来调整预售期需重核。",
+  "confidence": "medium",
+  "legacyLabel": "能信",
+  "derivedLabel": "能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "12306现在火车票是提前15天开售的",
+    "role": "主要主张",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.12306.cn/mormhweb/zxdt/202412/t20241211_43192.html",
+      "title": "12306公告",
+      "quote": "按照目前火车票提前 15 天开始发售的规则",
+      "fetched": true
+     },
+     {
+      "url": "https://www.12306.cn/mormhweb/zxdt/202412/t20241211_43192.html",
+      "title": "12306公告",
+      "quote": "按照目前火车票提前 15 天开始发售的规则， 2024 年 12 月 31 日将开售春运第一天火车票",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "12306现在火车票是提前15天开售的",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.12306.cn/mormhweb/zxdt/202412/t20241211_43192.html",
+        "title": "12306公告",
+        "quote": "按照目前火车票提前 15 天开始发售的规则",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "公告日期 2024-12-11，“现在”以该公告为准。"
+   },
+   "B": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "12306现在火车票是提前15天开售的",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.12306.cn/mormhweb/zxdt/202412/t20241211_43192.html",
+        "title": "12306公告",
+        "quote": "按照目前火车票提前 15 天开始发售的规则， 2024 年 12 月 31 日将开售春运第一天火车票",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "公告日期2024-12-11；本次没有找到更新的预售期公告。"
+   }
+  }
+ },
+ {
+  "id": "NEW-410",
+  "claim": "成年人每天吃盐不该超过5克",
+  "domain": "health",
+  "origin": "new",
+  "expectedLead": "是真的。",
+  "keyFact": "《中国居民膳食指南（2022）》建议成年人每天食盐摄入不超过5克。",
+  "keySources": [
+   {
+    "url": "https://www.sohu.com/a/1077381447_121106875",
+    "title": "“盐”多必失，每天5克就够了",
+    "sourceChecked": true,
+    "note": "抓取确认（转述指南，非指南原文）。"
+   }
+  ],
+  "reasoning": "出处为搜狐转述，需换成指南或卫健委原文。",
+  "confidence": "medium",
+  "legacyLabel": "能信",
+  "derivedLabel": "能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "成年人每天吃盐不该超过5克",
+    "role": "主要主张",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://www.sohu.com/a/1077381447_121106875",
+      "title": "“盐”多必失，每天5克就够了",
+      "quote": "《中国居民膳食指南（2022）》明确建议，成年人每天食盐摄入量应控制在不超过 5克 的范围内。",
+      "fetched": true
+     },
+     {
+      "url": "http://dg.cnsoc.org/article/04/ApX3_ozGTmSoqQaFFh5z_Q.html",
+      "title": "中国居民膳食指南2022 准则五（中国营养学会）",
+      "quote": "成年人每天摄入食盐不超过5g，烹调油25～30g。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "成年人每天吃盐不该超过5克",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.sohu.com/a/1077381447_121106875",
+        "title": "“盐”多必失，每天5克就够了",
+        "quote": "《中国居民膳食指南（2022）》明确建议，成年人每天食盐摄入量应控制在不超过 5克 的范围内。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "成年人每天吃盐不该超过5克",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "http://dg.cnsoc.org/article/04/ApX3_ozGTmSoqQaFFh5z_Q.html",
+        "title": "中国居民膳食指南2022 准则五（中国营养学会）",
+        "quote": "成年人每天摄入食盐不超过5g，烹调油25～30g。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   }
+  }
+ },
+ {
+  "id": "NEW-411",
+  "claim": "医保个人账户里的钱可以给家人用",
+  "domain": "policy",
+  "origin": "new",
+  "expectedLead": "是真的，可用于配偶、父母、子女等家庭共济。",
+  "keyFact": "国办2021年指导意见：个人账户可用于支付配偶、父母、子女在定点机构就医的个人负担费用；后来范围扩大到近亲属。",
+  "keySources": [
+   {
+    "url": "https://news.sina.com.cn/gov/2024-10-30/doc-incuhwii3817252.shtml",
+    "title": "什么是“医保家庭共济”？哪些亲属可共济？一文读懂",
+    "sourceChecked": true,
+    "note": "抓取确认。"
+   }
+  ],
+  "reasoning": "需注意钱可共济但医保卡不能共用，需办理共济。",
+  "confidence": "medium",
+  "legacyLabel": "能信",
+  "derivedLabel": "能信",
+  "status": "agreed",
+  "classification": "一致",
+  "boundary": false,
+  "legacyMismatch": false,
+  "parts": [
+   {
+    "text": "医保个人账户里的钱可以给家人用",
+    "role": "主要主张",
+    "status": "被支持",
+    "quotes": [
+     {
+      "url": "https://news.sina.com.cn/gov/2024-10-30/doc-incuhwii3817252.shtml",
+      "title": "职工医保个人账户家庭共济",
+      "quote": "2021年，国办印发文件，将职工医保个人账户使用范围从职工本人，扩大到其参加基本医保的“配偶、父母、子女”，开启了我们所说的家庭共济。",
+      "fetched": true
+     },
+     {
+      "url": "https://www.news.cn/politics/20240512/7e47a45e08254cd9b1a0eb8d7e25086b/c.html",
+      "title": "医保“家庭共济”和亲情账户有何区别？（新华网）",
+      "quote": "2021年4月，我国提出适当拓宽职工医保个人账户使用范围，从为自己看病就医买单，到允许家庭成员相互共济，使用个人账户支付政策范围内的医药费等，也就是“家庭共济”。",
+      "fetched": true
+     }
+    ]
+   }
+  ],
+  "annotations": {
+   "A": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "医保个人账户里的钱可以给家人用",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://news.sina.com.cn/gov/2024-10-30/doc-incuhwii3817252.shtml",
+        "title": "职工医保个人账户家庭共济",
+        "quote": "2021年，国办印发文件，将职工医保个人账户使用范围从职工本人，扩大到其参加基本医保的“配偶、父母、子女”，开启了我们所说的家庭共济。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": ""
+   },
+   "B": {
+    "derivedLabel": "能信",
+    "parts": [
+     {
+      "text": "医保个人账户里的钱可以给家人用",
+      "role": "主要主张",
+      "status": "被支持",
+      "quotes": [
+       {
+        "url": "https://www.news.cn/politics/20240512/7e47a45e08254cd9b1a0eb8d7e25086b/c.html",
+        "title": "医保“家庭共济”和亲情账户有何区别？（新华网）",
+        "quote": "2021年4月，我国提出适当拓宽职工医保个人账户使用范围，从为自己看病就医买单，到允许家庭成员相互共济，使用个人账户支付政策范围内的医药费等，也就是“家庭共济”。",
+        "fetched": true
+       }
+      ]
+     }
+    ],
+    "notes": "限职工医保个人账户，且家人需参加基本医保；各地需先办理共济绑定。"
+   }
+  }
+ }
+]

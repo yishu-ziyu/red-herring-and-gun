@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assembleFinalReport, buildClaimItems, deriveOverallVerdict, faceVerdictFor } from "./assembleFinalReport";
+import { assembleFinalReport, buildClaimItems, faceVerdictFor } from "./assembleFinalReport";
 import { resolveImageOrigin } from "../imageOrigin/imageOrigin";
 
 describe("assembleFinalReport", () => {
@@ -157,81 +157,5 @@ describe("assembleFinalReport 检索预算", () => {
       type: "value",
       reason: "整句为价值判断",
     });
-  });
-});
-
-describe("deriveOverallVerdict", () => {
-  const sourced = { url: "https://gov.cn/1" };
-
-  it("有据 true + 有据 false → partial（mixed 救回，RUMOR-011 形态）", () => {
-    expect(
-      deriveOverallVerdict([
-        { verdict: "false", contradictingSources: [sourced] },
-        { verdict: "true", supportingSources: [sourced] },
-        { verdict: "partial", supportingSources: [sourced] },
-      ])
-    ).toBe("partial");
-    expect(
-      deriveOverallVerdict([
-        { verdict: "true", supportingSources: [sourced] },
-        { verdict: "false", contradictingSources: [sourced] },
-      ])
-    ).toBe("partial");
-  });
-
-  it("真但无据 + 有据之假 → false（无据不救，纯谣言不受零星 true 干扰）", () => {
-    expect(
-      deriveOverallVerdict([
-        { verdict: "false", contradictingSources: [sourced] },
-        { verdict: "true", supportingSources: [] },
-      ])
-    ).toBe("false");
-  });
-
-  it("方向契约（Review 5128449568 Blocker 3）：true 只认支撑桶，false 只认反证桶", () => {
-    expect(deriveOverallVerdict([{ verdict: "true", contradictingSources: [sourced] }])).toBeNull();
-    expect(deriveOverallVerdict([{ verdict: "false", supportingSources: [sourced] }])).toBeNull();
-    expect(deriveOverallVerdict([{ verdict: "false", contradictingSources: [sourced] }])).toBe("false");
-    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }])).toBe("true");
-  });
-
-  it("检索垫的 related-only 来源不算有据（sourcesRelatedOnly=true 不救）", () => {
-    expect(
-      deriveOverallVerdict([
-        { verdict: "false" },
-        { verdict: "true", supportingSources: [sourced], sourcesRelatedOnly: true },
-      ])
-    ).toBeNull();
-    expect(
-      deriveOverallVerdict([
-        { verdict: "false", contradictingSources: [sourced] },
-        { verdict: "true", supportingSources: [sourced], sourcesRelatedOnly: true },
-      ])
-    ).toBe("false");
-  });
-
-  it("两条无来源 false → null", () => {
-    expect(deriveOverallVerdict([{ verdict: "false" }, { verdict: "false" }])).toBeNull();
-  });
-
-  it("单独一条有据 false → false", () => {
-    expect(deriveOverallVerdict([{ verdict: "false", contradictingSources: [sourced] }])).toBe("false");
-  });
-
-  it("每个必要成分均有支持证据才可聚合 true；一条无据即不能证明整体（Shannon §3）", () => {
-    // 原句 A∧B：A 有据不能替代 B 的证据。依据本轮任务 §3，不依实现反推期望。
-    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }, { verdict: "true" }])).toBeNull();
-    expect(deriveOverallVerdict([{ verdict: "true", supportingSources: [sourced] }, { verdict: "true", supportingSources: [sourced] }])).toBe("true");
-    expect(deriveOverallVerdict([{ verdict: "true" }, { verdict: "true", supportingSources: [] }])).toBeNull();
-  });
-
-  it("仅 partial/exaggerated（无假）→ partial", () => {
-    expect(deriveOverallVerdict([{ verdict: "exaggerated" }, { verdict: "partial" }])).toBe("partial");
-  });
-
-  it("无肯定判词（空/unverified/unknown）→ null 保留 LLM 整体字段", () => {
-    expect(deriveOverallVerdict([])).toBeNull();
-    expect(deriveOverallVerdict([{ verdict: "unverified" }, { verdict: "" }])).toBeNull();
-    expect(deriveOverallVerdict([{ verdict: "unknown" }])).toBeNull();
   });
 });
