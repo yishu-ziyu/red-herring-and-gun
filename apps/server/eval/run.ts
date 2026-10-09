@@ -35,10 +35,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 loadLocalEnv();
 
 const hasAnyKey = Boolean(
-  process.env.STEPFUN_API_KEY ||
-    process.env.DEEPSEEK_API_KEY ||
-    process.env.MINIMAX_API_KEY ||
-    process.env.MIMO_API_KEY
+  process.env.STEPFUN_API_KEY || process.env.MINIMAX_API_KEY
 );
 
 function flagValue(argv: string[], name: string): string | undefined {
@@ -347,7 +344,7 @@ function maybeWriteBaseline(
 
 async function main() {
   if (!hasAnyKey) {
-    console.error("未检测到任何 API key（STEPFUN/DEEPSEEK/MINIMAX/MIMO）。请先在 apps/.env.local 配置。");
+    console.error("未检测到任何 API key（STEPFUN/MINIMAX）。请先在 apps/.env.local 配置。");
     process.exit(1);
   }
 
@@ -355,7 +352,6 @@ async function main() {
   const cases = filterCases(args);
   const evalEnv: EvalEnv = {
     env: process.env as Record<string, string>,
-    codexBin: process.env.CODEX_BIN || "/usr/local/bin/codex",
   };
 
   const repeats = args.repeats;

@@ -100,17 +100,6 @@ app.post(
   quotaGate("/api/agent/orchestrate-stream"),
   (req, res, next) => handlers.orchestrateStreamHandler(req, res, next)
 );
-if (process.env.NODE_ENV === "production") {
-  app.post("/api/agent/test-llm", (_req, res) => {
-    res.status(404).json({ error: "Not found" });
-  });
-} else {
-  app.post("/api/agent/test-llm", quotaGate("/api/agent/test-llm"), (req, res, next) => handlers.testLlmHandler(req, res, next));
-}
-app.get("/api/models/list", (req, res, next) => handlers.modelsListHandler(req, res, next));
-// 可用性探针不计入每日核查额度：输入页每次加载都会调它，计进去会让访客打开一次首页就用光配额。
-// 闸门判定来源 lib/quotaPolicy.ts，契约 docs/evals/2026-09-11-health-probe-quota.md。
-app.get("/api/models/health", (req, res, next) => handlers.modelsHealthHandler(req, res, next));
 
 // v3 邮箱登录 + 账号数据
 app.post("/api/auth/email/request", (req, res, next) => emailRequestHandler(req, res).catch(next));

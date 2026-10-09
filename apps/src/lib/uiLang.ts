@@ -86,7 +86,6 @@ export type UiCopy = {
   signIn: string;
   accountNavLabel: string;
   accountMenu: string;
-  modelSettings: string;
   dossierLabel: string;
   dossierTitle: string;
   collapse: string;
@@ -177,7 +176,6 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     signIn: "登录",
     accountNavLabel: "账号与设置",
     accountMenu: "账户",
-    modelSettings: "模型设置",
     dossierLabel: "核查卷宗",
     dossierTitle: "核查卷宗",
     collapse: "收起",
@@ -266,7 +264,6 @@ export const UI_COPY: Record<UiLang, UiCopy> = {
     signIn: "Sign in",
     accountNavLabel: "Account & settings",
     accountMenu: "Account",
-    modelSettings: "Model settings",
     dossierLabel: "Case file",
     dossierTitle: "Case file",
     collapse: "Collapse",

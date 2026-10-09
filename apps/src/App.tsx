@@ -12,8 +12,6 @@ import { gpCopyFor } from "./goldenPath/copy";
 import { useUiLang } from "./lib/useUiLang";
 import { LoginView } from "./components/v3/auth/LoginView";
 import { AccountView } from "./components/v3/auth/AccountView";
-import { ModelProviderSettingsPreview } from "./components/v3/settings/ModelProviderSettingsPreview";
-import { ApiKeySettings } from "./components/v3/settings/ApiKeySettings";
 import { caseIntakeFailedLinks, caseIntakePrimaryText, createCaseIntake, type CaseIntake } from "./lib/caseIntake";
 import { homeCaseSnapshot, type HomeCaseId } from "./goldenPath/homeCases";
 import { createKnowledgeBase, normalizeHistoryClaim } from "./lib/knowledgeBase";
@@ -54,9 +52,6 @@ function ProductApp() {
   const [draftClaim, setDraftClaim] = useState("");
   const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
   const [pendingFocus, setPendingFocus] = useState<{ question: string; runId: string } | null>(null);
-
-  const isModelSettingsPreviewRoute = import.meta.env.DEV && window.location.pathname === "/model-settings-preview";
-  const isApiKeySettingsRoute = window.location.pathname === "/settings/api-key";
 
   // 账户与历史水合（挂载即跑一次；登录成功后再跑）。
   const { account, setAccount, accountEmailRef, scopeVersion, cases, setCases, historyReady, hydrateAccountCases } = useAccountSession();
@@ -338,12 +333,6 @@ function ProductApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingFocus, run.state.runId, run.state.serverStatus]);
 
-  if (isModelSettingsPreviewRoute) {
-    return <ModelProviderSettingsPreview />;
-  }
-  if (isApiKeySettingsRoute) {
-    return <ApiKeySettings />;
-  }
   if (window.location.pathname.startsWith("/s/")) {
     return (
       <main className="gp-share-unavailable" data-gp-share-unavailable>

@@ -177,8 +177,6 @@ rm -rf "$MIGRATE_DIR"
 docker compose ps
 docker exec red-herring-api wget -qO- http://127.0.0.1:3000/health
 echo
-docker exec red-herring-api wget -qO- http://127.0.0.1:3000/api/models/list
-echo
 EOF
 }
 
@@ -431,8 +429,6 @@ local_api_smoke() {
 
   curl -fsS --max-time 5 "http://127.0.0.1:${port}/health"
   echo
-  curl -fsS --max-time 5 "http://127.0.0.1:${port}/api/models/list"
-  echo
 }
 
 public_check() {
@@ -460,17 +456,15 @@ public_check() {
   # fails with SSL_ERROR_SYSCALL even when browsers and OpenSSL succeed.
   python_https_probe_resolved "domain https via Aliyun IP" "/" "$APP_DOMAIN" "$ALIYUN_HOST"
   python_https_probe_resolved "domain health via Aliyun IP" "/health" "$APP_DOMAIN" "$ALIYUN_HOST"
-  python_https_probe_resolved "domain models via Aliyun IP" "/api/models/list" "$APP_DOMAIN" "$ALIYUN_HOST"
 
   if [ -n "$doh_ip" ] && [ "$doh_ip" != "$ALIYUN_HOST" ]; then
     python_https_probe_resolved "domain https via DoH IP" "/" "$APP_DOMAIN" "$doh_ip"
-    python_https_probe_resolved "domain models via DoH IP" "/api/models/list" "$APP_DOMAIN" "$doh_ip"
+    python_https_probe_resolved "domain health via DoH IP" "/health" "$APP_DOMAIN" "$doh_ip"
   fi
 
   # HTTP domain may hit Aliyun ICP block; IP /health + /api are the reliable ops paths.
   probe "domain http (may be ICP-blocked)" "http://${APP_DOMAIN}/" HEAD
   probe "server health via IP" "http://${ALIYUN_HOST}/health"
-  probe "server models via IP" "http://${ALIYUN_HOST}/api/models/list"
 }
 
 aliyun_domain_check() {
@@ -480,7 +474,6 @@ aliyun_domain_check() {
 
   python_https_probe_resolved "aliyun domain https" "/" "$APP_DOMAIN" "$ALIYUN_HOST"
   python_https_probe_resolved "aliyun domain health" "/health" "$APP_DOMAIN" "$ALIYUN_HOST"
-  python_https_probe_resolved "aliyun domain models" "/api/models/list" "$APP_DOMAIN" "$ALIYUN_HOST"
 }
 
 remote_check() {
@@ -509,9 +502,6 @@ echo "-- docker compose ps"
 docker compose ps
 echo "-- container health"
 docker exec red-herring-api wget -qO- http://127.0.0.1:3000/health || true
-echo
-echo "-- models endpoint"
-docker exec red-herring-api wget -qO- http://127.0.0.1:3000/api/models/list || true
 echo
 EOF
 }

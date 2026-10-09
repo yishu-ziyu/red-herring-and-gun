@@ -1,5 +1,4 @@
 import { caseIntakePrimaryText, type CaseIntake } from "./caseIntake";
-import { readSavedByoKey } from "./byoKeyRequest";
 import type { AgentEvidenceBundle } from "./schemas";
 import type { AgentContract } from "./agentConfigs";
 import { getTraceCollector, type TraceStatus } from "./reasoningTrace";
@@ -47,25 +46,6 @@ export interface SearchStoppedItem {
   title: string;
   reason: "duplicate" | "budget" | "low_confidence" | "out_of_scope";
 }
-
-// ───────────────────────────────────────────────────────────────
-// 按 Agent 的模型选择（payload 层；UI 未挂载，默认空 map 走 fallback 链）
-// ───────────────────────────────────────────────────────────────
-
-export type AgentId = "rumor_detector" | "fact_checker" | "source_validator" | "report_composer";
-
-export interface AvailableModel {
-  provider: string;
-  model: string;
-  label?: string;
-}
-
-export interface ModelChoiceEntry {
-  provider: string;
-  model: string;
-}
-
-export type ModelChoiceMap = Partial<Record<AgentId, ModelChoiceEntry>>;
 
 // ───────────────────────────────────────────────────────────────
 // 多 Agent Handoff Orchestrate
@@ -229,7 +209,6 @@ function asFollowUpLink(link?: string | OrchestrateFollowUpLink): OrchestrateFol
 export async function* requestOrchestrateStream(
   input: string | CaseIntake,
   memoryRecall?: Record<string, unknown>,
-  modelChoice?: Record<string, { provider: string; model: string }>,
   /** 幂等键（PR-D）：同一身份下同一个键只建一条 run，双击不会开两条管线。 */
   clientRequestId?: string,
   /**
@@ -241,7 +220,6 @@ export async function* requestOrchestrateStream(
   const claim = typeof input === "string" ? input : caseIntakePrimaryText(input);
   const payload: Record<string, unknown> = typeof input === "string" ? { claim } : { claim, intake: input };
   if (memoryRecall) payload.memoryRecall = memoryRecall;
-  if (modelChoice && Object.keys(modelChoice).length > 0) payload.modelChoice = modelChoice;
   if (clientRequestId) payload.clientRequestId = clientRequestId;
   const followUp = asFollowUpLink(followUpLink);
   const priorCaseId = typeof followUp.priorCaseId === "string" ? followUp.priorCaseId.trim() : "";
@@ -251,16 +229,6 @@ export async function* requestOrchestrateStream(
   } else if (followUp.priorRound) {
     payload.followUp = true;
     payload.priorRound = followUp.priorRound;
-  }
-  // BYO key 接管：本地保存过密钥时随请求上行，调查的模型调用改烧用户密钥；
-  // 未保存时请求体与现状完全一致（行为零变化）。
-  const savedByoKey = readSavedByoKey();
-  if (savedByoKey) {
-    payload.byoKey = {
-      baseUrl: savedByoKey.baseUrl.trim(),
-      apiKey: savedByoKey.apiKey.trim(),
-      modelName: savedByoKey.modelName.trim(),
-    };
   }
   if (typeof window !== "undefined") {
     try {

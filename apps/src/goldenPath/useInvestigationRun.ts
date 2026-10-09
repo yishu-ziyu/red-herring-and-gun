@@ -21,7 +21,6 @@ import { cancelInvestigation, resumeInvestigationStream } from "../lib/investiga
 import { caseIntakePrimaryText, type CaseIntake } from "../lib/caseIntake";
 import { createKnowledgeBase } from "../lib/knowledgeBase";
 import { buildLocalMemoryRecall } from "../lib/localMemoryRecall";
-import type { ModelChoiceMap } from "../lib/agentExpansion";
 import type { VisiblePriorRound } from "../lib/priorRoundBrief";
 
 /** legacy 原始事件：只存在于 debug/telemetry；Golden Path 不从中推导任何产品语义。 */
@@ -180,7 +179,6 @@ export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, cla
 }
 
 export type StartOptions = {
-  modelChoice?: ModelChoiceMap;
   accountEmail?: string | null;
   /** DEV 固定装置：不走网络，按脚本回放快照（仅 import.meta.env.DEV）。 */
   fixture?: (emit: (event: OrchestrateStreamEvent) => void) => () => void;
@@ -246,7 +244,6 @@ export function useInvestigationRun() {
         for await (const event of requestOrchestrateStream(
           intake,
           memoryRecall,
-          options.modelChoice,
           clientRequestId,
           { priorCaseId: options.priorCaseId, priorRound: options.priorRound }
         )) {

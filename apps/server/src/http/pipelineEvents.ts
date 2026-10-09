@@ -1,12 +1,11 @@
 /**
- * 管线事件 → SSE 帧：agent 四帧、检索与追索、复核，以及 BYO fail-closed 的报告工厂。
+ * 管线事件 → SSE 帧：agent 四帧、检索与追索、复核，以及报告写作工厂。
  * 事件名与载荷字节级不变。
  */
 import type { AtomSearchBundle } from "../lib/atomSearch.js";
 import type { CasePipelineHooks, CasePipelineInput, PipelineStep, RunAgentFn } from "../lib/casePipeline/index.js";
 import type { InvestigationSnapshotV1 } from "../lib/investigation/index.js";
 import type { createInvestigationEmitter } from "../lib/investigationEmitter.js";
-import { ByoKeyError } from "../lib/orchestrateByo.js";
 import { runReportComposerWithFallback } from "../lib/reportFallback.js";
 import { getSearchToolName } from "../lib/searchProviders.js";
 import { toFriendlyError } from "./publicStream.js";
@@ -40,17 +39,13 @@ function makeReportRunner(runAgent: RunAgentFn) {
     });
 }
 
-/**
- * BYO fail-closed 报告工厂：包装 makeReportRunner，密钥失败时抛出阻断收尾，不静默回退 env 密钥。
- */
+/** 报告写作工厂：兜底报告也作为 agent_complete 帧发出。 */
 export function makeRunReport(
   runAgent: RunAgentFn,
-  byo: { modelName?: string } | undefined,
-  byoFail: AbortController,
   sendEvent: (data: object) => void
 ): CasePipelineInput["runReport"] {
-  return async (args) => {
-    const reportStep = await makeReportRunner(runAgent)({
+  return (args) =>
+    makeReportRunner(runAgent)({
       ...args,
       onFallback: (step) => {
         sendEvent({
@@ -65,20 +60,11 @@ export function makeRunReport(
         });
       },
     });
-    // BYO fail-closed：密钥失败引发的报告兜底不算完成，抛出触发错误收尾，
-    // 绝不把确定性兜底报告冒充成功结果，也绝不回退 env 密钥重烧一遍。
-    if (byo && byoFail.signal.aborted) {
-      throw byoFail.signal.reason instanceof Error
-        ? byoFail.signal.reason
-        : new ByoKeyError("你保存的模型密钥调用失败，这次核查已停止。");
-    }
-    return reportStep;
-  };
 }
 
 /**
  * Agent 事件回调工厂：把 agent_start / agent_thought / agent_complete / agent_error 四帧
- * 的 sendEvent 调用聚在一起，入口主体只传给 byoAdapter.makeRunAgent。
+ * 的 sendEvent 调用聚在一起，入口主体只传给 adapter.makeRunAgent。
  */
 export function makeRunAgentCallbacks(sendEvent: (data: object) => void) {
   return {

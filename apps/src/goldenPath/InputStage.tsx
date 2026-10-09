@@ -25,12 +25,7 @@ import {
   quotaIsExhausted,
   type CheckQuotaView,
 } from "../lib/checkQuota";
-import type { ModelChoiceMap } from "../lib/agentExpansion";
 import { homeCaseCards, type HomeCaseId } from "./homeCases";
-
-type ServiceState = {
-  status: "checking" | "available" | "unavailable" | "unknown";
-};
 
 const MAX_IMAGE_COUNT = 4;
 const MAX_TOTAL_IMAGE_BYTES = 6 * 1024 * 1024;
@@ -92,7 +87,7 @@ function showLinkScrapeNotice(text: string, host: HTMLElement | null) {
 }
 
 type InputStageProps = {
-  onSubmit: (intake: CaseIntake, modelChoice: ModelChoiceMap) => void;
+  onSubmit: (intake: CaseIntake) => void;
   initialClaim?: string;
   accountEmail?: string | null;
   onNeedLogin?: () => void;
@@ -114,8 +109,6 @@ export function InputStage({
   const [images, setImages] = useState<CaseImage[]>([]);
   const [inputError, setInputError] = useState("");
   const [isScraping, setIsScraping] = useState(false);
-  const [service, setService] = useState<ServiceState>({ status: "checking" });
-  const [hasModels, setHasModels] = useState(true);
   const [checkQuota, setCheckQuota] = useState<CheckQuotaView | null>(null);
   const [highlightedDemo, setHighlightedDemo] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -126,32 +119,7 @@ export function InputStage({
     () => images.map((image) => ({ id: image.id, name: image.name, kind: "image" as const })),
     [images]
   );
-  const blocked = service.status === "checking" || service.status === "unavailable" || !hasModels;
   const quotaExhausted = quotaIsExhausted(checkQuota);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/models/health")
-      .then((response) => (response.ok ? response.json() : { status: "unknown" }))
-      .then((data: { status?: string }) => {
-        if (cancelled) return;
-        setService({ status: data.status === "available" ? "available" : data.status === "unavailable" ? "unavailable" : "unknown" });
-      })
-      .catch(() => {
-        if (!cancelled) setService({ status: "unknown" });
-      });
-    fetch("/api/models/list")
-      .then((r) => (r.ok ? r.json() : { models: [] }))
-      .then((data: { models?: unknown[] }) => {
-        if (!cancelled) setHasModels(Array.isArray(data.models) && data.models.length > 0);
-      })
-      .catch(() => {
-        if (!cancelled) setHasModels(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,10 +140,6 @@ export function InputStage({
     if (quotaExhausted && checkQuota) {
       setInputError(checksRemainingMessage(checkQuota));
       if (checkQuota.kind === "guest") onNeedLogin?.();
-      return;
-    }
-    if (blocked) {
-      setInputError(copy.serviceUnavailable);
       return;
     }
     if (isScraping) return;
@@ -211,8 +175,8 @@ export function InputStage({
         setIsScraping(false);
       }
     }
-    onSubmit(enriched, {});
-  }, [blocked, checkQuota, copy.serviceUnavailable, images, inputValue, isScraping, lang, legacy.fillMaterialFirst, legacy.scrapeFailed, onNeedLogin, onSubmit, quotaExhausted]);
+    onSubmit(enriched);
+  }, [checkQuota, images, inputValue, isScraping, lang, legacy.fillMaterialFirst, legacy.scrapeFailed, onNeedLogin, onSubmit, quotaExhausted]);
 
   const handleAddFiles = useCallback(
     async (files: File[]) => {
@@ -287,19 +251,13 @@ export function InputStage({
         if (checkQuota.kind === "guest") onNeedLogin?.();
         return;
       }
-      if (blocked) {
-        setInputError(copy.serviceUnavailable);
-        return;
-      }
       onRecheckHomeCase?.(claim);
     },
-    [blocked, checkQuota, copy.serviceUnavailable, onNeedLogin, onRecheckHomeCase, quotaExhausted]
+    [checkQuota, onNeedLogin, onRecheckHomeCase, quotaExhausted]
   );
 
   const userHint = (() => {
     if (inputError) return { tone: inputError.includes("抓取失败") ? "muted" : "warning", text: inputError } as const;
-    if (service.status === "checking") return { tone: "muted", text: copy.serviceChecking } as const;
-    if (service.status === "unavailable" || !hasModels) return { tone: "warning", text: copy.serviceUnavailable } as const;
     if (checkQuota?.enforced) {
       if (quotaExhausted) {
         return {
@@ -333,7 +291,6 @@ export function InputStage({
           attachments={attachments}
           onAddFiles={handleAddFiles}
           onRemoveAttachment={removeImage}
-          submitDisabled={blocked}
           busy={isScraping}
           submitText
           submitLabel={isScraping ? copy.inputScraping : copy.inputSubmit}

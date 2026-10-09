@@ -10,21 +10,10 @@
 // 单次生效超时取三者最小值。不传后两个时行为与旧版一致。
 // ───────────────────────────────────────────────────────────────
 
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { withExecutionBudget } from "./executionBudget.js";
-import {
-  call360ChatAgent,
-  callAnthropicAgent,
-  callCodexAgent,
-  callDeepSeekAgent,
-  callMimoAgent,
-  callMiniMaxAgent,
-  callStepFunAgent,
-} from "./agentProviders.js";
+import { callMiniMaxAgent, callStepFunAgent } from "./agentProviders.js";
 // 审查 P3-2 修复：extractJsonObject 从共享模块引入并 re-export，
 // 不再在本文件维护独立副本（原 line 193-204 本地定义已删除）。
 // 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
@@ -32,36 +21,19 @@ import { extractJsonObject } from "./anthropicParse.js";
 export { extractJsonObject };
 import { isMiniMaxM27, miniMaxCallOptions, MINIMAX_M27_DEFAULT_TIMEOUT_MS, MINIMAX_M3_DEFAULT_TIMEOUT_MS } from "./minimaxM3.js";
 
-export type AgentTextProviderId =
-  | "deepseek"
-  | "mimo"
-  | "minimax"
-  | "stepfun"
-  | "360"
-  | "anthropic"
-  | "codex";
+/** MiniMax 是主力；阶跃负责图片解析与第二意见（2026-10-09 起只保留这两家）。 */
+export type AgentTextProviderId = "minimax" | "stepfun";
 
-const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>([
-  "deepseek",
-  "mimo",
-  "minimax",
-  "stepfun",
-  "360",
-  "anthropic",
-  "codex",
-]);
+const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>(["minimax", "stepfun"]);
 
 /** Process-local: once a provider returns hard quota/balance, skip it for later agents in this process. */
 const quotaExhaustedUntil = new Map<string, number>();
 const timeoutStrikes = new Map<string, number>();
-/** 被跳过的原因：account = 余额 / 额度 / 密钥（服务真不可用）；transient = 空结果 / 超时（只是这会儿不好用）。 */
-const skipReason = new Map<string, "account" | "transient">();
 const QUOTA_SKIP_MS = 10 * 60 * 1000;
 
 export function resetProviderQuotaSkipForTests(): void {
   quotaExhaustedUntil.clear();
   timeoutStrikes.clear();
-  skipReason.clear();
 }
 
 export function isHardProviderQuotaError(message: string): boolean {
@@ -90,10 +62,6 @@ export function isHardProviderFailure(message: string): boolean {
 }
 
 function canonicalProviderId(provider: string): string {
-  if (provider.startsWith("mimo")) return "mimo";
-  if (provider.startsWith("360")) return "360";
-  if (provider.startsWith("anthropic")) return "anthropic";
-  if (provider.startsWith("codex")) return "codex";
   if (provider.startsWith("minimax")) return "minimax";
   return provider;
 }
@@ -103,33 +71,13 @@ export function isProviderQuotaSkipped(provider: string): boolean {
   return typeof until === "number" && until > Date.now();
 }
 
-function skipProvider(provider: string, reason: "account" | "transient"): void {
-  const id = canonicalProviderId(provider);
-  quotaExhaustedUntil.set(id, Date.now() + QUOTA_SKIP_MS);
-  skipReason.set(id, reason);
-}
-
-/** 余额不足、额度用尽、密钥无效：换谁来问都不会好，服务对用户就是不可用。 */
-export function isAccountProviderFailure(message: string): boolean {
-  return isHardProviderQuotaError(message) || isHardProviderAuthError(message);
-}
-
-/** 这家供应商因为账号问题被跳过（不是临时的空结果或超时）。 */
-export function isProviderAccountBlocked(provider: string): boolean {
-  return isProviderQuotaSkipped(provider) && skipReason.get(canonicalProviderId(provider)) === "account";
-}
-
-/** 探活问通了：临时跳过作废，调查可以重新用它。 */
-export function clearProviderSkip(provider: string): void {
-  const id = canonicalProviderId(provider);
-  quotaExhaustedUntil.delete(id);
-  timeoutStrikes.delete(id);
-  skipReason.delete(id);
+function skipProvider(provider: string): void {
+  quotaExhaustedUntil.set(canonicalProviderId(provider), Date.now() + QUOTA_SKIP_MS);
 }
 
 export function noteProviderFailure(provider: string, message: string): void {
   if (isHardProviderFailure(message)) {
-    skipProvider(provider, isAccountProviderFailure(message) ? "account" : "transient");
+    skipProvider(provider);
     return;
   }
   if (/超时 \d+ms/.test(message)) {
@@ -140,71 +88,31 @@ export function noteProviderFailure(provider: string, message: string): void {
     // MiniMax-M3 默认等 10 分钟：一次挂死才跳过。M2.7 的 90s/180s 超时是慢，不是额度耗尽。
     const minimaxM3Hang =
       /minimax:MiniMax-M3\b/i.test(message) || (id === "minimax" && timeoutMs >= 300_000);
-    if (n >= (minimaxM3Hang ? 1 : 2)) skipProvider(provider, "transient");
+    if (n >= (minimaxM3Hang ? 1 : 2)) skipProvider(provider);
   }
 }
-
-const CLOUD_TEXT_PROVIDERS: AgentTextProviderId[] = [
-  "minimax",
-  "stepfun",
-  "anthropic",
-  "deepseek",
-  "mimo",
-  "360",
-];
 
 export function providerHasCredentials(env: Record<string, string>, provider: string): boolean {
   const id = canonicalProviderId(provider);
-  if (id === "deepseek") return Boolean(envValue(env, "DEEPSEEK_API_KEY"));
-  if (id === "mimo") return Boolean(envValue(env, "MIMO_API_KEY"));
   if (id === "minimax") return Boolean(getMiniMaxApiKey(env));
   if (id === "stepfun") return Boolean(envValue(env, "STEPFUN_API_KEY"));
-  if (id === "360") return Boolean(getSearch360ApiKey(env));
-  if (id === "anthropic") {
-    return Boolean(
-      envValue(env, "ANTHROPIC_BASE_URL") ||
-        envValue(env, "ANTHROPIC_AUTH_TOKEN") ||
-        envValue(env, "ANTHROPIC_API_KEY")
-    );
-  }
-  if (id === "codex") return Boolean(envValue(env, "CODEX_BIN") || process.env.CODEX_BIN);
   return false;
 }
 
-/** Configured cloud chat providers that are still eligible this process. */
+/** Configured chat providers that are still eligible this process. */
 export function pendingCloudProviders(env: Record<string, string>, agentId?: string): AgentTextProviderId[] {
-  const order = providerOrderForAgent(env, agentId);
-  return order.filter(
-    (provider): provider is AgentTextProviderId =>
-      CLOUD_TEXT_PROVIDERS.includes(provider) &&
-      providerHasCredentials(env, provider) &&
-      !isProviderQuotaSkipped(provider)
+  return providerOrderForAgent(env, agentId).filter(
+    (provider) => providerHasCredentials(env, provider) && !isProviderQuotaSkipped(provider)
   );
 }
 
 export function areCloudProvidersHardSkipped(env: Record<string, string>, agentId?: string): boolean {
-  const order = providerOrderForAgent(env, agentId);
-  const configured = order.filter(
-    (provider) => CLOUD_TEXT_PROVIDERS.includes(provider) && providerHasCredentials(env, provider)
-  );
+  const configured = providerOrderForAgent(env, agentId).filter((provider) => providerHasCredentials(env, provider));
   return configured.length > 0 && pendingCloudProviders(env, agentId).length === 0;
 }
 
-/** Skip 90s-class fallbacks once this invocation already saw multiple hard failures. */
-export function shouldSkipSlowFallback(provider: string, hardFailuresThisCall: number): boolean {
-  return canonicalProviderId(provider) === "codex" && hardFailuresThisCall >= 2;
-}
-
-// MiniMax is the local SSOT default chat; 360 is legacy hackathon sponsor path (low context).
-const DEFAULT_TEXT_PROVIDER_ORDER: AgentTextProviderId[] = [
-  "minimax",
-  "stepfun",
-  "anthropic",
-  "deepseek",
-  "mimo",
-  "360",
-  "codex",
-];
+// MiniMax is the default chat provider; StepFun is the fallback.
+const DEFAULT_TEXT_PROVIDER_ORDER: AgentTextProviderId[] = ["minimax", "stepfun"];
 
 // ───────────────────────────────────────────────────────────────
 // Env helpers
@@ -221,10 +129,11 @@ export function agentEnvKey(agentId?: string): string {
 }
 
 /** 解析 ORCHESTRATE_<AGENT>_PROVIDER_ORDER / ORCHESTRATE_TEXT_PROVIDER_ORDER
- *  - 尊重 env/per-agent 顺序、codex 最后
- *  - 未识别的 provider 名静默丢弃
+ *  - 尊重 env/per-agent 顺序
+ *  - 未识别的 provider 名（含已删除的 deepseek / mimo / anthropic / 360 / codex）静默丢弃
  *  - 去重
  *  - agentId 提供时优先 per-agent env
+ *  - 丢完一个都不剩时用默认顺序
  */
 export function providerOrderForAgent(
   env: Record<string, string>,
@@ -241,17 +150,12 @@ export function providerOrderForAgent(
     const provider = item.trim().toLowerCase() as AgentTextProviderId;
     if (TEXT_PROVIDER_IDS.has(provider) && !order.includes(provider)) order.push(provider);
   }
-
-  // 尊重 env/per-agent 顺序；codex 作为本地兜底永远最后。
-  const withoutCodex = order.filter((provider) => provider !== "codex");
-  order.splice(0, order.length, ...withoutCodex);
-  if (!order.includes("codex")) order.push("codex");
-  return order.length > 0 ? order : DEFAULT_TEXT_PROVIDER_ORDER;
+  return order.length > 0 ? order : [...DEFAULT_TEXT_PROVIDER_ORDER];
 }
 
 /** 解析 <PREFIX>_<AGENT>_MODEL / <PREFIX>_MODEL / fallback
- *  例: modelForAgent(env, "DEEPSEEK", "rumor_detector", "deepseek-v4-pro")
- *      → env.DEEPSEEK_RUMOR_DETECTOR_MODEL ?? env.DEEPSEEK_MODEL ?? "deepseek-v4-pro"
+ *  例: modelForAgent(env, "MINIMAX", "rumor_detector", "MiniMax-M2.7-highspeed")
+ *      → env.MINIMAX_RUMOR_DETECTOR_MODEL ?? env.MINIMAX_MODEL ?? "MiniMax-M2.7-highspeed"
  */
 export function modelForAgent(
   env: Record<string, string>,
@@ -261,11 +165,6 @@ export function modelForAgent(
 ): string {
   const key = agentEnvKey(agentId);
   return (key && envValue(env, `${prefix}_${key}_MODEL`)) || envValue(env, `${prefix}_MODEL`) || fallback;
-}
-
-/** 360 智脑 API key */
-export function getSearch360ApiKey(env: Record<string, string>): string {
-  return envValue(env, "QIHOO_360_API_KEY");
 }
 
 export function getMiniMaxApiKey(env: Record<string, string>): string {
@@ -300,41 +199,6 @@ function stepFunReasoningEffortForModel(
     );
   }
   return parseReasoningEffort(envValue(env, "STEPFUN_REASONING_EFFORT")) || requested;
-}
-
-/** Anthropic proxy 配置：先读 env，再回退到 ~/.claude/settings.json */
-export async function loadAnthropicConfig(
-  env: Record<string, string>
-): Promise<{ baseUrl: string; model: string; token: string } | undefined> {
-  const explicitBaseUrl = envValue(env, "ANTHROPIC_BASE_URL");
-  const explicitModel = envValue(env, "ANTHROPIC_MODEL");
-  const explicitToken =
-    envValue(env, "ANTHROPIC_AUTH_TOKEN") || envValue(env, "ANTHROPIC_API_KEY");
-
-  if (explicitBaseUrl && explicitModel) {
-    return {
-      baseUrl: explicitBaseUrl.replace(/\/$/, ""),
-      model: explicitModel,
-      token: explicitToken || "local",
-    };
-  }
-
-  try {
-    const raw = await readFile(join(homedir(), ".claude/settings.json"), "utf8");
-    const settings = JSON.parse(raw);
-    const claudeEnv = settings?.env ?? {};
-    const baseUrl = claudeEnv.ANTHROPIC_BASE_URL;
-    const model = claudeEnv.ANTHROPIC_MODEL;
-    const token = claudeEnv.ANTHROPIC_AUTH_TOKEN || claudeEnv.ANTHROPIC_API_KEY || "local";
-
-    if (typeof baseUrl === "string" && typeof model === "string") {
-      return { baseUrl: baseUrl.replace(/\/$/, ""), model, token };
-    }
-  } catch {
-    return undefined;
-  }
-
-  return undefined;
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -534,7 +398,6 @@ export function parseValidatedAgentJson(text: string, label: string, schema: obj
   return output;
 }
 
-// 导出给 orchestrateByo 复用：BYO 接管模式下的 JSON 修复重试与 fallback 链保持同一提示词。
 export function buildJsonRepairUserContent(brokenText: string, originalUserContent: string): string {
   const broken = brokenText.length > 14000 ? `${brokenText.slice(0, 14000)}\n…[truncated]` : brokenText;
   const original =
@@ -588,10 +451,9 @@ export interface CallAgentParams {
   responseSchema: object;
   maxTokens: number;
   env: Record<string, string>;
-  codexBin: string;
   reasoningEffort?: "low" | "medium" | "high";
   /**
-   * 用户在前端 model picker 里指定的 (provider, model)。
+   * 指定先调的 (provider, model)，目前只有交叉质询用它挑第二意见模型。
    * 传入时：先调这一对；缺 key / 调用失败 / 超时后继续走 fallback chain，避免整条流程中断。
    * 不传：维持默认 fallback chain 行为。
    */
@@ -670,9 +532,7 @@ export async function dispatchSingleProvider({
   agentId,
   systemPrompt,
   userContent,
-  responseSchema,
   maxTokens,
-  codexBin,
   reasoningEffort,
   signal,
 }: {
@@ -682,25 +542,11 @@ export async function dispatchSingleProvider({
   agentId?: string;
   systemPrompt: string;
   userContent: string;
-  responseSchema: object;
   maxTokens: number;
-  codexBin: string;
   reasoningEffort: "low" | "medium" | "high";
   signal?: AbortSignal;
 }): Promise<{ text: string; model: string; reasoning?: string }> {
   signal?.throwIfAborted();
-  if (provider === "deepseek") {
-    const apiKey = envValue(env, "DEEPSEEK_API_KEY");
-    if (!apiKey) throw new Error(`未配置 DEEPSEEK_API_KEY`);
-    const baseUrl = (envValue(env, "DEEPSEEK_BASE_URL") || "https://api.deepseek.com/v1").replace(/\/$/, "");
-    return await callDeepSeekAgent({ apiKey, baseUrl, model, systemPrompt, userContent, maxTokens, signal });
-  }
-  if (provider === "mimo") {
-    const apiKey = envValue(env, "MIMO_API_KEY");
-    if (!apiKey) throw new Error(`未配置 MIMO_API_KEY`);
-    const baseUrl = (envValue(env, "MIMO_BASE_URL") || "https://token-plan-cn.xiaomimimo.com/anthropic").replace(/\/$/, "");
-    return await callMimoAgent({ baseUrl, apiKey, model, systemPrompt, userContent, maxTokens, signal });
-  }
   if (provider === "minimax") {
     const apiKey = getMiniMaxApiKey(env);
     if (!apiKey) throw new Error(`未配置 MINIMAX_API_KEY`);
@@ -731,30 +577,6 @@ export async function dispatchSingleProvider({
       signal,
     });
   }
-  if (provider === "360") {
-    const apiKey = getSearch360ApiKey(env);
-    if (!apiKey) throw new Error(`未配置 360 API key`);
-    const baseUrl = (envValue(env, "AI360_BASE_URL") || "https://api.360.cn/v1").replace(/\/$/, "");
-    return await call360ChatAgent({ apiKey, baseUrl, model, systemPrompt, userContent, maxTokens, signal });
-  }
-  if (provider === "anthropic") {
-    const anthropicConfig = await loadAnthropicConfig(env);
-    if (!anthropicConfig?.baseUrl || !anthropicConfig.model) {
-      throw new Error(`未配置 Anthropic proxy (ANTHROPIC_BASE_URL / ANTHROPIC_MODEL)`);
-    }
-    return await callAnthropicAgent({
-      baseUrl: anthropicConfig.baseUrl,
-      token: anthropicConfig.token,
-      model,
-      systemPrompt,
-      userContent,
-      maxTokens,
-      signal,
-    });
-  }
-  if (provider === "codex") {
-    return await callCodexAgent({ codexBin, model, systemPrompt, userContent, responseSchema, maxTokens, signal });
-  }
   throw new Error(`未知 provider: ${provider}`);
 }
 
@@ -766,7 +588,6 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
     responseSchema,
     maxTokens,
     env,
-    codexBin,
     reasoningEffort = "high",
     options = {},
   } = params;
@@ -779,7 +600,6 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   const startTime = Date.now();
   const errors: string[] = [];
   const providerOrder = providerOrderForAgent(env, agentId);
-  let hardFailuresThisCall = 0;
 
   // ───────────────────────────────────────────────────────────────
   // 阶段级硬预算（主路 P1 Change H）
@@ -904,9 +724,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
               agentId,
               systemPrompt: sys,
               userContent: user,
-              responseSchema,
               maxTokens,
-              codexBin,
               reasoningEffort,
               signal,
             }),
@@ -931,10 +749,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           timeoutMs: ovTimeoutMs,
           message,
         });
-        if (!stageBudgetExpired()) {
-          noteProviderFailure(ovProvider, message);
-          if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
-        }
+        if (!stageBudgetExpired()) noteProviderFailure(ovProvider, message);
         errors.push(`[${ovProvider}:${ovModel}] ${message}`);
       }
     }
@@ -985,10 +800,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         timeoutMs: attemptTimeout,
         message,
       });
-      if (!stageBudgetExpired()) {
-        noteProviderFailure(provider, message);
-        if (isHardProviderFailure(message)) hardFailuresThisCall += 1;
-      }
+      if (!stageBudgetExpired()) noteProviderFailure(provider, message);
       return { ok: false, msg: message };
     }
   };
@@ -1006,58 +818,6 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       errors.push(`[${canonicalProviderId(provider)}] 本进程已因额度耗尽跳过`);
       continue;
     }
-    if (shouldSkipSlowFallback(provider, hardFailuresThisCall)) {
-      errors.push(`[${canonicalProviderId(provider)}] 已因连续失败跳过慢速兜底`);
-      continue;
-    }
-    if (provider === "deepseek") {
-      const apiKey = envValue(env, "DEEPSEEK_API_KEY");
-      const baseUrl = (envValue(env, "DEEPSEEK_BASE_URL") || "https://api.deepseek.com/v1").replace(/\/$/, "");
-      const model = envValue(env, "DEEPSEEK_MODEL") || modelForAgent(env, "DEEPSEEK", agentId, "deepseek-v4-pro");
-      if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
-      if (!apiKey) {
-        if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "deepseek", model });
-        if (onMissing === "error") errors.push(`[deepseek:${model}] 未配置 DEEPSEEK_API_KEY`);
-        continue;
-      }
-      const out = await runOne("deepseek", model, (sys, user, signal) =>
-        callDeepSeekAgent({ apiKey, baseUrl, model, systemPrompt: sys, userContent: user, maxTokens, signal })
-      );
-      if (out.ok) {
-        return out.result;
-      }
-      errors.push(`[deepseek:${model}] ${(out as { ok: false; msg: string }).msg}`);
-      continue;
-    }
-
-    if (provider === "mimo") {
-      const apiKey = envValue(env, "MIMO_API_KEY");
-      const model = modelForAgent(env, "MIMO", agentId, "mimo-v2.5-pro");
-      if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
-      if (!apiKey) {
-        if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "mimo", model });
-        if (onMissing === "error") errors.push(`[mimo:${model}] 未配置 MIMO_API_KEY`);
-        continue;
-      }
-      const clusters = [
-        (envValue(env, "MIMO_BASE_URL") || "https://token-plan-cn.xiaomimimo.com/anthropic").replace(/\/$/, ""),
-        "https://token-plan-sgp.xiaomimimo.com/anthropic",
-        "https://token-plan-ams.xiaomimimo.com/anthropic",
-      ];
-      for (const clusterUrl of clusters) {
-        if (isProviderQuotaSkipped("mimo")) break;
-        if (stageBudgetExpired()) break;
-        const out = await runOne(`mimo@${clusterUrl}`, model, (sys, user, signal) =>
-          callMimoAgent({ baseUrl: clusterUrl, apiKey, model, systemPrompt: sys, userContent: user, maxTokens, signal })
-        );
-        if (out.ok) {
-          return out.result;
-        }
-        errors.push(`[${clusterUrl}] ${(out as { ok: false; msg: string }).msg}`);
-      }
-      continue;
-    }
-
     if (provider === "minimax") {
       const apiKey = getMiniMaxApiKey(env);
       const model = modelForAgent(env, "MINIMAX", agentId, "MiniMax-M2.7-highspeed");
@@ -1117,66 +877,6 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       }
       errors.push(`[stepfun:${model}] ${(out as { ok: false; msg: string }).msg}`);
       continue;
-    }
-
-    if (provider === "360") {
-      const apiKey = getSearch360ApiKey(env);
-      const baseUrl = (envValue(env, "AI360_BASE_URL") || "https://api.360.cn/v1").replace(/\/$/, "");
-      const model =
-        (agentId && envValue(env, `AI360_${agentEnvKey(agentId)}_MODEL`)) ||
-        envValue(env, "AI360_CHAT_MODEL") ||
-        envValue(env, "AI360_MODEL") ||
-        "360gpt-pro";
-      if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
-      if (!apiKey) {
-        if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "360", model });
-        if (onMissing === "error") errors.push(`[360:${model}] 未配置 360 API key`);
-        continue;
-      }
-      const out = await runOne("360", model, (sys, user, signal) =>
-        call360ChatAgent({ apiKey, baseUrl, model, systemPrompt: sys, userContent: user, maxTokens, signal })
-      );
-      if (out.ok) {
-        return out.result;
-      }
-      errors.push(`[360:${model}] ${(out as { ok: false; msg: string }).msg}`);
-      continue;
-    }
-
-    if (provider === "anthropic") {
-      const anthropicConfig = await loadAnthropicConfig(env);
-      if (!anthropicConfig?.baseUrl || !anthropicConfig.model) {
-        if (onMissing === "log") logger.info("[orchestrate-provider] missing anthropic config", {});
-        if (onMissing === "error") errors.push("[anthropic] 未配置 Anthropic proxy");
-        continue;
-      }
-      const out = await runOne("anthropic-local", anthropicConfig.model, (sys, user, signal) =>
-        callAnthropicAgent({
-          baseUrl: anthropicConfig.baseUrl,
-          token: anthropicConfig.token,
-          model: anthropicConfig.model,
-          systemPrompt: sys,
-          userContent: user,
-          maxTokens,
-          signal,
-        })
-      );
-      if (out.ok) {
-        return out.result;
-      }
-      errors.push(`[anthropic:${anthropicConfig.model}] ${(out as { ok: false; msg: string }).msg}`);
-      continue;
-    }
-
-    if (provider === "codex") {
-      const model = envValue(env, "CODEX_LOCAL_MODEL") || "gpt-5.5";
-      const out = await runOne("codex-cli", model, (sys, user, signal) =>
-        callCodexAgent({ codexBin, model, systemPrompt: sys, userContent: user, responseSchema, maxTokens, signal })
-      );
-      if (out.ok) {
-        return out.result;
-      }
-      errors.push(`[codex:${model}] ${(out as { ok: false; msg: string }).msg}`);
     }
   }
 

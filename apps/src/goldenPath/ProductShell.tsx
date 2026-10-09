@@ -105,7 +105,6 @@ export function ProductShell({
           <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); onAccountClick(); }}>
             {copy.accountMenu}
           </button>
-          <a role="menuitem" href="/settings/api-key">{copy.modelSettings}</a>
           {/* 退出失败时菜单保持打开以便重试；成功由父层 handleLogout 关闭。 */}
           <button type="button" role="menuitem" onClick={() => onLogout()}>
             {copy.signOut}

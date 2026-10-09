@@ -3,7 +3,7 @@
  *
  * 职责：把 claim + 检索结果 组装成单个 Agent 调用（状态栏 / 按需 Skills / 模型 fallback /
  * 思考句流式），以及自证 / 改写 / 交叉二审三个子调用器。纯编排，不含 HTTP。
- * handlers 只做接线：注入 env / codexBin / 模型路由 / 工具函数，拿到工厂产物回调。
+ * handlers 只做接线：注入 env / 模型路由 / 工具函数，拿到工厂产物回调。
  */
 import {
   AGENT_CONFIGS,
@@ -20,23 +20,12 @@ import { compactSearchResultForAgent, buildReportEvidenceInputs } from "./search
 import { attachKnowledgeDrafts } from "./atomSearch.js";
 import { splitReasoningSentences } from "./reasoningThoughts.js";
 import { getTimeoutMs } from "./httpUtils.js";
-import type { ExecutionBudget } from "./executionBudget.js";
-import { callByoAgent, ByoKeyError, type ByoConfig } from "./orchestrateByo.js";
 import type { RunAgentFn } from "./casePipeline/index.js";
 
 export interface OrchestrateAdapterDeps {
   signal?: AbortSignal;
   deadlineMs?: number;
   env: Record<string, string>;
-  codexBin: string;
-  /**
-   * 请求内 BYO 配置。存在时全部主力模型调用（runAgent / 自证 / 改写 / 交叉质询）
-   * 直调用户端点（request-scoped），不读服务端 env 主力密钥；
-   * 主力模型以 BYO modelName 为准（endpoint 与 model 是一对），忽略 modelChoice 的主力模型语义。
-   */
-  byo?: ByoConfig;
-  /** BYO 凭证失败（鉴权/网络）回调：handlers 用来中止管线、以用户可读错误收尾（fail-closed）。 */
-  onByoFailure?: (error: unknown) => void;
 }
 
 /** Prefer rumor_detector stanceClaimType; default mixed for skill routing. */
@@ -50,47 +39,13 @@ function inferClaimTypeForSkills(steps: Array<{ agent?: string; output?: Record<
 }
 
 export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
-  const { env, codexBin } = deps;
-  const byo = deps.byo;
-  const onByoFailure = deps.onByoFailure;
+  const { env } = deps;
   const deadlineFor = (deadline?: number) => Math.min(deadline ?? Infinity, deps.deadlineMs ?? Infinity);
   const requestOptions = () => ({ logger: console, signal: deps.signal, deadlineMs: deps.deadlineMs });
-
-  const byoTimeoutMs = () => getTimeoutMs(env, "ORCHESTRATE_BYO_TIMEOUT_MS", 120_000);
-
-  /**
-   * BYO 接管模式下的单次主力调用：只打用户端点。
-   * 凭证失败（鉴权/网络）→ 先回调 onByoFailure 触发 fail-closed 收尾，再把 ByoKeyError 原样上抛；
-   * 输出解析失败等非凭证问题按普通错误上抛，走现有 agent_error / fail-open 语义。
-   */
-  async function callByoPrimary(input: {
-    systemPrompt: string;
-    userContent: string;
-    maxTokens: number;
-    responseSchema?: object;
-  } & ExecutionBudget): Promise<{ output: any; model: string; reasoning?: string }> {
-    if (!byo) throw new Error("BYO 接管模式未启用");
-    try {
-      return await callByoAgent({
-        byo,
-        systemPrompt: input.systemPrompt,
-        userContent: input.userContent,
-        maxTokens: input.maxTokens,
-        timeoutMs: byoTimeoutMs(),
-        signal: input.signal ?? deps.signal,
-        deadlineMs: deadlineFor(input.deadlineMs),
-        responseSchema: input.responseSchema,
-      });
-    } catch (error) {
-      if (error instanceof ByoKeyError) onByoFailure?.(error);
-      throw error;
-    }
-  }
 
   /** 单个 Agent 调用：组装输入 → LLM fallback → 结果 step。 */
   function makeRunAgent(opts: {
     claim: string;
-    modelChoice: any;
     intakeMetadata: any;
     visualExtraction: Record<string, unknown> | undefined;
     clientMemoryRecall: any;
@@ -159,35 +114,16 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
       let modelUsed: string;
       let reasoning: string | undefined;
       try {
-        let result: { output: any; model: string; reasoning?: string };
-        if (byo) {
-          // BYO 接管：主力模型只打用户端点；endpoint 与 model 成对，忽略 modelChoice。
-          result = await callByoPrimary({
-            systemPrompt,
-            userContent,
-            maxTokens: agentConfig.maxTokens,
-            responseSchema: agentConfig.responseSchema,
-            signal,
-            deadlineMs: deadlineFor(execution.deadlineMs),
-          });
-        } else {
-          const modelOverride =
-            opts.modelChoice && typeof opts.modelChoice === "object"
-              ? (opts.modelChoice as Record<string, { provider: string; model: string }>)[agentConfig.id]
-              : undefined;
-          result = await callAgentWithFallback({
-            agentId: agentConfig.id,
-            systemPrompt,
-            userContent,
-            responseSchema: agentConfig.responseSchema,
-            maxTokens: agentConfig.maxTokens,
-            env,
-            codexBin,
-            reasoningEffort: "high",
-            modelOverride: modelOverride as { provider: AgentTextProviderId; model: string } | undefined,
-            options: { logger: console, signal, deadlineMs: deadlineFor(execution.deadlineMs) },
-          });
-        }
+        const result = await callAgentWithFallback({
+          agentId: agentConfig.id,
+          systemPrompt,
+          userContent,
+          responseSchema: agentConfig.responseSchema,
+          maxTokens: agentConfig.maxTokens,
+          env,
+          reasoningEffort: "high",
+          options: { logger: console, signal, deadlineMs: deadlineFor(execution.deadlineMs) },
+        });
         output = result.output;
         signal?.throwIfAborted();
         modelUsed = result.model;
@@ -224,8 +160,6 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
       } catch (error) {
         signal?.throwIfAborted();
         opts.onError?.(agentId, agentConfig, error);
-        // BYO 凭证失败保持原错误上抛（携带用户可读文案），不包一层：fail-closed 收尾要认它。
-        if (error instanceof ByoKeyError) throw error;
         const message = error instanceof Error ? error.message : "Agent 调用失败";
         throw new Error(`${agentConfig.name} 真实模型调用失败：${message}`);
       }
@@ -241,8 +175,8 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
   const SELF_PROOF_STAGE_BUDGET_MS_DEFAULT = 45_000;
   const SELF_PROOF_ATTEMPT_TIMEOUT_CAP_MS_DEFAULT = 25_000;
 
-  /** 自证子调用（原句自证，claimAtom 用）。BYO 接管时走用户端点，忽略 modelChoice。 */
-  function makeSelfProofCaller(claim: string, modelChoice: any) {
+  /** 自证子调用（原句自证，claimAtom 用）。 */
+  function makeSelfProofCaller() {
     let stageDeadline: number | undefined;
     return (input: {
       systemPrompt: string;
@@ -251,15 +185,6 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
       maxTokens: number;
     }) => {
       stageDeadline ??= deadlineFor(Date.now() + getTimeoutMs(env, "ORCHESTRATE_SELFPROOF_STAGE_BUDGET_MS", SELF_PROOF_STAGE_BUDGET_MS_DEFAULT));
-      if (byo) {
-        return callByoPrimary({
-          systemPrompt: input.systemPrompt,
-          userContent: input.userContent,
-          maxTokens: input.maxTokens,
-          responseSchema: input.responseSchema,
-          deadlineMs: stageDeadline,
-        }).then((r) => ({ output: r.output, model: r.model }));
-      }
       return callAgentWithFallback({
         agentId: "rumor_detector_selfproof",
         systemPrompt: input.systemPrompt,
@@ -267,9 +192,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         responseSchema: input.responseSchema,
         maxTokens: input.maxTokens,
         env,
-        codexBin,
         reasoningEffort: "low",
-        modelOverride: modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
         options: {
           logger: console,
           signal: deps.signal,
@@ -284,22 +207,14 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
     };
   }
 
-  /** Evidence loop 语义改写（ADR-004）：裸模型调用 → makeRewriteQueryCall 绑定 prompt/解析。BYO 接管时走用户端点。 */
-  function makeRewriteCaller(modelChoice: any) {
+  /** Evidence loop 语义改写（ADR-004）：裸模型调用 → makeRewriteQueryCall 绑定 prompt/解析。 */
+  function makeRewriteCaller() {
     return (input: {
       systemPrompt: string;
       userContent: string;
       responseSchema: object;
       maxTokens: number;
     }) => {
-      if (byo) {
-        return callByoPrimary({
-          systemPrompt: input.systemPrompt,
-          userContent: input.userContent,
-          maxTokens: input.maxTokens,
-          responseSchema: input.responseSchema,
-        }).then((r) => ({ output: r.output, model: r.model }));
-      }
       return callAgentWithFallback({
         agentId: "evidence_loop_rewriter",
         systemPrompt: input.systemPrompt,
@@ -307,78 +222,27 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         responseSchema: input.responseSchema,
         maxTokens: input.maxTokens,
         env,
-        codexBin,
         reasoningEffort: "low",
-        modelOverride:
-          modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
         options: requestOptions(),
       }).then((r) => ({ output: r.output, model: r.model }));
     };
   }
 
   // Cross exam 第二意见（G3/P1）：国产优先、与主判 provider 不同源（真双模型交叉）。
-  function pickCrossExamModel(
-    modelChoice: any
-  ): { provider: AgentTextProviderId; model: string } | undefined {
-    if (modelChoice && modelChoice["cross_examiner"]) return modelChoice["cross_examiner"];
+  function pickCrossExamModel(): { provider: AgentTextProviderId; model: string } | undefined {
     const candidates: Array<{ provider: AgentTextProviderId; model: string; hasKey: boolean }> = [
       { provider: "stepfun", model: "step-3.7-flash", hasKey: Boolean(env.STEPFUN_API_KEY) },
       { provider: "minimax", model: "MiniMax-M3", hasKey: Boolean(env.MINIMAX_API_KEY) },
-      { provider: "mimo", model: "mimo-v2.5-pro", hasKey: Boolean(env.MIMO_API_KEY) },
     ].filter(
       (c): c is { provider: AgentTextProviderId; model: string; hasKey: boolean } => c.hasKey
     );
     if (candidates.length === 0) return undefined;
-    const primary = providerOrderForAgent(env).find((p) => p !== "codex");
+    const primary = providerOrderForAgent(env)[0];
     return candidates.find((c) => c.provider !== primary) ?? candidates[0];
   }
 
-  function makeCrossExamCaller(modelChoice: any, sendAgentEvent?: (data: object) => void) {
-    // BYO 接管：交叉质询同属主力模型调用，走用户端点（不再挑第二 provider）。
-    if (byo) {
-      return (input: {
-        systemPrompt: string;
-        userContent: string;
-        responseSchema: object;
-        maxTokens: number;
-      }) => {
-        sendAgentEvent?.({
-          type: "agent_start",
-          agent: "cross_examiner",
-          agentName: "CrossExaminer",
-          query: "第二模型独立复核冲突证据",
-          timestamp: Date.now(),
-        });
-        return callByoPrimary({
-          systemPrompt: input.systemPrompt,
-          userContent: input.userContent,
-          maxTokens: input.maxTokens,
-          responseSchema: input.responseSchema,
-        })
-          .then((r) => {
-            sendAgentEvent?.({
-              type: "agent_complete",
-              agent: "cross_examiner",
-              agentName: "CrossExaminer",
-              output: r.output,
-              model: r.model,
-              timestamp: Date.now(),
-            });
-            return { output: r.output, model: r.model };
-          })
-          .catch((error) => {
-            sendAgentEvent?.({
-              type: "agent_error",
-              agent: "cross_examiner",
-              agentName: "CrossExaminer",
-              error: "独立复核未完成",
-              timestamp: Date.now(),
-            });
-            throw error;
-          });
-      };
-    }
-    const modelOverride = pickCrossExamModel(modelChoice);
+  function makeCrossExamCaller(sendAgentEvent?: (data: object) => void) {
+    const modelOverride = pickCrossExamModel();
     if (!modelOverride) return undefined;
     return (input: {
       systemPrompt: string;
@@ -400,7 +264,6 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         responseSchema: input.responseSchema,
         maxTokens: input.maxTokens,
         env,
-        codexBin,
         reasoningEffort: "high",
         modelOverride,
         options: requestOptions(),
@@ -430,14 +293,13 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
   }
 
   /** Whole-Claim Audit（Issue #78）：整句审计规划/评估的裸模型调用。实现层静默，不进 SSE Agent 日志。 */
-  function makeWholeClaimAuditCaller(modelChoice: any) {
+  function makeWholeClaimAuditCaller() {
     return (input: {
       systemPrompt: string;
       userContent: string;
       responseSchema: object;
       maxTokens: number;
     }) => {
-      if (byo) return callByoPrimary(input).then((r) => ({ output: r.output, model: r.model }));
       return callAgentWithFallback({
         agentId: "whole_claim_auditor",
         systemPrompt: input.systemPrompt,
@@ -445,9 +307,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         responseSchema: input.responseSchema,
         maxTokens: input.maxTokens,
         env,
-        codexBin,
         reasoningEffort: "low",
-        modelOverride: modelChoice && modelChoice["fact_checker"] ? modelChoice["fact_checker"] : undefined,
         options: requestOptions(),
       }).then((r) => ({ output: r.output, model: r.model }));
     };

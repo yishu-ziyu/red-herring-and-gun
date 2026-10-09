@@ -4,11 +4,6 @@
 // 任何 router（callAgentWithFallback）通过 import 这些函数调度
 // ───────────────────────────────────────────────────────────────
 
-import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
 // 审查 P3-2 修复：extractAnthropicText 从共享模块引入并 re-export，
 // 不再在本文件维护独立副本（原 line 47-87 本地定义已删除）。
 // 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
@@ -19,8 +14,6 @@ import {
   isMiniMaxM3,
   type MiniMaxThinkingType,
 } from "./minimaxM3.js";
-
-const execFileAsync = promisify(execFile);
 
 // ───────────────────────────────────────────────────────────────
 // Response text extractors（OpenAI 兼容 / Anthropic 兼容 / 空响应诊断）
@@ -55,99 +48,7 @@ export function describeEmptyChatCompletion(data: any): string {
 }
 
 // ───────────────────────────────────────────────────────────────
-// Provider 1: DeepSeek（OpenAI 兼容 + json_object 强制）
-// ───────────────────────────────────────────────────────────────
-
-export async function callDeepSeekAgent({
-  apiKey,
-  baseUrl,
-  model,
-  systemPrompt,
-  userContent,
-  maxTokens,
-  signal,
-}: {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  systemPrompt: string;
-  userContent: string;
-  maxTokens: number;
-  signal?: AbortSignal;
-}) {
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    signal,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
-      ],
-      response_format: { type: "json_object" },
-      max_tokens: maxTokens,
-    }),
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    const detail = data?.error?.message || data?.message || response.statusText;
-    throw new Error(`DeepSeek API 调用失败：${detail}`);
-  }
-  const text = extractChatCompletionText(data);
-  if (!text) throw new Error("DeepSeek API 没有返回可解析文本。");
-  return { text, model: `deepseek:${model}` };
-}
-
-// ───────────────────────────────────────────────────────────────
-// Provider 2: MiMo（Anthropic 兼容，多集群 fallback 在 router 层）
-// ───────────────────────────────────────────────────────────────
-
-export async function callMimoAgent({
-  baseUrl,
-  apiKey,
-  model,
-  systemPrompt,
-  userContent,
-  maxTokens,
-  signal,
-}: {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-  systemPrompt: string;
-  userContent: string;
-  maxTokens: number;
-  signal?: AbortSignal;
-}) {
-  const response = await fetch(`${baseUrl}/v1/messages`, {
-    method: "POST",
-    signal,
-    headers: {
-      "Content-Type": "application/json",
-      "api-key": apiKey,
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userContent }],
-    }),
-  });
-  const raw = await response.text();
-  if (!response.ok) {
-    throw new Error(`MiMo API 调用失败：${raw.slice(0, 500)}`);
-  }
-  const text = extractAnthropicText(raw);
-  if (!text) throw new Error("MiMo API 没有返回可解析文本。");
-  return { text, model: `mimo:${model}` };
-}
-
-// ───────────────────────────────────────────────────────────────
-// Provider 3: StepFun 阶跃星辰（OpenAI 兼容 + reasoning_effort）
+// Provider: StepFun 阶跃星辰（OpenAI 兼容 + reasoning_effort）
 // ───────────────────────────────────────────────────────────────
 
 // Reasoning 系列模型（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
@@ -327,102 +228,7 @@ export async function callStepFunPlanAgent({
 }
 
 // ───────────────────────────────────────────────────────────────
-// Provider 4: 360 智脑（OpenAI 兼容）
-// ───────────────────────────────────────────────────────────────
-
-export async function call360ChatAgent({
-  apiKey,
-  baseUrl,
-  model,
-  systemPrompt,
-  userContent,
-  maxTokens,
-  signal,
-}: {
-  apiKey: string;
-  baseUrl: string;
-  model: string;
-  systemPrompt: string;
-  userContent: string;
-  maxTokens: number;
-  signal?: AbortSignal;
-}) {
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: "POST",
-    signal,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userContent },
-      ],
-      stream: false,
-      temperature: 0.3,
-      max_tokens: maxTokens,
-      top_p: 0.8,
-    }),
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    const detail = data?.error?.message || data?.message || response.statusText;
-    throw new Error(`360 智脑 API 调用失败：${detail}`);
-  }
-  const text = extractChatCompletionText(data);
-  if (!text) throw new Error("360 智脑 API 没有返回可解析文本。");
-  return { text, model: `360-chat:${model}` };
-}
-
-// ───────────────────────────────────────────────────────────────
-// Provider 5: Anthropic proxy（Anthropic 兼容，baseUrl 由 ANTHROPIC_BASE_URL env 决定）
-// ───────────────────────────────────────────────────────────────
-
-export async function callAnthropicAgent({
-  baseUrl,
-  token,
-  model,
-  systemPrompt,
-  userContent,
-  maxTokens,
-  signal,
-}: {
-  baseUrl: string;
-  token: string;
-  model: string;
-  systemPrompt: string;
-  userContent: string;
-  maxTokens: number;
-  signal?: AbortSignal;
-}) {
-  const response = await fetch(`${baseUrl}/v1/messages`, {
-    method: "POST",
-    signal,
-    headers: {
-      "Content-Type": "application/json",
-      "anthropic-version": "2023-06-01",
-      "x-api-key": token,
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userContent }],
-    }),
-  });
-  const raw = await response.text();
-  if (!response.ok) {
-    throw new Error(`Anthropic proxy 调用失败：${raw.slice(0, 500)}`);
-  }
-  const text = extractAnthropicText(raw);
-  if (!text) throw new Error("Anthropic proxy 没有返回可解析文本。");
-  return { text, model: `anthropic-local:${model}` };
-}
-
-// ───────────────────────────────────────────────────────────────
-// Provider 6: MiniMax（Anthropic-compatible API；使用 Bearer 认证）
+// Provider: MiniMax（Anthropic-compatible API；使用 Bearer 认证）
 // ───────────────────────────────────────────────────────────────
 
 export async function callMiniMaxAgent({
@@ -523,73 +329,4 @@ function miniMaxMessagesUrl(baseUrl: string) {
   // Local Anthropic proxy (127.0.0.1:15721) serves /v1/messages directly.
   if (/localhost|127\.0\.0\.1/.test(normalized)) return `${normalized}/v1/messages`;
   return `${normalized}/anthropic/v1/messages`;
-}
-
-// ───────────────────────────────────────────────────────────────
-// Provider 7: 本地 Codex CLI（subprocess 调用 codex exec）
-// 输出 raw JSON（不解析），router 用 parseAgentJson 二次处理
-// ───────────────────────────────────────────────────────────────
-
-export async function callCodexAgent({
-  codexBin,
-  model,
-  systemPrompt,
-  userContent,
-  responseSchema,
-  maxTokens,
-  signal,
-}: {
-  codexBin: string;
-  model: string;
-  systemPrompt: string;
-  userContent: string;
-  responseSchema: object;
-  maxTokens: number;
-  signal?: AbortSignal;
-}) {
-  signal?.throwIfAborted();
-  const tempDir = await mkdtemp(join(tmpdir(), "suzheng-orchestrate-"));
-  const schemaPath = join(tempDir, "schema.json");
-  const outputPath = join(tempDir, "last-message.json");
-
-  try {
-    await writeFile(schemaPath, JSON.stringify(responseSchema), "utf8");
-    const args = [
-      "exec",
-      "--ephemeral",
-      "--skip-git-repo-check",
-      "--ignore-user-config",
-      "--ignore-rules",
-      "-s",
-      "read-only",
-      "-C",
-      process.cwd(),
-      "-m",
-      model,
-      "--output-schema",
-      schemaPath,
-      "-o",
-      outputPath,
-      `${systemPrompt}\n\n${userContent}`,
-    ];
-    const timeout = Number(process.env.CODEX_LOCAL_TIMEOUT_MS || 180000);
-
-    await execFileAsync(codexBin, args, {
-      cwd: process.cwd(),
-      signal,
-      timeout,
-      maxBuffer: 1024 * 1024 * 8,
-      env: { ...process.env, NO_COLOR: "1" },
-    });
-
-    const raw = await readFile(outputPath, "utf8");
-    return { text: raw, model: `codex-local:${model}` };
-  } catch (error: any) {
-    signal?.throwIfAborted();
-    const stderr = typeof error?.stderr === "string" ? error.stderr.trim() : "";
-    const detail = stderr.split("\n").slice(-4).join(" ") || error?.message || "未知错误";
-    throw new Error(`Codex Agent 调用失败：${detail}`);
-  } finally {
-    await rm(tempDir, { recursive: true, force: true });
-  }
 }

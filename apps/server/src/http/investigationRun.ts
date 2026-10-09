@@ -1,7 +1,7 @@
 /**
  * 一次调查的生命周期（POST /api/agent/orchestrate-stream 通过校验、建好 run 之后）：
  *
- *   开 SSE → 取消 / BYO 失败 / 断开三个中止源 → 图片解析 → 管线接线 → 两段时限（总时限 → 宽限）
+ *   开 SSE → 取消 / 断开两个中止源 → 图片解析 → 管线接线 → 两段时限（总时限 → 宽限）
  *   → 结局（runOutcome.ts）→ 按结局发终态帧、落 run 终态、结算额度。
  *
  * 断开连接不是取消：run 属于它的 runId，用户离开页面后照常跑完，结论经刷新接回取回。
@@ -26,7 +26,6 @@ import { interruptedInvestigationSnapshot } from "../lib/interruptedSnapshot.js"
 import type { InvestigationSnapshotV1 } from "../lib/investigation/index.js";
 import { createInvestigationEmitter } from "../lib/investigationEmitter.js";
 import { createOrchestrateAdapter } from "../lib/orchestrate.js";
-import { ByoKeyError, searchEnvWithByoCredentials, type ByoConfig } from "../lib/orchestrateByo.js";
 import { buildDeterministicFinalReport } from "../lib/reportFallback.js";
 import { makeSearch360ReverseImage } from "../lib/reverseImage/search360ReverseImage.js";
 import type { RunService } from "../lib/runService.js";
@@ -52,7 +51,6 @@ import { openSse, sseFrame, SSE_KEEPALIVE_FRAME, SSE_KEEPALIVE_MS } from "./sseC
 
 export type InvestigationRunDeps = {
   env: Record<string, string>;
-  codexBin: string;
   runs: RunService;
   runStore: RunStore | null;
   /** 总时限（ORCHESTRATE_TOTAL_TIMEOUT_MS）。 */
@@ -64,8 +62,6 @@ export type InvestigationRunDeps = {
 /** 已通过校验、已建好 run 的一次调查请求。 */
 export type InvestigationRequest = {
   claim: string;
-  byo: ByoConfig | undefined;
-  modelChoice: unknown;
   ticket: CheckTicket;
   intake: CaseIntakePayload | null;
   intakeMetadata: ReturnType<typeof buildCaseIntakeMetadata>;
@@ -141,14 +137,14 @@ function makeImageOriginLookup(
 
 function makeSearchOneAtom(
   onSearchProgress: ((event: SearchProgressEvent) => void) | undefined,
-  searchEnvOverride: Record<string, string>,
+  searchEnv: Record<string, string>,
   execution: ExecutionBudget = {},
 ) {
   return async (atom: string) => {
     execution.signal?.throwIfAborted();
     let result: Record<string, unknown>;
     try {
-      result = await retrieveAtomSources(searchEnvOverride, atom, onSearchProgress, execution);
+      result = await retrieveAtomSources(searchEnv, atom, onSearchProgress, execution);
     } catch (error) {
       execution.signal?.throwIfAborted();
       const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
@@ -209,12 +205,10 @@ function combineAbortSignals(...sources: AbortSignal[]): AbortSignal {
 }
 
 export async function runInvestigation(deps: InvestigationRunDeps, request: InvestigationRequest, res: any): Promise<void> {
-  const { env, codexBin, runs, runStore } = deps;
+  const { env, runs, runStore } = deps;
   const PIPELINE_TOTAL_TIMEOUT_MS = deps.totalTimeoutMs;
   const PIPELINE_LATE_GRACE_MS = deps.lateGraceMs;
   const {
-    byo,
-    modelChoice,
     ticket,
     intake,
     intakeMetadata,
@@ -240,29 +234,17 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
   openSse(res);
 
   // A subscriber leaving is not a cancellation. The run belongs to its stored runId.
-  // Explicit cancel/BYO failure/deadline remain the only ways to stop the work.
+  // Explicit cancel/deadline remain the only ways to stop the work.
   let detachedFromClient = false;
   const disconnect = new AbortController();
   res.on("close", () => {
     if (!res.writableEnded) detachedFromClient = true;
   });
 
-  // BYO fail-closed：请求内密钥失败（鉴权/网络）→ 独立 abort 源中止管线，
-  // 与客户端断开分开计数——密钥失败要退还名额并给出密钥相关的用户可读错误，不与断连混淆。
-  const byoFail = new AbortController();
-  const onByoFailure = (error: unknown) => {
-    if (!byoFail.signal.aborted) {
-      byoFail.abort(error instanceof Error ? error : new Error("byo-key-failed"));
-    }
-  };
   const pipelineSignal = combineAbortSignals(
     disconnect.signal,
-    byoFail.signal,
     ...(runSignal ? [runSignal] : [])
   );
-
-  // 检索凭证绑定：BYO 端点命中 MiniMax / 阶跃 → 对应检索路径换用户密钥；其余端点检索仍全走 env。
-  const searchEnv = searchEnvWithByoCredentials(env, byo);
 
   const writeFrame = (data: object) => {
     // 只看 res 自己有没有结束：`disconnect.abort()` 是「停管线」的信号，
@@ -385,7 +367,7 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
           error: message,
           timestamp: Date.now(),
         });
-        // 取消、断连、BYO 失败仍走各自的结局，不当成「图片读不出来」。
+        // 取消、断连仍走各自的结局，不当成「图片读不出来」。
         pipelineSignal.throwIfAborted();
         // R10：图片没读出来不拖垮整次调查。有文字就按文字继续并留常驻提示；没有文字就明说，不假装查过。
         const hasText = intake.text.trim().length > 0 || intake.links.some((link) => Boolean(link.scrapedContent?.trim()));
@@ -399,12 +381,10 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
       }
     }
 
-    // BYO 接管的请求内适配器：byo 存在时全部主力调用直调用户端点；不存在时与现状零差异。
-    const byoAdapter = createOrchestrateAdapter({ env, codexBin, byo, onByoFailure, signal: pipelineSignal, deadlineMs: workDeadlineMs });
+    const adapter = createOrchestrateAdapter({ env, signal: pipelineSignal, deadlineMs: workDeadlineMs });
 
-    const runAgent = byoAdapter.makeRunAgent({
+    const runAgent = adapter.makeRunAgent({
       claim,
-      modelChoice,
       intakeMetadata,
       visualExtraction,
       clientMemoryRecall,
@@ -413,18 +393,18 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
 
     const pipelinePromise = withExecutionBudget((signal) => runCasePipeline({
       claim,
-      // 断连与 BYO 密钥失败两个 abort 源合并：任一触发，管线阶段边界立即退出
+      // 断连与取消两个 abort 源合并：任一触发，管线阶段边界立即退出
       signal,
       // 截止 = 总超时 − 10s 收尾余量：补查/复核提前收敛，报告写作不再被总超时截断
       deadline: workDeadlineMs,
       intakeLinks: intake?.links,
       runAgent,
-      searchOne: makeSearchOneAtom((event) => sendEvent(event), searchEnv, { signal, deadlineMs: workDeadlineMs }),
+      searchOne: makeSearchOneAtom((event) => sendEvent(event), env, { signal, deadlineMs: workDeadlineMs }),
       lookupImageOrigin: makeImageOriginLookup(env, intake, visualExtraction, { signal, deadlineMs: workDeadlineMs }),
-      callSelfProofModel: byoAdapter.makeSelfProofCaller(claim, modelChoice),
-      evidenceLoop: { callRewriteModel: makeRewriteQueryCall(byoAdapter.makeRewriteCaller(modelChoice)) },
-      crossExam: { callRaw: byoAdapter.makeCrossExamCaller(modelChoice, (data) => sendEvent(data)) },
-      wholeClaimAudit: { callModel: byoAdapter.makeWholeClaimAuditCaller(modelChoice) },
+      callSelfProofModel: adapter.makeSelfProofCaller(),
+      evidenceLoop: { callRewriteModel: makeRewriteQueryCall(adapter.makeRewriteCaller()) },
+      crossExam: { callRaw: adapter.makeCrossExamCaller((data) => sendEvent(data)) },
+      wholeClaimAudit: { callModel: adapter.makeWholeClaimAuditCaller() },
       followUpReuse: priorCase
         ? {
             priorReport: priorCase.report,
@@ -432,7 +412,7 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
             priorCreatedAt: priorCase.createdAt,
           }
         : clientFollowUpReuse ?? undefined,
-      runReport: makeRunReport(runAgent, byo, byoFail, sendEvent),
+      runReport: makeRunReport(runAgent, sendEvent),
       hooks: makePipelineHooks({ claim, sendEvent, emitInvestigation, emitter, searchesCounter }),
       finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>
         pipelineFinalize(fctx, visualExtraction),
@@ -499,41 +479,12 @@ export async function runInvestigation(deps: InvestigationRunDeps, request: Inve
   } catch (error) {
     const outcome = classifyFailure(error, {
       cancelled: Boolean(runSignal?.aborted),
-      byoFailed: Boolean(byo && byoFail.signal.aborted),
     });
     if (outcome === "cancelled") {
       settleQuota(outcome);
       emitInvestigation(interruptedInvestigationSnapshot(lastInvestigation, claim));
       finishRun(RUN_FINAL_STATUS[outcome]);
       endResponse();
-      return;
-    }
-    // BYO key fail-closed（Evaluator 3）：密钥失败时管线已被 byoFail 中止，
-    // 不需要再走断连 abort；先发中断帧与密钥错误帧，再收尾，绝不静默回退 env 密钥重烧。
-    if (outcome === "byo-failed") {
-      settleQuota(outcome);
-      console.error(
-        `[byo-key] investigation ended fail-closed label=${byo?.modelName} detail=${
-          error instanceof Error ? error.name : "unknown"
-        }`
-      );
-      const byoMessage =
-        error instanceof ByoKeyError && error.userMessage
-          ? error.userMessage
-          : "你保存的模型密钥调用失败，这次核查没能完成。请检查模型设置后重试。";
-      sendEvent({
-        type: "investigation_snapshot",
-        investigation: interruptedInvestigationSnapshot(lastInvestigation, claim),
-        timestamp: Date.now(),
-      });
-      sendEvent({
-        type: "error",
-        code: "byo_key_failed",
-        message: byoMessage,
-        timestamp: Date.now(),
-      });
-      finishRun(RUN_FINAL_STATUS[outcome]);
-      res.end();
       return;
     }
     // B1：走到这里说明这次管线已经是 race 的落败方——abort 它，

@@ -58,12 +58,9 @@ export function toPublicStreamEvent(data: object): Record<string, unknown> {
   const event = scrubProviderDiagnostics(data) as Record<string, unknown>;
   delete event.detail;
   delete event.providerErrors;
-  // code=byo_key_failed 的错误文案是服务端手写的固定中文（不含密钥与诊断），
-  // 必须原样到达用户——BYO 密钥失败是用户自己能修复的问题，吞成通用文案就失去 fail-closed 的意义。
   if (
     event.type === "error" &&
     event.code !== "checks_exhausted" &&
-    event.code !== "byo_key_failed" &&
     event.code !== "image_unreadable"
   ) {
     event.message = "这次核查没能完成，请稍后重试";

@@ -10,11 +10,8 @@ import { createRunService, hashRunInput } from "./lib/runService.js";
 import { readEmailAccountOptional } from "./lib/emailSession.js";
 import { isTerminalStatus, openRunStore } from "./lib/runStore.js";
 import { getCase, generateCaseId, type CaseEntry } from "./lib/caseStore.js";
-import { listAvailableModels, validateModelChoice } from "./lib/availableModels.js";
-import { MODEL_UNKNOWN_MESSAGE, probeModelServiceHealth } from "./lib/modelServiceHealth.js";
 import { releaseFreeCheck } from "./lib/checkQuota.js";
 import { readJson, sendJson } from "./lib/httpUtils.js";
-import { isBlockedTestLlmUrl } from "./lib/ssrfGuard.js";
 import {
   normalizeCaseIntake,
   normalizeClientMemoryRecall,
@@ -24,7 +21,6 @@ import { followUpReuseFromClientBrief } from "./lib/followUpReuse.js";
 import { runInvestigation, type InvestigationRunDeps } from "./http/investigationRun.js";
 import { openSse, sseFrame, SSE_KEEPALIVE_FRAME, SSE_KEEPALIVE_MS } from "./http/sseChannel.js";
 import { toPublicStreamEvent } from "./http/publicStream.js";
-import { baseUrlTargetsPrivateNetwork, isLocalHttpUrl, parseByoConfig } from "./lib/orchestrateByo.js";
 
 export { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot.js";
 
@@ -72,8 +68,6 @@ export function createHandlers(env: Record<string, string>) {
       return null;
     }
   }
-
-  const codexBin = env.CODEX_BIN || process.env.CODEX_BIN || "/usr/local/bin/codex";
 
   /**
    * 取消一次正在跑的调查（IMPLEMENTATION_PLAN §5.5）。
@@ -188,36 +182,11 @@ export function createHandlers(env: Record<string, string>) {
     res.on("close", close);
   }
 
-  async function modelsListHandler(req: any, res: any, next: any) {
-    if (req.method !== "GET") return next();
-    try {
-      const models = listAvailableModels(env);
-      return sendJson(res, 200, { models });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "列出可用模型失败";
-      return sendJson(res, 500, { message });
-    }
-  }
-
-  async function modelsHealthHandler(req: any, res: any, next: any) {
-    if (req.method !== "GET") return next();
-    try {
-      const health = await probeModelServiceHealth(env);
-      return sendJson(res, 200, health);
-    } catch {
-      return sendJson(res, 200, {
-        status: "unknown",
-        message: MODEL_UNKNOWN_MESSAGE,
-      });
-    }
-  }
-
   const PIPELINE_TOTAL_TIMEOUT_MS = Number(env.ORCHESTRATE_TOTAL_TIMEOUT_MS || PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT);
   /** 超时后给管线自己收尾的宽限（Change C）；ORCHESTRATE_LATE_GRACE_MS 可覆盖，默认 120s。 */
   const PIPELINE_LATE_GRACE_MS = Number(env.ORCHESTRATE_LATE_GRACE_MS || PIPELINE_LATE_GRACE_MS_DEFAULT);
   const investigationDeps: InvestigationRunDeps = {
     env,
-    codexBin,
     runs,
     runStore,
     totalTimeoutMs: PIPELINE_TOTAL_TIMEOUT_MS,
@@ -244,20 +213,6 @@ export function createHandlers(env: Record<string, string>) {
     if (!claim || typeof claim !== "string") {
       releaseEarlyTicket(req);
       return sendJson(res, 400, { message: "缺少 claim 参数" });
-    }
-    // BYO key 接管：请求携带合法 byoKey 时，调查管线主力模型调用与命中家的检索改用请求内凭证；
-    // 未携带时 byo=undefined，行为与现状零差异。携带但畸形 → 400 拒绝（先退还本次核查名额）。
-    const byoParsed = await parseByoConfig(payload.byoKey);
-    if (!byoParsed.ok) {
-      releaseEarlyTicket(req);
-      return sendJson(res, 400, { message: byoParsed.error });
-    }
-    const byo = byoParsed.config;
-    const modelChoice = payload.modelChoice;
-    const mcValidation = validateModelChoice(env, modelChoice);
-    if (!mcValidation.ok) {
-      releaseEarlyTicket(req);
-      return sendJson(res, 400, { message: mcValidation.error || "modelChoice 非法" });
     }
     const ticket = req.checkTicket;
     if (!ticket) return;
@@ -317,8 +272,6 @@ export function createHandlers(env: Record<string, string>) {
     }
     return runInvestigation(investigationDeps, {
       claim,
-      byo,
-      modelChoice,
       ticket,
       intake,
       intakeMetadata,
@@ -331,120 +284,10 @@ export function createHandlers(env: Record<string, string>) {
     }, res);
   }
 
-  // ───────────────────────────────────────────────────────────────
-  // POST /api/agent/test-llm — BYO key 连接性探针（不落库，不记 key）
-  // 强约束：
-  //   - 仅放行 https:// 站点（dev 允许 http://localhost）
-  //   - prod 拒绝任何 loopback / 内网 IP
-  //   - 5s 超时 + AbortController
-  //   - 永不记录 apiKey
-  // 内网/loopback 判定抽到 lib/orchestrateByo.ts，供 BYO 接管路径共用同一纪律。
-  // ───────────────────────────────────────────────────────────────
-
-  async function testLlmHandler(req: any, res: any, next: any) {
-    if (process.env.NODE_ENV === "production") {
-      return sendJson(res, 404, { error: "Not found" });
-    }
-    if (req.method !== "POST") return next();
-
-    let payload: any;
-    try {
-      payload = await readJson(req);
-    } catch {
-      return sendJson(res, 400, { ok: false, error: "无法解析请求 JSON" });
-    }
-
-    const baseUrl = typeof payload.baseUrl === "string" ? payload.baseUrl.trim() : "";
-    const apiKey = typeof payload.apiKey === "string" ? payload.apiKey.trim() : "";
-    const modelName = typeof payload.modelName === "string" ? payload.modelName.trim() : "";
-
-    if (!baseUrl || !apiKey) {
-      return sendJson(res, 400, { ok: false, error: "缺少 baseUrl 或 apiKey" });
-    }
-
-    const isLocalhost = isLocalHttpUrl(baseUrl);
-    if (!baseUrl.startsWith("https://") && !isLocalhost) {
-      return sendJson(res, 400, {
-        ok: false,
-        error: "baseUrl 必须以 https:// 开头（dev 环境允许 http://localhost）",
-      });
-    }
-
-    if (!isLocalhost && (await baseUrlTargetsPrivateNetwork(baseUrl))) {
-      return sendJson(res, 400, {
-        ok: false,
-        error: "禁止 baseUrl 指向 loopback 或内网地址",
-      });
-    }
-    if (isBlockedTestLlmUrl(baseUrl) && !isLocalhost) {
-      return sendJson(res, 400, {
-        ok: false,
-        error: "禁止 baseUrl 指向 loopback、内网或 metadata 地址",
-      });
-    }
-
-    const normalizedBase = baseUrl.replace(/\/$/, "");
-    const target = `${normalizedBase}/chat/completions`;
-    const safeLabel = modelName || "默认模型";
-    console.log(`[test-llm] test attempt for modelName=${safeLabel}`);
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-
-    const startedAt = Date.now();
-    try {
-      const upstream = await fetch(target, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: modelName || "gpt-4o-mini",
-          messages: [{ role: "user", content: "ping" }],
-          max_tokens: 5,
-        }),
-        signal: controller.signal,
-        redirect: "manual",
-      });
-
-      const latencyMs = Date.now() - startedAt;
-      await upstream.arrayBuffer().catch(() => undefined);
-
-      if (!upstream.ok) {
-        return sendJson(res, 200, {
-          ok: false,
-          latencyMs,
-          status: upstream.status,
-        });
-      }
-
-      return sendJson(res, 200, {
-        ok: true,
-        latencyMs,
-        status: upstream.status,
-      });
-    } catch (error) {
-      const latencyMs = Date.now() - startedAt;
-      const message = error instanceof Error ? error.message : "未知错误";
-      const aborted = error instanceof Error && error.name === "AbortError";
-      return sendJson(res, 200, {
-        ok: false,
-        latencyMs,
-        error: aborted ? "连接超时（5s）" : message,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
   return {
-    modelsListHandler,
-    modelsHealthHandler,
     orchestrateStreamHandler,
     cancelInvestigationHandler,
     getInvestigationHandler,
     investigationEventsHandler,
-    testLlmHandler,
   };
 }

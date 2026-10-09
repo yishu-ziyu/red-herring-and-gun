@@ -27,21 +27,19 @@ function pickCrossExamModel(env: Record<string, string>): { provider: string; mo
   const candidates = [
     { provider: "stepfun", model: "step-3.7-flash", hasKey: Boolean(env.STEPFUN_API_KEY) },
     { provider: "minimax", model: "MiniMax-M3", hasKey: Boolean(env.MINIMAX_API_KEY || env.MINIMAX_TOKEN_PLAN_KEY) },
-    { provider: "mimo", model: "mimo-v2.5-pro", hasKey: Boolean(env.MIMO_API_KEY) },
   ].filter((c) => c.hasKey);
   if (candidates.length === 0) return undefined;
-  const primary = providerOrderForAgent(env).find((p) => p !== "codex");
+  const primary = providerOrderForAgent(env)[0];
   const crossSource = candidates.find((c) => c.provider !== primary);
   return crossSource ?? candidates[0];
 }
 
 export interface EvalEnv {
   env: Record<string, string>;
-  codexBin: string;
 }
 
 /** 单个 agent 的真实模型调用（production path 同款）。 */
-function makeRunAgent({ env, codexBin }: EvalEnv, claim: string) {
+function makeRunAgent({ env }: EvalEnv, claim: string) {
   return async function runAgent(
     agentId: string,
     steps: PipelineStep[],
@@ -67,7 +65,6 @@ function makeRunAgent({ env, codexBin }: EvalEnv, claim: string) {
       responseSchema: agentConfig.responseSchema,
       maxTokens: agentConfig.maxTokens,
       env,
-      codexBin,
       reasoningEffort: "high",
       options: { logger: { info: () => {}, error: console.error.bind(console) } },
     });
@@ -106,7 +103,6 @@ function makeBareCall(
       responseSchema: input.responseSchema,
       maxTokens: input.maxTokens,
       env: evalEnv.env,
-      codexBin: evalEnv.codexBin,
       reasoningEffort,
       ...(modelOverride ? { modelOverride } : {}),
       options: { logger: { info: () => {}, error: console.error.bind(console) } },

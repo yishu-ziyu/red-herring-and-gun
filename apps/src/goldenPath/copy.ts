@@ -13,7 +13,6 @@ export const GP_COPY = {
     signIn: "登录",
     signOut: "退出",
     accountMenu: "账号与设置",
-    modelSettings: "模型设置",
     newCheck: "新调查",
     langSwitch: "中/EN",
 
@@ -54,8 +53,6 @@ export const GP_COPY = {
       kind === "guest" ? `今天还能查 ${n} 次；登录后获得更多次数。` : `今天还能查 ${n} 次。`,
     quotaExhaustedGuest: "今天免费次数用完了，登录后可以继续查。",
     quotaExhaustedUser: "今天的次数用完了，明天再来。",
-    serviceChecking: "正在确认调查服务…",
-    serviceUnavailable: "调查服务暂时不可用。你的材料还没有提交，请稍后重试。",
     serviceUnknown: "暂时无法确认调查服务状态。你可以继续尝试，若中断请稍后重试。",
 
     canvasOriginalLabel: "你调查的说法",
@@ -174,7 +171,6 @@ export const GP_COPY = {
     signIn: "Sign in",
     signOut: "Sign out",
     accountMenu: "Account & settings",
-    modelSettings: "Model settings",
     newCheck: "New check",
     langSwitch: "中/EN",
 
@@ -215,8 +211,6 @@ export const GP_COPY = {
       kind === "guest" ? `${n} free checks left today. Sign in for more.` : `${n} checks left today.`,
     quotaExhaustedGuest: "Free checks are used up for today. Sign in to continue.",
     quotaExhaustedUser: "You've used up today's checks. Come back tomorrow.",
-    serviceChecking: "Checking the investigation service…",
-    serviceUnavailable: "The investigation service is temporarily unavailable. Nothing was submitted. Please retry later.",
     serviceUnknown: "Can't confirm the service status right now. You can still try.",
     canvasOriginalLabel: "The claim you asked about",
     canvasOriginalInResult: "In that sentence",

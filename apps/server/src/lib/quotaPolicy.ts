@@ -1,18 +1,13 @@
 /**
  * 哪些端点计入每日免费核查额度。
  *
- * 只有真正发起核查的端点才算额度。服务可用性探针（`/api/models/health`）
- * 与只读列表（`/api/models/list`）不是核查，不得计额度：前端每次加载输入页都会调探针，
- * 把探针计进去会让访客打开一次首页就用光当天配额。
- *
+ * 只有真正发起核查的端点才算额度；只读端点不得计额度。
  * 判定与中间件都收在这里，作为唯一来源；`index.ts` 不再把闸门散写在各路由参数里。
- * 契约见 `docs/evals/2026-09-11-health-probe-quota.md`。
  */
 import { gateFreeCheck } from "./checkQuota.js";
 
 export const QUOTA_GATED_PATHS = [
   "/api/agent/orchestrate-stream",
-  "/api/agent/test-llm",
 ] as const;
 
 export function isQuotaGatedPath(path: string): boolean {

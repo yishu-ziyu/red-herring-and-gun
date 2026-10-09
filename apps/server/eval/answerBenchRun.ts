@@ -67,7 +67,7 @@ const currentAdapter: PipelineAdapter = {
     // (the InvestigationSnapshotV1 the UI reads); the production HTTP path always subscribes.
     const out = await runCase(
       { claim } as never,
-      { env: process.env as Record<string, string>, codexBin: process.env.CODEX_BIN || "/usr/local/bin/codex" },
+      { env: process.env as Record<string, string> },
       { onInvestigationSnapshot: () => undefined },
     );
     const totalMs = Date.now() - t0;
@@ -368,7 +368,7 @@ async function parentMain(argv: string[]) {
   const timeoutMs = (Number(flag(argv, "--timeout-min") ?? 15) || 15) * 60_000;
 
   loadLocalEnv();
-  if (!replay && !(process.env.STEPFUN_API_KEY || process.env.MINIMAX_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.MIMO_API_KEY)) {
+  if (!replay && !(process.env.STEPFUN_API_KEY || process.env.MINIMAX_API_KEY)) {
     throw new Error("no provider key found in apps/.env.local");
   }
 
