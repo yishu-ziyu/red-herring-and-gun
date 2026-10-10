@@ -21,7 +21,7 @@ import { extractJsonObject } from "./anthropicParse.js";
 export { extractJsonObject };
 import { isMiniMaxM27, miniMaxCallOptions, MINIMAX_M27_DEFAULT_TIMEOUT_MS, MINIMAX_M3_DEFAULT_TIMEOUT_MS } from "./minimaxM3.js";
 
-/** MiniMax 是主力；阶跃负责图片解析与第二意见（2026-10-09 起只保留这两家）。 */
+/** MiniMax 是主力；阶跃负责图片解析与兜底（2026-10-09 起只保留这两家）。 */
 export type AgentTextProviderId = "minimax" | "stepfun";
 
 const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>(["minimax", "stepfun"]);
@@ -453,7 +453,7 @@ export interface CallAgentParams {
   env: Record<string, string>;
   reasoningEffort?: "low" | "medium" | "high";
   /**
-   * 指定先调的 (provider, model)，目前只有交叉质询用它挑第二意见模型。
+   * 指定先调的 (provider, model)。
    * 传入时：先调这一对；缺 key / 调用失败 / 超时后继续走 fallback chain，避免整条流程中断。
    * 不传：维持默认 fallback chain 行为。
    */
@@ -828,8 +828,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
         if (onMissing === "error") errors.push(`[minimax:${model}] 未配置 MINIMAX_API_KEY`);
         continue;
       }
-      // 填表类调用降温到 0，要稳定的输出；写报告那步保留服务商默认。
-      const minimaxTemperature = agentId === "report_composer" ? undefined : 0;
+      // 填表类调用降温到 0，要稳定的输出。
+      const minimaxTemperature = 0;
       const out = await runOne("minimax", model, (sys, user, signal) =>
         callMiniMaxAgent({
           baseUrl,

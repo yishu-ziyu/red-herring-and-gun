@@ -1,6 +1,6 @@
 /**
  * Claim-atom domain module.
- * Depth: key / split / merge / self-proof / force-checkable behind one seam.
+ * Depth: key / split / merge / prefilter / force-checkable behind one seam.
  * Production and client twins must import from here — no private copies.
  */
 
@@ -18,13 +18,4 @@ export { alignFalseEvidenceBuckets, mergeSubclaimVerdicts, splitVerifiableAtoms 
 export { forceCheckableAtomTypes, looksLikeCirculatingClaim } from "./forceCheckable.js";
 export { collapseShortSingleClaim, dropUntraceableAtoms, ensureStanceAtom, keepOriginalWording, markStanceAtoms } from "./roles.js";
 export { collapseNarrativeAtoms, ensureLeapAtoms, extractLeapAtoms, retainAtomTypes } from "./textbookAtoms.js";
-export {
-  SELF_PROOF_SYSTEM_PROMPT,
-  applySelfProof,
-  buildSelfProofUserContent,
-  parseSelfProofResults,
-  prefilterClaimAtoms,
-  runClaimAtomSelfProof,
-  selfProofSchema,
-  type SelfProofModelCall,
-} from "./selfProof.js";
+export { prefilterClaimAtoms } from "./prefilter.js";

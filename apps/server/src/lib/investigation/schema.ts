@@ -206,7 +206,7 @@ export const InvestigationConflictSchema = Type.Object(
     claimId: Type.String(),
     summary: Type.String(),
     sides: Type.Array(InvestigationConflictSideSchema),
-    /** 只有证据/质询回应能支持时才填；不知道就 reasonStatus=unknown 且不给 reason。 */
+    /** 只有证据能支持时才填；不知道就 reasonStatus=unknown 且不给 reason。 */
     reason: Type.Optional(Type.String()),
     reasonStatus: Type.Union([Type.Literal("known"), Type.Literal("unknown")]),
     unresolved: Type.Boolean(),

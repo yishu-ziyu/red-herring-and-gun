@@ -3,7 +3,7 @@
  * 查看走同一套结果组件，不发起调查、不扣额、不假装实时过程。
  */
 import type { InvestigationSnapshotV1 } from "../lib/investigation";
-import { conflictKnownReason, mixedComplete, unresolvedComplete } from "./fixtures";
+import { conflictContext, mixedComplete, unresolvedComplete } from "./fixtures";
 
 export type HomeCaseId = "mixed" | "context" | "unresolved";
 
@@ -40,7 +40,7 @@ const CATALOG: Array<HomeCaseCard & { build: () => InvestigationSnapshotV1 }> = 
     checkedAtIso: CONTEXT_AT,
     investigatedAt: Date.parse(CONTEXT_AT),
     dateLabel: "2026/9/7",
-    build: conflictKnownReason,
+    build: conflictContext,
   },
   {
     id: "unresolved",

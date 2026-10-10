@@ -12,7 +12,7 @@ export const SSE_HEADERS = {
   "X-Accel-Buffering": "no",
 } as const;
 
-/** 心跳：report_composer 等阶段可静默 ~50s，注释帧让中间代理与浏览器知道流还活着。 */
+/** 心跳：模型调用阶段可静默 ~50s，注释帧让中间代理与浏览器知道流还活着。 */
 export const SSE_KEEPALIVE_FRAME = ": keepalive\n\n";
 export const SSE_KEEPALIVE_MS = 15_000;
 

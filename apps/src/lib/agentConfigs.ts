@@ -1,7 +1,3 @@
-import {
-  mergeSubclaimVerdicts as mergeSubclaimVerdictsDomain,
-  splitVerifiableAtoms,
-} from "../../server/src/lib/claimAtom/index";
 /**
  * agentConfigs.ts — 多 Agent Handoff 配置
  *
@@ -81,7 +77,7 @@ export interface HandoffStep {
 export interface HandoffResult {
   claim: string;
   steps: HandoffStep[];
-  finalReport?: ReportComposerOutput;
+  finalReport?: FinalReportOutput;
 }
 
 // Agent 专用输出类型
@@ -116,7 +112,7 @@ export interface SourceValidatorOutput {
   verificationNotes: string;
 }
 
-export interface ReportComposerOutput {
+export interface FinalReportOutput {
   verdictType: "true" | "false" | "mixed_misleading" | "unverified";
   conclusion: string;
   recommendation: string;
@@ -172,7 +168,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     },
     inputContract: ["原始 claim", "可选历史相似案例", "可选用户场景"],
     outputContract: ["claimAtoms", "rumorTypes", "rumorIndicators", "severity", "neededEvidence", "handoffTargets"],
-    handoffRules: ["必须把 neededEvidence 交给 FactChecker", "必须把可疑信源线索交给 SourceValidator", "不得跳过后续核查直接给 ReportComposer"],
+    handoffRules: ["必须把 neededEvidence 交给 FactChecker", "必须把可疑信源线索交给 SourceValidator", "不得跳过后续核查直接写报告"],
     uiTrace: {
       start: ["读取原始声明", "检索相似谣言类型"],
       running: ["拆分可核查原子命题", "标注谣言类型和风险信号", "生成后续证据需求"],
@@ -199,7 +195,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     },
     inputContract: ["claim", "claimAtoms", "rumorIndicators", "多搜索引擎证据包"],
     outputContract: ["factCheckResult", "confidence", "supportingEvidence", "counterEvidence", "unresolvedEvidenceGaps"],
-    handoffRules: ["必须把 sources 和 unresolvedEvidenceGaps 交给 ReportComposer", "发现来源疑点时交给 SourceValidator 复核"],
+    handoffRules: ["必须把 sources 和 unresolvedEvidenceGaps 交给报告", "发现来源疑点时交给 SourceValidator 复核"],
     uiTrace: {
       start: ["读取证据需求", "生成支持/反驳搜索 query"],
       running: ["调用 360 搜索", "比较多源结果一致性", "提取支持与反驳证据"],
@@ -226,7 +222,7 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     },
     inputContract: ["claim", "candidate sources", "RumorDetector 风险信号", "FactChecker 证据列表"],
     outputContract: ["sourceReliability", "verifiedSources", "questionableSources", "missingSources", "verificationNotes"],
-    handoffRules: ["必须把 verified/questionable/missing sources 交给 ReportComposer", "递归搜索结果只进入 Canvas，等待用户选择下一轮"],
+    handoffRules: ["必须把 verified/questionable/missing sources 交给报告", "递归搜索结果只进入 Canvas，等待用户选择下一轮"],
     uiTrace: {
       start: ["读取候选来源", "检查可追溯性"],
       running: ["区分原始来源和传播来源", "审计权威性与独立性", "必要时开放递归搜索入口"],
@@ -234,83 +230,6 @@ export const AGENT_CONTRACTS: Record<string, AgentContract> = {
     },
     failurePolicy: "如果来源无法验证，sourceReliability 必须是 unverified，并说明缺失来源，不得补写虚假来源。",
     evaluationChecks: ["是否区分原始出处和二次传播", "是否说明 missingSources", "是否保留递归搜索的用户控制权"],
-  },
-  report_composer: {
-    id: "report_composer",
-    name: "ReportComposer",
-    icon: "📝",
-    roleTitle: "写结论",
-    mission: "只基于前序输出写结论：能信还是不能信，依据是什么。",
-    nonGoals: ["不新增未经前序 Agent 验证的事实", "不把未出结论包装成确定判断", "不隐藏证据缺口"],
-    tools: [
-      { id: "llm_report_synthesis", name: "LLM 报告合成", kind: "llm", description: "将多 Agent 输出合成为结构化核查报告。" },
-      { id: "fire_confidence", name: "FIRE 置信度评估", kind: "report", description: "按来源、完整度、一致性、时效、权威五维调制置信度。" },
-      { id: "closure_actions", name: "收束", kind: "report", description: "生成核查摘要、存疑归档、分享文案。" },
-    ],
-    memory: {
-      reads: ["前序 Agent 输出", "相似案例结论", "证据质量摘要"],
-      writes: ["最终报告", "置信度维度", "可复用案例记忆", "收束记录"],
-    },
-    inputContract: ["RumorDetector 输出", "FactChecker 输出", "SourceValidator 输出", "多搜索引擎证据包"],
-    outputContract: ["verdictType", "conclusion", "whyHardToVerify", "evidenceChain", "causalBoundary", "closureActions", "confidenceDimensions"],
-    handoffRules: ["只在证据足够时给可发布结论", "证据不足时输出未出结论和 nextEvidenceNeeded", "结果必须写入 Agent Memory"],
-    uiTrace: {
-      start: ["读取三方 Agent 结果", "检查证据边界"],
-      running: ["合成结论", "计算 FIRE 置信度", "写给人看的结论"],
-      complete: ["写入报告"],
-    },
-    failurePolicy: "如果前序输出为空或来自 fallback，必须输出未出结论，不得生成补充性判断。",
-    evaluationChecks: ["是否忠实引用前序证据", "是否暴露证据缺口", "是否写清下一步"],
-  },
-  alternative_explanation_searcher: {
-    id: "alternative_explanation_searcher",
-    name: "AlternativeExplanationSearcher",
-    icon: "🔎",
-    roleTitle: "替代解释",
-    mission: "主动寻找能同样解释观察结果的替代因果链，不否定现有证据",
-    nonGoals: ["不捏造证据", "不否定现有证据", "不预设立场"],
-    tools: [
-      { id: "llm_causal_search", name: "LLM 替代解释生成", kind: "llm", description: "基于当前因果断言生成 2-4 条合理的替代解释。" },
-    ],
-    memory: {
-      reads: ["前序事实核查结果", "搜索证据摘要"],
-      writes: ["替代解释列表", "因果链评估"],
-    },
-    inputContract: ["原始 claim", "FactChecker 输出", "搜索证据"],
-    outputContract: ["alternativeExplanations", "conclusion"],
-    handoffRules: ["必须把 alternativeExplanations 交给 CounterEvidenceGrader", "不得直接跳转到 ReportComposer"],
-    uiTrace: {
-      start: ["读取因果断言和前序证据"],
-      running: ["生成替代解释", "评估与现有证据的兼容度"],
-      complete: ["交给反证评分和共识调解"],
-    },
-    failurePolicy: "如果无法生成替代解释，明确说明为什么现有因果链目前没有有力的竞争者。",
-    evaluationChecks: ["替代解释是否逻辑合理", "是否准确评估兼容度"],
-  },
-  counter_evidence_grader: {
-    id: "counter_evidence_grader",
-    name: "CounterEvidenceGrader",
-    icon: "⚖️",
-    roleTitle: "反证评分",
-    mission: "评估反证强度和对结论的降权影响",
-    nonGoals: ["不预设立场", "不修改前序结论"],
-    tools: [
-      { id: "llm_evidence_grading", name: "LLM 证据评分", kind: "llm", description: "评估反证和证据缺口对结论的影响。" },
-    ],
-    memory: {
-      reads: ["前序事实核查结果", "替代解释输出"],
-      writes: ["反证评分", "证据缺口评分", "置信度调整"],
-    },
-    inputContract: ["FactChecker 输出", "AlternativeExplanationSearcher 输出", "搜索证据"],
-    outputContract: ["counterEvidenceScore", "evidenceGapScore", "overallConfidenceAdjustment", "breakdown", "recommendation"],
-    handoffRules: ["必须把 overallConfidenceAdjustment 交给 ConsensusDebate", "不得直接跳转到 ReportComposer"],
-    uiTrace: {
-      start: ["读取事实核查和替代解释结果"],
-      running: ["评估反证强度", "量化证据缺口影响", "调整结论置信度"],
-      complete: ["交给共识调解收束"],
-    },
-    failurePolicy: "如果证据不足评分，输出保守的降权值并说明原因。",
-    evaluationChecks: ["评分是否基于证据而非猜测", "结论表达建议是否一致"],
   },
 };
 
@@ -445,180 +364,6 @@ const sourceValidatorSchema = {
   required: ["sourceReliability", "verifiedSources", "questionableSources", "missingSources", "verificationNotes"],
 };
 
-const reportComposerSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    verdictType: { type: "string", enum: ["true", "false", "mixed_misleading", "unverified"] },
-    conclusion: {
-      type: "string",
-      description:
-        "Verdict prose. When the report has cited web sources, insert [n] markers. n is 1-based global order: unique URLs from subclaimVerdicts.supportingSources then contradictingSources in claim order (first-seen). No [n] without a matching source.",
-    },
-    recommendation: { type: "string" },
-    summaryForPublic: { type: "string" },
-    whyHardToVerify: { type: "array", items: { type: "string" } },
-    subclaimVerdicts: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          claimAtom: { type: "string" },
-          verdict: { type: "string", enum: ["true", "false", "partial", "unverified", "exaggerated"] },
-          evidence: {
-            type: "string",
-            description:
-              "Evidence prose for this atom. [n] is 1-based over supportingSources then contradictingSources. If supportingSources is empty and contradictingSources is not, [1] is the first contradicting source. Do not invent numbers.",
-          },
-          boundary: { type: "string" },
-          supportingSources: {
-            type: "array",
-            items: verdictSourceSchema,
-            description:
-              "Sources that support this claim atom (the atom is true according to this source). Do not put sources that refute the atom here.",
-          },
-          contradictingSources: {
-            type: "array",
-            items: verdictSourceSchema,
-            description:
-              "Sources that refute this claim atom (the atom is false according to this source). When verdict=false, cited sources belong here.",
-          },
-          evidenceGaps: { type: "array", items: { type: "string" } },
-        },
-        required: ["claimAtom", "verdict", "evidence", "boundary"],
-      },
-    },
-    evidenceChain: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          layer: { type: "string" },
-          finding: { type: "string" },
-          evidence: {
-            type: "string",
-            description:
-              "Layer evidence prose. When sourceRefs is non-empty, insert [n] matching this layer's sourceRefs order (1-based). Prefer full URLs in sourceRefs.",
-          },
-          boundary: { type: "string" },
-          sourceRefs: {
-            type: "array",
-            items: { type: "string" },
-            description:
-              "Citation list for this layer, preferably full http(s) URLs in the same order as [n] in evidence.",
-          },
-        },
-        required: ["layer", "finding", "evidence", "boundary", "sourceRefs"],
-      },
-    },
-    causalBoundary: { type: "string" },
-    canSay: { type: "array", items: { type: "string" } },
-    cannotSay: { type: "array", items: { type: "string" } },
-    closureActions: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          type: { type: "string", enum: ["rebuttal_card", "archive_doubt", "share_public", "follow_up"] },
-          label: { type: "string" },
-          content: { type: "string" },
-          status: { type: "string", enum: ["ready", "needs_review", "blocked"] },
-        },
-        required: ["type", "label", "content", "status"],
-      },
-    },
-    logicRiskItems: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          id: { type: "string" },
-          label: { type: "string" },
-          severity: { type: "string", enum: ["low", "medium", "high"] },
-          explanation: { type: "string" },
-          affectedSubclaimId: { type: "string" },
-          mitigation: { type: "string" },
-        },
-        required: ["id", "label", "severity", "explanation", "mitigation"],
-      },
-    },
-    confidenceDimensions: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          dimension: {
-            type: "string",
-            enum: ["source_reliability", "evidence_completeness", "consistency", "recency", "authority"],
-          },
-          label: { type: "string" },
-          score: { type: "number" },
-          threshold: { type: "number" },
-          passed: { type: "boolean" },
-          reason: { type: "string" },
-        },
-        required: ["dimension", "label", "score", "threshold", "passed", "reason"],
-      },
-    },
-  },
-  required: ["verdictType", "conclusion", "recommendation", "summaryForPublic", "whyHardToVerify", "subclaimVerdicts", "evidenceChain", "causalBoundary", "canSay", "cannotSay", "closureActions", "confidenceDimensions"],
-};
-
-const alternativeExplanationSearcherSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    alternativeExplanations: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          hypothesis: { type: "string" },
-          mechanism: { type: "string" },
-          requiredAssumptions: { type: "array", items: { type: "string" } },
-          compatibilityWithEvidence: { type: "string" },
-          plausibility: { type: "string", enum: ["high", "medium", "low"] },
-        },
-        required: ["hypothesis", "mechanism", "compatibilityWithEvidence", "plausibility"],
-      },
-    },
-    conclusion: { type: "string" },
-  },
-  required: ["alternativeExplanations", "conclusion"],
-};
-
-const counterEvidenceGraderSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    counterEvidenceScore: { type: "number" },
-    evidenceGapScore: { type: "number" },
-    overallConfidenceAdjustment: { type: "number" },
-    breakdown: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        counterEvidenceStrength: { type: "string" },
-        gapImpact: { type: "string" },
-        causalInferenceStrength: { type: "string" },
-      },
-      required: ["counterEvidenceStrength", "gapImpact", "causalInferenceStrength"],
-    },
-    recommendation: { type: "string", enum: ["strengthen", "maintain", "weaken", "block"] },
-  },
-  required: ["counterEvidenceScore", "evidenceGapScore", "overallConfidenceAdjustment", "breakdown", "recommendation"],
-};
-
-// ───────────────────────────────────────────────────────────────
-// Agent 配置
-// ───────────────────────────────────────────────────────────────
-
 export const AGENT_CONFIGS: AgentConfig[] = [
   {
     id: "rumor_detector",
@@ -661,7 +406,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
       "{\n  \"claimAtoms\": [\"可核查原子命题1\"],\n  \"rumorTypes\": [\"社会\"],\n  \"rumorIndicators\": [\"谣言特征1\", \"谣言特征2\"],\n  \"severity\": \"medium\",\n  \"analysis\": \"详细分析说明\",\n  \"detectedPatterns\": [\"匹配的模式1\", \"匹配的模式2\"],\n  \"neededEvidence\": [\"需要查找的证据类型\"],\n  \"handoffTargets\": [\"fact_checker\", \"source_validator\"]\n}",
-      "handoffTargets 可包含 fact_checker、source_validator、report_composer，但不得直接跳到 report_composer。",
+      "handoffTargets 只能包含 fact_checker、source_validator。",
       "",
       "severity 必须是 'low'、'medium'、'high' 之一。",
     ].join("\n")),
@@ -733,117 +478,6 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     ].join("\n")),
     responseSchema: sourceValidatorSchema,
   },
-  {
-    id: "report_composer",
-    name: "ReportComposer",
-    icon: "📝",
-    description: "报告生成",
-    contract: AGENT_CONTRACTS.report_composer,
-    maxTokens: 2600,
-    systemPrompt: withAgentContract("report_composer", [
-      "你是红鲱鱼与枪的 ReportComposer。",
-      "只写证据已经许可的判断，把证据、反证、缺口和不能推出的边界全部摆出来。",
-      "你的任务是基于 RumorDetector、FactChecker 和 SourceValidator 的分析结果，生成一份综合核查报告。",
-      "",
-      "写作要求：",
-      "用平实、准确的中文。不要阴阳怪气、口号、道德训诫。",
-      "conclusion / summaryForPublic 结构（2–5 短句）：(1) 流传说法是什么 (2) 现有证据支持/反驳什么 (3) 仍无法证实或不能推出什么。",
-      "Prefer「不能支持 / 不足以确认 / 未见公开记录」over「纯属捏造 / 可笑 / 震惊」。",
-      "禁止：阴阳怪气、口号体、作为AI自述、句内元标签、未出现在输入中的来源/日期/官员名。",
-      "canSay / cannotSay 必须诚实分离；不得把 cannotSay 用语气包装成能信。",
-      "",
-      "输出前自检：",
-      "1) 是否有无来源硬断言？2) cannotSay 是否被写成真？3) 是否有震惊体/嘲讽？4) 是否用导致/已经/证明却无机制与数据？5) 读者能否不靠信任作者就找到来源？不合格则改写后再输出。",
-      "",
-      "硬约束：不得新增前序 Agent 和 search360.sources 中没有出现的事实；不得把搜索摘要中的未经核验说法改写成确定事实。",
-      "如果 FactChecker 或 SourceValidator 标记缺少官方/原始/医学来源，summaryForPublic 必须保留这个证据边界。",
-      "不要只给模糊结论。必须解释：这句话为什么难甄别、哪一层有真实成分、哪一层发生偷换、现有证据哪些能信、哪些不能信。",
-      "对健康、医学、营养、金融、政策等 claim，必须特别审计“观察性相关被说成因果”“成分机制被说成真实收益”“旧研究被说成当前建议”“个体经验被说成普遍规律”。",
-      "",
-      "输入包含：",
-      "- 原始 claim",
-      "- RumorDetector 检测到的谣言特征和严重程度",
-      "- FactChecker 的事实核查结果和关键发现",
-      "- SourceValidator 的信源验证结果",
-      "- 可选 search360 搜索摘要与来源",
-      "- 可选 logicRisks / biasWarnings / doNotInfer，需要归入逻辑风险审计并反映到 consistency 分数",
-      "- 逐条判定 subclaimVerdicts（每个 claimAtom 对应的判定结果，作为报告的可审计要点）",
-      "",
-      "verdictType 判定：",
-      "- true：核心断言被可靠证据支持",
-      "- false：核心断言被可靠证据反驳",
-      "- mixed_misleading：有真实片段，但把机制、相关、观察性研究、旧表述或局部事实偷换成过度结论",
-      "- unverified：缺少足够证据，不能给可发布判断",
-      "",
-      "报告结构要求：",
-      "1. whyHardToVerify：用 2-4 条解释为什么它不是简单真假题，例如“有真实成分”“研究类型有限”“公共卫生建议已收紧”。",
-      "2. evidenceChain：至少 3 层。每层必须写 finding、evidence、boundary。sourceRefs 只能引用输入里出现过的来源标题或 URL；优先完整 URL。",
-      "3. causalBoundary：明确说明是否存在因果证据，不能把相关性、机制 plausibility、观察性研究直接写成健康收益。",
-      "4. closureActions：给出可执行下一步：核查摘要、存疑归档、继续追证。证据不足的动作 status 必须是 needs_review 或 blocked。",
-      "5. conclusion 必须是可审计结论，不得只写“缺乏科学依据”这类空泛话；要点明哪部分能信、哪部分不能信。",
-      "6. 逐条判定清单：把 subclaimVerdicts 作为报告的一部分渲染，逐条列出每个 claimAtom 的判定（verdict）、证据与边界，不得遗漏、不得编造输入中不存在的原子；保留 supportingSources / contradictingSources 与 evidence 中的 [n] 对应关系。",
-      "",
-      "【句内引用编号 / Inline citations — 强制】",
-      "1. conclusion：全局编号 = subclaimVerdicts 顺序中 supportingSources 再 contradictingSources 的 URL 去重后首次出现 [1][2]…；有来源支撑的论断后写 [n]。",
-      "2. 逐条 evidence：[n] 按 supportingSources 再 contradictingSources 的局部合并顺序；两桶都空不得写 [n]。",
-      "3. evidenceChain 每层：evidence 中的 [n] 与本层 sourceRefs 顺序一一对应。",
-      "4. 禁止编造 URL/编号；禁止用 Markdown 链接替代 [n]。",
-      "5. conclusion、summaryForPublic、evidence、finding、boundary 禁止写 S1、S2、C1、S3/S5 这类检索序号；点名材料用标题或域名。",
-      "",
-      "输出要求：严格 JSON，不要 Markdown，不要代码块。字段必须符合 schema。",
-      "字段长度控制：whyHardToVerify 2-3 条；evidenceChain 恰好 3 层；closureActions 3 条；每个中文字符串尽量控制在 90 字以内，conclusion 可到 180 字。",
-      "",
-      "confidenceDimensions 必须包含 source_reliability、evidence_completeness、consistency、recency、authority 五项。",
-      "如果存在逻辑风险，confidenceDimensions 中 consistency 的分数必须降低，并在 reason 中解释。",
-    ].join("\n")),
-    responseSchema: reportComposerSchema,
-  },
-  {
-    id: "alternative_explanation_searcher",
-    name: "AlternativeExplanationSearcher",
-    icon: "🔎",
-    description: "替代解释搜索",
-    contract: AGENT_CONTRACTS.alternative_explanation_searcher,
-    maxTokens: 900,
-    systemPrompt: withAgentContract("alternative_explanation_searcher", [
-      "你是红鲱鱼与枪的 AlternativeExplanationSearcher。",
-      "不否定现有证据，但主动寻找其他同样能解释观察结果的因果链。",
-      "你的任务是针对当前 claim 的因果断言，生成 2-4 条合理的替代解释。",
-      "每条替代解释必须：说明它能如何解释观察到的现象、指出它需要的额外前提、评估它与现有证据的兼容度。",
-      "不得捏造不存在的证据来支持替代解释；替代解释的价值在于它的逻辑合理性，不在于它已被证明。",
-      "如果找不到合理的替代解释，明确说明为什么现有因果链目前没有有力的竞争者。",
-      "",
-      "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"alternativeExplanations\": [\n    {\n      \"hypothesis\": \"替代解释概述\",\n      \"mechanism\": \"如何解释观察现象\",\n      \"requiredAssumptions\": [\"前提1\"],\n      \"compatibilityWithEvidence\": \"与现有证据的兼容程度\",\n      \"plausibility\": \"high/medium/low\"\n    }\n  ],\n  \"conclusion\": \"综合评估：当前因果链是否排他\"\n}",
-      "alternativeExplanations 数组每项 2-4 条；plausibility 必须是 'high'、'medium' 或 'low'。",
-    ].join("\n")),
-    responseSchema: alternativeExplanationSearcherSchema,
-  },
-  {
-    id: "counter_evidence_grader",
-    name: "CounterEvidenceGrader",
-    icon: "⚖️",
-    description: "反证评分",
-    contract: AGENT_CONTRACTS.counter_evidence_grader,
-    maxTokens: 800,
-    systemPrompt: withAgentContract("counter_evidence_grader", [
-      "你是红鲱鱼与枪的 CounterEvidenceGrader。",
-      "不预设立场，只评估现有证据对当前结论的支持度和反证力度。",
-      "你的任务是评估 FactChecker 和搜索结果的证据强度，对反证和证据缺口做降权评分。",
-      "",
-      "评估维度：",
-      "1. 反证强度 — 反证的数量、质量和来源权威性",
-      "2. 证据缺口 — 缺少哪些关键证据，这些缺口对结论的影响",
-      "3. 因果推断强度 — 现有证据是支持因果还是仅支持相关",
-      "4. 结论稳健性 — 如果新增证据，结论有多大可能改变",
-      "",
-      "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"counterEvidenceScore\": -25,\n  \"evidenceGapScore\": -15,\n  \"overallConfidenceAdjustment\": -18,\n  \"breakdown\": {\n    \"counterEvidenceStrength\": \"评估说明\",\n    \"gapImpact\": \"缺口影响说明\",\n    \"causalInferenceStrength\": \"因果推断强度说明\"\n  },\n  \"recommendation\": \"建议的结论表达强度\"\n}",
-      "overallConfidenceAdjustment 是 -100 到 +20 的整数，负数表示反证/缺口需要降权。",
-      "recommendation 必须是 'strengthen'、'maintain'、'weaken' 或 'block' 之一。",
-    ].join("\n")),
-    responseSchema: counterEvidenceGraderSchema,
-  },
 ];
 
 // ───────────────────────────────────────────────────────────────
@@ -865,16 +499,12 @@ export interface AgentRegistry {
   canContinueAfterFailure(id: string): boolean;
 }
 
-// rumor_detector / 可选 enrichment 失败后可继续检索与收束。
-// report_composer 失败时产出诚实降级报告（未完成 + 保留已检索材料），
+// 拆题、核查、信源审计失败后可继续检索与收束（未完成 + 保留已检索材料），
 // 而不是让整轮抛错、用户等完后一无所得（eval 260814-1206 首轮三 case 均因此中断）。
 const CONTINUE_AFTER_FAILURE_AGENTS = new Set([
   "rumor_detector",
   "fact_checker",
   "source_validator",
-  "alternative_explanation_searcher",
-  "counter_evidence_grader",
-  "report_composer",
 ]);
 
 function createAgentRegistry(configs: AgentConfig[]): AgentRegistry {
@@ -889,29 +519,6 @@ const agentRegistry = createAgentRegistry(AGENT_CONFIGS);
 
 export function getAgentRegistry(): AgentRegistry {
   return agentRegistry;
-}
-
-function compactStrings(value: unknown, limit = 5, maxLength = 260) {
-  return Array.isArray(value)
-    ? value
-        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-        .slice(0, limit)
-        .map((item) => item.length > maxLength ? `${item.slice(0, maxLength)}…` : item)
-    : [];
-}
-
-function compactText(value: unknown, maxLength = 420) {
-  if (typeof value !== "string") return "";
-  return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
-}
-
-
-// Claim-atom domain SSOT (server) — no private twin merge/key.
-function mergeSubclaimVerdicts(
-  claimAtoms: unknown,
-  verdicts: unknown
-): import("./schemas").SubclaimVerdict[] {
-  return mergeSubclaimVerdictsDomain(claimAtoms, verdicts) as import("./schemas").SubclaimVerdict[];
 }
 
 export function buildAgentInput(
@@ -945,75 +552,6 @@ export function buildAgentInput(
         rumorTypes: prev?.output?.rumorTypes ?? [],
         rumorIndicators: prev?.output?.rumorIndicators ?? [],
         neededEvidence: prev?.output?.neededEvidence ?? [],
-      };
-    }
-
-    case "alternative_explanation_searcher": {
-      const rumorStep = previousSteps.find((s) => s.agent === "rumor_detector");
-      const factStep = previousSteps.find((s) => s.agent === "fact_checker");
-      return {
-        claim,
-        task: "为当前因果断言生成替代解释",
-        claimAtoms: rumorStep?.output?.claimAtoms ?? [],
-        factCheckResult: factStep?.output?.factCheckResult,
-        supportingEvidence: compactStrings(factStep?.output?.supportingEvidence, 4, 200),
-        contradictingSources: compactStrings(factStep?.output?.contradictingSources, 4, 200),
-      };
-    }
-
-    case "counter_evidence_grader": {
-      const factStep = previousSteps.find((s) => s.agent === "fact_checker");
-      return {
-        claim,
-        task: "评估反证和证据缺口对结论的影响",
-        factCheckResult: factStep?.output?.factCheckResult,
-        confidence: factStep?.output?.confidence,
-        counterEvidence: compactStrings(factStep?.output?.counterEvidence, 5, 200),
-        unresolvedEvidenceGaps: compactStrings(factStep?.output?.unresolvedEvidenceGaps, 4, 200),
-        contradictingSources: compactStrings(factStep?.output?.contradictingSources, 4, 200),
-      };
-    }
-
-    case "report_composer": {
-      const rumorStep = previousSteps.find((s) => s.agent === "rumor_detector");
-      const factStep = previousSteps.find((s) => s.agent === "fact_checker");
-      const sourceStep = previousSteps.find((s) => s.agent === "source_validator");
-      return {
-        claim,
-        task: "生成综合核查报告",
-        rumorAnalysis: {
-          claimAtoms: compactStrings(rumorStep?.output?.claimAtoms, 12, 180),
-          rumorTypes: compactStrings(rumorStep?.output?.rumorTypes, 4, 80),
-          indicators: compactStrings(rumorStep?.output?.rumorIndicators, 5, 120),
-          severity: rumorStep?.output?.severity ?? "low",
-          analysis: compactText(rumorStep?.output?.analysis, 360),
-          neededEvidence: compactStrings(rumorStep?.output?.neededEvidence, 5, 180),
-        },
-        factCheck: {
-          result: factStep?.output?.factCheckResult ?? "unverified",
-          confidence: factStep?.output?.confidence ?? "low",
-          subclaimVerdicts: (() => {
-            const split = splitVerifiableAtoms(
-              rumorStep?.output?.claimAtoms,
-              rumorStep?.output?.claimAtomTypes
-            );
-            return mergeSubclaimVerdicts(split.verifiable, factStep?.output?.subclaimVerdicts);
-          })(),
-          sources: compactStrings(factStep?.output?.sources, 6, 160),
-          supportingEvidence: compactStrings(factStep?.output?.supportingEvidence, 4, 240),
-          contradictingSources: compactStrings(factStep?.output?.contradictingSources, 5, 160),
-          keyFindings: compactStrings(factStep?.output?.keyFindings, 5, 260),
-          counterEvidence: compactStrings(factStep?.output?.counterEvidence, 5, 240),
-          unresolvedEvidenceGaps: compactStrings(factStep?.output?.unresolvedEvidenceGaps, 4, 240),
-          logicRisks: compactStrings(factStep?.output?.logicRisks, 4, 180),
-        },
-        sourceValidation: {
-          reliability: sourceStep?.output?.sourceReliability ?? "unverified",
-          verifiedSources: compactStrings(sourceStep?.output?.verifiedSources, 4, 220),
-          questionableSources: compactStrings(sourceStep?.output?.questionableSources, 4, 220),
-          missingSources: compactStrings(sourceStep?.output?.missingSources, 4, 220),
-          verificationNotes: compactText(sourceStep?.output?.verificationNotes, 420),
-        },
       };
     }
 

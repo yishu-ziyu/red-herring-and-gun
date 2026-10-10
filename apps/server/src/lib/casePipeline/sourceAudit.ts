@@ -1,8 +1,8 @@
 /**
  * 来源关系审计（Issue #90）：FactChecker 准备上屏的支持 / 反驳来源，必须先经 SourceValidator 对 claimAtom + URL 独立审核。
  *
- * 补查、质询、整句审计都可能往检索包里加新来源；每次加完，先刷新审计，再让新来源带方向上屏。
- * 刷新不了（没时间或审计失败）时，新来源一律只作背景（fail-closed），不会闪一下绿色「支持」再被纠正。
+ * 首次审计没覆盖全部方向性来源时，再审一次；刷新不了（没时间或审计失败）时，
+ * 没审过的来源一律只作背景（fail-closed），不会闪一下绿色「支持」再被纠正。
  */
 import { bindAtomEvidenceToVerdicts } from "../atomSearch.js";
 import { claimAtomKey } from "../claimAtom/index.js";
@@ -14,8 +14,6 @@ export type SourceAudit = {
   apply: () => void;
   /** 检索包变了或审计没覆盖全部方向性来源时，再审一次。 */
   refreshIfNeeded: () => Promise<void>;
-  /** 调用方自己刚审过一次（整句审计补查）：记下此刻的检索包。 */
-  markAudited: () => void;
 };
 
 export function createSourceAudit(ctx: PipelineContext, state: Omit<CaseState, "sourceAudit">): SourceAudit {
@@ -76,11 +74,5 @@ export function createSourceAudit(ctx: PipelineContext, state: Omit<CaseState, "
     apply();
   };
 
-  return {
-    apply,
-    refreshIfNeeded,
-    markAudited: () => {
-      auditedSignature = bundleSignature();
-    },
-  };
+  return { apply, refreshIfNeeded };
 }

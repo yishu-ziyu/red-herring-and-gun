@@ -126,7 +126,7 @@ export interface VerdictSource {
   snippet: string;
 }
 
-/** 逐条判定条目：来自 fact_checker / report_composer 的 subclaimVerdicts，经 merge 闸门规范化后存档 */
+/** 逐条判定条目：来自 fact_checker 的 subclaimVerdicts，经 merge 闸门规范化后存档 */
 export interface SubclaimVerdict {
   claimAtom: string;
   verdict: SubclaimVerdictValue;

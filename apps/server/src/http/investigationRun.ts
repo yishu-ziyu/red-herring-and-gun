@@ -9,7 +9,6 @@
 import { runCasePipeline, type PipelineStep } from "../lib/casePipeline/index.js";
 import { commitFreeCheck, releaseFreeCheck, type CheckTicket } from "../lib/checkQuota.js";
 import { applyContextCrossCheckToReport } from "../lib/contextCrossCheck.js";
-import { makeRewriteQueryCall } from "../lib/evidenceLoop/index.js";
 import { withExecutionBudget, type ExecutionBudget } from "../lib/executionBudget.js";
 import { applyFactDeskPostProcessToReport } from "../lib/factDeskPostProcess.js";
 import { followUpReuseFromClientBrief } from "../lib/followUpReuse.js";
@@ -36,7 +35,7 @@ import {
   type CaseIntakePayload,
   type normalizeClientMemoryRecall,
 } from "../lib/visionIntake.js";
-import { makePipelineHooks, makeRunAgentCallbacks, makeRunReport } from "./pipelineEvents.js";
+import { makePipelineHooks, makeRunAgentCallbacks } from "./pipelineEvents.js";
 import { toFriendlyError, toPublicStreamEvent } from "./publicStream.js";
 import { classifyFailure, QUOTA_SETTLEMENT, RUN_FINAL_STATUS, TIMEOUT_LABEL, type RunOutcome } from "./runOutcome.js";
 import { openSse, sseFrame, SSE_KEEPALIVE_FRAME, SSE_KEEPALIVE_MS } from "./sseChannel.js";
@@ -59,8 +58,6 @@ export type InvestigationRequest = {
   intakeMetadata: ReturnType<typeof buildCaseIntakeMetadata>;
   clientMemoryRecall: ReturnType<typeof normalizeClientMemoryRecall>;
   clientFollowUpReuse: ReturnType<typeof followUpReuseFromClientBrief>;
-  /** #145 对比实验；只有非生产环境的请求能是 lean。 */
-  pipelineMode: "full" | "lean";
   run: { runId: string; caseId: string };
 };
 
@@ -103,7 +100,7 @@ function pipelineFinalize(
  * 只在宽限期也过了、管线确定回不来时用（Change C 之后超时本身不再走这条路）。
  */
 function buildTimedOutReport(c: string): Record<string, unknown> {
-  const report = buildDeterministicFinalReport(c, [], undefined, "核查超过时限，先给中间结论。");
+  const report = buildDeterministicFinalReport(c, [], undefined);
   report._source = "error-boundary";
   return report;
 }
@@ -146,7 +143,6 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
     intakeMetadata,
     clientMemoryRecall,
     clientFollowUpReuse,
-    pipelineMode,
     run,
   } = request;
   let claim = request.claim;
@@ -221,7 +217,7 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
 
   // Investigation Snapshot 最新帧：中断/超时时补发 interrupted 帧（保留已真实获得的数据）。
   let lastInvestigation: InvestigationSnapshotV1 | undefined;
-  // 追问观测用：本轮实际发起的检索次数 = 命题检索 + 证据追索补查轮次。
+  // 追问观测用：本轮实际发起的命题检索次数。
   // 数值来自钩子（真发生过的动作），不来自报告文本。
   const searchesCounter = { current: 0 };
   // 公共活动账本（IMPLEMENTATION_PLAN §5.1）：只由已校验快照差分与结构化 hook 生成。
@@ -335,19 +331,13 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
       displayClaim,
       // 断连与取消两个 abort 源合并：任一触发，管线阶段边界立即退出
       signal,
-      // 截止 = 总超时 − 10s 收尾余量：补查/复核提前收敛，报告写作不再被总超时截断
+      // 截止 = 总超时 − 10s 收尾余量：来源审计刷新在此前收敛
       deadline: workDeadlineMs,
       intakeLinks: intake?.links,
       runAgent,
       searchOne: makeSearchOneAtom((event) => sendEvent(event), env, { signal, deadlineMs: workDeadlineMs }),
-      callSelfProofModel: adapter.makeSelfProofCaller(),
-      evidenceLoop: { callRewriteModel: makeRewriteQueryCall(adapter.makeRewriteCaller()) },
-      crossExam: { callRaw: adapter.makeCrossExamCaller((data) => sendEvent(data)) },
-      wholeClaimAudit: { callModel: adapter.makeWholeClaimAuditCaller() },
       followUpReuse: clientFollowUpReuse ?? undefined,
-      mode: pipelineMode,
-      runReport: makeRunReport(runAgent, sendEvent),
-      hooks: makePipelineHooks({ claim, sendEvent, emitInvestigation, emitter, searchesCounter }),
+      hooks: makePipelineHooks({ sendEvent, emitInvestigation, emitter, searchesCounter }),
       finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>
         pipelineFinalize(fctx, visualExtraction),
     }), { signal: pipelineSignal, timeoutMs: PIPELINE_TOTAL_TIMEOUT_MS + PIPELINE_LATE_GRACE_MS, label: TIMEOUT_LABEL });

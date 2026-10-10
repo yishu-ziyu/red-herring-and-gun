@@ -1,66 +1,12 @@
 /**
- * 管线事件 → SSE 帧：agent 四帧、检索与追索、复核，以及报告写作工厂。
+ * 管线事件 → SSE 帧：agent 四帧、检索、复核。
  * 事件名与载荷字节级不变。
  */
-import type { AtomSearchBundle } from "../lib/atomSearch.js";
-import type { CasePipelineHooks, CasePipelineInput, PipelineStep, RunAgentFn } from "../lib/casePipeline/index.js";
+import type { CasePipelineHooks } from "../lib/casePipeline/index.js";
 import type { InvestigationSnapshotV1 } from "../lib/investigation/index.js";
 import type { createInvestigationEmitter } from "../lib/investigationEmitter.js";
-import { runReportComposerWithFallback } from "../lib/reportFallback.js";
 import { getSearchToolName } from "../lib/searchProviders.js";
 import { toFriendlyError } from "./publicStream.js";
-
-function makeReportRunner(runAgent: RunAgentFn) {
-  return async ({
-    claim,
-    steps,
-    search360Result,
-    atomSearchBundle,
-    onFallback,
-    signal,
-    deadlineMs,
-  }: {
-    claim: string;
-    steps: PipelineStep[];
-    search360Result: unknown;
-    atomSearchBundle: AtomSearchBundle;
-    onFallback?: (step: PipelineStep) => void;
-    signal?: AbortSignal;
-    deadlineMs?: number;
-  }) =>
-    runReportComposerWithFallback({
-      claim,
-      steps,
-      search360Result,
-      runAgent: (agentId, s, search, execution) => runAgent(agentId, s as PipelineStep[], search, atomSearchBundle, execution),
-      onFallback,
-      signal,
-      deadlineMs,
-    });
-}
-
-/** 报告写作工厂：兜底报告也作为 agent_complete 帧发出。 */
-export function makeRunReport(
-  runAgent: RunAgentFn,
-  sendEvent: (data: object) => void
-): CasePipelineInput["runReport"] {
-  return (args) =>
-    makeReportRunner(runAgent)({
-      ...args,
-      onFallback: (step) => {
-        sendEvent({
-          type: "agent_complete",
-          agent: step.agent,
-          agentName: step.agentName,
-          agentIcon: step.agentIcon,
-          output: step.output,
-          model: step.model,
-          latencyMs: step.latencyMs,
-          timestamp: Date.now(),
-        });
-      },
-    });
-}
 
 /**
  * Agent 事件回调工厂：把 agent_start / agent_thought / agent_complete / agent_error 四帧
@@ -122,22 +68,16 @@ export function makeRunAgentCallbacks(sendEvent: (data: object) => void) {
  * 事件名与载荷字节级不变——这里只改形状，不改语义。
  */
 export function makePipelineHooks(ctx: {
-  claim: string;
   sendEvent: (data: object) => void;
   emitInvestigation: (snapshot: InvestigationSnapshotV1) => void;
   emitter: ReturnType<typeof createInvestigationEmitter>;
   searchesCounter: { current: number };
 }): CasePipelineHooks {
-  const { claim, sendEvent, emitInvestigation, emitter, searchesCounter } = ctx;
+  const { sendEvent, emitInvestigation, emitter, searchesCounter } = ctx;
   return {
     searchMode: "sequential",
     onInvestigationSnapshot: (snapshot) => {
       emitInvestigation(snapshot);
-    },
-    onSelfProof: (info) => {
-      console.log(
-        `[agent_self_proof] claim=${JSON.stringify(claim).slice(0, 120)} kept=${info.kept.length} dropped=${info.dropped.length}`
-      );
     },
     onAtomSearchStart: (atom) => {
       searchesCounter.current += 1;
@@ -168,67 +108,6 @@ export function makePipelineHooks(ctx: {
           timestamp: Date.now(),
         });
       }
-    },
-    onEvidenceLoopRoundStart: (info) => {
-      searchesCounter.current += 1;
-      sendEvent({
-        type: "tool_start",
-        toolName: "证据追索",
-        query: info.query,
-        result: {
-          kind: "evidence_pursuit",
-          atom: info.atom,
-          round: info.round,
-          goal: info.goal,
-          purpose: info.purpose,
-          missingEvidence: info.missingEvidence,
-          trigger: info.trigger,
-        },
-        timestamp: Date.now(),
-      });
-    },
-    onEvidenceLoopRoundResult: (info) => {
-      sendEvent({
-        type: "tool_result",
-        toolName: "证据追索",
-        query: info.query,
-        result: {
-          kind: "evidence_pursuit",
-          atom: info.atom,
-          round: info.round,
-          sourceCount: info.sourceCount,
-          newSourceCount: info.newSourceCount,
-          goal: info.goal,
-          purpose: info.purpose,
-          resultKind: info.resultKind,
-          gain: info.gain,
-          missingAfter: info.missingAfter,
-          action: info.action,
-          detail: info.detail,
-        },
-        timestamp: Date.now(),
-      });
-    },
-    onEvidenceLoopStopped: (info) => {
-      const reasonText: Record<string, string> = {
-        "evidence-found": "缺口收窄，转入重判",
-        "no-new-evidence": "继续搜也没有新证据，判停",
-        "rewrite-empty": "没有可用的新查询，判停",
-        "search-failed": "补查检索失败，判停",
-      };
-      sendEvent({
-        type: "tool_result",
-        toolName: "证据追索",
-        query: info.atom,
-        result: {
-          kind: "evidence_pursuit",
-          atom: info.atom,
-          rounds: info.rounds,
-          reason: info.reason,
-          reasonText: reasonText[info.reason] ?? info.reason,
-        },
-        timestamp: Date.now(),
-      });
     },
     onReportReviewStart: (info) => {
       sendEvent({ type: "tool_start", toolName: info.toolName, query: info.query, timestamp: Date.now() });

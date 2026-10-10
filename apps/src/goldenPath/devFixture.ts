@@ -26,7 +26,6 @@ type AtomSpec = {
     gaps?: string[];
     relatedOnly?: boolean;
   };
-  crossExam?: { status: string; response: string };
 };
 
 // 与三张参考图同一题材：三条命题、可支持/反驳/待核对/相关材料/争议齐备。
@@ -58,7 +57,6 @@ const ATOMS: AtomSpec[] = [
       contradicting: [src("https://course.example.org/poison-terms", "科普：什么是「毒药」——剂量决定毒性", "脱离剂量的毒性表述不成立")],
       gaps: ["缺少对常温存放 24 小时以上样本的定向检测数据"],
     },
-    crossExam: { status: "answered", response: "分歧来自剂量与储存条件：疾控提醒的是不当储存风险，而常温短存放不构成「毒药」级危害。" },
   },
   {
     atom: "只要冷藏保存，隔夜菜就一定安全",
@@ -102,13 +100,6 @@ function staged(phase: "investigating" | "judging" | "complete") {
     (input.subclaimVerdicts as Array<Record<string, unknown>>).forEach((v, i) => {
       if (i === 1) v.sourcesRelatedOnly = false;
     });
-    input.crossExam = {
-      ran: true,
-      atoms: ATOMS.filter((a) => a.crossExam).map((a) => ({ atom: a.atom, ...a.crossExam, secondVerdict: "false" })),
-    };
-    input.pursuitHops = [
-      { hop: 1, atom: ATOMS[1]!.atom, goal: "找常温久放样本的检测数据", purpose: "gap", query: "隔夜菜 常温 24小时 检测", resultKind: "partial", newEvidence: 0, missingAfter: ["常温久放样本检测"], gain: 0, action: "stop" },
-    ];
     input.report = {
       conclusion: "现有证据不支持「隔夜菜会直接致癌、吃了等于吃毒药」。不当储存确有风险，但常规冷藏并彻底回热的隔夜菜，风险远低于说法描述；「一定安全」也不成立，冷藏超过三天仍应丢弃。",
       verdictType: "mixed_misleading",

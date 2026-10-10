@@ -220,23 +220,13 @@ const conflictBase = (() => {
   };
 })();
 
-export function conflictKnownReason(): InvestigationSnapshotV1 {
+/** 首页样例「语境错位」：同一命题支持与反驳并存。 */
+export function conflictContext(): InvestigationSnapshotV1 {
   return buildInvestigationSnapshot(
     {
       ...conflictBase.input,
       phase: "complete",
       subclaimVerdicts: [conflictBase.verdict],
-      crossExam: {
-        ran: true,
-        atoms: [
-          {
-            atom: conflictBase.atom,
-            status: "answered",
-            response: "分歧来自适用范围：试点通知只覆盖某地，不是全国新规。",
-            secondVerdict: "false",
-          },
-        ],
-      },
       report: { conclusion: "该说法把地方试点说成了全国新规。", verdictType: "unverified" },
     },
     { claimAtomKeyFn: noopKey }

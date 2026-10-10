@@ -1,7 +1,7 @@
 /**
  * factDeskPostProcess.ts — Prompt A+F post-process for live handoff JSON
  *
- * Runs after ReportComposer (LLM or deterministic fallback) returns finalReport.
+ * Runs after the deterministic report is built.
  * Goals:
  * 1. Strip drama / AI self-talk / infrastructure leaks from public prose
  * 2. Keep canSay / cannotSay honest and non-empty

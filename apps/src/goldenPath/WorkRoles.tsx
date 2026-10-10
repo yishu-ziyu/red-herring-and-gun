@@ -41,7 +41,7 @@ type WorkRolesProps = {
   compact?: boolean;
   activeIndex?: number;
   phase?: string;
-  /** received 且自证已开始：拆问题还在场，文案改成核对。 */
+  /** received 且拆题模型已回来但没拆出命题：拆问题还在场，文案改成核对。 */
   preClaimWork?: "splitting" | "checking";
   sourceCount?: number;
 };

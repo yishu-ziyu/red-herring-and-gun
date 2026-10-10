@@ -1,7 +1,7 @@
 /**
  * reportReviewer.ts — deterministic proposer-reviewer (server copy)
  *
- * ReportComposer is the proposer; this module is a non-LLM reviewer:
+ * The deterministic report is the proposer; this module is a non-LLM reviewer:
  * contract fields, evidence chain, boundary language, minimal repair.
  */
 
@@ -61,7 +61,7 @@ function reportHasBoundHttpUrl(report: Record<string, unknown>): boolean {
 }
 
 /**
- * Review and minimally repair report_composer output.
+ * Review and minimally repair the report.
  * previousOutputs: prior step outputs for coarse fidelity checks.
  */
 export function reviewAndRepairReport(

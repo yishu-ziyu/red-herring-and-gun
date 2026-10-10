@@ -38,7 +38,7 @@ export type AssembleFinalReportInput = {
   finalReport: Record<string, unknown>;
   /** rumor_detector step (or { output }) */
   rumorStep: { output?: Record<string, unknown> } | null | undefined;
-  /** Prefer report_composer verdicts; fall back to fact_checker */
+  /** fact_checker verdicts (the report's own only when fact_checker gave none) */
   verdicts: unknown;
   searchSources?: Array<{ url?: unknown }>;
   atomSearchBundle?: AtomSearchBundle | null;

@@ -2,36 +2,18 @@
  * eval/runCase.ts — 用生产依赖组装 casePipeline，跑单个 golden case。
  *
  * 复用生产模块（callAgentWithFallback / AGENT_CONFIGS / buildAgentInput /
- * runClaimAtomSelfProof / reviewAndRepairReport / retrieveAtomSources），
+ * reviewAndRepairReport / retrieveAtomSources），
  * 不复制生产逻辑，保证评测跑的就是生产路径。
  *
  * 运行方式见 eval/run.ts（tsx 脚本，不参与 tsc build）。
  */
 
 import { AGENT_CONFIGS, buildAgentInput } from "../src/lib/agentConfigs.js";
-import {
-  callAgentWithFallback,
-  providerOrderForAgent,
-  ProviderFallbackError,
-} from "../src/lib/providerRouter.js";
+import { callAgentWithFallback, ProviderFallbackError } from "../src/lib/providerRouter.js";
 import { runCasePipeline, type CasePipelineHooks, type PipelineStep } from "../src/lib/casePipeline/index.js";
 import { retrieveAtomSources } from "../src/lib/searchProviders.js";
-import { buildDeterministicFinalReport } from "../src/lib/reportFallback.js";
 import { applyFactDeskPostProcessToReport } from "../src/lib/factDeskPostProcess.js";
-import { makeRewriteQueryCall } from "../src/lib/evidenceLoop/index.js";
 import type { ScoreCaseGolden } from "./golden.js";
-
-/** Cross exam 第二意见（G3）：与主判 provider 异源优先，与生产 handlers 同策略。 */
-function pickCrossExamModel(env: Record<string, string>): { provider: string; model: string } | undefined {
-  const candidates = [
-    { provider: "stepfun", model: "step-3.7-flash", hasKey: Boolean(env.STEPFUN_API_KEY) },
-    { provider: "minimax", model: "MiniMax-M3", hasKey: Boolean(env.MINIMAX_API_KEY || env.MINIMAX_TOKEN_PLAN_KEY) },
-  ].filter((c) => c.hasKey);
-  if (candidates.length === 0) return undefined;
-  const primary = providerOrderForAgent(env)[0];
-  const crossSource = candidates.find((c) => c.provider !== primary);
-  return crossSource ?? candidates[0];
-}
 
 export interface EvalEnv {
   env: Record<string, string>;
@@ -49,9 +31,9 @@ function makeRunAgent({ env }: EvalEnv, claim: string) {
     if (!agentConfig) throw new Error(`Unknown agent: ${agentId}`);
 
     const agentInput = buildAgentInput(agentId, claim, steps as never) as Record<string, unknown>;
-    if (search360Result && ["fact_checker", "source_validator", "report_composer"].includes(agentId)) {
+    if (search360Result && ["fact_checker", "source_validator"].includes(agentId)) {
       agentInput.search360 = search360Result;
-      if (atomSearchBundle && (agentId === "fact_checker" || agentId === "source_validator" || agentId === "report_composer")) {
+      if (atomSearchBundle) {
         agentInput.atomSearches = (atomSearchBundle as { forAgent?: unknown }).forAgent;
       }
     }
@@ -83,35 +65,6 @@ function makeRunAgent({ env }: EvalEnv, claim: string) {
   };
 }
 
-function makeBareCall(
-  evalEnv: EvalEnv,
-  agentId: string,
-  reasoningEffort: "low" | "high",
-  modelOverride?: { provider: string; model: string }
-) {
-  return (input: {
-    systemPrompt: string;
-    userContent: string;
-    responseSchema: object;
-    maxTokens: number;
-  }) =>
-    callAgentWithFallback({
-      agentId,
-      systemPrompt: input.systemPrompt,
-      userContent: input.userContent,
-      responseSchema: input.responseSchema,
-      maxTokens: input.maxTokens,
-      env: evalEnv.env,
-      reasoningEffort,
-      ...(modelOverride ? { modelOverride } : {}),
-      options: { logger: { info: () => {}, error: console.error.bind(console) } },
-    }).then((r) => ({ output: r.output, model: r.model }));
-}
-
-function makeSelfProof(evalEnv: EvalEnv) {
-  return makeBareCall(evalEnv, "rumor_detector_selfproof", "low");
-}
-
 /** 生产搜索：与 Case Pipeline HTTP 同一 retrieveAtomSources（双路查询 + 并行源）。 */
 function makeSearchOne(env: Record<string, string>) {
   return async (atom: string) => {
@@ -121,18 +74,6 @@ function makeSearchOne(env: Record<string, string>) {
       return { sources: [], answer: "", model: "", traceText: "", _source: "error" };
     }
   };
-}
-
-/** evidenceLoop 裸模型改写调用（与 handlers.makeRewriteCaller 同款）。 */
-function makeRewriteRaw(evalEnv: EvalEnv) {
-  return makeBareCall(evalEnv, "evidence_loop_rewriter", "low");
-}
-
-/** cross exam 第二意见裸调用（与 handlers.makeCrossExamCaller 同款，国产优先）。 */
-function makeCrossExamRaw(evalEnv: EvalEnv) {
-  const modelOverride = pickCrossExamModel(evalEnv.env);
-  if (!modelOverride) return undefined;
-  return makeBareCall(evalEnv, "cross_examiner", "high", modelOverride);
 }
 
 export interface EvalCaseResult {
@@ -164,25 +105,6 @@ export async function runCase(
       ...(hooks ? { hooks } : {}),
       runAgent,
       searchOne: makeSearchOne(evalEnv.env),
-      callSelfProofModel: makeSelfProof(evalEnv),
-      // LLM 语义改写（与生产 handlers 同款）：eval 必须跑生产路径
-      evidenceLoop: { callRewriteModel: makeRewriteQueryCall(makeRewriteRaw(evalEnv)) },
-      crossExam: { callRaw: makeCrossExamRaw(evalEnv) },
-      runReport: async ({ claim: reportClaim, steps, search360Result, atomSearchBundle }) => {
-        try {
-          return await runAgent("report_composer", steps, search360Result, atomSearchBundle);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "report_composer failed";
-          return {
-            agent: "report_composer",
-            output: buildDeterministicFinalReport(reportClaim, steps, search360Result, message),
-            model: "fallback:deterministic-report",
-            status: "completed",
-            error: message,
-            timestamp: Date.now(),
-          };
-        }
-      },
       finalizeReport: ({ finalReport, claim: reportClaim }) => {
         applyFactDeskPostProcessToReport(finalReport, reportClaim);
       },
@@ -191,7 +113,6 @@ export async function runCase(
       steps: result.steps,
       finalReport: result.finalReport,
       atomSearchBundle: result.atomSearchBundle,
-      evidenceLoop: result.evidenceLoop,
     };
   } catch (error) {
     return {

@@ -1,5 +1,4 @@
 const INFRASTRUCTURE_ERROR_PATTERNS = [
-  /ReportComposer/i,
   /providers? failed/i,
   /API error/i,
   /quota\s+(?:exceeded|limit|exhausted)|(?:exceeded|insufficient)\s+quota/i,

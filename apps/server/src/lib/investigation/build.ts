@@ -2,7 +2,7 @@
  * 生产数据 → InvestigationSnapshotV1 的确定性映射（不调用任何 LLM）。
  *
  * 输入是生产结构的鸭子类型（claimAtoms / claimAtomTypes / AtomSearchBundle /
- * subclaimVerdicts / crossExam / pursuitHops / finalReport），全部可选——
+ * subclaimVerdicts / finalReport），全部可选——
  * 同一个 builder 服务调查进行中、完成、interrupted 和旧历史重建。
  *
  * 判词纪律不在本文件发明：true/false 无已绑定 http(s) 来源时按生产 demote 规则
@@ -44,7 +44,7 @@ import { verbatimQuote } from "./quote.js";
 export type InvestigationBuildInput = {
   originalClaim: string;
   phase: InvestigationPhase;
-  /** self-proof 后保留的原子（原句序）。dropped 原子不进 claims——它们不是用户主张。 */
+  /** 拆题后保留的原子（原句序）。被丢掉的原子不进 claims——它们不是用户主张。 */
   claimAtoms?: unknown;
   /** [{ text, verifiable, type }]，拆题类型闸工单。 */
   claimAtomTypes?: unknown;
@@ -58,10 +58,6 @@ export type InvestigationBuildInput = {
   sourceRelationAudits?: unknown;
   /** [{ text, type }] 立场/不适用原子（legacy 补 types 用）。 */
   nonVerifiableAtoms?: unknown;
-  /** { ran?, atoms?: [...] } 质询记录；只用于冲突 reason，不决定冲突是否存在。 */
-  crossExam?: unknown;
-  /** PursuitHop[] 证据追索跳；只用于 gap consequence。 */
-  pursuitHops?: unknown;
   /** finalReport 形：{ conclusion?, verdictType?, causalBoundary?, citationSources?, checkedAt? }。 */
   report?: unknown;
   /** 引用探活死链（pruneDeadCitations.deadUrls）：死链来源标 reachable=false。 */
@@ -545,48 +541,6 @@ function readBundle(
   return { searchedKeys, allowKeys, perAtom };
 }
 
-function readCrossExam(
-  raw: unknown,
-  keyFn: (s: string) => string
-): Map<string, { response: string; status: string }> {
-  const rec = asRecord(raw);
-  const out = new Map<string, { response: string; status: string }>();
-  if (!rec) return out;
-  for (const item of asArray(rec.atoms)) {
-    const atomRec = asRecord(item);
-    if (!atomRec) continue;
-    const atom = asString(atomRec.atom).trim();
-    if (!atom) continue;
-    out.set(keyFn(atom), {
-      response: clip(asString(atomRec.response), 300),
-      status: asString(atomRec.status),
-    });
-  }
-  return out;
-}
-
-function readPursuitHops(
-  raw: unknown,
-  keyFn: (s: string) => string
-): Map<string, { goal: string; missingAfter: string[] }> {
-  const out = new Map<string, { goal: string; missingAfter: string[] }>();
-  for (const item of asArray(raw)) {
-    const rec = asRecord(item);
-    if (!rec) continue;
-    const atom = asString(rec.atom).trim();
-    if (!atom) continue;
-    const missingAfter = asArray(rec.missingAfter)
-      .map((m) => clip(asString(m), 40))
-      .filter((m) => m.length > 0);
-    if (missingAfter.length === 0) continue;
-    out.set(keyFn(atom), {
-      goal: clip(asString(rec.goal), 80),
-      missingAfter,
-    });
-  }
-  return out;
-}
-
 function verdictToJudgment(verdict: string): InvestigationJudgment | null {
   switch (verdict) {
     case "true":
@@ -628,8 +582,8 @@ export function buildInvestigationSnapshot(
   const originalClaim = input.originalClaim;
 
   // key 与展示文本分离（#51 复审 blocker）：key 只做 identity join
-  // （dedupe / verdict / bundle / type / crossExam / pursuit），会规范化全角空格
-  // 并超长截断；text 是 self-proof 后 kept atom 的真实展示文本，不因内部键改写。
+  // （dedupe / verdict / bundle / type），会规范化全角空格
+  // 并超长截断；text 是拆题后保留命题的真实展示文本，不因内部键改写。
   const keptAtoms: Array<{ key: string; text: string }> = [];
   const seenAtom = new Set<string>();
   for (const item of asArray(input.claimAtoms)) {
@@ -645,8 +599,6 @@ export function buildInvestigationSnapshot(
   const verdicts = readVerdicts(input.subclaimVerdicts, keyFn);
   const bundle = readBundle(input.atomSearchBundle, keyFn);
   const relationAudits = readRelationAudits(input.sourceRelationAudits, keyFn);
-  const crossExamAtoms = readCrossExam(input.crossExam, keyFn);
-  const pursuitByAtom = readPursuitHops(input.pursuitHops, keyFn);
   const report = asRecord(input.report);
   const deadUrls = new Set(asArray(input.reachability?.deadUrls).map((u) => asString(u)));
   const verdictDecision = readVerdictDecision(report, keyFn);
@@ -1021,12 +973,6 @@ export function buildInvestigationSnapshot(
     }
 
     const gaps: InvestigationGap[] = [];
-    const pursuit = pursuitByAtom.get(a.key);
-    let consequence: string | undefined;
-    if (pursuit) {
-      const goalPart = pursuit.goal ? `证据追索以「${pursuit.goal}」为目标补查` : "证据追索已补查";
-      consequence = clip(`${goalPart}，仍缺 ${pursuit.missingAfter.join("、")}`, 160);
-    }
     const seenGap = new Set<string>();
     for (const g of verdict?.evidenceGaps ?? []) {
       if (seenGap.has(g)) continue;
@@ -1036,19 +982,6 @@ export function buildInvestigationSnapshot(
         claimId: `claim-${a.order + 1}`,
         description: g,
         status: "open",
-        ...(consequence && gaps.length === 0 ? { consequence } : {}),
-      });
-    }
-    // 判词没列缺口但证据追索记录了真实 missingAfter：命题还查不清时这是一等缺口，如实立对象。
-    // 命题已经判定时，检索流程没补到的槽位（当事方、地点……）不是用户需要的缺口。
-    const settled = judgment === "supported" || judgment === "refuted" || judgment === "mixed";
-    if (gaps.length === 0 && pursuit && !settled) {
-      gaps.push({
-        id: `gap-${a.order + 1}-${gaps.length + 1}`,
-        claimId: `claim-${a.order + 1}`,
-        description: clip(`补查后仍缺：${pursuit.missingAfter.join("、")}`, 160),
-        status: "open",
-        ...(consequence ? { consequence } : {}),
       });
     }
 
@@ -1068,17 +1001,13 @@ export function buildInvestigationSnapshot(
     };
   });
 
-  // 冲突：只来自真实证据层（同命题支持与反驳来源并存）；crossExam 只补原因线索。
-  // assemblies 与 claims 同序同长；判词与质询都按内部 key join，不经过展示文本。
+  // 冲突：只来自真实证据层（同命题支持与反驳来源并存）。原因未知，如实标 unknown。
   const conflicts: InvestigationConflict[] = [];
   for (let i = 0; i < keptAtoms.length; i++) {
-    const assembly = assemblies[i]!;
     const claim = claims[i]!;
     const supportIds = claim.evidence.filter((l) => l.role === "support").map((l) => l.sourceId);
     const contradictIds = claim.evidence.filter((l) => l.role === "contradict").map((l) => l.sourceId);
     if (supportIds.length === 0 || contradictIds.length === 0) continue;
-    const cross = assembly.verdict ? crossExamAtoms.get(assembly.verdict.claimAtom) : undefined;
-    const knownReason = cross && cross.status === "answered" && cross.response ? cross.response : "";
     conflicts.push({
       id: `conflict-${claim.order + 1}`,
       claimId: claim.id,
@@ -1087,8 +1016,7 @@ export function buildInvestigationSnapshot(
         { position: "support", sourceIds: supportIds },
         { position: "contradict", sourceIds: contradictIds },
       ],
-      ...(knownReason ? { reason: knownReason } : {}),
-      reasonStatus: knownReason ? "known" : "unknown",
+      reasonStatus: "unknown",
       unresolved: true,
     });
   }
@@ -1265,8 +1193,6 @@ export function rebuildInvestigationFromReport(input: {
     }
   }
 
-  const pursuitHops = asRecord(report.evidencePursuit)?.hops;
-
   return buildInvestigationSnapshot(
     {
       originalClaim: input.claim,
@@ -1274,8 +1200,6 @@ export function rebuildInvestigationFromReport(input: {
       claimAtoms: atoms,
       claimAtomTypes: types,
       subclaimVerdicts: report.subclaimVerdicts,
-      crossExam: report.crossExam,
-      pursuitHops,
       report,
     },
     input.options

@@ -19,7 +19,7 @@ export function compactText(value: unknown, maxLength = 420): string {
 
 /**
  * 统一原子键：全角空格规范化 + 截断到 maxLength（超长加省略号）。
- * 自证闸门改写后，split/merge/claimItems 都复用同一键。
+ * 拆题收窄后，split/merge/claimItems 都复用同一键。
  */
 export function claimAtomKey(value: string, maxLength = 180): string {
   const norm = value.replace(/\u3000/g, " ");

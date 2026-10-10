@@ -119,7 +119,7 @@ export function build360SearchFailure(query: string, message: string) {
   };
 }
 
-/** 给写作模型看的来源：标题、URL、域名、片段。不带 S1/C1 这类检索序号。 */
+/** 给核查模型看的来源：标题、URL、域名、片段。不带 S1/C1 这类检索序号。 */
 function agentFacingSource(source: any) {
   const url = String(source?.url || source?.link || "").trim();
   const domain = String(source?.domain || source?.site || "").trim();
@@ -138,38 +138,6 @@ function agentFacingSource(source: any) {
 function agentFacingSources(list: unknown, limit: number) {
   if (!Array.isArray(list)) return [];
   return list.slice(0, limit).map(agentFacingSource).filter(Boolean);
-}
-
-export function buildReportEvidenceInputs(steps: any[], searchResult?: any) {
-  const factStep = [...steps].reverse().find((step) => step.agent === "fact_checker");
-  const sourceStep = steps.find((step) => step.agent === "source_validator");
-  const sources = agentFacingSources(searchResult?.sources, 8);
-
-  return {
-    searchSummary: {
-      tool: getSearchToolName(searchResult),
-      answer: typeof searchResult?.answer === "string" ? searchResult.answer.slice(0, 900) : "",
-      sources,
-      supportingEvidence: stringItems(searchResult?.supportingEvidence).slice(0, 5),
-      contradictingEvidence: stringItems(searchResult?.contradictingEvidence).slice(0, 5),
-      unresolvedEvidenceGaps: stringItems(searchResult?.unresolvedEvidenceGaps).slice(0, 5),
-      relatedQuestions: stringItems(searchResult?.relatedQuestions).slice(0, 4),
-    },
-    factFindings: {
-      result: factStep?.output?.factCheckResult ?? "unverified",
-      confidence: factStep?.output?.confidence ?? "low",
-      sources: stringItems(factStep?.output?.sources).slice(0, 6),
-      keyFindings: stringItems(factStep?.output?.keyFindings).slice(0, 5),
-      counterEvidence: stringItems(factStep?.output?.counterEvidence).slice(0, 5),
-    },
-    sourceAudit: {
-      reliability: sourceStep?.output?.sourceReliability ?? "unverified",
-      verifiedSources: stringItems(sourceStep?.output?.verifiedSources).slice(0, 5),
-      questionableSources: stringItems(sourceStep?.output?.questionableSources).slice(0, 5),
-      missingSources: stringItems(sourceStep?.output?.missingSources).slice(0, 5),
-      notes: typeof sourceStep?.output?.verificationNotes === "string" ? sourceStep.output.verificationNotes.slice(0, 500) : "",
-    },
-  };
 }
 
 export function compactSearchResultForAgent(searchResult: any) {

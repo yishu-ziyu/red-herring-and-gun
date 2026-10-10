@@ -18,7 +18,7 @@ import {
   wholeLabelFor,
   type LabelKey,
 } from "../domain/labels.js";
-import { buildScopedEvidence, clipSentence } from "./wholeClaimAudit/scopedEvidence.js";
+import { buildScopedEvidence, clipSentence } from "./scopedEvidence.js";
 
 type Report = Record<string, unknown>;
 
@@ -177,11 +177,10 @@ function firstSentence(text: string, label: LabelKey): string {
   return /[。！？]$/.test(first) ? first : `${first}。`;
 }
 
-/** 模型写的整句理由；没有时（确定性报告、模型没给）用各截标签拼一句。 */
+/** 核查模型写的整句理由；模型没给或不合格时用各截标签拼一句。 */
 function wholeReasonOf(report: Report, parts: readonly AssessedPart[], label: LabelKey, factCheckReason?: unknown): string {
-  // 报告写作那一步的理由优先；时间不够跳过报告写作时，用核查那一步写的理由（两步都是模型写的）。
   const pick = (value: unknown) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "");
-  const model = firstSentence(pick(report.verdictReason), label) || firstSentence(pick(factCheckReason), label);
+  const model = firstSentence(pick(factCheckReason), label);
   if (model) return model;
   if (parts.length > 0) return `${parts.map(partLine).join("；")}。`;
   return FALLBACK_PART_REASON[label];
@@ -220,7 +219,7 @@ function renderConclusion(
   report: Report,
   verdictType: string,
   parts: readonly AssessedPart[],
-  context: { nonVerifiableAtoms?: unknown; auditUnresolvedGaps?: readonly string[] },
+  context: { nonVerifiableAtoms?: unknown },
   whole: { label: LabelKey; reason: string }
 ) {
   // 结论第一句 = 整句标签 + 一句理由（#140）。
@@ -244,8 +243,6 @@ function renderConclusion(
   for (const text of stance) body.push(`「${clip(text, 40)}」不适用真假判断，未计入真假结论。`);
   if (verdictType === "unverified") {
     for (const note of missingNotes(report, parts)) body.push(`还缺：${clip(note, 100)}。`);
-    const gap = (context.auditUnresolvedGaps ?? []).find((g) => typeof g === "string" && g.trim());
-    if (gap) body.push(`仍缺关键依据：${clip(gap, 100)}`);
   }
   report.conclusion = body.join("").slice(0, 480);
 
@@ -259,7 +256,7 @@ function renderConclusion(
 export function applySentenceVerdict(
   report: Report,
   parts: AssessedPart[],
-  context: { nonVerifiableAtoms?: unknown; auditUnresolvedGaps?: readonly string[]; factCheckReason?: unknown } = {}
+  context: { nonVerifiableAtoms?: unknown; factCheckReason?: unknown } = {}
 ) {
   const decision = decideSentenceVerdict(parts);
   const before = String(report.verdictType ?? "");

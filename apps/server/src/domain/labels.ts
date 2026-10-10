@@ -86,7 +86,7 @@ export function labelToJudgment(label: LabelKey): Judgment {
   }
 }
 
-/** 模型给的标签 → 流水线内部沿用的判词（merge / 引用绑定 / 质询都读它）。 */
+/** 模型给的标签 → 流水线内部沿用的判词（merge / 引用绑定都读它）。 */
 export function verdictForLabel(label: LabelKey): "true" | "false" | "partial" | "exaggerated" | "disputed" | "unverified" {
   switch (label) {
     case "true":

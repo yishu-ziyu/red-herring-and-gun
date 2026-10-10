@@ -1,5 +1,5 @@
 /**
- * reportFallback.ts — ReportComposer 失败/超时时的确定性兜底报告与共识辩论构建。
+ * reportFallback.ts — 由分条判断确定性地写出整份报告（不调用写作模型）。
  * 结构完整、不撒谎、不空白。
  */
 
@@ -10,65 +10,8 @@ import { applyFactDeskPostProcessToReport } from "./factDeskPostProcess.js";
 import { applyPublicCopy } from "./publicCopy.js";
 
 import { stringItems } from "./valueCoerce.js";
-import { withExecutionBudget, type ExecutionBudget } from "./executionBudget.js";
 
-/**
- * ReportComposer 只负责把已有判断写成报告，不能无限期阻塞调查收束。
- * 生产侧历史测量表明它可静默约 50s；75s 给正常调用留余量，同时给 reviewer / 探活 / final gate 留收尾窗口。
- * 调用者可在测试或特殊环境显式覆盖。
- */
-export const REPORT_COMPOSER_TIMEOUT_MS_DEFAULT = 75_000;
-
-export async function runReportComposerWithFallback({
-  claim,
-  steps,
-  search360Result,
-  runAgent,
-  onFallback,
-  timeoutMs = REPORT_COMPOSER_TIMEOUT_MS_DEFAULT,
-  signal,
-  deadlineMs,
-}: {
-  claim: string;
-  steps: any[];
-  search360Result: any;
-  runAgent: (agentId: string, steps: any[], search360Result?: any, execution?: ExecutionBudget) => Promise<any>;
-  onFallback?: (step: any) => void;
-  /** ReportComposer 自身的硬预算；到点后用已有事实判断确定性收束。 */
-  timeoutMs?: number;
-  signal?: AbortSignal;
-  deadlineMs?: number;
-}) {
-  const startedAt = Date.now();
-  try {
-    return await withExecutionBudget(
-      (reportSignal) => runAgent("report_composer", steps, search360Result, { signal: reportSignal, deadlineMs }),
-      { signal, deadlineMs, timeoutMs, label: "ReportComposer" },
-    );
-  } catch (error) {
-    signal?.throwIfAborted();
-    const message = error instanceof Error ? error.message : "ReportComposer 调用失败";
-    const fallbackStep = {
-      agent: "report_composer",
-      agentName: "ReportComposer",
-      agentIcon: "📝",
-      systemPrompt: "deterministic fallback report",
-      input: {
-        claim,
-        fallbackReason: message,
-      },
-      output: buildDeterministicFinalReport(claim, steps, search360Result, message),
-      model: "fallback:deterministic-report",
-      latencyMs: Date.now() - startedAt,
-      timestamp: Date.now(),
-      status: "completed",
-    };
-    onFallback?.(fallbackStep);
-    return fallbackStep;
-  }
-}
-
-export function buildDeterministicFinalReport(claim: string, steps: any[], searchResult: any, reason: string) {
+export function buildDeterministicFinalReport(claim: string, steps: any[], searchResult: any) {
   const rumorStep = steps.find((step) => step.agent === "rumor_detector");
   const factStep = [...steps].reverse().find((step) => step.agent === "fact_checker");
   const sourceStep = steps.find((step) => step.agent === "source_validator");
@@ -108,9 +51,8 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
     recommendation: hasMissingSources
       ? "先把出处补上，再判断这句话站不站得住。"
       : "按现有证据判断原句站不站得住，并标出查不清的部分。",
-    summaryForPublic: `${conclusion} 本报告由兜底生成，因为最终写作模型未在服务时间内完成。`,
+    summaryForPublic: conclusion,
     whyHardToVerify: [
-      reason.slice(0, 220),
       missingText,
       "搜索结果和 Agent 输出只能作为核查线索，不能替代原始材料或权威发布。",
     ],
@@ -147,8 +89,8 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
         layer: "结论边界",
         finding: conclusion,
         evidence: [...counterEvidence, ...searchGaps].slice(0, 3).join("；") || missingText,
-        boundary: "最终写作模型超时，因此本结论采用保守兜底。",
-        sourceRefs: ["FallbackReport"],
+        boundary: "结论只写到分条判断撑得住的程度。",
+        sourceRefs: [],
       },
     ],
     // 不写每次都一样的通用免责话（#141）；每一截自己的「不能推出」在 subclaimVerdicts.boundary 里。
@@ -180,7 +122,6 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
       buildConfidenceDimension("recency", "信息时效性", searchSources.length > 0 ? 58 : 35, 50, searchSources.length > 0, "以当前搜索返回为准"),
       buildConfidenceDimension("authority", "权威匹配度", verifiedSources.length > 0 ? 62 : 38, 65, verifiedSources.length > 0, verifiedSources[0] || "缺少明确权威来源"),
     ],
-    _fallbackReason: reason,
   };
 
   // 排除层落库闸门：subclaimVerdicts 只覆盖可核查原子，不可核查原子单独进 nonVerifiableAtoms

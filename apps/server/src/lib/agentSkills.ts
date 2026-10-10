@@ -52,30 +52,6 @@ export const AGENT_SKILLS: AgentSkill[] = [
     ].join("\n"),
   },
   {
-    id: "skill.causal-boundary",
-    title: "因果边界",
-    agents: ["alternative_explanation_searcher", "counter_evidence_grader", "report_composer"],
-    claimTypes: ["causal", "mixed"],
-    body: [
-      "Skill · 因果边界",
-      "1. 观察相关 ≠ 因果；必须列出至少一种合理替代解释。",
-      "2. 报告 canSay 只允许写证据支持的关联/机制边界。",
-      "3. cannotSay 必须显式写出「不能推出因果/不能推广到人群」等。",
-    ].join("\n"),
-  },
-  {
-    id: "skill.report-fidelity",
-    title: "报告忠实合成",
-    agents: ["report_composer"],
-    body: [
-      "Skill · 报告忠实合成",
-      "1. 只使用前序 Agent 与 search360 中出现的证据，禁止新增外部事实。",
-      "2. evidenceChain ≥ 3 层；每层含 finding / evidence / boundary / sourceRefs。",
-      "3. 证据不足时 verdictType=unverified 或 mixed_misleading，不要硬给 true/false。",
-      "4. 输出 canSay / cannotSay / closureActions；公众摘要不得比结论更绝对。",
-    ].join("\n"),
-  },
-  {
     id: "skill.no-prompt-injection",
     title: "抗注入",
     body: [
