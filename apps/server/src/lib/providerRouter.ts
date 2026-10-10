@@ -387,10 +387,15 @@ export class AgentOutputError extends Error {
 /** Live output must be complete and satisfy the job schema; never guess missing tokens. */
 export function parseValidatedAgentJson(text: string, label: string, schema: object = {}): any {
   let output: unknown;
+  const candidate = extractJsonObject(stripJsonNoise(text));
   try {
-    output = JSON.parse(extractJsonObject(stripJsonNoise(text)));
-  } catch {
-    throw new AgentOutputError(`${label} 返回 JSON 无法解析（输出不完整或语法错误）`);
+    output = JSON.parse(candidate);
+  } catch (error) {
+    // 记下出错位置附近的原文：2026-10-10 核查一步常在 3 千字左右解析失败，原因不明（推测是来源原文里的双引号没转义）。
+    const reason = error instanceof Error ? error.message : "";
+    const at = Number(/position (\d+)/.exec(reason)?.[1] ?? NaN);
+    const near = Number.isFinite(at) ? ` 附近：${JSON.stringify(candidate.slice(Math.max(0, at - 60), at + 20))}` : "";
+    throw new AgentOutputError(`${label} 返回 JSON 无法解析（输出不完整或语法错误：${reason.slice(0, 120)}${near}）`);
   }
   if (!output || typeof output !== "object" || Array.isArray(output) || !Value.Check(schema as TSchema, output)) {
     throw new AgentOutputError(`${label} 输出字段不符合 responseSchema`);

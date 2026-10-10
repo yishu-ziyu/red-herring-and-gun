@@ -208,7 +208,7 @@ const verdictSourceSchema = {
     snippet: {
       type: "string",
       description:
-        "The one sentence from this source's snippet text that supports or refutes this atom, copied character for character (max 80 chars). No paraphrase, no ellipsis, no joining of two sentences.",
+        "The one sentence from this source's snippet text that supports or refutes this atom, copied character for character (max 80 chars). No paraphrase, no ellipsis, no joining of two sentences. Write any ASCII double quote from the source as 「 or 」 so the JSON stays valid.",
     },
   },
   required: ["url", "title", "snippet"],
@@ -464,7 +464,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "【逐条判定来源绑定 / 判定可追溯 — 强制】",
       "1. 输入可能含 atomSearches：每项 { claimAtom, sources[] }，表示该原子定向检索结果。优先从对应 claimAtom 的 sources 中引用 supportingSources / contradictingSources。",
       "2. 若无 atomSearches，则回退到 search360.sources。url / title / snippet 必须来自输入中真实存在的来源，不得编造。",
-      "2a. supportingSources / contradictingSources 每项的 snippet 只写一句话：从该来源输入 snippet 里逐字复制、真正支持或反驳这条命题的那一句（或那一个分句），不超过 80 字。不改写、不概括、不加省略号、不把两句拼成一句、不写只交代背景或机制的句子。",
+      "2a. supportingSources / contradictingSources 每项的 snippet 只写一句话：从该来源输入 snippet 里逐字复制、真正支持或反驳这条命题的那一句（或那一个分句），不超过 80 字。不改写、不概括、不加省略号、不把两句拼成一句、不写只交代背景或机制的句子。原文里的英文双引号 \" 一律写成「」，否则 JSON 会失效。",
       "3. 某来源若不在该原子 sources（或 search360.sources）中，不得写入；宁可留空数组，也不编造。",
       "4. evidenceGaps 列出该条尚未找到的证据；该原子检索为空时须在 boundary 或 evidenceGaps 写明未能证实/待补证，禁止仅因无结果就判 false。",
       "",
