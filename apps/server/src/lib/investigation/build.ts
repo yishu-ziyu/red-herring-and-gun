@@ -456,16 +456,18 @@ function readAtomTypes(
   claimAtomTypes: unknown,
   nonVerifiableAtoms: unknown,
   keyFn: (s: string) => string
-): Map<string, { verifiable: boolean; type: string }> {
-  const map = new Map<string, { verifiable: boolean; type: string }>();
+): Map<string, { verifiable: boolean; type: string; span?: string }> {
+  const map = new Map<string, { verifiable: boolean; type: string; span?: string }>();
   for (const item of asArray(claimAtomTypes)) {
     const rec = asRecord(item);
     if (!rec) continue;
     const text = asString(rec.text).trim();
     if (!text) continue;
+    const span = asString(rec.span).trim();
     map.set(keyFn(text), {
       verifiable: rec.verifiable !== false,
       type: clip(asString(rec.type), 40),
+      ...(span ? { span } : {}),
     });
   }
   for (const item of asArray(nonVerifiableAtoms)) {
@@ -985,12 +987,14 @@ export function buildInvestigationSnapshot(
       });
     }
 
-    const span = originalClaim.indexOf(a.text);
+    // 画线位置：先找这一截原文；模型补了字（「吃隔夜菜等于吃毒药」）找不到时，用拆题给的逐字片段（「等于吃毒药」）。
+    const spanText = originalClaim.includes(a.text) ? a.text : (types.get(a.key)?.span ?? "");
+    const span = spanText ? originalClaim.indexOf(spanText) : -1;
     return {
       id: `claim-${a.order + 1}`,
       text: a.text,
       order: a.order,
-      ...(span >= 0 ? { originalSpan: { start: span, end: span + a.text.length } } : {}),
+      ...(span >= 0 ? { originalSpan: { start: span, end: span + spanText.length } } : {}),
       checkability: a.checkability,
       progress: progressFor(phase, bundle.searchedKeys.has(a.key), judgment !== null),
       judgment,

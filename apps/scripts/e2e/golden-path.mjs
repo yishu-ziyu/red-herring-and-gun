@@ -112,7 +112,7 @@ function reasonProblems(reason, label) {
 // #141 part b: the original sentence is shown with each part underlined; a part without a span in the
 // sentence is listed under it. Every part must appear one way or the other.
 async function checkOriginalSentence() {
-  const sentence = (await page.locator("[data-gp-original-sentence]").first().innerText().catch(() => "")).replace(/[“”"\s]/g, "");
+  const sentence = (await page.locator("[data-gp-original-sentence]").first().innerText().catch(() => "")).replace(/[“”"\s①②③④⑤⑥⑦⑧⑨⑩]/g, "");
   const partCount = await page.locator("article[data-gp-claim-id]").count();
   const spanned = await page.locator("[data-gp-original-sentence] [data-gp-span-part]").evaluateAll((nodes) =>
     nodes.map((n) => n.getAttribute("data-gp-span-part")));
