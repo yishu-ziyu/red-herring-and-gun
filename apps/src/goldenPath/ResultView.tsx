@@ -1,6 +1,7 @@
 /**
  * ResultView — 查完的一轮（#141）：结论 → 每一截的判断和依据 → 追问 / 分享 / 新调查。
  * 依据直接摊在每一截下面，不再走抽屉。历史回看、追问轮用同一个版式。
+ * 版式是 2026-10-10 用户选的头版式（#150，DECISIONS.md）：大字结论在上，各截不套卡片，证据像脚注。
  */
 import { useState } from "react";
 import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSnapshotV1, InvestigationSource } from "../lib/investigation";
@@ -53,8 +54,9 @@ export function ResultView({
   return (
     <div className="gp-result" data-gp-result>
       <section className="gp-result-verdict" aria-label="结论" data-gp-conclusion>
+        <p className="gp-eyebrow" aria-hidden="true">结论</p>
         <div data-gp-direct-answer>
-          <span className={`gp-label gp-label--${LABEL_TONE[label]}`} data-gp-conclusion-label={label}>
+          <span className={`gp-verdict-word gp-tone--${LABEL_TONE[label]}`} data-gp-conclusion-label={label}>
             {LABEL_TEXT[label]}
           </span>
           <p className="gp-result-headline" data-gp-conclusion-reason={hasReason ? "" : undefined}>
@@ -66,12 +68,15 @@ export function ResultView({
             {leftoverNote}
           </p>
         ) : null}
-        {day ? <p className="gp-result-meta">核查于 {day}</p> : null}
+        <p className="gp-result-meta">
+          {claims.length > 0 ? `查了 ${claims.length} 截` : ""}
+          {claims.length > 0 && day ? " · " : ""}
+          {day ? `核查于 ${day}` : ""}
+        </p>
       </section>
 
       {claims.length > 0 ? (
-        <section aria-label="每一截的判断和依据">
-          <h2 className="gp-result-heading">每一截的判断和依据</h2>
+        <section className="gp-result-parts" aria-label="每一截的判断和依据">
           {claims.map((claim, index) => (
             <PartCard key={claim.id} claim={claim} index={index} sources={snapshot.sources} />
           ))}
@@ -184,7 +189,7 @@ function PartCard({ claim, index, sources }: { claim: InvestigationClaim; index:
     <article className="gp-part" data-gp-claim-id={claim.id}>
       <div className="gp-part-head">
         <span className="gp-part-title">
-          <span className="gp-part-no" aria-hidden="true">{partNumber(index)}</span>
+          <span className="gp-part-no" aria-hidden="true">{index + 1}</span>
           <span className="gp-part-text" data-gp-part-text>{claim.text}</span>
         </span>
         {label ? (
@@ -249,7 +254,6 @@ function EvidenceRow({ claimId, link, source }: { claimId: string; link: Investi
   const day = publishedDay(source);
   return (
     <li className="gp-ev" data-gp-evidence-row data-gp-role={link.role} data-gp-evidence-claim={claimId} data-gp-source-id={source.id}>
-      <span className={`gp-ev-role is-${link.role}`}>{ROLE_LABEL[link.role]}</span>
       {quote ? (
         <q className="gp-ev-quote" data-gp-evidence-quote>{quote}</q>
       ) : summary ? (
@@ -259,6 +263,7 @@ function EvidenceRow({ claimId, link, source }: { claimId: string; link: Investi
         </span>
       ) : null}
       <span className="gp-ev-src">
+        <span className={`gp-ev-role is-${link.role}`}>{ROLE_LABEL[link.role]}</span>
         {href ? (
           <a href={href} target="_blank" rel="noopener noreferrer" data-gp-evidence-link>
             {sourceName(source)} ↗
@@ -292,6 +297,7 @@ function ResultActions({
   };
   return (
     <section className="gp-result-actions" aria-label="接下来" data-gp-result-actions>
+      <p className="gp-eyebrow" aria-hidden="true">接着问</p>
       {!readOnly && onFollowUp ? (
         <form
           className="gp-result-ask"

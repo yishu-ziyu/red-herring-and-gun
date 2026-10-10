@@ -17,16 +17,29 @@
   font-size: 15px;
   line-height: 1.7;
   color: var(--gp-ink);
-  animation: gp-result-in var(--gp-motion-emerge) var(--gp-ease-out) both;
 }
 
+/* 出现：结论、各截、操作依次浮起，每块 280ms，先快后慢，带一点模糊变清楚。 */
+.gp-result-verdict,
+.gp-part,
+.gp-result-actions {
+  animation: gp-result-in 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.gp-part { animation-delay: 120ms; }
+.gp-part:nth-child(2) { animation-delay: 180ms; }
+.gp-part:nth-child(3) { animation-delay: 240ms; }
+.gp-part:nth-child(n + 4) { animation-delay: 300ms; }
+.gp-result-actions { animation-delay: 320ms; }
+
 @keyframes gp-result-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: translateY(6px); filter: blur(2px); }
+  to { opacity: 1; transform: none; filter: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gp-result { animation: none; }
+  .gp-result-verdict,
+  .gp-part,
+  .gp-result-actions { animation: none; }
 }
 
 .gp-label {
@@ -68,25 +81,39 @@
   overflow-wrap: anywhere;
 }
 
-.gp-result-verdict,
-.gp-part,
-.gp-result-actions {
-  background: var(--gp-surface);
-  border: 1px solid var(--gp-line);
-  border-radius: 14px;
-  min-width: 0;
+/* 头版式（#150）：不套卡片；同一套行距，块与块之间只靠留白和一条淡线分开。 */
+.gp-eyebrow {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  color: var(--gp-ink-3);
 }
 
 .gp-result-verdict {
-  margin: 28px 0 8px;
-  padding: 24px;
+  margin: 8px 0 0;
+  padding: 14px 0 22px;
+  min-width: 0;
 }
 
-.gp-result-headline {
-  margin: 10px 0 0;
+.gp-verdict-word {
+  display: block;
   font-family: var(--gp-serif);
-  font-size: 24px;
-  line-height: 1.5;
+  font-size: 64px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.06em;
+}
+.gp-tone--positive { color: var(--gp-tone-positive); }
+.gp-tone--negative { color: var(--gp-tone-negative); }
+.gp-tone--mixed { color: var(--gp-tone-mixed); }
+.gp-tone--muted { color: var(--gp-tone-muted); }
+
+.gp-result-headline {
+  margin: 14px 0 0;
+  max-width: 44em;
+  font-family: var(--gp-serif);
+  font-size: 21px;
+  line-height: 1.8;
   overflow-wrap: anywhere;
 }
 
@@ -100,19 +127,14 @@
   margin: 14px 0 0;
   font-size: 13px;
   color: var(--gp-ink-3);
+  font-variant-numeric: tabular-nums;
 }
-
-.gp-result-heading {
-  margin: 36px 0 10px;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  color: var(--gp-ink-3);
-}
+.gp-result-meta:empty { display: none; }
 
 .gp-part {
-  padding: 20px 24px;
-  margin-bottom: 14px;
+  padding: 22px 0 18px;
+  border-top: 1px solid var(--gp-line-subtle);
+  min-width: 0;
 }
 
 .gp-part-head {
@@ -127,20 +149,38 @@
 }
 
 .gp-part-no {
-  margin-right: 8px;
-  font-size: 16px;
-  color: var(--gp-ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 10px;
+  border-radius: 50%;
+  background: var(--gp-surface-inset);
+  color: var(--gp-ink-2);
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: 3px;
 }
 
 .gp-part-text {
   min-width: 0;
   font-family: var(--gp-serif);
-  font-size: 18px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
+.gp-part .gp-label { border-color: transparent; }
+
 .gp-part-reason {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
+  max-width: 46em;
+  font-family: var(--gp-serif);
+  font-size: 16px;
+  line-height: 1.85;
+  color: var(--gp-ink-2);
   overflow-wrap: anywhere;
 }
 
@@ -150,34 +190,33 @@
   color: var(--gp-ink-3);
 }
 
+/* 一条证据：原文那句话在上，「方向 · 来源 · 日期」在下，像一条脚注。 */
 .gp-part-evidence {
   list-style: none;
   padding: 0;
-  margin: 14px 0 0;
-  border-top: 1px solid var(--gp-line-subtle);
+  margin: 10px 0 0;
 }
 
 .gp-ev {
-  padding: 12px 0;
-  border-bottom: 1px solid var(--gp-line-subtle);
+  margin: 0 -10px;
+  padding: 8px 10px;
+  border-radius: 10px;
   min-width: 0;
   overflow-wrap: anywhere;
+  transition: background-color 150ms ease;
 }
-
-.gp-ev-role {
-  margin-right: 6px;
-  font-size: 12px;
-  font-weight: 600;
-}
-.gp-ev-role.is-contradict { color: var(--gp-tone-negative); }
-.gp-ev-role.is-support { color: var(--gp-tone-positive); }
+.gp-ev:hover { background: rgba(28, 25, 23, 0.035); }
 
 .gp-ev-quote {
+  display: block;
   font-family: var(--gp-serif);
+  font-size: 15.5px;
+  line-height: 1.8;
   quotes: "「" "」";
 }
 
 .gp-ev-summary {
+  display: block;
   color: var(--gp-ink-2);
 }
 
@@ -193,26 +232,37 @@
 .gp-ev-src {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  margin-top: 4px;
-  font-size: 13px;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin-top: 2px;
+  font-size: 12.5px;
   color: var(--gp-ink-3);
 }
+
+.gp-ev-role {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.gp-ev-role.is-contradict { color: var(--gp-tone-negative); }
+.gp-ev-role.is-support { color: var(--gp-tone-positive); }
 
 .gp-ev-src a {
   color: var(--gp-ink-2);
   min-width: 0;
+  text-decoration-color: var(--gp-line);
+  text-underline-offset: 3px;
 }
+.gp-ev-src a:hover { text-decoration-color: currentColor; }
 
 .gp-ev-date {
-  color: var(--gp-ink-2);
+  color: var(--gp-ink-3);
   font-variant-numeric: tabular-nums;
 }
 .gp-ev-date.is-unknown { color: var(--gp-ink-3); }
 
 .gp-part-related {
-  margin-top: 10px;
-  font-size: 14px;
+  margin-top: 8px;
+  font-size: 13px;
   color: var(--gp-ink-2);
 }
 
@@ -232,14 +282,16 @@
 }
 
 .gp-part-boundary {
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   font-size: 13px;
-  color: var(--gp-ink-3);
+  color: var(--gp-ink-2);
 }
 
 .gp-result-actions {
-  margin-top: 36px;
-  padding: 18px 20px;
+  margin-top: 8px;
+  padding: 18px 0 8px;
+  border-top: 1px solid var(--gp-line-subtle);
+  min-width: 0;
 }
 
 .gp-result-ask {
@@ -255,9 +307,9 @@
   min-height: 46px;
   font: inherit;
   color: var(--gp-ink);
-  background: var(--gp-surface-inset);
+  background: var(--gp-surface);
   border: 1px solid var(--gp-line);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 10px 12px;
   resize: vertical;
 }
@@ -266,9 +318,10 @@
   font: inherit;
   font-size: 14px;
   line-height: 1.4;
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 9px 16px;
   cursor: pointer;
+  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
   border: 1px solid var(--gp-line);
   background: var(--gp-surface);
   color: var(--gp-ink);
@@ -280,6 +333,8 @@
   color: var(--gp-bg);
   border-color: var(--gp-ink);
 }
+
+.gp-btn:active:not(:disabled) { transform: scale(0.97); }
 
 .gp-btn:disabled {
   cursor: default;
@@ -328,15 +383,38 @@
 }
 
 @media (max-width: 560px) {
-  .gp-result-verdict,
-  .gp-part {
-    padding: 18px 16px;
+  .gp-verdict-word {
+    font-size: 48px;
   }
   .gp-result-headline {
-    font-size: 21px;
+    font-size: 18px;
+  }
+  .gp-part-text {
+    font-size: 19px;
   }
   .gp-result-ask {
     flex-direction: column;
     align-items: stretch;
   }
+}
+
+/* 查完以后的原句块：和头版式一致，不要左边那条粗竖线。 */
+.gp-canvas[data-gp-phase="complete"] .gp-original {
+  border-left: none;
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--gp-line-subtle);
+}
+.gp-canvas[data-gp-phase="complete"] .gp-original-label {
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-weight: 400;
+}
+.gp-canvas[data-gp-phase="complete"] .gp-original-text {
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.8;
+}
+@media (max-width: 560px) {
+  .gp-canvas[data-gp-phase="complete"] .gp-original-text { font-size: 18px; }
 }
