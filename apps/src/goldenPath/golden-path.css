@@ -1700,14 +1700,6 @@ button.gp-save-state {
   flex-direction: column;
 }
 
-.gp-point {
-  margin: 0 0 10px;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.65;
-  color: var(--gp-ink);
-}
-
 .gp-overclaim {
   margin: 0 0 10px;
   font-size: 14px;

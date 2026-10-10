@@ -51,7 +51,6 @@ export interface PipelineResult {
   /** Everything the searches returned (relation always "unknown"). */
   searchedSources: PipelineSource[];
   snapshotBuilt: boolean;
-  fallbackUsed: boolean;
   timings: { totalMs: number };
   calls: { model: number; search: number };
   error?: string;
@@ -153,7 +152,6 @@ export interface ScoredRow {
   keyInCitedExact: boolean;
   /** Any cited or evidence source is official / debunk platform / major-media original. */
   usedReliablePrimary: boolean;
-  fallbackUsed: boolean;
   seconds: number;
   modelCalls: number;
   searchCalls: number;
@@ -189,7 +187,6 @@ export function scoreCase(c: BenchCase, r: PipelineResult): ScoredRow {
     keyInCited: inCited.hit,
     keyInCitedExact: inCited.exact,
     usedReliablePrimary: [...r.citedSources, ...r.evidenceSources].some((x) => sourceType(x.url) !== "other"),
-    fallbackUsed: r.fallbackUsed,
     seconds: r.timings.totalMs / 1000,
     modelCalls: r.calls.model,
     searchCalls: r.calls.search,
@@ -231,7 +228,6 @@ export function summarize(rows: readonly ScoredRow[]) {
     keyInCited: rows.filter((r) => r.keyInCited).length,
     keyInCitedExact: rows.filter((r) => r.keyInCitedExact).length,
     usedReliablePrimary: rows.filter((r) => r.usedReliablePrimary).length,
-    fallbackUsed: rows.filter((r) => r.fallbackUsed).length,
     errors: rows.filter((r) => r.error).length,
     secondsMedian: median(seconds),
     secondsMax: seconds.length ? Math.max(...seconds) : null,

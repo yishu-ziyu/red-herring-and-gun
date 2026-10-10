@@ -80,22 +80,19 @@ const currentAdapter: PipelineAdapter = {
     const face = faceVerdictFor(rawVerdict);
     const answerText = str(conclusion.directAnswer) || str(report.conclusion);
     const lead = str(conclusion.verdictLead) || firstSentence(answerText);
-    const composer = out.steps.find((s) => s.agent === "report_composer");
-    const fallbackUsed = Boolean(composer && (String(composer.model ?? "").startsWith("fallback") || composer.error));
     return {
       label: mapToBenchLabel({ face, judgment: str(conclusion.judgment) }),
       rawVerdict: `${rawVerdict}|${face}|${str(conclusion.judgment)}`,
       lead,
       answerText,
       ...extractSources(report, out.atomSearchBundle),
-      fallbackUsed,
       timings: { totalMs },
     };
   },
 };
 
 const EMPTY: Omit<PipelineResult, "calls" | "timings"> = {
-  label: "错误", rawVerdict: "", lead: "", answerText: "", evidenceSources: [], citedSources: [], searchedSources: [], snapshotBuilt: false, fallbackUsed: false,
+  label: "错误", rawVerdict: "", lead: "", answerText: "", evidenceSources: [], citedSources: [], searchedSources: [], snapshotBuilt: false,
 };
 
 const ADAPTERS: Record<string, PipelineAdapter> = { current: currentAdapter };
@@ -343,13 +340,13 @@ const pad = (s: string, n: number) => {
 };
 
 function printTable(rows: Row[]) {
-  console.log(["id", "expected", "got", "ok", "sec", "model", "search", "fb", "keyS", "keyC", "rel"].map((h, i) => pad(h, [14, 10, 10, 4, 6, 6, 7, 3, 5, 5, 4][i]!)).join(" "));
+  console.log(["id", "expected", "got", "ok", "sec", "model", "search", "keyS", "keyC", "rel"].map((h, i) => pad(h, [14, 10, 10, 4, 6, 6, 7, 5, 5, 4][i]!)).join(" "));
   for (const r of rows) {
     const s = r.score;
     const ok = s.labelCorrect === null ? "人评" : s.labelCorrect ? "Y" : "N";
     console.log(
-      [r.id, s.derivedLabel ?? "边界", s.label, ok, s.seconds.toFixed(0), String(s.modelCalls), String(s.searchCalls), s.fallbackUsed ? "Y" : "-", s.keyInSearch ? "Y" : "-", s.keyInCited ? "Y" : "-", s.usedReliablePrimary ? "Y" : "-"]
-        .map((v, i) => pad(v, [14, 10, 10, 4, 6, 6, 7, 3, 5, 5, 4][i]!))
+      [r.id, s.derivedLabel ?? "边界", s.label, ok, s.seconds.toFixed(0), String(s.modelCalls), String(s.searchCalls), s.keyInSearch ? "Y" : "-", s.keyInCited ? "Y" : "-", s.usedReliablePrimary ? "Y" : "-"]
+        .map((v, i) => pad(v, [14, 10, 10, 4, 6, 6, 7, 5, 5, 4][i]!))
         .join(" "),
     );
   }

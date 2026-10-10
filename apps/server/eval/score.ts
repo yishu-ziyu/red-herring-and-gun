@@ -14,7 +14,6 @@ export interface CaseResult {
     difficulty: string;
     expectedVerdictType: string;
     expectedAgentSequence: string[];
-    expectsEvidenceLoop?: boolean;
     expectedAtoms?: Array<{
       atom: string;
       expectedVerdict: string;
@@ -26,13 +25,6 @@ export interface CaseResult {
   finalReport: Record<string, unknown>;
   /** 生产 atomSearchBundle；只读 atomsSearched */
   atomSearchBundle?: unknown;
-  /** ADR-004 evidenceLoop 结果（结构兼容 EvidenceLoopOutcome） */
-  evidenceLoop?: {
-    ran: boolean;
-    atoms: Array<{ atom: string; trigger: string; stopReason: string; rounds?: number }>;
-    totalNewSources: number;
-    recheckFactChecker: boolean;
-  };
   error?: string;
 }
 
@@ -49,10 +41,6 @@ export interface MetricScores {
   overallPass: boolean;
   atomMatchPass: boolean;
   mustSearchPass: boolean;
-  /** ADR-004 观测指标（不进门禁）：期望补查的 case 是否真触发 / 是否翻案 */
-  evidenceLoopExpected: boolean;
-  evidenceLoopRan: boolean;
-  evidenceLoopRescued: boolean;
 }
 
 export interface AggregateMetrics {
@@ -66,10 +54,6 @@ export interface AggregateMetrics {
   avgReportReviewScore: number;
   byCategory: Record<string, { total: number; passed: number; verdictCorrectCount: number }>;
   failures: Array<{ caseId: string; claim: string; reason: string }>;
-  /** ADR-004 观测指标：分母 = expectsEvidenceLoop 的 case 数 */
-  evidenceLoopExpectedCount: number;
-  evidenceLoopTriggerRate: number;
-  evidenceLoopRescueRate: number;
 }
 
 function extractVerdict(report: Record<string, unknown>): string {
@@ -165,7 +149,7 @@ function scoreMustSearch(needles: string[] | undefined, bundle: unknown): boolea
   });
 }
 
-function failedCaseScores(golden: CaseResult["case"], loopExpected: boolean): MetricScores {
+function failedCaseScores(golden: CaseResult["case"]): MetricScores {
   return {
     caseId: golden.id,
     claim: golden.claim,
@@ -179,9 +163,6 @@ function failedCaseScores(golden: CaseResult["case"], loopExpected: boolean): Me
     overallPass: false,
     atomMatchPass: true,
     mustSearchPass: true,
-    evidenceLoopExpected: loopExpected,
-    evidenceLoopRan: false,
-    evidenceLoopRescued: false,
   };
 }
 
@@ -214,12 +195,7 @@ function reviewFromReport(report: Record<string, unknown>): { reportContractPass
 
 export function scoreCase(result: CaseResult): MetricScores {
   const golden = result.case;
-  const loopExpected = golden.expectsEvidenceLoop === true;
-  const loop = result.evidenceLoop;
-  const loopRan = loop?.ran === true;
-  // 翻案 = 补查命中新证据（任一原子 evidence-found）
-  const loopRescued = loopRan && (loop?.atoms?.some((a) => a.stopReason === "evidence-found") ?? false);
-  if (result.error) return failedCaseScores(golden, loopExpected);
+  if (result.error) return failedCaseScores(golden);
 
   const actualAgents = result.steps.map((s) => s.agent).filter(Boolean) as string[];
   const routingCorrect = routingIsCorrect(golden.category, actualAgents);
@@ -250,9 +226,6 @@ export function scoreCase(result: CaseResult): MetricScores {
     overallPass,
     atomMatchPass,
     mustSearchPass,
-    evidenceLoopExpected: loopExpected,
-    evidenceLoopRan: loopRan,
-    evidenceLoopRescued: loopRescued,
   };
 }
 
@@ -333,8 +306,6 @@ function failureReason(s: MetricScores): string {
 export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
   const total = scores.length;
   const passed = scores.filter((s) => s.overallPass).length;
-  const loopExpectedScores = scores.filter((s) => s.evidenceLoopExpected);
-  const loopExpectedCount = loopExpectedScores.length;
 
   return {
     totalCases: total,
@@ -351,9 +322,6 @@ export function aggregateMetrics(scores: MetricScores[]): AggregateMetrics {
       claim: s.claim,
       reason: failureReason(s),
     })),
-    evidenceLoopExpectedCount: loopExpectedCount,
-    evidenceLoopTriggerRate: share(loopExpectedScores.filter((s) => s.evidenceLoopRan).length, loopExpectedCount),
-    evidenceLoopRescueRate: share(loopExpectedScores.filter((s) => s.evidenceLoopRescued).length, loopExpectedCount),
   };
 }
 

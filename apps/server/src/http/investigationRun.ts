@@ -17,7 +17,7 @@ import { interruptedInvestigationSnapshot } from "../lib/interruptedSnapshot.js"
 import type { InvestigationSnapshotV1 } from "../lib/investigation/index.js";
 import { createInvestigationEmitter } from "../lib/investigationEmitter.js";
 import { createOrchestrateAdapter } from "../lib/orchestrate.js";
-import { buildDeterministicFinalReport } from "../lib/reportFallback.js";
+import { buildDeterministicFinalReport } from "../lib/deterministicReport.js";
 import type { RunService } from "../lib/runService.js";
 import type { RunStore } from "../lib/runStore.js";
 import {

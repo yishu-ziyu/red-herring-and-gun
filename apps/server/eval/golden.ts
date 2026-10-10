@@ -14,8 +14,6 @@ export interface ScoreCaseGolden {
   expectedVerdictType: "true" | "false" | "mixed_misleading" | "unverified";
   expectedAgentSequence: string[];
   traps: string[];
-  /** 口语说法与官方口径词表错位，期望 evidenceLoop 补查被触发（ADR-004） */
-  expectsEvidenceLoop?: boolean;
   /** 半真半假按条期望；缺省则不按条打分 */
   expectedAtoms?: ExpectedAtom[];
   /** 必须出现在 atomSearchBundle.atomsSearched；不读拆题 verifiable */
@@ -287,8 +285,7 @@ export const goldenDataset: ScoreCaseGolden[] = [
     expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["P图当现场", "太琐碎丢掉"],
   },
-  // ── evidenceLoop 翻案案例（ADR-004）：口语说法与官方口径词表错位，
-  // 第一轮按原子原文检索常未命中，需换官方来源词/原文语境补查 ──
+  // ── 词表错位案例：口语说法与官方口径词表错位，按原子原文检索常未命中 ──
   {
     id: "LOOP-001",
     claim: "听说电动车都被集中拉去国外销毁了，一批一批装船运走",
@@ -298,7 +295,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     expectedVerdictType: "false",
     expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["口语「拉去销毁」≠官方「回收处置/以旧换新」", "词表错位一轮未命中"],
-    expectsEvidenceLoop: true,
   },
   {
     id: "LOOP-002",
@@ -309,7 +305,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     expectedVerdictType: "false",
     expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["合成公告", "「悬赏公告」口语检索未命中需换「警方通报」"],
-    expectsEvidenceLoop: true,
   },
   {
     id: "LOOP-003",
@@ -320,7 +315,6 @@ export const goldenDataset: ScoreCaseGolden[] = [
     expectedVerdictType: "mixed_misleading",
     expectedAgentSequence: ["rumor_detector", "fact_checker", "source_validator", "report_composer"],
     traps: ["部分地方试点当全国政策", "「打到卡里」口语需换「生育津贴 直发」官方口径"],
-    expectsEvidenceLoop: true,
   },
   {
     id: "EVAL-UNVERIFIED-001",

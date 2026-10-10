@@ -22,7 +22,6 @@ export type BenchSummaryInput = {
   trueToFalse?: number;
   shouldJudgeButDidnt?: number;
   wrongSupport?: number;
-  fallbackUsed?: number;
   secondsMedian?: number;
   secondsMax?: number;
   modelCallsMean?: number;
@@ -38,7 +37,6 @@ export type MetricsRow = {
   trueToFalse: number;
   shouldJudgeButDidnt: number;
   wrongSupport: number;
-  fallbackRate: number;
   secondsMedian: number;
   secondsMax: number;
   modelCallsMean: number;
@@ -62,7 +60,6 @@ export function toMetricsRow(summary: BenchSummaryInput, meta: { date: string; c
     trueToFalse: num(summary.trueToFalse),
     shouldJudgeButDidnt: num(summary.shouldJudgeButDidnt),
     wrongSupport: num(summary.wrongSupport),
-    fallbackRate: ratio(num(summary.fallbackUsed), cases),
     secondsMedian: num(summary.secondsMedian),
     secondsMax: num(summary.secondsMax),
     modelCallsMean: num(summary.modelCallsMean),
@@ -136,14 +133,13 @@ export function renderMetricsHtml(rows: MetricsRow[]): string {
     chart("把真话判假", "标准「能信」被判「不能信」，条数", xs, [S("条数", 0, (r) => r.trueToFalse)], int, "count"),
     chart("该判不判", "标准有结论却判「证据不足」，条数", xs, [S("条数", 0, (r) => r.shouldJudgeButDidnt)], int, "count"),
     chart("错标支持", "反驳或无关来源被标为「支持」，条数", xs, [S("条数", 0, (r) => r.wrongSupport)], int, "count"),
-    chart("兜底报告率", "最终报告走兜底的占比，分母是全部条数", xs, [S("兜底率", 0, (r) => r.fallbackRate)], pct, "pct"),
     chart("用时", "秒", xs, [S("中位数", 0, (r) => r.secondsMedian), S("最长", 1, (r) => r.secondsMax)], int),
     chart("每条调用次数", "平均", xs, [S("模型", 0, (r) => r.modelCallsMean), S("搜索", 1, (r) => r.searchCallsMean)], fix1),
   ].join("\n");
-  const head = ["运行", "日期", "提交", "条数", "判定正确", "把真话判假", "该判不判", "错标支持", "兜底率", "用时中位", "用时最长", "模型调用", "搜索调用"];
+  const head = ["运行", "日期", "提交", "条数", "判定正确", "把真话判假", "该判不判", "错标支持", "用时中位", "用时最长", "模型调用", "搜索调用"];
   const body = rows.map((r) => "<tr>" + [
     r.label, r.date, r.commit, int(r.cases), pct(r.accuracy.overall), int(r.trueToFalse), int(r.shouldJudgeButDidnt),
-    int(r.wrongSupport), pct(r.fallbackRate), int(r.secondsMedian) + " 秒", int(r.secondsMax) + " 秒", fix1(r.modelCallsMean), fix1(r.searchCallsMean),
+    int(r.wrongSupport), int(r.secondsMedian) + " 秒", int(r.secondsMax) + " 秒", fix1(r.modelCallsMean), fix1(r.searchCallsMean),
   ].map((c) => `<td>${esc(c)}</td>`).join("") + "</tr>").join("\n");
   const table = rows.length === 0
     ? `<p class="muted">还没有记录。跑完回答基准后执行 <code>npx tsx eval/answerBenchMetrics.ts --label &lt;运行名&gt;</code>。</p>`

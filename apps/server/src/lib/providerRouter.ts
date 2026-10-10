@@ -463,12 +463,6 @@ export interface CallAgentParams {
   maxTokens: number;
   env: Record<string, string>;
   reasoningEffort?: "low" | "medium" | "high";
-  /**
-   * 指定先调的 (provider, model)。
-   * 传入时：先调这一对；缺 key / 调用失败 / 超时后继续走 fallback chain，避免整条流程中断。
-   * 不传：维持默认 fallback chain 行为。
-   */
-  modelOverride?: { provider: AgentTextProviderId; model: string };
   options?: ProviderRouterOptions;
 }
 
@@ -529,68 +523,6 @@ export function timeoutForProviderModel(
   return fallbackMs;
 }
 
-/**
- * 单个 provider 的一次直调（用于 modelOverride 旁路 + 单元测试）
- * - 用传入的 model，不读 env 默认
- * - 缺 key → throw（带 provider + model 上下文）
- * - 调用失败 → throw（带 provider + model 上下文）
- * - 成功 → 返回 { text, model: "provider:actualModel" }
- */
-export async function dispatchSingleProvider({
-  provider,
-  model,
-  env,
-  agentId,
-  systemPrompt,
-  userContent,
-  maxTokens,
-  reasoningEffort,
-  signal,
-}: {
-  provider: AgentTextProviderId;
-  model: string;
-  env: Record<string, string>;
-  agentId?: string;
-  systemPrompt: string;
-  userContent: string;
-  maxTokens: number;
-  reasoningEffort: "low" | "medium" | "high";
-  signal?: AbortSignal;
-}): Promise<{ text: string; model: string; reasoning?: string }> {
-  signal?.throwIfAborted();
-  if (provider === "minimax") {
-    const apiKey = getMiniMaxApiKey(env);
-    if (!apiKey) throw new Error(`未配置 MINIMAX_API_KEY`);
-    const baseUrl = (envValue(env, "MINIMAX_BASE_URL") || "https://api.minimaxi.com/anthropic").replace(/\/$/, "");
-    return await callMiniMaxAgent({
-      baseUrl,
-      apiKey,
-      authHeader: getMiniMaxAuthHeader(env),
-      model,
-      systemPrompt,
-      userContent,
-      ...miniMaxCallOptions(env, model, maxTokens),
-      signal,
-    });
-  }
-  if (provider === "stepfun") {
-    const apiKey = envValue(env, "STEPFUN_API_KEY");
-    if (!apiKey) throw new Error(`未配置 STEPFUN_API_KEY`);
-    const baseUrl = (envValue(env, "STEPFUN_BASE_URL") || "https://api.stepfun.com/v1").replace(/\/$/, "");
-    return await callStepFunAgent({
-      baseUrl,
-      apiKey,
-      model,
-      systemPrompt,
-      userContent,
-      maxTokens: stepFunMaxTokensForModel(env, model, maxTokens),
-      reasoningEffort: stepFunReasoningEffortForModel(env, model, reasoningEffort),
-      signal,
-    });
-  }
-  throw new Error(`未知 provider: ${provider}`);
-}
-
 export async function callAgentWithFallback(params: CallAgentParams): Promise<CallAgentResult> {
   const {
     agentId,
@@ -648,15 +580,6 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
     ]);
   }
 
-  // ───────────────────────────────────────────────────────────────
-  // modelOverride 优先（用户在前端 model picker 选过 model 时先试这里）
-  // 语义：先调这一对 (provider, model)；失败后继续 fallback chain。
-  // ───────────────────────────────────────────────────────────────
-  const attemptedOverride =
-    params.modelOverride && TEXT_PROVIDER_IDS.has(params.modelOverride.provider)
-      ? params.modelOverride
-      : undefined;
-
   /**
    * 调一次 provider 拿文本，本地 parse；若是坏 JSON，同 provider 再修一次（仅 1 次），
    * 避免 360/小模型把整步打成 agent_error。
@@ -701,70 +624,6 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       }
     }, { signal: options.signal, deadlineMs: stageDeadlineMs, timeoutMs, label: `${traceLabel} ${provider}:${modelName}` });
   };
-
-  if (params.modelOverride) {
-    const { provider: ovProvider, model: ovModel } = params.modelOverride;
-    if (!TEXT_PROVIDER_IDS.has(ovProvider)) {
-      throw new Error(`modelOverride 指向未知 provider: ${ovProvider}`);
-    }
-    if (isProviderQuotaSkipped(ovProvider)) {
-      errors.push(`[${canonicalProviderId(ovProvider)}] 本进程已因额度耗尽跳过`);
-    } else if (stageBudgetExpired()) {
-      noteStageBudgetExhausted();
-      errors.push(`[stage] 阶段硬预算已用尽，跳过 modelOverride ${ovProvider}:${ovModel}`);
-    } else {
-      const ovStart = Date.now();
-      const ovTimeoutMs = attemptTimeoutMs(
-        timeoutForProviderModel(env, ovProvider, ovModel, providerTimeoutMs)
-      );
-      logger.info("[orchestrate-provider] start (override)", {
-        agent: traceLabel,
-        provider: ovProvider,
-        model: ovModel,
-        timeoutMs: ovTimeoutMs,
-      });
-      try {
-        const result = await invokeAndParse(
-          ovProvider,
-          ovModel,
-          (sys, user, signal) =>
-            dispatchSingleProvider({
-              provider: ovProvider,
-              model: ovModel,
-              env,
-              agentId,
-              systemPrompt: sys,
-              userContent: user,
-              maxTokens,
-              reasoningEffort,
-              signal,
-            }),
-          ovTimeoutMs,
-          "override"
-        );
-        logger.info("[orchestrate-provider] complete (override)", {
-          agent: traceLabel,
-          provider: ovProvider,
-          model: ovModel,
-          latencyMs: Date.now() - ovStart,
-        });
-        return result;
-      } catch (error) {
-        options.signal?.throwIfAborted();
-        const message = error instanceof Error ? error.message : `${ovProvider} 调用失败`;
-        logger.error("[orchestrate-provider] error (override)", {
-          agent: traceLabel,
-          provider: ovProvider,
-          model: ovModel,
-          latencyMs: Date.now() - ovStart,
-          timeoutMs: ovTimeoutMs,
-          message,
-        });
-        if (!stageBudgetExpired()) noteProviderFailure(ovProvider, message);
-        errors.push(`[${ovProvider}:${ovModel}] ${message}`);
-      }
-    }
-  }
 
   /**
    * 包装单个 provider 调用：start 日志 → 执行(+JSON repair retry) → complete/error 日志。
@@ -833,7 +692,6 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       const apiKey = getMiniMaxApiKey(env);
       const model = modelForAgent(env, "MINIMAX", agentId, "MiniMax-M2.7-highspeed");
       const baseUrl = (envValue(env, "MINIMAX_BASE_URL") || "https://api.minimaxi.com/anthropic").replace(/\/$/, "");
-      if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
       if (!apiKey) {
         if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "minimax", model });
         if (onMissing === "error") errors.push(`[minimax:${model}] 未配置 MINIMAX_API_KEY`);
@@ -865,7 +723,6 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       const apiKey = envValue(env, "STEPFUN_API_KEY");
       const model = modelForAgent(env, "STEPFUN", agentId, "step-2-mini");
       const baseUrl = (envValue(env, "STEPFUN_BASE_URL") || "https://api.stepfun.com/v1").replace(/\/$/, "");
-      if (attemptedOverride?.provider === provider && attemptedOverride.model === model) continue;
       if (!apiKey) {
         if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "stepfun", model });
         if (onMissing === "error") errors.push(`[stepfun:${model}] 未配置 STEPFUN_API_KEY`);

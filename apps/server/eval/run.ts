@@ -26,7 +26,6 @@ import {
   aggregateRepeats,
   compareToBaseline,
   type AggregateMetrics,
-  type CaseResult,
   type RepeatRun,
 } from "./score.js";
 
@@ -152,15 +151,13 @@ async function collectRepeats(golden: ScoreCaseGolden, evalEnv: EvalEnv, repeats
   let lastReport: Record<string, unknown> = {};
   let lastError: string | undefined;
   let lastBundle: Awaited<ReturnType<typeof runCase>>["atomSearchBundle"];
-  let lastLoop: Awaited<ReturnType<typeof runCase>>["evidenceLoop"];
 
   for (let r = 0; r < repeats; r++) {
-    const { steps, finalReport, error, atomSearchBundle, evidenceLoop } = await runCase(golden, evalEnv);
+    const { steps, finalReport, error, atomSearchBundle } = await runCase(golden, evalEnv);
     lastSteps = steps;
     lastReport = finalReport;
     lastError = error;
     lastBundle = atomSearchBundle;
-    lastLoop = evidenceLoop;
     const { run, detail } = oneRepeat(error, finalReport, steps, r + 1);
     repeatRuns.push(run);
     perRunDetails.push(detail);
@@ -169,7 +166,7 @@ async function collectRepeats(golden: ScoreCaseGolden, evalEnv: EvalEnv, repeats
     }
   }
 
-  return { repeatRuns, perRunDetails, lastSteps, lastReport, lastError, lastBundle, lastLoop };
+  return { repeatRuns, perRunDetails, lastSteps, lastReport, lastError, lastBundle };
 }
 
 function scoreCollected(golden: ScoreCaseGolden, collected: Awaited<ReturnType<typeof collectRepeats>>) {
@@ -191,14 +188,12 @@ function scoreCollected(golden: ScoreCaseGolden, collected: Awaited<ReturnType<t
         difficulty: golden.difficulty,
         expectedVerdictType: golden.expectedVerdictType,
         expectedAgentSequence: golden.expectedAgentSequence,
-        expectsEvidenceLoop: golden.expectsEvidenceLoop,
         expectedAtoms: golden.expectedAtoms,
         mustSearch: golden.mustSearch,
       },
       steps: collected.lastSteps,
       finalReport: scoredReport,
       atomSearchBundle: collected.lastBundle,
-      evidenceLoop: collected.lastLoop as CaseResult["evidenceLoop"],
       error: agg.error,
     }),
   };
@@ -221,7 +216,6 @@ async function evaluateGolden(golden: ScoreCaseGolden, evalEnv: EvalEnv, repeats
       latencyMs: ms,
       agents: collected.lastSteps.map((s) => s.agent),
       search: scored.searchMeta,
-      evidenceLoop: collected.lastLoop ?? undefined,
       repeats: repeats > 1
         ? { n: repeats, votes: scored.agg.verdictVotes, runs: collected.perRunDetails }
         : undefined,
@@ -254,22 +248,6 @@ function printTinySummary(results: Array<{ id: unknown; verdict: unknown; search
         boundUrlShare: withUrl / tiny.length,
         faceShare: faceOk / tiny.length,
         correctDirectionShare: directionOk / tiny.length,
-      },
-      null,
-      2
-    )
-  );
-}
-
-function printEvidenceLoop(aggregate: AggregateMetrics): void {
-  if (aggregate.evidenceLoopExpectedCount <= 0) return;
-  console.log("\n===== Evidence Loop（翻案案例） =====");
-  console.log(
-    JSON.stringify(
-      {
-        expected: aggregate.evidenceLoopExpectedCount,
-        triggerRate: aggregate.evidenceLoopTriggerRate,
-        rescueRate: aggregate.evidenceLoopRescueRate,
       },
       null,
       2
@@ -359,7 +337,6 @@ async function main() {
   console.log("\n===== 聚合指标 =====");
   console.log(JSON.stringify(aggregate, null, 2));
   printTinySummary(results);
-  printEvidenceLoop(aggregate);
   appendHistory(results, aggregate);
   maybeRunGate(args.gate, aggregate);
   maybeWriteBaseline(args, aggregate);

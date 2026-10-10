@@ -1,10 +1,10 @@
 /**
  * Per-atom retrieval queries for Case Pipeline.
  * Raw atom text is not enough for Weibo-scale rumors: also hunt 辟谣 / 规划 traces.
- * Query portfolio + RRF live in evidencePursuit (ADR-005); this file remains the retrieve seam.
+ * Query portfolio + RRF live in retrievalQueries (ADR-005); this file remains the retrieve seam.
  */
 
-import { buildQueryPortfolio, fuseByRrf, type RankedDoc } from "./evidencePursuit/index.js";
+import { buildQueryPortfolio, fuseByRrf, type RankedDoc } from "./retrievalQueries/index.js";
 
 const FILLER = /我说|原来|叫谁|这是|那个|一下|真的吗|是不是/g;
 const STOP = new Set([

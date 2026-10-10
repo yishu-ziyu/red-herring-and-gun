@@ -81,7 +81,6 @@ export interface EvalCaseResult {
   steps: PipelineStep[];
   finalReport: Record<string, unknown>;
   atomSearchBundle?: unknown;
-  evidenceLoop?: unknown;
   error?: string;
 }
 
@@ -94,7 +93,6 @@ export async function runCase(
   steps: PipelineStep[];
   finalReport: Record<string, unknown>;
   atomSearchBundle?: unknown;
-  evidenceLoop?: unknown;
   error?: string;
 }> {
   const runAgent = makeRunAgent(evalEnv, golden.claim);

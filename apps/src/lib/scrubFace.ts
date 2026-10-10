@@ -27,17 +27,3 @@ export function scrubFaceText(text: string): string {
     .replace(/[，、]{2,}/g, "，")
     .trim();
 }
-
-export function tooSimilarTo(candidate: string, corpus: string): boolean {
-  const needle = scrubFaceText(candidate).replace(/\s+/g, "");
-  const hay = scrubFaceText(corpus).replace(/\s+/g, "");
-  if (needle.length < 8 || hay.length < 8) return false;
-  if (hay.includes(needle) || needle.includes(hay)) return true;
-  const sentences = (text: string) =>
-    scrubFaceText(text)
-      .split(/[。！？；\n]/)
-      .map((part) => part.replace(/\s+/g, ""))
-      .filter((part) => part.length >= 12);
-  return sentences(candidate).some((part) => hay.includes(part))
-    || sentences(corpus).some((part) => needle.includes(part));
-}

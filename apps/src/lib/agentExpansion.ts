@@ -1,6 +1,5 @@
 import { caseIntakePrimaryText, type CaseIntake } from "./caseIntake";
 import type { AgentEvidenceBundle } from "./schemas";
-import type { AgentContract } from "./agentConfigs";
 import { getTraceCollector, type TraceStatus } from "./reasoningTrace";
 import {
   checksExhaustedMessage,
@@ -55,7 +54,6 @@ export interface HandoffStep {
   agent: string;
   agentName: string;
   agentIcon: string;
-  agentContract?: AgentContract;
   systemPrompt: string;
   input: Record<string, unknown>;
   output: Record<string, unknown>;
@@ -143,7 +141,6 @@ export interface OrchestrateStreamEvent {
   agent?: string;
   agentName?: string;
   agentIcon?: string;
-  agentContract?: AgentContract;
   /** agent_thought: 模型 thinking 文本增量（逐条） */
   content?: string;
   /** agent_thought: 句子序号（从 0 起） */
