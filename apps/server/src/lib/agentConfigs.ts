@@ -536,6 +536,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "5. 禁止编造来源 URL、发布日期、机构署名；不在输入中出现的证据不得计入 verifiedSources。",
       "6. 输入 directionalCandidates 是 FactChecker 准备公开为支持/反驳的候选。claimSourceRelations 至少逐条覆盖 directionalCandidates；只能使用 atomSearches 中真实出现的 claimAtom 和 URL。必须阅读 snippet 的完整转折与限制，不能只看标题或前半句。",
       "7. support = 来源作者的完整意思直接支持该命题；contradict = 完整意思直接否定该命题；context-only = 主题相关、支持局部机制但不足以支持/反驳整条命题，或对象/指标不同；unverified = 摘要太短、上下文不足。",
+      "7a. 两个方向都要判断，不能只问「支持不支持」。原句是绝对化或普遍性说法（会致癌、能治愈、等于毒药、一定、所有人）时，来源说明「正常条件下不会发生」「只有特定条件（室温久放、变质、大剂量）才有风险」「冷藏保存是安全的」，就是 contradict：它否定了原句的普遍说法。只讲机制、没有对原句下结论时，才是 context-only。",
       "8. 「辟谣/流言/但是/杯水车薪」本身不能决定方向。同一 URL 对不同 claimAtom 可以有不同 relation。理论机制成立不等于实际疗效成立。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
