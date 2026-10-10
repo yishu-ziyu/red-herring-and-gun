@@ -6,6 +6,7 @@ import {
   collapseNarrativeAtoms,
   collapseShortSingleClaim,
   dropUntraceableAtoms,
+  keepOriginalWording,
   ensureLeapAtoms,
   ensureStanceAtom,
   forceCheckableAtomTypes,
@@ -136,7 +137,9 @@ export async function decompose(ctx: PipelineContext): Promise<PipelineStep> {
       collapseFollowUpAtoms(claim, collapseNarrativeAtoms(claim, selfProof.kept)),
     );
     // 每一部分要对得上原句的一截（编造的丢掉）；短单句不拆。角色标记跟着命题走（在类型表里）。
-    const traced = dropUntraceableAtoms(claim, selfProven, rumorStep.output.claimAtomTypes);
+    const worded = keepOriginalWording(claim, selfProven, rumorStep.output.claimAtomTypes);
+    if (worded.restored.length > 0) console.warn(`[decompose] restored original wording for ${JSON.stringify(worded.restored)}`);
+    const traced = dropUntraceableAtoms(claim, worded.atoms, worded.types);
     const single = collapseShortSingleClaim(claim, traced.atoms, traced.types);
     const stanced = ensureStanceAtom(claim, single.atoms, single.types, rumorStep.output.stanceClaimType);
     rumorStep.output.claimAtoms = stanced.atoms;

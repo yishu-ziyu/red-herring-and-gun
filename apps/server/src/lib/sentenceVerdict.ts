@@ -168,6 +168,9 @@ const MAX_REASON_CHARS = 80;
 function firstSentence(text: string, label: LabelKey): string {
   const first = (text.match(/^[^。！？]*[。！？]?/)?.[0] ?? "").trim();
   if (!first || INTERNAL_TERMS.test(first) || first.length > MAX_REASON_CHARS) return "";
+  // 代码内部的标签名（2026-10-10：「…危言耸听，属false。」）和不成对的引号（开头多了「」」）。
+  if (/\b(true|false|mostly-true|partly-true|exaggerated|unresolved|uncheckable|disputed|opinion|supported|refuted|mixed)\b/i.test(first)) return "";
+  if ((first.match(/「/g) ?? []).length !== (first.match(/」/g) ?? []).length) return "";
   const own = LABEL_TEXT[label];
   const rest = first.split(own).join("");
   if (/部分属实|基本属实|不属实|属实|夸大|还查不清|无法核对|说法不一|是观点/.test(rest)) return "";

@@ -904,7 +904,7 @@ export function buildInvestigationSnapshot(
           (role === "contradict" && audit.relation === "contradict") ||
           (role === "context-only" && (audit.relation === "context-only" || audit.relation === "unverified")));
       // 只有支持/反驳行引用原文；这一句必须逐字出自本轮拿到的来源文字。
-      const quote = role === "support" || role === "contradict" ? verbatimQuote(source.quote, source.snippet) : "";
+      const quote = role === "support" || role === "contradict" ? verbatimQuote(source.quote, source.snippet, a.text) : "";
       return {
         ...passage,
         ...(quote ? { quote } : {}),

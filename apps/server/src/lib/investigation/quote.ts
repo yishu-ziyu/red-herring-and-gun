@@ -26,25 +26,45 @@ function folded(text: string): { chars: string; at: number[] } {
   return { chars, at };
 }
 
-/** 核对通过返回来源里的这一句（原字，空白归一），否则返回空串。 */
-export function verbatimQuote(quote: unknown, sourceText: unknown): string {
+/** 一句话在来源里的原文（原字，空白归一）；不在来源里返回空串。 */
+function locate(sentence: string, source: string): string {
+  // 句末标点不比：模型常把原文里的「，」抄成「。」。
+  const needle = folded(sentence.replace(/[。｡！？!?，,；;：:]+$/, "")).chars;
+  const hay = folded(source);
+  const start = needle ? hay.chars.indexOf(needle) : -1;
+  if (start < 0) return "";
+  return source.slice(hay.at[start], hay.at[start + needle.length - 1]! + 1).replace(/\s+/g, " ").trim();
+}
+
+/** 和这一截共有的汉字数：模型抄了好几句时，用它挑出讲这一截的那一句。 */
+function overlap(sentence: string, partText: string): number {
+  const own = new Set(partText.match(/\p{Script=Han}/gu) ?? []);
+  return new Set((sentence.match(/\p{Script=Han}/gu) ?? []).filter((ch) => own.has(ch))).size;
+}
+
+/**
+ * 核对通过返回来源里的一句（原字，空白归一），否则返回空串。
+ * 2026-10-10 的 6 次调查里，47 次拒绝有 34 次是模型抄了不止一句、8 次带省略号，只有 5 次不是原文。
+ * 所以按句号和省略号切开，逐句核对是不是原文，再挑和这一截共有汉字最多的那一句。
+ */
+export function verbatimQuote(quote: unknown, sourceText: unknown, partText = ""): string {
   const text = typeof quote === "string" ? quote.replace(/\s+/g, " ").trim() : "";
   const source = typeof sourceText === "string" ? sourceText : "";
-  // 2026-10-10 真实运行里大多数句子被拒绝，原因不明：记下被拒的句子和比对的来源开头，下次运行就能看出是模型改写了还是比对太严。
+  // 记下被拒的句子和比对的来源开头，下次运行就能看出是模型改写了还是比对太严。
   const reject = (reason: string) => {
     if (text) console.warn(`[quote] rejected (${reason}) quote=${JSON.stringify(text.slice(0, 120))} source=${JSON.stringify(source.replace(/\s+/g, " ").slice(0, 160))}`);
     return "";
   };
-  if (text.length < 6 || text.length > QUOTE_MAX) return reject("length");
-  if (/…|\.\.\./.test(text)) return reject("ellipsis");
-  // 一句话：句末标点只能出现在最后。
-  if (/[。｡！？!?]/.test(text.slice(0, -1))) return reject("more than one sentence");
-  const needle = folded(text).chars;
-  const hay = folded(source);
-  const start = hay.chars.indexOf(needle);
-  if (!needle || start < 0) return reject("not in source text");
-  const original = source.slice(hay.at[start], hay.at[start + needle.length - 1]! + 1).replace(/\s+/g, " ").trim();
-  return original.length <= QUOTE_MAX ? original : reject("source span too long");
+  if (!text) return "";
+  const sentences = text
+    .split(/(?<=[。｡！？!?])|…+|\.{3,}/)
+    .map((x) => x.trim())
+    .filter((x) => x.length >= 6);
+  const found = sentences
+    .map((sentence) => locate(sentence, source))
+    .filter((original) => original.length >= 6 && original.length <= QUOTE_MAX);
+  if (found.length === 0) return reject(sentences.length === 0 ? "too short" : "not in source text");
+  return found.reduce((best, cur) => (overlap(cur, partText) > overlap(best, partText) ? cur : best));
 }
 
 /** 原文链接 + 文本片段（#:~:text=），浏览器打开后高亮这一句。 */

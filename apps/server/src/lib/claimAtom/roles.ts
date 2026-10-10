@@ -36,6 +36,45 @@ export function collapseShortSingleClaim(
 }
 
 /**
+ * 拆出来的一截用了原句没有的字，就是模型改写了原话：换回它在原句里的那一截（span）。
+ * 2026-10-10：「隔夜菜会致癌」被改写成「隔夜菜会产生致癌物」，查的是另一句更弱的话，整句被判成「属实」。
+ * 只补主语之类、所有字都出自原句的条目（例：「等于吃毒药」写成「隔夜菜等于吃毒药」）不动。
+ */
+export function keepOriginalWording(
+  claim: string,
+  atoms: string[],
+  types: unknown
+): { atoms: string[]; types: unknown; restored: string[] } {
+  const source = squash(claim);
+  const sourceChars = new Set(source.match(/\p{Script=Han}/gu) ?? []);
+  const spanByKey = new Map<string, string>();
+  for (const item of Array.isArray(types) ? types : []) {
+    const r = rec(item);
+    if (r && typeof r.text === "string" && typeof r.span === "string" && source.includes(squash(r.span))) {
+      spanByKey.set(claimAtomKey(r.text), r.span.trim());
+    }
+  }
+  const replacement = new Map<string, string>();
+  for (const atom of atoms) {
+    const added = (squash(atom).match(/\p{Script=Han}/gu) ?? []).filter((ch) => !sourceChars.has(ch));
+    const span = spanByKey.get(claimAtomKey(atom));
+    if (added.length > 0 && span) replacement.set(claimAtomKey(atom), span);
+  }
+  if (replacement.size === 0) return { atoms, types, restored: [] };
+  const swap = (text: string) => replacement.get(claimAtomKey(text)) ?? text;
+  return {
+    atoms: atoms.map(swap),
+    types: Array.isArray(types)
+      ? types.map((item) => {
+          const r = rec(item);
+          return r && typeof r.text === "string" ? { ...r, text: swap(r.text) } : item;
+        })
+      : types,
+    restored: atoms.filter((atom) => replacement.has(claimAtomKey(atom))),
+  };
+}
+
+/**
  * 原句里找不到对应片段的命题是拆题编造的（FactLens）：丢掉。
  * 只看写了 span 的条目；没写的（旧输出、沿用上一轮的命题）不丢。全部都对不上时不清空，保留全部。
  */
