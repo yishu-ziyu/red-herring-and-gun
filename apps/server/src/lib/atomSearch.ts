@@ -13,8 +13,9 @@ import {
   type NonVerifiableAtom,
   type SubclaimVerdict,
 } from "./claimAtom/index.js";
-import { filterAtomSources, type FilterMeta, type FilterableSource } from "./retrievalFilter.js";
+import { canonicalizeUrl, filterAtomSources, type FilterMeta, type FilterableSource } from "./retrievalFilter.js";
 import { isOffTopicSource } from "./atomSearchQuery.js";
+import { normalizeInvestigationSourceUrl } from "./investigation/sourceIdentity.js";
 import {
   bindDualBucketCitations,
   bindRelatedSourcesOnly,
@@ -124,7 +125,53 @@ export type AtomSearchBundle = {
     perAtom: Record<string, FilterMeta>;
     totals: FilterMeta;
   };
+  /**
+   * 只供评测度量（#144）：规范化 URL → 找到它的搜索引擎。
+   * 不进模型输入、快照和界面；复用上一轮注入的来源没有引擎。
+   */
+  enginesByUrl?: Record<string, string[]>;
+  /** 只供评测度量（#144）：claimAtomKey → 各引擎返回 / 筛后留下的来源条数；Total 是来源条数，一条来源被几个引擎找到也只算一次。 */
+  enginesPerAtom?: Record<string, AtomEngineCounts>;
 };
+
+export type AtomEngineCounts = {
+  returned: Record<string, number>;
+  kept: Record<string, number>;
+  returnedTotal: number;
+  keptTotal: number;
+};
+
+/**
+ * 检索结果里每条来源的引擎归属。键用筛选同款 canonicalizeUrl：留下的来源 URL 已被它改写，
+ * 快照里的 URL 也是改写后的，用原始 URL 当键会对不上。与 asSourceList 同样只看前 24 条。
+ */
+function originsByUrl(result: unknown): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  const sources = (result as { sources?: unknown })?.sources;
+  if (!Array.isArray(sources)) return out;
+  for (let i = 0; i < sources.length && i < 24; i += 1) {
+    const rec = sources[i] as Record<string, unknown> | null;
+    if (!rec || typeof rec !== "object") continue;
+    const url = String(rec.url || rec.link || "").trim();
+    if (!url) continue;
+    const key = normalizeInvestigationSourceUrl(canonicalizeUrl(url) ?? url);
+    const list = out.get(key) ?? [];
+    const origins = Array.isArray(rec.providerOrigins) ? rec.providerOrigins : [];
+    for (const o of origins) if (typeof o === "string" && !list.includes(o)) list.push(o);
+    out.set(key, list);
+  }
+  return out;
+}
+
+function countEngines(urls: string[], origins: Map<string, string[]>): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const url of urls) {
+    for (const engine of origins.get(normalizeInvestigationSourceUrl(canonicalizeUrl(url) ?? url)) ?? []) {
+      counts[engine] = (counts[engine] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
 
 function asSourceList(result: unknown): FilterableSource[] {
   const sources = (result as { sources?: unknown })?.sources;
@@ -293,6 +340,8 @@ export function buildAtomSearchBundle(
   const atomsSearched: string[] = [];
   const perAtomMeta: Record<string, FilterMeta> = {};
   const totals: FilterMeta = { before: 0, afterFilter: 0, afterDedupe: 0, afterTopK: 0 };
+  const enginesByUrl: Record<string, string[]> = {};
+  const enginesPerAtom: Record<string, AtomEngineCounts> = {};
   // 本轮材料实际取得时间：bundle 组装时刻，即这批检索结果到手的时间。
   const retrievedAt = new Date().toISOString();
 
@@ -301,9 +350,21 @@ export function buildAtomSearchBundle(
     const atom = item.atom;
     atomsSearched.push(atom);
     const key = claimAtomKeyFn(atom);
-    const rawSources = asSourceList(item.result).filter((s) => !isOffTopicSource(atom, s));
+    const listed = asSourceList(item.result);
+    const rawSources = listed.filter((s) => !isOffTopicSource(atom, s));
     const { sources: filtered, meta } = filterAtomSources(rawSources);
     perAtomMeta[key] = meta;
+    const origins = originsByUrl(item.result);
+    for (const [url, engines] of origins) {
+      const list = (enginesByUrl[url] ??= []);
+      for (const e of engines) if (!list.includes(e)) list.push(e);
+    }
+    enginesPerAtom[key] = {
+      returned: countEngines(listed.map((s) => s.url), origins),
+      kept: countEngines(filtered.map((s) => s.url), origins),
+      returnedTotal: listed.length,
+      keptTotal: filtered.length,
+    };
     totals.before += meta.before;
     totals.afterFilter += meta.afterFilter;
     totals.afterDedupe += meta.afterDedupe;
@@ -351,6 +412,8 @@ export function buildAtomSearchBundle(
     forAgent,
     knowledgeDrafts: [],
     filterMeta: { perAtom: perAtomMeta, totals },
+    enginesByUrl,
+    enginesPerAtom,
     aggregate: {
       answer: answers.join("\n\n").slice(0, 1800),
       sources: aggregateSources.slice(0, 24),

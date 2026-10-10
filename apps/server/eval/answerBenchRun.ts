@@ -86,6 +86,8 @@ const currentAdapter: PipelineAdapter = {
       lead,
       answerText,
       ...extractSources(report, out.atomSearchBundle),
+      // Per-atom engine counts (#144) ride in result, so each results.jsonl row carries them.
+      enginesPerAtom: (out.atomSearchBundle as { enginesPerAtom?: PipelineResult["enginesPerAtom"] } | undefined)?.enginesPerAtom,
       timings: { totalMs },
     };
   },

@@ -4,8 +4,10 @@
  *  - citedSources: what the final report cites (report.citationSources)
  *  - evidenceSources: what the UI's InvestigationSnapshotV1 shows with a real role (支持/反驳/相关/待核对)
  * A source's relation is "unknown" whenever the snapshot is missing; it is never defaulted to 相关.
+ * foundBy joins each URL to bundle.enginesByUrl (#144); an empty list means no engine (prior-round reuse, or an old row).
  */
 import type { PipelineSource } from "./answerBenchScore.js";
+import { normalizeInvestigationSourceUrl } from "../src/lib/investigation/sourceIdentity.js";
 
 type Rec = Record<string, unknown>;
 const asRec = (v: unknown): Rec => (v && typeof v === "object" ? (v as Rec) : {});
@@ -29,22 +31,35 @@ export interface ExtractedSources {
 export function extractSources(report: Rec, atomSearchBundle?: unknown): ExtractedSources {
   const snap = asRec(report.investigation);
   const snapshotBuilt = arr(snap.claims).length > 0 || arr(snap.sources).length > 0 || snap.schemaVersion === 1;
+  const bundle = asRec(atomSearchBundle);
+  const enginesByUrl = asRec(bundle.enginesByUrl);
+  const foundBy = (url: string) => ({
+    foundBy: arr(enginesByUrl[normalizeInvestigationSourceUrl(url)]).filter((e): e is string => typeof e === "string"),
+  });
 
   const byId = new Map<string, Rec>();
   for (const s of arr(snap.sources)) byId.set(str(asRec(s).id), asRec(s));
   const evidenceSources: PipelineSource[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, PipelineSource>();
   for (const claim of arr(snap.claims)) {
+    const part = str(asRec(claim).text);
     for (const link of arr(asRec(claim).evidence)) {
       const l = asRec(link);
       const src = byId.get(str(l.sourceId));
       if (!src) continue;
       const relation = ROLE_TO_RELATION[str(l.role)] ?? "unknown";
       const key = `${str(src.url)}|${relation}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const prev = seen.get(key);
+      if (prev) {
+        if (part && !prev.parts!.includes(part)) prev.parts!.push(part);
+        continue;
+      }
       const quote = str(l.passage) || str(l.finding) || str(src.excerpt);
-      evidenceSources.push({ url: str(src.url), title: str(src.title), relation, ...(quote ? { quote } : {}) });
+      const row: PipelineSource = {
+        url: str(src.url), title: str(src.title), relation, ...(quote ? { quote } : {}), ...foundBy(str(src.url)), parts: part ? [part] : [],
+      };
+      seen.set(key, row);
+      evidenceSources.push(row);
     }
   }
 
@@ -60,7 +75,6 @@ export function extractSources(report: Rec, atomSearchBundle?: unknown): Extract
     citedSources.push({ url, title: str(r.title), relation: role });
   }
 
-  const bundle = asRec(atomSearchBundle);
   const agg = asRec(bundle.aggregate);
   const rawSearched = arr(agg.sources).length
     ? arr(agg.sources)
@@ -72,7 +86,7 @@ export function extractSources(report: Rec, atomSearchBundle?: unknown): Extract
     const url = str(r.url).trim();
     if (!/^https?:\/\//i.test(url) || searchedSeen.has(url)) continue;
     searchedSeen.add(url);
-    searchedSources.push({ url, title: str(r.title), relation: "unknown" });
+    searchedSources.push({ url, title: str(r.title), relation: "unknown", ...foundBy(url) });
   }
 
   return { snapshotBuilt, evidenceSources, citedSources, searchedSources };

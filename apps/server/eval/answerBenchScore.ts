@@ -3,6 +3,7 @@
  * Pure functions only: no provider, network or file access. No LLM judging.
  */
 import type { BenchLabel } from "./answerBenchLabel.js";
+import type { AtomEngineCounts } from "../src/lib/atomSearch.js";
 
 export type ResultLabel = BenchLabel | "错误";
 
@@ -37,6 +38,10 @@ export interface PipelineSource {
   /** 支持 / 反驳 / 相关 / 待核对 (the UI's ROLE_LABEL). */
   relation: string;
   quote?: string;
+  /** Search engines that returned this URL (bundle.enginesByUrl); measurement only (#144). */
+  foundBy?: string[];
+  /** Evidence only: text of every snapshot claim this url+relation is linked to. */
+  parts?: string[];
 }
 export interface PipelineResult {
   label: ResultLabel;
@@ -51,6 +56,8 @@ export interface PipelineResult {
   /** Everything the searches returned (relation always "unknown"). */
   searchedSources: PipelineSource[];
   snapshotBuilt: boolean;
+  /** bundle.enginesPerAtom (#144); absent in rows recorded before it existed. */
+  enginesPerAtom?: Record<string, AtomEngineCounts>;
   timings: { totalMs: number };
   calls: { model: number; search: number };
   error?: string;
