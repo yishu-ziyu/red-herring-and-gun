@@ -24,6 +24,7 @@ import type {
   InvestigationSource,
 } from "./schema.js";
 import { validateInvestigationSnapshot } from "./schema.js";
+import { findClaimSourceRelationAudit } from "../sourceRelationAudit.js";
 import { decideSentenceVerdict, type PartRole, type PartStanding } from "../../domain/verdict.js";
 import {
   FALLBACK_PART_REASON,
@@ -434,8 +435,8 @@ function readVerdictDecision(report: Record<string, unknown> | null, keyFn: (s: 
 function readRelationAudits(
   raw: unknown,
   keyFn: (s: string) => string,
-): Map<string, RelationAuditView> {
-  const out = new Map<string, RelationAuditView>();
+): Array<RelationAuditView & { claimAtom: string; url: string }> {
+  const out: Array<RelationAuditView & { claimAtom: string; url: string }> = [];
   for (const item of asArray(raw)) {
     const rec = asRecord(item);
     if (!rec) continue;
@@ -444,10 +445,7 @@ function readRelationAudits(
     const relation = asString(rec.relation).trim();
     if (!claimAtom || !url) continue;
     if (relation !== "support" && relation !== "contradict" && relation !== "context-only" && relation !== "unverified") continue;
-    out.set(`${keyFn(claimAtom)}\u0000${url}`, {
-      relation,
-      reason: clip(asString(rec.reason), 320),
-    });
+    out.push({ claimAtom, url, relation, reason: clip(asString(rec.reason), 320) });
   }
   return out;
 }
@@ -850,7 +848,7 @@ export function buildInvestigationSnapshot(
     const evidence: InvestigationEvidenceLink[] = [];
     const evidenceMeta = (source: BundleSource, role: InvestigationEvidenceLink["role"]) => {
       const url = normalizeInvestigationSourceUrl(source.url);
-      const audit = relationAudits.get(`${a.key}\u0000${url}`);
+      const audit = findClaimSourceRelationAudit(relationAudits, a.text, url, keyFn);
       const passage = passageMeta(a.text, source.snippet);
       const auditMatchesRole =
         audit &&

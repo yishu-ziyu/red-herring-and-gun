@@ -1,4 +1,5 @@
 import { stripCitationMarkers } from "./citationBinding.js";
+import { normalizeInvestigationSourceUrl } from "./investigation/sourceIdentity.js";
 
 export type ClaimSourceRelation = "support" | "contradict" | "context-only" | "unverified";
 
@@ -31,6 +32,43 @@ function sourceList(value: unknown): SourceLike[] {
     : [];
 }
 
+function hanChars(text: string): Set<string> {
+  return new Set(text.match(/\p{Script=Han}/gu) ?? []);
+}
+
+/**
+ * 找这一截、这个网址的方向核验结果。先按「这一截原文 + 网址」精确找；
+ * 找不到时，在同一网址的核验结果里挑这一截文字最接近的那条（共有汉字至少占较短一方的一半）。
+ * 2026-10-10：核验模型把这一截写成「吃隔夜菜等于吃毒药」，精确匹配全部落空，所有来源被降为「只和话题相关」，结论成了「还查不清」。
+ */
+export function findClaimSourceRelationAudit<A extends { claimAtom: string; url: string }>(
+  audits: readonly A[],
+  claimAtom: string,
+  url: string,
+  claimAtomKeyFn: (value: string) => string,
+): A | undefined {
+  const target = normalizeInvestigationSourceUrl(url);
+  const sameUrl = audits.filter((audit) => normalizeInvestigationSourceUrl(audit.url) === target);
+  const key = claimAtomKeyFn(claimAtom);
+  const exact = sameUrl.find((audit) => claimAtomKeyFn(audit.claimAtom) === key);
+  if (exact) return exact;
+  const own = hanChars(claimAtom);
+  let best: A | undefined;
+  let bestScore = 0;
+  for (const audit of sameUrl) {
+    const other = hanChars(audit.claimAtom);
+    const shared = [...other].filter((ch) => own.has(ch)).length;
+    const score = shared / Math.max(1, Math.min(own.size, other.size));
+    if (score > bestScore) {
+      best = audit;
+      bestScore = score;
+    }
+  }
+  if (best && bestScore >= 0.5) return best;
+  if (sameUrl.length === 0 && target) console.warn(`[relation-audit] no audit for claimAtom=${JSON.stringify(claimAtom)} url=${target}`);
+  return undefined;
+}
+
 export function parseClaimSourceRelationAudits(value: unknown): ClaimSourceRelationAudit[] {
   if (!Array.isArray(value)) return [];
   const out: ClaimSourceRelationAudit[] = [];
@@ -58,16 +96,14 @@ export function relationAuditCoversDirectionalSources(
   claimAtomKeyFn: (value: string) => string,
 ): boolean {
   const rows = parseClaimSourceRelationAudits(audits);
-  const keys = new Set(rows.map((row) => `${claimAtomKeyFn(row.claimAtom)}\u0000${row.url}`));
   if (!Array.isArray(verdicts)) return true;
   for (const item of verdicts) {
     if (!item || typeof item !== "object") continue;
     const verdict = item as VerdictLike;
     const atom = typeof verdict.claimAtom === "string" ? verdict.claimAtom : "";
-    const atomKey = claimAtomKeyFn(atom);
     for (const source of [...sourceList(verdict.supportingSources), ...sourceList(verdict.contradictingSources)]) {
       const url = normalizedUrl(source.url);
-      if (url && !keys.has(`${atomKey}\u0000${url}`)) return false;
+      if (url && !findClaimSourceRelationAudit(rows, atom, url, claimAtomKeyFn)) return false;
     }
   }
   return true;
@@ -84,14 +120,9 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
   claimAtomKeyFn: (value: string) => string,
 ): T[] {
   const audits = parseClaimSourceRelationAudits(auditsRaw);
-  const byKey = new Map<string, ClaimSourceRelationAudit>();
-  for (const audit of audits) {
-    byKey.set(`${claimAtomKeyFn(audit.claimAtom)}\u0000${audit.url}`, audit);
-  }
 
   return verdicts.map((verdict) => {
     const claimAtom = typeof verdict.claimAtom === "string" ? verdict.claimAtom : "";
-    const atomKey = claimAtomKeyFn(claimAtom);
     const support: SourceLike[] = [];
     const contradict: SourceLike[] = [];
     let changed = false;
@@ -101,7 +132,7 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
       const url = normalizedUrl(source.url);
       if (!url) return;
       hadDirectional = true;
-      const audit = byKey.get(`${atomKey}\u0000${url}`);
+      const audit = findClaimSourceRelationAudit(audits, claimAtom, url, claimAtomKeyFn);
       if (!audit || audit.relation === "context-only" || audit.relation === "unverified") {
         changed = true;
         return;

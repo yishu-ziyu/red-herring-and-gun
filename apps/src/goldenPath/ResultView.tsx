@@ -96,7 +96,8 @@ type SentenceLayout = {
 };
 
 /**
- * 原句上每一截的位置只认 originalSpan，且那段原字必须和这一截的文字一模一样；不猜、不模糊匹配。
+ * 原句上每一截的位置只认 originalSpan，且那段原字必须出现在这一截的文字里；不猜、不模糊匹配。
+ * 模型常给一截补上主语（原句「等于吃毒药」，这一截写「隔夜菜等于吃毒药」），这时只画原句里那几个字。
  * 两截位置重叠时只画编号靠前的那一截；后一截的原字确实在原句里，所以也不放进「没有直接写出」那一行。
  */
 function layoutSentence(text: string, claims: InvestigationClaim[]): SentenceLayout {
@@ -111,7 +112,7 @@ function layoutSentence(text: string, claims: InvestigationClaim[]): SentenceLay
       span.start >= 0 &&
       span.end <= text.length &&
       span.start < span.end &&
-      text.slice(span.start, span.end) === claim.text;
+      claim.text.includes(text.slice(span.start, span.end));
     if (!usable) {
       unspanned.push({ index, claim });
       return;
