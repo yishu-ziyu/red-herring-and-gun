@@ -3,46 +3,26 @@
  * investigating → complete 不换壳：结论区从调查中就存在，完成时同一节点显现 directAnswer。
  * 原始说法与命题保持原位。不抢焦点、不滚动、不关闭已打开的 Drawer。
  * interrupted：保留已获真实数据、无伪结论、可重试。
+ * 调查中和查完同一套头版式（#150）：调查中用 ProgressView 一行行填，不展示执行过程。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { InlineLoader } from "generative-loaders";
-import type {
-  InvestigationEvidenceLink,
-  InvestigationSnapshotV1,
-  InvestigationSource,
-  PublicActivity,
-} from "../lib/investigation";
+import { useEffect, useState } from "react";
+import type { InvestigationSnapshotV1 } from "../lib/investigation";
 import { judgmentToLabel } from "../lib/investigation";
 import { scrubFaceText } from "../lib/scrubFace";
 import { useUiLang } from "../lib/useUiLang";
 import { displayFollowUpClaim, conclusionMissesFollowUp, followUpQuestionLead } from "../lib/composeFollowUpClaim";
 import { isUrlOnlyClaim, type CaseImage } from "../lib/caseIntake";
 import { gpCopyFor } from "./copy";
-import { phaseHeadline } from "./snapshotUi";
-import { buildClaimTraceSegments } from "./claimTrace";
 import { leftoverGapSentence, leftoverTextsForCanvas, isCompleteEmptyShell } from "./leftoverClaims";
-import { ClaimSection } from "./ClaimSection";
-import { ActivityFeed } from "./ActivityFeed";
 import { OriginalSentence, ResultView, UnspannedParts } from "./ResultView";
+import { ProgressView } from "./ProgressView";
 import { buildConclusionBrief } from "./ShareControl";
-import { WorkRoles, roleIndexForPhase } from "./WorkRoles";
-import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { IntakeImages } from "./IntakeImages";
-import { useEnteringIds } from "./useEnteringIds";
-import {
-  SourceDrawer,
-  buildSourceDrawerViewFromClick,
-  resolveSourceDrawerView,
-  sourceDrawerSessionIdentity,
-  type SourceDrawerView,
-} from "./SourceDrawer";
 
 type InvestigationCanvasProps = {
   snapshot: InvestigationSnapshotV1;
   /** 连接/运行是否仍在进行（决定调查态的进行中语气）。 */
   live: boolean;
-  /** 公共活动（可选）：空数组是合法常态，活动层坏了不影响结果。 */
-  activities?: PublicActivity[];
   /** 停止：三态由服务端确认驱动，不提前说已停止。 */
   stop?: "idle" | "stopping" | "stopped";
   onStop?: () => void;
@@ -64,18 +44,10 @@ type InvestigationCanvasProps = {
   shareRunId?: string;
 };
 
-type DrawerSession = {
-  identity: string;
-  claimId: string;
-  sourceId: string;
-  role: InvestigationEvidenceLink["role"];
-  initialView: SourceDrawerView;
-} | null;
 
 export function InvestigationCanvas({
   snapshot,
   live,
-  activities = [],
   stop = "idle",
   onStop,
   saveStatus = "idle",
@@ -91,25 +63,7 @@ export function InvestigationCanvas({
 }: InvestigationCanvasProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
-  const [drawer, setDrawer] = useState<DrawerSession>(null);
   const [announce, setAnnounce] = useState("");
-  const [hoverClaimId, setHoverClaimId] = useState<string | null>(null);
-  const [focusClaimId, setFocusClaimId] = useState<string | null>(null);
-  const [expandedTraceClaimId, setExpandedTraceClaimId] = useState<string | null>(null);
-  const [isPaused, setIsPaused] = useState(false);
-  // Pointer hover wins. Keyboard focus clears stale hover so a parked pointer cannot hijack Tab. Touch uses expanded-active.
-  const tracedClaimId = hoverClaimId ?? focusClaimId ?? expandedTraceClaimId;
-  const triggerRef = useRef<HTMLElement | null>(null);
-  const lastConfirmedRef = useRef<{ identity: string; view: SourceDrawerView } | null>(null);
-
-  const handleHeaderHover = (claimId: string | null) => {
-    setHoverClaimId(claimId);
-  };
-
-  const handleHeaderFocus = (claimId: string | null) => {
-    setFocusClaimId(claimId);
-    if (claimId) setHoverClaimId(null);
-  };
 
   // 状态变化用一句轻量播报解释发生了什么（渐进呈现，不是 Agent 日志）。
   useEffect(() => {
@@ -159,61 +113,6 @@ export function InvestigationCanvas({
   const leftoverTexts =
     complete || interrupted ? leftoverTextsForCanvas(snapshot.originalClaim, snapshot.claims) : [];
   const leftoverSentence = leftoverTexts.length > 0 ? leftoverGapSentence(leftoverTexts) : "";
-  const claimIds = snapshot.claims.map((claim) => claim.id);
-  const claimEnter = useEnteringIds(claimIds, live && !complete && !interrupted);
-  const openSource = (
-    link: InvestigationEvidenceLink,
-    source: InvestigationSource,
-    claimId: string,
-    trigger: HTMLElement,
-  ) => {
-    const claim = snapshot.claims.find((item) => item.id === claimId);
-    // 用户材料（material=user-intake）没有命题关联也能打开：用一个无命题的
-    // material 视图（claimIndex=-1），relation 标 context-only。
-    const initialView = claim
-      ? buildSourceDrawerViewFromClick(snapshot.claims, claimId, source, link, snapshot.sources)
-      : source.material === "user-intake"
-        ? { claimId: "", claimIndex: -1, claimText: "", source, link, relatedSources: [source] }
-        : null;
-    if (!initialView) return;
-    const identity = claim
-      ? sourceDrawerSessionIdentity(claimId, claim?.evidence ?? [], link)
-      : `material:${source.id}`;
-    triggerRef.current = trigger;
-    lastConfirmedRef.current = { identity, view: initialView };
-    setDrawer({ identity, claimId, sourceId: source.id, role: link.role, initialView });
-  };
-  const closeDrawer = useCallback(() => {
-    const trigger = triggerRef.current;
-    lastConfirmedRef.current = null;
-    setDrawer(null);
-    window.setTimeout(() => trigger?.focus(), 0);
-  }, []);
-
-  const jumpToConflict = useCallback((claimId: string) => {
-    // 先精确落争点块，再回退命题卡。逗号选择器做不到这件事：命题卡是争点的祖先，
-    // 文档序里先命中卡片，高亮就落在整卡上（.gp-conflict.is-target-highlight 的脉冲动画永不触发）。
-    const el =
-      document.querySelector<HTMLElement>(`[data-gp-claim-id="${claimId}"] .gp-conflict`) ??
-      document.querySelector<HTMLElement>(`[data-gp-claim-id="${claimId}"]`);
-    if (!el) return;
-    el.classList.add("is-target-highlight");
-    el.focus?.();
-    window.setTimeout(() => el.classList.remove("is-target-highlight"), 2400);
-  }, []);
-
-  const liveView = drawer
-    ? resolveSourceDrawerView(snapshot.claims, snapshot.sources, drawer.claimId, drawer.identity)
-    : null;
-  if (drawer && liveView) {
-    lastConfirmedRef.current = { identity: drawer.identity, view: liveView };
-  }
-  const heldView =
-    drawer && lastConfirmedRef.current?.identity === drawer.identity
-      ? lastConfirmedRef.current.view
-      : drawer?.initialView ?? null;
-  const drawerView = liveView ?? heldView;
-
   return (
     <div
       className="gp-canvas"
@@ -250,18 +149,6 @@ export function InvestigationCanvas({
             <div className="gp-original-side">
               {restoredAt ? (
                 <em className="gp-original-time">{copy.oldCaseNotice(formatDate(restoredAt))}</em>
-              ) : null}
-              {!complete && !interrupted && live ? (
-                <button
-                  type="button"
-                  className={`gp-live-pill ${isPaused ? "is-paused" : ""}`}
-                  aria-label={isPaused ? "已暂停慢读，点击恢复" : "正在调查，点击暂停慢读"}
-                  title={isPaused ? "已暂停慢读，点击恢复跟随" : "点击暂停自动滚动慢读"}
-                  onClick={() => setIsPaused(!isPaused)}
-                >
-                  <span className="gp-live-dot" aria-hidden="true" />
-                  <span>{isPaused ? "已暂停慢读" : "正在调查"}</span>
-                </button>
               ) : null}
               {saveStatus !== "idle" ? (
                 saveStatus === "failed" && onRetrySave ? (
@@ -305,14 +192,9 @@ export function InvestigationCanvas({
               // 长 URL 一类不可断词会撑破左栏（实测 scrollW 357 / clientW 298），与原句同栏的
               // 其它文本一样按任意字符断行。
               style={{ overflowWrap: "anywhere" }}
-              data-gp-traced-claim={tracedClaimId ?? ""}
               data-gp-original-sentence
             >
-              {complete ? (
-                <OriginalSentence text={displayFollowUpClaim(snapshot.originalClaim)} claims={resultClaims} />
-              ) : (
-                renderOriginalClaim(snapshot, tracedClaimId)
-              )}
+              <OriginalSentence text={displayFollowUpClaim(snapshot.originalClaim)} claims={resultClaims} />
             </span>
             <span className="gp-quote-close" aria-hidden="true">”</span>
           </blockquote>
@@ -343,15 +225,6 @@ export function InvestigationCanvas({
           />
         ) : null}
 
-        {!complete && !interrupted ? (
-          <ActivityFeed
-            activities={activities}
-            snapshot={snapshot}
-            onSelectSource={openSource}
-            onSelectConflict={jumpToConflict}
-          />
-        ) : null}
-
         {stop !== "idle" ? (
           <section
             className={`gp-stopped${stop === "stopping" ? " is-stopping" : ""}`}
@@ -379,55 +252,8 @@ export function InvestigationCanvas({
           </section>
         ) : null}
 
-        {!complete && !interrupted ? (
-          <>
-            <WorkRoles
-              compact
-              phase={snapshot.phase}
-              activeIndex={roleIndexForPhase(snapshot.phase, snapshot.claims.some((claim) => Boolean(claim.judgment)))}
-              preClaimWork={snapshot.preClaimWork}
-              sourceCount={snapshot.sources?.length ?? 0}
-            />
-
-            <ThinkingDisclosure snapshot={snapshot} live={live} />
-          </>
-        ) : null}
-
-        {!complete && (resultClaims.length > 0 || leftoverSentence) ? (
-          <section className="gp-claims" aria-label={copy.canvasEvidenceLabel}>
-            <h3 className="gp-section-label">{copy.canvasClaimsLabel}</h3>
-            <div className="gp-claim-list">
-              {resultClaims.map((claim, index) => (
-                <ClaimSection
-                  key={claim.id}
-                  claim={claim}
-                  index={index}
-                  sources={snapshot.sources}
-                  conflicts={snapshot.conflicts}
-                  entering={claimEnter.isEntering(claim.id)}
-                  enterDelayMs={claimEnter.delayMs(claim.id)}
-                  enterLive={live && !complete && !interrupted}
-                  defaultExpanded={interrupted ? true : claim.progress !== "pending"}
-                  onSelectSource={openSource}
-                  onHeaderHover={handleHeaderHover}
-                  onHeaderFocus={handleHeaderFocus}
-                  onExpandedTrace={setExpandedTraceClaimId}
-                  asWork={!interrupted}
-                />
-              ))}
-            </div>
-            {!complete && leftoverSentence ? (
-              <aside className="gp-leftover-gap" aria-label={copy.gapLabel} data-gp-leftover-gap>
-                <p className="gp-note">{leftoverSentence}</p>
-              </aside>
-            ) : null}
-          </section>
-        ) : null}
-
-        {resultClaims.length === 0 && leftoverSentence === "" && live ? (
-          <div className="gp-waiting-area" role="status">
-            <span style={{ display: "none" }}>正在拆解这句话…</span>
-          </div>
+        {!complete ? (
+          <ProgressView snapshot={snapshot} claims={resultClaims} interrupted={interrupted} leftoverNote={leftoverSentence} />
         ) : null}
 
       </div>
@@ -436,37 +262,8 @@ export function InvestigationCanvas({
         {announce}
       </p>
 
-      {drawer && drawerView ? (
-        <SourceDrawer
-          key={drawer.identity}
-          view={drawerView}
-          resolveState={liveView ? "live" : "held"}
-          onClose={closeDrawer}
-        />
-      ) : null}
     </div>
   );
-}
-
-/** 「你调查的说法」区渲染的原文：追问轮只留用户自己写的部分（裁切规则在 lib 里，四处显示同一份）。 */
-function renderOriginalClaim(snapshot: InvestigationSnapshotV1, tracedClaimId: string | null) {
-  const segments = buildClaimTraceSegments(displayFollowUpClaim(snapshot.originalClaim), snapshot.claims);
-  return segments.map((segment, index) => {
-    if (!segment.traceable || !segment.claimId || segment.text.length === 0) {
-      return <span key={`plain-${index}`}>{segment.text}</span>;
-    }
-    const active = tracedClaimId === segment.claimId;
-    return (
-      <mark
-        key={`trace-${segment.claimId}-${index}`}
-        className={`gp-trace-mark${active ? " is-active" : ""}`}
-        data-gp-trace-claim={segment.claimId}
-        data-gp-trace-active={active ? "true" : "false"}
-      >
-        {segment.text}
-      </mark>
-    );
-  });
 }
 
 function formatDate(ts: number): string {

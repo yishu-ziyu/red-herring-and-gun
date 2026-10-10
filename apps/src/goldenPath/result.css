@@ -1,8 +1,9 @@
 /* 查完的一轮（#141）。版式照 2026-10-09 用户确认的草稿：暖纸底、判断句和摘录用衬线、标签颜色只做辅助。 */
 
-/* 标签颜色也给「你调查的说法」里的下划线用，它在 .gp-result 外面。 */
+/* 标签颜色也给「你调查的说法」里的下划线和调查中的进度页用，它们在 .gp-result 外面。 */
 .gp-result,
-.gp-original {
+.gp-original,
+.gp-progress {
   --gp-tone-positive: #20604c;
   --gp-tone-positive-bg: rgba(32, 96, 76, 0.08);
   --gp-tone-negative: #8f2d2a;
@@ -398,23 +399,101 @@
   }
 }
 
-/* 查完以后的原句块：和头版式一致，不要左边那条粗竖线。 */
-.gp-canvas[data-gp-phase="complete"] .gp-original {
+/* 原句块（调查中和查完一样）：和头版式一致，不要左边那条粗竖线。 */
+.gp-canvas .gp-original {
   border-left: none;
   padding: 0 0 18px;
   border-bottom: 1px solid var(--gp-line-subtle);
 }
-.gp-canvas[data-gp-phase="complete"] .gp-original-label {
+.gp-canvas .gp-original-label {
   font-size: 12.5px;
   letter-spacing: 0.04em;
   text-transform: none;
   font-weight: 400;
 }
-.gp-canvas[data-gp-phase="complete"] .gp-original-text {
+.gp-canvas .gp-original-text {
   font-size: 20px;
   font-weight: 400;
   line-height: 1.8;
 }
 @media (max-width: 560px) {
-  .gp-canvas[data-gp-phase="complete"] .gp-original-text { font-size: 18px; }
+  .gp-canvas .gp-original-text { font-size: 18px; }
+}
+
+/* ===== 调查进行中（ProgressView）：同一套版式，按真实进度一行行出现 ===== */
+.gp-progress-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 4px;
+  font-size: 14px;
+  color: var(--gp-ink-2);
+}
+
+.gp-progress-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gp-ink-3);
+  animation: gp-progress-pulse 1.2s ease-in-out infinite;
+  flex: none;
+}
+
+@keyframes gp-progress-pulse {
+  50% { opacity: 0.25; }
+}
+
+.gp-progress-part {
+  animation-delay: 0ms;
+}
+
+.gp-progress-wait {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 0;
+  font-size: 14px;
+  color: var(--gp-ink-3);
+}
+
+/* 不确定时长的进度：一小段在细线上来回移动，不假装有百分比。 */
+.gp-progress-bar {
+  position: relative;
+  width: 120px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--gp-line);
+  overflow: hidden;
+  flex: none;
+}
+.gp-progress-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: var(--gp-ink-3);
+  animation: gp-progress-slide 1.1s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+}
+
+@keyframes gp-progress-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
+/* 判完一截：标签和理由淡入，原句上那一截的下划线换成标签颜色。 */
+.gp-progress-label,
+.gp-progress-reason {
+  animation: gp-result-in 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+.gp-span {
+  transition: border-bottom-color 280ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gp-progress-dot,
+  .gp-progress-bar::after,
+  .gp-progress-label,
+  .gp-progress-reason { animation: none; }
+  .gp-span { transition: none; }
 }

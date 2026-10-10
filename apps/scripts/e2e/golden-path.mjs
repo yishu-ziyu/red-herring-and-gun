@@ -66,6 +66,17 @@ async function run() {
   await page.getByRole("button", { name: "开始调查" }).click();
   await shot("1-submitted");
 
+  // #150: while it runs, the parts appear one by one under a plain status line; no roles or execution log (PRODUCT bottom line 1).
+  const partShown = await page.locator("[data-gp-progress-claim]").first().waitFor({ timeout: 90_000 }).then(() => true).catch(() => false);
+  if (partShown) {
+    await shot("1b-in-progress");
+    const status = (await page.locator("[data-gp-progress-status]").first().innerText().catch(() => "")).trim();
+    const processNodes = await page.locator(".gp-canvas .gp-roles, .gp-canvas .gp-activity, .gp-canvas .gp-thinking-box").count();
+    record("while running, parts show under a plain status line and no roles or execution log", status.length > 0 && processNodes === 0, `status=${status} processNodes=${processNodes}`);
+  } else {
+    record("while running, parts show under a plain status line and no roles or execution log", false, "no part appeared within 90s");
+  }
+
   const phase = await waitForFinish();
   await shot("2-finished");
   if (!record("investigation completes", phase === "complete", `phase=${phase}`)) return;

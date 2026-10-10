@@ -341,7 +341,6 @@ function ProductApp() {
               snapshot={displaySnapshot}
               readOnly={Boolean(archivedRound)}
               live={archivedRound || active.restored ? false : run.state.connection === "connecting" || run.state.connection === "live"}
-              activities={archivedRound || active.restored ? [] : run.state.activities}
               stop={archivedRound || active.restored ? "idle" : run.state.stop}
               onStop={archivedRound || active.restored || !run.state.runId ? undefined : () => void run.cancel()}
               saveStatus={saveStatus}
