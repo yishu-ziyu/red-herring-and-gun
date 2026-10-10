@@ -126,10 +126,11 @@ export async function decompose(ctx: PipelineContext): Promise<PipelineStep> {
     } else if (!rumorStep.error) {
       snapshots.receivedChecking();
     }
-    const selfProof = rumorStep.error
+    const selfProof = rumorStep.error || ctx.lean
       ? (() => {
           const pre = prefilterClaimAtoms(claim, rumorStep?.output?.claimAtoms ?? []);
-          return { kept: pre.atoms, dropped: pre.dropped, model: "fallback:skip-after-rumor-error" };
+          const model = rumorStep.error ? "fallback:skip-after-rumor-error" : "lean:skip-self-proof";
+          return { kept: pre.atoms, dropped: pre.dropped, model };
         })()
       : await runSelfProofWithRetry(claim, rumorStep?.output?.claimAtoms ?? [], callSelfProofModel);
     const selfProven = ensureLeapAtoms(
@@ -158,7 +159,7 @@ export async function decompose(ctx: PipelineContext): Promise<PipelineStep> {
     hooks?.onSelfProof?.({ ...selfProof, kept: keptAtoms });
 
     // Whole-Claim Audit Planning（Issue #78）：检索前做可核查性语义修订，记下整句缺口基线。
-    if (audit.callModel && budget.canPlanWholeClaim()) {
+    if (!ctx.lean && audit.callModel && budget.canPlanWholeClaim()) {
       const planning = await runWholeClaimPlanning({
         claim,
         keptAtoms: Array.isArray(rumorStep.output.claimAtoms) ? (rumorStep.output.claimAtoms as string[]) : [],

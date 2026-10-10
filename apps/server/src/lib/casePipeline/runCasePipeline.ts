@@ -180,6 +180,11 @@ export type CasePipelineInput = {
     priorClaim: string;
     priorCreatedAt: number;
   };
+  /**
+   * #145 对比实验：lean = 拆题（不跑自证、不做整句审计规划）→ 检索 → 核查，
+   * 跳过证据补查、质询、因果增强、整句审计和报告写作模型（确定性报告）。默认 full。
+   */
+  mode?: "full" | "lean";
 };
 
 export type CasePipelineResult = {
@@ -223,6 +228,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     budget: createBudget(input.deadline),
     snapshots,
     throwIfAborted,
+    lean: input.mode === "lean",
     reusePlan: input.followUpReuse
       ? planFollowUpReuse({
           claim,
@@ -249,8 +255,10 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const retrieval = await retrieve(ctx, rumorStep);
   throwIfAborted();
   const state = await judge(ctx, rumorStep, retrieval);
-  await pursueEvidence(ctx, state);
-  await crossExamine(ctx, state);
+  if (!ctx.lean) {
+    await pursueEvidence(ctx, state);
+    await crossExamine(ctx, state);
+  }
 
   // Evidence loop / cross-exam may have added URLs. Refresh the independent
   // relation audit once after those bounded searches; until this succeeds,
@@ -268,9 +276,11 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     pursuitHops: state.evidenceLoop?.pursuitHops,
   });
 
-  await enrichCausal(ctx, state);
-  throwIfAborted();
-  await evaluateWholeClaim(ctx, state);
+  if (!ctx.lean) {
+    await enrichCausal(ctx, state);
+    throwIfAborted();
+    await evaluateWholeClaim(ctx, state);
+  }
 
   // Whole-claim audit may add another bounded search pass after the earlier
   // source audit. Refresh once more if needed; otherwise keep any new URL

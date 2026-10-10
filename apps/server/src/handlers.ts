@@ -218,6 +218,8 @@ export function createHandlers(env: Record<string, string>) {
     // 分享只认创建这次调查的浏览器：记下访客 id 的哈希（没有访客 cookie 就在这次响应里发一个）。
     const ownerHash = guestOwnerHash(ensureGuestId(req, res, ticket.guestId));
     const clientFollowUpReuse = isFollowUp ? followUpReuseFromClientBrief(payload.priorRound) : null;
+    // #145 对比实验：只在非生产环境接受精简管线，生产环境的客户端切不了。
+    const pipelineMode = payload.pipeline === "lean" && process.env.NODE_ENV !== "production" ? "lean" : "full";
 
     const started = runs.start({
       // 追问轮是新一轮调查：caseId 另生成一个，
@@ -254,6 +256,7 @@ export function createHandlers(env: Record<string, string>) {
       intakeMetadata,
       clientMemoryRecall,
       clientFollowUpReuse,
+      pipelineMode,
       run: { runId: started.run.runId, caseId: started.run.caseId },
     }, res);
   }

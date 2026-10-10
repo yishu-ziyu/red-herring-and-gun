@@ -59,6 +59,8 @@ export type InvestigationRequest = {
   intakeMetadata: ReturnType<typeof buildCaseIntakeMetadata>;
   clientMemoryRecall: ReturnType<typeof normalizeClientMemoryRecall>;
   clientFollowUpReuse: ReturnType<typeof followUpReuseFromClientBrief>;
+  /** #145 对比实验；只有非生产环境的请求能是 lean。 */
+  pipelineMode: "full" | "lean";
   run: { runId: string; caseId: string };
 };
 
@@ -144,6 +146,7 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
     intakeMetadata,
     clientMemoryRecall,
     clientFollowUpReuse,
+    pipelineMode,
     run,
   } = request;
   let claim = request.claim;
@@ -342,6 +345,7 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
       crossExam: { callRaw: adapter.makeCrossExamCaller((data) => sendEvent(data)) },
       wholeClaimAudit: { callModel: adapter.makeWholeClaimAuditCaller() },
       followUpReuse: clientFollowUpReuse ?? undefined,
+      mode: pipelineMode,
       runReport: makeRunReport(runAgent, sendEvent),
       hooks: makePipelineHooks({ claim, sendEvent, emitInvestigation, emitter, searchesCounter }),
       finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>

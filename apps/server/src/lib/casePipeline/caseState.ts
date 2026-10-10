@@ -24,6 +24,8 @@ export type PipelineContext = {
   snapshots: SnapshotTimeline;
   /** 协作式取消：各阶段边界检查一次。 */
   throwIfAborted: () => void;
+  /** #145 对比实验的精简管线（见 CasePipelineInput.mode）。 */
+  lean: boolean;
   /** 同一案追问且上一轮有可点开证据时的复用计划；否则为 null。 */
   reusePlan: FollowUpReusePlan | null;
   audit: WholeClaimAuditState;

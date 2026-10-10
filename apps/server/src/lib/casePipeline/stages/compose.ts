@@ -65,17 +65,18 @@ export async function compose(ctx: PipelineContext, state: CaseState): Promise<P
   const { input, claim, steps, budget, throwIfAborted } = ctx;
   const { rumorStep, search360Result, atomSearchBundle } = state;
   throwIfAborted();
-  const reportStep = shouldWriteDeterministicReport({
+  const outOfTime = shouldWriteDeterministicReport({
     rumorStep,
     factStep: state.factStep,
     timeLeftMs: budget.timeLeftMs(),
     reportWriteMs: REPORT_WRITE_MS,
-  })
+  });
+  const reportStep = ctx.lean || outOfTime
     ? deterministicReportStep(
         claim,
         steps,
         search360Result,
-        "剩余时间不够写完整报告，按已有分条判断收束。"
+        ctx.lean ? "精简管线不跑报告写作模型，按已有分条判断收束。" : "剩余时间不够写完整报告，按已有分条判断收束。"
       )
     : await input.runReport({
         claim,
