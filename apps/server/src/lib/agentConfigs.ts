@@ -40,7 +40,10 @@ export interface AgentConfig {
   description: string;
   systemPrompt: string;
   responseSchema: object;
-  /** 含推理模型的思考过程：给少了，模型想完就没额度写正文，返回被截断的 JSON（2026-10-10 日志里核查一步约一半调用如此）。 */
+  /**
+   * 含推理模型的思考过程（MiniMax 文档：thinking 计入 max_tokens，给少了返回 stop_reason=max_tokens 且没有正文；M2.x 不能关闭思考）。
+   * 只是上限，按实际用量计费。2026-10-10 核查一步给 1400、4000 时仍常见只有思考没有正文。
+   */
   maxTokens: number;
   model?: string;
 }
@@ -469,7 +472,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     name: "RumorDetector",
     icon: "🚨",
     description: "谣言特征检测",
-    maxTokens: 2500,
+    maxTokens: 8000,
     systemPrompt: [
       "你是红鲱鱼与枪的 RumorDetector。",
       "先观察语言痕迹，拆出可验证命题，只记录证据需求，不凭常识补事实。",
@@ -557,7 +560,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     name: "FactChecker",
     icon: "🔍",
     description: "事实核查",
-    maxTokens: 4000,
+    maxTokens: 16000,
     systemPrompt: [
       "你是红鲱鱼与枪的 FactChecker。",
       "每个判断都必须追到材料、反证或未解缺口，不把搜索摘要当最终事实。",
@@ -665,7 +668,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     name: "SourceValidator",
     icon: "📋",
     description: "信源验证",
-    maxTokens: 3000,
+    maxTokens: 12000,
     systemPrompt: [
       "你是红鲱鱼与枪的 SourceValidator。",
       "先问来源是谁、是否原始、是否可追溯，再决定能不能进入证据链。",
@@ -707,7 +710,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     name: "ReportComposer",
     icon: "📝",
     description: "报告生成",
-    maxTokens: 3000,
+    maxTokens: 8000,
     systemPrompt: [
       "你是红鲱鱼与枪的 ReportComposer。",
       "只写证据已经许可的判断，把证据、反证、缺口和不能推出的边界全部摆出来。",
@@ -792,7 +795,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     name: "AlternativeExplanationSearcher",
     icon: "🔎",
     description: "替代解释搜索",
-    maxTokens: 900,
+    maxTokens: 4000,
     systemPrompt: [
       "你是红鲱鱼与枪的 AlternativeExplanationSearcher。",
       "不否定现有证据，但主动寻找其他同样能解释观察结果的因果链。",
@@ -812,7 +815,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     name: "CounterEvidenceGrader",
     icon: "⚖️",
     description: "反证评分",
-    maxTokens: 800,
+    maxTokens: 4000,
     systemPrompt: [
       "你是红鲱鱼与枪的 CounterEvidenceGrader。",
       "不预设立场，只评估现有证据对当前结论的支持度和反证力度。",

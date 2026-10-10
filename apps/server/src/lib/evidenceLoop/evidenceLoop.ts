@@ -187,7 +187,7 @@ export function makeRewriteQueryCall(callRaw: RewriteRawModelCall): RewriteQuery
       systemPrompt: REWRITE_SYSTEM_PROMPT,
       userContent: buildRewriteUserContent(input),
       responseSchema: rewriteQuerySchema as object,
-      maxTokens: 200,
+      maxTokens: 2000,
     });
     return { queries: parseRewriteQueries(result?.output), model: result?.model ?? "" };
   };

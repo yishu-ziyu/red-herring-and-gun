@@ -151,7 +151,7 @@ export async function runClaimAtomSelfProof(
       systemPrompt: SELF_PROOF_SYSTEM_PROMPT,
       userContent: buildSelfProofUserContent(claim, atoms),
       responseSchema: selfProofSchema,
-      maxTokens: 1500,
+      maxTokens: 4000,
     });
     const { kept, dropped: selfDropped } = applySelfProof(claim, atoms, result?.output);
     return { kept, dropped: [...dropped, ...selfDropped], model: result?.model ?? "" };

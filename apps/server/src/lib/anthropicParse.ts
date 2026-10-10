@@ -179,13 +179,17 @@ export function parseAnthropicSseDataLine(dataText: string): AnthropicSseDelta |
 export async function readAnthropicSse(
   body: ReadableStream<Uint8Array>,
   onDelta: (delta: { thinkingChunk?: string; textChunk?: string }) => void
-): Promise<{ text: string; thinking: string; rawTail: string }> {
+): Promise<{ text: string; thinking: string; rawTail: string; stopReason?: string; outputTokens?: number; sawMessageStop: boolean }> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
   let thinking = "";
   let blockType = "";
+  // 停止原因和用量（message_delta / message_stop）：分清「额度用完只剩思考」和「流中途断了」。
+  let stopReason: string | undefined;
+  let outputTokens: number | undefined;
+  let sawMessageStop = false;
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -199,7 +203,8 @@ export async function readAnthropicSse(
         if (!dataText || dataText === "[DONE]") continue;
         let event: {
           type?: string;
-          delta?: { type?: string; text?: unknown; thinking?: unknown };
+          delta?: { type?: string; text?: unknown; thinking?: unknown; stop_reason?: unknown };
+          usage?: { output_tokens?: unknown };
           content_block?: { type?: string; text?: unknown; thinking?: unknown };
         };
         try {
@@ -240,6 +245,11 @@ export async function readAnthropicSse(
           onDelta({ textChunk: textPiece });
         }
         if (event.type === "content_block_stop") blockType = "";
+        if (event.type === "message_delta") {
+          if (typeof event.delta?.stop_reason === "string") stopReason = event.delta.stop_reason;
+          if (typeof event.usage?.output_tokens === "number") outputTokens = event.usage.output_tokens;
+        }
+        if (event.type === "message_stop") sawMessageStop = true;
       }
     }
   } finally {
@@ -250,5 +260,5 @@ export async function readAnthropicSse(
     text = extractAnthropicText(rawTail);
     thinking = extractAnthropicThinking(rawTail);
   }
-  return { text, thinking, rawTail };
+  return { text, thinking, rawTail, stopReason, outputTokens, sawMessageStop };
 }

@@ -205,6 +205,8 @@ export async function callStepFunPlanAgent({
 
   let data: {
     content?: Array<{ type?: string; text?: string; thinking?: string }>;
+    stop_reason?: string;
+    usage?: { output_tokens?: number };
   } | null = null;
   try {
     data = JSON.parse(raw);
@@ -223,7 +225,11 @@ export async function callStepFunPlanAgent({
     .join("")
     .trim();
 
-  if (!text) throw new Error(`StepFun API 没有返回可解析文本（content_blocks=${blocks.map((b) => b.type).join(",") || "empty"}）。`);
+  if (!text) {
+    throw new Error(
+      `StepFun API 没有返回可解析文本（content_blocks=${blocks.map((b) => b.type).join(",") || "empty"}, stop_reason=${data?.stop_reason ?? "?"}, output_tokens=${data?.usage?.output_tokens ?? "?"}, max_tokens=${maxTokens}）。`
+    );
+  }
   return { text, model: `stepfun:${model}`, ...(reasoning ? { reasoning } : {}) };
 }
 
@@ -292,6 +298,7 @@ export async function callMiniMaxAgent({
 
   let text = "";
   let reasoning = "";
+  let ending = "non-stream";
   if (response.body) {
     let thinkingAcc = "";
     const streamed = await readAnthropicSse(response.body, (delta) => {
@@ -301,6 +308,7 @@ export async function callMiniMaxAgent({
     });
     text = streamed.text;
     reasoning = streamed.thinking || thinkingAcc;
+    ending = `stop_reason=${streamed.stopReason ?? (streamed.sawMessageStop ? "none" : "stream-ended-early")}, output_tokens=${streamed.outputTokens ?? "?"}, max_tokens=${maxTokens}`;
     if (!text && !reasoning && streamed.rawTail) {
       text = extractAnthropicText(streamed.rawTail);
       reasoning = extractAnthropicThinking(streamed.rawTail);
@@ -314,9 +322,7 @@ export async function callMiniMaxAgent({
 
   if (!text) {
     throw new Error(
-      `MiniMax API 没有返回可解析文本。${
-        reasoning ? "stop_reason=unknown, content_types=thinking" : "raw empty"
-      }`
+      `MiniMax API 没有返回可解析文本。${ending}, content_types=${reasoning ? "thinking" : "none"}`
     );
   }
   return { text, model: `minimax:${model}`, reasoning: reasoning || undefined };
