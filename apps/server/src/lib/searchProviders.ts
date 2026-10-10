@@ -5,7 +5,8 @@
 
 import { randomUUID } from "node:crypto";
 
-import { buildAtomSearchQueries, mergeParallelSearchPayloads } from "./atomSearchQuery.js";
+import { buildAtomQueryPlan, mergeParallelSearchPayloads } from "./atomSearchQuery.js";
+import type { PlannedQuery } from "./searchPlan.js";
 
 import { canonicalizeUrl } from "./retrievalFilter.js";
 
@@ -443,9 +444,11 @@ export async function retrieveAtomSources(
   atom: string,
   onProgress?: (event: SearchProgressEvent) => void,
   execution: ExecutionBudget = {},
+  planned?: PlannedQuery[],
 ) {
   execution.signal?.throwIfAborted();
-  const queries = buildAtomSearchQueries(atom);
+  const plan = buildAtomQueryPlan(atom, planned);
+  const queries = plan.map((q) => q.query);
   const queryCount = queries.length;
   const providers = parallelSearchProviders(env);
 
@@ -509,7 +512,13 @@ export async function retrieveAtomSources(
   const failures: string[] = [];
   settled.forEach((item, index) => {
     if (item.status === "fulfilled") {
-      ok.push(item.value as Record<string, unknown>);
+      // 每条来源记下是哪类搜索词找到的（只供评测统计，不进模型输入和界面）。
+      const payload = item.value as Record<string, unknown>;
+      const goal = plan[index]?.goal;
+      if (goal && Array.isArray(payload.sources)) {
+        payload.sources = payload.sources.map((source: Record<string, unknown>) => ({ ...source, queryGoals: [goal] }));
+      }
+      ok.push(payload);
       return;
     }
     const message = item.reason instanceof Error ? item.reason.message : String(item.reason);

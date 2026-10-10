@@ -40,6 +40,8 @@ export interface PipelineSource {
   quote?: string;
   /** Search engines that returned this URL (bundle.enginesByUrl); measurement only (#144). */
   foundBy?: string[];
+  /** Purposes of the search queries that returned this URL (bundle.goalsByUrl); measurement only (#144). */
+  foundByGoal?: string[];
   /** Evidence only: text of every snapshot claim this url+relation is linked to. */
   parts?: string[];
 }

@@ -16,6 +16,7 @@ import {
 import { canonicalizeUrl, filterAtomSources, type FilterMeta, type FilterableSource } from "./retrievalFilter.js";
 import { isOffTopicSource } from "./atomSearchQuery.js";
 import { normalizeInvestigationSourceUrl } from "./investigation/sourceIdentity.js";
+import type { PlannedQuery } from "./searchPlan.js";
 import {
   bindDualBucketCitations,
   bindRelatedSourcesOnly,
@@ -29,7 +30,7 @@ const DIGIT_LOAD_RE = /\d/;
 export const SEARCH_BUDGET_GAP = "检索预算未覆盖";
 
 /** Adapter at the search seam: one atom → raw search result. */
-export type SearchOneAtom = (atom: string) => Promise<unknown>;
+export type SearchOneAtom = (atom: string, planned?: PlannedQuery[]) => Promise<unknown>;
 
 export type RetrieveForAtomsHooks = {
   onAtomStart?: (atom: string) => void;
@@ -130,6 +131,8 @@ export type AtomSearchBundle = {
    * 不进模型输入、快照和界面；复用上一轮注入的来源没有引擎。
    */
   enginesByUrl?: Record<string, string[]>;
+  /** 只供评测度量（#144）：规范化 URL → 找到它的搜索词目的（见 searchPlan.ts 的 EvidenceGoal）。 */
+  goalsByUrl?: Record<string, string[]>;
   /** 只供评测度量（#144）：claimAtomKey → 各引擎返回 / 筛后留下的来源条数；Total 是来源条数，一条来源被几个引擎找到也只算一次。 */
   enginesPerAtom?: Record<string, AtomEngineCounts>;
 };
@@ -145,7 +148,7 @@ export type AtomEngineCounts = {
  * 检索结果里每条来源的引擎归属。键用筛选同款 canonicalizeUrl：留下的来源 URL 已被它改写，
  * 快照里的 URL 也是改写后的，用原始 URL 当键会对不上。与 asSourceList 同样只看前 24 条。
  */
-function originsByUrl(result: unknown): Map<string, string[]> {
+function originsByUrl(result: unknown, field = "providerOrigins"): Map<string, string[]> {
   const out = new Map<string, string[]>();
   const sources = (result as { sources?: unknown })?.sources;
   if (!Array.isArray(sources)) return out;
@@ -156,7 +159,7 @@ function originsByUrl(result: unknown): Map<string, string[]> {
     if (!url) continue;
     const key = normalizeInvestigationSourceUrl(canonicalizeUrl(url) ?? url);
     const list = out.get(key) ?? [];
-    const origins = Array.isArray(rec.providerOrigins) ? rec.providerOrigins : [];
+    const origins = Array.isArray(rec[field]) ? (rec[field] as unknown[]) : [];
     for (const o of origins) if (typeof o === "string" && !list.includes(o)) list.push(o);
     out.set(key, list);
   }
@@ -341,6 +344,7 @@ export function buildAtomSearchBundle(
   const perAtomMeta: Record<string, FilterMeta> = {};
   const totals: FilterMeta = { before: 0, afterFilter: 0, afterDedupe: 0, afterTopK: 0 };
   const enginesByUrl: Record<string, string[]> = {};
+  const goalsByUrl: Record<string, string[]> = {};
   const enginesPerAtom: Record<string, AtomEngineCounts> = {};
   // 本轮材料实际取得时间：bundle 组装时刻，即这批检索结果到手的时间。
   const retrievedAt = new Date().toISOString();
@@ -358,6 +362,10 @@ export function buildAtomSearchBundle(
     for (const [url, engines] of origins) {
       const list = (enginesByUrl[url] ??= []);
       for (const e of engines) if (!list.includes(e)) list.push(e);
+    }
+    for (const [url, goals] of originsByUrl(item.result, "queryGoals")) {
+      const list = (goalsByUrl[url] ??= []);
+      for (const g of goals) if (!list.includes(g)) list.push(g);
     }
     enginesPerAtom[key] = {
       returned: countEngines(listed.map((s) => s.url), origins),
@@ -413,6 +421,7 @@ export function buildAtomSearchBundle(
     knowledgeDrafts: [],
     filterMeta: { perAtom: perAtomMeta, totals },
     enginesByUrl,
+    goalsByUrl,
     enginesPerAtom,
     aggregate: {
       answer: answers.join("\n\n").slice(0, 1800),
@@ -628,6 +637,8 @@ export async function retrieveForAtoms(options: {
   priorityClaimAtoms?: unknown;
   onPlan?: (plan: { includedAtoms: string[]; deferredAtoms: string[] }) => void;
   searchOne: SearchOneAtom;
+  /** 拆题模型写的每截搜索计划；没有就走旧模板。 */
+  queryPlanFor?: (atom: string) => PlannedQuery[] | undefined;
   hooks?: RetrieveForAtomsHooks;
   claimAtomKeyFn?: (s: string) => string;
   /** 同一案上一轮证据（契约 docs/evals/2026-09-13-followup-fast-path.md）。 */
@@ -689,7 +700,7 @@ export async function retrieveForAtoms(options: {
   if (mode === "sequential") {
     for (const atom of atomsToSearch) {
       options.hooks?.onAtomStart?.(atom);
-      const result = await options.searchOne(atom);
+      const result = await options.searchOne(atom, options.queryPlanFor?.(atom));
       options.hooks?.onAtomResult?.(atom, result);
       items.push({ atom, result });
     }
@@ -697,7 +708,7 @@ export async function retrieveForAtoms(options: {
     const settled = await Promise.all(
       atomsToSearch.map(async (atom) => {
         options.hooks?.onAtomStart?.(atom);
-        const result = await options.searchOne(atom);
+        const result = await options.searchOne(atom, options.queryPlanFor?.(atom));
         options.hooks?.onAtomResult?.(atom, result);
         return { atom, result };
       })

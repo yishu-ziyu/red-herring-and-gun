@@ -4,6 +4,7 @@
  * Reads outputs/answer-bench/<label>/results.jsonl, writes engines.json next to it. Used = relation 支持 or 反驳.
  * "soleKeyParts" = (case, part) pairs where every 支持/反驳 source of that part was found by this engine alone.
  * Also prints, per case, parts that kept ≤3 sources, with each engine's returned/kept counts.
+ * "goals" = the same used / exclusiveUsed counts per search-query purpose (searchPlan.ts EvidenceGoal).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -23,6 +24,8 @@ const rows = readFileSync(join(OUT, label, "results.jsonl"), "utf8")
 type EngineStats = { casesWithKept: number; kept: number; used: number; exclusiveUsed: number; soleKeyParts: number };
 const engines: Record<string, EngineStats> = {};
 const stat = (e: string) => (engines[e] ??= { casesWithKept: 0, kept: 0, used: 0, exclusiveUsed: 0, soleKeyParts: 0 });
+const goals: Record<string, { used: number; exclusiveUsed: number }> = {};
+const goal = (g: string) => (goals[g] ??= { used: 0, exclusiveUsed: 0 });
 const thinParts: Record<string, Array<{ part: string; keptTotal: number; returned: Record<string, number>; kept: Record<string, number> }>> = {};
 
 for (const { id, result } of rows) {
@@ -43,6 +46,11 @@ for (const { id, result } of rows) {
     for (const e of by) stat(e).used += 1;
     if (by.length === 1) stat(by[0]!).exclusiveUsed += 1;
   }
+  for (const s of used) {
+    const by = s.foundByGoal ?? [];
+    for (const g of by) goal(g).used += 1;
+    if (by.length === 1) goal(by[0]!).exclusiveUsed += 1;
+  }
   for (const part of new Set(used.flatMap((s) => s.parts ?? []))) {
     const by = used.filter((s) => s.parts?.includes(part)).map((s) => s.foundBy ?? []);
     const sole = by[0]?.length === 1 ? by[0][0]! : null;
@@ -50,8 +58,8 @@ for (const { id, result } of rows) {
   }
 }
 
-writeFileSync(join(OUT, label, "engines.json"), JSON.stringify({ label, cases: rows.length, engines, thinParts }, null, 2));
-console.log(JSON.stringify({ cases: rows.length, engines }, null, 2));
+writeFileSync(join(OUT, label, "engines.json"), JSON.stringify({ label, cases: rows.length, engines, goals, thinParts }, null, 2));
+console.log(JSON.stringify({ cases: rows.length, engines, goals }, null, 2));
 for (const [id, parts] of Object.entries(thinParts)) {
   console.log(`\n${id}`);
   for (const p of parts) console.log(`  kept ${p.keptTotal}  ${p.part.slice(0, 40)}  returned=${JSON.stringify(p.returned)} kept=${JSON.stringify(p.kept)}`);

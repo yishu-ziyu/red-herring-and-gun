@@ -12,6 +12,7 @@ import { AGENT_CONFIGS, buildAgentInput } from "../src/lib/agentConfigs.js";
 import { callAgentWithFallback, ProviderFallbackError } from "../src/lib/providerRouter.js";
 import { runCasePipeline, type CasePipelineHooks, type PipelineStep } from "../src/lib/casePipeline/index.js";
 import { retrieveAtomSources } from "../src/lib/searchProviders.js";
+import type { PlannedQuery } from "../src/lib/searchPlan.js";
 import { applyFactDeskPostProcessToReport } from "../src/lib/factDeskPostProcess.js";
 import type { ScoreCaseGolden } from "./golden.js";
 
@@ -67,9 +68,9 @@ function makeRunAgent({ env }: EvalEnv, claim: string) {
 
 /** 生产搜索：与 Case Pipeline HTTP 同一 retrieveAtomSources（双路查询 + 并行源）。 */
 function makeSearchOne(env: Record<string, string>) {
-  return async (atom: string) => {
+  return async (atom: string, planned?: PlannedQuery[]) => {
     try {
-      return await retrieveAtomSources(env, atom);
+      return await retrieveAtomSources(env, atom, undefined, {}, planned);
     } catch {
       return { sources: [], answer: "", model: "", traceText: "", _source: "error" };
     }

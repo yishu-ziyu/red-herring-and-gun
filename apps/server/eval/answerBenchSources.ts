@@ -4,7 +4,7 @@
  *  - citedSources: what the final report cites (report.citationSources)
  *  - evidenceSources: what the UI's InvestigationSnapshotV1 shows with a real role (支持/反驳/相关/待核对)
  * A source's relation is "unknown" whenever the snapshot is missing; it is never defaulted to 相关.
- * foundBy joins each URL to bundle.enginesByUrl (#144); an empty list means no engine (prior-round reuse, or an old row).
+ * foundBy / foundByGoal join each URL to bundle.enginesByUrl / goalsByUrl (#144); an empty list means no engine (prior-round reuse, or an old row).
  */
 import type { PipelineSource } from "./answerBenchScore.js";
 import { normalizeInvestigationSourceUrl } from "../src/lib/investigation/sourceIdentity.js";
@@ -33,8 +33,11 @@ export function extractSources(report: Rec, atomSearchBundle?: unknown): Extract
   const snapshotBuilt = arr(snap.claims).length > 0 || arr(snap.sources).length > 0 || snap.schemaVersion === 1;
   const bundle = asRec(atomSearchBundle);
   const enginesByUrl = asRec(bundle.enginesByUrl);
+  const goalsByUrl = asRec(bundle.goalsByUrl);
+  const strings = (v: unknown) => arr(v).filter((e): e is string => typeof e === "string");
   const foundBy = (url: string) => ({
-    foundBy: arr(enginesByUrl[normalizeInvestigationSourceUrl(url)]).filter((e): e is string => typeof e === "string"),
+    foundBy: strings(enginesByUrl[normalizeInvestigationSourceUrl(url)]),
+    foundByGoal: strings(goalsByUrl[normalizeInvestigationSourceUrl(url)]),
   });
 
   const byId = new Map<string, Rec>();

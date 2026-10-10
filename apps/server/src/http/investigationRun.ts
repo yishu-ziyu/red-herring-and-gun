@@ -39,6 +39,7 @@ import { makePipelineHooks, makeRunAgentCallbacks } from "./pipelineEvents.js";
 import { toFriendlyError, toPublicStreamEvent } from "./publicStream.js";
 import { classifyFailure, QUOTA_SETTLEMENT, RUN_FINAL_STATUS, TIMEOUT_LABEL, type RunOutcome } from "./runOutcome.js";
 import { openSse, sseFrame, SSE_KEEPALIVE_FRAME, SSE_KEEPALIVE_MS } from "./sseChannel.js";
+import type { PlannedQuery } from "../lib/searchPlan.js";
 
 export type InvestigationRunDeps = {
   env: Record<string, string>;
@@ -66,11 +67,11 @@ function makeSearchOneAtom(
   searchEnv: Record<string, string>,
   execution: ExecutionBudget = {},
 ) {
-  return async (atom: string) => {
+  return async (atom: string, planned?: PlannedQuery[]) => {
     execution.signal?.throwIfAborted();
     let result: Record<string, unknown>;
     try {
-      result = await retrieveAtomSources(searchEnv, atom, onSearchProgress, execution);
+      result = await retrieveAtomSources(searchEnv, atom, onSearchProgress, execution, planned);
     } catch (error) {
       execution.signal?.throwIfAborted();
       const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";

@@ -191,6 +191,27 @@ const rumorDetectorSchema = {
       },
       required: ["verifiable", "type", "reason"],
     },
+    // 只写宽松结构：这里校验不过会让整份拆题作废；goal 和长度由 searchPlan.ts 逐条检查，坏的只丢那一条。
+    searchPlan: {
+      type: "array",
+      description: "每条可核查命题的搜索词，最多 2 条，每条写明要找哪类材料。",
+      items: {
+        type: "object",
+        properties: {
+          atom: { type: "string", description: "逐字照抄 claimAtoms 里的那一条" },
+          queries: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                goal: { type: "string", description: "primary_source | independent_evidence | counter_evidence" },
+                query: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+    },
     rumorIndicators: { type: "array", items: { type: "string" } },
     severity: { type: "string", enum: ["low", "medium", "high"] },
     analysis: { type: "string" },
@@ -346,6 +367,13 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "- 拆解不得删除原句的限定条件（「某种情况下 X」不得拆成「X」）。",
       "- 不得产出无独立含义的碎片；能合并进同一判断的不要拆成多条。",
       "- 拆分完成后把 claimAtoms 拼接回读，逐条对照原句自证，不能自证的删掉。",
+      "",
+      "【每一截的搜索计划 searchPlan】",
+      "为 claimAtoms 里每条 verifiable=true 的命题写 searchPlan：atom 逐字照抄那一条，queries 写 2 个搜索词，两个的 goal 必须不同，按这条命题最缺哪类材料来选：",
+      "- primary_source：找原始出处——谁说的、最早在哪里发布、原文怎么写。原句点名了机构、媒体或研究者时，写成限定该机构官网的搜索，例如「site:who.int leftover food cancer」；没点名就搜这句话最早的出处和原文。",
+      "- independent_evidence：找和谣言措辞无关的独立依据——研究、数据、国家标准、官方统计。用中性、专业的说法（例如「隔夜蔬菜 亚硝酸盐 冷藏 含量 研究」），不要照抄谣言原话，不要带「辟谣」。",
+      "- counter_evidence：找已有的核查或相反说法——辟谣、澄清、误传、被错误归到某个机构头上。",
+      "搜索词是给搜索引擎的关键词组合，不超过 30 个字，不写成问句，不写你认为的结论。",
       "",
       "【课文 / 百科 / 教材长文 — 强制】",
       "原句是一段说明文、百科或课文，而不是一句流传谣言时：只抽出可独立核查的断言，最多 4 条，不要按句号切成十几条再假装都是谣言。超过 4 条就是做错。",

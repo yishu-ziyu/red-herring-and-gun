@@ -5,6 +5,7 @@
  */
 
 import { buildQueryPortfolio, fuseByRrf, type RankedDoc } from "./retrievalQueries/index.js";
+import type { PlannedQuery } from "./searchPlan.js";
 
 const FILLER = /我说|原来|叫谁|这是|那个|一下|真的吗|是不是/g;
 const STOP = new Set([
@@ -131,6 +132,22 @@ export function buildAtomSearchQueries(atom: string): string[] {
   );
 }
 
+/**
+ * 一截实际要跑的搜索词。拆题模型写了搜索计划：原句一条 + 计划里最多两条（数量和旧模板相同）；
+ * 没写或写坏了：旧模板。goal 跟着来源走，只供评测统计哪类搜索词找到了被用上的证据。
+ */
+export function buildAtomQueryPlan(atom: string, planned?: PlannedQuery[]): PlannedQuery[] {
+  const t = atom.replace(/\s+/g, " ").trim();
+  if (!t) return [];
+  const exact = buildQueryPortfolio(t).find((p) => p.purpose === "exact")?.query || t;
+  if (planned && planned.length > 0) {
+    const out: PlannedQuery[] = [{ query: exact, goal: "exact_claim" }];
+    for (const q of planned) if (!out.some((o) => o.query === q.query)) out.push(q);
+    return out.slice(0, 3);
+  }
+  return buildAtomSearchQueries(t).map((query) => ({ query, goal: query === exact ? "exact_claim" : "template" }));
+}
+
 export function mergeParallelSearchPayloads(
   atom: string,
   payloads: Array<Record<string, unknown>>
@@ -172,8 +189,9 @@ export function mergeParallelSearchPayloads(
     for (const { url, rec } of ranked) {
       const first = seenUrl.get(url);
       if (first) {
-        // 同 URL 再次出现（同 provider 的其它 query 或别的 provider）：UNION 归属，不覆盖。
-        unionProviderOrigins(first, rec.providerOrigins);
+        // 同 URL 再次出现（同 provider 的其它 query 或别的 provider）：UNION 引擎和搜索词目的，不覆盖。
+        unionStrings(first, "providerOrigins", rec.providerOrigins);
+        unionStrings(first, "queryGoals", rec.queryGoals);
         continue;
       }
       seenUrl.set(url, rec);
@@ -217,16 +235,13 @@ export function mergeParallelSearchPayloads(
   };
 }
 
-/** 把 incoming 的 provider 归属并入 target 记录（去重、保序）。 */
-function unionProviderOrigins(target: Record<string, unknown>, incoming: unknown): void {
+/** 把 incoming 的引擎或搜索词目的并入 target 记录（去重、保序）。 */
+function unionStrings(target: Record<string, unknown>, field: string, incoming: unknown): void {
   if (!Array.isArray(incoming)) return;
-  const list = Array.isArray(target.providerOrigins)
-    ? (target.providerOrigins.filter((o): o is string => typeof o === "string"))
-    : [];
-  for (const origin of incoming) {
-    if (typeof origin === "string" && !list.includes(origin)) list.push(origin);
-  }
-  target.providerOrigins = list;
+  const current = target[field];
+  const list = Array.isArray(current) ? current.filter((o): o is string => typeof o === "string") : [];
+  for (const v of incoming) if (typeof v === "string" && !list.includes(v)) list.push(v);
+  target[field] = list;
 }
 
 function uniqueKeep(items: string[], max: number): string[] {

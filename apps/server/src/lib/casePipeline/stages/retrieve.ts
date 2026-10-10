@@ -5,6 +5,7 @@
 import { retrieveForAtoms, type AtomSearchBundle } from "../../atomSearch.js";
 import { claimAtomKey } from "../../claimAtom/index.js";
 import { priorRoundLookupOf } from "../../followUpReuse.js";
+import { searchPlanLookup } from "../../searchPlan.js";
 import type { PipelineContext } from "../caseState.js";
 import type { PipelineStep } from "../runCasePipeline.js";
 
@@ -22,6 +23,7 @@ export async function retrieve(ctx: PipelineContext, rumorStep: PipelineStep): P
     priorityClaimAtoms: rumorStep.output.priorityClaimAtoms,
     onPlan: (scopePlan) => { snapshots.setScopePlan(scopePlan); },
     searchOne: input.searchOne,
+    queryPlanFor: searchPlanLookup(rumorStep.output.searchPlan),
     claimAtomKeyFn: claimAtomKey,
     priorRound: reusePlan
       ? {
