@@ -89,9 +89,10 @@ export async function checkUrlLiveness(
     if (execution.deadlineMs !== undefined && Date.now() >= execution.deadlineMs) {
       throw new ExecutionTimeoutError("来源探活总预算", 0);
     }
-    // A slow site is not a dead link: kepuchina.cn answered 200 in 4.5s yet was pruned as unopenable.
-    if (error instanceof ExecutionTimeoutError) return "alive";
-    return "dead";
+    // 连不上不等于死链：慢站（kepuchina.cn 4.5 秒才回 200）、掐断机器访问的站、本机代理约 5 秒断开都会走到这里。
+    // 2026-10-10 统计：两个模型都确认方向的 67 条来源里，26 条因此被当成死链删掉。只有域名不存在才算死链。
+    const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
+    return code === "ENOTFOUND" ? "dead" : "alive";
   }
 }
 
