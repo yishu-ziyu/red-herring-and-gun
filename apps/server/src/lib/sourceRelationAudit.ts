@@ -65,7 +65,6 @@ export function findClaimSourceRelationAudit<A extends { claimAtom: string; url:
     }
   }
   if (best && bestScore >= 0.5) return best;
-  if (sameUrl.length === 0 && target) console.warn(`[relation-audit] no audit for claimAtom=${JSON.stringify(claimAtom)} url=${target}`);
   return undefined;
 }
 
@@ -133,6 +132,8 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
       if (!url) return;
       hadDirectional = true;
       const audit = findClaimSourceRelationAudit(audits, claimAtom, url, claimAtomKeyFn);
+      // 只记方向性候选（支持 / 反驳）没有核验结果的情况：这些来源会被降为只作背景。
+      if (!audit && audits.length > 0) console.warn(`[relation-audit] directional source has no audit claimAtom=${JSON.stringify(claimAtom)} url=${url}`);
       if (!audit || audit.relation === "context-only" || audit.relation === "unverified") {
         changed = true;
         return;
