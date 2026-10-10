@@ -835,33 +835,6 @@
   animation-delay: var(--gp-enter-delay, 0ms);
 }
 
-.gp-home-case {
-  width: 100%;
-  max-width: 920px;
-  margin: 38px auto 0;
-  border-top: 1px solid var(--gp-line);
-  padding-top: 25px;
-  display: grid;
-  grid-template-columns: 1fr 1.4fr;
-  gap: 45px;
-  text-align: left;
-}
-
-.gp-home-case-copy h2 {
-  margin: 0 0 8px;
-  font-family: var(--gp-serif);
-  font-size: 24px;
-  font-weight: 500;
-  line-height: 1.35;
-  color: var(--gp-ink);
-}
-
-.gp-home-case-copy p {
-  margin: 0;
-  color: var(--gp-ink-2);
-  font-size: 14px;
-}
-
 /* 示例区（Quiet Editorial 标签，无巨型彩色药丸） */
 .gp-examples {
   margin-top: 18px;
@@ -921,110 +894,6 @@
   color: var(--gp-accent);
   background: var(--gp-accent-subtle);
   font-weight: 500;
-}
-
-.gp-home-cases {
-  width: 100%;
-  max-width: 760px;
-  margin-top: 28px;
-}
-
-.gp-home-cases-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 12px;
-}
-
-.gp-home-case-card {
-  background: var(--gp-surface);
-  border: 1px solid var(--gp-hairline);
-  border-radius: var(--gp-radius-card);
-  padding: 20px 24px;
-  text-align: left;
-  box-shadow: 0 2px 12px -2px rgba(27, 24, 20, 0.03);
-  transition: border-color var(--gp-motion-fast) var(--gp-ease-out), box-shadow var(--gp-motion-fast) var(--gp-ease-out);
-}
-
-.gp-home-case-card:hover {
-  border-color: var(--gp-ink-2);
-  box-shadow: 0 4px 16px -2px rgba(27, 24, 20, 0.05);
-}
-
-.gp-home-case-mark {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0 0 10px;
-  font-family: var(--gp-mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
-  color: var(--gp-accent);
-  background: var(--gp-accent-subtle);
-  padding: 3px 8px;
-  border-radius: 4px;
-}
-
-.gp-home-case-claim {
-  margin: 0 0 6px;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.45;
-  color: var(--gp-ink-primary);
-}
-
-.gp-home-case-finding {
-  margin: 0 0 10px;
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--gp-ink-2);
-}
-
-.gp-home-case-date {
-  margin: 0 0 12px;
-  font-family: var(--gp-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.2px;
-  color: var(--gp-ink-3);
-}
-
-.gp-home-case-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--gp-line-subtle);
-}
-
-.gp-home-case-actions .gp-primary-btn {
-  background: var(--gp-ink-primary);
-  border-radius: var(--gp-radius-sm);
-  padding: 7px 16px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.gp-home-case-actions .gp-primary-btn:hover {
-  background: var(--gp-accent);
-}
-
-.gp-home-case-actions .gp-ghost-btn {
-  background: var(--gp-surface-inset);
-  border: 1px solid var(--gp-hairline);
-  color: var(--gp-ink-2);
-  border-radius: var(--gp-radius-sm);
-  padding: 7px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  transition: background-color var(--gp-motion-fast) var(--gp-ease-out), border-color var(--gp-motion-fast) var(--gp-ease-out), color var(--gp-motion-fast) var(--gp-ease-out);
-}
-
-.gp-home-case-actions .gp-ghost-btn:hover {
-  background: #ffffff;
-  border-color: var(--gp-ink-primary);
-  color: var(--gp-ink-primary);
 }
 
 .gp-drawer-scope {
@@ -3049,10 +2918,6 @@ a.gp-finding-cite-badge:hover {
 /* ---------- 响应式（Responsive 768px & 390px） ---------- */
 
 @media (max-width: 800px) {
-  .gp-home-case {
-    grid-template-columns: 1fr;
-    gap: 18px;
-  }
   .gp-roles {
     gap: 12px;
     width: 100%;

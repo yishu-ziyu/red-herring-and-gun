@@ -24,7 +24,6 @@ import {
   quotaIsExhausted,
   type CheckQuotaView,
 } from "../lib/checkQuota";
-import { homeCaseCards, type HomeCaseId } from "./homeCases";
 
 const MAX_IMAGE_COUNT = 4;
 const MAX_TOTAL_IMAGE_BYTES = 6 * 1024 * 1024;
@@ -88,15 +87,11 @@ function showLinkScrapeNotice(text: string, host: HTMLElement | null) {
 type InputStageProps = {
   onSubmit: (intake: CaseIntake) => void;
   initialClaim?: string;
-  onViewHomeCase?: (id: HomeCaseId) => void;
-  onRecheckHomeCase?: (claim: string) => void;
 };
 
 export function InputStage({
   onSubmit,
   initialClaim = "",
-  onViewHomeCase,
-  onRecheckHomeCase,
 }: InputStageProps) {
   const { lang, copy: legacy } = useUiLang();
   const copy = gpCopyFor(lang);
@@ -214,17 +209,6 @@ export function InputStage({
     setInputError("");
   }, []);
 
-  const recheckHomeCase = useCallback(
-    (claim: string) => {
-      if (quotaExhausted && checkQuota) {
-        setInputError(checksRemainingMessage(checkQuota));
-        return;
-      }
-      onRecheckHomeCase?.(claim);
-    },
-    [checkQuota, onRecheckHomeCase, quotaExhausted]
-  );
-
   const userHint = (() => {
     if (inputError) return { tone: inputError.includes("抓取失败") ? "muted" : "warning", text: inputError } as const;
     if (checkQuota?.enforced) {
@@ -293,38 +277,6 @@ export function InputStage({
               >
                 {claim}
               </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="gp-home-cases" aria-label={copy.homeCasesLabel}>
-        <p className="gp-examples-label">{copy.homeCasesLabel}</p>
-        <ul className="gp-home-cases-list">
-          {homeCaseCards().map((card) => (
-            <li key={card.id} className="gp-home-case-card" data-gp-home-case={card.id}>
-              <p className="gp-home-case-mark">{card.mark}</p>
-              <p className="gp-home-case-claim">{card.claim}</p>
-              <p className="gp-home-case-finding">{card.finding}</p>
-              <p className="gp-home-case-date">{copy.homeCaseDate(card.dateLabel)}</p>
-              <div className="gp-home-case-actions">
-                <button
-                  type="button"
-                  className="gp-primary-btn"
-                  data-gp-home-case-view
-                  onClick={() => onViewHomeCase?.(card.id)}
-                >
-                  {copy.homeCaseView}
-                </button>
-                <button
-                  type="button"
-                  className="gp-ghost-btn"
-                  data-gp-home-case-recheck
-                  onClick={() => recheckHomeCase(card.claim)}
-                >
-                  {copy.homeCaseRecheck}
-                </button>
-              </div>
             </li>
           ))}
         </ul>

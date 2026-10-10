@@ -10,7 +10,6 @@ import { useInvestigationRun, type StartOptions } from "./goldenPath/useInvestig
 import { gpCopyFor } from "./goldenPath/copy";
 import { useUiLang } from "./lib/useUiLang";
 import { caseIntakeDisplayText, caseIntakeFailedLinks, caseIntakeIsImageOnly, caseIntakePrimaryText, createCaseIntake, type CaseIntake } from "./lib/caseIntake";
-import { homeCaseSnapshot, type HomeCaseId } from "./goldenPath/homeCases";
 import { createKnowledgeBase, normalizeHistoryClaim } from "./lib/knowledgeBase";
 import { composeFollowUpClaim, displayFollowUpClaim, previousAnswerText } from "./lib/composeFollowUpClaim";
 import { visiblePriorRoundFromSnapshot } from "./lib/priorRoundBrief";
@@ -124,31 +123,6 @@ function ProductApp() {
       beginRun(intake);
     },
     [cases, historyReady, beginRun]
-  );
-
-  const handleViewHomeCase = useCallback(
-    (id: HomeCaseId) => {
-      const opened = homeCaseSnapshot(id);
-      if (!opened) return;
-      run.reset();
-      setSelectedRoundId(null);
-      setSameClaim(null);
-      setActive({
-        localId: `home-${id}`,
-        claim: opened.claim,
-        intake: createCaseIntake(opened.claim, []),
-        restored: { snapshot: opened.snapshot, report: null, at: opened.investigatedAt },
-      });
-      setMode("investigation");
-    },
-    [run]
-  );
-
-  const handleRecheckHomeCase = useCallback(
-    (claim: string) => {
-      beginRun(createCaseIntake(claim, []));
-    },
-    [beginRun]
   );
 
   const handleBackHome = useCallback(() => {
@@ -353,8 +327,6 @@ function ProductApp() {
             <InputStage
               onSubmit={handleStart}
               initialClaim={draftClaim}
-              onViewHomeCase={handleViewHomeCase}
-              onRecheckHomeCase={handleRecheckHomeCase}
             />
           </>
         ) : active && displaySnapshot ? (

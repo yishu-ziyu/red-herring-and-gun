@@ -1,6 +1,8 @@
 /* 查完的一轮（#141）。版式照 2026-10-09 用户确认的草稿：暖纸底、判断句和摘录用衬线、标签颜色只做辅助。 */
 
-.gp-result {
+/* 标签颜色也给「你调查的说法」里的下划线用，它在 .gp-result 外面。 */
+.gp-result,
+.gp-original {
   --gp-tone-positive: #20604c;
   --gp-tone-positive-bg: rgba(32, 96, 76, 0.08);
   --gp-tone-negative: #8f2d2a;
@@ -9,6 +11,9 @@
   --gp-tone-mixed-bg: rgba(133, 95, 26, 0.1);
   --gp-tone-muted: #57534e;
   --gp-tone-muted-bg: rgba(87, 83, 78, 0.08);
+}
+
+.gp-result {
   font-size: 15px;
   line-height: 1.7;
   color: var(--gp-ink);
@@ -38,6 +43,30 @@
 .gp-label--negative { color: var(--gp-tone-negative); background: var(--gp-tone-negative-bg); }
 .gp-label--mixed { color: var(--gp-tone-mixed); background: var(--gp-tone-mixed-bg); }
 .gp-label--muted { color: var(--gp-tone-muted); background: var(--gp-tone-muted-bg); }
+
+/* 原句里的每一截：下划线颜色同这一截的标签。行内元素的下边框会随折行断开，窄屏不会横向溢出。 */
+.gp-span {
+  padding-bottom: 2px;
+  border-bottom: 2px solid var(--gp-tone-muted);
+}
+.gp-span sup {
+  font-family: var(--gp-font);
+  font-size: 11px;
+  line-height: 0;
+  margin-left: 1px;
+}
+.gp-span--positive { border-bottom-color: var(--gp-tone-positive); }
+.gp-span--negative { border-bottom-color: var(--gp-tone-negative); }
+.gp-span--mixed { border-bottom-color: var(--gp-tone-mixed); }
+.gp-span--muted { border-bottom-color: var(--gp-tone-muted); }
+
+.gp-original-unspanned {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--gp-ink-2);
+  overflow-wrap: anywhere;
+}
 
 .gp-result-verdict,
 .gp-part,

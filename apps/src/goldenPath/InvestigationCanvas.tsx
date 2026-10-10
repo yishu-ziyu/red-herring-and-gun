@@ -23,7 +23,7 @@ import { buildClaimTraceSegments } from "./claimTrace";
 import { leftoverGapSentence, leftoverTextsForCanvas, isCompleteEmptyShell } from "./leftoverClaims";
 import { ClaimSection } from "./ClaimSection";
 import { ActivityFeed } from "./ActivityFeed";
-import { ResultView } from "./ResultView";
+import { OriginalSentence, ResultView, UnspannedParts } from "./ResultView";
 import { buildConclusionBrief } from "./ShareControl";
 import { WorkRoles, roleIndexForPhase } from "./WorkRoles";
 import { ThinkingDisclosure } from "./ThinkingDisclosure";
@@ -306,11 +306,17 @@ export function InvestigationCanvas({
               // 其它文本一样按任意字符断行。
               style={{ overflowWrap: "anywhere" }}
               data-gp-traced-claim={tracedClaimId ?? ""}
+              data-gp-original-sentence
             >
-              {renderOriginalClaim(snapshot, tracedClaimId)}
+              {complete ? (
+                <OriginalSentence text={displayFollowUpClaim(snapshot.originalClaim)} claims={resultClaims} />
+              ) : (
+                renderOriginalClaim(snapshot, tracedClaimId)
+              )}
             </span>
             <span className="gp-quote-close" aria-hidden="true">”</span>
           </blockquote>
+          {complete ? <UnspannedParts text={displayFollowUpClaim(snapshot.originalClaim)} claims={resultClaims} /> : null}
           <IntakeImages images={images} />
         </section>
 

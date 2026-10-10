@@ -89,6 +89,79 @@ export function ResultView({
   );
 }
 
+type SentenceLayout = {
+  pieces: Array<{ text: string; part: { index: number; claim: InvestigationClaim } | null }>;
+  /** 没有可用下标的截：原句里找不到它的原字。 */
+  unspanned: Array<{ index: number; claim: InvestigationClaim }>;
+};
+
+/**
+ * 原句上每一截的位置只认 originalSpan，且那段原字必须和这一截的文字一模一样；不猜、不模糊匹配。
+ * 两截位置重叠时只画编号靠前的那一截；后一截的原字确实在原句里，所以也不放进「没有直接写出」那一行。
+ */
+function layoutSentence(text: string, claims: InvestigationClaim[]): SentenceLayout {
+  const accepted: Array<{ start: number; end: number; index: number; claim: InvestigationClaim }> = [];
+  const unspanned: SentenceLayout["unspanned"] = [];
+  claims.forEach((claim, index) => {
+    const span = claim.originalSpan;
+    const usable =
+      span &&
+      Number.isInteger(span.start) &&
+      Number.isInteger(span.end) &&
+      span.start >= 0 &&
+      span.end <= text.length &&
+      span.start < span.end &&
+      text.slice(span.start, span.end) === claim.text;
+    if (!usable) {
+      unspanned.push({ index, claim });
+      return;
+    }
+    if (accepted.some((a) => span.start < a.end && a.start < span.end)) return;
+    accepted.push({ start: span.start, end: span.end, index, claim });
+  });
+  accepted.sort((a, b) => a.start - b.start);
+  const pieces: SentenceLayout["pieces"] = [];
+  let cursor = 0;
+  for (const a of accepted) {
+    if (a.start > cursor) pieces.push({ text: text.slice(cursor, a.start), part: null });
+    pieces.push({ text: text.slice(a.start, a.end), part: { index: a.index, claim: a.claim } });
+    cursor = a.end;
+  }
+  if (cursor < text.length) pieces.push({ text: text.slice(cursor), part: null });
+  return { pieces, unspanned };
+}
+
+/** 「你调查的说法」里的原句：每一截画下划线，颜色同这一截的标签，右上角是编号。 */
+export function OriginalSentence({ text, claims }: { text: string; claims: InvestigationClaim[] }) {
+  return (
+    <>
+      {layoutSentence(text, claims).pieces.map((piece, i) => {
+        if (!piece.part) return <span key={i}>{piece.text}</span>;
+        const label = claimLabel(piece.part.claim);
+        const tone = label ? LABEL_TONE[label] : "muted";
+        return (
+          <span key={i} className={`gp-span gp-span--${tone}`} data-gp-span-part={piece.part.index + 1}>
+            {piece.text}
+            <sup>{partNumber(piece.part.index)}</sup>
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
+/** 原句里找不到原字的截，列成一行放在原句下面；都找得到时不显示。 */
+export function UnspannedParts({ text, claims }: { text: string; claims: InvestigationClaim[] }) {
+  const { unspanned } = layoutSentence(text, claims);
+  if (unspanned.length === 0) return null;
+  return (
+    <p className="gp-original-unspanned" data-gp-unspanned-parts>
+      原句没有直接写出、但判断要用到：
+      {unspanned.map(({ index, claim }) => `${partNumber(index)}${claim.text}`).join("；")}
+    </p>
+  );
+}
+
 function PartCard({ claim, index, sources }: { claim: InvestigationClaim; index: number; sources: InvestigationSource[] }) {
   const label = claimLabel(claim);
   const sourceOf = (link: InvestigationEvidenceLink) => sources.find((s) => s.id === link.sourceId);

@@ -152,38 +152,6 @@ export function mixedWithoutSpans(): InvestigationSnapshotV1 {
   };
 }
 
-export const UNRESOLVED_CLAIM = "某小区本月的自来水异味来自新增消毒工艺。";
-
-export function unresolvedComplete(): InvestigationSnapshotV1 {
-  const atom = "某小区本月的自来水异味来自新增消毒工艺";
-  return buildInvestigationSnapshot(
-    {
-      originalClaim: UNRESOLVED_CLAIM,
-      phase: "complete",
-      claimAtoms: [atom],
-      claimAtomTypes: [{ text: atom, verifiable: true, type: "causal" }],
-      atomSearchBundle: { atomsSearched: [atom], byAtomKey: { [atom]: [] } },
-      subclaimVerdicts: [
-        {
-          claimAtom: atom,
-          verdict: "unverified",
-          evidence: "",
-          boundary: "",
-          supportingSources: [],
-          contradictingSources: [],
-          evidenceGaps: ["该原子定向检索无结果，待补证"],
-        },
-      ],
-      report: {
-        conclusion: "公开材料还撑不住这条说法，异味来源仍未查清。",
-        verdictType: "unverified",
-        citationSources: [],
-      },
-    },
-    { claimAtomKeyFn: noopKey }
-  );
-}
-
 export const CONFLICT_CLAIM = "新规要求 2026 年起电动车必须装识别芯片。";
 
 const conflictBase = (() => {
@@ -219,19 +187,6 @@ const conflictBase = (() => {
     },
   };
 })();
-
-/** 首页样例「语境错位」：同一命题支持与反驳并存。 */
-export function conflictContext(): InvestigationSnapshotV1 {
-  return buildInvestigationSnapshot(
-    {
-      ...conflictBase.input,
-      phase: "complete",
-      subclaimVerdicts: [conflictBase.verdict],
-      report: { conclusion: "该说法把地方试点说成了全国新规。", verdictType: "unverified" },
-    },
-    { claimAtomKeyFn: noopKey }
-  );
-}
 
 export function conflictUnknownReason(): InvestigationSnapshotV1 {
   return buildInvestigationSnapshot(
