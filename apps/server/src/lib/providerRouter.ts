@@ -389,7 +389,13 @@ export function parseValidatedAgentJson(text: string, label: string, schema: obj
   let output: unknown;
   const candidate = extractJsonObject(stripJsonNoise(text));
   try {
-    output = JSON.parse(candidate);
+    try {
+      output = JSON.parse(candidate);
+    } catch {
+      // 来源标题和原文常带英文双引号（2026-10-10：「【真相"枣"知道】隔夜菜会致癌？」），两家模型都照抄不转义，
+      // 重试也照抄。补上转义不是猜内容，解析后仍要过下面的字段校验。
+      output = JSON.parse(escapeUnescapedInnerQuotes(candidate));
+    }
   } catch (error) {
     // 记下出错位置附近的原文：2026-10-10 核查一步常在 3 千字左右解析失败，原因不明（推测是来源原文里的双引号没转义）。
     const reason = error instanceof Error ? error.message : "";

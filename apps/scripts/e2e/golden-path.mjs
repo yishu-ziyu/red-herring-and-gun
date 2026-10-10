@@ -57,6 +57,9 @@ async function run() {
   await page.goto(baseUrl, { waitUntil: "networkidle" });
   const editor = page.locator("[contenteditable=true], textarea").first();
   if (!record("home shows the input", await editor.isVisible())) return;
+  // #141 part b: the hand-written case cards (fake sources) are gone from the home page.
+  const homeText = await page.locator("body").innerText().catch(() => "");
+  record("home shows no hand-written case cards", !homeText.includes("已完成的调查案例"), "");
 
   await editor.click();
   await page.keyboard.type(claim);
@@ -71,6 +74,7 @@ async function run() {
   const answer = (await page.locator("[data-gp-direct-answer]").first().innerText().catch(() => "")).trim();
   record("conclusion answers the claim", answer.length > 0, answer.slice(0, 80));
   await checkLabels();
+  await checkOriginalSentence();
 
   await checkResultLayout();
   await checkDatesAndQuoteLinks();
@@ -105,6 +109,22 @@ function reasonProblems(reason, label) {
 }
 
 // Every claim part shows one label and a reason; the conclusion starts with a label and a reason; no old label words.
+// #141 part b: the original sentence is shown with each part underlined; a part without a span in the
+// sentence is listed under it. Every part must appear one way or the other.
+async function checkOriginalSentence() {
+  const sentence = (await page.locator("[data-gp-original-sentence]").first().innerText().catch(() => "")).replace(/[“”"\s]/g, "");
+  const partCount = await page.locator("article[data-gp-claim-id]").count();
+  const spanned = await page.locator("[data-gp-original-sentence] [data-gp-span-part]").evaluateAll((nodes) =>
+    nodes.map((n) => n.getAttribute("data-gp-span-part")));
+  const unspanned = (await page.locator("[data-gp-unspanned-parts]").first().innerText().catch(() => ""));
+  const listed = (unspanned.match(/[①②③④⑤⑥⑦⑧⑨⑩]/g) ?? []).length;
+  record(
+    "original sentence shows every part, underlined or listed",
+    sentence.includes(claim.replace(/\s/g, "")) && partCount > 0 && spanned.length + listed >= partCount,
+    `parts=${partCount} underlined=${spanned.join(",")} listed=${listed}`
+  );
+}
+
 async function checkLabels() {
   const parts = await page.locator("article[data-gp-claim-id]").evaluateAll((nodes) =>
     nodes.map((node) => ({
