@@ -37,7 +37,6 @@ import {
   publisherOf,
   relationHref,
   relationPassage,
-  relationText,
   ROLE_BADGE,
   ROLE_LABEL,
   ROLE_TONE,
@@ -433,7 +432,8 @@ function SourcePopover({
       </p>
       {passage ? <blockquote className={`gp-source-popover-snippet is-${role}`}>「{passage}」</blockquote> : null}
       <div className="gp-source-popover-footer">
-        <span className="gp-source-popover-tip">{relationText(role, claimNo)}</span>
+        {/* 立场已经写在卡片顶上，底部只说是第几个要点。 */}
+        <span className="gp-source-popover-tip">{journeyCopy.partHeading(claimNo)}</span>
         {onOpenInDrawer ? (
           <button type="button" className="gp-source-popover-action" onClick={() => onOpenInDrawer(source.id)}>
             {journeyCopy.openInDrawer}
@@ -490,11 +490,8 @@ export function SourceCitation({ items, variant = "inline" }: SourceCitationProp
         else actions.show(key, event.currentTarget, items, "click");
       }}
     >
-      <span className="gp-source-stack" aria-hidden="true">
-        {items.slice(0, 3).map((item, i) => (
-          <SourceFavicon key={`${item.source.id}:${i}`} url={item.source.url} />
-        ))}
-      </span>
+      {/* 只露第一份的图标：几个图标叠在一起会糊，其余的用「+N」交代。 */}
+      <SourceFavicon url={first.source.url} />
       <span className="gp-source-domain">{publisherOf(first.source)}</span>
       {items.length > 1 ? (
         <span className="gp-source-count">+{items.length - 1}</span>

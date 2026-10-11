@@ -84,6 +84,7 @@ export function ResultView({
         ) : null}
         <div className="gp-result-meta">
           {day ? <span>{day} 查完</span> : null}
+          {day && snapshot.sources.length > 0 ? <span className="gp-result-meta-sep" aria-hidden="true">·</span> : null}
           <AllSourcesButton sources={snapshot.sources} claims={claims} />
         </div>
         {boundaries.length > 0 ? (

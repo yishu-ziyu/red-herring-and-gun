@@ -69,19 +69,23 @@
 }
 .gp-result .gp-source-pill { font-family: var(--gp-font); }
 .gp-result-note { margin: var(--gp-space-12) 0 0; font-size: var(--gp-type-14); color: var(--gp-ink-2); overflow-wrap: anywhere; }
+/* 理由下面的说明行（查完时间 · 全部资料）：比正文小一级、灰色，紧跟理由；「问题在哪」另起一层，拉开并用细线隔开。 */
 .gp-result-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--gp-space-6) var(--gp-space-20);
-  margin-top: var(--gp-space-24);
-  font-size: var(--gp-type-13);
+  gap: var(--gp-space-4) var(--gp-space-8);
+  margin-top: var(--gp-space-12);
+  font-size: var(--gp-type-12);
   color: var(--gp-ink-3);
   font-variant-numeric: tabular-nums;
 }
 .gp-result-meta:empty { display: none; }
-.gp-result-care { display: flex; gap: var(--gp-space-10); margin-top: var(--gp-space-20); font-size: var(--gp-type-13); color: var(--gp-ink-2); overflow-wrap: anywhere; }
-.gp-result-care b { flex: none; font-weight: 500; color: var(--gp-ink); }
+.gp-result-meta-sep { color: var(--gp-ink-3); }
+.gp-result-meta .gp-text-btn { padding: 0; font-size: var(--gp-type-12); color: var(--gp-ink-2); text-decoration: none; }
+.gp-result-meta .gp-text-btn:hover { color: var(--gp-ink); text-decoration: underline; text-decoration-color: var(--gp-line-strong); text-underline-offset: 3px; }
+.gp-result-care { display: flex; align-items: baseline; gap: var(--gp-space-10); margin-top: var(--gp-space-32); padding-top: var(--gp-space-16); border-top: 1px solid var(--gp-hairline-subtle); font-size: var(--gp-type-14); color: var(--gp-ink-2); overflow-wrap: anywhere; }
+.gp-result-care b { flex: none; font-size: var(--gp-type-12); font-weight: 400; color: var(--gp-ink-3); }
 .gp-result .gp-result-section {
   font-size: var(--gp-type-12);
   font-weight: 400;

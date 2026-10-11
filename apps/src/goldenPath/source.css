@@ -136,13 +136,25 @@ button.gp-source-pill:focus-visible {
   height: var(--gp-icon-nav);
 }
 
-/* ---------- 引用：几个网站图标叠在一起 + 第一份的名字 + 「+N」或立场 ---------- */
+/* ---------- 引用：第一份的图标 + 名字 + 「+N」或立场 ----------
+   不加边框、用浅底，和正文隔开一点；只露一个图标，不叠（叠起来会糊）。没有图标时是同样大小的灰色地球。 */
 
 .gp-source-pill--cite {
+  gap: var(--gp-space-4);
   height: var(--gp-cite-height);
   padding: 0 var(--gp-space-8) 0 var(--gp-space-6);
-  margin-left: var(--gp-space-6);
-  vertical-align: 2px;
+  margin-left: var(--gp-space-8);
+  border-color: transparent;
+  background: var(--gp-surface-inset);
+  vertical-align: 1px;
+}
+
+button.gp-source-pill--cite:hover,
+.gp-source-pill--cite.on {
+  border-color: transparent;
+  background: var(--gp-line-subtle);
+  box-shadow: none;
+  transform: none;
 }
 
 .gp-source-pill--cite .gp-source-domain {
@@ -153,30 +165,6 @@ button.gp-source-pill:focus-visible {
 .gp-source-pill--fold {
   margin-left: 0;
   vertical-align: 0;
-}
-
-.gp-source-stack {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-}
-
-.gp-source-stack .gp-favicon {
-  background-color: var(--gp-surface);
-  box-shadow: 0 0 0 var(--gp-favicon-ring) var(--gp-surface-soft);
-}
-
-.gp-source-stack .gp-favicon.is-fallback {
-  border-radius: 50%;
-}
-
-.gp-source-stack .gp-favicon + .gp-favicon {
-  margin-left: calc(-1 * var(--gp-favicon-overlap));
-}
-
-button.gp-source-pill:hover .gp-source-stack .gp-favicon,
-.gp-source-pill.on .gp-source-stack .gp-favicon {
-  box-shadow: 0 0 0 var(--gp-favicon-ring) var(--gp-surface);
 }
 
 .gp-source-count {
@@ -199,7 +187,7 @@ button.gp-source-pill:hover .gp-source-stack .gp-favicon,
   left: 0;
   z-index: 90;
   width: min(var(--gp-popover-width), calc(100vw - 2 * var(--gp-space-16)));
-  padding: var(--gp-space-14) var(--gp-space-16);
+  padding: var(--gp-space-12) var(--gp-space-16);
   background: var(--gp-surface);
   border: 1px solid var(--gp-line);
   border-radius: var(--gp-radius-card);
@@ -233,10 +221,11 @@ button.gp-source-pill:hover .gp-source-stack .gp-favicon,
   box-shadow: var(--gp-focus-ring);
 }
 
+/* 卡片里只用三级字号：12（立场、页码、出处、底部说明）、13（引文）、14（标题）；间距 4 / 8 / 12。 */
 .gp-source-popover-meta {
   display: flex;
   align-items: center;
-  margin-bottom: var(--gp-space-6);
+  margin-bottom: var(--gp-space-12);
 }
 
 .gp-source-popover-idx {
@@ -274,7 +263,7 @@ button.gp-source-pill:hover .gp-source-stack .gp-favicon,
   display: flex;
   align-items: center;
   gap: var(--gp-space-6);
-  margin-bottom: var(--gp-space-6);
+  margin-bottom: var(--gp-space-4);
   min-width: 0;
 }
 
@@ -284,7 +273,6 @@ button.gp-source-pill:hover .gp-source-stack .gp-favicon,
   gap: var(--gp-space-4);
   min-width: 0;
   overflow: hidden;
-  font-family: var(--gp-mono);
   color: var(--gp-ink-3);
   text-decoration: none;
   border-radius: var(--gp-radius-sm);
@@ -303,9 +291,9 @@ a.gp-source-popover-domain:hover {
 
 .gp-source-popover-title {
   margin: 0 0 var(--gp-space-8);
-  font-size: var(--gp-type-13);
+  font-size: var(--gp-type-14);
   font-weight: 500;
-  line-height: 1.4;
+  line-height: 1.45;
   color: var(--gp-ink-primary);
   overflow-wrap: anywhere;
 }
@@ -317,15 +305,15 @@ a.gp-source-popover-domain:hover {
   -webkit-line-clamp: 6;
   line-clamp: 6;
   overflow: hidden;
-  margin: 0 0 var(--gp-space-10);
-  padding: var(--gp-space-8) var(--gp-space-10);
-  background: var(--gp-surface-inset);
+  margin: 0 0 var(--gp-space-12);
+  padding: 0 0 0 var(--gp-space-10);
+  background: none;
   border: 0;
-  border-left: 3px solid var(--gp-accent);
-  border-radius: var(--gp-radius-sm);
+  border-left: 2px solid var(--gp-accent);
+  border-radius: 0;
   font-family: var(--gp-serif);
-  font-size: var(--gp-type-12);
-  line-height: 1.5;
+  font-size: var(--gp-type-13);
+  line-height: 1.65;
   color: var(--gp-ink-2);
   overflow-wrap: anywhere;
 }
@@ -338,8 +326,8 @@ a.gp-source-popover-domain:hover {
   align-items: center;
   justify-content: space-between;
   gap: var(--gp-space-12);
-  padding-top: var(--gp-space-8);
-  border-top: 1px solid var(--gp-hairline);
+  padding-top: var(--gp-space-10);
+  border-top: 1px solid var(--gp-hairline-subtle);
 }
 
 .gp-source-popover-tip {

@@ -164,11 +164,9 @@
 
   /* 来源药丸：进度页里一排的药丸，和正文里引用用的小一号药丸。 */
   --gp-pill-height: 28px;
-  --gp-cite-height: 24px;
+  --gp-cite-height: 26px;
   --gp-pill-name-max: 220px;
   --gp-cite-name-max: 168px;
-  --gp-favicon-overlap: 5px;
-  --gp-favicon-ring: 1.5px;
 
   /* 旧来源药丸引用过、但仓库历史里从没定义过的四个变量，绑到最接近的现有 token。 */
   --gp-line-strong: var(--gp-ink-3);
