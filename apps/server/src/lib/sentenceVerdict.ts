@@ -103,6 +103,11 @@ export function standingOf(verdict: Report | undefined): PartStanding {
 
 const ROLES: Record<string, PartRole> = { main: "main", premise: "premise", background: "background" };
 
+/** STE 规则：不用分号，将中文分号及中文字符/标点旁的半角分号换成句号。 */
+function replaceSemicolons(text: string): string {
+  return text.replace(/；|(?<=[\p{sc=Han}\u3000-\u303f\uff01-\uff60\u2014\u2018-\u201d\u2026]);|;(?=[\p{sc=Han}\u3000-\u303f\uff01-\uff60\u2014\u2018-\u201d\u2026])/gu, "。");
+}
+
 /** 可核查的部分及其角色。拆题标了角色就用；没标时排序第一条可核查的是主要主张，其余算必要前提。 */
 export function listAssessedClaims(report: Report, input: SentenceVerdictInput): AssessedPart[] {
   const { verifiable } = listAtomsForSearch(input.claimAtoms, input.claimAtomTypes);
@@ -126,7 +131,8 @@ export function listAssessedClaims(report: Report, input: SentenceVerdictInput):
     const verdict = findVerdict(report, atom);
     const modelLabel = isLabelKey(verdict?.label) ? verdict.label : undefined;
     const label = partLabelFor(standing, modelLabel);
-    const modelReason = typeof verdict?.reason === "string" ? verdict.reason.trim() : "";
+    const rawReason = typeof verdict?.reason === "string" ? verdict.reason.trim() : "";
+    const modelReason = replaceSemicolons(rawReason);
     // 代码改了模型的标签时，模型那句理由说的是另一个标签，不能留。
     const reason = label === modelLabel && modelReason ? modelReason : FALLBACK_PART_REASON[label];
     return {
@@ -166,7 +172,8 @@ const MAX_REASON_CHARS = 80;
  * （例：标签「不属实」，理由却说「整句为部分属实」——理由先于标签写出，会和代码定的标签矛盾）。
  */
 function firstSentence(text: string, label: LabelKey): string {
-  const first = (text.match(/^[^。！？]*[。！？]?/)?.[0] ?? "").trim();
+  const normalized = replaceSemicolons(text);
+  const first = (normalized.match(/^[^。！？]*[。！？]?/)?.[0] ?? "").trim();
   if (!first || INTERNAL_TERMS.test(first) || first.length > MAX_REASON_CHARS) return "";
   // 代码内部的标签名（2026-10-10：「…危言耸听，属false。」）和不成对的引号（开头多了「」」）。
   if (/\b(true|false|mostly-true|partly-true|exaggerated|unresolved|uncheckable|disputed|opinion|supported|refuted|mixed)\b/i.test(first)) return "";
@@ -182,7 +189,7 @@ function wholeReasonOf(report: Report, parts: readonly AssessedPart[], label: La
   const pick = (value: unknown) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "");
   const model = firstSentence(pick(factCheckReason), label);
   if (model) return model;
-  if (parts.length > 0) return `${parts.map(partLine).join("；")}。`;
+  if (parts.length > 0) return `${parts.map(partLine).join("。")}。`;
   return FALLBACK_PART_REASON[label];
 }
 
@@ -229,7 +236,7 @@ function renderConclusion(
     .filter(Boolean)
     .slice(0, 2);
 
-  const partsLine = parts.length > 1 ? `${parts.map(partLine).join("；")}。` : "";
+  const partsLine = parts.length > 1 ? `${parts.map(partLine).join("。")}。` : "";
   // 理由已经逐截列过时不再列第二遍。
   const enumerated = whole.reason.startsWith(partsLine) ? "" : partsLine;
   // 出处说错的那一处一定要写出来：答案得说清实际是谁（评分规则 1）。
