@@ -33,35 +33,35 @@ const ATOMS: AtomSpec[] = [
   {
     atom: "隔夜菜会直接致癌",
     search: [
-      src("https://piyao.example.org/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌"),
+      src("https://www.who.int/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌"),
       src("https://nutrition.example.cn/nitrite-facts", "食品科学解读：亚硝酸盐与致癌的量效关系", "正常冷藏隔夜菜亚硝酸盐远低于中毒剂量"),
     ],
     verdict: {
       verdict: "false",
       evidence: "多方权威机构与研究指出，正常储存的隔夜菜本身不会直接导致癌症[1]。",
       boundary: "不适用于已明显变质、被霉菌污染的食物",
-      contradicting: [src("https://piyao.example.org/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌")],
+      contradicting: [src("https://www.who.int/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌")],
     },
   },
   {
     atom: "隔夜菜会产生大量有害物质，等于吃毒药",
     search: [
-      src("https://cdc.example.cn/storage-safety", "疾控中心：家庭食品储存与致病菌预防", "不当储存可能滋生致病菌"),
+      src("https://www.chinacdc.cn/storage-safety", "疾控中心：家庭食品储存与致病菌预防", "不当储存可能滋生致病菌"),
       src("https://pkuph.example.org/nitrite-risk", "临床营养研究：不同人群的风险阈值与摄入量", "合理加热与冷藏下风险较低"),
-      src("https://course.example.org/poison-terms", "科普：什么是「毒药」——剂量决定毒性", "脱离剂量的毒性表述不成立"),
+      src("https://www.kepuchina.cn/poison-terms", "科普：什么是「毒药」——剂量决定毒性", "脱离剂量的毒性表述不成立"),
     ],
     verdict: {
       verdict: "exaggerated",
       evidence: "不当储存确实可能产生有害物质，但「等于吃毒药」夸大了常规食用风险[2]。",
-      supporting: [src("https://cdc.example.cn/storage-safety", "疾控中心：家庭食品储存与致病菌预防", "不当储存可能滋生致病菌")],
-      contradicting: [src("https://course.example.org/poison-terms", "科普：什么是「毒药」——剂量决定毒性", "脱离剂量的毒性表述不成立")],
+      supporting: [src("https://www.chinacdc.cn/storage-safety", "疾控中心：家庭食品储存与致病菌预防", "不当储存可能滋生致病菌")],
+      contradicting: [src("https://www.kepuchina.cn/poison-terms", "科普：什么是「毒药」——剂量决定毒性", "脱离剂量的毒性表述不成立")],
       gaps: ["缺少对常温存放 24 小时以上样本的定向检测数据"],
     },
   },
   {
     atom: "只要冷藏保存，隔夜菜就一定安全",
     search: [
-      src("https://diet.example.cn/leftover-guide", "膳食指南：隔夜菜冷藏期限与回热建议", "冷藏超过 3 天或反复回热仍有风险"),
+      src("https://dg.cnsoc.org/leftover-guide", "膳食指南：隔夜菜冷藏期限与回热建议", "冷藏超过 3 天或反复回热仍有风险"),
     ],
     // 判词未回来：进入 unassessed / 待核对（investigating 阶段）；
     // complete 阶段给出 relatedOnly（仅相关，不冒充证据位）。
@@ -155,6 +155,7 @@ export type FixtureName =
   | "received"
   | "decomposed"
   | "first-beat"
+  | "journey"
   | "investigating"
   | "judging"
   | "complete"
@@ -170,9 +171,9 @@ export type FixtureName =
 function settlingBefore() {
   const atom = "隔夜菜会直接致癌";
   const pack = [
-    src("https://piyao.example.org/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌"),
+    src("https://www.who.int/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌"),
     src("https://nutrition.example.cn/nitrite-facts", "食品科学解读：亚硝酸盐与致癌的量效关系", "正常冷藏隔夜菜亚硝酸盐远低于中毒剂量"),
-    src("https://diet.example.cn/leftover-guide", "膳食指南：隔夜菜冷藏期限与回热建议", "冷藏超过 3 天或反复回热仍有风险"),
+    src("https://dg.cnsoc.org/leftover-guide", "膳食指南：隔夜菜冷藏期限与回热建议", "冷藏超过 3 天或反复回热仍有风险"),
   ];
   return buildInvestigationSnapshot(
     {
@@ -189,9 +190,9 @@ function settlingBefore() {
 function settlingAfter() {
   const before = settlingBefore();
   const roleByUrl: Record<string, "support" | "contradict" | "context-only"> = {
-    "https://piyao.example.org/overnight-dishes": "contradict",
+    "https://www.who.int/overnight-dishes": "contradict",
     "https://nutrition.example.cn/nitrite-facts": "support",
-    "https://diet.example.cn/leftover-guide": "context-only",
+    "https://dg.cnsoc.org/leftover-guide": "context-only",
   };
   const urlById = Object.fromEntries(before.sources.map((s) => [s.id, s.url]));
   return {
@@ -208,6 +209,63 @@ function settlingAfter() {
         };
       }),
     })),
+  };
+}
+
+function journeyResult(): InvestigationSnapshotV1 {
+  const result = staged("complete");
+  const unread = staged("judging").claims[2];
+  return {
+    ...result,
+    claims: result.claims.map((claim, index) => index === 2 ? {
+      ...unread,
+      progress: "complete",
+      judgment: "unresolved",
+      label: "unresolved",
+      reason: "这个要点暂时查不清。我们只找到 1 份资料（膳食指南），还没读完，没有算进判断。它提到冷藏超过 3 天或反复回热仍有风险。",
+    } : {
+      ...claim,
+      progress: "complete",
+      reason: ATOMS[index].verdict?.evidence.replace(/\[\d+\]/g, "") ?? "",
+    }),
+  };
+}
+
+function journeyFrame(
+  result: InvestigationSnapshotV1,
+  { phase = "investigating", done = 0, active = -1, found = 0, conflict = true }: {
+    phase?: InvestigationSnapshotV1["phase"];
+    done?: number;
+    active?: number;
+    found?: number;
+    conflict?: boolean;
+  },
+): InvestigationSnapshotV1 {
+  const claims = result.claims.map((claim, index) => {
+    if (index < done) return claim;
+    const urls = new Set(index === active ? ATOMS[index].search.slice(0, found).map((source) => source.url) : []);
+    const ids = new Set(result.sources.filter((source) => urls.has(source.url)).map((source) => source.id));
+    const { label: _label, reason: _reason, boundary: _boundary, ...pending } = claim;
+    return {
+      ...pending,
+      progress: index === active ? "searching" as const : "pending" as const,
+      judgment: null,
+      gaps: [],
+      evidence: claim.evidence.filter((link) => ids.has(link.sourceId)).map((link) => {
+        const { finding: _finding, quote: _quote, relationReason: _relationReason, ...foundLink } = link;
+        return { ...foundLink, role: "unassessed" as const };
+      }),
+    };
+  });
+  const ids = new Set(claims.flatMap((claim) => claim.evidence.map((link) => link.sourceId)));
+  const finished = new Set(claims.slice(0, done).map((claim) => claim.id));
+  const { conclusion: _conclusion, checkedAt: _checkedAt, ...inProgress } = result;
+  return {
+    ...(phase === "complete" ? result : inProgress),
+    phase,
+    claims,
+    sources: result.sources.filter((source) => ids.has(source.id)),
+    conflicts: conflict ? result.conflicts.filter((item) => finished.has(item.claimId)) : [],
   };
 }
 
@@ -241,7 +299,44 @@ export function getDevFixture(
       at(40, () => emitSearchStarted("隔夜菜 致癌"));
     }
 
-    if (name === "replay") {
+    if (name === "journey") {
+      const result = journeyResult();
+      const frames: Array<[number, Parameters<typeof journeyFrame>[1]]> = [
+        [1800, { phase: "decomposed" }],
+        [2800, { active: 0 }],
+        [3800, { active: 0, found: 1 }],
+        [4700, { active: 0, found: 2 }],
+        [6000, { active: 0, found: 2, phase: "judging" }],
+        [7600, { done: 1 }],
+        [9000, { done: 1, active: 1 }],
+        [10000, { done: 1, active: 1, found: 1 }],
+        [11000, { done: 1, active: 1, found: 2 }],
+        [12000, { done: 1, active: 1, found: 3 }],
+        [13500, { done: 1, active: 1, found: 3, phase: "judging" }],
+        [15000, { done: 2, conflict: false }],
+        [16300, { done: 2 }],
+        [17800, { done: 2, active: 2 }],
+        [18800, { done: 2, active: 2, found: 1 }],
+        [20100, { done: 2, active: 2, found: 1, phase: "judging" }],
+        [21200, { done: 3, phase: "judging" }],
+      ];
+      at(60, () => emitWithActivity(receivedSnapshot()));
+      for (const [ms, frame] of frames) {
+        at(ms, () => {
+          emitWithActivity(journeyFrame(result, frame));
+          if (frame.active !== undefined && !frame.found) emitSearchStarted(ATOMS[frame.active].atom);
+        });
+      }
+      at(22400, () => {
+        emitWithActivity(result);
+        emit({
+          type: "complete",
+          finalReport: { conclusion: result.conclusion?.directAnswer, investigation: result },
+          timestamp: Date.now(),
+        });
+      });
+      return () => timers.forEach(clearTimeout);
+    } else if (name === "replay") {
       const pack = (window as unknown as { __RHG_REPLAY?: { frames?: Array<{ delayMs?: number; investigation: unknown; complete?: boolean }> } }).__RHG_REPLAY;
       const frames = pack?.frames ?? [];
       for (const frame of frames) {

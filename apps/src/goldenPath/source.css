@@ -1,0 +1,379 @@
+/* 资料的药丸、正文里的引用、引用卡。由 SourcePill.tsx 引入。
+   外观照原型 pill.css（2026-10-11 定稿），它的底子是旧版 PromptKitSource 的药丸（1e82a2e^），只把原值换成 token。
+   引用卡挂在 <body> 上，不在 .gp-shell 里，所以字体、盒模型、焦点环要在这里自己写。 */
+
+/* ---------- 一排药丸（进度页） ---------- */
+
+.gp-source-pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gp-space-8);
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* ---------- 药丸 ---------- */
+
+.gp-source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gp-space-6);
+  box-sizing: border-box;
+  height: var(--gp-pill-height);
+  max-width: 100%;
+  margin: 0;
+  padding: 0 var(--gp-space-10);
+  background: var(--gp-surface-soft);
+  border: 1px solid var(--gp-line);
+  border-radius: var(--gp-radius-pill);
+  font-family: inherit;
+  font-size: var(--gp-type-12);
+  line-height: 1;
+  letter-spacing: inherit;
+  color: var(--gp-ink-2);
+  white-space: nowrap;
+  vertical-align: middle;
+  user-select: none;
+  transition:
+    background-color var(--gp-motion-fast) var(--gp-ease-out),
+    border-color var(--gp-motion-fast) var(--gp-ease-out),
+    transform var(--gp-motion-fast) var(--gp-ease-out),
+    box-shadow var(--gp-motion-fast) var(--gp-ease-out);
+}
+
+/* 只有按钮（引用）会浮起来；进度页里的药丸只告诉你找到了哪些资料，不能看起来可以点。 */
+button.gp-source-pill {
+  cursor: pointer;
+}
+
+button.gp-source-pill:hover,
+.gp-source-pill.on {
+  background: var(--gp-surface);
+  border-color: var(--gp-line-strong);
+  box-shadow: var(--gp-shadow-sm);
+}
+
+button.gp-source-pill:hover {
+  transform: translateY(-1px);
+}
+
+button.gp-source-pill:focus-visible {
+  outline: none;
+  background: var(--gp-surface);
+  border-color: var(--gp-line-strong);
+  box-shadow: var(--gp-focus-ring);
+}
+
+/* 正在读的那一份：底色提亮，立场位先写「在读」。 */
+.gp-source-pill.is-reading {
+  background: var(--gp-surface);
+  border-color: var(--gp-line-strong);
+}
+
+.gp-source-pill.is-enter {
+  animation: gp-source-in var(--gp-motion-ui) var(--gp-ease-out) both;
+  animation-delay: var(--gp-enter-delay, 0ms);
+}
+
+@keyframes gp-source-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.gp-source-domain {
+  min-width: 0;
+  max-width: var(--gp-pill-name-max);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--gp-ink-primary);
+}
+
+/* 立场永远是字；颜色只辅助。没给立场（在读）时是灰字。 */
+.gp-source-stance-tag {
+  flex: none;
+  padding: 1px var(--gp-space-6);
+  border-radius: var(--gp-radius-pill);
+  font-size: var(--gp-type-12);
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--gp-ink-3);
+  background: var(--gp-tone-muted-bg);
+}
+.gp-source-stance-tag.is-contradict { color: var(--gp-semantic-contradict); background: var(--gp-accent-soft); }
+.gp-source-stance-tag.is-support { color: var(--gp-semantic-support); background: var(--gp-support-soft); }
+.gp-source-stance-tag.is-context-only { color: var(--gp-semantic-context); background: var(--gp-tone-muted-bg); }
+.gp-source-stance-tag.is-unassessed { color: var(--gp-ink-3); background: var(--gp-tone-muted-bg); }
+
+/* ---------- 网站图标 ---------- */
+
+/* 默认 16px（资料行、全部资料）；药丸和引用卡里小一号。取不到图标时换成同样大小的灰色地球，不加底框。 */
+.gp-favicon {
+  display: inline-block;
+  flex: none;
+  width: var(--gp-icon-tile-img);
+  height: var(--gp-icon-tile-img);
+  border-radius: var(--gp-radius-icon);
+  object-fit: contain;
+  vertical-align: middle;
+}
+
+.gp-favicon.is-fallback {
+  width: var(--gp-icon-tile-img);
+  height: var(--gp-icon-tile-img);
+  border-radius: 0;
+  color: var(--gp-ink-3);
+}
+
+.gp-source-pill .gp-favicon,
+.gp-source-pill .gp-favicon.is-fallback,
+.gp-source-popover-head .gp-favicon,
+.gp-source-popover-head .gp-favicon.is-fallback {
+  width: var(--gp-icon-nav);
+  height: var(--gp-icon-nav);
+}
+
+/* ---------- 引用：第一份的图标 + 名字 + 「+N」或立场 ----------
+   不加边框、用浅底，和正文隔开一点；只露一个图标，不叠（叠起来会糊）。没有图标时是同样大小的灰色地球。 */
+
+.gp-source-pill--cite {
+  gap: var(--gp-space-4);
+  height: var(--gp-cite-height);
+  padding: 0 var(--gp-space-8) 0 var(--gp-space-6);
+  margin-left: var(--gp-space-8);
+  border-color: transparent;
+  background: var(--gp-surface-inset);
+  vertical-align: 1px;
+}
+
+button.gp-source-pill--cite:hover,
+.gp-source-pill--cite.on {
+  border-color: transparent;
+  background: var(--gp-line-subtle);
+  box-shadow: none;
+  transform: none;
+}
+
+.gp-source-pill--cite .gp-source-domain {
+  max-width: var(--gp-cite-name-max);
+}
+
+/* 折起来的要点行右侧那个引用：不在正文里，不需要和前面的字隔开，也不用抬高。 */
+.gp-source-pill--fold {
+  margin-left: 0;
+  vertical-align: 0;
+}
+
+.gp-source-count {
+  font-size: var(--gp-type-12);
+  font-weight: 500;
+  color: var(--gp-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 引用卡（整页只有一张，挂在 <body> 上） ---------- */
+
+.gp-source-popover,
+.gp-source-popover * {
+  box-sizing: border-box;
+}
+
+.gp-source-popover {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 90;
+  width: min(var(--gp-popover-width), calc(100vw - 2 * var(--gp-space-16)));
+  padding: var(--gp-space-12) var(--gp-space-16);
+  background: var(--gp-surface);
+  border: 1px solid var(--gp-line);
+  border-radius: var(--gp-radius-card);
+  box-shadow: var(--gp-elevation-menu);
+  font-family: var(--gp-font);
+  font-size: var(--gp-type-12);
+  line-height: 1.5;
+  letter-spacing: var(--gp-tracking);
+  color: var(--gp-ink);
+  text-align: left;
+  outline: none;
+  animation: gp-popover-in var(--gp-motion-fast) var(--gp-ease-out) both;
+}
+
+.gp-source-popover[data-placement="top"] {
+  animation-name: gp-popover-in-up;
+}
+
+@keyframes gp-popover-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes gp-popover-in-up {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.gp-source-popover :focus-visible {
+  outline: none;
+  box-shadow: var(--gp-focus-ring);
+}
+
+/* 卡片里只用三级字号：12（立场、页码、出处、底部说明）、13（引文）、14（标题）；间距 4 / 8 / 12。 */
+.gp-source-popover-meta {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--gp-space-12);
+}
+
+.gp-source-popover-idx {
+  margin-left: var(--gp-space-8);
+  color: var(--gp-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.gp-source-popover-pager {
+  display: inline-flex;
+  gap: var(--gp-space-2);
+  margin-left: auto;
+}
+
+.gp-source-popover-pager button {
+  display: inline-grid;
+  place-items: center;
+  width: var(--gp-icon-card);
+  height: var(--gp-icon-card);
+  padding: 0;
+  border: 0;
+  border-radius: var(--gp-radius-sm);
+  background: none;
+  color: var(--gp-ink-3);
+  cursor: pointer;
+  transition: color var(--gp-motion-fast) var(--gp-ease-out), background-color var(--gp-motion-fast) var(--gp-ease-out);
+}
+
+.gp-source-popover-pager button:hover {
+  color: var(--gp-ink);
+  background: var(--gp-surface-inset);
+}
+
+.gp-source-popover-head {
+  display: flex;
+  align-items: center;
+  gap: var(--gp-space-6);
+  margin-bottom: var(--gp-space-4);
+  min-width: 0;
+}
+
+.gp-source-popover-domain {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gp-space-4);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--gp-ink-3);
+  text-decoration: none;
+  border-radius: var(--gp-radius-sm);
+  transition: color var(--gp-motion-fast) var(--gp-ease-out);
+}
+
+a.gp-source-popover-domain:hover {
+  color: var(--gp-ink);
+}
+
+.gp-source-popover-domain .gp-icon,
+.gp-source-popover-action .gp-icon {
+  width: var(--gp-type-12);
+  height: var(--gp-type-12);
+}
+
+.gp-source-popover-title {
+  margin: 0 0 var(--gp-space-8);
+  font-size: var(--gp-type-14);
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--gp-ink-primary);
+  overflow-wrap: anywhere;
+}
+
+/* 引的那段话。竖线颜色跟立场走；背景和没读完不参与判断，用中性的细线色。太长的段落只露前几行，全文在资料行里看。 */
+.gp-source-popover-snippet {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  overflow: hidden;
+  margin: 0 0 var(--gp-space-12);
+  padding: 0 0 0 var(--gp-space-10);
+  background: none;
+  border: 0;
+  border-left: 2px solid var(--gp-accent);
+  border-radius: 0;
+  font-family: var(--gp-serif);
+  font-size: var(--gp-type-13);
+  line-height: 1.65;
+  color: var(--gp-ink-2);
+  overflow-wrap: anywhere;
+}
+.gp-source-popover-snippet.is-support { border-left-color: var(--gp-semantic-support); }
+.gp-source-popover-snippet.is-context-only,
+.gp-source-popover-snippet.is-unassessed { border-left-color: var(--gp-line); }
+
+.gp-source-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gp-space-12);
+  padding-top: var(--gp-space-10);
+  border-top: 1px solid var(--gp-hairline-subtle);
+}
+
+.gp-source-popover-tip {
+  min-width: 0;
+  color: var(--gp-ink-3);
+}
+
+.gp-source-popover-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gp-space-2);
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--gp-radius-sm);
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  color: var(--gp-accent);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.gp-source-popover-action:hover {
+  text-decoration: underline;
+}
+
+/* 减少动态效果：不位移、不浮起，只保留短暂的淡入。 */
+@media (prefers-reduced-motion: reduce) {
+  .gp-source-pill {
+    transition-property: background-color, border-color, box-shadow;
+  }
+  button.gp-source-pill:hover {
+    transform: none;
+  }
+  .gp-source-pill.is-enter {
+    animation-name: gp-source-fade;
+    animation-duration: var(--gp-motion-fast);
+  }
+  .gp-source-popover,
+  .gp-source-popover[data-placement="top"] {
+    animation-name: gp-source-fade;
+  }
+}
+
+@keyframes gp-source-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

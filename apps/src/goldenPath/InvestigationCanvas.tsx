@@ -6,7 +6,7 @@
  * 调查中和查完同一套头版式（#150）：调查中用 ProgressView 一行行填，不展示执行过程。
  */
 import { useEffect, useState } from "react";
-import type { InvestigationSnapshotV1 } from "../lib/investigation";
+import type { InvestigationSnapshotV1, PublicActivity } from "../lib/investigation";
 import { judgmentToLabel } from "../lib/investigation";
 import { scrubFaceText } from "../lib/scrubFace";
 import { useUiLang } from "../lib/useUiLang";
@@ -15,9 +15,12 @@ import { isUrlOnlyClaim, type CaseImage } from "../lib/caseIntake";
 import { gpCopyFor } from "./copy";
 import { leftoverGapSentence, leftoverTextsForCanvas, isCompleteEmptyShell } from "./leftoverClaims";
 import { OriginalSentence, ResultView, UnspannedParts } from "./ResultView";
-import { ProgressView } from "./ProgressView";
+import { ProgressView, motionMs, prefersReducedMotion } from "./ProgressView";
+import { journeyCopy } from "./journeyCopy";
 import { buildConclusionBrief } from "./ShareControl";
 import { IntakeImages } from "./IntakeImages";
+import { SourcePopoverProvider } from "./SourcePill";
+import { AllSourcesButton } from "./SourceDrawer";
 
 type InvestigationCanvasProps = {
   snapshot: InvestigationSnapshotV1;
@@ -42,8 +45,11 @@ type InvestigationCanvasProps = {
   images?: CaseImage[];
   /** 这一轮在服务端的调查编号：有才显示「分享」（老历史没有）。 */
   shareRunId?: string;
+  /** 这一轮的公开活动记录：结果页「查过了」用它列出步骤。历史回看没有，就只写计数。 */
+  activities?: PublicActivity[];
 };
 
+const COMPLETION_HOLD_MS = 1200;
 
 export function InvestigationCanvas({
   snapshot,
@@ -60,25 +66,36 @@ export function InvestigationCanvas({
   readOnly = false,
   images,
   shareRunId,
+  activities,
 }: InvestigationCanvasProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
   // 历史只读也保留用户主动停止的事实，不把它重新解释成网络中断。
   const stop = snapshot.interruptionReason === "cancelled" ? "stopped" : liveStop;
-  const [announce, setAnnounce] = useState("");
-
-  // 状态变化用一句轻量播报解释发生了什么（渐进呈现，不是 Agent 日志）。
-  useEffect(() => {
-    if (snapshot.phase === "interrupted" || stop !== "idle") setAnnounce("");
-    else if (snapshot.phase === "decomposed") setAnnounce(copy.canvasClaimsLabel);
-    else if (snapshot.phase === "investigating") setAnnounce("正在逐条追查出处");
-    else if (snapshot.phase === "judging") setAnnounce("正在对照证据形成判断");
-    else if (snapshot.phase === "complete") setAnnounce("");
-  }, [snapshot.phase, stop, copy.canvasClaimsLabel]);
-
-
   const conclusion = snapshot.conclusion;
   const complete = snapshot.phase === "complete" && Boolean(conclusion);
+  const isLiveProgress = live && !complete && snapshot.phase !== "interrupted" && stop === "idle" && !readOnly && !restoredAt;
+  const [seenLiveProgress, setSeenLiveProgress] = useState(isLiveProgress);
+  if (isLiveProgress && !seenLiveProgress) setSeenLiveProgress(true);
+  const [completionStage, setCompletionStage] = useState<"hold" | "leaving" | "report">("hold");
+  const animateCompletion = seenLiveProgress && !readOnly && !restoredAt;
+  const showReport = complete && (!animateCompletion || completionStage === "report");
+
+  useEffect(() => {
+    if (!complete || !animateCompletion) return;
+    let exitTimer: ReturnType<typeof setTimeout> | undefined;
+    const holdTimer = setTimeout(() => {
+      setCompletionStage("leaving");
+      exitTimer = setTimeout(() => setCompletionStage("report"), motionMs(prefersReducedMotion() ? "--gp-motion-fast" : "--gp-motion-ui"));
+    }, prefersReducedMotion() ? motionMs("--gp-motion-fast") : COMPLETION_HOLD_MS);
+    return () => {
+      clearTimeout(holdTimer);
+      clearTimeout(exitTimer);
+    };
+  }, [complete, animateCompletion]);
+
+  // 状态变化用一句轻量播报解释发生了什么（渐进呈现，不是 Agent 日志）。
+  const announce = showReport && seenLiveProgress ? journeyCopy.phaseDone : "";
   const urlOnly = isUrlOnlyClaim(snapshot.originalClaim);
   const unopenedLink = linkUnreachable || (complete && urlOnly && snapshot.claims.length === 0);
   const followUpQuestion = displayFollowUpClaim(snapshot.originalClaim);
@@ -111,41 +128,20 @@ export function InvestigationCanvas({
   const interrupted = snapshot.phase === "interrupted" && stop !== "stopped";
   const closedAnswer = snapshot.phase === "interrupted" ? snapshot.conclusion?.directAnswer?.trim() ?? "" : "";
   const interruptedAnswer = interrupted ? closedAnswer : "";
-  const interruptedHasJudgments = !interruptedAnswer && snapshot.claims.some((claim) => claim.judgment);
   const resultClaims = complete ? snapshot.claims.filter((c) => !isCompleteEmptyShell(c)) : snapshot.claims;
   const leftoverTexts =
     complete || interrupted ? leftoverTextsForCanvas(snapshot.originalClaim, snapshot.claims) : [];
   const leftoverSentence = leftoverTexts.length > 0 ? leftoverGapSentence(leftoverTexts) : "";
   return (
+    // 进度页和结果页的引用共用一张引用卡；抽屉用 useRegisterDrawerOpener 自己登记，不用改这里。
+    <SourcePopoverProvider>
     <div
-      className="gp-canvas"
+      className="gp-canvas gp-canvas--journey"
       data-gp-phase={snapshot.phase}
+      data-gp-presentation={complete ? showReport ? "report" : completionStage : "progress"}
       data-gp-single-claim={snapshot.claims.length === 1 ? "true" : undefined}
     >
       <div className="gp-canvas-inner">
-        {interrupted ? (
-          <section className="gp-interrupted" role="alert" data-gp-interrupted>
-            <strong>{interruptedAnswer ? copy.interruptedPartialTitle : copy.interruptedTitle}</strong>
-            <p>
-              {interruptedAnswer ? copy.interruptedPartialBody : copy.interruptedBody}
-              {interruptedHasJudgments ? ` ${copy.interruptedHasJudgments}` : ""}
-            </p>
-            {interruptedAnswer ? (
-              <p className="gp-interrupted-answer" data-gp-interrupted-answer>
-                {interruptedAnswer}
-              </p>
-            ) : null}
-            <div className="gp-interrupted-actions" hidden={readOnly}>
-              <button type="button" className="gp-primary-btn" onClick={onReverify}>
-                {copy.interruptedRetry}
-              </button>
-              <button type="button" className="gp-ghost-btn" onClick={onBackHome}>
-                {copy.backHome}
-              </button>
-            </div>
-          </section>
-        ) : null}
-
         <section className="gp-original" aria-label={copy.canvasOriginalLabel}>
           <div className="gp-original-meta">
             <span className="gp-original-label">{copy.canvasOriginalLabel}</span>
@@ -201,11 +197,11 @@ export function InvestigationCanvas({
             </span>
             <span className="gp-quote-close" aria-hidden="true">”</span>
           </blockquote>
-          {complete ? <UnspannedParts text={displayFollowUpClaim(snapshot.originalClaim)} claims={resultClaims} /> : null}
+          {showReport ? <UnspannedParts text={displayFollowUpClaim(snapshot.originalClaim)} claims={resultClaims} /> : null}
           <IntakeImages images={images} />
         </section>
 
-        {complete && conclusion ? (
+        {showReport && conclusion ? (
           <ResultView
             snapshot={snapshot}
             claims={resultClaims}
@@ -217,6 +213,7 @@ export function InvestigationCanvas({
             onFollowUp={onFollowUp}
             onNewInvestigation={onBackHome}
             shareRunId={shareRunId}
+            activities={activities}
             brief={buildConclusionBrief({
               originalClaim: snapshot.originalClaim,
               directAnswer: displayDirectAnswer,
@@ -228,6 +225,32 @@ export function InvestigationCanvas({
           />
         ) : null}
 
+        {!showReport ? (
+          <ProgressView
+            snapshot={snapshot}
+            claims={snapshot.claims}
+            interrupted={snapshot.phase === "interrupted" || stop !== "idle"}
+            leftoverNote={leftoverSentence}
+            finishing={complete}
+            leaving={complete && completionStage === "leaving"}
+          />
+        ) : null}
+
+        {interrupted ? (
+          <section className="gp-interrupted" role="alert" data-gp-interrupted>
+            <strong>{journeyCopy.interruptedTitle}</strong>
+            <p>{interruptedAnswer ? "已经找到的资料和查完的要点都留在上面。下面保留停下前写出的回答。" : journeyCopy.interruptedBody}</p>
+            {interruptedAnswer ? (
+              <p className="gp-interrupted-answer" data-gp-interrupted-answer>{interruptedAnswer}</p>
+            ) : null}
+            {snapshot.sources.length > 0 ? <AllSourcesButton sources={snapshot.sources} claims={snapshot.claims} /> : null}
+            <div className="gp-interrupted-actions" hidden={readOnly}>
+              <button type="button" className="gp-primary-btn" onClick={onReverify}>{journeyCopy.retry}</button>
+              <button type="button" className="gp-ghost-btn" onClick={onBackHome}>{copy.backHome}</button>
+            </div>
+          </section>
+        ) : null}
+
         {stop !== "idle" ? (
           <section
             className={`gp-stopped${stop === "stopping" ? " is-stopping" : ""}`}
@@ -236,7 +259,7 @@ export function InvestigationCanvas({
             data-gp-stop-state={stop}
           >
             <strong>{stop === "stopping" ? copy.stoppingInvestigation : copy.stoppedInvestigation}</strong>
-            <p>{copy.stoppedBody}</p>
+            <p>{stop === "stopping" ? "正在停止调查。已经找到的资料会保留。" : closedAnswer ? "已经找到的资料和查完的要点都留在上面。下面保留停下前写出的回答。" : journeyCopy.interruptedBody}</p>
             {stop === "stopped" && closedAnswer ? (
               <p className="gp-interrupted-answer" data-gp-interrupted-answer>
                 {closedAnswer}
@@ -255,10 +278,6 @@ export function InvestigationCanvas({
           </section>
         ) : null}
 
-        {!complete ? (
-          <ProgressView snapshot={snapshot} claims={resultClaims} interrupted={snapshot.phase === "interrupted" || stop !== "idle"} leftoverNote={leftoverSentence} />
-        ) : null}
-
       </div>
 
       <p className="gp-announcer" role="status" aria-live="polite">
@@ -266,6 +285,7 @@ export function InvestigationCanvas({
       </p>
 
     </div>
+    </SourcePopoverProvider>
   );
 }
 

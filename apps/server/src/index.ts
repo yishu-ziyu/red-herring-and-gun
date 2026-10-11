@@ -4,6 +4,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { createHandlers } from "./handlers.js";
 import { checksQuotaHandler } from "./lib/checkQuota.js";
+import { faviconHandler } from "./lib/favicon.js";
 import { quotaGate } from "./lib/quotaPolicy.js";
 import { flushSnapshots, startSnapshotLoop } from "./lib/jsonSnapshot.js";
 import { sessionSecretFromEnv } from "./lib/signedCookie.js";
@@ -59,6 +60,7 @@ app.post(
 );
 
 app.get("/api/checks/quota", (req, res, next) => checksQuotaHandler(req, res).catch(next));
+app.get("/api/favicon", (req, res, next) => faviconHandler(req, res).catch(next));
 
 import { renderShareHtmlHandler } from "./lib/shareHandlers.js";
 

@@ -1,6 +1,7 @@
 /**
  * ssrfGuard.ts — 服务端替别人访问外部网址之前，拦截内网、元数据服务和特殊 IPv6 地址。
- * 只看网址里写的主机名和 IP，不做 DNS 解析：解析到内网 IP 的公网域名拦不住。
+ * isBlockedUrl 只看网址里写的主机名和 IP，不做 DNS 解析：解析到内网 IP 的公网域名拦不住。
+ * 自己做 DNS 解析的调用方（如 favicon 代取）用 ipGuard.ts 的 isBlockedIp 逐个检查解析出的地址。
  */
 
 function ipv4OctetsFromHostname(hostname: string): number[] | "blocked" | null {
@@ -15,7 +16,7 @@ function ipv4OctetsFromHostname(hostname: string): number[] | "blocked" | null {
   return nums;
 }
 
-function isBlockedPrivateIpv4(parts: number[]): boolean {
+export function isBlockedPrivateIpv4(parts: number[]): boolean {
   const [a, b] = parts;
   if (a === 0) return true;
   if (a === 10) return true;

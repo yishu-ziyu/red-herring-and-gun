@@ -82,7 +82,29 @@ const shot = (name) => page.screenshot({ path: `${out}/${name}.png`, animations:
 const finished = () => page.locator('[data-gp-phase="complete"], [data-gp-phase="interrupted"], [data-gp-phase="stopped"]').first();
 async function waitForFinish() {
   await finished().waitFor({ timeout: timeoutMs }).catch(() => {});
-  return finished().getAttribute("data-gp-phase").catch(() => null);
+  const phase = await finished().getAttribute("data-gp-phase").catch(() => null);
+  if (phase === "complete") await page.locator("[data-gp-result]").first().waitFor({ timeout: 10000 });
+  return phase;
+}
+
+async function openSources() {
+  const drawer = page.locator("[data-gp-source-drawer]");
+  if (!await drawer.count()) await page.getByRole("button", { name: /^全部 \d+ 份资料$/ }).click();
+  await drawer.waitFor({ state: "visible", timeout: 10000 });
+  return drawer;
+}
+
+async function openSourceOrigins(drawer) {
+  for (const origin of await drawer.locator("[data-gp-source-origin]").all()) {
+    if (!await origin.evaluate((node) => node.open)) await origin.locator(":scope > summary").click();
+  }
+}
+
+async function closeSources() {
+  const drawer = page.locator("[data-gp-source-drawer]");
+  if (!await drawer.count()) return;
+  await drawer.getByRole("button", { name: "关闭", exact: true }).click();
+  await drawer.waitFor({ state: "detached" });
 }
 
 async function run() {
@@ -164,7 +186,7 @@ async function checkStoppedMaterial(sourceId, passage) {
   const rows = page.locator(`[data-gp-evidence-row][data-gp-source-id="${sourceId}"]`);
   const row = rows.first();
   const visible = await row.isVisible().catch(() => false);
-  record("停止后已读正文可查看，且仍标为尚未核对", visible && (await row.innerText()).includes("尚未核对") && await row.getAttribute("data-gp-material-kind") === "page-excerpt");
+  record("停止后已读正文可查看，且仍标为没读完", visible && (await row.innerText()).includes("没读完") && await row.getAttribute("data-gp-material-kind") === "page-excerpt");
   if (visible) {
     await row.locator("summary").click();
     record("停止后的材料原地展开", await row.locator("[data-gp-material-text]").isVisible());
@@ -242,9 +264,10 @@ async function runTruncation() {
   const hasOtherEvidence = (c) => c.evidence.some((l) => ["support", "contradict"].includes(l.role) && firstSnapshot.sources.find((s) => s.id === l.sourceId)?.fetchStatus !== "truncated");
   const decisive = (c) => ["supported", "refuted", "mixed"].includes(c.judgment);
   record("其他有效依据仍可形成明确判断", firstSnapshot.claims.some((c) => hasOtherEvidence(c) && decisive(c)) && firstSnapshot.claims.every((c) => !decisive(c) || hasOtherEvidence(c)));
-  const row = page.locator(`[data-gp-evidence-row][data-gp-source-id="${source.id}"]`).first();
-  const related = row.locator("xpath=ancestor::details[@data-gp-related]");
-  if (await related.count()) await related.locator("summary").first().click();
+  const drawer = await openSources();
+  const row = drawer.locator(`[data-gp-evidence-row][data-gp-source-id="${source.id}"]`).first();
+  const origin = row.locator("xpath=ancestor::details[@data-gp-source-origin]");
+  await origin.locator(":scope > summary").click();
   const visible = await row.isVisible().catch(() => false);
   record("截断材料保留读取限制与查看入口", visible && (await row.innerText()).includes("只取得部分正文") && (await row.innerText()).includes("未读"));
   if (visible) {
@@ -256,7 +279,9 @@ async function runTruncation() {
 }
 
 async function checkMaterialDisplay() {
-  const rows = page.locator("[data-gp-evidence-row]");
+  const drawer = await openSources();
+  await openSourceOrigins(drawer);
+  const rows = drawer.locator("[data-gp-evidence-row]");
   const states = await rows.evaluateAll((nodes) => nodes.map((node) => ({
     sourceId: node.getAttribute("data-gp-source-id"),
     role: node.getAttribute("data-gp-role"),
@@ -282,6 +307,7 @@ async function checkMaterialDisplay() {
   record("material expands in place", await rows.first().locator("[data-gp-material-text]").isVisible().catch(() => false), "");
   await shot("2c-material-expanded");
   await rows.first().locator("summary").click();
+  await closeSources();
 }
 
 // 用本轮真实快照只删定位/读取元信息；不重新调用模型，不把改写快照当新的核查结果。
@@ -302,9 +328,12 @@ async function checkMissingMetadata(snapshot) {
   await page.locator("[data-gp-unspanned-parts]").waitFor({ timeout: 10000 });
   const note = await page.locator("[data-gp-unspanned-parts]").innerText();
   record("deleting spans does not say the user omitted the words", note.includes("暂未可靠定位") && !note.includes("原句没有直接写出"), "");
-  const status = await page.locator("[data-gp-material-status]").allTextContents();
+  const drawer = await openSources();
+  await openSourceOrigins(drawer);
+  const status = await drawer.locator("[data-gp-material-status]").allTextContents();
   record("missing read metadata stays unknown", status.length > 0 && status.every((s) => s.includes("正文读取情况未知")), "");
   await shot("7-metadata-missing");
+  await closeSources();
   record("boundary display does not start another investigation", investigationPosts.length === postsBefore, `posts=${investigationPosts.length}`);
 }
 
@@ -386,32 +415,50 @@ async function checkLabels() {
 
 // #141: the result page is conclusion, part cards with their evidence, and three actions. Nothing else.
 async function checkResultLayout() {
+  await page.mouse.move(0, 0);
+  await page.keyboard.press("Escape");
   const pageText = (await page.locator("body").textContent().catch(() => "")) ?? "";
   const leftovers = DELETED_BLOCKS.filter((word) => pageText.includes(word));
   const oldNodes = await page.locator("[data-gp-source-pill], [data-gp-dossier], [data-gp-scope], [data-gp-key-evidence], [role=dialog]").count();
   record("deleted blocks are absent (查看已有依据, 继续补查, 本轮核查范围, 调查案卷, 收集到的来源)", leftovers.length === 0 && oldNodes === 0, `words=${leftovers.join("/")} nodes=${oldNodes}`);
 
+  const drawer = await openSources();
+  await shot("2d-all-sources");
+  await openSourceOrigins(drawer);
   const parts = await page.locator("[data-gp-result] article[data-gp-claim-id]").evaluateAll((nodes) =>
     nodes.map((node) => ({
       text: node.querySelector("[data-gp-part-text]")?.textContent?.trim() ?? "",
       label: node.querySelector("[data-gp-claim-label]")?.textContent?.trim() ?? "",
-      rows: [...node.querySelectorAll("[data-gp-evidence-row]")].map((row) => ({
-        role: row.getAttribute("data-gp-role"),
-        href: row.querySelector("a[href]")?.getAttribute("href") ?? "",
-        date: row.querySelector("[data-gp-published]")?.textContent?.trim() ?? "",
-      })),
+      citations: [...node.querySelectorAll("[data-gp-cite]")].map((cite) => cite.getAttribute("data-gp-cite").split(" ")),
+      inlineRows: node.querySelectorAll("[data-gp-evidence-row]").length,
+      rows: [...document.querySelectorAll("[data-gp-source-drawer] [data-gp-evidence-row]")]
+        .filter((row) => row.getAttribute("data-gp-evidence-claim") === node.getAttribute("data-gp-claim-id"))
+        .map((row) => ({
+          sourceId: row.getAttribute("data-gp-source-id"),
+          role: row.getAttribute("data-gp-role"),
+          href: row.querySelector("a[href]")?.getAttribute("href") ?? "",
+          date: row.querySelector("[data-gp-published]")?.textContent?.trim() ?? "",
+          visible: row.getClientRects().length > 0,
+        })),
     }))
   );
   const rows = parts.flatMap((p) => p.rows);
-  const badRows = rows.filter((r) => !/^https?:\/\//.test(r.href) || !(DATE.test(r.date) || r.date === "发布日期未取到"));
+  const badRows = rows.filter((r) => !r.visible || !/^https?:\/\//.test(r.href) || !(DATE.test(r.date) || r.date === "我们没取到发布日期"));
   const bareParts = parts.filter((p) => DECISIVE_LABELS.includes(p.label) && !p.rows.some((row) => ["support", "contradict"].includes(row.role)));
+  const badCitations = parts.filter((p) => {
+    const ids = [...new Set(p.rows.map((row) => row.sourceId))].sort();
+    return p.inlineRows !== 0 || (ids.length > 0
+      ? p.citations.length !== 1 || JSON.stringify([...p.citations[0]].sort()) !== JSON.stringify(ids)
+      : p.citations.length !== 0);
+  });
   record(
-    "each part card shows its evidence rows with a link to the page and a date",
-    parts.length > 0 && rows.length > 0 && badRows.length === 0 && bareParts.length === 0,
-    `rows per part ${parts.map((p) => `${p.label}:${p.rows.length}`).join(" ")}; bad rows ${badRows.length}; decisive parts without a row: ${bareParts.map((p) => p.text.slice(0, 20)).join("/") || "none"}`
+    "each part cites its evidence rows in the drawer with a link to the page and a date",
+    parts.length > 0 && rows.length > 0 && badRows.length === 0 && bareParts.length === 0 && badCitations.length === 0,
+    `rows per part ${parts.map((p) => `${p.label}:${p.rows.length}`).join(" ")}; bad rows ${badRows.length}; bad citations ${badCitations.length}; decisive parts without a row: ${bareParts.map((p) => p.text.slice(0, 20)).join("/") || "none"}`
   );
+  await closeSources();
 
-  const buttons = await page.locator("[data-gp-result] button").evaluateAll((nodes) =>
+  const buttons = await page.locator("[data-gp-result-actions] button").evaluateAll((nodes) =>
     nodes.filter((n) => n.getClientRects().length > 0).map((n) => n.textContent.trim()));
   const fields = await page.locator("[data-gp-result] textarea, [data-gp-result] input").count();
   const ask = await page.locator("[data-gp-result]").getByPlaceholder(/针对这份调查继续问/).count();
@@ -426,11 +473,13 @@ async function checkResultLayout() {
 // #140: every evidence row shows a publish date or says it is missing; some source has a real date;
 // the link on a quoted evidence row jumps to a sentence of that quote.
 async function checkDatesAndQuoteLinks() {
-  const rows = await page.locator("[data-gp-evidence-row]").evaluateAll((nodes) =>
+  const drawer = await openSources();
+  await openSourceOrigins(drawer);
+  const rows = await drawer.locator("[data-gp-evidence-row]").evaluateAll((nodes) =>
     nodes.map((node) => node.querySelector("[data-gp-published]")?.textContent?.trim() ?? "NO DATE"));
-  const bad = rows.filter((text) => !DATE.test(text) && text !== "发布日期未取到");
-  record("every evidence row shows a publish date or 发布日期未取到", rows.length > 0 && bad.length === 0, `rows=${rows.length} bad=${bad.join("/")}`);
-  const days = await page.locator("[data-gp-result] [data-gp-published]").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("data-gp-published") ?? ""));
+  const bad = rows.filter((text) => !DATE.test(text) && text !== "我们没取到发布日期");
+  record("every evidence row shows a publish date or 我们没取到发布日期", rows.length > 0 && bad.length === 0, `rows=${rows.length} bad=${bad.join("/")}`);
+  const days = await drawer.locator("[data-gp-evidence-row] [data-gp-published]").evaluateAll((nodes) => nodes.map((n) => n.getAttribute("data-gp-published") ?? ""));
   const dated = days.filter((day) => DATE.test(day)).length;
   record("at least one source has a real publish date", dated > 0, `dated ${dated}/${days.length}`);
 
@@ -460,6 +509,7 @@ async function checkDatesAndQuoteLinks() {
   }
   const bodyRows = await page.locator('[data-gp-material-kind="page-excerpt"]:has([data-gp-evidence-quote])').count();
   record("body quotes use a locator; snippets do not imply a body locator", bodyRows === 0 || Boolean(hit), `body quotes=${bodyRows}`);
+  await closeSources();
 }
 
 // #141: the phone layout must not scroll sideways.
@@ -553,7 +603,7 @@ async function runFull(firstAnswer) {
     const earlier = (await page.locator("[data-gp-direct-answer]").first().innerText().catch(() => "")).trim();
     record("round 1 keeps its original conclusion", earlier === firstAnswer, earlier.slice(0, 80));
     const roundParts = await page.locator("[data-gp-result] article[data-gp-claim-id]").count();
-    const roundButtons = await page.locator("[data-gp-result] button").allTextContents();
+    const roundButtons = await page.locator("[data-gp-result-actions] button").allTextContents();
     record(
       "round 1 uses the same result layout, without the 追问 input",
       roundParts > 0 && JSON.stringify(roundButtons.map((t) => t.trim())) === JSON.stringify(["分享", "新调查"]),
@@ -596,7 +646,7 @@ try {
       await checkStoppedMaterial(source.id, link.passage);
       record("停止材料展示回放不启动新调查", investigationPosts.length === 0);
     } else {
-      await page.locator("[data-gp-evidence-row]").first().waitFor({ timeout: 10000 });
+      await page.locator("[data-gp-result]").first().waitFor({ timeout: 10000 });
       await checkMaterialDisplay();
     }
   } else {

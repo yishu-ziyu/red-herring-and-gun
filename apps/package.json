@@ -11,7 +11,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "eval": "cd server && npx tsx eval/run.ts",
     "eval:gate": "cd server && npx tsx eval/run.ts --gate eval/baseline.json",
-    "e2e": "node scripts/e2e/golden-path.mjs"
+    "e2e": "node scripts/e2e/golden-path.mjs",
+    "check:css": "node scripts/check-css-tokens.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
