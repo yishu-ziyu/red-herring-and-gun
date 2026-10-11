@@ -1,6 +1,7 @@
 /**
- * searchProviders.ts — 并行搜索矩阵（360 智搜 / AnySearch / Metaso / Tavily / Exa / MiniMax 套餐 / 阶跃 Step Plan）
- * 与 per-atom 检索入口 retrieveAtomSources。失败不阻断整次核查。
+ * searchProviders.ts — 并行搜索矩阵与 per-atom 检索入口 retrieveAtomSources。失败不阻断整次核查。
+ * 默认引擎：MiniMax 套餐 / 阶跃 Step Plan / Exa / 百度千帆 / 本机 open-webSearch（各自有密钥或地址才启用）。
+ * 360 / AnySearch / Metaso / Tavily 只在 SEARCH_PROVIDERS 里点名且有密钥时启用。
  */
 
 import { randomUUID } from "node:crypto";
@@ -40,6 +41,14 @@ function getMiniMaxSearchApiKey(env: Record<string, string>) {
 
 function getStepFunSearchApiKey(env: Record<string, string>) {
   return env.STEPFUN_API_KEY || process.env.STEPFUN_API_KEY || "";
+}
+
+function getQianfanApiKey(env: Record<string, string>) {
+  return env.QIANFAN_API_KEY || process.env.QIANFAN_API_KEY || "";
+}
+
+function getOpenWebSearchUrl(env: Record<string, string>) {
+  return (env.OPEN_WEBSEARCH_URL || process.env.OPEN_WEBSEARCH_URL || "").trim().replace(/\/+$/, "");
 }
 
 function envFieldPresent(env: Record<string, string>, key: string): boolean {
@@ -101,6 +110,8 @@ export function getSearchToolName(result: { _source?: string } | undefined) {
   if (result?._source === "360-mwebsearch") return "360 智搜";
   if (result?._source === "minimax-coding-plan") return "MiniMax Token Plan";
   if (result?._source === "stepfun-step-plan") return "阶跃 Step Plan";
+  if (result?._source === "qianfan-search") return "百度千帆搜索";
+  if (result?._source === "open-websearch") return "open-webSearch";
   if (result?._source === "tool-error") return "Search Tool";
   return "Search";
 }
@@ -190,7 +201,9 @@ export type SearchProviderId =
   | "tavily_search"
   | "exa_search"
   | "minimax_search"
-  | "stepfun_search";
+  | "stepfun_search"
+  | "qianfan_search"
+  | "open_websearch";
 
 /** 单 Provider 在产品侧的进度态（SSE search_progress 用，不含任何诊断/密钥/请求 ID）。 */
 export type SearchProviderProgress = {
@@ -217,7 +230,7 @@ export type SearchProgressEvent = {
   timestamp: number;
 };
 
-const SEARCH_PROVIDERS: SearchProviderId[] = [
+const ALL_SEARCH_PROVIDERS: SearchProviderId[] = [
   "360_search",
   "any_search",
   "metaso_search",
@@ -225,14 +238,85 @@ const SEARCH_PROVIDERS: SearchProviderId[] = [
   "exa_search",
   "minimax_search",
   "stepfun_search",
+  "qianfan_search",
+  "open_websearch",
 ];
 
-function parallelSearchProviders(env: Record<string, string>): SearchProviderId[] {
-  return SEARCH_PROVIDERS.filter((id) => {
-    if (id === "minimax_search") return envFieldPresent(env, "MINIMAX_API_KEY");
-    if (id === "stepfun_search") return envFieldPresent(env, "STEPFUN_API_KEY");
-    return true;
-  });
+/** 不点名时的默认引擎。360 / AnySearch / Metaso / Tavily 要在 SEARCH_PROVIDERS 里点名才用。 */
+const DEFAULT_SEARCH_PROVIDERS: SearchProviderId[] = [
+  "minimax_search",
+  "stepfun_search",
+  "exa_search",
+  "qianfan_search",
+  "open_websearch",
+];
+
+const PROVIDER_KEY_FIELD: Record<SearchProviderId, string> = {
+  "360_search": "QIHOO_360_API_KEY",
+  any_search: "ANYSEARCH_API_KEY",
+  metaso_search: "METASO_API_KEY",
+  tavily_search: "TAVILY_API_KEY",
+  exa_search: "EXA_API_KEY",
+  minimax_search: "MINIMAX_API_KEY",
+  stepfun_search: "STEPFUN_API_KEY",
+  qianfan_search: "QIANFAN_API_KEY",
+  open_websearch: "OPEN_WEBSEARCH_URL",
+};
+
+function envValue(env: Record<string, string>, key: string): string {
+  const value = env[key] ?? process.env[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export function parallelSearchProviders(env: Record<string, string>): SearchProviderId[] {
+  const named = envValue(env, "SEARCH_PROVIDERS")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s): s is SearchProviderId => (ALL_SEARCH_PROVIDERS as string[]).includes(s));
+  const wanted = named.length > 0 ? named : DEFAULT_SEARCH_PROVIDERS;
+  return wanted.filter((id) => envValue(env, PROVIDER_KEY_FIELD[id]).length > 0);
+}
+
+/** 每个 atom 每个引擎最多跑几条查询（默认 2）。 */
+function maxQueriesPerAtom(env: Record<string, string>): number {
+  const n = Number(envValue(env, "SEARCH_QUERIES_PER_ATOM") || 2);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 2;
+}
+
+/** 保留原句直查，再按原顺序补到上限。 */
+export function capAtomQueries(atom: string, queries: string[], max: number): string[] {
+  if (queries.length <= max) return queries;
+  const t = atom.replace(/\s+/g, " ").trim();
+  const exact = queries.find((q) => q === t);
+  const rest = queries.filter((q) => q !== exact);
+  return (exact ? [exact, ...rest] : rest).slice(0, max);
+}
+
+/** 进程内并发闸。阶跃 Step Plan 账号并发上限 8，评测 --jobs 2 每进程各占一半。 */
+const providerInFlight = new Map<string, number>();
+const providerWaiters = new Map<string, Array<() => void>>();
+function providerConcurrency(env: Record<string, string>, provider: string): number {
+  if (provider !== "stepfun_search") return Infinity;
+  const n = Number(envValue(env, "STEPFUN_SEARCH_MAX_CONCURRENCY") || 4);
+  return Number.isFinite(n) && n >= 1 ? Math.min(8, Math.floor(n)) : 4;
+}
+async function withProviderSlot<T>(env: Record<string, string>, provider: string, run: () => Promise<T>): Promise<T> {
+  const limit = providerConcurrency(env, provider);
+  if (limit === Infinity) return run();
+  while ((providerInFlight.get(provider) ?? 0) >= limit) {
+    await new Promise<void>((resolve) => {
+      const list = providerWaiters.get(provider) ?? [];
+      list.push(resolve);
+      providerWaiters.set(provider, list);
+    });
+  }
+  providerInFlight.set(provider, (providerInFlight.get(provider) ?? 0) + 1);
+  try {
+    return await run();
+  } finally {
+    providerInFlight.set(provider, (providerInFlight.get(provider) ?? 1) - 1);
+    providerWaiters.get(provider)?.shift()?.();
+  }
 }
 
 export async function callSearchProvider({
@@ -257,7 +341,7 @@ export async function callSearchProvider({
     throw new Error(`${getProviderLabel(provider)} 额度耗尽，本进程已跳过`);
   }
   try {
-    return await withExecutionBudget(async (signal) => {
+    return await withProviderSlot(env, provider, () => withExecutionBudget(async (signal) => {
       switch (provider) {
         case "360_search":
           return await call360AiSearch({ env, query, model, refProm, signal });
@@ -273,10 +357,14 @@ export async function callSearchProvider({
           return await callMiniMaxCodingPlanSearch({ env, query, signal });
         case "stepfun_search":
           return await callStepFunPlanMcpSearch({ env, query, signal });
+        case "qianfan_search":
+          return await callQianfanWebSearch({ env, query, signal });
+        case "open_websearch":
+          return await callOpenWebSearch({ env, query, signal });
         default:
           throw new Error(`未知搜索 Provider：${provider}`);
       }
-    }, { signal: parentSignal, deadlineMs, timeoutMs: getTimeoutMs(env, "SEARCH_PROVIDER_TIMEOUT_MS", 25000), label: getProviderLabel(provider) });
+    }, { signal: parentSignal, deadlineMs, timeoutMs: getTimeoutMs(env, "SEARCH_PROVIDER_TIMEOUT_MS", 25000), label: getProviderLabel(provider) }));
   } catch (reason) {
     parentSignal?.throwIfAborted();
     const message = reason instanceof Error ? reason.message : String(reason);
@@ -445,7 +533,7 @@ export async function retrieveAtomSources(
   execution: ExecutionBudget = {},
 ) {
   execution.signal?.throwIfAborted();
-  const queries = buildAtomSearchQueries(atom);
+  const queries = capAtomQueries(atom, buildAtomSearchQueries(atom), maxQueriesPerAtom(env));
   const queryCount = queries.length;
   const providers = parallelSearchProviders(env);
 
@@ -557,6 +645,8 @@ export function getProviderLabel(provider: SearchProviderId | string) {
     exa_search: "Exa Search",
     minimax_search: "MiniMax Token Plan",
     stepfun_search: "阶跃 Step Plan",
+    qianfan_search: "百度千帆搜索",
+    open_websearch: "open-webSearch",
   };
   return labels[provider] ?? provider;
 }
@@ -1168,5 +1258,215 @@ function normalize360MWebSearchResponse(data: any, query: string, refProm: strin
     model: `360-mwebsearch:${refProm}`,
     traceText: `360 智搜 ${refProm} 返回 ${sources.length} 条可追溯来源（已跳过失效 aisearch）。`,
     _source: "360-mwebsearch",
+  };
+}
+
+/* ------------------------------------------------------------ 百度千帆 web_search */
+
+/** 千帆 query 上限 72 字符（一个汉字算 2），超出部分官方直接截掉；这里先按同一口径截断。 */
+function clipQianfanQuery(query: string): string {
+  let width = 0;
+  let out = "";
+  for (const ch of query) {
+    width += /[\u0000-\u00ff]/.test(ch) ? 1 : 2;
+    if (width > 72) break;
+    out += ch;
+  }
+  return out;
+}
+
+async function callQianfanWebSearch({
+  env,
+  query,
+  signal,
+}: {
+  env: Record<string, string>;
+  query: string;
+  signal?: AbortSignal;
+}) {
+  const apiKey = getQianfanApiKey(env);
+  if (!apiKey) throw new Error("未配置百度千帆 API key");
+  const topK = Number(envValue(env, "QIANFAN_SEARCH_TOP_K") || 10);
+  const response = await fetchWithTimeout("https://qianfan.baidubce.com/v2/ai_search/web_search", {
+    method: "POST",
+    signal,
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages: [{ role: "user", content: clipQianfanQuery(query) }],
+      search_source: "baidu_search_v2",
+      resource_type_filter: [{ type: "web", top_k: Number.isFinite(topK) && topK > 0 ? Math.min(50, topK) : 10 }],
+    }),
+  }, getSearchFetchTimeoutMs(env), "百度千帆搜索");
+  const data: any = await response.json().catch(() => null);
+  if (!response.ok || data?.code || data?.error) {
+    const detail = data?.message || data?.error?.message || data?.error || response.statusText;
+    throw new Error(`百度千帆搜索调用失败：HTTP ${response.status} ${String(detail ?? "")}`.trim());
+  }
+  const refs = Array.isArray(data?.references) ? data.references : [];
+  const sources = mapProviderSources(
+    refs.map((r: any) => ({ ...r, snippet: r?.snippet || r?.content, siteName: r?.website })),
+    (i) => `百度千帆来源 ${i}`,
+  );
+  return {
+    answer: sources.map((source) => `【${source.title}】${source.snippet}`).join("\n"),
+    sources,
+    unresolvedEvidenceGaps: sources.length > 0 ? [] : ["百度千帆搜索未返回可引用来源。"],
+    relatedQuestions: [],
+    model: "qianfan:baidu_search_v2",
+    traceText: `百度千帆搜索返回 ${sources.length} 条可追溯来源，请求 ID：${data?.request_id || "unknown"}。`,
+    _source: "qianfan-search",
+  };
+}
+
+/* ------------------------------------------------- 本机 open-webSearch 旁路服务 */
+
+/**
+ * open-webSearch（Apache-2.0）在本机跑 `open-websearch serve`，靠抓取 Bing / 百度结果页取结果，
+ * 随时可能被验证码或限流挡住。每个子引擎单独熔断：连续失败（报错、空结果、验证码）达到阈值后
+ * 跳过一段时间，不拖慢整次检索。百度结果是 baidu.com/link 跳转链接，必须解析成原网址才能当证据。
+ */
+const OPEN_WEBSEARCH_BREAK_AFTER = 3;
+const OPEN_WEBSEARCH_BREAK_MS = 10 * 60 * 1000;
+const openWebSearchFailures = new Map<string, number>();
+const openWebSearchOpenUntil = new Map<string, number>();
+
+export function resetOpenWebSearchBreakerForTests(): void {
+  openWebSearchFailures.clear();
+  openWebSearchOpenUntil.clear();
+}
+
+function openWebSearchEngineOpen(engine: string): boolean {
+  const until = openWebSearchOpenUntil.get(engine);
+  return typeof until === "number" && until > Date.now();
+}
+
+function noteOpenWebSearchResult(engine: string, ok: boolean): void {
+  if (ok) {
+    openWebSearchFailures.set(engine, 0);
+    return;
+  }
+  const n = (openWebSearchFailures.get(engine) ?? 0) + 1;
+  openWebSearchFailures.set(engine, n);
+  if (n >= OPEN_WEBSEARCH_BREAK_AFTER) {
+    openWebSearchOpenUntil.set(engine, Date.now() + OPEN_WEBSEARCH_BREAK_MS);
+    openWebSearchFailures.set(engine, 0);
+  }
+}
+
+const BAIDU_LINK = /^https?:\/\/(?:www\.)?baidu\.com\/link\?/i;
+/** 解析后仍落在百度自身的搜索页、验证码页、视频聚合页：不是原始来源，丢弃。 */
+const BAIDU_NON_SOURCE = /^https?:\/\/(?:(?:www|m|wappass)\.)?baidu\.com(?:\/|$)/i;
+const CAPTCHA_HINT = /captcha|验证码|安全验证|unusual traffic|are you a robot|wappass\.baidu\.com/i;
+
+/** baidu.com/link 跳转 → 原网址。http 版在境外常超时，统一改走 https；解析不出就返回 null（丢弃该条）。 */
+async function resolveBaiduLink(url: string, signal?: AbortSignal): Promise<string | null> {
+  const httpsUrl = url.replace(/^http:/i, "https:");
+  try {
+    const response = await fetchWithTimeout(httpsUrl, {
+      method: "GET",
+      redirect: "manual",
+      signal,
+      headers: { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36" },
+    }, 6000, "百度跳转解析");
+    const location = response.headers.get("location");
+    if (location && /^https?:\/\//i.test(location) && !BAIDU_LINK.test(location)) {
+      await response.body?.cancel();
+      return location;
+    }
+    const body = (await response.text().catch(() => "")).slice(0, 4000);
+    const m = body.match(/URL='([^']+)'/) || body.match(/location\.replace\("([^"]+)"\)/);
+    return m && /^https?:\/\//i.test(m[1]!) ? m[1]! : null;
+  } catch {
+    return null;
+  }
+}
+
+async function searchOpenWebSearchEngine(
+  base: string,
+  engine: string,
+  query: string,
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+): Promise<Array<Record<string, unknown>>> {
+  const response = await fetchWithTimeout(`${base}/search`, {
+    method: "POST",
+    signal,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, engines: [engine], limit: 10 }),
+  }, timeoutMs, `open-webSearch ${engine}`);
+  const text = await response.text();
+  if (!response.ok) throw new Error(`HTTP ${response.status} ${text.slice(0, 120)}`);
+  if (CAPTCHA_HINT.test(text.slice(0, 2000)) && !text.includes('"results":[{')) throw new Error("验证码拦截");
+  let data: any = null;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error("返回不是 JSON");
+  }
+  const results = Array.isArray(data?.data?.results) ? data.data.results : [];
+  if (results.length === 0) throw new Error("空结果");
+  const resolved = await Promise.all(
+    results.map(async (r: any) => {
+      const raw = String(r?.url || "");
+      const url = BAIDU_LINK.test(raw) ? await resolveBaiduLink(raw, signal) : raw;
+      if (!url || BAIDU_NON_SOURCE.test(url)) return null;
+      return { title: r?.title, url, snippet: r?.description, siteName: r?.source, engine };
+    }),
+  );
+  const kept = resolved.filter((r): r is NonNullable<typeof r> => r !== null);
+  if (kept.length === 0) throw new Error("跳转链接全部解析失败");
+  return kept;
+}
+
+async function callOpenWebSearch({
+  env,
+  query,
+  signal,
+}: {
+  env: Record<string, string>;
+  query: string;
+  signal?: AbortSignal;
+}) {
+  const base = getOpenWebSearchUrl(env);
+  if (!base) throw new Error("未配置 OPEN_WEBSEARCH_URL");
+  const engines = (envValue(env, "OPEN_WEBSEARCH_ENGINES") || "bing,baidu")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const live = engines.filter((e) => !openWebSearchEngineOpen(e));
+  if (live.length === 0) throw new Error(`open-webSearch 引擎均在熔断中：${engines.join(",")}`);
+  const timeoutMs = getSearchFetchTimeoutMs(env);
+  const settled = await Promise.allSettled(
+    live.map((engine) => searchOpenWebSearchEngine(base, engine, query, signal, timeoutMs)),
+  );
+  const items: Array<Record<string, unknown>> = [];
+  const failures: string[] = [];
+  settled.forEach((item, i) => {
+    const engine = live[i]!;
+    if (item.status === "fulfilled") {
+      noteOpenWebSearchResult(engine, true);
+      items.push(...item.value);
+    } else {
+      signal?.throwIfAborted();
+      noteOpenWebSearchResult(engine, false);
+      failures.push(`${engine}：${item.reason instanceof Error ? item.reason.message : String(item.reason)}`);
+    }
+  });
+  if (items.length === 0) throw new Error(`open-webSearch 无结果（${failures.join("；")}）`);
+  // 各子引擎轮流取，避免一个引擎占满 8 条上限。
+  const byEngine = live.map((e) => items.filter((it) => it.engine === e));
+  const interleaved: Array<Record<string, unknown>> = [];
+  for (let i = 0; interleaved.length < items.length; i += 1) {
+    for (const list of byEngine) if (list[i]) interleaved.push(list[i]!);
+  }
+  const sources = mapProviderSources(interleaved, (i) => `open-webSearch 来源 ${i}`);
+  return {
+    answer: sources.map((source) => `【${source.title}】${source.snippet}`).join("\n"),
+    sources,
+    unresolvedEvidenceGaps: failures.map((f) => `open-webSearch ${f}`),
+    relatedQuestions: [],
+    model: `open-websearch:${live.join("+")}`,
+    traceText: `open-webSearch 返回 ${sources.length} 条可追溯来源${failures.length ? `；失败：${failures.join("；")}` : ""}。`,
+    _source: "open-websearch",
   };
 }
