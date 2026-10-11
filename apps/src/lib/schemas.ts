@@ -461,7 +461,7 @@ export interface Search360Response {
   relatedQuestions: string[];
   model?: string;
   traceText?: string;
-  _source?: "360-ai-search" | "anysearch-search" | "metaso-search" | "tavily-search" | "exa-search" | "parallel-search" | "demo-fallback" | "tool-error";
+  _source?: "360-ai-search" | "anysearch-search" | "metaso-search" | "tavily-search" | "exa-search" | "qianfan-search" | "open-websearch" | "parallel-search" | "demo-fallback" | "tool-error";
 }
 
 // ── Agent evidence bundle ─────────────────────────────────────
@@ -545,7 +545,7 @@ export interface ClaimDecompositionResult {
 }
 
 export interface SearchTask {
-  provider: "360_search" | "any_search" | "metaso_search" | "tavily_search" | "exa_search" | "minimax_search" | "stepfun_search";
+  provider: "360_search" | "any_search" | "metaso_search" | "tavily_search" | "exa_search" | "minimax_search" | "stepfun_search" | "qianfan_search" | "open_websearch";
   query: string;
   status: "pending" | "running" | "completed" | "failed";
   result?: SearchProviderResult;

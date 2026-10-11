@@ -73,7 +73,9 @@ export type SearchProgressProviderId =
   | "tavily_search"
   | "exa_search"
   | "minimax_search"
-  | "stepfun_search";
+  | "stepfun_search"
+  | "qianfan_search"
+  | "open_websearch";
 
 export type SearchProgressProviderStatus = "pending" | "running" | "completed" | "partial" | "failed";
 

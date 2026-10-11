@@ -106,6 +106,9 @@ const SEARCH_HOST = /tavily|metaso|anysearch|exa\.ai|bocha|serper|brave|bing\.|b
 
 function classify(url: URL): "model" | "search" | "other" {
   const host = url.hostname;
+  // Local open-webSearch sidecar = one search call; baidu.com/link redirect resolution is page plumbing, not a search.
+  if ((host === "127.0.0.1" || host === "localhost") && url.pathname === "/search") return "search";
+  if (/(^|\.)baidu\.com$/i.test(host) && url.pathname === "/link") return "other";
   // Model providers also host search endpoints (minimax coding_plan/search, stepfun mcp/web_search, 360 mwebsearch).
   const isModelPath = /chat\/completions|\/messages$|\/responses$/.test(url.pathname) && !/search/i.test(url.pathname);
   if (/360\.cn$/i.test(host) || MODEL_HOST.test(host)) {
