@@ -51,7 +51,7 @@ function ProductApp() {
 
   const { resumedRef } = useRunPointer({ historyReady, mode, active, run, copy, setActive, setMode, setHistoryNotice });
 
-  // DEV 固定装置：/?fixture=investigating|judging|complete|conflict|interrupted|mixed|nospan|settling|source-audit|replay
+  // DEV 固定装置：/?fixture=journey|received|decomposed|first-beat|investigating|judging|complete|conflict|interrupted|mixed|nospan|settling|source-audit|replay
   // 用脚本化快照驱动真实组件树（截图与走查）。生产构建 dead-code eliminated。
   useEffect(() => {
     if (!import.meta.env.DEV) return;

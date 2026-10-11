@@ -155,6 +155,7 @@ export type FixtureName =
   | "received"
   | "decomposed"
   | "first-beat"
+  | "journey"
   | "investigating"
   | "judging"
   | "complete"
@@ -211,6 +212,63 @@ function settlingAfter() {
   };
 }
 
+function journeyResult(): InvestigationSnapshotV1 {
+  const result = staged("complete");
+  const unread = staged("judging").claims[2];
+  return {
+    ...result,
+    claims: result.claims.map((claim, index) => index === 2 ? {
+      ...unread,
+      progress: "complete",
+      judgment: "unresolved",
+      label: "unresolved",
+      reason: "这个要点暂时查不清。我们只找到 1 份资料（膳食指南），还没读完，没有算进判断。它提到冷藏超过 3 天或反复回热仍有风险。",
+    } : {
+      ...claim,
+      progress: "complete",
+      reason: ATOMS[index].verdict?.evidence.replace(/\[\d+\]/g, "") ?? "",
+    }),
+  };
+}
+
+function journeyFrame(
+  result: InvestigationSnapshotV1,
+  { phase = "investigating", done = 0, active = -1, found = 0, conflict = true }: {
+    phase?: InvestigationSnapshotV1["phase"];
+    done?: number;
+    active?: number;
+    found?: number;
+    conflict?: boolean;
+  },
+): InvestigationSnapshotV1 {
+  const claims = result.claims.map((claim, index) => {
+    if (index < done) return claim;
+    const urls = new Set(index === active ? ATOMS[index].search.slice(0, found).map((source) => source.url) : []);
+    const ids = new Set(result.sources.filter((source) => urls.has(source.url)).map((source) => source.id));
+    const { label: _label, reason: _reason, boundary: _boundary, ...pending } = claim;
+    return {
+      ...pending,
+      progress: index === active ? "searching" as const : "pending" as const,
+      judgment: null,
+      gaps: [],
+      evidence: claim.evidence.filter((link) => ids.has(link.sourceId)).map((link) => {
+        const { finding: _finding, quote: _quote, relationReason: _relationReason, ...foundLink } = link;
+        return { ...foundLink, role: "unassessed" as const };
+      }),
+    };
+  });
+  const ids = new Set(claims.flatMap((claim) => claim.evidence.map((link) => link.sourceId)));
+  const finished = new Set(claims.slice(0, done).map((claim) => claim.id));
+  const { conclusion: _conclusion, checkedAt: _checkedAt, ...inProgress } = result;
+  return {
+    ...(phase === "complete" ? result : inProgress),
+    phase,
+    claims,
+    sources: result.sources.filter((source) => ids.has(source.id)),
+    conflicts: conflict ? result.conflicts.filter((item) => finished.has(item.claimId)) : [],
+  };
+}
+
 export function getDevFixture(
   name: FixtureName
 ): (emit: (event: OrchestrateStreamEvent) => void) => () => void {
@@ -241,7 +299,44 @@ export function getDevFixture(
       at(40, () => emitSearchStarted("隔夜菜 致癌"));
     }
 
-    if (name === "replay") {
+    if (name === "journey") {
+      const result = journeyResult();
+      const frames: Array<[number, Parameters<typeof journeyFrame>[1]]> = [
+        [1800, { phase: "decomposed" }],
+        [2800, { active: 0 }],
+        [3800, { active: 0, found: 1 }],
+        [4700, { active: 0, found: 2 }],
+        [6000, { active: 0, found: 2, phase: "judging" }],
+        [7600, { done: 1 }],
+        [9000, { done: 1, active: 1 }],
+        [10000, { done: 1, active: 1, found: 1 }],
+        [11000, { done: 1, active: 1, found: 2 }],
+        [12000, { done: 1, active: 1, found: 3 }],
+        [13500, { done: 1, active: 1, found: 3, phase: "judging" }],
+        [15000, { done: 2, conflict: false }],
+        [16300, { done: 2 }],
+        [17800, { done: 2, active: 2 }],
+        [18800, { done: 2, active: 2, found: 1 }],
+        [20100, { done: 2, active: 2, found: 1, phase: "judging" }],
+        [21200, { done: 3, phase: "judging" }],
+      ];
+      at(60, () => emitWithActivity(receivedSnapshot()));
+      for (const [ms, frame] of frames) {
+        at(ms, () => {
+          emitWithActivity(journeyFrame(result, frame));
+          if (frame.active !== undefined && !frame.found) emitSearchStarted(ATOMS[frame.active].atom);
+        });
+      }
+      at(22400, () => {
+        emitWithActivity(result);
+        emit({
+          type: "complete",
+          finalReport: { conclusion: result.conclusion?.directAnswer, investigation: result },
+          timestamp: Date.now(),
+        });
+      });
+      return () => timers.forEach(clearTimeout);
+    } else if (name === "replay") {
       const pack = (window as unknown as { __RHG_REPLAY?: { frames?: Array<{ delayMs?: number; investigation: unknown; complete?: boolean }> } }).__RHG_REPLAY;
       const frames = pack?.frames ?? [];
       for (const frame of frames) {
