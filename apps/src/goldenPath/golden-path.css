@@ -84,6 +84,97 @@
   --gp-type-13: 13px;
   --gp-type-14: 14px;
   --gp-type-24: 24px;
+
+  /* 标签颜色：结果页、进度页、来源药丸和「你调查的说法」下划线共用，所以放在 :root 而不是 .gp-result 里。 */
+  --gp-tone-positive: #20604c;
+  --gp-tone-positive-bg: rgba(32, 96, 76, 0.08);
+  --gp-tone-negative: #8f2d2a;
+  --gp-tone-negative-bg: rgba(143, 45, 42, 0.08);
+  --gp-tone-mixed: #855f1a;
+  --gp-tone-mixed-bg: rgba(133, 95, 26, 0.1);
+  --gp-tone-muted: #57534e;
+  --gp-tone-muted-bg: rgba(87, 83, 78, 0.08);
+
+  /* 以前散落在规则里的颜色，原值收成 token，外观不变。 */
+  --gp-scrim: rgba(24, 24, 27, 0.28);
+  --gp-elevation-card: 0 4px 24px -4px rgba(27, 24, 20, 0.04), 0 1px 3px rgba(27, 24, 20, 0.02);
+  --gp-elevation-badge: 0 1px 3px rgba(0, 0, 0, 0.15);
+  --gp-warning-line: rgba(185, 28, 28, 0.35);
+  --gp-avatar-bg: #eeece5;
+  --gp-ink-inverse: #ffffff;
+  --gp-shimmer-edge: #62665e;
+  --gp-shimmer-mid: #252723;
+  --gp-hover-wash: rgba(28, 25, 23, 0.035);
+
+  /* 字号阶梯：取现有规则里同一角色已经在用的值，没有新造。 */
+  --gp-type-9: 9px;
+  --gp-type-11: 11px;
+  --gp-type-15: 15px;
+  --gp-type-16: 16px;
+  --gp-type-20: 20px;
+  --gp-type-22: 22px;
+  --gp-type-34: 34px;
+
+  /* 间距阶梯：gap / padding / margin 现在用到的档位。 */
+  --gp-space-2: 2px;
+  --gp-space-4: 4px;
+  --gp-space-6: 6px;
+  --gp-space-8: 8px;
+  --gp-space-10: 10px;
+  --gp-space-12: 12px;
+  --gp-space-14: 14px;
+  --gp-space-16: 16px;
+  --gp-space-20: 20px;
+  --gp-space-24: 24px;
+  --gp-space-32: 32px;
+  --gp-space-40: 40px;
+  --gp-space-48: 48px;
+  --gp-space-56: 56px;
+  --gp-space-64: 64px;
+  --gp-space-88: 88px;
+  --gp-space-120: 120px;
+
+  /* 来源图标：16px 网站图标放进 20px（--gp-icon-card）的位置；图标统一用 Lucide 的线宽。 */
+  --gp-radius-tile: 4px;
+  --gp-radius-icon: 3px;
+  --gp-icon-tile-img: 16px;
+  --gp-icon-stroke: 1.75;
+
+  /* 进度页动效：退场用加速曲线，和 --gp-ease-out 成对。 */
+  --gp-ease-in: cubic-bezier(0.3, 0, 1, 1);
+  --gp-motion-spin: 900ms;
+  --gp-motion-flight: 400ms;
+  --gp-motion-stagger: 50ms;
+  --gp-row-title-height: 31px;
+  --gp-row-status-height: 26px;
+
+  /* 结果页的出现节奏比界面反馈慢：结论、各个要点一块块浮出来，读的人跟得上。 */
+  --gp-motion-rise: 600ms;
+  --gp-motion-reveal: 900ms;
+  --gp-motion-rule: 1100ms;
+  /* 从引用卡跳到「全部资料」里那一行时，那一行亮一下再褪掉。 */
+  --gp-motion-flash: 1600ms;
+  --gp-flash-bg: linear-gradient(90deg, var(--gp-accent-subtle), transparent 70%);
+
+  /* 版心：页面一开始就是报告宽度，说法不会在进度页换成报告时挪位置；进度列表和各个要点用阅读宽度。 */
+  --gp-reading-width: 760px;
+  --gp-report-width: 1040px;
+  --gp-drawer-width: 560px;
+  --gp-popover-width: 340px;
+
+  /* 来源药丸：进度页里一排的药丸，和正文里引用用的小一号药丸。 */
+  --gp-pill-height: 28px;
+  --gp-cite-height: 24px;
+  --gp-pill-name-max: 220px;
+  --gp-cite-name-max: 168px;
+  --gp-favicon-overlap: 5px;
+  --gp-favicon-ring: 1.5px;
+
+  /* 旧来源药丸引用过、但仓库历史里从没定义过的四个变量，绑到最接近的现有 token。 */
+  --gp-line-strong: var(--gp-ink-3);
+  --gp-shadow-sm: var(--gp-elevation-input);
+  --gp-accent-soft: var(--gp-tone-negative-bg);
+  --gp-support-soft: var(--gp-tone-positive-bg);
 }
 
 /* ---------- 基础与通用重置（仅 Golden Path 壳内，不污染 auth/settings/legacy） ---------- */
@@ -98,6 +189,51 @@
 .gp-shell :focus-visible {
   outline: none;
   box-shadow: var(--gp-focus-ring);
+}
+
+/* Icon.tsx：默认和导航图标一样大，用的地方用 className 改尺寸。 */
+.gp-icon {
+  width: var(--gp-icon-nav);
+  height: var(--gp-icon-nav);
+  flex: none;
+  stroke-width: var(--gp-icon-stroke);
+}
+
+/* 正在进行的状态：转圈图标。减少动态效果时停转，图标本身仍说明「在进行」。 */
+.gp-spin {
+  animation: gp-spin var(--gp-motion-spin) linear infinite;
+}
+
+@keyframes gp-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gp-spin { animation: none; }
+}
+
+/* 标签：判断（属实、不属实……）和资料的立场（反驳、支持、背景、没读完）都用它。进度页、结果页、引用卡、全部资料共用。
+   颜色只辅助，字才是信息。 */
+.gp-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gp-space-6);
+  font-size: var(--gp-type-13);
+  font-weight: 600;
+  line-height: 1.6;
+  padding: 1px var(--gp-space-10);
+  border-radius: var(--gp-radius-pill);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.gp-label--positive { color: var(--gp-tone-positive); background: var(--gp-tone-positive-bg); }
+.gp-label--negative { color: var(--gp-tone-negative); background: var(--gp-tone-negative-bg); }
+.gp-label--mixed { color: var(--gp-tone-mixed); background: var(--gp-tone-mixed-bg); }
+.gp-label--muted { color: var(--gp-tone-muted); background: var(--gp-tone-muted-bg); }
+/* 资料行、引用卡里的小号标签。 */
+.gp-label--small {
+  font-size: var(--gp-type-12);
+  padding: 0 var(--gp-space-8);
 }
 
 /* ---------- 壳层（UI Layer Chrome） ---------- */
@@ -325,7 +461,7 @@
   inset: 0;
   z-index: 40;
   border: 0;
-  background: rgba(24, 24, 27, 0.28);
+  background: var(--gp-scrim);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
   cursor: pointer;
@@ -492,7 +628,7 @@
   background: var(--gp-surface);
   border: 1px solid var(--gp-hairline);
   border-radius: var(--gp-radius-card);
-  box-shadow: 0 4px 24px -4px rgba(27, 24, 20, 0.04), 0 1px 3px rgba(27, 24, 20, 0.02);
+  box-shadow: var(--gp-elevation-card);
   padding: 18px 22px 14px;
   text-align: left;
   transition: border-color var(--gp-motion-fast) var(--gp-ease-out), box-shadow var(--gp-motion-fast) var(--gp-ease-out);
@@ -565,8 +701,8 @@
 
 .gp-hint--warning .gp-hint-badge {
   color: var(--gp-semantic-contradict);
-  border-color: rgba(185, 28, 28, 0.35);
-  background: #fff;
+  border-color: var(--gp-warning-line);
+  background: var(--gp-surface);
 }
 
 .gp-roles {
@@ -587,7 +723,7 @@
   height: 74px;
   object-fit: cover;
   border-radius: 50%;
-  background: #eeece5;
+  background: var(--gp-avatar-bg);
   display: block;
   border: 3px solid var(--gp-canvas);
   margin: auto;
@@ -658,15 +794,15 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--gp-semantic-support, #28705a);
-  color: #ffffff;
+  background: var(--gp-semantic-support);
+  color: var(--gp-ink-inverse);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 11px;
   font-weight: bold;
-  border: 2px solid #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  border: 2px solid var(--gp-surface);
+  box-shadow: var(--gp-elevation-badge);
   animation: gp-popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
@@ -674,7 +810,7 @@
   position: absolute;
   inset: -4px;
   border-radius: 50%;
-  border: 2px solid var(--gp-accent, #a13734);
+  border: 2px solid var(--gp-accent);
   opacity: 0;
   animation: gp-radarPulse 1.8s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
   pointer-events: none;
@@ -684,13 +820,13 @@
   position: absolute;
   bottom: -4px;
   right: -6px;
-  background: var(--gp-accent, #a13734);
-  color: #ffffff;
+  background: var(--gp-accent);
+  color: var(--gp-ink-inverse);
   font-size: 10px;
   font-weight: 700;
   padding: 1px 6px;
   border-radius: 10px;
-  border: 1px solid #ffffff;
+  border: 1px solid var(--gp-surface);
   animation: gp-bounceCount 0.4s ease;
 }
 
@@ -712,7 +848,7 @@
 }
 
 .gp-role-shimmer {
-  background: linear-gradient(90deg, #62665e 0%, #252723 50%, #62665e 100%);
+  background: linear-gradient(90deg, var(--gp-shimmer-edge) 0%, var(--gp-shimmer-mid) 50%, var(--gp-shimmer-edge) 100%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
@@ -1153,7 +1289,7 @@ button.gp-save-state {
   border: 0;
   border-radius: var(--gp-radius-sm);
   background: var(--gp-ink-primary);
-  color: var(--gp-bg, #faf9f5);
+  color: var(--gp-bg);
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;

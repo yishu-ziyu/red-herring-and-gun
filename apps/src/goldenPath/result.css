@@ -1,19 +1,5 @@
 /* 查完的一轮（#141）。版式照 2026-10-09 用户确认的草稿：暖纸底、判断句和摘录用衬线、标签颜色只做辅助。 */
 
-/* 标签颜色也给「你调查的说法」里的下划线和调查中的进度页用，它们在 .gp-result 外面。 */
-.gp-result,
-.gp-original,
-.gp-progress {
-  --gp-tone-positive: #20604c;
-  --gp-tone-positive-bg: rgba(32, 96, 76, 0.08);
-  --gp-tone-negative: #8f2d2a;
-  --gp-tone-negative-bg: rgba(143, 45, 42, 0.08);
-  --gp-tone-mixed: #855f1a;
-  --gp-tone-mixed-bg: rgba(133, 95, 26, 0.1);
-  --gp-tone-muted: #57534e;
-  --gp-tone-muted-bg: rgba(87, 83, 78, 0.08);
-}
-
 .gp-result {
   font-size: 15px;
   line-height: 1.7;
@@ -42,21 +28,6 @@
   .gp-part,
   .gp-result-actions { animation: none; }
 }
-
-.gp-label {
-  display: inline-block;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.6;
-  padding: 1px 10px;
-  border-radius: 999px;
-  border: 1px solid currentColor;
-  white-space: nowrap;
-}
-.gp-label--positive { color: var(--gp-tone-positive); background: var(--gp-tone-positive-bg); }
-.gp-label--negative { color: var(--gp-tone-negative); background: var(--gp-tone-negative-bg); }
-.gp-label--mixed { color: var(--gp-tone-mixed); background: var(--gp-tone-mixed-bg); }
-.gp-label--muted { color: var(--gp-tone-muted); background: var(--gp-tone-muted-bg); }
 
 /* 原句里的每一截：下划线颜色同这一截的标签。行内元素的下边框会随折行断开，窄屏不会横向溢出。 */
 .gp-span {
@@ -206,7 +177,7 @@
   overflow-wrap: anywhere;
   transition: background-color 150ms ease;
 }
-.gp-ev:hover { background: rgba(28, 25, 23, 0.035); }
+.gp-ev:hover { background: var(--gp-hover-wash); }
 
 .gp-ev-quote {
   display: block;

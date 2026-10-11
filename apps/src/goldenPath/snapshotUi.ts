@@ -15,21 +15,15 @@ import { LABEL_TEXT, LABEL_TONE, judgmentToLabel, normalizePublishedDate, type L
 
 export type EvidenceRole = InvestigationEvidenceLink["role"];
 
-export const ROLE_ORDER: EvidenceRole[] = ["contradict", "support", "unassessed", "context-only"];
+/** 资料排序：先放能决定判断的（反驳、支持），再放背景，最后放没读完的。 */
+export const ROLE_ORDER: EvidenceRole[] = ["contradict", "support", "context-only", "unassessed"];
 
+/** 资料对要点的作用，用文案准则 v2 的核准词。界面上永远写字，不用色块或图形代替。 */
 export const ROLE_LABEL: Record<EvidenceRole, string> = {
   support: "支持",
   contradict: "反驳",
-  unassessed: "尚未核对",
-  "context-only": "相关材料",
-};
-
-/** 证据行左侧固定栏：比分组标题更短，相关不写「相关材料」。 */
-export const ROLE_ROW_LABEL: Record<EvidenceRole, string> = {
-  support: "支持",
-  contradict: "反驳",
-  unassessed: "待核对",
-  "context-only": "相关",
+  unassessed: "没读完",
+  "context-only": "背景",
 };
 
 export const PUBLISHED_UNKNOWN = "发布日期未取到";
@@ -75,12 +69,12 @@ export function sourceExcerpt(source: InvestigationSource | undefined): string {
   return text || "";
 }
 
-/** role 的 neutral/positive/negative 语气；unassessed 绝不能被染成证据位。 */
-export const ROLE_TONE: Record<EvidenceRole, "positive" | "negative" | "neutral" | "muted"> = {
+/** 立场标签的颜色（.gp-label--{tone}）。背景和没读完都不参与判断，所以同为灰色，不能被染成依据的颜色。 */
+export const ROLE_TONE: Record<EvidenceRole, "positive" | "negative" | "muted"> = {
   support: "positive",
   contradict: "negative",
   unassessed: "muted",
-  "context-only": "neutral",
+  "context-only": "muted",
 };
 
 /** judgment 对应的标签词（9 个标签之一，见 domain/labels）。活动流等只有 judgment 的地方用它。 */
@@ -157,11 +151,11 @@ export function domainOf(url: string): string {
 export type EvidenceGroup = {
   role: EvidenceRole;
   label: string;
-  tone: "positive" | "negative" | "neutral" | "muted";
+  tone: (typeof ROLE_TONE)[EvidenceRole];
   links: InvestigationEvidenceLink[];
 };
 
-/** 把一条 claim 的证据按角色分组，固定顺序（反驳、支持、待核对、相关材料）。 */
+/** 把一条 claim 的证据按角色分组，顺序同 ROLE_ORDER。 */
 export function groupEvidence(links: InvestigationEvidenceLink[]): EvidenceGroup[] {
   return ROLE_ORDER.map((role) => ({
     role,
@@ -249,33 +243,9 @@ export function evidenceLinkKey(claimId: string, links: InvestigationEvidenceLin
   return identifyEvidenceLinks(claimId, links)[index]?.key ?? `${claimId}:`;
 }
 
-export const ROLE_LAYOUT_ORDER: Record<EvidenceRole, number> = {
-  contradict: 10,
-  support: 20,
-  unassessed: 30,
-  "context-only": 40,
-};
-
-export function roleGlyph(role: EvidenceRole): string {
-  switch (role) {
-    case "support":
-    case "contradict":
-      return "●";
-    case "context-only":
-      return "○";
-    case "unassessed":
-      return "◌";
-    default:
-      return "●";
-  }
-}
-
 export function sourceById(snapshot: InvestigationSnapshotV1, id: string): InvestigationSource | undefined {
   return snapshot.sources.find((s) => s.id === id);
 }
-
-/** 所有来源共用的本地图标：不向第三方图标服务透露用户在看哪些网站。 */
-export const SOURCE_ICON_URL = "/source-icon.svg";
 
 /** 完成态下是否有任何可下钻的来源。 */
 export function hasDrilldownSource(snapshot: InvestigationSnapshotV1): boolean {

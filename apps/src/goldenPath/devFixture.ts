@@ -33,35 +33,35 @@ const ATOMS: AtomSpec[] = [
   {
     atom: "隔夜菜会直接致癌",
     search: [
-      src("https://piyao.example.org/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌"),
+      src("https://www.who.int/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌"),
       src("https://nutrition.example.cn/nitrite-facts", "食品科学解读：亚硝酸盐与致癌的量效关系", "正常冷藏隔夜菜亚硝酸盐远低于中毒剂量"),
     ],
     verdict: {
       verdict: "false",
       evidence: "多方权威机构与研究指出，正常储存的隔夜菜本身不会直接导致癌症[1]。",
       boundary: "不适用于已明显变质、被霉菌污染的食物",
-      contradicting: [src("https://piyao.example.org/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌")],
+      contradicting: [src("https://www.who.int/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌")],
     },
   },
   {
     atom: "隔夜菜会产生大量有害物质，等于吃毒药",
     search: [
-      src("https://cdc.example.cn/storage-safety", "疾控中心：家庭食品储存与致病菌预防", "不当储存可能滋生致病菌"),
+      src("https://www.chinacdc.cn/storage-safety", "疾控中心：家庭食品储存与致病菌预防", "不当储存可能滋生致病菌"),
       src("https://pkuph.example.org/nitrite-risk", "临床营养研究：不同人群的风险阈值与摄入量", "合理加热与冷藏下风险较低"),
-      src("https://course.example.org/poison-terms", "科普：什么是「毒药」——剂量决定毒性", "脱离剂量的毒性表述不成立"),
+      src("https://www.kepuchina.cn/poison-terms", "科普：什么是「毒药」——剂量决定毒性", "脱离剂量的毒性表述不成立"),
     ],
     verdict: {
       verdict: "exaggerated",
       evidence: "不当储存确实可能产生有害物质，但「等于吃毒药」夸大了常规食用风险[2]。",
-      supporting: [src("https://cdc.example.cn/storage-safety", "疾控中心：家庭食品储存与致病菌预防", "不当储存可能滋生致病菌")],
-      contradicting: [src("https://course.example.org/poison-terms", "科普：什么是「毒药」——剂量决定毒性", "脱离剂量的毒性表述不成立")],
+      supporting: [src("https://www.chinacdc.cn/storage-safety", "疾控中心：家庭食品储存与致病菌预防", "不当储存可能滋生致病菌")],
+      contradicting: [src("https://www.kepuchina.cn/poison-terms", "科普：什么是「毒药」——剂量决定毒性", "脱离剂量的毒性表述不成立")],
       gaps: ["缺少对常温存放 24 小时以上样本的定向检测数据"],
     },
   },
   {
     atom: "只要冷藏保存，隔夜菜就一定安全",
     search: [
-      src("https://diet.example.cn/leftover-guide", "膳食指南：隔夜菜冷藏期限与回热建议", "冷藏超过 3 天或反复回热仍有风险"),
+      src("https://dg.cnsoc.org/leftover-guide", "膳食指南：隔夜菜冷藏期限与回热建议", "冷藏超过 3 天或反复回热仍有风险"),
     ],
     // 判词未回来：进入 unassessed / 待核对（investigating 阶段）；
     // complete 阶段给出 relatedOnly（仅相关，不冒充证据位）。
@@ -170,9 +170,9 @@ export type FixtureName =
 function settlingBefore() {
   const atom = "隔夜菜会直接致癌";
   const pack = [
-    src("https://piyao.example.org/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌"),
+    src("https://www.who.int/overnight-dishes", "世卫组织辟谣平台：无「隔夜菜致癌」结论", "官方声明未提及隔夜菜直接致癌"),
     src("https://nutrition.example.cn/nitrite-facts", "食品科学解读：亚硝酸盐与致癌的量效关系", "正常冷藏隔夜菜亚硝酸盐远低于中毒剂量"),
-    src("https://diet.example.cn/leftover-guide", "膳食指南：隔夜菜冷藏期限与回热建议", "冷藏超过 3 天或反复回热仍有风险"),
+    src("https://dg.cnsoc.org/leftover-guide", "膳食指南：隔夜菜冷藏期限与回热建议", "冷藏超过 3 天或反复回热仍有风险"),
   ];
   return buildInvestigationSnapshot(
     {
@@ -189,9 +189,9 @@ function settlingBefore() {
 function settlingAfter() {
   const before = settlingBefore();
   const roleByUrl: Record<string, "support" | "contradict" | "context-only"> = {
-    "https://piyao.example.org/overnight-dishes": "contradict",
+    "https://www.who.int/overnight-dishes": "contradict",
     "https://nutrition.example.cn/nitrite-facts": "support",
-    "https://diet.example.cn/leftover-guide": "context-only",
+    "https://dg.cnsoc.org/leftover-guide": "context-only",
   };
   const urlById = Object.fromEntries(before.sources.map((s) => [s.id, s.url]));
   return {

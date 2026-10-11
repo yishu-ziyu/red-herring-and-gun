@@ -18,6 +18,7 @@ import { OriginalSentence, ResultView, UnspannedParts } from "./ResultView";
 import { ProgressView } from "./ProgressView";
 import { buildConclusionBrief } from "./ShareControl";
 import { IntakeImages } from "./IntakeImages";
+import { SourcePopoverProvider } from "./SourcePill";
 
 type InvestigationCanvasProps = {
   snapshot: InvestigationSnapshotV1;
@@ -117,6 +118,8 @@ export function InvestigationCanvas({
     complete || interrupted ? leftoverTextsForCanvas(snapshot.originalClaim, snapshot.claims) : [];
   const leftoverSentence = leftoverTexts.length > 0 ? leftoverGapSentence(leftoverTexts) : "";
   return (
+    // 进度页和结果页的引用共用一张引用卡；抽屉用 useRegisterDrawerOpener 自己登记，不用改这里。
+    <SourcePopoverProvider>
     <div
       className="gp-canvas"
       data-gp-phase={snapshot.phase}
@@ -266,6 +269,7 @@ export function InvestigationCanvas({
       </p>
 
     </div>
+    </SourcePopoverProvider>
   );
 }
 

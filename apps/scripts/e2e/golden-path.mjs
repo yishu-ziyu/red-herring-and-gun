@@ -164,7 +164,7 @@ async function checkStoppedMaterial(sourceId, passage) {
   const rows = page.locator(`[data-gp-evidence-row][data-gp-source-id="${sourceId}"]`);
   const row = rows.first();
   const visible = await row.isVisible().catch(() => false);
-  record("停止后已读正文可查看，且仍标为尚未核对", visible && (await row.innerText()).includes("尚未核对") && await row.getAttribute("data-gp-material-kind") === "page-excerpt");
+  record("停止后已读正文可查看，且仍标为没读完", visible && (await row.innerText()).includes("没读完") && await row.getAttribute("data-gp-material-kind") === "page-excerpt");
   if (visible) {
     await row.locator("summary").click();
     record("停止后的材料原地展开", await row.locator("[data-gp-material-text]").isVisible());
