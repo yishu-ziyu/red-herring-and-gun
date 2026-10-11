@@ -3,25 +3,27 @@
  * 依据直接摊在每一截下面，不再走抽屉。历史回看、追问轮用同一个版式。
  * 版式是 2026-10-10 用户选的头版式（#150，DECISIONS.md）：大字结论在上，各截不套卡片，证据像脚注。
  */
-import { useState } from "react";
-import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSnapshotV1, InvestigationSource } from "../lib/investigation";
-import { materialKindLabel, materialRetrievedLabel, quoteLinkUrl, sourceReadStatus } from "../lib/investigation";
+import { useMemo, useState } from "react";
+import type { InvestigationClaim, InvestigationConflict, InvestigationEvidenceLink, InvestigationSnapshotV1, InvestigationSource, PublicActivity } from "../lib/investigation";
 import {
   CHECKABILITY_HINT,
   claimLabel,
-  domainOf,
+  JUDGMENT_LABEL,
   LABEL_TEXT,
   LABEL_TONE,
-  publishedDay,
-  PUBLISHED_UNKNOWN,
-  ROLE_LABEL,
   type LabelKey,
 } from "./snapshotUi";
+import { Icon } from "./Icon";
+import { journeyCopy } from "./journeyCopy";
+import { AllSourcesButton, EvidenceProvenance } from "./SourceDrawer";
+import { SourceCitation } from "./SourcePill";
+import { claimSourceRelations, publisherOf, relationText, roleRank } from "./sourceUi";
 import { ShareControl } from "./ShareControl";
 import "./result.css";
 
 type ResultViewProps = {
   snapshot: InvestigationSnapshotV1;
+  activities?: PublicActivity[];
   claims: InvestigationClaim[];
   label: LabelKey;
   /** 结论第一句（标签后面那句）。 */
@@ -39,6 +41,7 @@ type ResultViewProps = {
 
 export function ResultView({
   snapshot,
+  activities,
   claims,
   label,
   lead,
@@ -51,35 +54,56 @@ export function ResultView({
   brief,
 }: ResultViewProps) {
   const day = checkedDay(snapshot.checkedAt);
+  const citations = useMemo(() => {
+    const seen = new Set<string>();
+    return claims.flatMap((claim, index) => claimSourceRelations(claim, index + 1, snapshot.sources))
+      .sort((a, b) => roleRank(a.role) - roleRank(b.role))
+      .filter(({ source }) => !seen.has(source.id) && Boolean(seen.add(source.id)));
+  }, [claims, snapshot.sources]);
+  const rationale = withoutReferenceMarkers(snapshot.conclusion?.rationale ?? "");
+  const boundaries = snapshot.conclusion?.boundaries.filter((text) => text.trim()) ?? [];
   return (
     <div className="gp-result" data-gp-result>
+      <RunSummary snapshot={snapshot} claims={claims} activities={activities} />
       <section className="gp-result-verdict" aria-label="结论" data-gp-conclusion>
-        <p className="gp-eyebrow" aria-hidden="true">结论</p>
         <div data-gp-direct-answer>
-          <span className={`gp-verdict-word gp-tone--${LABEL_TONE[label]}`} data-gp-conclusion-label={label}>
-            {LABEL_TEXT[label]}
-          </span>
-          <p className="gp-result-headline" data-gp-conclusion-reason={hasReason ? "" : undefined}>
-            {lead}
-          </p>
+          <div className={`gp-result-label gp-tone--${LABEL_TONE[label]}`}>
+            <span className="gp-result-rule" aria-hidden="true" />
+            <span className={`gp-label gp-label--${LABEL_TONE[label]}`} data-gp-conclusion-label={label}>
+              {LABEL_TEXT[label]}
+            </span>
+          </div>
+          <h2 className="gp-result-headline" data-gp-conclusion-reason={hasReason ? "" : undefined}>
+            {withoutReferenceMarkers(lead)}
+          </h2>
         </div>
+        {rationale || citations.length > 0 ? (
+          <p className="gp-result-rationale">
+            {rationale}<SourceCitation items={citations} />
+          </p>
+        ) : null}
+        <div className="gp-result-meta">
+          {day ? <span>{day} 查完</span> : null}
+          <AllSourcesButton sources={snapshot.sources} claims={claims} />
+        </div>
+        {boundaries.length > 0 ? (
+          <div className="gp-result-care"><b>问题在哪</b><span>{boundaries.map(withoutReferenceMarkers).join(" ")}</span></div>
+        ) : null}
         {leftoverNote ? (
           <p className="gp-result-note" data-gp-leftover-gap>
             {leftoverNote}
           </p>
         ) : null}
-        <p className="gp-result-meta">
-          {claims.length > 0 ? `查了 ${claims.length} 截` : ""}
-          {claims.length > 0 && day ? " · " : ""}
-          {day ? `核查于 ${day}` : ""}
-        </p>
       </section>
 
       {claims.length > 0 ? (
-        <section className="gp-result-parts" aria-label="每一截的判断和依据">
-          {claims.map((claim, index) => (
-            <PartCard key={claim.id} claim={claim} index={index} sources={snapshot.sources} />
-          ))}
+        <section className="gp-result-parts" aria-label="分开来看">
+          <h2 className="gp-result-section">分开来看</h2>
+          <div className="gp-result-reading">
+            {claims.map((claim, index) => (
+              <PartCard key={claim.id} claim={claim} index={index} sources={snapshot.sources} conflicts={snapshot.conflicts} />
+            ))}
+          </div>
         </section>
       ) : null}
 
@@ -92,6 +116,40 @@ export function ResultView({
       />
     </div>
   );
+}
+
+function RunSummary({ snapshot, claims, activities }: Pick<ResultViewProps, "snapshot" | "claims" | "activities">) {
+  const read = snapshot.sources.filter((source) => source.fetchStatus === "fetched" && source.excerptKind === "page-excerpt").length;
+  const summary = `查过了：拆成 ${snapshot.claims.length} 个要点，找到 ${snapshot.sources.length} 份资料，读完 ${read} 份`;
+  const items = activities?.map((activity) => activityText(activity, claims)).filter(Boolean) ?? [];
+  if (items.length === 0) return <p className="gp-result-done" role="status" aria-live="polite">{summary}</p>;
+  return (
+    <details className="gp-result-done">
+      <summary><Icon name="chevron-right" className="gp-chevron" />{summary}</summary>
+      <ol>{items.map((text, index) => <li key={index}><em>{String(index + 1).padStart(2, "0")}</em>{text}</li>)}</ol>
+    </details>
+  );
+}
+
+function activityText(activity: PublicActivity, claims: InvestigationClaim[]): string {
+  const claimNo = claims.findIndex((claim) => activity.claimIds.includes(claim.id)) + 1;
+  const { title, claimText, role, judgment, description } = activity.payload;
+  switch (activity.kind) {
+    case "claim_decomposed": return claimNo && claimText ? `拆出第 ${claimNo} 个要点：${claimText}` : "";
+    case "source_found": return title ? `找到《${title}》` : "";
+    case "source_checked": return claimNo && title && (role === "support" || role === "contradict" || role === "context-only")
+      ? `读完《${title}》，${relationText(role, claimNo)}` : "";
+    case "evidence_assessed": return claimNo && Object.hasOwn(JUDGMENT_LABEL, judgment)
+      ? `判断第 ${claimNo} 个要点：${JUDGMENT_LABEL[judgment as keyof typeof JUDGMENT_LABEL]}` : "";
+    case "gap_identified": return claimNo && description ? `记下第 ${claimNo} 个要点${journeyCopy.gapLine(description)}` : "";
+    case "conflict_detected": return claimNo ? `第 ${claimNo} 个要点的资料一边支持、一边反驳` : "";
+    case "run_completed": return activity.payload.phase === "complete" ? "全部查完，写出结论" : "";
+    default: return "";
+  }
+}
+
+function withoutReferenceMarkers(text: string): string {
+  return text.replace(/\[\d+(?:\s*[,，、–-]\s*\d+)*\]/g, "").trim();
 }
 
 type SentenceLayout = {
@@ -168,121 +226,66 @@ export function UnspannedParts({ text, claims }: { text: string; claims: Investi
   );
 }
 
-function PartCard({ claim, index, sources }: { claim: InvestigationClaim; index: number; sources: InvestigationSource[] }) {
+function PartCard({ claim, index, sources, conflicts }: {
+  claim: InvestigationClaim;
+  index: number;
+  sources: InvestigationSource[];
+  conflicts: InvestigationConflict[];
+}) {
   const label = claimLabel(claim);
-  const sourceOf = (link: InvestigationEvidenceLink) => sources.find((s) => s.id === link.sourceId);
-  const decisive = claim.evidence.filter(
-    (link) => (link.role === "contradict" || link.role === "support") && sourceOf(link),
-  );
-  const decisiveIds = new Set(decisive.map((link) => link.sourceId));
-  const seen = new Set<string>();
-  const related = claim.evidence.filter((link) => {
-    if (link.role === "contradict" || link.role === "support") return false;
-    if (decisiveIds.has(link.sourceId) || seen.has(link.sourceId) || !sourceOf(link)) return false;
-    seen.add(link.sourceId);
-    return true;
-  });
-  const reason = claim.reason?.trim() || (claim.checkability !== "checkable" ? CHECKABILITY_HINT[claim.checkability] : "");
-  const boundary = claim.boundary?.trim().replace(/^不能推出[：:]?/, "") ?? "";
-
+  const items = useMemo(() => claimSourceRelations(claim, index + 1, sources), [claim, index, sources]);
+  const reason = withoutReferenceMarkers(claim.reason?.trim() || CHECKABILITY_HINT[claim.checkability]);
+  const boundary = claim.boundary?.trim() ?? "";
+  const claimConflicts = conflicts.filter((conflict) => conflict.claimId === claim.id);
   return (
     <article className="gp-part" data-gp-claim-id={claim.id}>
       <div className="gp-part-head">
-        <span className="gp-part-title">
-          <span className="gp-part-no" aria-hidden="true">{index + 1}</span>
-          <span className="gp-part-text" data-gp-part-text>{claim.text}</span>
+        <span>{journeyCopy.partHeading(index + 1)}</span>
+        <span className={`gp-label gp-label--${label ? LABEL_TONE[label] : "muted"}`} data-gp-claim-label={label ?? undefined}>
+          {label ? LABEL_TEXT[label] : journeyCopy.partInterrupted}
         </span>
-        {label ? (
-          <span className={`gp-label gp-label--${LABEL_TONE[label]}`} data-gp-claim-label={label}>
-            {LABEL_TEXT[label]}
-          </span>
-        ) : null}
       </div>
-      {reason ? (
-        <p className="gp-part-reason" data-gp-claim-reason={claim.reason ? "" : undefined}>
-          {reason}
+      <h3 className="gp-part-text" data-gp-part-text>{claim.text}</h3>
+      {reason || items.length > 0 ? (
+        <p className="gp-part-reason">
+          <span data-gp-claim-reason={claim.reason ? "" : undefined}>{reason}</span>
+          <SourceCitation items={items} />
         </p>
       ) : null}
-
-      {decisive.length > 0 ? (
-        <ul className="gp-part-evidence">
-          {decisive.map((link, i) => (
-            <EvidenceRow key={`${link.sourceId}:${link.role}:${i}`} claimId={claim.id} link={link} source={sourceOf(link)!} />
-          ))}
-        </ul>
-      ) : (
-        <p className="gp-part-empty">没有找到直接支持或反驳这一截的依据。</p>
-      )}
-
-      {related.length > 0 ? (
-        <details className="gp-part-related" data-gp-related>
-          <summary>另有 {related.length} 条材料，没有用来判断</summary>
-          <ul>
-            {related.map((link) => {
-              const source = sourceOf(link)!;
-              return (
-                <EvidenceRow key={link.sourceId} claimId={claim.id} link={link} source={source} />
-              );
-            })}
-          </ul>
-        </details>
-      ) : null}
-
+      {claimConflicts.map((conflict) => (
+        <p key={conflict.id} className="gp-part-note gp-part-conflict" data-gp-part-conflict>
+          <Icon name="split" /><span>{conflictText(conflict, sources)}</span>
+        </p>
+      ))}
+      {claim.gaps.filter((gap) => gap.status === "open").map((gap) => (
+        <p key={gap.id} className="gp-part-note gp-part-gap" data-gp-part-gap>
+          <Icon name="circle-alert" /><span>{journeyCopy.gapLine(withoutReferenceMarkers(gap.description))}</span>
+        </p>
+      ))}
       {boundary ? (
-        <p className="gp-part-boundary" data-gp-part-boundary>
-          不能推出：{boundary}
+        <p className="gp-part-note gp-part-boundary" data-gp-part-boundary>
+          <Icon name="info" /><span>{journeyCopy.boundaryLine(withoutReferenceMarkers(boundary))}</span>
         </p>
       ) : null}
     </article>
   );
 }
 
+function conflictText(conflict: InvestigationConflict, sources: InvestigationSource[]): string {
+  if (conflict.reasonStatus === "known" && conflict.reason?.trim()) {
+    return withoutReferenceMarkers(`${conflict.summary} ${conflict.reason}`);
+  }
+  const side = (position: "support" | "contradict") => {
+    const entry = conflict.sides.find((item) => item.position === position);
+    const publishers = sources.filter((source) => entry?.sourceIds.includes(source.id)).map(publisherOf);
+    return publishers.length > 0 ? { publisher: publishers.join("、"), summary: withoutReferenceMarkers(entry?.summary ?? "") } : undefined;
+  };
+  return journeyCopy.conflictLine(side("support"), side("contradict"));
+}
+
 export function EvidenceRow({ claimId, link, source }: { claimId: string; link: InvestigationEvidenceLink; source: InvestigationSource }) {
   // 引文只保证出自这条依据实际取得的文字；摘要不能冒充网页正文。
-  const quote = link.quote?.trim() ?? "";
-  const summary = quote ? "" : link.relationReason?.trim() ?? "";
-  const href = source.url ? quoteLinkUrl(source.url, link.excerptKind === "page-excerpt" ? quote : "") : "";
-  const day = publishedDay(source);
-  const passage = link.passage?.trim() ?? "";
-  return (
-    <li className="gp-ev" data-gp-evidence-row data-gp-role={link.role} data-gp-evidence-claim={claimId} data-gp-source-id={source.id} data-gp-material-kind={link.excerptKind ?? "unknown"}>
-      {quote ? <span className="gp-ev-kind">{materialKindLabel(link.excerptKind)}中的摘句</span> : null}
-      {quote ? (
-        <q className="gp-ev-quote" data-gp-evidence-quote>{quote}</q>
-      ) : summary ? (
-        <span className="gp-ev-summary" data-gp-evidence-summary>
-          <span className="gp-ev-summary-label">我们的概括</span>
-          {summary}
-        </span>
-      ) : null}
-      <span className="gp-ev-src">
-        <span className={`gp-ev-role is-${link.role}`}>{ROLE_LABEL[link.role]}</span>
-        {href ? (
-          <a href={href} target="_blank" rel="noopener noreferrer" data-gp-evidence-link>
-            {source.title?.trim() || sourceName(source)} ↗
-          </a>
-        ) : (
-          <span>{sourceName(source)}</span>
-        )}
-        <span className={day ? "gp-ev-date" : "gp-ev-date is-unknown"} data-gp-published={day ?? ""}>
-          {day ?? PUBLISHED_UNKNOWN}
-        </span>
-        {source.reachable === false ? <span className="gp-ev-dead">打不开</span> : null}
-        {link.provenance === "prior-round" ? <span className="gp-ev-prior" data-gp-prior-round-mark>依据来自刚才那一轮</span> : null}
-      </span>
-      <p className="gp-ev-status" data-gp-material-status>
-        资料状态：{sourceReadStatus(source)}
-        {source.fetchNote ? `；${source.fetchNote}` : ""}
-        {link.excerptKind === "search-snippet" && source.excerptKind === "page-excerpt" ? "。这条依据核对的是搜索摘要，不是已取得的正文" : ""}
-      </p>
-      <details className="gp-ev-material" data-gp-material>
-        <summary>查看取得的材料</summary>
-        <p className="gp-ev-status">这条依据的材料：{materialKindLabel(link.excerptKind)}</p>
-        {passage ? <blockquote data-gp-material-text>{passage}</blockquote> : <p>这条依据没有保存可检查的上下文。</p>}
-        <p className="gp-ev-status">来源材料{materialRetrievedLabel(source.retrievedAt)}</p>
-      </details>
-    </li>
-  );
+  return <EvidenceProvenance claimId={claimId} link={link} source={source} />;
 }
 
 function ResultActions({
@@ -301,37 +304,39 @@ function ResultActions({
   };
   return (
     <section className="gp-result-actions" aria-label="接下来" data-gp-result-actions>
-      <p className="gp-eyebrow" aria-hidden="true">接着问</p>
-      {!readOnly && onFollowUp ? (
-        <form
-          className="gp-result-ask"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          <textarea
-            value={question}
-            rows={1}
-            onChange={(event) => setQuestion(event.target.value)}
-            placeholder="针对这份调查继续问"
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                submit();
-              }
+      <div className="gp-result-ask-box">
+        {!readOnly && onFollowUp ? (
+          <form
+            className="gp-result-ask"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit();
             }}
-          />
-          <button type="submit" className="gp-btn gp-btn--primary" disabled={!question.trim()}>
-            追问
+          >
+            <textarea
+              value={question}
+              rows={2}
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder="针对这份调查继续问…"
+              aria-label="针对这份调查继续问"
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  submit();
+                }
+              }}
+            />
+            <button type="submit" className="gp-btn gp-btn--primary" disabled={!question.trim()}>
+              追问
+            </button>
+          </form>
+        ) : null}
+        <div className="gp-result-row">
+          {shareRunId ? <ShareControl runId={shareRunId} brief={brief} /> : null}
+          <button type="button" className="gp-btn gp-result-new" onClick={onNewInvestigation}>
+            新调查
           </button>
-        </form>
-      ) : null}
-      <div className="gp-result-row">
-        {shareRunId ? <ShareControl runId={shareRunId} brief={brief} /> : null}
-        <button type="button" className="gp-btn gp-result-new" onClick={onNewInvestigation}>
-          新调查
-        </button>
+        </div>
       </div>
     </section>
   );
@@ -342,15 +347,11 @@ function partNumber(index: number): string {
   return index < 20 ? String.fromCharCode(0x2460 + index) : `${index + 1}.`;
 }
 
-function sourceName(source: InvestigationSource): string {
-  return source.publisher?.trim() || (source.url ? domainOf(source.url) : "") || source.title?.trim() || source.id;
-}
-
 function checkedDay(iso: string | undefined): string {
   if (!iso) return "";
   const time = Date.parse(iso);
   if (Number.isNaN(time)) return "";
   const d = new Date(time);
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getFullYear()} 年 ${d.getMonth() + 1} 月 ${d.getDate()} 日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
