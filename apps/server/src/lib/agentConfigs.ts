@@ -230,14 +230,19 @@ const subclaimVerdictsSchema = {
       },
       reason: {
         type: "string",
-        description: "一句中文理由，说明为什么是这个标签；只用本轮材料，不写 [n]，不写标签词本身。",
+        description:
+          "一句中文理由，说明为什么是这个标签。只用本轮资料，不写 [n]，不写标签词本身。STE 要求：每句不超过 25 个字（「」《》里的引文、数字各算 1 个字），不用分号，用「资料」「依据」不用「来源」「证据」「材料」，不用「完全」「一刀切」这类词。",
       },
       evidence: {
         type: "string",
         description:
-          "Evidence prose for this atom. [n] is 1-based over supportingSources then contradictingSources. If supportingSources is empty and contradictingSources is not, [1] is the first contradicting source. Do not invent numbers.",
+          "这一要点的依据正文。[n] 从 1 开始按 supportingSources 再 contradictingSources 顺序编号。若 supportingSources 为空且 contradictingSources 非空，[1] 对应首个 contradictingSources。不编造编号。STE 要求：每句不超过 25 个字（「」《》里的引文、数字各算 1 个字），不用分号，用「资料」「依据」不用「来源」「证据」「材料」，不用「完全」「一刀切」这类词。",
       },
-      boundary: { type: "string" },
+      boundary: {
+        type: "string",
+        description:
+          "说明当前依据不能推出的部分、适用条件或边界。STE 要求：每句不超过 25 个字（「」《》里的引文、数字各算 1 个字），不用分号，用「资料」「依据」不用「来源」「证据」「材料」，不用「完全」「一刀切」这类词。",
+      },
       contradictedElement: {
         type: "string",
         description:
@@ -256,7 +261,12 @@ const subclaimVerdictsSchema = {
         description:
           "Sources that refute this claim atom (the atom is false according to this source). When verdict=false, cited sources belong here.",
       },
-      evidenceGaps: { type: "array", items: { type: "string" } },
+      evidenceGaps: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "还缺的资料，每项一句。STE 要求：每句不超过 25 个字（「」《》里的引文、数字各算 1 个字），不用分号，用「资料」「依据」不用「来源」「证据」「材料」，不用「完全」「一刀切」这类词。",
+      },
     },
     required: ["claimAtom", "verdict", "reason", "evidence", "boundary"],
   },
@@ -275,7 +285,7 @@ const factCheckerSchema = {
     verdictReason: {
       type: "string",
       description:
-        "一句中文：各截的判断怎么合成整句判断。不写标签词，不重复某一截的 reason，只用本轮材料，不写 [n]。",
+        "一句中文，不超过 25 个字（引文算 1 个字），说明各要点的判断怎么合成整句结论，不写标签词，不重复某个要点的 reason，只用本轮资料，不写 [n]，不用分号。",
     },
   },
   required: ["factCheckResult", "confidence", "sources", "keyFindings", "counterEvidence", "subclaimVerdicts", "verdictReason"],
@@ -482,8 +492,25 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "6. 原句断言「已经证明」某功效，而权威来源明确说该功效未经证实：判 false，来源放 contradictingSources；原句只说「有效果」，而来源只说「未证实、证据不足」：判 unresolved，不判 false。",
       "",
       "【整句理由 verdictReason — 强制】",
-      "整句标签由系统按各截标签推出，显示在结论开头；你写标签后面那一句理由 verdictReason：一句中文，说明各截的判断怎么合成整句判断（例如：主要说法被权威辟谣反驳；另一截只在某条件下有一点道理，说得太重）。只有一截时，说明这一截为什么决定了整句。只写一句，不超过 60 字；不重复各截的证据细节；不用「原子」「命题」「判定为」这类内部用语，用户看不懂。",
-      "不写任何标签词，不重复某一截 reason 的原话，只用本轮输入里的材料，不凭记忆补充事实，不写 [n]。",
+      "整句标签由系统按各要点标签推出，显示在结论开头；你写标签后面那一句理由 verdictReason：一句中文，说明各要点的判断怎么合成整句结论（例如：疾控中心通报反驳了主要说法）。只有一个要点时，说明这一要点为什么决定了整句。只写一句，不超过 25 个字（引文算 1 个字）；不重复各要点的依据细节；不用「原子」「命题」「截」「判定为」这类内部用语，用户看不懂。",
+      "不写任何标签词，不重复某个要点 reason 的原话，只用本轮输入里的资料，不凭记忆补充事实，不写 [n]。",
+      "",
+      "【写给用户的文字 / STE 规则 — 强制】",
+      "verdictReason、subclaimVerdicts[].reason、evidence、boundary、evidenceGaps 这些字段每一句都会原样显示给普通读者，句子长了读者读不完，必须遵守。",
+      "1. 不用分号（；和 ;）。要说两件事就写两句，用句号分开。",
+      "2. 一句只说一件事。描述句不超过 25 个字。计字数时，「」或《》里的引文、数字、英文专有名词各算 1 个字。",
+      "3. 条件放在前面：先写「如果……」「在……时」，再写结果。",
+      "4. 用主动语态，说清谁做了什么（例：「国家医保局发了这份通知」，不写「该通知已被发布」）。",
+      "5. 不用习语、比喻、俚语（如「站得住」「靠谱」「一刀切」「打脸」）。",
+      "6. 用核准词：用户的整句话叫「说法」，拆出的部分叫「要点」，网页或文件叫「资料」，用来判断的资料叫「依据」，整句结果叫「结论」，每个要点的结果叫「判断」。不写「命题」「原子」「截」「来源」「材料」「证据」「核查」「核实」「判定」。但「」里逐字引用的原句和资料原文不改。",
+      "7. 不写无法证明的最高级和绝对词（如「最权威」「完全」「彻底」「100%」「绝对」），除非是逐字引用。",
+      "改写示例（不要这样写 → 这样写）：",
+      "- 第 1 组：",
+      "  不要这样写：经多个权威来源确认，某市图书馆周末延长开放时间服务调整方案已完成发布并开始执行。",
+      "  这样写：市图书馆发布了周末开馆通告。市图书馆把闭馆时间推迟两小时。",
+      "- 第 2 组：",
+      "  不要这样写：官方来源证实周末延时开馆为属实；网传通宵开放属于不实说法。",
+      "  这样写：市图书馆资料只说明延长两小时，没有通宵开放。",
       "",
       "【预测原子 / 现在时抓手 — 强制】",
       "若某 claimAtom 指向未来（type 为 prediction，或断言含将/会/未来）：只核查当下能点开的出处——公开承诺、正式文件、已发布预测、已经作出的决定。",
@@ -498,7 +525,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "5. 两桶都空时，evidence 不得出现任何 [n]。不得把反驳材料改塞进 supportingSources 只为了能写 [n]。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"factCheckResult\": \"partial\",\n  \"confidence\": \"medium\",\n  \"sources\": [\"https://example.com/a\"],\n  \"keyFindings\": [\"发现1\", \"发现2\"],\n  \"counterEvidence\": [\"反驳证据1\", \"反驳证据2\"],\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"原子命题1\", \"verdict\": \"true\", \"reason\": \"国家卫健委通报证实了这一点。\", \"evidence\": \"官方通报不支持该绝对化表述[1]。\", \"boundary\": \"边界\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"来源标题\", \"snippet\": \"从该来源原文逐字复制的那一句\"}], \"contradictingSources\": [], \"evidenceGaps\": []},\n    {\"claimAtom\": \"原子命题2\", \"verdict\": \"unresolved\", \"reason\": \"这次只找到转述，没有找到官方公告。\", \"evidence\": \"\", \"boundary\": \"暂无可靠证据\", \"supportingSources\": [], \"contradictingSources\": [], \"evidenceGaps\": [\"缺少官方公告\"]}\n  ]\n}",
+      "{\n  \"factCheckResult\": \"partial\",\n  \"confidence\": \"medium\",\n  \"sources\": [\"https://example.com/a\"],\n  \"keyFindings\": [\"发现1\", \"发现2\"],\n  \"counterEvidence\": [\"反驳证据1\", \"反驳证据2\"],\n  \"verdictReason\": \"国家医保局发文支持了主要说法。\",\n  \"subclaimVerdicts\": [\n    {\"claimAtom\": \"要点1\", \"verdict\": \"true\", \"reason\": \"国家医保局发了这份通知。\", \"evidence\": \"官方通报不支持这个说法[1]。\", \"boundary\": \"这不能推出对所有人有效。\", \"supportingSources\": [{\"url\": \"https://example.com/a\", \"title\": \"资料标题\", \"snippet\": \"从该资料原文逐字复制的那一句\"}], \"contradictingSources\": [], \"evidenceGaps\": []},\n    {\"claimAtom\": \"要点2\", \"verdict\": \"unresolved\", \"reason\": \"我们只找到转述资料，没找到官方公告。\", \"evidence\": \"\", \"boundary\": \"还没找到公开依据。\", \"supportingSources\": [], \"contradictingSources\": [], \"evidenceGaps\": [\"缺少官方通知。\"]}\n  ]\n}",
       "",
       "factCheckResult 必须是 'true'、'false'、'partial'、'unverified' 之一。",
       "confidence 必须是 'low'、'medium'、'high' 之一。",
