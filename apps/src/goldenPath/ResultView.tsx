@@ -120,7 +120,7 @@ export function ResultView({
 
 function RunSummary({ snapshot, claims, activities }: Pick<ResultViewProps, "snapshot" | "claims" | "activities">) {
   const read = snapshot.sources.filter((source) => source.fetchStatus === "fetched" && source.excerptKind === "page-excerpt").length;
-  const summary = `查过了：拆成 ${snapshot.claims.length} 个要点，找到 ${snapshot.sources.length} 份资料，读完 ${read} 份`;
+  const summary = `查过了：拆成 ${snapshot.claims.length} 个要点，找到 ${snapshot.sources.length} 份资料${read > 0 ? `，读完 ${read} 份` : ""}`;
   const items = activities?.map((activity) => activityText(activity, claims)).filter(Boolean) ?? [];
   if (items.length === 0) return <p className="gp-result-done" role="status" aria-live="polite">{summary}</p>;
   return (
@@ -234,7 +234,9 @@ function PartCard({ claim, index, sources, conflicts }: {
 }) {
   const label = claimLabel(claim);
   const items = useMemo(() => claimSourceRelations(claim, index + 1, sources), [claim, index, sources]);
-  const reason = withoutReferenceMarkers(claim.reason?.trim() || CHECKABILITY_HINT[claim.checkability]);
+  // 没有整截理由时用依据里的概括（和进度页同一个来源）：依据列表挪进了抽屉，这里不能只剩一个引用。
+  const finding = claim.evidence.find((link) => link.finding?.trim())?.finding?.trim();
+  const reason = withoutReferenceMarkers(claim.reason?.trim() || finding || CHECKABILITY_HINT[claim.checkability]);
   const boundary = claim.boundary?.trim() ?? "";
   const claimConflicts = conflicts.filter((conflict) => conflict.claimId === claim.id);
   return (

@@ -6,7 +6,7 @@
  * 调查中和查完同一套头版式（#150）：调查中用 ProgressView 一行行填，不展示执行过程。
  */
 import { useEffect, useState } from "react";
-import type { InvestigationSnapshotV1 } from "../lib/investigation";
+import type { InvestigationSnapshotV1, PublicActivity } from "../lib/investigation";
 import { judgmentToLabel } from "../lib/investigation";
 import { scrubFaceText } from "../lib/scrubFace";
 import { useUiLang } from "../lib/useUiLang";
@@ -20,6 +20,7 @@ import { journeyCopy } from "./journeyCopy";
 import { buildConclusionBrief } from "./ShareControl";
 import { IntakeImages } from "./IntakeImages";
 import { SourcePopoverProvider } from "./SourcePill";
+import { AllSourcesButton } from "./SourceDrawer";
 
 type InvestigationCanvasProps = {
   snapshot: InvestigationSnapshotV1;
@@ -44,6 +45,8 @@ type InvestigationCanvasProps = {
   images?: CaseImage[];
   /** 这一轮在服务端的调查编号：有才显示「分享」（老历史没有）。 */
   shareRunId?: string;
+  /** 这一轮的公开活动记录：结果页「查过了」用它列出步骤。历史回看没有，就只写计数。 */
+  activities?: PublicActivity[];
 };
 
 const COMPLETION_HOLD_MS = 1200;
@@ -63,6 +66,7 @@ export function InvestigationCanvas({
   readOnly = false,
   images,
   shareRunId,
+  activities,
 }: InvestigationCanvasProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
@@ -209,6 +213,7 @@ export function InvestigationCanvas({
             onFollowUp={onFollowUp}
             onNewInvestigation={onBackHome}
             shareRunId={shareRunId}
+            activities={activities}
             brief={buildConclusionBrief({
               originalClaim: snapshot.originalClaim,
               directAnswer: displayDirectAnswer,
@@ -238,6 +243,7 @@ export function InvestigationCanvas({
             {interruptedAnswer ? (
               <p className="gp-interrupted-answer" data-gp-interrupted-answer>{interruptedAnswer}</p>
             ) : null}
+            {snapshot.sources.length > 0 ? <AllSourcesButton sources={snapshot.sources} claims={snapshot.claims} /> : null}
             <div className="gp-interrupted-actions" hidden={readOnly}>
               <button type="button" className="gp-primary-btn" onClick={onReverify}>{journeyCopy.retry}</button>
               <button type="button" className="gp-ghost-btn" onClick={onBackHome}>{copy.backHome}</button>

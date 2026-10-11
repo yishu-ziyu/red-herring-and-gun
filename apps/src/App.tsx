@@ -352,6 +352,7 @@ function ProductApp() {
               linkUnreachable={caseIntakeFailedLinks(active.intake).length > 0}
               images={archivedRound || active.restored ? undefined : active.intake?.images}
               shareRunId={archivedRound ? archivedRound.runId : currentRunId(active, run.state.runId)}
+              activities={archivedRound || active.restored ? undefined : run.state.activities}
             />
           </>
         ) : showTimeoutPending ? (

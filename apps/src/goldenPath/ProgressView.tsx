@@ -294,7 +294,8 @@ function PartRow({
         <Grow on={Boolean(reason)}>
           <p className="gp-progress-reason">{reason}</p>
         </Grow>
-        <Grow on={pills.length > 0}>
+        {/* 停下以后下面列出完整的依据行，药丸就不再重复列一遍：同一份资料只出现在一处。 */}
+        <Grow on={pills.length > 0 && !(frozen && claim.evidence.length > 0)}>
           <div className="gp-source-pills-row gp-progress-pills">
             {pills.map(({ source, role, reading, delay }) => (
               <SourcePill key={source.id} source={source} role={role} state={reading ? "reading" : undefined} entering enterDelayMs={delay} />

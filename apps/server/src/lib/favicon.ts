@@ -13,7 +13,7 @@ import type net from "node:net";
 import zlib from "node:zlib";
 import type { Readable } from "node:stream";
 import type { Request, Response } from "express";
-import { isBlockedIp } from "./ssrfGuard.js";
+import { isBlockedIp } from "./ipGuard.js";
 import { clientIpKey } from "./checkQuota.js";
 
 // 名字里不能带 bot：实测 www.kepuchina.cn 的防火墙对含 bot 的 UA 一律回 502
@@ -80,6 +80,16 @@ export function normalizeFaviconHost(raw: unknown): string | null {
   return host;
 }
 
+/**
+ * 有些开发沙箱用「假 IP」DNS：所有域名都解析到 198.18.0.0/15，再由出口代理按域名转发。
+ * 这一段在公网上不可路由，正式环境必须拦；只有显式设置 FAVICON_TRUST_FAKE_IP=1 的本机开发才放行这一段，其余内网段照拦。
+ */
+function isTrustedFakeIp(address: string): boolean {
+  if (process.env.FAVICON_TRUST_FAKE_IP !== "1") return false;
+  const m = /^198\.(18|19)\.\d{1,3}\.\d{1,3}$/.exec(address);
+  return Boolean(m);
+}
+
 // ── 带 SSRF 防护的单次请求 ───────────────────────────────────
 
 type Pinned = { address: string; family: number };
@@ -99,7 +109,7 @@ async function resolveVetted(host: string, deadline: number): Promise<Pinned> {
   }
   if (addresses.length === 0) throw new FaviconMiss("dns-empty");
   // 任何一个地址不合格就整体拒绝：只挑合格的那个连，等于允许攻击者用多条记录混进内网地址试探
-  if (addresses.some((entry) => isBlockedIp(entry.address))) throw new FaviconMiss("dns-blocked");
+  if (addresses.some((entry) => isBlockedIp(entry.address) && !isTrustedFakeIp(entry.address))) throw new FaviconMiss("dns-blocked");
   // 优先 IPv4：不少服务器没有可用的 IPv6 出口，先连 IPv6 只会白白超时
   return addresses.find((entry) => entry.family === 4) ?? addresses[0]!;
 }
