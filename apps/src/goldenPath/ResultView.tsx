@@ -5,7 +5,7 @@
  */
 import { useState } from "react";
 import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSnapshotV1, InvestigationSource } from "../lib/investigation";
-import { quoteLinkUrl } from "../lib/investigation";
+import { materialKindLabel, materialRetrievedLabel, quoteLinkUrl, sourceReadStatus } from "../lib/investigation";
 import {
   CHECKABILITY_HINT,
   claimLabel,
@@ -96,14 +96,14 @@ export function ResultView({
 
 type SentenceLayout = {
   pieces: Array<{ text: string; part: { index: number; claim: InvestigationClaim } | null }>;
-  /** 没有可用下标的截：原句里找不到它的原字。 */
+  /** 没有可靠定位的截；不能据此判断用户没有说过。 */
   unspanned: Array<{ index: number; claim: InvestigationClaim }>;
 };
 
 /**
  * 原句上每一截的位置只认 originalSpan，且那段原字必须出现在这一截的文字里；不猜、不模糊匹配。
  * 模型常给一截补上主语（原句「等于吃毒药」，这一截写「隔夜菜等于吃毒药」），这时只画原句里那几个字。
- * 两截位置重叠时只画编号靠前的那一截；后一截的原字确实在原句里，所以也不放进「没有直接写出」那一行。
+ * 两截位置重叠时只画编号靠前的那一截；后一截的原字仍在原句里，不列入定位失败。
  */
 function layoutSentence(text: string, claims: InvestigationClaim[]): SentenceLayout {
   const accepted: Array<{ start: number; end: number; index: number; claim: InvestigationClaim }> = [];
@@ -156,13 +156,13 @@ export function OriginalSentence({ text, claims }: { text: string; claims: Inves
   );
 }
 
-/** 原句里找不到原字的截，列成一行放在原句下面；都找得到时不显示。 */
+/** 定位失败只说明技术限制，不把它解释成关于用户原意的判断。 */
 export function UnspannedParts({ text, claims }: { text: string; claims: InvestigationClaim[] }) {
   const { unspanned } = layoutSentence(text, claims);
   if (unspanned.length === 0) return null;
   return (
     <p className="gp-original-unspanned" data-gp-unspanned-parts>
-      原句没有直接写出、但判断要用到：
+      以下条目暂未可靠定位到原句：
       {unspanned.map(({ index, claim }) => `${partNumber(index)}${claim.text}`).join("；")}
     </p>
   );
@@ -216,21 +216,12 @@ function PartCard({ claim, index, sources }: { claim: InvestigationClaim; index:
 
       {related.length > 0 ? (
         <details className="gp-part-related" data-gp-related>
-          <summary>另有 {related.length} 条只和话题相关，没有用来判断</summary>
+          <summary>另有 {related.length} 条材料，没有用来判断</summary>
           <ul>
             {related.map((link) => {
               const source = sourceOf(link)!;
-              const day = publishedDay(source);
               return (
-                <li key={link.sourceId} data-gp-related-row>
-                  {source.url ? (
-                    <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title?.trim() || domainOf(source.url)}</a>
-                  ) : (
-                    source.title?.trim() || source.id
-                  )}
-                  （{sourceName(source)}，
-                  <span data-gp-published={day ?? ""}>{day ?? PUBLISHED_UNKNOWN}</span>）
-                </li>
+                <EvidenceRow key={link.sourceId} claimId={claim.id} link={link} source={source} />
               );
             })}
           </ul>
@@ -246,14 +237,16 @@ function PartCard({ claim, index, sources }: { claim: InvestigationClaim; index:
   );
 }
 
-function EvidenceRow({ claimId, link, source }: { claimId: string; link: InvestigationEvidenceLink; source: InvestigationSource }) {
-  // 引号里只放核查时挑出、已核对逐字出自原文的那一句（quote.ts）；没有这一句就写我们的概括，不拿别的句子顶替。
+export function EvidenceRow({ claimId, link, source }: { claimId: string; link: InvestigationEvidenceLink; source: InvestigationSource }) {
+  // 引文只保证出自这条依据实际取得的文字；摘要不能冒充网页正文。
   const quote = link.quote?.trim() ?? "";
   const summary = quote ? "" : link.relationReason?.trim() ?? "";
-  const href = source.url ? quoteLinkUrl(source.url, quote) : "";
+  const href = source.url ? quoteLinkUrl(source.url, link.excerptKind === "page-excerpt" ? quote : "") : "";
   const day = publishedDay(source);
+  const passage = link.passage?.trim() ?? "";
   return (
-    <li className="gp-ev" data-gp-evidence-row data-gp-role={link.role} data-gp-evidence-claim={claimId} data-gp-source-id={source.id}>
+    <li className="gp-ev" data-gp-evidence-row data-gp-role={link.role} data-gp-evidence-claim={claimId} data-gp-source-id={source.id} data-gp-material-kind={link.excerptKind ?? "unknown"}>
+      {quote ? <span className="gp-ev-kind">{materialKindLabel(link.excerptKind)}中的摘句</span> : null}
       {quote ? (
         <q className="gp-ev-quote" data-gp-evidence-quote>{quote}</q>
       ) : summary ? (
@@ -266,7 +259,7 @@ function EvidenceRow({ claimId, link, source }: { claimId: string; link: Investi
         <span className={`gp-ev-role is-${link.role}`}>{ROLE_LABEL[link.role]}</span>
         {href ? (
           <a href={href} target="_blank" rel="noopener noreferrer" data-gp-evidence-link>
-            {sourceName(source)} ↗
+            {source.title?.trim() || sourceName(source)} ↗
           </a>
         ) : (
           <span>{sourceName(source)}</span>
@@ -277,6 +270,17 @@ function EvidenceRow({ claimId, link, source }: { claimId: string; link: Investi
         {source.reachable === false ? <span className="gp-ev-dead">打不开</span> : null}
         {link.provenance === "prior-round" ? <span className="gp-ev-prior" data-gp-prior-round-mark>依据来自刚才那一轮</span> : null}
       </span>
+      <p className="gp-ev-status" data-gp-material-status>
+        资料状态：{sourceReadStatus(source)}
+        {source.fetchNote ? `；${source.fetchNote}` : ""}
+        {link.excerptKind === "search-snippet" && source.excerptKind === "page-excerpt" ? "。这条依据核对的是搜索摘要，不是已取得的正文" : ""}
+      </p>
+      <details className="gp-ev-material" data-gp-material>
+        <summary>查看取得的材料</summary>
+        <p className="gp-ev-status">这条依据的材料：{materialKindLabel(link.excerptKind)}</p>
+        {passage ? <blockquote data-gp-material-text>{passage}</blockquote> : <p>这条依据没有保存可检查的上下文。</p>}
+        <p className="gp-ev-status">来源材料{materialRetrievedLabel(source.retrievedAt)}</p>
+      </details>
     </li>
   );
 }

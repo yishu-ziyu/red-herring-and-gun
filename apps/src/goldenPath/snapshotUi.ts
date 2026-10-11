@@ -20,7 +20,7 @@ export const ROLE_ORDER: EvidenceRole[] = ["contradict", "support", "unassessed"
 export const ROLE_LABEL: Record<EvidenceRole, string> = {
   support: "支持",
   contradict: "反驳",
-  unassessed: "待核对",
+  unassessed: "尚未核对",
   "context-only": "相关材料",
 };
 

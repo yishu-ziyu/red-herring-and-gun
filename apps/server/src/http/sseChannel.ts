@@ -5,7 +5,7 @@
 import type { ServerResponse } from "node:http";
 
 export const SSE_HEADERS = {
-  "Content-Type": "text/event-stream",
+  "Content-Type": "text/event-stream; charset=utf-8",
   "Cache-Control": "no-cache",
   Connection: "keep-alive",
   // 不依赖反代配置：任何 nginx（含未关 proxy_buffering 的旧配置）见此头即不缓冲本响应

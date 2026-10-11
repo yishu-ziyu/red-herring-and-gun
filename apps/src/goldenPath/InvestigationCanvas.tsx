@@ -48,7 +48,7 @@ type InvestigationCanvasProps = {
 export function InvestigationCanvas({
   snapshot,
   live,
-  stop = "idle",
+  stop: liveStop = "idle",
   onStop,
   saveStatus = "idle",
   onRetrySave,
@@ -63,15 +63,18 @@ export function InvestigationCanvas({
 }: InvestigationCanvasProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
+  // 历史只读也保留用户主动停止的事实，不把它重新解释成网络中断。
+  const stop = snapshot.interruptionReason === "cancelled" ? "stopped" : liveStop;
   const [announce, setAnnounce] = useState("");
 
   // 状态变化用一句轻量播报解释发生了什么（渐进呈现，不是 Agent 日志）。
   useEffect(() => {
-    if (snapshot.phase === "decomposed") setAnnounce(copy.canvasClaimsLabel);
+    if (snapshot.phase === "interrupted" || stop !== "idle") setAnnounce("");
+    else if (snapshot.phase === "decomposed") setAnnounce(copy.canvasClaimsLabel);
     else if (snapshot.phase === "investigating") setAnnounce("正在逐条追查出处");
     else if (snapshot.phase === "judging") setAnnounce("正在对照证据形成判断");
     else if (snapshot.phase === "complete") setAnnounce("");
-  }, [snapshot.phase, copy.canvasClaimsLabel]);
+  }, [snapshot.phase, stop, copy.canvasClaimsLabel]);
 
 
   const conclusion = snapshot.conclusion;
@@ -253,7 +256,7 @@ export function InvestigationCanvas({
         ) : null}
 
         {!complete ? (
-          <ProgressView snapshot={snapshot} claims={resultClaims} interrupted={interrupted} leftoverNote={leftoverSentence} />
+          <ProgressView snapshot={snapshot} claims={resultClaims} interrupted={snapshot.phase === "interrupted" || stop !== "idle"} leftoverNote={leftoverSentence} />
         ) : null}
 
       </div>

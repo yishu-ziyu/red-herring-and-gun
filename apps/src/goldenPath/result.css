@@ -230,6 +230,28 @@
   color: var(--gp-ink-3);
 }
 
+.gp-ev-kind,
+.gp-ev-status {
+  display: block;
+  margin: 3px 0;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--gp-ink-3);
+}
+
+.gp-ev-material {
+  margin-top: 5px;
+  font-size: 13px;
+}
+.gp-ev-material summary { cursor: pointer; color: var(--gp-ink-2); }
+.gp-ev-material blockquote {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--gp-line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .gp-ev-src {
   display: flex;
   flex-wrap: wrap;

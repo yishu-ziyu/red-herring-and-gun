@@ -8,9 +8,10 @@ export type ClaimSourceRelationAudit = {
   url: string;
   relation: ClaimSourceRelation;
   reason: string;
+  quote?: string;
 };
 
-type SourceLike = { url?: unknown; title?: unknown; snippet?: unknown };
+type SourceLike = { url?: unknown; title?: unknown; snippet?: unknown; fetchStatus?: unknown };
 
 type VerdictLike = {
   claimAtom?: unknown;
@@ -84,6 +85,7 @@ export function parseClaimSourceRelationAudits(value: unknown): ClaimSourceRelat
       url,
       relation,
       reason: typeof rec.reason === "string" ? rec.reason.trim().slice(0, 320) : "",
+      ...(typeof rec.quote === "string" && rec.quote.trim() ? { quote: rec.quote.trim() } : {}),
     });
   }
   return out;
@@ -126,11 +128,18 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
     const contradict: SourceLike[] = [];
     let changed = false;
     let hadDirectional = false;
+    let hadTruncated = false;
 
     const place = (source: SourceLike, original: "support" | "contradict") => {
       const url = normalizedUrl(source.url);
       if (!url) return;
       hadDirectional = true;
+      if (source.fetchStatus === "truncated") {
+        // 未读部分可能含否定或适用条件，局部正文不能作为这条命题的方向性依据。
+        hadTruncated = true;
+        changed = true;
+        return;
+      }
       const audit = findClaimSourceRelationAudit(audits, claimAtom, url, claimAtomKeyFn);
       // 只记方向性候选（支持 / 反驳）没有核验结果的情况：这些来源会被降为只作背景。
       if (!audit && audits.length > 0) console.warn(`[relation-audit] directional source has no audit claimAtom=${JSON.stringify(claimAtom)} url=${url}`);
@@ -160,8 +169,10 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
     const oldGaps = Array.isArray(verdict.evidenceGaps)
       ? verdict.evidenceGaps.filter((gap): gap is string => typeof gap === "string")
       : [];
-    const relationGap = "来源与这条命题的方向关系尚未通过独立核验，暂不作为支持或反驳";
-    const gaps = shouldDemote && !oldGaps.includes(relationGap) ? [relationGap, ...oldGaps].slice(0, 3) : oldGaps;
+    const relationGap = hadTruncated
+      ? "部分来源只取得局部正文，未读部分可能包含限定条件，暂不作为支持或反驳"
+      : "来源与这条命题的方向关系尚未通过独立核验，暂不作为支持或反驳";
+    const gaps = (shouldDemote || hadTruncated) && !oldGaps.includes(relationGap) ? [relationGap, ...oldGaps].slice(0, 3) : oldGaps;
 
     return {
       ...verdict,

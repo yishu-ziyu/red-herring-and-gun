@@ -22,6 +22,7 @@ import { conclusionMissesFollowUp, followUpQuestionLead } from "../../../src/lib
 import { LABEL_TEXT, LABEL_TONE, isLabelKey, judgmentToLabel, type LabelKey } from "../domain/labels.js";
 import { normalizePublishedDate } from "./investigation/sourceDate.js";
 import { quoteLinkUrl } from "./investigation/quote.js";
+import { materialKindLabel, materialRetrievedLabel, sourceReadStatus } from "./investigation/material.js";
 
 const TOKEN_BYTES = 24;
 const SHARE_TTL_DAYS = 30;
@@ -41,9 +42,9 @@ export type PublicShareProjection = {
   boundaries: string[];
   checkedAt?: string;
   createdAt: number;
-  claims: Array<{ text: string; judgment: string | null; label?: LabelKey; reason?: string; evidence: Array<{ role: string; sourceId: string; sentence?: string; note?: string; finding?: string }> }>;
+  claims: Array<{ text: string; judgment: string | null; label?: LabelKey; reason?: string; evidence: Array<{ role: string; sourceId: string; sentence?: string; note?: string; finding?: string; excerptKind?: string; passage?: string }> }>;
   deferredClaims: string[];
-  sources: Array<{ id: string; title: string; url: string; publishedAt?: string }>;
+  sources: Array<{ id: string; title: string; url: string; publishedAt?: string; retrievedAt?: string; excerptKind?: string; fetchStatus?: string; fetchNote?: string }>;
 };
 
 type ShareRecord = { shareId: string; runId: string | null; projection: PublicShareProjection; createdAt: number; revokedAt: number | null };
@@ -122,6 +123,8 @@ export function projectionFromSnapshot(snapshotValue: unknown, createdAt: number
           .map((link) => ({
             role: str(link.role),
             sourceId: str(link.sourceId),
+            ...(["search-snippet", "page-excerpt"].includes(str(link.excerptKind)) ? { excerptKind: str(link.excerptKind) } : {}),
+            ...(str(link.passage) ? { passage: str(link.passage) } : {}),
             // 与结果页同一规则：引号里只放已核对的那一句；没有就给我们的概括。
             // 老分享存的 quote 是整段 passage，显示时不再读。
             ...(str(link.quote) ? { sentence: str(link.quote) } : str(link.relationReason) ? { note: scrubFaceText(str(link.relationReason)) } : {}),
@@ -137,6 +140,10 @@ export function projectionFromSnapshot(snapshotValue: unknown, createdAt: number
         title: str(source.title) || str(source.url),
         url: str(source.url),
         ...(str(source.publishedAt) ? { publishedAt: str(source.publishedAt) } : {}),
+        ...(str(source.retrievedAt) ? { retrievedAt: str(source.retrievedAt) } : {}),
+        ...(["search-snippet", "page-excerpt"].includes(str(source.excerptKind)) ? { excerptKind: str(source.excerptKind) } : {}),
+        ...(["snippet-only", "fetched", "truncated", "restricted", "failed"].includes(str(source.fetchStatus)) ? { fetchStatus: str(source.fetchStatus) } : {}),
+        ...(str(source.fetchNote) ? { fetchNote: str(source.fetchNote) } : {}),
       })),
   };
 }
@@ -359,12 +366,15 @@ export function buildSharedPageHtml(lookup: ShareLookup): string {
         .map((link) => {
           const source = sourceById.get(link.sourceId);
           const label = `${ROLE_LABEL[link.role] ?? ""}${source ? ` · ${escapeHtml(source.title)} ${publishedTag(source.publishedAt)}` : ""}`;
-          const quote = link.sentence ? `<blockquote data-share-quote>${escapeHtml(link.sentence)}</blockquote>` : "";
+          const kind = materialKindLabel(link.excerptKind);
+          const quote = link.sentence ? `<small>${kind}中的摘句</small><blockquote data-share-quote>${escapeHtml(link.sentence)}</blockquote>` : "";
           const note = !quote && link.note ? `<div data-share-note>我们的概括：${escapeHtml(link.note)}</div>` : "";
           const finding = link.finding ? `<div>${escapeHtml(link.finding)}</div>` : "";
-          const href = source ? quoteLinkUrl(source.url, link.sentence) : "";
-          const open = href ? ` <a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">原文 ↗</a>` : "";
-          return quote || note || finding ? `<li><small>${label}${open}</small>${quote}${note}${finding}</li>` : "";
+          const href = source ? quoteLinkUrl(source.url, link.excerptKind === "page-excerpt" ? link.sentence : "") : "";
+          const open = href ? ` <a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>` : "";
+          const status = `<p><small data-share-material-status>资料状态：${sourceReadStatus(source ?? {})}${source?.fetchNote ? `；${escapeHtml(source.fetchNote)}` : ""}${link.excerptKind === "search-snippet" && source?.excerptKind === "page-excerpt" ? "。这条依据核对的是搜索摘要，不是已取得的正文" : ""}</small></p>`;
+          const material = `<details><summary>查看取得的材料</summary><p>${kind}</p>${link.passage ? `<blockquote>${escapeHtml(link.passage)}</blockquote>` : "<p>这条依据没有保存可检查的上下文。</p>"}<small>来源材料${materialRetrievedLabel(source?.retrievedAt)}</small></details>`;
+          return quote || note || finding || link.passage ? `<li data-share-material-kind="${escapeHtml(link.excerptKind ?? "unknown")}" data-share-source-id="${escapeHtml(link.sourceId)}" data-share-role="${escapeHtml(link.role)}"><small>${label}${open}</small>${quote}${note}${finding}${status}${material}</li>` : "";
         })
         .filter(Boolean)
         .join("");

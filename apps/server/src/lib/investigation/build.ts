@@ -40,6 +40,7 @@ import {
 } from "../../domain/labels.js";
 import { investigationSourceId, normalizeInvestigationSourceUrl } from "./sourceIdentity.js";
 import { dateFromUrl, normalizePublishedDate } from "./sourceDate.js";
+import { SOURCE_CONTENT_MAX_CHARS } from "../sourceContent.js";
 import { verbatimQuote } from "./quote.js";
 
 export type InvestigationBuildInput = {
@@ -157,10 +158,11 @@ function sectionTitleFromPassage(text: string, anchor: number): string | undefin
   return selected || undefined;
 }
 
-function passageMeta(claim: string, snippet: string): { passage?: string; sectionTitle?: string } {
+function passageMeta(claim: string, snippet: string, quote = ""): { passage?: string; sectionTitle?: string } {
   const text = cleanPassageText(snippet);
   if (!text) return {};
-  const anchor = claimAnchorIndex(claim, text);
+  const quoteAnchor = quote ? text.indexOf(quote) : -1;
+  const anchor = quoteAnchor >= 0 ? quoteAnchor : claimAnchorIndex(claim, text);
   const start = anchor > 160 ? anchor - 160 : 0;
   const passage = text.slice(start, Math.min(text.length, start + PASSAGE_MAX));
   return {
@@ -337,6 +339,7 @@ type VerdictLike = {
 type RelationAuditView = {
   relation: "support" | "contradict" | "context-only" | "unverified";
   reason: string;
+  quote?: string;
 };
 
 /**
@@ -445,7 +448,7 @@ function readRelationAudits(
     const relation = asString(rec.relation).trim();
     if (!claimAtom || !url) continue;
     if (relation !== "support" && relation !== "contradict" && relation !== "context-only" && relation !== "unverified") continue;
-    out.push({ claimAtom, url, relation, reason: clip(asString(rec.reason), 320) });
+    out.push({ claimAtom, url, relation, reason: clip(asString(rec.reason), 320), ...(typeof rec.quote === "string" ? { quote: rec.quote } : {}) });
   }
   return out;
 }
@@ -521,7 +524,7 @@ function readBundle(
           return {
             url: asString(s.url).trim(),
             title: clip(asString(s.title), 200),
-            snippet: clip(asString(s.snippet), 900),
+            snippet: clip(asString(s.snippet), excerptKind === "page-excerpt" ? SOURCE_CONTENT_MAX_CHARS : 900),
             ...(reusable && provenance ? { provenance } : {}),
             ...(reusable && asString(s.originDate).trim()
               ? { originDate: clip(asString(s.originDate), 40) }
@@ -792,8 +795,7 @@ export function buildInvestigationSnapshot(
     const status = asString(link?.scrapeStatus);
     const content = asString(link?.scrapedContent);
     if (status === "success" && content.trim()) {
-      // 真读到正文：标 page-excerpt + material。截断判定与卡片实际展示的
-      // 摘录上限（DISPLAY_EXCERPT_MAX）用同一把尺，不再写与实际不符的 1200。
+      // 读取状态与来源卡的展示截断分开；卡片缩短不代表正文未读完。
       registerSource({
         url,
         title: hostname,
@@ -802,9 +804,9 @@ export function buildInvestigationSnapshot(
         publisher: hostname,
         material: "user-intake",
         excerptKind: "page-excerpt",
-        fetchStatus: content.length > DISPLAY_EXCERPT_MAX ? "truncated" : "fetched",
-        ...(content.length > DISPLAY_EXCERPT_MAX
-          ? { fetchNote: `正文共 ${content.length} 字，来源卡只展示开头 ${DISPLAY_EXCERPT_MAX} 字摘录` }
+        fetchStatus: content.length >= SOURCE_CONTENT_MAX_CHARS ? "truncated" : "fetched",
+        ...(content.length >= SOURCE_CONTENT_MAX_CHARS
+          ? { fetchNote: "正文保存达到大小上限，未保存部分未知" }
           : {}),
       });
     } else if (status === "error") {
@@ -849,18 +851,21 @@ export function buildInvestigationSnapshot(
     const evidenceMeta = (source: BundleSource, role: InvestigationEvidenceLink["role"]) => {
       const url = normalizeInvestigationSourceUrl(source.url);
       const audit = findClaimSourceRelationAudit(relationAudits, a.text, url, keyFn);
-      const passage = passageMeta(a.text, source.snippet);
       const auditMatchesRole =
         audit &&
         ((role === "support" && audit.relation === "support") ||
           (role === "contradict" && audit.relation === "contradict") ||
           (role === "context-only" && (audit.relation === "context-only" || audit.relation === "unverified")));
       // 只有支持/反驳行引用原文；这一句必须逐字出自本轮拿到的来源文字。
-      const quote = role === "support" || role === "contradict" ? verbatimQuote(source.quote, source.snippet, a.text) : "";
+      const selectedQuote = auditMatchesRole && audit.quote !== undefined ? audit.quote : source.quote;
+      const quote = role === "support" || role === "contradict" ? verbatimQuote(selectedQuote, source.snippet, a.text) : "";
       return {
-        ...passage,
+        ...passageMeta(a.text, source.snippet, quote),
+        ...(source.excerptKind ? { excerptKind: source.excerptKind } : {}),
         ...(quote ? { quote } : {}),
-        ...(auditMatchesRole && audit.reason ? { relationReason: audit.reason } : {}),
+        ...(source.fetchStatus === "truncated"
+          ? { relationReason: "只取得部分正文，未读部分可能包含限定条件；这份材料未用来支持或反驳" }
+          : auditMatchesRole && audit.reason ? { relationReason: audit.reason } : {}),
       };
     };
     if (verdict) {

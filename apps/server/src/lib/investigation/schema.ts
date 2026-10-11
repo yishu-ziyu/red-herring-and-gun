@@ -130,8 +130,10 @@ export const InvestigationEvidenceLinkSchema = Type.Object(
     sectionTitle: Type.Optional(Type.String()),
     /** 与当前 claim 最相关的 canonical 检索上下文；不是模型重写的 finding。 */
     passage: Type.Optional(Type.String()),
-    /** 支持/反驳行引用的那一句：核查模型挑的，已核对逐字出自来源文字（quote.ts）。 */
+    /** 支持/反驳行引用的那一句：逐字核对实际取得的材料；摘要不代表原文。 */
     quote: Type.Optional(Type.String()),
+    /** 此证据实际核对的材料类型，不随来源目录升级而改变。 */
+    excerptKind: Type.Optional(Type.Union([Type.Literal("search-snippet"), Type.Literal("page-excerpt")])),
     /** SourceValidator 对 claimAtom + URL 的方向核验理由。 */
     relationReason: Type.Optional(Type.String()),
     /** 同上：复用的证据条目。字段与来源条目同名。 */
@@ -251,6 +253,7 @@ export const InvestigationSnapshotSchema = Type.Object(
     schemaVersion: Type.Literal(1),
     originalClaim: Type.String(),
     phase: InvestigationPhaseSchema,
+    interruptionReason: Type.Optional(Type.Literal("cancelled")),
     claims: Type.Array(InvestigationClaimSchema),
     sources: Type.Array(InvestigationSourceSchema),
     conflicts: Type.Array(InvestigationConflictSchema),

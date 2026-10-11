@@ -101,6 +101,7 @@ export interface SourceValidatorOutput {
     url: string;
     relation: "support" | "contradict" | "context-only" | "unverified";
     reason: string;
+    quote?: string;
   }>;
 }
 
@@ -299,8 +300,9 @@ const sourceValidatorSchema = {
           url: { type: "string" },
           relation: { type: "string", enum: ["support", "contradict", "context-only", "unverified"] },
           reason: { type: "string" },
+          quote: { type: "string", description: "从实际取得的材料逐字摘出、表达这个方向的一句；没有合适的原句就留空。" },
         },
-        required: ["claimAtom", "url", "relation", "reason"],
+        required: ["claimAtom", "url", "relation", "reason", "quote"],
       },
     },
   },
@@ -465,6 +467,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "1. 输入可能含 atomSearches：每项 { claimAtom, sources[] }，表示该原子定向检索结果。优先从对应 claimAtom 的 sources 中引用 supportingSources / contradictingSources。",
       "2. 若无 atomSearches，则回退到 search360.sources。url / title / snippet 必须来自输入中真实存在的来源，不得编造。",
       "2a. supportingSources / contradictingSources 每项的 snippet 只写一句话：从该来源输入 snippet 里逐字复制、真正支持或反驳这条命题的那一句（或那一个分句），不超过 80 字。不改写、不概括、不加省略号、不把两句拼成一句、不写只交代背景或机制的句子。原文里的英文双引号 \" 一律写成「」，否则 JSON 会失效。",
+      "2b. excerptKind=search-snippet 只表示取得搜索摘要；不得声称读过原网页、核过全文或确认前后文完整。摘句不得只抄标题里的待核说法，必须保留支持或否定它的条件和否定词。",
       "3. 某来源若不在该原子 sources（或 search360.sources）中，不得写入；宁可留空数组，也不编造。",
       "4. evidenceGaps 列出该条尚未找到的证据；该原子检索为空时须在 boundary 或 evidenceGaps 写明未能证实/待补证，禁止仅因无结果就判 false。",
       "",
@@ -535,12 +538,14 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "4. missingSources 应主动列出关键缺口（原始数据、官方公告、原始论文 DOI 等），不要默认 placeholder。",
       "5. 禁止编造来源 URL、发布日期、机构署名；不在输入中出现的证据不得计入 verifiedSources。",
       "6. 输入 directionalCandidates 是 FactChecker 准备公开为支持/反驳的候选。claimSourceRelations 至少逐条覆盖 directionalCandidates；只能使用 atomSearches 中真实出现的 claimAtom 和 URL。必须阅读 snippet 的完整转折与限制，不能只看标题或前半句。",
+      "6a. 来源 snippet 可能已升级为本次取得的正文（excerptKind=page-excerpt），优先按它核对方向；search-snippet 仍只是搜索摘要，不得说已读原网页、摘要完整或前后文完整。读取失败或截断时照实保留限制。",
+      "6b. 对 support/contradict，在 claimSourceRelations.quote 逐字摘出 snippet 中表达该方向的一句，不超过80字，保留否定、条件与范围；不能只抄标题里的谣言或被否定的那句话。没有合适原句就 quote 留空，不改写。",
       "7. support = 来源作者的完整意思直接支持该命题；contradict = 完整意思直接否定该命题；context-only = 主题相关、支持局部机制但不足以支持/反驳整条命题，或对象/指标不同；unverified = 摘要太短、上下文不足。",
       "7a. 两个方向都要判断，不能只问「支持不支持」。原句是绝对化或普遍性说法（会致癌、能治愈、等于毒药、一定、所有人）时，来源说明「正常条件下不会发生」「只有特定条件（室温久放、变质、大剂量）才有风险」「冷藏保存是安全的」，就是 contradict：它否定了原句的普遍说法。只讲机制、没有对原句下结论时，才是 context-only。",
       "8. 「辟谣/流言/但是/杯水车薪」本身不能决定方向。同一 URL 对不同 claimAtom 可以有不同 relation。理论机制成立不等于实际疗效成立。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
-      "{\n  \"sourceReliability\": \"medium\",\n  \"verifiedSources\": [\"可靠来源1\"],\n  \"questionableSources\": [\"可疑来源1\"],\n  \"missingSources\": [\"缺失来源1\"],\n  \"verificationNotes\": \"验证过程说明\",\n  \"claimSourceRelations\": [\n    {\"claimAtom\": \"原子命题\", \"url\": \"https://example.com/source\", \"relation\": \"context-only\", \"reason\": \"来源讨论相关机制，但对象/结果指标不同，不能直接支持该命题\"}\n  ]\n}",
+      "{\n  \"sourceReliability\": \"medium\",\n  \"verifiedSources\": [\"可靠来源1\"],\n  \"questionableSources\": [\"可疑来源1\"],\n  \"missingSources\": [\"缺失来源1\"],\n  \"verificationNotes\": \"验证过程说明\",\n  \"claimSourceRelations\": [\n    {\"claimAtom\": \"原子命题\", \"url\": \"https://example.com/source\", \"relation\": \"context-only\", \"reason\": \"来源讨论相关机制，但对象/结果指标不同，不能直接支持该命题\", \"quote\": \"\"}\n  ]\n}",
       "",
       "sourceReliability 必须是 'high'、'medium'、'low'、'unverified' 之一。",
     ].join("\n"),

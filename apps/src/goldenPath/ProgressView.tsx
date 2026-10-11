@@ -5,6 +5,7 @@
  */
 import type { InvestigationClaim, InvestigationSnapshotV1 } from "../lib/investigation";
 import { CHECKABILITY_HINT, claimLabel, LABEL_TEXT, LABEL_TONE } from "./snapshotUi";
+import { EvidenceRow } from "./ResultView";
 
 type ProgressViewProps = {
   snapshot: InvestigationSnapshotV1;
@@ -29,7 +30,7 @@ export function ProgressView({ snapshot, claims, interrupted, leftoverNote }: Pr
       {claims.length > 0 ? (
         <section className="gp-result-parts" aria-label="每一截的进度">
           {claims.map((claim, index) => (
-            <ProgressRow key={claim.id} claim={claim} index={index} deferred={deferred.has(claim.id)} interrupted={interrupted} />
+            <ProgressRow key={claim.id} claim={claim} index={index} sources={snapshot.sources} deferred={deferred.has(claim.id)} interrupted={interrupted} />
           ))}
         </section>
       ) : null}
@@ -45,11 +46,13 @@ export function ProgressView({ snapshot, claims, interrupted, leftoverNote }: Pr
 function ProgressRow({
   claim,
   index,
+  sources,
   deferred,
   interrupted,
 }: {
   claim: InvestigationClaim;
   index: number;
+  sources: InvestigationSnapshotV1["sources"];
   deferred: boolean;
   interrupted: boolean;
 }) {
@@ -79,6 +82,14 @@ function ProgressRow({
           {hasMaterial ? "找到资料，正在判断" : claim.progress === "pending" ? "等着查" : "正在找资料"}
         </p>
       )}
+      {interrupted && hasMaterial ? (
+        <ul className="gp-part-evidence">
+          {claim.evidence.map((link, i) => {
+            const source = sources.find((item) => item.id === link.sourceId);
+            return source ? <EvidenceRow key={`${link.sourceId}:${i}`} claimId={claim.id} link={link} source={source} /> : null;
+          })}
+        </ul>
+      ) : null}
     </article>
   );
 }

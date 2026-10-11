@@ -7,6 +7,7 @@ import type { CaseState, PipelineContext } from "../caseState.js";
 import type { PipelineStep } from "../runCasePipeline.js";
 import { createSourceAudit } from "../sourceAudit.js";
 import type { Retrieval } from "./retrieve.js";
+import { enrichSearchSources } from "../../sourceContent.js";
 
 function fallbackAgentStep(agentId: string, error: unknown, search360Result?: unknown, _claim = ""): PipelineStep {
   const message = error instanceof Error ? error.message : `${agentId} failed`;
@@ -60,6 +61,20 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
     factStep = fallbackAgentStep("fact_checker", error, search360Result, claim);
   }
   steps.push(factStep);
+  throwIfAborted();
+  // 正文读取只针对本轮准备采用的依据，而不是搜索排名靠前但未用于判断的材料。
+  const verdicts = Array.isArray(factStep.output.subclaimVerdicts) ? factStep.output.subclaimVerdicts : [];
+  const selectedUrls = verdicts.flatMap((raw) => {
+    if (!raw || typeof raw !== "object") return [];
+    const verdict = raw as Record<string, unknown>;
+    return [verdict.supportingSources, verdict.contradictingSources].flatMap((sources) =>
+      Array.isArray(sources) ? sources.map((source) => String(source?.url ?? "").trim()).filter(Boolean) : []);
+  });
+  await enrichSearchSources(atomSearchBundle, ctx.input.signal, ctx.input.deadline, selectedUrls, () => {
+    // 只发布已取得、尚未核对的材料；不能提前发布 FactChecker 的未审计判词。
+    snapshots.investigating({ atomSearchBundle });
+  });
+  throwIfAborted();
   let sourceStep: PipelineStep;
   try {
     sourceStep = await runAgent("source_validator", steps, search360Result, atomSearchBundle);

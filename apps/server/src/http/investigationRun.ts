@@ -393,7 +393,7 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
     });
     if (outcome === "cancelled") {
       settleQuota(outcome);
-      emitInvestigation(interruptedInvestigationSnapshot(lastInvestigation, displayClaim));
+      emitInvestigation({ ...interruptedInvestigationSnapshot(lastInvestigation, displayClaim), interruptionReason: "cancelled" });
       finishRun(RUN_FINAL_STATUS[outcome]);
       endResponse();
       return;
