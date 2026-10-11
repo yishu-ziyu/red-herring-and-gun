@@ -64,7 +64,7 @@ export function resetSearchQuotaSkipForTests(): void {
 }
 
 export function isHardSearchQuotaError(message: string): boolean {
-  return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded|limit)|billing hard limit|over_quota|无可用额度|please top up|usage limit|exceeds your plan|HTTP 402\b|HTTP 432\b/i.test(
+  return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded|limit)|billing hard limit|over_quota|无可用额度|please top up|usage limit|exceeds your plan|daily free quota|QUOTA_USER_DAILY_FREE|HTTP 402\b|HTTP 432\b/i.test(
     message
   );
 }
@@ -1275,6 +1275,24 @@ function clipQianfanQuery(query: string): string {
   return out;
 }
 
+/**
+ * 千帆只搜这些站点（search_filter.match.site，文档上限 100 个；子域名一并命中，例如 zj.xinhuanet.com）。
+ * 不过滤时结果偏向最新自媒体，烟测里没有一条被用作依据。过滤后搜不到就是没有，不退回全网搜索。
+ */
+const QIANFAN_DEFAULT_SITES = [
+  "gov.cn", "www.gov.cn", "nhc.gov.cn", "piyao.org.cn", "news.cn", "xinhuanet.com", "people.com.cn",
+  "cctv.com", "cctv.cn", "cnr.cn", "gmw.cn", "chinanews.com.cn", "chinadaily.com.cn", "chinacdc.cn",
+  "thepaper.cn", "caixin.com", "guokr.com", "dxy.cn", "who.int",
+];
+
+function qianfanSites(env: Record<string, string>): string[] {
+  const raw = envValue(env, "QIANFAN_SITES");
+  const list = raw ? raw.split(",").map((s) => s.trim().replace(/^\*\./, "")).filter(Boolean) : QIANFAN_DEFAULT_SITES;
+  return [...new Set(list)].slice(0, 100);
+}
+
+const QIANFAN_RECENCY = new Set(["week", "month", "semiyear", "year"]);
+
 async function callQianfanWebSearch({
   env,
   query,
@@ -1295,11 +1313,13 @@ async function callQianfanWebSearch({
       messages: [{ role: "user", content: clipQianfanQuery(query) }],
       search_source: "baidu_search_v2",
       resource_type_filter: [{ type: "web", top_k: Number.isFinite(topK) && topK > 0 ? Math.min(50, topK) : 10 }],
+      search_filter: { match: { site: qianfanSites(env) } },
+      ...(QIANFAN_RECENCY.has(envValue(env, "QIANFAN_RECENCY")) ? { search_recency_filter: envValue(env, "QIANFAN_RECENCY") } : {}),
     }),
   }, getSearchFetchTimeoutMs(env), "百度千帆搜索");
   const data: any = await response.json().catch(() => null);
   if (!response.ok || data?.code || data?.error) {
-    const detail = data?.message || data?.error?.message || data?.error || response.statusText;
+    const detail = [data?.code, data?.message || data?.error?.message || data?.error || response.statusText].filter(Boolean).join(" ");
     throw new Error(`百度千帆搜索调用失败：HTTP ${response.status} ${String(detail ?? "")}`.trim());
   }
   const refs = Array.isArray(data?.references) ? data.references : [];
