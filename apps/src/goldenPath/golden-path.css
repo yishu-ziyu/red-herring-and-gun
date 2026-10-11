@@ -581,9 +581,12 @@
   font-weight: 700 !important;
   letter-spacing: -0.6px;
   color: var(--gp-ink-primary);
+  /* 窄屏只在「，」后换行：中文不在字与字之间断开，第二行是整句红字，不会出现「靠/谱」。 */
+  word-break: keep-all;
 }
 
 .gp-headline em {
+  white-space: nowrap;
   font-style: normal;
   color: var(--gp-accent);
   border-bottom: 0;
@@ -609,6 +612,9 @@
   line-height: 1.7;
   color: var(--gp-ink-2);
   white-space: pre-line;
+  /* 只在标点后换行，不拆「补查/缺口」这样的词；几行尽量一样长。桌面一行放得下，不受影响。 */
+  word-break: keep-all;
+  text-wrap: balance;
 }
 
 /* 单一功能 Surface：PromptInput 通过 CSS 自定义属性消费嵌入契约 */
