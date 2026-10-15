@@ -157,8 +157,12 @@ function nonCheckableLabels(report: Report, nonVerifiableAtoms: unknown): LabelK
   return records(nonVerifiableAtoms ?? report.nonVerifiableAtoms).map((atom) => nonCheckableLabel(String(atom.type ?? "")));
 }
 
-/** 模型有时写成好几句、带内部用语：只留第一句；第一句仍带内部用语就不用，改用各截标签拼的句子。 */
+/** 模型有时写成好几句、带内部用语：只留一句（第一句只复述判定时用第二句）；这一句仍带内部用语就不用，改用各截标签拼的句子。 */
 const INTERNAL_TERMS = /原子|命题|判定为|判词|整句为|整句是|Agent|模型|置信/;
+/** 指这句话的「该命题」直接换成「这句话」，不因为一个指代词丢掉整句理由（2026-10-15 RUMOR-001）。 */
+const CLAIM_REFERENT = /(?:该|此|这个|这一)命题/g;
+/** 只说「这句话成立」的开头句不是理由，理由在下一句（2026-10-15 NEW-404：「该句核心事实成立。」）。 */
+const RESTATED_VERDICT = /^(?:该|这|此)(?:句话?|说法)?的?(?:核心|主要)?(?:事实|内容)?(?:基本)?(?:成立|不成立|属实|不属实|正确|错误)[。！？]?$/;
 /** 理由超过这个长度就不是「一句理由」了，读者在结论处读不完。 */
 const MAX_REASON_CHARS = 80;
 /**
@@ -166,7 +170,8 @@ const MAX_REASON_CHARS = 80;
  * （例：标签「不属实」，理由却说「整句为部分属实」——理由先于标签写出，会和代码定的标签矛盾）。
  */
 function firstSentence(text: string, label: LabelKey): string {
-  const first = (text.match(/^[^。！？]*[。！？]?/)?.[0] ?? "").trim();
+  const sentences = (text.replace(CLAIM_REFERENT, "这句话").match(/[^。！？]+[。！？]?/g) ?? []).map((s) => s.trim()).filter(Boolean);
+  const first = (RESTATED_VERDICT.test(sentences[0] ?? "") ? sentences[1] : sentences[0]) ?? "";
   if (!first || INTERNAL_TERMS.test(first) || first.length > MAX_REASON_CHARS) return "";
   // 代码内部的标签名（2026-10-10：「…危言耸听，属false。」）和不成对的引号（开头多了「」」）。
   if (/\b(true|false|mostly-true|partly-true|exaggerated|unresolved|uncheckable|disputed|opinion|supported|refuted|mixed)\b/i.test(first)) return "";
