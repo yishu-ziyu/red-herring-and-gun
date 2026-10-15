@@ -103,6 +103,8 @@ function normalizeBody(body) {
   for (const form of TODAY_FORMS) if (text.includes(form)) text = text.split(form).join("<today>");
   return text
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, "<ts>")
+    // 今天的时间戳在上面已被换成「<today>T…Z」，上一条匹配不到（2026-10-15：retrievedAt 让判断模型的请求每次都不同）。
+    .replace(/<today>T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z/g, "<ts>")
     .replace(/\b1[6-9]\d{11}\b/g, "<epoch>")
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "<uuid>");
 }
@@ -313,6 +315,15 @@ if (RECORD) {
     const { tape, response, error } = replayResponse(tapes[Math.min(n, tapes.length - 1)], method);
     advanceTo(issuedAt + (tape.ms ?? 0));
     log({ mode: "hit", key, n, method, url: normalizedUrl, status: tape.status, error: tape.error?.name });
+    // 录制时这条请求是被调用方中止的（例如读正文整体超时）。立刻抛错，调用方会把它当成「读取失败」而不是「超时」，
+    // 后面发给模型的材料状态就和录音对不上（2026-10-15）。所以等调用方自己中止，最多等 20 秒。
+    if (error?.name === "AbortError" && signal && !signal.aborted) {
+      await new Promise((resolve) => {
+        const cap = setTimeout(resolve, 20_000);
+        signal.addEventListener("abort", () => { clearTimeout(cap); resolve(); }, { once: true });
+      });
+      if (signal.aborted) throw abortError(signal);
+    }
     if (error) throw error;
     return response;
   };
