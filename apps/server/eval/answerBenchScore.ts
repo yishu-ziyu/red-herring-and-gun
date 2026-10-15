@@ -4,6 +4,7 @@
  */
 import type { BenchLabel } from "./answerBenchLabel.js";
 import type { AtomEngineCounts } from "../src/lib/atomSearch.js";
+import { LABEL_TEXT, isLabelKey, type LabelKey } from "../src/domain/labels.js";
 
 export type ResultLabel = BenchLabel | "错误";
 
@@ -58,9 +59,117 @@ export interface PipelineResult {
   snapshotBuilt: boolean;
   /** bundle.enginesPerAtom (#144); absent in rows recorded before it existed. */
   enginesPerAtom?: Record<string, AtomEngineCounts>;
+  /** Snapshot `conclusion.reason` (else `verdictLead`): the sentence under the big verdict. Absent in older rows. */
+  reason?: string;
+  conclusionLabel?: string;
+  /** Snapshot phase (complete / interrupted / stopped). Absent in older rows. */
+  phase?: string;
+  /** Snapshot claims, compact (no quote text). Absent in older rows. */
+  parts?: PipelinePart[];
   timings: { totalMs: number };
   calls: { model: number; search: number };
   error?: string;
+}
+
+export interface PipelinePart {
+  text: string;
+  label?: string;
+  evidence: { role: string; excerptKind?: string; hasQuote: boolean }[];
+}
+
+type Rec = Record<string, unknown>;
+const asRec = (v: unknown): Rec => (v && typeof v === "object" ? (v as Rec) : {});
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+
+/** The fields the two snapshot checks read, from `finalReport.investigation`. Empty when there is no snapshot. */
+export function compactSnapshot(snapshot: unknown): Pick<PipelineResult, "reason" | "conclusionLabel" | "phase" | "parts"> {
+  const snap = asRec(snapshot);
+  if (snap.schemaVersion !== 1) return {};
+  const conclusion = asRec(snap.conclusion);
+  return {
+    reason: str(conclusion.reason) || str(conclusion.verdictLead),
+    phase: str(snap.phase),
+    conclusionLabel: str(conclusion.label),
+    parts: arr(snap.claims).map((raw) => {
+      const claim = asRec(raw);
+      return {
+        text: str(claim.text),
+        ...(str(claim.label) ? { label: str(claim.label) } : {}),
+        evidence: arr(claim.evidence).map((e) => {
+          const link = asRec(e);
+          return { role: str(link.role), ...(str(link.excerptKind) ? { excerptKind: str(link.excerptKind) } : {}), hasQuote: str(link.quote).trim() !== "" };
+        }),
+      };
+    }),
+  };
+}
+
+const labelText = (label: string | undefined): string => LABEL_TEXT[isLabelKey(label) ? label : "unresolved"];
+/** Same as `clip` in src/lib/sentenceVerdict.ts (not exported): collapse whitespace, cut to max, add "…". */
+const clipEllipsis = (text: string, max: number): string => {
+  const t = text.replace(/\s+/g, " ").trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+};
+/** Same as `clip` in src/lib/investigation/build.ts (not exported): trim, cut to max, no "…". */
+const clipPlain = (text: string, max: number): string => {
+  const t = text.trim();
+  return t.length > max ? t.slice(0, max) : t;
+};
+const ISSUER_TEMPLATE = "的内容属实，只是原句把发文机关或出处说错了";
+/** Longest first, so 基本属实 / 部分属实 / 不属实 go before 属实. */
+const LABEL_WORDS = (Object.values(LABEL_TEXT) as string[]).sort((a, b) => b.length - a.length);
+/**
+ * Words that only point at the claim or restate a verdict in other words. Without them a reason like
+ * 「该句核心事实成立。」 (2026-10-15 pilot, NEW-404) passed while saying nothing beyond the label.
+ */
+const GENERIC_WORDS = [
+  "这句话", "该说法", "这一说法", "此说法", "该句", "此句", "原句", "整句", "说法",
+  "核心事实", "核心", "事实", "不成立", "成立", "正确", "错误", "准确", "真实", "虚假", "不可信", "可信",
+  "无法核实", "无法证实", "未能核实", "现有", "公开", "资料", "材料", "信息", "证据", "依据",
+  "主要", "基本", "内容", "情况", "均", "都",
+].sort((a, b) => b.length - a.length);
+const MIN_NEW_CHARS = 4;
+
+/**
+ * 理由句有新内容: the reason must say something beyond the original claim, the part texts and the label words.
+ * `templated` is true when the reason is exactly the code fallback 「part」label；… (sentenceVerdict.ts partLine,
+ * or the relabel line in investigation/build.ts, which clips without "…").
+ */
+export function checkReason(input: { reason: string; claim: string; parts: readonly { text: string; label?: string }[]; phase?: string }): {
+  pass: boolean;
+  templated: boolean;
+  remainder: string;
+} {
+  const reason = input.reason.trim();
+  const templateWith = (clip: (t: string, max: number) => string) =>
+    `${input.parts.map((p) => `「${clip(p.text, 40)}」${labelText(p.label)}`).join("；")}。`;
+  const templated = reason !== "" && (reason === templateWith(clipEllipsis) || reason === templateWith(clipPlain));
+  if (!reason) return { pass: false, templated, remainder: "" };
+  // 没查完的调查（例：「本次核查没能完成，判断还没写成。」）不算有理由。
+  if (input.phase && input.phase !== "complete") return { pass: false, templated, remainder: "" };
+  const texts = [input.claim, ...input.parts.map((p) => p.text)].flatMap((t) => [t, t.replace(/\s+/g, " ").trim(), clipEllipsis(t, 40), clipPlain(t, 40)]);
+  const restated = [...new Set(texts.filter((t) => t.trim() !== ""))].sort((a, b) => b.length - a.length);
+  let rest = reason;
+  for (const t of restated) rest = rest.split(t).join("");
+  // The issuer template contains 属实, so it has to go before the label words.
+  rest = rest.split(ISSUER_TEMPLATE).join("");
+  for (const w of LABEL_WORDS) rest = rest.split(w).join("");
+  for (const w of GENERIC_WORDS) rest = rest.split(w).join("");
+  rest = rest.replace(/[\p{P}「」『』“”"'\s]/gu, "");
+  return { pass: [...rest].length >= MIN_NEW_CHARS, templated, remainder: rest };
+}
+
+/** Labels that decide something; unresolved / uncheckable / opinion are excluded. */
+const DECISIVE_LABELS: ReadonlySet<LabelKey> = new Set<LabelKey>(["true", "mostly-true", "partly-true", "exaggerated", "false", "disputed"]);
+
+/** 依据读到正文: every decisive part has a support/contradict quote checked against fetched page text. */
+export function checkGrounded(parts: readonly PipelinePart[]): { decisiveParts: number; groundedParts: number; pass: boolean | null } {
+  const decisive = parts.filter((p) => isLabelKey(p.label) && DECISIVE_LABELS.has(p.label));
+  const grounded = decisive.filter((p) =>
+    p.evidence.some((e) => (e.role === "support" || e.role === "contradict") && e.excerptKind === "page-excerpt" && e.hasQuote),
+  );
+  return { decisiveParts: decisive.length, groundedParts: grounded.length, pass: decisive.length === 0 ? null : grounded.length === decisive.length };
 }
 
 /**
@@ -162,6 +271,13 @@ export interface ScoredRow {
   seconds: number;
   modelCalls: number;
   searchCalls: number;
+  /** Checks on the snapshot; null = unknown (row recorded before these fields existed), never a failure. */
+  reasonPass: boolean | null;
+  reasonTemplated: boolean | null;
+  reasonRemainder: string;
+  decisiveParts: number | null;
+  groundedParts: number | null;
+  groundedPass: boolean | null;
   error?: string;
 }
 
@@ -180,6 +296,8 @@ export function scoreCase(c: BenchCase, r: PipelineResult): ScoredRow {
   };
   const inSearch = match(r.searchedSources);
   const inCited = match([...r.citedSources, ...r.evidenceSources]);
+  const reason = r.reason !== undefined && r.parts ? checkReason({ reason: r.reason, claim: c.claim, parts: r.parts, phase: r.phase }) : null;
+  const grounded = r.parts ? checkGrounded(r.parts) : null;
   return {
     id: c.id,
     derivedLabel: derived,
@@ -197,6 +315,12 @@ export function scoreCase(c: BenchCase, r: PipelineResult): ScoredRow {
     seconds: r.timings.totalMs / 1000,
     modelCalls: r.calls.model,
     searchCalls: r.calls.search,
+    reasonPass: reason ? reason.pass : null,
+    reasonTemplated: reason ? reason.templated : null,
+    reasonRemainder: reason ? reason.remainder : "",
+    decisiveParts: grounded ? grounded.decisiveParts : null,
+    groundedParts: grounded ? grounded.groundedParts : null,
+    groundedPass: grounded ? grounded.pass : null,
     ...(r.error ? { error: r.error } : {}),
   };
 }
@@ -220,6 +344,10 @@ export function summarize(rows: readonly ScoredRow[]) {
     if (r.labelCorrect) e.correct += 1;
   }
   const seconds = rows.map((r) => r.seconds);
+  // Older rows have no reasonPass / grounded fields at all (undefined), newer ones null when unknown.
+  const reasonKnown = rows.filter((r) => r.reasonPass === true || r.reasonPass === false);
+  const groundedKnown = rows.filter((r) => r.groundedPass === true || r.groundedPass === false);
+  const partsKnown = rows.filter((r) => typeof r.decisiveParts === "number");
   return {
     cases: rows.length,
     scored: scoredRows.length,
@@ -240,5 +368,12 @@ export function summarize(rows: readonly ScoredRow[]) {
     secondsMax: seconds.length ? Math.max(...seconds) : null,
     modelCallsMean: mean(rows.map((r) => r.modelCalls)),
     searchCallsMean: mean(rows.map((r) => r.searchCalls)),
+    reasonPass: { pass: reasonKnown.filter((r) => r.reasonPass).length, of: reasonKnown.length },
+    reasonTemplated: rows.filter((r) => r.reasonTemplated === true).length,
+    groundedCases: { pass: groundedKnown.filter((r) => r.groundedPass).length, of: groundedKnown.length },
+    groundedParts: {
+      grounded: partsKnown.reduce((a, r) => a + (r.groundedParts ?? 0), 0),
+      of: partsKnown.reduce((a, r) => a + (r.decisiveParts ?? 0), 0),
+    },
   };
 }

@@ -22,6 +22,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { loadLocalEnv } from "./localEnv.js";
 import { extractSources } from "./answerBenchSources.js";
 import {
+  compactSnapshot,
   mapToBenchLabel,
   scoreCase,
   summarize,
@@ -88,6 +89,8 @@ const currentAdapter: PipelineAdapter = {
       ...extractSources(report, out.atomSearchBundle),
       // Per-atom engine counts (#144) ride in result, so each results.jsonl row carries them.
       enginesPerAtom: (out.atomSearchBundle as { enginesPerAtom?: PipelineResult["enginesPerAtom"] } | undefined)?.enginesPerAtom,
+      // Reason sentence and per-part evidence kinds, compact, so --rescore can rerun the two snapshot checks.
+      ...compactSnapshot(report.investigation),
       timings: { totalMs },
     };
   },
@@ -457,6 +460,11 @@ async function parentMain(argv: string[]) {
   console.log("");
   printTable(all.filter((r) => todo.some((c) => c.id === r.id)));
   console.log("\n" + JSON.stringify({ ...summary, callsByHost: hosts, tokensByHost: tokens }, null, 2));
+  const { reasonPass, reasonTemplated, groundedCases, groundedParts } = summary;
+  console.log(
+    `\n理由句有新内容 ${reasonPass.pass}/${reasonPass.of} (代码拼的 ${reasonTemplated})  ` +
+      `依据读到正文 ${groundedCases.pass}/${groundedCases.of} 条, ${groundedParts.grounded}/${groundedParts.of} 截  (older rows without these fields are not counted)`,
+  );
   console.log(`\nresults: ${resultsFile}`);
 }
 

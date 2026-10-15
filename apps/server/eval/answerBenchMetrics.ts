@@ -26,6 +26,10 @@ export type BenchSummaryInput = {
   secondsMax?: number;
   modelCallsMean?: number;
   searchCallsMean?: number;
+  reasonPass?: { pass?: number; of?: number };
+  reasonTemplated?: number;
+  groundedCases?: { pass?: number; of?: number };
+  groundedParts?: { grounded?: number; of?: number };
 };
 
 export type MetricsRow = {
@@ -41,6 +45,11 @@ export type MetricsRow = {
   secondsMax: number;
   modelCallsMean: number;
   searchCallsMean: number;
+  /** Absent in rows written before these checks, or when no case had the fields. */
+  reasonPass?: { pass: number; of: number };
+  reasonTemplated?: number;
+  groundedCases?: { pass: number; of: number };
+  groundedParts?: { grounded: number; of: number };
 };
 
 const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
@@ -64,6 +73,16 @@ export function toMetricsRow(summary: BenchSummaryInput, meta: { date: string; c
     secondsMax: num(summary.secondsMax),
     modelCallsMean: num(summary.modelCallsMean),
     searchCallsMean: num(summary.searchCallsMean),
+    ...(num(summary.reasonPass?.of) > 0
+      ? {
+          reasonPass: { pass: num(summary.reasonPass?.pass), of: num(summary.reasonPass?.of) },
+          reasonTemplated: num(summary.reasonTemplated),
+        }
+      : {}),
+    ...(num(summary.groundedCases?.of) > 0 ? { groundedCases: { pass: num(summary.groundedCases?.pass), of: num(summary.groundedCases?.of) } } : {}),
+    ...(num(summary.groundedParts?.of) > 0
+      ? { groundedParts: { grounded: num(summary.groundedParts?.grounded), of: num(summary.groundedParts?.of) } }
+      : {}),
   };
 }
 
@@ -88,6 +107,8 @@ const esc = (s: string): string =>
 const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
 const fix1 = (v: number): string => v.toFixed(1);
 const int = (v: number): string => String(Math.round(v));
+const frac = (v: { of: number } & ({ pass: number } | { grounded: number }) | undefined): string =>
+  v ? `${"pass" in v ? v.pass : v.grounded}/${v.of}` : "—";
 
 type Series = { name: string; color: string; values: number[] };
 const PALETTE = ["#9a3412", "#1e40af", "#166534", "#6b21a8"];
@@ -136,10 +157,11 @@ export function renderMetricsHtml(rows: MetricsRow[]): string {
     chart("用时", "秒", xs, [S("中位数", 0, (r) => r.secondsMedian), S("最长", 1, (r) => r.secondsMax)], int),
     chart("每条调用次数", "平均", xs, [S("模型", 0, (r) => r.modelCallsMean), S("搜索", 1, (r) => r.searchCallsMean)], fix1),
   ].join("\n");
-  const head = ["运行", "日期", "提交", "条数", "判定正确", "把真话判假", "该判不判", "错标支持", "用时中位", "用时最长", "模型调用", "搜索调用"];
+  const head = ["运行", "日期", "提交", "条数", "判定正确", "把真话判假", "该判不判", "错标支持", "用时中位", "用时最长", "模型调用", "搜索调用", "理由有新内容", "理由是代码拼的", "依据读到正文（条）", "依据读到正文（截）"];
   const body = rows.map((r) => "<tr>" + [
     r.label, r.date, r.commit, int(r.cases), pct(r.accuracy.overall), int(r.trueToFalse), int(r.shouldJudgeButDidnt),
     int(r.wrongSupport), int(r.secondsMedian) + " 秒", int(r.secondsMax) + " 秒", fix1(r.modelCallsMean), fix1(r.searchCallsMean),
+    frac(r.reasonPass), r.reasonTemplated === undefined ? "—" : int(r.reasonTemplated), frac(r.groundedCases), frac(r.groundedParts),
   ].map((c) => `<td>${esc(c)}</td>`).join("") + "</tr>").join("\n");
   const table = rows.length === 0
     ? `<p class="muted">还没有记录。跑完回答基准后执行 <code>npx tsx eval/answerBenchMetrics.ts --label &lt;运行名&gt;</code>。</p>`
