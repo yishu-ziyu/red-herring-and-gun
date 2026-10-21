@@ -246,7 +246,6 @@ export function EvidenceRow({ claimId, link, source }: { claimId: string; link: 
   const passage = link.passage?.trim() ?? "";
   return (
     <li className="gp-ev" data-gp-evidence-row data-gp-role={link.role} data-gp-evidence-claim={claimId} data-gp-source-id={source.id} data-gp-material-kind={link.excerptKind ?? "unknown"}>
-      {quote ? <span className="gp-ev-kind">{materialKindLabel(link.excerptKind)}中的摘句</span> : null}
       {quote ? (
         <q className="gp-ev-quote" data-gp-evidence-quote>{quote}</q>
       ) : summary ? (
@@ -269,15 +268,18 @@ export function EvidenceRow({ claimId, link, source }: { claimId: string; link: 
         </span>
         {source.reachable === false ? <span className="gp-ev-dead">打不开</span> : null}
         {link.provenance === "prior-round" ? <span className="gp-ev-prior" data-gp-prior-round-mark>依据来自刚才那一轮</span> : null}
+        <span className="gp-ev-tag" data-gp-material-status>
+          <span className="gp-ev-tag-label">资料状态：</span>
+          {sourceReadStatus(source)}
+        </span>
       </span>
-      <p className="gp-ev-status" data-gp-material-status>
-        资料状态：{sourceReadStatus(source)}
-        {source.fetchNote ? `；${source.fetchNote}` : ""}
-        {link.excerptKind === "search-snippet" && source.excerptKind === "page-excerpt" ? "。这条依据核对的是搜索摘要，不是已取得的正文" : ""}
-      </p>
       <details className="gp-ev-material" data-gp-material>
-        <summary>查看取得的材料</summary>
-        <p className="gp-ev-status">这条依据的材料：{materialKindLabel(link.excerptKind)}</p>
+        <summary>上下文</summary>
+        <p className="gp-ev-status">
+          这条依据的材料：{materialKindLabel(link.excerptKind)}
+          {source.fetchNote ? `；${source.fetchNote}` : ""}
+          {link.excerptKind === "search-snippet" && source.excerptKind === "page-excerpt" ? "。这条依据核对的是搜索摘要，不是已取得的正文" : ""}
+        </p>
         {passage ? <blockquote data-gp-material-text>{passage}</blockquote> : <p>这条依据没有保存可检查的上下文。</p>}
         <p className="gp-ev-status">来源材料{materialRetrievedLabel(source.retrievedAt)}</p>
       </details>
