@@ -275,7 +275,7 @@ export function EvidenceRow({ claimId, link, source }: { claimId: string; link: 
       </span>
       <details className="gp-ev-material" data-gp-material>
         <summary>上下文</summary>
-        <p className="gp-ev-status">
+        <p className="gp-ev-status" data-gp-material-note>
           这条依据的材料：{materialKindLabel(link.excerptKind)}
           {source.fetchNote ? `；${source.fetchNote}` : ""}
           {link.excerptKind === "search-snippet" && source.excerptKind === "page-excerpt" ? "。这条依据核对的是搜索摘要，不是已取得的正文" : ""}

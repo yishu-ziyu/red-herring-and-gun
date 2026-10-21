@@ -262,6 +262,7 @@ async function checkMaterialDisplay() {
     role: node.getAttribute("data-gp-role"),
     kind: node.getAttribute("data-gp-material-kind"),
     status: node.querySelector("[data-gp-material-status]")?.textContent?.trim() ?? "",
+    note: node.querySelector("[data-gp-material-note]")?.textContent?.trim() ?? "",
     quote: node.querySelector("[data-gp-evidence-quote]")?.textContent?.trim() ?? "",
     summary: node.querySelector("[data-gp-evidence-summary]")?.textContent ?? "",
     passage: node.querySelector("[data-gp-material-text]")?.textContent?.trim() ?? "",
@@ -276,7 +277,7 @@ async function checkMaterialDisplay() {
   record("read status matches the actual source metadata", Boolean(firstSnapshot) && states.every((row) => {
     const source = firstSnapshot.sources.find((source) => source.id === row.sourceId);
     const expected = statusTerms[source?.fetchStatus] ?? "正文读取情况未知";
-    return row.status.includes(expected) && (!source?.fetchNote || row.status.includes(source.fetchNote));
+    return row.status.includes(expected) && (!source?.fetchNote || row.note.includes(source.fetchNote));
   }), "");
   await rows.first().locator("summary").click();
   record("material expands in place", await rows.first().locator("[data-gp-material-text]").isVisible().catch(() => false), "");
