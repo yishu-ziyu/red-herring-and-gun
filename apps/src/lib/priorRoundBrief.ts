@@ -5,14 +5,14 @@
 import { displayFollowUpClaim } from "./composeFollowUpClaim";
 import type { InvestigationSnapshotV1 } from "./investigation";
 
-export type VisiblePriorEvidence = {
+type VisiblePriorEvidence = {
   url: string;
   title: string;
   excerpt: string;
   role: "support" | "contradict";
 };
 
-export type VisiblePriorClaim = {
+type VisiblePriorClaim = {
   text: string;
   judgment: "supported" | "refuted" | "mixed";
   evidence: VisiblePriorEvidence[];

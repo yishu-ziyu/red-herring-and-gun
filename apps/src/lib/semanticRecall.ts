@@ -1,16 +1,15 @@
 /**
- * semanticRecall — 记忆语义召回（确定性，零依赖）— G2 / agentbook Ch.3
+ * semanticRecall — 记忆语义召回（确定性，零依赖）
  *
  * 词面 bigram 召回的缺口：同义说法（电瓶车/电动车）与转述（被偷/失窃）零交集。
  * 这里做确定性语义桥接，不引入 embedding 模型或 LLM rerank（每案零开销零延迟）：
  * 1. 领域同义词组 → 规范 token（syn:<组id>），任意成员命中即桥接；
  * 2. 汉字字符集 Dice 系数，捕捉转述改写的模糊重叠；
- * 3. 与既有 bigram Jaccard 加权合成，输出 0–100（与 calculateClaimSimilarity 同标度）。
- * 升级路径：需要更强泛化时再挂本地 embedding（ADR-001 Phase 3 备选）。
+ * 3. 与既有 bigram Jaccard 加权合成，输出 0–100。
  */
 
 /** 谣言域同义词组：新词组直接追加，命中任一成员 → 同一规范 token。 */
-export const RUMOR_SYNONYM_GROUPS: string[][] = [
+const RUMOR_SYNONYM_GROUPS: string[][] = [
   ["电瓶车", "电动车", "电动自行车", "电单车"],
   ["被偷", "失窃", "被盗", "被偷走"],
   ["偷走", "盗走", "窃取"],
@@ -47,7 +46,7 @@ const SYNONYM_TOKEN_MAP: Map<string, string> = (() => {
 })();
 
 /** 文本里命中的同义词组（规范 token 集合）。 */
-export function synonymTokensOf(text: string): Set<string> {
+function synonymTokensOf(text: string): Set<string> {
   const hits = new Set<string>();
   for (const [term, canonical] of SYNONYM_TOKEN_MAP) {
     if (term && text.includes(term)) hits.add(canonical);
@@ -60,7 +59,7 @@ function normalizeForRecall(value: string): string {
 }
 
 /** 语义 token：既有 bigram + 拉丁词 + 同义词规范 token。 */
-export function semanticTokensOf(text: string): Set<string> {
+function semanticTokensOf(text: string): Set<string> {
   const normalized = normalizeForRecall(text);
   const tokens = new Set<string>(normalized.match(/[a-z0-9]{2,}/g) ?? []);
   for (let i = 0; i < normalized.length - 1; i += 1) {
@@ -72,7 +71,7 @@ export function semanticTokensOf(text: string): Set<string> {
 }
 
 /** 汉字字符集 Dice 系数：捕捉「被偷→失窃」这类改写的残余重叠。 */
-export function hanCharDice(a: string, b: string): number {
+function hanCharDice(a: string, b: string): number {
   const han = (s: string) => (s.match(/[\p{Script=Han}]/gu) ?? []);
   const charsA = han(a);
   const charsB = han(b);
@@ -91,7 +90,7 @@ export function hanCharDice(a: string, b: string): number {
 }
 
 /**
- * 语义相似度（0–100，与 knowledgeBase.calculateClaimSimilarity 同标度）。
+ * 语义相似度（0–100）。
  * 三路信号合成，取词面与同义词中的强者为语义主信号：
  * - lex：非同义词 token 的 Jaccard（原词面信号）；
  * - syn：同义词组 Jaccard（单独计算，不被 bigram 基数稀释——这是桥接的关键）；

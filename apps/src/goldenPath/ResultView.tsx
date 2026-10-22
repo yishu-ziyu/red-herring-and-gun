@@ -1,22 +1,20 @@
 /**
  * ResultView — 查完的一轮（#141）：结论 → 每一截的判断和依据 → 追问 / 分享 / 新调查。
  * 依据直接摊在每一截下面，不再走抽屉。历史回看、追问轮用同一个版式。
- * 版式是 2026-10-10 用户选的头版式（#150，DECISIONS.md）：大字结论在上，各截不套卡片，证据像脚注。
+ * 版式是 2026-10-10 用户选的头版式（#150）：大字结论在上，各截不套卡片，证据像脚注。
  */
 import { useState } from "react";
 import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSnapshotV1, InvestigationSource } from "../lib/investigation";
-import { materialKindLabel, materialRetrievedLabel, quoteLinkUrl, sourceReadStatus } from "../lib/investigation";
 import {
-  CHECKABILITY_HINT,
-  claimLabel,
-  domainOf,
   LABEL_TEXT,
   LABEL_TONE,
-  publishedDay,
-  PUBLISHED_UNKNOWN,
-  ROLE_LABEL,
+  materialKindLabel,
+  materialRetrievedLabel,
+  quoteLinkUrl,
+  sourceReadStatus,
   type LabelKey,
-} from "./snapshotUi";
+} from "../lib/investigation";
+import { CHECKABILITY_HINT, claimLabel, domainOf, publishedDay, PUBLISHED_UNKNOWN, ROLE_LABEL } from "./snapshotUi";
 import { ShareControl } from "./ShareControl";
 import "./result.css";
 

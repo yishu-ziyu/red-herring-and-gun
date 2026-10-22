@@ -1,5 +1,5 @@
 /**
- * investigationResume — 刷新/断线后接回同一条 run（IMPLEMENTATION_PLAN §5.3）。
+ * investigationResume — 刷新/断线后接回同一条 run。
  *
  * 补发接口是 GET：先给 after 之后的活动与最新快照，再接直播。
  * 它不跑模型、不检索、不扣额——重连不是第二次核查。
@@ -8,14 +8,9 @@
  * 客户端断开不是取消：服务端照常把这条 run 跑完，刷新接回时拿到的是它当时的进度，
  * 跑完了就是完成态。只有用户点停止、自带密钥失败或超过时限才会中断。
  */
-import type { OrchestrateStreamEvent } from "./agentExpansion";
+import type { OrchestrateStreamEvent } from "./orchestrateStream";
 
 const API_BASE = "";
-
-export type ResumeHandle = {
-  /** 主动停止本地接收（不发取消请求）。 */
-  close: () => void;
-};
 
 function parseFrame(raw: string): OrchestrateStreamEvent | null {
   const line = raw.trim();
@@ -29,24 +24,18 @@ function parseFrame(raw: string): OrchestrateStreamEvent | null {
   }
 }
 
-/**
- * 接回一条已有 run。每个事件交给 onEvent；流自然结束或出错时交给 onEnd。
- * 返回的 close 只关本地连接。
- */
+/** 接回一条已有 run。每个事件交给 onEvent；流自然结束或出错时交给 onEnd。 */
 export function resumeInvestigationStream(
   runId: string,
   after: number,
   onEvent: (event: OrchestrateStreamEvent) => void,
   onEnd: (reason: "closed" | "failed") => void
-): ResumeHandle {
-  const controller = new AbortController();
-  let closed = false;
-
+): void {
   void (async () => {
     try {
       const response = await fetch(
         `${API_BASE}/api/investigations/${encodeURIComponent(runId)}/events?after=${Math.max(0, Math.floor(after))}`,
-        { method: "GET", credentials: "include", signal: controller.signal }
+        { method: "GET", credentials: "include" }
       );
       if (!response.ok || !response.body) {
         onEnd("failed");
@@ -55,7 +44,7 @@ export function resumeInvestigationStream(
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      while (!closed) {
+      while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
@@ -67,18 +56,11 @@ export function resumeInvestigationStream(
           if (event) onEvent(event);
         }
       }
-      if (!closed) onEnd("closed");
+      onEnd("closed");
     } catch {
-      if (!closed) onEnd("failed");
+      onEnd("failed");
     }
   })();
-
-  return {
-    close: () => {
-      closed = true;
-      controller.abort();
-    },
-  };
 }
 
 /** 取消一条正在跑的 run。返回后端确认的状态。 */

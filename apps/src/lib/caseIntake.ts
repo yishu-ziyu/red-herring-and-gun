@@ -82,10 +82,6 @@ export function createCaseIntake(text: string, images: CaseImage[]): CaseIntake 
   };
 }
 
-export function caseIntakeHasMaterial(intake: Pick<CaseIntake, "text" | "links" | "images">) {
-  return Boolean(intake.text.trim() || intake.links.length > 0 || intake.images.length > 0);
-}
-
 /** 抓取失败、正文不可用的链接。历史回看没有 intake 时当没有失败链接。 */
 export function caseIntakeFailedLinks(intake: Pick<CaseIntake, "links"> | null | undefined): CaseLink[] {
   return (intake?.links ?? []).filter((link) => link.scrapeFailed === true);
@@ -119,14 +115,6 @@ export function caseIntakeIsImageOnly(intake: Pick<CaseIntake, "text" | "links" 
 export function caseIntakeDisplayText(intake: CaseIntake): string {
   if (caseIntakeIsImageOnly(intake)) return `${intake.images.length} 张图片`;
   return caseIntakePrimaryText(intake);
-}
-
-export function caseIntakeSummary(intake: CaseIntake) {
-  const parts = [];
-  if (intake.text.trim()) parts.push("文字");
-  if (intake.links.length > 0) parts.push(`${intake.links.length} 个链接`);
-  if (intake.images.length > 0) parts.push(`${intake.images.length} 张图片`);
-  return parts.join(" / ") || "空材料";
 }
 
 export function imageFileToCaseImage(file: File): Promise<CaseImage> {

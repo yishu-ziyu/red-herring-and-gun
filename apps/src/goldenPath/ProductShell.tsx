@@ -26,7 +26,6 @@ type ProductShellProps = {
   onSelectCase: (id: string) => void;
   /** 正在看一次调查/旧结果：只有这时品牌才作为「回到空白输入」的入口。 */
   viewingInvestigation: boolean;
-  topRightExtra?: ReactNode;
   children: ReactNode;
 };
 
@@ -43,7 +42,6 @@ export function ProductShell({
   onNewCase,
   onSelectCase,
   viewingInvestigation,
-  topRightExtra,
   children,
 }: ProductShellProps) {
   const { lang } = useUiLang();
@@ -81,7 +79,6 @@ export function ProductShell({
                 {copy.examplesNav}
               </a>
             )}
-            {topRightExtra}
             <button
               type="button"
               className="gp-icon-btn"

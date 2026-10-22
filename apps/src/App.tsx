@@ -28,7 +28,7 @@ import { useLocalHistory } from "./app/useLocalHistory";
 import { useResultPersistence } from "./app/useResultPersistence";
 import { useRunPointer } from "./app/useRunPointer";
 
-function ProductApp() {
+export default function App() {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
   const [mode, setMode] = useState<ProductMode>("input");
@@ -149,9 +149,9 @@ function ProductApp() {
         return;
       }
       try {
-        const entry = await createKnowledgeBase(null).getCase(id);
-        const snapshot = entry ? snapshotFromReport(entry.finalReport as Record<string, unknown>) : undefined;
-        // 读不到或读不出内容不能点了没反应：提示可见，条目状态不动（Change G）。
+        const entry = await createKnowledgeBase().getCase(id);
+        const snapshot = entry ? snapshotFromReport(entry.finalReport) : undefined;
+        // 读不到或读不出内容不能点了没反应：提示可见，条目状态不动。
         if (!entry || !snapshot) {
           setHistoryNotice(HISTORY_OPEN_FAILED_NOTICE[lang]);
           return;
@@ -162,7 +162,7 @@ function ProductApp() {
           claim: entry.claim,
           ...restoredThreadFields(entry.finalReport),
           intake: null,
-          restored: { snapshot, report: entry.finalReport as Record<string, unknown>, at: entry.timestamp },
+          restored: { snapshot, report: entry.finalReport, at: entry.timestamp },
         });
         setMode("investigation");
       } catch {
@@ -238,115 +238,108 @@ function ProductApp() {
   const archivedRound = selectedRoundId ? active?.thread?.rounds.find((round) => round.id === selectedRoundId) : undefined;
   const displaySnapshot = archivedRound?.snapshot ?? snapshot;
   return (
-    <>
-      <ProductShell
-        cases={cases}
-        activeCaseId={active?.localId ?? null}
-        historyReady={historyReady}
-        onNewCase={handleBackHome}
-        onSelectCase={(id) => void handleSelectCase(id)}
-        viewingInvestigation={mode === "investigation"}
-      >
-        {showLinkUnreachable ? (
-          <p className="gp-global-notice" role="alert">
-            {copy.linkUnreachableNotice}
+    <ProductShell
+      cases={cases}
+      activeCaseId={active?.localId ?? null}
+      historyReady={historyReady}
+      onNewCase={handleBackHome}
+      onSelectCase={(id) => void handleSelectCase(id)}
+      viewingInvestigation={mode === "investigation"}
+    >
+      {showLinkUnreachable ? (
+        <p className="gp-global-notice" role="alert">
+          {copy.linkUnreachableNotice}
+        </p>
+      ) : run.state.notice && mode === "investigation" ? (
+        <p className="gp-global-notice" role="alert">{run.state.notice}</p>
+      ) : historyNotice ? (
+        <p className="gp-global-notice" role="alert">{historyNotice}</p>
+      ) : null}
+      {sameClaim ? (
+        <div className="gp-same-claim" role="dialog" aria-label={copy.sameClaimTitle}>
+          <p className="gp-same-claim-title">{copy.sameClaimTitle}</p>
+          <p className="gp-same-claim-text">{sameClaim.claim}</p>
+          <p className="gp-same-claim-time">
+            {sameClaim.at ? copy.oldCaseNotice(new Date(sameClaim.at).toLocaleString("zh-CN", { hour12: false })) : copy.oldCaseNotice(copy.unknownTime)}
           </p>
-        ) : run.state.notice && mode === "investigation" ? (
-          <p className="gp-global-notice" role="alert">{run.state.notice}</p>
-        ) : historyNotice ? (
-          <p className="gp-global-notice" role="alert">{historyNotice}</p>
-        ) : null}
-        {sameClaim ? (
-          <div className="gp-same-claim" role="dialog" aria-label={copy.sameClaimTitle}>
-            <p className="gp-same-claim-title">{copy.sameClaimTitle}</p>
-            <p className="gp-same-claim-text">{sameClaim.claim}</p>
-            <p className="gp-same-claim-time">
-              {sameClaim.at ? copy.oldCaseNotice(new Date(sameClaim.at).toLocaleString("zh-CN", { hour12: false })) : copy.oldCaseNotice(copy.unknownTime)}
-            </p>
-            <div className="gp-same-claim-actions">
-              <button
-                type="button"
-                className="gp-primary-btn"
-                onClick={() => {
-                  const target = sameClaim;
-                  setSameClaim(null);
-                  void handleSelectCase(target.id);
-                }}
-              >
-                {copy.sameClaimOpen}
-              </button>
-              <button
-                type="button"
-                className="gp-ghost-btn"
-                onClick={() => {
-                  const target = sameClaim;
-                  setSameClaim(null);
-                  beginRun(target.intake);
-                }}
-              >
-                {copy.sameClaimRedo}
-              </button>
-              <button type="button" className="gp-ghost-btn" onClick={() => setSameClaim(null)}>
-                {copy.cancel}
-              </button>
-            </div>
+          <div className="gp-same-claim-actions">
+            <button
+              type="button"
+              className="gp-primary-btn"
+              onClick={() => {
+                const target = sameClaim;
+                setSameClaim(null);
+                void handleSelectCase(target.id);
+              }}
+            >
+              {copy.sameClaimOpen}
+            </button>
+            <button
+              type="button"
+              className="gp-ghost-btn"
+              onClick={() => {
+                const target = sameClaim;
+                setSameClaim(null);
+                beginRun(target.intake);
+              }}
+            >
+              {copy.sameClaimRedo}
+            </button>
+            <button type="button" className="gp-ghost-btn" onClick={() => setSameClaim(null)}>
+              {copy.cancel}
+            </button>
           </div>
-        ) : null}
-        {mode === "investigation" && active?.thread ? <InvestigationThreadHeader
-          thread={active.thread}
-          currentQuestion={displayFollowUpClaim(active.claim)}
-          selectedRoundId={selectedRoundId}
-          onSelect={setSelectedRoundId}
-        /> : null}
-        {mode === "input" ? (
-          <>
-            {!historyReady ? <p className="gp-global-notice" role="status">{copy.loadingHistory}</p> : null}
-            <InputStage
-              onSubmit={handleStart}
-              initialClaim={draftClaim}
-            />
-          </>
-        ) : active && displaySnapshot ? (
-          <>
-            {showTimeoutPending ? (
-              <p className="gp-hint" role="status" data-gp-timeout-pending>
-                {TIMEOUT_PENDING_NOTICE[lang]}
-              </p>
-            ) : null}
-            <InvestigationCanvas
-              key={archivedRound?.id ?? active.roundId ?? active.localId}
-              snapshot={displaySnapshot}
-              readOnly={Boolean(archivedRound)}
-              live={archivedRound || active.restored ? false : run.state.connection === "connecting" || run.state.connection === "live"}
-              stop={archivedRound || active.restored ? "idle" : run.state.stop}
-              onStop={archivedRound || active.restored || !run.state.runId ? undefined : () => void run.cancel()}
-              saveStatus={saveStatus}
-              onRetrySave={retrySave}
-              restoredAt={active.restored?.at}
-              onReverify={handleRetry}
-              onBackHome={handleBackHome}
-              onFollowUp={archivedRound ? undefined : handleFollowUp}
-              linkUnreachable={caseIntakeFailedLinks(active.intake).length > 0}
-              images={archivedRound || active.restored ? undefined : active.intake?.images}
-              shareRunId={archivedRound ? archivedRound.runId : currentRunId(active, run.state.runId)}
-            />
-          </>
-        ) : showTimeoutPending ? (
-          <p className="gp-hint" role="status" data-gp-timeout-pending>
-            {TIMEOUT_PENDING_NOTICE[lang]}
-          </p>
-        ) : (
-          <p className="gp-waiting" role="status">
-            {run.state.connection === "failed" && !snapshot && !showLinkUnreachable
-              ? publicTransportError(run.state.errorMessage, copy.connectionLost)
-              : "正在拆解这句话…"}
-          </p>
-        )}
-      </ProductShell>
-    </>
+        </div>
+      ) : null}
+      {mode === "investigation" && active?.thread ? <InvestigationThreadHeader
+        thread={active.thread}
+        currentQuestion={displayFollowUpClaim(active.claim)}
+        selectedRoundId={selectedRoundId}
+        onSelect={setSelectedRoundId}
+      /> : null}
+      {mode === "input" ? (
+        <>
+          {!historyReady ? <p className="gp-global-notice" role="status">{copy.loadingHistory}</p> : null}
+          <InputStage
+            onSubmit={handleStart}
+            initialClaim={draftClaim}
+          />
+        </>
+      ) : active && displaySnapshot ? (
+        <>
+          {showTimeoutPending ? (
+            <p className="gp-hint" role="status" data-gp-timeout-pending>
+              {TIMEOUT_PENDING_NOTICE[lang]}
+            </p>
+          ) : null}
+          <InvestigationCanvas
+            key={archivedRound?.id ?? active.roundId ?? active.localId}
+            snapshot={displaySnapshot}
+            readOnly={Boolean(archivedRound)}
+            stop={archivedRound || active.restored ? "idle" : run.state.stop}
+            onStop={archivedRound || active.restored || !run.state.runId ? undefined : () => void run.cancel()}
+            saveStatus={saveStatus}
+            onRetrySave={retrySave}
+            restoredAt={active.restored?.at}
+            onReverify={handleRetry}
+            onBackHome={handleBackHome}
+            onFollowUp={archivedRound ? undefined : handleFollowUp}
+            linkUnreachable={caseIntakeFailedLinks(active.intake).length > 0}
+            images={archivedRound || active.restored ? undefined : active.intake?.images}
+            shareRunId={archivedRound ? archivedRound.runId : currentRunId(active, run.state.runId)}
+          />
+        </>
+      ) : showTimeoutPending ? (
+        <p className="gp-hint" role="status" data-gp-timeout-pending>
+          {TIMEOUT_PENDING_NOTICE[lang]}
+        </p>
+      ) : (
+        <p className="gp-waiting" role="status">
+          {run.state.connection === "failed" && !snapshot && !showLinkUnreachable
+            ? publicTransportError(run.state.errorMessage, copy.connectionLost)
+            : "正在拆解这句话…"}
+        </p>
+      )}
+    </ProductShell>
   );
-}
-
-export default function App() {
-  return <ProductApp />;
 }

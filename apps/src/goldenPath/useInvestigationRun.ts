@@ -6,7 +6,7 @@
  *  2. 连接状态与最终 finalReport（complete 事件，用于落库）。
  *
  * raw Agent / tool / search / planner 事件在此被显式忽略——
- * 删掉它们之后生产 Golden Path 仍必须完整工作（见 goldenPath/run.test.tsx 负向测试）。
+ * 删掉它们之后生产 Golden Path 仍必须完整工作。
  */
 import { useCallback, useRef, useState } from "react";
 import {
@@ -16,14 +16,14 @@ import {
   type InvestigationSnapshotV1,
   type PublicActivity,
 } from "../lib/investigation";
-import { requestOrchestrateStream, type OrchestrateStreamEvent } from "../lib/agentExpansion";
+import { requestOrchestrateStream, type OrchestrateStreamEvent } from "../lib/orchestrateStream";
 import { cancelInvestigation, resumeInvestigationStream } from "../lib/investigationResume";
 import { caseIntakePrimaryText, type CaseIntake } from "../lib/caseIntake";
 import { createKnowledgeBase } from "../lib/knowledgeBase";
 import { buildLocalMemoryRecall } from "../lib/localMemoryRecall";
 import type { VisiblePriorRound } from "../lib/priorRoundBrief";
 
-/** legacy 原始事件：只存在于 debug/telemetry；Golden Path 不从中推导任何产品语义。 */
+/** legacy 原始事件：Golden Path 不从中推导任何产品语义。 */
 const IGNORED_LEGACY_EVENT_TYPES: ReadonlySet<OrchestrateStreamEvent["type"]> = new Set([
   "search_progress",
   "planner_update",
@@ -37,12 +37,12 @@ const IGNORED_LEGACY_EVENT_TYPES: ReadonlySet<OrchestrateStreamEvent["type"]> = 
   "tool_error",
 ]);
 
-export type ConnectionPhase = "connecting" | "live" | "ended" | "failed";
+type ConnectionPhase = "connecting" | "live" | "ended" | "failed";
 
 /** 停止只分三态：没在停 / 已请求、等后端 / 后端已确认。不提前说「已停止」。 */
-export type StopPhase = "idle" | "stopping" | "stopped";
+type StopPhase = "idle" | "stopping" | "stopped";
 
-export type RunState = {
+type RunState = {
   /** null = 尚未收到任何快照（拆题还没回来）。 */
   snapshot: InvestigationSnapshotV1 | null;
   connection: ConnectionPhase;
@@ -64,8 +64,7 @@ export type RunState = {
   serverStatus: string | null;
   stop: StopPhase;
   /**
-   * 整体超时后管线仍在跑（契约 2026-09-12-mainpath-p0 Change C）：
-   * 这时候等结果变成「可选」——用户离开页面或刷新都还能拿回同一份结论。
+   * 整体超时后管线仍在跑：这时候等结果变成「可选」——用户离开页面或刷新都还能拿回同一份结论。
    * complete（真结果到了）或 error（最终失败）时翻回 false。
    */
   timeoutPending: boolean;
@@ -87,16 +86,15 @@ const INITIAL_STATE: RunState = {
   timeoutPending: false,
 };
 
-/**
- * 纯 reducer：一条 SSE 事件 → 下一份产品 state。
- * 只认 investigation_snapshot / complete / error / timeout_pending；legacy 事件原样忽略（E2 负向测试的对象）。
- * claim 供 complete 报告缺快照时的确定性重建使用。
- */
 function isTerminalServerStatus(status: string | null): boolean {
   return status === "completed" || status === "interrupted" || status === "cancelled";
 }
 
-export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: string): RunState {
+/**
+ * 纯 reducer：一条 SSE 事件 → 下一份产品 state。legacy 事件原样忽略。
+ * claim 供 complete 报告缺快照时的确定性重建使用。
+ */
+function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: string): RunState {
   if (event.type === "run_started") {
     return { ...prev, runId: typeof event.runId === "string" ? event.runId : prev.runId };
   }
@@ -182,7 +180,7 @@ export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, cla
 export type StartOptions = {
   /**
    * 追问：带上一轮可见材料。
-   * 不带时请求体与现状完全一致（首轮、重试、legacy 都不带）。
+   * 首轮、重试都不带，请求体里也就没有这些字段。
    */
   priorRound?: VisiblePriorRound | null;
 };
@@ -223,19 +221,11 @@ export function useInvestigationRun() {
       void (async () => {
         let memoryRecall: Record<string, unknown> | undefined;
         try {
-          memoryRecall = (await buildLocalMemoryRecall(
-            createKnowledgeBase(null),
-            typeof intake === "string" ? intake : intake.text
-          )) as unknown as Record<string, unknown>;
+          memoryRecall = await buildLocalMemoryRecall(createKnowledgeBase(), intake.text);
         } catch {
           // 召回降级不阻断调查
         }
-        for await (const event of requestOrchestrateStream(
-          intake,
-          memoryRecall,
-          clientRequestId,
-          { priorRound: options.priorRound }
-        )) {
+        for await (const event of requestOrchestrateStream(intake, memoryRecall, clientRequestId, options.priorRound)) {
           if (runIdRef.current !== runId) return;
           if (IGNORED_LEGACY_EVENT_TYPES.has(event.type)) continue;
           applyEvent(event, claim);
@@ -247,7 +237,6 @@ export function useInvestigationRun() {
             : prev
         );
       })();
-      return { cancel: () => { runIdRef.current += 1; } };
     },
     [applyEvent]
   );
@@ -275,15 +264,12 @@ export function useInvestigationRun() {
     return result;
   }, [state.runId]);
 
-  /**
-   * 接回一条已有 run（刷新/返回）。不新建 run、不扣额。
-   * 返回的 cancel 只关本地连接。
-   */
+  /** 接回一条已有 run（刷新/返回）。不新建 run、不扣额。 */
   const resume = useCallback(
     (runId: string, after: number, claim: string) => {
       const local = ++runIdRef.current;
       setState({ ...INITIAL_STATE, runId, connection: "connecting" });
-      const handle = resumeInvestigationStream(
+      resumeInvestigationStream(
         runId,
         after,
         (event) => {
@@ -296,18 +282,11 @@ export function useInvestigationRun() {
             if (prev.connection === "ended" || prev.connection === "failed") return prev;
             // 服务端已确认终态：补发完就关流，不是「还活着」。超时后晚完成的 run 走的正是这条路——
             // 刷新回来能拿到 phase=complete 的快照，界面必须按「已结束」渲染，不能挂着进行中。
-            if (
-              prev.serverStatus === "completed" ||
-              prev.serverStatus === "interrupted" ||
-              prev.serverStatus === "cancelled"
-            ) {
-              return { ...prev, connection: "ended" };
-            }
+            if (isTerminalServerStatus(prev.serverStatus)) return { ...prev, connection: "ended" };
             return { ...prev, connection: reason === "failed" ? "failed" : prev.finalReport ? "ended" : "live" };
           });
         }
       );
-      return { cancel: () => { runIdRef.current += 1; handle.close(); } };
     },
     [applyEvent]
   );

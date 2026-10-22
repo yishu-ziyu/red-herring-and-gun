@@ -1,12 +1,11 @@
 /**
  * 本地记忆召回（纯数据，无 UI）：查过的相似案件与本地证据作为检索线索喂给后端。
- * 从 MissionControlView 抽出，供 legacy 执行壳与生产 Golden Path 共用；
  * 只作为复用检索路径与信源经验，不直接替代本案证据。
  */
-import { calculateClaimSimilarity, type KnowledgeBase } from "./knowledgeBase";
-import type { KnowledgeBaseEntry } from "./schemas";
+import type { KnowledgeBase, KnowledgeBaseEntry } from "./knowledgeBase";
+import { semanticClaimSimilarity } from "./semanticRecall";
 
-export interface LocalMemoryRecall extends Record<string, unknown> {
+interface LocalMemoryRecall extends Record<string, unknown> {
   hitCount: number;
   evidenceCount: number;
   hits: Array<{
@@ -45,7 +44,7 @@ export async function buildLocalMemoryRecall(
       title: `历史案件来源：${entry.claim.slice(0, 36)}${entry.claim.length > 36 ? "..." : ""}`,
       url,
       domain: safeDomainFromUrl(url),
-      snippet: `来自相似案件，原信息相似度 ${calculateClaimSimilarity(claim, entry.claim)}/100。旧案只作为检索线索，不直接进入本案结论。`,
+      snippet: `来自相似案件，原信息相似度 ${semanticClaimSimilarity(claim, entry.claim)}/100。旧案只作为检索线索，不直接进入本案结论。`,
       sourceType: "历史案件",
       evidenceRole: "线索",
     }))
@@ -64,7 +63,7 @@ export async function buildLocalMemoryRecall(
   const hits = cases.map((entry) => ({
     id: entry.id,
     claim: entry.claim,
-    score: calculateClaimSimilarity(claim, entry.claim),
+    score: semanticClaimSimilarity(claim, entry.claim),
     verdict: finalReportText(entry.finalReport, "verdictType"),
     tags: entry.tags.slice(0, 5),
     sourceUrls: extractSourceUrlsFromCase(entry).slice(0, 5),

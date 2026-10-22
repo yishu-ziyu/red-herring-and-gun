@@ -4,7 +4,7 @@
  * round is not a new rumor check from a blank page.
  */
 
-export const FOLLOW_UP_MARKER = "同一条核查的追问，不是新案件。";
+const FOLLOW_UP_MARKER = "同一条核查的追问，不是新案件。";
 
 const ANSWER_EXCERPT = 1200;
 
@@ -12,17 +12,12 @@ export function composeFollowUpClaim(input: {
   originalClaim: string;
   previousAnswer: string;
   followUp: string;
-  priorFollowUps?: string[];
 }): string {
   const followUp = input.followUp.trim();
   const original = input.originalClaim.trim();
   const answer = input.previousAnswer.trim().slice(0, ANSWER_EXCERPT);
-  const prior = (input.priorFollowUps ?? []).map((item) => item.trim()).filter(Boolean);
 
   const lines = [followUp, "", `（${FOLLOW_UP_MARKER}）`, `原对象：${original}`];
-  if (prior.length > 0) {
-    lines.push(`此前追问：${prior.join(" / ")}`);
-  }
   if (answer) {
     lines.push(`上一轮回答：${answer}`);
   }
@@ -48,7 +43,7 @@ export function displayFollowUpClaim(originalClaim: string): string {
   return originalClaim.slice(0, markerIndex).replace(/[\s\u3000]*[（(]\s*$/, "").trim();
 }
 
-export function distinctiveFollowUpTerms(question: string): string[] {
+function distinctiveFollowUpTerms(question: string): string[] {
   const compact = question.replace(/[^\u4e00-\u9fff]/g, "");
   const seen = new Set<string>();
   const terms: string[] = [];

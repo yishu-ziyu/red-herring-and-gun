@@ -1,7 +1,7 @@
 /**
  * InputStage — 输入态（Issue #52 第三节）：5 秒内看懂「放什么、会得到什么、下一步」。
  * 只有用户级状态（服务不可用 / 次数用尽 / 链接抓取失败）；
- * 实现层品牌、积分、批量工具与模型供应商控制一律不在默认首页（E3 扫描对象）。
+ * 实现层品牌、积分、批量工具与模型供应商控制一律不在默认首页。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -35,9 +35,8 @@ const LINK_SCRAPE_NOTICE_TTL_MS = 12000;
  * 把「链接打不开」的提示挂到输入态所在的那一层页面容器上（产品壳的 main），
  * 而不是挂在输入态的 React 树里。
  *
- * 原因：点提交后 App 立刻切到调查态，输入态整块卸载，挂在输入态树里的提示一帧都画不出来
- * （docs/reports/2026-09-12-golden-path-walkthrough/wiring-review.md P8）。产品壳的 main
- * 在一次会话里始终在，提示挂上去以后提交后仍留在屏幕上，十几秒后自己消失。
+ * 原因：点提交后 App 立刻切到调查态，输入态整块卸载，挂在输入态树里的提示一帧都画不出来。
+ * 产品壳的 main 在一次会话里始终在，提示挂上去以后提交后仍留在屏幕上，十几秒后自己消失。
  */
 function showLinkScrapeNotice(text: string, host: HTMLElement | null) {
   if (typeof document === "undefined" || !document.body) return;
@@ -93,7 +92,7 @@ export function InputStage({
   onSubmit,
   initialClaim = "",
 }: InputStageProps) {
-  const { lang, copy: legacy } = useUiLang();
+  const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
   const [inputValue, setInputValue] = useState(initialClaim);
   const [images, setImages] = useState<CaseImage[]>([]);
@@ -104,9 +103,8 @@ export function InputStage({
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const detectedLinks = useMemo(() => extractLinks(inputValue), [inputValue]);
-  const hasMaterial = Boolean(inputValue.trim() || detectedLinks.length > 0 || images.length > 0);
   const attachments = useMemo<PromptAttachment[]>(
-    () => images.map((image) => ({ id: image.id, name: image.name, kind: "image" as const })),
+    () => images.map((image) => ({ id: image.id, name: image.name })),
     [images]
   );
   const quotaExhausted = quotaIsExhausted(checkQuota);
@@ -134,7 +132,7 @@ export function InputStage({
     if (isScraping) return;
     const intake = createCaseIntake(inputValue, images);
     if (!intake.text && intake.links.length === 0 && intake.images.length === 0) {
-      setInputError(legacy.fillMaterialFirst);
+      setInputError(copy.fillMaterialFirst);
       return;
     }
     let enriched = intake;
@@ -157,7 +155,7 @@ export function InputStage({
           showLinkScrapeNotice(copy.linkUnreachableNotice, rootRef.current);
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : legacy.scrapeFailed;
+        const message = error instanceof Error ? error.message : copy.scrapeFailed;
         setInputError(message);
         showLinkScrapeNotice(message, rootRef.current);
       } finally {
@@ -165,7 +163,7 @@ export function InputStage({
       }
     }
     onSubmit(enriched);
-  }, [checkQuota, images, inputValue, isScraping, lang, legacy.fillMaterialFirst, legacy.scrapeFailed, onSubmit, quotaExhausted]);
+  }, [checkQuota, images, inputValue, isScraping, lang, copy.fillMaterialFirst, copy.scrapeFailed, onSubmit, quotaExhausted]);
 
   const handleAddFiles = useCallback(
     async (files: File[]) => {
@@ -174,25 +172,25 @@ export function InputStage({
       try {
         const imageFiles = files.filter((file) => file.type.startsWith("image/"));
         if (imageFiles.length === 0 || imageFiles.length !== files.length) {
-          setInputError(legacy.filesUnsupported);
+          setInputError(copy.filesUnsupported);
           return;
         }
         if (images.length + imageFiles.length > MAX_IMAGE_COUNT) {
-          setInputError(legacy.tooManyImages);
+          setInputError(copy.tooManyImages);
           return;
         }
         const total = images.reduce((sum, image) => sum + image.size, 0) + imageFiles.reduce((sum, file) => sum + file.size, 0);
         if (total > MAX_TOTAL_IMAGE_BYTES) {
-          setInputError(legacy.imagesTooLarge);
+          setInputError(copy.imagesTooLarge);
           return;
         }
         const next = await Promise.all(imageFiles.map(imageFileToCaseImage));
         setImages((prev) => [...prev, ...next].slice(0, MAX_IMAGE_COUNT));
       } catch (error) {
-        setInputError(error instanceof Error ? error.message : legacy.imageReadFailed);
+        setInputError(error instanceof Error ? error.message : copy.imageReadFailed);
       }
     },
-    [images, legacy]
+    [images, copy]
   );
 
   const removeImage = useCallback((imageId: string) => {
@@ -222,7 +220,6 @@ export function InputStage({
 
   return (
     <div className="gp-input-stage" ref={rootRef}>
-      {copy.inputKicker ? <p className="gp-kicker">{copy.inputKicker}</p> : null}
       <h1 className="gp-headline">
         {copy.inputHeadlineA}
         <em>{copy.inputHeadlineAccent}</em>
@@ -242,13 +239,12 @@ export function InputStage({
           onAddFiles={handleAddFiles}
           onRemoveAttachment={removeImage}
           busy={isScraping}
-          submitText
           submitLabel={isScraping ? copy.inputScraping : copy.inputSubmit}
           ariaLabel={copy.inputLabel}
           placeholder={copy.inputPlaceholder}
         />
         {detectedLinks.length > 0 ? (
-          <div className="gp-link-row" aria-label={legacy.linksDetected}>
+          <div className="gp-link-row" aria-label={copy.linksDetected}>
             {detectedLinks.map((link) => (
               <a key={link.id} className="gp-link-chip" href={link.url} target="_blank" rel="noreferrer">
                 <span>{link.hostname}</span>
@@ -265,10 +261,10 @@ export function InputStage({
         ) : null}
       </section>
 
-      <section className="gp-examples" id="gp-examples" aria-label={legacy.examplesAria}>
+      <section className="gp-examples" id="gp-examples" aria-label={copy.examplesAria}>
         <p className="gp-examples-label">{copy.examplesLabel}</p>
         <ul className="gp-examples-list">
-          {legacy.demoClaims.map((claim) => (
+          {copy.demoClaims.map((claim) => (
             <li key={claim}>
               <button
                 type="button"

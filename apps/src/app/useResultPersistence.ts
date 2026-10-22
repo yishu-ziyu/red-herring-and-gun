@@ -7,9 +7,8 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import type { ShellCase } from "../goldenPath/ProductShell";
 import type { useInvestigationRun } from "../goldenPath/useInvestigationRun";
-import { createKnowledgeBase } from "../lib/knowledgeBase";
+import { createKnowledgeBase, type KnowledgeBaseEntry } from "../lib/knowledgeBase";
 import { threadSummary } from "../lib/investigationThread";
-import type { KnowledgeBaseEntry } from "../lib/schemas";
 import { currentRunId, groupThreadCases, snapshotFromReport, threadForRound, type ActiveCase, type ProductMode, type SaveStatus } from "./caseViews";
 
 export function useResultPersistence(args: {
@@ -33,7 +32,7 @@ export function useResultPersistence(args: {
     async (report: Record<string, unknown>, localId: string, claim: string) => {
       const doneAt = Date.now();
       const isCurrent = () => activeIdRef.current === localId;
-      const knowledgeBase = createKnowledgeBase(null);
+      const knowledgeBase = createKnowledgeBase();
       const existing = await knowledgeBase.getCase(localId).catch(() => null);
       const entry: KnowledgeBaseEntry = {
         id: localId,

@@ -15,16 +15,16 @@ export function useLocalHistory() {
     let cancelled = false;
     void (async () => {
       try {
-        const local = await createKnowledgeBase(null).listCases();
+        const local = await createKnowledgeBase().listCases();
         if (cancelled) return;
         setCases((prev) => {
           const localItems: ShellCase[] = local.map((entry) => ({
             id: entry.id,
             claim: threadSummary(entry.finalReport).threadClaim ?? entry.claim,
             ...threadSummary(entry.finalReport),
-            status: (entry.finalReport as Record<string, unknown>)._source === "error-boundary" ? "interrupted" as const : "done" as const,
+            status: entry.finalReport._source === "error-boundary" ? "interrupted" as const : "done" as const,
             createdAt: entry.timestamp,
-            report: entry.finalReport as Record<string, unknown>,
+            report: entry.finalReport,
           }));
           const ids = new Set(localItems.map((item) => item.id));
           return groupThreadCases([...localItems, ...prev.filter((item) => !ids.has(item.id))]);

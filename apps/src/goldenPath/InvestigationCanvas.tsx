@@ -21,8 +21,6 @@ import { IntakeImages } from "./IntakeImages";
 
 type InvestigationCanvasProps = {
   snapshot: InvestigationSnapshotV1;
-  /** 连接/运行是否仍在进行（决定调查态的进行中语气）。 */
-  live: boolean;
   /** 停止：三态由服务端确认驱动，不提前说已停止。 */
   stop?: "idle" | "stopping" | "stopped";
   onStop?: () => void;
@@ -47,7 +45,6 @@ type InvestigationCanvasProps = {
 
 export function InvestigationCanvas({
   snapshot,
-  live,
   stop: liveStop = "idle",
   onStop,
   saveStatus = "idle",

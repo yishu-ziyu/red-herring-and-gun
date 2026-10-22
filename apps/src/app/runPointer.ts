@@ -4,7 +4,7 @@
 import type { CaseIntake } from "../lib/caseIntake";
 import type { InvestigationRound, InvestigationThread } from "../lib/investigationThread";
 
-export type StoredRunPointer = {
+type StoredRunPointer = {
   runId: string;
   claim: string;
   intake: CaseIntake | null;

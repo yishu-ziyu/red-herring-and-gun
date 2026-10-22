@@ -22,7 +22,7 @@ export function isCompleteEmptyShell(claim: InvestigationClaim): boolean {
   return true;
 }
 
-export function leftoverClaimTexts(claims: InvestigationClaim[]): string[] {
+function leftoverClaimTexts(claims: InvestigationClaim[]): string[] {
   return claims.filter(isCompleteEmptyShell).map((claim) => claim.text.trim()).filter(Boolean);
 }
 
@@ -37,7 +37,7 @@ function compactText(text: string): string {
  * 用户对前一句的确认/质疑语气，不是新的事实主张。
  * 这些片段可以表达「请核实上一句」，但不能被当成独立命题再次检索。
  */
-export function isMetaQuestionFragment(text: string): boolean {
+function isMetaQuestionFragment(text: string): boolean {
   const compact = compactText(text)
     .replace(/[？?！!。；;，,、]+$/g, "")
     .trim();
@@ -106,7 +106,7 @@ function paraphraseCovers(claimTexts: string[], clause: string): boolean {
 }
 
 /** 原句里有、命题列表盖不住的句子。整句都没盖住就整句留下；只有半句被盖住才按逗号拆开。 */
-export function uncoveredOriginalClauses(originalClaim: string, claimTexts: string[]): string[] {
+function uncoveredOriginalClauses(originalClaim: string, claimTexts: string[]): string[] {
   const texts = claimTexts.map((text) => text.trim()).filter(Boolean);
   const leftover: string[] = [];
   const isCovered = (clause: string) => texts.some((text) => covers(text, clause)) || paraphraseCovers(texts, clause);

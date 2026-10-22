@@ -7,7 +7,7 @@
 
 import type { CaseLink } from "./caseIntake";
 
-export interface ScrapedLink extends CaseLink {
+interface ScrapedLink extends CaseLink {
   scrapedContent: string;
   scrapedAt: number;
   scrapeStatus: "success" | "error";
@@ -20,7 +20,7 @@ const JINA_AI_BASE = "https://r.jina.ai/";
 const FETCH_TIMEOUT_MS = 15000;
 
 /** 少于这个字数的「正文」不足以当材料：登录墙与空页在 Jina 里常常只剩标题和空壳。 */
-export const MIN_SCRAPE_CONTENT_CHARS = 200;
+const MIN_SCRAPE_CONTENT_CHARS = 200;
 
 /**
  * 通用登录墙特征（小写匹配）。只认公开可见的「要登录才给看」提示，
@@ -46,7 +46,7 @@ const LOGIN_WALL_REDIRECT = /\bpassport\.[a-z0-9-]+\.(?:com|cn|net)\b/i;
 /**
  * 判定一段抓取结果能不能当正文用。能用返回 null，不能用返回失败原因。
  */
-export function scrapeFailureReason(content: string): string | null {
+function scrapeFailureReason(content: string): string | null {
   const text = content.trim();
   if (!text) return "抓取内容为空";
   if (text.length < MIN_SCRAPE_CONTENT_CHARS) return `抓取内容过短（${text.length} 字）`;
