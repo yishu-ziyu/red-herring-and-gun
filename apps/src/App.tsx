@@ -327,6 +327,7 @@ export default function App() {
             linkUnreachable={caseIntakeFailedLinks(active.intake).length > 0}
             images={archivedRound || active.restored ? undefined : active.intake?.images}
             shareRunId={archivedRound ? archivedRound.runId : currentRunId(active, run.state.runId)}
+            startedAt={archivedRound || active.restored ? undefined : run.state.startedAt ?? undefined}
           />
         </>
       ) : showTimeoutPending ? (

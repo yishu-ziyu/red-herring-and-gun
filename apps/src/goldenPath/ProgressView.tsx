@@ -2,8 +2,10 @@
  * ProgressView — 调查进行中（和中断时）的版式，和结果页同一套头版式（#150）。
  * 只按真实进度一行行出现：拆出几截就出现几行，每一截找到资料、判完，那一行才往下填。
  * 不展示执行过程：没有角色、没有执行记录、没有来源条数，只有一句大白话说现在在做什么。
- * 例外（2026-10-22 用户决定）：还没判完的一截下面列出已经找到的网页标题，只列标题。
+ * 例外（2026-10-22 用户决定）：还没判完的一截下面列出已经找到的网页标题，只列标题；
+ * 状态行右边显示已经用了多久、一般要多久。
  */
+import { useEffect, useState } from "react";
 import { LABEL_TEXT, LABEL_TONE, type InvestigationClaim, type InvestigationSnapshotV1 } from "../../shared/investigation";
 import { CHECKABILITY_HINT, claimLabel } from "./snapshotUi";
 import { EvidenceRow } from "./ResultView";
@@ -15,18 +17,23 @@ type ProgressViewProps = {
   interrupted: boolean;
   /** 原句里没进本轮核查的部分，必须明说。 */
   leftoverNote: string;
+  /** 这一轮开始的时间（本机时钟）；没有就不显示已用时间。 */
+  startedAt?: number;
 };
 
-export function ProgressView({ snapshot, claims, interrupted, leftoverNote }: ProgressViewProps) {
+export function ProgressView({ snapshot, claims, interrupted, leftoverNote, startedAt }: ProgressViewProps) {
   const deferred = new Set(snapshot.scope?.deferredClaimIds ?? []);
   const status = interrupted ? "" : statusLine(snapshot, claims, deferred);
   return (
     <div className="gp-progress" data-gp-progress>
       {status ? (
-        <p className="gp-progress-status" role="status" data-gp-progress-status>
-          <span className="gp-progress-dot" aria-hidden="true" />
-          {status}
-        </p>
+        <div className="gp-progress-status-row">
+          <p className="gp-progress-status" role="status" data-gp-progress-status>
+            <span className="gp-progress-dot" aria-hidden="true" />
+            {status}
+          </p>
+          {startedAt ? <ElapsedClock startedAt={startedAt} /> : null}
+        </div>
       ) : null}
       {claims.length > 0 ? (
         <section className="gp-result-parts" aria-label="每一截的进度">
@@ -101,6 +108,25 @@ function ProgressRow({
         </ul>
       ) : null}
     </article>
+  );
+}
+
+/** 一次调查一般要 2 到 4 分钟（2026-10-22 实测 152–217 秒）。每秒更新；不放进 role=status，免得读屏每秒播报。 */
+const USUAL_MAX_SECONDS = 4 * 60;
+
+function ElapsedClock({ startedAt }: { startedAt: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const seconds = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const used = seconds < 60 ? `${seconds} 秒` : `${Math.floor(seconds / 60)} 分 ${String(seconds % 60).padStart(2, "0")} 秒`;
+  const hint = seconds < USUAL_MAX_SECONDS ? "一次调查一般要 2 到 4 分钟" : "这次比一般的久，还在查";
+  return (
+    <span className="gp-progress-clock" data-gp-progress-clock>
+      已用 {used} · {hint}
+    </span>
   );
 }
 

@@ -151,7 +151,7 @@ export function createHandlers(env: Record<string, string>) {
       }
     };
 
-    write({ type: "run_started", runId, caseId: run.caseId, timestamp: Date.now() });
+    write({ type: "run_started", runId, caseId: run.caseId, startedAt: run.createdAt, timestamp: Date.now() });
     // 补发：先给已经发生过的活动，再给最新快照。
     for (const activity of runs.replayActivities(runId, after)) {
       write({ type: "investigation_activity", activity, timestamp: Date.now() });
@@ -288,7 +288,7 @@ export function createHandlers(env: Record<string, string>) {
       intakeMetadata,
       clientMemoryRecall,
       clientFollowUpReuse,
-      run: { runId: started.run.runId, caseId: started.run.caseId },
+      run: { runId: started.run.runId, caseId: started.run.caseId, createdAt: started.run.createdAt },
     }, res);
   }
 

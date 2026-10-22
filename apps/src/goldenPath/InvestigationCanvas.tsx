@@ -40,6 +40,8 @@ type InvestigationCanvasProps = {
   images?: CaseImage[];
   /** 这一轮在服务端的调查编号：有才显示「分享」（老历史没有）。 */
   shareRunId?: string;
+  /** 正在跑的这一轮开始的时间（本机时钟）；历史回看没有。 */
+  startedAt?: number;
 };
 
 
@@ -57,6 +59,7 @@ export function InvestigationCanvas({
   readOnly = false,
   images,
   shareRunId,
+  startedAt,
 }: InvestigationCanvasProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
@@ -253,7 +256,7 @@ export function InvestigationCanvas({
         ) : null}
 
         {!complete ? (
-          <ProgressView snapshot={snapshot} claims={resultClaims} interrupted={snapshot.phase === "interrupted" || stop !== "idle"} leftoverNote={leftoverSentence} />
+          <ProgressView snapshot={snapshot} claims={resultClaims} interrupted={snapshot.phase === "interrupted" || stop !== "idle"} leftoverNote={leftoverSentence} startedAt={startedAt} />
         ) : null}
 
       </div>

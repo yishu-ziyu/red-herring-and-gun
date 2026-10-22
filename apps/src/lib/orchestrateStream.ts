@@ -40,6 +40,10 @@ export interface OrchestrateStreamEvent {
   activity?: PublicActivity;
   /** run_started：这次调查的运行身份（取消与刷新恢复都要它）。 */
   runId?: string;
+  /** run_started：这次调查在服务端开始的时间（毫秒）；刷新接回时也是最初那一刻。 */
+  startedAt?: number;
+  /** 服务端发出这条事件的时间（毫秒）。 */
+  timestamp?: number;
   /** run_state：服务端确认的运行状态（重连时先给一次）。 */
   status?: string;
   finalReport?: Record<string, unknown>;

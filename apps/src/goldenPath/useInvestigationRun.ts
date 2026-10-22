@@ -57,6 +57,8 @@ type RunState = {
   lastActivitySeq: number;
   /** 服务端运行身份（run_started 事件）。刷新恢复与取消都要它。 */
   runId: string | null;
+  /** 这次调查开始的时间，已换成本机时钟（毫秒）。进行中页面算已用时间。 */
+  startedAt: number | null;
   /** 服务端确认的 run 状态（run_state 事件 / 取消响应）。 */
   serverStatus: string | null;
   stop: StopPhase;
@@ -77,6 +79,7 @@ const INITIAL_STATE: RunState = {
   activityRunId: null,
   lastActivitySeq: 0,
   runId: null,
+  startedAt: null,
   serverStatus: null,
   stop: "idle",
   timeoutPending: false,
@@ -92,7 +95,11 @@ function isTerminalServerStatus(status: string | null): boolean {
  */
 function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: string): RunState {
   if (event.type === "run_started") {
-    return { ...prev, runId: typeof event.runId === "string" ? event.runId : prev.runId };
+    return {
+      ...prev,
+      runId: typeof event.runId === "string" ? event.runId : prev.runId,
+      startedAt: typeof event.startedAt === "number" ? event.startedAt : prev.startedAt,
+    };
   }
   if (event.type === "run_state") {
     const status = typeof event.status === "string" ? event.status : prev.serverStatus;
@@ -191,7 +198,12 @@ export function useInvestigationRun() {
   const lastSubmitRef = useRef<{ key: string; clientRequestId: string; at: number } | null>(null);
 
   const applyEvent = useCallback((event: OrchestrateStreamEvent, claim?: string) => {
-    setState((prev) => applyRunEvent(prev, event, claim));
+    // 服务端的开始时间换成本机时钟：两边时钟可能差几分钟，按这条事件的发出时间对齐。
+    const localEvent =
+      event.type === "run_started" && typeof event.startedAt === "number" && typeof event.timestamp === "number"
+        ? { ...event, startedAt: event.startedAt + (Date.now() - event.timestamp) }
+        : event;
+    setState((prev) => applyRunEvent(prev, localEvent, claim));
   }, []);
 
   const start = useCallback(

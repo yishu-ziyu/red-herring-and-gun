@@ -56,7 +56,7 @@ type InvestigationRequest = {
   intakeMetadata: ReturnType<typeof buildCaseIntakeMetadata>;
   clientMemoryRecall: ReturnType<typeof normalizeClientMemoryRecall>;
   clientFollowUpReuse: ReturnType<typeof followUpReuseFromClientBrief>;
-  run: { runId: string; caseId: string };
+  run: { runId: string; caseId: string; createdAt: number };
 };
 
 function makeSearchOneAtom(
@@ -186,8 +186,8 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
   };
   const unsubscribeRun = runs.subscribe(runId, (event) => writeFrame(event));
 
-  // 先告诉客户端这次调查的 runId：取消与刷新恢复都要它。
-  sendEvent({ type: "run_started", runId, caseId: run.caseId, timestamp: Date.now() });
+  // 先告诉客户端这次调查的 runId：取消与刷新恢复都要它。startedAt 给进行中页面算已用时间。
+  sendEvent({ type: "run_started", runId, caseId: run.caseId, startedAt: run.createdAt, timestamp: Date.now() });
 
   const heartbeat = setInterval(() => {
     if (res.writableEnded || res.destroyed) return;
