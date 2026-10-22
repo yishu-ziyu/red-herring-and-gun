@@ -5,7 +5,7 @@
  * Server cannot import client src (tsconfig rootDir); copy is intentional (ADR-003).
  */
 
-export interface AgentStatusBarInput {
+interface AgentStatusBarInput {
   agentId: string;
   agentName: string;
   claim: string;
@@ -20,7 +20,7 @@ export interface AgentStatusBarInput {
   now?: Date;
 }
 
-export interface AgentStatusBar {
+interface AgentStatusBar {
   /** 稳定前缀（时区/角色），利于 KV-cache 命中 */
   prefix: string;
   /** 本步变化的动态行 */

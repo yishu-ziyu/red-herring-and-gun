@@ -30,7 +30,7 @@ const SHARE_TTL_DAYS = 30;
 const IMAGE_REQUEST_PREFIX = "请核查用户上传的";
 
 /** 公开页显示的全部内容。白名单就是这份类型。 */
-export type PublicShareProjection = {
+type PublicShareProjection = {
   version: 2;
   claim: string;
   /** 结论句：和结果页大字显示的那句一致。 */
@@ -49,7 +49,7 @@ export type PublicShareProjection = {
 
 type ShareRecord = { shareId: string; runId: string | null; projection: PublicShareProjection; createdAt: number; revokedAt: number | null };
 
-export type ShareLookup =
+type ShareLookup =
   | { state: "ok"; record: ShareRecord }
   | { state: "revoked" }
   | { state: "missing" };
@@ -88,7 +88,7 @@ function labelOf(label: unknown, judgment: unknown): LabelKey | undefined {
 }
 
 /** 从一轮调查的快照造公开内容。只读快照，不读任何浏览器发来的东西。 */
-export function projectionFromSnapshot(snapshotValue: unknown, createdAt: number): PublicShareProjection {
+function projectionFromSnapshot(snapshotValue: unknown, createdAt: number): PublicShareProjection {
   const snapshot = rec(snapshotValue);
   const conclusion = rec(snapshot.conclusion);
   const claims = arr(snapshot.claims).map(rec);
@@ -164,15 +164,15 @@ function readStoredProjection(raw: string): PublicShareProjection | null {
   return projection;
 }
 
-export function hashShareToken(token: string): string {
+function hashShareToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
 type ShareRow = { shareId: string; runId: string | null; projection: string; createdAt: number; revokedAt: number | null };
 
-export type ShareStore = ReturnType<typeof createShareStore>;
+type ShareStore = ReturnType<typeof createShareStore>;
 
-export function createShareStore(db: DatabaseSync | null) {
+function createShareStore(db: DatabaseSync | null) {
   const memory = new Map<string, ShareRow>();
   const find = (shareId: string): ShareRow | undefined =>
     db ? (db.prepare("SELECT shareId, runId, projection, createdAt, revokedAt FROM shares WHERE shareId = ?").get(shareId) as ShareRow | undefined) : memory.get(shareId);
@@ -333,7 +333,7 @@ function shell(title: string, body: string, indexable: boolean): string {
 }
 
 /** 只用公开内容渲染分享页。 */
-export function buildSharedPageHtml(lookup: ShareLookup): string {
+function buildSharedPageHtml(lookup: ShareLookup): string {
   if (lookup.state === "revoked") {
     return shell(
       "分享链接已撤销 · 红鲱鱼与枪",

@@ -171,7 +171,7 @@ export function labelBackedByEvidence(label: LabelKey, support: number, contradi
   return label;
 }
 
-export type LabeledPart = { role: PartRole; standing: PartStanding; label: LabelKey };
+type LabeledPart = { role: PartRole; standing: PartStanding; label: LabelKey };
 
 /**
  * 规则 → 整句标签（#140 第 6 条，2026-10-09 用户确认）。

@@ -18,7 +18,7 @@ import { extractJsonObject } from "./anthropicParse.js";
 import { isMiniMaxM27, miniMaxCallOptions, MINIMAX_M27_DEFAULT_TIMEOUT_MS, MINIMAX_M3_DEFAULT_TIMEOUT_MS } from "./minimaxM3.js";
 
 /** MiniMax 是主力；阶跃负责图片解析与兜底（2026-10-09 起只保留这两家）。 */
-export type AgentTextProviderId = "minimax" | "stepfun";
+type AgentTextProviderId = "minimax" | "stepfun";
 
 const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>(["minimax", "stepfun"]);
 
@@ -27,24 +27,24 @@ const quotaExhaustedUntil = new Map<string, number>();
 const timeoutStrikes = new Map<string, number>();
 const QUOTA_SKIP_MS = 10 * 60 * 1000;
 
-export function isHardProviderQuotaError(message: string): boolean {
+function isHardProviderQuotaError(message: string): boolean {
   return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded)|billing hard limit|over_quota|无可用额度/i.test(
     message
   );
 }
 
-export function isHardProviderAuthError(message: string): boolean {
+function isHardProviderAuthError(message: string): boolean {
   return /invalid api key|invalid_key|incorrect api key|unauthorized|ENOENT|authentication fails|api key[\s\S]{0,80}is invalid/i.test(
     message
   );
 }
 
 /** Empty-body / no-text is usually a dead account or thinking-budget wipe, not a transient blip. */
-export function isEmptyProviderResponse(message: string): boolean {
+function isEmptyProviderResponse(message: string): boolean {
   return /没有返回可解析文本|无返回文本|empty (?:response|text)|no (?:usable )?text/i.test(message);
 }
 
-export function isHardProviderFailure(message: string): boolean {
+function isHardProviderFailure(message: string): boolean {
   return (
     isHardProviderQuotaError(message) ||
     isHardProviderAuthError(message) ||
@@ -57,7 +57,7 @@ function canonicalProviderId(provider: string): string {
   return provider;
 }
 
-export function isProviderQuotaSkipped(provider: string): boolean {
+function isProviderQuotaSkipped(provider: string): boolean {
   const until = quotaExhaustedUntil.get(canonicalProviderId(provider));
   return typeof until === "number" && until > Date.now();
 }
@@ -66,7 +66,7 @@ function skipProvider(provider: string): void {
   quotaExhaustedUntil.set(canonicalProviderId(provider), Date.now() + QUOTA_SKIP_MS);
 }
 
-export function noteProviderFailure(provider: string, message: string): void {
+function noteProviderFailure(provider: string, message: string): void {
   if (isHardProviderFailure(message)) {
     skipProvider(provider);
     return;
@@ -83,7 +83,7 @@ export function noteProviderFailure(provider: string, message: string): void {
   }
 }
 
-export function providerHasCredentials(env: Record<string, string>, provider: string): boolean {
+function providerHasCredentials(env: Record<string, string>, provider: string): boolean {
   const id = canonicalProviderId(provider);
   if (id === "minimax") return Boolean(getMiniMaxApiKey(env));
   if (id === "stepfun") return Boolean(envValue(env, "STEPFUN_API_KEY"));
@@ -91,13 +91,13 @@ export function providerHasCredentials(env: Record<string, string>, provider: st
 }
 
 /** Configured chat providers that are still eligible this process. */
-export function pendingCloudProviders(env: Record<string, string>, agentId?: string): AgentTextProviderId[] {
+function pendingCloudProviders(env: Record<string, string>, agentId?: string): AgentTextProviderId[] {
   return providerOrderForAgent(env, agentId).filter(
     (provider) => providerHasCredentials(env, provider) && !isProviderQuotaSkipped(provider)
   );
 }
 
-export function areCloudProvidersHardSkipped(env: Record<string, string>, agentId?: string): boolean {
+function areCloudProvidersHardSkipped(env: Record<string, string>, agentId?: string): boolean {
   const configured = providerOrderForAgent(env, agentId).filter((provider) => providerHasCredentials(env, provider));
   return configured.length > 0 && pendingCloudProviders(env, agentId).length === 0;
 }
@@ -110,12 +110,12 @@ const DEFAULT_TEXT_PROVIDER_ORDER: AgentTextProviderId[] = ["minimax", "stepfun"
 // ───────────────────────────────────────────────────────────────
 
 /** 优先从传入的 env 对象读（覆盖 process.env），缺省返回空串 */
-export function envValue(env: Record<string, string>, key: string): string {
+function envValue(env: Record<string, string>, key: string): string {
   return env[key] || process.env[key] || "";
 }
 
 /** 把 "rumor_detector" / "report-composer" 规整成 "RUMOR_DETECTOR" / "REPORT_COMPOSER" */
-export function agentEnvKey(agentId?: string): string {
+function agentEnvKey(agentId?: string): string {
   return agentId ? agentId.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").toUpperCase() : "";
 }
 
@@ -126,7 +126,7 @@ export function agentEnvKey(agentId?: string): string {
  *  - agentId 提供时优先 per-agent env
  *  - 丢完一个都不剩时用默认顺序
  */
-export function providerOrderForAgent(
+function providerOrderForAgent(
   env: Record<string, string>,
   agentId?: string
 ): AgentTextProviderId[] {
@@ -148,7 +148,7 @@ export function providerOrderForAgent(
  *  例: modelForAgent(env, "MINIMAX", "rumor_detector", "MiniMax-M2.7-highspeed")
  *      → env.MINIMAX_RUMOR_DETECTOR_MODEL ?? env.MINIMAX_MODEL ?? "MiniMax-M2.7-highspeed"
  */
-export function modelForAgent(
+function modelForAgent(
   env: Record<string, string>,
   prefix: string,
   agentId: string | undefined,
@@ -158,7 +158,7 @@ export function modelForAgent(
   return (key && envValue(env, `${prefix}_${key}_MODEL`)) || envValue(env, `${prefix}_MODEL`) || fallback;
 }
 
-export function getMiniMaxApiKey(env: Record<string, string>): string {
+function getMiniMaxApiKey(env: Record<string, string>): string {
   return envValue(env, "MINIMAX_API_KEY");
 }
 
@@ -211,7 +211,7 @@ function stripJsonNoise(text: string): string {
  * 启发式：字符串内遇到 `"` 时，向后看第一个非空白字符——
  * 是 `,` `}` `]` `:` 或 EOF 才算真正的闭合引号，否则当内容转义。
  */
-export function escapeUnescapedInnerQuotes(json: string): string {
+function escapeUnescapedInnerQuotes(json: string): string {
   let out = "";
   let inString = false;
   let escape = false;
@@ -249,132 +249,12 @@ export function escapeUnescapedInnerQuotes(json: string): string {
   return out;
 }
 
-/** 尝试修复 LLM 输出的 loose JSON（尾随逗号、未加引号的值、截断闭合） */
-function repairLooseJsonObject(json: string): string {  let repaired = stripJsonNoise(json)
-    // // line comments and /* block comments */ (outside of perfect string handling — best effort)
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/(^|[^:])\/\/.*$/gm, "$1")
-    .replace(/,\s*([}\]])/g, "$1")
-    .replace(/:\s*([^"{\[\]\d\-tfn][^,\n\r}\]]*?)(?=\s*[,}\]])/g, (_match, value: string) => {
-      const trimmed = value.trim();
-      if (!trimmed) return ': ""';
-      if (/^(true|false|null)$/i.test(trimmed)) return `: ${trimmed.toLowerCase()}`;
-      return `: ${JSON.stringify(trimmed.replace(/^['"]|['"]$/g, ""))}`;
-    });
-
-  // Single-quoted strings → double-quoted (common model slip)
-  repaired = repaired.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_m, inner: string) =>
-    JSON.stringify(inner.replace(/\\'/g, "'"))
-  );
-
-  return closeTruncatedJson(repaired);
-}
-
-/**
- * Balance braces/brackets for truncated model output.
- * If a string is left open, close it first; drop a trailing incomplete key/comma.
- */
-export function closeTruncatedJson(input: string): string {
-  let s = input.trim();
-  if (!s) return s;
-
-  // Drop dangling trailing comma / incomplete key before we close.
-  s = s.replace(/,\s*$/, "");
-  s = s.replace(/,\s*"[^"]*$/, "");
-  s = s.replace(/:\s*"[^"]*$/, ': ""');
-  s = s.replace(/:\s*[^,{\[\]}\s"]+$/, ': null');
-
-  const stack: Array<"{" | "["> = [];
-  let inString = false;
-  let escape = false;
-
-  for (let i = 0; i < s.length; i += 1) {
-    const ch = s[i];
-    if (inString) {
-      if (escape) {
-        escape = false;
-        continue;
-      }
-      if (ch === "\\") {
-        escape = true;
-        continue;
-      }
-      if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-    if (ch === "{") stack.push("{");
-    else if (ch === "[") stack.push("[");
-    else if (ch === "}" || ch === "]") {
-      const open = stack[stack.length - 1];
-      if ((ch === "}" && open === "{") || (ch === "]" && open === "[")) stack.pop();
-    }
-  }
-
-  if (inString) s += '"';
-  s = s.replace(/,\s*$/, "");
-  while (stack.length > 0) {
-    const open = stack.pop();
-    s += open === "{" ? "}" : "]";
-  }
-  return s;
-}
-
-function tryParseJsonCandidate(candidate: string): any | undefined {
-  try {
-    return JSON.parse(candidate);
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * 解析 LLM JSON 输出：extract → 多策略 repair → JSON.parse。
- * 解析失败抛带 label 的 Error。
- */
-export function parseAgentJson(text: string, label: string): any {
-  const cleaned = stripJsonNoise(text);
-  const extracted = extractJsonObject(cleaned);
-  const candidates = [
-    extracted,
-    escapeUnescapedInnerQuotes(extracted),
-    repairLooseJsonObject(extracted),
-    closeTruncatedJson(extracted),
-    repairLooseJsonObject(closeTruncatedJson(escapeUnescapedInnerQuotes(extracted))),
-    repairLooseJsonObject(closeTruncatedJson(extracted)),
-    // last resort: whole cleaned text if it already looks like an object
-    cleaned.startsWith("{") ? repairLooseJsonObject(cleaned) : "",
-  ].filter((item, index, arr) => item && arr.indexOf(item) === index);
-
-  let lastError: Error | undefined;
-  for (const candidate of candidates) {
-    try {
-      return JSON.parse(candidate);
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error("JSON 解析失败");
-    }
-  }
-
-  const message = lastError?.message || "JSON 解析失败";
-  throw new Error(`${label} 返回 JSON 无法解析：${message}`);
-}
-
-export function isAgentJsonParseError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /JSON 无法解析|Unexpected token|Unexpected end of JSON|Expected .* after property|Bad control character|JSON\.parse/i.test(
-    message
-  );
-}
-
-export class AgentOutputError extends Error {
+class AgentOutputError extends Error {
   constructor(message: string) { super(message); this.name = "AgentOutputError"; }
 }
 
 /** Live output must be complete and satisfy the job schema; never guess missing tokens. */
-export function parseValidatedAgentJson(text: string, label: string, schema: object = {}): any {
+function parseValidatedAgentJson(text: string, label: string, schema: object = {}): any {
   let output: unknown;
   const candidate = extractJsonObject(stripJsonNoise(text));
   try {
@@ -398,7 +278,7 @@ export function parseValidatedAgentJson(text: string, label: string, schema: obj
   return output;
 }
 
-export function buildJsonRepairUserContent(brokenText: string, originalUserContent: string): string {
+function buildJsonRepairUserContent(brokenText: string, originalUserContent: string): string {
   const broken = brokenText.length > 14000 ? `${brokenText.slice(0, 14000)}\n…[truncated]` : brokenText;
   const original =
     originalUserContent.length > 6000
@@ -421,12 +301,12 @@ export function buildJsonRepairUserContent(brokenText: string, originalUserConte
 // callAgentWithFallback — 4-Agent pipeline 的核心 provider 调度器
 // ───────────────────────────────────────────────────────────────
 
-export interface ProviderRouterLogger {
+interface ProviderRouterLogger {
   info(msg: string, ctx?: Record<string, unknown>): void;
   error(msg: string, ctx?: Record<string, unknown>): void;
 }
 
-export interface ProviderRouterOptions {
+interface ProviderRouterOptions {
   signal?: AbortSignal;
   /** 日志回调；缺省 no-op。vite.config.ts 会注入 console 包装 */
   logger?: ProviderRouterLogger;
@@ -444,7 +324,7 @@ export interface ProviderRouterOptions {
   attemptTimeoutCapMs?: number;
 }
 
-export interface CallAgentParams {
+interface CallAgentParams {
   agentId?: string;
   systemPrompt: string;
   userContent: string;
@@ -455,7 +335,7 @@ export interface CallAgentParams {
   options?: ProviderRouterOptions;
 }
 
-export interface CallAgentResult {
+interface CallAgentResult {
   output: any;
   model: string;
   latencyMs: number;
@@ -468,7 +348,7 @@ export interface CallAgentResult {
  * 完整诊断（每家的 provider/model + 原始错误串）放在 providerErrors 上，
  * 供结构化日志/事件透传，绝不上屏。
  */
-export class ProviderFallbackError extends Error {
+class ProviderFallbackError extends Error {
   providerErrors: string[];
   constructor(message: string, providerErrors: string[]) {
     super(message);
@@ -493,7 +373,7 @@ function positiveMs(value: number | undefined): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-export function timeoutForProviderModel(
+function timeoutForProviderModel(
   env: Record<string, string>,
   provider: AgentTextProviderId | string,
   model: string,

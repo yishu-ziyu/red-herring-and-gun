@@ -17,7 +17,7 @@ export type RunOutcome =
   /** 服务端真失败（含图片解析失败）。 */
   | "server-error";
 
-export type FailureOutcome = Exclude<RunOutcome, "completed">;
+type FailureOutcome = Exclude<RunOutcome, "completed">;
 
 /** 总时限与宽限期的超时错误都带这个标签（withTimeout 的 label）。 */
 export const TIMEOUT_LABEL = "整体核查";

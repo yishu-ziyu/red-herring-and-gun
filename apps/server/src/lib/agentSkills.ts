@@ -5,7 +5,7 @@
  * Server cannot import client src (tsconfig rootDir); copy is intentional (ADR-003).
  */
 
-export interface AgentSkill {
+interface AgentSkill {
   id: string;
   title: string;
   /** 触发：agent id 列表；空 = 不按 agent 限 */
@@ -15,7 +15,7 @@ export interface AgentSkill {
   body: string;
 }
 
-export const AGENT_SKILLS: AgentSkill[] = [
+const AGENT_SKILLS: AgentSkill[] = [
   {
     id: "skill.claim-atom-triage",
     title: "拆开原子命题",

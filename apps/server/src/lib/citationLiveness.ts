@@ -17,7 +17,7 @@ import {
 import { withExecutionBudget, ExecutionTimeoutError, type ExecutionBudget } from "./executionBudget.js";
 import { isBlockedUrl } from "./ssrfGuard.js";
 
-export type LivenessStatus = "alive" | "dead";
+type LivenessStatus = "alive" | "dead";
 
 /** 404/408/410 与 5xx 视为死链；401/403/405/429 等说明页面存在但有门槛，不判死。 */
 const DEAD_HTTP_STATUSES = new Set([404, 408, 410]);
@@ -44,7 +44,7 @@ export type LivenessDeps = ExecutionBudget & {
   liveness?: Map<string, LivenessStatus>;
 };
 
-export function classifyLivenessStatus(status: number): LivenessStatus {
+function classifyLivenessStatus(status: number): LivenessStatus {
   if (status < 400) return "alive";
   if (DEAD_HTTP_STATUSES.has(status) || status >= 500) return "dead";
   return "alive";
@@ -59,7 +59,7 @@ function isProbeAllowed(url: string): boolean {
  * GET 到响应头即断开：不拉正文，也能覆盖禁用 HEAD 的站点。
  * 跳转自己跟：每一跳访问前都过 ssrfGuard，公网地址跳到内网地址也拦得住。
  */
-export async function checkUrlLiveness(
+async function checkUrlLiveness(
   url: string,
   fetchImpl: FetchLike,
   timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -96,7 +96,7 @@ export async function checkUrlLiveness(
   }
 }
 
-export async function checkSourceLiveness(
+async function checkSourceLiveness(
   urls: string[],
   deps: LivenessDeps = {}
 ): Promise<Map<string, LivenessStatus>> {

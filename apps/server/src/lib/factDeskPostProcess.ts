@@ -24,7 +24,7 @@ const BANNED_DRAMA =
 
 const META_LABELS = /【可说】|【不可说】|（可说）|（不可说）/g;
 
-export interface FactDeskPostProcessResult {
+interface FactDeskPostProcessResult {
   report: Record<string, unknown>;
   notes: string[];
   changed: boolean;
@@ -126,7 +126,7 @@ function softCausalWithoutEvidence(text: string, notes: string[], label: string)
  * Post-process live handoff finalReport (Prompt A structure + Prompt F critique).
  * Idempotent-ish: safe to run twice; second pass usually no-ops.
  */
-export function postProcessHandoffFinalReport(
+function postProcessHandoffFinalReport(
   finalReport: unknown,
   claim: string,
 ): FactDeskPostProcessResult | null {

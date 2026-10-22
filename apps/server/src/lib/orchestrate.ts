@@ -34,7 +34,7 @@ function withLegacyVerdicts(output: Record<string, unknown>): Record<string, unk
   return output;
 }
 
-export interface OrchestrateAdapterDeps {
+interface OrchestrateAdapterDeps {
   signal?: AbortSignal;
   deadlineMs?: number;
   env: Record<string, string>;

@@ -8,7 +8,6 @@
 // 不再在本文件维护独立副本（原 line 47-87 本地定义已删除）。
 // 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
 import { extractAnthropicText, extractAnthropicThinking, readAnthropicSse } from "./anthropicParse.js";
-export { extractAnthropicText };
 import {
   buildMiniMaxMessagesBody,
   isMiniMaxM3,
@@ -39,7 +38,7 @@ export function extractChatCompletionText(data: any): string {
  * 当 OpenAI 兼容响应返回空文本时，描述 finish_reason / content 类型 / 推理长度，
  * 方便定位是 length_truncated 还是 reasoning_only 等场景。
  */
-export function describeEmptyChatCompletion(data: any): string {
+function describeEmptyChatCompletion(data: any): string {
   const choice = data?.choices?.[0];
   const message = choice?.message;
   const finishReason = choice?.finish_reason || choice?.finishReason || "unknown";
@@ -164,7 +163,7 @@ export async function callStepFunAgent({
  * StepFun Token Plan — Anthropic 协议端点（https://api.stepfun.com/step_plan/v1/messages）。
  * Bearer 认证；content 块数组（thinking + text）；无 response_format，JSON 靠 prompt 约束 + 下游 parseAgentJson。
  */
-export async function callStepFunPlanAgent({
+async function callStepFunPlanAgent({
   baseUrl,
   apiKey,
   model,

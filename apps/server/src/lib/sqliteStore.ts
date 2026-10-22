@@ -9,8 +9,6 @@ import { createRequire } from "node:module";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-export type SqlValue = string | number | bigint | null | Uint8Array;
-
 /**
  * 驱动运行时才 require：`node:sqlite` 是 Node 内置模块，前端测试环境（jsdom）
  * 静态解析它会直接报「Cannot bundle Node.js built-in」。放到函数里就绕开了。
@@ -29,11 +27,11 @@ function loadDriver(): (new (path: string) => DatabaseSync) | null {
 let instance: DatabaseSync | null = null;
 let instancePath = "";
 
-export function dataDir(): string {
+function dataDir(): string {
   return process.env.DATA_DIR || join(process.cwd(), ".data");
 }
 
-export function defaultDatabasePath(): string {
+function defaultDatabasePath(): string {
   return process.env.RHG_DB_FILE || join(dataDir(), "rhg.sqlite");
 }
 
@@ -159,25 +157,3 @@ function migrate(db: DatabaseSync): void {
   }
 }
 
-/** 测试/维护用：关掉当前实例，下次 openDatabase 重新打开。 */
-export function closeDatabase(): void {
-  try {
-    instance?.close();
-  } catch {
-    /* 已关闭 */
-  }
-  instance = null;
-  instancePath = "";
-}
-
-export function isSqliteAvailable(): boolean {
-  const Driver = loadDriver();
-  if (!Driver) return false;
-  try {
-    const db = new Driver(":memory:");
-    db.close();
-    return true;
-  } catch {
-    return false;
-  }
-}

@@ -1,9 +1,9 @@
 import { stripCitationMarkers } from "./citationBinding.js";
 import { normalizeInvestigationSourceUrl } from "./investigation/sourceIdentity.js";
 
-export type ClaimSourceRelation = "support" | "contradict" | "context-only" | "unverified";
+type ClaimSourceRelation = "support" | "contradict" | "context-only" | "unverified";
 
-export type ClaimSourceRelationAudit = {
+type ClaimSourceRelationAudit = {
   claimAtom: string;
   url: string;
   relation: ClaimSourceRelation;
@@ -69,7 +69,7 @@ export function findClaimSourceRelationAudit<A extends { claimAtom: string; url:
   return undefined;
 }
 
-export function parseClaimSourceRelationAudits(value: unknown): ClaimSourceRelationAudit[] {
+function parseClaimSourceRelationAudits(value: unknown): ClaimSourceRelationAudit[] {
   if (!Array.isArray(value)) return [];
   const out: ClaimSourceRelationAudit[] = [];
   for (const item of value) {

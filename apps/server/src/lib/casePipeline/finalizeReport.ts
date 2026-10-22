@@ -26,7 +26,7 @@ import { decideSentenceVerdict } from "../../domain/verdict.js";
 import { applySentenceVerdict, listAssessedClaims, VERDICT_TYPE } from "../sentenceVerdict.js";
 import type { CasePipelineInput, PipelineStep } from "./runCasePipeline.js";
 
-export type FinalizeReportInput = {
+type FinalizeReportInput = {
   claim: string;
   /** 报告步骤。output 是对象时就地收尾（与 steps 里是同一个对象），否则从空报告开始。 */
   reportStep: PipelineStep;
@@ -47,7 +47,7 @@ export type FinalizeReportInput = {
   signal?: AbortSignal;
 };
 
-export type FinalizeReportResult = {
+type FinalizeReportResult = {
   finalReport: Record<string, unknown>;
   /** 探活判死、已从报告剔除的链接（完成快照的 reachability）。 */
   deadUrls: string[];

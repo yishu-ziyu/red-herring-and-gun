@@ -13,7 +13,7 @@ const TEXTBOOK_META = /写进.{0,12}教科书|写进.{0,12}教材|科普读物/;
 const CIRCULATING = /唯一|肉眼|太空|可见|糯米/;
 
 /** 长文硬上限：超过就不是在抽断言，是在按句切片。 */
-export const NARRATIVE_ATOM_CAP = 4;
+const NARRATIVE_ATOM_CAP = 4;
 
 /** 流传说法 / 可独立核对的谓语。分数越高越该留下。 */
 function assertiveScore(atom: string): number {
@@ -37,7 +37,7 @@ const LEAP_MARK = /所以|因此|于是|由此可见|这说明|所以说/;
 const SEARCH_ATOM_BUDGET = 6;
 
 /** 「所以 / 因此」之后的结论句。背景事实不得把它们挤掉。 */
-export function extractLeapAtoms(claim: string): string[] {
+function extractLeapAtoms(claim: string): string[] {
   const text = (claim ?? "").trim();
   if (!text) return [];
   const match = text.match(LEAP_MARK);

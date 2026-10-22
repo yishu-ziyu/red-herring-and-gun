@@ -158,37 +158,3 @@ export function mergeSubclaimVerdicts(
   return result;
 }
 
-/**
- * 排除层：claimAtoms × claimAtomTypes → 可核查 / 不可核查。
- * 不变量：verifiable=false 绝不进入 verifiable。
- */
-export function splitVerifiableAtoms(
-  claimAtoms: unknown,
-  claimAtomTypes: unknown
-): { verifiable: string[]; nonVerifiable: Array<{ text: string; type: string }> } {
-  const atoms = compactStrings(claimAtoms, MAX_CLAIM_ATOMS, 180).map((s) => claimAtomKey(s));
-  const typed = new Map<string, { verifiable: boolean; type: string }>();
-  if (Array.isArray(claimAtomTypes)) {
-    for (const item of claimAtomTypes) {
-      if (!item || typeof item !== "object") continue;
-      const rec = item as Record<string, unknown>;
-      const text = typeof rec.text === "string" ? rec.text : "";
-      if (!text) continue;
-      typed.set(claimAtomKey(text), {
-        verifiable: rec.verifiable !== false,
-        type: typeof rec.type === "string" ? rec.type.slice(0, 40) : "",
-      });
-    }
-  }
-  const verifiable: string[] = [];
-  const nonVerifiable: Array<{ text: string; type: string }> = [];
-  for (const atom of atoms) {
-    const info = typed.get(atom);
-    if (info && info.verifiable === false) {
-      nonVerifiable.push({ text: atom, type: info.type });
-    } else {
-      verifiable.push(atom);
-    }
-  }
-  return { verifiable, nonVerifiable };
-}

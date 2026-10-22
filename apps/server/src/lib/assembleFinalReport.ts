@@ -16,7 +16,7 @@ import {
 import { normalizeReportCitations } from "./citationBinding.js";
 import { applyPublicCopy } from "./publicCopy.js";
 
-export const FACE_VERDICT: Record<string, string> = {
+const FACE_VERDICT: Record<string, string> = {
   true: "能信",
   false: "不能信",
   mixed_misleading: "有真有假",
@@ -31,7 +31,7 @@ export function faceVerdictFor(verdictType: unknown): string {
   return FACE_VERDICT[key] || "还查不清";
 }
 
-export type AssembleFinalReportInput = {
+type AssembleFinalReportInput = {
   finalReport: Record<string, unknown>;
   /** rumor_detector step (or { output }) */
   rumorStep: { output?: Record<string, unknown> } | null | undefined;
@@ -41,7 +41,7 @@ export type AssembleFinalReportInput = {
   atomSearchBundle?: AtomSearchBundle | null;
 };
 
-export type AssembleFinalReportResult = {
+type AssembleFinalReportResult = {
   subclaimVerdicts: SubclaimVerdict[];
   nonVerifiableAtoms: Array<{ text: string; type: string }>;
   claimItems: ClaimReportItem[];
@@ -52,7 +52,7 @@ export type AssembleFinalReportResult = {
 /**
  * 服务端预交错展示 items：按 claimAtoms 原句全局序，用统一 claimAtomKey 匹配。
  */
-export function buildClaimItems(
+function buildClaimItems(
   claimAtoms: unknown,
   verdicts: Array<{ claimAtom: string }>,
   nonVerifiable: Array<{ text: string; type: string }>

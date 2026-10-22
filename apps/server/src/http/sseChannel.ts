@@ -4,7 +4,7 @@
  */
 import type { ServerResponse } from "node:http";
 
-export const SSE_HEADERS = {
+const SSE_HEADERS = {
   "Content-Type": "text/event-stream; charset=utf-8",
   "Cache-Control": "no-cache",
   Connection: "keep-alive",

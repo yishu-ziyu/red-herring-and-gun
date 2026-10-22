@@ -12,7 +12,7 @@ import {
   type PublicActivity,
 } from "./investigation/index.js";
 
-export type InvestigationEmitter = {
+type InvestigationEmitter = {
   readonly runId: string;
   /** 快照先落，活动后发。重复快照不产生新活动。 */
   emitSnapshot(snapshot: InvestigationSnapshotV1): void;

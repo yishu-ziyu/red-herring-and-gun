@@ -11,7 +11,7 @@
  * 原子级判词只有 true/false/partial/exaggerated/unverified，
  * 其中 partial / exaggerated 语义就是整句口径的 mixed_misleading（有真有假）。
  */
-export const KNOWLEDGE_INJECTABLE_VERDICTS: readonly string[] = ["true", "false", "mixed_misleading"];
+const KNOWLEDGE_INJECTABLE_VERDICTS: readonly string[] = ["true", "false", "mixed_misleading"];
 
 export function isKnowledgeVerdictInjectable(verdict: unknown): boolean {
   return KNOWLEDGE_INJECTABLE_VERDICTS.includes(String(verdict ?? "").trim().toLowerCase());

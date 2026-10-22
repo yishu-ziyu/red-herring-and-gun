@@ -30,7 +30,7 @@ export interface CaseIntakePayload {
   images: CaseIntakeImagePayload[];
 }
 
-export interface ClientMemoryRecallPayload {
+interface ClientMemoryRecallPayload {
   policy: string;
   hitCount: number;
   evidenceCount: number;
@@ -122,7 +122,7 @@ export function buildCaseIntakeMetadata(intake: CaseIntakePayload | null) {
   };
 }
 
-export function buildVisionPrompt(claim: string, intake: CaseIntakePayload) {
+function buildVisionPrompt(claim: string, intake: CaseIntakePayload) {
   return [
     "请只做用户材料的视觉预处理，不判断真假。",
     "任务：读取用户上传的图片，提取图片里的可见文字、截图上下文、主体、来源线索、时间地点线索和可核查声明。",

@@ -57,7 +57,7 @@ export type VerdictRule =
   | "all-supported"
   | "no-checkable-claim";
 
-export type VerdictDecision = {
+type VerdictDecision = {
   verdict: SentenceVerdict;
   /** 哪条规则得出的结论，写进报告便于回查。 */
   rule: VerdictRule;

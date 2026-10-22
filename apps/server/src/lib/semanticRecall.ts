@@ -10,7 +10,7 @@
  */
 
 /** 谣言域同义词组：新词组直接追加，命中任一成员 → 同一规范 token。 */
-export const RUMOR_SYNONYM_GROUPS: string[][] = [
+const RUMOR_SYNONYM_GROUPS: string[][] = [
   ["电瓶车", "电动车", "电动自行车", "电单车"],
   ["被偷", "失窃", "被盗", "被偷走"],
   ["偷走", "盗走", "窃取"],
@@ -47,7 +47,7 @@ const SYNONYM_TOKEN_MAP: Map<string, string> = (() => {
 })();
 
 /** 文本里命中的同义词组（规范 token 集合）。 */
-export function synonymTokensOf(text: string): Set<string> {
+function synonymTokensOf(text: string): Set<string> {
   const hits = new Set<string>();
   for (const [term, canonical] of SYNONYM_TOKEN_MAP) {
     if (term && text.includes(term)) hits.add(canonical);
@@ -60,7 +60,7 @@ function normalizeForRecall(value: string): string {
 }
 
 /** 语义 token：既有 bigram + 拉丁词 + 同义词规范 token。 */
-export function semanticTokensOf(text: string): Set<string> {
+function semanticTokensOf(text: string): Set<string> {
   const normalized = normalizeForRecall(text);
   const tokens = new Set<string>(normalized.match(/[a-z0-9]{2,}/g) ?? []);
   for (let i = 0; i < normalized.length - 1; i += 1) {
@@ -72,7 +72,7 @@ export function semanticTokensOf(text: string): Set<string> {
 }
 
 /** 汉字字符集 Dice 系数：捕捉「被偷→失窃」这类改写的残余重叠。 */
-export function hanCharDice(a: string, b: string): number {
+function hanCharDice(a: string, b: string): number {
   const han = (s: string) => (s.match(/[\p{Script=Han}]/gu) ?? []);
   const charsA = han(a);
   const charsB = han(b);

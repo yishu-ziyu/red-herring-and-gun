@@ -18,14 +18,14 @@ import {
   wholeLabelFor,
   type LabelKey,
 } from "../domain/labels.js";
-import { buildScopedEvidence, clipSentence } from "./scopedEvidence.js";
+import { buildScopedEvidence } from "./scopedEvidence.js";
 
 type Report = Record<string, unknown>;
 
 /** 一截的显示标签与理由：标签由证据状态定、模型标签细分（domain/labels.partLabelFor）。 */
-export type AssessedPart = SentencePart & { label?: LabelKey; reason?: string };
+type AssessedPart = SentencePart & { label?: LabelKey; reason?: string };
 
-export type SentenceVerdictInput = {
+type SentenceVerdictInput = {
   claimAtoms: unknown;
   /** 每条含 verifiable / type，拆题标了的还含 role（main / premise / background）与 issuer（原句在说发文机关或出处）。 */
   claimAtomTypes: unknown;
@@ -63,7 +63,7 @@ function quotesClaim(element: unknown, claimAtom: unknown): boolean {
  * 判词 → 这一部分的状态。只认方向一致、能点开的出处；
  * 夸大（评分规则 2：把个别现象说成普遍）按被反驳算，属实的一截在正文里另说。
  */
-export function standingOf(verdict: Report | undefined): PartStanding {
+function standingOf(verdict: Report | undefined): PartStanding {
   if (!verdict) return "unresolved";
   const v = String(verdict.verdict ?? "").trim().toLowerCase();
   const bound = (direction: string) =>
@@ -183,7 +183,7 @@ function firstSentence(text: string, label: LabelKey): string {
 }
 
 /** 核查模型写的整句理由；模型没给或不合格时用各截标签拼一句。 */
-function wholeReasonOf(report: Report, parts: readonly AssessedPart[], label: LabelKey, factCheckReason?: unknown): string {
+function wholeReasonOf(parts: readonly AssessedPart[], label: LabelKey, factCheckReason?: unknown): string {
   const pick = (value: unknown) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "");
   const model = firstSentence(pick(factCheckReason), label);
   if (model) return model;
@@ -272,7 +272,7 @@ export function applySentenceVerdict(
     parts.map((p) => ({ role: p.role, standing: p.standing, label: p.label ?? partLabelFor(p.standing, undefined) })),
     nonCheckableLabels(report, context.nonVerifiableAtoms)
   );
-  const reason = wholeReasonOf(report, parts, label, context.factCheckReason);
+  const reason = wholeReasonOf(parts, label, context.factCheckReason);
   report._verdictDecision = {
     verdict: decision.verdict,
     rule: decision.rule,

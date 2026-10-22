@@ -126,7 +126,7 @@ export type CasePipelineInput = {
   };
 };
 
-export type CasePipelineResult = {
+type CasePipelineResult = {
   steps: PipelineStep[];
   finalReport: Record<string, unknown>;
   atomSearchBundle: AtomSearchBundle;

@@ -11,7 +11,7 @@ import type { LABEL_KEYS } from "../../domain/labels.js";
 
 const closed = { additionalProperties: false } as const;
 
-export const InvestigationPhaseSchema = Type.Union([
+const InvestigationPhaseSchema = Type.Union([
   Type.Literal("received"),
   Type.Literal("decomposed"),
   Type.Literal("investigating"),
@@ -21,14 +21,14 @@ export const InvestigationPhaseSchema = Type.Union([
 ]);
 export type InvestigationPhase = Static<typeof InvestigationPhaseSchema>;
 
-export const InvestigationCheckabilitySchema = Type.Union([
+const InvestigationCheckabilitySchema = Type.Union([
   Type.Literal("checkable"),
   Type.Literal("not-applicable"),
   Type.Literal("trace-only"),
 ]);
 export type InvestigationCheckability = Static<typeof InvestigationCheckabilitySchema>;
 
-export const InvestigationProgressSchema = Type.Union([
+const InvestigationProgressSchema = Type.Union([
   Type.Literal("pending"),
   Type.Literal("searching"),
   Type.Literal("complete"),
@@ -36,7 +36,7 @@ export const InvestigationProgressSchema = Type.Union([
 ]);
 export type InvestigationProgress = Static<typeof InvestigationProgressSchema>;
 
-export const InvestigationJudgmentSchema = Type.Union([
+const InvestigationJudgmentSchema = Type.Union([
   Type.Literal("supported"),
   Type.Literal("refuted"),
   Type.Literal("mixed"),
@@ -47,7 +47,7 @@ export const InvestigationJudgmentSchema = Type.Union([
 export type InvestigationJudgment = Static<typeof InvestigationJudgmentSchema>;
 
 /** 9 个判断标签（domain/labels）。改版前的快照没有这个字段，显示时由 judgment 推出。 */
-export const InvestigationLabelSchema = Type.Union([
+const InvestigationLabelSchema = Type.Union([
   Type.Literal("true"),
   Type.Literal("mostly-true"),
   Type.Literal("partly-true"),
@@ -64,15 +64,13 @@ const _labelsMatch: Static<typeof InvestigationLabelSchema> extends (typeof LABE
   : never = true;
 void _labelsMatch;
 
-export const InvestigationEvidenceRoleSchema = Type.Union([
+const InvestigationEvidenceRoleSchema = Type.Union([
   Type.Literal("unassessed"),
   Type.Literal("support"),
   Type.Literal("contradict"),
   Type.Literal("context-only"),
 ]);
-export type InvestigationEvidenceRole = Static<typeof InvestigationEvidenceRoleSchema>;
-
-export const InvestigationSourceSchema = Type.Object(
+const InvestigationSourceSchema = Type.Object(
   {
     /** 由规范化 URL 确定性派生；跨 Snapshot 稳定，不是注册序号。 */
     id: Type.String(),
@@ -119,7 +117,7 @@ export const InvestigationSourceSchema = Type.Object(
 );
 export type InvestigationSource = Static<typeof InvestigationSourceSchema>;
 
-export const InvestigationEvidenceLinkSchema = Type.Object(
+const InvestigationEvidenceLinkSchema = Type.Object(
   {
     sourceId: Type.String(),
     /** unassessed 只是检索返回后的暂态，不得计入支持/反驳，也不得残留在完成态。 */
@@ -144,7 +142,7 @@ export const InvestigationEvidenceLinkSchema = Type.Object(
 );
 export type InvestigationEvidenceLink = Static<typeof InvestigationEvidenceLinkSchema>;
 
-export const InvestigationGapSchema = Type.Object(
+const InvestigationGapSchema = Type.Object(
   {
     id: Type.String(),
     claimId: Type.String(),
@@ -158,7 +156,7 @@ export const InvestigationGapSchema = Type.Object(
 );
 export type InvestigationGap = Static<typeof InvestigationGapSchema>;
 
-export const InvestigationSpanSchema = Type.Object(
+const InvestigationSpanSchema = Type.Object(
   {
     start: Type.Integer({ minimum: 0 }),
     end: Type.Integer({ minimum: 0 }),
@@ -166,7 +164,7 @@ export const InvestigationSpanSchema = Type.Object(
   closed,
 );
 
-export const InvestigationClaimSchema = Type.Object(
+const InvestigationClaimSchema = Type.Object(
   {
     id: Type.String(),
     text: Type.String(),
@@ -188,7 +186,7 @@ export const InvestigationClaimSchema = Type.Object(
 );
 export type InvestigationClaim = Static<typeof InvestigationClaimSchema>;
 
-export const InvestigationConflictSideSchema = Type.Object(
+const InvestigationConflictSideSchema = Type.Object(
   {
     position: Type.Union([
       Type.Literal("support"),
@@ -200,9 +198,7 @@ export const InvestigationConflictSideSchema = Type.Object(
   },
   closed,
 );
-export type InvestigationConflictSide = Static<typeof InvestigationConflictSideSchema>;
-
-export const InvestigationConflictSchema = Type.Object(
+const InvestigationConflictSchema = Type.Object(
   {
     id: Type.String(),
     claimId: Type.String(),
@@ -217,7 +213,7 @@ export const InvestigationConflictSchema = Type.Object(
 );
 export type InvestigationConflict = Static<typeof InvestigationConflictSchema>;
 
-export const InvestigationConclusionSchema = Type.Object(
+const InvestigationConclusionSchema = Type.Object(
   {
     /** 对原问题的直接回答（生产 conclusion 文本），不是内部 verdict 标签。 */
     directAnswer: Type.String(),
@@ -235,20 +231,16 @@ export const InvestigationConclusionSchema = Type.Object(
   },
   closed,
 );
-export type InvestigationConclusion = Static<typeof InvestigationConclusionSchema>;
-
 /**
  * 命题尚未出现时，思考区跟的是哪一段真实工作。
  * 缺省（received 且不写本字段）= 正在拆原句；checking = 拆完、正在核对这些说法站不站得住。
  * 命题出现后不写。不是前端按秒解锁的假阶段。
  */
-export const InvestigationPreClaimWorkSchema = Type.Union([
+const InvestigationPreClaimWorkSchema = Type.Union([
   Type.Literal("splitting"),
   Type.Literal("checking"),
 ]);
-export type InvestigationPreClaimWork = Static<typeof InvestigationPreClaimWorkSchema>;
-
-export const InvestigationSnapshotSchema = Type.Object(
+const InvestigationSnapshotSchema = Type.Object(
   {
     schemaVersion: Type.Literal(1),
     originalClaim: Type.String(),

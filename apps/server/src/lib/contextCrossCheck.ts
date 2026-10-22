@@ -24,7 +24,7 @@ const IGNORE_TOKENS = new Set([
 ]);
 
 /** 提取配文里的核心断言词（中文段按停用词切开，取 2-8 字片段；英文/数字 token 保留）。 */
-export function coreClaimTokens(claim: string): string[] {
+function coreClaimTokens(claim: string): string[] {
   const cleaned = claim
     .replace(/[，。！？、；：""''（）【】《》]/g, " ")
     .toLowerCase();
@@ -78,7 +78,7 @@ function extractVisualCorpus(visual: unknown): string {
   return parts.join(" ");
 }
 
-export interface ContextCrossCheckResult {
+interface ContextCrossCheckResult {
   matchedTokens: string[];
   missingTokens: string[];
   /** 本次是否有图内可读内容可供对比。 */
@@ -91,7 +91,7 @@ export interface ContextCrossCheckResult {
  * 对比「配文核心词」与「截图语料」。只做确定性结论：
  * 配文核心词 >=2 个且全部未在图内出现 → 提示「配文要点截图里没有」。
  */
-export function contextCrossCheck(input: {
+function contextCrossCheck(input: {
   claim: string;
   visualExtraction?: unknown;
 }): ContextCrossCheckResult {

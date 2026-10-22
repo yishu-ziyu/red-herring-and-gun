@@ -7,7 +7,7 @@
 // 公开 SSE 只发用户可读文案。原始 provider 诊断留在服务端 logger，
 // 不再随 detail / providerErrors 下发到浏览器，避免 UI 或网络面板泄漏运维信息。
 // ───────────────────────────────────────────────────────────────
-export interface FriendlyErrorInfo {
+interface FriendlyErrorInfo {
   /** 用户可读友好文案（不包含原始诊断） */
   message: string;
   /** 原始诊断串（可选；仅当原始串与友好文案不同才携带） */

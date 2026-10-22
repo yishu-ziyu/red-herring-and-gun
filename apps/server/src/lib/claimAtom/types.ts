@@ -32,16 +32,6 @@ export interface SubclaimVerdict {
   reason?: string;
 }
 
-export type ClaimAtomType =
-  | "fact"
-  | "causal"
-  | "comparison"
-  | "concept"
-  | "value"
-  | "prediction"
-  | "normative"
-  | "personal";
-
 export interface ClaimAtomDropped {
   text: string;
   reason: string;

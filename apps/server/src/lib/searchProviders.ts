@@ -50,7 +50,7 @@ function envFieldPresent(env: Record<string, string>, key: string): boolean {
 const SEARCH_QUOTA_SKIP_MS = 10 * 60 * 1000;
 const searchQuotaExhaustedUntil = new Map<string, number>();
 
-export function isHardSearchQuotaError(message: string): boolean {
+function isHardSearchQuotaError(message: string): boolean {
   return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded|limit)|billing hard limit|over_quota|无可用额度|please top up|usage limit|exceeds your plan|HTTP 402\b|HTTP 432\b/i.test(
     message
   );
@@ -179,7 +179,7 @@ async function call360AiSearch({
   return await call360MWebSearch({ env, apiKey, query, refProm, signal });
 }
 
-export type SearchProviderId =
+type SearchProviderId =
   | "360_search"
   | "any_search"
   | "metaso_search"
@@ -189,7 +189,7 @@ export type SearchProviderId =
   | "stepfun_search";
 
 /** 单 Provider 在产品侧的进度态（SSE search_progress 用，不含任何诊断/密钥/请求 ID）。 */
-export type SearchProviderProgress = {
+type SearchProviderProgress = {
   id: SearchProviderId;
   label: string;
   status: "pending" | "running" | "completed" | "partial" | "failed";
@@ -231,7 +231,7 @@ function parallelSearchProviders(env: Record<string, string>): SearchProviderId[
   });
 }
 
-export async function callSearchProvider({
+async function callSearchProvider({
   env,
   provider,
   query,
@@ -302,13 +302,13 @@ async function callSearchProviderWithTimeout({
 }
 
 /** 单 Provider 单次查询的调用结果（仅产品字段，无诊断）。 */
-export type ProviderCallEvent = {
+type ProviderCallEvent = {
   provider: SearchProviderId;
   status: "running" | "completed" | "failed";
   resultCount: number;
 };
 
-export async function callParallelSearchProviders({
+async function callParallelSearchProviders({
   env,
   query,
   model,
@@ -384,7 +384,7 @@ export async function callParallelSearchProviders({
 }
 
 /** 收敛统计：rawResultCount 由调用方传入（含重复的逐 provider 逐 query 返回数之和）。 */
-export function computeSearchProgressStats(
+function computeSearchProgressStats(
   sources: Array<Record<string, unknown>>,
   rawResultCount: number
 ): NonNullable<SearchProgressEvent["stats"]> {
@@ -544,7 +544,7 @@ export async function retrieveAtomSources(
   return merged;
 }
 
-export function getProviderLabel(provider: SearchProviderId | string) {
+function getProviderLabel(provider: SearchProviderId | string) {
   const labels: Record<string, string> = {
     "360_search": "360 Search",
     any_search: "AnySearch",

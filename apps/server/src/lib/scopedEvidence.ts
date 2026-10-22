@@ -4,7 +4,7 @@
  */
 
 /** 截在 max 以内最后一个句末（连同其后的引号与 [n] 标记）；一句都没说完时补「…」。 */
-export function clipSentence(value: unknown, max: number): string {
+function clipSentence(value: unknown, max: number): string {
   const text = typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
   if (text.length <= max) return text;
   const ends = [...text.slice(0, max).matchAll(/[。！？；](?:["”」』]|\s*\[\d+\])*/g)];

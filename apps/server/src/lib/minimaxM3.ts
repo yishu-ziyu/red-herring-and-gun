@@ -5,8 +5,8 @@
  * 开发阶段不额外设上限——用 MiniMax 文档推荐的 128K（硬顶 512K）。
  */
 
-export const MINIMAX_M3_RECOMMENDED_MAX_TOKENS = 131072;
-export const MINIMAX_M3_ABSOLUTE_MAX_TOKENS = 524288;
+const MINIMAX_M3_RECOMMENDED_MAX_TOKENS = 131072;
+const MINIMAX_M3_ABSOLUTE_MAX_TOKENS = 524288;
 export const MINIMAX_M3_DEFAULT_TIMEOUT_MS = 600000;
 /** MiniMax-M2.7 作判断：四条命题 + 二十来条来源实测 61s 成功、90s 被掐。 */
 export const MINIMAX_M27_DEFAULT_TIMEOUT_MS = 180000;
@@ -27,7 +27,7 @@ export function isMiniMaxM3(model: string): boolean {
   return /^MiniMax-M3$/i.test(model);
 }
 
-export function miniMaxM3ThinkingType(
+function miniMaxM3ThinkingType(
   env: Record<string, string> | undefined,
   model: string
 ): MiniMaxThinkingType | undefined {
@@ -37,7 +37,7 @@ export function miniMaxM3ThinkingType(
   return "adaptive";
 }
 
-export function miniMaxMaxTokensForModel(
+function miniMaxMaxTokensForModel(
   env: Record<string, string> | undefined,
   model: string,
   requested: number

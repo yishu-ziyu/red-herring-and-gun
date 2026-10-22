@@ -3,7 +3,7 @@
  * Pure functions. Caller: atomSearchQuery.
  */
 
-export const QUERY_PURPOSES = [
+const QUERY_PURPOSES = [
   "exact",
   "entity",
   "primary",
@@ -12,9 +12,9 @@ export const QUERY_PURPOSES = [
   "alternative",
 ] as const;
 
-export type QueryPurpose = (typeof QUERY_PURPOSES)[number];
+type QueryPurpose = (typeof QUERY_PURPOSES)[number];
 
-export type PortfolioQuery = {
+type PortfolioQuery = {
   purpose: QueryPurpose;
   query: string;
   score: number;
@@ -37,7 +37,7 @@ const PLACE_RE = /省|市|县|区|州|镇|村|北京|上海|新疆|甘南|喀什
 const RELATE_RE = /表示|指控|宣布|告|导致|称|说|在.+中提供|持续到/;
 const PLAN_RE = /将|要建|拟建|计划建|规划|即将|准备建|会上马|要修|要开通/;
 
-export const RRF_K = 60;
+const RRF_K = 60;
 
 function charLen(s: string): number {
   return [...s].length;
@@ -56,7 +56,7 @@ function tokens(q: string): string[] {
 }
 
 /** Score(q)=0.30 Rarity + 0.25 Entity + 0.20 Specificity + 0.15 Relation + 0.10 LengthQuality */
-export function scoreQueryDiscriminability(q: string): number {
+function scoreQueryDiscriminability(q: string): number {
   const text = q.replace(/\s+/g, " ").trim();
   if (!text) return 0;
   const toks = tokens(text);

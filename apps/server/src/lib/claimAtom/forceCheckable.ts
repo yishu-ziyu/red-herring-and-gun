@@ -25,7 +25,7 @@ function hasObjectAndJudgment(text: string): boolean {
 }
 
 /** 像不像可核对流传说法。不像（规范/价值/纯骂/第一人称体验）优先。 */
-export function looksLikeCirculatingClaim(text: string): boolean {
+function looksLikeCirculatingClaim(text: string): boolean {
   const t = text.replace(/\s+/g, " ").trim();
   if (!t) return false;
   if (looksLikeStanceOrExperience(t)) return false;

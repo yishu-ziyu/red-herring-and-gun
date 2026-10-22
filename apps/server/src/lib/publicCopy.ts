@@ -4,7 +4,7 @@
  * No tool names, no agent names, no forwarding advice.
  */
 
-export const FACE_WORDS = ["能信", "不能信", "有真有假", "部分成立", "有争议", "还查不清"] as const;
+const FACE_WORDS = ["能信", "不能信", "有真有假", "部分成立", "有争议", "还查不清"] as const;
 
 const FACE_BY_TYPE: Record<string, (typeof FACE_WORDS)[number]> = {
   true: "能信",
@@ -42,12 +42,12 @@ export function findFuzzyQuantifiers(text: string): string[] {
   return matches ? Array.from(new Set(matches)) : [];
 }
 
-export function faceWord(verdictType: unknown): (typeof FACE_WORDS)[number] {
+function faceWord(verdictType: unknown): (typeof FACE_WORDS)[number] {
   const key = typeof verdictType === "string" ? verdictType.trim() : "";
   return FACE_BY_TYPE[key] || "还查不清";
 }
 
-export function looksLikeResearchMemo(text: string): boolean {
+function looksLikeResearchMemo(text: string): boolean {
   const t = (text ?? "").trim();
   if (!t) return false;
   if (/^#{1,3}\s/m.test(t)) return true;
@@ -62,13 +62,9 @@ const FACE_TOKEN = `(?:\\*\\*)?(?:${FACE_ALT})[。．.]?(?:\\*\\*)?[。．.]?[ \
 const FACE_LEAD_RE = new RegExp(`^${FACE_TOKEN}`);
 const FACE_AFTER_CORE_RE = new RegExp(`(##\\s*核心结论\\s*\\n+)${FACE_TOKEN}`);
 
-export function startsWithFace(text: string): boolean {
-  return Boolean(leadingFaceWord(text));
-}
-
 const STAMP_WORDS = ["只能信一部分", "有真有假", "部分成立", "有争议", "还查不清", "不能信", "能信"] as const;
 
-export function leadingFaceWord(text: string): (typeof STAMP_WORDS)[number] | undefined {
+function leadingFaceWord(text: string): (typeof STAMP_WORDS)[number] | undefined {
   let t = (text ?? "").trim();
   const core = t.match(/##\s*核心结论\s*\n+([\s\S]*)/);
   if (core) t = core[1].trim();
@@ -117,13 +113,13 @@ const CLAIM_JUDGMENT_PHRASE: Record<string, string> = {
   unresolved: "还查不清",
 };
 
-export type BoundedInterruptedClaim = {
+type BoundedInterruptedClaim = {
   text: string;
   checkability: string;
   judgment: string | null;
 };
 
-export type BoundedInterruptedAnswer = {
+type BoundedInterruptedAnswer = {
   directAnswer: string;
   judgment: "supported" | "refuted" | "mixed" | "unresolved";
 };
@@ -161,7 +157,7 @@ export function boundedInterruptedAnswer(
 }
 
 /** 只贴了链接、没有其它要查的文字。 */
-export function looksLikeUrlOnlyClaim(claim: string): boolean {
+function looksLikeUrlOnlyClaim(claim: string): boolean {
   const raw = String(claim ?? "").trim();
   if (!raw) return false;
   const t = raw.replace(/^请核查链接内容：/, "").trim();
@@ -169,8 +165,8 @@ export function looksLikeUrlOnlyClaim(claim: string): boolean {
   return leftover.length === 0;
 }
 
-export const UNOPENED_LINK_NOTICE = "链接打不开（可能需要登录），已按你输入的文字继续";
-export const UNOPENED_LINK_ANSWER = "链接打不开（可能需要登录），没法从链接里读到要查的说法。";
+const UNOPENED_LINK_NOTICE = "链接打不开（可能需要登录），已按你输入的文字继续";
+const UNOPENED_LINK_ANSWER = "链接打不开（可能需要登录），没法从链接里读到要查的说法。";
 
 /** 0 命题且原句只是打不开的链接：结论不能假装已经查完。 */
 export function applyUnopenedLinkConclusion(
@@ -190,7 +186,7 @@ export function applyUnopenedLinkConclusion(
 /** 检索曾把来源标成 S1/C1。可见正文里拿掉序号，不碰句内 [n] 绑定。 */
 const SOURCE_ALIAS_RE = /\b[SC]\d+(?:\s*[/、,，]\s*[SC]\d+)*(?:将|把|中)?/g;
 
-export function stripSourceAliases(text: string): string {
+function stripSourceAliases(text: string): string {
   if (!text) return "";
   return text
     .replace(SOURCE_ALIAS_RE, "")
@@ -207,7 +203,7 @@ const SCHEMA_WORD_RE = /\b(?:claimAtom|subclaim|verdictType|atomSearches|claim)\
 /** 400 字截断留下的半截拉丁残字，紧贴下一段引号。完整 IARC（4 字母）不动。 */
 const TRUNCATED_LATIN_BEFORE_QUOTE_RE = /[A-Za-z]{1,3}(?=「)/g;
 
-export function scrubPublicText(value: unknown): string {
+function scrubPublicText(value: unknown): string {
   if (typeof value !== "string") return "";
   let text = dropInternalSentences(value);
   text = text.replace(JARGON_RE, "");
@@ -224,7 +220,7 @@ export function scrubPublicText(value: unknown): string {
 }
 
 /** Keep newlines so a research memo does not collapse into a slogan card. */
-export function scrubMemoText(value: unknown): string {
+function scrubMemoText(value: unknown): string {
   if (typeof value !== "string") return "";
   return dropInternalSentences(value)
     .split("\n")
@@ -251,7 +247,7 @@ function insertCoreLede(memo: string, lede: string): string {
   return `${bold}\n\n${memo}`;
 }
 
-export function ensureMemoFace(text: string, verdictType: unknown): string {
+function ensureMemoFace(text: string, verdictType: unknown): string {
   const originalFace = leadingFaceWord(text);
   const body = stripFaceStamp(scrubMemoText(text));
   const answer = directAnswer(verdictType);
@@ -275,7 +271,7 @@ function splitSentences(text: string): string[] {
 }
 
 /** 2–5 short sentences. First answers the claim. No essay openers, no advice, no four-word stamp. */
-export function shapeConclusion(text: string, verdictType: unknown): string {
+function shapeConclusion(text: string, verdictType: unknown): string {
   const led = leadWithFace(text, verdictType);
   const kept: string[] = [];
   for (const sentence of splitSentences(led)) {
@@ -288,7 +284,7 @@ export function shapeConclusion(text: string, verdictType: unknown): string {
   return kept.slice(0, 5).join("");
 }
 
-export function leadWithFace(text: string, verdictType: unknown): string {
+function leadWithFace(text: string, verdictType: unknown): string {
   const body = scrubPublicText(text);
   const originalFace = leadingFaceWord(body);
   const stripped = stripFaceStamp(body);
@@ -298,7 +294,7 @@ export function leadWithFace(text: string, verdictType: unknown): string {
   return stripped;
 }
 
-export function constrainRecommendation(text: unknown, verdictType: unknown): string {
+function constrainRecommendation(text: unknown, verdictType: unknown): string {
   const body = scrubPublicText(text);
   if (!body || FORWARD_RE.test(body)) return directAnswer(verdictType);
   const stripped = stripFaceStamp(body);

@@ -4,10 +4,10 @@
  * 纯函数，无 I/O。
  */
 
-export const DEFAULT_TOP_K = 5;
+const DEFAULT_TOP_K = 5;
 
 /** 默认可扩展 denylist（主机后缀或完整 host，小写） */
-export const DEFAULT_DENY_HOST_SUFFIXES: string[] = [
+const DEFAULT_DENY_HOST_SUFFIXES: string[] = [
   "bit.ly",
   "t.cn",
   "tinyurl.com",
@@ -35,7 +35,7 @@ export type FilterMeta = {
   afterTopK: number;
 };
 
-export type FilterAtomSourcesResult = {
+type FilterAtomSourcesResult = {
   sources: FilterableSource[];
   meta: FilterMeta;
 };
@@ -93,7 +93,7 @@ function normalizeTitle(title: string): string {
 }
 
 /** S1 硬过滤 */
-export function hardFilterSources(
+function hardFilterSources(
   sources: FilterableSource[],
   denylist: string[] = DEFAULT_DENY_HOST_SUFFIXES
 ): FilterableSource[] {
@@ -134,7 +134,7 @@ function credibilityTier(c?: string): number {
 }
 
 /** S2 跨源去重：同规范化 URL；否则 域名+标题。入口可重复 canonicalize，便于单测直调。 */
-export function dedupeSources(sources: FilterableSource[]): FilterableSource[] {
+function dedupeSources(sources: FilterableSource[]): FilterableSource[] {
   const byKey = new Map<string, FilterableSource>();
   for (const s of sources) {
     const canon = canonicalizeUrl(s.url) || s.url;
@@ -160,7 +160,7 @@ export function dedupeSources(sources: FilterableSource[]): FilterableSource[] {
  * 可用度分 0–100：域名启发式 + 摘要/标题。
  * provider_rank_score：0 最好 → 映射高分。
  */
-export function scoreSource(s: FilterableSource): number {
+function scoreSource(s: FilterableSource): number {
   let usability = 40;
   const tier = credibilityTier(s.credibility);
   usability += tier * 15; // 0/15/30/45
@@ -186,7 +186,7 @@ export function scoreSource(s: FilterableSource): number {
 }
 
 /** S3 打分截断 */
-export function topKSources(sources: FilterableSource[], k: number = DEFAULT_TOP_K): FilterableSource[] {
+function topKSources(sources: FilterableSource[], k: number = DEFAULT_TOP_K): FilterableSource[] {
   const sorted = [...sources].sort((a, b) => scoreSource(b) - scoreSource(a));
   return sorted.slice(0, Math.max(0, k));
 }

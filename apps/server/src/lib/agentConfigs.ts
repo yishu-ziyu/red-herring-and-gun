@@ -2,14 +2,13 @@
  * agentConfigs.ts — Agent registry (prompts + schemas + handoff I/O).
  */
 
-import type { ClaimAtomType, SubclaimVerdict, VerdictSource } from "./claimAtom/types.js";
 import { LABEL_KEYS } from "../domain/labels.js";
 
 // ───────────────────────────────────────────────────────────────
 // 类型定义
 // ───────────────────────────────────────────────────────────────
 
-export interface AgentConfig {
+interface AgentConfig {
   id: string;
   name: string;
   icon: string;
@@ -24,7 +23,7 @@ export interface AgentConfig {
   model?: string;
 }
 
-export interface HandoffStep {
+interface HandoffStep {
   agent: string;
   agentName: string;
   agentIcon: string;
@@ -38,86 +37,6 @@ export interface HandoffStep {
   error?: string;
   /** Pipeline-internal pre-audit candidates; never part of the public agent output. */
   relationAuditCandidates?: unknown[];
-}
-
-export interface HandoffResult {
-  claim: string;
-  steps: HandoffStep[];
-  finalReport?: FinalReportOutput;
-}
-
-export interface RumorDetectorOutput {
-  claimAtoms: string[];
-  claimAtomTypes: Array<{
-    text: string;
-    verifiable: boolean;
-    type: ClaimAtomType;
-  }>;
-  // 整句判定字段（与系统既有 claimType/ExecutionDagClaimType 区分），命名 stanceClaimType
-  stanceClaimType: {
-    verifiable: boolean;
-    type: ClaimAtomType | "mixed";
-    reason: string;
-  };
-  rumorIndicators: string[];
-  severity: "low" | "medium" | "high";
-  analysis: string;
-  detectedPatterns: string[];
-}
-
-export interface FactCheckerOutput {
-  factCheckResult: "true" | "false" | "partial" | "unverified";
-  confidence: "low" | "medium" | "high";
-  sources: string[];
-  keyFindings: string[];
-  counterEvidence: string[];
-  subclaimVerdicts: SubclaimVerdict[];
-}
-
-export interface SourceValidatorOutput {
-  sourceReliability: "high" | "medium" | "low" | "unverified";
-  verifiedSources: string[];
-  questionableSources: string[];
-  missingSources: string[];
-  verificationNotes: string;
-  claimSourceRelations: Array<{
-    claimAtom: string;
-    url: string;
-    relation: "support" | "contradict" | "context-only" | "unverified";
-    reason: string;
-    quote?: string;
-  }>;
-}
-
-export interface FinalReportOutput {
-  verdictType: "true" | "false" | "mixed_misleading" | "unverified";
-  conclusion: string;
-  recommendation: string;
-  summaryForPublic: string;
-  whyHardToVerify: string[];
-  subclaimVerdicts: SubclaimVerdict[];
-  evidenceChain: Array<{
-    layer: string;
-    finding: string;
-    evidence: string;
-    boundary: string;
-    sourceRefs: string[];
-  }>;
-  causalBoundary: string;
-  closureActions: Array<{
-    type: "rebuttal_card" | "archive_doubt" | "share_public" | "follow_up";
-    label: string;
-    content: string;
-    status: "ready" | "needs_review" | "blocked";
-  }>;
-  confidenceDimensions: Array<{
-    dimension: "source_reliability" | "evidence_completeness" | "consistency" | "recency" | "authority";
-    label: string;
-    score: number;
-    threshold: number;
-    passed: boolean;
-    reason: string;
-  }>;
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -536,14 +455,6 @@ export const AGENT_CONFIGS: AgentConfig[] = [
     responseSchema: sourceValidatorSchema,
   },
 ];
-
-// ───────────────────────────────────────────────────────────────
-// 工具函数（registry only；claim-atom domain → ./claimAtom）
-// ───────────────────────────────────────────────────────────────
-
-export function getAgentConfig(id: string): AgentConfig | undefined {
-  return AGENT_CONFIGS.find((a) => a.id === id);
-}
 
 export function buildAgentInput(
   agentId: string,

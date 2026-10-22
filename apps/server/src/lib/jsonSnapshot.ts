@@ -47,7 +47,7 @@ export function flushSnapshots(): void {
   pending.clear();
 }
 
-export function saveSnapshotDebounced(file: string, value: unknown): void {
+function saveSnapshotDebounced(file: string, value: unknown): void {
   pending.set(file, value);
   if (timer) return;
   timer = setTimeout(() => {

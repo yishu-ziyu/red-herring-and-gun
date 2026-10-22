@@ -18,7 +18,7 @@ import type { PublicActivity } from "./investigation/index.js";
 
 type PublicActivityLike = PublicActivity;
 
-export type StartRunInput = {
+type StartRunInput = {
   caseId: string;
   ownerHash?: string | null;
   clientRequestId?: string | null;
@@ -27,12 +27,12 @@ export type StartRunInput = {
   now?: number;
 };
 
-export type StartRunResult =
+type StartRunResult =
   | { kind: "created"; run: RunRecord }
   | { kind: "existing"; run: RunRecord }
   | { kind: "conflict"; existing: RunRecord };
 
-export type CancelResult =
+type CancelResult =
   | { kind: "cancelling"; run: RunRecord }
   | { kind: "already-terminal"; run: RunRecord }
   | { kind: "not-found" };
@@ -47,7 +47,7 @@ type ActiveRun = {
 };
 
 /** 流上已经发出去的一帧；重连时用来补发。 */
-export type RunEvent = Record<string, unknown>;
+type RunEvent = Record<string, unknown>;
 
 export type RunService = ReturnType<typeof createRunService>;
 

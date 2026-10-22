@@ -4,7 +4,7 @@
  */
 
 /** 来源审计刷新的最低余量；不够时新来源一律只作背景（fail-closed）。 */
-export const SOURCE_AUDIT_REFRESH_MIN_MS = 20_000;
+const SOURCE_AUDIT_REFRESH_MIN_MS = 20_000;
 
 export type Budget = {
   /** 来不及再刷新一次来源审计。 */

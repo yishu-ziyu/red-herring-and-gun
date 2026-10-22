@@ -16,17 +16,15 @@ import {
   bindRelatedSourcesOnly,
   stripCitationMarkers,
 } from "./citationBinding.js";
-export const MAX_ATOM_SEARCHES = 6;
-/** @deprecated 用 claimAtom.MAX_CLAIM_ATOMS */
-export const MAX_CLAIM_ATOMS_LISTED = MAX_CLAIM_ATOMS;
+const MAX_ATOM_SEARCHES = 6;
 const CAUSAL_LOAD_RE = /导致|造成|引起|致使/;
 const DIGIT_LOAD_RE = /\d/;
-export const SEARCH_BUDGET_GAP = "检索预算未覆盖";
+const SEARCH_BUDGET_GAP = "检索预算未覆盖";
 
 /** Adapter at the search seam: one atom → raw search result. */
 export type SearchOneAtom = (atom: string) => Promise<unknown>;
 
-export type RetrieveForAtomsHooks = {
+type RetrieveForAtomsHooks = {
   onAtomStart?: (atom: string) => void;
   onAtomResult?: (atom: string, result: unknown) => void;
   /** parallel (default) or sequential (SSE-friendly) */
@@ -70,7 +68,7 @@ export type KnowledgeInjection = {
 };
 
 /** 判定拍用的可复核初稿（记忆只加速，不代替本轮核查）。 */
-export type KnowledgeDraft = {
+type KnowledgeDraft = {
   claimAtom: string;
   originDate: string;
   priorVerdict: string;
@@ -84,7 +82,7 @@ export type KnowledgeHit = {
   sourceCount: number;
 };
 
-export type AtomSearchItem = {
+type AtomSearchItem = {
   atom: string;
   result: unknown;
 };
@@ -129,7 +127,7 @@ export type AtomSearchBundle = {
   enginesPerAtom?: Record<string, AtomEngineCounts>;
 };
 
-export type AtomEngineCounts = {
+type AtomEngineCounts = {
   returned: Record<string, number>;
   kept: Record<string, number>;
   returnedTotal: number;
@@ -194,7 +192,7 @@ function asSourceList(result: unknown): FilterableSource[] {
   return out;
 }
 
-export function atomSearchLoad(atom: string, type?: string): number {
+function atomSearchLoad(atom: string, type?: string): number {
   if (type === "causal" || CAUSAL_LOAD_RE.test(atom)) return 2;
   if (DIGIT_LOAD_RE.test(atom)) return 1;
   return 0;
@@ -322,7 +320,7 @@ export function applyUnsearchedAtomVerdicts(
  * 把「每原子一轮」的检索结果打成 bundle。
  * claimAtomKeyFn：与 merge/claimItems 同一套键（由调用方注入 claimAtomKey）。
  */
-export function buildAtomSearchBundle(
+function buildAtomSearchBundle(
   items: AtomSearchItem[],
   claimAtomKeyFn: (s: string) => string
 ): AtomSearchBundle {
@@ -423,7 +421,7 @@ export function buildAtomSearchBundle(
   };
 }
 
-export type BindableVerdict = {
+type BindableVerdict = {
   claimAtom: string;
   evidence?: string;
   supportingSources?: AtomSearchSource[];
@@ -547,7 +545,7 @@ function usableKnowledgeEvidence(injection: KnowledgeInjection): KnowledgeInject
  * - 不改 traceText / filterMeta：那两项统计的是本次联网检索做了多少轮、滤掉多少条，
  *   注入没走那条漏斗，硬算进去反而让数字变假。
  */
-export function injectKnowledgeEvidence(
+function injectKnowledgeEvidence(
   bundle: AtomSearchBundle,
   atom: string,
   injection: KnowledgeInjection,

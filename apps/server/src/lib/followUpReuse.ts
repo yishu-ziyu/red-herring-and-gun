@@ -19,19 +19,19 @@ import { semanticClaimSimilarity } from "./semanticRecall.js";
 import type { KnowledgeInjection } from "./atomSearch.js";
 
 /** 与前端 composeFollowUpClaim 同一句；服务端只用来裁出用户追问，不改拼接。 */
-export const FOLLOW_UP_MARKER = "同一条核查的追问，不是新案件。";
+const FOLLOW_UP_MARKER = "同一条核查的追问，不是新案件。";
 
 /**
  * 「追问已被上一轮命题覆盖」的相似度门槛（0–100）。
  * 门槛取高：宁可多搜一句新问题，也不把「隔夜海鲜」当成「隔夜菜」。
  */
-export const FOLLOW_UP_COVER_THRESHOLD = 50;
+const FOLLOW_UP_COVER_THRESHOLD = 50;
 
 const VERIFIED_ATOM_VERDICTS = new Set(["true", "false", "partial", "exaggerated", "mixed_misleading"]);
 
-export type FollowUpEvidence = { url: string; title: string; snippet: string };
+type FollowUpEvidence = { url: string; title: string; snippet: string };
 
-export type FollowUpReusedAtom = {
+type FollowUpReusedAtom = {
   text: string;
   verdict: string;
   evidence: FollowUpEvidence[];
@@ -49,19 +49,19 @@ export type FollowUpReusePlan = {
  * 访客没有服务端案件档案时，随追问带上的上一轮可见材料。
  * 只含命题、判断、可点开出处、结论；不含内部拼接指令或未展示字段。
  */
-export type VisiblePriorRound = {
+type VisiblePriorRound = {
   originalClaim: string;
   conclusion: string;
   claims: VisiblePriorClaim[];
 };
 
-export type VisiblePriorClaim = {
+type VisiblePriorClaim = {
   text: string;
   judgment: "supported" | "refuted" | "mixed";
   evidence: VisiblePriorEvidence[];
 };
 
-export type VisiblePriorEvidence = {
+type VisiblePriorEvidence = {
   url: string;
   title: string;
   excerpt: string;
@@ -120,7 +120,7 @@ function parseVisibleClaim(raw: unknown): VisiblePriorClaim | null {
 }
 
 /** 访客 payload 的上一轮材料：读不到可用证据就 null，不假装快路径。 */
-export function parsePriorRoundBrief(raw: unknown): VisiblePriorRound | null {
+function parsePriorRoundBrief(raw: unknown): VisiblePriorRound | null {
   if (!isRecord(raw)) return null;
   const claims: VisiblePriorClaim[] = [];
   const seen = new Set<string>();
@@ -141,7 +141,7 @@ export function parsePriorRoundBrief(raw: unknown): VisiblePriorRound | null {
   };
 }
 
-export function priorReportFromVisibleBrief(brief: VisiblePriorRound): Record<string, unknown> {
+function priorReportFromVisibleBrief(brief: VisiblePriorRound): Record<string, unknown> {
   return {
     conclusion: brief.conclusion,
     subclaimVerdicts: brief.claims.map((claim) => ({
@@ -204,7 +204,7 @@ export function followUpQuestionOf(claim: string): string {
 /**
  * 追问是否已被这一条已核命题覆盖。人物/日期/链接冲突一律不算覆盖。
  */
-export function followUpCoveredByAtom(followUp: string, atom: string): boolean {
+function followUpCoveredByAtom(followUp: string, atom: string): boolean {
   const question = followUpQuestionOf(followUp) || followUp;
   if (!question.trim() || !atom.trim()) return false;
   if (hasTokenConflict(question, atom)) return false;
@@ -217,7 +217,7 @@ export function followUpCoveredByAtom(followUp: string, atom: string): boolean {
 }
 
 /** 上一轮报告里已核且带真实 URL 的命题。读不到就空数组，不编。 */
-export function extractPriorVerifiedAtoms(priorReport: unknown): FollowUpReusedAtom[] {
+function extractPriorVerifiedAtoms(priorReport: unknown): FollowUpReusedAtom[] {
   if (!isRecord(priorReport)) return [];
   const out: FollowUpReusedAtom[] = [];
   const seen = new Set<string>();
@@ -288,10 +288,6 @@ export function priorRoundLookupOf(
   };
 }
 
-export function reusedAtomKeysOf(plan: FollowUpReusePlan): Set<string> {
-  return new Set(plan.reused.map((atom) => claimAtomKey(atom.text)));
-}
-
 const FOLLOW_UP_ATOM_CAP = 2;
 
 /**
@@ -339,7 +335,7 @@ function followUpVerdictPhrase(verdictType: unknown): string {
   return "现有材料还撑不住判断";
 }
 
-export function distinctiveFollowUpTerms(question: string): string[] {
+function distinctiveFollowUpTerms(question: string): string[] {
   const compact = question.replace(/[^\u4e00-\u9fff]/g, "");
   const seen = new Set<string>();
   const terms: string[] = [];
@@ -353,7 +349,7 @@ export function distinctiveFollowUpTerms(question: string): string[] {
   return terms;
 }
 
-export function conclusionMissesFollowUp(conclusion: string, claim: string): boolean {
+function conclusionMissesFollowUp(conclusion: string, claim: string): boolean {
   if (!String(claim).includes(FOLLOW_UP_MARKER)) return false;
   const question = followUpQuestionOf(claim);
   if (!question) return false;

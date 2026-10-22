@@ -18,7 +18,7 @@ import {
 import { cookieOptions, decodeSignedJson, encodeSignedJson, getServerSecret, parseCookies } from "./signedCookie.js";
 import { loadSnapshot, registerSnapshotSource } from "./jsonSnapshot.js";
 
-export const GUEST_CHECKS_COOKIE = "v3_guest_checks";
+const GUEST_CHECKS_COOKIE = "v3_guest_checks";
 // 也是分享的所有者凭证：要比分享有效期（30 天）长，否则分享者撤销不了自己的链接。
 const GUEST_COOKIE_TTL_SECONDS = 60 * 24 * 60 * 60;
 
@@ -31,12 +31,12 @@ function envInt(name: string, fallback: number): number {
 }
 
 /** 单个访客每天的免费核查数。`CHECK_QUOTA_GUEST_LIMIT` 可覆盖（测试期放宽用）。 */
-export function guestDailyLimit(): number {
+function guestDailyLimit(): number {
   return envInt("CHECK_QUOTA_GUEST_LIMIT", GUEST_DAILY_CHECKS);
 }
 
 /** 整条来源 IP 每天的核查总数上限。`CHECK_QUOTA_IP_LIMIT` 可覆盖。 */
-export function ipDailyLimit(): number {
+function ipDailyLimit(): number {
   return envInt("CHECK_QUOTA_IP_LIMIT", IP_DAILY_CHECKS);
 }
 
@@ -130,7 +130,7 @@ function hashIp(ip: string) {
  * token 只存在服务端 env（OPS_CHECK_BYPASS_TOKEN），未配置时旁路完全关闭；
  * 头名 x-ops-check-token。恒时比较防探测。
  */
-export function hasOpsCheckBypass(req: { headers?: { [key: string]: unknown } }): boolean {
+function hasOpsCheckBypass(req: { headers?: { [key: string]: unknown } }): boolean {
   const expected = process.env.OPS_CHECK_BYPASS_TOKEN?.trim();
   if (!expected) return false;
   const supplied = headerValue(req.headers?.["x-ops-check-token"]);
@@ -240,7 +240,7 @@ function writeJson(res: any, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
-export async function peekCheckQuota(
+async function peekCheckQuota(
   req: { headers?: { cookie?: unknown; [key: string]: unknown }; socket?: { remoteAddress?: string } }
 ): Promise<CheckQuotaView> {
   if (hasOpsCheckBypass(req)) return bypassQuotaView();
@@ -260,7 +260,7 @@ export async function peekCheckQuota(
   };
 }
 
-export async function beginFreeCheck(
+async function beginFreeCheck(
   req: any,
   res: any
 ): Promise<{ ok: true; ticket: CheckTicket } | { ok: false; kind: CheckQuotaKind }> {

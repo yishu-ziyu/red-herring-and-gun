@@ -14,13 +14,3 @@ export function splitReasoningSentences(reasoning: string): string[] {
   return parts.length > 0 ? parts : [trimmed];
 }
 
-/**
- * Inter-sentence delay when replaying a finished reasoning block over SSE.
- * Keeps total reveal roughly 1.5–4s so UI can animate without inventing text.
- */
-export function thoughtInterSentenceDelayMs(sentenceCount: number): number {
-  const n = Math.max(1, sentenceCount);
-  if (n <= 1) return 0;
-  // ~2.4s budget for the whole replay, clamped per gap
-  return Math.min(900, Math.max(180, Math.round(2400 / (n - 1))));
-}

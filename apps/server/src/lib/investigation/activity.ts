@@ -18,30 +18,16 @@ import type { InvestigationSnapshotV1 } from "./schema.js";
 
 const closed = { additionalProperties: false } as const;
 
-export const WorkRoleSchema = Type.Union([
+const WorkRoleSchema = Type.Union([
   Type.Literal("question"),
   Type.Literal("source"),
   Type.Literal("context"),
   Type.Literal("judgment"),
 ]);
-export type WorkRole = Static<typeof WorkRoleSchema>;
+type WorkRole = Static<typeof WorkRoleSchema>;
 
-/** 活动种类的唯一清单；改这里必须同时改下面的 Schema（有测试守住两者一致）。 */
-export const ACTIVITY_KINDS = [
-  "claim_decomposed",
-  "search_started",
-  "prior_round_reuse",
-  "source_found",
-  "source_checked",
-  "evidence_assessed",
-  "conflict_detected",
-  "gap_identified",
-  "judgment_revised",
-  "run_completed",
-] as const;
-
-// 逐字列出来而不是从 ACTIVITY_KINDS 推导：TS 对映射出来的 Type.Union 推不出联合，会塌成 never。
-export const ActivityKindSchema = Type.Union([
+/** 活动种类的唯一清单。 */
+const ActivityKindSchema = Type.Union([
   Type.Literal("claim_decomposed"),
   Type.Literal("search_started"),
   /**
@@ -57,10 +43,10 @@ export const ActivityKindSchema = Type.Union([
   Type.Literal("judgment_revised"),
   Type.Literal("run_completed"),
 ]);
-export type ActivityKind = Static<typeof ActivityKindSchema>;
+type ActivityKind = Static<typeof ActivityKindSchema>;
 
 /** 每个 kind 允许出现在 payload 里的键。白名单之外一律丢弃，不报错、不落库。 */
-export const ACTIVITY_PAYLOAD_KEYS: Record<ActivityKind, readonly string[]> = {
+const ACTIVITY_PAYLOAD_KEYS: Record<ActivityKind, readonly string[]> = {
   claim_decomposed: ["claimText"],
   search_started: ["query"],
   prior_round_reuse: ["originDate"],
@@ -74,7 +60,7 @@ export const ACTIVITY_PAYLOAD_KEYS: Record<ActivityKind, readonly string[]> = {
 };
 
 /** 每个 kind 固定归属的工作职责；不让调用方自由指定。 */
-export const ACTIVITY_ROLE: Record<ActivityKind, WorkRole> = {
+const ACTIVITY_ROLE: Record<ActivityKind, WorkRole> = {
   claim_decomposed: "question",
   search_started: "source",
   prior_round_reuse: "source",
@@ -88,9 +74,9 @@ export const ACTIVITY_ROLE: Record<ActivityKind, WorkRole> = {
 };
 
 /** 单条 payload 值的长度上限；超出即截断，避免把整篇正文塞进事件流。 */
-export const ACTIVITY_VALUE_MAX = 160;
+const ACTIVITY_VALUE_MAX = 160;
 
-export const PublicActivitySchema = Type.Object(
+const PublicActivitySchema = Type.Object(
   {
     version: Type.Literal(1),
     /** `runId:seq`，稳定且不含时间戳；重放同一份数据得到同一个 id。 */
@@ -110,22 +96,12 @@ export const PublicActivitySchema = Type.Object(
 );
 export type PublicActivity = Static<typeof PublicActivitySchema>;
 
-/** 校验并返回；不合法抛错（信息含违规路径）。 */
-export function validatePublicActivity(input: unknown): PublicActivity {
-  if (Value.Check(PublicActivitySchema, input)) return input as PublicActivity;
-  const detail =
-    Value.Errors(PublicActivitySchema, input)
-      .map((err) => `${err.instancePath || "/"}: ${err.message}`)
-      .join("\n") || "invalid";
-  throw new Error(detail);
-}
-
 export function isPublicActivity(input: unknown): input is PublicActivity {
   return Value.Check(PublicActivitySchema, input);
 }
 
 /** 只留白名单键，值压成字符串并截断；不编值、不补默认。 */
-export function sanitizeActivityPayload(
+function sanitizeActivityPayload(
   kind: ActivityKind,
   raw: Record<string, unknown> | undefined,
 ): Record<string, string> {
@@ -145,7 +121,7 @@ export function sanitizeActivityPayload(
 }
 
 /** 投影中间态：id / seq / occurredAt / revision 由 ActivityLog 统一分配。 */
-export type ActivityDraft = Pick<PublicActivity, "kind" | "claimIds" | "sourceIds"> & {
+type ActivityDraft = Pick<PublicActivity, "kind" | "claimIds" | "sourceIds"> & {
   payload?: Record<string, unknown>;
 };
 
@@ -343,4 +319,3 @@ export function createActivityLog(options: { runId: string; now?: () => Date }) 
   };
 }
 
-export type ActivityLog = ReturnType<typeof createActivityLog>;

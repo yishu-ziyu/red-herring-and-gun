@@ -80,7 +80,7 @@ export type InvestigationBuildInput = {
   preClaimWork?: "splitting" | "checking";
 };
 
-export type InvestigationBuildOptions = {
+type InvestigationBuildOptions = {
   /**
    * 生产传 mvp `claimAtomKey`，保证与 merge/claimItems 同键；
    * 缺省用内置同规则规范化（全角空格 → 空格，超长 180 截断）。
@@ -437,7 +437,6 @@ function readVerdictDecision(report: Record<string, unknown> | null, keyFn: (s: 
 
 function readRelationAudits(
   raw: unknown,
-  keyFn: (s: string) => string,
 ): Array<RelationAuditView & { claimAtom: string; url: string }> {
   const out: Array<RelationAuditView & { claimAtom: string; url: string }> = [];
   for (const item of asArray(raw)) {
@@ -601,7 +600,7 @@ export function buildInvestigationSnapshot(
   const types = readAtomTypes(input.claimAtomTypes, input.nonVerifiableAtoms, keyFn);
   const verdicts = readVerdicts(input.subclaimVerdicts, keyFn);
   const bundle = readBundle(input.atomSearchBundle, keyFn);
-  const relationAudits = readRelationAudits(input.sourceRelationAudits, keyFn);
+  const relationAudits = readRelationAudits(input.sourceRelationAudits);
   const report = asRecord(input.report);
   const deadUrls = new Set(asArray(input.reachability?.deadUrls).map((u) => asString(u)));
   const verdictDecision = readVerdictDecision(report, keyFn);

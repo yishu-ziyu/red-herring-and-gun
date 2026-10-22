@@ -13,7 +13,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "./sqliteStore.js";
 import type { InvestigationSnapshotV1, PublicActivity } from "./investigation/index.js";
 
-export const RUN_STATUSES = [
+const RUN_STATUSES = [
   "accepted",
   "extracting",
   "investigating",
@@ -91,7 +91,7 @@ function toRecord(row: RunRow): RunRecord {
   };
 }
 
-export type CreateRunInput = {
+type CreateRunInput = {
   runId: string;
   caseId: string;
   ownerHash?: string | null;
@@ -103,7 +103,7 @@ export type CreateRunInput = {
 
 export type RunStore = ReturnType<typeof createRunStore>;
 
-export function createRunStore(db: DatabaseSync) {
+function createRunStore(db: DatabaseSync) {
   const insertRun = db.prepare(
     `INSERT INTO runs (runId, caseId, ownerHash, clientRequestId, inputHash, status, revision, snapshot, activities, lastSeq, createdAt, updatedAt)
      VALUES (?, ?, ?, ?, ?, ?, 0, NULL, '[]', 0, ?, ?)`

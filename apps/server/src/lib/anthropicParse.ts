@@ -49,7 +49,7 @@ export function extractAnthropicText(raw: string): string {
 }
 
 /** 从 Anthropic 完整响应对象中拼接 content[*].text。保持纯净，避免 thinking 污染 JSON 解析。 */
-export function extractAnthropicContent(data: unknown): string {
+function extractAnthropicContent(data: unknown): string {
   if (!data || typeof data !== "object") return "";
   const content = (data as { content?: unknown }).content;
   if (typeof content === "string") return content;
@@ -61,36 +61,6 @@ export function extractAnthropicContent(data: unknown): string {
     }
   }
   return parts.join("");
-}
-
-/** 空 text 时描述 stop_reason / content 块类型，区分 thinking-only 与真·空响应。 */
-export function describeEmptyAnthropic(raw: string): string {
-  try {
-    const data = JSON.parse(raw) as {
-      stop_reason?: unknown;
-      stopReason?: unknown;
-      content?: unknown;
-      usage?: { output_tokens?: unknown; outputTokens?: unknown };
-    };
-    const items = Array.isArray(data.content) ? data.content : [];
-    const types =
-      items
-        .map((item) =>
-          item && typeof item === "object" && "type" in item && typeof item.type === "string"
-            ? item.type
-            : typeof item
-        )
-        .join(",") || (typeof data.content === "string" ? "string" : "none");
-    const stop =
-      (typeof data.stop_reason === "string" && data.stop_reason) ||
-      (typeof data.stopReason === "string" && data.stopReason) ||
-      "unknown";
-    const outputTokens = data.usage?.output_tokens ?? data.usage?.outputTokens;
-    const usageBit = outputTokens != null ? ` output_tokens=${outputTokens}` : "";
-    return `stop_reason=${stop}, content_types=${types}${usageBit}`;
-  } catch {
-    return `raw_chars=${raw.length}`;
-  }
 }
 
 /** 从 Anthropic 兼容响应中提取思考文本（MiniMax-M3 的 content[*].thinking）。无则返回空串。 */
@@ -132,48 +102,6 @@ export function extractJsonObject(text: string): string {
   const end = trimmed.lastIndexOf("}");
   if (start === -1 || end === -1 || end < start) return trimmed;
   return trimmed.slice(start, end + 1);
-}
-
-export type AnthropicSseDelta = {
-  thinkingChunk?: string;
-  textChunk?: string;
-};
-
-/** Parse one SSE `data:` payload from an Anthropic-compatible stream. */
-export function parseAnthropicSseDataLine(dataText: string): AnthropicSseDelta | null {
-  const trimmed = dataText.trim();
-  if (!trimmed || trimmed === "[DONE]") return null;
-  try {
-    const event = JSON.parse(trimmed) as {
-      type?: string;
-      delta?: { type?: string; text?: unknown; thinking?: unknown };
-      content_block?: { type?: string; text?: unknown; thinking?: unknown };
-    };
-    const delta = event.delta ?? {};
-    const thinkingChunk =
-      typeof delta.thinking === "string"
-        ? delta.thinking
-        : event.type === "content_block_start" &&
-            event.content_block?.type === "thinking" &&
-            typeof event.content_block.thinking === "string"
-          ? event.content_block.thinking
-          : "";
-    const textChunk =
-      typeof delta.text === "string"
-        ? delta.text
-        : event.type === "content_block_start" &&
-            event.content_block?.type === "text" &&
-            typeof event.content_block.text === "string"
-          ? event.content_block.text
-          : "";
-    if (!thinkingChunk && !textChunk) return null;
-    return {
-      ...(thinkingChunk ? { thinkingChunk } : {}),
-      ...(textChunk ? { textChunk } : {}),
-    };
-  } catch {
-    return null;
-  }
 }
 
 export async function readAnthropicSse(

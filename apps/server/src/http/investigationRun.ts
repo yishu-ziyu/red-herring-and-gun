@@ -31,7 +31,6 @@ import {
   composeClaimWithVision,
   imageTextForDisplay,
   type buildCaseIntakeMetadata,
-  type CaseIntakeImagePayload,
   type CaseIntakePayload,
   type normalizeClientMemoryRecall,
 } from "../lib/visionIntake.js";
@@ -51,7 +50,7 @@ export type InvestigationRunDeps = {
 };
 
 /** 已通过校验、已建好 run 的一次调查请求。 */
-export type InvestigationRequest = {
+type InvestigationRequest = {
   claim: string;
   ticket: CheckTicket;
   intake: CaseIntakePayload | null;

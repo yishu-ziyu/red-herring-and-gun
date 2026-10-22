@@ -15,7 +15,7 @@ export type CiteSource = {
   quote?: string;
 };
 
-export type BoundCitation = {
+type BoundCitation = {
   text: string;
   sources: CiteSource[];
   /** old 1-based index → new 1-based index (survivors only) */
@@ -26,7 +26,7 @@ export type BoundCitation = {
 
 const MARKER_RE = /\[(\d+)\]/g;
 
-export function normalizeUrl(url: string): string {
+function normalizeUrl(url: string): string {
   return typeof url === "string" ? url.trim() : "";
 }
 
@@ -112,27 +112,7 @@ export function clampMarkersToSources(text: string, sourceCount: number): string
     .trim();
 }
 
-/**
- * Bind model evidence + raw sources under an optional URL whitelist.
- * Source order after filter is the only truth for [n].
- */
-export function bindLocalCitations(
-  evidence: unknown,
-  rawSources: unknown,
-  allowedUrls: Set<string> | null = null
-): BoundCitation {
-  const textIn = typeof evidence === "string" ? evidence : "";
-  const { sources, remap } = filterSourcesWithRemap(rawSources, allowedUrls);
-  const text = remapCitationMarkers(textIn, remap);
-  return {
-    text: clampMarkersToSources(text, sources.length),
-    sources,
-    remap,
-    relatedOnly: false,
-  };
-}
-
-export type BoundDualCitation = {
+type BoundDualCitation = {
   text: string;
   supportingSources: CiteSource[];
   contradictingSources: CiteSource[];
@@ -236,7 +216,7 @@ export function bindRelatedSourcesOnly(
 }
 
 /** Global first-seen unique sources across verdicts (claim order). */
-export function buildGlobalCiteSources(
+function buildGlobalCiteSources(
   verdicts: Array<{
     supportingSources?: CiteSource[] | null | undefined;
     contradictingSources?: CiteSource[] | null | undefined;

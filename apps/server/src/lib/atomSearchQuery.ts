@@ -16,7 +16,7 @@ export function looksLikePlanOrPrediction(atom: string): boolean {
 }
 
 /** Drop first-person filler so slangy Weibo sentences still hit 辟谣 pages. */
-export function compactAtomForSearch(atom: string): string {
+function compactAtomForSearch(atom: string): string {
   const stripped = atom
     .replace(FILLER, " ")
     .replace(/[，。！？、；：""''（）【】《》]/g, " ")
@@ -29,7 +29,7 @@ export function compactAtomForSearch(atom: string): string {
 }
 
 /** Generic insult/affair captions need a public-bulletin query, not the empty “是不是真的”. */
-export function extraRumorQueries(atom: string): string[] {
+function extraRumorQueries(atom: string): string[] {
   const extra: string[] = [];
   if (/P图|p图|配图/.test(atom) && /侮辱|辱骂|侮辱性/.test(atom)) {
     extra.push("P图 编造 侮辱性文字 发群 警方通报 辟谣");
@@ -65,12 +65,12 @@ const AUTHORITY_SITES: ReadonlyArray<string> = [
 const HEALTH_RE = /(癌|疫苗|治疗|养生|食品|药品|血压|血糖|健康|病|感染|传染|停课|封城)/;
 const SOCIAL_RE = /(死亡|爆炸|火灾|车祸|地震|下雪|补贴|领钱|疫苗|停课|封城|转发)/;
 
-export function looksLikeHealthOrSocialRumor(atom: string): boolean {
+function looksLikeHealthOrSocialRumor(atom: string): boolean {
   return HEALTH_RE.test(atom) || SOCIAL_RE.test(atom);
 }
 
 /** 权威站点直查：健康/社会谣言至少带 1 路，独立于 3 路配额，官方来源命中即高权重。 */
-export function authoritySiteQueries(atom: string): string[] {
+function authoritySiteQueries(atom: string): string[] {
   const compact = compactAtomForSearch(atom);
   if (!compact) return [];
   const isHealth = HEALTH_RE.test(atom);
@@ -82,12 +82,12 @@ export function authoritySiteQueries(atom: string): string[] {
 
 /** 英文谣言分语言策略：claim 主体为英文时，检索走英文谣言语境（rumor/debunk/fact-check），
  *  而不是套中文「辟谣/官方通报」后缀。 */
-export function looksLikeEnglishClaim(atom: string): boolean {
+function looksLikeEnglishClaim(atom: string): boolean {
   const letters = (atom.match(/[a-zA-Z]/g) ?? []).length;
   const cjk = (atom.match(/[\u4e00-\u9fff]/g) ?? []).length;
   return letters > 0 && letters > cjk * 2;
 }
-export function enRumorQueries(atom: string): string[] {
+function enRumorQueries(atom: string): string[] {
   if (!looksLikeEnglishClaim(atom)) return [];
   const words = atom.match(/[a-zA-Z][a-zA-Z0-9'-]{2,}/g) ?? [];
   const head = words.slice(0, 3).join(" ");
