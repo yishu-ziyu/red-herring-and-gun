@@ -134,7 +134,7 @@
 
 .gp-part {
   padding: 22px 0 18px;
-  border-top: 1px solid var(--gp-line-subtle);
+  border-top: 1px solid var(--gp-hairline-subtle);
   min-width: 0;
 }
 
@@ -225,7 +225,7 @@
   margin-right: 6px;
   padding: 0 6px;
   font-size: 12px;
-  border: 1px solid var(--gp-line);
+  border: 1px solid var(--gp-hairline);
   border-radius: 6px;
   color: var(--gp-ink-3);
 }
@@ -247,7 +247,7 @@
 .gp-ev-material blockquote {
   margin: 8px 0;
   padding-left: 12px;
-  border-left: 2px solid var(--gp-line);
+  border-left: 2px solid var(--gp-hairline);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -272,7 +272,7 @@
 .gp-ev-src a {
   color: var(--gp-ink-2);
   min-width: 0;
-  text-decoration-color: var(--gp-line);
+  text-decoration-color: var(--gp-hairline);
   text-underline-offset: 3px;
 }
 .gp-ev-src a:hover { text-decoration-color: currentColor; }
@@ -313,7 +313,7 @@
 .gp-result-actions {
   margin-top: 8px;
   padding: 18px 0 8px;
-  border-top: 1px solid var(--gp-line-subtle);
+  border-top: 1px solid var(--gp-hairline-subtle);
   min-width: 0;
 }
 
@@ -331,7 +331,7 @@
   font: inherit;
   color: var(--gp-ink);
   background: var(--gp-surface);
-  border: 1px solid var(--gp-line);
+  border: 1px solid var(--gp-hairline);
   border-radius: 12px;
   padding: 10px 12px;
   resize: vertical;
@@ -345,7 +345,7 @@
   padding: 9px 16px;
   cursor: pointer;
   transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
-  border: 1px solid var(--gp-line);
+  border: 1px solid var(--gp-hairline);
   background: var(--gp-surface);
   color: var(--gp-ink);
   white-space: nowrap;
@@ -353,7 +353,7 @@
 
 .gp-btn--primary {
   background: var(--gp-ink);
-  color: var(--gp-bg);
+  color: var(--gp-canvas);
   border-color: var(--gp-ink);
 }
 
@@ -425,7 +425,7 @@
 .gp-canvas .gp-original {
   border-left: none;
   padding: 0 0 18px;
-  border-bottom: 1px solid var(--gp-line-subtle);
+  border-bottom: 1px solid var(--gp-hairline-subtle);
 }
 .gp-canvas .gp-original-label {
   font-size: 12.5px;
@@ -484,7 +484,7 @@
   width: 120px;
   height: 2px;
   border-radius: 1px;
-  background: var(--gp-line);
+  background: var(--gp-hairline);
   overflow: hidden;
   flex: none;
 }
