@@ -1,7 +1,7 @@
 /**
  * 阶段 3 核查：FactChecker → SourceValidator → 来源关系审计。
  * SourceValidator 必须看见 FactChecker 真正准备发布的方向性 URL，才能对 claimAtom + URL 做独立关系审计；
- * 并行各跑各的无法完成这条 P0 门禁。首份 judging 快照在审计之后才发。
+ * 并行各跑各的无法完成这条门禁。首份 judging 快照在审计之后才发。
  */
 import type { CaseState, PipelineContext } from "../caseState.js";
 import type { PipelineStep } from "../runCasePipeline.js";
@@ -9,7 +9,7 @@ import { createSourceAudit } from "../sourceAudit.js";
 import type { Retrieval } from "./retrieve.js";
 import { enrichSearchSources } from "../../sourceContent.js";
 
-function fallbackAgentStep(agentId: string, error: unknown, search360Result?: unknown, _claim = ""): PipelineStep {
+function fallbackAgentStep(agentId: string, error: unknown, search360Result?: unknown): PipelineStep {
   const message = error instanceof Error ? error.message : `${agentId} failed`;
   const sources = Array.isArray((search360Result as { sources?: unknown[] } | undefined)?.sources)
     ? ((search360Result as { sources: Array<{ title?: unknown; snippet?: unknown; url?: unknown }> }).sources)
@@ -51,14 +51,14 @@ function fallbackAgentStep(agentId: string, error: unknown, search360Result?: un
 }
 
 export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retrieval: Retrieval): Promise<CaseState> {
-  const { claim, steps, snapshots, throwIfAborted } = ctx;
+  const { steps, snapshots, throwIfAborted } = ctx;
   const { runAgent } = ctx.input;
   const { atomSearchBundle, search360Result } = retrieval;
   let factStep: PipelineStep;
   try {
     factStep = await runAgent("fact_checker", steps, search360Result, atomSearchBundle);
   } catch (error) {
-    factStep = fallbackAgentStep("fact_checker", error, search360Result, claim);
+    factStep = fallbackAgentStep("fact_checker", error, search360Result);
   }
   steps.push(factStep);
   throwIfAborted();
@@ -79,7 +79,7 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   try {
     sourceStep = await runAgent("source_validator", steps, search360Result, atomSearchBundle);
   } catch (error) {
-    sourceStep = fallbackAgentStep("source_validator", error, search360Result, claim);
+    sourceStep = fallbackAgentStep("source_validator", error, search360Result);
   }
   steps.push(sourceStep);
 

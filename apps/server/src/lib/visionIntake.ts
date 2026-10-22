@@ -17,7 +17,7 @@ export interface CaseIntakeLinkPayload {
   scrapedAt?: number;
 }
 
-export interface CaseIntakeImagePayload {
+interface CaseIntakeImagePayload {
   name?: string;
   type?: string;
   size?: number;

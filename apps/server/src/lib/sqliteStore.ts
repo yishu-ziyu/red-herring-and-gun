@@ -25,7 +25,6 @@ function loadDriver(): (new (path: string) => DatabaseSync) | null {
 }
 
 let instance: DatabaseSync | null = null;
-let instancePath = "";
 
 function dataDir(): string {
   return process.env.DATA_DIR || join(process.cwd(), ".data");
@@ -39,8 +38,9 @@ function defaultDatabasePath(): string {
  * 打开（或复用）库并建表。建表是幂等的：每次启动都跑一遍。
  * 返回 null 表示这个 Node 没有可用的 sqlite，调用方必须回退，不得静默丢数据。
  */
-export function openDatabase(filePath: string = defaultDatabasePath()): DatabaseSync | null {
-  if (instance && instancePath === filePath) return instance;
+export function openDatabase(): DatabaseSync | null {
+  if (instance) return instance;
+  const filePath = defaultDatabasePath();
   const Driver = loadDriver();
   if (!Driver) {
     console.warn("[sqlite] 这个 Node 没有 node:sqlite，回退到进程内状态");
@@ -58,7 +58,6 @@ export function openDatabase(filePath: string = defaultDatabasePath()): Database
   db.exec("PRAGMA foreign_keys = ON");
   migrate(db);
   instance = db;
-  instancePath = filePath;
   return db;
 }
 
