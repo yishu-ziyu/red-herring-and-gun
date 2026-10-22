@@ -2,7 +2,7 @@
  * Golden Path 文案：产品语义词（说法 / 命题 / 出处 / 判断 / 追问 / 历史 +
  * 证据语义 支持/反驳/相关/尚缺/争议）。不出现实现层词汇。
  */
-import type { UiLang } from "../lib/uiLang";
+import type { UiLang } from "../lib/useUiLang";
 
 const GP_COPY = {
   zh: {

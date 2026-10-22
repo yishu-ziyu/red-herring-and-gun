@@ -88,7 +88,7 @@ export function useResultPersistence(args: {
     const durable = savedSnapshot ? { ...report, investigationThread: threadForRound(active, savedSnapshot, run.state.runId) } : report;
     const summary = threadSummary(durable);
     setCases((prev) => groupThreadCases([
-      { id: localId, claim: summary.threadClaim ?? claim, ...summary, report: durable, status: report._source === "error-boundary" ? ("interrupted" as const) : ("done" as const), createdAt: doneAt },
+      { id: localId, claim: summary.threadClaim ?? claim, ...summary, status: report._source === "error-boundary" ? ("interrupted" as const) : ("done" as const), createdAt: doneAt },
       ...prev.filter((item) => item.id !== localId),
     ]));
     void persistResult(durable, localId, claim);

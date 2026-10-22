@@ -1,14 +1,48 @@
 /**
  * 刷新接回：本机留着一条没跑完的 run，就在历史读好之后接回去（只跑一次，不重开调查、不重复扣额）；
- * 进行中持续记下它的座标，终态或回首页时清掉。
+ * 进行中持续记下它的座标（localStorage `rhg:active-run`），终态或回首页时清掉。
  */
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { useInvestigationRun } from "../goldenPath/useInvestigationRun";
-import { caseIntakeFailedLinks } from "../lib/caseIntake";
-import { readInvestigationThread } from "../lib/investigationThread";
+import { caseIntakeFailedLinks, type CaseIntake } from "../lib/caseIntake";
+import { readInvestigationThread, type InvestigationRound, type InvestigationThread } from "../lib/investigationThread";
 import type { ActiveCase, ProductMode } from "./caseViews";
 import { publicTransportError } from "./notices";
-import { readRunPointer, writeRunPointer } from "./runPointer";
+
+type StoredRunPointer = {
+  runId: string;
+  claim: string;
+  intake: CaseIntake | null;
+  lastSeq: number;
+  at: number;
+  localId?: string;
+  roundId?: string;
+  roundKind?: InvestigationRound["kind"];
+  thread?: InvestigationThread;
+};
+
+const RUN_POINTER_KEY = "rhg:active-run";
+
+function readRunPointer(): StoredRunPointer | null {
+  try {
+    const raw = window.localStorage.getItem(RUN_POINTER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredRunPointer;
+    if (!parsed || typeof parsed.runId !== "string" || !parsed.runId) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeRunPointer(value: StoredRunPointer | null): void {
+  try {
+    if (value) window.localStorage.setItem(RUN_POINTER_KEY, JSON.stringify(value));
+    else window.localStorage.removeItem(RUN_POINTER_KEY);
+  } catch {
+    /* 隐私模式下写不了就不写，不影响调查本身 */
+  }
+}
 
 export function useRunPointer(args: {
   historyReady: boolean;

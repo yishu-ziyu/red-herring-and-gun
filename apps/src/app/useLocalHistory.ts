@@ -24,7 +24,6 @@ export function useLocalHistory() {
             ...threadSummary(entry.finalReport),
             status: entry.finalReport._source === "error-boundary" ? "interrupted" as const : "done" as const,
             createdAt: entry.timestamp,
-            report: entry.finalReport,
           }));
           const ids = new Set(localItems.map((item) => item.id));
           return groupThreadCases([...localItems, ...prev.filter((item) => !ids.has(item.id))]);

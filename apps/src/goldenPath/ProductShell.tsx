@@ -15,7 +15,6 @@ export type ShellCase = {
   createdAt?: number;
   threadId?: string;
   roundCount?: number;
-  report?: Record<string, unknown>;
 };
 
 type ProductShellProps = {

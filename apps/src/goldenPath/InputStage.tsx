@@ -69,7 +69,6 @@ function showLinkScrapeNotice(text: string, host: HTMLElement | null) {
   notice.textContent = text;
   // 真实 App 提交后会立刻卸载 InputStage，并由 App 的常驻 notice 接管。
   // 下一帧若输入态 host 已离开 DOM，就撤掉这枚临时 toast，避免两个同文案提示叠在一起。
-  // 单独渲染 InputStage 时 host 仍连接，toast 继续按原 TTL 展示。
   const sourceHost = host;
   window.setTimeout(() => {
     if (!sourceHost || sourceHost.isConnected) return;

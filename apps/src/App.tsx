@@ -212,27 +212,27 @@ export default function App() {
     mode === "investigation" && Boolean(active?.intake) && caseIntakeFailedLinks(active!.intake).length > 0;
 
   function handleFollowUp(question: string) {
-      if (!active) return;
-      const prevAnswer =
-        previousAnswerText(
-          (active.restored?.report ?? run.state.finalReport) as { conclusion?: string; memo?: string } | null
-        ) || snapshot?.conclusion?.directAnswer || "";
-      const composed = composeFollowUpClaim({
-        originalClaim: active.thread?.originalClaim ?? active.claim,
-        previousAnswer: prevAnswer,
-        followUp: question,
-      });
-      beginRun(
-        {
-          text: composed,
-          links: [],
-          images: [],
-          createdAt: Date.now(),
-        },
-        { priorRound: visiblePriorRoundFromSnapshot(snapshot) },
-        snapshot ? threadForRound(active, snapshot, currentRunId(active, run.state.runId)) : active.thread,
-        "follow-up",
-      );
+    if (!active) return;
+    const prevAnswer =
+      previousAnswerText(
+        (active.restored?.report ?? run.state.finalReport) as { conclusion?: string; memo?: string } | null
+      ) || snapshot?.conclusion?.directAnswer || "";
+    const composed = composeFollowUpClaim({
+      originalClaim: active.thread?.originalClaim ?? active.claim,
+      previousAnswer: prevAnswer,
+      followUp: question,
+    });
+    beginRun(
+      {
+        text: composed,
+        links: [],
+        images: [],
+        createdAt: Date.now(),
+      },
+      { priorRound: visiblePriorRoundFromSnapshot(snapshot) },
+      snapshot ? threadForRound(active, snapshot, currentRunId(active, run.state.runId)) : active.thread,
+      "follow-up",
+    );
   }
 
   const archivedRound = selectedRoundId ? active?.thread?.rounds.find((round) => round.id === selectedRoundId) : undefined;

@@ -14,7 +14,6 @@ import {
   rebuildInvestigationFromReport,
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
-  type PublicActivity,
 } from "../lib/investigation";
 import { requestOrchestrateStream, type OrchestrateStreamEvent } from "../lib/orchestrateStream";
 import { cancelInvestigation, resumeInvestigationStream } from "../lib/investigationResume";
@@ -49,14 +48,12 @@ type RunState = {
   errorMessage: string;
   /** complete 事件的 finalReport（父层落库用）。 */
   finalReport: Record<string, unknown> | null;
-  /**
-   * 公共活动：按 seq 累计、按 id 去重。只由 investigation_activity 事件写入；
-   * 活动层坏了不影响快照与结果（空数组是合法常态）。
-   */
-  activities: PublicActivity[];
   /** 当前活动的 runId；不同 run 的活动不混在一起。 */
   activityRunId: string | null;
-  /** 已接受的最大 seq；小于等于它的重放一律忽略。 */
+  /**
+   * 已收到的最大活动 seq：刷新接回时从它之后补发。只由 investigation_activity 事件写入；
+   * 活动层坏了不影响快照与结果。
+   */
   lastActivitySeq: number;
   /** 服务端运行身份（run_started 事件）。刷新恢复与取消都要它。 */
   runId: string | null;
@@ -77,7 +74,6 @@ const INITIAL_STATE: RunState = {
   connection: "connecting",
   errorMessage: "",
   finalReport: null,
-  activities: [],
   activityRunId: null,
   lastActivitySeq: 0,
   runId: null,
@@ -117,16 +113,10 @@ function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: st
     const activity = event.activity;
     if (!activity || !isPublicActivity(activity)) return prev;
     const sameRun = prev.activityRunId === activity.runId;
-    // 重放与重复只按 id 去重；乱序到达按 seq 插到正确位置，不丢帧。
-    if (sameRun && prev.activities.some((item) => item.id === activity.id)) return prev;
-    const merged = sameRun ? [...prev.activities, activity] : [activity];
-    merged.sort((a, b) => a.seq - b.seq);
-    return {
-      ...prev,
-      activities: merged,
-      activityRunId: activity.runId,
-      lastActivitySeq: sameRun ? Math.max(prev.lastActivitySeq, activity.seq) : activity.seq,
-    };
+    // 重放、重复和乱序到达都不会把 seq 往回拨。
+    const lastActivitySeq = sameRun ? Math.max(prev.lastActivitySeq, activity.seq) : activity.seq;
+    if (sameRun && lastActivitySeq === prev.lastActivitySeq) return prev;
+    return { ...prev, activityRunId: activity.runId, lastActivitySeq };
   }
   if (event.type === "investigation_snapshot" && event.investigation) {
     try {
@@ -250,7 +240,7 @@ export function useInvestigationRun() {
   const cancel = useCallback(async () => {
     const runId = state.runId;
     const generation = runIdRef.current;
-    if (!runId) return { ok: false as const };
+    if (!runId) return;
     setState((prev) => isTerminalServerStatus(prev.serverStatus) ? prev : { ...prev, stop: "stopping" });
     const result = await cancelInvestigation(runId);
     setState((prev) => {
@@ -261,7 +251,6 @@ export function useInvestigationRun() {
         ? applyRunEvent(prev, { type: "run_state", status: result.status ?? "cancelling" })
         : { ...prev, errorMessage: "停止请求没有送达，调查可能还在继续。" };
     });
-    return result;
   }, [state.runId]);
 
   /** 接回一条已有 run（刷新/返回）。不新建 run、不扣额。 */
