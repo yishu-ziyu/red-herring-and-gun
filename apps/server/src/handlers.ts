@@ -187,7 +187,7 @@ export function createHandlers(env: Record<string, string>) {
   }
 
   const PIPELINE_TOTAL_TIMEOUT_MS = Number(env.ORCHESTRATE_TOTAL_TIMEOUT_MS || PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT);
-  /** 超时后给管线自己收尾的宽限（Change C）；ORCHESTRATE_LATE_GRACE_MS 可覆盖，默认 120s。 */
+  /** 超时后给管线自己收尾的宽限；ORCHESTRATE_LATE_GRACE_MS 可覆盖，默认 120s。 */
   const PIPELINE_LATE_GRACE_MS = Number(env.ORCHESTRATE_LATE_GRACE_MS || PIPELINE_LATE_GRACE_MS_DEFAULT);
   const investigationDeps: InvestigationRunDeps = {
     env,
@@ -239,7 +239,7 @@ export function createHandlers(env: Record<string, string>) {
     const intakeMetadata = buildCaseIntakeMetadata(intake);
     const clientMemoryRecall = normalizeClientMemoryRecall(payload.memoryRecall);
 
-    // 运行身份（PR-D 片一）：clientRequestId 幂等、runId 供取消与后续重连使用。
+    // 运行身份：clientRequestId 幂等、runId 供取消与后续重连使用。
     // 没有这条 run 之前，「停止」只能是前端不管结果，服务端照跑照烧。
     const clientRequestId =
       typeof payload.clientRequestId === "string" && payload.clientRequestId.trim()

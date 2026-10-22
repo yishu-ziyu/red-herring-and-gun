@@ -34,7 +34,7 @@ function collectBucketSources(value: unknown): ScopedSource[] {
 }
 
 /**
- * 把局部 [n] 映射到全局 source index（Review 5128220693 Blocker 2）。
+ * 把局部 [n] 映射到全局 source index。
  * 局部编号与判词双桶同构：supporting → [1..S]，contradicting → [S+1..S+C]。
  * 映射不到存活全局来源的 marker 直接删除，绝不错绑。
  */

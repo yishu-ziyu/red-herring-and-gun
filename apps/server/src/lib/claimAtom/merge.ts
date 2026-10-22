@@ -24,7 +24,7 @@ function demoteUnsourcedTrueFalse(
   if (verdict !== "true" && verdict !== "false") {
     return { verdict, evidenceGaps: gaps };
   }
-  // 方向专属契约（Review 5128449568 Blocker 3）：true 只认支撑桶、false 只认反证桶
+  // 方向专属契约：true 只认支撑桶、false 只认反证桶
   // （alignFalseEvidenceBuckets 已先行改桶）；错桶 URL 不算该方向的证据，
   // 与整句规则表（sentenceVerdict.standingOf）/ Snapshot 判词映射同向。
   if (

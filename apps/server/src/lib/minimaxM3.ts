@@ -23,7 +23,7 @@ function envPick(env: Record<string, string> | undefined, key: string): string {
   return typeof fromProcess === "string" ? fromProcess.trim() : "";
 }
 
-export function isMiniMaxM3(model: string): boolean {
+function isMiniMaxM3(model: string): boolean {
   return /^MiniMax-M3$/i.test(model);
 }
 

@@ -564,7 +564,7 @@ export function buildInvestigationSnapshot(
   const phase = input.phase;
   const originalClaim = input.originalClaim;
 
-  // key 与展示文本分离（#51 复审 blocker）：key 只做 identity join
+  // key 与展示文本分离（#51）：key 只做 identity join
   // （dedupe / verdict / bundle / type），会规范化全角空格
   // 并超长截断；text 是拆题后保留命题的真实展示文本，不因内部键改写。
   const keptAtoms: Array<{ key: string; text: string }> = [];

@@ -1,5 +1,5 @@
 /**
- * reportReviewer.ts — deterministic proposer-reviewer (server copy)
+ * reportReviewer.ts — deterministic proposer-reviewer
  *
  * The deterministic report is the proposer; this module is a non-LLM reviewer:
  * contract fields, evidence chain, boundary language, minimal repair.

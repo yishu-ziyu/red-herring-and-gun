@@ -88,7 +88,7 @@ function pipelineFinalize(
 
 /**
  * 整体核查超时兜底：不憋用户，先给「还没查完」的中间结论（unverified + error-boundary）。
- * 只在宽限期也过了、管线确定回不来时用（Change C 之后超时本身不再走这条路）。
+ * 只在宽限期也过了、管线确定回不来时用（第一次总超时不走这条路）。
  */
 function buildTimedOutReport(c: string): Record<string, unknown> {
   const report = buildDeterministicFinalReport(c, [], undefined);
@@ -173,7 +173,7 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
     runs.publish(runId, data as Record<string, unknown>);
   };
   /**
-   * 收尾响应：Change C 之后管线可能已经与这条连接解耦（用户按提示离开了页面），
+   * 收尾响应：总超时之后管线可能已经与这条连接解耦（用户按提示离开了页面），
    * res 已关不算错——结论已经落 run 库，经刷新恢复通道可取回。
    */
   const endResponse = () => {
@@ -324,7 +324,7 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
       try {
         return await withTimeout(pipelinePromise, PIPELINE_TOTAL_TIMEOUT_MS, TIMEOUT_LABEL);
       } catch (error) {
-        // 契约 Change C：超时不再一锤定音。超时只说明「这条连接的等待到头了」，不是管线失败：
+        // 超时不一锤定音。超时只说明「这条连接的等待到头了」，不是管线失败：
         //  1) 先告诉客户端「还在查」，用户留在页面上就继续跟着看；
         //  2) 从此这条连接不再是管线的生命线（detachedFromClient），用户离开页面也不再 abort 它；
         //  3) 再等管线自己收尾：晚完成 → 落 complete，快照与结论经刷新恢复通道取回；
@@ -374,9 +374,9 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
       endResponse();
       return;
     }
-    // B1：走到这里说明这次管线已经是 race 的落败方——abort 它，
+    // 走到这里说明这次管线已经是 race 的落败方——abort 它，
     // 各阶段边界会立即退出，不再僵尸烧 token。
-    // （Change C：第一次总超时不再走这条——那条路上管线被故意留着继续收尾。）
+    // （第一次总超时不走这条——那条路上管线被故意留着继续收尾。）
     if (!disconnect.signal.aborted) {
       disconnect.abort(error instanceof Error ? error : new Error("aborted"));
     }
@@ -387,7 +387,7 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
       const timedOut = buildTimedOutReport(displayClaim);
       timedOut.investigation = interrupted;
       applyContextCrossCheckToReport(timedOut, { claim, visualExtraction });
-      // B2：先计费再收尾（原先 release 在前把 settled 置真，这里的 commit 变空操作 → 超时=白嫖）
+      // 先计费再收尾：release 在前会把 settled 置真，commit 变空操作，超时就等于白嫖。
       settleQuota(outcome);
       sendEvent({
         type: "complete",

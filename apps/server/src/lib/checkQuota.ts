@@ -30,7 +30,7 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
 }
 
-/** 单个访客每天的免费核查数。`CHECK_QUOTA_GUEST_LIMIT` 可覆盖（测试期放宽用）。 */
+/** 单个访客每天的免费核查数。`CHECK_QUOTA_GUEST_LIMIT` 可覆盖（放宽额度用）。 */
 function guestDailyLimit(): number {
   return envInt("CHECK_QUOTA_GUEST_LIMIT", GUEST_DAILY_CHECKS);
 }

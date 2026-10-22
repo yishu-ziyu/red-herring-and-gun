@@ -1,5 +1,5 @@
 /**
- * 同一案追问快路径（契约 docs/evals/2026-09-13-followup-fast-path.md）。
+ * 同一案追问快路径。
  *
  * 这里管「这一案子里的下一句」：
  * 已核过且带真实 URL 的命题不再联网；只有新冒出来的可核查小问题才搜。
@@ -9,14 +9,57 @@
  */
 import { claimAtomKey } from "./claimAtom/text.js";
 import { directAnswer } from "./publicCopy.js";
-import {
-  hasTokenConflict,
-  isKnowledgeVerdictInjectable,
-  normalizeKnowledgeAtom,
-  originDateOf,
-} from "./knowledgeMatch.js";
 import { semanticClaimSimilarity } from "./semanticRecall.js";
 import type { KnowledgeInjection } from "./atomSearch.js";
+
+/**
+ * 规范化：trim → NFKC（全角转半角、兼容字符统一）→ 小写 → 压缩空白 → 去句末标点。
+ * 只做形状规范化，不做同义替换——同义与转述由相似度负责。
+ */
+function normalizeKnowledgeAtom(text: string): string {
+  return String(text ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[。．.！!？?；;，,、：:…~～"'“”‘’）)】\]》>]+$/u, "")
+    .trim();
+}
+
+/** epoch ms → YYYY-MM-DD（UTC，无时区歧义）。取不到返回空串，不编日期。 */
+function originDateOf(ms: number | null | undefined): string {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return "";
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * 「人物/日期/链接变化 → 匹配不上」的确定性闸门：
+ * 两边都出现数字/拉丁词或链接、且**各自都有对方没有的**数字/拉丁词时判冲突
+ * （2 月 5 日 vs 2 月 6 日、第 8 号 vs 第 9 号、0.5mg vs 0.3mg、两条不同链接）。
+ * 只有一侧带数字/链接不算冲突——正常改写常常补一个时间或出处。
+ */
+function hasTokenConflict(atomA: string, atomB: string): boolean {
+  const a = normalizeKnowledgeAtom(atomA);
+  const b = normalizeKnowledgeAtom(atomB);
+  if (!a || !b) return false;
+
+  const digitsA = new Set(a.match(/[a-z0-9]+/g) ?? []);
+  const digitsB = new Set(b.match(/[a-z0-9]+/g) ?? []);
+  if (digitsA.size > 0 && digitsB.size > 0) {
+    const onlyA = [...digitsA].some((token) => !digitsB.has(token));
+    const onlyB = [...digitsB].some((token) => !digitsA.has(token));
+    if (onlyA && onlyB) return true;
+  }
+
+  const linksA = new Set(a.match(/https?:\/\/\S+/g) ?? []);
+  const linksB = new Set(b.match(/https?:\/\/\S+/g) ?? []);
+  if (linksA.size > 0 && linksB.size > 0) {
+    const shared = [...linksA].some((link) => linksB.has(link));
+    if (!shared) return true;
+  }
+
+  return false;
+}
 
 /** 与前端 composeFollowUpClaim 同一句；服务端只用来裁出用户追问，不改拼接。 */
 const FOLLOW_UP_MARKER = "同一条核查的追问，不是新案件。";
@@ -27,6 +70,10 @@ const FOLLOW_UP_MARKER = "同一条核查的追问，不是新案件。";
  */
 const FOLLOW_UP_COVER_THRESHOLD = 50;
 
+/**
+ * 上一轮已经核出结果、可以沿用的判词。partial / exaggerated 语义就是整句口径的
+ * mixed_misleading（有真有假）；unverified 不算已核。
+ */
 const VERIFIED_ATOM_VERDICTS = new Set(["true", "false", "partial", "exaggerated", "mixed_misleading"]);
 
 type FollowUpEvidence = { url: string; title: string; snippet: string };
@@ -40,7 +87,6 @@ type FollowUpReusedAtom = {
 export type FollowUpReusePlan = {
   /** 本轮要核查的命题：已核的在前，新问题在后。 */
   atoms: string[];
-  newAtoms: string[];
   reused: FollowUpReusedAtom[];
   originDate: string;
 };
@@ -189,10 +235,6 @@ function httpEvidenceOf(source: Record<string, unknown>): FollowUpEvidence | nul
   };
 }
 
-function atomVerdictInjectable(verdict: string): boolean {
-  return VERIFIED_ATOM_VERDICTS.has(verdict) || isKnowledgeVerdictInjectable(verdict);
-}
-
 /** 用户追问原文：裁到「同一条核查的追问」标记之前；没有标记则整段当追问。 */
 export function followUpQuestionOf(claim: string): string {
   if (typeof claim !== "string") return "";
@@ -227,7 +269,7 @@ function extractPriorVerifiedAtoms(priorReport: unknown): FollowUpReusedAtom[] {
     const key = claimAtomKey(text);
     if (seen.has(key)) continue;
     const label = String(verdict.verdict ?? "").trim().toLowerCase();
-    if (!atomVerdictInjectable(label)) continue;
+    if (!VERIFIED_ATOM_VERDICTS.has(label)) continue;
     const evidence: FollowUpEvidence[] = [];
     const seenUrl = new Set<string>();
     for (const bucket of [verdict.supportingSources, verdict.contradictingSources]) {
@@ -264,7 +306,6 @@ export function planFollowUpReuse(input: {
 
   return {
     atoms,
-    newAtoms,
     reused,
     originDate: originDateOf(input.priorCreatedAt),
   };

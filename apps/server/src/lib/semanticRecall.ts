@@ -5,7 +5,7 @@
  * 这里做确定性语义桥接，不引入 embedding 模型或 LLM rerank（每案零开销零延迟）：
  * 1. 领域同义词组 → 规范 token（syn:<组id>），任意成员命中即桥接；
  * 2. 汉字字符集 Dice 系数，捕捉转述改写的模糊重叠；
- * 3. 与既有 bigram Jaccard 加权合成，输出 0–100（与 calculateClaimSimilarity 同标度）。
+ * 3. 与 bigram Jaccard 加权合成，输出 0–100。
  * 升级路径：需要更强泛化时再挂本地 embedding。
  */
 
@@ -91,7 +91,7 @@ function hanCharDice(a: string, b: string): number {
 }
 
 /**
- * 语义相似度（0–100，与 knowledgeBase.calculateClaimSimilarity 同标度）。
+ * 语义相似度（0–100）。
  * 三路信号合成，取词面与同义词中的强者为语义主信号：
  * - lex：非同义词 token 的 Jaccard（原词面信号）；
  * - syn：同义词组 Jaccard（单独计算，不被 bigram 基数稀释——这是桥接的关键）；

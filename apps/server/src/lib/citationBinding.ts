@@ -134,7 +134,7 @@ function listHasHttpUrl(list: unknown[]): boolean {
 }
 
 /**
- * 方向专属「有据」契约（Review 5128449568 Blocker 3 共享定义）：
+ * 方向专属「有据」契约：
  * - true / trueish 必须由 supportingSources 的 http(s) 支撑；
  * - false 必须由 contradictingSources 的 http(s) 支撑（alignFalseEvidenceBuckets 先行改桶）；
  * - related-only 永远不算；
