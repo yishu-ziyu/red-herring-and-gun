@@ -11,8 +11,25 @@ import { canonicalizeUrl } from "./retrievalFilter.js";
 
 import { stringItems } from "./valueCoerce.js";
 
-import { fetchWithTimeout, getTimeoutMs } from "./httpUtils.js";
-import { withExecutionBudget, type ExecutionBudget } from "./executionBudget.js";
+import { getTimeoutMs, withExecutionBudget, type ExecutionBudget } from "./executionBudget.js";
+
+async function fetchWithTimeout(url: string | URL, init: RequestInit, timeoutMs: number, label: string) {
+  init.signal?.throwIfAborted();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal });
+  } catch (error) {
+    init.signal?.throwIfAborted();
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`${label} 超时 ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 function getSearch360ApiKey(env: Record<string, string>) {
   return env.QIHOO_360_API_KEY || process.env.QIHOO_360_API_KEY || "";

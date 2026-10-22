@@ -12,7 +12,7 @@
 
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { withExecutionBudget } from "./executionBudget.js";
+import { getTimeoutMs, withExecutionBudget } from "./executionBudget.js";
 import { callMiniMaxAgent, callStepFunAgent } from "./agentProviders.js";
 import { extractJsonObject } from "./anthropicParse.js";
 import { isMiniMaxM27, miniMaxCallOptions, MINIMAX_M27_DEFAULT_TIMEOUT_MS, MINIMAX_M3_DEFAULT_TIMEOUT_MS } from "./minimaxM3.js";
@@ -361,12 +361,6 @@ const NOOP_LOGGER: ProviderRouterLogger = {
   info: () => {},
   error: () => {},
 };
-
-function getTimeoutMs(env: Record<string, string>, key: string, fallbackMs: number) {
-  const raw = envValue(env, key);
-  const parsed = raw ? Number(raw) : NaN;
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
-}
 
 /** 非正数 / NaN / undefined 一律当「没给」，不因为一个坏值把阶段预算写成 0。 */
 function positiveMs(value: number | undefined): number | undefined {

@@ -15,7 +15,6 @@ import { formatSkillsForPrompt, selectAgentSkills } from "./agentSkills.js";
 import { callAgentWithFallback } from "./providerRouter.js";
 import { compactSearchResultForAgent } from "./searchProviders.js";
 import { attachKnowledgeDrafts } from "./atomSearch.js";
-import { splitReasoningSentences } from "./reasoningThoughts.js";
 import type { RunAgentFn } from "./casePipeline/runCasePipeline.js";
 
 
@@ -32,6 +31,17 @@ function withLegacyVerdicts(output: Record<string, unknown>): Record<string, unk
     return { ...rec, label: rec.verdict, verdict: verdictForLabel(rec.verdict) };
   });
   return output;
+}
+
+/** 把模型的思考文本切成显示用的句子（中英文标点与换行）；只用模型原文，不编句子。 */
+function splitReasoningSentences(reasoning: string): string[] {
+  const trimmed = (reasoning ?? "").trim();
+  if (!trimmed) return [];
+  const parts = trimmed
+    .split(/(?<=[。！？!?；;\n])/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : [trimmed];
 }
 
 interface OrchestrateAdapterDeps {

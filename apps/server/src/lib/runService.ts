@@ -1,5 +1,5 @@
 /**
- * runService — 一次调查的身份、幂等与取消（IMPLEMENTATION_PLAN §5.2、§5.5）。
+ * runService — 一次调查的身份、幂等与取消。
  *
  * 解决的三个具体问题：
  *   1. 双击提交会开两条管线、扣两次额度 —— 同一身份 + 同一 clientRequestId 只认一条 run。
@@ -16,15 +16,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { isTerminalStatus, type RunRecord, type RunStatus, type RunStore } from "./runStore.js";
 import type { PublicActivity } from "./investigation/index.js";
 
-type PublicActivityLike = PublicActivity;
-
 type StartRunInput = {
   caseId: string;
   ownerHash?: string | null;
   clientRequestId?: string | null;
   /** 归一化后的输入指纹；用来判断同一 clientRequestId 是不是同一份请求。 */
   inputHash?: string | null;
-  now?: number;
 };
 
 type StartRunResult =
@@ -36,6 +33,21 @@ type CancelResult =
   | { kind: "cancelling"; run: RunRecord }
   | { kind: "already-terminal"; run: RunRecord }
   | { kind: "not-found" };
+
+const CASE_ID_LENGTH = 8;
+
+/**
+ * 生成 caseId：基于 claim + timestamp + 随机数。
+ * 8 字符 base36。
+ */
+export function generateCaseId(seed: string): string {
+  const input = `${seed}|${Date.now()}|${Math.random().toString(36).slice(2)}`;
+  let h = 0;
+  for (let i = 0; i < input.length; i++) {
+    h = (h * 31 + input.charCodeAt(i)) | 0;
+  }
+  return (h >>> 0).toString(36).padStart(CASE_ID_LENGTH, "0").slice(0, CASE_ID_LENGTH);
+}
 
 export function hashRunInput(claim: string, extras: Record<string, unknown> = {}): string {
   return createHash("sha256").update(`${claim}\u0000${JSON.stringify(extras)}`).digest("hex").slice(0, 32);
@@ -51,10 +63,9 @@ type RunEvent = Record<string, unknown>;
 
 export type RunService = ReturnType<typeof createRunService>;
 
-export function createRunService(options: { store?: RunStore | null; now?: () => Date | number } = {}) {
-  const store = options.store ?? null;
-  const nowRaw = options.now ?? (() => Date.now());
-  const now = () => (typeof nowRaw() === "number" ? (nowRaw() as number) : (nowRaw() as Date).getTime());
+export function createRunService(options: { store: RunStore | null }) {
+  const store = options.store;
+  const now = () => Date.now();
   // 进程内活体注册表：signal 与「当前是不是真在跑」只有活着的进程知道。
   const active = new Map<string, ActiveRun>();
   // 没有 SQLite 时的记录表，键是 runId。
@@ -85,8 +96,6 @@ export function createRunService(options: { store?: RunStore | null; now?: () =>
   }
 
   return {
-    /** 供测试与运维查看：当前进程里有几条在跑。 */
-    activeCount: () => active.size,
     signalFor: (runId: string): AbortSignal | undefined => active.get(runId)?.controller.signal,
 
     /**
@@ -97,7 +106,7 @@ export function createRunService(options: { store?: RunStore | null; now?: () =>
     start(input: StartRunInput): StartRunResult {
       const ownerHash = input.ownerHash ?? null;
       const clientRequestId = input.clientRequestId ?? null;
-      const at = input.now ?? now();
+      const at = now();
 
       if (clientRequestId) {
         const existing = lookup(ownerHash, clientRequestId);
@@ -226,7 +235,7 @@ export function createRunService(options: { store?: RunStore | null; now?: () =>
     },
 
     /** 重连用：先补 afterSeq 之后的活动，再返回退订函数。 */
-    replayActivities(runId: string, afterSeq: number): PublicActivityLike[] {
+    replayActivities(runId: string, afterSeq: number): PublicActivity[] {
       if (!store) return [];
       return store.listActivities(runId, afterSeq);
     },

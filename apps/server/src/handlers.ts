@@ -6,12 +6,10 @@
  * 产品规则不写在 HTTP 层；域深度在 lib/。
  */
 
-import { createRunService, hashRunInput } from "./lib/runService.js";
+import { createRunService, generateCaseId, hashRunInput } from "./lib/runService.js";
 import { isTerminalStatus, openRunStore } from "./lib/runStore.js";
-import { generateCaseId } from "./lib/caseStore.js";
 import { ensureGuestId, guestIdFromRequest, guestOwnerHash, releaseFreeCheck } from "./lib/checkQuota.js";
 import { createShareHandlers } from "./lib/shareHandlers.js";
-import { readJson, sendJson } from "./lib/httpUtils.js";
 import {
   normalizeCaseIntake,
   normalizeClientMemoryRecall,
@@ -36,14 +34,55 @@ const PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT = 420_000;
  */
 const PIPELINE_LATE_GRACE_MS_DEFAULT = 120_000;
 
+// 与 express.json 上限一致：兜底路径同样要有界，防止无上限累积打爆内存
+const READ_JSON_MAX_BYTES = 10 * 1024 * 1024;
+
+function readJson(req: any) {
+  if (req.body && typeof req.body === "object") {
+    return Promise.resolve(req.body);
+  }
+
+  return new Promise((resolve, reject) => {
+    let raw = "";
+    let bytes = 0;
+    let overflowed = false;
+    req.on("data", (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > READ_JSON_MAX_BYTES) {
+        overflowed = true;
+        return; // 不再累积，等 end 直接拒绝
+      }
+      raw += chunk.toString("utf8");
+    });
+    req.on("end", () => {
+      if (overflowed) {
+        reject(new Error("payload too large"));
+        return;
+      }
+      try {
+        resolve(JSON.parse(raw || "{}"));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on("error", reject);
+  });
+}
+
+function sendJson(res: any, status: number, body: unknown) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(body));
+}
+
 export function createHandlers(env: Record<string, string>) {
-  // 运行身份与取消（PR-D）：存储不可用时退化成进程内注册表，不阻塞启动。
+  // 运行身份与取消：存储不可用时退化成进程内注册表，不阻塞启动。
   const runStore = openRunStore();
   const runs = createRunService({ store: runStore });
   runs.markInterruptedOnBoot();
 
   /**
-   * 取消一次正在跑的调查（IMPLEMENTATION_PLAN §5.5）。
+   * 取消一次正在跑的调查。
    * 幂等：终态再调无副作用。不可猜的 runId 就是能力凭证。
    */
   async function cancelInvestigationHandler(req: any, res: any, next: any) {
@@ -69,7 +108,7 @@ export function createHandlers(env: Record<string, string>) {
   }
 
   /**
-   * GET /api/investigations/:runId — 刷新恢复（IMPLEMENTATION_PLAN §5.3）。
+   * GET /api/investigations/:runId — 刷新恢复。
    * 只给拿得到不可猜 runId 的人；不跑模型、不检索、不扣额。
    */
   async function getInvestigationHandler(req: any, res: any, next: any) {

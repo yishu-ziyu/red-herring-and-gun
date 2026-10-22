@@ -11,13 +11,31 @@
  * Keep public copy plain and sourced.
  */
 
-import {
-  sanitizePublicReportArray,
-  sanitizePublicReportText,
-  PUBLIC_REPORT_FALLBACK_REASON,
-} from "./reportSanitizer.js";
 import { faceVerdictFor } from "./assembleFinalReport.js";
 import { stripFaceStamp } from "./publicCopy.js";
+
+const INFRASTRUCTURE_ERROR_PATTERNS = [
+  /providers? failed/i,
+  /API error/i,
+  /quota\s+(?:exceeded|limit|exhausted)|(?:exceeded|insufficient)\s+quota/i,
+  /credits?\s+(?:limit|exhausted|exceeded)|insufficient\s+credits?/i,
+  /timeout|time out/i,
+  /Error:|Exception/i,
+  /\b(?:4\d\d|5\d\d)\b.*https?:\/\/\S+\/(?:v\d+|api)\b/i,
+  /https?:\/\/\S+\/(?:v\d+|api)\b.*\b(?:4\d\d|5\d\d)\b/i,
+  /调用失败|调用异常|超时/i,
+  /invalid api key/i,
+  /insufficient balance/i,
+];
+
+const PUBLIC_REPORT_FALLBACK_REASON = "最终写作服务暂时不可用，系统已改用保守兜底报告。";
+
+/** 基础设施报错（额度、超时、HTTP 错误）不进公开文案，整句换成兜底说明。 */
+function sanitizePublicReportText(value: string): string {
+  const text = value.trim();
+  if (!text) return "";
+  return INFRASTRUCTURE_ERROR_PATTERNS.some((pattern) => pattern.test(text)) ? PUBLIC_REPORT_FALLBACK_REASON : text;
+}
 
 const BANNED_DRAMA =
   /纯属捏造|纯属子虚乌有|令人啼笑皆非|令人啼笑|可笑至极|震惊全网|铁证如山|毋庸置疑|智慧的网友|作为AI|作为人工智能|速来围观|当帮凶|广大网友务必/g;
@@ -147,7 +165,7 @@ function postProcessHandoffFinalReport(
   for (const key of textFields) {
     const raw = asString(report[key]);
     if (!raw) continue;
-    const sanitized = sanitizePublicReportText(raw, PUBLIC_REPORT_FALLBACK_REASON);
+    const sanitized = sanitizePublicReportText(raw);
     if (sanitized !== raw) notes.push(`${key}: infra sanitized`);
     report[key] = sanitized;
   }
@@ -155,7 +173,7 @@ function postProcessHandoffFinalReport(
   for (const key of ["whyHardToVerify", "canSay", "cannotSay"] as const) {
     const arr = asStringArray(report[key]);
     if (arr.length === 0) continue;
-    const sanitized = sanitizePublicReportArray(arr, PUBLIC_REPORT_FALLBACK_REASON);
+    const sanitized = arr.map(sanitizePublicReportText);
     if (JSON.stringify(sanitized) !== JSON.stringify(arr)) notes.push(`${key}: infra array sanitized`);
     report[key] = sanitized;
   }
@@ -163,7 +181,7 @@ function postProcessHandoffFinalReport(
   // Internal-ish but still may leak to clients in handoff payload
   if (typeof report._fallbackReason === "string") {
     const raw = report._fallbackReason;
-    const cleaned = sanitizePublicReportText(raw, PUBLIC_REPORT_FALLBACK_REASON);
+    const cleaned = sanitizePublicReportText(raw);
     if (cleaned !== raw) notes.push("_fallbackReason: infra sanitized");
     report._fallbackReason = cleaned;
   }

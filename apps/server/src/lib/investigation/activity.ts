@@ -1,5 +1,5 @@
 /**
- * PublicActivity — 调查正在做什么的确定性投影（IMPLEMENTATION_PLAN §5.1）。
+ * PublicActivity — 调查正在做什么的确定性投影。
  *
  * 它不是模型写的直播稿，也不是原始工具日志：只由已校验快照的差分与结构化 hook 生成，
  * payload 走每 kind 的白名单，供应商原文、内部思考、提示词与密钥都进不来。
@@ -139,13 +139,10 @@ const ASSESSED_ROLES = new Set(["support", "contradict"]);
  * 一次 run 的活动账本：负责 seq、稳定 id、快照 revision、去重与引用校验。
  * 不读自由文本推测关联；没有可归属对象的 draft 引用数组必须为空。
  */
-export function createActivityLog(options: { runId: string; now?: () => Date }) {
-  const runId = options.runId;
-  const now = options.now ?? (() => new Date());
+export function createActivityLog(runId: string) {
   let seq = 0;
   let revision = 0;
   const emitted = new Set<string>();
-  const activities: PublicActivity[] = [];
 
   function push(draft: ActivityDraft): PublicActivity[] {
     const claimIds = [...new Set(draft.claimIds)];
@@ -156,7 +153,7 @@ export function createActivityLog(options: { runId: string; now?: () => Date }) 
       id: `${runId}:${seq}`,
       runId,
       seq,
-      occurredAt: now().toISOString(),
+      occurredAt: new Date().toISOString(),
       kind: draft.kind,
       role: ACTIVITY_ROLE[draft.kind],
       claimIds,
@@ -164,7 +161,6 @@ export function createActivityLog(options: { runId: string; now?: () => Date }) 
       snapshotRevision: revision,
       payload: sanitizeActivityPayload(draft.kind, draft.payload),
     };
-    activities.push(activity);
     return [activity];
   }
 
@@ -177,11 +173,6 @@ export function createActivityLog(options: { runId: string; now?: () => Date }) 
   }
 
   return {
-    runId,
-    /** 已投影的快照份数；活动引用它表示「这份快照已经发过了」。 */
-    revision: () => revision,
-    all: () => [...activities],
-
     /** 动作类事件：没有可归属对象，只能描述动作。 */
     recordSearchStarted(query: string): PublicActivity[] {
       return push({ kind: "search_started", claimIds: [], sourceIds: [], payload: { query } });

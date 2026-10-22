@@ -9,10 +9,9 @@
 import { runCasePipeline } from "../lib/casePipeline/runCasePipeline.js";
 import { commitFreeCheck, releaseFreeCheck, type CheckTicket } from "../lib/checkQuota.js";
 import { applyContextCrossCheckToReport } from "../lib/contextCrossCheck.js";
-import { withExecutionBudget, type ExecutionBudget } from "../lib/executionBudget.js";
+import { withExecutionBudget, withTimeout, type ExecutionBudget } from "../lib/executionBudget.js";
 import { applyFactDeskPostProcessToReport } from "../lib/factDeskPostProcess.js";
 import { followUpReuseFromClientBrief } from "../lib/followUpReuse.js";
-import { withTimeout } from "../lib/httpUtils.js";
 import { interruptedInvestigationSnapshot } from "../lib/interruptedSnapshot.js";
 import type { InvestigationSnapshotV1 } from "../lib/investigation/index.js";
 import { createInvestigationEmitter } from "../lib/investigationEmitter.js";

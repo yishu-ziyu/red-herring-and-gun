@@ -42,3 +42,23 @@ export async function withExecutionBudget<T>(
     controller.signal.removeEventListener("abort", onAbort);
   }
 }
+
+/** 环境变量里的毫秒数；没配或不是正数时用默认值。 */
+export function getTimeoutMs(env: Record<string, string>, key: string, fallbackMs: number) {
+  const raw = env[key] || process.env[key];
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallbackMs;
+}
+
+export async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label} 超时 ${timeoutMs}ms`)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
