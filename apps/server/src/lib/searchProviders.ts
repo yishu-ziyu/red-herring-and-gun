@@ -181,19 +181,15 @@ export function compactSearchResultForAgent(searchResult: any) {
 async function call360AiSearch({
   env,
   query,
-  model: _model,
-  refProm,
   signal,
 }: {
   env: Record<string, string>;
   query: string;
-  model?: string;
-  refProm?: string;
   signal?: AbortSignal;
 }) {
   const apiKey = getSearch360ApiKey(env);
   if (!apiKey) throw new Error("未配置 360 API key");
-  return await call360MWebSearch({ env, apiKey, query, refProm, signal });
+  return await call360MWebSearch({ env, apiKey, query, signal });
 }
 
 type SearchProviderId =
@@ -252,16 +248,12 @@ async function callSearchProvider({
   env,
   provider,
   query,
-  model,
-  refProm,
   signal: parentSignal,
   deadlineMs,
 }: {
   env: Record<string, string>;
-  provider: string;
+  provider: SearchProviderId;
   query: string;
-  model?: string;
-  refProm?: string;
   signal?: AbortSignal;
   deadlineMs?: number;
 }) {
@@ -273,7 +265,7 @@ async function callSearchProvider({
     return await withExecutionBudget(async (signal) => {
       switch (provider) {
         case "360_search":
-          return await call360AiSearch({ env, query, model, refProm, signal });
+          return await call360AiSearch({ env, query, signal });
         case "any_search":
           return await callAnySearchSearch({ env, query, signal });
         case "metaso_search":
@@ -298,26 +290,6 @@ async function callSearchProvider({
   }
 }
 
-async function callSearchProviderWithTimeout({
-  env,
-  provider,
-  query,
-  model,
-  refProm,
-  signal,
-  deadlineMs,
-}: {
-  env: Record<string, string>;
-  provider: SearchProviderId;
-  query: string;
-  model?: string;
-  refProm?: string;
-  signal?: AbortSignal;
-  deadlineMs?: number;
-}) {
-  return callSearchProvider({ env, provider, query, model, refProm, signal, deadlineMs });
-}
-
 /** 单 Provider 单次查询的调用结果（仅产品字段，无诊断）。 */
 type ProviderCallEvent = {
   provider: SearchProviderId;
@@ -328,16 +300,12 @@ type ProviderCallEvent = {
 async function callParallelSearchProviders({
   env,
   query,
-  model,
-  refProm,
   onProviderEvent,
   signal,
   deadlineMs,
 }: {
   env: Record<string, string>;
   query: string;
-  model?: string;
-  refProm?: string;
   /** 每个 Provider 的 start/success/failure 实时上报（SSE search_progress 数据源）。 */
   onProviderEvent?: (event: ProviderCallEvent) => void;
   signal?: AbortSignal;
@@ -349,7 +317,7 @@ async function callParallelSearchProviders({
     providers.map(async (provider) => {
       onProviderEvent?.({ provider, status: "running", resultCount: 0 });
       try {
-        const result = await callSearchProviderWithTimeout({ env, provider, query, model, refProm, signal, deadlineMs });
+        const result = await callSearchProvider({ env, provider, query, signal, deadlineMs });
         signal?.throwIfAborted();
         const resultCount = Array.isArray(result?.sources) ? result.sources.length : 0;
         onProviderEvent?.({ provider, status: "completed", resultCount });
@@ -1050,17 +1018,14 @@ async function call360MWebSearch({
   env,
   apiKey,
   query,
-  refProm,
   signal,
 }: {
   env: Record<string, string>;
   apiKey: string;
   query: string;
-  refProm?: string;
   signal?: AbortSignal;
 }) {
   const selectedRefProm =
-    refProm ||
     env.SEARCH360_REF_PROM ||
     process.env.SEARCH360_REF_PROM ||
     "aiso-max";

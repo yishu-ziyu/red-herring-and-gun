@@ -43,7 +43,7 @@ export function openDatabase(filePath: string = defaultDatabasePath()): Database
   if (instance && instancePath === filePath) return instance;
   const Driver = loadDriver();
   if (!Driver) {
-    console.warn("[sqlite] 这个 Node 没有 node:sqlite，回退到 JSON 存储");
+    console.warn("[sqlite] 这个 Node 没有 node:sqlite，回退到进程内状态");
     return null;
   }
   let db: DatabaseSync;
@@ -51,7 +51,7 @@ export function openDatabase(filePath: string = defaultDatabasePath()): Database
     mkdirSync(dirname(filePath), { recursive: true });
     db = new Driver(filePath);
   } catch (error) {
-    console.error("[sqlite] 打不开库，回退到 JSON 存储", error);
+    console.error("[sqlite] 打不开库，回退到进程内状态", error);
     return null;
   }
   db.exec("PRAGMA journal_mode = WAL");

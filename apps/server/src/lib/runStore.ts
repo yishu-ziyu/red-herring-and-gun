@@ -43,10 +43,6 @@ export type RunRecord = {
   lastSeq: number;
   createdAt: number;
   updatedAt: number;
-  /** 追问 run 的上一轮 caseId；首轮、老行、进程内直接构造的 run 没有该字段。 */
-  priorCaseId?: string | null;
-  /** 是否追问 run；首轮与老行为 false。 */
-  isFollowUp?: boolean;
 };
 
 type RunRow = {
@@ -61,8 +57,6 @@ type RunRow = {
   lastSeq: number;
   createdAt: number;
   updatedAt: number;
-  priorCaseId: string | null;
-  isFollowUp: number;
 };
 
 function toRecord(row: RunRow): RunRecord {
@@ -86,8 +80,6 @@ function toRecord(row: RunRow): RunRecord {
     lastSeq: row.lastSeq,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
-    priorCaseId: row.priorCaseId ?? null,
-    isFollowUp: row.isFollowUp === 1,
   };
 }
 
@@ -97,8 +89,7 @@ type CreateRunInput = {
   ownerHash?: string | null;
   clientRequestId?: string | null;
   inputHash?: string | null;
-  status?: RunStatus;
-  now?: number;
+  now: number;
 };
 
 export type RunStore = ReturnType<typeof createRunStore>;
@@ -120,16 +111,15 @@ function createRunStore(db: DatabaseSync) {
   return {
     /** 建 run；`ownerHash + clientRequestId` 重复时抛 UNIQUE 约束错，由调用方判冲突。 */
     create(input: CreateRunInput): RunRecord {
-      const now = input.now ?? Date.now();
       insertRun.run(
         input.runId,
         input.caseId,
         input.ownerHash ?? null,
         input.clientRequestId ?? null,
         input.inputHash ?? null,
-        input.status ?? "accepted",
-        now,
-        now
+        "accepted",
+        input.now,
+        input.now
       );
       return toRecord(selectRun.get(input.runId) as RunRow);
     },
@@ -207,14 +197,6 @@ function createRunStore(db: DatabaseSync) {
         )
         .run(now);
       return Number(result.changes ?? 0);
-    },
-
-    /** 按 caseId 找最近一次 run（刷新恢复用）。 */
-    latestForCase(caseId: string): RunRecord | null {
-      const row = db
-        .prepare("SELECT * FROM runs WHERE caseId = ? ORDER BY createdAt DESC LIMIT 1")
-        .get(caseId) as RunRow | undefined;
-      return row ? toRecord(row) : null;
     },
   };
 }
