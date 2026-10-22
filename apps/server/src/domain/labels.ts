@@ -1,5 +1,5 @@
 /**
- * 判断标签：每一截和整句都只用这 9 个词（#140，2026-10-09 用户确认，docs/PRODUCT.md「判断怎么表达」）。
+ * 判断标签：每一截和整句都只用这 9 个词（#140，2026-10-09 用户确认）。
  * 整句标签由 verdict.ts 的规则表推出，这里只做规则 → 标签的对应。服务端、结果页、分享页共用这一份。
  */
 import type { PartRole, PartStanding, VerdictRule } from "./verdict.js";

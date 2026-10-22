@@ -1,5 +1,5 @@
 /**
- * runStore — 运行记录、活动与分享令牌的持久化（IMPLEMENTATION_PLAN §5.4）。
+ * runStore — 运行记录、活动与分享令牌的持久化。
  *
  * 这里管「一次调查跑到哪了」。
  * 存储介质由 sqliteStore 提供；没有可用 sqlite 时本模块不可用，调用方回退到进程内状态。

@@ -54,7 +54,7 @@ function saveSnapshotDebounced(file: string, value: unknown): void {
     timer = null;
     flushSnapshots();
   }, 2000);
-  // 不阻止进程退出（测试/脚本）；正式退出路径由 index.ts 的 SIGTERM 钩子兜底
+  // 不阻止进程退出；正式退出路径由 index.ts 的 SIGTERM 钩子兜底
   timer.unref?.();
 }
 

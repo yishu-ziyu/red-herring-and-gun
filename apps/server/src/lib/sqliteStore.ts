@@ -1,5 +1,5 @@
 /**
- * sqliteStore — 本地 SQLite 适配层（IMPLEMENTATION_PLAN §5.4）。
+ * sqliteStore — 本地 SQLite 适配层。
  *
  * 单机单进程部署不引入 Redis / 消息队列：一个本地库文件，驱动藏在 repository 接口后面。
  * 用 Node 22 自带的 `node:sqlite`，不装第三方依赖；不可用时调用方回退到旧的 JSON 实现。
@@ -10,9 +10,9 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 /**
- * 驱动运行时才 require：`node:sqlite` 是 Node 内置模块，前端测试环境（jsdom）
- * 静态解析它会直接报「Cannot bundle Node.js built-in」。放到函数里就绕开了。
- * 同时这也是降级点：拿不到驱动就返回 null，调用方回退到 JSON 存储。
+ * 驱动运行时才 require：`node:sqlite` 是 Node 内置模块，打包器静态解析它会直接报
+ * 「Cannot bundle Node.js built-in」。放到函数里就绕开了。
+ * 同时这也是降级点：拿不到驱动就返回 null，调用方回退到进程内状态。
  */
 function loadDriver(): (new (path: string) => DatabaseSync) | null {
   try {

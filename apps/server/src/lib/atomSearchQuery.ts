@@ -1,7 +1,7 @@
 /**
  * Per-atom retrieval queries for Case Pipeline.
  * Raw atom text is not enough for Weibo-scale rumors: also hunt 辟谣 / 规划 traces.
- * Query portfolio + RRF live in retrievalQueries (ADR-005); this file remains the retrieve seam.
+ * Query portfolio + RRF live in retrievalQueries; this file remains the retrieve seam.
  */
 
 import { buildQueryPortfolio, fuseByRrf, type RankedDoc } from "./retrievalQueries.js";

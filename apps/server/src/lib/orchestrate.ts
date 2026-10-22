@@ -140,7 +140,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
           maxTokens: agentConfig.maxTokens,
           env,
           reasoningEffort: "high",
-          options: { logger: console, signal, deadlineMs: deadlineFor(execution.deadlineMs) },
+          options: { signal, deadlineMs: deadlineFor(execution.deadlineMs) },
         });
         output = withLegacyVerdicts(result.output);
         signal?.throwIfAborted();

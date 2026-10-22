@@ -1,13 +1,8 @@
 // ───────────────────────────────────────────────────────────────
-// Server-side provider router
-// 把 server/src/handlers.ts 和 vite.config.ts 重复的 callAgentWithFallback 抽到一处。
-// 行为以 server/src/handlers.ts 原实现为基线（per-agent routing、per-agent model、
-// parseAgentJson 带 repair、API key 缺失 push 到 errors）。
-// 调用方通过 options 注入 logger / onMissingApiKey / 阶段预算（deadlineMs、
-// attemptTimeoutCapMs）行为以匹配各自的差异。
-// 超时有三层：per-provider 预算（ORCHESTRATE_PROVIDER_TIMEOUT_MS，按模型可覆写）、
-// 调用方给的阶段硬预算（options.deadlineMs）、调用方给的单次尝试上限（options.attemptTimeoutCapMs）；
-// 单次生效超时取三者最小值。不传后两个时行为与旧版一致。
+// Server-side provider router：per-agent routing、per-agent model、坏 JSON 同 provider 修一次、
+// API key 缺失记进 errors。
+// 超时有两层：per-provider 预算（ORCHESTRATE_PROVIDER_TIMEOUT_MS，按模型可覆写）、
+// 调用方给的阶段硬预算（options.deadlineMs）；单次生效超时取两者最小值。
 // ───────────────────────────────────────────────────────────────
 
 import type { TSchema } from "typebox";
@@ -301,27 +296,13 @@ function buildJsonRepairUserContent(brokenText: string, originalUserContent: str
 // callAgentWithFallback — 4-Agent pipeline 的核心 provider 调度器
 // ───────────────────────────────────────────────────────────────
 
-interface ProviderRouterLogger {
-  info(msg: string, ctx?: Record<string, unknown>): void;
-  error(msg: string, ctx?: Record<string, unknown>): void;
-}
-
 interface ProviderRouterOptions {
   signal?: AbortSignal;
-  /** 日志回调；缺省 no-op。vite.config.ts 会注入 console 包装 */
-  logger?: ProviderRouterLogger;
-  /** API key 缺失时的处理：缺省 "error"（push 到 errors 数组），vite 传 "silent"（静默跳过） */
-  onMissingApiKey?: "silent" | "log" | "error";
   /**
-   * 阶段级硬预算（主路 P1 Change H）：绝对时间戳，本次调用含全部 provider 尝试合计不得超过它。
+   * 阶段级硬预算：绝对时间戳，本次调用含全部 provider 尝试合计不得超过它。
    * 到点不再开下一次尝试，已开的那次用剩余时长封顶。
    */
   deadlineMs?: number;
-  /**
-   * 阶段内单次 provider 尝试的上限（毫秒）。一个 provider 卡住时用它就地降级到下一家，
-   * 不必等 per-provider 预算（minimax 默认 600000）耗尽；缺省沿用 per-provider 预算。
-   */
-  attemptTimeoutCapMs?: number;
 }
 
 interface CallAgentParams {
@@ -356,11 +337,6 @@ class ProviderFallbackError extends Error {
     this.providerErrors = providerErrors;
   }
 }
-
-const NOOP_LOGGER: ProviderRouterLogger = {
-  info: () => {},
-  error: () => {},
-};
 
 /** 非正数 / NaN / undefined 一律当「没给」，不因为一个坏值把阶段预算写成 0。 */
 function positiveMs(value: number | undefined): number | undefined {
@@ -397,9 +373,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
     reasoningEffort = "high",
     options = {},
   } = params;
-  const logger = options.logger ?? NOOP_LOGGER;
+  const logger = console;
   options.signal?.throwIfAborted();
-  const onMissing = options.onMissingApiKey ?? "error";
   const traceLabel = `Agent${agentId ? `:${agentId}` : ""}`;
   const providerTimeoutMs = getTimeoutMs(env, "ORCHESTRATE_PROVIDER_TIMEOUT_MS", 45000);
 
@@ -408,23 +383,20 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   const providerOrder = providerOrderForAgent(env, agentId);
 
   // ───────────────────────────────────────────────────────────────
-  // 阶段级硬预算（主路 P1 Change H）
+  // 阶段级硬预算
   // 单次 provider 预算拦不住「换着 provider 一家家等」：真实走查里 minimax 烧了 84.9 秒、
-  // stepfun 再跟两次，自证阶段合计 111 秒。deadlineMs 是本阶段的总账，
-  // attemptTimeoutCapMs 让卡住的那家尽早让位给下一家。
+  // stepfun 再跟两次，自证阶段合计 111 秒。deadlineMs 是本阶段的总账。
   // ───────────────────────────────────────────────────────────────
   const stageDeadlineMs = positiveMs(options.deadlineMs);
-  const attemptTimeoutCapMs = positiveMs(options.attemptTimeoutCapMs);
   const stageRemainingMs = () =>
     stageDeadlineMs === undefined ? undefined : stageDeadlineMs - Date.now();
   const stageBudgetExpired = () => {
     const left = stageRemainingMs();
     return left !== undefined && left <= 0;
   };
-  /** 单次尝试的生效超时 = min(per-provider 预算, 阶段内单次上限, 阶段剩余) */
+  /** 单次尝试的生效超时 = min(per-provider 预算, 阶段剩余) */
   const attemptTimeoutMs = (perProviderMs: number) => {
     const limits = [perProviderMs];
-    if (attemptTimeoutCapMs !== undefined) limits.push(attemptTimeoutCapMs);
     const left = stageRemainingMs();
     if (left !== undefined) limits.push(left);
     return Math.max(1, Math.min(...limits));
@@ -556,12 +528,9 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       const model = modelForAgent(env, "MINIMAX", agentId, "MiniMax-M2.7-highspeed");
       const baseUrl = (envValue(env, "MINIMAX_BASE_URL") || "https://api.minimaxi.com/anthropic").replace(/\/$/, "");
       if (!apiKey) {
-        if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "minimax", model });
-        if (onMissing === "error") errors.push(`[minimax:${model}] 未配置 MINIMAX_API_KEY`);
+        errors.push(`[minimax:${model}] 未配置 MINIMAX_API_KEY`);
         continue;
       }
-      // 填表类调用降温到 0，要稳定的输出。
-      const minimaxTemperature = 0;
       const out = await runOne("minimax", model, (sys, user, signal) =>
         callMiniMaxAgent({
           baseUrl,
@@ -571,7 +540,8 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           systemPrompt: sys,
           userContent: user,
           ...miniMaxCallOptions(env, model, maxTokens),
-          ...(minimaxTemperature !== undefined ? { temperature: minimaxTemperature } : {}),
+          // 填表类调用降温到 0，要稳定的输出。
+          temperature: 0,
           signal,
         })
       );
@@ -587,8 +557,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       const model = modelForAgent(env, "STEPFUN", agentId, "step-2-mini");
       const baseUrl = (envValue(env, "STEPFUN_BASE_URL") || "https://api.stepfun.com/v1").replace(/\/$/, "");
       if (!apiKey) {
-        if (onMissing === "log") logger.info("[orchestrate-provider] missing api key", { provider: "stepfun", model });
-        if (onMissing === "error") errors.push(`[stepfun:${model}] 未配置 STEPFUN_API_KEY`);
+        errors.push(`[stepfun:${model}] 未配置 STEPFUN_API_KEY`);
         continue;
       }
       const out = await runOne("stepfun", model, (sys, user, signal) =>

@@ -1,5 +1,5 @@
 /**
- * Retrieval queries — query portfolio and RRF fusion for the initial claim-atom retrieve (ADR-005).
+ * Retrieval queries — query portfolio and RRF fusion for the initial claim-atom retrieve.
  * Pure functions. Caller: atomSearchQuery.
  */
 

@@ -4,15 +4,8 @@
 // 任何 router（callAgentWithFallback）通过 import 这些函数调度
 // ───────────────────────────────────────────────────────────────
 
-// 审查 P3-2 修复：extractAnthropicText 从共享模块引入并 re-export，
-// 不再在本文件维护独立副本（原 line 47-87 本地定义已删除）。
-// 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
 import { extractAnthropicText, extractAnthropicThinking, readAnthropicSse } from "./anthropicParse.js";
-import {
-  buildMiniMaxMessagesBody,
-  isMiniMaxM3,
-  type MiniMaxThinkingType,
-} from "./minimaxM3.js";
+import { buildMiniMaxMessagesBody, type MiniMaxThinkingType } from "./minimaxM3.js";
 
 // ───────────────────────────────────────────────────────────────
 // Response text extractors（OpenAI 兼容 / Anthropic 兼容 / 空响应诊断）
@@ -161,7 +154,7 @@ export async function callStepFunAgent({
 
 /**
  * StepFun Token Plan — Anthropic 协议端点（https://api.stepfun.com/step_plan/v1/messages）。
- * Bearer 认证；content 块数组（thinking + text）；无 response_format，JSON 靠 prompt 约束 + 下游 parseAgentJson。
+ * Bearer 认证；content 块数组（thinking + text）；无 response_format，JSON 靠 prompt 约束 + 下游 parseValidatedAgentJson。
  */
 async function callStepFunPlanAgent({
   baseUrl,
@@ -246,7 +239,6 @@ export async function callMiniMaxAgent({
   maxTokens,
   thinking,
   signal,
-  onThinking,
   temperature,
 }: {
   baseUrl: string;
@@ -258,7 +250,6 @@ export async function callMiniMaxAgent({
   maxTokens: number;
   thinking?: MiniMaxThinkingType;
   signal?: AbortSignal;
-  onThinking?: (accumulated: string) => void;
   temperature?: number;
 }) {
   const url = miniMaxMessagesUrl(baseUrl);
@@ -271,9 +262,6 @@ export async function callMiniMaxAgent({
   } else {
     headers["x-api-key"] = apiKey;
   }
-  const thinkingMode: MiniMaxThinkingType | undefined =
-    thinking ?? (isMiniMaxM3(model) ? "adaptive" : undefined);
-
   const response = await fetch(url, {
     method: "POST",
     headers,
@@ -283,7 +271,7 @@ export async function callMiniMaxAgent({
         systemPrompt,
         userContent,
         maxTokens,
-        thinking: thinkingMode,
+        thinking,
         stream: true,
         ...(temperature !== undefined ? { temperature } : {}),
       })
@@ -303,7 +291,6 @@ export async function callMiniMaxAgent({
     const streamed = await readAnthropicSse(response.body, (delta) => {
       if (!delta.thinkingChunk) return;
       thinkingAcc += delta.thinkingChunk;
-      onThinking?.(thinkingAcc);
     });
     text = streamed.text;
     reasoning = streamed.thinking || thinkingAcc;
@@ -316,7 +303,6 @@ export async function callMiniMaxAgent({
     const raw = await response.text();
     text = extractAnthropicText(raw);
     reasoning = extractAnthropicThinking(raw);
-    if (reasoning) onThinking?.(reasoning);
   }
 
   if (!text) {

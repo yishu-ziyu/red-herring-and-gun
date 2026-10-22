@@ -1,9 +1,5 @@
 /**
- * anthropicParse.ts — Anthropic 兼容响应/SSE 文本提取 + JSON 块抽取共享模块
- *
- * 审查 P3-2 修复：extractAnthropicText / extractAnthropicContent / extractJsonObject
- * 原本在 handlers.ts、agentProviders.ts、mimoClient.ts、providerRouter.ts 四处独立实现，
- * 已抽到本文件统一维护，防止 drift。
+ * anthropicParse.ts — Anthropic 兼容响应/SSE 文本提取 + JSON 块抽取。
  */
 
 /**

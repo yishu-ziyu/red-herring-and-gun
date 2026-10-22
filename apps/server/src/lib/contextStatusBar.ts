@@ -1,8 +1,5 @@
 /**
- * contextStatusBar.ts — AI Agent Book Ch.2 上下文工程：Agent 状态栏（server copy）
- *
- * Keep in sync with src/lib/agentRuntime/contextStatusBar.ts (client/AgentRuntime).
- * Server cannot import client src (tsconfig rootDir); copy is intentional (ADR-003).
+ * contextStatusBar.ts — AI Agent Book Ch.2 上下文工程：Agent 状态栏。
  */
 
 interface AgentStatusBarInput {
@@ -16,18 +13,12 @@ interface AgentStatusBarInput {
   memoryHitCount?: number;
   searchReady?: boolean;
   steeringCount?: number;
-  failurePolicy?: string;
-  now?: Date;
 }
 
 interface AgentStatusBar {
-  /** 稳定前缀（时区/角色），利于 KV-cache 命中 */
-  prefix: string;
-  /** 本步变化的动态行 */
-  dynamic: string;
-  /** 合并后的短文本，直接塞进 user content */
+  /** 稳定前缀（时区/角色，利于 KV-cache 命中）+ 本步变化的动态行，直接塞进 user content */
   text: string;
-  /** 结构化字段，便于评测与 SSE 透出 */
+  /** 结构化字段，随 agent 输入一起给模型 */
   fields: Record<string, string | number | boolean>;
 }
 
@@ -37,7 +28,7 @@ function formatClock(now: Date): string {
 }
 
 export function buildAgentStatusBar(input: AgentStatusBarInput): AgentStatusBar {
-  const now = input.now ?? new Date();
+  const now = new Date();
   const toolNames = input.tools
     .map((t) => t.name || t.id)
     .filter(Boolean)
@@ -62,17 +53,8 @@ export function buildAgentStatusBar(input: AgentStatusBarInput): AgentStatusBar 
     `steering=${input.steeringCount ?? 0}`,
   ].filter(Boolean);
 
-  if (input.failurePolicy) {
-    dynamicParts.push(`failPolicy=${input.failurePolicy.slice(0, 60)}`);
-  }
-
-  const dynamic = dynamicParts.join(" | ");
-  const text = `${prefix}\n${dynamic}`;
-
   return {
-    prefix,
-    dynamic,
-    text,
+    text: `${prefix}\n${dynamicParts.join(" | ")}`,
     fields: {
       agentId: input.agentId,
       agentName: input.agentName,

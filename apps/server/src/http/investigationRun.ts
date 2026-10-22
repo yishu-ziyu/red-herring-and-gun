@@ -82,7 +82,7 @@ function pipelineFinalize(
   ctx: { finalReport: Record<string, unknown>; claim: string },
   visualExtraction?: Record<string, unknown>
 ) {
-  applyFactDeskPostProcessToReport(ctx.finalReport, ctx.claim);
+  applyFactDeskPostProcessToReport(ctx.finalReport);
   applyContextCrossCheckToReport(ctx.finalReport, { claim: ctx.claim, visualExtraction });
 }
 

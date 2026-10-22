@@ -6,7 +6,7 @@
  * 1. 领域同义词组 → 规范 token（syn:<组id>），任意成员命中即桥接；
  * 2. 汉字字符集 Dice 系数，捕捉转述改写的模糊重叠；
  * 3. 与既有 bigram Jaccard 加权合成，输出 0–100（与 calculateClaimSimilarity 同标度）。
- * 升级路径：需要更强泛化时再挂本地 embedding（ADR-001 Phase 3 备选）。
+ * 升级路径：需要更强泛化时再挂本地 embedding。
  */
 
 /** 谣言域同义词组：新词组直接追加，命中任一成员 → 同一规范 token。 */

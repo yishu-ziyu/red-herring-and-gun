@@ -42,12 +42,6 @@ const BANNED_DRAMA =
 
 const META_LABELS = /【可说】|【不可说】|（可说）|（不可说）/g;
 
-interface FactDeskPostProcessResult {
-  report: Record<string, unknown>;
-  notes: string[];
-  changed: boolean;
-}
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -102,18 +96,13 @@ function hasUncertainty(text: string): boolean {
   return /不足|无法|未见|不能支持|尚未|缺口|不能|有限|待核|未证实|不宜|不能信|还查不清/.test(text);
 }
 
-function ensureFaceLead(text: string, _verdictType: unknown, notes: string[], label: string): string {
+function ensureFaceLead(text: string, notes: string[], label: string): string {
   const stripped = stripFaceStamp(text);
   if (stripped !== text.trim()) notes.push(`${label}: stripped face stamp`);
   return stripped || text;
 }
 
-function ensureClaimAndUncertainty(
-  conclusion: string,
-  _claim: string,
-  notes: string[],
-  verdictType?: unknown,
-): string {
+function ensureUncertainty(conclusion: string, notes: string[], verdictType: unknown): string {
   let out = conclusion.trim();
   if (!out) {
     notes.push("conclusion: empty → conservative default");
@@ -141,18 +130,14 @@ function softCausalWithoutEvidence(text: string, notes: string[], label: string)
 }
 
 /**
- * Post-process live handoff finalReport (Prompt A structure + Prompt F critique).
+ * 原地清洗终稿报告（Prompt A structure + Prompt F critique）。
  * Idempotent-ish: safe to run twice; second pass usually no-ops.
  */
-function postProcessHandoffFinalReport(
-  finalReport: unknown,
-  claim: string,
-): FactDeskPostProcessResult | null {
+export function applyFactDeskPostProcessToReport(finalReport: unknown): void {
   const report = asRecord(finalReport);
-  if (!report) return null;
+  if (!report) return;
 
   const notes: string[] = [];
-  const originalSnapshot = JSON.stringify(report);
 
   // 1) Infrastructure sanitizer on public prose fields
   const textFields = [
@@ -194,11 +179,10 @@ function postProcessHandoffFinalReport(
   conclusion = softCausalWithoutEvidence(conclusion, notes, "conclusion");
   summaryForPublic = softCausalWithoutEvidence(summaryForPublic, notes, "summaryForPublic");
 
-  // 3) Prompt A structure: claim framing + uncertainty when missing
-  const safeClaim = (claim || asString(report.originalClaim) || "").trim();
+  // 3) Prompt A structure: uncertainty when missing
   const verdictType = report.verdictType;
-  conclusion = ensureClaimAndUncertainty(conclusion, safeClaim, notes, verdictType);
-  conclusion = ensureFaceLead(conclusion, verdictType, notes, "conclusion");
+  conclusion = ensureUncertainty(conclusion, notes, verdictType);
+  conclusion = ensureFaceLead(conclusion, notes, "conclusion");
 
   if (!summaryForPublic) {
     summaryForPublic = conclusion.length > 120 ? `${conclusion.slice(0, 100)}…` : conclusion;
@@ -207,7 +191,7 @@ function postProcessHandoffFinalReport(
     summaryForPublic = `${summaryForPublic.replace(/[。．.]+$/g, "")}。现有证据仍不足以按原强度确认。`;
     notes.push("summaryForPublic: injected uncertainty");
   }
-  summaryForPublic = ensureFaceLead(summaryForPublic, verdictType, notes, "summaryForPublic");
+  summaryForPublic = ensureFaceLead(summaryForPublic, notes, "summaryForPublic");
   report.faceVerdict = faceVerdictFor(verdictType);
 
   if (!recommendation) {
@@ -260,20 +244,4 @@ function postProcessHandoffFinalReport(
     notes,
     version: "A+F-2026-07-10",
   };
-
-  const changed = JSON.stringify(report) !== originalSnapshot || notes.length > 0;
-  return { report, notes, changed };
-}
-
-/** Mutate finalReport in place (handlers convenience). */
-export function applyFactDeskPostProcessToReport(
-  finalReport: any,
-  claim: string,
-): string[] {
-  const result = postProcessHandoffFinalReport(finalReport, claim);
-  if (!result) return [];
-  if (finalReport && typeof finalReport === "object") {
-    Object.assign(finalReport, result.report);
-  }
-  return result.notes;
 }
