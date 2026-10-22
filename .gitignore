@@ -1,124 +1,14 @@
-node_modules
+node_modules/
 dist/
-.env.local
-.env.local.*
-.env.*.local
-
-# Runtime directories
-.agent-memory/
-apps/server/.data/
-.agent-swarm/
-.superpowers/
-.claude/
-.ship/
-.video_agent/
-.playwright-mcp/
-
-# Evaluation baseline (env-dependent, regenerated per run)
-apps/server/eval/baseline.json
-
-# Build artifacts
-dist-a/
-dist-b/
-exports/
-outputs/
-
-# OS files
 .DS_Store
-._*
+.env
+.env.*
+!.env.local.example
 
-# Local datasets and research inputs
-Chinese_Rumor_Dataset/
-
-# Local pitch and review scratch files
-CODEX_PPT_PROMPT.md
-DEPLOYMENT_CHECKLIST.md
-PITCH_GUIDE.md
-findings.md
-progress.md
-task_plan.md
-pitch-deck-red-herring.html
-pitch-style-variants.html
-
-# Local visual QA screenshots and references
-*.pptx
-kimi-webbridge-gun-home.png
-apps/kimi-screenshot-*.png
-apps/mission-control-view.png
-apps/plan-*.png
-apps/product-homepage.png
-apps/ref-*.png
-apps/ref-*.jpg
-apps/ref-*.md
-apps/research-*.md
-apps/screenshot-*.png
-apps/multi-agent-viz-research/
-
-# Misc screenshots and scratch summary drafts
-1.png
-/real-*.png
-/tracker-*.png
-
-# Local walkthrough dumps — not standing docs
-docs/reports/
-docs/evals/artifacts/
-docs/evals/2026-09-14-qa/
-docs/evals/2026-09-15-salt-run/
-docs/evals/2026-09-15-salt-run2/
-docs/evals/*.png
-docs/evals/**/*.png
-!docs/evals/2026-09-15-salt-run3/03-end.png
-docs/design/2026-09-11-investigation-experience/preview/
-apps/public/decision-assets/
-apps/public/decision-tracker.html
-apps/public/reports/
-apps/tmp/
-
-# Local clones / nested worktrees (never commit)
-vendor/
-.worktrees/
-.playwright-mcp/
-
-# Design-study clones (FrontierAgent, visual replica). Not product.
-tmp-apodex-study/
-apps/apodex-replica/
-
-# Local Teable CLI
-.teable/
-
-# Local agent / IDE scratch
-.agents/
-.cursor/
-/.serena/
-/.v2c/
-skills-lock.json
-
-# CaseFile spine packages
+# Local runtime data, e2e output, agent and IDE state
 .data/
-
-# Local prototype scratch (selected review sources are explicitly tracked)
-.context/compound-engineering/
-
-# Generated local design catalog and cleanup receipts
-.context/design-overview/*.json
-__pycache__/
-
-# Local QA Python environment
-.venv-qa/
-
-# QA run output and local agent/MCP state (generated per run)
-# 锚定仓库根：不加前导斜杠会匹配任意层级同名目录
 /out/
-/.omo/
-/.statamcp/
-/tmp/
-.vercel
-
-# Playwright 调试轨迹：体积大且可由 qa:replay 重生成，不随仓库分发（文件保留在本地磁盘）
-docs/**/*.zip
-
-# 黑客松参赛过程档案（含对手分析），仅本地
-参赛记录/
-
-# Third-party debunk archive (fetched, not ours to redistribute)
-data/debunk-archive/
+/outputs/
+apps/server/eval/
+.claude/
+.serena/

@@ -9,13 +9,10 @@
     "dev:api": "npm --prefix server run dev",
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "eval": "cd server && npx tsx eval/run.ts",
-    "eval:gate": "cd server && npx tsx eval/run.ts --gate eval/baseline.json",
     "e2e": "node scripts/e2e/golden-path.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "framer-motion": "^12.40.0",
     "generative-loaders": "^0.1.1",
     "react": "latest",
     "react-dom": "latest",
