@@ -3,7 +3,6 @@
  * 复用的命题各落一条活动行；其余命题一律联网检索。
  */
 import { retrieveForAtoms, type AtomSearchBundle } from "../../atomSearch.js";
-import { claimAtomKey } from "../../claimAtom/text.js";
 import { priorRoundLookupOf } from "../../followUpReuse.js";
 import type { PipelineContext } from "../caseState.js";
 import type { PipelineStep } from "../runCasePipeline.js";
@@ -22,7 +21,6 @@ export async function retrieve(ctx: PipelineContext, rumorStep: PipelineStep): P
     priorityClaimAtoms: rumorStep.output.priorityClaimAtoms,
     onPlan: (scopePlan) => { snapshots.setScopePlan(scopePlan); },
     searchOne: input.searchOne,
-    claimAtomKeyFn: claimAtomKey,
     priorRound: reusePlan
       ? {
           lookup: priorRoundLookupOf(reusePlan),
@@ -30,7 +28,6 @@ export async function retrieve(ctx: PipelineContext, rumorStep: PipelineStep): P
         }
       : undefined,
     hooks: {
-      mode: hooks?.searchMode ?? "parallel",
       onAtomStart: (atom) => {
         // 里程碑：单个原子检索开始（声明该命题进入 searching；来源未返回不预填）。
         searchedAtoms.push(atom);

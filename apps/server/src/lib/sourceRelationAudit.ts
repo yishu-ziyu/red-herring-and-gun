@@ -1,4 +1,5 @@
 import { stripCitationMarkers } from "./citationBinding.js";
+import { claimAtomKey } from "./claimAtom/text.js";
 import { normalizeInvestigationSourceUrl } from "./investigation/sourceIdentity.js";
 
 type ClaimSourceRelation = "support" | "contradict" | "context-only" | "unverified";
@@ -46,12 +47,11 @@ export function findClaimSourceRelationAudit<A extends { claimAtom: string; url:
   audits: readonly A[],
   claimAtom: string,
   url: string,
-  claimAtomKeyFn: (value: string) => string,
 ): A | undefined {
   const target = normalizeInvestigationSourceUrl(url);
   const sameUrl = audits.filter((audit) => normalizeInvestigationSourceUrl(audit.url) === target);
-  const key = claimAtomKeyFn(claimAtom);
-  const exact = sameUrl.find((audit) => claimAtomKeyFn(audit.claimAtom) === key);
+  const key = claimAtomKey(claimAtom);
+  const exact = sameUrl.find((audit) => claimAtomKey(audit.claimAtom) === key);
   if (exact) return exact;
   const own = hanChars(claimAtom);
   let best: A | undefined;
@@ -94,7 +94,6 @@ function parseClaimSourceRelationAudits(value: unknown): ClaimSourceRelationAudi
 export function relationAuditCoversDirectionalSources(
   verdicts: unknown,
   audits: unknown,
-  claimAtomKeyFn: (value: string) => string,
 ): boolean {
   const rows = parseClaimSourceRelationAudits(audits);
   if (!Array.isArray(verdicts)) return true;
@@ -104,7 +103,7 @@ export function relationAuditCoversDirectionalSources(
     const atom = typeof verdict.claimAtom === "string" ? verdict.claimAtom : "";
     for (const source of [...sourceList(verdict.supportingSources), ...sourceList(verdict.contradictingSources)]) {
       const url = normalizedUrl(source.url);
-      if (url && !findClaimSourceRelationAudit(rows, atom, url, claimAtomKeyFn)) return false;
+      if (url && !findClaimSourceRelationAudit(rows, atom, url)) return false;
     }
   }
   return true;
@@ -118,7 +117,6 @@ export function relationAuditCoversDirectionalSources(
 export function applyClaimSourceRelationAudit<T extends VerdictLike>(
   verdicts: T[],
   auditsRaw: unknown,
-  claimAtomKeyFn: (value: string) => string,
 ): T[] {
   const audits = parseClaimSourceRelationAudits(auditsRaw);
 
@@ -140,7 +138,7 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
         changed = true;
         return;
       }
-      const audit = findClaimSourceRelationAudit(audits, claimAtom, url, claimAtomKeyFn);
+      const audit = findClaimSourceRelationAudit(audits, claimAtom, url);
       // 只记方向性候选（支持 / 反驳）没有核验结果的情况：这些来源会被降为只作背景。
       if (!audit && audits.length > 0) console.warn(`[relation-audit] directional source has no audit claimAtom=${JSON.stringify(claimAtom)} url=${url}`);
       if (!audit || audit.relation === "context-only" || audit.relation === "unverified") {

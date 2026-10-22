@@ -1,18 +1,18 @@
 /**
  * 报告收尾链：组装之后、完成快照之前，终态报告只在这里定型。
  *
- * 顺序即语义（behavior-spec 12.1）：每一步原地改同一份 finalReport，后一步读前一步的结果。
+ * 顺序即语义：每一步原地改同一份 finalReport，后一步读前一步的结果。
  * finalizeReport 的函数体从上到下就是步骤表；新加一道关卡，只能在这张表里选位置：
  *
- *   1 组装 → 2 整句判定（先行，给公式分用）→ 3 注入的收尾钩子（公式分 · 口吻清洗 · 截图语境）
+ *   1 组装 → 2 整句判定（先行，给收尾钩子用）→ 3 注入的收尾钩子（口吻清洗 · 截图语境）
  *   → 4 复核（+ 重绑引用）→ 5 来源探活剔死链
  *   → 6 整句判定（终局，写结论）→ 7 追问直答 → 8 打不开的链接 → 9 徽章 → 10 核查时间
  *
  * 整句结论只由规则表（domain/verdict）得出，2 与 6 是同一个纯函数在不同时点的两次求值：
- * 2 只在调用公式分期间借用结论（分数与最终判定不得互相矛盾），6 在死链剔除之后重新求值并写结论文字。
+ * 2 只在调用收尾钩子期间借用结论（口吻清洗按它定措辞），6 在死链剔除之后重新求值并写结论文字。
  * 除这两处，任何一步都不得改整句的 verdictType（复核可能改，但会被 6 重新决定）。
  *
- * 完成快照、复核结果事件与记忆收尾不在这里：runCasePipeline 在收尾之后做。
+ * 完成快照与复核结果事件不在这里：runCasePipeline 在收尾之后做。
  */
 
 import type { AtomSearchBundle } from "../atomSearch.js";
@@ -31,14 +31,14 @@ type FinalizeReportInput = {
   /** 报告步骤。output 是对象时就地收尾（与 steps 里是同一个对象），否则从空报告开始。 */
   reportStep: PipelineStep;
   rumorStep: PipelineStep;
-  /** 原子级守门把整句 false 救成 partial 时，同步改它的 factCheckResult（公式分读这里）。 */
+  /** 原子级守门把整句 false 救成 partial 时，同步改它的 factCheckResult。 */
   factStep: PipelineStep;
   sourceStep: PipelineStep;
   /** 复核看全部前序输出，报告步骤自己也在里面。 */
   steps: PipelineStep[];
   search360Result: unknown;
   atomSearchBundle: AtomSearchBundle;
-  /** handlers 注入的收尾钩子：公式分 · 口吻清洗 · 截图语境。 */
+  /** handlers 注入的收尾钩子：口吻清洗 · 截图语境。 */
   finalizeHook?: CasePipelineInput["finalizeReport"];
   /** 复核开始（SSE tool_start）。 */
   onReviewStart?: () => void;
@@ -54,7 +54,7 @@ type FinalizeReportResult = {
   review: ReportReviewResult;
 };
 
-/** 规则表结论 → 公式分读的整体判定（fact_checker 的 factCheckResult 四值）。 */
+/** 规则表结论 → 整体判定（fact_checker 的 factCheckResult 四值）。 */
 const FACT_CHECK_RESULT = {
   "can-believe": "true",
   "cannot-believe": "false",
@@ -93,8 +93,8 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
       claimAtomTypes: rumorStep.output.claimAtomTypes,
       priorityClaimAtoms: rumorStep.output.priorityClaimAtoms,
     });
-  // 2 整句判定（先行）：同一个规则表，先求一次值给公式分用，免得分数读的是模型漂出来的整句字段
-  // （例如「有据之真 + 假」被写成整句 false，或规则表判了不能信而分数没有封顶）。
+  // 2 整句判定（先行）：同一个规则表，先求一次值给收尾钩子用，免得钩子读的是模型漂出来的整句字段
+  // （例如「有据之真 + 假」被写成整句 false）。
   // 只在调用注入的收尾钩子期间借用这个结论；钩子之后 verdictType 还原成模型草稿交给复核，
   // 终局由第 6 步在死链剔除之后重新求值。
   const provisional = decideSentenceVerdict(assess());
@@ -102,20 +102,13 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
   finalReport.verdictType = VERDICT_TYPE[provisional.verdict];
   const originalFactResult = String(factStep?.output?.factCheckResult ?? "").trim();
   if (factStep?.output && originalFactResult === "false" && FACT_CHECK_RESULT[provisional.verdict] === "partial") {
-    // 模型把「有据之真 + 假」漂成整体 false 时，公式分读到的整体判定跟着规则表走（救回真的部分）。
+    // 模型把「有据之真 + 假」漂成整体 false 时，整体判定跟着规则表走（救回真的部分）。
     factStep.output._factCheckResultDerived = { from: "false", to: "partial", rule: provisional.rule };
     factStep.output.factCheckResult = "partial";
   }
 
   // 3 注入的收尾钩子。
-  input.finalizeHook?.({
-    finalReport,
-    claim,
-    rumorStep,
-    factStep,
-    sourceStep,
-    search360Result,
-  });
+  input.finalizeHook?.({ finalReport, claim });
   finalReport.verdictType = draftVerdictType;
 
   // 4 确定性复核（非 LLM）。复核可能补证据链、改写结论：重绑 [n]。

@@ -3,24 +3,6 @@
  * 不随 detail / providerErrors 下发，避免 UI 或网络面板泄漏运维信息。
  */
 
-// ───────────────────────────────────────────────────────────────
-// 公开 SSE 只发用户可读文案。原始 provider 诊断留在服务端 logger，
-// 不再随 detail / providerErrors 下发到浏览器，避免 UI 或网络面板泄漏运维信息。
-// ───────────────────────────────────────────────────────────────
-interface FriendlyErrorInfo {
-  /** 用户可读友好文案（不包含原始诊断） */
-  message: string;
-  /** 原始诊断串（可选；仅当原始串与友好文案不同才携带） */
-  detail?: string;
-  /** provider 级错误明细（可选） */
-  providerErrors?: string[];
-}
-
-export function toFriendlyError(error: unknown, fallback: string): FriendlyErrorInfo {
-  void error;
-  return { message: fallback };
-}
-
 // provider 名不得出现在公开流（产品规则：用户不看见模型 ID）。
 // model 字段与「provider:model」形状的字符串值（_scoreSource 等）一并清空，
 // latencyMs 整个删除；普通正文不匹配模型引用形状，不受影响。服务端 logger 保留全量诊断。

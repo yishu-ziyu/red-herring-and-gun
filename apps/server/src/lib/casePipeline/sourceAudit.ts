@@ -5,7 +5,6 @@
  * 没审过的来源一律只作背景（fail-closed），不会闪一下绿色「支持」再被纠正。
  */
 import { bindAtomEvidenceToVerdicts } from "../atomSearch.js";
-import { claimAtomKey } from "../claimAtom/text.js";
 import { applyClaimSourceRelationAudit, relationAuditCoversDirectionalSources } from "../sourceRelationAudit.js";
 import type { CaseState, PipelineContext } from "./caseState.js";
 
@@ -37,14 +36,13 @@ export function createSourceAudit(ctx: PipelineContext, state: Omit<CaseState, "
       : Array.isArray(factStep?.output?.subclaimVerdicts)
         ? (factStep.output.subclaimVerdicts as Array<{ claimAtom: string; [key: string]: unknown }>)
       : [];
-    const bound = bindAtomEvidenceToVerdicts(raw, state.atomSearchBundle.byAtomKey, claimAtomKey);
+    const bound = bindAtomEvidenceToVerdicts(raw, state.atomSearchBundle.byAtomKey);
     if (!factStep.relationAuditCandidates) {
       factStep.relationAuditCandidates = bound as Array<Record<string, unknown>>;
     }
     factStep.output.subclaimVerdicts = applyClaimSourceRelationAudit(
       bound,
       state.sourceStep?.output?.claimSourceRelations,
-      claimAtomKey,
     );
   };
 
@@ -54,7 +52,6 @@ export function createSourceAudit(ctx: PipelineContext, state: Omit<CaseState, "
     const covered = relationAuditCoversDirectionalSources(
       verdicts,
       state.sourceStep?.output?.claimSourceRelations,
-      claimAtomKey,
     );
     if (nextSignature === auditedSignature && covered) return;
     // If there is no room for another source audit, keep new/unknown material non-directional.

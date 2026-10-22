@@ -21,28 +21,12 @@ type LivenessStatus = "alive" | "dead";
 
 /** 404/408/410 与 5xx 视为死链；401/403/405/429 等说明页面存在但有门槛，不判死。 */
 const DEAD_HTTP_STATUSES = new Set([404, 408, 410]);
-const DEFAULT_TIMEOUT_MS = 6000;
-const DEFAULT_MAX_URLS = 16;
-const DEFAULT_CONCURRENCY = 5;
+const TIMEOUT_MS = 6000;
+const MAX_URLS = 16;
+const CONCURRENCY = 5;
 const MAX_REDIRECTS = 5;
 const REQUEST_USER_AGENT =
   "Mozilla/5.0 (compatible; RedHerringGun/1.0; citation-liveness-check)";
-
-type MinimalResponse = {
-  status: number;
-  headers?: { get(name: string): string | null };
-  body?: { cancel?: () => Promise<void> } | null;
-};
-type FetchLike = (url: string, init?: Record<string, unknown>) => Promise<MinimalResponse>;
-
-export type LivenessDeps = ExecutionBudget & {
-  fetchImpl?: FetchLike;
-  timeoutMs?: number;
-  maxUrls?: number;
-  concurrency?: number;
-  /** 直接给定探活结果（测试用）；跳过真实网络请求。 */
-  liveness?: Map<string, LivenessStatus>;
-};
 
 function classifyLivenessStatus(status: number): LivenessStatus {
   if (status < 400) return "alive";
@@ -59,30 +43,25 @@ function isProbeAllowed(url: string): boolean {
  * GET 到响应头即断开：不拉正文，也能覆盖禁用 HEAD 的站点。
  * 跳转自己跟：每一跳访问前都过 ssrfGuard，公网地址跳到内网地址也拦得住。
  */
-async function checkUrlLiveness(
-  url: string,
-  fetchImpl: FetchLike,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-  execution: ExecutionBudget = {},
-): Promise<LivenessStatus> {
+async function checkUrlLiveness(url: string, execution: ExecutionBudget): Promise<LivenessStatus> {
   try {
     return await withExecutionBudget(async (signal) => {
       let current = url;
       for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
         if (!isProbeAllowed(current)) return "dead";
-        const res = await fetchImpl(current, {
+        const res = await fetch(current, {
           method: "GET",
           redirect: "manual",
           signal,
           headers: { "user-agent": REQUEST_USER_AGENT },
         });
-        void Promise.resolve(res.body?.cancel?.()).catch(() => {});
-        const location = res.status >= 300 && res.status < 400 ? res.headers?.get("location") : null;
+        void Promise.resolve(res.body?.cancel()).catch(() => {});
+        const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
         if (!location) return classifyLivenessStatus(res.status);
         current = new URL(location, current).href;
       }
       return "dead";
-    }, { ...execution, timeoutMs, label: "来源探活" });
+    }, { ...execution, timeoutMs: TIMEOUT_MS, label: "来源探活" });
   } catch (error) {
     execution.signal?.throwIfAborted();
     // Exhausting the investigation's budget is not evidence that this URL is dead.
@@ -98,21 +77,17 @@ async function checkUrlLiveness(
 
 async function checkSourceLiveness(
   urls: string[],
-  deps: LivenessDeps = {}
+  execution: ExecutionBudget
 ): Promise<Map<string, LivenessStatus>> {
-  const fetchImpl = deps.fetchImpl ?? (globalThis.fetch as FetchLike);
-  const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const maxUrls = deps.maxUrls ?? DEFAULT_MAX_URLS;
-  const concurrency = deps.concurrency ?? DEFAULT_CONCURRENCY;
-  const unique = [...new Set(urls.filter((u) => /^https?:\/\//i.test(u)))].slice(0, maxUrls);
+  const unique = [...new Set(urls.filter((u) => /^https?:\/\//i.test(u)))].slice(0, MAX_URLS);
 
   const results = new Map<string, LivenessStatus>();
   let cursor = 0;
-  const workers = Array.from({ length: Math.min(concurrency, unique.length) }, async () => {
+  const workers = Array.from({ length: Math.min(CONCURRENCY, unique.length) }, async () => {
     while (cursor < unique.length) {
-      deps.signal?.throwIfAborted();
+      execution.signal?.throwIfAborted();
       const url = unique[cursor++];
-      results.set(url, await checkUrlLiveness(url, fetchImpl, timeoutMs, deps));
+      results.set(url, await checkUrlLiveness(url, execution));
     }
   });
   await Promise.all(workers);
@@ -120,7 +95,6 @@ async function checkSourceLiveness(
 }
 
 export type PruneResult = {
-  pruned: boolean;
   deadUrls: string[];
 };
 
@@ -129,16 +103,16 @@ export type PruneResult = {
  * subclaimVerdicts 的 evidence/supportingSources/contradictingSources、claimItems 内嵌 verdict、
  * 全局 conclusion/citationSources、evidenceChain 的 sourceRefs 全部同步。
  *
- * 双桶对称（Review 5128022550 Blocker 1）：supportingSources 与 contradictingSources
+ * 双桶对称：supportingSources 与 contradictingSources
  * 各自独立 filter、各自独立去重，绝不跨桶合并去重；同 URL 同时出现在两桶时是两条
  * relation，都保留。判词句内编号继续按「过滤后 support → 过滤后 contradict」
  *（与 citationBinding.bindDualBucketCitations 同构），不破坏 #74。
  */
 export async function pruneDeadCitations(
   report: Record<string, unknown>,
-  deps: LivenessDeps = {}
+  execution: ExecutionBudget
 ): Promise<PruneResult> {
-  if (!report || typeof report !== "object") return { pruned: false, deadUrls: [] };
+  if (!report || typeof report !== "object") return { deadUrls: [] };
   const citationSources = Array.isArray(report.citationSources) ? report.citationSources : [];
   const verdictsIn = Array.isArray(report.subclaimVerdicts) ? report.subclaimVerdicts : [];
   // 收集范围要同时覆盖全局引用与 verdict 层两桶来源：全局列表不含检索填充源，
@@ -172,12 +146,12 @@ export async function pruneDeadCitations(
     }
   }
   const candidates = urls.filter(Boolean);
-  if (candidates.length === 0) return { pruned: false, deadUrls: [] };
+  if (candidates.length === 0) return { deadUrls: [] };
 
-  const liveness = deps.liveness ?? (await checkSourceLiveness(candidates, deps));
-  deps.signal?.throwIfAborted();
+  const liveness = await checkSourceLiveness(candidates, execution);
+  execution.signal?.throwIfAborted();
   const deadUrls = [...new Set(candidates.filter((u) => liveness.get(u) === "dead"))];
-  if (deadUrls.length === 0) return { pruned: false, deadUrls: [] };
+  if (deadUrls.length === 0) return { deadUrls: [] };
   const aliveSet = new Set(candidates.filter((u) => liveness.get(u) !== "dead"));
 
   const prunedVerdicts = verdictsIn.map((raw) => {
@@ -272,5 +246,5 @@ export async function pruneDeadCitations(
     });
   }
 
-  return { pruned: true, deadUrls };
+  return { deadUrls };
 }

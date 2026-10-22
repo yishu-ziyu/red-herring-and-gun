@@ -5,9 +5,8 @@
  * HTTP / SSE are thin adapters; inject runAgent + searchOne.
  */
 
-import { randomUUID } from "node:crypto";
 import type { AtomSearchBundle, KnowledgeHit, SearchOneAtom } from "../atomSearch.js";
-import { pruneDeadCitations, type LivenessDeps } from "../citationLiveness.js";
+import { pruneDeadCitations } from "../citationLiveness.js";
 import { readSourcePageDates } from "../sourcePageDates.js";
 import type { ReportReviewIssue } from "../reportReviewer.js";
 import type { InvestigationSnapshotV1 } from "../investigation/index.js";
@@ -51,7 +50,6 @@ export type CasePipelineHooks = {
   onAtomSearchResult?: (atom: string, result: unknown) => void;
   /** 同一案上一轮证据够用、不再检索已核命题（活动流 prior_round_reuse 行） */
   onPriorRoundReuse?: (hit: KnowledgeHit) => void;
-  searchMode?: "parallel" | "sequential";
   /** deterministic report reviewer — tool_start style (SSE) */
   onReportReviewStart?: (info: { toolName: string; query: string }) => void;
   /** deterministic report reviewer — tool_result style (SSE) */
@@ -88,20 +86,11 @@ export type CasePipelineInput = {
   runAgent: RunAgentFn;
   searchOne: SearchOneAtom;
   hooks?: CasePipelineHooks;
-  /** optional post-assembly mutators (formula score, fact-desk voice) */
-  finalizeReport?: (ctx: {
-    finalReport: Record<string, unknown>;
-    claim: string;
-    rumorStep: PipelineStep;
-    factStep: PipelineStep;
-    sourceStep: PipelineStep;
-    search360Result: unknown;
-  }) => void;
-  /** stable run id; default randomUUID */
-  runId?: string;
+  /** 组装之后的收尾钩子（口吻清洗 · 截图语境），原地改报告。 */
+  finalizeReport?: (ctx: { finalReport: Record<string, unknown>; claim: string }) => void;
   /**
    * 管线截止时间（epoch ms）：来源审计刷新在此前必须收敛。
-   * 不传 = 无预算（测试/脚本用）。handlers 侧 = 总超时 − 收尾余量。
+   * 不传 = 无预算。调用方传的是总超时 − 收尾余量。
    */
   deadline?: number;
   /**
@@ -110,12 +99,7 @@ export type CasePipelineInput = {
    */
   signal?: AbortSignal;
   /**
-   * 引用探活依赖（「来源能点开」门）。默认真实网络探活；
-   * `false` 关闭；测试传 { liveness: Map } 注入结果避免触网。
-   */
-  citationLiveness?: LivenessDeps | false;
-  /**
-   * 同一案追问快路径（契约 docs/evals/2026-09-13-followup-fast-path.md）。
+   * 同一案追问快路径。
    * 读请求里浏览器带来的上一轮可见材料；没有可用证据时
    * 分类器返回 null，本函数仍走完整管道。
    */
@@ -130,12 +114,6 @@ type CasePipelineResult = {
   steps: PipelineStep[];
   finalReport: Record<string, unknown>;
   atomSearchBundle: AtomSearchBundle;
-  search360Result: unknown;
-  rumorStep: PipelineStep;
-  factStep: PipelineStep;
-  sourceStep: PipelineStep;
-  reportStep: PipelineStep;
-  runId: string;
 };
 
 const REPORT_REVIEWER_TOOL = "Report Reviewer (proposer-reviewer)";
@@ -202,13 +180,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     atomSearchBundle,
     finalizeHook: input.finalizeReport,
     onReviewStart: () => hooks?.onReportReviewStart?.({ toolName: REPORT_REVIEWER_TOOL, query: claim }),
-    pruneCitations: (report) =>
-      pruneDeadCitations(
-        report,
-        input.citationLiveness === false
-          ? { liveness: new Map(), signal: input.signal }
-          : { ...input.citationLiveness, signal: input.signal, deadlineMs: input.deadline }
-      ),
+    pruneCitations: (report) => pruneDeadCitations(report, { signal: input.signal, deadlineMs: input.deadline }),
     signal: input.signal,
   });
   // 核查步骤内部失败 → 本次核查未完成：先定终态再发快照，
@@ -254,18 +226,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     checks: review.checks,
   });
 
-  const runId = input.runId ?? randomUUID();
   throwIfAborted();
 
-  return {
-    steps,
-    finalReport,
-    atomSearchBundle,
-    search360Result,
-    rumorStep,
-    factStep,
-    sourceStep,
-    reportStep,
-    runId,
-  };
+  return { steps, finalReport, atomSearchBundle };
 }

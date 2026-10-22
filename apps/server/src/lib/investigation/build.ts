@@ -25,6 +25,7 @@ import type {
 } from "./schema.js";
 import { validateInvestigationSnapshot } from "./schema.js";
 import { findClaimSourceRelationAudit } from "../sourceRelationAudit.js";
+import { claimAtomKey } from "../claimAtom/text.js";
 import { decideSentenceVerdict, type PartRole, type PartStanding } from "../../domain/verdict.js";
 import {
   FALLBACK_PART_REASON,
@@ -79,22 +80,6 @@ export type InvestigationBuildInput = {
    */
   preClaimWork?: "splitting" | "checking";
 };
-
-type InvestigationBuildOptions = {
-  /**
-   * 生产传 mvp `claimAtomKey`，保证与 merge/claimItems 同键；
-   * 缺省用内置同规则规范化（全角空格 → 空格，超长 180 截断）。
-   * 键只用于 identity join，绝不进入 claim.text——展示文本用 kept atom 原文。
-   */
-  claimAtomKeyFn?: (value: string) => string;
-};
-
-const DEFAULT_KEY_MAX = 180;
-
-function defaultClaimAtomKey(value: string): string {
-  const norm = value.replace(/\u3000/g, " ");
-  return norm.length > DEFAULT_KEY_MAX ? `${norm.slice(0, DEFAULT_KEY_MAX)}…` : norm;
-}
 
 const HTTP_RE = /^https?:\/\//i;
 
@@ -364,14 +349,14 @@ function alignFalseEvidenceBuckets<T>(input: {
   return { supporting: input.supporting, contradicting: input.contradicting };
 }
 
-function readVerdicts(raw: unknown, keyFn: (s: string) => string): Map<string, VerdictLike> {
+function readVerdicts(raw: unknown): Map<string, VerdictLike> {
   const out = new Map<string, VerdictLike>();
   for (const item of asArray(raw)) {
     const rec = asRecord(item);
     if (!rec) continue;
     const atom = asString(rec.claimAtom).trim();
     if (!atom) continue;
-    const key = keyFn(atom);
+    const key = claimAtomKey(atom);
     if (!key || out.has(key)) continue;
     const supportingRaw = asArray(rec.supportingSources)
       .map(asRecord)
@@ -411,14 +396,14 @@ function readVerdicts(raw: unknown, keyFn: (s: string) => string): Map<string, V
 type DecidedPart = { key: string; text: string; role: PartRole; standing: PartStanding; label?: LabelKey; reason?: string; issuerMisattributed?: boolean };
 
 /** 整句规则表（sentenceVerdict.applySentenceVerdict）写进报告的决定：各截标签与整句标签。 */
-function readVerdictDecision(report: Record<string, unknown> | null, keyFn: (s: string) => string) {
+function readVerdictDecision(report: Record<string, unknown> | null) {
   const decision = asRecord(report?._verdictDecision);
   if (!decision) return null;
   const parts: DecidedPart[] = asArray(decision.parts)
     .map(asRecord)
     .filter((p): p is Record<string, unknown> => p !== null && asString(p.text).trim() !== "")
     .map((p) => ({
-      key: keyFn(asString(p.text).trim()),
+      key: claimAtomKey(asString(p.text).trim()),
       text: asString(p.text).trim(),
       role: (["main", "premise", "background"].includes(asString(p.role)) ? asString(p.role) : "premise") as PartRole,
       standing: (["supported", "refuted", "partial", "unresolved", "conflicting"].includes(asString(p.standing))
@@ -454,8 +439,7 @@ function readRelationAudits(
 
 function readAtomTypes(
   claimAtomTypes: unknown,
-  nonVerifiableAtoms: unknown,
-  keyFn: (s: string) => string
+  nonVerifiableAtoms: unknown
 ): Map<string, { verifiable: boolean; type: string; span?: string }> {
   const map = new Map<string, { verifiable: boolean; type: string; span?: string }>();
   for (const item of asArray(claimAtomTypes)) {
@@ -464,7 +448,7 @@ function readAtomTypes(
     const text = asString(rec.text).trim();
     if (!text) continue;
     const span = asString(rec.span).trim();
-    map.set(keyFn(text), {
+    map.set(claimAtomKey(text), {
       verifiable: rec.verifiable !== false,
       type: clip(asString(rec.type), 40),
       ...(span ? { span } : {}),
@@ -475,7 +459,7 @@ function readAtomTypes(
     if (!rec) continue;
     const text = asString(rec.text).trim();
     if (!text) continue;
-    const key = keyFn(text);
+    const key = claimAtomKey(text);
     if (!map.has(key)) {
       map.set(key, { verifiable: false, type: clip(asString(rec.type), 40) });
     }
@@ -484,8 +468,7 @@ function readAtomTypes(
 }
 
 function readBundle(
-  raw: unknown,
-  keyFn: (s: string) => string
+  raw: unknown
 ): {
   searchedKeys: Set<string>;
   /** byAtomKey 里出现过的键（含空列表）：空列表 = 检索过但零命中，仍要拦幻觉 URL。 */
@@ -498,7 +481,7 @@ function readBundle(
   const perAtom = new Map<string, Array<BundleSource>>();
   if (!rec) return { searchedKeys, allowKeys, perAtom };
   for (const atom of asArray(rec.atomsSearched)) {
-    if (typeof atom === "string" && atom.trim()) searchedKeys.add(keyFn(atom));
+    if (typeof atom === "string" && atom.trim()) searchedKeys.add(claimAtomKey(atom));
   }
   const byAtomKey = asRecord(rec.byAtomKey);
   if (byAtomKey) {
@@ -577,9 +560,7 @@ function progressFor(
  */
 export function buildInvestigationSnapshot(
   input: InvestigationBuildInput,
-  options: InvestigationBuildOptions = {}
 ): InvestigationSnapshotV1 {
-  const keyFn = options.claimAtomKeyFn ?? defaultClaimAtomKey;
   const phase = input.phase;
   const originalClaim = input.originalClaim;
 
@@ -591,19 +572,19 @@ export function buildInvestigationSnapshot(
   for (const item of asArray(input.claimAtoms)) {
     if (typeof item !== "string") continue;
     const text = item.trim();
-    const key = keyFn(text);
+    const key = claimAtomKey(text);
     if (!key || seenAtom.has(key)) continue;
     seenAtom.add(key);
     keptAtoms.push({ key, text });
   }
 
-  const types = readAtomTypes(input.claimAtomTypes, input.nonVerifiableAtoms, keyFn);
-  const verdicts = readVerdicts(input.subclaimVerdicts, keyFn);
-  const bundle = readBundle(input.atomSearchBundle, keyFn);
+  const types = readAtomTypes(input.claimAtomTypes, input.nonVerifiableAtoms);
+  const verdicts = readVerdicts(input.subclaimVerdicts);
+  const bundle = readBundle(input.atomSearchBundle);
   const relationAudits = readRelationAudits(input.sourceRelationAudits);
   const report = asRecord(input.report);
   const deadUrls = new Set(asArray(input.reachability?.deadUrls).map((u) => asString(u)));
-  const verdictDecision = readVerdictDecision(report, keyFn);
+  const verdictDecision = readVerdictDecision(report);
   const decidedPartByKey = new Map((verdictDecision?.parts ?? []).map((p) => [p.key, p]));
   // 改版前的报告（模型没给标签、规则表没写标签）不写标签和理由：显示时由 judgment 推出标签，不显示理由。
   const labeled = Boolean(verdictDecision?.label) || [...verdicts.values()].some((v) => v.label);
@@ -849,7 +830,7 @@ export function buildInvestigationSnapshot(
     const evidence: InvestigationEvidenceLink[] = [];
     const evidenceMeta = (source: BundleSource, role: InvestigationEvidenceLink["role"]) => {
       const url = normalizeInvestigationSourceUrl(source.url);
-      const audit = findClaimSourceRelationAudit(relationAudits, a.text, url, keyFn);
+      const audit = findClaimSourceRelationAudit(relationAudits, a.text, url);
       const auditMatchesRole =
         audit &&
         ((role === "support" && audit.relation === "support") ||
@@ -1148,8 +1129,8 @@ export function buildInvestigationSnapshot(
     ...(checkedAt ? { checkedAt } : {}),
     ...(preClaimWork ? { preClaimWork } : {}),
     ...(input.scopePlan ? { scope: {
-      includedClaimIds: claims.filter((c) => c.evidence.length > 0 || input.scopePlan!.includedAtoms.some((a) => keyFn(a) === keyFn(c.text))).map((c) => c.id),
-      deferredClaimIds: claims.filter((c) => c.evidence.length === 0 && !input.scopePlan!.includedAtoms.some((a) => keyFn(a) === keyFn(c.text)) && input.scopePlan!.deferredAtoms.some((a) => keyFn(a) === keyFn(c.text))).map((c) => c.id),
+      includedClaimIds: claims.filter((c) => c.evidence.length > 0 || input.scopePlan!.includedAtoms.some((a) => claimAtomKey(a) === claimAtomKey(c.text))).map((c) => c.id),
+      deferredClaimIds: claims.filter((c) => c.evidence.length === 0 && !input.scopePlan!.includedAtoms.some((a) => claimAtomKey(a) === claimAtomKey(c.text)) && input.scopePlan!.deferredAtoms.some((a) => claimAtomKey(a) === claimAtomKey(c.text))).map((c) => c.id),
     } } : {}),
   });
 }
@@ -1161,7 +1142,6 @@ export function buildInvestigationSnapshot(
 export function rebuildInvestigationFromReport(input: {
   report: unknown;
   claim: string;
-  options?: InvestigationBuildOptions;
 }): InvestigationSnapshotV1 {
   const report = asRecord(input.report) ?? {};
   const interrupted = report._source === "error-boundary";
@@ -1208,6 +1188,5 @@ export function rebuildInvestigationFromReport(input: {
       subclaimVerdicts: report.subclaimVerdicts,
       report,
     },
-    input.options
   );
 }

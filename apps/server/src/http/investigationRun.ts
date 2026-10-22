@@ -6,7 +6,7 @@
  *
  * 断开连接不是取消：run 属于它的 runId，用户离开页面后照常跑完，结论经刷新接回取回。
  */
-import { runCasePipeline, type PipelineStep } from "../lib/casePipeline/runCasePipeline.js";
+import { runCasePipeline } from "../lib/casePipeline/runCasePipeline.js";
 import { commitFreeCheck, releaseFreeCheck, type CheckTicket } from "../lib/checkQuota.js";
 import { applyContextCrossCheckToReport } from "../lib/contextCrossCheck.js";
 import { withExecutionBudget, type ExecutionBudget } from "../lib/executionBudget.js";
@@ -35,7 +35,7 @@ import {
   type normalizeClientMemoryRecall,
 } from "../lib/visionIntake.js";
 import { makePipelineHooks, makeRunAgentCallbacks } from "./pipelineEvents.js";
-import { toFriendlyError, toPublicStreamEvent } from "./publicStream.js";
+import { toPublicStreamEvent } from "./publicStream.js";
 import { classifyFailure, QUOTA_SETTLEMENT, RUN_FINAL_STATUS, TIMEOUT_LABEL, type RunOutcome } from "./runOutcome.js";
 import { openSse, sseFrame, SSE_KEEPALIVE_FRAME, SSE_KEEPALIVE_MS } from "./sseChannel.js";
 
@@ -80,14 +80,7 @@ function makeSearchOneAtom(
 }
 
 function pipelineFinalize(
-  ctx: {
-    finalReport: Record<string, unknown>;
-    claim: string;
-    rumorStep: PipelineStep;
-    factStep: PipelineStep;
-    sourceStep: PipelineStep;
-    search360Result: unknown;
-  },
+  ctx: { finalReport: Record<string, unknown>; claim: string },
   visualExtraction?: Record<string, unknown>
 ) {
   applyFactDeskPostProcessToReport(ctx.finalReport, ctx.claim);
@@ -113,11 +106,6 @@ class ImageUnreadableError extends Error {
     super("image-unreadable");
     this.name = "ImageUnreadableError";
   }
-}
-
-/** Node 22+: native composition keeps the first reason without accumulating listeners. */
-function combineAbortSignals(...sources: AbortSignal[]): AbortSignal {
-  return AbortSignal.any(sources);
 }
 
 export async function runInvestigation(deps: InvestigationRunDeps, request: InvestigationRequest, res: any): Promise<void> {
@@ -167,10 +155,7 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
     if (!res.writableEnded) detachedFromClient = true;
   });
 
-  const pipelineSignal = combineAbortSignals(
-    disconnect.signal,
-    ...(runSignal ? [runSignal] : [])
-  );
+  const pipelineSignal = AbortSignal.any([disconnect.signal, ...(runSignal ? [runSignal] : [])]);
 
   const writeFrame = (data: object) => {
     // 只看 res 自己有没有结束：`disconnect.abort()` 是「停管线」的信号，
@@ -216,12 +201,6 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
 
   // Investigation Snapshot 最新帧：中断/超时时补发 interrupted 帧（保留已真实获得的数据）。
   let lastInvestigation: InvestigationSnapshotV1 | undefined;
-  // 追问观测用：本轮实际发起的命题检索次数。
-  // 数值来自钩子（真发生过的动作），不来自报告文本。
-  const searchesCounter = { current: 0 };
-  // 公共活动账本（IMPLEMENTATION_PLAN §5.1）：只由已校验快照差分与结构化 hook 生成。
-  // runId 目前只覆盖这一条流；跨刷新的重放要等 RunService（PR-D）。
-  // 公共活动（IMPLEMENTATION_PLAN §5.1）：只由已校验快照差分与结构化 hook 生成。
   /**
    * 收尾：落终态并把结果广播出去。客户端就靠这帧把「正在停止」翻成「已停止」，
    * 不能让它自己猜——猜出来的状态等于假状态。
@@ -336,9 +315,8 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
       runAgent,
       searchOne: makeSearchOneAtom((event) => sendEvent(event), env, { signal, deadlineMs: workDeadlineMs }),
       followUpReuse: clientFollowUpReuse ?? undefined,
-      hooks: makePipelineHooks({ sendEvent, emitInvestigation, emitter, searchesCounter }),
-      finalizeReport: (fctx: Parameters<typeof pipelineFinalize>[0]) =>
-        pipelineFinalize(fctx, visualExtraction),
+      hooks: makePipelineHooks({ sendEvent, emitInvestigation, emitter }),
+      finalizeReport: (fctx) => pipelineFinalize(fctx, visualExtraction),
     }), { signal: pipelineSignal, timeoutMs: PIPELINE_TOTAL_TIMEOUT_MS + PIPELINE_LATE_GRACE_MS, label: TIMEOUT_LABEL });
     // withTimeout 是 race：落败方的 rejection 必须被吸收，
     // 否则断连/超时触发的 abort 会变成 unhandledRejection 直接崩进程
@@ -433,12 +411,11 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
       res.end();
       return;
     }
-    const { message } = toFriendlyError(error, "这次核查没能完成，请稍后重试");
     // 中断帧先行：前端拿到 phase=interrupted 的真实部分数据，再收 error 提示。
     emitInvestigation(interruptedInvestigationSnapshot(lastInvestigation, displayClaim));
     sendEvent({
       type: "error",
-      message,
+      message: "这次核查没能完成，请稍后重试",
       timestamp: Date.now(),
     });
     finishRun(RUN_FINAL_STATUS[outcome]);

@@ -7,7 +7,6 @@
  * 快照顺序本身是产品行为：首份 judging 快照必须已经过来源审计（behavior-spec 4.8）。
  * 每个里程碑只带这一刻变了的字段，与之前的里程碑合并后整份重建；构建失败不阻断管线。
  */
-import { claimAtomKey } from "../claimAtom/text.js";
 import {
   buildInvestigationSnapshot,
   type InvestigationBuildInput,
@@ -54,7 +53,7 @@ export function createSnapshotTimeline(args: {
     if (!hooks?.onInvestigationSnapshot) return null;
     try {
       base = { ...(base ?? {}), ...patch, ...(scopePlan ? { scopePlan } : {}), originalClaim: patch.originalClaim ?? claim } as InvestigationBuildInput;
-      let snapshot = buildInvestigationSnapshot(base, { claimAtomKeyFn: claimAtomKey });
+      let snapshot = buildInvestigationSnapshot(base);
       // 终态先定后发：核查失败的 run 直接广播中断帧，不先发 complete 再换帧。
       if (opts?.interrupted) snapshot = interruptedInvestigationSnapshot(snapshot, opts.claim ?? claim);
       hooks.onInvestigationSnapshot(snapshot);

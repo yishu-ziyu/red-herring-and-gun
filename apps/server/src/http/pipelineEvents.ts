@@ -6,7 +6,6 @@ import type { CasePipelineHooks } from "../lib/casePipeline/runCasePipeline.js";
 import type { InvestigationSnapshotV1 } from "../lib/investigation/index.js";
 import type { createInvestigationEmitter } from "../lib/investigationEmitter.js";
 import { getSearchToolName } from "../lib/searchProviders.js";
-import { toFriendlyError } from "./publicStream.js";
 
 /**
  * Agent 事件回调工厂：把 agent_start / agent_thought / agent_complete / agent_error 四帧
@@ -48,14 +47,14 @@ export function makeRunAgentCallbacks(sendEvent: (data: object) => void) {
         timestamp: Date.now(),
       });
     },
-    onError: (agentId: string, agentConfig: { name: string; icon?: string }, error: unknown) => {
-      const { message } = toFriendlyError(error, "核查服务暂时不可用，请稍后重试");
+    // 公开流只发友好文案，不带原始错误。
+    onError: (agentId: string, agentConfig: { name: string; icon?: string }) => {
       sendEvent({
         type: "agent_error",
         agent: agentId,
         agentName: agentConfig.name,
         agentIcon: agentConfig.icon,
-        error: message,
+        error: "核查服务暂时不可用，请稍后重试",
         timestamp: Date.now(),
       });
     },
@@ -71,16 +70,13 @@ export function makePipelineHooks(ctx: {
   sendEvent: (data: object) => void;
   emitInvestigation: (snapshot: InvestigationSnapshotV1) => void;
   emitter: ReturnType<typeof createInvestigationEmitter>;
-  searchesCounter: { current: number };
 }): CasePipelineHooks {
-  const { sendEvent, emitInvestigation, emitter, searchesCounter } = ctx;
+  const { sendEvent, emitInvestigation, emitter } = ctx;
   return {
-    searchMode: "sequential",
     onInvestigationSnapshot: (snapshot) => {
       emitInvestigation(snapshot);
     },
     onAtomSearchStart: (atom) => {
-      searchesCounter.current += 1;
       sendEvent({ type: "tool_start", toolName: "Atom Search", query: atom, timestamp: Date.now() });
       emitter.emitSearchStarted(atom);
     },

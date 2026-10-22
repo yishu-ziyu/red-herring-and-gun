@@ -8,9 +8,8 @@
 import { MAX_CLAIM_ATOMS, claimAtomKey, compactStrings } from "./claimAtom/text.js";
 import { alignFalseEvidenceBuckets } from "./claimAtom/merge.js";
 import type { NonVerifiableAtom, SubclaimVerdict } from "./claimAtom/types.js";
-import { canonicalizeUrl, filterAtomSources, type FilterMeta, type FilterableSource } from "./retrievalFilter.js";
+import { filterAtomSources, type FilterMeta, type FilterableSource } from "./retrievalFilter.js";
 import { isOffTopicSource } from "./atomSearchQuery.js";
-import { normalizeInvestigationSourceUrl } from "./investigation/sourceIdentity.js";
 import {
   bindDualBucketCitations,
   bindRelatedSourcesOnly,
@@ -27,8 +26,6 @@ export type SearchOneAtom = (atom: string) => Promise<unknown>;
 type RetrieveForAtomsHooks = {
   onAtomStart?: (atom: string) => void;
   onAtomResult?: (atom: string, result: unknown) => void;
-  /** parallel (default) or sequential (SSE-friendly) */
-  mode?: "parallel" | "sequential";
 };
 
 export type AtomSearchSource = {
@@ -57,7 +54,7 @@ export type AtomSearchSource = {
 
 /**
  * 复用注入材料：同一案上一轮的已核日期 + 当时绑定的真实来源。
- * 类型名沿用证据库时期的叫法；证据库已删除（2026-10-09），现在只有上一轮复用会产生它。
+ * 类型名沿用旧叫法；现在只有同一案上一轮复用会产生它。
  */
 export type KnowledgeInjection = {
   /** YYYY-MM-DD（上一轮的核查日期）；进快照 originDate 与活动行。 */
@@ -113,58 +110,7 @@ export type AtomSearchBundle = {
   forAgent: Array<{ claimAtom: string; sources: AtomSearchSource[] }>;
   /** 复用上一轮的原子：上次判词与证据，供判定拍当可复核初稿。 */
   knowledgeDrafts?: KnowledgeDraft[];
-  /** 筛选可观测性：过滤前→后条数 */
-  filterMeta?: {
-    perAtom: Record<string, FilterMeta>;
-    totals: FilterMeta;
-  };
-  /**
-   * 只供评测度量（#144）：规范化 URL → 找到它的搜索引擎。
-   * 不进模型输入、快照和界面；复用上一轮注入的来源没有引擎。
-   */
-  enginesByUrl?: Record<string, string[]>;
-  /** 只供评测度量（#144）：claimAtomKey → 各引擎返回 / 筛后留下的来源条数；Total 是来源条数，一条来源被几个引擎找到也只算一次。 */
-  enginesPerAtom?: Record<string, AtomEngineCounts>;
 };
-
-type AtomEngineCounts = {
-  returned: Record<string, number>;
-  kept: Record<string, number>;
-  returnedTotal: number;
-  keptTotal: number;
-};
-
-/**
- * 检索结果里每条来源的引擎归属。键用筛选同款 canonicalizeUrl：留下的来源 URL 已被它改写，
- * 快照里的 URL 也是改写后的，用原始 URL 当键会对不上。与 asSourceList 同样只看前 24 条。
- */
-function originsByUrl(result: unknown): Map<string, string[]> {
-  const out = new Map<string, string[]>();
-  const sources = (result as { sources?: unknown })?.sources;
-  if (!Array.isArray(sources)) return out;
-  for (let i = 0; i < sources.length && i < 24; i += 1) {
-    const rec = sources[i] as Record<string, unknown> | null;
-    if (!rec || typeof rec !== "object") continue;
-    const url = String(rec.url || rec.link || "").trim();
-    if (!url) continue;
-    const key = normalizeInvestigationSourceUrl(canonicalizeUrl(url) ?? url);
-    const list = out.get(key) ?? [];
-    const origins = Array.isArray(rec.providerOrigins) ? rec.providerOrigins : [];
-    for (const o of origins) if (typeof o === "string" && !list.includes(o)) list.push(o);
-    out.set(key, list);
-  }
-  return out;
-}
-
-function countEngines(urls: string[], origins: Map<string, string[]>): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const url of urls) {
-    for (const engine of origins.get(normalizeInvestigationSourceUrl(canonicalizeUrl(url) ?? url)) ?? []) {
-      counts[engine] = (counts[engine] ?? 0) + 1;
-    }
-  }
-  return counts;
-}
 
 function asSourceList(result: unknown): FilterableSource[] {
   const sources = (result as { sources?: unknown })?.sources;
@@ -317,12 +263,10 @@ export function applyUnsearchedAtomVerdicts(
 }
 
 /**
- * 把「每原子一轮」的检索结果打成 bundle。
- * claimAtomKeyFn：与 merge/claimItems 同一套键（由调用方注入 claimAtomKey）。
+ * 把「每原子一轮」的检索结果打成 bundle。键与 merge/claimItems 同为 claimAtomKey。
  */
 function buildAtomSearchBundle(
   items: AtomSearchItem[],
-  claimAtomKeyFn: (s: string) => string
 ): AtomSearchBundle {
   const byAtomKey: Record<string, AtomSearchSource[]> = {};
   const forAgent: AtomSearchBundle["forAgent"] = [];
@@ -331,10 +275,7 @@ function buildAtomSearchBundle(
   const answers: string[] = [];
   const models: string[] = [];
   const atomsSearched: string[] = [];
-  const perAtomMeta: Record<string, FilterMeta> = {};
   const totals: FilterMeta = { before: 0, afterFilter: 0, afterDedupe: 0, afterTopK: 0 };
-  const enginesByUrl: Record<string, string[]> = {};
-  const enginesPerAtom: Record<string, AtomEngineCounts> = {};
   // 本轮材料实际取得时间：bundle 组装时刻，即这批检索结果到手的时间。
   const retrievedAt = new Date().toISOString();
 
@@ -342,22 +283,9 @@ function buildAtomSearchBundle(
     if (!item || typeof item.atom !== "string") continue;
     const atom = item.atom;
     atomsSearched.push(atom);
-    const key = claimAtomKeyFn(atom);
-    const listed = asSourceList(item.result);
-    const rawSources = listed.filter((s) => !isOffTopicSource(atom, s));
+    const key = claimAtomKey(atom);
+    const rawSources = asSourceList(item.result).filter((s) => !isOffTopicSource(atom, s));
     const { sources: filtered, meta } = filterAtomSources(rawSources);
-    perAtomMeta[key] = meta;
-    const origins = originsByUrl(item.result);
-    for (const [url, engines] of origins) {
-      const list = (enginesByUrl[url] ??= []);
-      for (const e of engines) if (!list.includes(e)) list.push(e);
-    }
-    enginesPerAtom[key] = {
-      returned: countEngines(listed.map((s) => s.url), origins),
-      kept: countEngines(filtered.map((s) => s.url), origins),
-      returnedTotal: listed.length,
-      keptTotal: filtered.length,
-    };
     totals.before += meta.before;
     totals.afterFilter += meta.afterFilter;
     totals.afterDedupe += meta.afterDedupe;
@@ -404,9 +332,6 @@ function buildAtomSearchBundle(
     byAtomKey,
     forAgent,
     knowledgeDrafts: [],
-    filterMeta: { perAtom: perAtomMeta, totals },
-    enginesByUrl,
-    enginesPerAtom,
     aggregate: {
       answer: answers.join("\n\n").slice(0, 1800),
       sources: aggregateSources.slice(0, 24),
@@ -445,10 +370,9 @@ type BindableVerdict = {
 export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
   verdicts: T[],
   byAtomKey: Record<string, AtomSearchSource[]>,
-  claimAtomKeyFn: (s: string) => string
 ): T[] {
   return verdicts.map((v) => {
-    const key = claimAtomKeyFn(String(v.claimAtom ?? ""));
+    const key = claimAtomKey(String(v.claimAtom ?? ""));
     const retrieved = byAtomKey[key] ?? [];
     const known = new Set(retrieved.map((s) => s.url));
 
@@ -542,17 +466,15 @@ function usableKnowledgeEvidence(injection: KnowledgeInjection): KnowledgeInject
  * - 同时写进 `aggregate.sources`：`mergeSubclaimVerdicts` 用聚合来源当 URL 白名单，
  *   少写一处模型引用就会被当幻觉剥掉，注入等于白做。
  * - 注入的原子追加进 `atomsSearched`：它是「这次该原子有材料」的既有信号（见类型注释）。
- * - 不改 traceText / filterMeta：那两项统计的是本次联网检索做了多少轮、滤掉多少条，
+ * - 不改 traceText：它统计的是本次联网检索做了多少轮、滤掉多少条，
  *   注入没走那条漏斗，硬算进去反而让数字变假。
  */
 function injectKnowledgeEvidence(
   bundle: AtomSearchBundle,
   atom: string,
   injection: KnowledgeInjection,
-  claimAtomKeyFn: (s: string) => string,
-  provenance: "prior-round" = "prior-round"
 ): number {
-  const key = claimAtomKeyFn(atom);
+  const key = claimAtomKey(atom);
   const existing = bundle.byAtomKey[key] ?? [];
   const seen = new Set(existing.map((s) => s.url));
   const aggregateSeen = new Set(
@@ -567,7 +489,7 @@ function injectKnowledgeEvidence(
       url,
       title: String(item?.title ?? "").slice(0, 200),
       snippet: String(item?.snippet ?? "").slice(0, 900),
-      provenance,
+      provenance: "prior-round",
       originDate: injection.originDate,
     });
   }
@@ -575,7 +497,7 @@ function injectKnowledgeEvidence(
 
   const merged = [...added, ...existing];
   bundle.byAtomKey[key] = merged;
-  const forAgentItem = bundle.forAgent.find((f) => claimAtomKeyFn(f.claimAtom) === key);
+  const forAgentItem = bundle.forAgent.find((f) => claimAtomKey(f.claimAtom) === key);
   if (forAgentItem) forAgentItem.sources = merged;
   else bundle.forAgent.push({ claimAtom: atom, sources: merged });
 
@@ -591,7 +513,7 @@ function injectKnowledgeEvidence(
     });
   }
 
-  if (!bundle.atomsSearched.some((entry) => claimAtomKeyFn(entry) === key)) {
+  if (!bundle.atomsSearched.some((entry) => claimAtomKey(entry) === key)) {
     bundle.atomsSearched.push(atom);
   }
   if (!bundle.knowledgeDrafts) bundle.knowledgeDrafts = [];
@@ -622,20 +544,15 @@ export async function retrieveForAtoms(options: {
   onPlan?: (plan: { includedAtoms: string[]; deferredAtoms: string[] }) => void;
   searchOne: SearchOneAtom;
   hooks?: RetrieveForAtomsHooks;
-  claimAtomKeyFn?: (s: string) => string;
-  /** 同一案上一轮证据（契约 docs/evals/2026-09-13-followup-fast-path.md）。 */
+  /** 同一案上一轮证据。 */
   priorRound?: {
     lookup: (atom: string) => KnowledgeInjection | null;
     onInjected?: (hit: KnowledgeHit) => void;
   };
 }): Promise<{
-  atomsToSearch: string[];
   atomSearchBundle: AtomSearchBundle;
   search360Result: AtomSearchBundle["aggregate"];
-  /** 复用同一案上一轮证据的原子。 */
-  priorRoundHits: KnowledgeHit[];
 }> {
-  const keyFn = options.claimAtomKeyFn ?? claimAtomKey;
   const listed = listAtomsForSearch(options.claimAtoms, options.claimAtomTypes);
 
   const collectInjections = (
@@ -661,56 +578,38 @@ export async function retrieveForAtoms(options: {
 
   // 上一轮命中的原子退出联网候选，名额自然让给新问题。
   const injections = collectInjections(listed.verifiable, options.priorRound);
-  const injectedKeys = new Set(injections.map(({ atom }) => keyFn(atom)));
+  const injectedKeys = new Set(injections.map(({ atom }) => claimAtomKey(atom)));
   const candidates =
     injectedKeys.size === 0
       ? listed.verifiable
-      : listed.verifiable.filter((atom) => !injectedKeys.has(keyFn(atom)));
+      : listed.verifiable.filter((atom) => !injectedKeys.has(claimAtomKey(atom)));
   const priorities = Array.isArray(options.priorityClaimAtoms)
     ? options.priorityClaimAtoms.filter((atom): atom is string => typeof atom === "string")
     : [];
   const atomsToSearch = selectAtomsToSearch(candidates, listed.typeByKey, priorities);
   const includedAtoms = [...injections.map(({ atom }) => atom), ...atomsToSearch];
-  const includedKeys = new Set(includedAtoms.map((atom) => keyFn(atom)));
+  const includedKeys = new Set(includedAtoms.map((atom) => claimAtomKey(atom)));
   options.onPlan?.({
     includedAtoms,
-    deferredAtoms: listed.verifiable.filter((atom) => !includedKeys.has(keyFn(atom))),
+    deferredAtoms: listed.verifiable.filter((atom) => !includedKeys.has(claimAtomKey(atom))),
   });
-  const mode = options.hooks?.mode ?? "parallel";
+  // 逐条顺序检索：每条的开始 / 结果按顺序上屏。
   const items: AtomSearchItem[] = [];
-
-  if (mode === "sequential") {
-    for (const atom of atomsToSearch) {
-      options.hooks?.onAtomStart?.(atom);
-      const result = await options.searchOne(atom);
-      options.hooks?.onAtomResult?.(atom, result);
-      items.push({ atom, result });
-    }
-  } else {
-    const settled = await Promise.all(
-      atomsToSearch.map(async (atom) => {
-        options.hooks?.onAtomStart?.(atom);
-        const result = await options.searchOne(atom);
-        options.hooks?.onAtomResult?.(atom, result);
-        return { atom, result };
-      })
-    );
-    items.push(...settled);
+  for (const atom of atomsToSearch) {
+    options.hooks?.onAtomStart?.(atom);
+    const result = await options.searchOne(atom);
+    options.hooks?.onAtomResult?.(atom, result);
+    items.push({ atom, result });
   }
 
-  const atomSearchBundle = buildAtomSearchBundle(items, keyFn);
-  const priorRoundHits: KnowledgeHit[] = [];
+  const atomSearchBundle = buildAtomSearchBundle(items);
   for (const { atom, injection } of injections) {
-    const sourceCount = injectKnowledgeEvidence(atomSearchBundle, atom, injection, keyFn, "prior-round");
+    const sourceCount = injectKnowledgeEvidence(atomSearchBundle, atom, injection);
     if (sourceCount === 0) continue;
-    const hit: KnowledgeHit = { atom, originDate: injection.originDate, sourceCount };
-    priorRoundHits.push(hit);
-    options.priorRound?.onInjected?.(hit);
+    options.priorRound?.onInjected?.({ atom, originDate: injection.originDate, sourceCount });
   }
   return {
-    atomsToSearch,
     atomSearchBundle,
     search360Result: atomSearchBundle.aggregate,
-    priorRoundHits,
   };
 }

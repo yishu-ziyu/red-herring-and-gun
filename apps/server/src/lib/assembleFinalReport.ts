@@ -108,7 +108,6 @@ export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFi
     merged = bindAtomEvidenceToVerdicts(
       merged as Array<SubclaimVerdict & { [key: string]: unknown }>,
       atomSearchBundle.byAtomKey,
-      claimAtomKey
     ) as SubclaimVerdict[];
   }
   merged = applyUnsearchedAtomVerdicts(merged, listed.verifiable, searched);
