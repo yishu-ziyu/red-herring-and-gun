@@ -51,24 +51,6 @@ function ProductApp() {
 
   const { resumedRef } = useRunPointer({ historyReady, mode, active, run, copy, setActive, setMode, setHistoryNotice });
 
-  // DEV 固定装置：/?fixture=investigating|judging|complete|conflict|interrupted|mixed|nospan|settling|source-audit|replay
-  // 用脚本化快照驱动真实组件树（截图与走查）。生产构建 dead-code eliminated。
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    const name = new URLSearchParams(window.location.search).get("fixture");
-    if (!name) return;
-    let cancelled = false;
-    void (async () => {
-      const { getDevFixture, FIXTURE_CLAIM } = await import("./goldenPath/devFixture");
-      if (cancelled) return;
-      beginRun({ text: FIXTURE_CLAIM, links: [], images: [], createdAt: Date.now() }, getDevFixture(name as never));
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // 完成：留存到本机。保存失败不挡结果，但必须可见。
   const { saveStatus, setSaveStatus, retrySave } = useResultPersistence({
     mode,
@@ -83,7 +65,6 @@ function ProductApp() {
   const beginRun = useCallback(
     (
       intake: CaseIntake,
-      fixture?: NonNullable<Parameters<ReturnType<typeof useInvestigationRun>["start"]>[1]>["fixture"],
       // 追问：带上一轮可见材料。首轮不传。
       followUp?: Pick<StartOptions, "priorRound">,
       previousThread?: InvestigationThread,
@@ -101,10 +82,7 @@ function ProductApp() {
       setActive({ localId, roundId: localId, roundKind, claim, intake, thread });
       setCases((prev) => [{ id: localId, claim: thread.originalClaim, threadId: thread.id, roundCount: thread.rounds.length + 1, status: "running" as const }, ...prev.filter((item) => item.id !== localId && item.threadId !== thread.id)]);
       setMode("investigation");
-      run.start(intake, {
-        fixture,
-        priorRound: followUp?.priorRound,
-      });
+      run.start(intake, { priorRound: followUp?.priorRound });
     },
     [run]
   );
@@ -156,7 +134,7 @@ function ProductApp() {
       return;
     }
     const snapshot = active.restored?.snapshot ?? run.state.snapshot;
-    beginRun(active.intake ?? createCaseIntake(active.claim, []), undefined, undefined,
+    beginRun(active.intake ?? createCaseIntake(active.claim, []), undefined,
       snapshot ? threadForRound(active, snapshot, currentRunId(active, run.state.runId)) : active.thread, "recheck");
   }, [active, beginRun, handleBackHome, run.state.snapshot, run.state.runId]);
 
@@ -251,7 +229,6 @@ function ProductApp() {
           images: [],
           createdAt: Date.now(),
         },
-        undefined,
         { priorRound: visiblePriorRoundFromSnapshot(snapshot) },
         snapshot ? threadForRound(active, snapshot, currentRunId(active, run.state.runId)) : active.thread,
         "follow-up",

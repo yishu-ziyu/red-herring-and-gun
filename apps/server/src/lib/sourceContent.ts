@@ -9,7 +9,7 @@ const ACCESS_WALL = /sina visitor system|登录后查看|登录可见|登录后�
 
 type ContentResult = Pick<AtomSearchSource, "excerptKind" | "fetchStatus" | "fetchNote" | "retrievedAt"> & { snippet?: string };
 
-async function readSource(url: string, signal: AbortSignal, maxChars = SOURCE_CONTENT_MAX_CHARS): Promise<ContentResult> {
+async function readSource(url: string, signal: AbortSignal): Promise<ContentResult> {
   if (!/^https?:\/\//i.test(url) || isBlockedUrl(url) || new URL(url).username || new URL(url).password) {
     return { fetchStatus: "restricted", fetchNote: "网址被安全规则拦截，未读取正文，保留检索摘要" };
   }
@@ -40,7 +40,7 @@ async function readSource(url: string, signal: AbortSignal, maxChars = SOURCE_CO
         const remaining = MAX_BYTES - bytes;
         bytes += value.byteLength;
         text += decoder.decode(value.subarray(0, remaining), { stream: true });
-        if (bytes >= MAX_BYTES || text.length > maxChars + 2_000) {
+        if (bytes >= MAX_BYTES || text.length > SOURCE_CONTENT_MAX_CHARS + 2_000) {
           truncated = true;
           await reader.cancel();
           break;
@@ -61,9 +61,9 @@ async function readSource(url: string, signal: AbortSignal, maxChars = SOURCE_CO
     if (content.length < 200) {
       return { fetchStatus: "failed", fetchNote: "正文为空或过短，保留检索摘要" };
     }
-    truncated ||= content.length > maxChars;
+    truncated ||= content.length > SOURCE_CONTENT_MAX_CHARS;
     return {
-      snippet: content.slice(0, maxChars),
+      snippet: content.slice(0, SOURCE_CONTENT_MAX_CHARS),
       excerptKind: "page-excerpt",
       fetchStatus: truncated ? "truncated" : "fetched",
       retrievedAt: new Date().toISOString(),
@@ -92,13 +92,8 @@ export async function enrichSearchSources(bundle: AtomSearchBundle, signal?: Abo
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
     await Promise.all([...urls].map(async (url) => {
-      // 真实端到端边界场景只降低指定网页的实际读取上限；正常运行保持原上限。
-      const boundaryLimit = process.env.NODE_ENV === "test" && url === process.env.E2E_SOURCE_LIMIT_URL
-        ? Number(process.env.E2E_SOURCE_LIMIT_CHARS) : SOURCE_CONTENT_MAX_CHARS;
-      const maxChars = Number.isInteger(boundaryLimit) && boundaryLimit >= 200
-        ? Math.min(SOURCE_CONTENT_MAX_CHARS, boundaryLimit) : SOURCE_CONTENT_MAX_CHARS;
       let result: ContentResult;
-      try { result = await readSource(url, controller.signal, maxChars); }
+      try { result = await readSource(url, controller.signal); }
       catch {
         signal?.throwIfAborted();
         result = { fetchStatus: "failed", fetchNote: "正文读取超时，保留检索摘要" };

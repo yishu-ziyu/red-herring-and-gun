@@ -180,8 +180,6 @@ export function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, cla
 }
 
 export type StartOptions = {
-  /** DEV 固定装置：不走网络，按脚本回放快照（仅 import.meta.env.DEV）。 */
-  fixture?: (emit: (event: OrchestrateStreamEvent) => void) => () => void;
   /**
    * 追问：带上一轮可见材料。
    * 不带时请求体与现状完全一致（首轮、重试、legacy 都不带）。
@@ -221,14 +219,6 @@ export function useInvestigationRun() {
           : newClientRequestId();
       lastSubmitRef.current = { key: submitKey, clientRequestId, at: Date.now() };
       setState({ ...INITIAL_STATE, connection: "connecting" });
-
-      if (options.fixture && import.meta.env.DEV) {
-        // DEV 固定装置：真实组件树 + 脚本化快照（截图与走查用，不进生产路径）。
-        const stop = options.fixture((event) => {
-          if (runIdRef.current === runId) applyEvent(event, claim);
-        });
-        return { cancel: () => { runIdRef.current += 1; stop(); } };
-      }
 
       void (async () => {
         let memoryRecall: Record<string, unknown> | undefined;
