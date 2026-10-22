@@ -414,6 +414,12 @@
   color: var(--gp-ink);
 }
 
+/* 标题按两半句换行，不从「靠谱」中间断开。 */
+.gp-headline-part,
+.gp-headline em {
+  display: inline-block;
+}
+
 .gp-headline em {
   font-style: normal;
   color: var(--gp-accent);
@@ -1042,6 +1048,18 @@ button.gp-save-state {
     letter-spacing: -1px;
   }
   .gp-sub {
+    font-size: 14px;
+  }
+}
+
+/* 手机上四个角色排成两行两列，说明文字一行放得下。 */
+@media (max-width: 560px) {
+  .gp-roles {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 8px;
+  }
+  .gp-role strong {
     font-size: 14px;
   }
 }

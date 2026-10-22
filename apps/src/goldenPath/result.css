@@ -96,8 +96,10 @@
   min-width: 0;
 }
 
+/* 不在字中间断行：「是观点，不分对错」只在逗号后换行。 */
 .gp-verdict-word {
   display: block;
+  word-break: keep-all;
   font-family: var(--gp-serif);
   font-size: 64px;
   font-weight: 600;
@@ -108,6 +110,8 @@
 .gp-tone--negative { color: var(--gp-tone-negative); }
 .gp-tone--mixed { color: var(--gp-tone-mixed); }
 .gp-tone--muted { color: var(--gp-tone-muted); }
+/* 没下结论的大字用正文墨色：灰色大字像没加载完或不能点。 */
+.gp-verdict-word.gp-tone--muted { color: var(--gp-ink); }
 
 .gp-result-headline {
   margin: 14px 0 0;
@@ -230,27 +234,82 @@
   color: var(--gp-ink-3);
 }
 
-.gp-ev-kind,
-.gp-ev-status {
-  display: block;
-  margin: 3px 0;
+/* 依据最后一行：读取状态小标签 + 「看原文上下文」。 */
+.gp-ev-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 6px;
   font-size: 12.5px;
-  line-height: 1.65;
-  color: var(--gp-ink-3);
 }
 
-.gp-ev-material {
-  margin-top: 5px;
-  font-size: 13px;
+.gp-ev-read {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--gp-hairline);
+  border-radius: 6px;
+  line-height: 1.8;
+  color: var(--gp-ink-2);
 }
-.gp-ev-material summary { cursor: pointer; color: var(--gp-ink-2); }
-.gp-ev-material blockquote {
-  margin: 8px 0;
+.gp-ev-read::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  flex: none;
+}
+.gp-ev-read.is-read::before { background: currentColor; }
+.gp-ev-read.is-partial::before { background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
+
+.gp-ev-foot .gp-ev-material[open] { flex-basis: 100%; }
+
+.gp-ev-context {
+  margin: 8px 0 2px;
   padding-left: 12px;
   border-left: 2px solid var(--gp-hairline);
+  font-size: 13.5px;
+  color: var(--gp-ink-2);
+}
+.gp-ev-context blockquote,
+.gp-ev-context p {
+  margin: 0 0 6px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.gp-ev-context small {
+  display: block;
+  font-size: 12.5px;
+  color: var(--gp-ink-3);
+}
+
+/* 展开/收起：文字加细箭头，打开时箭头转向下。 */
+.gp-fold > summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  color: var(--gp-ink-2);
+  border-radius: 4px;
+}
+.gp-fold > summary::-webkit-details-marker { display: none; }
+.gp-fold > summary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: 4px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 160ms ease;
+}
+.gp-fold[open] > summary::after { transform: rotate(45deg) translate(-2px, -2px); }
+.gp-fold > summary:hover { color: var(--gp-ink); }
+.gp-fold > summary:focus-visible { outline: none; box-shadow: var(--gp-focus-ring); }
 
 .gp-ev-src {
   display: flex;
@@ -289,10 +348,6 @@
   color: var(--gp-ink-2);
 }
 
-.gp-part-related summary {
-  cursor: pointer;
-  color: var(--gp-ink-3);
-}
 
 .gp-part-related ul {
   margin: 6px 0 0;
@@ -304,10 +359,23 @@
   color: inherit;
 }
 
+/* 「不能推出」紧跟理由，和理由一样是判断的一部分，所以用正文字号。 */
 .gp-part-boundary {
-  margin: 8px 0 0;
-  font-size: 13px;
+  margin: 12px 0 4px;
+  max-width: 46em;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--gp-hairline);
+  font-size: 14.5px;
+  line-height: 1.75;
   color: var(--gp-ink-2);
+  overflow-wrap: anywhere;
+}
+.gp-part-boundary-label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--gp-ink-3);
 }
 
 .gp-result-actions {
@@ -317,25 +385,36 @@
   min-width: 0;
 }
 
+/* 追问：按钮放在输入框里右侧，输入框随内容变高。 */
 .gp-result-ask {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: flex-end;
   margin-bottom: 12px;
+  padding: 6px 6px 6px 14px;
+  background: var(--gp-surface);
+  border: 1px solid var(--gp-hairline);
+  border-radius: 14px;
 }
+/* 焦点画在整个框上，框里的输入区不再单独画一圈。 */
+.gp-result-ask:focus-within { border-color: var(--gp-ink-3); box-shadow: 0 0 0 3px var(--gp-accent-subtle); }
+.gp-shell .gp-result-ask textarea:focus-visible { outline: none; box-shadow: none; }
 
 .gp-result-ask textarea {
   flex: 1;
   min-width: 0;
-  min-height: 46px;
+  min-height: 40px;
+  max-height: 200px;
   font: inherit;
+  font-size: 15px;
   color: var(--gp-ink);
-  background: var(--gp-surface);
-  border: 1px solid var(--gp-hairline);
-  border-radius: 12px;
-  padding: 10px 12px;
-  resize: vertical;
+  background: transparent;
+  border: 0;
+  outline: none;
+  padding: 8px 0;
+  resize: none;
 }
+.gp-result-ask textarea::placeholder { color: var(--gp-ink-3); }
 
 .gp-btn {
   font: inherit;
@@ -352,9 +431,13 @@
 }
 
 .gp-btn--primary {
-  background: var(--gp-ink);
-  color: var(--gp-canvas);
-  border-color: var(--gp-ink);
+  background: var(--gp-accent);
+  color: #ffffff;
+  border-color: var(--gp-accent);
+}
+.gp-btn--primary:hover:not(:disabled) {
+  background: var(--gp-accent-deep);
+  border-color: var(--gp-accent-deep);
 }
 
 .gp-btn:active:not(:disabled) { transform: scale(0.97); }
@@ -363,11 +446,16 @@
   cursor: default;
   opacity: 0.5;
 }
+/* 不能点时浅灰底深灰字：看得清，也看得出现在点不了。 */
+.gp-btn--primary:disabled {
+  opacity: 1;
+  background: #e9e6df;
+  border-color: #e9e6df;
+  color: var(--gp-ink-2);
+}
 
 .gp-btn:focus-visible,
-.gp-result-ask textarea:focus-visible,
-.gp-result a:focus-visible,
-.gp-part-related summary:focus-visible {
+.gp-result a:focus-visible {
   outline: none;
   box-shadow: var(--gp-focus-ring);
 }
@@ -414,10 +502,6 @@
   }
   .gp-part-text {
     font-size: 19px;
-  }
-  .gp-result-ask {
-    flex-direction: column;
-    align-items: stretch;
   }
 }
 
@@ -502,6 +586,21 @@
   to { transform: translateX(250%); }
 }
 
+/* 还没判完的一截下面：已经找到的网页标题，逐行淡入。 */
+.gp-progress-found {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--gp-ink-3);
+  overflow-wrap: anywhere;
+}
+.gp-progress-found li {
+  animation: gp-result-in 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+.gp-progress-found li::before { content: "· "; }
+
 /* 判完一截：标签和理由淡入，原句上那一截的下划线换成标签颜色。 */
 .gp-progress-label,
 .gp-progress-reason {
@@ -516,6 +615,7 @@
   .gp-progress-dot,
   .gp-progress-bar::after,
   .gp-progress-label,
-  .gp-progress-reason { animation: none; }
+  .gp-progress-reason,
+  .gp-progress-found li { animation: none; }
   .gp-span { transition: none; }
 }

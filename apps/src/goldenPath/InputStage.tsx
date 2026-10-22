@@ -220,7 +220,7 @@ export function InputStage({
   return (
     <div className="gp-input-stage" ref={rootRef}>
       <h1 className="gp-headline">
-        {copy.inputHeadlineA}
+        <span className="gp-headline-part">{copy.inputHeadlineA}</span>
         <em>{copy.inputHeadlineAccent}</em>
       </h1>
       <p className="gp-sub">{lang === "en" ? "Drop in uncertain information. Get a bounded answer, inspect its evidence, and continue the same investigation when needed." : "把拿不准的内容放进来。先查主要疑问，再看依据、补查缺口，结果留在同一份调查里。"}</p>

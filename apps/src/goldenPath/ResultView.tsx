@@ -3,15 +3,15 @@
  * 依据直接摊在每一截下面，不再走抽屉。历史回看、追问轮用同一个版式。
  * 版式是 2026-10-10 用户选的头版式（#150）：大字结论在上，各截不套卡片，证据像脚注。
  */
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSnapshotV1, InvestigationSource } from "../../shared/investigation";
 import {
   LABEL_TEXT,
   LABEL_TONE,
-  materialKindLabel,
+  materialPassageLabel,
+  materialReadTag,
   materialRetrievedLabel,
   quoteLinkUrl,
-  sourceReadStatus,
   type LabelKey,
 } from "../../shared/investigation";
 import { CHECKABILITY_HINT, claimLabel, domainOf, publishedDay, PUBLISHED_UNKNOWN, ROLE_LABEL } from "./snapshotUi";
@@ -202,6 +202,13 @@ function PartCard({ claim, index, sources }: { claim: InvestigationClaim; index:
         </p>
       ) : null}
 
+      {boundary ? (
+        <p className="gp-part-boundary" data-gp-part-boundary>
+          <span className="gp-part-boundary-label">不能推出</span>
+          {boundary}
+        </p>
+      ) : null}
+
       {decisive.length > 0 ? (
         <ul className="gp-part-evidence">
           {decisive.map((link, i) => (
@@ -213,7 +220,7 @@ function PartCard({ claim, index, sources }: { claim: InvestigationClaim; index:
       )}
 
       {related.length > 0 ? (
-        <details className="gp-part-related" data-gp-related>
+        <details className="gp-fold gp-part-related" data-gp-related>
           <summary>另有 {related.length} 条材料，没有用来判断</summary>
           <ul>
             {related.map((link) => {
@@ -224,12 +231,6 @@ function PartCard({ claim, index, sources }: { claim: InvestigationClaim; index:
             })}
           </ul>
         </details>
-      ) : null}
-
-      {boundary ? (
-        <p className="gp-part-boundary" data-gp-part-boundary>
-          不能推出：{boundary}
-        </p>
       ) : null}
     </article>
   );
@@ -242,9 +243,14 @@ export function EvidenceRow({ claimId, link, source }: { claimId: string; link: 
   const href = source.url ? quoteLinkUrl(source.url, link.excerptKind === "page-excerpt" ? quote : "") : "";
   const day = publishedDay(source);
   const passage = link.passage?.trim() ?? "";
+  const read = materialReadTag(link, source);
+  const passageNote = [
+    materialPassageLabel(link.excerptKind),
+    source.fetchNote ? `正文读取情况：${source.fetchNote}` : "",
+    materialRetrievedLabel(source.retrievedAt),
+  ].filter(Boolean).join(" · ");
   return (
     <li className="gp-ev" data-gp-evidence-row data-gp-role={link.role} data-gp-evidence-claim={claimId} data-gp-source-id={source.id} data-gp-material-kind={link.excerptKind ?? "unknown"}>
-      {quote ? <span className="gp-ev-kind">{materialKindLabel(link.excerptKind)}中的摘句</span> : null}
       {quote ? (
         <q className="gp-ev-quote" data-gp-evidence-quote>{quote}</q>
       ) : summary ? (
@@ -268,17 +274,16 @@ export function EvidenceRow({ claimId, link, source }: { claimId: string; link: 
         {source.reachable === false ? <span className="gp-ev-dead">打不开</span> : null}
         {link.provenance === "prior-round" ? <span className="gp-ev-prior" data-gp-prior-round-mark>依据来自刚才那一轮</span> : null}
       </span>
-      <p className="gp-ev-status" data-gp-material-status>
-        资料状态：{sourceReadStatus(source)}
-        {source.fetchNote ? `；${source.fetchNote}` : ""}
-        {link.excerptKind === "search-snippet" && source.excerptKind === "page-excerpt" ? "。这条依据核对的是搜索摘要，不是已取得的正文" : ""}
-      </p>
-      <details className="gp-ev-material" data-gp-material>
-        <summary>查看取得的材料</summary>
-        <p className="gp-ev-status">这条依据的材料：{materialKindLabel(link.excerptKind)}</p>
-        {passage ? <blockquote data-gp-material-text>{passage}</blockquote> : <p>这条依据没有保存可检查的上下文。</p>}
-        <p className="gp-ev-status">来源材料{materialRetrievedLabel(source.retrievedAt)}</p>
-      </details>
+      <div className="gp-ev-foot">
+        <span className={`gp-ev-read is-${read.level}`} data-gp-material-status>{read.text}</span>
+        <details className="gp-fold gp-ev-material" data-gp-material>
+          <summary>看原文上下文</summary>
+          <div className="gp-ev-context">
+            {passage ? <blockquote data-gp-material-text>{passage}</blockquote> : <p>这条依据没有保存可检查的上下文。</p>}
+            <small>{passageNote}</small>
+          </div>
+        </details>
+      </div>
     </li>
   );
 }
@@ -291,6 +296,14 @@ function ResultActions({
   brief,
 }: Pick<ResultViewProps, "readOnly" | "onFollowUp" | "onNewInvestigation" | "shareRunId" | "brief">) {
   const [question, setQuestion] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // 输入多行时框跟着变高，清空后缩回一行。
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [question]);
   const submit = () => {
     const text = question.trim();
     if (!text || !onFollowUp) return;
@@ -309,6 +322,7 @@ function ResultActions({
           }}
         >
           <textarea
+            ref={inputRef}
             value={question}
             rows={1}
             onChange={(event) => setQuestion(event.target.value)}

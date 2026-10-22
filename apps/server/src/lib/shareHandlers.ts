@@ -22,7 +22,7 @@ import { conclusionMissesFollowUp, followUpQuestionLead } from "../../../shared/
 import { LABEL_TEXT, LABEL_TONE, isLabelKey, judgmentToLabel, type LabelKey } from "../../../shared/domain/labels.js";
 import { normalizePublishedDate } from "../../../shared/investigation/sourceDate.js";
 import { quoteLinkUrl } from "../../../shared/investigation/quote.js";
-import { materialKindLabel, materialRetrievedLabel, sourceReadStatus } from "../../../shared/investigation/material.js";
+import { materialPassageLabel, materialReadTag, materialRetrievedLabel } from "../../../shared/investigation/material.js";
 
 const TOKEN_BYTES = 24;
 const SHARE_TTL_DAYS = 30;
@@ -287,30 +287,89 @@ export function createShareHandlers(deps: { getRun: (runId: string) => RunRecord
   return { createShareHandler, revokeShareHandler };
 }
 
+// 和产品结果页同一套样式（apps/src/goldenPath/result.css）：暖纸底、判断和摘句用衬线、标签颜色只做辅助。
+// 分享多半在手机微信里打开，先按手机排；不加载网络字体。
 const SHARE_PAGE_STYLE = `
-  :root { color-scheme: light; }
-  body { font-family: -apple-system, "PingFang SC", sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; line-height: 1.75; color: #252723; background: #f6f4ef; }
-  h1 { font-size: 1.35rem; line-height: 1.5; margin: 0 0 .5rem; }
-  h2 { font-size: 1rem; margin: 1.6rem 0 .5rem; }
-  .meta { color: #62665e; font-size: .85rem; margin: .25rem 0 1.5rem; }
-  .lead { font-size: 1.08rem; }
-  .label { display: inline-block; border: 1px solid currentColor; border-radius: 4px; padding: 0 .4rem; font-size: .8rem; font-weight: 500; margin-right: .4rem; }
-  .reason { display: block; color: #3d403a; font-size: .9rem; }
-  blockquote { margin: .3rem 0 .3rem .2rem; padding-left: .7rem; border-left: 3px solid #dedcd4; color: #3d403a; font-size: .92rem; }
-  article { background: #fff; border: 1px solid #dedcd4; border-radius: 12px; padding: 1.1rem 1.25rem; }
-  ul { padding-left: 1.1rem; }
-  li { margin: .3rem 0; }
-  a { color: #a13734; }
-  footer { margin-top: 2rem; font-size: .85rem; color: #62665e; }
+  :root {
+    color-scheme: light;
+    --canvas: #faf9f5; --ink: #1c1917; --ink-2: #57534e; --ink-3: #8c867f;
+    --hairline: #e7e5df; --hairline-subtle: #f0ede6; --inset: #f5f4ef;
+    --accent: #8f2d2a; --accent-deep: #732220;
+    --positive: #20604c; --positive-bg: rgba(32, 96, 76, 0.08);
+    --negative: #8f2d2a; --negative-bg: rgba(143, 45, 42, 0.08);
+    --mixed: #855f1a; --mixed-bg: rgba(133, 95, 26, 0.1);
+    --muted: #57534e; --muted-bg: rgba(87, 83, 78, 0.08);
+    --serif: "Noto Serif SC", "Songti SC", "STSong", serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; font-size: 15px; line-height: 1.7; -webkit-font-smoothing: antialiased; }
+  main { max-width: 720px; margin: 0 auto; padding: 0 16px 32px; overflow-wrap: anywhere; }
+  a { color: var(--ink-2); text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: currentColor; }
+  .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0 12px; margin-bottom: 20px; border-bottom: 1px solid var(--hairline-subtle); }
+  .brand { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--ink); text-decoration: none; }
+  .brand img { width: 26px; height: 26px; border-radius: 6px; }
+  .top small { font-size: 12px; color: var(--ink-3); }
+  .eyebrow { margin: 0 0 4px; font-size: 12.5px; letter-spacing: .04em; color: var(--ink-3); }
+  .claim { margin: 0 0 18px; font-family: var(--serif); font-size: 20px; font-weight: 400; line-height: 1.7; }
+  .verdict { display: block; word-break: keep-all; font-family: var(--serif); font-size: 44px; font-weight: 600; line-height: 1.15; letter-spacing: .06em; }
+  .headline { margin: 12px 0 0; font-family: var(--serif); font-size: 18px; line-height: 1.8; }
+  .tone-positive { color: var(--positive); } .tone-negative { color: var(--negative); } .tone-mixed { color: var(--mixed); } .tone-muted { color: var(--ink); }
+  .rationale { margin: 10px 0 0; font-size: 14.5px; line-height: 1.75; color: var(--ink-2); }
+  .meta { margin: 12px 0 0; font-size: 13px; color: var(--ink-3); }
+  .scope { margin: 6px 0 0; font-size: 13px; color: var(--ink-3); }
+  .boundary { margin: 12px 0 4px; padding: 2px 0 2px 12px; border-left: 2px solid var(--hairline); font-size: 14.5px; line-height: 1.75; color: var(--ink-2); }
+  .boundary b { display: block; font-size: 12.5px; font-weight: 600; letter-spacing: .04em; color: var(--ink-3); }
+  .part { padding: 20px 0 16px; border-top: 1px solid var(--hairline-subtle); }
+  .part:first-of-type { margin-top: 22px; }
+  .part-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+  .part-no { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-right: 10px; border-radius: 50%; background: var(--inset); color: var(--ink-2); font-size: 12px; font-weight: 600; vertical-align: 3px; }
+  .part-text { font-family: var(--serif); font-size: 19px; font-weight: 600; line-height: 1.5; }
+  .label { display: inline-block; font-size: 13px; font-weight: 600; line-height: 1.6; padding: 1px 10px; border-radius: 999px; white-space: nowrap; }
+  .label-positive { color: var(--positive); background: var(--positive-bg); } .label-negative { color: var(--negative); background: var(--negative-bg); }
+  .label-mixed { color: var(--mixed); background: var(--mixed-bg); } .label-muted { color: var(--muted); background: var(--muted-bg); }
+  .reason { margin: 6px 0 0; font-family: var(--serif); font-size: 16px; line-height: 1.85; color: var(--ink-2); }
+  .empty { margin: 10px 0 0; font-size: 14px; color: var(--ink-3); }
+  ul.evidence { list-style: none; margin: 12px 0 0; padding: 0; }
+  .ev { padding: 8px 0; }
+  .ev q { display: block; font-family: var(--serif); font-size: 15.5px; line-height: 1.8; quotes: "「" "」"; }
+  .ev-note { display: block; font-size: 14.5px; color: var(--ink-2); }
+  .ev-note i { font-style: normal; font-size: 12px; margin-right: 6px; padding: 0 6px; border: 1px solid var(--hairline); border-radius: 6px; color: var(--ink-3); }
+  .ev-finding { font-size: 14px; color: var(--ink-2); }
+  .ev-src { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 2px; font-size: 12.5px; color: var(--ink-3); }
+  .role { font-weight: 600; } .role-support { color: var(--positive); } .role-contradict { color: var(--negative); }
+  .ev-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 6px; font-size: 12.5px; }
+  .read { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 1px solid var(--hairline); border-radius: 6px; line-height: 1.8; color: var(--ink-2); }
+  .read::before { content: ""; width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid currentColor; flex: none; }
+  .read-read::before { background: currentColor; } .read-partial::before { background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
+  .ev-foot details[open] { flex-basis: 100%; }
+  details { margin-top: 8px; font-size: 13px; }
+  .ev-foot details { margin: 0; font-size: 12.5px; }
+  summary { list-style: none; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--ink-2); }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: ""; width: 6px; height: 6px; margin-left: 4px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 160ms ease; }
+  details[open] > summary::after { transform: rotate(45deg) translate(-2px, -2px); }
+  .context { margin: 8px 0 2px; padding-left: 12px; border-left: 2px solid var(--hairline); font-size: 13.5px; color: var(--ink-2); }
+  .context blockquote, .context p { margin: 0 0 6px; white-space: pre-wrap; }
+  .context small { display: block; font-size: 12.5px; color: var(--ink-3); }
+  details ul.evidence { margin-top: 4px; padding-left: 12px; border-left: 2px solid var(--hairline-subtle); }
+  .sources { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; color: var(--ink-2); }
+  .sources li { margin: 4px 0; }
+  .sources small { color: var(--ink-3); }
+  .all { padding-top: 14px; border-top: 1px solid var(--hairline-subtle); }
+  .cta { display: block; margin: 26px 0 12px; padding: 12px; border-radius: 12px; background: var(--accent); color: #fff; text-align: center; font-size: 15px; font-weight: 600; text-decoration: none; }
+  .cta:hover { background: var(--accent-deep); }
+  footer p { margin: 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); text-align: center; }
+  h1.notice { margin: 8px 0 8px; font-family: var(--serif); font-size: 22px; }
+  @media (min-width: 640px) {
+    main { padding: 0 24px 48px; }
+    .verdict { font-size: 56px; }
+    .headline { font-size: 20px; }
+    .part-text { font-size: 21px; }
+  }
+  @media (prefers-reduced-motion: reduce) { summary::after { transition: none; } }
 `;
 
-const LABEL_COLOR: Record<string, string> = { positive: "#15803d", mixed: "#92400e", negative: "#b91c1c", muted: "#62665e" };
-
-/** 标签小块：文字一直显示，颜色只做辅助。 */
-function labelChip(label: LabelKey | undefined, attr: string): string {
-  if (!label) return "";
-  return `<span class="label" ${attr}="${label}" style="color:${LABEL_COLOR[LABEL_TONE[label]]}">${escapeHtml(LABEL_TEXT[label])}</span>`;
-}
 const ROLE_LABEL: Record<string, string> = { support: "支持", contradict: "反驳", "context-only": "背景" };
 
 function escapeHtml(value: unknown): string {
@@ -322,14 +381,31 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
+/** 「2026 年 10 月 22 日 13:05」，按北京时间；读不出就不显示。 */
+function readableTime(value: string | number | undefined): string {
+  if (value === undefined || value === "") return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value])
+  );
+  return `${parts.year} 年 ${parts.month} 月 ${parts.day} 日 ${parts.hour}:${parts.minute}`;
+}
+
 function shell(title: string, body: string, indexable: boolean): string {
   return `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="${indexable ? "index,follow" : "noindex"}">
 <title>${escapeHtml(title)}</title>
+<link rel="icon" type="image/png" href="/logo.png?v=20260615">
 <style>${SHARE_PAGE_STYLE}</style>
-</head><body>${body}</body></html>`;
+</head><body><main>
+<header class="top"><a class="brand" href="/"><img src="/logo.png?v=20260615" alt="">红鲱鱼与枪</a><small>别人分享给你的调查</small></header>
+${body}
+</main></body></html>`;
 }
 
 /** 只用公开内容渲染分享页。 */
@@ -337,18 +413,18 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
   if (lookup.state === "revoked") {
     return shell(
       "分享链接已撤销 · 红鲱鱼与枪",
-      `<main data-share-revoked><h1>这个分享链接已被撤销</h1>
+      `<section data-share-revoked><h1 class="notice">这个分享链接已被撤销</h1>
 <p>创建者撤销了这个链接，这里不再显示调查内容。</p>
-<p><a href="/">回到红鲱鱼与枪</a></p></main>`,
+<a class="cta" href="/">去查你听到的说法</a></section>`,
       false
     );
   }
   if (lookup.state === "missing") {
     return shell(
       "分享链接不可用 · 红鲱鱼与枪",
-      `<main data-share-missing><h1>分享链接不可用</h1>
+      `<section data-share-missing><h1 class="notice">分享链接不可用</h1>
 <p>这个链接不存在，或已经过期。</p>
-<p><a href="/">回到红鲱鱼与枪</a></p></main>`,
+<a class="cta" href="/">去查你听到的说法</a></section>`,
       false
     );
   }
@@ -360,57 +436,71 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
     return `<span data-share-published="${day ?? ""}">${day ?? "发布日期未取到"}</span>`;
   };
   const sourceById = new Map(p.sources.map((source) => [source.id, source]));
+  const evidenceRow = (link: PublicShareProjection["claims"][number]["evidence"][number]): string => {
+    const source = sourceById.get(link.sourceId);
+    const quote = link.sentence ? `<q data-share-quote>${escapeHtml(link.sentence)}</q>` : "";
+    const note = !quote && link.note ? `<span class="ev-note" data-share-note><i>我们的概括</i>${escapeHtml(link.note)}</span>` : "";
+    const finding = link.finding ? `<div class="ev-finding">${escapeHtml(link.finding)}</div>` : "";
+    if (!quote && !note && !finding && !link.passage) return "";
+    const href = source ? quoteLinkUrl(source.url, link.excerptKind === "page-excerpt" ? link.sentence : "") : "";
+    const title = escapeHtml(source?.title || "原网页");
+    const src = `<span class="ev-src"><span class="role role-${escapeHtml(link.role)}">${ROLE_LABEL[link.role] ?? ""}</span>${
+      href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer nofollow">${title} ↗</a>` : `<span>${title}</span>`
+    }${source ? publishedTag(source.publishedAt) : ""}</span>`;
+    const read = materialReadTag(link, source ?? {});
+    const passageNote = [
+      materialPassageLabel(link.excerptKind),
+      source?.fetchNote ? `正文读取情况：${escapeHtml(source.fetchNote)}` : "",
+      materialRetrievedLabel(source?.retrievedAt),
+    ].filter(Boolean).join(" · ");
+    const material = `<details><summary>看原文上下文</summary><div class="context">${
+      link.passage ? `<blockquote>${escapeHtml(link.passage)}</blockquote>` : "<p>这条依据没有保存可检查的上下文。</p>"
+    }<small>${passageNote}</small></div></details>`;
+    return `<li class="ev" data-share-material-kind="${escapeHtml(link.excerptKind ?? "unknown")}" data-share-source-id="${escapeHtml(link.sourceId)}" data-share-role="${escapeHtml(link.role)}">${quote}${note}${finding}${src}<div class="ev-foot"><span class="read read-${read.level}" data-share-material-status>${read.text}</span>${material}</div></li>`;
+  };
   const claimItems = p.claims
-    .map((claim) => {
-      const evidence = claim.evidence
-        .map((link) => {
-          const source = sourceById.get(link.sourceId);
-          const label = `${ROLE_LABEL[link.role] ?? ""}${source ? ` · ${escapeHtml(source.title)} ${publishedTag(source.publishedAt)}` : ""}`;
-          const kind = materialKindLabel(link.excerptKind);
-          const quote = link.sentence ? `<small>${kind}中的摘句</small><blockquote data-share-quote>${escapeHtml(link.sentence)}</blockquote>` : "";
-          const note = !quote && link.note ? `<div data-share-note>我们的概括：${escapeHtml(link.note)}</div>` : "";
-          const finding = link.finding ? `<div>${escapeHtml(link.finding)}</div>` : "";
-          const href = source ? quoteLinkUrl(source.url, link.excerptKind === "page-excerpt" ? link.sentence : "") : "";
-          const open = href ? ` <a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer">打开原网页 ↗</a>` : "";
-          const status = `<p><small data-share-material-status>资料状态：${sourceReadStatus(source ?? {})}${source?.fetchNote ? `；${escapeHtml(source.fetchNote)}` : ""}${link.excerptKind === "search-snippet" && source?.excerptKind === "page-excerpt" ? "。这条依据核对的是搜索摘要，不是已取得的正文" : ""}</small></p>`;
-          const material = `<details><summary>查看取得的材料</summary><p>${kind}</p>${link.passage ? `<blockquote>${escapeHtml(link.passage)}</blockquote>` : "<p>这条依据没有保存可检查的上下文。</p>"}<small>来源材料${materialRetrievedLabel(source?.retrievedAt)}</small></details>`;
-          return quote || note || finding || link.passage ? `<li data-share-material-kind="${escapeHtml(link.excerptKind ?? "unknown")}" data-share-source-id="${escapeHtml(link.sourceId)}" data-share-role="${escapeHtml(link.role)}"><small>${label}${open}</small>${quote}${note}${finding}${status}${material}</li>` : "";
-        })
-        .filter(Boolean)
-        .join("");
+    .map((claim, index) => {
+      const decisive = claim.evidence.filter((link) => link.role === "support" || link.role === "contradict").map(evidenceRow).filter(Boolean);
+      const background = claim.evidence.filter((link) => link.role !== "support" && link.role !== "contradict").map(evidenceRow).filter(Boolean);
       const label = labelOf(claim.label, claim.judgment);
-      const reason = claim.label && claim.reason ? `<span class="reason" data-share-claim-reason>${escapeHtml(claim.reason)}</span>` : "";
-      return `<li data-share-claim>${labelChip(label, "data-share-claim-label")}${escapeHtml(claim.text)}${reason}${evidence ? `<ul>${evidence}</ul>` : ""}</li>`;
+      const chip = label
+        ? `<span class="label label-${LABEL_TONE[label]}" data-share-claim-label="${label}">${escapeHtml(LABEL_TEXT[label])}</span>`
+        : "";
+      const reason = claim.label && claim.reason ? `<p class="reason" data-share-claim-reason>${escapeHtml(claim.reason)}</p>` : "";
+      return `<article class="part" data-share-claim>
+  <div class="part-head"><span><span class="part-no" aria-hidden="true">${index + 1}</span><span class="part-text">${escapeHtml(claim.text)}</span></span>${chip}</div>
+  ${reason}
+  ${decisive.length ? `<ul class="evidence">${decisive.join("")}</ul>` : `<p class="empty">没有找到直接支持或反驳这一截的依据。</p>`}
+  ${background.length ? `<details><summary>另有 ${background.length} 条背景材料，没有用来判断</summary><ul class="evidence">${background.join("")}</ul></details>` : ""}
+</article>`;
     })
     .join("");
-  const body = `<main>
-  <h1>${escapeHtml(p.claim)}</h1>
-  <p class="meta">原调查时间：${escapeHtml(new Date(p.createdAt).toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" }))}${
-    p.checkedAt ? ` · 核查完成：${escapeHtml(p.checkedAt)}` : ""
-  }</p>
-  <article>
-    <p class="lead" data-share-conclusion>${labelChip(p.label, "data-share-label")} <strong>${escapeHtml(p.answer)}</strong></p>
-    ${p.rationale ? `<p>${escapeHtml(p.rationale)}</p>` : ""}
-    ${p.boundaries.length ? `<p>必要边界：${p.boundaries.map(escapeHtml).join("；")}</p>` : ""}
-    <p>回答仅针对本轮列出的核查问题，不代表整份材料已获证实。</p>
-    ${p.deferredClaims.length ? `<p>本轮未覆盖：${p.deferredClaims.map(escapeHtml).join("；")}</p>` : ""}
-    ${claimItems ? `<h2>拆出的问题</h2><ul>${claimItems}</ul>` : ""}
-    ${
-      p.sources.length
-        ? `<h2>用到的材料</h2><ul>${p.sources
-            .map(
-              (source) =>
-                `<li><a href="${escapeHtml(source.url)}" rel="noreferrer nofollow">${escapeHtml(source.title)}</a> <small>${publishedTag(source.publishedAt)}</small></li>`
-            )
-            .join("")}</ul>`
-        : ""
-    }
-  </article>
-  <footer>
-    <p>这份页面是创建者当时公开的一轮调查的只读快照，不会随后续修改变化。创建者撤销之后本页即不可读。</p>
-    <p><a href="/">用红鲱鱼与枪查自己的说法</a></p>
-  </footer>
-</main>`;
+  const when = readableTime(p.checkedAt) || readableTime(p.createdAt);
+  const metaParts = [p.claims.length ? `查了 ${p.claims.length} 截` : "", when ? `核查于 ${when}` : ""].filter(Boolean);
+  const body = `<p class="eyebrow">调查的说法</p>
+  <h1 class="claim">「${escapeHtml(p.claim)}」</h1>
+  <p class="eyebrow">结论</p>
+  <div data-share-conclusion>${
+    p.label ? `<span class="verdict tone-${LABEL_TONE[p.label]}" data-share-label="${p.label}">${escapeHtml(LABEL_TEXT[p.label])}</span>` : ""
+  }<p class="headline">${escapeHtml(p.answer)}</p></div>
+  ${p.rationale ? `<p class="rationale">${escapeHtml(p.rationale)}</p>` : ""}
+  ${metaParts.length ? `<p class="meta">${metaParts.join(" · ")}</p>` : ""}
+  <p class="scope">结论只针对下面列出的几截，不代表整段话都已证实。</p>
+  ${p.boundaries.length ? `<p class="boundary"><b>必要边界</b>${p.boundaries.map(escapeHtml).join("；")}</p>` : ""}
+  ${p.deferredClaims.length ? `<p class="scope">这次没有查：${p.deferredClaims.map(escapeHtml).join("；")}</p>` : ""}
+  ${claimItems}
+  ${
+    p.sources.length
+      ? `<details class="all"><summary>这次一共用到 ${p.sources.length} 份材料</summary><ul class="sources">${p.sources
+          .map(
+            (source) =>
+              `<li><a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer nofollow">${escapeHtml(source.title)}</a> <small>${publishedTag(source.publishedAt)}</small></li>`
+          )
+          .join("")}</ul></details>`
+      : ""
+  }
+  <a class="cta" href="/">去查你听到的说法</a>
+  <footer><p>这是分享人当时的调查快照，之后不会再变；分享人撤销后，这个链接就打不开了。</p></footer>`;
   return shell(`${p.claim.slice(0, 40)} · 红鲱鱼与枪`, body, true);
 }
 

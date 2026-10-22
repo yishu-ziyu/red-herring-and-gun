@@ -207,12 +207,14 @@
 .send:hover::before {
   background: rgba(26, 26, 26, 0.14);
 }
+/* 没输入时看得清、也看得出点不了；全局 button:disabled 的半透明不适用。 */
 .send:disabled {
   cursor: default;
-  color: #828282;
+  color: #57534e;
+  opacity: 1;
 }
 .send:disabled::before {
-  background: rgba(26, 26, 26, 0.06);
+  background: #e9e6df;
 }
 .send:disabled:active::before {
   transform: none;
