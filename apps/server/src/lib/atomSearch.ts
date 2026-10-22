@@ -5,14 +5,9 @@
  * 整句兜底 / query 合并 / 缓存不在本模块。
  */
 
-import {
-  MAX_CLAIM_ATOMS,
-  alignFalseEvidenceBuckets,
-  claimAtomKey,
-  compactStrings,
-  type NonVerifiableAtom,
-  type SubclaimVerdict,
-} from "./claimAtom/index.js";
+import { MAX_CLAIM_ATOMS, claimAtomKey, compactStrings } from "./claimAtom/text.js";
+import { alignFalseEvidenceBuckets } from "./claimAtom/merge.js";
+import type { NonVerifiableAtom, SubclaimVerdict } from "./claimAtom/types.js";
 import { canonicalizeUrl, filterAtomSources, type FilterMeta, type FilterableSource } from "./retrievalFilter.js";
 import { isOffTopicSource } from "./atomSearchQuery.js";
 import { normalizeInvestigationSourceUrl } from "./investigation/sourceIdentity.js";

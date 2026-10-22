@@ -20,7 +20,7 @@ import { normalizeReportCitations } from "../citationBinding.js";
 import type { PruneResult } from "../citationLiveness.js";
 import { applyFollowUpAnswerLead } from "../followUpReuse.js";
 import { applyUnopenedLinkConclusion } from "../publicCopy.js";
-import { assembleFinalReport, faceVerdictFor } from "../reportAssembly/index.js";
+import { assembleFinalReport, faceVerdictFor } from "../assembleFinalReport.js";
 import { reviewAndRepairReport, type ReportReviewResult } from "../reportReviewer.js";
 import { decideSentenceVerdict } from "../../domain/verdict.js";
 import { applySentenceVerdict, listAssessedClaims, VERDICT_TYPE } from "../sentenceVerdict.js";

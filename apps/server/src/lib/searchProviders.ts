@@ -50,10 +50,6 @@ function envFieldPresent(env: Record<string, string>, key: string): boolean {
 const SEARCH_QUOTA_SKIP_MS = 10 * 60 * 1000;
 const searchQuotaExhaustedUntil = new Map<string, number>();
 
-export function resetSearchQuotaSkipForTests(): void {
-  searchQuotaExhaustedUntil.clear();
-}
-
 export function isHardSearchQuotaError(message: string): boolean {
   return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded|limit)|billing hard limit|over_quota|无可用额度|please top up|usage limit|exceeds your plan|HTTP 402\b|HTTP 432\b/i.test(
     message

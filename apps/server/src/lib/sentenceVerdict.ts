@@ -7,7 +7,7 @@
  */
 import { decideSentenceVerdict, type PartRole, type PartStanding, type SentencePart, type SentenceVerdict } from "../domain/verdict.js";
 import { listAtomsForSearch } from "./atomSearch.js";
-import { claimAtomKey } from "./claimAtom/index.js";
+import { claimAtomKey } from "./claimAtom/text.js";
 import { hasDirectionalBoundHttpUrl } from "./citationBinding.js";
 import {
   FALLBACK_PART_REASON,

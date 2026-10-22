@@ -7,7 +7,7 @@
  * 宪法写死在分类器里：人物/日期/链接变了必须重查（hasTokenConflict）；
  * 没有可点开的 URL 就不算已核、计划为 null（没证据不出结论，不假装快路径）。
  */
-import { claimAtomKey } from "./claimAtom/index.js";
+import { claimAtomKey } from "./claimAtom/text.js";
 import { directAnswer } from "./publicCopy.js";
 import {
   hasTokenConflict,

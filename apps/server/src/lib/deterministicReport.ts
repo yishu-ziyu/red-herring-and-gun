@@ -3,7 +3,7 @@
  * 结构完整、不撒谎、不空白。
  */
 
-import { applyExclusionLayerToReport } from "./reportAssembly/index.js";
+import { applyExclusionLayerToReport } from "./assembleFinalReport.js";
 
 import { applyFactDeskPostProcessToReport } from "./factDeskPostProcess.js";
 

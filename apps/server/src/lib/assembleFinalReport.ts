@@ -3,21 +3,18 @@
  * Interface is the test surface: assembleFinalReport(...) mutates/returns report fields.
  */
 
-import {
-  claimAtomKey,
-  mergeSubclaimVerdicts,
-  type ClaimReportItem,
-  type SubclaimVerdict,
-} from "../claimAtom/index.js";
+import { claimAtomKey } from "./claimAtom/text.js";
+import { mergeSubclaimVerdicts } from "./claimAtom/merge.js";
+import type { ClaimReportItem, SubclaimVerdict } from "./claimAtom/types.js";
 import {
   applyUnsearchedAtomVerdicts,
   bindAtomEvidenceToVerdicts,
   listAtomsForSearch,
   selectAtomsToSearch,
   type AtomSearchBundle,
-} from "../atomSearch.js";
-import { normalizeReportCitations } from "../citationBinding.js";
-import { applyPublicCopy } from "../publicCopy.js";
+} from "./atomSearch.js";
+import { normalizeReportCitations } from "./citationBinding.js";
+import { applyPublicCopy } from "./publicCopy.js";
 
 export const FACE_VERDICT: Record<string, string> = {
   true: "能信",

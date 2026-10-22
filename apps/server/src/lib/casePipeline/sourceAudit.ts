@@ -5,7 +5,7 @@
  * 没审过的来源一律只作背景（fail-closed），不会闪一下绿色「支持」再被纠正。
  */
 import { bindAtomEvidenceToVerdicts } from "../atomSearch.js";
-import { claimAtomKey } from "../claimAtom/index.js";
+import { claimAtomKey } from "../claimAtom/text.js";
 import { applyClaimSourceRelationAudit, relationAuditCoversDirectionalSources } from "../sourceRelationAudit.js";
 import type { CaseState, PipelineContext } from "./caseState.js";
 

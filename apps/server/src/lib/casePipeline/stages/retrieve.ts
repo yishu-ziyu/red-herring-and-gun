@@ -3,7 +3,7 @@
  * 复用的命题各落一条活动行；其余命题一律联网检索。
  */
 import { retrieveForAtoms, type AtomSearchBundle } from "../../atomSearch.js";
-import { claimAtomKey } from "../../claimAtom/index.js";
+import { claimAtomKey } from "../../claimAtom/text.js";
 import { priorRoundLookupOf } from "../../followUpReuse.js";
 import type { PipelineContext } from "../caseState.js";
 import type { PipelineStep } from "../runCasePipeline.js";

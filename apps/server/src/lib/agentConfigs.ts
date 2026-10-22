@@ -1,25 +1,9 @@
 /**
  * agentConfigs.ts — Agent registry (prompts + schemas + handoff I/O).
- *
- * Claim-atom domain (key / merge / split / prefilter) lives in ./claimAtom.
- * This module re-exports domain symbols for backward-compatible imports.
  */
 
-import {
-  type ClaimAtomType,
-  type SubclaimVerdict,
-  type VerdictSource,
-} from "./claimAtom/index.js";
+import type { ClaimAtomType, SubclaimVerdict, VerdictSource } from "./claimAtom/types.js";
 import { LABEL_KEYS } from "../domain/labels.js";
-
-export type { ClaimAtomType, SubclaimVerdict, VerdictSource };
-export {
-  claimAtomKey,
-  mergeSubclaimVerdicts,
-  splitVerifiableAtoms,
-  prefilterClaimAtoms,
-  type ClaimAtomDropped,
-} from "./claimAtom/index.js";
 
 // ───────────────────────────────────────────────────────────────
 // 类型定义

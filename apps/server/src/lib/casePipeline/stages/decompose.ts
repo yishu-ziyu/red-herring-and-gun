@@ -2,18 +2,10 @@
  * 阶段 1 拆题：拆题 → 收窄 → 去重 → 对回原句 → 类型闸。不再另跑模型校验拆出的命题。
  * 同一案追问且上一轮有可点开证据时不再完整拆题，沿用已核命题（+ 新冒出来的小问题）。
  */
-import {
-  collapseNarrativeAtoms,
-  collapseShortSingleClaim,
-  dropUntraceableAtoms,
-  keepOriginalWording,
-  ensureLeapAtoms,
-  ensureStanceAtom,
-  forceCheckableAtomTypes,
-  markStanceAtoms,
-  prefilterClaimAtoms,
-  retainAtomTypes,
-} from "../../claimAtom/index.js";
+import { collapseNarrativeAtoms, ensureLeapAtoms, retainAtomTypes } from "../../claimAtom/textbookAtoms.js";
+import { collapseShortSingleClaim, dropUntraceableAtoms, keepOriginalWording, ensureStanceAtom, markStanceAtoms } from "../../claimAtom/roles.js";
+import { forceCheckableAtomTypes } from "../../claimAtom/forceCheckable.js";
+import { prefilterClaimAtoms } from "../../claimAtom/prefilter.js";
 import { looksLikePlanOrPrediction } from "../../atomSearchQuery.js";
 import { collapseFollowUpAtoms } from "../../followUpReuse.js";
 import type { PipelineContext } from "../caseState.js";

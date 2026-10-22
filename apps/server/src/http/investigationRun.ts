@@ -6,7 +6,7 @@
  *
  * 断开连接不是取消：run 属于它的 runId，用户离开页面后照常跑完，结论经刷新接回取回。
  */
-import { runCasePipeline, type PipelineStep } from "../lib/casePipeline/index.js";
+import { runCasePipeline, type PipelineStep } from "../lib/casePipeline/runCasePipeline.js";
 import { commitFreeCheck, releaseFreeCheck, type CheckTicket } from "../lib/checkQuota.js";
 import { applyContextCrossCheckToReport } from "../lib/contextCrossCheck.js";
 import { withExecutionBudget, type ExecutionBudget } from "../lib/executionBudget.js";

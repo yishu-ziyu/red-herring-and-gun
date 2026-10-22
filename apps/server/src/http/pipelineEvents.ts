@@ -2,7 +2,7 @@
  * 管线事件 → SSE 帧：agent 四帧、检索、复核。
  * 事件名与载荷字节级不变。
  */
-import type { CasePipelineHooks } from "../lib/casePipeline/index.js";
+import type { CasePipelineHooks } from "../lib/casePipeline/runCasePipeline.js";
 import type { InvestigationSnapshotV1 } from "../lib/investigation/index.js";
 import type { createInvestigationEmitter } from "../lib/investigationEmitter.js";
 import { getSearchToolName } from "../lib/searchProviders.js";

@@ -7,7 +7,7 @@
  * 快照顺序本身是产品行为：首份 judging 快照必须已经过来源审计（behavior-spec 4.8）。
  * 每个里程碑只带这一刻变了的字段，与之前的里程碑合并后整份重建；构建失败不阻断管线。
  */
-import { claimAtomKey } from "../claimAtom/index.js";
+import { claimAtomKey } from "../claimAtom/text.js";
 import {
   buildInvestigationSnapshot,
   type InvestigationBuildInput,

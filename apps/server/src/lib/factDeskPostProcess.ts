@@ -16,7 +16,7 @@ import {
   sanitizePublicReportText,
   PUBLIC_REPORT_FALLBACK_REASON,
 } from "./reportSanitizer.js";
-import { faceVerdictFor } from "./reportAssembly/index.js";
+import { faceVerdictFor } from "./assembleFinalReport.js";
 import { stripFaceStamp } from "./publicCopy.js";
 
 const BANNED_DRAMA =

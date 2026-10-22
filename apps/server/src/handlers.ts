@@ -22,24 +22,19 @@ import { runInvestigation, type InvestigationRunDeps } from "./http/investigatio
 import { openSse, sseFrame, SSE_KEEPALIVE_FRAME, SSE_KEEPALIVE_MS } from "./http/sseChannel.js";
 import { toPublicStreamEvent } from "./http/publicStream.js";
 
-export { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot.js";
-
-export { toFriendlyError, toPublicStreamEvent, type FriendlyErrorInfo } from "./http/publicStream.js";
-
-
 /**
  * 管道总时限默认值：210s → 300s（P0）→ 420s（给 MiniMax-M2.7 作判断 180s 留余量）。
  * 依据：真实走查那一轮总时长压到 210 秒线附近，管线在 225.9s 才真正跑完并落了一份带结论的快照，
  * 而客户端在 210.0s 已经被判成「没查完」——那份 16 秒后产出的真结论没有任何人看得到。
  */
-export const PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT = 420_000;
+const PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT = 420_000;
 
 /**
  * 总超时之后还给仍在跑的管线多少时间自己收尾（同一个契约）。
  * 宽限期内跑完 → run 落 complete，结论经刷新恢复通道取回；宽限期到仍不回来 → 按中断收尾。
  * 有界，是为了不让一条僵尸管线永远占着后台；运维可用 ORCHESTRATE_LATE_GRACE_MS 覆盖。
  */
-export const PIPELINE_LATE_GRACE_MS_DEFAULT = 120_000;
+const PIPELINE_LATE_GRACE_MS_DEFAULT = 120_000;
 
 export function createHandlers(env: Record<string, string>) {
   // 运行身份与取消（PR-D）：存储不可用时退化成进程内注册表，不阻塞启动。

@@ -14,11 +14,7 @@ import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { withExecutionBudget } from "./executionBudget.js";
 import { callMiniMaxAgent, callStepFunAgent } from "./agentProviders.js";
-// 审查 P3-2 修复：extractJsonObject 从共享模块引入并 re-export，
-// 不再在本文件维护独立副本（原 line 193-204 本地定义已删除）。
-// 用 import + export 双语句让本文件内调用点也能解析（纯 re-export 不引入本地绑定）。
 import { extractJsonObject } from "./anthropicParse.js";
-export { extractJsonObject };
 import { isMiniMaxM27, miniMaxCallOptions, MINIMAX_M27_DEFAULT_TIMEOUT_MS, MINIMAX_M3_DEFAULT_TIMEOUT_MS } from "./minimaxM3.js";
 
 /** MiniMax 是主力；阶跃负责图片解析与兜底（2026-10-09 起只保留这两家）。 */
@@ -30,11 +26,6 @@ const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>(["minimax", "stepfun"]);
 const quotaExhaustedUntil = new Map<string, number>();
 const timeoutStrikes = new Map<string, number>();
 const QUOTA_SKIP_MS = 10 * 60 * 1000;
-
-export function resetProviderQuotaSkipForTests(): void {
-  quotaExhaustedUntil.clear();
-  timeoutStrikes.clear();
-}
 
 export function isHardProviderQuotaError(message: string): boolean {
   return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded)|billing hard limit|over_quota|无可用额度/i.test(
@@ -204,8 +195,6 @@ function stepFunReasoningEffortForModel(
 // ───────────────────────────────────────────────────────────────
 // JSON repair + parse
 // ───────────────────────────────────────────────────────────────
-
-// 审查 P3-2 修复：extractJsonObject 已抽到 ./anthropicParse.js，本文件顶部 re-export。
 
 function stripJsonNoise(text: string): string {
   return text

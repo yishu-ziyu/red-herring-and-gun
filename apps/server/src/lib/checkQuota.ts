@@ -40,15 +40,8 @@ export function ipDailyLimit(): number {
   return envInt("CHECK_QUOTA_IP_LIMIT", IP_DAILY_CHECKS);
 }
 
-let enforcedForTests: boolean | null = null;
-
-export function setCheckQuotaEnforcedForTests(value: boolean | null) {
-  enforcedForTests = value;
-}
-
-export function isCheckQuotaEnforced() {
-  if (enforcedForTests !== null) return enforcedForTests;
-  if (process.env.VITEST === "true" || process.env.NODE_ENV === "test") return true;
+/** 只在生产环境限额；本机开发不拦。 */
+function isCheckQuotaEnforced() {
   return process.env.NODE_ENV === "production";
 }
 
@@ -318,16 +311,23 @@ export function releaseFreeCheck(ticket: CheckTicket) {
   }
 }
 
-export async function gateFreeCheck(req: any, res: any): Promise<CheckTicket | null> {
+/**
+ * 额度闸中间件：只挂在真正发起核查的路由上，只读端点不计额度。
+ * 拿到名额就把票据挂到 req.checkTicket 上，额度不够回 429。
+ */
+export async function freeCheckGate(req: any, res: any, next: (error?: unknown) => void) {
   const result = await beginFreeCheck(req, res);
   // 名额由拿到票据的处理器结算（handlers.ts 与 http/runOutcome.ts），这里不挂连接关闭监听：
   // 请求体读完之后才挂的 close 监听，触不触发取决于时序（#117）。
-  if (result.ok) return result.ticket;
-  writeJson(res, 429, {
-    error: "checks_exhausted",
-    message: checksExhaustedMessage(),
-  });
-  return null;
+  if (!result.ok) {
+    writeJson(res, 429, {
+      error: "checks_exhausted",
+      message: checksExhaustedMessage(),
+    });
+    return;
+  }
+  req.checkTicket = result.ticket;
+  next();
 }
 
 export async function checksQuotaHandler(req: any, res: any) {
@@ -369,10 +369,4 @@ export function guestOwnerHash(guestId: string): string {
 /** 来源 IP 的哈希（加了服务端密钥），给分享限额用。 */
 export function clientIpKey(req: any): string {
   return hashIp(clientIp(req));
-}
-
-export function resetCheckQuotaForTests() {
-  guests.clear();
-  guestsByIp.clear();
-  enforcedForTests = null;
 }

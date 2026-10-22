@@ -3,9 +3,9 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { createHandlers } from "./handlers.js";
-import { checksQuotaHandler } from "./lib/checkQuota.js";
-import { quotaGate } from "./lib/quotaPolicy.js";
+import { checksQuotaHandler, freeCheckGate } from "./lib/checkQuota.js";
 import { flushSnapshots, startSnapshotLoop } from "./lib/jsonSnapshot.js";
+import { renderShareHtmlHandler } from "./lib/shareHandlers.js";
 import { sessionSecretFromEnv } from "./lib/signedCookie.js";
 
 dotenv.config();
@@ -54,13 +54,11 @@ app.get("/health", (_req, res) => {
 // API routes
 app.post(
   "/api/agent/orchestrate-stream",
-  quotaGate("/api/agent/orchestrate-stream"),
+  freeCheckGate,
   (req, res, next) => handlers.orchestrateStreamHandler(req, res, next)
 );
 
 app.get("/api/checks/quota", (req, res, next) => checksQuotaHandler(req, res).catch(next));
-
-import { renderShareHtmlHandler } from "./lib/shareHandlers.js";
 
 app.get("/api/investigations/:runId/events", (req, res, next) => handlers.investigationEventsHandler(req, res, next));
 app.get("/api/investigations/:runId", (req, res, next) => handlers.getInvestigationHandler(req, res, next));

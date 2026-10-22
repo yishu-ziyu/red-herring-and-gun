@@ -4,7 +4,7 @@
  * Query portfolio + RRF live in retrievalQueries (ADR-005); this file remains the retrieve seam.
  */
 
-import { buildQueryPortfolio, fuseByRrf, type RankedDoc } from "./retrievalQueries/index.js";
+import { buildQueryPortfolio, fuseByRrf, type RankedDoc } from "./retrievalQueries.js";
 
 const FILLER = /我说|原来|叫谁|这是|那个|一下|真的吗|是不是/g;
 const STOP = new Set([

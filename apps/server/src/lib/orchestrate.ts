@@ -16,7 +16,7 @@ import { callAgentWithFallback } from "./providerRouter.js";
 import { compactSearchResultForAgent } from "./searchProviders.js";
 import { attachKnowledgeDrafts } from "./atomSearch.js";
 import { splitReasoningSentences } from "./reasoningThoughts.js";
-import type { RunAgentFn } from "./casePipeline/index.js";
+import type { RunAgentFn } from "./casePipeline/runCasePipeline.js";
 
 
 /**
