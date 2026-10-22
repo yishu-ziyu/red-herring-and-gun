@@ -11,7 +11,7 @@
  */
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "./sqliteStore.js";
-import type { InvestigationSnapshotV1, PublicActivity } from "./investigation/index.js";
+import type { InvestigationSnapshotV1, PublicActivity } from "../../../shared/investigation/index.js";
 
 const RUN_STATUSES = [
   "accepted",

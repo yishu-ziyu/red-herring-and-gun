@@ -2,8 +2,8 @@
  * InvestigationSnapshotV1 → 用户可见语义的纯映射（Issue #52 第四节固定映射表）。
  * 不读 raw Agent/tool 事件；不含实现层词汇。
  */
-import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSource } from "../lib/investigation";
-import { judgmentToLabel, normalizePublishedDate, type LabelKey } from "../lib/investigation";
+import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSource } from "../../shared/investigation";
+import { judgmentToLabel, normalizePublishedDate, type LabelKey } from "../../shared/investigation";
 
 export const ROLE_LABEL: Record<InvestigationEvidenceLink["role"], string> = {
   support: "支持",

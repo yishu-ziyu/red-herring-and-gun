@@ -3,13 +3,13 @@
  */
 import type { ShellCase } from "../goldenPath/ProductShell";
 import type { CaseIntake } from "../lib/caseIntake";
-import { displayFollowUpClaim } from "../lib/composeFollowUpClaim";
+import { displayFollowUpClaim } from "../../shared/followUp";
 import {
   rebuildInvestigationFromReport,
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
-} from "../lib/investigation";
-import { appendInvestigationRound, readInvestigationThread, type InvestigationRound, type InvestigationThread } from "../lib/investigationThread";
+} from "../../shared/investigation";
+import { appendInvestigationRound, readInvestigationThread, type InvestigationRound, type InvestigationThread } from "../../shared/investigationThread";
 
 export type ProductMode = "input" | "investigation";
 

@@ -6,11 +6,11 @@
  * 调查中和查完同一套头版式（#150）：调查中用 ProgressView 一行行填，不展示执行过程。
  */
 import { useEffect, useState } from "react";
-import type { InvestigationSnapshotV1 } from "../lib/investigation";
-import { judgmentToLabel } from "../lib/investigation";
-import { scrubFaceText } from "../lib/scrubFace";
+import type { InvestigationSnapshotV1 } from "../../shared/investigation";
+import { judgmentToLabel } from "../../shared/investigation";
+import { scrubFaceText } from "../../shared/scrubFace";
 import { useUiLang } from "../lib/useUiLang";
-import { displayFollowUpClaim, conclusionMissesFollowUp, followUpQuestionLead } from "../lib/composeFollowUpClaim";
+import { displayFollowUpClaim, conclusionMissesFollowUp, followUpQuestionLead } from "../../shared/followUp";
 import { isUrlOnlyClaim, type CaseImage } from "../lib/caseIntake";
 import { gpCopyFor } from "./copy";
 import { leftoverGapSentence, leftoverTextsForCanvas, isCompleteEmptyShell } from "./leftoverClaims";

@@ -5,9 +5,9 @@
  * 这是整句判定的唯一决定点：模型只判每一部分，整句的 verdictType、结论首句、徽章类型、
  * 正文说明都由这一个结果推出（快照读 verdictType，见 investigation/build.ts）。
  */
-import { decideSentenceVerdict, type PartRole, type PartStanding, type SentencePart, type SentenceVerdict } from "../domain/verdict.js";
+import { decideSentenceVerdict, type PartRole, type PartStanding, type SentencePart, type SentenceVerdict } from "../../../shared/domain/verdict.js";
 import { listAtomsForSearch } from "./atomSearch.js";
-import { claimAtomKey } from "./claimAtom/text.js";
+import { claimAtomKey } from "../../../shared/claimAtomText.js";
 import { hasDirectionalBoundHttpUrl } from "./citationBinding.js";
 import {
   FALLBACK_PART_REASON,
@@ -17,7 +17,7 @@ import {
   partLabelFor,
   wholeLabelFor,
   type LabelKey,
-} from "../domain/labels.js";
+} from "../../../shared/domain/labels.js";
 import { buildScopedEvidence } from "./scopedEvidence.js";
 
 type Report = Record<string, unknown>;

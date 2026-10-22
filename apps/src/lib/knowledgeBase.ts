@@ -2,7 +2,7 @@
  * 本机知识库（localStorage）：查过的案件，以及旧版本留下的证据库。
  * 下面的类型就是存进去的数据形状；旧记录照原样读，字段不能改名。
  */
-import { semanticClaimSimilarity } from "./semanticRecall";
+import { semanticClaimSimilarity } from "../../shared/semanticRecall";
 
 type ScoreLevel = "高" | "中" | "低";
 

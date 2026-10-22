@@ -9,7 +9,7 @@ import type { AtomSearchBundle, KnowledgeHit, SearchOneAtom } from "../atomSearc
 import { pruneDeadCitations } from "../citationLiveness.js";
 import { readSourcePageDates } from "../sourcePageDates.js";
 import type { ReportReviewIssue } from "../reportReviewer.js";
-import type { InvestigationSnapshotV1 } from "../investigation/index.js";
+import type { InvestigationSnapshotV1 } from "../../../../shared/investigation/index.js";
 import { planFollowUpReuse } from "../followUpReuse.js";
 import { createBudget } from "./budget.js";
 import type { PipelineContext } from "./caseState.js";

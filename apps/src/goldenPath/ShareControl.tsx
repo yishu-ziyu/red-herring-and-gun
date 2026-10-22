@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
-import { displayFollowUpClaim } from "../lib/composeFollowUpClaim";
+import { displayFollowUpClaim } from "../../shared/followUp";
 
 function formatBriefDate(value: string): string {
   const time = Date.parse(value);

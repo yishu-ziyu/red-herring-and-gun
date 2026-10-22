@@ -14,7 +14,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { isTerminalStatus, type RunRecord, type RunStatus, type RunStore } from "./runStore.js";
-import type { PublicActivity } from "./investigation/index.js";
+import type { PublicActivity } from "../../../shared/investigation/index.js";
 
 type StartRunInput = {
   caseId: string;

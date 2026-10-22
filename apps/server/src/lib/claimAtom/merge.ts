@@ -1,7 +1,7 @@
 import type { SubclaimVerdict, VerdictSource } from "./types.js";
-import { claimAtomKey, compactStrings, compactText, MAX_CLAIM_ATOMS } from "./text.js";
+import { claimAtomKey, compactStrings, compactText, MAX_CLAIM_ATOMS } from "../../../../shared/claimAtomText.js";
 import { bindDualBucketCitations, hasDirectionalBoundHttpUrl } from "../citationBinding.js";
-import { isLabelKey, labelForVerdict, verdictForLabel } from "../../domain/labels.js";
+import { isLabelKey, labelForVerdict, verdictForLabel } from "../../../../shared/domain/labels.js";
 
 const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated", "disputed"];
 

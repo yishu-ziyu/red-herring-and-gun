@@ -1,7 +1,7 @@
 import { isBlockedUrl } from "./ssrfGuard.js";
 import type { AtomSearchBundle, AtomSearchSource } from "./atomSearch.js";
+import { SOURCE_CONTENT_MAX_CHARS } from "../../../shared/investigation/material.js";
 
-export const SOURCE_CONTENT_MAX_CHARS = 12_000;
 const MAX_BYTES = 64_000;
 const MAX_URLS = 4;
 const TIMEOUT_MS = 15_000;

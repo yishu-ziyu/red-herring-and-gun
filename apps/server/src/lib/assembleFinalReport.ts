@@ -3,7 +3,7 @@
  * Interface is the test surface: assembleFinalReport(...) mutates/returns report fields.
  */
 
-import { claimAtomKey } from "./claimAtom/text.js";
+import { claimAtomKey } from "../../../shared/claimAtomText.js";
 import { mergeSubclaimVerdicts } from "./claimAtom/merge.js";
 import type { ClaimReportItem, SubclaimVerdict } from "./claimAtom/types.js";
 import {

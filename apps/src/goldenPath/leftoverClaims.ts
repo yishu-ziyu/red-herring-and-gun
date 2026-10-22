@@ -1,4 +1,4 @@
-import type { InvestigationClaim } from "../lib/investigation";
+import type { InvestigationClaim } from "../../shared/investigation";
 
 const BUDGET_GAP = "检索预算未覆盖";
 const MODEL_UNCOVERED = "模型未覆盖";

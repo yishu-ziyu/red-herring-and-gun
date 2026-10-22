@@ -1,4 +1,4 @@
-import type { InvestigationThread } from "../lib/investigationThread";
+import type { InvestigationThread } from "../../shared/investigationThread";
 import { useUiLang } from "../lib/useUiLang";
 
 export function InvestigationThreadHeader({ thread, selectedRoundId, currentQuestion, onSelect }: {

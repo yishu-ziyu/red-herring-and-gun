@@ -1,4 +1,4 @@
-import type { LabelKey } from "../../domain/labels.js";
+import type { LabelKey } from "../../../../shared/domain/labels.js";
 
 /**
  * Claim-atom domain types (deep module surface for atom keys, exclusion, verdicts).

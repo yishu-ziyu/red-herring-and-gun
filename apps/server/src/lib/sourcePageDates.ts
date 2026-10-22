@@ -3,7 +3,7 @@
  * 只读 <head> 附近的一小段，有总时限；读不到就是没有，不阻断出结果。
  * 每一跳都过 ssrfGuard，和引用探活同一口径。
  */
-import { dateFromHtml, normalizeInvestigationSourceUrl, normalizePublishedDate } from "./investigation/index.js";
+import { dateFromHtml, normalizeInvestigationSourceUrl, normalizePublishedDate } from "../../../shared/investigation/index.js";
 import { isBlockedUrl } from "./ssrfGuard.js";
 
 const MAX_URLS = 24;

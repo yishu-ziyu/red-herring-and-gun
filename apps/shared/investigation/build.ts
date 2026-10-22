@@ -24,9 +24,8 @@ import type {
   InvestigationSource,
 } from "./schema.js";
 import { validateInvestigationSnapshot } from "./schema.js";
-import { findClaimSourceRelationAudit } from "../sourceRelationAudit.js";
-import { claimAtomKey } from "../claimAtom/text.js";
-import { decideSentenceVerdict, type PartRole, type PartStanding } from "../../domain/verdict.js";
+import { claimAtomKey } from "../claimAtomText.js";
+import { decideSentenceVerdict, type PartRole, type PartStanding } from "../domain/verdict.js";
 import {
   FALLBACK_PART_REASON,
   LABEL_TEXT,
@@ -38,10 +37,10 @@ import {
   standingForLabel,
   wholeLabelFor,
   type LabelKey,
-} from "../../domain/labels.js";
-import { investigationSourceId, normalizeInvestigationSourceUrl } from "./sourceIdentity.js";
+} from "../domain/labels.js";
+import { findClaimSourceRelationAudit, investigationSourceId, normalizeInvestigationSourceUrl } from "./sourceIdentity.js";
 import { dateFromUrl, normalizePublishedDate } from "./sourceDate.js";
-import { SOURCE_CONTENT_MAX_CHARS } from "../sourceContent.js";
+import { SOURCE_CONTENT_MAX_CHARS } from "./material.js";
 import { verbatimQuote } from "./quote.js";
 
 export type InvestigationBuildInput = {

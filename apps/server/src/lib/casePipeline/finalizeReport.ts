@@ -22,7 +22,7 @@ import { applyFollowUpAnswerLead } from "../followUpReuse.js";
 import { applyUnopenedLinkConclusion } from "../publicCopy.js";
 import { assembleFinalReport, faceVerdictFor } from "../assembleFinalReport.js";
 import { reviewAndRepairReport, type ReportReviewResult } from "../reportReviewer.js";
-import { decideSentenceVerdict } from "../../domain/verdict.js";
+import { decideSentenceVerdict } from "../../../../shared/domain/verdict.js";
 import { applySentenceVerdict, listAssessedClaims, VERDICT_TYPE } from "../sentenceVerdict.js";
 import type { CasePipelineInput, PipelineStep } from "./runCasePipeline.js";
 

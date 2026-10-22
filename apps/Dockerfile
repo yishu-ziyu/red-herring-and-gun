@@ -2,15 +2,16 @@
 
 FROM node:22-alpine AS builder
 
-# server 放 /app/server：server/src 通过 ../../src/lib/* 引用共享代码
+# server 放 /app/server，前后端共用的代码放 /app/shared（server/src 用 ../../shared 引用）
 WORKDIR /app/server
 COPY server/package*.json ./
 RUN npm ci
+# shared 里的 typebox 要从 server 的依赖解析
+RUN ln -s /app/server/node_modules /app/node_modules
 
 COPY server/tsconfig.json ./
 COPY server/src ./src
-# 服务端引用的前端共享 lib（例如 checkQuota）
-COPY src/lib /app/src/lib
+COPY shared /app/shared
 RUN npm run build
 
 FROM node:22-alpine
@@ -19,7 +20,7 @@ WORKDIR /app/server
 COPY server/package*.json ./
 RUN npm ci --omit=dev
 
-# tsc 无 rootDir：产物为 dist/server/src/* + dist/src/lib/*
+# tsc 无 rootDir：产物为 dist/server/src/* + dist/shared/*
 COPY --from=builder /app/server/dist ./dist
 
 EXPOSE 3000

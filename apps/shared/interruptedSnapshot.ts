@@ -3,7 +3,6 @@
  * 已有 conclusion 必须留下。没有 conclusion、但每条可核查命题都有判断时，
  * 用分条判断拼一句有界总答，不装成报告写完。
  */
-import { boundedInterruptedAnswer } from "./publicCopy.js";
 import {
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
@@ -53,4 +52,54 @@ function synthesizeInterruptedConclusion(
     claimIds: claims.map((row) => row.id),
     sourceIds,
   };
+}
+
+const CLAIM_JUDGMENT_PHRASE: Record<string, string> = {
+  supported: "站得住",
+  refuted: "站不住",
+  mixed: "有对有错",
+  unresolved: "还查不清",
+};
+
+type BoundedInterruptedClaim = {
+  text: string;
+  checkability: string;
+  judgment: string | null;
+};
+
+type BoundedInterruptedAnswer = {
+  directAnswer: string;
+  judgment: "supported" | "refuted" | "mixed" | "unresolved";
+};
+
+/**
+ * 中断且报告还没写成时：用已有分条判断拼一句总答。
+ * 每条可核查命题都有 judgment 才写；不编来源、不装成报告写完。
+ */
+function boundedInterruptedAnswer(
+  claims: readonly BoundedInterruptedClaim[]
+): BoundedInterruptedAnswer | null {
+  const checkable = claims.filter((c) => c.checkability === "checkable");
+  if (checkable.length === 0) return null;
+  if (checkable.some((c) => c.judgment == null || c.judgment === "")) return null;
+
+  const phrases = checkable.map((c) => {
+    const word = CLAIM_JUDGMENT_PHRASE[c.judgment!] ?? "还查不清";
+    return `「${c.text}」${word}`;
+  });
+  const directAnswer = `${phrases.join("；")}。`;
+
+  const judgments = new Set(checkable.map((c) => c.judgment));
+  const hasSupported = judgments.has("supported");
+  const hasRefuted = judgments.has("refuted");
+  const hasMixed = judgments.has("mixed");
+  const judgment: BoundedInterruptedAnswer["judgment"] =
+    hasMixed || (hasSupported && hasRefuted)
+      ? "mixed"
+      : hasRefuted
+        ? "refuted"
+        : hasSupported
+          ? "supported"
+          : "unresolved";
+  return { directAnswer, judgment };
 }

@@ -7,7 +7,7 @@
  */
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
-import type { LABEL_KEYS } from "../../domain/labels.js";
+import type { LABEL_KEYS } from "../domain/labels.js";
 
 const closed = { additionalProperties: false } as const;
 

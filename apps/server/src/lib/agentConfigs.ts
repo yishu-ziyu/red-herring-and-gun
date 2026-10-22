@@ -2,7 +2,7 @@
  * agentConfigs.ts — Agent registry (prompts + schemas + handoff I/O).
  */
 
-import { LABEL_KEYS } from "../domain/labels.js";
+import { LABEL_KEYS } from "../../../shared/domain/labels.js";
 
 // ───────────────────────────────────────────────────────────────
 // 类型定义

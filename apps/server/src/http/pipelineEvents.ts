@@ -3,7 +3,7 @@
  * 事件名与载荷字节级不变。
  */
 import type { CasePipelineHooks } from "../lib/casePipeline/runCasePipeline.js";
-import type { InvestigationSnapshotV1 } from "../lib/investigation/index.js";
+import type { InvestigationSnapshotV1 } from "../../../shared/investigation/index.js";
 import type { createInvestigationEmitter } from "../lib/investigationEmitter.js";
 import { getSearchToolName } from "../lib/searchProviders.js";
 

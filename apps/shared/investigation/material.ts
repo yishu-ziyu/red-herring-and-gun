@@ -1,3 +1,6 @@
+/** 一份来源最多取得的正文字数；达到上限即视为只取得部分正文。 */
+export const SOURCE_CONTENT_MAX_CHARS = 12_000;
+
 /** 结果页和分享页使用同一口径；材料类型缺失时不能从网址或引号推断。 */
 export function materialKindLabel(kind: unknown): string {
   if (kind === "search-snippet") return "搜索摘要";

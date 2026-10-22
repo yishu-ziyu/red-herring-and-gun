@@ -3,6 +3,13 @@
  * Retrieval is the tool. The user only sees judgment, problem, source.
  * No tool names, no agent names, no forwarding advice.
  */
+import {
+  INTERNAL_SENTENCE_RE,
+  SCHEMA_WORD_RE,
+  SCHEMA_ZH_RE,
+  SOURCE_ALIAS_RE,
+  TRUNCATED_LATIN_BEFORE_QUOTE_RE,
+} from "../../../shared/scrubFace.js";
 
 const FACE_WORDS = ["能信", "不能信", "有真有假", "部分成立", "有争议", "还查不清"] as const;
 
@@ -19,9 +26,6 @@ const FACE_BY_TYPE: Record<string, (typeof FACE_WORDS)[number]> = {
 /** Internal roles, vendors, schemas — never on the result page. */
 const JARGON_RE =
   /wholeClaimAudit|whole_claim_auditor|WholeClaimAudit|wholeClaimAuditPlan|ReportComposer|FactChecker|RumorDetector|SourceValidator|CrossExaminer|AlternativeExplanationSearcher|AgentRuntime|search360|atomSearches|MiniMax-M3|MiniMax|Mimic|StepFun|Tavily|AnySearch|Metaso|function calling|Function Calling|工具调用|智能体|LangChain|CrewAI|\bADK\b|\bAgent\b|360 AI Search|canSay|cannotSay|web_search|web_fetch|todo_write|submit_verdict|investigator/gi;
-
-/** 含内部标识的整句从用户可见正文拿掉，避免只删单词留下「但指出的四项…」。 */
-const INTERNAL_SENTENCE_RE = /wholeClaimAudit|whole_claim_auditor|WholeClaimAudit|wholeClaimAuditPlan|\bAgent:\w+/i;
 
 function dropInternalSentences(text: string): string {
   return text
@@ -106,56 +110,6 @@ export function directAnswer(verdictType: unknown): string {
   }
 }
 
-const CLAIM_JUDGMENT_PHRASE: Record<string, string> = {
-  supported: "站得住",
-  refuted: "站不住",
-  mixed: "有对有错",
-  unresolved: "还查不清",
-};
-
-type BoundedInterruptedClaim = {
-  text: string;
-  checkability: string;
-  judgment: string | null;
-};
-
-type BoundedInterruptedAnswer = {
-  directAnswer: string;
-  judgment: "supported" | "refuted" | "mixed" | "unresolved";
-};
-
-/**
- * 中断且报告还没写成时：用已有分条判断拼一句总答。
- * 每条可核查命题都有 judgment 才写；不编来源、不装成报告写完。
- */
-export function boundedInterruptedAnswer(
-  claims: readonly BoundedInterruptedClaim[]
-): BoundedInterruptedAnswer | null {
-  const checkable = claims.filter((c) => c.checkability === "checkable");
-  if (checkable.length === 0) return null;
-  if (checkable.some((c) => c.judgment == null || c.judgment === "")) return null;
-
-  const phrases = checkable.map((c) => {
-    const word = CLAIM_JUDGMENT_PHRASE[c.judgment!] ?? "还查不清";
-    return `「${c.text}」${word}`;
-  });
-  const directAnswer = `${phrases.join("；")}。`;
-
-  const judgments = new Set(checkable.map((c) => c.judgment));
-  const hasSupported = judgments.has("supported");
-  const hasRefuted = judgments.has("refuted");
-  const hasMixed = judgments.has("mixed");
-  const judgment: BoundedInterruptedAnswer["judgment"] =
-    hasMixed || (hasSupported && hasRefuted)
-      ? "mixed"
-      : hasRefuted
-        ? "refuted"
-        : hasSupported
-          ? "supported"
-          : "unresolved";
-  return { directAnswer, judgment };
-}
-
 /** 只贴了链接、没有其它要查的文字。 */
 function looksLikeUrlOnlyClaim(claim: string): boolean {
   const raw = String(claim ?? "").trim();
@@ -183,9 +137,6 @@ export function applyUnopenedLinkConclusion(
   report.causalBoundary = UNOPENED_LINK_NOTICE;
 }
 
-/** 检索曾把来源标成 S1/C1。可见正文里拿掉序号，不碰句内 [n] 绑定。 */
-const SOURCE_ALIAS_RE = /\b[SC]\d+(?:\s*[/、,，]\s*[SC]\d+)*(?:将|把|中)?/g;
-
 function stripSourceAliases(text: string): string {
   if (!text) return "";
   return text
@@ -196,12 +147,6 @@ function stripSourceAliases(text: string): string {
     .replace(/[，、]{2,}/g, "，")
     .trim();
 }
-
-/** 模型把 schema 词写进解释：`claim中「…」`。先删「claim中」再删孤立 claim。 */
-const SCHEMA_ZH_RE = /claim中/gi;
-const SCHEMA_WORD_RE = /\b(?:claimAtom|subclaim|verdictType|atomSearches|claim)\b/gi;
-/** 400 字截断留下的半截拉丁残字，紧贴下一段引号。完整 IARC（4 字母）不动。 */
-const TRUNCATED_LATIN_BEFORE_QUOTE_RE = /[A-Za-z]{1,3}(?=「)/g;
 
 function scrubPublicText(value: unknown): string {
   if (typeof value !== "string") return "";

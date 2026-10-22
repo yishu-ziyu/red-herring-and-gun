@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import type { ShellCase } from "../goldenPath/ProductShell";
 import { createKnowledgeBase } from "../lib/knowledgeBase";
-import { threadSummary } from "../lib/investigationThread";
+import { threadSummary } from "../../shared/investigationThread";
 import { groupThreadCases } from "./caseViews";
 
 export function useLocalHistory() {

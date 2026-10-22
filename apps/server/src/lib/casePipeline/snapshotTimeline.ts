@@ -11,9 +11,9 @@ import {
   buildInvestigationSnapshot,
   type InvestigationBuildInput,
   type InvestigationSnapshotV1,
-} from "../investigation/index.js";
+} from "../../../../shared/investigation/index.js";
 import type { CasePipelineHooks } from "./runCasePipeline.js";
-import { interruptedInvestigationSnapshot } from "../interruptedSnapshot.js";
+import { interruptedInvestigationSnapshot } from "../../../../shared/interruptedSnapshot.js";
 
 type Phase = InvestigationBuildInput["phase"];
 type Patch = Partial<InvestigationBuildInput> & { phase: Phase };

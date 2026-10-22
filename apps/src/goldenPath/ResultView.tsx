@@ -4,7 +4,7 @@
  * 版式是 2026-10-10 用户选的头版式（#150）：大字结论在上，各截不套卡片，证据像脚注。
  */
 import { useState } from "react";
-import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSnapshotV1, InvestigationSource } from "../lib/investigation";
+import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSnapshotV1, InvestigationSource } from "../../shared/investigation";
 import {
   LABEL_TEXT,
   LABEL_TONE,
@@ -13,7 +13,7 @@ import {
   quoteLinkUrl,
   sourceReadStatus,
   type LabelKey,
-} from "../lib/investigation";
+} from "../../shared/investigation";
 import { CHECKABILITY_HINT, claimLabel, domainOf, publishedDay, PUBLISHED_UNKNOWN, ROLE_LABEL } from "./snapshotUi";
 import { ShareControl } from "./ShareControl";
 import "./result.css";

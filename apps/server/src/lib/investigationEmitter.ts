@@ -10,7 +10,7 @@ import {
   createActivityLog,
   type InvestigationSnapshotV1,
   type PublicActivity,
-} from "./investigation/index.js";
+} from "../../../shared/investigation/index.js";
 
 type InvestigationEmitter = {
   /** 快照先落，活动后发。重复快照不产生新活动。 */

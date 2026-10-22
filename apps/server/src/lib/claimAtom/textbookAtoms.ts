@@ -4,7 +4,7 @@
  *
  * 走查：模型常把课文转述成 9 条而不是原句切片，所以长文不依赖「像不像按句切开」。
  */
-import { claimAtomKey } from "./text.js";
+import { claimAtomKey } from "../../../../shared/claimAtomText.js";
 
 const SENTENCE_SPLIT = /(?<=[。！？；])/;
 const NARRATIVE_OPEN =

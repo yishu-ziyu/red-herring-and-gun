@@ -2,9 +2,9 @@ import { caseIntakePrimaryText, type CaseIntake } from "./caseIntake";
 import {
   checksExhaustedMessage,
   isChecksExhaustedMessage,
-} from "./checkQuota";
-import type { InvestigationSnapshotV1, PublicActivity } from "./investigation";
-import type { VisiblePriorRound } from "./priorRoundBrief";
+} from "../../shared/quota";
+import type { InvestigationSnapshotV1, PublicActivity } from "../../shared/investigation";
+import type { VisiblePriorRound } from "../../shared/followUp";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 

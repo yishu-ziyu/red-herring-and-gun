@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { useInvestigationRun } from "../goldenPath/useInvestigationRun";
 import { caseIntakeFailedLinks, type CaseIntake } from "../lib/caseIntake";
-import { readInvestigationThread, type InvestigationRound, type InvestigationThread } from "../lib/investigationThread";
+import { readInvestigationThread, type InvestigationRound, type InvestigationThread } from "../../shared/investigationThread";
 import type { ActiveCase, ProductMode } from "./caseViews";
 import { publicTransportError } from "./notices";
 

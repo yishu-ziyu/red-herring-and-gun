@@ -6,7 +6,7 @@
  * 整句判定读这些标记（sentenceVerdict.listAssessedClaims）；这里只做三件确定性的事：
  *   1 短单句不拆；2 编造的命题（span 对不上原句）丢掉；3 价值判断句标为立场型。
  */
-import { claimAtomKey } from "./text.js";
+import { claimAtomKey } from "../../../../shared/claimAtomText.js";
 
 type Rec = Record<string, unknown>;
 const rec = (value: unknown): Rec | null => (value && typeof value === "object" && !Array.isArray(value) ? (value as Rec) : null);

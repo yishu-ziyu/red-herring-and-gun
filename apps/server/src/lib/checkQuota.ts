@@ -14,7 +14,7 @@ import {
   shanghaiDayKey,
   type CheckQuotaKind,
   type CheckQuotaView,
-} from "../../../src/lib/checkQuota.js";
+} from "../../../shared/quota.js";
 import { cookieOptions, decodeSignedJson, encodeSignedJson, getServerSecret, parseCookies } from "./signedCookie.js";
 import { loadSnapshot, registerSnapshotSource } from "./jsonSnapshot.js";
 

@@ -3,7 +3,7 @@
  * 只按真实进度一行行出现：拆出几截就出现几行，每一截找到资料、判完，那一行才往下填。
  * 不展示执行过程：没有角色、没有执行记录、没有来源条数，只有一句大白话说现在在做什么。
  */
-import { LABEL_TEXT, LABEL_TONE, type InvestigationClaim, type InvestigationSnapshotV1 } from "../lib/investigation";
+import { LABEL_TEXT, LABEL_TONE, type InvestigationClaim, type InvestigationSnapshotV1 } from "../../shared/investigation";
 import { CHECKABILITY_HINT, claimLabel } from "./snapshotUi";
 import { EvidenceRow } from "./ResultView";
 

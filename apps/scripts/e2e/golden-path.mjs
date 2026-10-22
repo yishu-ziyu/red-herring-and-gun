@@ -13,7 +13,7 @@ const claim = process.env.E2E_CLAIM || "隔夜菜会致癌，等于吃毒药";
 const out = resolve(`../out/e2e/${new Date().toISOString().replace(/[:.]/g, "-")}`);
 mkdirSync(out, { recursive: true });
 
-// Must match apps/server/src/domain/labels.ts.
+// Must match apps/shared/domain/labels.ts.
 const LABELS = ["属实", "基本属实", "部分属实", "夸大了", "不属实", "还查不清", "无法核对", "说法不一", "是观点，不分对错"];
 const DECISIVE_LABELS = ["属实", "基本属实", "部分属实", "夸大了", "不属实", "说法不一"];
 

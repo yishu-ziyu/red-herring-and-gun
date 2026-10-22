@@ -14,13 +14,13 @@ import {
   rebuildInvestigationFromReport,
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
-} from "../lib/investigation";
+} from "../../shared/investigation";
 import { requestOrchestrateStream, type OrchestrateStreamEvent } from "../lib/orchestrateStream";
 import { cancelInvestigation, resumeInvestigationStream } from "../lib/investigationResume";
 import { caseIntakePrimaryText, type CaseIntake } from "../lib/caseIntake";
 import { createKnowledgeBase } from "../lib/knowledgeBase";
 import { buildLocalMemoryRecall } from "../lib/localMemoryRecall";
-import type { VisiblePriorRound } from "../lib/priorRoundBrief";
+import type { VisiblePriorRound } from "../../shared/followUp";
 
 /** legacy 原始事件：Golden Path 不从中推导任何产品语义。 */
 const IGNORED_LEGACY_EVENT_TYPES: ReadonlySet<OrchestrateStreamEvent["type"]> = new Set([

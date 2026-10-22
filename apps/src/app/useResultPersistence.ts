@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRe
 import type { ShellCase } from "../goldenPath/ProductShell";
 import type { useInvestigationRun } from "../goldenPath/useInvestigationRun";
 import { createKnowledgeBase, type KnowledgeBaseEntry } from "../lib/knowledgeBase";
-import { threadSummary } from "../lib/investigationThread";
+import { threadSummary } from "../../shared/investigationThread";
 import { currentRunId, groupThreadCases, snapshotFromReport, threadForRound, type ActiveCase, type ProductMode, type SaveStatus } from "./caseViews";
 
 export function useResultPersistence(args: {

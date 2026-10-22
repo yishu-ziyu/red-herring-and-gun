@@ -7,9 +7,17 @@
  * 宪法写死在分类器里：人物/日期/链接变了必须重查（hasTokenConflict）；
  * 没有可点开的 URL 就不算已核、计划为 null（没证据不出结论，不假装快路径）。
  */
-import { claimAtomKey } from "./claimAtom/text.js";
+import { claimAtomKey } from "../../../shared/claimAtomText.js";
 import { directAnswer } from "./publicCopy.js";
-import { semanticClaimSimilarity } from "./semanticRecall.js";
+import { semanticClaimSimilarity } from "../../../shared/semanticRecall.js";
+import {
+  FOLLOW_UP_MARKER,
+  displayFollowUpClaim,
+  distinctiveFollowUpTerms,
+  type VisiblePriorClaim,
+  type VisiblePriorEvidence,
+  type VisiblePriorRound,
+} from "../../../shared/followUp.js";
 import type { KnowledgeInjection } from "./atomSearch.js";
 
 /**
@@ -61,9 +69,6 @@ function hasTokenConflict(atomA: string, atomB: string): boolean {
   return false;
 }
 
-/** 与前端 composeFollowUpClaim 同一句；服务端只用来裁出用户追问，不改拼接。 */
-const FOLLOW_UP_MARKER = "同一条核查的追问，不是新案件。";
-
 /**
  * 「追问已被上一轮命题覆盖」的相似度门槛（0–100）。
  * 门槛取高：宁可多搜一句新问题，也不把「隔夜海鲜」当成「隔夜菜」。
@@ -89,29 +94,6 @@ export type FollowUpReusePlan = {
   atoms: string[];
   reused: FollowUpReusedAtom[];
   originDate: string;
-};
-
-/**
- * 访客没有服务端案件档案时，随追问带上的上一轮可见材料。
- * 只含命题、判断、可点开出处、结论；不含内部拼接指令或未展示字段。
- */
-type VisiblePriorRound = {
-  originalClaim: string;
-  conclusion: string;
-  claims: VisiblePriorClaim[];
-};
-
-type VisiblePriorClaim = {
-  text: string;
-  judgment: "supported" | "refuted" | "mixed";
-  evidence: VisiblePriorEvidence[];
-};
-
-type VisiblePriorEvidence = {
-  url: string;
-  title: string;
-  excerpt: string;
-  role: "support" | "contradict";
 };
 
 const VISIBLE_JUDGMENTS = new Set(["supported", "refuted", "mixed"]);
@@ -237,10 +219,7 @@ function httpEvidenceOf(source: Record<string, unknown>): FollowUpEvidence | nul
 
 /** 用户追问原文：裁到「同一条核查的追问」标记之前；没有标记则整段当追问。 */
 export function followUpQuestionOf(claim: string): string {
-  if (typeof claim !== "string") return "";
-  const markerIndex = claim.indexOf(FOLLOW_UP_MARKER);
-  if (markerIndex === -1) return claim.trim();
-  return claim.slice(0, markerIndex).replace(/[\s\u3000]*[（(]\s*$/, "").trim();
+  return displayFollowUpClaim(claim).trim();
 }
 
 /**
@@ -374,20 +353,6 @@ function followUpVerdictPhrase(verdictType: unknown): string {
   }
   if (v === "disputed") return "权威来源之间说法不一致";
   return "现有材料还撑不住判断";
-}
-
-function distinctiveFollowUpTerms(question: string): string[] {
-  const compact = question.replace(/[^\u4e00-\u9fff]/g, "");
-  const seen = new Set<string>();
-  const terms: string[] = [];
-  for (let i = 0; i <= compact.length - 4; i += 1) {
-    const gram = compact.slice(i, i + 4);
-    if (/^[这一是否有在的中或可了和与及对把被从还没]/.test(gram)) continue;
-    if (seen.has(gram)) continue;
-    seen.add(gram);
-    terms.push(gram);
-  }
-  return terms;
 }
 
 function conclusionMissesFollowUp(conclusion: string, claim: string): boolean {

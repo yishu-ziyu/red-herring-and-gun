@@ -1,5 +1,5 @@
 import type { ClaimAtomDropped } from "./types.js";
-import { claimAtomKey, MAX_CLAIM_ATOMS } from "./text.js";
+import { claimAtomKey, MAX_CLAIM_ATOMS } from "../../../../shared/claimAtomText.js";
 
 export function prefilterClaimAtoms(
   claim: string,

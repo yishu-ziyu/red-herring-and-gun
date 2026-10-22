@@ -2,7 +2,7 @@
  * App — 生产入口（Issue #52）：轻量产品壳 + 同画布 Golden Path。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { interruptedInvestigationSnapshot } from "./lib/interruptedSnapshot";
+import { interruptedInvestigationSnapshot } from "../shared/interruptedSnapshot";
 import { ProductShell } from "./goldenPath/ProductShell";
 import { InputStage } from "./goldenPath/InputStage";
 import { InvestigationCanvas } from "./goldenPath/InvestigationCanvas";
@@ -11,9 +11,9 @@ import { gpCopyFor } from "./goldenPath/copy";
 import { useUiLang } from "./lib/useUiLang";
 import { caseIntakeDisplayText, caseIntakeFailedLinks, caseIntakeIsImageOnly, caseIntakePrimaryText, createCaseIntake, type CaseIntake } from "./lib/caseIntake";
 import { createKnowledgeBase, normalizeHistoryClaim } from "./lib/knowledgeBase";
-import { composeFollowUpClaim, displayFollowUpClaim, previousAnswerText } from "./lib/composeFollowUpClaim";
-import { visiblePriorRoundFromSnapshot } from "./lib/priorRoundBrief";
-import type { InvestigationThread, InvestigationRound } from "./lib/investigationThread";
+import { composeFollowUpClaim, displayFollowUpClaim, previousAnswerText } from "../shared/followUp";
+import { visiblePriorRoundFromSnapshot } from "../shared/followUp";
+import type { InvestigationThread, InvestigationRound } from "../shared/investigationThread";
 import { InvestigationThreadHeader } from "./goldenPath/InvestigationThreadHeader";
 import {
   currentRunId,

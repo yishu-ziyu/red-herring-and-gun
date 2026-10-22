@@ -23,7 +23,7 @@ import {
   parseCheckQuota,
   quotaIsExhausted,
   type CheckQuotaView,
-} from "../lib/checkQuota";
+} from "../../shared/quota";
 
 const MAX_IMAGE_COUNT = 4;
 const MAX_TOTAL_IMAGE_BYTES = 6 * 1024 * 1024;

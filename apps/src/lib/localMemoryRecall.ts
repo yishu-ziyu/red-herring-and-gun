@@ -3,7 +3,7 @@
  * 只作为复用检索路径与信源经验，不直接替代本案证据。
  */
 import type { KnowledgeBase, KnowledgeBaseEntry } from "./knowledgeBase";
-import { semanticClaimSimilarity } from "./semanticRecall";
+import { semanticClaimSimilarity } from "../../shared/semanticRecall";
 
 interface LocalMemoryRecall extends Record<string, unknown> {
   hitCount: number;

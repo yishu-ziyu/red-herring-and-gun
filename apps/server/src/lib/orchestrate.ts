@@ -10,7 +10,7 @@ import {
   buildAgentInput,
 } from "./agentConfigs.js";
 import { buildAgentStatusBar } from "./contextStatusBar.js";
-import { isLabelKey, verdictForLabel } from "../domain/labels.js";
+import { isLabelKey, verdictForLabel } from "../../../shared/domain/labels.js";
 import { formatSkillsForPrompt, selectAgentSkills } from "./agentSkills.js";
 import { callAgentWithFallback } from "./providerRouter.js";
 import { compactSearchResultForAgent } from "./searchProviders.js";
