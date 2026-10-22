@@ -362,6 +362,14 @@ function timeoutForProviderModel(
   return fallbackMs;
 }
 
+/** 到模型服务器的连接常在握手时断掉（2026-10-22 实测 MiniMax 约三成连接失败），同一家最多连 3 次。 */
+const CONNECT_ATTEMPTS = 3;
+
+/** 没连上服务器才算：服务器回了错误（额度、鉴权、内容）或超时都不重试。 */
+function isConnectFailure(error: unknown): boolean {
+  return error instanceof TypeError && error.message === "fetch failed";
+}
+
 export async function callAgentWithFallback(params: CallAgentParams): Promise<CallAgentResult> {
   const {
     agentId,
@@ -469,44 +477,53 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
     modelName: string,
     call: (sys: string, user: string, signal: AbortSignal) => Promise<{ text: string; model: string }>
   ): Promise<{ ok: true; result: CallAgentResult } | { ok: false; msg: string }> => {
-    const providerStart = Date.now();
-    const attemptTimeout = attemptTimeoutMs(
-      timeoutForProviderModel(env, provider, modelName, providerTimeoutMs)
-    );
-    logger.info("[orchestrate-provider] start", {
-      agent: traceLabel,
-      provider,
-      model: modelName,
-      timeoutMs: attemptTimeout,
-    });
-    try {
-      const result = await invokeAndParse(
-        provider,
-        modelName,
-        call,
-        attemptTimeout,
-        "fallback"
+    for (let attempt = 1; ; attempt += 1) {
+      const providerStart = Date.now();
+      const attemptTimeout = attemptTimeoutMs(
+        timeoutForProviderModel(env, provider, modelName, providerTimeoutMs)
       );
-      logger.info("[orchestrate-provider] complete", {
+      logger.info("[orchestrate-provider] start", {
         agent: traceLabel,
         provider,
         model: modelName,
-        latencyMs: Date.now() - providerStart,
-      });
-      return { ok: true, result };
-    } catch (error) {
-      options.signal?.throwIfAborted();
-      const message = error instanceof Error ? error.message : `${provider} 调用失败`;
-      logger.error("[orchestrate-provider] error", {
-        agent: traceLabel,
-        provider,
-        model: modelName,
-        latencyMs: Date.now() - providerStart,
         timeoutMs: attemptTimeout,
-        message,
+        ...(attempt > 1 ? { attempt } : {}),
       });
-      if (!stageBudgetExpired()) noteProviderFailure(provider, message);
-      return { ok: false, msg: message };
+      try {
+        const result = await invokeAndParse(
+          provider,
+          modelName,
+          call,
+          attemptTimeout,
+          "fallback"
+        );
+        logger.info("[orchestrate-provider] complete", {
+          agent: traceLabel,
+          provider,
+          model: modelName,
+          latencyMs: Date.now() - providerStart,
+        });
+        return { ok: true, result };
+      } catch (error) {
+        options.signal?.throwIfAborted();
+        const message = error instanceof Error ? error.message : `${provider} 调用失败`;
+        const connectFailure = isConnectFailure(error);
+        logger.error("[orchestrate-provider] error", {
+          agent: traceLabel,
+          provider,
+          model: modelName,
+          latencyMs: Date.now() - providerStart,
+          timeoutMs: attemptTimeout,
+          message,
+          // fetch failed 本身不说原因；底层的连接错误（如 ECONNRESET、证书握手失败）在 cause 里。
+          cause: (error as { cause?: { code?: string; message?: string } })?.cause?.code
+            ?? (error as { cause?: { message?: string } })?.cause?.message,
+          attempt,
+        });
+        if (connectFailure && attempt < CONNECT_ATTEMPTS && !stageBudgetExpired()) continue;
+        if (!stageBudgetExpired()) noteProviderFailure(provider, message);
+        return { ok: false, msg: message };
+      }
     }
   };
 
