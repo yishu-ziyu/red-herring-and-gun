@@ -371,6 +371,7 @@ export const AGENT_CONFIGS: AgentConfig[] = [
       "2. 若无 atomSearches，则回退到 search360.sources。url / title / snippet 必须来自输入中真实存在的来源，不得编造。",
       "2a. supportingSources / contradictingSources 每项的 snippet 只写一句话：从该来源输入 snippet 里逐字复制、真正支持或反驳这条命题的那一句（或那一个分句），不超过 80 字。不改写、不概括、不加省略号、不把两句拼成一句、不写只交代背景或机制的句子。原文里的英文双引号 \" 一律写成「」，否则 JSON 会失效。",
       "2b. excerptKind=search-snippet 只表示取得搜索摘要；不得声称读过原网页、核过全文或确认前后文完整。摘句不得只抄标题里的待核说法，必须保留支持或否定它的条件和否定词。",
+      "2c. excerptKind=page-excerpt 表示这次已读到原网页正文：优先按正文判断，摘句从正文逐字复制。fetchStatus=truncated 时只读了前面一部分，不得推断未读部分。",
       "3. 某来源若不在该原子 sources（或 search360.sources）中，不得写入；宁可留空数组，也不编造。",
       "4. evidenceGaps 列出该条尚未找到的证据；该原子检索为空时须在 boundary 或 evidenceGaps 写明未能证实/待补证，禁止仅因无结果就判 false。",
       "",

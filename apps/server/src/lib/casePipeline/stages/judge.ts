@@ -7,7 +7,10 @@ import type { CaseState, PipelineContext } from "../caseState.js";
 import type { PipelineStep } from "../runCasePipeline.js";
 import { createSourceAudit } from "../sourceAudit.js";
 import type { Retrieval } from "./retrieve.js";
-import { enrichSearchSources } from "../../sourceContent.js";
+import { enrichSearchSources, pickUrlsToRead } from "../../sourceContent.js";
+
+// Caps what one page adds to the FactChecker prompt; 8 pages stay well inside the model's context.
+const JUDGE_EXCERPT_CHARS = 8_000;
 
 function fallbackAgentStep(agentId: string, error: unknown, search360Result?: unknown): PipelineStep {
   const message = error instanceof Error ? error.message : `${agentId} failed`;
@@ -54,6 +57,11 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   const { steps, snapshots, throwIfAborted } = ctx;
   const { runAgent } = ctx.input;
   const { atomSearchBundle, search360Result } = retrieval;
+  // 判定前先读原文：FactChecker 要对着正文下判断，而不是对着搜索摘要。
+  await enrichSearchSources(atomSearchBundle, ctx.input.signal, ctx.input.deadline, pickUrlsToRead(atomSearchBundle), () => {
+    snapshots.investigating({ atomSearchBundle });
+  }, JUDGE_EXCERPT_CHARS);
+  throwIfAborted();
   let factStep: PipelineStep;
   try {
     factStep = await runAgent("fact_checker", steps, search360Result, atomSearchBundle);
@@ -62,7 +70,7 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   }
   steps.push(factStep);
   throwIfAborted();
-  // 正文读取只针对本轮准备采用的依据，而不是搜索排名靠前但未用于判断的材料。
+  // FactChecker 采用了判定前没读到的来源时，补读一次，供 SourceValidator 核对方向。
   const verdicts = Array.isArray(factStep.output.subclaimVerdicts) ? factStep.output.subclaimVerdicts : [];
   const selectedUrls = verdicts.flatMap((raw) => {
     if (!raw || typeof raw !== "object") return [];
@@ -73,7 +81,7 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   await enrichSearchSources(atomSearchBundle, ctx.input.signal, ctx.input.deadline, selectedUrls, () => {
     // 只发布已取得、尚未核对的材料；不能提前发布 FactChecker 的未审计判词。
     snapshots.investigating({ atomSearchBundle });
-  });
+  }, JUDGE_EXCERPT_CHARS);
   throwIfAborted();
   let sourceStep: PipelineStep;
   try {
