@@ -1,33 +1,13 @@
 :root {
-  /* 产品真相是固定的米纸浅色主题：显式声明，避免 OS 深色模式把
-     滚动条 / 表单控件 / 自动填充翻成深色，与站点主题打架。 */
+  /* 固定浅色主题：避免系统深色模式把滚动条、表单控件翻成深色。 */
   color-scheme: light;
-  color: #1A1A2E;
-  background: #fefcf6;
-  font-family: var(--font-sans);
-  line-height: 1.5;
-
-  --zt-accent: #F4D758;
-  --zt-text: #1A1A2E;
-  --zt-bg: #fefcf6;
-
-  --paper: #ffffff;
-  --accent: #b91c3c; /* warm brand crimson — not electric blue */
-  --border-subtle: #e8e4d9;
-
-  --font-sans: "Noto Sans SC", ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
-  --font-serif: "Noto Serif SC", "Huiwen Mincho", "STSong", "Songti SC", serif;
-
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --motion-fade: 240ms var(--ease-out);
-
-  --tracking-normal: -0.01em;
-  --leading-normal: 1.55;
+  --font-sans: "SF Pro Text", -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-serif: "Noto Serif SC", "Songti SC", "STSong", serif;
 }
 
 ::selection {
-  background: var(--zt-accent);
-  color: var(--zt-text);
+  background: var(--amber-5);
+  color: var(--sand-12);
 }
 
 * {
@@ -38,60 +18,30 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
   font-kerning: normal;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
-  background: var(--zt-bg);
-  color: var(--zt-text);
-  font-feature-settings: "kern", "calt", "ss01", "ss02";
-  font-variant-numeric: oldstyle-nums proportional-nums;
-  line-height: var(--leading-normal);
-  letter-spacing: var(--tracking-normal);
+  background: var(--sand-1);
+  color: var(--sand-12);
   overflow-x: hidden;
 }
 
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: rgba(21, 24, 33, 0.12);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-  transition: background var(--motion-fade);
-}
-::-webkit-scrollbar-thumb:hover { background: rgba(21, 24, 33, 0.24); background-clip: padding-box; }
-
-h1,
-h2,
-h3 {
-  font-family: var(--font-serif);
-}
-
+/* 按钮不带默认外观，样式由各自的 class 给。 */
 button,
 textarea {
   font: inherit;
+  color: inherit;
 }
 
 button {
   cursor: pointer;
   border: 0;
-  border-radius: 10px;
-  padding: 10px 12px;
-  color: #ffffff;
-  background: var(--accent);
-  font-size: 14px;
-  font-weight: 600;
+  padding: 0;
+  background: none;
 }
 
 button:disabled {
-  cursor: not-allowed;
-  opacity: 0.46;
+  cursor: default;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    --motion-fade: 1ms linear;
-    scroll-behavior: auto;
-  }
-}
-

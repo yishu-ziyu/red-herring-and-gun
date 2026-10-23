@@ -8,10 +8,11 @@ import { InputStage } from "./goldenPath/InputStage";
 import { InvestigationCanvas } from "./goldenPath/InvestigationCanvas";
 import { useInvestigationRun, type StartOptions } from "./goldenPath/useInvestigationRun";
 import { gpCopyFor } from "./goldenPath/copy";
+import { formatDay } from "./goldenPath/snapshotUi";
 import { useUiLang } from "./lib/useUiLang";
 import { caseIntakeDisplayText, caseIntakeFailedLinks, caseIntakeIsImageOnly, caseIntakePrimaryText, createCaseIntake, type CaseIntake } from "./lib/caseIntake";
 import { createKnowledgeBase, normalizeHistoryClaim } from "./lib/knowledgeBase";
-import { composeFollowUpClaim, displayFollowUpClaim, previousAnswerText } from "../shared/followUp";
+import { composeFollowUpClaim, previousAnswerText } from "../shared/followUp";
 import { visiblePriorRoundFromSnapshot } from "../shared/followUp";
 import type { InvestigationThread, InvestigationRound } from "../shared/investigationThread";
 import { InvestigationThreadHeader } from "./goldenPath/InvestigationThreadHeader";
@@ -41,7 +42,8 @@ export default function App() {
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = active?.localId ?? null;
   const [historyNotice, setHistoryNotice] = useState("");
-  const [sameClaim, setSameClaim] = useState<{ id: string; claim: string; at?: number; intake: CaseIntake } | null>(null);
+  // 提交了查过的同一句话：直接打开旧结果，提示里给「重新核查」，不先弹框让人选。
+  const [sameClaimAt, setSameClaimAt] = useState<number | null>(null);
   const run = useInvestigationRun();
   const [draftClaim, setDraftClaim] = useState("");
   const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
@@ -74,7 +76,7 @@ export default function App() {
       setSelectedRoundId(null);
       setSaveStatus("idle");
       setHistoryNotice("");
-      setSameClaim(null);
+      setSameClaimAt(null);
       setDraftClaim("");
       const claim = caseIntakeDisplayText(intake);
       const localId = `case-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -87,26 +89,11 @@ export default function App() {
     [run]
   );
 
-  const handleStart = useCallback(
-    (intake: CaseIntake) => {
-      const claim = caseIntakePrimaryText(intake);
-      // 同句提醒只在历史已经可靠读到时出现；加载中不截断新提交。
-      if (historyReady && !intake.links.length && !intake.images.length) {
-        const match = cases.find((item) => item.status === "done" && normalizeHistoryClaim(item.claim) === normalizeHistoryClaim(claim));
-        if (match) {
-          setSameClaim({ id: match.id, claim: match.claim, at: match.createdAt, intake });
-          return;
-        }
-      }
-      beginRun(intake);
-    },
-    [cases, historyReady, beginRun]
-  );
-
   const handleBackHome = useCallback(() => {
     // 从调查/旧报告返回首页时预填原句，方便改完再查（与旧壳一致）。只交了图片时没有可预填的原句。
     setDraftClaim((prev) => (caseIntakeIsImageOnly(active?.intake) ? "" : active?.thread?.originalClaim ?? active?.claim ?? prev));
     setSelectedRoundId(null);
+    setSameClaimAt(null);
     run.reset();
     setActive(null);
     setMode("input");
@@ -138,15 +125,17 @@ export default function App() {
       snapshot ? threadForRound(active, snapshot, currentRunId(active, run.state.runId)) : active.thread, "recheck");
   }, [active, beginRun, handleBackHome, run.state.snapshot, run.state.runId]);
 
+  /** 打开一条历史记录；打开成功返回 true。 */
   const handleSelectCase = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<boolean> => {
       const item = cases.find((entry) => entry.id === id);
-      if (!item) return;
+      if (!item) return false;
       setSelectedRoundId(null);
+      setSameClaimAt(null);
       // 本地在跑的那条：直接回到当前画布，不重新请求。
       if (item.status === "running" && active?.localId === id) {
         setMode("investigation");
-        return;
+        return true;
       }
       try {
         const entry = await createKnowledgeBase().getCase(id);
@@ -154,7 +143,7 @@ export default function App() {
         // 读不到或读不出内容不能点了没反应：提示可见，条目状态不动。
         if (!entry || !snapshot) {
           setHistoryNotice(HISTORY_OPEN_FAILED_NOTICE[lang]);
-          return;
+          return false;
         }
         run.reset();
         setActive({
@@ -165,16 +154,37 @@ export default function App() {
           restored: { snapshot, report: entry.finalReport, at: entry.timestamp },
         });
         setMode("investigation");
+        return true;
       } catch {
         setHistoryNotice(HISTORY_OPEN_FAILED_NOTICE[lang]);
+        return false;
       }
     },
     [active?.localId, cases, lang, run]
   );
 
+  const handleStart = useCallback(
+    (intake: CaseIntake) => {
+      const claim = caseIntakePrimaryText(intake);
+      // 同一句话查过：历史已经可靠读到时才判断；加载中不截断新提交。打不开旧记录就照常开查。
+      if (historyReady && !intake.links.length && !intake.images.length) {
+        const match = cases.find((item) => item.status === "done" && normalizeHistoryClaim(item.claim) === normalizeHistoryClaim(claim));
+        if (match) {
+          void handleSelectCase(match.id).then((opened) => {
+            if (opened) setSameClaimAt(match.createdAt ?? 0);
+            else beginRun(intake);
+          });
+          return;
+        }
+      }
+      beginRun(intake);
+    },
+    [cases, historyReady, beginRun, handleSelectCase]
+  );
+
   if (window.location.pathname.startsWith("/s/")) {
     return (
-      <main className="gp-share-unavailable" data-gp-share-unavailable>
+      <main className="gp-share-unavailable gp-column" data-gp-share-unavailable>
         <h1>{copy.shareUnavailableTitle}</h1>
         <p>{copy.shareUnavailableBody}</p>
         <a href="/">{copy.backHome}</a>
@@ -247,59 +257,29 @@ export default function App() {
       viewingInvestigation={mode === "investigation"}
     >
       {showLinkUnreachable ? (
-        <p className="gp-global-notice" role="alert">
+        <p className="gp-global-notice gp-column" role="alert">
           {copy.linkUnreachableNotice}
         </p>
       ) : run.state.notice && mode === "investigation" ? (
-        <p className="gp-global-notice" role="alert">{run.state.notice}</p>
+        <p className="gp-global-notice gp-column" role="alert">{run.state.notice}</p>
       ) : historyNotice ? (
-        <p className="gp-global-notice" role="alert">{historyNotice}</p>
-      ) : null}
-      {sameClaim ? (
-        <div className="gp-same-claim" role="dialog" aria-label={copy.sameClaimTitle}>
-          <p className="gp-same-claim-title">{copy.sameClaimTitle}</p>
-          <p className="gp-same-claim-text">{sameClaim.claim}</p>
-          <p className="gp-same-claim-time">
-            {sameClaim.at ? copy.oldCaseNotice(new Date(sameClaim.at).toLocaleString("zh-CN", { hour12: false })) : copy.oldCaseNotice(copy.unknownTime)}
-          </p>
-          <div className="gp-same-claim-actions">
-            <button
-              type="button"
-              className="gp-primary-btn"
-              onClick={() => {
-                const target = sameClaim;
-                setSameClaim(null);
-                void handleSelectCase(target.id);
-              }}
-            >
-              {copy.sameClaimOpen}
-            </button>
-            <button
-              type="button"
-              className="gp-ghost-btn"
-              onClick={() => {
-                const target = sameClaim;
-                setSameClaim(null);
-                beginRun(target.intake);
-              }}
-            >
-              {copy.sameClaimRedo}
-            </button>
-            <button type="button" className="gp-ghost-btn" onClick={() => setSameClaim(null)}>
-              {copy.cancel}
-            </button>
-          </div>
-        </div>
+        <p className="gp-global-notice gp-column" role="alert">{historyNotice}</p>
+      ) : sameClaimAt !== null && mode === "investigation" ? (
+        <p className="gp-global-notice gp-column" role="status" data-gp-same-claim>
+          {copy.sameClaimNotice(formatDay(sameClaimAt || undefined) || "之前")}
+          <button type="button" className="gp-link-btn" onClick={handleRetry}>
+            {copy.recheck}
+          </button>
+        </p>
       ) : null}
       {mode === "investigation" && active?.thread ? <InvestigationThreadHeader
         thread={active.thread}
-        currentQuestion={displayFollowUpClaim(active.claim)}
         selectedRoundId={selectedRoundId}
         onSelect={setSelectedRoundId}
       /> : null}
       {mode === "input" ? (
         <>
-          {!historyReady ? <p className="gp-global-notice" role="status">{copy.loadingHistory}</p> : null}
+          {!historyReady ? <p className="gp-global-notice gp-column" role="status">{copy.loadingHistory}</p> : null}
           <InputStage
             onSubmit={handleStart}
             initialClaim={draftClaim}
@@ -308,7 +288,7 @@ export default function App() {
       ) : active && displaySnapshot ? (
         <>
           {showTimeoutPending ? (
-            <p className="gp-hint" role="status" data-gp-timeout-pending>
+            <p className="gp-global-notice gp-column" role="status" data-gp-timeout-pending>
               {TIMEOUT_PENDING_NOTICE[lang]}
             </p>
           ) : null}
@@ -322,7 +302,6 @@ export default function App() {
             onRetrySave={retrySave}
             restoredAt={active.restored?.at}
             onReverify={handleRetry}
-            onBackHome={handleBackHome}
             onFollowUp={archivedRound ? undefined : handleFollowUp}
             linkUnreachable={caseIntakeFailedLinks(active.intake).length > 0}
             images={archivedRound || active.restored ? undefined : active.intake?.images}
@@ -331,14 +310,14 @@ export default function App() {
           />
         </>
       ) : showTimeoutPending ? (
-        <p className="gp-hint" role="status" data-gp-timeout-pending>
+        <p className="gp-global-notice gp-column" role="status" data-gp-timeout-pending>
           {TIMEOUT_PENDING_NOTICE[lang]}
         </p>
       ) : (
-        <p className="gp-waiting" role="status">
+        <p className="gp-waiting gp-column" role="status">
           {run.state.connection === "failed" && !snapshot && !showLinkUnreachable
             ? publicTransportError(run.state.errorMessage, copy.connectionLost)
-            : "正在拆解这句话…"}
+            : "正在拆分这句话…"}
         </p>
       )}
     </ProductShell>

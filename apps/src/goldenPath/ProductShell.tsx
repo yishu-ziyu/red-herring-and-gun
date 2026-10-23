@@ -1,11 +1,11 @@
 /**
- * ProductShell — 生产产品壳（Issue #52 第二节）：轻量 Chrome。
- * 顶部只有品牌 / 新调查 / 历史；历史走 drawer，不再占固定栏位。
- * 主内容就是一张调查画布。
+ * ProductShell — 产品壳（Issue #52 第二节）。
+ * 顶部只有品牌、新调查、历史记录；历史记录从右侧抽屉打开。
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
+import { formatDay } from "./snapshotUi";
 import "./golden-path.css";
 
 export type ShellCase = {
@@ -28,10 +28,11 @@ type ProductShellProps = {
   children: ReactNode;
 };
 
+/** 查完是常态，不标；只标还在查和没查完的。 */
 const CASE_STATUS_LABEL: Record<ShellCase["status"], string> = {
   running: "调查中",
-  done: "已完成",
-  interrupted: "没查完",
+  done: "",
+  interrupted: "未完成",
 };
 
 export function ProductShell({
@@ -59,25 +60,17 @@ export function ProductShell({
   return (
     <div className="gp-shell">
       <header className="gp-topbar">
-        <div className="gp-topbar-inner">
-          {/* 进门态品牌只是名字，不假装能点；回空白输入的入口只在看旧结果时出现在导航里。 */}
-          <div className="gp-brand gp-brand--static">
-            <img src="/logo.png?v=20260615" alt="" className="gp-brand-logo" />
-            <div className="gp-brand-text">
-              <span className="gp-brand-name">红鲱鱼与枪</span>
-              <span className="gp-brand-tagline">{copy.brandTagline}</span>
-            </div>
+        <div className="gp-topbar-inner gp-column">
+          <div className="gp-brand">
+            <img src="/mark.png" alt="" className="gp-brand-mark" />
+            红鲱鱼与枪
           </div>
           <nav className="gp-topbar-actions" aria-label="产品导航">
             {viewingInvestigation ? (
               <button type="button" className="gp-icon-btn" onClick={onNewCase}>
                 {copy.newCheck}
               </button>
-            ) : (
-              <a className="gp-nav-text" href="#gp-examples">
-                {copy.examplesNav}
-              </a>
-            )}
+            ) : null}
             <button
               type="button"
               className="gp-icon-btn"
@@ -85,9 +78,9 @@ export function ProductShell({
               aria-expanded={historyOpen}
               onClick={() => setHistoryOpen(true)}
             >
-              <svg viewBox="0 0 20 20" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6">
-                <circle cx="10" cy="10" r="7.2" />
-                <path d="M10 5.8V10l2.8 1.8" strokeLinecap="round" />
+              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="10" cy="10" r="7.25" />
+                <path d="M10 6v4l2.75 1.75" strokeLinecap="round" />
               </svg>
               {copy.historyLabel}
             </button>
@@ -100,19 +93,23 @@ export function ProductShell({
           <button
             type="button"
             className="gp-scrim"
-            aria-label="关闭历史"
+            aria-label={copy.close}
             onClick={() => setHistoryOpen(false)}
           />
-          <aside className="gp-drawer gp-drawer--history" role="dialog" aria-label={copy.historyDrawerTitle}>
+          <aside className="gp-drawer" role="dialog" aria-label={copy.historyLabel}>
             <header className="gp-drawer-head">
-              <strong>{copy.historyDrawerTitle}</strong>
-              <button type="button" className="gp-icon-btn" onClick={() => setHistoryOpen(false)}>
-                ✕
+              <strong>{copy.historyLabel}</strong>
+              <button
+                type="button"
+                className="gp-icon-btn gp-drawer-close"
+                aria-label={copy.close}
+                onClick={() => setHistoryOpen(false)}
+              >
+                <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M4 4l8 8M12 4l-8 8" />
+                </svg>
               </button>
             </header>
-            <p className="gp-drawer-scope" data-gp-history-scope="local">
-              {copy.historyScopeLocal}
-            </p>
             {!historyReady ? (
               <p className="gp-drawer-empty" role="status">{copy.loadingHistory}</p>
             ) : cases.length === 0 ? (
@@ -129,18 +126,23 @@ export function ProductShell({
                         onSelectCase(item.id);
                       }}
                     >
-                      <strong>{item.claim}</strong>
-                      <em>
-                        <span data-gp-case-status={item.status}>{CASE_STATUS_LABEL[item.status]}</span>
-                        {item.createdAt ? (
-                          <span> · {new Date(item.createdAt).toLocaleDateString("zh-CN")}</span>
-                        ) : null}
-                      </em>
+                      <span className="gp-history-claim">{item.claim}</span>
+                      {CASE_STATUS_LABEL[item.status] || item.createdAt ? (
+                        <span className="gp-history-meta">
+                          {CASE_STATUS_LABEL[item.status] ? (
+                            <span data-gp-case-status={item.status}>{CASE_STATUS_LABEL[item.status]}</span>
+                          ) : null}
+                          {item.createdAt ? <span>{formatDay(item.createdAt)}</span> : null}
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 ))}
               </ul>
             )}
+            <p className="gp-drawer-scope" data-gp-history-scope="local">
+              {copy.historyScopeLocal}
+            </p>
           </aside>
         </>
       ) : null}

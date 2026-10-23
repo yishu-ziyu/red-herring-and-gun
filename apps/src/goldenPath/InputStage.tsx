@@ -1,14 +1,12 @@
 /**
- * InputStage — 输入态（Issue #52 第三节）：5 秒内看懂「放什么、会得到什么、下一步」。
- * 只有用户级状态（服务不可用 / 次数用尽 / 链接抓取失败）；
- * 实现层品牌、积分、批量工具与模型供应商控制一律不在默认首页。
+ * InputStage — 首页（Issue #52 第三节）：标题、输入框、例子、四步分工。
+ * 只显示用户需要知道的状态（次数用尽、链接读不到）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   caseIntakeFailedLinks,
   createCaseIntake,
   isUrlOnlyClaim,
-  extractLinks,
   imageFileToCaseImage,
   type CaseImage,
   type CaseIntake,
@@ -50,17 +48,17 @@ function showLinkScrapeNotice(text: string, host: HTMLElement | null) {
     const { style } = notice;
     style.position = "fixed";
     style.left = "50%";
-    style.bottom = "28px";
+    style.bottom = "24px";
     style.transform = "translateX(-50%)";
+    style.width = "max-content";
     style.maxWidth = "min(560px, calc(100vw - 32px))";
-    style.padding = "10px 16px";
+    style.margin = "0";
+    style.padding = "8px 12px";
     style.borderRadius = "8px";
-    style.border = "1px solid var(--gp-hairline, #dedcd4)";
-    style.background = "var(--gp-surface, #ffffff)";
-    style.color = "var(--gp-ink, #252723)";
-    style.fontSize = "14px";
-    style.lineHeight = "1.5";
-    style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.16)";
+    style.border = "0.5px solid var(--sand-7)";
+    style.background = "var(--sand-1)";
+    style.color = "var(--sand-12)";
+    style.fontSize = "13px";
     // 低于 scrim(40)/drawer(50)：抽屉打开时提示不该浮在遮罩之上。
     style.zIndex = "35";
     container.appendChild(notice);
@@ -101,7 +99,6 @@ export function InputStage({
   const [highlightedDemo, setHighlightedDemo] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
-  const detectedLinks = useMemo(() => extractLinks(inputValue), [inputValue]);
   const attachments = useMemo<PromptAttachment[]>(
     () => images.map((image) => ({ id: image.id, name: image.name })),
     [images]
@@ -148,7 +145,7 @@ export function InputStage({
         };
         if (caseIntakeFailedLinks(enriched).length > 0) {
           if (!text && intake.images.length === 0 && isUrlOnlyClaim(intake.text)) {
-            setInputError(lang === "en" ? "The link could not be read. Add the original text or a screenshot; no investigation has started." : "链接打不开，无法确定其中的说法。请补充原文或截图，尚未开始调查。");
+            setInputError(copy.urlOnlyUnreadable);
             return;
           }
           showLinkScrapeNotice(copy.linkUnreachableNotice, rootRef.current);
@@ -162,7 +159,7 @@ export function InputStage({
       }
     }
     onSubmit(enriched);
-  }, [checkQuota, images, inputValue, isScraping, lang, copy.fillMaterialFirst, copy.scrapeFailed, onSubmit, quotaExhausted]);
+  }, [checkQuota, images, inputValue, isScraping, copy, onSubmit, quotaExhausted]);
 
   const handleAddFiles = useCallback(
     async (files: File[]) => {
@@ -207,7 +204,7 @@ export function InputStage({
   }, []);
 
   const userHint = (() => {
-    if (inputError) return { tone: inputError.includes("抓取失败") ? "muted" : "warning", text: inputError } as const;
+    if (inputError) return { tone: "warning", text: inputError } as const;
     if (checkQuota?.enforced) {
       if (quotaExhausted) {
         return { tone: "warning", text: copy.quotaExhausted } as const;
@@ -218,12 +215,11 @@ export function InputStage({
   })();
 
   return (
-    <div className="gp-input-stage" ref={rootRef}>
+    <div className="gp-input-stage gp-column" ref={rootRef}>
       <h1 className="gp-headline">
         <span className="gp-headline-part">{copy.inputHeadlineA}</span>
         <em>{copy.inputHeadlineAccent}</em>
       </h1>
-      <p className="gp-sub">{lang === "en" ? "Drop in uncertain information. Get a bounded answer, inspect its evidence, and continue the same investigation when needed." : "把拿不准的内容放进来。先查主要疑问，再看依据、补查缺口，结果留在同一份调查里。"}</p>
 
       <section className="gp-input-card" aria-label={copy.inputLabel}>
         <PromptInput
@@ -242,25 +238,14 @@ export function InputStage({
           ariaLabel={copy.inputLabel}
           placeholder={copy.inputPlaceholder}
         />
-        {detectedLinks.length > 0 ? (
-          <div className="gp-link-row" aria-label={copy.linksDetected}>
-            {detectedLinks.map((link) => (
-              <a key={link.id} className="gp-link-chip" href={link.url} target="_blank" rel="noreferrer">
-                <span>{link.hostname}</span>
-                <span className="gp-ext-arrow" aria-hidden="true">↗</span>
-              </a>
-            ))}
-          </div>
-        ) : null}
         {userHint ? (
           <p className={`gp-hint gp-hint--${userHint.tone}`} role={userHint.tone === "warning" ? "alert" : "status"}>
-            <span className="gp-hint-badge" aria-hidden="true">{userHint.tone === "warning" ? "!" : "•"}</span>
-            <span className="gp-hint-text">{userHint.text}</span>
+            {userHint.text}
           </p>
         ) : null}
       </section>
 
-      <section className="gp-examples" id="gp-examples" aria-label={copy.examplesAria}>
+      <section className="gp-examples" aria-label={copy.examplesAria}>
         <p className="gp-examples-label">{copy.examplesLabel}</p>
         <ul className="gp-examples-list">
           {copy.demoClaims.map((claim) => (

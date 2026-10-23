@@ -102,22 +102,23 @@ export function ShareControl({ runId, brief }: { runId: string; brief: string })
 
   return (
     <section className="gp-share" aria-label={copy.shareTitle} data-gp-share-state={state.phase}>
-      <div className="gp-share-head">
-        {state.phase === "idle" ? (
-          <button type="button" className="gp-btn" data-gp-share-start onClick={() => void create()}>
-            {copy.shareCreate}
-          </button>
-        ) : (
-          <span className="gp-share-label">{copy.shareTitle}</span>
-        )}
-        {state.phase === "creating" ? <span className="gp-share-hint">{copy.shareCreating}</span> : null}
-      </div>
+      {state.phase === "idle" || state.phase === "creating" ? (
+        <button
+          type="button"
+          className="gp-btn"
+          data-gp-share-start
+          disabled={state.phase === "creating"}
+          onClick={() => void create()}
+        >
+          {state.phase === "creating" ? copy.shareCreating : copy.shareCreate}
+        </button>
+      ) : null}
 
       {state.phase === "created" ? (
         <div className="gp-share-body">
           <p className="gp-share-url" data-gp-share-url>{state.url}</p>
           <div className="gp-share-actions">
-            <button type="button" className="gp-btn" data-gp-share-copy onClick={() => void copyText(state.url, "link")}>
+            <button type="button" className="gp-btn gp-btn--primary" data-gp-share-copy onClick={() => void copyText(state.url, "link")}>
               {copied === "link" ? copy.shareCopied : copy.shareCopy}
             </button>
             <button type="button" className="gp-btn" data-gp-share-copy-brief onClick={() => void copyText(brief, "brief")}>
@@ -131,8 +132,9 @@ export function ShareControl({ runId, brief }: { runId: string; brief: string })
             <p className="gp-share-hint is-error" role="alert">
               {copyError}
             </p>
-          ) : null}
-          <p className="gp-share-hint">{copy.shareRevokeNote}</p>
+          ) : (
+            <p className="gp-share-hint">{copy.shareRevokeNote}</p>
+          )}
         </div>
       ) : null}
 

@@ -1,75 +1,46 @@
 /*
- * Golden Path 样式（Issue #61）—— Mode 3 / Hybrid (Quiet Editorial Evidence)
- * 核心设计原则：Paper-first. Semantics by structure, not by paint.
- * 彻底废除大面积语义背景系统（No Semantic Rainbow），消除 Card-on-card 与 SaaS Dashboard 感。
+ * 产品壳、首页、调查页的样式。
+ * 颜色只用 Radix Colors（sand 中性色；red / green / amber 只表示判断结果和错误），按它的分级用：
+ * 1 页面底，2 浅底，3 控件底，4 悬停，5 选中，6 分隔线，7 控件边框，8 悬停边框和焦点，
+ * 9 实色，11 次要文字，12 主要文字。
+ * 字号只有 4 档：36 / 20 / 16 / 13。线一律 0.5px。
  */
 
 :root {
-  /* 方案 A：现代通透数字社论纸感（Modern Crisp Paper & Burgundy） */
-  --gp-canvas: #faf9f5;
-  --gp-surface: #ffffff;
-  --gp-surface-inset: #f5f4ef;
-  --gp-surface-soft: #faf8f3;
+  --gp-size-display: 36px;
+  --gp-size-title: 20px;
+  --gp-size-body: 16px;
+  --gp-size-small: 13px;
 
-  /* 墨水阶梯：深石炭墨 / 暖灰辅文 / 淡石灰标牌弱提示 */
-  --gp-ink: #1c1917;
-  --gp-ink-2: #57534e;
-  --gp-ink-3: #8c867f;
+  /* 嵌套圆角同心：外框 16 = 里面元素 8 + 间距 8。标签 4。 */
+  --gp-radius-tag: 4px;
+  --gp-radius: 8px;
+  --gp-radius-outer: 16px;
+  --gp-inset: 8px;
 
-  /* 发丝细线（极细纸边灰线，消除生硬卡片切割） */
-  --gp-hairline: #e7e5df;
-  --gp-hairline-subtle: #f0ede6;
+  --gp-line: 0.5px solid var(--sand-6);
+  --gp-column: 720px;
+  --gp-gutter: 24px;
 
-  /* 品牌强调：深沉内敛勃艮第酒红，不喧宾夺主 */
-  --gp-accent: #8f2d2a;
-  --gp-accent-deep: #732220;
-  --gp-accent-subtle: rgba(143, 45, 42, 0.07);
+  --gp-font: var(--font-sans);
+  --gp-serif: var(--font-serif);
 
-  /* 语义微墨水：有依据 / 不成立 / 尚不确定 带文字，颜色只辅助 */
-  --gp-semantic-contradict: #8f2d2a;
-  --gp-semantic-gap: #855f1a;
-
-  /* 卡片 14px，按钮 8px */
-  --gp-radius-card: 14px;
-  --gp-radius-sm: 8px;
-
-  --gp-elevation-input: 0 4px 20px -4px rgba(27, 24, 20, 0.04), 0 1px 3px rgba(27, 24, 20, 0.02);
-  --gp-elevation-drawer: -4px 0 24px rgba(27, 24, 20, 0.08);
-
-  /* 焦点环 */
-  --gp-focus-ring: 0 0 0 2px #ffffff, 0 0 0 4px #8f2d2a;
-
-  /* Motion tokens（有限基准，严禁全属性过渡） */
-  --gp-motion-fast: 140ms;
-  --gp-motion-ui: 240ms;
-  --gp-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-
-  /* 尺寸与版心 */
-  --gp-content-width: 880px;
-  --gp-shell-width: 1120px;
-
-  /* UI：SF Pro Regular/Medium，-0.15px。文书层（判断句、原句、摘录）仍用衬线。 */
-  --gp-font: "SF Pro Text", "SF Pro", -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Segoe UI", "Microsoft YaHei", sans-serif;
-  --gp-serif: var(--font-serif, "Noto Serif SC", "Songti SC", serif);
-  --gp-tracking: -0.15px;
-  --gp-type-14: 14px;
+  /* 判断结果的颜色：文字用 11，标签底用 3，原句里的标记用 4。 */
+  --gp-tone-positive: var(--green-11);
+  --gp-tone-positive-bg: var(--green-3);
+  --gp-tone-positive-mark: var(--green-4);
+  --gp-tone-mixed: var(--amber-11);
+  --gp-tone-mixed-bg: var(--amber-3);
+  --gp-tone-mixed-mark: var(--amber-4);
+  --gp-tone-negative: var(--red-11);
+  --gp-tone-negative-bg: var(--red-3);
+  --gp-tone-negative-mark: var(--red-4);
+  --gp-tone-muted: var(--sand-11);
+  --gp-tone-muted-bg: var(--sand-3);
+  --gp-tone-muted-mark: var(--sand-4);
 }
 
-/* ---------- 基础与通用重置（仅 Golden Path 壳内） ---------- */
-
-.gp-shell,
-.gp-shell *,
-.gp-shell *::before,
-.gp-shell *::after {
-  box-sizing: border-box;
-}
-
-.gp-shell :focus-visible {
-  outline: none;
-  box-shadow: var(--gp-focus-ring);
-}
-
-/* ---------- 壳层（UI Layer Chrome） ---------- */
+/* ---------- 壳 ---------- */
 
 .gp-shell {
   min-height: 100vh;
@@ -77,38 +48,40 @@
   display: flex;
   flex-direction: column;
   font-family: var(--gp-font);
-  font-weight: 400;
-  letter-spacing: var(--gp-tracking);
-  font-size: var(--gp-type-14);
-  color: var(--gp-ink);
-  background: var(--gp-canvas);
+  font-size: var(--gp-size-body);
+  color: var(--sand-12);
+  background: var(--sand-1);
 }
 
-.gp-shell strong,
+.gp-shell :focus-visible {
+  outline: 2px solid var(--sand-8);
+  outline-offset: 2px;
+}
+
 .gp-shell h1,
 .gp-shell h2,
 .gp-shell h3,
-.gp-shell h4 {
-  font-weight: 500;
+.gp-shell strong {
+  font-weight: 600;
 }
 
-.gp-shell [data-prompt-send] {
-  border-radius: var(--gp-radius-sm);
+/* 所有内容共用一列：顶栏、提示、首页、调查页左右边缘对齐。 */
+.gp-column {
+  width: min(100% - 2 * var(--gp-gutter), var(--gp-column));
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .gp-topbar {
   position: sticky;
   top: 0;
   z-index: 30;
-  background: var(--gp-canvas);
-  border-bottom: 1px solid var(--gp-hairline);
+  background: var(--sand-1);
+  border-bottom: var(--gp-line);
 }
 
 .gp-topbar-inner {
-  max-width: var(--gp-shell-width);
-  margin: 0 auto;
-  padding: 0 24px;
-  min-height: 77px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -119,108 +92,42 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 0;
-  background: none;
-  padding: 4px 6px;
-  margin-left: -6px;
-  border-radius: var(--gp-radius-sm);
-  cursor: pointer;
-  font-family: inherit;
-  color: var(--gp-ink);
   min-width: 0;
-  transition: background-color var(--gp-motion-fast) var(--gp-ease-out);
-}
-
-.gp-brand:hover {
-  background: var(--gp-surface-inset);
-}
-
-/* 进门态品牌只是名字：不假装能点。 */
-.gp-brand--static {
-  cursor: default;
-}
-
-.gp-brand--static:hover {
-  background: none;
-}
-
-.gp-brand-logo {
-  width: 37px;
-  height: 37px;
-  object-fit: contain;
-  flex: none;
-}
-
-.gp-brand-text {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  min-width: 0;
-}
-
-.gp-brand-name {
-  font-size: 14px;
-  font-weight: 500;
-  letter-spacing: 1px;
+  font-size: var(--gp-size-body);
+  font-weight: 600;
   white-space: nowrap;
 }
 
-.gp-brand-tagline {
-  display: block;
-  font-size: 12px;
-  line-height: 1.2;
-  letter-spacing: 1.4px;
-  color: var(--gp-ink-3);
+.gp-brand-mark {
+  width: 28px;
+  height: 28px;
+  flex: none;
 }
 
+/* 按钮文字和内容列右边缘对齐：抵掉按钮自身的左右内边距。 */
 .gp-topbar-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: nowrap;
-}
-
-.gp-nav-text {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 8px 0;
-  border: 0;
-  background: none;
-  color: var(--gp-ink-2);
-  font: inherit;
-  font-size: 14px;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.gp-nav-text:hover {
-  color: var(--gp-ink);
+  gap: 4px;
+  margin-right: -12px;
 }
 
 .gp-icon-btn {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
   gap: 6px;
-  border: 1px solid transparent;
-  background: none;
-  border-radius: var(--gp-radius-sm);
-  padding: 6px 12px;
-  font-size: 13px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: var(--gp-radius);
+  font-size: var(--gp-size-small);
   font-weight: 500;
-  font-family: inherit;
-  color: var(--gp-ink-2);
-  cursor: pointer;
+  color: var(--sand-11);
   white-space: nowrap;
-  text-decoration: none;
-  transition: background-color var(--gp-motion-fast) var(--gp-ease-out), color var(--gp-motion-fast) var(--gp-ease-out);
 }
 
 .gp-icon-btn:hover {
-  background: var(--gp-surface-inset);
-  color: var(--gp-ink);
+  background: var(--sand-3);
+  color: var(--sand-12);
 }
 
 .gp-main {
@@ -229,174 +136,130 @@
   flex-direction: column;
 }
 
-/* 全局提示（历史打开失败/超时、历史读取中）：一句话看得清，不抢版面、不动布局。 */
+/* 全局提示：一句话，和内容列对齐。 */
 .gp-global-notice {
-  /* 与画布内容列对齐：宽屏 840 = 内容列 880 减去自身 20 的左右 padding。 */
-  width: min(100% - 40px, calc(var(--gp-content-width) - 40px));
-  margin: 12px auto 0;
+  margin-top: 16px;
+  margin-bottom: 0;
   padding: 8px 12px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--gp-ink-2);
-  background: var(--gp-surface-soft);
-  border: 1px solid var(--gp-hairline);
-  border-radius: var(--gp-radius-sm);
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
+  background: var(--sand-2);
+  border: var(--gp-line);
+  border-radius: var(--gp-radius);
 }
 
-/* 打开失败/超时是 alert：要像一件待处理的事，不能埋进背景。 */
 .gp-global-notice[role="alert"] {
-  color: var(--gp-accent-deep);
-  background: var(--gp-accent-subtle);
-  border-color: var(--gp-accent);
+  color: var(--red-11);
+  background: var(--red-2);
+  border-color: var(--red-6);
 }
 
-/* 同一说法查过：与全局提示同列对齐。 */
-.gp-same-claim {
-  width: min(100% - 40px, calc(var(--gp-content-width) - 40px));
-  margin: 12px auto 0;
-  padding: 14px 16px;
-  background: var(--gp-surface);
-  border: 1px solid var(--gp-hairline);
-  border-radius: var(--gp-radius-sm);
+.gp-global-notice .gp-link-btn {
+  margin-left: 8px;
 }
 
-.gp-same-claim-title {
-  margin: 0 0 4px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--gp-accent-deep);
-}
-
-.gp-same-claim-text {
-  margin: 0 0 2px;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.6;
-  color: var(--gp-ink);
-}
-
-.gp-same-claim-time {
-  margin: 0 0 12px;
-  font-size: 12.5px;
-  color: var(--gp-ink-3);
-}
-
-.gp-same-claim-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-/* ---------- Drawer / Scrim ---------- */
+/* ---------- 历史记录抽屉 ---------- */
 
 .gp-scrim {
   position: fixed;
   inset: 0;
   z-index: 40;
-  border: 0;
-  background: rgba(24, 24, 27, 0.28);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  cursor: pointer;
-  animation: gp-fade var(--gp-motion-ui) var(--gp-ease-out);
+  background: var(--black-a5);
 }
 
 .gp-drawer {
   position: fixed;
   z-index: 50;
-  background: var(--gp-surface);
-  box-shadow: var(--gp-elevation-drawer);
-  display: flex;
-  flex-direction: column;
-}
-
-.gp-drawer--history {
   top: 0;
   right: 0;
   bottom: 0;
   width: min(360px, 92vw);
-  border-left: 1px solid var(--gp-hairline);
-  border-radius: 0;
-  animation: gp-slide-in var(--gp-motion-ui) var(--gp-ease-out);
+  display: flex;
+  flex-direction: column;
+  background: var(--sand-1);
+  border-left: var(--gp-line);
 }
 
 .gp-drawer-head {
+  flex: none;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 18px 12px 20px;
-  font-size: 14px;
-  font-weight: 500;
-  border-bottom: 1px solid var(--gp-hairline-subtle);
+  padding: 0 8px 0 20px;
+  border-bottom: var(--gp-line);
+  font-size: var(--gp-size-body);
+}
+
+.gp-drawer-close {
+  width: 40px;
+  justify-content: center;
+  padding: 0;
 }
 
 .gp-drawer-empty {
-  padding: 14px 20px 20px;
-  font-size: 13px;
-  color: var(--gp-ink-3);
+  margin: 0;
+  padding: 16px 20px;
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
 }
 
 .gp-history-list {
+  flex: 1;
   list-style: none;
   margin: 0;
-  padding: 8px 12px 20px;
+  padding: 8px;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
 }
 
 .gp-history-item {
   width: 100%;
-  text-align: left;
-  border: 0;
-  background: none;
-  font-family: inherit;
-  border-radius: var(--gp-radius-sm);
-  padding: 8px 12px;
-  cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  transition: background-color var(--gp-motion-fast) var(--gp-ease-out);
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: var(--gp-radius);
+  text-align: left;
+  font-size: var(--gp-size-small);
 }
 
 .gp-history-item:hover {
-  background: var(--gp-surface-inset);
+  background: var(--sand-4);
 }
 
 .gp-history-item.is-active {
-  background: var(--gp-surface-inset);
-  border-left: 2px solid var(--gp-accent);
+  background: var(--sand-5);
 }
 
-.gp-history-item strong {
-  font-size: 13px;
+.gp-history-claim {
   font-weight: 500;
-  color: var(--gp-ink);
-  line-height: 1.5;
+  color: var(--sand-12);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-.gp-history-item em {
-  font-style: normal;
-  font-size: 12px;
-  color: var(--gp-ink-3);
+.gp-history-meta {
   display: flex;
-  gap: 4px;
+  gap: 8px;
+  color: var(--sand-11);
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- 输入态（Input Stage） ---------- */
+.gp-drawer-scope {
+  flex: none;
+  margin: auto 0 0;
+  padding: 12px 20px 16px;
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
+  border-top: var(--gp-line);
+}
+
+/* ---------- 首页 ---------- */
 
 .gp-input-stage {
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 40px 24px 72px;
+  padding: 80px 0 72px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -404,17 +267,14 @@
 }
 
 .gp-shell .gp-headline {
-  margin: 12px 0 0;
-  max-width: 800px;
+  margin: 0 0 32px;
   font-family: var(--gp-serif);
-  font-size: 34px;
+  font-size: var(--gp-size-display);
+  font-weight: 700;
   line-height: 1.3;
-  font-weight: 700 !important;
-  letter-spacing: -0.6px;
-  color: var(--gp-ink);
 }
 
-/* 标题按两半句换行，不从「靠谱」中间断开。 */
+/* 标题按两半句换行，不从词中间断开。 */
 .gp-headline-part,
 .gp-headline em {
   display: inline-block;
@@ -422,185 +282,47 @@
 
 .gp-headline em {
   font-style: normal;
-  color: var(--gp-accent);
-  border-bottom: 0;
-  position: relative;
-  padding: 0 2px;
+  color: var(--red-11);
 }
 
-.gp-headline em::after {
-  content: "";
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: color-mix(in srgb, var(--gp-accent) 26%, transparent);
-  border-radius: 2px;
-}
-
-.gp-sub {
-  margin: 17px 0 30px;
-  max-width: 760px;
-  font-size: 14px;
-  line-height: 1.7;
-  color: var(--gp-ink-2);
-  white-space: pre-line;
-}
-
-/* 单一功能 Surface：PromptInput 通过 CSS 自定义属性消费嵌入契约 */
+/* 输入框：外框 16 圆角、8 内边距，里面的按钮 8 圆角，同心。 */
 .gp-input-card {
-  --paper: transparent;
-  --border-subtle: transparent;
-  --prompt-frame-background: transparent;
-  --prompt-frame-border: 0 solid transparent;
-  --prompt-frame-shadow: none;
-  --prompt-frame-padding: 6px 4px 4px;
-  --prompt-frame-padding-top: 6px;
-  --prompt-frame-radius: 0;
   width: 100%;
-  max-width: 760px;
-  background: var(--gp-surface);
-  border: 1px solid var(--gp-hairline);
-  border-radius: var(--gp-radius-card);
-  box-shadow: 0 4px 24px -4px rgba(27, 24, 20, 0.04), 0 1px 3px rgba(27, 24, 20, 0.02);
-  padding: 18px 22px 14px;
+  padding: var(--gp-inset);
   text-align: left;
-  transition: border-color var(--gp-motion-fast) var(--gp-ease-out), box-shadow var(--gp-motion-fast) var(--gp-ease-out);
+  background: var(--sand-1);
+  border: 0.5px solid var(--sand-7);
+  border-radius: var(--gp-radius-outer);
 }
 
 .gp-input-card:focus-within {
-  border-color: var(--gp-accent);
-  box-shadow: 0 0 0 1px var(--gp-accent), var(--gp-elevation-input);
+  border-color: var(--sand-8);
 }
 
-/* 输入框内层可编辑区域由外层卡片统一承担聚焦反馈，消除嵌套重复焦点环 */
-.gp-input-card #claim-input:focus-visible,
-.gp-input-card [contenteditable="true"]:focus-visible {
+.gp-input-card [contenteditable]:focus-visible {
   outline: none;
-  box-shadow: none;
-}
-
-.gp-link-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 4px 2px;
-}
-
-.gp-link-chip {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--gp-ink-2);
-  background: var(--gp-surface-inset);
-  border: 1px solid var(--gp-hairline);
-  border-radius: var(--gp-radius-sm);
-  padding: 3px 8px;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  transition: color var(--gp-motion-fast) var(--gp-ease-out), border-color var(--gp-motion-fast) var(--gp-ease-out);
-}
-
-.gp-link-chip:hover {
-  color: var(--gp-accent);
-  border-color: var(--gp-accent);
 }
 
 .gp-hint {
-  margin: 10px 4px 2px;
-  font-size: 13px;
-  color: var(--gp-ink-3);
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  margin: 0;
+  padding: 8px 8px 4px;
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
 }
 
 .gp-hint--warning {
-  color: var(--gp-semantic-contradict);
+  color: var(--red-11);
 }
 
-.gp-hint-badge {
-  font-size: 12px;
-  font-weight: 500;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  display: inline-grid;
-  place-items: center;
-  background: var(--gp-surface-inset);
-  border: 1px solid var(--gp-hairline);
-  line-height: 1;
-}
-
-.gp-hint--warning .gp-hint-badge {
-  color: var(--gp-semantic-contradict);
-  border-color: rgba(185, 28, 28, 0.35);
-  background: #fff;
-}
-
-.gp-roles {
-  display: flex;
-  gap: 33px;
-  justify-content: center;
-  margin: 29px auto 0;
-  flex-wrap: wrap;
-}
-
-.gp-role {
-  text-align: center;
-  min-width: 106px;
-}
-
-.gp-role-avatar {
-  width: 74px;
-  height: 74px;
-  object-fit: cover;
-  border-radius: 50%;
-  background: #eeece5;
-  display: block;
-  border: 3px solid var(--gp-canvas);
-  margin: auto;
-}
-
-.gp-role strong {
-  display: block;
-  margin-top: 5px;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.gp-role small {
-  display: block;
-  font-size: 12px;
-  color: var(--gp-ink-2);
-}
-
-/* 示例区（Quiet Editorial 标签，无巨型彩色药丸） */
 .gp-examples {
-  margin-top: 18px;
   width: 100%;
-  max-width: 760px;
+  margin-top: 24px;
 }
 
 .gp-examples-label {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  justify-content: center;
-  color: var(--gp-ink-3);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  margin: 0 0 12px;
-}
-
-.gp-examples-label::before,
-.gp-examples-label::after {
-  content: "";
-  height: 1px;
-  width: 32px;
-  background: var(--gp-hairline);
+  margin: 0 0 8px;
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
 }
 
 .gp-examples-list {
@@ -614,184 +336,84 @@
 }
 
 .gp-example {
-  border: 1px solid var(--gp-hairline);
-  background: var(--gp-surface);
-  border-radius: var(--gp-radius-sm);
   padding: 6px 12px;
-  font-size: 13px;
-  font-family: inherit;
-  color: var(--gp-ink-2);
-  cursor: pointer;
-  transition: border-color var(--gp-motion-fast) var(--gp-ease-out), color var(--gp-motion-fast) var(--gp-ease-out), background-color var(--gp-motion-fast) var(--gp-ease-out);
+  border-radius: var(--gp-radius);
+  background: var(--sand-3);
+  font-size: var(--gp-size-small);
+  color: var(--sand-12);
+  text-align: left;
 }
 
 .gp-example:hover {
-  border-color: var(--gp-ink-3);
-  color: var(--gp-ink);
-  background: var(--gp-surface-inset);
+  background: var(--sand-4);
 }
 
 .gp-example.is-active {
-  border-color: var(--gp-accent);
-  color: var(--gp-accent);
-  background: var(--gp-accent-subtle);
-  font-weight: 500;
+  background: var(--sand-5);
 }
 
-.gp-drawer-scope {
-  margin: 0 16px 10px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--gp-ink-2);
+.gp-roles {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 64px;
+}
+
+.gp-role-avatar {
+  display: block;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 8px;
+  object-fit: cover;
+  border-radius: 50%;
+  background: var(--sand-3);
+}
+
+.gp-role strong,
+.gp-role small {
+  display: block;
+  font-size: var(--gp-size-small);
+}
+
+.gp-role small {
+  color: var(--sand-11);
 }
 
 .gp-share-unavailable {
-  max-width: 560px;
-  margin: 4rem auto;
-  padding: 0 1.25rem;
-  color: var(--gp-ink);
+  padding: 64px 0;
 }
 
 .gp-share-unavailable h1 {
-  font-size: 24px;
-  font-weight: 500;
-  line-height: 1.35;
-  margin: 0 0 12px;
+  margin: 0 0 8px;
+  font-size: var(--gp-size-title);
 }
 
 .gp-share-unavailable p {
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--gp-ink-2);
+  margin: 0 0 16px;
+  color: var(--sand-11);
 }
 
-/* ---------- 调查画布（Content Layer） ---------- */
+.gp-share-unavailable a {
+  color: var(--sand-12);
+}
+
+/* ---------- 调查页 ---------- */
 
 .gp-canvas {
   flex: 1;
 }
 
 .gp-canvas-inner {
-  max-width: var(--gp-content-width);
-  margin: 0 auto;
-  padding: 36px 20px 96px;
+  padding: 40px 0 96px;
   display: flex;
   flex-direction: column;
-  gap: 0;
 }
 
-/* 分享：默认收起；先看字段，再建链接。 */
-.gp-share {
-  margin: 20px 0 0;
-  padding-top: 14px;
-  border-top: 1px solid var(--gp-hairline);
-}
-
-.gp-share-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.gp-share-label {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--gp-ink);
-}
-
-.gp-share-body {
-  margin-top: 8px;
-}
-
-.gp-share-hint {
-  margin: 4px 0 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--gp-ink-2);
-}
-
-.gp-share-hint.is-error {
-  color: var(--gp-accent);
-}
-
-.gp-share-url {
-  margin: 6px 0;
-  font-size: 12px;
-  word-break: break-all;
-  color: var(--gp-ink);
-  background: var(--gp-surface);
-  border: 1px solid var(--gp-hairline);
-  border-radius: 8px;
-  padding: 6px 8px;
-}
-
-.gp-share-actions {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin: 8px 0 0;
-}
-
-/* 保存状态：一句话，不是徽章墙；失败要看得见。 */
-.gp-save-state {
-  font-size: 12px;
-  color: var(--gp-ink-3);
-}
-
-.gp-save-state.is-failed {
-  color: var(--gp-accent);
-}
-
-button.gp-save-state {
-  border: 0;
-  background: none;
-  font: inherit;
-  font-size: 12px;
-  padding: 0;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-/* 已停止：材料留着，语气平，不当作错误也不当作完成。 */
-.gp-stopped {
-  margin: 0 0 20px;
-  padding: 12px 0 12px 12px;
-  border-left: 2px solid var(--gp-hairline);
-}
-
-.gp-stopped strong {
-  display: block;
-  font-size: 14px;
-  color: var(--gp-ink);
-}
-
-.gp-stopped p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--gp-ink-2);
-}
-
-.gp-stopped-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.gp-link-btn[disabled] {
-  opacity: 0.6;
-  cursor: default;
-}
-
-/* 拆解命题前尚无任何命题可显示的等待态：也要有「系统还活着」的信号。 */
 .gp-waiting {
-  margin: 0;
-  font-size: 13px;
-  color: var(--gp-ink-2);
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  margin-top: 40px;
+  margin-bottom: 0;
+  color: var(--sand-11);
 }
 
 .gp-announcer {
@@ -802,136 +424,39 @@ button.gp-save-state {
   clip: rect(0 0 0 0);
 }
 
-/* 原始说法引用（Paper-first Quote） */
+/* 原句 */
 .gp-original {
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  border-radius: 0;
-  border-left: 2px solid var(--gp-ink);
-  padding: 4px 0 4px 14px;
-  margin: 0 0 24px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  overflow-anchor: auto;
-}
-
-.gp-canvas[data-gp-phase="complete"] .gp-original {
-  margin-top: 2px;
-  margin-bottom: 20px;
-}
-
-.gp-original-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-  row-gap: 8px;
-}
-
-.gp-original-label {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  color: var(--gp-ink-3);
-  text-transform: uppercase;
-}
-
-.gp-original-side {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  row-gap: 6px;
-}
-
-.gp-original-time {
-  font-style: normal;
-  font-size: 12px;
-  color: var(--gp-ink-3);
-  font-variant-numeric: tabular-nums;
-}
-
-.gp-link-btn {
-  border: 0;
-  background: none;
-  padding: 0;
-  font-family: inherit;
-  font-size: 12px;
-  color: var(--gp-ink-2);
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-  transition: color var(--gp-motion-fast) var(--gp-ease-out);
-}
-
-.gp-link-btn:hover {
-  color: var(--gp-accent);
+  padding-bottom: 24px;
+  border-bottom: var(--gp-line);
 }
 
 .gp-original-quote {
-  margin: 0;
-  padding: 0;
-}
-
-.gp-original-text {
+  position: relative;
   margin: 0;
   font-family: var(--gp-serif);
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.65;
-  color: var(--gp-ink);
+  font-size: var(--gp-size-title);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
 }
 
-/* 中断态（Quiet Editorial 警示，无黄色大色块） */
-.gp-interrupted {
-  background: var(--gp-surface-inset);
-  border: 1px solid var(--gp-hairline);
-  border-left: 2px solid var(--gp-semantic-gap);
-  border-radius: var(--gp-radius-card);
-  padding: 12px 16px;
-  margin: 0 0 22px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* 开头的引号挂在左边距里，让第一个字和下面的内容对齐。 */
+.gp-quote-open {
+  position: absolute;
+  right: 100%;
 }
 
-.gp-interrupted strong {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--gp-semantic-gap);
+.gp-original-unspanned {
+  margin: 12px 0 0;
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
+  overflow-wrap: anywhere;
 }
 
-.gp-interrupted p {
-  margin: 0;
-  font-size: 13px;
-  color: var(--gp-ink-2);
-  line-height: 1.6;
-}
-
-.gp-interrupted-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 6px;
-}
-
-.gp-interrupted-answer {
-  margin: 4px 0 0;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 1.6;
-  color: var(--gp-ink);
-}
-
-/* 用户这次上传的图片缩略图（「你调查的说法」下面） */
 .gp-intake-images {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 16px;
 }
 
 .gp-intake-images img {
@@ -939,230 +464,257 @@ button.gp-save-state {
   max-width: 200px;
   max-height: 120px;
   object-fit: contain;
-  border: 1px solid var(--gp-hairline);
-  border-radius: var(--gp-radius-card);
-  background: var(--gp-surface-inset);
+  border: var(--gp-line);
+  border-radius: var(--gp-radius);
+  background: var(--sand-2);
 }
 
-.gp-canvas[data-gp-phase="complete"] .gp-original {
-  margin: 20px 0 8px;
+/* 中断、已停止：不套框，标题和按钮直接排在原句上面或下面。 */
+.gp-interrupted,
+.gp-stopped {
+  padding: 24px 0;
 }
 
-.gp-ext-arrow {
-  opacity: 0.7;
+.gp-interrupted {
+  padding-top: 0;
+  margin-bottom: 24px;
+  border-bottom: var(--gp-line);
 }
 
-/* ---------- 通用元件（Common UI Elements） ---------- */
+.gp-interrupted strong,
+.gp-stopped strong {
+  display: block;
+  font-size: var(--gp-size-body);
+}
 
-.gp-primary-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.gp-interrupted strong {
+  color: var(--amber-11);
+}
+
+.gp-interrupted p,
+.gp-stopped p {
+  margin: 4px 0 0;
+  color: var(--sand-11);
+}
+
+.gp-interrupted .gp-interrupted-answer,
+.gp-stopped .gp-interrupted-answer {
+  margin-top: 12px;
+  font-family: var(--gp-serif);
+  color: var(--sand-12);
+}
+
+.gp-interrupted-actions,
+.gp-stopped-actions {
+  display: flex;
   gap: 8px;
-  border: 0;
-  border-radius: var(--gp-radius-sm);
-  background: var(--gp-ink);
-  color: var(--gp-canvas, #faf9f5);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: var(--gp-tracking);
-  padding: 8px 18px;
-  cursor: pointer;
-  text-decoration: none;
-  transition: background-color var(--gp-motion-fast) var(--gp-ease-out);
+  margin-top: 16px;
 }
 
-.gp-primary-btn:hover {
-  background: var(--gp-accent);
-}
+/* ---------- 按钮 ---------- */
 
-.gp-ghost-btn {
+.gp-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid var(--gp-hairline);
-  border-radius: var(--gp-radius-sm);
-  background: var(--gp-surface-inset);
-  color: var(--gp-ink-2);
-  font-family: inherit;
-  font-size: 13px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--gp-radius);
+  background: var(--sand-3);
+  color: var(--sand-12);
+  font-size: var(--gp-size-small);
   font-weight: 500;
-  padding: 8px 16px;
+  white-space: nowrap;
+}
+
+.gp-btn:hover:not(:disabled) {
+  background: var(--sand-4);
+}
+
+.gp-btn:active:not(:disabled) {
+  background: var(--sand-5);
+}
+
+.gp-btn--primary {
+  background: var(--sand-12);
+  color: var(--sand-1);
+}
+
+.gp-btn--primary:hover:not(:disabled),
+.gp-btn--primary:active:not(:disabled) {
+  background: var(--sand-12);
+  opacity: 0.88;
+}
+
+/* 不能点时浅灰底深灰字：看得清，也看得出现在点不了。 */
+.gp-btn--primary:disabled {
+  background: var(--sand-3);
+  color: var(--sand-11);
+}
+
+.gp-link-btn {
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
+  text-decoration: underline;
+  text-decoration-thickness: 0.5px;
+  text-decoration-color: var(--sand-8);
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+.gp-link-btn:hover {
+  color: var(--sand-12);
+  text-decoration-color: currentColor;
+}
+
+.gp-link-btn:disabled {
+  color: var(--sand-11);
+  text-decoration: none;
+}
+
+.gp-link-btn.is-error {
+  color: var(--red-11);
+  text-decoration-color: var(--red-8);
+}
+
+/* ---------- 分享 ---------- */
+
+.gp-share-body {
+  min-width: 0;
+}
+
+.gp-share-url {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: var(--gp-size-small);
+  word-break: break-all;
+  background: var(--sand-2);
+  border: var(--gp-line);
+  border-radius: var(--gp-radius);
+}
+
+.gp-share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+
+.gp-share-actions .gp-link-btn {
+  margin-left: auto;
+}
+
+.gp-share-hint {
+  margin: 8px 0 0;
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
+}
+
+.gp-share-hint.is-error {
+  color: var(--red-11);
+}
+
+/* ---------- 多轮调查 ---------- */
+
+.gp-investigation-thread {
+  padding-top: 24px;
+  overflow-wrap: anywhere;
+}
+
+.gp-thread-material {
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
+}
+
+.gp-thread-material summary {
   cursor: pointer;
-  transition: background-color var(--gp-motion-fast) var(--gp-ease-out), border-color var(--gp-motion-fast) var(--gp-ease-out), color var(--gp-motion-fast) var(--gp-ease-out);
 }
 
-.gp-ghost-btn:hover {
-  background: var(--gp-surface);
-  color: var(--gp-ink);
-  border-color: var(--gp-ink);
+.gp-thread-material p {
+  margin: 8px 0 0;
+  font-size: var(--gp-size-body);
+  color: var(--sand-12);
 }
 
-/* ---------- Motion & Accessibility ---------- */
-
-@keyframes gp-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.gp-investigation-thread nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
 }
 
-@keyframes gp-slide-in {
-  from { transform: translateX(20px); opacity: 0.6; }
-  to { transform: translateX(0); opacity: 1; }
+.gp-investigation-thread nav button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 112px;
+  max-width: 240px;
+  padding: 8px 12px;
+  border-radius: var(--gp-radius);
+  background: var(--sand-3);
+  font-size: var(--gp-size-small);
+  text-align: left;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .gp-shell *,
-  .gp-shell *::before,
-  .gp-shell *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
+.gp-investigation-thread nav button:hover {
+  background: var(--sand-4);
 }
 
-/* ---------- 响应式（Responsive 768px & 390px） ---------- */
-
-@media (max-width: 800px) {
-  .gp-roles {
-    gap: 12px;
-    width: 100%;
-  }
-  .gp-role {
-    min-width: 0;
-    flex: 1 1 0;
-  }
-  .gp-role-avatar {
-    width: 62px;
-    height: 62px;
-  }
-  .gp-role strong {
-    font-size: 12px;
-  }
-  .gp-role small {
-    font-size: 12px;
-  }
-  .gp-headline {
-    letter-spacing: -1px;
-  }
-  .gp-sub {
-    font-size: 14px;
-  }
+.gp-investigation-thread nav button[aria-pressed="true"] {
+  background: var(--sand-5);
 }
 
-/* 手机上四个角色排成两行两列，说明文字一行放得下。 */
-@media (max-width: 560px) {
-  .gp-roles {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px 8px;
-  }
-  .gp-role strong {
-    font-size: 14px;
-  }
+.gp-investigation-thread nav span {
+  font-weight: 600;
 }
 
-@media (max-width: 768px) {
-  .gp-topbar-inner {
-    padding: 8px 20px;
-    gap: 8px;
-    min-height: 69px;
+.gp-investigation-thread nav small {
+  max-width: 100%;
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- 窄屏 ---------- */
+
+@media (max-width: 640px) {
+  :root {
+    --gp-gutter: 16px;
   }
-  .gp-brand-tagline {
-    display: none;
-  }
-  .gp-icon-btn {
-    padding: 6px 10px;
-    font-size: 12px;
-    gap: 4px;
-  }
-  .gp-canvas-inner {
-    padding: 24px 16px 64px;
-  }
-  .gp-canvas[data-gp-phase="investigating"] .gp-canvas-inner,
-  .gp-canvas[data-gp-phase="judging"] .gp-canvas-inner {
-    display: flex;
-    flex-direction: column;
-    max-width: var(--gp-content-width);
-  }
-  .gp-canvas[data-gp-phase="investigating"] .gp-original,
-  .gp-canvas[data-gp-phase="judging"] .gp-original {
-    position: static;
-    grid-column: auto;
-    grid-row: auto;
-    margin-bottom: 20px;
-  }
-  .gp-canvas[data-gp-phase="investigating"] .gp-original-text,
-  .gp-canvas[data-gp-phase="judging"] .gp-original-text {
-    font-size: 14px;
-  }
+
   .gp-input-stage {
-    padding: 36px 16px 48px;
+    padding-top: 48px;
+  }
+
+  .gp-roles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 24px;
+    margin-top: 48px;
+  }
+
+  .gp-investigation-thread nav button {
+    flex: 1 1 120px;
+    min-width: 0;
+    max-width: 100%;
   }
 }
 
-@media (max-width: 420px) {
-  /* 320px 实测：品牌名与右侧导航会互相压住。两头都收一档，不做成两行。 */
-  .gp-topbar-inner {
-    padding: 8px 14px;
-    gap: 8px;
-  }
-
-  .gp-brand-name {
-    font-size: 14px;
-    letter-spacing: 0;
-  }
-
-  .gp-brand-logo {
-    width: 24px;
-    height: 24px;
+/* 320px 宽时品牌名和右侧两个按钮放得下：按钮内边距收一点。 */
+@media (max-width: 380px) {
+  .gp-icon-btn {
+    padding: 0 8px;
   }
 
   .gp-topbar-actions {
-    gap: 2px;
+    gap: 0;
+    margin-right: -8px;
   }
 
-  .gp-nav-text,
-  .gp-icon-btn {
-    font-size: 12px;
-    padding: 6px 6px;
-    gap: 3px;
-  }
-  .gp-examples-list {
-    gap: 6px;
-  }
-  .gp-example {
-    font-size: 12px;
-    padding: 5px 10px;
+  .gp-icon-btn svg {
+    display: none;
   }
 }
-
-/* One investigation, multiple dated rounds. Reading never starts another run. */
-.gp-investigation-thread {
-  width: 100%;
-  max-width: var(--gp-content-width);
-  margin: 0 auto;
-  padding: 24px 20px 0;
-  overflow-wrap: anywhere;
-}
-.gp-thread-material { font-size: 13px; color: var(--gp-ink-2); }
-.gp-thread-material summary { cursor: pointer; }
-.gp-thread-material p { line-height: 1.65; }
-.gp-investigation-thread nav { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-.gp-investigation-thread nav button {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
-  min-width: 110px; max-width: 260px; padding: 10px 12px;
-  font: inherit; font-size: 13px; text-align: left; cursor: pointer;
-  border: 1px solid var(--gp-hairline); border-radius: 8px;
-  color: var(--gp-ink-2); background: var(--gp-surface);
-}
-.gp-investigation-thread nav button[aria-pressed="true"] { border-color: var(--gp-accent); color: var(--gp-ink); }
-.gp-investigation-thread nav small { max-width: 100%; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--gp-ink-3); }
-.gp-investigation-thread > p { font-size: 13px; line-height: 1.6; }
-
-@media (max-width: 600px) {
-  .gp-investigation-thread nav button { flex: 1 1 120px; min-width: 0; max-width: 100%; }
-}
-

@@ -28,9 +28,9 @@ type InvestigationCanvasProps = {
   saveStatus?: "idle" | "local" | "failed";
   /** 保存失败要真的能点重试，不能只写「重试」两个字。 */
   onRetrySave?: () => void;
+  /** 从历史记录打开的旧结果：结果下面给「重新核查」。 */
   restoredAt?: number;
   onReverify: () => void;
-  onBackHome: () => void;
   /** 追问回调：就当前结论继续深入查证 */
   onFollowUp?: (question: string) => void;
   /** 这次提交的链接抓取失败（登录墙/空页）：调查全程都要看见，不能只亮 12 秒。 */
@@ -53,7 +53,6 @@ export function InvestigationCanvas({
   onRetrySave,
   restoredAt,
   onReverify,
-  onBackHome,
   onFollowUp,
   linkUnreachable = false,
   readOnly = false,
@@ -111,7 +110,6 @@ export function InvestigationCanvas({
   const interrupted = snapshot.phase === "interrupted" && stop !== "stopped";
   const closedAnswer = snapshot.phase === "interrupted" ? snapshot.conclusion?.directAnswer?.trim() ?? "" : "";
   const interruptedAnswer = interrupted ? closedAnswer : "";
-  const interruptedHasJudgments = !interruptedAnswer && snapshot.claims.some((claim) => claim.judgment);
   const resultClaims = complete ? snapshot.claims.filter((c) => !isCompleteEmptyShell(c)) : snapshot.claims;
   const leftoverTexts =
     complete || interrupted ? leftoverTextsForCanvas(snapshot.originalClaim, snapshot.claims) : [];
@@ -122,84 +120,29 @@ export function InvestigationCanvas({
       data-gp-phase={snapshot.phase}
       data-gp-single-claim={snapshot.claims.length === 1 ? "true" : undefined}
     >
-      <div className="gp-canvas-inner">
+      <div className="gp-canvas-inner gp-column">
         {interrupted ? (
           <section className="gp-interrupted" role="alert" data-gp-interrupted>
             <strong>{interruptedAnswer ? copy.interruptedPartialTitle : copy.interruptedTitle}</strong>
-            <p>
-              {interruptedAnswer ? copy.interruptedPartialBody : copy.interruptedBody}
-              {interruptedHasJudgments ? ` ${copy.interruptedHasJudgments}` : ""}
-            </p>
+            <p>{interruptedAnswer ? copy.interruptedPartialBody : copy.interruptedBody}</p>
             {interruptedAnswer ? (
               <p className="gp-interrupted-answer" data-gp-interrupted-answer>
                 {interruptedAnswer}
               </p>
             ) : null}
             <div className="gp-interrupted-actions" hidden={readOnly}>
-              <button type="button" className="gp-primary-btn" onClick={onReverify}>
+              <button type="button" className="gp-btn gp-btn--primary" onClick={onReverify}>
                 {copy.interruptedRetry}
-              </button>
-              <button type="button" className="gp-ghost-btn" onClick={onBackHome}>
-                {copy.backHome}
               </button>
             </div>
           </section>
         ) : null}
 
         <section className="gp-original" aria-label={copy.canvasOriginalLabel}>
-          <div className="gp-original-meta">
-            <span className="gp-original-label">{copy.canvasOriginalLabel}</span>
-            <div className="gp-original-side">
-              {restoredAt ? (
-                <em className="gp-original-time">{copy.oldCaseNotice(formatDate(restoredAt))}</em>
-              ) : null}
-              {saveStatus !== "idle" ? (
-                saveStatus === "failed" && onRetrySave ? (
-                  <button
-                    type="button"
-                    className="gp-save-state is-failed"
-                    data-gp-save-status="failed"
-                    data-gp-save-retry
-                    onClick={onRetrySave}
-                  >
-                    {copy.saveFailed}
-                  </button>
-                ) : (
-                  <span className={`gp-save-state is-${saveStatus}`} data-gp-save-status={saveStatus}>
-                    {saveStatus === "failed" ? copy.saveFailed : copy.saveLocal}
-                  </span>
-                )
-              ) : null}
-              {!complete && !interrupted && onStop && stop !== "stopped" ? (
-                <button
-                  type="button"
-                  className="gp-link-btn"
-                  data-gp-stop
-                  disabled={stop === "stopping"}
-                  onClick={onStop}
-                >
-                  {stop === "stopping" ? copy.stoppingInvestigation : copy.stopInvestigation}
-                </button>
-              ) : null}
-              {!complete && !interrupted ? (
-                <button type="button" className="gp-link-btn" onClick={onBackHome}>
-                  {copy.backHome}
-                </button>
-              ) : null}
-            </div>
-          </div>
-          <blockquote className="gp-original-quote">
+          <blockquote className="gp-original-quote" data-gp-original-sentence>
             <span className="gp-quote-open" aria-hidden="true">“</span>
-            <span
-              className="gp-original-text"
-              // 长 URL 一类不可断词会撑破左栏（实测 scrollW 357 / clientW 298），与原句同栏的
-              // 其它文本一样按任意字符断行。
-              style={{ overflowWrap: "anywhere" }}
-              data-gp-original-sentence
-            >
-              <OriginalSentence text={displayFollowUpClaim(snapshot.originalClaim)} claims={resultClaims} />
-            </span>
-            <span className="gp-quote-close" aria-hidden="true">”</span>
+            <OriginalSentence text={displayFollowUpClaim(snapshot.originalClaim)} claims={resultClaims} />
+            <span aria-hidden="true">”</span>
           </blockquote>
           {complete ? <UnspannedParts text={displayFollowUpClaim(snapshot.originalClaim)} claims={resultClaims} /> : null}
           <IntakeImages images={images} />
@@ -215,7 +158,8 @@ export function InvestigationCanvas({
             leftoverNote={leftoverSentence}
             readOnly={readOnly}
             onFollowUp={onFollowUp}
-            onNewInvestigation={onBackHome}
+            onRecheck={restoredAt && !readOnly ? onReverify : undefined}
+            onRetrySave={saveStatus === "failed" ? onRetrySave : undefined}
             shareRunId={shareRunId}
             brief={buildConclusionBrief({
               originalClaim: snapshot.originalClaim,
@@ -242,13 +186,10 @@ export function InvestigationCanvas({
                 {closedAnswer}
               </p>
             ) : null}
-            {stop === "stopped" ? (
+            {stop === "stopped" && !readOnly ? (
               <div className="gp-stopped-actions">
-                <button type="button" className="gp-primary-btn" data-gp-stopped-retry onClick={onReverify}>
+                <button type="button" className="gp-btn gp-btn--primary" data-gp-stopped-retry onClick={onReverify}>
                   {copy.reviewAgain}
-                </button>
-                <button type="button" className="gp-ghost-btn" onClick={onBackHome}>
-                  {copy.backHome}
                 </button>
               </div>
             ) : null}
@@ -256,7 +197,14 @@ export function InvestigationCanvas({
         ) : null}
 
         {!complete ? (
-          <ProgressView snapshot={snapshot} claims={resultClaims} interrupted={snapshot.phase === "interrupted" || stop !== "idle"} leftoverNote={leftoverSentence} startedAt={startedAt} />
+          <ProgressView
+            snapshot={snapshot}
+            claims={resultClaims}
+            interrupted={snapshot.phase === "interrupted" || stop !== "idle"}
+            leftoverNote={leftoverSentence}
+            startedAt={startedAt}
+            onStop={!interrupted && onStop && stop === "idle" ? onStop : undefined}
+          />
         ) : null}
 
       </div>
@@ -267,12 +215,4 @@ export function InvestigationCanvas({
 
     </div>
   );
-}
-
-function formatDate(ts: number): string {
-  try {
-    return new Date(ts).toLocaleString("zh-CN", { hour12: false });
-  } catch {
-    return String(ts);
-  }
 }

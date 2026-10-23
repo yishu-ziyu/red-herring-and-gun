@@ -153,5 +153,5 @@ function clipAtom(text: string, max = 72): string {
 export function leftoverGapSentence(texts: string[]): string {
   if (texts.length === 0) return "";
   const names = texts.map((text) => `「${clipAtom(text)}」`).join("、");
-  return `这些这次没查：${names}。结论没有拿它们当依据。`;
+  return `本次未核查${names}，结论不涉及这部分。`;
 }

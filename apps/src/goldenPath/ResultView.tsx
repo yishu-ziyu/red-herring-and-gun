@@ -1,7 +1,7 @@
 /**
- * ResultView — 查完的一轮（#141）：结论 → 每一截的判断和依据 → 追问 / 分享 / 新调查。
- * 依据直接摊在每一截下面，不再走抽屉。历史回看、追问轮用同一个版式。
- * 版式是 2026-10-10 用户选的头版式（#150）：大字结论在上，各截不套卡片，证据像脚注。
+ * ResultView — 查完的一轮（#141）：结论 → 每一点的判断和依据 → 追问 / 分享。
+ * 依据直接摊在每一点下面，不走抽屉。历史回看、追问轮用同一个版式。
+ * 版式是 2026-10-10 用户选的头版式（#150）：大字结论在上，各点不套卡片，证据像脚注。
  */
 import { useLayoutEffect, useRef, useState } from "react";
 import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSnapshotV1, InvestigationSource } from "../../shared/investigation";
@@ -14,8 +14,10 @@ import {
   quoteLinkUrl,
   type LabelKey,
 } from "../../shared/investigation";
-import { CHECKABILITY_HINT, claimLabel, domainOf, publishedDay, PUBLISHED_UNKNOWN, ROLE_LABEL } from "./snapshotUi";
+import { CHECKABILITY_HINT, claimLabel, domainOf, formatDay, publishedDay, PUBLISHED_UNKNOWN, ROLE_LABEL } from "./snapshotUi";
 import { ShareControl } from "./ShareControl";
+import { useUiLang } from "../lib/useUiLang";
+import { gpCopyFor } from "./copy";
 import "./result.css";
 
 type ResultViewProps = {
@@ -30,7 +32,10 @@ type ResultViewProps = {
   leftoverNote: string;
   readOnly: boolean;
   onFollowUp?: (question: string) => void;
-  onNewInvestigation: () => void;
+  /** 从历史记录打开的旧结果才有。 */
+  onRecheck?: () => void;
+  /** 保存到本机失败时才有。 */
+  onRetrySave?: () => void;
   shareRunId?: string;
   brief: string;
 };
@@ -44,15 +49,17 @@ export function ResultView({
   leftoverNote,
   readOnly,
   onFollowUp,
-  onNewInvestigation,
+  onRecheck,
+  onRetrySave,
   shareRunId,
   brief,
 }: ResultViewProps) {
-  const day = checkedDay(snapshot.checkedAt);
+  const { lang } = useUiLang();
+  const copy = gpCopyFor(lang);
+  const day = formatDay(snapshot.checkedAt);
   return (
     <div className="gp-result" data-gp-result>
       <section className="gp-result-verdict" aria-label="结论" data-gp-conclusion>
-        <p className="gp-eyebrow" aria-hidden="true">结论</p>
         <div data-gp-direct-answer>
           <span className={`gp-verdict-word gp-tone--${LABEL_TONE[label]}`} data-gp-conclusion-label={label}>
             {LABEL_TEXT[label]}
@@ -66,15 +73,20 @@ export function ResultView({
             {leftoverNote}
           </p>
         ) : null}
-        <p className="gp-result-meta">
-          {claims.length > 0 ? `查了 ${claims.length} 截` : ""}
-          {claims.length > 0 && day ? " · " : ""}
-          {day ? `核查于 ${day}` : ""}
-        </p>
+        {day || onRetrySave ? (
+          <p className="gp-result-meta">
+            {day ? <span>{copy.checkedAt(day)}</span> : null}
+            {onRetrySave ? (
+              <button type="button" className="gp-link-btn is-error" data-gp-save-status="failed" data-gp-save-retry onClick={onRetrySave}>
+                {copy.saveFailed}
+              </button>
+            ) : null}
+          </p>
+        ) : null}
       </section>
 
       {claims.length > 0 ? (
-        <section className="gp-result-parts" aria-label="每一截的判断和依据">
+        <section className="gp-result-parts" aria-label="每一点的判断和依据">
           {claims.map((claim, index) => (
             <PartCard key={claim.id} claim={claim} index={index} sources={snapshot.sources} />
           ))}
@@ -84,7 +96,7 @@ export function ResultView({
       <ResultActions
         readOnly={readOnly}
         onFollowUp={onFollowUp}
-        onNewInvestigation={onNewInvestigation}
+        onRecheck={onRecheck}
         shareRunId={shareRunId}
         brief={brief}
       />
@@ -94,14 +106,14 @@ export function ResultView({
 
 type SentenceLayout = {
   pieces: Array<{ text: string; part: { index: number; claim: InvestigationClaim } | null }>;
-  /** 没有可靠定位的截；不能据此判断用户没有说过。 */
+  /** 没有可靠定位的点；不能据此判断用户没有说过。 */
   unspanned: Array<{ index: number; claim: InvestigationClaim }>;
 };
 
 /**
- * 原句上每一截的位置只认 originalSpan，且那段原字必须出现在这一截的文字里；不猜、不模糊匹配。
- * 模型常给一截补上主语（原句「等于吃毒药」，这一截写「隔夜菜等于吃毒药」），这时只画原句里那几个字。
- * 两截位置重叠时只画编号靠前的那一截；后一截的原字仍在原句里，不列入定位失败。
+ * 原句上每一点的位置只认 originalSpan，且那段原字必须出现在这一点的文字里；不猜、不模糊匹配。
+ * 模型常给一点补上主语（原句「等于吃毒药」，这一点写「隔夜菜等于吃毒药」），这时只画原句里那几个字。
+ * 两点位置重叠时只画编号靠前的那一点；后一点的原字仍在原句里，不列入定位失败。
  */
 function layoutSentence(text: string, claims: InvestigationClaim[]): SentenceLayout {
   const accepted: Array<{ start: number; end: number; index: number; claim: InvestigationClaim }> = [];
@@ -135,7 +147,7 @@ function layoutSentence(text: string, claims: InvestigationClaim[]): SentenceLay
   return { pieces, unspanned };
 }
 
-/** 「你调查的说法」里的原句：每一截画下划线，颜色同这一截的标签，右上角是编号。 */
+/** 原句：每一点加底色，颜色同这一点的标签，右上角是编号。 */
 export function OriginalSentence({ text, claims }: { text: string; claims: InvestigationClaim[] }) {
   return (
     <>
@@ -160,7 +172,7 @@ export function UnspannedParts({ text, claims }: { text: string; claims: Investi
   if (unspanned.length === 0) return null;
   return (
     <p className="gp-original-unspanned" data-gp-unspanned-parts>
-      以下条目暂未可靠定位到原句：
+      这几点没能在原句中标出：
       {unspanned.map(({ index, claim }) => `${partNumber(index)}${claim.text}`).join("；")}
     </p>
   );
@@ -185,54 +197,60 @@ function PartCard({ claim, index, sources }: { claim: InvestigationClaim; index:
 
   return (
     <article className="gp-part" data-gp-claim-id={claim.id}>
-      <div className="gp-part-head">
-        <span className="gp-part-title">
-          <span className="gp-part-no" aria-hidden="true">{index + 1}</span>
+      <PartNumber index={index} />
+      <div className="gp-part-body">
+        <div className="gp-part-head">
           <span className="gp-part-text" data-gp-part-text>{claim.text}</span>
-        </span>
-        {label ? (
-          <span className={`gp-label gp-label--${LABEL_TONE[label]}`} data-gp-claim-label={label}>
-            {LABEL_TEXT[label]}
-          </span>
+          {label ? (
+            <span className={`gp-label gp-label--${LABEL_TONE[label]}`} data-gp-claim-label={label}>
+              {LABEL_TEXT[label]}
+            </span>
+          ) : null}
+        </div>
+        {reason ? (
+          <p className="gp-part-reason" data-gp-claim-reason={claim.reason ? "" : undefined}>
+            {reason}
+          </p>
+        ) : null}
+
+        {boundary ? (
+          <p className="gp-part-boundary" data-gp-part-boundary>
+            <span className="gp-part-boundary-label">不能推出</span>
+            {boundary}
+          </p>
+        ) : null}
+
+        {decisive.length > 0 ? (
+          <ul className="gp-part-evidence">
+            {decisive.map((link, i) => (
+              <EvidenceRow key={`${link.sourceId}:${link.role}:${i}`} claimId={claim.id} link={link} source={sourceOf(link)!} />
+            ))}
+          </ul>
+        ) : (
+          <p className="gp-part-empty">没有找到直接支持或反驳这一点的依据。</p>
+        )}
+
+        {related.length > 0 ? (
+          <details className="gp-fold gp-part-related" data-gp-related>
+            <summary>另有 {related.length} 条相关材料，未用于判断</summary>
+            <ul>
+              {related.map((link) => (
+                <EvidenceRow key={link.sourceId} claimId={claim.id} link={link} source={sourceOf(link)!} />
+              ))}
+            </ul>
+          </details>
         ) : null}
       </div>
-      {reason ? (
-        <p className="gp-part-reason" data-gp-claim-reason={claim.reason ? "" : undefined}>
-          {reason}
-        </p>
-      ) : null}
-
-      {boundary ? (
-        <p className="gp-part-boundary" data-gp-part-boundary>
-          <span className="gp-part-boundary-label">不能推出</span>
-          {boundary}
-        </p>
-      ) : null}
-
-      {decisive.length > 0 ? (
-        <ul className="gp-part-evidence">
-          {decisive.map((link, i) => (
-            <EvidenceRow key={`${link.sourceId}:${link.role}:${i}`} claimId={claim.id} link={link} source={sourceOf(link)!} />
-          ))}
-        </ul>
-      ) : (
-        <p className="gp-part-empty">没有找到直接支持或反驳这一截的依据。</p>
-      )}
-
-      {related.length > 0 ? (
-        <details className="gp-fold gp-part-related" data-gp-related>
-          <summary>另有 {related.length} 条材料，没有用来判断</summary>
-          <ul>
-            {related.map((link) => {
-              const source = sourceOf(link)!;
-              return (
-                <EvidenceRow key={link.sourceId} claimId={claim.id} link={link} source={source} />
-              );
-            })}
-          </ul>
-        </details>
-      ) : null}
     </article>
+  );
+}
+
+/** 每一点左侧的编号，和原句里的上标编号对应。 */
+export function PartNumber({ index }: { index: number }) {
+  return (
+    <span className="gp-part-no" aria-hidden="true">
+      {index + 1}
+    </span>
   );
 }
 
@@ -248,14 +266,14 @@ export function EvidenceRow({ claimId, link, source }: { claimId: string; link: 
     materialPassageLabel(link.excerptKind),
     source.fetchNote ? `正文读取情况：${source.fetchNote}` : "",
     materialRetrievedLabel(source.retrievedAt),
-  ].filter(Boolean).join(" · ");
+  ].filter(Boolean).join("；");
   return (
     <li className="gp-ev" data-gp-evidence-row data-gp-role={link.role} data-gp-evidence-claim={claimId} data-gp-source-id={source.id} data-gp-material-kind={link.excerptKind ?? "unknown"}>
       {quote ? (
         <q className="gp-ev-quote" data-gp-evidence-quote>{quote}</q>
       ) : summary ? (
         <span className="gp-ev-summary" data-gp-evidence-summary>
-          <span className="gp-ev-summary-label">我们的概括</span>
+          <span className="gp-ev-summary-label">概括</span>
           {summary}
         </span>
       ) : null}
@@ -271,13 +289,13 @@ export function EvidenceRow({ claimId, link, source }: { claimId: string; link: 
         <span className={day ? "gp-ev-date" : "gp-ev-date is-unknown"} data-gp-published={day ?? ""}>
           {day ?? PUBLISHED_UNKNOWN}
         </span>
-        {source.reachable === false ? <span className="gp-ev-dead">打不开</span> : null}
-        {link.provenance === "prior-round" ? <span className="gp-ev-prior" data-gp-prior-round-mark>依据来自刚才那一轮</span> : null}
+        {source.reachable === false ? <span className="gp-ev-dead">链接已失效</span> : null}
+        {link.provenance === "prior-round" ? <span data-gp-prior-round-mark>来自上一轮</span> : null}
       </span>
       <div className="gp-ev-foot">
-        <span className={`gp-ev-read is-${read.level}`} data-gp-material-status>{read.text}</span>
+        <span data-gp-material-status data-gp-material-level={read.level}>{read.text}</span>
         <details className="gp-fold gp-ev-material" data-gp-material>
-          <summary>看原文上下文</summary>
+          <summary>查看上下文</summary>
           <div className="gp-ev-context">
             {passage ? <blockquote data-gp-material-text>{passage}</blockquote> : <p>这条依据没有保存可检查的上下文。</p>}
             <small>{passageNote}</small>
@@ -291,10 +309,12 @@ export function EvidenceRow({ claimId, link, source }: { claimId: string; link: 
 function ResultActions({
   readOnly,
   onFollowUp,
-  onNewInvestigation,
+  onRecheck,
   shareRunId,
   brief,
-}: Pick<ResultViewProps, "readOnly" | "onFollowUp" | "onNewInvestigation" | "shareRunId" | "brief">) {
+}: Pick<ResultViewProps, "readOnly" | "onFollowUp" | "onRecheck" | "shareRunId" | "brief">) {
+  const { lang } = useUiLang();
+  const copy = gpCopyFor(lang);
   const [question, setQuestion] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // 输入多行时框跟着变高，清空后缩回一行。
@@ -310,10 +330,11 @@ function ResultActions({
     onFollowUp(text);
     setQuestion("");
   };
+  const canAsk = !readOnly && Boolean(onFollowUp);
+  if (!canAsk && !shareRunId && !onRecheck) return null;
   return (
     <section className="gp-result-actions" aria-label="接下来" data-gp-result-actions>
-      <p className="gp-eyebrow" aria-hidden="true">接着问</p>
-      {!readOnly && onFollowUp ? (
+      {canAsk ? (
         <form
           className="gp-result-ask"
           onSubmit={(event) => {
@@ -325,8 +346,9 @@ function ResultActions({
             ref={inputRef}
             value={question}
             rows={1}
+            aria-label="追问"
             onChange={(event) => setQuestion(event.target.value)}
-            placeholder="针对这份调查继续问"
+            placeholder="针对这次调查继续提问"
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
@@ -341,9 +363,11 @@ function ResultActions({
       ) : null}
       <div className="gp-result-row">
         {shareRunId ? <ShareControl runId={shareRunId} brief={brief} /> : null}
-        <button type="button" className="gp-btn gp-result-new" onClick={onNewInvestigation}>
-          新调查
-        </button>
+        {onRecheck ? (
+          <button type="button" className="gp-btn" onClick={onRecheck}>
+            {copy.recheck}
+          </button>
+        ) : null}
       </div>
     </section>
   );
@@ -356,13 +380,4 @@ function partNumber(index: number): string {
 
 function sourceName(source: InvestigationSource): string {
   return source.publisher?.trim() || (source.url ? domainOf(source.url) : "") || source.title?.trim() || source.id;
-}
-
-function checkedDay(iso: string | undefined): string {
-  if (!iso) return "";
-  const time = Date.parse(iso);
-  if (Number.isNaN(time)) return "";
-  const d = new Date(time);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }

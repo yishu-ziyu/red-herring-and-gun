@@ -1,56 +1,19 @@
-/* 查完的一轮（#141）。版式照 2026-10-09 用户确认的草稿：暖纸底、判断句和摘录用衬线、标签颜色只做辅助。 */
-
-/* 标签颜色也给「你调查的说法」里的下划线和调查中的进度页用，它们在 .gp-result 外面。 */
-.gp-result,
-.gp-original,
-.gp-progress {
-  --gp-tone-positive: #20604c;
-  --gp-tone-positive-bg: rgba(32, 96, 76, 0.08);
-  --gp-tone-negative: #8f2d2a;
-  --gp-tone-negative-bg: rgba(143, 45, 42, 0.08);
-  --gp-tone-mixed: #855f1a;
-  --gp-tone-mixed-bg: rgba(133, 95, 26, 0.1);
-  --gp-tone-muted: #57534e;
-  --gp-tone-muted-bg: rgba(87, 83, 78, 0.08);
-}
+/* 查完的一轮和调查进行中共用的版式（#141 / #150）：大字结论在上，各点不套卡片，依据像脚注。 */
 
 .gp-result {
-  font-size: 15px;
-  line-height: 1.7;
-  color: var(--gp-ink);
+  color: var(--sand-12);
 }
 
-/* 出现：结论、各截、操作依次浮起，每块 280ms，先快后慢，带一点模糊变清楚。 */
-.gp-result-verdict,
-.gp-part,
-.gp-result-actions {
-  animation: gp-result-in 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
-}
-.gp-part { animation-delay: 120ms; }
-.gp-part:nth-child(2) { animation-delay: 180ms; }
-.gp-part:nth-child(3) { animation-delay: 240ms; }
-.gp-part:nth-child(n + 4) { animation-delay: 300ms; }
-.gp-result-actions { animation-delay: 320ms; }
-
-@keyframes gp-result-in {
-  from { opacity: 0; transform: translateY(6px); filter: blur(2px); }
-  to { opacity: 1; transform: none; filter: none; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .gp-result-verdict,
-  .gp-part,
-  .gp-result-actions { animation: none; }
-}
+/* ---------- 标签与原句标记 ---------- */
 
 .gp-label {
   display: inline-block;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.6;
-  padding: 1px 10px;
-  border-radius: 999px;
-  border: 1px solid currentColor;
+  padding: 0 6px;
+  border-radius: var(--gp-radius-tag);
+  font-family: var(--gp-font);
+  font-size: var(--gp-size-small);
+  font-weight: 500;
+  line-height: 22px;
   white-space: nowrap;
 }
 .gp-label--positive { color: var(--gp-tone-positive); background: var(--gp-tone-positive-bg); }
@@ -58,41 +21,28 @@
 .gp-label--mixed { color: var(--gp-tone-mixed); background: var(--gp-tone-mixed-bg); }
 .gp-label--muted { color: var(--gp-tone-muted); background: var(--gp-tone-muted-bg); }
 
-/* 原句里的每一截：下划线颜色同这一截的标签。行内元素的下边框会随折行断开，窄屏不会横向溢出。 */
+/* 原句里的每一点：底色同这一点的标签，右上角是编号。折行时每行各自带底色。 */
 .gp-span {
-  padding-bottom: 2px;
-  border-bottom: 2px solid var(--gp-tone-muted);
+  padding: 0 2px;
+  background: var(--gp-tone-muted-mark);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .gp-span sup {
+  margin-left: 2px;
   font-family: var(--gp-font);
-  font-size: 11px;
+  font-size: var(--gp-size-small);
   line-height: 0;
-  margin-left: 1px;
+  color: var(--sand-11);
 }
-.gp-span--positive { border-bottom-color: var(--gp-tone-positive); }
-.gp-span--negative { border-bottom-color: var(--gp-tone-negative); }
-.gp-span--mixed { border-bottom-color: var(--gp-tone-mixed); }
-.gp-span--muted { border-bottom-color: var(--gp-tone-muted); }
+.gp-span--positive { background: var(--gp-tone-positive-mark); }
+.gp-span--negative { background: var(--gp-tone-negative-mark); }
+.gp-span--mixed { background: var(--gp-tone-mixed-mark); }
 
-.gp-original-unspanned {
-  margin: 8px 0 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--gp-ink-2);
-  overflow-wrap: anywhere;
-}
-
-/* 头版式（#150）：不套卡片；同一套行距，块与块之间只靠留白和一条淡线分开。 */
-.gp-eyebrow {
-  margin: 0 0 4px;
-  font-size: 12.5px;
-  letter-spacing: 0.04em;
-  color: var(--gp-ink-3);
-}
+/* ---------- 结论 ---------- */
 
 .gp-result-verdict {
-  margin: 8px 0 0;
-  padding: 14px 0 22px;
+  padding: 32px 0;
   min-width: 0;
 }
 
@@ -101,44 +51,67 @@
   display: block;
   word-break: keep-all;
   font-family: var(--gp-serif);
-  font-size: 64px;
-  font-weight: 600;
-  line-height: 1.1;
-  letter-spacing: 0.06em;
+  font-size: var(--gp-size-display);
+  font-weight: 700;
+  line-height: 1.3;
 }
 .gp-tone--positive { color: var(--gp-tone-positive); }
 .gp-tone--negative { color: var(--gp-tone-negative); }
 .gp-tone--mixed { color: var(--gp-tone-mixed); }
-.gp-tone--muted { color: var(--gp-tone-muted); }
-/* 没下结论的大字用正文墨色：灰色大字像没加载完或不能点。 */
-.gp-verdict-word.gp-tone--muted { color: var(--gp-ink); }
+/* 没下结论的大字用正文颜色：灰色大字像没加载完。 */
+.gp-tone--muted { color: var(--sand-12); }
 
 .gp-result-headline {
-  margin: 14px 0 0;
-  max-width: 44em;
+  margin: 12px 0 0;
   font-family: var(--gp-serif);
-  font-size: 21px;
-  line-height: 1.8;
+  font-size: var(--gp-size-title);
+  line-height: 1.7;
   overflow-wrap: anywhere;
 }
 
 .gp-result-note {
   margin: 12px 0 0;
-  font-size: 14px;
-  color: var(--gp-ink-2);
+  color: var(--sand-11);
+  overflow-wrap: anywhere;
 }
 
 .gp-result-meta {
-  margin: 14px 0 0;
-  font-size: 13px;
-  color: var(--gp-ink-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 16px 0 0;
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
   font-variant-numeric: tabular-nums;
 }
-.gp-result-meta:empty { display: none; }
 
+/* ---------- 每一点 ---------- */
+
+/* 编号单独占一列，标题折行、理由和依据都和标题第一个字对齐。 */
 .gp-part {
-  padding: 22px 0 18px;
-  border-top: 1px solid var(--gp-hairline-subtle);
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: baseline;
+  padding: 24px 0;
+  border-top: var(--gp-line);
+}
+
+.gp-part-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--sand-3);
+  font-size: var(--gp-size-small);
+  font-weight: 500;
+  color: var(--sand-11);
+  font-variant-numeric: tabular-nums;
+}
+
+.gp-part-body {
   min-width: 0;
 }
 
@@ -146,454 +119,275 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 10px;
-}
-
-.gp-part-title {
-  min-width: 0;
-}
-
-.gp-part-no {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin-right: 10px;
-  border-radius: 50%;
-  background: var(--gp-surface-inset);
-  color: var(--gp-ink-2);
-  font-size: 12px;
-  font-weight: 600;
-  vertical-align: 3px;
+  gap: 4px 12px;
 }
 
 .gp-part-text {
   min-width: 0;
   font-family: var(--gp-serif);
-  font-size: 22px;
+  font-size: var(--gp-size-title);
   font-weight: 600;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
-.gp-part .gp-label { border-color: transparent; }
-
 .gp-part-reason {
-  margin: 6px 0 0;
-  max-width: 46em;
+  margin: 8px 0 0;
   font-family: var(--gp-serif);
-  font-size: 16px;
-  line-height: 1.85;
-  color: var(--gp-ink-2);
+  line-height: 1.8;
   overflow-wrap: anywhere;
+}
+
+/* 「不能推出」紧跟理由，是判断的一部分。 */
+.gp-part-boundary {
+  margin: 12px 0 0;
+  line-height: 1.8;
+  color: var(--sand-11);
+  overflow-wrap: anywhere;
+}
+.gp-part-boundary-label {
+  display: block;
+  font-size: var(--gp-size-small);
+  font-weight: 600;
 }
 
 .gp-part-empty {
   margin: 12px 0 0;
-  font-size: 14px;
-  color: var(--gp-ink-3);
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
 }
 
-/* 一条证据：原文那句话在上，「方向 · 来源 · 日期」在下，像一条脚注。 */
+/* ---------- 依据 ---------- */
+
 .gp-part-evidence {
   list-style: none;
+  margin: 16px 0 0;
   padding: 0;
-  margin: 10px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .gp-ev {
-  margin: 0 -10px;
-  padding: 8px 10px;
-  border-radius: 10px;
   min-width: 0;
   overflow-wrap: anywhere;
-  transition: background-color 150ms ease;
 }
-.gp-ev:hover { background: rgba(28, 25, 23, 0.035); }
 
+/* 开头的「挂出半个字，引文的第一个字和下面的来源行对齐。 */
 .gp-ev-quote {
   display: block;
+  text-indent: -0.5em;
   font-family: var(--gp-serif);
-  font-size: 15.5px;
   line-height: 1.8;
+  color: var(--sand-11);
   quotes: "「" "」";
 }
 
 .gp-ev-summary {
   display: block;
-  color: var(--gp-ink-2);
+  color: var(--sand-11);
 }
 
 .gp-ev-summary-label {
-  margin-right: 6px;
-  padding: 0 6px;
-  font-size: 12px;
-  border: 1px solid var(--gp-hairline);
-  border-radius: 6px;
-  color: var(--gp-ink-3);
+  margin-right: 8px;
+  font-size: var(--gp-size-small);
+  font-weight: 600;
 }
 
-/* 依据最后一行：读取状态小标签 + 「看原文上下文」。 */
+.gp-ev-src,
 .gp-ev-foot {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-  margin-top: 6px;
-  font-size: 12.5px;
-}
-
-.gp-ev-read {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 8px;
-  border: 1px solid var(--gp-hairline);
-  border-radius: 6px;
-  line-height: 1.8;
-  color: var(--gp-ink-2);
-}
-.gp-ev-read::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  border: 1.5px solid currentColor;
-  flex: none;
-}
-.gp-ev-read.is-read::before { background: currentColor; }
-.gp-ev-read.is-partial::before { background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
-
-.gp-ev-foot .gp-ev-material[open] { flex-basis: 100%; }
-
-.gp-ev-context {
-  margin: 8px 0 2px;
-  padding-left: 12px;
-  border-left: 2px solid var(--gp-hairline);
-  font-size: 13.5px;
-  color: var(--gp-ink-2);
-}
-.gp-ev-context blockquote,
-.gp-ev-context p {
-  margin: 0 0 6px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.gp-ev-context small {
-  display: block;
-  font-size: 12.5px;
-  color: var(--gp-ink-3);
-}
-
-/* 展开/收起：文字加细箭头，打开时箭头转向下。 */
-.gp-fold > summary {
-  list-style: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-  color: var(--gp-ink-2);
-  border-radius: 4px;
-}
-.gp-fold > summary::-webkit-details-marker { display: none; }
-.gp-fold > summary::after {
-  content: "";
-  width: 6px;
-  height: 6px;
-  margin-left: 4px;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg);
-  transition: transform 160ms ease;
-}
-.gp-fold[open] > summary::after { transform: rotate(45deg) translate(-2px, -2px); }
-.gp-fold > summary:hover { color: var(--gp-ink); }
-.gp-fold > summary:focus-visible { outline: none; box-shadow: var(--gp-focus-ring); }
-
-.gp-ev-src {
-  display: flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  gap: 2px 10px;
-  margin-top: 2px;
-  font-size: 12.5px;
-  color: var(--gp-ink-3);
+  gap: 4px 12px;
+  margin-top: 4px;
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
 }
 
 .gp-ev-role {
-  font-size: 12.5px;
   font-weight: 600;
 }
 .gp-ev-role.is-contradict { color: var(--gp-tone-negative); }
 .gp-ev-role.is-support { color: var(--gp-tone-positive); }
 
 .gp-ev-src a {
-  color: var(--gp-ink-2);
   min-width: 0;
-  text-decoration-color: var(--gp-hairline);
+  color: var(--sand-12);
+  text-decoration-thickness: 0.5px;
+  text-decoration-color: var(--sand-8);
   text-underline-offset: 3px;
 }
 .gp-ev-src a:hover { text-decoration-color: currentColor; }
 
 .gp-ev-date {
-  color: var(--gp-ink-3);
   font-variant-numeric: tabular-nums;
 }
-.gp-ev-date.is-unknown { color: var(--gp-ink-3); }
+
+.gp-ev-dead {
+  color: var(--red-11);
+}
+
+.gp-ev-foot .gp-ev-material[open] {
+  flex-basis: 100%;
+}
+
+.gp-ev-context {
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: var(--gp-radius);
+  background: var(--sand-2);
+}
+.gp-ev-context blockquote,
+.gp-ev-context p {
+  margin: 0 0 8px;
+  color: var(--sand-12);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.gp-ev-context small {
+  display: block;
+  font-size: var(--gp-size-small);
+}
+
+/* 展开/收起：文字加细箭头，打开时箭头朝下。 */
+.gp-fold > summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--sand-11);
+}
+.gp-fold > summary::-webkit-details-marker { display: none; }
+.gp-fold > summary::after {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(-45deg);
+}
+.gp-fold[open] > summary::after { transform: translateY(-2px) rotate(45deg); }
+.gp-fold > summary:hover { color: var(--sand-12); }
 
 .gp-part-related {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--gp-ink-2);
+  margin-top: 16px;
+  font-size: var(--gp-size-small);
 }
-
 
 .gp-part-related ul {
-  margin: 6px 0 0;
-  padding-left: 18px;
-  overflow-wrap: anywhere;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  font-size: var(--gp-size-body);
 }
 
-.gp-part-related a {
-  color: inherit;
-}
-
-/* 「不能推出」紧跟理由，和理由一样是判断的一部分，所以用正文字号。 */
-.gp-part-boundary {
-  margin: 12px 0 4px;
-  max-width: 46em;
-  padding: 2px 0 2px 12px;
-  border-left: 2px solid var(--gp-hairline);
-  font-size: 14.5px;
-  line-height: 1.75;
-  color: var(--gp-ink-2);
-  overflow-wrap: anywhere;
-}
-.gp-part-boundary-label {
-  display: block;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--gp-ink-3);
-}
+/* ---------- 追问与分享 ---------- */
 
 .gp-result-actions {
-  margin-top: 8px;
-  padding: 18px 0 8px;
-  border-top: 1px solid var(--gp-hairline-subtle);
+  padding-top: 24px;
+  border-top: var(--gp-line);
   min-width: 0;
 }
 
-/* 追问：按钮放在输入框里右侧，输入框随内容变高。 */
+/* 追问框：外框 16 圆角、8 内边距，按钮 8 圆角，同心。 */
 .gp-result-ask {
   display: flex;
-  gap: 8px;
   align-items: flex-end;
-  margin-bottom: 12px;
-  padding: 6px 6px 6px 14px;
-  background: var(--gp-surface);
-  border: 1px solid var(--gp-hairline);
-  border-radius: 14px;
+  gap: 8px;
+  padding: var(--gp-inset);
+  background: var(--sand-1);
+  border: 0.5px solid var(--sand-7);
+  border-radius: var(--gp-radius-outer);
 }
-/* 焦点画在整个框上，框里的输入区不再单独画一圈。 */
-.gp-result-ask:focus-within { border-color: var(--gp-ink-3); box-shadow: 0 0 0 3px var(--gp-accent-subtle); }
-.gp-shell .gp-result-ask textarea:focus-visible { outline: none; box-shadow: none; }
+.gp-result-ask:focus-within { border-color: var(--sand-8); }
+.gp-shell .gp-result-ask textarea:focus-visible { outline: none; }
 
 .gp-result-ask textarea {
   flex: 1;
   min-width: 0;
   min-height: 40px;
   max-height: 200px;
-  font: inherit;
-  font-size: 15px;
-  color: var(--gp-ink);
-  background: transparent;
+  padding: 8px;
   border: 0;
   outline: none;
-  padding: 8px 0;
   resize: none;
+  background: transparent;
+  font-size: var(--gp-size-body);
+  line-height: 24px;
+  color: var(--sand-12);
 }
-.gp-result-ask textarea::placeholder { color: var(--gp-ink-3); }
+.gp-result-ask textarea::placeholder { color: var(--sand-10); }
 
-.gp-btn {
-  font: inherit;
-  font-size: 14px;
-  line-height: 1.4;
-  border-radius: 12px;
-  padding: 9px 16px;
-  cursor: pointer;
-  transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
-  border: 1px solid var(--gp-hairline);
-  background: var(--gp-surface);
-  color: var(--gp-ink);
-  white-space: nowrap;
-}
-
-.gp-btn--primary {
-  background: var(--gp-accent);
-  color: #ffffff;
-  border-color: var(--gp-accent);
-}
-.gp-btn--primary:hover:not(:disabled) {
-  background: var(--gp-accent-deep);
-  border-color: var(--gp-accent-deep);
-}
-
-.gp-btn:active:not(:disabled) { transform: scale(0.97); }
-
-.gp-btn:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-/* 不能点时浅灰底深灰字：看得清，也看得出现在点不了。 */
-.gp-btn--primary:disabled {
-  opacity: 1;
-  background: #e9e6df;
-  border-color: #e9e6df;
-  color: var(--gp-ink-2);
-}
-
-.gp-btn:focus-visible,
-.gp-result a:focus-visible {
-  outline: none;
-  box-shadow: var(--gp-focus-ring);
-}
-
-/* 分享按钮和新调查并排，分享建好的链接另起一行。 */
+/* 分享按钮一行；建好的链接另起一行。 */
 .gp-result-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
+  margin-top: 16px;
 }
+.gp-result-row:empty { display: none; }
 
-.gp-result-row .gp-share {
-  display: contents;
-}
-
-.gp-result-row .gp-share-head { order: 0; }
-.gp-result-row .gp-result-new { order: 1; }
+.gp-result-row .gp-share { display: contents; }
 .gp-result-row .gp-share-body,
 .gp-result-row .gp-share > .gp-share-hint {
   order: 2;
   flex-basis: 100%;
-  min-width: 0;
 }
 
-.gp-result-row .gp-share-body {
-  margin: 0;
-  padding: 14px;
-  background: var(--gp-surface-inset);
-  border-radius: 10px;
-  font-size: 14px;
-}
+/* ---------- 调查进行中 ---------- */
 
-.gp-result-row .gp-share-actions {
-  flex-wrap: wrap;
-  gap: 8px 10px;
-}
-
-@media (max-width: 560px) {
-  .gp-verdict-word {
-    font-size: 48px;
-  }
-  .gp-result-headline {
-    font-size: 18px;
-  }
-  .gp-part-text {
-    font-size: 19px;
-  }
-}
-
-/* 原句块（调查中和查完一样）：和头版式一致，不要左边那条粗竖线。 */
-.gp-canvas .gp-original {
-  border-left: none;
-  padding: 0 0 18px;
-  border-bottom: 1px solid var(--gp-hairline-subtle);
-}
-.gp-canvas .gp-original-label {
-  font-size: 12.5px;
-  letter-spacing: 0.04em;
-  text-transform: none;
-  font-weight: 400;
-}
-.gp-canvas .gp-original-text {
-  font-size: 20px;
-  font-weight: 400;
-  line-height: 1.8;
-}
-@media (max-width: 560px) {
-  .gp-canvas .gp-original-text { font-size: 18px; }
-}
-
-/* ===== 调查进行中（ProgressView）：同一套版式，按真实进度一行行出现 ===== */
 .gp-progress-status-row {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 4px 16px;
-  margin: 18px 0 4px;
+  padding: 24px 0;
 }
 
 .gp-progress-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   margin: 0;
-  font-size: 14px;
-  color: var(--gp-ink-2);
 }
 
-.gp-progress-clock {
-  font-size: 13px;
-  color: var(--gp-ink-3);
+.gp-progress-side {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
   font-variant-numeric: tabular-nums;
-}
-
-.gp-progress-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--gp-ink-3);
-  animation: gp-progress-pulse 1.2s ease-in-out infinite;
-  flex: none;
-}
-
-@keyframes gp-progress-pulse {
-  50% { opacity: 0.25; }
-}
-
-.gp-progress-part {
-  animation-delay: 0ms;
 }
 
 .gp-progress-wait {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin: 8px 0 0;
-  font-size: 14px;
-  color: var(--gp-ink-3);
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
 }
 
-/* 不确定时长的进度：一小段在细线上来回移动，不假装有百分比。 */
+/* 不确定时长的进度：一小段在细槽里来回移动，不假装有百分比。 */
 .gp-progress-bar {
   position: relative;
-  width: 120px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--gp-hairline);
-  overflow: hidden;
   flex: none;
+  width: 96px;
+  height: 2px;
+  overflow: hidden;
+  background: var(--sand-4);
 }
 .gp-progress-bar::after {
   content: "";
   position: absolute;
   inset: 0;
   width: 40%;
-  background: var(--gp-ink-3);
-  animation: gp-progress-slide 1.1s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+  background: var(--sand-9);
+  animation: gp-progress-slide 1.2s ease-out infinite;
 }
 
 @keyframes gp-progress-slide {
@@ -601,36 +395,20 @@
   to { transform: translateX(250%); }
 }
 
-/* 还没判完的一截下面：已经找到的网页标题，逐行淡入。 */
 .gp-progress-found {
   list-style: none;
-  margin: 10px 0 0;
+  margin: 8px 0 0;
   padding: 0;
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--gp-ink-3);
+  font-size: var(--gp-size-small);
+  color: var(--sand-11);
   overflow-wrap: anywhere;
-}
-.gp-progress-found li {
-  animation: gp-result-in 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
-}
-.gp-progress-found li::before { content: "· "; }
-
-/* 判完一截：标签和理由淡入，原句上那一截的下划线换成标签颜色。 */
-.gp-progress-label,
-.gp-progress-reason {
-  animation: gp-result-in 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
-}
-
-.gp-span {
-  transition: border-bottom-color 280ms ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .gp-progress-dot,
-  .gp-progress-bar::after,
-  .gp-progress-label,
-  .gp-progress-reason,
-  .gp-progress-found li { animation: none; }
-  .gp-span { transition: none; }
+  .gp-progress-bar::after { animation: none; }
+}
+
+/* 中断后没有状态行：第一点不再画上边线，免得和原句的下边线叠在一起。 */
+.gp-progress > .gp-result-parts:first-child > .gp-part:first-child {
+  border-top: 0;
 }

@@ -287,87 +287,77 @@ export function createShareHandlers(deps: { getRun: (runId: string) => RunRecord
   return { createShareHandler, revokeShareHandler };
 }
 
-// 和产品结果页同一套样式（apps/src/goldenPath/result.css）：暖纸底、判断和摘句用衬线、标签颜色只做辅助。
-// 分享多半在手机微信里打开，先按手机排；不加载网络字体。
+// 和产品结果页同一套样式（apps/src/goldenPath/result.css）：颜色取自 Radix Colors（sand / red / green / amber），
+// 字号只有 36 / 20 / 16 / 13，线一律 0.5px。分享多半在手机微信里打开，先按手机排；不加载网络字体。
 const SHARE_PAGE_STYLE = `
   :root {
     color-scheme: light;
-    --canvas: #faf9f5; --ink: #1c1917; --ink-2: #57534e; --ink-3: #8c867f;
-    --hairline: #e7e5df; --hairline-subtle: #f0ede6; --inset: #f5f4ef;
-    --accent: #8f2d2a; --accent-deep: #732220;
-    --positive: #20604c; --positive-bg: rgba(32, 96, 76, 0.08);
-    --negative: #8f2d2a; --negative-bg: rgba(143, 45, 42, 0.08);
-    --mixed: #855f1a; --mixed-bg: rgba(133, 95, 26, 0.1);
-    --muted: #57534e; --muted-bg: rgba(87, 83, 78, 0.08);
+    --sand-1: #fdfdfc; --sand-2: #f9f9f8; --sand-3: #f1f0ef; --sand-4: #e9e8e6; --sand-6: #dad9d6;
+    --sand-8: #bcbbb5; --sand-11: #63635e; --sand-12: #21201c;
+    --green-3: #e6f6eb; --green-11: #218358;
+    --amber-3: #fff7c2; --amber-11: #ab6400;
+    --red-3: #feebec; --red-11: #ce2c31;
+    --line: 0.5px solid var(--sand-6);
     --serif: "Noto Serif SC", "Songti SC", "STSong", serif;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--canvas); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; font-size: 15px; line-height: 1.7; -webkit-font-smoothing: antialiased; }
-  main { max-width: 720px; margin: 0 auto; padding: 0 16px 32px; overflow-wrap: anywhere; }
-  a { color: var(--ink-2); text-decoration-color: var(--hairline); text-underline-offset: 3px; }
+  body { margin: 0; background: var(--sand-1); color: var(--sand-12); font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  main { max-width: 720px; margin: 0 auto; padding: 0 16px 48px; overflow-wrap: anywhere; }
+  a { color: var(--sand-12); text-decoration-thickness: 0.5px; text-decoration-color: var(--sand-8); text-underline-offset: 3px; }
   a:hover { text-decoration-color: currentColor; }
-  .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0 12px; margin-bottom: 20px; border-bottom: 1px solid var(--hairline-subtle); }
-  .brand { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--ink); text-decoration: none; }
-  .brand img { width: 26px; height: 26px; border-radius: 6px; }
-  .top small { font-size: 12px; color: var(--ink-3); }
-  .eyebrow { margin: 0 0 4px; font-size: 12.5px; letter-spacing: .04em; color: var(--ink-3); }
-  .claim { margin: 0 0 18px; font-family: var(--serif); font-size: 20px; font-weight: 400; line-height: 1.7; }
-  .verdict { display: block; word-break: keep-all; font-family: var(--serif); font-size: 44px; font-weight: 600; line-height: 1.15; letter-spacing: .06em; }
-  .headline { margin: 12px 0 0; font-family: var(--serif); font-size: 18px; line-height: 1.8; }
-  .tone-positive { color: var(--positive); } .tone-negative { color: var(--negative); } .tone-mixed { color: var(--mixed); } .tone-muted { color: var(--ink); }
-  .rationale { margin: 10px 0 0; font-size: 14.5px; line-height: 1.75; color: var(--ink-2); }
-  .meta { margin: 12px 0 0; font-size: 13px; color: var(--ink-3); }
-  .scope { margin: 6px 0 0; font-size: 13px; color: var(--ink-3); }
-  .boundary { margin: 12px 0 4px; padding: 2px 0 2px 12px; border-left: 2px solid var(--hairline); font-size: 14.5px; line-height: 1.75; color: var(--ink-2); }
-  .boundary b { display: block; font-size: 12.5px; font-weight: 600; letter-spacing: .04em; color: var(--ink-3); }
-  .part { padding: 20px 0 16px; border-top: 1px solid var(--hairline-subtle); }
-  .part:first-of-type { margin-top: 22px; }
-  .part-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
-  .part-no { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; margin-right: 10px; border-radius: 50%; background: var(--inset); color: var(--ink-2); font-size: 12px; font-weight: 600; vertical-align: 3px; }
-  .part-text { font-family: var(--serif); font-size: 19px; font-weight: 600; line-height: 1.5; }
-  .label { display: inline-block; font-size: 13px; font-weight: 600; line-height: 1.6; padding: 1px 10px; border-radius: 999px; white-space: nowrap; }
-  .label-positive { color: var(--positive); background: var(--positive-bg); } .label-negative { color: var(--negative); background: var(--negative-bg); }
-  .label-mixed { color: var(--mixed); background: var(--mixed-bg); } .label-muted { color: var(--muted); background: var(--muted-bg); }
-  .reason { margin: 6px 0 0; font-family: var(--serif); font-size: 16px; line-height: 1.85; color: var(--ink-2); }
-  .empty { margin: 10px 0 0; font-size: 14px; color: var(--ink-3); }
-  ul.evidence { list-style: none; margin: 12px 0 0; padding: 0; }
-  .ev { padding: 8px 0; }
-  .ev q { display: block; font-family: var(--serif); font-size: 15.5px; line-height: 1.8; quotes: "「" "」"; }
-  .ev-note { display: block; font-size: 14.5px; color: var(--ink-2); }
-  .ev-note i { font-style: normal; font-size: 12px; margin-right: 6px; padding: 0 6px; border: 1px solid var(--hairline); border-radius: 6px; color: var(--ink-3); }
-  .ev-finding { font-size: 14px; color: var(--ink-2); }
-  .ev-src { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 2px; font-size: 12.5px; color: var(--ink-3); }
-  .role { font-weight: 600; } .role-support { color: var(--positive); } .role-contradict { color: var(--negative); }
-  .ev-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 6px; font-size: 12.5px; }
-  .read { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 1px solid var(--hairline); border-radius: 6px; line-height: 1.8; color: var(--ink-2); }
-  .read::before { content: ""; width: 6px; height: 6px; border-radius: 50%; border: 1.5px solid currentColor; flex: none; }
-  .read-read::before { background: currentColor; } .read-partial::before { background: linear-gradient(90deg, currentColor 50%, transparent 50%); }
+  .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; height: 56px; margin-bottom: 32px; border-bottom: var(--line); }
+  .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; text-decoration: none; }
+  .brand img { width: 28px; height: 28px; }
+  .top small, .meta, .scope, .empty, .ev-src, .ev-foot, .context small { font-size: 13px; color: var(--sand-11); }
+  .claim { position: relative; margin: 0; padding-bottom: 24px; border-bottom: var(--line); font-family: var(--serif); font-size: 20px; font-weight: 400; line-height: 1.7; }
+  .claim .open { position: absolute; right: 100%; }
+  .verdict-block { padding: 32px 0; }
+  .verdict { display: block; word-break: keep-all; font-family: var(--serif); font-size: 36px; font-weight: 700; line-height: 1.3; }
+  .headline { margin: 12px 0 0; font-family: var(--serif); font-size: 20px; line-height: 1.7; }
+  .tone-positive { color: var(--green-11); } .tone-negative { color: var(--red-11); } .tone-mixed { color: var(--amber-11); } .tone-muted { color: var(--sand-12); }
+  .rationale { margin: 12px 0 0; color: var(--sand-11); }
+  .meta { margin: 16px 0 0; }
+  .scope { margin: 8px 0 0; }
+  .boundary { margin: 12px 0 0; line-height: 1.8; color: var(--sand-11); }
+  .boundary b { display: block; font-size: 13px; font-weight: 600; }
+  .part { display: grid; grid-template-columns: 20px minmax(0, 1fr); column-gap: 12px; align-items: baseline; padding: 24px 0; border-top: var(--line); }
+  .part-no { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--sand-3); color: var(--sand-11); font-size: 13px; font-weight: 500; }
+  .part-body { min-width: 0; }
+  .part-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  .part-text { font-family: var(--serif); font-size: 20px; font-weight: 600; line-height: 1.5; }
+  .label { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 13px; font-weight: 500; line-height: 22px; white-space: nowrap; }
+  .label-positive { color: var(--green-11); background: var(--green-3); } .label-negative { color: var(--red-11); background: var(--red-3); }
+  .label-mixed { color: var(--amber-11); background: var(--amber-3); } .label-muted { color: var(--sand-11); background: var(--sand-3); }
+  .reason { margin: 8px 0 0; font-family: var(--serif); line-height: 1.8; }
+  .empty { margin: 12px 0 0; }
+  ul.evidence { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+  .ev q { display: block; text-indent: -0.5em; font-family: var(--serif); line-height: 1.8; color: var(--sand-11); quotes: "「" "」"; }
+  .ev-note { display: block; color: var(--sand-11); }
+  .ev-note i { font-style: normal; font-size: 13px; font-weight: 600; margin-right: 8px; }
+  .ev-finding { color: var(--sand-11); }
+  .ev-src, .ev-foot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-top: 4px; }
+  .role { font-weight: 600; } .role-support { color: var(--green-11); } .role-contradict { color: var(--red-11); }
   .ev-foot details[open] { flex-basis: 100%; }
-  details { margin-top: 8px; font-size: 13px; }
-  .ev-foot details { margin: 0; font-size: 12.5px; }
-  summary { list-style: none; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; color: var(--ink-2); }
+  details { margin-top: 16px; font-size: 13px; }
+  .ev-foot details { margin: 0; }
+  summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--sand-11); }
   summary::-webkit-details-marker { display: none; }
-  summary::after { content: ""; width: 6px; height: 6px; margin-left: 4px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform 160ms ease; }
-  details[open] > summary::after { transform: rotate(45deg) translate(-2px, -2px); }
-  .context { margin: 8px 0 2px; padding-left: 12px; border-left: 2px solid var(--hairline); font-size: 13.5px; color: var(--ink-2); }
-  .context blockquote, .context p { margin: 0 0 6px; white-space: pre-wrap; }
-  .context small { display: block; font-size: 12.5px; color: var(--ink-3); }
-  details ul.evidence { margin-top: 4px; padding-left: 12px; border-left: 2px solid var(--hairline-subtle); }
-  .sources { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; color: var(--ink-2); }
+  summary::after { content: ""; width: 5px; height: 5px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-45deg); }
+  details[open] > summary::after { transform: translateY(-2px) rotate(45deg); }
+  summary:hover { color: var(--sand-12); }
+  .context { margin-top: 8px; padding: 12px; border-radius: 8px; background: var(--sand-2); }
+  .context blockquote, .context p { margin: 0 0 8px; white-space: pre-wrap; }
+  details ul.evidence { font-size: 16px; }
+  .sources { list-style: none; margin: 12px 0 0; padding: 0; }
   .sources li { margin: 4px 0; }
-  .sources small { color: var(--ink-3); }
-  .all { padding-top: 14px; border-top: 1px solid var(--hairline-subtle); }
-  .cta { display: block; margin: 26px 0 12px; padding: 12px; border-radius: 12px; background: var(--accent); color: #fff; text-align: center; font-size: 15px; font-weight: 600; text-decoration: none; }
-  .cta:hover { background: var(--accent-deep); }
-  footer p { margin: 0; font-size: 12px; line-height: 1.7; color: var(--ink-3); text-align: center; }
-  h1.notice { margin: 8px 0 8px; font-family: var(--serif); font-size: 22px; }
+  .all { margin-top: 0; padding-top: 24px; border-top: var(--line); }
+  .cta { display: flex; align-items: center; justify-content: center; height: 40px; margin: 32px 0 0; border-radius: 8px; background: var(--sand-12); color: var(--sand-1); font-size: 13px; font-weight: 500; text-decoration: none; }
+  .cta:hover { opacity: 0.88; }
+  h1.notice { margin: 0 0 8px; font-size: 20px; }
+  section > p { color: var(--sand-11); }
   @media (min-width: 640px) {
-    main { padding: 0 24px 48px; }
-    .verdict { font-size: 56px; }
-    .headline { font-size: 20px; }
-    .part-text { font-size: 21px; }
+    main { padding: 0 24px 64px; }
   }
-  @media (prefers-reduced-motion: reduce) { summary::after { transition: none; } }
 `;
 
 const ROLE_LABEL: Record<string, string> = { support: "支持", contradict: "反驳", "context-only": "背景" };
@@ -403,7 +393,7 @@ function shell(title: string, body: string, indexable: boolean): string {
 <link rel="icon" type="image/png" href="/logo.png?v=20260615">
 <style>${SHARE_PAGE_STYLE}</style>
 </head><body><main>
-<header class="top"><a class="brand" href="/"><img src="/logo.png?v=20260615" alt="">红鲱鱼与枪</a><small>别人分享给你的调查</small></header>
+<header class="top"><a class="brand" href="/"><img src="/mark.png" alt="">红鲱鱼与枪</a><small>分享的调查</small></header>
 ${body}
 </main></body></html>`;
 }
@@ -412,19 +402,19 @@ ${body}
 function buildSharedPageHtml(lookup: ShareLookup): string {
   if (lookup.state === "revoked") {
     return shell(
-      "分享链接已撤销 · 红鲱鱼与枪",
+      "分享链接已撤销｜红鲱鱼与枪",
       `<section data-share-revoked><h1 class="notice">这个分享链接已被撤销</h1>
-<p>创建者撤销了这个链接，这里不再显示调查内容。</p>
-<a class="cta" href="/">去查你听到的说法</a></section>`,
+<p>分享人已撤销这个链接，不再显示调查内容。</p>
+<a class="cta" href="/">核查你听到的说法</a></section>`,
       false
     );
   }
   if (lookup.state === "missing") {
     return shell(
-      "分享链接不可用 · 红鲱鱼与枪",
+      "分享链接不可用｜红鲱鱼与枪",
       `<section data-share-missing><h1 class="notice">分享链接不可用</h1>
-<p>这个链接不存在，或已经过期。</p>
-<a class="cta" href="/">去查你听到的说法</a></section>`,
+<p>链接不存在或已过期。</p>
+<a class="cta" href="/">核查你听到的说法</a></section>`,
       false
     );
   }
@@ -433,13 +423,13 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
   // 发布日期：老分享里存的是原样日期，显示时按同一规则读；读不出就照实说没取到。
   const publishedTag = (raw: string | undefined) => {
     const day = normalizePublishedDate(raw);
-    return `<span data-share-published="${day ?? ""}">${day ?? "发布日期未取到"}</span>`;
+    return `<span data-share-published="${day ?? ""}">${day ?? "发布日期不详"}</span>`;
   };
   const sourceById = new Map(p.sources.map((source) => [source.id, source]));
   const evidenceRow = (link: PublicShareProjection["claims"][number]["evidence"][number]): string => {
     const source = sourceById.get(link.sourceId);
     const quote = link.sentence ? `<q data-share-quote>${escapeHtml(link.sentence)}</q>` : "";
-    const note = !quote && link.note ? `<span class="ev-note" data-share-note><i>我们的概括</i>${escapeHtml(link.note)}</span>` : "";
+    const note = !quote && link.note ? `<span class="ev-note" data-share-note><i>概括</i>${escapeHtml(link.note)}</span>` : "";
     const finding = link.finding ? `<div class="ev-finding">${escapeHtml(link.finding)}</div>` : "";
     if (!quote && !note && !finding && !link.passage) return "";
     const href = source ? quoteLinkUrl(source.url, link.excerptKind === "page-excerpt" ? link.sentence : "") : "";
@@ -452,8 +442,8 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
       materialPassageLabel(link.excerptKind),
       source?.fetchNote ? `正文读取情况：${escapeHtml(source.fetchNote)}` : "",
       materialRetrievedLabel(source?.retrievedAt),
-    ].filter(Boolean).join(" · ");
-    const material = `<details><summary>看原文上下文</summary><div class="context">${
+    ].filter(Boolean).join("；");
+    const material = `<details><summary>查看上下文</summary><div class="context">${
       link.passage ? `<blockquote>${escapeHtml(link.passage)}</blockquote>` : "<p>这条依据没有保存可检查的上下文。</p>"
     }<small>${passageNote}</small></div></details>`;
     return `<li class="ev" data-share-material-kind="${escapeHtml(link.excerptKind ?? "unknown")}" data-share-source-id="${escapeHtml(link.sourceId)}" data-share-role="${escapeHtml(link.role)}">${quote}${note}${finding}${src}<div class="ev-foot"><span class="read read-${read.level}" data-share-material-status>${read.text}</span>${material}</div></li>`;
@@ -468,30 +458,31 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
         : "";
       const reason = claim.label && claim.reason ? `<p class="reason" data-share-claim-reason>${escapeHtml(claim.reason)}</p>` : "";
       return `<article class="part" data-share-claim>
-  <div class="part-head"><span><span class="part-no" aria-hidden="true">${index + 1}</span><span class="part-text">${escapeHtml(claim.text)}</span></span>${chip}</div>
+  <span class="part-no" aria-hidden="true">${index + 1}</span>
+  <div class="part-body">
+  <div class="part-head"><span class="part-text">${escapeHtml(claim.text)}</span>${chip}</div>
   ${reason}
-  ${decisive.length ? `<ul class="evidence">${decisive.join("")}</ul>` : `<p class="empty">没有找到直接支持或反驳这一截的依据。</p>`}
-  ${background.length ? `<details><summary>另有 ${background.length} 条背景材料，没有用来判断</summary><ul class="evidence">${background.join("")}</ul></details>` : ""}
+  ${decisive.length ? `<ul class="evidence">${decisive.join("")}</ul>` : `<p class="empty">没有找到直接支持或反驳这一点的依据。</p>`}
+  ${background.length ? `<details><summary>另有 ${background.length} 条相关材料，未用于判断</summary><ul class="evidence">${background.join("")}</ul></details>` : ""}
+  </div>
 </article>`;
     })
     .join("");
   const when = readableTime(p.checkedAt) || readableTime(p.createdAt);
-  const metaParts = [p.claims.length ? `查了 ${p.claims.length} 截` : "", when ? `核查于 ${when}` : ""].filter(Boolean);
-  const body = `<p class="eyebrow">调查的说法</p>
-  <h1 class="claim">「${escapeHtml(p.claim)}」</h1>
-  <p class="eyebrow">结论</p>
+  const body = `<h1 class="claim"><span class="open" aria-hidden="true">“</span>${escapeHtml(p.claim)}<span aria-hidden="true">”</span></h1>
+  <div class="verdict-block">
   <div data-share-conclusion>${
     p.label ? `<span class="verdict tone-${LABEL_TONE[p.label]}" data-share-label="${p.label}">${escapeHtml(LABEL_TEXT[p.label])}</span>` : ""
   }<p class="headline">${escapeHtml(p.answer)}</p></div>
   ${p.rationale ? `<p class="rationale">${escapeHtml(p.rationale)}</p>` : ""}
-  ${metaParts.length ? `<p class="meta">${metaParts.join(" · ")}</p>` : ""}
-  <p class="scope">结论只针对下面列出的几截，不代表整段话都已证实。</p>
   ${p.boundaries.length ? `<p class="boundary"><b>必要边界</b>${p.boundaries.map(escapeHtml).join("；")}</p>` : ""}
-  ${p.deferredClaims.length ? `<p class="scope">这次没有查：${p.deferredClaims.map(escapeHtml).join("；")}</p>` : ""}
+  ${p.deferredClaims.length ? `<p class="scope">本次未核查：${p.deferredClaims.map(escapeHtml).join("；")}</p>` : ""}
+  ${when ? `<p class="meta">核查于 ${when}</p>` : ""}
+  </div>
   ${claimItems}
   ${
     p.sources.length
-      ? `<details class="all"><summary>这次一共用到 ${p.sources.length} 份材料</summary><ul class="sources">${p.sources
+      ? `<details class="all"><summary>本次共用到 ${p.sources.length} 份材料</summary><ul class="sources">${p.sources
           .map(
             (source) =>
               `<li><a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer nofollow">${escapeHtml(source.title)}</a> <small>${publishedTag(source.publishedAt)}</small></li>`
@@ -499,9 +490,8 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
           .join("")}</ul></details>`
       : ""
   }
-  <a class="cta" href="/">去查你听到的说法</a>
-  <footer><p>这是分享人当时的调查快照，之后不会再变；分享人撤销后，这个链接就打不开了。</p></footer>`;
-  return shell(`${p.claim.slice(0, 40)} · 红鲱鱼与枪`, body, true);
+  <a class="cta" href="/">核查你听到的说法</a>`;
+  return shell(`${p.claim.slice(0, 40)}｜红鲱鱼与枪`, body, true);
 }
 
 /** GET /s/:shareId — 只查分享里存的公开内容，不读 run。 */

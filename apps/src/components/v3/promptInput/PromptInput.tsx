@@ -2,7 +2,6 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
-  useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import styles from "./PromptInput.module.css";
@@ -14,7 +13,7 @@ function Icon({
   size = 14,
   className,
 }: {
-  name: "image" | "loader" | "plus" | "x";
+  name: "image" | "loader" | "x";
   size?: number;
   className?: string;
 }) {
@@ -43,13 +42,6 @@ function Icon({
       return (
         <svg {...common}>
           <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-        </svg>
-      );
-    case "plus":
-      return (
-        <svg {...common}>
-          <path d="M5 12h14" />
-          <path d="M12 5v14" />
         </svg>
       );
     case "x":
@@ -97,13 +89,7 @@ export function PromptInput({
 }: PromptInputProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
-  // The material is plain text; input controls must never add instructions to it.
-  const [menuOpen, setMenuOpen] = useState(false);
-  // ids of chips currently playing their exit animation before removal
-  const [exitingAtt, setExitingAtt] = useState<string[]>([]);
-
   const editorRef = useRef<HTMLDivElement>(null);
-  const plusRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const lastExternalValue = useRef(value);
   const composing = useRef(false);
@@ -151,23 +137,6 @@ export function PromptInput({
     }
   };
 
-  // Dismiss the "+" menu on outside click / Escape.
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDown = (e: PointerEvent) => {
-      if (!plusRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [menuOpen]);
-
   // Seed editor from the initial value once on mount.
   useLayoutEffect(() => {
     const editor = editorRef.current;
@@ -184,25 +153,15 @@ export function PromptInput({
     onSubmit();
   };
 
-  // Remove an attachment only after its exit animation.
-  const removeAttachment = (id: string) => {
-    setExitingAtt((e) => (e.includes(id) ? e : [...e, id]));
-    window.setTimeout(() => {
-      onRemoveAttachment(id);
-      setExitingAtt((e) => e.filter((x) => x !== id));
-    }, 200);
-  };
-
   const openPicker = () => {
     const input = fileRef.current;
     if (!input || busy) return;
     input.value = "";
     input.click();
-    setMenuOpen(false);
   };
 
   return (
-    <div className={styles.wrap}>
+    <>
       <input
         ref={fileRef}
         type="file"
@@ -222,104 +181,64 @@ export function PromptInput({
         {attachments.length > 0 && (
           <div className={styles.chips}>
             {attachments.map((att) => (
-              <span
-                key={att.id}
-                className={styles.chip}
-                data-exit={exitingAtt.includes(att.id) || undefined}
-              >
+              <span key={att.id} className={styles.chip}>
                 <span className={styles.chipIcon}>
-                  <Icon name="image" size={13} />
+                  <Icon name="image" size={14} />
                 </span>
                 <span className={styles.chipName}>{att.name}</span>
                 <button
                   type="button"
                   className={styles.chipRemove}
                   aria-label={"移除 " + att.name}
-                  onClick={() => removeAttachment(att.id)}
+                  onClick={() => onRemoveAttachment(att.id)}
                 >
-                  <Icon name="x" size={11} />
+                  <Icon name="x" size={12} />
                 </button>
               </span>
             ))}
           </div>
         )}
 
-        <div className={styles.editorWrap}>
-          <div
-            ref={editorRef}
-            id="claim-input"
-            className={styles.field}
-            contentEditable={!busy}
-            suppressContentEditableWarning
-            role="textbox"
-            aria-multiline="true"
-            aria-label={ariaLabel}
-            data-empty={!hasText || undefined}
-            data-placeholder={placeholder}
-            onInput={syncFromEditor}
-            onKeyDown={onEditorKeyDown}
-            onCompositionStart={() => { composing.current = true; }}
-            onCompositionEnd={() => { composing.current = false; syncFromEditor(); }}
-          />
-
-        </div>
+        <div
+          ref={editorRef}
+          id="claim-input"
+          className={styles.field}
+          contentEditable={!busy}
+          suppressContentEditableWarning
+          role="textbox"
+          aria-multiline="true"
+          aria-label={ariaLabel}
+          data-empty={!hasText || undefined}
+          data-placeholder={placeholder}
+          onInput={syncFromEditor}
+          onKeyDown={onEditorKeyDown}
+          onCompositionStart={() => { composing.current = true; }}
+          onCompositionEnd={() => { composing.current = false; syncFromEditor(); }}
+        />
 
         <div className={styles.row}>
-          <div className={styles.plusWrap} ref={plusRef}>
-            <button
-              type="button"
-              className={[styles.iconBtn, styles.plus].join(" ")}
-              data-prompt-add
-              data-open={menuOpen || undefined}
-              aria-label={copy.addMaterial}
-              aria-expanded={menuOpen}
-              disabled={busy}
-              onClick={() => setMenuOpen((o) => !o)}
-            >
-              <span className={styles.plusIcon}>
-                <Icon name="plus" size={14} />
-              </span>
-            </button>
-
-            {menuOpen && (
-              <div className={styles.menu} role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={styles.menuItem}
-                  onClick={openPicker}
-                  title={copy.unsupportedMaterials}
-                >
-                  <span className={styles.menuIcon}>
-                    <Icon name="image" size={14} />
-                  </span>
-                  <span className={styles.menuName}>{copy.addImage}</span>
-                </button>
-                <p className={styles.materialHint}>{copy.unsupportedMaterials}</p>
-              </div>
-            )}
-          </div>
-
-          <div className={styles.right}>
-            <button
-              type="button"
-              className={[styles.iconBtn, styles.send, sendActive && styles.sendActive, styles.sendText]
-                .filter(Boolean)
-                .join(" ")}
-              data-prompt-send
-              aria-label={submitLabel}
-              disabled={!sendActive}
-              onClick={send}
-            >
-              {busy ? (
-                <Icon name="loader" size={15} className={styles.spinner} />
-              ) : (
-                <span className={styles.sendLabel}>{submitLabel}</span>
-              )}
-            </button>
-          </div>
+          <button
+            type="button"
+            className={styles.add}
+            data-prompt-add
+            disabled={busy}
+            onClick={openPicker}
+          >
+            <Icon name="image" size={16} />
+            {copy.addImage}
+          </button>
+          <button
+            type="button"
+            className={styles.send}
+            data-prompt-send
+            aria-label={submitLabel}
+            disabled={!sendActive}
+            onClick={send}
+          >
+            {busy ? <Icon name="loader" size={16} className={styles.spinner} /> : submitLabel}
+          </button>
         </div>
       </div>
-    </div>
+    </>
   );
 }

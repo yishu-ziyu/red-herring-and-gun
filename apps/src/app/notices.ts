@@ -8,8 +8,8 @@
  * 离开或刷新也能从同一条 run 取回同一份结论。
  */
 export const TIMEOUT_PENDING_NOTICE = {
-  zh: "还在查，可以离开页面，稍后回来或刷新能看到结果",
-  en: "Still investigating. You can leave this page — come back later or refresh to see the result.",
+  zh: "调查仍在进行。可以先离开，稍后回来或刷新页面即可看到结果。",
+  en: "Still investigating. You can leave and come back later, or refresh to see the result.",
 };
 
 /**
@@ -18,8 +18,8 @@ export const TIMEOUT_PENDING_NOTICE = {
  * 必须说出来；条目本身的状态不动，用户还能再试。
  */
 export const HISTORY_OPEN_FAILED_NOTICE = {
-  zh: "这条历史暂时打不开，条目还留在列表里，可以稍后重试。",
-  en: "This saved check can't be opened right now. It stays in your list; try again later.",
+  zh: "这条记录暂时无法打开，请稍后重试。",
+  en: "This record can't be opened right now. Try again later.",
 };
 
 /** 浏览器把接口进程死掉写成 Failed to fetch，不能原样摊在首页主区。 */

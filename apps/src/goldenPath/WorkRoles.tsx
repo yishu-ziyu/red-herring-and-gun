@@ -15,7 +15,7 @@ export function WorkRoles() {
       {WORK_ROLES.map((role) => (
         <div key={role.id} className="gp-role" data-gp-role={role.id} data-gp-role-state="home">
           <span className="gp-role-avatar-wrap">
-            <img className="gp-role-avatar" src={role.src} alt="" width={74} height={74} />
+            <img className="gp-role-avatar" src={role.src} alt="" width={64} height={64} />
           </span>
           <strong>{role.name}</strong>
           <small>{role.desc}</small>
