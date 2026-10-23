@@ -2,7 +2,7 @@
 // conclusion label with the expected one. Manual measurement, not a test:
 //   API_PORT=3011 node scripts/dev.mjs --port 5181   (in another terminal)
 //   node scripts/eval/run.mjs [--only id1,id2] [--concurrency 2]
-import { execFileSync } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,20 +53,39 @@ async function investigate(claim) {
 
 function snapshotOf(runId) {
   if (!runId) return null;
-  const out = execFileSync("sqlite3", ["-json", DB, `select snapshot from runs where runId='${runId.replace(/'/g, "")}'`]).toString();
-  const row = JSON.parse(out || "[]")[0];
-  return row?.snapshot ? JSON.parse(row.snapshot) : null;
+  const db = new DatabaseSync(DB, { readOnly: true });
+  try {
+    const row = db.prepare("select snapshot from runs where runId = ?").get(runId);
+    return row?.snapshot ? JSON.parse(row.snapshot) : null;
+  } finally {
+    db.close();
+  }
+}
+
+// A run that never finished (model connection reset, overall timeout) says nothing about judgment:
+// retry it instead of scoring it, and report it separately if it keeps failing.
+async function finishedRun(claim, attempts = 3) {
+  let last;
+  for (let i = 0; i < attempts; i++) {
+    const run = await investigate(claim);
+    const snap = snapshotOf(run.runId);
+    last = { run, snap, attempts: i + 1 };
+    if (snap?.phase === "complete") return last;
+  }
+  return last;
 }
 
 async function evaluate(item) {
   try {
-    const run = await investigate(item.claim);
-    const snap = snapshotOf(run.runId);
+    const { run, snap, attempts } = await finishedRun(item.claim);
+    if (snap?.phase !== "complete") {
+      return { id: item.id, category: item.category, claim: item.claim, expected: item.expected, got: "（没跑完）", pass: "incomplete", attempts, ended: run.ended, runId: run.runId };
+    }
     const got = LABEL_TEXT[snap?.conclusion?.label] || "（无结论）";
     const pass = got === item.expected ? "match" : (item.acceptable || []).includes(got) ? "acceptable" : "miss";
     return {
       id: item.id, category: item.category, claim: item.claim, expected: item.expected, acceptable: item.acceptable || [],
-      got, pass, seconds: run.seconds, ended: run.ended, runId: run.runId,
+      got, pass, seconds: run.seconds, attempts, ended: run.ended, runId: run.runId,
       answer: snap?.conclusion?.directAnswer || snap?.conclusion?.reason || "",
       parts: (snap?.claims || []).map((c) => `${LABEL_TEXT[c.label] || "?"}｜${c.text}`),
     };
@@ -82,17 +101,17 @@ await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, as
     const item = items[next++];
     const r = await evaluate(item);
     results.push(r);
-    console.log(`${r.pass === "miss" ? "✗" : "✓"} [${r.category}] ${r.claim}\n    期望 ${r.expected} · 得到 ${r.got} · ${r.seconds ?? "-"}s`);
+    console.log(`${r.pass === "miss" ? "✗" : r.pass === "incomplete" ? "…" : "✓"} [${r.category}] ${r.claim}\n    期望 ${r.expected} · 得到 ${r.got} · ${r.seconds ?? "-"}s`);
   }
 }));
 
 const byCategory = {};
 for (const r of results) {
-  const c = (byCategory[r.category] ||= { total: 0, match: 0, acceptable: 0 });
-  c.total++; if (r.pass === "match") c.match++; if (r.pass === "acceptable") c.acceptable++;
+  const c = (byCategory[r.category] ||= { total: 0, match: 0, acceptable: 0, incomplete: 0 });
+  c.total++; if (r.pass === "match") c.match++; if (r.pass === "acceptable") c.acceptable++; if (r.pass === "incomplete") c.incomplete++;
 }
-console.log("\n分类  条数  完全对  可接受");
-for (const [k, v] of Object.entries(byCategory)) console.log(`${k}  ${v.total}  ${v.match}  ${v.acceptable}`);
+console.log("\n分类  条数  完全对  可接受  没跑完");
+for (const [k, v] of Object.entries(byCategory)) console.log(`${k}  ${v.total}  ${v.match}  ${v.acceptable}  ${v.incomplete}`);
 const secs = results.map((r) => r.seconds).filter(Number.isFinite).sort((a, b) => a - b);
 if (secs.length) console.log(`用时中位数 ${secs[Math.floor(secs.length / 2)]}s`);
 
