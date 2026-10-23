@@ -601,6 +601,13 @@ export function buildInvestigationSnapshot(
     verdict: VerdictLike | undefined;
   };
 
+  const runSourceByUrl = new Map<string, BundleSource>();
+  for (const list of bundle.perAtom.values()) {
+    for (const s of list) {
+      const url = normalizeInvestigationSourceUrl(s.url);
+      if (url && !runSourceByUrl.has(url)) runSourceByUrl.set(url, s);
+    }
+  }
   const assemblies: ClaimAssembly[] = keptAtoms.map(({ key, text }, index) => {
     const verdict = verdicts.get(key);
     const info = types.get(key);
@@ -613,7 +620,9 @@ export function buildInvestigationSnapshot(
       for (const s of list) {
         const url = normalizeInvestigationSourceUrl(asString(s.url).trim());
         if (!isHttpUrl(url) || seen.has(url)) continue;
-        const canonical = allowed?.find((a) => normalizeInvestigationSourceUrl(a.url) === url);
+        const canonical = allowed
+          ? allowed.find((a) => normalizeInvestigationSourceUrl(a.url) === url) ?? runSourceByUrl.get(url)
+          : undefined;
         if (allowed && !canonical) continue; // 幻觉 URL 拦截
         seen.add(url);
         // URL 只证明「模型引用的是本轮拿到的来源」，不能授权模型改写 title/snippet。

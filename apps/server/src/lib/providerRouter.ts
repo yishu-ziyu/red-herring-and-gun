@@ -29,22 +29,15 @@ function isHardProviderQuotaError(message: string): boolean {
 }
 
 function isHardProviderAuthError(message: string): boolean {
-  return /invalid api key|invalid_key|incorrect api key|unauthorized|ENOENT|authentication fails|api key[\s\S]{0,80}is invalid/i.test(
+  return /invalid api key|invalid_key|incorrect api key|unauthorized|ENOENT|authentication fails|api key[\s\S]{0,80}is invalid|no active [\w ]{0,30}subscription/i.test(
     message
   );
 }
 
-/** Empty-body / no-text is usually a dead account or thinking-budget wipe, not a transient blip. */
-function isEmptyProviderResponse(message: string): boolean {
-  return /没有返回可解析文本|无返回文本|empty (?:response|text)|no (?:usable )?text/i.test(message);
-}
-
+// An empty reply (the stream ended while the model was still thinking) is not a hard failure:
+// skipping MiniMax for it once sent every investigation for the next 10 minutes to the fallback.
 function isHardProviderFailure(message: string): boolean {
-  return (
-    isHardProviderQuotaError(message) ||
-    isHardProviderAuthError(message) ||
-    isEmptyProviderResponse(message)
-  );
+  return isHardProviderQuotaError(message) || isHardProviderAuthError(message);
 }
 
 function canonicalProviderId(provider: string): string {
@@ -503,6 +496,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           model: modelName,
           latencyMs: Date.now() - providerStart,
         });
+        timeoutStrikes.delete(canonicalProviderId(provider));
         return { ok: true, result };
       } catch (error) {
         options.signal?.throwIfAborted();
@@ -520,7 +514,11 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
             ?? (error as { cause?: { message?: string } })?.cause?.message,
           attempt,
         });
+        // A reply cut off mid-stream or JSON still broken after the repair pass is usually a one-off;
+        // with the fallback provider unavailable, one more try is what keeps the run from failing.
+        const brokenReply = /没有返回可解析文本|JSON 无法解析/.test(message);
         if (connectFailure && attempt < CONNECT_ATTEMPTS && !stageBudgetExpired()) continue;
+        if (brokenReply && attempt < 2 && !stageBudgetExpired()) continue;
         if (!stageBudgetExpired()) noteProviderFailure(provider, message);
         return { ok: false, msg: message };
       }

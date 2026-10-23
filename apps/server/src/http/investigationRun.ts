@@ -367,6 +367,7 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
     const outcome = classifyFailure(error, {
       cancelled: Boolean(runSignal?.aborted),
     });
+    if (outcome !== "cancelled") console.error(`[run] ${outcome}:`, error);
     if (outcome === "cancelled") {
       settleQuota(outcome);
       emitInvestigation({ ...interruptedInvestigationSnapshot(lastInvestigation, displayClaim), interruptionReason: "cancelled" });

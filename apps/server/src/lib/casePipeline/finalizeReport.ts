@@ -155,6 +155,9 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
     .map((step) => (typeof step?.error === "string" && step.error.trim() ? step.agent : null))
     .filter((agent): agent is string => Boolean(agent));
   if (failedSteps.length > 0) {
+    console.error(`[finalize] steps failed: ${failedSteps.join(", ")}`, [rumorStep, factStep, sourceStep, reportStep]
+      .filter((step) => typeof step?.error === "string" && step.error.trim())
+      .map((step) => `${step.agent}: ${step.error}`));
     finalReport._source = "error-boundary";
     finalReport.incompleteSteps = failedSteps;
     finalReport.conclusion = "本次核查没能完成，判断还没写成。已找到的公开材料保留在来源里，可以重新调查。";

@@ -371,10 +371,16 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
   verdicts: T[],
   byAtomKey: Record<string, AtomSearchSource[]>,
 ): T[] {
+  // A source found while searching another part of the same sentence can still decide this part
+  // (the rumor "...塑料瓶会析出致癌物，喝多了会得癌" is refuted by pages found for its first half).
+  // Only URLs nobody retrieved this run are treated as made up.
+  const runSources = Object.values(byAtomKey).flat();
+  const known = new Set(runSources.map((s) => s.url));
+  const canonicalByUrl = new Map<string, AtomSearchSource>();
+  for (const source of runSources) if (!canonicalByUrl.has(source.url)) canonicalByUrl.set(source.url, source);
   return verdicts.map((v) => {
     const key = claimAtomKey(String(v.claimAtom ?? ""));
     const retrieved = byAtomKey[key] ?? [];
-    const known = new Set(retrieved.map((s) => s.url));
 
     const verdictNorm = typeof v.verdict === "string" ? v.verdict.trim().toLowerCase() : "";
     const supportingRaw = Array.isArray(v.supportingSources) ? v.supportingSources : [];
@@ -386,7 +392,6 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
       contradicting: contradictingRaw,
     });
     const bound = bindDualBucketCitations(v.evidence, aligned.supporting, aligned.contradicting, known);
-    const canonicalByUrl = new Map(retrieved.map((source) => [source.url, source]));
     // A valid URL proves identity only. The model is not allowed to rewrite the
     // page title/snippet that later appears in reports or drawers.
     // The model's snippet is the sentence it copied from this source; keep it as `quote`.
