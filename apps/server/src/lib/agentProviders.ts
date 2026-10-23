@@ -1,15 +1,15 @@
-// ───────────────────────────────────────────────────────────────
+
 // Server-side LLM provider HTTP adapters
 // 为 4-Agent pipeline 提供 LLM provider 的 OpenAI / Anthropic 兼容调用
 // 任何 router（callAgentWithFallback）通过 import 这些函数调度
-// ───────────────────────────────────────────────────────────────
+
 
 import { extractAnthropicText, extractAnthropicThinking, readAnthropicSse } from "./anthropicParse.js";
 import { buildMiniMaxMessagesBody, type MiniMaxThinkingType } from "./minimaxM3.js";
 
-// ───────────────────────────────────────────────────────────────
+
 // Response text extractors（OpenAI 兼容 / Anthropic 兼容 / 空响应诊断）
-// ───────────────────────────────────────────────────────────────
+
 
 /**
  * 从 OpenAI 兼容协议的 JSON 响应中提取首个 choice 的文本。
@@ -39,9 +39,9 @@ function describeEmptyChatCompletion(data: any): string {
   return `finish_reason=${finishReason}, content_type=${typeof message?.content}, reasoning_chars=${reasoning.length}`;
 }
 
-// ───────────────────────────────────────────────────────────────
+
 // Provider: StepFun 阶跃星辰（OpenAI 兼容 + reasoning_effort）
-// ───────────────────────────────────────────────────────────────
+
 
 // Reasoning 系列模型（step-3.7-flash）拒收 response_format / temperature / reasoning_effort，
 // 三者皆会触发 400 Invalid request。仅 chat 模型才发这些字段。
@@ -225,9 +225,9 @@ async function callStepFunPlanAgent({
   return { text, model: `stepfun:${model}`, ...(reasoning ? { reasoning } : {}) };
 }
 
-// ───────────────────────────────────────────────────────────────
+
 // Provider: MiniMax（Anthropic-compatible API；使用 Bearer 认证）
-// ───────────────────────────────────────────────────────────────
+
 
 export async function callMiniMaxAgent({
   baseUrl,

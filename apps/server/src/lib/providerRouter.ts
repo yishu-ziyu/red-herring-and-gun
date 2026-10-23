@@ -1,9 +1,9 @@
-// ───────────────────────────────────────────────────────────────
+
 // Server-side provider router：per-agent routing、per-agent model、坏 JSON 同 provider 修一次、
 // API key 缺失记进 errors。
 // 超时有两层：per-provider 预算（ORCHESTRATE_PROVIDER_TIMEOUT_MS，按模型可覆写）、
 // 调用方给的阶段硬预算（options.deadlineMs）；单次生效超时取两者最小值。
-// ───────────────────────────────────────────────────────────────
+
 
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
@@ -12,7 +12,7 @@ import { callMiniMaxAgent, callStepFunAgent } from "./agentProviders.js";
 import { extractJsonObject } from "./anthropicParse.js";
 import { isMiniMaxM27, miniMaxCallOptions, MINIMAX_M27_DEFAULT_TIMEOUT_MS, MINIMAX_M3_DEFAULT_TIMEOUT_MS } from "./minimaxM3.js";
 
-/** MiniMax 是主力；阶跃负责图片解析与兜底（2026-10-09 起只保留这两家）。 */
+/** MiniMax 是主力；阶跃负责图片解析与兜底。 */
 type AgentTextProviderId = "minimax" | "stepfun";
 
 const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>(["minimax", "stepfun"]);
@@ -93,9 +93,9 @@ function areCloudProvidersHardSkipped(env: Record<string, string>, agentId?: str
 // MiniMax is the default chat provider; StepFun is the fallback.
 const DEFAULT_TEXT_PROVIDER_ORDER: AgentTextProviderId[] = ["minimax", "stepfun"];
 
-// ───────────────────────────────────────────────────────────────
+
 // Env helpers
-// ───────────────────────────────────────────────────────────────
+
 
 /** 优先从传入的 env 对象读（覆盖 process.env），缺省返回空串 */
 function envValue(env: Record<string, string>, key: string): string {
@@ -109,7 +109,7 @@ function agentEnvKey(agentId?: string): string {
 
 /** 解析 ORCHESTRATE_<AGENT>_PROVIDER_ORDER / ORCHESTRATE_TEXT_PROVIDER_ORDER
  *  - 尊重 env/per-agent 顺序
- *  - 未识别的 provider 名（含已删除的 deepseek / mimo / anthropic / 360 / codex）静默丢弃
+ *  - 未识别的 provider 名静默丢弃
  *  - 去重
  *  - agentId 提供时优先 per-agent env
  *  - 丢完一个都不剩时用默认顺序
@@ -180,9 +180,9 @@ function stepFunReasoningEffortForModel(
   return parseReasoningEffort(envValue(env, "STEPFUN_REASONING_EFFORT")) || requested;
 }
 
-// ───────────────────────────────────────────────────────────────
+
 // JSON repair + parse
-// ───────────────────────────────────────────────────────────────
+
 
 function stripJsonNoise(text: string): string {
   return text
@@ -249,12 +249,11 @@ function parseValidatedAgentJson(text: string, label: string, schema: object = {
     try {
       output = JSON.parse(candidate);
     } catch {
-      // 来源标题和原文常带英文双引号（2026-10-10：「【真相"枣"知道】隔夜菜会致癌？」），两家模型都照抄不转义，
-      // 重试也照抄。补上转义不是猜内容，解析后仍要过下面的字段校验。
+      // 修复字符串内部未转义的双引号；解析后仍须通过字段校验。
       output = JSON.parse(escapeUnescapedInnerQuotes(candidate));
     }
   } catch (error) {
-    // 记下出错位置附近的原文：2026-10-10 核查一步常在 3 千字左右解析失败，原因不明（推测是来源原文里的双引号没转义）。
+    // 在解析错误中附上出错位置附近的内容，便于定位格式问题。
     const reason = error instanceof Error ? error.message : "";
     const at = Number(/position (\d+)/.exec(reason)?.[1] ?? NaN);
     const near = Number.isFinite(at) ? ` 附近：${JSON.stringify(candidate.slice(Math.max(0, at - 60), at + 20))}` : "";
@@ -285,9 +284,9 @@ function buildJsonRepairUserContent(brokenText: string, originalUserContent: str
   ].join("\n");
 }
 
-// ───────────────────────────────────────────────────────────────
-// callAgentWithFallback — 4-Agent pipeline 的核心 provider 调度器
-// ───────────────────────────────────────────────────────────────
+
+// 按阶段选择提供方，并处理失败和重试
+
 
 interface ProviderRouterOptions {
   signal?: AbortSignal;
@@ -355,7 +354,7 @@ function timeoutForProviderModel(
   return fallbackMs;
 }
 
-/** 到模型服务器的连接常在握手时断掉（2026-10-22 实测 MiniMax 约三成连接失败），同一家最多连 3 次。 */
+/** 对可重试的连接失败，在同一提供方内最多尝试 3 次。 */
 const CONNECT_ATTEMPTS = 3;
 
 /** 没连上服务器才算：服务器回了错误（额度、鉴权、内容）或超时都不重试。 */
@@ -383,11 +382,10 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
   const errors: string[] = [];
   const providerOrder = providerOrderForAgent(env, agentId);
 
-  // ───────────────────────────────────────────────────────────────
+
   // 阶段级硬预算
-  // 单次 provider 预算拦不住「换着 provider 一家家等」：真实走查里 minimax 烧了 84.9 秒、
-  // stepfun 再跟两次，自证阶段合计 111 秒。deadlineMs 是本阶段的总账。
-  // ───────────────────────────────────────────────────────────────
+  // deadlineMs 限制所有提供方和重试的总耗时，避免逐次调用各自耗尽预算。
+
   const stageDeadlineMs = positiveMs(options.deadlineMs);
   const stageRemainingMs = () =>
     stageDeadlineMs === undefined ? undefined : stageDeadlineMs - Date.now();

@@ -68,8 +68,7 @@ async function checkUrlLiveness(url: string, execution: ExecutionBudget): Promis
     if (execution.deadlineMs !== undefined && Date.now() >= execution.deadlineMs) {
       throw new ExecutionTimeoutError("来源探活总预算", 0);
     }
-    // 连不上不等于死链：慢站（kepuchina.cn 4.5 秒才回 200）、掐断机器访问的站、本机代理约 5 秒断开都会走到这里。
-    // 2026-10-10 统计：两个模型都确认方向的 67 条来源里，26 条因此被当成死链删掉。只有域名不存在才算死链。
+    // 连接失败不证明来源不存在；此分支仅将 ENOTFOUND 判为死链。
     const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
     return code === "ENOTFOUND" ? "dead" : "alive";
   }
@@ -106,7 +105,7 @@ export type PruneResult = {
  * 双桶对称：supportingSources 与 contradictingSources
  * 各自独立 filter、各自独立去重，绝不跨桶合并去重；同 URL 同时出现在两桶时是两条
  * relation，都保留。判词句内编号继续按「过滤后 support → 过滤后 contradict」
- *（与 citationBinding.bindDualBucketCitations 同构），不破坏 #74。
+ *（与 citationBinding.bindDualBucketCitations 同构）。
  */
 export async function pruneDeadCitations(
   report: Record<string, unknown>,

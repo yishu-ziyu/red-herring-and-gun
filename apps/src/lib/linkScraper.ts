@@ -1,8 +1,5 @@
 /**
- * linkScraper.ts — 链接内容抓取模块
- *
- * 使用 r.jina.ai（免费，无需 API Key，返回 Clean Markdown）
- * 支持 CORS，可直接在前端调用。
+ * 通过 r.jina.ai 读取链接内容，并排除空页和登录墙。
  */
 
 import type { CaseLink } from "./caseIntake";

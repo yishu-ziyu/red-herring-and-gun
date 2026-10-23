@@ -10,7 +10,6 @@ import { pruneDeadCitations } from "../citationLiveness.js";
 import { readSourcePageDates } from "../sourcePageDates.js";
 import type { ReportReviewIssue } from "../reportReviewer.js";
 import type { InvestigationSnapshotV1 } from "../../../../shared/investigation/index.js";
-import { planFollowUpReuse } from "../followUpReuse.js";
 import { createBudget } from "./budget.js";
 import type { PipelineContext } from "./caseState.js";
 import { finalizeReport } from "./finalizeReport.js";
@@ -72,6 +71,7 @@ export type CasePipelineHooks = {
 };
 
 export type CasePipelineInput = {
+  recorder?: import("../runRecorder.js").RunRecorder;
   claim: string;
   /**
    * 快照里「你调查的说法」显示的文字。claim 可能带着给模型看的材料说明（例如图片的视觉提取），
@@ -94,20 +94,10 @@ export type CasePipelineInput = {
    */
   deadline?: number;
   /**
-   * 协作式取消：客户端断开 / 总超时后 abort，各阶段边界立即退出，
-   * 流水线不再作为 Promise.race 落败方僵尸烧 token（阶段内在途调用不受此控制）。
+   * 协作式取消：收到取消或截止信号后，在阶段边界退出。
+   * 阶段内调用通过传入的 signal 响应取消；客户端断开连接本身不取消调查。
    */
   signal?: AbortSignal;
-  /**
-   * 同一案追问快路径。
-   * 读请求里浏览器带来的上一轮可见材料；没有可用证据时
-   * 分类器返回 null，本函数仍走完整管道。
-   */
-  followUpReuse?: {
-    priorReport: unknown;
-    priorClaim: string;
-    priorCreatedAt: number;
-  };
 };
 
 type CasePipelineResult = {
@@ -123,7 +113,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   const steps: PipelineStep[] = [];
 
   // 协作式取消：各阶段边界检查一次。fail-open 的 catch 会吞掉 AbortError，
-  // 所以下一个边界必须再查，断连后最多再浪费一个阶段调用就会整体退出。
+  // 所以下一个阶段边界必须再次检查取消信号。
   const throwIfAborted = () => input.signal?.throwIfAborted();
   throwIfAborted();
 
@@ -139,14 +129,6 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
     budget: createBudget(input.deadline),
     snapshots,
     throwIfAborted,
-    reusePlan: input.followUpReuse
-      ? planFollowUpReuse({
-          claim,
-          priorReport: input.followUpReuse.priorReport,
-          priorClaim: input.followUpReuse.priorClaim,
-          priorCreatedAt: input.followUpReuse.priorCreatedAt,
-        })
-      : null,
   };
 
   const rumorStep = await decompose(ctx);
@@ -187,7 +169,7 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   // 中断帧在 emit 之前成形（stream / 存库 snapshot / run 状态三者同一终态），
   // 不能先发 complete 帧再事后换 interrupted，否则广播与终态不一致。
   const runIncomplete = finalReport._source === "error-boundary";
-  // 检索方没给发布日期的来源，读网页自己的发布元数据（#140）。
+  // 检索方没给发布日期的来源，读网页自己的发布元数据。
   const intakeUrls = (Array.isArray(input.intakeLinks) ? input.intakeLinks : [])
     .map((link) => String((link as { url?: unknown } | null)?.url ?? ""))
     .filter(Boolean);

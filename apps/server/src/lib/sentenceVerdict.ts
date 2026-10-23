@@ -61,7 +61,7 @@ function quotesClaim(element: unknown, claimAtom: unknown): boolean {
 
 /**
  * 判词 → 这一部分的状态。只认方向一致、能点开的出处；
- * 夸大（评分规则 2：把个别现象说成普遍）按被反驳算，属实的一截在正文里另说。
+ * 夸大在有对应来源时按部分成立处理；缺少来源时保持未解决。
  */
 function standingOf(verdict: Report | undefined): PartStanding {
   if (!verdict) return "unresolved";
@@ -75,20 +75,19 @@ function standingOf(verdict: Report | undefined): PartStanding {
     });
   if (v === "false") return bound("false") ? "refuted" : "unresolved";
   if (v === "true") return bound("true") ? "supported" : "unresolved";
-  // 夸大：有一部分道理，按部分成立处理（#140：主要说法夸大 → 整句「夸大了」，不是「不属实」）。
+  // 夸大：有一部分道理，按部分成立处理；主要说法夸大时，整句标为「夸大了」。
   // 模型有时把说明夸大的出处放进反驳桶，任一方向有出处都算。
   if (v === "exaggerated") return bound("exaggerated") || bound("partial") ? "partial" : "unresolved";
   if (v === "partial" || v === "mixed" || v === "mixed_misleading") {
     if (!bound(v)) return "unresolved";
     // 部分成立只在有来源明确反驳了原句里某个具体要素（数字、日期、范围、主体、因果关系），并且逐字引出那个要素时才算。
-    // 用词不精确、缺细节、来源补充的适用条件（仅境内航班、需办手续、从某日起）、只是「不是 100%」都不反驳原句：
-    // 命题按日常意思成立（基准 v1：只有支持、没有反驳的真话被判成有真有假 / 部分成立）。
+    // 缺少可核对的反驳要素时保留不确定性，不能把模型的部分成立升级为属实。
     const contradicted =
       records(verdict.contradictingSources).length > 0 &&
       verdict.sourcesRelatedOnly !== true &&
       quotesClaim(verdict.contradictedElement, verdict.claimAtom);
-    if (contradicted) return "partial";
-    return records(verdict.supportingSources).length > 0 ? "supported" : "unresolved";
+    if (contradicted && records(verdict.supportingSources).length > 0) return "partial";
+    return "unresolved";
   }
   if (v === "disputed") {
     // 有争议要两边都有能点开的出处；只有一边是没查清（一边的出处撑不起「权威互相矛盾」）。
@@ -102,10 +101,6 @@ function standingOf(verdict: Report | undefined): PartStanding {
 }
 
 const ROLES: Record<string, PartRole> = { main: "main", premise: "premise", background: "background" };
-
-function linkedSources(list: unknown): number {
-  return Array.isArray(list) ? list.filter((s) => /^https?:\/\//i.test(String((s as { url?: unknown } | null)?.url ?? ""))).length : 0;
-}
 
 /** 可核查的部分及其角色。拆题标了角色就用；没标时排序第一条可核查的是主要主张，其余算必要前提。 */
 export function listAssessedClaims(report: Report, input: SentenceVerdictInput): AssessedPart[] {
@@ -121,28 +116,21 @@ export function listAssessedClaims(report: Report, input: SentenceVerdictInput):
   const declared = verifiable.map((atom) => ROLES[String(meta.get(claimAtomKey(atom))?.role ?? "")]);
   const anyMain = declared.includes("main");
   const standings = verifiable.map((atom) => standingOf(findVerdict(report, atom)));
-  const issuers = verifiable.map((atom) => meta.get(claimAtomKey(atom))?.issuer === true);
-  // 出处说错只有在另有内容被证实时才算「内容属实」（domain/verdict 同一条规则）。
-  const contentTrue = standings.some((standing, i) => standing === "supported" && !issuers[i]);
   return verifiable.map((atom, index) => {
     const standing = standings[index]!;
     const role: PartRole = anyMain ? (declared[index] ?? "premise") : atom === fallbackMain ? "main" : (declared[index] ?? "premise");
     const verdict = findVerdict(report, atom);
     const modelLabel = isLabelKey(verdict?.label) ? verdict.label : undefined;
-    let label = partLabelFor(standing, modelLabel);
-    // 部分属实要有支持也有反驳；只有反驳时，读者看到的是一条反驳配「部分属实」。同一类里改为夸大了，模型理由仍然成立。
-    if (label === "partly-true" && linkedSources(verdict?.supportingSources) === 0 && linkedSources(verdict?.contradictingSources) > 0) label = "exaggerated";
+    const label = partLabelFor(standing, modelLabel);
     const modelReason = typeof verdict?.reason === "string" ? verdict.reason.trim() : "";
     // 代码改了模型的标签时，模型那句理由说的是另一个标签，不能留。
-    const sameClassSwap = modelLabel === "partly-true" && label === "exaggerated";
-    const reason = (label === modelLabel || sameClassSwap) && modelReason ? modelReason : FALLBACK_PART_REASON[label];
+    const reason = label === modelLabel && modelReason ? modelReason : FALLBACK_PART_REASON[label];
     return {
       text: atom,
       role,
       standing,
       label,
       reason,
-      ...(contentTrue && issuers[index] && standing === "refuted" ? { issuerMisattributed: true } : {}),
     };
   });
 }
@@ -154,7 +142,6 @@ function clip(text: string, max: number): string {
 
 function partLine(part: AssessedPart): string {
   const quoted = `「${clip(part.text, 40)}」`;
-  if (part.issuerMisattributed) return `${quoted}的内容属实，只是原句把发文机关或出处说错了`;
   // 用和这一截标签相同的词，结论和标签不会说成两样。
   return `${quoted}${LABEL_TEXT[part.label ?? partLabelFor(part.standing, undefined)]}`;
 }
@@ -166,9 +153,9 @@ function nonCheckableLabels(report: Report, nonVerifiableAtoms: unknown): LabelK
 
 /** 模型有时写成好几句、带内部用语：只留一句（第一句只复述判定时用第二句）；这一句仍带内部用语就不用，改用各截标签拼的句子。 */
 const INTERNAL_TERMS = /原子|命题|判定为|判词|整句为|整句是|Agent|模型|置信/;
-/** 指这句话的「该命题」直接换成「这句话」，不因为一个指代词丢掉整句理由（2026-10-15 RUMOR-001）。 */
+/** 指这句话的「该命题」直接换成「这句话」，不因为一个指代词丢掉整句理由。 */
 const CLAIM_REFERENT = /(?:该|此|这个|这一)命题/g;
-/** 只说「这句话成立」的开头句不是理由，理由在下一句（2026-10-15 NEW-404：「该句核心事实成立。」）。 */
+/** 只说「这句话成立」的开头句不是理由，理由在下一句。 */
 const RESTATED_VERDICT = /^(?:该|这|此)(?:句话?|说法)?的?(?:核心|主要)?(?:事实|内容)?(?:基本)?(?:成立|不成立|属实|不属实|正确|错误)[。！？]?$/;
 /** 理由超过这个长度就不是「一句理由」了，读者在结论处读不完。 */
 const MAX_REASON_CHARS = 80;
@@ -180,7 +167,7 @@ function firstSentence(text: string, label: LabelKey): string {
   const sentences = (text.replace(CLAIM_REFERENT, "这句话").match(/[^。！？]+[。！？]?/g) ?? []).map((s) => s.trim()).filter(Boolean);
   const first = (RESTATED_VERDICT.test(sentences[0] ?? "") ? sentences[1] : sentences[0]) ?? "";
   if (!first || INTERNAL_TERMS.test(first) || first.length > MAX_REASON_CHARS) return "";
-  // 代码内部的标签名（2026-10-10：「…危言耸听，属false。」）和不成对的引号（开头多了「」」）。
+  // 代码内部的标签名和不成对的引号（开头多了「」」）。
   if (/\b(true|false|mostly-true|partly-true|exaggerated|unresolved|uncheckable|disputed|opinion|supported|refuted|mixed)\b/i.test(first)) return "";
   if ((first.match(/「/g) ?? []).length !== (first.match(/」/g) ?? []).length) return "";
   const own = LABEL_TEXT[label];
@@ -240,7 +227,7 @@ function renderConclusion(
   context: { nonVerifiableAtoms?: unknown },
   whole: { label: LabelKey; reason: string }
 ) {
-  // 结论第一句 = 整句标签 + 一句理由（#140）。
+  // 结论第一句 = 整句标签 + 一句理由。
   const lead = `${LABEL_TEXT[whole.label]}。${whole.reason}`;
   const stance = records(context.nonVerifiableAtoms ?? report.nonVerifiableAtoms)
     .map((atom) => String(atom.text ?? "").trim())
@@ -250,7 +237,7 @@ function renderConclusion(
   const partsLine = parts.length > 1 ? `${parts.map(partLine).join("；")}。` : "";
   // 理由已经逐截列过时不再列第二遍。
   const enumerated = whole.reason.startsWith(partsLine) ? "" : partsLine;
-  // 出处说错的那一处一定要写出来：答案得说清实际是谁（评分规则 1）。
+  // 出处说错的那一处一定要写出来：答案得说清实际是谁。
   const ordered = [...parts].sort(
     (a, b) => Number(Boolean(b.issuerMisattributed)) - Number(Boolean(a.issuerMisattributed)) || DECISIVE_FIRST[a.standing] - DECISIVE_FIRST[b.standing]
   );

@@ -1,5 +1,5 @@
 /**
- * ShareControl — 把这一轮调查分享成一个公开链接（#142 part b，不需要登录）。
+ * ShareControl — 把这一轮调查分享成一个公开链接。
  *
  * 点「分享」才建链接。链接内容由服务端从它存下的这一轮调查生成，这里不发送任何正文。
  * 只有发起这轮调查的浏览器能建、能撤。
@@ -23,6 +23,7 @@ export function buildConclusionBrief(input: {
   checkedAt?: string;
   sourceUrls?: string[];
   coverageNote?: string;
+  claimBoundaries?: Array<{ text: string; boundary?: string }>;
 }): string {
   const claim = displayFollowUpClaim(input.originalClaim);
   const urls = (input.sourceUrls ?? []).map((url) => url.trim()).filter(Boolean);
@@ -30,6 +31,8 @@ export function buildConclusionBrief(input: {
     claim ? `原句：${claim}` : "",
     input.directAnswer ? `判断：${input.directAnswer}` : "",
     input.boundaries?.length ? `必要边界：${input.boundaries.join("；")}` : "",
+    ...(input.claimBoundaries ?? []).filter((claim) => claim.boundary?.trim()).map((claim) =>
+      `关于「${claim.text}」：不能推出${claim.boundary!.trim().replace(/^不能推出[：:]?/, "")}`),
     input.coverageNote ?? "",
     input.checkedAt ? `核查日期：${formatBriefDate(input.checkedAt)}` : "",
     urls.length ? `关键来源：\n${urls.join("\n")}` : "关键来源：这次没有可用的来源链接",

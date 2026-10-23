@@ -90,7 +90,7 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
         sourceRefs: [],
       },
     ],
-    // 不写每次都一样的通用免责话（#141）；每一截自己的「不能推出」在 subclaimVerdicts.boundary 里。
+    // 不写每次都一样的通用免责话；每一截自己的「不能推出」在 subclaimVerdicts.boundary 里。
     causalBoundary: "",
     closureActions: [
       {

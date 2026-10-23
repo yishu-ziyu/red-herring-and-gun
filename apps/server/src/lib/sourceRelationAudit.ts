@@ -143,7 +143,12 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
       evidence: changed ? stripCitationMarkers(typeof verdict.evidence === "string" ? verdict.evidence : "") : verdict.evidence,
       evidenceGaps: gaps,
       sourcesRelatedOnly: support.length + contradict.length === 0 && hadDirectional ? true : verdict.sourcesRelatedOnly === true,
-      ...(shouldDemote ? { verdict: "unverified", demotedFrom: String(verdict.verdict ?? "") } : {}),
+      ...(shouldDemote ? {
+        verdict: "unverified",
+        label: "unresolved",
+        reason: relationGap,
+        demotedFrom: String(verdict.verdict ?? ""),
+      } : {}),
     } as T;
   });
 }

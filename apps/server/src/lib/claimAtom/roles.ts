@@ -37,7 +37,6 @@ export function collapseShortSingleClaim(
 
 /**
  * 拆出来的一截用了原句没有的字，就是模型改写了原话：删掉这些字；删完对不上原句时，换回它在原句里的那一截（span）。
- * 2026-10-10：「隔夜菜会致癌」被改写成「隔夜菜会产生致癌物」，查的是另一句更弱的话，整句被判成「属实」。
  * 只补主语之类、所有字都出自原句的条目（例：「等于吃毒药」写成「隔夜菜等于吃毒药」）不动。
  */
 export function keepOriginalWording(
@@ -81,7 +80,7 @@ export function keepOriginalWording(
 
 /**
  * 原句里找不到对应片段的命题是拆题编造的（FactLens）：丢掉。
- * 只看写了 span 的条目；没写的（旧输出、沿用上一轮的命题）不丢。全部都对不上时不清空，保留全部。
+ * 只看写了 span 的条目；没写的（旧输出、沿用上一轮的命题）不丢。全部对不上时退回输入本身。
  */
 export function dropUntraceableAtoms(
   claim: string,
@@ -100,7 +99,10 @@ export function dropUntraceableAtoms(
     const span = spanByKey.get(claimAtomKey(atom));
     return span !== undefined && !source.includes(span);
   });
-  if (dropped.length === 0 || dropped.length === atoms.length) return { atoms, types, dropped: [] };
+  if (dropped.length === 0) return { atoms, types, dropped: [] };
+  if (dropped.length === atoms.length) {
+    return { atoms: [claim], types: [{ text: claim, verifiable: true, type: "fact", role: "main" }], dropped };
+  }
   const droppedKeys = new Set(dropped.map((atom) => claimAtomKey(atom)));
   return {
     atoms: atoms.filter((atom) => !droppedKeys.has(claimAtomKey(atom))),

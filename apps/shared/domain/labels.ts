@@ -1,5 +1,5 @@
 /**
- * 判断标签：每一截和整句都只用这 9 个词（#140，2026-10-09 用户确认）。
+ * 判断标签：每一截和整句都只用这 9 个词。
  * 整句标签由 verdict.ts 的规则表推出，这里只做规则 → 标签的对应。服务端、结果页、分享页共用这一份。
  */
 import type { PartRole, PartStanding, VerdictRule } from "./verdict.js";
@@ -130,7 +130,7 @@ export function labelForVerdict(verdict: string): LabelKey {
 export function partLabelFor(standing: PartStanding, modelLabel: LabelKey | undefined): LabelKey {
   switch (standing) {
     case "supported":
-      return modelLabel === "mostly-true" || modelLabel === "partly-true" ? "mostly-true" : "true";
+      return modelLabel === "mostly-true" ? "mostly-true" : modelLabel === "partly-true" ? "unresolved" : "true";
     case "refuted":
       return "false";
     case "partial":
@@ -161,23 +161,21 @@ export function standingForLabel(label: LabelKey): PartStanding {
 }
 
 /**
- * 标签要有证据撑着（#140）：属实 / 基本属实至少一条支持，不属实至少一条反驳，
- * 部分属实 / 夸大了至少一条支持或反驳。撑不住就降为还查不清。
- * 部分属实说的是「一部分被支持、一部分被反驳」：只有反驳、没有支持时，读者看到的是一条反驳配一个「部分属实」，
- * 改成同一类里的夸大了（有一部分道理，原话说得太重）。
+ * 标签要有证据撑着：属实 / 基本属实至少一条支持，不属实至少一条反驳，
+ * 部分属实需要支持和反驳两侧材料；夸大了需要对应来源。撑不住就降为还查不清，不能靠来源数量推断夸张。
  */
 export function labelBackedByEvidence(label: LabelKey, support: number, contradict: number): LabelKey {
   if ((label === "true" || label === "mostly-true") && support === 0) return "unresolved";
   if (label === "false" && contradict === 0) return "unresolved";
   if ((label === "partly-true" || label === "exaggerated") && support + contradict === 0) return "unresolved";
-  if (label === "partly-true" && support === 0) return "exaggerated";
+  if (label === "partly-true" && (support === 0 || contradict === 0)) return "unresolved";
   return label;
 }
 
 type LabeledPart = { role: PartRole; standing: PartStanding; label: LabelKey };
 
 /**
- * 规则 → 整句标签（#140 第 6 条，2026-10-09 用户确认）。
+ * 规则 → 整句标签。
  * nonCheckable：没有可核查部分时，那些立场 / 预测条目的标签（全是无法核对时整句才是无法核对）。
  */
 export function wholeLabelFor(rule: VerdictRule, parts: readonly LabeledPart[], nonCheckable: readonly LabelKey[] = []): LabelKey {
@@ -186,7 +184,7 @@ export function wholeLabelFor(rule: VerdictRule, parts: readonly LabeledPart[], 
   const mainList = mains.length > 0 ? mains : parts;
   switch (rule) {
     case "all-supported":
-      return "true";
+      return parts.some((p) => p.label === "mostly-true") ? "mostly-true" : "true";
     case "background-refuted":
       return "mostly-true";
     case "main-partial":

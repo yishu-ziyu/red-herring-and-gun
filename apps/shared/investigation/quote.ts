@@ -1,5 +1,5 @@
 /**
- * 证据行上引用的那一句（#141 part c）。
+ * 证据行上引用的那一句。
  *
  * 核查或来源审核模型从实际取得的材料里挑出支持或反驳这一截的那句话。
  * 忽略空白、全角半角和引号写法后，摘句必须出自这份材料，而且只有一句。
@@ -45,8 +45,7 @@ function overlap(sentence: string, partText: string): number {
 
 /**
  * 核对通过返回来源里的一句（原字，空白归一），否则返回空串。
- * 2026-10-10 的 6 次调查里，47 次拒绝有 34 次是模型抄了不止一句、8 次带省略号，只有 5 次不是原文。
- * 所以按句号和省略号切开，逐句核对是不是原文，再挑和这一截共有汉字最多的那一句。
+ * 按句号和省略号切开，逐句核对是不是原文，再挑和这一截共有汉字最多的那一句。
  */
 export function verbatimQuote(quote: unknown, sourceText: unknown, partText = ""): string {
   const text = typeof quote === "string" ? quote.replace(/\s+/g, " ").trim() : "";

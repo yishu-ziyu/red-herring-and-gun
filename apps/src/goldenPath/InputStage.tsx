@@ -1,6 +1,5 @@
 /**
- * InputStage — 首页（Issue #52 第三节）：标题、输入框、例子、四步分工。
- * 只显示用户需要知道的状态（次数用尽、链接读不到）。
+ * 首页输入、示例和分工说明。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -11,9 +10,8 @@ import {
   type CaseImage,
   type CaseIntake,
 } from "../lib/caseIntake";
-import { formatScrapedContent, scrapeLinks } from "../lib/linkScraper";
+import { scrapeLinks } from "../lib/linkScraper";
 import { PromptInput, type PromptAttachment } from "../components/v3/promptInput/PromptInput";
-import { WorkRoles } from "./WorkRoles";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import {
@@ -137,14 +135,13 @@ export function InputStage({
       setInputError("");
       try {
         const scraped = await scrapeLinks(intake.links);
-        const text = formatScrapedContent(scraped);
+        const hasContent = scraped.some((link) => link.scrapeStatus === "success" && !link.scrapeFailed && link.scrapedContent.trim());
         enriched = {
           ...intake,
           links: scraped,
-          text: text ? `${intake.text}\n\n【链接抓取内容】\n${text}` : intake.text,
         };
         if (caseIntakeFailedLinks(enriched).length > 0) {
-          if (!text && intake.images.length === 0 && isUrlOnlyClaim(intake.text)) {
+          if (!hasContent && intake.images.length === 0 && isUrlOnlyClaim(intake.text)) {
             setInputError(copy.urlOnlyUnreadable);
             return;
           }
@@ -262,7 +259,6 @@ export function InputStage({
         </ul>
       </section>
 
-      <WorkRoles />
     </div>
   );
 }

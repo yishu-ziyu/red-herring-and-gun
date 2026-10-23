@@ -174,9 +174,7 @@ export function compactSearchResultForAgent(searchResult: any) {
 }
 
 /**
- * 360 检索（生产唯一路径）。
- * 2026-08-06 实测：`/v1/search/aisearch` 持续 18–25s 超时，已下线该路径，
- * 仅保留可用的 `/v2/mwebsearch`（含 trusted_sources / exclude_aigc）。
+ * 通过 `/v2/mwebsearch` 调用 360 检索。
  */
 async function call360AiSearch({
   env,
@@ -209,7 +207,7 @@ type SearchProviderProgress = {
   resultCount: number;
 };
 
-/** 每原子一条的多路检索进度事件（前端消费，字段语义冻结自 Issue #9）。 */
+/** 按命题发送的多路检索进度事件。 */
 export type SearchProgressEvent = {
   type: "search_progress";
   atom: string;

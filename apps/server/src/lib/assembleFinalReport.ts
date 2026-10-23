@@ -1,6 +1,5 @@
 /**
- * Final Report Assembly — one deep module for exclusion + merge + bind + claimItems.
- * Interface is the test surface: assembleFinalReport(...) mutates/returns report fields.
+ * 合并、绑定各项判断，并将结果写入报告。
  */
 
 import { claimAtomKey } from "../../../shared/claimAtomText.js";

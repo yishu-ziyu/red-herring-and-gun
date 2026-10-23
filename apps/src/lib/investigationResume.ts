@@ -10,7 +10,7 @@
  */
 import type { OrchestrateStreamEvent } from "./orchestrateStream";
 
-const API_BASE = "";
+const API_BASE = import.meta.env.VITE_API_BASE || "";
 
 function parseFrame(raw: string): OrchestrateStreamEvent | null {
   const line = raw.trim();
@@ -32,21 +32,33 @@ export function resumeInvestigationStream(
   onEnd: (reason: "closed" | "failed") => void
 ): void {
   void (async () => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refreshTimeout = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => controller.abort(), 60_000);
+    };
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     try {
+      refreshTimeout();
       const response = await fetch(
         `${API_BASE}/api/investigations/${encodeURIComponent(runId)}/events?after=${Math.max(0, Math.floor(after))}`,
-        { method: "GET", credentials: "include" }
+        { method: "GET", credentials: "include", signal: controller.signal }
       );
       if (!response.ok || !response.body) {
+        if (response.status === 404 || response.status === 403) {
+          onEvent({ type: "error", code: "resume_unavailable", message: "无法接回这次调查：记录不存在或当前浏览器无权读取。已收到的材料仍保留在下面。" });
+        }
         onEnd("failed");
         return;
       }
-      const reader = response.body.getReader();
+      reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        refreshTimeout();
         buffer += decoder.decode(value, { stream: true });
         // 帧以空行分隔；注释行（心跳）天然不匹配 parseFrame
         const parts = buffer.split("\n\n");
@@ -56,9 +68,15 @@ export function resumeInvestigationStream(
           if (event) onEvent(event);
         }
       }
+      const tail = parseFrame(buffer);
+      if (tail) onEvent(tail);
       onEnd("closed");
     } catch {
       onEnd("failed");
+    } finally {
+      if (timer) clearTimeout(timer);
+      await reader?.cancel().catch(() => {});
+      reader?.releaseLock();
     }
   })();
 }

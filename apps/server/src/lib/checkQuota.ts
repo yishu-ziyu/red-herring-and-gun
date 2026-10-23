@@ -57,10 +57,13 @@ type GuestBucket = {
   inflight: number;
 };
 
+// A response cookie is not present in the request headers until the next request.
+// Share one identity across acceptance, quota reservation and ownership in this request.
+const requestGuestIds = new WeakMap<object, string>();
 const guests = new Map<string, GuestBucket>();
 const guestsByIp = new Map<string, GuestBucket>();
 
-// ── D1：访客配额桶持久化（重启后 inflight 不可信，清零；跨天的桶不再恢复）──
+// ── 访客配额桶持久化（重启后 inflight 不可信，清零；跨天的桶不再恢复）──
 const QUOTA_SNAPSHOT_FILE = "quota.json";
 
 function snapshotQuota() {
@@ -161,15 +164,13 @@ function guestState(
 ) {
   const day = shanghaiDayKey(now);
   const cookie = readGuestCookie(req);
-  const id = cookie?.id || crypto.randomBytes(12).toString("hex");
+  const id = cookie?.id || requestGuestIds.get(req) || crypto.randomBytes(12).toString("hex");
+  requestGuestIds.set(req, id);
   const ipKey = hashIp(clientIp(req));
   const memory = syncBucket(guests.get(id), day);
   const ip = syncBucket(guestsByIp.get(ipKey), day);
   const cookieUsed = cookie && cookie.day === day ? cookie.used : 0;
-  // 访客桶只记这个访客自己的用量。
-  // 这里曾经写成 `Math.max(memory.used, ip.used, cookieUsed)`：IP 桶是整条出口 IP 的聚合，
-  // 那行会让同一网络下的新访客一进门就背上前一个人的用量，等于整条 IP 当天只允许 1 次核查。
-  // IP 桶仍照常累加（见 commitFreeCheck），但只在 IP 天花板上起作用，不参与访客自己的额度。
+  // 访客用量只合并本人的内存与 cookie 计数；IP 聚合用量只用于 IP 限额，不能计入个人额度。
   memory.used = Math.max(memory.used, cookieUsed);
   guests.set(id, memory);
   guestsByIp.set(ipKey, ip);
@@ -318,7 +319,7 @@ export function releaseFreeCheck(ticket: CheckTicket) {
 export async function freeCheckGate(req: any, res: any, next: (error?: unknown) => void) {
   const result = await beginFreeCheck(req, res);
   // 名额由拿到票据的处理器结算（handlers.ts 与 http/runOutcome.ts），这里不挂连接关闭监听：
-  // 请求体读完之后才挂的 close 监听，触不触发取决于时序（#117）。
+  // 请求体读完之后才挂的 close 监听，触不触发取决于时序。
   if (!result.ok) {
     writeJson(res, 429, {
       error: "checks_exhausted",
@@ -349,16 +350,17 @@ export async function checksQuotaHandler(req: any, res: any) {
  */
 export function ensureGuestId(req: any, res: any, preferredId?: string): string {
   const cookie = readGuestCookie(req);
-  if (cookie?.id) return cookie.id;
-  if (preferredId) return preferredId;
-  const id = crypto.randomBytes(12).toString("hex");
+  const existing = cookie?.id || requestGuestIds.get(req);
+  if (existing) { requestGuestIds.set(req, existing); return existing; }
+  const id = preferredId || crypto.randomBytes(12).toString("hex");
+  requestGuestIds.set(req, id);
   writeGuestCookie(res, { id, day: shanghaiDayKey(), used: 0 });
   return id;
 }
 
 /** 请求里已有的访客 id；没有 cookie 就是 null（不发新的）。 */
 export function guestIdFromRequest(req: any): string | null {
-  return readGuestCookie(req)?.id ?? null;
+  return readGuestCookie(req)?.id ?? requestGuestIds.get(req) ?? null;
 }
 
 /** 存进 runs.ownerHash 的值：访客 id 的哈希，库里不放 id 原文。 */

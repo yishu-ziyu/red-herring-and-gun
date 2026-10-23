@@ -1,12 +1,4 @@
-/**
- * 同一案追问快路径。
- *
- * 这里管「这一案子里的下一句」：
- * 已核过且带真实 URL 的命题不再联网；只有新冒出来的可核查小问题才搜。
- *
- * 宪法写死在分类器里：人物/日期/链接变了必须重查（hasTokenConflict）；
- * 没有可点开的 URL 就不算已核、计划为 null（没证据不出结论，不假装快路径）。
- */
+/** 解析上一轮对话材料，并处理追问文字；历史材料不能替代本轮检索。 */
 import { claimAtomKey } from "../../../shared/claimAtomText.js";
 import { directAnswer } from "./publicCopy.js";
 import { semanticClaimSimilarity } from "../../../shared/semanticRecall.js";
@@ -18,7 +10,6 @@ import {
   type VisiblePriorEvidence,
   type VisiblePriorRound,
 } from "../../../shared/followUp.js";
-import type { KnowledgeInjection } from "./atomSearch.js";
 
 /**
  * 规范化：trim → NFKC（全角转半角、兼容字符统一）→ 小写 → 压缩空白 → 去句末标点。
@@ -32,12 +23,6 @@ function normalizeKnowledgeAtom(text: string): string {
     .trim()
     .replace(/[。．.！!？?；;，,、：:…~～"'“”‘’）)】\]》>]+$/u, "")
     .trim();
-}
-
-/** epoch ms → YYYY-MM-DD（UTC，无时区歧义）。取不到返回空串，不编日期。 */
-function originDateOf(ms: number | null | undefined): string {
-  if (typeof ms !== "number" || !Number.isFinite(ms) || ms <= 0) return "";
-  return new Date(ms).toISOString().slice(0, 10);
 }
 
 /**
@@ -74,27 +59,6 @@ function hasTokenConflict(atomA: string, atomB: string): boolean {
  * 门槛取高：宁可多搜一句新问题，也不把「隔夜海鲜」当成「隔夜菜」。
  */
 const FOLLOW_UP_COVER_THRESHOLD = 50;
-
-/**
- * 上一轮已经核出结果、可以沿用的判词。partial / exaggerated 语义就是整句口径的
- * mixed_misleading（有真有假）；unverified 不算已核。
- */
-const VERIFIED_ATOM_VERDICTS = new Set(["true", "false", "partial", "exaggerated", "mixed_misleading"]);
-
-type FollowUpEvidence = { url: string; title: string; snippet: string };
-
-type FollowUpReusedAtom = {
-  text: string;
-  verdict: string;
-  evidence: FollowUpEvidence[];
-};
-
-export type FollowUpReusePlan = {
-  /** 本轮要核查的命题：已核的在前，新问题在后。 */
-  atoms: string[];
-  reused: FollowUpReusedAtom[];
-  originDate: string;
-};
 
 const VISIBLE_JUDGMENTS = new Set(["supported", "refuted", "mixed"]);
 const VISIBLE_ROLES = new Set(["support", "contradict"]);
@@ -147,7 +111,7 @@ function parseVisibleClaim(raw: unknown): VisiblePriorClaim | null {
   };
 }
 
-/** 访客 payload 的上一轮材料：读不到可用证据就 null，不假装快路径。 */
+/** 读取客户端携带的上一轮材料；仅供理解对话。 */
 function parsePriorRoundBrief(raw: unknown): VisiblePriorRound | null {
   if (!isRecord(raw)) return null;
   const claims: VisiblePriorClaim[] = [];
@@ -165,6 +129,7 @@ function parsePriorRoundBrief(raw: unknown): VisiblePriorRound | null {
   return {
     originalClaim: clipText(raw.originalClaim, 500),
     conclusion: clipText(raw.conclusion, 800),
+    ...(typeof raw.checkedAt === "string" && Number.isFinite(Date.parse(raw.checkedAt)) ? { checkedAt: raw.checkedAt } : {}),
     claims,
   };
 }
@@ -188,33 +153,19 @@ function priorReportFromVisibleBrief(brief: VisiblePriorRound): Record<string, u
 export function followUpReuseFromClientBrief(raw: unknown): {
   priorReport: unknown;
   priorClaim: string;
-  priorCreatedAt: number;
+  priorCreatedAt?: number;
 } | null {
   const brief = parsePriorRoundBrief(raw);
   if (!brief) return null;
   return {
     priorReport: priorReportFromVisibleBrief(brief),
     priorClaim: brief.originalClaim,
-    priorCreatedAt: Date.now(),
+    ...(brief.checkedAt ? { priorCreatedAt: Date.parse(brief.checkedAt) } : {}),
   };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function recordsOf(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value) ? value.filter(isRecord) : [];
-}
-
-function httpEvidenceOf(source: Record<string, unknown>): FollowUpEvidence | null {
-  const url = String(source.url ?? "").trim();
-  if (!/^https?:\/\//i.test(url)) return null;
-  return {
-    url,
-    title: String(source.title ?? "").slice(0, 200),
-    snippet: String(source.snippet ?? source.excerpt ?? "").slice(0, 320),
-  };
 }
 
 /** 用户追问原文：裁到「同一条核查的追问」标记之前；没有标记则整段当追问。 */
@@ -235,77 +186,6 @@ function followUpCoveredByAtom(followUp: string, atom: string): boolean {
   if (a === b) return true;
   if (a.length >= 6 && b.length >= 6 && (a.includes(b) || b.includes(a))) return true;
   return semanticClaimSimilarity(a, b) >= FOLLOW_UP_COVER_THRESHOLD;
-}
-
-/** 上一轮报告里已核且带真实 URL 的命题。读不到就空数组，不编。 */
-function extractPriorVerifiedAtoms(priorReport: unknown): FollowUpReusedAtom[] {
-  if (!isRecord(priorReport)) return [];
-  const out: FollowUpReusedAtom[] = [];
-  const seen = new Set<string>();
-  for (const verdict of recordsOf(priorReport.subclaimVerdicts)) {
-    const text = String(verdict.claimAtom ?? "").trim();
-    if (!text) continue;
-    const key = claimAtomKey(text);
-    if (seen.has(key)) continue;
-    const label = String(verdict.verdict ?? "").trim().toLowerCase();
-    if (!VERIFIED_ATOM_VERDICTS.has(label)) continue;
-    const evidence: FollowUpEvidence[] = [];
-    const seenUrl = new Set<string>();
-    for (const bucket of [verdict.supportingSources, verdict.contradictingSources]) {
-      for (const source of recordsOf(bucket)) {
-        const item = httpEvidenceOf(source);
-        if (!item || seenUrl.has(item.url)) continue;
-        seenUrl.add(item.url);
-        evidence.push(item);
-      }
-    }
-    if (evidence.length === 0) continue;
-    seen.add(key);
-    out.push({ text, verdict: label, evidence });
-  }
-  return out;
-}
-
-export function planFollowUpReuse(input: {
-  claim: string;
-  priorReport: unknown;
-  priorClaim?: string;
-  priorCreatedAt?: number;
-}): FollowUpReusePlan | null {
-  const reused = extractPriorVerifiedAtoms(input.priorReport);
-  if (reused.length === 0) return null;
-
-  const followUp = followUpQuestionOf(input.claim);
-  const priorClaim = String(input.priorClaim ?? "").trim();
-  const coveredByOriginal = priorClaim ? followUpCoveredByAtom(followUp, priorClaim) : false;
-  const coveredByAtom = reused.some((atom) => followUpCoveredByAtom(followUp, atom.text));
-  const newAtoms = coveredByOriginal || coveredByAtom ? [] : followUp ? [followUp] : [];
-  const atoms = [...reused.map((atom) => atom.text), ...newAtoms];
-  if (atoms.length === 0) return null;
-
-  return {
-    atoms,
-    reused,
-    originDate: originDateOf(input.priorCreatedAt),
-  };
-}
-
-export function priorRoundLookupOf(
-  plan: FollowUpReusePlan
-): (atom: string) => KnowledgeInjection | null {
-  const byKey = new Map<string, FollowUpReusedAtom>();
-  for (const atom of plan.reused) {
-    byKey.set(claimAtomKey(atom.text), atom);
-  }
-  return (atom: string) => {
-    const hit = byKey.get(claimAtomKey(atom));
-    if (!hit) return null;
-    return {
-      originDate: plan.originDate,
-      priorVerdict: hit.verdict,
-      evidence: hit.evidence,
-    };
-  };
 }
 
 const FOLLOW_UP_ATOM_CAP = 2;

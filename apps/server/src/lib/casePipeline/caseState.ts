@@ -5,7 +5,6 @@
  * CaseState 在核查返回时建好（拆题与检索的结果 + 当前生效的核查与来源审计），之后的阶段都读它。
  */
 import type { AtomSearchBundle } from "../atomSearch.js";
-import type { FollowUpReusePlan } from "../followUpReuse.js";
 import type { Budget } from "./budget.js";
 import type { CasePipelineHooks, CasePipelineInput, PipelineStep } from "./runCasePipeline.js";
 import type { SnapshotTimeline } from "./snapshotTimeline.js";
@@ -21,8 +20,6 @@ export type PipelineContext = {
   snapshots: SnapshotTimeline;
   /** 协作式取消：各阶段边界检查一次。 */
   throwIfAborted: () => void;
-  /** 同一案追问且上一轮有可点开证据时的复用计划；否则为 null。 */
-  reusePlan: FollowUpReusePlan | null;
 };
 
 export type CaseState = {

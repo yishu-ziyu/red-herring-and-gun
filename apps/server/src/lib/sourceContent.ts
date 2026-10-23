@@ -1,3 +1,4 @@
+import type { RunRecorder } from "./runRecorder.js";
 import { lookup } from "node:dns";
 import http from "node:http";
 import https from "node:https";
@@ -17,7 +18,7 @@ const SHORT_PAGE_CHARS = 600;
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 const ACCESS_WALL = /sina visitor system|登录后查看|登录可见|登录后可见|请先登录|需要登录|sign in to continue|log in to continue|\bpassport\.[a-z0-9-]+\.(?:com|cn|net)\b|captcha|access denied|verify you are human/i;
 
-type ContentResult = Pick<AtomSearchSource, "excerptKind" | "fetchStatus" | "fetchNote" | "retrievedAt"> & { snippet?: string };
+type ContentResult = Pick<AtomSearchSource, "excerptKind" | "fetchStatus" | "fetchNote" | "retrievedAt"> & { snippet?: string; readMethod?: "direct" | "reader" | "blocked" };
 type Attempt = { ok: true; text: string } | { ok: false; status?: number; reason: string };
 
 // ssrfGuard only checks the hostname as written; resolving here rejects public names that point at private addresses at connect time.
@@ -116,7 +117,7 @@ function timeoutSignal(parent: AbortSignal, ms: number): AbortSignal {
 
 /**
  * 转读服务返回整页 Markdown，导航、推荐阅读、评论区都在里面，常把一篇几百字的新闻撑过字数上限，
- * 被截断的正文又不能用来支持或反驳（2026-10-23 央视健康一篇 362 字的稿件因此作废）。只留正文样子的行。
+ * 被截断的正文又不能用来支持或反驳。只留正文样子的行。
  */
 export function cleanReaderText(markdown: string): string {
   return markdown
@@ -188,19 +189,23 @@ async function readViaJina(url: string, parent: AbortSignal): Promise<Attempt> {
 
 async function readSource(url: string, signal: AbortSignal, maxChars: number): Promise<ContentResult> {
   if (!/^https?:\/\//i.test(url) || isBlockedUrl(url) || new URL(url).username || new URL(url).password) {
-    return { fetchStatus: "restricted", fetchNote: "网址被安全规则拦截，未读取正文，保留检索摘要" };
+    return { readMethod: "blocked", fetchStatus: "restricted", fetchNote: "网址被安全规则拦截，未读取正文，保留检索摘要" };
   }
   const direct = await readDirect(url, signal);
   // Short direct text usually means the article body is rendered by script; the reader service often gets more.
   let attempt: Attempt = direct;
+  let readMethod: "direct" | "reader" = "direct";
   if (!direct.ok || direct.text.length < SHORT_PAGE_CHARS) {
     const viaJina = await readViaJina(url, signal);
-    if (viaJina.ok && (!direct.ok || viaJina.text.length > direct.text.length)) attempt = viaJina;
-    else if (!direct.ok) attempt = viaJina;
+    if ((viaJina.ok && (!direct.ok || viaJina.text.length > direct.text.length)) || !direct.ok) {
+      attempt = viaJina;
+      readMethod = "reader";
+    }
   }
   if (attempt.ok) {
     const truncated = attempt.text.length > maxChars;
     return {
+      readMethod,
       snippet: attempt.text.slice(0, maxChars),
       excerptKind: "page-excerpt",
       fetchStatus: truncated ? "truncated" : "fetched",
@@ -211,6 +216,7 @@ async function readSource(url: string, signal: AbortSignal, maxChars: number): P
   const fails = [direct, attempt] as Array<Extract<Attempt, { ok: false }>>;
   const restricted = fails.every((f) => f.status !== undefined && [401, 403, 429, 451].includes(f.status));
   return {
+    readMethod,
     fetchStatus: restricted ? "restricted" : "failed",
     fetchNote: `正文没读到（直接读取：${fails[0]!.reason}；转读服务：${fails[1]!.reason}），保留检索摘要`,
   };
@@ -234,7 +240,7 @@ export function pickUrlsToRead(bundle: AtomSearchBundle, perAtom = 3): string[] 
 }
 
 /** 只提升本轮检索材料；不增加搜索或模型调用，所有消费者仍读同一 canonical 材料。 */
-export async function enrichSearchSources(bundle: AtomSearchBundle, signal?: AbortSignal, deadline?: number, selectedUrls: readonly string[] = [], onSource?: () => void, maxChars = SOURCE_CONTENT_MAX_CHARS): Promise<void> {
+export async function enrichSearchSources(bundle: AtomSearchBundle, signal?: AbortSignal, deadline?: number, selectedUrls: readonly string[] = [], onSource?: () => void, maxChars = SOURCE_CONTENT_MAX_CHARS, recorder?: RunRecorder): Promise<void> {
   signal?.throwIfAborted();
   const lists = Object.values(bundle.byAtomKey);
   const all = [...lists, bundle.aggregate.sources as AtomSearchSource[], ...bundle.forAgent.map((item) => item.sources)];
@@ -258,9 +264,16 @@ export async function enrichSearchSources(bundle: AtomSearchBundle, signal?: Abo
         result = { fetchStatus: "failed", fetchNote: "正文没读到（本次调查剩余时间不够），保留检索摘要" };
       }
       signal?.throwIfAborted();
+      const original = all.flat().find((source) => source.url === url);
+      const { readMethod, ...sourceResult } = result;
+      const materialId = recorder?.recordMaterial({
+        url, kind: result.excerptKind === "page-excerpt" ? "page-excerpt" : "search-snippet",
+        content: result.snippet ?? original?.snippet ?? "",
+        metadata: { ...sourceResult, readMethod: readMethod ?? "unknown", observedAt: new Date().toISOString(), retainedSearchSnippet: result.excerptKind !== "page-excerpt" },
+      });
       for (const list of all) {
         for (const source of list) {
-          if (source.url === url && unread(source)) Object.assign(source, { fetchNote: undefined }, result);
+          if (source.url === url && unread(source)) Object.assign(source, { fetchNote: undefined }, sourceResult, materialId && result.excerptKind === "page-excerpt" ? { materialId } : {});
         }
       }
       onSource?.();

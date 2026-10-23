@@ -1,6 +1,5 @@
 /**
- * ProductShell — 产品壳（Issue #52 第二节）。
- * 顶部只有品牌、新调查、历史记录；历史记录从右侧抽屉打开。
+ * 页面布局与导航。
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { useUiLang } from "../lib/useUiLang";

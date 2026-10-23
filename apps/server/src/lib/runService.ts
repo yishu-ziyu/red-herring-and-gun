@@ -1,39 +1,12 @@
-/**
- * runService — 一次调查的身份、幂等与取消。
- *
- * 解决的三个具体问题：
- *   1. 双击提交会开两条管线、扣两次额度 —— 同一身份 + 同一 clientRequestId 只认一条 run。
- *   2. 用户点「停止」原本只是前端不管结果，服务端照跑照烧 —— 现在有真 AbortSignal。
- *   3. 同一份请求重放成两份 run —— payload 不同就明确冲突，不静默复用。
- *
- * signal 由编排适配层传到模型、检索及响应流，阶段边界同时检查以阻止迟到写入。
- * 请求中止不代表供应商停止计算或退款；这里仅维护本地运行状态与取消身份。
- *
- * 持久化是可选的：没有可用 SQLite 时退化成进程内注册表（重启即丢状态），
- * 但取消与幂等在本次进程内仍然成立。
- */
+/** Durable run authority: commit before broadcasting; no in-memory persistence fallback. */
 import { createHash, randomUUID } from "node:crypto";
-import { isTerminalStatus, type RunRecord, type RunStatus, type RunStore } from "./runStore.js";
-import type { PublicActivity } from "../../../shared/investigation/index.js";
+import { isTerminalStatus, type RunRecord, type RunStatus, type RunStore, type CreateRunInput, type CommitRunInput } from "./runStore.js";
+import { interruptedInvestigationSnapshot } from "../../../shared/interruptedSnapshot.js";
+import { toPublicStreamEvent } from "../http/publicStream.js";
 
-type StartRunInput = {
-  caseId: string;
-  ownerHash?: string | null;
-  clientRequestId?: string | null;
-  /** 归一化后的输入指纹；用来判断同一 clientRequestId 是不是同一份请求。 */
-  inputHash?: string | null;
-};
-
-type StartRunResult =
-  | { kind: "created"; run: RunRecord }
-  | { kind: "existing"; run: RunRecord }
-  | { kind: "conflict"; existing: RunRecord };
-
-type CancelResult =
-  | { kind: "cancelling"; run: RunRecord }
-  | { kind: "already-terminal"; run: RunRecord }
-  | { kind: "not-found" };
-
+type StartRunInput = Omit<CreateRunInput, "runId" | "now">;
+type StartRunResult = { kind: "created" | "existing"; run: RunRecord } | { kind: "conflict"; existing: RunRecord };
+type CancelResult = { kind: "cancelling" | "already-terminal"; run: RunRecord } | { kind: "not-found" };
 const CASE_ID_LENGTH = 8;
 
 /**
@@ -53,196 +26,92 @@ export function hashRunInput(claim: string, extras: Record<string, unknown> = {}
   return createHash("sha256").update(`${claim}\u0000${JSON.stringify(extras)}`).digest("hex").slice(0, 32);
 }
 
-type ActiveRun = {
-  controller: AbortController;
-  status: RunStatus;
-};
-
-/** 流上已经发出去的一帧；重连时用来补发。 */
-type RunEvent = Record<string, unknown>;
 
 export type RunService = ReturnType<typeof createRunService>;
-
 export function createRunService(options: { store: RunStore | null }) {
+  if (!options.store) throw new Error("Persistent run storage required");
   const store = options.store;
-  const now = () => Date.now();
-  // 进程内活体注册表：signal 与「当前是不是真在跑」只有活着的进程知道。
-  const active = new Map<string, ActiveRun>();
-  // 没有 SQLite 时的记录表，键是 runId。
-  const memory = new Map<string, RunRecord>();
-  const memoryByIdempotency = new Map<string, string>();
-  // 直播订阅：重连时接上同一只 run 后续的帧，不再开第二条管线。
-  const subscribers = new Map<string, Set<(event: RunEvent) => void>>();
-
-  function idempotencyKey(ownerHash: string | null, clientRequestId: string): string {
-    return `${ownerHash ?? "\u0000anonymous"}\u0000${clientRequestId}`;
+  const active = new Map<string, AbortController>();
+  const subscribers = new Map<string, Set<(event: Record<string, unknown>) => void>>();
+  function commit(runId: string, input: CommitRunInput) {
+    const current = store.get(runId);
+    if (current?.status === "cancelling" && input.status && !["cancelling", "cancelled", "interrupted"].includes(input.status)) {
+      return { run: current, events: [] };
+    }
+    const result = store.commit(runId, { ...input, events: input.events.map(toPublicStreamEvent) });
+    if (isTerminalStatus(result.run.status)) active.delete(runId);
+    for (const event of result.events) {
+      for (const listener of [...(subscribers.get(runId) ?? [])]) {
+        try { listener(event); } catch { subscribers.get(runId)?.delete(listener); }
+      }
+    }
+    return result;
   }
-
-  function lookup(ownerHash: string | null, clientRequestId: string): RunRecord | null {
-    if (store) return store.findByIdempotencyKey(ownerHash, clientRequestId);
-    const runId = memoryByIdempotency.get(idempotencyKey(ownerHash, clientRequestId));
-    return runId ? memory.get(runId) ?? null : null;
-  }
-
-  function read(runId: string): RunRecord | null {
-    if (store) return store.get(runId);
-    return memory.get(runId) ?? null;
-  }
-
-  function write(run: RunRecord): void {
-    if (store) return;
-    memory.set(run.runId, run);
-    if (run.clientRequestId) memoryByIdempotency.set(idempotencyKey(run.ownerHash, run.clientRequestId), run.runId);
-  }
-
   return {
-    signalFor: (runId: string): AbortSignal | undefined => active.get(runId)?.controller.signal,
-
-    /**
-     * 建 run。同一身份 + 同一 clientRequestId：
-     *   - 输入指纹相同 → 返回既有 run（不新建、不再扣额）；
-     *   - 输入指纹不同 → 返回 conflict，由 HTTP 层翻成 409。
-     */
+    signalFor: (runId: string) => active.get(runId)?.signal,
+    findExisting: store.findByIdempotencyKey,
     start(input: StartRunInput): StartRunResult {
-      const ownerHash = input.ownerHash ?? null;
-      const clientRequestId = input.clientRequestId ?? null;
-      const at = now();
-
-      if (clientRequestId) {
-        const existing = lookup(ownerHash, clientRequestId);
-        if (existing) {
-          const sameInput =
-            !input.inputHash || !existing.inputHash || input.inputHash === existing.inputHash;
-          return sameInput ? { kind: "existing", run: existing } : { kind: "conflict", existing };
-        }
-      }
-
+      const existingResult = (run: RunRecord): StartRunResult => input.inputHash === run.inputHash
+        ? { kind: "existing", run } : { kind: "conflict", existing: run };
+      const existing = input.clientRequestId ? store.findByIdempotencyKey(input.ownerHash ?? null, input.clientRequestId) : null;
+      if (existing) return existingResult(existing);
       const runId = randomUUID();
-      const run: RunRecord = {
-        runId,
-        caseId: input.caseId,
-        ownerHash,
-        clientRequestId,
-        inputHash: input.inputHash ?? null,
-        status: "accepted",
-        revision: 0,
-        snapshot: null,
-        lastSeq: 0,
-        createdAt: at,
-        updatedAt: at,
-      };
-      if (store) {
-        try {
-          store.create({
-            runId,
-            caseId: input.caseId,
-            ownerHash,
-            clientRequestId,
-            inputHash: input.inputHash ?? null,
-            now: at,
-          });
-        } catch (error) {
-          // UNIQUE(ownerHash, clientRequestId) 撞了：说明并发下另一个请求刚建好同一条。
-          const raced = clientRequestId ? lookup(ownerHash, clientRequestId) : null;
-          if (raced) {
-            const sameInput =
-              !input.inputHash || !raced.inputHash || input.inputHash === raced.inputHash;
-            return sameInput ? { kind: "existing", run: raced } : { kind: "conflict", existing: raced };
-          }
-          throw error;
-        }
-      } else {
-        write(run);
+      try {
+        const run = store.create({ ...input, runId, now: Date.now() });
+        active.set(runId, new AbortController());
+        return { kind: "created", run };
+      } catch (error) {
+        const raced = input.clientRequestId ? store.findByIdempotencyKey(input.ownerHash ?? null, input.clientRequestId) : null;
+        if (raced) return existingResult(raced);
+        throw error;
       }
-      active.set(runId, { controller: new AbortController(), status: "accepted" });
-      return { kind: "created", run: read(runId) ?? run };
     },
-
-    /** 推进运行状态；终态不可逆。 */
+    commit,
     advance(runId: string, status: RunStatus): boolean {
-      const current = read(runId);
-      if (!current || isTerminalStatus(current.status)) return false;
-      if (store) {
-        const changed = store.setStatus(runId, status, now());
-        if (changed) {
-          const live = active.get(runId);
-          if (live) live.status = status;
-        }
-        return changed;
-      }
-      const next: RunRecord = { ...current, status, updatedAt: now() };
-      write(next);
-      const live = active.get(runId);
-      if (live) live.status = status;
-      return true;
+      const current = store.get(runId);
+      if (!current || isTerminalStatus(current.status) || current.status === status) return false;
+      return commit(runId, { status, events: [{ type: "run_state", status, terminal: isTerminalStatus(status) }] }).events.length > 0;
     },
-
-    /**
-     * 取消：abort signal，状态进 cancelling，等待执行层清理后落 cancelled。
-     * 终态再调无副作用；底层响应与重试共享取消信号。
-     */
     cancel(runId: string): CancelResult {
-      const current = read(runId);
+      const current = store.get(runId);
       if (!current) return { kind: "not-found" };
       if (isTerminalStatus(current.status)) return { kind: "already-terminal", run: current };
-      const live = active.get(runId);
-      if (live && !live.controller.signal.aborted) {
-        live.controller.abort(new Error("cancelled-by-user"));
-      }
-      this.advance(runId, "cancelling");
-      return { kind: "cancelling", run: read(runId) ?? current };
+      const result = commit(runId, { status: "cancelling", events: [{ type: "run_state", status: "cancelling", terminal: false }] });
+      active.get(runId)?.abort(new Error("cancelled-by-user"));
+      return { kind: "cancelling", run: result.run };
     },
-
-    /**
-     * 管线收尾：清掉活体注册表，落终态。
-     *
-     * 一条硬规矩：用户已经点了停止（cancelling），就不把这次调查报成 completed——
-     * 管线可能刚好在写最后一份报告，但“已完成”是用户没要求的结论。
-     * 供应商未必能硬断在途请求，这条守卫只管state 不撒谎。
-     */
-    finish(runId: string, status: RunStatus): void {
-      active.delete(runId);
-      const current = read(runId);
+    /** Execution failure uses the same durable partial-result contract as ordinary interruption. */
+    finish(runId: string, status: "interrupted" | "cancelled"): void {
+      const current = store.get(runId);
       if (!current || isTerminalStatus(current.status)) return;
-      const resolved: RunStatus = current.status === "cancelling" && status === "completed" ? "cancelled" : status;
-      this.advance(runId, resolved);
+      const resolved = current.status === "cancelling" ? "cancelled" : status;
+      const snapshot = interruptedInvestigationSnapshot(current.snapshot ?? undefined, store.getInput(runId)?.claim ?? "");
+      if (resolved === "cancelled") snapshot.interruptionReason = "cancelled";
+      const controller = active.get(runId);
+      commit(runId, {
+        status: resolved, snapshot, publication: "partial",
+        events: [
+          { type: "investigation_snapshot", investigation: snapshot },
+          ...(resolved === "interrupted" ? [{ type: "error", message: "这次核查没能完成，请稍后重试" }] : []),
+          { type: "run_state", status: resolved, terminal: true, reason: "execution-ended" },
+        ],
+      });
+      controller?.abort(new Error("execution-ended"));
     },
-
-    get: read,
-
-    /** 把一帧广播给所有订阅者；没有人听也不报错。 */
-    publish(runId: string, event: RunEvent): void {
-      const listeners = subscribers.get(runId);
-      if (!listeners) return;
-      for (const listener of [...listeners]) {
-        try {
-          listener(event);
-        } catch {
-          listeners.delete(listener);
-        }
-      }
-    },
-
-    /** 订阅后续帧；返回退订函数。 */
-    subscribe(runId: string, listener: (event: RunEvent) => void): () => void {
+    get: store.get,
+    getInput: store.getInput,
+    getResult: store.getResult,
+    listByOwner: store.listByOwner,
+    deleteOwned: store.deleteOwned,
+    replayEvents: store.listEvents,
+    replayActivities: store.listActivities,
+    markInterruptedOnBoot: store.markInterruptedOnBoot,
+    publish(runId: string, event: Record<string, unknown>): void { commit(runId, { events: [event] }); },
+    subscribe(runId: string, listener: (event: Record<string, unknown>) => void): () => void {
       const listeners = subscribers.get(runId) ?? new Set();
       listeners.add(listener);
       subscribers.set(runId, listeners);
-      return () => {
-        listeners.delete(listener);
-        if (listeners.size === 0 && !active.has(runId)) subscribers.delete(runId);
-      };
-    },
-
-    /** 重连用：先补 afterSeq 之后的活动，再返回退订函数。 */
-    replayActivities(runId: string, afterSeq: number): PublicActivity[] {
-      if (!store) return [];
-      return store.listActivities(runId, afterSeq);
-    },
-
-    /** 进程重启：未完成的 run 标 interrupted，中间快照保留。 */
-    markInterruptedOnBoot(): number {
-      return store ? store.markInterruptedOnBoot(now()) : 0;
+      return () => { listeners.delete(listener); if (!listeners.size) subscribers.delete(runId); };
     },
   };
 }

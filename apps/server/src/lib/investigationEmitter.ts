@@ -24,8 +24,7 @@ type InvestigationEmitter = {
 export function createInvestigationEmitter(options: {
   runId: string;
   send: (event: Record<string, unknown>) => void;
-  /** 追加活动时回调（持久化用）；失败不抛，不挡流。 */
-  onActivities?: (activities: PublicActivity[]) => void;
+  commitSnapshot?: (snapshot: InvestigationSnapshotV1, events: Record<string, unknown>[]) => void;
 }): InvestigationEmitter {
   const log = createActivityLog(options.runId);
   const timestamp = () => Date.now();
@@ -36,18 +35,18 @@ export function createInvestigationEmitter(options: {
     for (const activity of activities) {
       options.send({ type: "investigation_activity", activity, timestamp: timestamp() });
     }
-    try {
-      options.onActivities?.(activities);
-    } catch (error) {
-      // 活动落库失败不影响已经发出去的帧。
-      console.error("[activity] 落库失败", error);
-    }
+
   };
 
   return {
     emitSnapshot(snapshot) {
-      options.send({ type: "investigation_snapshot", investigation: snapshot, timestamp: timestamp() });
-      sendActivities(log.project(previous, snapshot));
+      const activities = log.project(previous, snapshot);
+      const events = [
+        { type: "investigation_snapshot", investigation: snapshot, timestamp: timestamp() },
+        ...activities.map(activity => ({ type: "investigation_activity", activity, timestamp: timestamp() })),
+      ];
+      if (options.commitSnapshot) options.commitSnapshot(snapshot, events);
+      else for (const event of events) options.send(event);
       previous = snapshot;
     },
     emitSearchStarted(atom) {

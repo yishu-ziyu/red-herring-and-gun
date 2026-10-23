@@ -2,7 +2,7 @@
  * signedCookie — 签名 cookie 的编码、解码与会话密钥。现在只有访客额度 cookie 在用。
  *
  * 会话密钥读 SESSION_SECRET；没有设时回退读旧名 AIPING_SESSION_SECRET，
- * 这样已部署的环境不用改配置。AI Ping 登录已在 2026-10-09 删除，旧名只为兼容保留。
+ * 这样已部署的环境不用改配置。旧配置名仅为兼容保留。
  */
 import crypto from "node:crypto";
 

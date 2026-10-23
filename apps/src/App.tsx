@@ -1,5 +1,5 @@
 /**
- * App — 生产入口（Issue #52）：轻量产品壳 + 同画布 Golden Path。
+ * 应用入口：提交调查、切换视图和保存本机历史。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { interruptedInvestigationSnapshot } from "../shared/interruptedSnapshot";
@@ -8,10 +8,9 @@ import { InputStage } from "./goldenPath/InputStage";
 import { InvestigationCanvas } from "./goldenPath/InvestigationCanvas";
 import { useInvestigationRun, type StartOptions } from "./goldenPath/useInvestigationRun";
 import { gpCopyFor } from "./goldenPath/copy";
-import { formatDay } from "./goldenPath/snapshotUi";
 import { useUiLang } from "./lib/useUiLang";
-import { caseIntakeDisplayText, caseIntakeFailedLinks, caseIntakeIsImageOnly, caseIntakePrimaryText, createCaseIntake, type CaseIntake } from "./lib/caseIntake";
-import { createKnowledgeBase, normalizeHistoryClaim } from "./lib/knowledgeBase";
+import { caseIntakeDisplayText, caseIntakeFailedLinks, caseIntakeIsImageOnly, createCaseIntake, type CaseIntake } from "./lib/caseIntake";
+import { createKnowledgeBase } from "./lib/knowledgeBase";
 import { composeFollowUpClaim, previousAnswerText } from "../shared/followUp";
 import { visiblePriorRoundFromSnapshot } from "../shared/followUp";
 import type { InvestigationThread, InvestigationRound } from "../shared/investigationThread";
@@ -42,8 +41,6 @@ export default function App() {
   const activeIdRef = useRef<string | null>(null);
   activeIdRef.current = active?.localId ?? null;
   const [historyNotice, setHistoryNotice] = useState("");
-  // 提交了查过的同一句话：直接打开旧结果，提示里给「重新核查」，不先弹框让人选。
-  const [sameClaimAt, setSameClaimAt] = useState<number | null>(null);
   const run = useInvestigationRun();
   const [draftClaim, setDraftClaim] = useState("");
   const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
@@ -63,7 +60,7 @@ export default function App() {
     setHistoryNotice,
   });
 
-  /** 无守卫直接开跑：同句守卫的「重新核查」与普通提交共用。 */
+  /** 普通提交与重新核查都启动新一轮；旧结果由历史入口打开。 */
   const beginRun = useCallback(
     (
       intake: CaseIntake,
@@ -76,7 +73,6 @@ export default function App() {
       setSelectedRoundId(null);
       setSaveStatus("idle");
       setHistoryNotice("");
-      setSameClaimAt(null);
       setDraftClaim("");
       const claim = caseIntakeDisplayText(intake);
       const localId = `case-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -90,10 +86,9 @@ export default function App() {
   );
 
   const handleBackHome = useCallback(() => {
-    // 从调查/旧报告返回首页时预填原句，方便改完再查（与旧壳一致）。只交了图片时没有可预填的原句。
+    // 从调查/旧报告返回首页时预填原句，方便改完再查。只交了图片时没有可预填的原句。
     setDraftClaim((prev) => (caseIntakeIsImageOnly(active?.intake) ? "" : active?.thread?.originalClaim ?? active?.claim ?? prev));
     setSelectedRoundId(null);
-    setSameClaimAt(null);
     run.reset();
     setActive(null);
     setMode("input");
@@ -131,7 +126,6 @@ export default function App() {
       const item = cases.find((entry) => entry.id === id);
       if (!item) return false;
       setSelectedRoundId(null);
-      setSameClaimAt(null);
       // 本地在跑的那条：直接回到当前画布，不重新请求。
       if (item.status === "running" && active?.localId === id) {
         setMode("investigation");
@@ -163,24 +157,7 @@ export default function App() {
     [active?.localId, cases, lang, run]
   );
 
-  const handleStart = useCallback(
-    (intake: CaseIntake) => {
-      const claim = caseIntakePrimaryText(intake);
-      // 同一句话查过：历史已经可靠读到时才判断；加载中不截断新提交。打不开旧记录就照常开查。
-      if (historyReady && !intake.links.length && !intake.images.length) {
-        const match = cases.find((item) => item.status === "done" && normalizeHistoryClaim(item.claim) === normalizeHistoryClaim(claim));
-        if (match) {
-          void handleSelectCase(match.id).then((opened) => {
-            if (opened) setSameClaimAt(match.createdAt ?? 0);
-            else beginRun(intake);
-          });
-          return;
-        }
-      }
-      beginRun(intake);
-    },
-    [cases, historyReady, beginRun, handleSelectCase]
-  );
+  const handleStart = useCallback((intake: CaseIntake) => beginRun(intake), [beginRun]);
 
   if (window.location.pathname.startsWith("/s/")) {
     return (
@@ -224,9 +201,9 @@ export default function App() {
   function handleFollowUp(question: string) {
     if (!active) return;
     const prevAnswer =
-      previousAnswerText(
+      snapshot?.conclusion?.directAnswer || previousAnswerText(
         (active.restored?.report ?? run.state.finalReport) as { conclusion?: string; memo?: string } | null
-      ) || snapshot?.conclusion?.directAnswer || "";
+      ) || "";
     const composed = composeFollowUpClaim({
       originalClaim: active.thread?.originalClaim ?? active.claim,
       previousAnswer: prevAnswer,
@@ -247,6 +224,8 @@ export default function App() {
 
   const archivedRound = selectedRoundId ? active?.thread?.rounds.find((round) => round.id === selectedRoundId) : undefined;
   const displaySnapshot = archivedRound?.snapshot ?? snapshot;
+  const disconnected = mode === "investigation" && !active?.restored && !archivedRound && run.state.connection === "disconnected";
+  const reconnecting = !active?.restored && Boolean(run.state.runId) && run.state.connection === "connecting";
   return (
     <ProductShell
       cases={cases}
@@ -256,6 +235,16 @@ export default function App() {
       onSelectCase={(id) => void handleSelectCase(id)}
       viewingInvestigation={mode === "investigation"}
     >
+      {disconnected ? (
+        <p className="gp-global-notice gp-column" role="status" data-gp-disconnected>
+          {run.state.runId
+            ? "连接已断开，调查可能仍在继续。下面保留的是断线前收到的内容。"
+            : "连接已断开，尚未收到调查编号，无法确认请求是否已经开始。"}
+          {run.state.runId ? <button type="button" className="gp-link-btn" onClick={() => run.resume(run.state.runId!, run.state.lastActivitySeq, active?.claim ?? "")}>
+            重新连接这次调查
+          </button> : null}
+        </p>
+      ) : reconnecting ? <p className="gp-global-notice gp-column" role="status">正在重新连接这次调查…</p> : null}
       {showLinkUnreachable ? (
         <p className="gp-global-notice gp-column" role="alert">
           {copy.linkUnreachableNotice}
@@ -264,13 +253,6 @@ export default function App() {
         <p className="gp-global-notice gp-column" role="alert">{run.state.notice}</p>
       ) : historyNotice ? (
         <p className="gp-global-notice gp-column" role="alert">{historyNotice}</p>
-      ) : sameClaimAt !== null && mode === "investigation" ? (
-        <p className="gp-global-notice gp-column" role="status" data-gp-same-claim>
-          {copy.sameClaimNotice(formatDay(sameClaimAt || undefined) || "之前")}
-          <button type="button" className="gp-link-btn" onClick={handleRetry}>
-            {copy.recheck}
-          </button>
-        </p>
       ) : null}
       {mode === "investigation" && active?.thread ? <InvestigationThreadHeader
         thread={active.thread}
@@ -295,6 +277,7 @@ export default function App() {
           <InvestigationCanvas
             key={archivedRound?.id ?? active.roundId ?? active.localId}
             snapshot={displaySnapshot}
+            connectionUnavailable={disconnected || reconnecting}
             readOnly={Boolean(archivedRound)}
             stop={archivedRound || active.restored ? "idle" : run.state.stop}
             onStop={archivedRound || active.restored || !run.state.runId ? undefined : () => void run.cancel()}
@@ -315,7 +298,7 @@ export default function App() {
         </p>
       ) : (
         <p className="gp-waiting gp-column" role="status">
-          {run.state.connection === "failed" && !snapshot && !showLinkUnreachable
+          {disconnected || reconnecting ? "尚未收到新的调查内容。" : run.state.connection === "failed" && !snapshot && !showLinkUnreachable
             ? publicTransportError(run.state.errorMessage, copy.connectionLost)
             : "正在拆分这句话…"}
         </p>

@@ -57,7 +57,7 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   // 判定前先读原文：FactChecker 要对着正文下判断，而不是对着搜索摘要。
   await enrichSearchSources(atomSearchBundle, ctx.input.signal, ctx.input.deadline, pickUrlsToRead(atomSearchBundle), () => {
     snapshots.investigating({ atomSearchBundle });
-  });
+  }, undefined, ctx.input.recorder);
   throwIfAborted();
   let factStep: PipelineStep;
   try {
@@ -78,7 +78,7 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   await enrichSearchSources(atomSearchBundle, ctx.input.signal, ctx.input.deadline, selectedUrls, () => {
     // 只发布已取得、尚未核对的材料；不能提前发布 FactChecker 的未审计判词。
     snapshots.investigating({ atomSearchBundle });
-  });
+  }, undefined, ctx.input.recorder);
   throwIfAborted();
   let sourceStep: PipelineStep;
   try {

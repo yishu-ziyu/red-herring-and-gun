@@ -26,6 +26,7 @@ export interface OrchestrateStreamEvent {
     | "tool_result"
     | "tool_error"
     | "complete"
+    | "transport_error"
     /** 超时后管线仍在跑：这条连接等不到头了，但调查没失败。 */
     | "timeout_pending"
     /** 服务端常驻提示（code=image_unreadable：图片没读出来，已按文字继续）。 */
@@ -87,7 +88,12 @@ export async function* requestOrchestrateStream(
     }
 
     if (!response.ok || !response.body) {
-      yield { type: "error", message: `Orchestrate Stream API 失败：HTTP ${response.status}` };
+      yield {
+        type: response.status >= 500 || !response.body ? "transport_error" : "error",
+        message: response.status >= 500 || !response.body
+          ? "暂时无法连接核查服务，无法确认调查是否已经开始。"
+          : `核查请求未被接受：HTTP ${response.status}`,
+      };
       return;
     }
 
@@ -104,7 +110,7 @@ export async function* requestOrchestrateStream(
 
     try {
       while (true) {
-        // F1：服务端每 15s 发心跳注释帧；60s 无任何字节 = 死连接，不再无限等待
+        // 服务端每 15s 发心跳注释帧；60s 无任何字节 = 死连接，不再无限等待
         const read = reader.read();
         read.catch(() => {}); // 竞态落败后 abort 会让它 reject，别变成 unhandled rejection
         let readTimer: ReturnType<typeof setTimeout> | undefined;
@@ -117,7 +123,7 @@ export async function* requestOrchestrateStream(
         } catch (error) {
           console.error("[stream] 60 秒无数据，判定连接已断", error);
           controller.abort();
-          yield { type: "error", message: "与核查服务的连接中断了，这次没有查完。请重试。" };
+          yield { type: "transport_error", message: "连接已断开，暂时无法确认调查进度。" };
           return;
         } finally {
           if (readTimer) clearTimeout(readTimer);
@@ -154,7 +160,7 @@ export async function* requestOrchestrateStream(
       }
       drained = true;
     } finally {
-      // 消费端提前退出（组件卸载/重置）：取消读取并断开连接，避免服务端空跑
+      // 消费端提前退出（组件卸载/重置）：释放读取器并断开连接；取消调查需另发请求
       if (!drained) {
         controller.abort();
         await reader.cancel().catch(() => {});
@@ -165,8 +171,8 @@ export async function* requestOrchestrateStream(
     const raw = error instanceof Error ? error.message : "";
     const message =
       !raw || /failed to fetch|networkerror|load failed|network request failed/i.test(raw)
-        ? "与核查服务的连接中断了，这次没有查完。请重试。"
+        ? "连接已断开，暂时无法确认调查进度。"
         : raw;
-    yield { type: "error", message };
+    yield { type: "transport_error", message };
   }
 }

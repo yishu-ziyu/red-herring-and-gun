@@ -281,6 +281,7 @@ type VerdictSourceLike = { url?: unknown; title?: unknown; snippet?: unknown; qu
 type ReuseProvenance = "knowledge" | "prior-round";
 
 type BundleSource = {
+  materialId?: string;
   url: string;
   title: string;
   snippet: string;
@@ -505,7 +506,8 @@ function readBundle(
           return {
             url: asString(s.url).trim(),
             title: clip(asString(s.title), 200),
-            snippet: clip(asString(s.snippet), excerptKind === "page-excerpt" ? SOURCE_CONTENT_MAX_CHARS : 900),
+            snippet: asString(s.materialId).trim() ? asString(s.snippet) : clip(asString(s.snippet), excerptKind === "page-excerpt" ? SOURCE_CONTENT_MAX_CHARS : 900),
+            ...(asString(s.materialId).trim() ? { materialId: asString(s.materialId).trim() } : {}),
             ...(reusable && provenance ? { provenance } : {}),
             ...(reusable && asString(s.originDate).trim()
               ? { originDate: clip(asString(s.originDate), 40) }
@@ -563,7 +565,7 @@ export function buildInvestigationSnapshot(
   const phase = input.phase;
   const originalClaim = input.originalClaim;
 
-  // key 与展示文本分离（#51）：key 只做 identity join
+  // key 与展示文本分离：key 只做 identity join
   // （dedupe / verdict / bundle / type），会规范化全角空格
   // 并超长截断；text 是拆题后保留命题的真实展示文本，不因内部键改写。
   const keptAtoms: Array<{ key: string; text: string }> = [];
@@ -651,7 +653,7 @@ export function buildInvestigationSnapshot(
     };
   });
 
-  // 来源登记：id 由规范化 URL 确定性派生（#76），与 phase / role / 注册顺序无关。
+  // 来源登记：id 由规范化 URL 确定性派生，与 phase / role / 注册顺序无关。
   // 数组顺序仍是证据位先、检索垫后——只影响 catalog 排列，不决定 identity。
   const sources: InvestigationSource[] = [];
   const sourceIdByUrl = new Map<string, string>();
@@ -675,6 +677,7 @@ export function buildInvestigationSnapshot(
     return { provenance: meta.provenance, ...(meta.originDate ? { originDate: meta.originDate } : {}) };
   };
   const registerSource = (s: {
+    materialId?: string;
     url: string;
     title: string;
     snippet: string;
@@ -709,6 +712,8 @@ export function buildInvestigationSnapshot(
         };
         if (s.excerptKind === "page-excerpt" && src.excerptKind !== "page-excerpt" && s.snippet) {
           src.excerpt = clipExcerpt(s.snippet);
+          if (s.materialId) src.materialId = s.materialId;
+          else delete src.materialId;
           src.excerptKind = "page-excerpt";
           src.fetchStatus = s.fetchStatus;
           // 既有 fetchNote（例如此前一次抓取失败）标为历史：用户看到
@@ -744,6 +749,7 @@ export function buildInvestigationSnapshot(
     sources.push({
       id,
       url: key,
+      ...(s.materialId ? { materialId: s.materialId } : {}),
       title: s.title,
       ...(s.snippet ? { excerpt: clipExcerpt(s.snippet) } : {}),
       ...(s.publishedAt ? { publishedAt: s.publishedAt } : {}),
@@ -846,9 +852,14 @@ export function buildInvestigationSnapshot(
           (role === "context-only" && (audit.relation === "context-only" || audit.relation === "unverified")));
       // 只有支持/反驳行引用原文；这一句必须逐字出自本轮拿到的来源文字。
       const selectedQuote = auditMatchesRole && audit.quote !== undefined ? audit.quote : source.quote;
-      const quote = role === "support" || role === "contradict" ? verbatimQuote(selectedQuote, source.snippet, a.text) : "";
+      const candidate = role === "support" || role === "contradict" ? verbatimQuote(selectedQuote, source.snippet, a.text) : "";
+      const quoteStart = candidate ? source.snippet.indexOf(candidate) : -1;
+      // Legacy records keep their established quote behavior; new material references require exact bytes of text.
+      const quote = source.materialId && quoteStart < 0 ? "" : candidate;
       return {
         ...passageMeta(a.text, source.snippet, quote),
+        ...(source.materialId ? { materialId: source.materialId } : {}),
+        ...(source.materialId && quote && quoteStart >= 0 ? { quoteRange: { start: quoteStart, end: quoteStart + quote.length } } : {}),
         ...(source.excerptKind ? { excerptKind: source.excerptKind } : {}),
         ...(quote ? { quote } : {}),
         ...(source.fetchStatus === "truncated"
@@ -929,7 +940,7 @@ export function buildInvestigationSnapshot(
       judgment = null;
     }
 
-    // 标签 + 一句理由（#140）。整句规则表已经定了这一截的标签就用它；调查进行中按判词推出。
+    // 标签 + 一句理由。整句规则表已经定了这一截的标签就用它；调查进行中按判词推出。
     // 标签必须有证据撑着，撑不住降为还查不清；judgment 跟着标签走，两者不矛盾。
     let label: LabelKey | undefined;
     let reason: string | undefined;
@@ -1022,7 +1033,7 @@ export function buildInvestigationSnapshot(
   let conclusion: InvestigationSnapshotV1["conclusion"];
   if (phase === "complete" && report) {
     const conclusionText = asString(report.conclusion);
-    const directAnswer = clip(conclusionText, 400);
+    let directAnswer = clip(conclusionText, 400);
     if (directAnswer) {
       // 一条命题都没拆出来时不能写 not-applicable（那是在断言整句是立场/价值表达）：
       // 无命题只说明证据撑不出判断，按 unresolved 显示，与「还查不清」同义。
@@ -1071,12 +1082,12 @@ export function buildInvestigationSnapshot(
           .map((s) => asString(s.url).trim())
       );
       // 顶层边界只承载整次调查级边界（causalBoundary）。命题级 boundary 继续在
-      // 命题内部展示（ClaimSection），不再同一屏出现第二次。
+      // 对应命题内展示，避免顶层重复。
       const boundaries: string[] = [];
       const causal = clip(asString(report.causalBoundary), 200);
       if (causal) boundaries.push(causal);
       let layers = splitConclusionLayers(conclusionText, originalClaim);
-      // 结论第一句 = 整句标签 + 一句理由（#140）。标签单独存，不靠切句子取（切句会把「不属实。」切成一句）。
+      // 结论第一句 = 整句标签 + 一句理由。标签单独存，不靠切句子取（切句会把「不属实。」切成一句）。
       let wholeLabel: LabelKey | undefined;
       let wholeReason = "";
       if (verdictDecision?.label) {
@@ -1090,17 +1101,19 @@ export function buildInvestigationSnapshot(
           const shownLabel = claimByKey.get(p.key)?.label ?? p.label;
           return shownLabel ? { ...p, label: shownLabel, standing: standingForLabel(shownLabel) } : p;
         });
-        if (shown.some((p, i) => p.label !== verdictDecision.parts[i]!.label)) {
+        const partsAdjusted = shown.some((p, i) => p.label !== verdictDecision.parts[i]!.label);
+        if (partsAdjusted) {
           const redo = decideSentenceVerdict(shown);
           const relabel = wholeLabelFor(redo.rule, shown.map((p) => ({ role: p.role, standing: p.standing, label: p.label ?? "unresolved" })));
-          if (relabel !== wholeLabel) {
-            wholeLabel = relabel;
-            // 只有一点时，「「X」夸大了」只是把说法和标签重复一遍；用这一点自己的理由。
-            const onlyReason = shown.length === 1 ? claimByKey.get(shown[0]!.key)?.reason : undefined;
-            wholeReason = onlyReason || `${shown.map((p) => `「${clip(p.text, 40)}」${LABEL_TEXT[p.label ?? "unresolved"]}`).join("；")}。`;
-          }
+          wholeLabel = relabel;
+          const onlyReason = shown.length === 1 ? claimByKey.get(shown[0]!.key)?.reason : undefined;
+          wholeReason = onlyReason || `${shown.map((p) => `「${clip(p.text, 40)}」${LABEL_TEXT[p.label ?? "unresolved"]}`).join("；")}。`;
         }
-        if (textHasLead) {
+        if (partsAdjusted) {
+          // 原说明依据的是调整前的判断，不能继续用于展示、复制或追问。
+          directAnswer = `${LABEL_TEXT[wholeLabel]}。${wholeReason}`;
+          layers = { verdictLead: wholeReason };
+        } else if (textHasLead) {
           const rest = conclusionText.slice(prefix.length).trim();
           layers = { verdictLead: wholeReason, ...(rest ? { rationale: rest } : {}) };
         } else {

@@ -1,20 +1,5 @@
 /**
- * 整句判定：原句该得到什么结论，由各部分的角色与证据状态推出。这是全产品唯一下整句结论的地方。
- *
- * 产品最稳定的业务规则（2026-09-28 用户确认判定规则，2026-09-29 加评分规则 1–6），换模型、换搜索、换存储都不变。
- * 本文件不引用任何外部模块。
- *
- * 参照：Snopes 按「主要内容 / 次要细节」定级；台湾事实查核中心「主要内容错误 / 部分错误 / 证据不足」。
- *
- *   主要主张（含并列） 必要前提   背景细节    结论
- *   任一被反驳         任意       任意        不能信
- *   并列：一真一假      任意       任意        有真有假
- *   全被证实           全被证实   无被反驳    能信
- *   全被证实           全被证实   有被反驳    部分成立
- *   全被证实           有被反驳   任意        有真有假
- *   全被证实           有查不清   任意        证据不足
- *   查不清             任意       任意        证据不足
- *   证据互相冲突       任意       任意        有争议
+ * 根据各部分的角色与证据状态推导整句结论。显示标签由 domain/labels 映射。
  */
 
 /** 部分在原句里的角色：原句真正想让人信的（可并列多条）、要让主张成立必须为真的前提、可有可无的背景。 */
@@ -30,7 +15,7 @@ export type SentencePart = {
   text: string;
   role: PartRole;
   standing: PartStanding;
-  /** 评分规则 1：内容属实，只是原句把发文机关或出处说错了。这一处被反驳不算被反驳（前提：另有内容部分被证实）。 */
+  /** 旧报告的出处归属标记；保留读取兼容，不用于改变证据状态。 */
   issuerMisattributed?: boolean;
 };
 
@@ -65,12 +50,8 @@ type VerdictDecision = {
 };
 
 export function decideSentenceVerdict(input: readonly SentencePart[]): VerdictDecision {
-  // 评分规则 1：内容属实、只说错发文机关或出处，不算被反驳。「内容属实」要有另一处不是出处的部分被证实；
-  // 没有任何一处内容被证实时，被标成出处的那一处就是原句本身站不住（不能借出处标记翻案）。
-  const contentTrue = input.some((part) => !part.issuerMisattributed && part.standing === "supported");
-  const parts = input.map((part) =>
-    contentTrue && part.issuerMisattributed && part.standing === "refuted" ? { ...part, standing: "supported" as const } : part
-  );
+  // 出处归属也是待核查事实，不能因为另一部分属实而撤销它的反驳结果。
+  const parts = input;
   if (parts.length === 0) return { verdict: "not-enough-evidence", rule: "no-checkable-claim", boundaryParts: [] };
 
   const declaredMains = parts.filter((part) => part.role === "main");

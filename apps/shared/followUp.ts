@@ -105,6 +105,7 @@ export type VisiblePriorRound = {
   originalClaim: string;
   conclusion: string;
   claims: VisiblePriorClaim[];
+  checkedAt?: string;
 };
 
 const HTTP_URL = /^https?:\/\//i;
@@ -147,6 +148,7 @@ export function visiblePriorRoundFromSnapshot(
   return {
     originalClaim: clip(displayFollowUpClaim(snapshot.originalClaim), 500),
     conclusion: clip(snapshot.conclusion?.directAnswer ?? "", 800),
+    ...(snapshot.checkedAt ? { checkedAt: snapshot.checkedAt } : {}),
     claims,
   };
 }

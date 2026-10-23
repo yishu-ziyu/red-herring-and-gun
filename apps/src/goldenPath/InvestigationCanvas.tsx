@@ -1,13 +1,10 @@
 /**
- * InvestigationCanvas — 唯一调查画布（Issue #52 同画布 + Issue #64 persistent conclusion）。
- * investigating → complete 不换壳：结论区从调查中就存在，完成时同一节点显现 directAnswer。
- * 原始说法与命题保持原位。不抢焦点、不滚动、不关闭已打开的 Drawer。
- * interrupted：保留已获真实数据、无伪结论、可重试。
- * 调查中和查完同一套头版式（#150）：调查中用 ProgressView 一行行填，不展示执行过程。
+ * 展示当前调查或历史快照；中断时保留已取得的材料并提供重试。
  */
 import { useEffect, useState } from "react";
 import type { InvestigationSnapshotV1 } from "../../shared/investigation";
 import { judgmentToLabel } from "../../shared/investigation";
+import { LABEL_TEXT } from "../../shared/domain/labels";
 import { scrubFaceText } from "../../shared/scrubFace";
 import { useUiLang } from "../lib/useUiLang";
 import { displayFollowUpClaim, conclusionMissesFollowUp, followUpQuestionLead } from "../../shared/followUp";
@@ -21,6 +18,7 @@ import { IntakeImages } from "./IntakeImages";
 
 type InvestigationCanvasProps = {
   snapshot: InvestigationSnapshotV1;
+  connectionUnavailable?: boolean;
   /** 停止：三态由服务端确认驱动，不提前说已停止。 */
   stop?: "idle" | "stopping" | "stopped";
   onStop?: () => void;
@@ -47,6 +45,7 @@ type InvestigationCanvasProps = {
 
 export function InvestigationCanvas({
   snapshot,
+  connectionUnavailable = false,
   stop: liveStop = "idle",
   onStop,
   saveStatus = "idle",
@@ -68,12 +67,12 @@ export function InvestigationCanvas({
 
   // 状态变化用一句轻量播报解释发生了什么（渐进呈现，不是 Agent 日志）。
   useEffect(() => {
-    if (snapshot.phase === "interrupted" || stop !== "idle") setAnnounce("");
+    if (connectionUnavailable || snapshot.phase === "interrupted" || stop !== "idle") setAnnounce("");
     else if (snapshot.phase === "decomposed") setAnnounce(copy.canvasClaimsLabel);
     else if (snapshot.phase === "investigating") setAnnounce("正在逐条追查出处");
     else if (snapshot.phase === "judging") setAnnounce("正在对照证据形成判断");
     else if (snapshot.phase === "complete") setAnnounce("");
-  }, [snapshot.phase, stop, copy.canvasClaimsLabel]);
+  }, [snapshot.phase, stop, copy.canvasClaimsLabel, connectionUnavailable]);
 
 
   const conclusion = snapshot.conclusion;
@@ -163,8 +162,9 @@ export function InvestigationCanvas({
             shareRunId={shareRunId}
             brief={buildConclusionBrief({
               originalClaim: snapshot.originalClaim,
-              directAnswer: displayDirectAnswer,
+              directAnswer: `${LABEL_TEXT[conclusion.label ?? judgmentToLabel(conclusion.judgment)]}。${displayLead}`,
               boundaries: conclusion.boundaries,
+              claimBoundaries: resultClaims,
               checkedAt: snapshot.checkedAt,
               sourceUrls: briefSourceUrls,
               coverageNote,
@@ -201,6 +201,7 @@ export function InvestigationCanvas({
             snapshot={snapshot}
             claims={resultClaims}
             interrupted={snapshot.phase === "interrupted" || stop !== "idle"}
+            connectionUnavailable={connectionUnavailable}
             leftoverNote={leftoverSentence}
             startedAt={startedAt}
             onStop={!interrupted && onStop && stop === "idle" ? onStop : undefined}

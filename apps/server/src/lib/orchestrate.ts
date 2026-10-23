@@ -5,6 +5,8 @@
  * 思考句流式）。纯编排，不含 HTTP。
  * handlers 只做接线：注入 env / 模型路由 / 工具函数，拿到工厂产物回调。
  */
+import { createHash } from "node:crypto";
+import { RunRecordingError, type RunRecorder } from "./runRecorder.js";
 import {
   AGENT_CONFIGS,
   buildAgentInput,
@@ -70,6 +72,8 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
     intakeMetadata: any;
     visualExtraction: Record<string, unknown> | undefined;
     clientMemoryRecall: any;
+    priorRoundContext?: unknown;
+    recorder?: RunRecorder;
     onStart?: (agentId: string, agentConfig: (typeof AGENT_CONFIGS)[number]) => void;
     onThought?: (
       agentId: string,
@@ -95,6 +99,10 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
       if (opts.intakeMetadata) agentInput.intake = opts.intakeMetadata;
       if (opts.visualExtraction) agentInput.visualExtraction = opts.visualExtraction;
       if (opts.clientMemoryRecall) agentInput.memoryRecall = opts.clientMemoryRecall;
+      if (opts.priorRoundContext) agentInput.priorRoundContext = {
+        policy: "仅用于理解此前对话，不是本轮已核实证据；本轮事实判断必须依据本轮检索并审核的材料。",
+        previous: opts.priorRoundContext,
+      };
       if (search360Result && ["fact_checker", "source_validator"].includes(agentId)) {
         agentInput.search360 = compactSearchResultForAgent(search360Result);
         if (atomSearchBundle) {
@@ -128,6 +136,12 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
       agentInput.loadedSkills = skills.map((s) => s.id);
       const userContent = `${statusBar.text}\n\n${JSON.stringify(agentInput, null, 2)}`;
 
+      // This records one stage attempt; provider retries and JSON repair may occur inside it.
+      const attemptId = opts.recorder?.startAttempt({
+        stage: agentId, input: { systemPrompt, userContent, responseSchema: agentConfig.responseSchema },
+        metadata: { granularity: "stage", systemPromptHash: createHash("sha256").update(systemPrompt).digest("hex") },
+      });
+      let attemptFinished = false;
       let output: Record<string, unknown>;
       let modelUsed: string;
       let reasoning: string | undefined;
@@ -142,6 +156,10 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
           reasoningEffort: "high",
           options: { signal, deadlineMs: deadlineFor(execution.deadlineMs) },
         });
+        if (attemptId) {
+          opts.recorder!.finishAttempt(attemptId, { status: "succeeded", output: result.output, model: result.model });
+          attemptFinished = true;
+        }
         output = withLegacyVerdicts(result.output);
         signal?.throwIfAborted();
         modelUsed = result.model;
@@ -176,6 +194,11 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         opts.onComplete?.(step);
         return step;
       } catch (error) {
+        if (error instanceof RunRecordingError) throw error;
+        if (attemptId && !attemptFinished) opts.recorder!.finishAttempt(attemptId, {
+          status: signal?.aborted ? "cancelled" : "failed",
+          error: error instanceof Error ? error.message : "Agent 调用失败",
+        });
         signal?.throwIfAborted();
         opts.onError?.(agentId, agentConfig, error);
         const message = error instanceof Error ? error.message : "Agent 调用失败";

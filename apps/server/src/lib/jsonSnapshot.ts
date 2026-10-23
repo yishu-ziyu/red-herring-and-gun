@@ -1,5 +1,5 @@
 /**
- * jsonSnapshot — 内存 Map 的防抖 JSON 落盘（D1：重启全丢）。
+ * jsonSnapshot — 内存 Map 的防抖 JSON 落盘。
  *
  * 设计：单实例部署够用。启动时 loadSnapshot 恢复；每次变更 saveSnapshotDebounced
  * 打脏标记，2 秒后原子写（tmp + rename）。进程退出前必须 flushSnapshots()，

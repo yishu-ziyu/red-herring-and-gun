@@ -1,7 +1,7 @@
 import type { SubclaimVerdict, VerdictSource } from "./types.js";
 import { claimAtomKey, compactStrings, compactText, MAX_CLAIM_ATOMS } from "../../../../shared/claimAtomText.js";
 import { bindDualBucketCitations, hasDirectionalBoundHttpUrl } from "../citationBinding.js";
-import { isLabelKey, labelForVerdict, verdictForLabel } from "../../../../shared/domain/labels.js";
+import { FALLBACK_PART_REASON, isLabelKey, labelForVerdict, verdictForLabel } from "../../../../shared/domain/labels.js";
 
 const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated", "disputed"];
 
@@ -92,14 +92,16 @@ export function mergeSubclaimVerdicts(
     if (!atoms.includes(atomKey)) continue;
     covered.add(atomKey);
     // 模型现在给 9 个标签之一（domain/labels）；流水线内部仍读旧判词，由标签推出。
-    const modelLabel = isLabelKey(rec.label) ? rec.label : isLabelKey(rec.verdict) ? rec.verdict : undefined;
+    // 审核降级后的判词优先于旧标签；后续合并不能恢复已经失去依据的判断。
+    const demoted = rec.verdict === "unverified" && typeof rec.demotedFrom === "string";
+    const modelLabel = demoted ? "unresolved" : isLabelKey(rec.label) ? rec.label : isLabelKey(rec.verdict) ? rec.verdict : undefined;
     const verdict = (modelLabel
       ? verdictForLabel(modelLabel)
       : SUBCLAIM_VERDICTS.includes(String(rec.verdict))
         ? String(rec.verdict)
         : "unverified") as SubclaimVerdict["verdict"];
     const label = modelLabel ?? labelForVerdict(verdict);
-    const reason = compactText(rec.reason, 160);
+    const reason = demoted && rec.label !== "unresolved" ? FALLBACK_PART_REASON.unresolved : compactText(rec.reason, 160);
     const aligned = alignFalseEvidenceBuckets({
       verdict,
       sourcesRelatedOnly: rec.sourcesRelatedOnly === true,
@@ -136,8 +138,10 @@ export function mergeSubclaimVerdicts(
       // 判定来历跨合并保留：规则层要分清「模型没判 / 模型判了但被降级 / 模型判了查不清」。
       ...(rec.notJudgedByModel === true ? { notJudgedByModel: true } : {}),
       ...(typeof rec.demotedFrom === "string" ? { demotedFrom: rec.demotedFrom } : {}),
-      label,
-      ...(reason ? { reason } : {}),
+      label: guarded.verdict === verdict ? label : labelForVerdict(guarded.verdict),
+      ...(guarded.verdict !== verdict
+        ? { reason: FALLBACK_PART_REASON[labelForVerdict(guarded.verdict)], demotedFrom: verdict }
+        : reason ? { reason } : {}),
     });
   }
   for (const atom of atoms) {

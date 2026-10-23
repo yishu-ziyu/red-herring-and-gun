@@ -6,9 +6,11 @@
  * 产品规则不写在 HTTP 层；域深度在 lib/。
  */
 
+import { createRunRecorder } from "./lib/runRecorder.js";
+import { randomUUID } from "node:crypto";
 import { createRunService, generateCaseId, hashRunInput } from "./lib/runService.js";
-import { isTerminalStatus, openRunStore } from "./lib/runStore.js";
-import { ensureGuestId, guestIdFromRequest, guestOwnerHash, releaseFreeCheck } from "./lib/checkQuota.js";
+import { isTerminalStatus, openRunStore, type RunRecord } from "./lib/runStore.js";
+import { ensureGuestId, guestIdFromRequest, guestOwnerHash, releaseFreeCheck, freeCheckGate } from "./lib/checkQuota.js";
 import { createShareHandlers } from "./lib/shareHandlers.js";
 import {
   normalizeCaseIntake,
@@ -17,13 +19,11 @@ import {
 } from "./lib/visionIntake.js";
 import { followUpReuseFromClientBrief } from "./lib/followUpReuse.js";
 import { runInvestigation, type InvestigationRunDeps } from "./http/investigationRun.js";
-import { openSse, sseFrame, SSE_KEEPALIVE_FRAME, SSE_KEEPALIVE_MS } from "./http/sseChannel.js";
+import { createSseWriter } from "./http/sseChannel.js";
 import { toPublicStreamEvent } from "./http/publicStream.js";
 
 /**
- * 管道总时限默认值：210s → 300s（P0）→ 420s（给 MiniMax-M2.7 作判断 180s 留余量）。
- * 依据：真实走查那一轮总时长压到 210 秒线附近，管线在 225.9s 才真正跑完并落了一份带结论的快照，
- * 而客户端在 210.0s 已经被判成「没查完」——那份 16 秒后产出的真结论没有任何人看得到。
+ * 调查总时限的默认值；可通过 ORCHESTRATE_TOTAL_TIMEOUT_MS 覆盖。
  */
 const PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT = 420_000;
 
@@ -72,231 +72,306 @@ function readJson(req: any) {
 function sendJson(res: any, status: number, body: unknown) {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify(body));
 }
 
 export function createHandlers(env: Record<string, string>) {
-  // 运行身份与取消：存储不可用时退化成进程内注册表，不阻塞启动。
   const runStore = openRunStore();
+  if (!runStore) throw new Error("Investigation storage unavailable; refusing non-durable startup");
   const runs = createRunService({ store: runStore });
-  runs.markInterruptedOnBoot();
-
-  /**
-   * 取消一次正在跑的调查。
-   * 幂等：终态再调无副作用。不可猜的 runId 就是能力凭证。
-   */
-  async function cancelInvestigationHandler(req: any, res: any, next: any) {
-    if (req.method !== "POST") return next();
-    const runId = String(req.params?.runId ?? "").trim();
-    if (!runId) return sendJson(res, 400, { message: "缺少 runId" });
-    const run = runs.get(runId);
-    if (!run) return sendJson(res, 404, { message: "没有这次调查" });
-    // 只有发起调查的浏览器能停它；没有归属的旧调查照旧。
-    if (run.ownerHash) {
-      const guestId = guestIdFromRequest(req);
-      if (!guestId || guestOwnerHash(guestId) !== run.ownerHash) return sendJson(res, 403, { message: "不能停止别人的调查" });
-    }
-    const result = runs.cancel(runId);
-    if (result.kind === "not-found") return sendJson(res, 404, { message: "没有这次调查" });
-    // 立刻把「在停」广播到还开着的流上：客户端不能靠 POST 回执猜流上的状态。
-    runs.publish(runId, { type: "run_state", status: result.run.status, terminal: isTerminalStatus(result.run.status), timestamp: Date.now() });
-    return sendJson(res, 200, {
-      runId,
-      status: result.run.status,
-      accepted: result.kind === "cancelling",
-    });
-  }
-
-  /**
-   * GET /api/investigations/:runId — 刷新恢复。
-   * 只给拿得到不可猜 runId 的人；不跑模型、不检索、不扣额。
-   */
-  async function getInvestigationHandler(req: any, res: any, next: any) {
-    if (req.method !== "GET") return next();
-    const runId = String(req.params?.runId ?? "").trim();
-    if (!runId) return sendJson(res, 400, { message: "缺少 runId" });
-    const run = runs.get(runId);
-    if (!run) return sendJson(res, 404, { message: "没有这次调查" });
-    return sendJson(res, 200, toPublicStreamEvent({
-      runId: run.runId,
-      caseId: run.caseId,
-      status: run.status,
-      revision: run.revision,
-      lastSeq: run.lastSeq,
-      snapshot: run.snapshot,
-      activities: runs.replayActivities(runId, 0),
-      updatedAt: run.updatedAt,
-    }));
-  }
-
-  /**
-   * GET /api/investigations/:runId/events?after=N — 补发 N 之后的活动，再接直播。
-   * 重连不新建 run、不重复扣额；终态的 run 补完就关，不挂长连接。
-   */
-  async function investigationEventsHandler(req: any, res: any, next: any) {
-    if (req.method !== "GET") return next();
-    const runId = String(req.params?.runId ?? "").trim();
-    const run = runId ? runs.get(runId) : null;
-    if (!run) return sendJson(res, 404, { message: "没有这次调查" });
-    const afterRaw = Number(new URL(req.url ?? "/", "http://localhost").searchParams.get("after") ?? 0);
-    const after = Number.isFinite(afterRaw) && afterRaw > 0 ? Math.floor(afterRaw) : 0;
-
-    openSse(res);
-    // 接回补发与直播使用首次提交相同的公开清洗边界（Issue #132 / R11）。
-    const write = (event: object) => {
-      try {
-        res.write(sseFrame(toPublicStreamEvent(event)));
-      } catch {
-        /* 客户端已断开，由 close 收尾 */
-      }
-    };
-
-    write({ type: "run_started", runId, caseId: run.caseId, startedAt: run.createdAt, timestamp: Date.now() });
-    // 补发：先给已经发生过的活动，再给最新快照。
-    for (const activity of runs.replayActivities(runId, after)) {
-      write({ type: "investigation_activity", activity, timestamp: Date.now() });
-    }
-    if (run.snapshot) {
-      write({ type: "investigation_snapshot", investigation: run.snapshot, timestamp: Date.now() });
-    }
-
-    const terminal = isTerminalStatus(run.status);
-    write({ type: "run_state", status: run.status, terminal, timestamp: Date.now() });
-    if (terminal) {
-      res.end();
-      return;
-    }
-
-    const unsubscribe = runs.subscribe(runId, (event) => {
-      write(event);
-      if (event.type === "run_state" && event.terminal === true) close();
-    });
-    const heartbeat = setInterval(() => {
-      try {
-        res.write(SSE_KEEPALIVE_FRAME);
-      } catch {
-        /* ignored */
-      }
-    }, SSE_KEEPALIVE_MS);
-    const close = () => {
-      clearInterval(heartbeat);
-      unsubscribe();
-      if (!res.writableEnded) res.end();
-    };
-    res.on("close", close);
-  }
-
-  const PIPELINE_TOTAL_TIMEOUT_MS = Number(env.ORCHESTRATE_TOTAL_TIMEOUT_MS || PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT);
-  /** 超时后给管线自己收尾的宽限；ORCHESTRATE_LATE_GRACE_MS 可覆盖，默认 120s。 */
-  const PIPELINE_LATE_GRACE_MS = Number(env.ORCHESTRATE_LATE_GRACE_MS || PIPELINE_LATE_GRACE_MS_DEFAULT);
+  const releaseRuntime = runStore.claimRuntime();
+  try { runs.markInterruptedOnBoot(); }
+  catch (error) { releaseRuntime(); throw error; }
+  const protocolVersion = 2;
   const investigationDeps: InvestigationRunDeps = {
-    env,
-    runs,
-    runStore,
-    totalTimeoutMs: PIPELINE_TOTAL_TIMEOUT_MS,
-    lateGraceMs: PIPELINE_LATE_GRACE_MS,
+    env, runs, runStore,
+    totalTimeoutMs: Number(env.ORCHESTRATE_TOTAL_TIMEOUT_MS || PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT),
+    lateGraceMs: Number(env.ORCHESTRATE_LATE_GRACE_MS || PIPELINE_LATE_GRACE_MS_DEFAULT),
   };
 
-  /** 建 run 之前的提前拒绝：退还额度闸发的名额（没有票据时什么也不做；重复退还由 settled 挡住）。 */
-  function releaseEarlyTicket(req: any) {
-    if (req.checkTicket) releaseFreeCheck(req.checkTicket);
+  function ownerOf(req: any): string | null {
+    const guestId = guestIdFromRequest(req);
+    return guestId ? guestOwnerHash(guestId) : null;
   }
 
-  /**
-   * 建 run 之前任何一步抛错（建 run、存储出错）：退还名额并回 500，不让名额悬空。
-   * 进入 runInvestigation 之后由它按结局结算（http/runOutcome.ts）。
-   */
-  async function orchestrateStreamHandler(req: any, res: any, next: any) {
-    try {
-      return await startOrchestrateStream(req, res, next);
-    } catch (error) {
-      console.error("[orchestrate] 调查请求处理出错", error);
-      releaseEarlyTicket(req);
-      if (!res.headersSent) return sendJson(res, 500, { message: "这次核查没能开始，请稍后重试" });
-      if (!res.writableEnded) res.end();
+  function ownedRun(req: any, res: any): RunRecord | null {
+    const runId = String(req.params?.runId ?? "").trim();
+    const run = runId ? runs.get(runId) : null;
+    if (!run) { sendJson(res, 404, { message: "没有这次调查" }); return null; }
+    if (!run.ownerHash || run.ownerHash !== ownerOf(req)) {
+      sendJson(res, 403, { message: "只有发起调查的浏览器能访问它" });
+      return null;
     }
+    return run;
   }
 
-  async function startOrchestrateStream(req: any, res: any, next: any) {
+  function runMeta(run: RunRecord) {
+    return {
+      protocolVersion, runId: run.runId, caseId: run.caseId,
+      conversationId: run.conversationId, parentRunId: run.parentRunId, kind: run.kind,
+      status: run.status, revision: run.revision, lastSeq: run.lastSeq,
+      lastEventSeq: run.lastEventSeq, resultId: run.resultId,
+      createdAt: run.createdAt, updatedAt: run.updatedAt,
+      statusUrl: `/api/investigations/${run.runId}`,
+      eventsUrl: `/api/investigations/${run.runId}/events`,
+      resultUrl: `/api/investigations/${run.runId}/result`,
+      eventCursor: "afterEvent", eventId: "eventSeq",
+    };
+  }
+
+  // Express 4 does not forward rejected async handlers automatically.
+  const guarded = (handler: (req: any, res: any, next: any) => Promise<unknown>) =>
+    async (req: any, res: any, next: any) => {
+      try { return await handler(req, res, next); }
+      catch (error) {
+        if (req.checkTicket) releaseFreeCheck(req.checkTicket);
+        console.error("[investigations] request failed", error);
+        if (!res.headersSent) return sendJson(res, 503, { error: "investigation_unavailable", message: "调查服务暂时不可用，请稍后重试" });
+        return next(error);
+      }
+    };
+
+  const healthHandler = guarded(async (_req, res) => {
+    // Query the same run-store connection used by requests; startup success is not a live probe.
+    runStore.get("__health_probe__");
+    return sendJson(res, 200, { status: "ok", storage: "sqlite", protocolVersion, timestamp: Date.now() });
+  });
+
+  const cancelInvestigationHandler = guarded(async (req, res, next) => {
     if (req.method !== "POST") return next();
+    const run = ownedRun(req, res);
+    if (!run) return;
+    const result = runs.cancel(run.runId);
+    if (result.kind === "not-found") return sendJson(res, 404, { message: "没有这次调查" });
+    return sendJson(res, 200, { runId: run.runId, status: result.run.status, accepted: result.kind === "cancelling" });
+  });
 
-    let payload: any;
-    try {
-      payload = await readJson(req);
-    } catch {
-      releaseEarlyTicket(req);
-      return sendJson(res, 400, { message: "无法解析请求 JSON" });
+  const getInvestigationHandler = guarded(async (req, res, next) => {
+    if (req.method !== "GET") return next();
+    const run = ownedRun(req, res);
+    if (!run) return;
+    return sendJson(res, 200, toPublicStreamEvent({
+      ...runMeta(run), snapshot: run.snapshot, activities: runs.replayActivities(run.runId, 0),
+    }));
+  });
+
+  const listInvestigationsHandler = guarded(async (req, res, next) => {
+    if (req.method !== "GET") return next();
+    const ownerHash = ownerOf(req);
+    if (!ownerHash) return sendJson(res, 403, { message: "需要原浏览器的访客身份才能读取历史" });
+    return sendJson(res, 200, { protocolVersion, investigations: runs.listByOwner(ownerHash).map(run => ({
+      ...runMeta(run), claim: run.snapshot?.originalClaim ?? runs.getInput(run.runId)?.claim ?? "",
+    })) });
+  });
+
+  const investigationResultHandler = guarded(async (req, res, next) => {
+    if (req.method !== "GET") return next();
+    const run = ownedRun(req, res);
+    if (!run) return;
+    const raw = new URL(req.url ?? "/", "http://localhost").searchParams.get("revision");
+    const revision = raw === null ? undefined : Number(raw);
+    if (revision !== undefined && (!/^\d+$/.test(raw!) || !Number.isSafeInteger(revision) || revision < 1)) {
+      return sendJson(res, 400, { message: "revision 必须是正整数" });
     }
+    const result = runs.getResult(run.runId, revision);
+    if (result) return sendJson(res, 200, toPublicStreamEvent({ protocolVersion, ...result }));
+    if (revision !== undefined || isTerminalStatus(run.status)) {
+      return sendJson(res, 404, { ...runMeta(run), error: "result_unavailable", message: "没有这个已发布的结果版本" });
+    }
+    res.setHeader("Retry-After", "2");
+    return sendJson(res, 202, { ...runMeta(run), pending: true });
+  });
 
-    const claim = payload.claim;
-    if (!claim || typeof claim !== "string") {
-      releaseEarlyTicket(req);
+  const investigationMaterialHandler = guarded(async (req, res, next) => {
+    if (req.method !== "GET") return next();
+    const run = ownedRun(req, res);
+    if (!run) return;
+    const materialId = String(req.params?.materialId ?? "");
+    const material = createRunRecorder(run.runId).getMaterial(materialId);
+    if (!material) return sendJson(res, 404, { message: "没有这份调查材料" });
+    res.setHeader("Cache-Control", "private, no-store");
+    return sendJson(res, 200, { ...material, quoteOffsetEncoding: "utf-16" });
+  });
+
+  const deleteInvestigationHandler = guarded(async (req, res, next) => {
+    if (req.method !== "DELETE") return next();
+    const run = ownedRun(req, res);
+    if (!run) return;
+    if (!isTerminalStatus(run.status)) return sendJson(res, 409, { message: "调查仍在进行，请先停止，结束后再删除" });
+    const deleted = runs.deleteOwned(run.runId, run.ownerHash!);
+    if (!deleted) return sendJson(res, 409, { message: "这次调查暂时不能删除" });
+    return sendJson(res, 200, { runId: run.runId, deleted: true });
+  });
+
+  async function streamEvents(req: any, res: any, run: RunRecord, legacyAfter?: number) {
+    const query = new URL(req.url ?? "/", "http://localhost").searchParams;
+    const eventCursor = query.get("afterEvent") ?? req.headers?.["last-event-id"];
+    const oldCursor = query.get("after");
+    const legacy = legacyAfter !== undefined || (eventCursor === undefined && oldCursor !== null);
+    const raw = legacyAfter ?? (legacy ? oldCursor : eventCursor ?? 0);
+    const after = Number(raw);
+    if (!/^\d+$/.test(String(raw)) || !Number.isSafeInteger(after) || after < 0) {
+      return sendJson(res, 400, { message: "事件游标必须是非负整数" });
+    }
+    if (!legacy && after > run.lastEventSeq) return sendJson(res, 400, { message: "事件游标超过这次调查的最后事件" });
+    // Bound each SQLite read; live arrivals during replay stay in the journal, not another queue.
+    let cursor = legacy ? run.lastEventSeq : after;
+    let replayThrough = run.lastEventSeq;
+    const firstPage = legacy ? [] : runs.replayEvents(run.runId, after, 128);
+    const activities = legacy ? runs.replayActivities(run.runId, after) : [];
+    const writer = createSseWriter(res);
+    let replaying = true;
+    const unsubscribe = runs.subscribe(run.runId, event => {
+      const seq = Number(event.eventSeq);
+      if (replaying) {
+        if (Number.isSafeInteger(seq)) replayThrough = Math.max(replayThrough, seq);
+        return;
+      }
+      if (!Number.isSafeInteger(seq) || seq <= cursor) return;
+      cursor = seq;
+      void writer.send(toPublicStreamEvent(event));
+      if (event.type === "run_state" && event.terminal === true) writer.finish();
+    });
+    writer.onClose(unsubscribe);
+    const send = (event: Record<string, unknown>) => writer.send(toPublicStreamEvent(event));
+    try {
+      if (legacy) {
+        await send({ type: "run_started", ...runMeta(run), startedAt: run.createdAt, timestamp: Date.now() });
+        for (const activity of activities) {
+          if (writer.closed) break;
+          await send({ type: "investigation_activity", activity, timestamp: Date.now() });
+        }
+        if (!writer.closed && run.snapshot) await send({ type: "investigation_snapshot", investigation: run.snapshot, timestamp: Date.now() });
+        if (!writer.closed) await send({ type: "run_state", status: run.status, terminal: isTerminalStatus(run.status), timestamp: Date.now() });
+      }
+      let page = firstPage;
+      while (!writer.closed && cursor < replayThrough) {
+        if (!page.length) page = runs.replayEvents(run.runId, cursor, 128);
+        if (!page.length) throw new Error("Durable event cursor has a gap");
+        for (const event of page) {
+          if (writer.closed) break;
+          if (event.eventSeq <= cursor) continue;
+          if (!await send(event)) break;
+          cursor = event.eventSeq;
+        }
+        page = [];
+      }
+      // No await between the catch-up check and live mode: no event can fall between them.
+      replaying = false;
+      if (!writer.closed && isTerminalStatus(runs.get(run.runId)?.status ?? run.status)) writer.finish();
+    } catch (error) {
+      writer.close();
+      throw error;
+    }
+  }
+
+  const investigationEventsHandler = guarded(async (req, res, next) => {
+    if (req.method !== "GET") return next();
+    const run = ownedRun(req, res);
+    if (run) return streamEvents(req, res, run);
+  });
+
+  // Serialize only admission for the same request key, never the investigation itself.
+  // Concurrent retries must see the persisted run before checking an already-reserved quota.
+  const admissions = new Map<string, Promise<void>>();
+  async function lockAdmission(key: string): Promise<() => void> {
+    const previous = admissions.get(key);
+    let release!: () => void;
+    const current = new Promise<void>(resolve => { release = resolve; });
+    admissions.set(key, current);
+    if (previous) await previous;
+    return () => { release(); if (admissions.get(key) === current) admissions.delete(key); };
+  }
+
+  async function startInvestigation(req: any, res: any, next: any, background: boolean) {
+    if (req.method !== "POST") return next();
+    let payload: any;
+    try { payload = await readJson(req); }
+    catch { return sendJson(res, 400, { message: "无法解析请求 JSON" }); }
+    if (!payload || Array.isArray(payload) || typeof payload.claim !== "string" || !payload.claim.trim()) {
       return sendJson(res, 400, { message: "缺少 claim 参数" });
     }
-    const ticket = req.checkTicket;
-    if (!ticket) return;
+    const claim = payload.claim.trim();
+    const bodyKey = typeof payload.clientRequestId === "string" ? payload.clientRequestId.trim() : "";
+    const headerKey = typeof req.headers?.["idempotency-key"] === "string" ? req.headers["idempotency-key"].trim() : "";
+    if ((bodyKey && headerKey && bodyKey !== headerKey) || (bodyKey || headerKey).length > 120) {
+      return sendJson(res, 400, { message: "请求编号不一致或超过 120 个字符" });
+    }
+    const clientRequestId = bodyKey || headerKey || (background ? "" : randomUUID());
+    if (!clientRequestId) return sendJson(res, 400, { message: "需要 clientRequestId 或 Idempotency-Key 才能安全重试" });
+    const kind = payload.kind ?? (payload.followUp === true ? "follow-up" : "initial");
+    if (!["initial", "follow-up", "recheck"].includes(kind)) return sendJson(res, 400, { message: "调查 kind 无效" });
+    for (const key of ["conversationId", "parentRunId", "caseId"]) {
+      if (payload[key] !== undefined && (typeof payload[key] !== "string" || !payload[key].trim() || payload[key].length > 120)) {
+        return sendJson(res, 400, { message: `${key} 必须是有效编号` });
+      }
+    }
     const intake = normalizeCaseIntake(payload.intake);
     const intakeMetadata = buildCaseIntakeMetadata(intake);
     const clientMemoryRecall = normalizeClientMemoryRecall(payload.memoryRecall);
-
-    // 运行身份：clientRequestId 幂等、runId 供取消与后续重连使用。
-    // 没有这条 run 之前，「停止」只能是前端不管结果，服务端照跑照烧。
-    const clientRequestId =
-      typeof payload.clientRequestId === "string" && payload.clientRequestId.trim()
-        ? payload.clientRequestId.trim().slice(0, 120)
-        : null;
-
-    // 追问：服务端没有用户档案，上一轮可见材料由浏览器放在 priorRound 里带来。
-    // 首轮与 legacy 路径不传 followUp（caseId 仍按老规矩当本次 case 用）。
-    const isFollowUp = payload.followUp === true;
-    // 分享只认创建这次调查的浏览器：记下访客 id 的哈希（没有访客 cookie 就在这次响应里发一个）。
-    const ownerHash = guestOwnerHash(ensureGuestId(req, res, ticket.guestId));
-    const clientFollowUpReuse = isFollowUp ? followUpReuseFromClientBrief(payload.priorRound) : null;
-
-    const started = runs.start({
-      // 追问轮是新一轮调查：caseId 另生成一个，
-      // 不拿上一轮的 caseId 当本轮的 caseId（那会让两轮共用同一个案件坐标）。
-      caseId: isFollowUp
-        ? generateCaseId(claim)
-        : typeof payload.caseId === "string" && payload.caseId
-          ? payload.caseId
-          : generateCaseId(claim),
-      ownerHash,
-      clientRequestId,
-      inputHash: hashRunInput(claim, { intake: intakeMetadata }),
+    const clientFollowUpReuse = kind === "follow-up" ? followUpReuseFromClientBrief(payload.priorRound) : null;
+    const guestId = ensureGuestId(req, res);
+    const ownerHash = guestOwnerHash(guestId);
+    const parentRunId = payload.parentRunId?.trim() || undefined;
+    const conversationId = payload.conversationId?.trim() || undefined;
+    const inputHash = hashRunInput(claim, {
+      intake, memoryRecall: clientMemoryRecall, kind, priorRound: payload.priorRound ?? null,
+      parentRunId: parentRunId ?? null, conversationId: conversationId ?? null, caseId: payload.caseId ?? null,
     });
-    if (started.kind === "conflict") {
-      releaseFreeCheck(ticket);
-      return sendJson(res, 409, {
-        message: "同一个请求编号对应了不同的材料，这次没有重复核查。",
-        runId: started.existing.runId,
+    const unlock = await lockAdmission(`${ownerHash}:${clientRequestId}`);
+    let started: ReturnType<typeof runs.start>;
+    let ticket: NonNullable<typeof req.checkTicket>;
+    try {
+      const existing = runs.findExisting(ownerHash, clientRequestId);
+      if (existing) {
+        if (existing.inputHash !== inputHash) return sendJson(res, 409, { message: "同一个请求编号对应了不同的材料", runId: existing.runId });
+        return background ? sendJson(res, 202, { ...runMeta(existing), reused: true }) : streamEvents(req, res, existing, 0);
+      }
+      if (parentRunId) {
+        const parent = runs.get(parentRunId);
+        if (!parent || parent.ownerHash !== ownerHash) return sendJson(res, 403, { message: "不能关联其他浏览器的调查" });
+        if (conversationId && parent.conversationId !== conversationId) return sendJson(res, 409, { message: "父调查不属于这个会话" });
+      }
+      let allowed = false;
+      await freeCheckGate(req, res, (error?: unknown) => { if (error) throw error; allowed = true; });
+      if (!allowed || !req.checkTicket) return;
+      ticket = req.checkTicket;
+      started = runs.start({
+        caseId: kind === "follow-up" ? generateCaseId(claim) : payload.caseId || generateCaseId(claim),
+        ownerHash, clientRequestId, inputHash, conversationId, parentRunId, kind,
+        input: { claim: payload.claim, intake: payload.intake ?? null, memoryRecall: payload.memoryRecall ?? null, priorRound: payload.priorRound ?? null },
       });
-    }
-    if (started.kind === "existing") {
-      releaseFreeCheck(ticket);
-      return investigationEventsHandler({
-        ...req,
-        method: "GET",
-        params: { ...req.params, runId: started.run.runId },
-        url: `/api/investigations/${started.run.runId}/events?after=0`,
-      }, res, next);
-    }
-    return runInvestigation(investigationDeps, {
-      claim,
-      ticket,
-      intake,
-      intakeMetadata,
-      clientMemoryRecall,
-      clientFollowUpReuse,
-      run: { runId: started.run.runId, caseId: started.run.caseId, createdAt: started.run.createdAt },
-    }, res);
+      if (started.kind !== "created") {
+        releaseFreeCheck(ticket);
+        if (started.kind === "conflict") return sendJson(res, 409, { message: "同一个请求编号对应了不同的材料", runId: started.existing.runId });
+        return background ? sendJson(res, 202, { ...runMeta(started.run), reused: true }) : streamEvents(req, res, started.run, 0);
+      }
+    } finally { unlock(); }
+    const createdRun = started.run;
+    const request = {
+      claim, ticket, intake, intakeMetadata, clientMemoryRecall, clientFollowUpReuse,
+      run: { runId: createdRun.runId, caseId: createdRun.caseId, createdAt: createdRun.createdAt },
+    };
+    if (!background) return runInvestigation(investigationDeps, request, res);
+    setImmediate(() => {
+      void runInvestigation(investigationDeps, request).catch(error => {
+        console.error(`[investigations] background execution failed runId=${createdRun.runId}`, error);
+        releaseFreeCheck(ticket);
+        try { runs.finish(createdRun.runId, "interrupted"); }
+        catch (storageError) { console.error("[investigations] failed to persist execution failure", storageError); }
+      });
+    });
+    // Execution owns the ticket once scheduled, even if writing the acceptance response fails.
+    delete req.checkTicket;
+    sendJson(res, 202, { ...runMeta(createdRun), reused: false });
   }
 
   return {
-    ...createShareHandlers({ getRun: (runId) => runs.get(runId) }),
-    orchestrateStreamHandler,
-    cancelInvestigationHandler,
-    getInvestigationHandler,
-    investigationEventsHandler,
+    ...createShareHandlers({ getRun: runId => runs.get(runId), getResult: runId => runs.getResult(runId) }),
+    orchestrateStreamHandler: guarded((req, res, next) => startInvestigation(req, res, next, false)),
+    createInvestigationHandler: guarded((req, res, next) => startInvestigation(req, res, next, true)),
+    healthHandler, cancelInvestigationHandler, getInvestigationHandler, investigationEventsHandler,
+    listInvestigationsHandler, investigationResultHandler, investigationMaterialHandler, deleteInvestigationHandler,
   };
 }

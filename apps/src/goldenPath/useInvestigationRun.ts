@@ -1,12 +1,5 @@
 /**
- * useInvestigationRun — 生产 Golden Path 的唯一 SSE 消费点（Issue #52 第一节硬性架构决定）。
- *
- * 产品 state 只有两样：
- *  1. 最新一份通过 schema 校验的 InvestigationSnapshotV1（来自 investigation_snapshot）；
- *  2. 连接状态与最终 finalReport（complete 事件，用于落库）。
- *
- * raw Agent / tool / search / planner 事件在此被显式忽略——
- * 删掉它们之后生产 Golden Path 仍必须完整工作。
+ * 消费调查流，维护快照、连接状态和最终报告；忽略不供当前界面使用的旧事件。
  */
 import { useCallback, useRef, useState } from "react";
 import {
@@ -36,7 +29,7 @@ const IGNORED_LEGACY_EVENT_TYPES: ReadonlySet<OrchestrateStreamEvent["type"]> = 
   "tool_error",
 ]);
 
-type ConnectionPhase = "connecting" | "live" | "ended" | "failed";
+type ConnectionPhase = "connecting" | "live" | "disconnected" | "ended" | "failed";
 
 /** 停止只分三态：没在停 / 已请求、等后端 / 后端已确认。不提前说「已停止」。 */
 type StopPhase = "idle" | "stopping" | "stopped";
@@ -128,7 +121,7 @@ function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: st
   if (event.type === "investigation_snapshot" && event.investigation) {
     try {
       const snapshot = validateInvestigationSnapshot(event.investigation);
-      return { ...prev, snapshot, connection: "live", errorMessage: "" };
+      return { ...prev, snapshot, connection: isTerminalServerStatus(prev.serverStatus) ? prev.connection : "live", errorMessage: "" };
     } catch {
       // 契约外快照不进产品 state：宁可停留上一份，也不渲染未校验数据。
       return prev;
@@ -144,7 +137,7 @@ function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: st
   if (event.type === "complete") {
     const report = (event.finalReport ?? null) as Record<string, unknown> | null;
     let snapshot = prev.snapshot;
-    // complete 的 finalReport 自带完成态快照（#51）；比流中最后一份更权威。
+    // complete 的 finalReport 自带完成态快照；比流中最后一份更权威。
     const embedded = report && typeof report === "object" ? (report as Record<string, unknown>).investigation : undefined;
     if (embedded) {
       try {
@@ -170,6 +163,10 @@ function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: st
       // 超时后管线最终失败 → 交给现有中断文案与重查入口，超时提示不再并列显示。
       timeoutPending: false,
     };
+  }
+  if (event.type === "transport_error") {
+    if (isTerminalServerStatus(prev.serverStatus) || prev.finalReport) return prev;
+    return { ...prev, connection: "disconnected", timeoutPending: false, errorMessage: event.message ?? "" };
   }
   return prev;
 }
@@ -210,7 +207,12 @@ export function useInvestigationRun() {
     (intake: CaseIntake, options: StartOptions = {}) => {
       const runId = ++runIdRef.current;
       const claim = caseIntakePrimaryText(intake);
-      const submitKey = `${claim}\u0000${intake.links.length}\u0000${intake.images.length}`;
+      const submitKey = JSON.stringify({
+        claim,
+        links: intake.links.map((link) => ({ url: link.url, content: link.scrapedContent })),
+        images: intake.images.map((image) => image.dataUrl),
+        priorRound: options.priorRound,
+      });
       const previous = lastSubmitRef.current;
       // 同一份材料 + 5 秒内重复提交 → 复用同一个 clientRequestId，服务端只建一条 run。
       const clientRequestId =
@@ -232,10 +234,10 @@ export function useInvestigationRun() {
           if (IGNORED_LEGACY_EVENT_TYPES.has(event.type)) continue;
           applyEvent(event, claim);
         }
-        // 流自然结束但没等到 complete（服务端异常收尾）：保留已获快照，标失败。
+        // 流结束不证明调查失败；保留运行身份，允许接回同一轮。
         setState((prev) =>
-          prev.connection === "live" || prev.connection === "connecting"
-            ? { ...prev, connection: prev.finalReport ? "ended" : "failed" }
+          runIdRef.current === runId && (prev.connection === "live" || prev.connection === "connecting")
+            ? { ...prev, connection: prev.finalReport ? "ended" : "disconnected" }
             : prev
         );
       })();
@@ -269,7 +271,9 @@ export function useInvestigationRun() {
   const resume = useCallback(
     (runId: string, after: number, claim: string) => {
       const local = ++runIdRef.current;
-      setState({ ...INITIAL_STATE, runId, connection: "connecting" });
+      setState((prev) => prev.runId === runId
+        ? { ...prev, connection: "connecting", errorMessage: "", timeoutPending: false }
+        : { ...INITIAL_STATE, runId, connection: "connecting" });
       resumeInvestigationStream(
         runId,
         after,
@@ -284,7 +288,7 @@ export function useInvestigationRun() {
             // 服务端已确认终态：补发完就关流，不是「还活着」。超时后晚完成的 run 走的正是这条路——
             // 刷新回来能拿到 phase=complete 的快照，界面必须按「已结束」渲染，不能挂着进行中。
             if (isTerminalServerStatus(prev.serverStatus)) return { ...prev, connection: "ended" };
-            return { ...prev, connection: reason === "failed" ? "failed" : prev.finalReport ? "ended" : "live" };
+            return { ...prev, connection: prev.finalReport ? "ended" : "disconnected" };
           });
         }
       );

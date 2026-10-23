@@ -1,5 +1,5 @@
 /**
- * 调查快照的里程碑（Issue #51，SSE investigation_snapshot）：每次发一份完整的 InvestigationSnapshotV1，前端只取最新版。
+ * 调查快照的里程碑：每次发一份完整的 InvestigationSnapshotV1，前端只取最新版。
  *
  *   received（收到）→ decomposed（拆题一出来就上屏；没拆出条才停在 received·checking）→ investigating（检索开始 / 返回）
  *   → judging（核查绑定 / 来源审计刷新）→ complete（报告 + 复核 + 探活之后）。中断帧由 handlers 补发。

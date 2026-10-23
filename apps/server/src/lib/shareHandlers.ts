@@ -1,8 +1,8 @@
 /**
- * shareHandlers — 不登录也能分享一轮调查（#142 part b）。
+ * shareHandlers — 不登录也能分享一轮调查。
  *
  * 规矩：
- *   1. 分享只含一轮调查，内容只取服务端为这一轮（run）存下的快照，不收浏览器发来的任何正文。
+ *   1. 分享只含一轮调查，内容只取服务端为这一轮（run）发布的固定最终结果，不收浏览器发来的任何正文。
  *      所以没人能借分享发布自己写的任意文字。只有跑完（completed）的一轮能分享。
  *   2. 只有建这轮调查的浏览器（同一个访客 cookie）能建、能撤这一轮的分享。
  *   3. 链接令牌随机、猜不出；库里只存令牌的哈希。撤销之后链接只显示「已撤销」，不显示正文；
@@ -15,7 +15,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "./sqliteStore.js";
 import { followUpQuestionOf } from "./followUpReuse.js";
 import { clientIpKey, guestIdFromRequest, guestOwnerHash } from "./checkQuota.js";
-import type { RunRecord } from "./runStore.js";
+import type { RunRecord, PublishedRunResult } from "./runStore.js";
 import { GUEST_DAILY_SHARES, IP_DAILY_SHARES, shanghaiDayKey } from "../../../shared/quota.js";
 import { scrubFaceText } from "../../../shared/scrubFace.js";
 import { conclusionMissesFollowUp, followUpQuestionLead } from "../../../shared/followUp.js";
@@ -35,16 +35,16 @@ type PublicShareProjection = {
   claim: string;
   /** 结论句：和结果页大字显示的那句一致。 */
   answer: string;
-  /** 整句标签与一句理由（#140）。改版前存下的分享没有这两个字段。 */
+  /** 整句标签与一句理由。改版前存下的分享没有这两个字段。 */
   label?: LabelKey;
   reason?: string;
   rationale?: string;
   boundaries: string[];
   checkedAt?: string;
   createdAt: number;
-  claims: Array<{ text: string; judgment: string | null; label?: LabelKey; reason?: string; evidence: Array<{ role: string; sourceId: string; sentence?: string; note?: string; finding?: string; excerptKind?: string; passage?: string }> }>;
+  claims: Array<{ text: string; judgment: string | null; label?: LabelKey; reason?: string; boundary?: string; evidence: Array<{ role: string; sourceId: string; sentence?: string; note?: string; finding?: string; excerptKind?: string; passage?: string; provenance?: string; originDate?: string }> }>;
   deferredClaims: string[];
-  sources: Array<{ id: string; title: string; url: string; publishedAt?: string; retrievedAt?: string; excerptKind?: string; fetchStatus?: string; fetchNote?: string }>;
+  sources: Array<{ id: string; title: string; url: string; publishedAt?: string; retrievedAt?: string; excerptKind?: string; fetchStatus?: string; fetchNote?: string; provenance?: string; originDate?: string }>;
 };
 
 type ShareRecord = { shareId: string; runId: string | null; projection: PublicShareProjection; createdAt: number; revokedAt: number | null };
@@ -115,6 +115,7 @@ function projectionFromSnapshot(snapshotValue: unknown, createdAt: number): Publ
       .map((claim) => ({
         text: str(claim.text),
         judgment: str(claim.judgment) || null,
+        ...(str(claim.boundary) ? { boundary: str(claim.boundary) } : {}),
         ...(isLabelKey(claim.label) ? { label: claim.label } : {}),
         ...(isLabelKey(claim.label) && str(claim.reason) ? { reason: scrubFaceText(str(claim.reason)) } : {}),
         evidence: arr(claim.evidence)
@@ -123,6 +124,7 @@ function projectionFromSnapshot(snapshotValue: unknown, createdAt: number): Publ
           .map((link) => ({
             role: str(link.role),
             sourceId: str(link.sourceId),
+            ...(["prior-round", "knowledge"].includes(str(link.provenance)) ? { provenance: str(link.provenance), originDate: str(link.originDate) } : {}),
             ...(["search-snippet", "page-excerpt"].includes(str(link.excerptKind)) ? { excerptKind: str(link.excerptKind) } : {}),
             ...(str(link.passage) ? { passage: str(link.passage) } : {}),
             // 与结果页同一规则：引号里只放已核对的那一句；没有就给我们的概括。
@@ -139,6 +141,7 @@ function projectionFromSnapshot(snapshotValue: unknown, createdAt: number): Publ
         id: str(source.id),
         title: str(source.title) || str(source.url),
         url: str(source.url),
+        ...(["prior-round", "knowledge"].includes(str(source.provenance)) ? { provenance: str(source.provenance), originDate: str(source.originDate) } : {}),
         ...(str(source.publishedAt) ? { publishedAt: str(source.publishedAt) } : {}),
         ...(str(source.retrievedAt) ? { retrievedAt: str(source.retrievedAt) } : {}),
         ...(["search-snippet", "page-excerpt"].includes(str(source.excerptKind)) ? { excerptKind: str(source.excerptKind) } : {}),
@@ -168,27 +171,25 @@ function hashShareToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
-type ShareRow = { shareId: string; runId: string | null; projection: string; createdAt: number; revokedAt: number | null };
+type ShareRow = { shareId: string; runId: string | null; resultId: string | null; projection: string; createdAt: number; revokedAt: number | null };
 
 type ShareStore = ReturnType<typeof createShareStore>;
 
-function createShareStore(db: DatabaseSync | null) {
-  const memory = new Map<string, ShareRow>();
+function createShareStore(db: DatabaseSync) {
   const find = (shareId: string): ShareRow | undefined =>
-    db ? (db.prepare("SELECT shareId, runId, projection, createdAt, revokedAt FROM shares WHERE shareId = ?").get(shareId) as ShareRow | undefined) : memory.get(shareId);
+    (db.prepare("SELECT shareId, runId, resultId, projection, createdAt, revokedAt FROM shares WHERE shareId = ?").get(shareId) as ShareRow | undefined);
 
   return {
     /** 建分享：返回**明文令牌**，库里只落哈希。 */
-    create(run: RunRecord, projection: PublicShareProjection, now = Date.now()): { token: string } {
+    create(run: RunRecord, resultId: string, projection: PublicShareProjection, now = Date.now()): { token: string } {
       const token = randomBytes(TOKEN_BYTES).toString("base64url");
       const shareId = hashShareToken(token);
-      const row: ShareRow = { shareId, runId: run.runId, projection: JSON.stringify(projection), createdAt: now, revokedAt: null };
-      if (!db) memory.set(shareId, row);
-      else
-        db.prepare("INSERT INTO shares (shareId, caseId, runId, projection, createdAt, revokedAt) VALUES (?, ?, ?, ?, ?, NULL)").run(
+      const row: ShareRow = { shareId, runId: run.runId, resultId, projection: JSON.stringify(projection), createdAt: now, revokedAt: null };
+      db.prepare("INSERT INTO shares (shareId, caseId, runId, resultId, projection, createdAt, revokedAt) VALUES (?, ?, ?, ?, ?, ?, NULL)").run(
           shareId,
           run.caseId,
           run.runId,
+          resultId,
           row.projection,
           now
         );
@@ -212,8 +213,7 @@ function createShareStore(db: DatabaseSync | null) {
       const row = find(shareId);
       if (!row || row.runId !== runId) return false;
       if (row.revokedAt) return true;
-      if (!db) memory.set(shareId, { ...row, revokedAt: now });
-      else db.prepare("UPDATE shares SET revokedAt = ? WHERE shareId = ?").run(now, shareId);
+      db.prepare("UPDATE shares SET revokedAt = ? WHERE shareId = ?").run(now, shareId);
       return true;
     },
   };
@@ -222,7 +222,11 @@ function createShareStore(db: DatabaseSync | null) {
 let cachedStore: ShareStore | null = null;
 
 function shareStore(): ShareStore {
-  if (!cachedStore) cachedStore = createShareStore(openDatabase());
+  if (!cachedStore) {
+    const db = openDatabase();
+    if (!db) throw new Error("Share storage unavailable");
+    cachedStore = createShareStore(db);
+  }
   return cachedStore;
 }
 
@@ -250,7 +254,10 @@ function ownsRun(req: any, run: RunRecord): string | null {
   return guestId;
 }
 
-export function createShareHandlers(deps: { getRun: (runId: string) => RunRecord | null }) {
+export function createShareHandlers(deps: {
+  getRun: (runId: string) => RunRecord | null;
+  getResult: (runId: string) => PublishedRunResult | null;
+}) {
   /** POST /api/investigations/:runId/shares — 请求体一律不读。 */
   async function createShareHandler(req: any, res: any): Promise<void> {
     const runId = String(req.params?.runId ?? "").trim();
@@ -258,8 +265,9 @@ export function createShareHandlers(deps: { getRun: (runId: string) => RunRecord
     if (!run) return sendJson(res, 404, { message: "没有这次调查" });
     const guestId = ownsRun(req, run);
     if (!guestId) return sendJson(res, 403, { message: "只有发起这次调查的浏览器能分享它" });
-    const snapshot = run.snapshot;
-    if (run.status !== "completed" || !snapshot || snapshot.phase !== "complete" || !snapshot.conclusion) {
+    const published = deps.getResult(runId);
+    const snapshot = published?.snapshot;
+    if (run.status !== "completed" || published?.kind !== "final" || !snapshot || snapshot.phase !== "complete" || !snapshot.conclusion) {
       return sendJson(res, 409, { message: "这次调查还没有查完，查完才能分享" });
     }
     const day = shanghaiDayKey();
@@ -267,10 +275,10 @@ export function createShareHandlers(deps: { getRun: (runId: string) => RunRecord
     if (usedToday(sharesByGuest, guestId, day) >= GUEST_DAILY_SHARES || usedToday(sharesByIp, ipKey, day) >= IP_DAILY_SHARES) {
       return sendJson(res, 429, { message: "今天建的分享链接太多了，明天再试" });
     }
-    const { token } = shareStore().create(run, projectionFromSnapshot(snapshot, run.createdAt));
+    const { token } = shareStore().create(run, published.resultId, projectionFromSnapshot(snapshot, published.createdAt));
     countShare(sharesByGuest, guestId, day);
     countShare(sharesByIp, ipKey, day);
-    return sendJson(res, 201, { shareId: token, url: `/s/${token}` });
+    return sendJson(res, 201, { shareId: token, resultId: published.resultId, revision: published.revision, url: `/s/${token}` });
   }
 
   /** DELETE /api/investigations/:runId/shares/:shareId */
@@ -440,6 +448,9 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
     const src = `<span class="ev-src"><span class="role role-${escapeHtml(link.role)}">${ROLE_LABEL[link.role] ?? ""}</span>${
       href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer nofollow">${title} ↗</a>` : `<span>${title}</span>`
     }${source ? publishedTag(source.publishedAt) : ""}</span>`;
+    const provenance = link.provenance ?? source?.provenance;
+    const originDate = link.originDate || source?.originDate;
+    const origin = provenance ? `<span>${provenance === "prior-round" ? "来自上一轮" : "来自历史材料"}${originDate ? ` · ${escapeHtml(originDate)}` : ""}</span>` : "";
     const read = materialReadTag(link, source ?? {});
     const passageNote = [
       materialPassageLabel(link.excerptKind),
@@ -449,7 +460,7 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
     const material = `<details><summary>查看上下文</summary><div class="context">${
       link.passage ? `<blockquote>${escapeHtml(link.passage)}</blockquote>` : "<p>这条依据没有保存可检查的上下文。</p>"
     }<small>${passageNote}</small></div></details>`;
-    return `<li class="ev" data-share-material-kind="${escapeHtml(link.excerptKind ?? "unknown")}" data-share-source-id="${escapeHtml(link.sourceId)}" data-share-role="${escapeHtml(link.role)}">${quote}${note}${finding}${src}<div class="ev-foot"><span class="read read-${read.level}" data-share-material-status>${read.text}</span>${material}</div></li>`;
+    return `<li class="ev" data-share-material-kind="${escapeHtml(link.excerptKind ?? "unknown")}" data-share-source-id="${escapeHtml(link.sourceId)}" data-share-role="${escapeHtml(link.role)}">${quote}${note}${finding}${src}${origin}<div class="ev-foot"><span class="read read-${read.level}" data-share-material-status>${read.text}</span>${material}</div></li>`;
   };
   const claimItems = p.claims
     .map((claim, index) => {
@@ -465,6 +476,7 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
   <div class="part-body">
   <div class="part-head"><span class="part-text">${escapeHtml(claim.text)}</span>${chip}</div>
   ${reason}
+  ${claim.boundary ? `<p class="reason"><strong>不能推出：</strong>${escapeHtml(claim.boundary.replace(/^不能推出[：:]?/, ""))}</p>` : ""}
   ${decisive.length ? `<ul class="evidence">${decisive.join("")}</ul>` : `<p class="empty">没有找到直接支持或反驳这一点的依据。</p>`}
   ${background.length ? `<details><summary>另有 ${background.length} 条相关材料，未用于判断</summary><ul class="evidence">${background.join("")}</ul></details>` : ""}
   </div>

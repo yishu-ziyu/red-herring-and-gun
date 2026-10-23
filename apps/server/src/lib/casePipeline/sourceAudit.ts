@@ -1,5 +1,5 @@
 /**
- * 来源关系审计（Issue #90）：FactChecker 准备上屏的支持 / 反驳来源，必须先经 SourceValidator 对 claimAtom + URL 独立审核。
+ * 来源关系审计：FactChecker 准备上屏的支持 / 反驳来源，必须先经 SourceValidator 对 claimAtom + URL 独立审核。
  *
  * 首次审计没覆盖全部方向性来源时，再审一次；刷新不了（没时间或审计失败）时，
  * 没审过的来源一律只作背景（fail-closed），不会闪一下绿色「支持」再被纠正。

@@ -1,14 +1,11 @@
 /**
- * MiniMax-M3：思考开着，输出预算用官方推荐值。
- *
- * thinking 计入 max_tokens。Agent 自己的 800/2400 会把思考写满、正文为空。
- * 开发阶段不额外设上限——用 MiniMax 文档推荐的 128K（硬顶 512K）。
+ * MiniMax 模型的输出预算、思考选项和调用时限。
+ * thinking 计入 max_tokens，预算需同时容纳思考和正文。
  */
 
 const MINIMAX_M3_RECOMMENDED_MAX_TOKENS = 131072;
 const MINIMAX_M3_ABSOLUTE_MAX_TOKENS = 524288;
 export const MINIMAX_M3_DEFAULT_TIMEOUT_MS = 600000;
-/** MiniMax-M2.7 作判断：四条命题 + 二十来条来源实测 61s 成功、90s 被掐。 */
 export const MINIMAX_M27_DEFAULT_TIMEOUT_MS = 180000;
 export function isMiniMaxM27(model: string): boolean {
   return /^MiniMax-M2\.7(?:-highspeed)?$/i.test(model);

@@ -1,7 +1,5 @@
 /**
- * ResultView — 查完的一轮（#141）：结论 → 每一点的判断和依据 → 追问 / 分享。
- * 依据直接摊在每一点下面，不走抽屉。历史回看、追问轮用同一个版式。
- * 版式是 2026-10-10 用户选的头版式（#150）：大字结论在上，各点不套卡片，证据像脚注。
+ * 展示各项判断、对应依据，以及追问和分享操作。历史记录使用同一视图。
  */
 import { useLayoutEffect, useRef, useState } from "react";
 import type { InvestigationClaim, InvestigationEvidenceLink, InvestigationSnapshotV1, InvestigationSource } from "../../shared/investigation";

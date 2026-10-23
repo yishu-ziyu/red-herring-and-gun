@@ -1,7 +1,5 @@
 /**
- * 检索筛选漏斗 v1（决策：2026-08-06-retrieval-quality-decision）
- * 硬过滤 → 跨源去重 → 可用度打分截断 top-K
- * 纯函数，无 I/O。
+ * 过滤、去重并按可用度保留检索结果；无 I/O。
  */
 
 const DEFAULT_TOP_K = 5;

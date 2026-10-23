@@ -29,6 +29,7 @@ type RetrieveForAtomsHooks = {
 };
 
 export type AtomSearchSource = {
+  materialId?: string;
   url: string;
   title: string;
   snippet: string;

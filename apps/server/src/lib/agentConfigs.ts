@@ -4,9 +4,9 @@
 
 import { LABEL_KEYS } from "../../../shared/domain/labels.js";
 
-// ───────────────────────────────────────────────────────────────
+
 // 类型定义
-// ───────────────────────────────────────────────────────────────
+
 
 interface AgentConfig {
   id: string;
@@ -17,7 +17,7 @@ interface AgentConfig {
   responseSchema: object;
   /**
    * 含推理模型的思考过程（MiniMax 文档：thinking 计入 max_tokens，给少了返回 stop_reason=max_tokens 且没有正文；M2.x 不能关闭思考）。
-   * 只是上限，按实际用量计费。2026-10-10 核查一步给 1400、4000 时仍常见只有思考没有正文。
+   * 这里只设置输出上限；推理模型需要为思考和正文共同预留预算。
    */
   maxTokens: number;
   model?: string;
@@ -39,9 +39,9 @@ interface HandoffStep {
   relationAuditCandidates?: unknown[];
 }
 
-// ───────────────────────────────────────────────────────────────
+
 // JSON Schemas
-// ───────────────────────────────────────────────────────────────
+
 
 const rumorDetectorSchema = {
   type: "object",

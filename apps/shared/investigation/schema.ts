@@ -1,5 +1,5 @@
 /**
- * Investigation Snapshot v1 — 白盒调查语义契约（Issue #51）。
+ * Investigation Snapshot v1 — 白盒调查语义契约。
  *
  * 用户语义契约：原始说法 → 拆分命题 → 出处及其与命题的关系 → 尚缺什么 →
  * 是否存在实质争议 → 当前/最终判断。实现层（Agent / provider / tool / token /
@@ -75,6 +75,8 @@ const InvestigationSourceSchema = Type.Object(
     /** 由规范化 URL 确定性派生；跨 Snapshot 稳定，不是注册序号。 */
     id: Type.String(),
     url: Type.String(),
+    /** 本次取得的不可变材料记录；旧数据缺省表示未知。 */
+    materialId: Type.Optional(Type.String({ minLength: 1 })),
     title: Type.String(),
     excerpt: Type.Optional(Type.String()),
     publishedAt: Type.Optional(Type.String()),
@@ -82,7 +84,7 @@ const InvestigationSourceSchema = Type.Object(
     reachable: Type.Optional(Type.Boolean()),
     /**
      * 材料复用来源：prior-round 是同一案上一轮。老快照无此字段，照常渲染。
-     * knowledge 来自已删除的证据库（2026-10-09），不再产生；只为让存下来的老快照仍能通过校验。
+     * knowledge 来自已删除的证据库，不再产生；只为让存下来的老快照仍能通过校验。
      */
     provenance: Type.Optional(Type.Union([Type.Literal("knowledge"), Type.Literal("prior-round")])),
     /** 复用条目的已核日期（YYYY-MM-DD）；只有带 provenance 时才有意义。 */
@@ -120,6 +122,12 @@ export type InvestigationSource = Static<typeof InvestigationSourceSchema>;
 const InvestigationEvidenceLinkSchema = Type.Object(
   {
     sourceId: Type.String(),
+    /** 这条证据实际使用的材料版本，不能由来源目录后续更新替换。 */
+    materialId: Type.Optional(Type.String({ minLength: 1 })),
+    /** quote 在材料原文中的 UTF-16 半开区间 [start,end)。 */
+    quoteRange: Type.Optional(Type.Object({
+      start: Type.Integer({ minimum: 0 }), end: Type.Integer({ minimum: 1 }),
+    }, closed)),
     /** unassessed 只是检索返回后的暂态，不得计入支持/反驳，也不得残留在完成态。 */
     role: InvestigationEvidenceRoleSchema,
     finding: Type.Optional(Type.String()),
@@ -174,7 +182,7 @@ const InvestigationClaimSchema = Type.Object(
     checkability: InvestigationCheckabilitySchema,
     progress: InvestigationProgressSchema,
     judgment: Type.Union([InvestigationJudgmentSchema, Type.Null()]),
-    /** 这一截的标签与一句理由（#140）；有判断才有。 */
+    /** 这一截的标签与一句理由；有判断才有。 */
     label: Type.Optional(InvestigationLabelSchema),
     reason: Type.Optional(Type.String()),
     /** 判断透明补充（审计新增）：该命题「仍不能推出什么」，来自生产 boundary 字段。 */
@@ -220,7 +228,7 @@ const InvestigationConclusionSchema = Type.Object(
     /** 结论第一句判断句（含结尾标点）；缺失时前端回退，只渲染 directAnswer。 */
     verdictLead: Type.Optional(Type.String()),
     judgment: InvestigationJudgmentSchema,
-    /** 整句标签（规则表推出）与一句理由（模型写）：结论第一句（#140）。 */
+    /** 整句标签（规则表推出）与一句理由（模型写）：结论第一句。 */
     label: Type.Optional(InvestigationLabelSchema),
     reason: Type.Optional(Type.String()),
     /** 判断句之后的解释文本；为空则不输出该字段（前端不渲染解释层）。 */
