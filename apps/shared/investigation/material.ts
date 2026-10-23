@@ -39,3 +39,29 @@ export function materialRetrievedLabel(value: unknown): string {
   if (!Number.isFinite(date.getTime())) return "取得时间未知";
   return `取得于 ${date.toLocaleString("zh-CN", { hour12: false, timeZone: "Asia/Shanghai" })}`;
 }
+
+/**
+ * 每条来源读没读到正文，由系统标在来源旁边。模型写局限说明时还不知道判定后补读的结果，
+ * 它写的「只有搜索摘要、未读取正文」可能是错的（2026-10-23「看手机近视」：下面明明有一条已读正文）。
+ * 所以去掉模型文字里讲读取状态的分句，其余照留；「未取得研究报告全文」这类讲缺少原始资料的话不算读取状态。
+ */
+const READ_STATUS = /(搜索|检索)摘要|(未|没有|没能|无法)(读取|读到|打开|取得)(原?网页)?正文|(只|仅)(有|拿到|取得)了?摘要/;
+export function withoutReadStatus(text: string): string {
+  const kept = text
+    .split(/(?<=[。；;！？])/)
+    .map((sentence) => {
+      const clauses = sentence.split(/(?<=[，,])/);
+      const rest = clauses.filter((c) => !READ_STATUS.test(c));
+      if (rest.length === clauses.length) return sentence;
+      return rest.join("").replace(/[，,]\s*$/, "");
+    })
+    .join("")
+    .replace(/^[，,；;。\s]+/, "")
+    .trim();
+  return kept && !/[。！？]$/.test(kept) ? `${kept.replace(/[，,；;]+$/, "")}。` : kept;
+}
+
+/** 代码里管原句的一部分叫「一截」，用户看不懂；模型照着提示词也会写出来。 */
+export function plainPartWording(text: string): string {
+  return text.replace(/(两|三|四|五|几|各|每|这一|那一|另一|某一|一)截/g, "$1点");
+}

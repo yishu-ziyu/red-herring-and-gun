@@ -114,6 +114,27 @@ function timeoutSignal(parent: AbortSignal, ms: number): AbortSignal {
   return AbortSignal.any([parent, AbortSignal.timeout(ms)]);
 }
 
+/**
+ * 转读服务返回整页 Markdown，导航、推荐阅读、评论区都在里面，常把一篇几百字的新闻撑过字数上限，
+ * 被截断的正文又不能用来支持或反驳（2026-10-23 央视健康一篇 362 字的稿件因此作废）。只留正文样子的行。
+ */
+export function cleanReaderText(markdown: string): string {
+  return markdown
+    .split("\n")
+    .map((line) => {
+      const withoutImages = line.replace(/!\[[^\]]*\]\([^)]*\)/g, "");
+      const links = withoutImages.match(/\[[^\]]*\]\([^)]*\)/g) ?? [];
+      const text = withoutImages.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/^[\s*#>|-]+/, "").replace(/\s+/g, " ").trim();
+      const outsideLinks = withoutImages.replace(/\[[^\]]*\]\([^)]*\)/g, "").replace(/[\s*#>|·•\-]+/g, "");
+      // A line that is only a link (menu item, related headline) is not article text.
+      if (links.length > 0 && outsideLinks.length < 10) return "";
+      return text;
+    })
+    // Login prompts and widget labels are short and have no sentence punctuation; article sentences do.
+    .filter((line) => line.length >= 40 || (line.length >= 12 && /[。！？!?]/.test(line)))
+    .join("\n");
+}
+
 function failure(error: unknown, signal: AbortSignal, parent: AbortSignal): Attempt {
   parent.throwIfAborted();
   const msg = error instanceof Error ? error.message : String(error);
@@ -159,7 +180,7 @@ async function readViaJina(url: string, parent: AbortSignal): Promise<Attempt> {
     if (returnedUrl && isBlockedUrl(returnedUrl)) return { ok: false, status: 451, reason: "跳转地址被安全规则拦截" };
     if (/^Warning:.*(?:[45]\d\d|error)/im.test(text)) return { ok: false, status: 403, reason: "原网站拒绝访问" };
     const start = text.search(/^Markdown Content:\s*$/m);
-    return judgeContent((start >= 0 ? text.slice(start).replace(/^Markdown Content:\s*/, "") : text).trim());
+    return judgeContent(cleanReaderText(start >= 0 ? text.slice(start).replace(/^Markdown Content:\s*/, "") : text));
   } catch (error) {
     return failure(error, signal, parent);
   }

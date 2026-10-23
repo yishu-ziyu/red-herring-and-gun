@@ -40,7 +40,7 @@ import {
 } from "../domain/labels.js";
 import { findClaimSourceRelationAudit, investigationSourceId, normalizeInvestigationSourceUrl } from "./sourceIdentity.js";
 import { dateFromUrl, normalizePublishedDate } from "./sourceDate.js";
-import { SOURCE_CONTENT_MAX_CHARS } from "./material.js";
+import { SOURCE_CONTENT_MAX_CHARS, plainPartWording, withoutReadStatus } from "./material.js";
 import { verbatimQuote } from "./quote.js";
 
 export type InvestigationBuildInput = {
@@ -960,12 +960,13 @@ export function buildInvestigationSnapshot(
     const gaps: InvestigationGap[] = [];
     const seenGap = new Set<string>();
     for (const g of verdict?.evidenceGaps ?? []) {
-      if (seenGap.has(g)) continue;
-      seenGap.add(g);
+      const description = withoutReadStatus(plainPartWording(g));
+      if (!description || seenGap.has(description)) continue;
+      seenGap.add(description);
       gaps.push({
         id: `gap-${a.order + 1}-${gaps.length + 1}`,
         claimId: `claim-${a.order + 1}`,
-        description: g,
+        description,
         status: "open",
       });
     }
@@ -973,6 +974,7 @@ export function buildInvestigationSnapshot(
     // 画线位置：先找这一截原文；模型补了字（「吃隔夜菜等于吃毒药」）找不到时，用拆题给的逐字片段（「等于吃毒药」）。
     const spanText = originalClaim.includes(a.text) ? a.text : (types.get(a.key)?.span ?? "");
     const span = spanText ? originalClaim.indexOf(spanText) : -1;
+    const boundary = verdict?.boundary ? withoutReadStatus(plainPartWording(verdict.boundary)) : "";
     return {
       id: `claim-${a.order + 1}`,
       text: a.text,
@@ -981,8 +983,8 @@ export function buildInvestigationSnapshot(
       checkability: a.checkability,
       progress: progressFor(phase, bundle.searchedKeys.has(a.key), judgment !== null),
       judgment,
-      ...(label ? { label, reason: reason ?? FALLBACK_PART_REASON[label] } : {}),
-      ...(verdict?.boundary ? { boundary: verdict.boundary } : {}),
+      ...(label ? { label, reason: plainPartWording(reason ?? FALLBACK_PART_REASON[label]) } : {}),
+      ...(boundary ? { boundary } : {}),
       evidence,
       gaps,
     };
@@ -1084,7 +1086,9 @@ export function buildInvestigationSnapshot(
           const relabel = wholeLabelFor(redo.rule, shown.map((p) => ({ role: p.role, standing: p.standing, label: p.label ?? "unresolved" })));
           if (relabel !== wholeLabel) {
             wholeLabel = relabel;
-            wholeReason = `${shown.map((p) => `「${clip(p.text, 40)}」${LABEL_TEXT[p.label ?? "unresolved"]}`).join("；")}。`;
+            // 只有一点时，「「X」夸大了」只是把说法和标签重复一遍；用这一点自己的理由。
+            const onlyReason = shown.length === 1 ? claimByKey.get(shown[0]!.key)?.reason : undefined;
+            wholeReason = onlyReason || `${shown.map((p) => `「${clip(p.text, 40)}」${LABEL_TEXT[p.label ?? "unresolved"]}`).join("；")}。`;
           }
         }
         if (textHasLead) {
@@ -1096,13 +1100,14 @@ export function buildInvestigationSnapshot(
         }
       }
       const shownJudgment = wholeLabel ? labelToJudgment(wholeLabel) : overallJudgment;
+      const plain = (text: string) => withoutReadStatus(plainPartWording(text));
       conclusion = {
-        directAnswer,
-        ...(layers.verdictLead ? { verdictLead: layers.verdictLead } : {}),
-        ...(layers.rationale ? { rationale: layers.rationale } : {}),
+        directAnswer: plain(directAnswer) || directAnswer,
+        ...(layers.verdictLead ? { verdictLead: plain(layers.verdictLead) || layers.verdictLead } : {}),
+        ...(layers.rationale && plain(layers.rationale) ? { rationale: plain(layers.rationale) } : {}),
         judgment: shownJudgment,
         ...(wholeLabel ? { label: wholeLabel } : {}),
-        ...(wholeLabel && wholeReason ? { reason: wholeReason } : {}),
+        ...(wholeLabel && wholeReason ? { reason: plain(wholeReason) || wholeReason } : {}),
         boundaries,
         claimIds: claims.map((c) => c.id),
         sourceIds: sources.filter((s) => citedUrls.has(s.url)).map((s) => s.id),
