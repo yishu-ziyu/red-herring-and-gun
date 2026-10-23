@@ -103,6 +103,10 @@ function standingOf(verdict: Report | undefined): PartStanding {
 
 const ROLES: Record<string, PartRole> = { main: "main", premise: "premise", background: "background" };
 
+function linkedSources(list: unknown): number {
+  return Array.isArray(list) ? list.filter((s) => /^https?:\/\//i.test(String((s as { url?: unknown } | null)?.url ?? ""))).length : 0;
+}
+
 /** 可核查的部分及其角色。拆题标了角色就用；没标时排序第一条可核查的是主要主张，其余算必要前提。 */
 export function listAssessedClaims(report: Report, input: SentenceVerdictInput): AssessedPart[] {
   const { verifiable } = listAtomsForSearch(input.claimAtoms, input.claimAtomTypes);
@@ -125,10 +129,13 @@ export function listAssessedClaims(report: Report, input: SentenceVerdictInput):
     const role: PartRole = anyMain ? (declared[index] ?? "premise") : atom === fallbackMain ? "main" : (declared[index] ?? "premise");
     const verdict = findVerdict(report, atom);
     const modelLabel = isLabelKey(verdict?.label) ? verdict.label : undefined;
-    const label = partLabelFor(standing, modelLabel);
+    let label = partLabelFor(standing, modelLabel);
+    // 部分属实要有支持也有反驳；只有反驳时，读者看到的是一条反驳配「部分属实」。同一类里改为夸大了，模型理由仍然成立。
+    if (label === "partly-true" && linkedSources(verdict?.supportingSources) === 0 && linkedSources(verdict?.contradictingSources) > 0) label = "exaggerated";
     const modelReason = typeof verdict?.reason === "string" ? verdict.reason.trim() : "";
     // 代码改了模型的标签时，模型那句理由说的是另一个标签，不能留。
-    const reason = label === modelLabel && modelReason ? modelReason : FALLBACK_PART_REASON[label];
+    const sameClassSwap = modelLabel === "partly-true" && label === "exaggerated";
+    const reason = (label === modelLabel || sameClassSwap) && modelReason ? modelReason : FALLBACK_PART_REASON[label];
     return {
       text: atom,
       role,
@@ -187,6 +194,12 @@ function wholeReasonOf(parts: readonly AssessedPart[], label: LabelKey, factChec
   const pick = (value: unknown) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "");
   const model = firstSentence(pick(factCheckReason), label);
   if (model) return model;
+  // 只有一截时，「「X」部分属实」只是把说法和标签重复一遍；用这一截自己的理由。
+  const only = parts.length === 1 ? parts[0]! : undefined;
+  if (only?.reason && only.reason !== FALLBACK_PART_REASON[only.label ?? label]) {
+    const own = firstSentence(only.reason, label);
+    if (own) return own;
+  }
   if (parts.length > 0) return `${parts.map(partLine).join("；")}。`;
   return FALLBACK_PART_REASON[label];
 }

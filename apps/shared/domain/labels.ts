@@ -163,11 +163,14 @@ export function standingForLabel(label: LabelKey): PartStanding {
 /**
  * 标签要有证据撑着（#140）：属实 / 基本属实至少一条支持，不属实至少一条反驳，
  * 部分属实 / 夸大了至少一条支持或反驳。撑不住就降为还查不清。
+ * 部分属实说的是「一部分被支持、一部分被反驳」：只有反驳、没有支持时，读者看到的是一条反驳配一个「部分属实」，
+ * 改成同一类里的夸大了（有一部分道理，原话说得太重）。
  */
 export function labelBackedByEvidence(label: LabelKey, support: number, contradict: number): LabelKey {
   if ((label === "true" || label === "mostly-true") && support === 0) return "unresolved";
   if (label === "false" && contradict === 0) return "unresolved";
   if ((label === "partly-true" || label === "exaggerated") && support + contradict === 0) return "unresolved";
+  if (label === "partly-true" && support === 0) return "exaggerated";
   return label;
 }
 

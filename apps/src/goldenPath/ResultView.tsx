@@ -257,6 +257,8 @@ export function PartNumber({ index }: { index: number }) {
 export function EvidenceRow({ claimId, link, source }: { claimId: string; link: InvestigationEvidenceLink; source: InvestigationSource }) {
   // 引文只保证出自这条依据实际取得的文字；摘要不能冒充网页正文。
   const quote = link.quote?.trim() ?? "";
+  // 摘自搜索摘要的句子可能被搜索引擎改写过，不能加引号当作网页原话。
+  const fromSnippet = link.excerptKind !== "page-excerpt";
   const summary = quote ? "" : link.relationReason?.trim() ?? "";
   const href = source.url ? quoteLinkUrl(source.url, link.excerptKind === "page-excerpt" ? quote : "") : "";
   const day = publishedDay(source);
@@ -269,7 +271,12 @@ export function EvidenceRow({ claimId, link, source }: { claimId: string; link: 
   ].filter(Boolean).join("；");
   return (
     <li className="gp-ev" data-gp-evidence-row data-gp-role={link.role} data-gp-evidence-claim={claimId} data-gp-source-id={source.id} data-gp-material-kind={link.excerptKind ?? "unknown"}>
-      {quote ? (
+      {quote && fromSnippet ? (
+        <span className="gp-ev-summary" data-gp-evidence-snippet>
+          <span className="gp-ev-summary-label">搜索摘要</span>
+          {quote}
+        </span>
+      ) : quote ? (
         <q className="gp-ev-quote" data-gp-evidence-quote>{quote}</q>
       ) : summary ? (
         <span className="gp-ev-summary" data-gp-evidence-summary>

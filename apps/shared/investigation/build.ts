@@ -949,8 +949,9 @@ export function buildInvestigationSnapshot(
         evidence.filter((l) => l.role === "contradict").length
       );
       if (backed !== label) {
+        // 同一类里换词（部分属实 → 夸大了）时，模型那句理由仍然成立。
+        if (standingForLabel(backed) !== standingForLabel(label)) reason = undefined;
         label = backed;
-        reason = undefined;
       }
       reason = reason || FALLBACK_PART_REASON[label];
       judgment = labelToJudgment(label);

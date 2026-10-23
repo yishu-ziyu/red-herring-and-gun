@@ -9,9 +9,6 @@ import { createSourceAudit } from "../sourceAudit.js";
 import type { Retrieval } from "./retrieve.js";
 import { enrichSearchSources, pickUrlsToRead } from "../../sourceContent.js";
 
-// Caps what one page adds to the FactChecker prompt; 8 pages stay well inside the model's context.
-const JUDGE_EXCERPT_CHARS = 8_000;
-
 function fallbackAgentStep(agentId: string, error: unknown, search360Result?: unknown): PipelineStep {
   const message = error instanceof Error ? error.message : `${agentId} failed`;
   const sources = Array.isArray((search360Result as { sources?: unknown[] } | undefined)?.sources)
@@ -60,7 +57,7 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   // 判定前先读原文：FactChecker 要对着正文下判断，而不是对着搜索摘要。
   await enrichSearchSources(atomSearchBundle, ctx.input.signal, ctx.input.deadline, pickUrlsToRead(atomSearchBundle), () => {
     snapshots.investigating({ atomSearchBundle });
-  }, JUDGE_EXCERPT_CHARS);
+  });
   throwIfAborted();
   let factStep: PipelineStep;
   try {
@@ -81,7 +78,7 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   await enrichSearchSources(atomSearchBundle, ctx.input.signal, ctx.input.deadline, selectedUrls, () => {
     // 只发布已取得、尚未核对的材料；不能提前发布 FactChecker 的未审计判词。
     snapshots.investigating({ atomSearchBundle });
-  }, JUDGE_EXCERPT_CHARS);
+  });
   throwIfAborted();
   let sourceStep: PipelineStep;
   try {

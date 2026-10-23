@@ -428,7 +428,10 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
   const sourceById = new Map(p.sources.map((source) => [source.id, source]));
   const evidenceRow = (link: PublicShareProjection["claims"][number]["evidence"][number]): string => {
     const source = sourceById.get(link.sourceId);
-    const quote = link.sentence ? `<q data-share-quote>${escapeHtml(link.sentence)}</q>` : "";
+    // 摘自搜索摘要的句子可能被搜索引擎改写过，不能加引号当作网页原话。
+    const quote = !link.sentence ? ""
+      : link.excerptKind === "page-excerpt" ? `<q data-share-quote>${escapeHtml(link.sentence)}</q>`
+      : `<span class="ev-note" data-share-snippet><i>搜索摘要</i>${escapeHtml(link.sentence)}</span>`;
     const note = !quote && link.note ? `<span class="ev-note" data-share-note><i>概括</i>${escapeHtml(link.note)}</span>` : "";
     const finding = link.finding ? `<div class="ev-finding">${escapeHtml(link.finding)}</div>` : "";
     if (!quote && !note && !finding && !link.passage) return "";
