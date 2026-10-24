@@ -1,7 +1,7 @@
 // 右侧「当前 agent 的实际产出」。思考折叠照抄 AI Elements Reasoning（https://ai-sdk.dev/elements/components/reasoning），
 // 检索 / 审核的子任务照抄 AI Elements Task（https://ai-sdk.dev/elements/components/task），
 // 长段文字用 AI Elements MessageResponse（https://ai-sdk.dev/elements/components/message，原 Response）渲染。
-import { CheckIcon, FileSearchIcon, ImageIcon, ListTreeIcon, ScaleIcon, XIcon } from "lucide-react";
+import { CheckIcon, FileSearchIcon, ImageIcon, ListTreeIcon, ScaleIcon } from "lucide-react";
 import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-elements/reasoning";
 import { Task, TaskContent, TaskItem, TaskItemFile, TaskTrigger } from "@/components/ai-elements/task";
 import { MessageResponse } from "@/components/ai-elements/message";
@@ -28,7 +28,7 @@ function Thinking({ step, now }: { step: Step; now: number }) {
   const streaming = step.status === "active" && !step.thinkingEndedAt;
   const duration = ((step.thinkingEndedAt ?? now) - step.startedAt) / 1000;
   return (
-    <Reasoning key={step.id} isStreaming={streaming} duration={streaming ? undefined : duration} defaultOpen={false}>
+    <Reasoning key={step.id} isStreaming={streaming} duration={streaming ? undefined : duration}>
       <ReasoningTrigger
         getThinkingMessage={(isStreaming, d) =>
           isStreaming ? <Shimmer duration={1}>思考中</Shimmer> : <p>思考已完成{d !== undefined ? ` · ${d.toFixed(1)}s` : ""}</p>
@@ -150,7 +150,6 @@ function CheckOutput({ output }: { output: Rec }) {
       })}
       {findings.length ? (
         <div className="flex flex-col gap-1">
-          <h4 className="text-xs font-medium text-muted-foreground">关键发现</h4>
           <ul className="list-disc space-y-1 pl-5 text-sm">
             {findings.map((f, i) => (
               <li key={i}>{clean(f)}</li>
@@ -214,17 +213,10 @@ function AuditOutput({ output }: { output: Rec }) {
   );
 }
 
-function WriteOutput({ step, snapshot }: { step: Step; snapshot: InvestigationSnapshotV1 | null }) {
+function WriteOutput({ snapshot }: { snapshot: InvestigationSnapshotV1 | null }) {
   const conclusion = snapshot?.phase === "complete" ? snapshot.conclusion : undefined;
-  const passed = rec(step.output).passed;
   return (
     <div className="flex flex-col gap-3 text-sm">
-      {passed !== undefined ? (
-        <p className="flex items-center gap-2 text-muted-foreground">
-          {passed ? <CheckIcon className="size-4 text-emerald-600" /> : <XIcon className="size-4 text-amber-600" />}
-          {passed ? "复核通过" : "复核提出了修改，已按材料改写"}
-        </p>
-      ) : null}
       {conclusion ? (
         <div className="flex flex-col gap-2 rounded-md border p-3">
           {conclusion.label ? <LabelBadge label={conclusion.label} className="h-6 text-sm" /> : null}
@@ -252,7 +244,7 @@ export function StepOutput({ step, snapshot, now, lines }: { step: Step; snapsho
   const output = step.output ? rec(step.output) : null;
   const body = (() => {
     if (step.kind === "search" && !step.approx) return <SearchOutput step={step} />;
-    if (step.kind === "write" && (output || snapshot?.phase === "complete")) return <WriteOutput step={step} snapshot={snapshot} />;
+    if (step.kind === "write" && (output || snapshot?.phase === "complete")) return <WriteOutput snapshot={snapshot} />;
     if (!output) return null;
     if (step.kind === "vision") return <VisionOutput output={output} />;
     if (step.kind === "split") return <SplitOutput output={output} />;

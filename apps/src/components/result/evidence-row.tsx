@@ -68,16 +68,6 @@ export function EvidenceRow({
         <span className="min-w-0 truncate text-muted-foreground">{clean(ev.linkText)}</span>
       </div>
       <p className="text-sm leading-relaxed">
-        {ev.quote?.kind === "snippet" ? (
-          <Badge variant="secondary" className="mr-1 align-middle">
-            {w.snippetTag}
-          </Badge>
-        ) : null}
-        {ev.quote?.kind === "summary" ? (
-          <Badge variant="secondary" className="mr-1 align-middle">
-            {w.summaryTag}
-          </Badge>
-        ) : null}
         {quote ? (
           ev.quote?.kind === "summary" ? (
             <span>{quote}</span>
@@ -89,7 +79,6 @@ export function EvidenceRow({
       </p>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <span>{ev.published ?? w.publishedUnknown}</span>
-        <span>{ev.read.text}</span>
         {ev.dead ? <span className="text-amber-700">{w.deadLink}</span> : null}
         {ev.provenance ? (
           <span>
@@ -113,7 +102,6 @@ export function EvidenceRow({
               <p className="max-h-48 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">{clean(ev.passage)}</p>
             </div>
           ) : null}
-          <p className="text-xs text-muted-foreground">{clean(ev.passageNote)}</p>
         </CollapsibleContent>
       </Collapsible>
     </li>

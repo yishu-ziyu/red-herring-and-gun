@@ -68,7 +68,7 @@ export function HistorySheet({ open, onOpenChange }: { open: boolean; onOpenChan
       <SheetContent side="right" className="w-full gap-0 p-0 data-[side=right]:w-full data-[side=right]:sm:max-w-md">
         <SheetHeader className="border-b">
           <SheetTitle>历史记录</SheetTitle>
-          <SheetDescription>点开直接看结果，不会重新核查。</SheetDescription>
+          <SheetDescription className="sr-only">历史记录</SheetDescription>
         </SheetHeader>
         <ScrollArea className="min-h-0 flex-1">
           <div className="flex flex-col gap-6 p-4">
@@ -80,7 +80,6 @@ export function HistorySheet({ open, onOpenChange }: { open: boolean; onOpenChan
             ) : (
               <>
                 <section className="flex flex-col gap-2">
-                  <h3 className="text-xs font-medium text-muted-foreground">这个浏览器发起的核查</h3>
                   {data.mine.length ? (
                     <ItemGroup className="gap-2">
                       {data.mine.map((entry) => (
@@ -94,7 +93,7 @@ export function HistorySheet({ open, onOpenChange }: { open: boolean; onOpenChan
                           <HistoryIcon />
                         </EmptyMedia>
                         <EmptyTitle>还没有记录</EmptyTitle>
-                        <EmptyDescription>{data.error || "在这个浏览器里核查过的说法会列在这里。"}</EmptyDescription>
+                        {data.error ? <EmptyDescription>{data.error}</EmptyDescription> : null}
                       </EmptyHeader>
                     </Empty>
                   )}

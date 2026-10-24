@@ -149,7 +149,6 @@ export function ResultView({ run, mode = "owner" }: { run: RunData; mode?: "owne
     <div data-gp-result className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardDescription>核查的说法</CardDescription>
           <CardTitle className="text-lg leading-relaxed font-medium">
             {claimText.fromImage ? (
               <span className="inline-flex items-center gap-2">
@@ -223,7 +222,6 @@ export function ResultView({ run, mode = "owner" }: { run: RunData; mode?: "owne
 
       {claims.length ? (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium text-muted-foreground">拆成 {claims.length} 点逐一核对</h2>
           {claims.map((claim, i) => (
             <PointCard key={claim.id} claim={claim} index={i} run={run} numbers={numbers} />
           ))}
@@ -236,7 +234,7 @@ export function ResultView({ run, mode = "owner" }: { run: RunData; mode?: "owne
             <Sources className="mb-0 text-sm text-foreground">
               <SourcesTrigger count={sources.length}>
                 <BookIcon className="size-4" />
-                <span className="font-medium">本次共用到 {sources.length} 份材料</span>
+                <span className="font-medium">全部材料（{sources.length}）</span>
                 <ChevronDownIcon className="size-4" />
               </SourcesTrigger>
               <SourcesContent className="w-full">

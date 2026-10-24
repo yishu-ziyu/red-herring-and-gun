@@ -136,9 +136,6 @@ function StepList({
                     <AgentAvatar kind={step.kind} />
                     <span className="min-w-0 flex-1">
                       <span className={cn("block font-medium text-foreground", active && "font-semibold")}>{meta.title}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {meta.agent} · {meta.job}
-                      </span>
                     </span>
                   </span>
                 }
@@ -167,9 +164,6 @@ function StepList({
                   <AgentAvatar kind={kind} dim />
                   <span className="min-w-0 flex-1">
                     <span className="block font-medium">{STEP_META[kind].title}</span>
-                    <span className="block truncate text-xs">
-                      {STEP_META[kind].agent} · {STEP_META[kind].job}
-                    </span>
                   </span>
                 </span>
               }
@@ -262,7 +256,7 @@ function ActivityPanel({ wb, selected, mode, onMode, cursor, total, onCursor, on
         <div className="flex flex-col gap-2">
           <Slider min={1} max={Math.max(1, total)} step={1} value={[Math.min(cursor, Math.max(1, total))]} onValueChange={([v]) => onCursor(v ?? 1)} aria-label="回到某个时刻" />
           <p className="text-xs text-muted-foreground tabular-nums">
-            停在第 {Math.min(cursor, total)} / {total} 条事件 · +{seconds(wb.lastAt - wb.startedAt) || "0.0 秒"}
+            {seconds(wb.lastAt - wb.startedAt) || "0.0 秒"}
           </p>
         </div>
       ) : null}
@@ -472,9 +466,6 @@ export function RunningView({ data }: { data: RunData }) {
                     <AgentAvatar kind={current.kind} className="size-10" />
                     <div className="min-w-0">
                       <CardTitle>{STEP_META[current.kind].title}</CardTitle>
-                      <CardDescription className="truncate">
-                        {STEP_META[current.kind].agent} · {STEP_META[current.kind].job}
-                      </CardDescription>
                     </div>
                   </div>
                   <CardAction className="flex flex-col items-end gap-1">
@@ -489,7 +480,6 @@ export function RunningView({ data }: { data: RunData }) {
                   </CardAction>
                 </CardHeader>
                 <CardContent>
-                  {current.approx ? <p className="mb-3 text-xs text-muted-foreground">这条旧记录只存了活动，没有逐步耗时和思考过程。</p> : null}
                   <StepOutput step={current} snapshot={wb.snapshot} now={now} lines={wb.lines} />
                 </CardContent>
               </>

@@ -71,6 +71,10 @@ async function run() {
   const lead = page.locator("[data-gp-direct-answer]").first();
   const label = (await lead.locator("[data-gp-conclusion-label]").first().textContent().catch(() => "")).trim();
   const reason = (await lead.locator("[data-gp-conclusion-reason]").first().textContent().catch(() => "")).trim();
+  // Copy the user retired: 「截」 for parts (they are 「点」), agent job titles, read-status jargon, internal review notes.
+  const pageText = await page.locator("body").innerText().catch(() => "");
+  const retired = pageText.match(/.{0,8}(截(?![图断取屏])|拆题员|检索员|核查员|审核员|成稿员|搜索摘要|已读正文|复核通过|逐一核对|条事件).{0,8}/);
+  record("page shows none of the retired copy", !retired, retired ? retired[0] : "");
   record("conclusion shows one of the 9 labels and a reason", LABELS.includes(label) && reason.length > 0, `${label}｜${reason.slice(0, 80)}`);
 
   const parts = await page.locator("[data-gp-result] article[data-gp-claim-id]").evaluateAll((nodes) =>
