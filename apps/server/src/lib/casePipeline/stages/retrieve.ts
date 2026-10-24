@@ -5,13 +5,12 @@ import type { PipelineStep } from "../runCasePipeline.js";
 
 export type Retrieval = {
   atomSearchBundle: AtomSearchBundle;
-  search360Result: unknown;
 };
 
 export async function retrieve(ctx: PipelineContext, rumorStep: PipelineStep): Promise<Retrieval> {
   const { input, hooks, snapshots } = ctx;
   const searchedAtoms: string[] = [];
-  const { atomSearchBundle, search360Result } = await retrieveForAtoms({
+  const atomSearchBundle = await retrieveForAtoms({
     claimAtoms: rumorStep.output.claimAtoms,
     claimAtomTypes: rumorStep.output.claimAtomTypes,
     priorityClaimAtoms: rumorStep.output.priorityClaimAtoms,
@@ -47,5 +46,5 @@ export async function retrieve(ctx: PipelineContext, rumorStep: PipelineStep): P
     claimAtomTypes: rumorStep.output.claimAtomTypes,
     atomSearchBundle,
   });
-  return { atomSearchBundle, search360Result };
+  return { atomSearchBundle };
 }

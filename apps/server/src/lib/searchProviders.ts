@@ -15,16 +15,16 @@ export function getSearchToolName(result: { _source?: string } | undefined) {
   return "Search";
 }
 
-export function build360SearchFailure(query: string, message: string) {
+export function buildSearchFailure(query: string, message: string) {
   return {
     answer: "",
     sources: [],
     supportingEvidence: [],
     contradictingEvidence: [],
-    unresolvedEvidenceGaps: [`360 搜索真实调用失败：${message}`],
+    unresolvedEvidenceGaps: [`搜索真实调用失败：${message}`],
     relatedQuestions: [],
-    model: "360-ai-search:error",
-    traceText: `360 搜索真实调用失败：“${query}”未产生可引用证据。原因：${message}`,
+    model: "search:error",
+    traceText: `搜索真实调用失败：“${query}”未产生可引用证据。原因：${message}`,
     _source: "tool-error",
   };
 }
@@ -78,7 +78,7 @@ export async function retrieveAtomSources(
   execution: ExecutionBudget = {},
 ) {
   const outcome = await searchAtom(atom, { env, onProgress, ...execution });
-  if (!outcome.ok) return build360SearchFailure(atom, outcome.reason);
+  if (!outcome.ok) return buildSearchFailure(atom, outcome.reason);
   return {
     answer: outcome.answer,
     sources: outcome.sources,

@@ -13,7 +13,7 @@ import {
 
 /** Internal roles, vendors, schemas — never on the result page. */
 const JARGON_RE =
-  /wholeClaimAudit|whole_claim_auditor|WholeClaimAudit|wholeClaimAuditPlan|ReportComposer|FactChecker|RumorDetector|SourceValidator|CrossExaminer|AlternativeExplanationSearcher|AgentRuntime|search360|atomSearches|MiniMax-M3|MiniMax|Mimic|StepFun|Tavily|AnySearch|Metaso|function calling|Function Calling|工具调用|智能体|LangChain|CrewAI|\bADK\b|\bAgent\b|360 AI Search|canSay|cannotSay|web_search|web_fetch|todo_write|submit_verdict|investigator/gi;
+  /wholeClaimAudit|whole_claim_auditor|WholeClaimAudit|wholeClaimAuditPlan|ReportComposer|FactChecker|RumorDetector|SourceValidator|CrossExaminer|AlternativeExplanationSearcher|AgentRuntime|webSearch|atomSearches|MiniMax-M3|MiniMax|Mimic|StepFun|Tavily|AnySearch|Metaso|function calling|Function Calling|工具调用|智能体|LangChain|CrewAI|\bADK\b|\bAgent\b|360 AI Search|canSay|cannotSay|web_search|web_fetch|todo_write|submit_verdict|investigator/gi;
 
 function dropInternalSentences(text: string): string {
   return text

@@ -5,6 +5,7 @@
  *
  * 不认识 SSE：订阅者来去不影响执行，取消是 run 自己的操作。
  */
+import { searchResultOf } from "../atomSearch.js";
 import { runCasePipeline } from "../casePipeline/runCasePipeline.js";
 import { IMAGE_UNREADABLE_ONLY_MESSAGE, ImageUnreadableError, readIntake, type IntakeResult } from "../casePipeline/stages/intake.js";
 import { applyContextCrossCheckToReport } from "../contextCrossCheck.js";
@@ -15,7 +16,7 @@ import { createOrchestrateAdapter } from "../orchestrate.js";
 import { createRunRecorder, type RunRecorder } from "../runRecorder.js";
 import type { RunService } from "../runService.js";
 import {
-  build360SearchFailure,
+  buildSearchFailure,
   retrieveAtomSources,
   type SearchProgressEvent,
 } from "../searchProviders.js";
@@ -57,7 +58,7 @@ function makeSearchOneAtom(
     } catch (error) {
       execution.signal?.throwIfAborted();
       const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
-      result = build360SearchFailure(atom, message);
+      result = buildSearchFailure(atom, message);
     }
     recorder?.recordMaterial({ kind: "search-response", content: JSON.stringify(result), metadata: { query: atom } });
     return result;
@@ -158,7 +159,7 @@ async function execute(deps: InvestigationRunDeps, request: InvestigationRequest
       result = await withTimeout(pipelinePromise, lateGraceMs, TIMEOUT_LABEL);
     }
     signal.throwIfAborted();
-    console.log(`[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length}`);
+    console.log(`[atom_search] sources=${searchResultOf(result.atomSearchBundle).sources.length}`);
 
     recorder.assertHealthy();
     const failed = result.finalReport._source === "error-boundary";

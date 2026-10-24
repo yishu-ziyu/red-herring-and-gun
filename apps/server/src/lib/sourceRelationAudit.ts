@@ -1,3 +1,4 @@
+import { directionalSources } from "./agents/sourceValidator.js";
 import { stripCitationMarkers } from "./citationBinding.js";
 import { findClaimSourceRelationAudit } from "../../../shared/investigation/sourceIdentity.js";
 
@@ -27,12 +28,6 @@ type VerdictLike = {
 function normalizedUrl(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
-function sourceList(value: unknown): SourceLike[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is SourceLike => Boolean(item) && typeof item === "object")
-    : [];
-}
-
 function parseClaimSourceRelationAudits(value: unknown): ClaimSourceRelationAudit[] {
   if (!Array.isArray(value)) return [];
   const out: ClaimSourceRelationAudit[] = [];
@@ -65,9 +60,8 @@ export function relationAuditCoversDirectionalSources(
     if (!item || typeof item !== "object") continue;
     const verdict = item as VerdictLike;
     const atom = typeof verdict.claimAtom === "string" ? verdict.claimAtom : "";
-    for (const source of [...sourceList(verdict.supportingSources), ...sourceList(verdict.contradictingSources)]) {
-      const url = normalizedUrl(source.url);
-      if (url && !findClaimSourceRelationAudit(rows, atom, url)) return false;
+    for (const { url } of directionalSources(verdict)) {
+      if (!findClaimSourceRelationAudit(rows, atom, url)) return false;
     }
   }
   return true;
@@ -92,31 +86,27 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
     let hadDirectional = false;
     let hadTruncated = false;
 
-    const place = (source: SourceLike, original: "support" | "contradict") => {
-      const url = normalizedUrl(source.url);
-      if (!url) return;
+    for (const { source, url, relation: original } of directionalSources(verdict)) {
       hadDirectional = true;
       if (source.fetchStatus === "truncated") {
         // 未读部分可能含否定或适用条件，局部正文不能作为这条命题的方向性依据。
         hadTruncated = true;
         changed = true;
-        return;
+        continue;
       }
       const audit = findClaimSourceRelationAudit(audits, claimAtom, url);
       // 只记方向性候选（支持 / 反驳）没有核验结果的情况：这些来源会被降为只作背景。
       if (!audit && audits.length > 0) console.warn(`[relation-audit] directional source has no audit claimAtom=${JSON.stringify(claimAtom)} url=${url}`);
       if (!audit || audit.relation === "context-only" || audit.relation === "unverified") {
         changed = true;
-        return;
+        continue;
       }
       // The quoted sentence was picked for the other direction; it does not belong to the moved row.
       const placed = audit.relation === original ? source : { ...source, quote: "" };
       if (audit.relation === "support") support.push(placed);
       else contradict.push(placed);
       if (audit.relation !== original) changed = true;
-    };
-    for (const source of sourceList(verdict.supportingSources)) place(source, "support");
-    for (const source of sourceList(verdict.contradictingSources)) place(source, "contradict");
+    }
 
     const verdictNorm = typeof verdict.verdict === "string" ? verdict.verdict.trim().toLowerCase() : "";
     const directionConsistent =

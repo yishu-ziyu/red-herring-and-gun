@@ -13,6 +13,7 @@ import {
   type AtomSearchBundle,
 } from "./atomSearch.js";
 import { normalizeReportCitations } from "./citationBinding.js";
+import { evidenceGateFor } from "./evidenceGate.js";
 
 type AssembleFinalReportInput = {
   finalReport: Record<string, unknown>;
@@ -20,7 +21,6 @@ type AssembleFinalReportInput = {
   rumorStep: { output?: Record<string, unknown> } | null | undefined;
   /** 当前生效的公开判词（CaseState.subclaimVerdicts） */
   verdicts: unknown;
-  searchSources?: Array<{ url?: unknown }>;
   atomSearchBundle?: AtomSearchBundle | null;
 };
 
@@ -63,7 +63,7 @@ function buildClaimItems(
  * 写入 finalReport。
  */
 export function assembleFinalReport(input: AssembleFinalReportInput): void {
-  const { finalReport, rumorStep, verdicts, searchSources, atomSearchBundle } = input;
+  const { finalReport, rumorStep, verdicts, atomSearchBundle } = input;
   if (!finalReport || typeof finalReport !== "object") return;
 
   const rumorOutput = rumorStep?.output ?? {};
@@ -72,11 +72,12 @@ export function assembleFinalReport(input: AssembleFinalReportInput): void {
     atomSearchBundle?.atomsSearched && atomSearchBundle.atomsSearched.length > 0
       ? atomSearchBundle.atomsSearched
       : selectAtomsToSearch(listed.verifiable, listed.typeByKey);
-  let merged = mergeSubclaimVerdicts(searched, verdicts, searchSources);
-  if (atomSearchBundle?.byAtomKey) {
+  const gate = atomSearchBundle ? evidenceGateFor(atomSearchBundle) : null;
+  let merged = mergeSubclaimVerdicts(searched, verdicts, gate?.knownUrls ?? null);
+  if (gate) {
     merged = bindAtomEvidenceToVerdicts(
       merged as Array<SubclaimVerdict & { [key: string]: unknown }>,
-      atomSearchBundle.byAtomKey,
+      gate,
     ) as SubclaimVerdict[];
   }
   merged = applyUnsearchedAtomVerdicts(merged, listed.verifiable, searched);

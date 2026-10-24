@@ -30,10 +30,7 @@ type WorkRole = Static<typeof WorkRoleSchema>;
 const ActivityKindSchema = Type.Union([
   Type.Literal("claim_decomposed"),
   Type.Literal("search_started"),
-  /**
-   * 同一案上一轮证据够用：该命题不再联网检索。
-   * 没有可归属对象（动作类）：claimIds / sourceIds 留空。
-   */
+  /** 已不再产生；留着让早先存下的活动仍能通过校验。 */
   Type.Literal("prior_round_reuse"),
   Type.Literal("source_found"),
   Type.Literal("source_checked"),
@@ -176,20 +173,6 @@ export function createActivityLog(runId: string) {
     /** 动作类事件：没有可归属对象，只能描述动作。 */
     recordSearchStarted(query: string): PublicActivity[] {
       return push({ kind: "search_started", claimIds: [], sourceIds: [], payload: { query } });
-    },
-
-    /**
-     * 同一案上一轮证据够用 → 该命题这次不联网检索。
-     * 与 search_started 同类：动作类、引用留空；日期可缺（不编日期）。
-     */
-    recordPriorRoundReuse(originDate: string): PublicActivity[] {
-      const day = String(originDate ?? "").trim();
-      return push({
-        kind: "prior_round_reuse",
-        claimIds: [],
-        sourceIds: [],
-        payload: day ? { originDate: day } : {},
-      });
     },
 
     /** 快照先落，再允许引用。同一份快照重复投影不产生新活动。 */

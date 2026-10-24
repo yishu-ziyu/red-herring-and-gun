@@ -28,7 +28,6 @@ export type CaseState = {
   rumorStep: PipelineStep;
   /** 逐命题检索包。 */
   atomSearchBundle: AtomSearchBundle;
-  search360Result: unknown;
   /** 核查模型的原始输出，之后不再改写。 */
   factStep: PipelineStep;
   /** 当前生效的来源关系审计。 */

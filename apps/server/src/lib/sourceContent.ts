@@ -1,7 +1,7 @@
 import type { RunRecorder } from "./runRecorder.js";
 import { ARTICLE_TIMEOUT_MS, fetchPage, isPublicHttpUrl, pageCacheFor, UnreachablePageError, type PageCache } from "./publicWeb.js";
 import { isBlockedUrl } from "./ssrfGuard.js";
-import type { AtomSearchBundle, AtomSearchSource } from "./atomSearch.js";
+import { atomSearchesForAgent, type AtomSearchBundle, type AtomSearchSource } from "./atomSearch.js";
 import { SOURCE_CONTENT_MAX_CHARS } from "../../../shared/investigation/material.js";
 
 const MAX_URLS = 8;
@@ -153,13 +153,13 @@ async function readSource(url: string, signal: AbortSignal, maxChars: number, ca
 }
 
 function unread(source: AtomSearchSource): boolean {
-  return !source.provenance && source.excerptKind !== "page-excerpt" && (source.fetchStatus === undefined || source.fetchStatus === "snippet-only");
+  return source.excerptKind !== "page-excerpt" && (source.fetchStatus === undefined || source.fetchStatus === "snippet-only");
 }
 
 /** 每个原子取排名靠前的几条，判定前先读原文；总数受 MAX_URLS 限制。 */
 export function pickUrlsToRead(bundle: AtomSearchBundle, perAtom = 3): string[] {
   const picked = new Set<string>();
-  const lists = bundle.forAgent.map((item) => item.sources.filter((s) => /^https?:\/\//i.test(s.url) && unread(s)));
+  const lists = atomSearchesForAgent(bundle).map((item) => item.sources.filter((s) => /^https?:\/\//i.test(s.url) && unread(s)));
   for (let rank = 0; rank < perAtom && picked.size < MAX_URLS; rank++) {
     for (const list of lists) {
       const source = list[rank];
@@ -172,8 +172,7 @@ export function pickUrlsToRead(bundle: AtomSearchBundle, perAtom = 3): string[] 
 /** 只提升本轮检索材料；不增加搜索或模型调用，所有消费者仍读同一 canonical 材料。 */
 export async function enrichSearchSources(bundle: AtomSearchBundle, signal?: AbortSignal, deadline?: number, selectedUrls: readonly string[] = [], onSource?: () => void, maxChars = SOURCE_CONTENT_MAX_CHARS, recorder?: RunRecorder): Promise<void> {
   signal?.throwIfAborted();
-  const lists = Object.values(bundle.byAtomKey);
-  const all = [...lists, bundle.aggregate.sources as AtomSearchSource[], ...bundle.forAgent.map((item) => item.sources)];
+  const all = Object.values(bundle.byAtomKey);
   const urls = new Set<string>();
   for (const url of selectedUrls) {
     if (urls.size >= MAX_URLS) break;

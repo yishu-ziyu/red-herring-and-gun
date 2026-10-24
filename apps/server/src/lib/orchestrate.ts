@@ -51,7 +51,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
     onComplete?: (step: any) => void;
     onError?: (agentId: string, job: AgentJob, error: unknown) => void;
   }): RunAgentFn {
-    return async function runAgent(agentId, steps, search360Result?, atomSearchBundle?, execution = {}) {
+    return async function runAgent(agentId, steps, searchResult?, atomSearchBundle?, execution = {}) {
       const signal = execution.signal && deps.signal
         ? AbortSignal.any([execution.signal, deps.signal]) : execution.signal ?? deps.signal;
       signal?.throwIfAborted();
@@ -68,7 +68,7 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
         visualExtraction: opts.visualExtraction,
         memoryRecall: opts.clientMemoryRecall,
         priorRoundContext: opts.priorRoundContext,
-        search360Result,
+        searchResult,
         atomSearchBundle,
       });
       const { input: agentInput, systemPrompt, userContent } = call;

@@ -4,16 +4,17 @@
  */
 
 import { assembleFinalReport } from "./assembleFinalReport.js";
+import { searchResultOf } from "./atomSearch.js";
 import type { CaseState } from "./casePipeline/caseState.js";
 import { applyFactDeskPostProcessToReport } from "./factDeskPostProcess.js";
 import { decideAndWriteVerdict } from "./sentenceVerdict.js";
 import { stringItems } from "./valueCoerce.js";
 
-type SkeletonInput = Partial<Pick<CaseState, "rumorStep" | "factStep" | "sourceStep" | "search360Result">>;
+type SkeletonInput = Partial<Pick<CaseState, "rumorStep" | "factStep" | "sourceStep" | "atomSearchBundle">>;
 
 export function buildReportSkeleton(claim: string, state: SkeletonInput): Record<string, unknown> {
   const { rumorStep, factStep, sourceStep } = state;
-  const searchResult = state.search360Result as any;
+  const searchResult = state.atomSearchBundle ? searchResultOf(state.atomSearchBundle) : undefined;
   const sourceReliability = String(sourceStep?.output?.sourceReliability || "unverified");
   const keyFindings = stringItems(factStep?.output?.keyFindings);
   const counterEvidence = stringItems(factStep?.output?.counterEvidence);

@@ -43,11 +43,17 @@ export class ProviderError extends Error {
   }
 }
 
-const QUOTA_REPLY = /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded)|billing hard limit|over_quota|无可用额度/i;
+/** Out-of-credit replies, shared by model and search providers; any of them parks the provider. */
+export function isQuotaReply(detail: string): boolean {
+  return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded|limit)|billing hard limit|over_quota|无可用额度|please top up|usage limit|exceeds your plan|HTTP 402\b/i.test(
+    detail
+  );
+}
+
 const AUTH_REPLY = /invalid api key|invalid_key|incorrect api key|unauthorized|ENOENT|authentication fails|api key[\s\S]{0,80}is invalid|no active [\w ]{0,30}subscription/i;
 
 export function providerHttpError(label: string, detail: string): ProviderError {
-  const kind = QUOTA_REPLY.test(detail) ? "quota" : AUTH_REPLY.test(detail) ? "auth" : "http";
+  const kind = isQuotaReply(detail) ? "quota" : AUTH_REPLY.test(detail) ? "auth" : "http";
   return new ProviderError(kind, `${label} API 调用失败：${detail}`);
 }
 

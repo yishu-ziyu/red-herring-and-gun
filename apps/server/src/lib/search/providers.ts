@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { getTimeoutMs, withExecutionBudget, type ExecutionBudget } from "../executionBudget.js";
+import { isQuotaReply } from "../models/provider.js";
 
 type Env = Record<string, string>;
 
@@ -43,11 +44,9 @@ function setting(env: Env, key: string, fallback = ""): string {
 const SEARCH_QUOTA_SKIP_MS = 10 * 60 * 1000;
 const searchQuotaExhaustedUntil = new Map<string, number>();
 
-/** providerRouter.isHardProviderQuotaError plus the HTTP statuses search APIs use for quota. */
+/** Some search APIs report an exhausted plan as HTTP 432. */
 function isHardSearchQuotaError(message: string): boolean {
-  return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded|limit)|billing hard limit|over_quota|无可用额度|please top up|usage limit|exceeds your plan|HTTP 402\b|HTTP 432\b/i.test(
-    message
-  );
+  return isQuotaReply(message) || /HTTP 432\b/i.test(message);
 }
 
 async function timedFetch(url: string | URL, init: RequestInit, env: Env, label: string) {

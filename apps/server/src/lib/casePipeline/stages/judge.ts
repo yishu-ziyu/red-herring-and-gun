@@ -7,14 +7,13 @@ import type { CaseState, PipelineContext } from "../caseState.js";
 import type { PipelineStep } from "../runCasePipeline.js";
 import { createSourceAudit } from "../sourceAudit.js";
 import type { Retrieval } from "./retrieve.js";
+import { directionalSources } from "../../agents/sourceValidator.js";
+import { searchResultOf, type AtomSearchBundle } from "../../atomSearch.js";
 import { enrichSearchSources, pickUrlsToRead } from "../../sourceContent.js";
 
-function fallbackAgentStep(agentId: string, error: unknown, search360Result?: unknown): PipelineStep {
+function fallbackAgentStep(agentId: string, error: unknown, bundle: AtomSearchBundle): PipelineStep {
   const message = error instanceof Error ? error.message : `${agentId} failed`;
-  const sources = Array.isArray((search360Result as { sources?: unknown[] } | undefined)?.sources)
-    ? ((search360Result as { sources: Array<{ title?: unknown; snippet?: unknown; url?: unknown }> }).sources)
-    : [];
-  const urls = sources
+  const urls = searchResultOf(bundle).sources
     .map((s) => String(s.url || "").trim())
     .filter((u) => /^https?:\/\//i.test(u))
     .slice(0, 4);
@@ -53,7 +52,7 @@ function fallbackAgentStep(agentId: string, error: unknown, search360Result?: un
 export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retrieval: Retrieval): Promise<CaseState> {
   const { steps, snapshots, throwIfAborted } = ctx;
   const { runAgent } = ctx.input;
-  const { atomSearchBundle, search360Result } = retrieval;
+  const { atomSearchBundle } = retrieval;
   // 判定前先读原文：FactChecker 要对着正文下判断，而不是对着搜索摘要。
   await enrichSearchSources(atomSearchBundle, ctx.input.signal, ctx.input.deadline, pickUrlsToRead(atomSearchBundle), () => {
     snapshots.investigating({ atomSearchBundle });
@@ -61,20 +60,15 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   throwIfAborted();
   let factStep: PipelineStep;
   try {
-    factStep = await runAgent("fact_checker", steps, search360Result, atomSearchBundle);
+    factStep = await runAgent("fact_checker", steps, searchResultOf(atomSearchBundle), atomSearchBundle);
   } catch (error) {
-    factStep = fallbackAgentStep("fact_checker", error, search360Result);
+    factStep = fallbackAgentStep("fact_checker", error, atomSearchBundle);
   }
   steps.push(factStep);
   throwIfAborted();
   // FactChecker 采用了判定前没读到的来源时，补读一次，供 SourceValidator 核对方向。
   const verdicts = Array.isArray(factStep.output.subclaimVerdicts) ? factStep.output.subclaimVerdicts : [];
-  const selectedUrls = verdicts.flatMap((raw) => {
-    if (!raw || typeof raw !== "object") return [];
-    const verdict = raw as Record<string, unknown>;
-    return [verdict.supportingSources, verdict.contradictingSources].flatMap((sources) =>
-      Array.isArray(sources) ? sources.map((source) => String(source?.url ?? "").trim()).filter(Boolean) : []);
-  });
+  const selectedUrls = verdicts.flatMap((verdict) => directionalSources(verdict).map(({ url }) => url));
   await enrichSearchSources(atomSearchBundle, ctx.input.signal, ctx.input.deadline, selectedUrls, () => {
     // 只发布已取得、尚未核对的材料；不能提前发布 FactChecker 的未审计判词。
     snapshots.investigating({ atomSearchBundle });
@@ -82,9 +76,9 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   throwIfAborted();
   let sourceStep: PipelineStep;
   try {
-    sourceStep = await runAgent("source_validator", steps, search360Result, atomSearchBundle);
+    sourceStep = await runAgent("source_validator", steps, searchResultOf(atomSearchBundle), atomSearchBundle);
   } catch (error) {
-    sourceStep = fallbackAgentStep("source_validator", error, search360Result);
+    sourceStep = fallbackAgentStep("source_validator", error, atomSearchBundle);
   }
   steps.push(sourceStep);
 
