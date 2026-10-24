@@ -40,7 +40,6 @@ export type AtomSearchOutcome =
       /** The final topK for this atom, best first. */
       sources: SearchSource[];
       answer: string;
-      model: string;
       /** Provider and query failures that did not stop the search. */
       gaps: string[];
       traceText: string;
@@ -162,16 +161,15 @@ export async function searchAtom(
 
   const failedQueries = perQuery.filter((q) => q.answered.length === 0).map((q) => `${q.query}：${q.failures.join("；") || nobodyAnswered}`);
   const gaps = [...new Set([...answeredQueries.flatMap((q) => q.failures), ...failedQueries])].slice(0, MAX_GAPS);
+  // 答案原文交给核查模型；不标是哪家搜索服务给的，模型看到服务名就会把它写进思考和审核结论。
   const answer = answered
-    .map((a) => ({ label: a.provider.label, text: a.answer || a.sources.map((s) => `【${s.title}】${s.snippet}`).join("\n") }))
-    .filter((a) => a.text)
-    .map((a) => `【${a.label}】${a.text}`)
+    .map((a) => a.answer || a.sources.map((s) => `【${s.title}】${s.snippet}`).join("\n"))
+    .filter(Boolean)
     .join("\n\n");
   return {
     ok: true,
     sources,
     answer: answer.slice(0, 2400),
-    model: [...new Set(answered.map((a) => a.provider.label))].join(" + "),
     gaps,
     traceText: `按原子检索「${atom.slice(0, 40)}」共 ${queries.length} 路查询，聚合 ${candidates.length} 条去重来源，保留 ${sources.length} 条。`,
   };

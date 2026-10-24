@@ -60,8 +60,8 @@ export type AtomSearchBundle = {
   atomsSearched: string[];
   /** claimAtomKey → 该原子检索到的来源（已筛选）。每条来源只存在这里，其余视图都由它推出。 */
   byAtomKey: Record<string, AtomSearchSource[]>;
-  /** 检索返回时的汇总：各轮答案、模型名、检索漏斗统计。 */
-  summary: { answer: string; model: string; traceText: string };
+  /** 检索返回时的汇总：各轮答案、检索漏斗统计。 */
+  summary: { answer: string; traceText: string };
 };
 
 /** 给核查模型的按条材料，顺序同 atomsSearched。 */
@@ -238,7 +238,6 @@ function buildAtomSearchBundle(
   const byAtomKey: Record<string, AtomSearchSource[]> = {};
   const seenUrl = new Set<string>();
   const answers: string[] = [];
-  const models: string[] = [];
   const atomsSearched: string[] = [];
   let keptCount = 0;
   // 本轮材料实际取得时间：bundle 组装时刻，即这批检索结果到手的时间。
@@ -268,7 +267,6 @@ function buildAtomSearchBundle(
     if (res && typeof res.answer === "string" && res.answer.trim()) {
       answers.push(`[${atom.slice(0, 40)}] ${res.answer.slice(0, 400)}`);
     }
-    if (res && typeof res.model === "string") models.push(res.model);
   }
 
   return {
@@ -276,7 +274,6 @@ function buildAtomSearchBundle(
     byAtomKey,
     summary: {
       answer: answers.join("\n\n").slice(0, 1800),
-      model: models.slice(0, 3).join(" | ") || "atom-search",
       traceText: `按可核查原子检索 ${atomsSearched.length} 轮；保留 ${keptCount} 条来源，聚合去重来源 ${seenUrl.size} 条。`,
     },
   };

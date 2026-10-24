@@ -119,7 +119,7 @@ function estimateSourceCredibility(url: string): string {
   return "中";
 }
 
-function mapProviderSources(items: any[], titleFallback: string): SearchSource[] {
+function mapProviderSources(items: any[]): SearchSource[] {
   const out: SearchSource[] = [];
   for (let index = 0; index < items.length && out.length < 8; index += 1) {
     const source = items[index];
@@ -130,7 +130,8 @@ function mapProviderSources(items: any[], titleFallback: string): SearchSource[]
     // 发布者只取 provider 实际返回的字段；拿不到就是缺失，不用站点名或抓取信息补造。
     const publisher = String(source?.publisher || source?.siteName || source?.site_name || source?.site || "").trim();
     const row: SearchSource = {
-      title: String(source?.title || source?.name || source?.site_name || `${titleFallback} ${out.length + 1}`).slice(0, 200),
+      // 没标题时不用搜索服务名充当标题：标题会进核查模型输入和来源列表。
+      title: String(source?.title || source?.name || source?.site_name || `未命名网页 ${out.length + 1}`).slice(0, 200),
       url,
       // 关系核验需要看到转折后的限制条件（「虽然……但……」），摘要给足 900 字。
       snippet: String(
@@ -307,7 +308,7 @@ const provider360: SearchProvider = {
       data?.result ||
       data?.data ||
       [];
-    return { sources: mapProviderSources(Array.isArray(rawItems) ? rawItems : [], "360 智搜来源") };
+    return { sources: mapProviderSources(Array.isArray(rawItems) ? rawItems : []) };
   },
 };
 
@@ -349,7 +350,7 @@ const providerAnySearch: SearchProvider = {
       data?.result?.content?.[0]?.text ||
       ""
     );
-    return { sources: mapProviderSources(parseAnySearchMarkdownResults(text), "AnySearch 来源") };
+    return { sources: mapProviderSources(parseAnySearchMarkdownResults(text)) };
   },
 };
 
@@ -391,7 +392,7 @@ const providerMetaso: SearchProvider = {
       data?.webpages ||
       [];
     return {
-      sources: mapProviderSources(Array.isArray(rawItems) ? rawItems : [], "Metaso 来源"),
+      sources: mapProviderSources(Array.isArray(rawItems) ? rawItems : []),
       answer: String(data?.answer || data?.summary || data?.data?.answer || data?.data?.summary || ""),
     };
   },
@@ -425,7 +426,7 @@ const providerTavily: SearchProvider = {
       ...s,
       snippet: s?.content || s?.raw_content || s?.snippet,
     }));
-    return { sources: mapProviderSources(items, "Tavily 来源"), answer: String(data?.answer || "") };
+    return { sources: mapProviderSources(items), answer: String(data?.answer || "") };
   },
 };
 
@@ -462,7 +463,7 @@ const providerExa: SearchProvider = {
         s?.text ||
         "",
     }));
-    return { sources: mapProviderSources(items, "Exa 来源"), answer: String(data?.context || "") };
+    return { sources: mapProviderSources(items), answer: String(data?.context || "") };
   },
 };
 
@@ -482,7 +483,7 @@ const providerMiniMax: SearchProvider = {
     if (!response.ok) throw new Error(httpFailMessage("MiniMax", response, data));
     throwIfMiniMaxSearchFailed(data);
     const organic = Array.isArray(data?.organic) ? data.organic : [];
-    return { sources: mapProviderSources(organic, "MiniMax 来源") };
+    return { sources: mapProviderSources(organic) };
   },
 };
 
@@ -511,11 +512,11 @@ const providerStepFun: SearchProvider = {
     }, env, "阶跃 Step Plan");
     const data = parseJsonOrSse(await response.text().catch(() => ""));
     if (!response.ok) throw new Error(httpFailMessage("阶跃 Step Plan", response, data));
-    return { sources: mapProviderSources(mcpSearchRows(data), "阶跃来源") };
+    return { sources: mapProviderSources(mcpSearchRows(data)) };
   },
 };
 
-const SEARCH_PROVIDERS: readonly SearchProvider[] = [
+export const SEARCH_PROVIDERS: readonly SearchProvider[] = [
   provider360,
   providerAnySearch,
   providerMetaso,

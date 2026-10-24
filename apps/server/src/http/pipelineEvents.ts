@@ -95,7 +95,6 @@ export function makePipelineHooks(ctx: {
           type: "tool_result",
           toolName: searchToolName,
           query: atom,
-          model: (result as any)?.model,
           result,
           timestamp: Date.now(),
         });

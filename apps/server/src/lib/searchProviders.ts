@@ -63,7 +63,6 @@ export function compactSearchResultForAgent(searchResult: any) {
     supportingEvidence: stringItems(searchResult?.supportingEvidence).slice(0, 4).map((item) => item.slice(0, 240)),
     contradictingEvidence: stringItems(searchResult?.contradictingEvidence).slice(0, 4).map((item) => item.slice(0, 240)),
     relatedQuestions: stringItems(searchResult?.relatedQuestions).slice(0, 4),
-    model: String(searchResult?.model || ""),
     traceText: String(searchResult?.traceText || "").slice(0, 700),
     _source: searchResult?._source || "search",
   };
@@ -82,7 +81,6 @@ export async function retrieveAtomSources(
     answer: outcome.answer,
     sources: outcome.sources,
     unresolvedEvidenceGaps: outcome.gaps,
-    model: outcome.model,
     traceText: outcome.traceText,
     _source: "parallel-search",
   };
