@@ -13,13 +13,12 @@ import { getSearchToolName } from "../lib/searchProviders.js";
  */
 export function makeRunAgentCallbacks(sendEvent: (data: object) => void) {
   return {
-    onStart: (agentId: string, agentConfig: { name: string; icon?: string; model?: string }) => {
+    onStart: (agentId: string, agentConfig: { name: string; icon?: string }) => {
       sendEvent({
         type: "agent_start",
         agent: agentId,
         agentName: agentConfig.name,
         agentIcon: agentConfig.icon,
-        model: agentConfig.model || "",
         timestamp: Date.now(),
       });
     },

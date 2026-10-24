@@ -101,9 +101,8 @@ export function extractJsonObject(text: string): string {
 }
 
 export async function readAnthropicSse(
-  body: ReadableStream<Uint8Array>,
-  onDelta: (delta: { thinkingChunk?: string; textChunk?: string }) => void
-): Promise<{ text: string; thinking: string; rawTail: string; stopReason?: string; outputTokens?: number; sawMessageStop: boolean }> {
+  body: ReadableStream<Uint8Array>
+): Promise<{ text: string; thinking: string; stopReason?: string; outputTokens?: number; sawMessageStop: boolean }> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -160,14 +159,8 @@ export async function readAnthropicSse(
                   typeof event.content_block.text === "string"
                 ? event.content_block.text
                 : "";
-        if (thinkingPiece) {
-          thinking += thinkingPiece;
-          onDelta({ thinkingChunk: thinkingPiece });
-        }
-        if (textPiece) {
-          text += textPiece;
-          onDelta({ textChunk: textPiece });
-        }
+        thinking += thinkingPiece;
+        text += textPiece;
         if (event.type === "content_block_stop") blockType = "";
         if (event.type === "message_delta") {
           if (typeof event.delta?.stop_reason === "string") stopReason = event.delta.stop_reason;
@@ -180,9 +173,9 @@ export async function readAnthropicSse(
     reader.releaseLock();
   }
   const rawTail = (buffer + decoder.decode()).trim();
-  if (!text && !thinking && rawTail.startsWith("{")) {
+  if (!text && !thinking && rawTail) {
     text = extractAnthropicText(rawTail);
     thinking = extractAnthropicThinking(rawTail);
   }
-  return { text, thinking, rawTail, stopReason, outputTokens, sawMessageStop };
+  return { text, thinking, stopReason, outputTokens, sawMessageStop };
 }

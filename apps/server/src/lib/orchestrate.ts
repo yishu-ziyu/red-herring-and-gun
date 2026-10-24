@@ -7,33 +7,9 @@
  */
 import { createHash } from "node:crypto";
 import { RunRecordingError, type RunRecorder } from "./runRecorder.js";
-import {
-  AGENT_CONFIGS,
-  buildAgentInput,
-} from "./agentConfigs.js";
-import { buildAgentStatusBar } from "./contextStatusBar.js";
-import { isLabelKey, verdictForLabel } from "../../../shared/domain/labels.js";
-import { formatSkillsForPrompt, selectAgentSkills } from "./agentSkills.js";
-import { callAgentWithFallback } from "./providerRouter.js";
-import { compactSearchResultForAgent } from "./searchProviders.js";
-import { attachKnowledgeDrafts } from "./atomSearch.js";
+import { AGENT_JOBS, buildJobCall, runJob, type AgentJob } from "./agents/index.js";
 import type { RunAgentFn } from "./casePipeline/runCasePipeline.js";
 
-
-/**
- * 模型给每一截的 verdict 现在是 9 个标签之一（domain/labels）。流水线里读 verdict 的地方
- * （引用绑定、规则表）仍按旧判词工作：这里把标签挪到 label，verdict 换成旧判词。
- */
-function withLegacyVerdicts(output: Record<string, unknown>): Record<string, unknown> {
-  if (!output || !Array.isArray(output.subclaimVerdicts)) return output;
-  output.subclaimVerdicts = output.subclaimVerdicts.map((item: unknown) => {
-    if (!item || typeof item !== "object") return item;
-    const rec = item as Record<string, unknown>;
-    if (!isLabelKey(rec.verdict)) return rec;
-    return { ...rec, label: rec.verdict, verdict: verdictForLabel(rec.verdict) };
-  });
-  return output;
-}
 
 /** 把模型的思考文本切成显示用的句子（中英文标点与换行）；只用模型原文，不编句子。 */
 function splitReasoningSentences(reasoning: string): string[] {
@@ -52,16 +28,6 @@ interface OrchestrateAdapterDeps {
   env: Record<string, string>;
 }
 
-/** Prefer rumor_detector stanceClaimType; default mixed for skill routing. */
-function inferClaimTypeForSkills(steps: Array<{ agent?: string; output?: Record<string, unknown> }>): string | undefined {
-  const rumor = steps.find((s) => s.agent === "rumor_detector");
-  const stance = rumor?.output?.stanceClaimType as { type?: string } | undefined;
-  if (stance && typeof stance.type === "string" && stance.type.length > 0) {
-    return stance.type;
-  }
-  return undefined;
-}
-
 export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
   const { env } = deps;
   const deadlineFor = (deadline?: number) => Math.min(deadline ?? Infinity, deps.deadlineMs ?? Infinity);
@@ -74,71 +40,42 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
     clientMemoryRecall: any;
     priorRoundContext?: unknown;
     recorder?: RunRecorder;
-    onStart?: (agentId: string, agentConfig: (typeof AGENT_CONFIGS)[number]) => void;
+    onStart?: (agentId: string, job: AgentJob) => void;
     onThought?: (
       agentId: string,
-      agentConfig: (typeof AGENT_CONFIGS)[number],
+      job: AgentJob,
       content: string,
       seq: number,
       done: boolean
     ) => void;
     onComplete?: (step: any) => void;
-    onError?: (agentId: string, agentConfig: (typeof AGENT_CONFIGS)[number], error: unknown) => void;
+    onError?: (agentId: string, job: AgentJob, error: unknown) => void;
   }): RunAgentFn {
     return async function runAgent(agentId, steps, search360Result?, atomSearchBundle?, execution = {}) {
       const signal = execution.signal && deps.signal
         ? AbortSignal.any([execution.signal, deps.signal]) : execution.signal ?? deps.signal;
       signal?.throwIfAborted();
-      const agentConfig = AGENT_CONFIGS.find((a) => a.id === agentId);
-      if (!agentConfig) {
+      const job = AGENT_JOBS.find((a) => a.id === agentId);
+      if (!job) {
         throw new Error(`Unknown agent: ${agentId}`);
       }
-      opts.onStart?.(agentId, agentConfig);
+      opts.onStart?.(agentId, job);
       const stepStart = Date.now();
-      const agentInput = buildAgentInput(agentId, opts.claim, steps as any);
-      if (opts.intakeMetadata) agentInput.intake = opts.intakeMetadata;
-      if (opts.visualExtraction) agentInput.visualExtraction = opts.visualExtraction;
-      if (opts.clientMemoryRecall) agentInput.memoryRecall = opts.clientMemoryRecall;
-      if (opts.priorRoundContext) agentInput.priorRoundContext = {
-        policy: "仅用于理解此前对话，不是本轮已核实证据；本轮事实判断必须依据本轮检索并审核的材料。",
-        previous: opts.priorRoundContext,
-      };
-      if (search360Result && ["fact_checker", "source_validator"].includes(agentId)) {
-        agentInput.search360 = compactSearchResultForAgent(search360Result);
-        if (atomSearchBundle) {
-          agentInput.atomSearches = atomSearchBundle.forAgent;
-        }
-      }
-      if (atomSearchBundle && ["fact_checker", "source_validator"].includes(agentId)) {
-        attachKnowledgeDrafts(agentInput, atomSearchBundle);
-      }
-
-      // Book Ch.2：状态栏 + 按需 Skills
-      const claimType = inferClaimTypeForSkills(steps as any) ?? "mixed";
-      const memoryRecall = opts.clientMemoryRecall as
-        | { hitCount?: number }
-        | undefined;
-      const statusBar = buildAgentStatusBar({
-        agentId,
-        agentName: agentConfig.name,
+      const call = buildJobCall(job, {
         claim: opts.claim,
-        claimType,
-        stepIndex: steps.length + 1,
-        totalStepsHint: 4,
-        tools: [],
-        memoryHitCount: memoryRecall?.hitCount ?? 0,
-        searchReady: Boolean(search360Result),
+        steps,
+        intakeMetadata: opts.intakeMetadata,
+        visualExtraction: opts.visualExtraction,
+        memoryRecall: opts.clientMemoryRecall,
+        priorRoundContext: opts.priorRoundContext,
+        search360Result,
+        atomSearchBundle,
       });
-      agentInput.agentStatusBar = statusBar.text;
-      agentInput.agentStatusFields = statusBar.fields;
-      const skills = selectAgentSkills({ agentId, claimType, maxSkills: 3 });
-      const systemPrompt = `${agentConfig.systemPrompt}${formatSkillsForPrompt(skills)}`;
-      agentInput.loadedSkills = skills.map((s) => s.id);
-      const userContent = `${statusBar.text}\n\n${JSON.stringify(agentInput, null, 2)}`;
+      const { input: agentInput, systemPrompt, userContent } = call;
 
       // This records one stage attempt; provider retries and JSON repair may occur inside it.
       const attemptId = opts.recorder?.startAttempt({
-        stage: agentId, input: { systemPrompt, userContent, responseSchema: agentConfig.responseSchema },
+        stage: agentId, input: { systemPrompt, userContent, responseSchema: job.schema },
         metadata: { granularity: "stage", systemPromptHash: createHash("sha256").update(systemPrompt).digest("hex") },
       });
       let attemptFinished = false;
@@ -146,21 +83,16 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
       let modelUsed: string;
       let reasoning: string | undefined;
       try {
-        const result = await callAgentWithFallback({
-          agentId: agentConfig.id,
-          systemPrompt,
-          userContent,
-          responseSchema: agentConfig.responseSchema,
-          maxTokens: agentConfig.maxTokens,
+        const result = await runJob(job, call, {
           env,
-          reasoningEffort: "high",
-          options: { signal, deadlineMs: deadlineFor(execution.deadlineMs) },
+          signal,
+          deadlineMs: deadlineFor(execution.deadlineMs),
         });
         if (attemptId) {
-          opts.recorder!.finishAttempt(attemptId, { status: "succeeded", output: result.output, model: result.model });
+          opts.recorder!.finishAttempt(attemptId, { status: "succeeded", output: result.raw, model: result.model });
           attemptFinished = true;
         }
-        output = withLegacyVerdicts(result.output);
+        output = result.output;
         signal?.throwIfAborted();
         modelUsed = result.model;
         reasoning = result.reasoning;
@@ -171,8 +103,8 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
           const sentences = splitReasoningSentences(reasoning);
           for (let index = 0; index < sentences.length; index++) {
             opts.onThought!(
-              agentConfig.id,
-              agentConfig,
+              job.id,
+              job,
               sentences[index],
               index,
               index === sentences.length - 1
@@ -180,9 +112,9 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
           }
         }
         const step = {
-          agent: agentConfig.id,
-          agentName: agentConfig.name,
-          agentIcon: agentConfig.icon,
+          agent: job.id,
+          agentName: job.name,
+          agentIcon: job.icon,
           systemPrompt,
           input: agentInput,
           output,
@@ -200,9 +132,9 @@ export function createOrchestrateAdapter(deps: OrchestrateAdapterDeps) {
           error: error instanceof Error ? error.message : "Agent 调用失败",
         });
         signal?.throwIfAborted();
-        opts.onError?.(agentId, agentConfig, error);
+        opts.onError?.(agentId, job, error);
         const message = error instanceof Error ? error.message : "Agent 调用失败";
-        throw new Error(`${agentConfig.name} 真实模型调用失败：${message}`);
+        throw new Error(`${job.name} 真实模型调用失败：${message}`);
       }
     };
   }
