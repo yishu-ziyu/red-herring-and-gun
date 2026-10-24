@@ -13,9 +13,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "./sqliteStore.js";
-import { clientIpKey, guestIdFromRequest, guestOwnerHash } from "./checkQuota.js";
+import { guestFromRequest, type GuestIdentity } from "./guestIdentity.js";
+import { reserveQuota } from "./quotaLedger.js";
 import type { RunRecord, PublishedRunResult } from "./runStore.js";
-import { GUEST_DAILY_SHARES, IP_DAILY_SHARES, shanghaiDayKey } from "../../../shared/quota.js";
 import { scrubFaceText } from "../../../shared/scrubFace.js";
 import { conclusionMissesFollowUp, followUpQuestionLead, followUpQuestionOf } from "../../../shared/followUp.js";
 import { LABEL_TEXT, LABEL_TONE, isLabelKey, judgmentToLabel, type LabelKey } from "../../../shared/domain/labels.js";
@@ -229,28 +229,15 @@ function shareStore(): ShareStore {
   return cachedStore;
 }
 
-// ── 建分享限额：按访客、按来源 IP，每天各算各的。只在进程内计数，重启清零。──
-const sharesByGuest = new Map<string, { day: string; used: number }>();
-const sharesByIp = new Map<string, { day: string; used: number }>();
-
-function usedToday(map: Map<string, { day: string; used: number }>, key: string, day: string): number {
-  const bucket = map.get(key);
-  return bucket && bucket.day === day ? bucket.used : 0;
-}
-
-function countShare(map: Map<string, { day: string; used: number }>, key: string, day: string): void {
-  map.set(key, { day, used: usedToday(map, key, day) + 1 });
-}
-
 function sendJson(res: any, status: number, body: unknown): void {
   res.status(status).json(body);
 }
 
 /** 这一轮调查是不是这个浏览器建的。老 run 的 ownerHash 是 null，谁都不认。 */
-function ownsRun(req: any, run: RunRecord): string | null {
-  const guestId = guestIdFromRequest(req);
-  if (!guestId || !run.ownerHash || guestOwnerHash(guestId) !== run.ownerHash) return null;
-  return guestId;
+function ownsRun(req: any, run: RunRecord): GuestIdentity | null {
+  const guest = guestFromRequest(req);
+  if (!guest || !run.ownerHash || guest.ownerHash !== run.ownerHash) return null;
+  return guest;
 }
 
 export function createShareHandlers(deps: {
@@ -262,21 +249,24 @@ export function createShareHandlers(deps: {
     const runId = String(req.params?.runId ?? "").trim();
     const run = runId ? deps.getRun(runId) : null;
     if (!run) return sendJson(res, 404, { message: "没有这次调查" });
-    const guestId = ownsRun(req, run);
-    if (!guestId) return sendJson(res, 403, { message: "只有发起这次调查的浏览器能分享它" });
+    const guest = ownsRun(req, run);
+    if (!guest) return sendJson(res, 403, { message: "只有发起这次调查的浏览器能分享它" });
     const published = deps.getResult(runId);
     const snapshot = published?.snapshot;
     if (run.status !== "completed" || published?.kind !== "final" || !snapshot || snapshot.phase !== "complete" || !snapshot.conclusion) {
       return sendJson(res, 409, { message: "这次调查还没有查完，查完才能分享" });
     }
-    const day = shanghaiDayKey();
-    const ipKey = clientIpKey(req);
-    if (usedToday(sharesByGuest, guestId, day) >= GUEST_DAILY_SHARES || usedToday(sharesByIp, ipKey, day) >= IP_DAILY_SHARES) {
-      return sendJson(res, 429, { message: "今天建的分享链接太多了，明天再试" });
+    // 建分享限额：按访客、按来源 IP，每天各算各的。
+    const reservation = reserveQuota(guest, "share");
+    if (!reservation) return sendJson(res, 429, { message: "今天建的分享链接太多了，明天再试" });
+    let token: string;
+    try {
+      ({ token } = shareStore().create(run, published.resultId, projectionFromSnapshot(snapshot, published.createdAt)));
+    } catch (error) {
+      reservation.release();
+      throw error;
     }
-    const { token } = shareStore().create(run, published.resultId, projectionFromSnapshot(snapshot, published.createdAt));
-    countShare(sharesByGuest, guestId, day);
-    countShare(sharesByIp, ipKey, day);
+    reservation.commit();
     return sendJson(res, 201, { shareId: token, resultId: published.resultId, revision: published.revision, url: `/s/${token}` });
   }
 

@@ -1,5 +1,4 @@
 import type { InvestigationSnapshotV1 } from "../../../shared/investigation/index.js";
-import { createInvestigationEmitter } from "./investigationEmitter.js";
 import { createRunRecorder } from "./runRecorder.js";
 import type { RunService } from "./runService.js";
 import type { PublishedRunResult } from "./runStore.js";
@@ -108,25 +107,10 @@ export function commitReusedResult(runs: RunService, run: { runId: string; claim
     })),
     reusedFrom: { checkedAt },
   };
-  recorder.validateSnapshot(snapshot, { requireEvidenceMaterials: true });
-  recorder.assertHealthy();
-
-  let terminalEvents: Record<string, unknown>[] = [];
-  createInvestigationEmitter({
-    runId,
-    send: (event) => runs.publish(runId, event),
-    commitSnapshot: (_snapshot, events) => { terminalEvents = events; },
-  }).emitSnapshot(snapshot);
-  const report: Record<string, unknown> = { ...structuredClone(source.report ?? {}), investigation: snapshot };
-  runs.commit(runId, {
-    status: "completed",
+  runs.settle(runId, {
+    outcome: "reused",
+    displayClaim: claim,
     snapshot,
-    publication: "final",
-    report,
-    events: [
-      ...terminalEvents,
-      { type: "complete", claim, steps: [], finalReport: report },
-      { type: "run_state", status: "completed", terminal: true },
-    ],
+    report: structuredClone(source.report ?? {}),
   });
 }

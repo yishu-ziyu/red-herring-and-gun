@@ -92,7 +92,7 @@ interface ContextCrossCheckResult {
  * 配文核心词 >=2 个且全部未在图内出现 → 提示「配文要点截图里没有」。
  */
 function contextCrossCheck(input: {
-  claim: string;
+  caption: string;
   visualExtraction?: unknown;
 }): ContextCrossCheckResult {
   if (!input.visualExtraction) {
@@ -102,7 +102,7 @@ function contextCrossCheck(input: {
   if (!corpus.trim()) {
     return { matchedTokens: [], missingTokens: [], visible: false };
   }
-  const tokens = coreClaimTokens(input.claim);
+  const tokens = coreClaimTokens(input.caption);
   if (tokens.length < 2) {
     return { matchedTokens: [], missingTokens: [], visible: true };
   }
@@ -120,10 +120,13 @@ function contextCrossCheck(input: {
   };
 }
 
-/** 挂到 finalReport：不改判定，只追加提示与 cannotSay 边界。 */
+/**
+ * 挂到 finalReport：不改判定，只追加提示与 cannotSay 边界。
+ * caption 只能是用户自己写的配文：拼进了视觉提取的调查文本会和截图语料自相匹配，提示就永远出不来。
+ */
 export function applyContextCrossCheckToReport(
   report: Record<string, unknown>,
-  input: { claim: string; visualExtraction?: unknown }
+  input: { caption: string; visualExtraction?: unknown }
 ): void {
   if (!report || typeof report !== "object") return;
   const result = contextCrossCheck(input);

@@ -1,231 +1,27 @@
 /**
- * 免费核查闸门。每个访客每天 2 条。
- * 开始时占位，出判断才扣；我们自己失败则放回；用户中途取消仍计一次。
- *
- * 额度分两个独立维度：访客桶（按 cookie id）与 IP 桶（整条来源 IP 的聚合）。
- * IP 是共享的，所以 IP 桶只当天花板、不当单人额度 —— 见 `guestState` 里的说明。
+ * 免费核查额度的 HTTP 入口。每个访客每天 2 条，账本在 quotaLedger.ts。
+ * 开始时占位，出判断才扣；我们自己失败则放回；用户中途取消不计。
  */
 
 import crypto from "node:crypto";
-import {
-  GUEST_DAILY_CHECKS,
-  IP_DAILY_CHECKS,
-  checksExhaustedMessage,
-  shanghaiDayKey,
-  type CheckQuotaKind,
-  type CheckQuotaView,
-} from "../../../shared/quota.js";
-import { cookieOptions, decodeSignedJson, encodeSignedJson, getServerSecret, parseCookies } from "./signedCookie.js";
-import { loadSnapshot, registerSnapshotSource } from "./jsonSnapshot.js";
-
-const GUEST_CHECKS_COOKIE = "v3_guest_checks";
-// 也是分享的所有者凭证：要比分享有效期（30 天）长，否则分享者撤销不了自己的链接。
-const GUEST_COOKIE_TTL_SECONDS = 60 * 24 * 60 * 60;
-
-/** 非负整数环境变量；未设置或非法时回落到默认值。 */
-function envInt(name: string, fallback: number): number {
-  const raw = process.env[name]?.trim();
-  if (!raw) return fallback;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
-}
-
-/** 单个访客每天的免费核查数。`CHECK_QUOTA_GUEST_LIMIT` 可覆盖（放宽额度用）。 */
-function guestDailyLimit(): number {
-  return envInt("CHECK_QUOTA_GUEST_LIMIT", GUEST_DAILY_CHECKS);
-}
-
-/** 整条来源 IP 每天的核查总数上限。`CHECK_QUOTA_IP_LIMIT` 可覆盖。 */
-function ipDailyLimit(): number {
-  return envInt("CHECK_QUOTA_IP_LIMIT", IP_DAILY_CHECKS);
-}
-
-/** 只在生产环境限额；本机开发不拦。 */
-function isCheckQuotaEnforced() {
-  return process.env.NODE_ENV === "production";
-}
-
-type GuestCookiePayload = {
-  id: string;
-  day: string;
-  used: number;
-};
-
-type GuestBucket = {
-  day: string;
-  used: number;
-  inflight: number;
-};
-
-// A response cookie is not present in the request headers until the next request.
-// Share one identity across acceptance, quota reservation and ownership in this request.
-const requestGuestIds = new WeakMap<object, string>();
-const guests = new Map<string, GuestBucket>();
-const guestsByIp = new Map<string, GuestBucket>();
-
-// ── 访客配额桶持久化（重启后 inflight 不可信，清零；跨天的桶不再恢复）──
-const QUOTA_SNAPSHOT_FILE = "quota.json";
-
-function snapshotQuota() {
-  const today = shanghaiDayKey();
-  return {
-    guests: [...guests.entries()].filter(([, b]) => b.day === today),
-    guestsByIp: [...guestsByIp.entries()].filter(([, b]) => b.day === today),
-  };
-}
-
-{
-  const today = shanghaiDayKey();
-  const restored = loadSnapshot<ReturnType<typeof snapshotQuota>>(QUOTA_SNAPSHOT_FILE);
-  if (restored) {
-    for (const [id, b] of restored.guests ?? []) if (b.day === today) guests.set(id, { ...b, inflight: 0 });
-    for (const [ip, b] of restored.guestsByIp ?? [])
-      if (b.day === today) guestsByIp.set(ip, { ...b, inflight: 0 });
-  }
-  registerSnapshotSource(QUOTA_SNAPSHOT_FILE, snapshotQuota);
-}
-
-export type CheckTicket = {
-  kind: CheckQuotaKind;
-  day: string;
-  guestId?: string;
-  ipKey?: string;
-  settled: boolean;
-};
-
-function cookieHeader(raw: unknown): string | undefined {
-  if (typeof raw === "string") return raw;
-  if (Array.isArray(raw) && raw.every((item) => typeof item === "string")) {
-    return raw.join("; ");
-  }
-  return undefined;
-}
-
-function headerValue(raw: unknown): string {
-  if (typeof raw === "string") return raw.trim();
-  if (Array.isArray(raw) && typeof raw[0] === "string") return raw[0].trim();
-  return "";
-}
-
-function clientIp(req: { headers?: { [key: string]: unknown }; socket?: { remoteAddress?: string } }) {
-  // nginx 用 $remote_addr 覆盖 X-Real-IP，客户端无法伪造（前提：3000 不对外，见 docker-compose）。
-  const realIp = headerValue(req.headers?.["x-real-ip"]);
-  if (realIp) return realIp.split(",")[0]?.trim() || realIp;
-  // XFF 只取最后一跳：由我们自己的反代追加，客户端伪造的段排在前面。
-  const forwarded = headerValue(req.headers?.["x-forwarded-for"]);
-  if (forwarded) {
-    const lastHop = forwarded
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .pop();
-    if (lastHop) return lastHop;
-  }
-  return req.socket?.remoteAddress || "unknown";
-}
-
-function hashIp(ip: string) {
-  return crypto.createHash("sha256").update(`${ip}|${getServerSecret()}`, "utf8").digest("hex").slice(0, 32);
-}
+import { checksExhaustedMessage, type CheckQuotaView } from "../../../shared/quota.js";
+import { headerValue, identifyGuest, writeGuestCookie } from "./guestIdentity.js";
+import { guestDailyLimit, quotaUsage, reserveQuota, unmeteredReservation, type Reservation } from "./quotaLedger.js";
 
 /**
- * 运维旁路：开发者/服务器自己验证真实链路时不受免费额度限制。
- * token 只存在服务端 env（OPS_CHECK_BYPASS_TOKEN），未配置时旁路完全关闭；
- * 头名 x-ops-check-token。恒时比较防探测。
+ * 只在生产环境限额；本机开发不拦。
+ * 运维旁路：开发者/服务器自己验证真实链路时不受免费额度限制。token 只存在服务端 env（OPS_CHECK_BYPASS_TOKEN），
+ * 未配置时旁路完全关闭；头名 x-ops-check-token。恒时比较防探测。
  */
-function hasOpsCheckBypass(req: { headers?: { [key: string]: unknown } }): boolean {
+function isMetered(req: { headers?: { [key: string]: unknown } }): boolean {
+  if (process.env.NODE_ENV !== "production") return false;
   const expected = process.env.OPS_CHECK_BYPASS_TOKEN?.trim();
-  if (!expected) return false;
+  if (!expected) return true;
   const supplied = headerValue(req.headers?.["x-ops-check-token"]);
-  if (!supplied) return false;
+  if (!supplied) return true;
   const a = crypto.createHash("sha256").update(expected, "utf8").digest();
   const b = crypto.createHash("sha256").update(supplied, "utf8").digest();
-  return crypto.timingSafeEqual(a, b);
-}
-
-function readGuestCookie(req: { headers?: { cookie?: unknown } }): GuestCookiePayload | null {
-  const cookies = parseCookies(cookieHeader(req.headers?.cookie));
-  const raw = cookies[GUEST_CHECKS_COOKIE];
-  if (!raw) return null;
-  const decoded = decodeSignedJson<GuestCookiePayload>(raw, getServerSecret());
-  if (!decoded || typeof decoded.id !== "string" || typeof decoded.day !== "string") return null;
-  if (typeof decoded.used !== "number" || decoded.used < 0) return null;
-  return decoded;
-}
-
-function syncBucket(bucket: GuestBucket | undefined, day: string): GuestBucket {
-  if (!bucket || bucket.day !== day) return { day, used: 0, inflight: 0 };
-  return bucket;
-}
-
-function guestState(
-  req: { headers?: { cookie?: unknown; [key: string]: unknown }; socket?: { remoteAddress?: string } },
-  now = Date.now()
-) {
-  const day = shanghaiDayKey(now);
-  const cookie = readGuestCookie(req);
-  const id = cookie?.id || requestGuestIds.get(req) || crypto.randomBytes(12).toString("hex");
-  requestGuestIds.set(req, id);
-  const ipKey = hashIp(clientIp(req));
-  const memory = syncBucket(guests.get(id), day);
-  const ip = syncBucket(guestsByIp.get(ipKey), day);
-  const cookieUsed = cookie && cookie.day === day ? cookie.used : 0;
-  // 访客用量只合并本人的内存与 cookie 计数；IP 聚合用量只用于 IP 限额，不能计入个人额度。
-  memory.used = Math.max(memory.used, cookieUsed);
-  guests.set(id, memory);
-  guestsByIp.set(ipKey, ip);
-  return { id, day, memory, ip, ipKey };
-}
-
-function remainingOf(used: number, inflight: number, total: number) {
-  return Math.max(0, total - used - inflight);
-}
-
-function bypassQuotaView(): CheckQuotaView {
-  const total = guestDailyLimit();
-  return { remaining: total, total, used: 0, kind: "guest", enforced: false };
-}
-
-/** 访客桶比单人额度，IP 桶比 IP 天花板；两者独立，任一触顶即拦。 */
-function guestBlocked(memory: GuestBucket, ip: GuestBucket) {
-  return (
-    memory.used + memory.inflight >= guestDailyLimit() ||
-    ip.used + ip.inflight >= ipDailyLimit()
-  );
-}
-
-function buildSetCookie(
-  name: string,
-  value: string,
-  options: { httpOnly?: boolean; secure?: boolean; sameSite?: string; path?: string; maxAge?: number }
-) {
-  const parts: string[] = [`${name}=${value}`];
-  if (options.httpOnly) parts.push("HttpOnly");
-  if (options.secure) parts.push("Secure");
-  if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
-  if (options.path) parts.push(`Path=${options.path}`);
-  if (typeof options.maxAge === "number") parts.push(`Max-Age=${Math.floor(options.maxAge / 1000)}`);
-  return parts.join("; ");
-}
-
-function appendSetCookie(res: { setHeader?: Function; getHeader?: Function }, cookie: string) {
-  if (typeof res.setHeader !== "function") return;
-  const prev = typeof res.getHeader === "function" ? res.getHeader("Set-Cookie") : undefined;
-  if (!prev) {
-    res.setHeader("Set-Cookie", cookie);
-    return;
-  }
-  const list = Array.isArray(prev) ? prev : [String(prev)];
-  res.setHeader("Set-Cookie", [...list, cookie]);
-}
-
-function writeGuestCookie(
-  res: { setHeader?: Function; getHeader?: Function; headersSent?: boolean },
-  payload: GuestCookiePayload
-) {
-  if (res.headersSent) return;
-  const token = encodeSignedJson(payload, getServerSecret());
-  appendSetCookie(res, buildSetCookie(GUEST_CHECKS_COOKIE, token, cookieOptions(GUEST_COOKIE_TTL_SECONDS)));
+  return !crypto.timingSafeEqual(a, b);
 }
 
 function writeJson(res: any, status: number, body: unknown) {
@@ -241,94 +37,21 @@ function writeJson(res: any, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
-async function peekCheckQuota(
-  req: { headers?: { cookie?: unknown; [key: string]: unknown }; socket?: { remoteAddress?: string } }
-): Promise<CheckQuotaView> {
-  if (hasOpsCheckBypass(req)) return bypassQuotaView();
-  if (!isCheckQuotaEnforced()) return bypassQuotaView();
-  const { memory, ip } = guestState(req);
-  // used 只报访客自己的用量；remaining 取「访客剩余」与「IP 剩余」的较小值，
-  // 这样 IP 触顶时界面不会谎报还有额度。
-  return {
-    remaining: Math.min(
-      remainingOf(memory.used, memory.inflight, guestDailyLimit()),
-      remainingOf(ip.used, ip.inflight, ipDailyLimit())
-    ),
-    total: guestDailyLimit(),
-    used: memory.used,
-    kind: "guest",
-    enforced: true,
-  };
-}
-
-async function beginFreeCheck(
-  req: any,
-  res: any
-): Promise<{ ok: true; ticket: CheckTicket } | { ok: false; kind: CheckQuotaKind }> {
-  if (hasOpsCheckBypass(req) || !isCheckQuotaEnforced()) {
-    return { ok: true, ticket: { kind: "guest", day: shanghaiDayKey(), settled: true } };
-  }
-
-  const { id, day, memory, ip, ipKey } = guestState(req);
-  if (guestBlocked(memory, ip)) {
-    writeGuestCookie(res, { id, day, used: memory.used });
-    return { ok: false, kind: "guest" };
-  }
-  memory.inflight += 1;
-  ip.inflight += 1;
-  writeGuestCookie(res, { id, day, used: memory.used });
-  return { ok: true, ticket: { kind: "guest", day, guestId: id, ipKey, settled: false } };
-}
-
-export function commitFreeCheck(res: any, ticket: CheckTicket) {
-  if (ticket.settled) return;
-  ticket.settled = true;
-  if (!ticket.guestId) return;
-  const bucket = guests.get(ticket.guestId);
-  if (bucket) {
-    if (bucket.inflight > 0) bucket.inflight -= 1;
-    bucket.used += 1;
-    writeGuestCookie(res, { id: ticket.guestId, day: bucket.day, used: bucket.used });
-  }
-  if (ticket.ipKey) {
-    const ip = guestsByIp.get(ticket.ipKey);
-    if (ip) {
-      if (ip.inflight > 0) ip.inflight -= 1;
-      ip.used += 1;
-    }
-  }
-}
-
-export function releaseFreeCheck(ticket: CheckTicket) {
-  if (ticket.settled) return;
-  ticket.settled = true;
-  if (ticket.guestId) {
-    const bucket = guests.get(ticket.guestId);
-    if (bucket && bucket.inflight > 0) bucket.inflight -= 1;
-  }
-  if (ticket.ipKey) {
-    const ip = guestsByIp.get(ticket.ipKey);
-    if (ip && ip.inflight > 0) ip.inflight -= 1;
-  }
-}
-
 /**
- * 额度闸中间件：只挂在真正发起核查的路由上，只读端点不计额度。
- * 拿到名额就把票据挂到 req.checkTicket 上，额度不够回 429。
+ * 只在真正发起核查时调用，只读端点不计额度。额度不够时回 429 并返回 null。
+ * 拿到的占位交给 run（RunService.start），由 run 的结局结算。
  */
-export async function freeCheckGate(req: any, res: any, next: (error?: unknown) => void) {
-  const result = await beginFreeCheck(req, res);
-  // 名额由拿到票据的处理器结算（handlers.ts 与 http/runOutcome.ts），这里不挂连接关闭监听：
-  // 请求体读完之后才挂的 close 监听，触不触发取决于时序。
-  if (!result.ok) {
-    writeJson(res, 429, {
-      error: "checks_exhausted",
-      message: checksExhaustedMessage(),
-    });
-    return;
+export function reserveFreeCheck(req: any, res: any): Reservation | null {
+  if (!isMetered(req)) return unmeteredReservation();
+  const guest = identifyGuest(req);
+  const reservation = reserveQuota(guest, "check");
+  const usage = quotaUsage(guest, "check");
+  writeGuestCookie(res, guest.id, usage.day, usage.used);
+  if (!reservation) {
+    writeJson(res, 429, { error: "checks_exhausted", message: checksExhaustedMessage() });
+    return null;
   }
-  req.checkTicket = result.ticket;
-  next();
+  return reservation;
 }
 
 export async function checksQuotaHandler(req: any, res: any) {
@@ -336,39 +59,15 @@ export async function checksQuotaHandler(req: any, res: any) {
     writeJson(res, 405, { error: "Method not allowed" });
     return;
   }
-  const quota = await peekCheckQuota(req);
-  if (quota.enforced && quota.kind === "guest") {
-    const { id, day, memory } = guestState(req);
-    writeGuestCookie(res, { id, day, used: memory.used });
+  let quota: CheckQuotaView;
+  if (isMetered(req)) {
+    const guest = identifyGuest(req);
+    const usage = quotaUsage(guest, "check");
+    writeGuestCookie(res, guest.id, usage.day, usage.used);
+    quota = { remaining: usage.remaining, total: usage.total, used: usage.used, kind: "guest", enforced: true };
+  } else {
+    const total = guestDailyLimit("check");
+    quota = { remaining: total, total, used: 0, kind: "guest", enforced: false };
   }
   writeJson(res, 200, quota);
-}
-
-/**
- * 访客身份：分享靠它认「同一个浏览器」。cookie 已有就沿用里面的 id，不改写（改写会把访客当天的核查用量清零）；
- * 没有或读不出时发一个新的。`preferredId` 是额度闸门在这次响应里刚发出的 id，用它免得一次响应里出现两个不同 id。
- */
-export function ensureGuestId(req: any, res: any, preferredId?: string): string {
-  const cookie = readGuestCookie(req);
-  const existing = cookie?.id || requestGuestIds.get(req);
-  if (existing) { requestGuestIds.set(req, existing); return existing; }
-  const id = preferredId || crypto.randomBytes(12).toString("hex");
-  requestGuestIds.set(req, id);
-  writeGuestCookie(res, { id, day: shanghaiDayKey(), used: 0 });
-  return id;
-}
-
-/** 请求里已有的访客 id；没有 cookie 就是 null（不发新的）。 */
-export function guestIdFromRequest(req: any): string | null {
-  return readGuestCookie(req)?.id ?? requestGuestIds.get(req) ?? null;
-}
-
-/** 存进 runs.ownerHash 的值：访客 id 的哈希，库里不放 id 原文。 */
-export function guestOwnerHash(guestId: string): string {
-  return crypto.createHash("sha256").update(`guest-owner|${guestId}`, "utf8").digest("hex").slice(0, 32);
-}
-
-/** 来源 IP 的哈希（加了服务端密钥），给分享限额用。 */
-export function clientIpKey(req: any): string {
-  return hashIp(clientIp(req));
 }

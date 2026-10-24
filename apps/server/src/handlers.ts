@@ -1,8 +1,8 @@
 /**
  * handlers.ts — Express HTTP adapter.
  *
- * 路由处理器与组装：调查流的请求解析与校验在这里，一次调查的生命周期在 http/investigationRun.ts，
- * 管线事件到 SSE 帧在 http/pipelineEvents.ts，公开流清洗在 http/publicStream.ts，SSE 线上格式在 http/sseChannel.ts。
+ * 路由处理器与组装：调查流的请求解析与校验在这里，一次调查的执行在 lib/run/investigation.ts、收场在 lib/runService.ts，
+ * 调查流的 SSE 适配在 http/investigationRun.ts，管线事件到运行事件在 http/pipelineEvents.ts，公开流清洗在 http/publicStream.ts，SSE 线上格式在 http/sseChannel.ts。
  * 产品规则不写在 HTTP 层；域深度在 lib/。
  */
 
@@ -10,7 +10,8 @@ import { createRunRecorder } from "./lib/runRecorder.js";
 import { randomUUID } from "node:crypto";
 import { createRunService, generateCaseId, hashRunInput } from "./lib/runService.js";
 import { isTerminalStatus, openRunStore, type RunRecord } from "./lib/runStore.js";
-import { ensureGuestId, guestIdFromRequest, guestOwnerHash, releaseFreeCheck, freeCheckGate } from "./lib/checkQuota.js";
+import { reserveFreeCheck } from "./lib/checkQuota.js";
+import { ensureGuest, guestFromRequest } from "./lib/guestIdentity.js";
 import { createShareHandlers } from "./lib/shareHandlers.js";
 import {
   normalizeCaseIntake,
@@ -19,7 +20,8 @@ import {
 } from "./lib/visionIntake.js";
 import { followUpReuseFromClientBrief } from "./lib/followUpReuse.js";
 import { commitReusedResult, findReusableResult, isTextOnlyIntake } from "./lib/claimReuse.js";
-import { runInvestigation, type InvestigationRunDeps } from "./http/investigationRun.js";
+import { runInvestigation, type InvestigationRunDeps } from "./lib/run/investigation.js";
+import { streamInvestigation } from "./http/investigationRun.js";
 import { createSseWriter } from "./http/sseChannel.js";
 import { toPublicStreamEvent } from "./http/publicStream.js";
 
@@ -86,14 +88,13 @@ export function createHandlers(env: Record<string, string>) {
   catch (error) { releaseRuntime(); throw error; }
   const protocolVersion = 2;
   const investigationDeps: InvestigationRunDeps = {
-    env, runs, runStore,
+    env, runs,
     totalTimeoutMs: Number(env.ORCHESTRATE_TOTAL_TIMEOUT_MS || PIPELINE_TOTAL_TIMEOUT_MS_DEFAULT),
     lateGraceMs: Number(env.ORCHESTRATE_LATE_GRACE_MS || PIPELINE_LATE_GRACE_MS_DEFAULT),
   };
 
   function ownerOf(req: any): string | null {
-    const guestId = guestIdFromRequest(req);
-    return guestId ? guestOwnerHash(guestId) : null;
+    return guestFromRequest(req)?.ownerHash ?? null;
   }
 
   function ownedRun(req: any, res: any): RunRecord | null {
@@ -126,7 +127,6 @@ export function createHandlers(env: Record<string, string>) {
     async (req: any, res: any, next: any) => {
       try { return await handler(req, res, next); }
       catch (error) {
-        if (req.checkTicket) releaseFreeCheck(req.checkTicket);
         console.error("[investigations] request failed", error);
         if (!res.headersSent) return sendJson(res, 503, { error: "investigation_unavailable", message: "调查服务暂时不可用，请稍后重试" });
         return next(error);
@@ -312,8 +312,7 @@ export function createHandlers(env: Record<string, string>) {
     const intakeMetadata = buildCaseIntakeMetadata(intake);
     const clientMemoryRecall = normalizeClientMemoryRecall(payload.memoryRecall);
     const clientFollowUpReuse = kind === "follow-up" ? followUpReuseFromClientBrief(payload.priorRound) : null;
-    const guestId = ensureGuestId(req, res);
-    const ownerHash = guestOwnerHash(guestId);
+    const ownerHash = ensureGuest(req, res).ownerHash;
     const parentRunId = payload.parentRunId?.trim() || undefined;
     const conversationId = payload.conversationId?.trim() || undefined;
     const inputHash = hashRunInput(claim, {
@@ -322,7 +321,6 @@ export function createHandlers(env: Record<string, string>) {
     });
     const unlock = await lockAdmission(`${ownerHash}:${clientRequestId}`);
     let started: ReturnType<typeof runs.start>;
-    let ticket: NonNullable<typeof req.checkTicket>;
     try {
       const existing = runs.findExisting(ownerHash, clientRequestId);
       if (existing) {
@@ -334,17 +332,15 @@ export function createHandlers(env: Record<string, string>) {
         if (!parent || parent.ownerHash !== ownerHash) return sendJson(res, 403, { message: "不能关联其他浏览器的调查" });
         if (conversationId && parent.conversationId !== conversationId) return sendJson(res, 409, { message: "父调查不属于这个会话" });
       }
-      let allowed = false;
-      await freeCheckGate(req, res, (error?: unknown) => { if (error) throw error; allowed = true; });
-      if (!allowed || !req.checkTicket) return;
-      ticket = req.checkTicket;
+      const reservation = reserveFreeCheck(req, res);
+      if (!reservation) return;
       started = runs.start({
         caseId: kind === "follow-up" ? generateCaseId(claim) : payload.caseId || generateCaseId(claim),
         ownerHash, clientRequestId, inputHash, conversationId, parentRunId, kind,
         input: { claim: payload.claim, intake: payload.intake ?? null, memoryRecall: payload.memoryRecall ?? null, priorRound: payload.priorRound ?? null },
+        reservation,
       });
       if (started.kind !== "created") {
-        releaseFreeCheck(ticket);
         if (started.kind === "conflict") return sendJson(res, 409, { message: "同一个请求编号对应了不同的材料", runId: started.existing.runId });
         return background ? sendJson(res, 202, { ...runMeta(started.run), reused: true }) : streamEvents(req, res, started.run, 0);
       }
@@ -362,27 +358,16 @@ export function createHandlers(env: Record<string, string>) {
         console.error(`[investigations] reusing an earlier result failed, checking afresh runId=${createdRun.runId}`, error);
       }
       if (reusedResult) {
-        releaseFreeCheck(ticket);
-        delete req.checkTicket;
         const finished = runs.get(createdRun.runId) ?? createdRun;
         return background ? sendJson(res, 202, { ...runMeta(finished), reused: false }) : streamEvents(req, res, finished);
       }
     }
     const request = {
-      claim, ticket, intake, intakeMetadata, clientMemoryRecall, clientFollowUpReuse,
+      claim, intake, intakeMetadata, clientMemoryRecall, clientFollowUpReuse,
       run: { runId: createdRun.runId, caseId: createdRun.caseId, createdAt: createdRun.createdAt },
     };
-    if (!background) return runInvestigation(investigationDeps, request, res);
-    setImmediate(() => {
-      void runInvestigation(investigationDeps, request).catch(error => {
-        console.error(`[investigations] background execution failed runId=${createdRun.runId}`, error);
-        releaseFreeCheck(ticket);
-        try { runs.finish(createdRun.runId, "interrupted"); }
-        catch (storageError) { console.error("[investigations] failed to persist execution failure", storageError); }
-      });
-    });
-    // Execution owns the ticket once scheduled, even if writing the acceptance response fails.
-    delete req.checkTicket;
+    if (!background) return streamInvestigation(investigationDeps, request, res);
+    setImmediate(() => { void runInvestigation(investigationDeps, request); });
     sendJson(res, 202, { ...runMeta(createdRun), reused: false });
   }
 
