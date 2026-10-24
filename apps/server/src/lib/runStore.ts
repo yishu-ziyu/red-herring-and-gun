@@ -242,10 +242,6 @@ function createRunStore(db: DatabaseSync) {
         : db.prepare("SELECT * FROM run_results WHERE runId = ? AND revision = ?").get(runId, revision)) as ResultRow | undefined;
       return row ? toResult(row) : null;
     },
-    /**
-     * 可复用的已完成调查：只有文字（没有图片、没有链接）、不是追问、本身不是复用来的，
-     * 且在 sinceMs 之后发布过最终结果。最新的在前；只取原话，不读快照与报告。
-     */
     listReuseCandidates(sinceMs: number, limit = 500): Array<{ runId: string; claim: string }> {
       return db.prepare(`SELECT r.runId AS runId, json_extract(i.payload, '$.claim') AS claim
         FROM runs r JOIN run_inputs i ON i.runId = r.runId

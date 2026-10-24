@@ -177,7 +177,6 @@ export type StartOptions = {
    * 首轮、重试都不带，请求体里也就没有这些字段。
    */
   priorRound?: VisiblePriorRound | null;
-  /** 重新核查：不用同一句话以前的结果，照常现查。 */
   kind?: "recheck";
 };
 

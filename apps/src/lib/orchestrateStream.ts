@@ -59,7 +59,6 @@ export async function* requestOrchestrateStream(
   clientRequestId?: string,
   /** 追问：传上一轮可见材料。首轮不传，payload 不出现这些字段。 */
   priorRound?: VisiblePriorRound | null,
-  /** 重新核查：服务端不复用同一句话以前的结果，照常现查。 */
   kind?: "recheck"
 ): AsyncGenerator<OrchestrateStreamEvent> {
   const payload: Record<string, unknown> = { claim: caseIntakePrimaryText(input), intake: input };

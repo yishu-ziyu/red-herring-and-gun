@@ -350,8 +350,6 @@ export function createHandlers(env: Record<string, string>) {
       }
     } finally { unlock(); }
     const createdRun = started.run;
-    // 同一句话（只有文字的首轮）有人查完过：直接给出那次的结果，不跑管线、不扣次数。
-    // 重新核查与追问一律现查。复用途中出错就照常现查，不让用户拿不到结果。
     if (kind === "initial" && isTextOnlyIntake(intake)) {
       let reusedResult = false;
       try {

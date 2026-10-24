@@ -30,7 +30,6 @@ type ResultViewProps = {
   leftoverNote: string;
   readOnly: boolean;
   onFollowUp?: (question: string) => void;
-  /** 从历史记录打开的旧结果、复用以前结果的这一轮才有。 */
   onRecheck?: () => void;
   /** 保存到本机失败时才有。 */
   onRetrySave?: () => void;
@@ -389,7 +388,6 @@ function ResultActions({
   );
 }
 
-/** 「10 月 3 日」；英文界面「Oct 3」。 */
 function monthDay(value: string, lang: string): string {
   const time = Date.parse(value);
   if (!Number.isFinite(time)) return "";
