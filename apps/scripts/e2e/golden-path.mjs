@@ -44,7 +44,7 @@ async function run() {
   await page.keyboard.type(claim);
   await page.getByRole("button", { name: "开始调查" }).click();
 
-  const finished = page.locator('[data-gp-phase="complete"], [data-gp-phase="interrupted"], [data-gp-phase="stopped"]').first();
+  const finished = page.locator('[data-gp-phase="complete"], [data-gp-phase="interrupted"]').first();
   await finished.waitFor({ timeout: 10 * 60 * 1000 }).catch(() => {});
   const phase = await finished.getAttribute("data-gp-phase").catch(() => null);
   await shot("result");
