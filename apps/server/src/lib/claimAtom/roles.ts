@@ -36,7 +36,7 @@ export function collapseShortSingleClaim(
 }
 
 /**
- * 拆出来的一截用了原句没有的字，就是模型改写了原话：删掉这些字；删完对不上原句时，换回它在原句里的那一截（span）。
+ * 拆出来的一截用了原句没有的字，就是模型改写了原话：删掉这些字；删完剩得太少时，换回它在原句里的那一截（span）。
  * 只补主语之类、所有字都出自原句的条目（例：「等于吃毒药」写成「隔夜菜等于吃毒药」）不动。
  */
 export function keepOriginalWording(
@@ -58,10 +58,10 @@ export function keepOriginalWording(
     const added = (squash(atom).match(/\p{Script=Han}/gu) ?? []).filter((ch) => !sourceChars.has(ch));
     const span = spanByKey.get(claimAtomKey(atom));
     if (added.length === 0 || !span) continue;
-    // 只删掉原句没有的字，保留模型补上的主语（「隔夜菜就等于吃毒药」→「隔夜菜等于吃毒药」，不是只剩「等于吃毒药」，
-    // 否则没有主语，搜不到对口的证据）。删完既不是原句的一段、也不以原句那一截结尾时，才退回那一截。
+    // 只删掉原句没有的字，保留模型补上的主语（「满40岁去换领的身份证为长期有效」→「满40岁去换的身份证长期有效」，
+    // 不退回没有「身份证」的原句片段，否则搜不到对口的证据）。删掉的字太多、剩下的不成句时，才退回那一截。
     const trimmed = [...squash(atom)].filter((ch) => !/\p{Script=Han}/u.test(ch) || sourceChars.has(ch)).join("");
-    const usable = source.includes(trimmed) || trimmed.endsWith(squash(span));
+    const usable = trimmed.endsWith(squash(span)) || trimmed.length >= squash(atom).length * 0.75;
     replacement.set(claimAtomKey(atom), usable ? trimmed : span);
   }
   if (replacement.size === 0) return { atoms, types, restored: [] };
