@@ -102,6 +102,7 @@ export function createRunService(options: { store: RunStore | null }) {
     getInput: store.getInput,
     getResult: store.getResult,
     listByOwner: store.listByOwner,
+    listReuseCandidates: store.listReuseCandidates,
     deleteOwned: store.deleteOwned,
     replayEvents: store.listEvents,
     replayActivities: store.listActivities,

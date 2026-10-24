@@ -259,6 +259,8 @@ const InvestigationSnapshotSchema = Type.Object(
     conflicts: Type.Array(InvestigationConflictSchema),
     conclusion: Type.Optional(InvestigationConclusionSchema),
     checkedAt: Type.Optional(Type.String()),
+    /** 同一句话之前有人查完过，这次直接给出那次的结果；只记原结果的核查时间，不带原调查或原访客的任何信息。 */
+    reusedFrom: Type.Optional(Type.Object({ checkedAt: Type.String() }, closed)),
     preClaimWork: Type.Optional(InvestigationPreClaimWorkSchema),
     scope: Type.Optional(Type.Object({
       includedClaimIds: Type.Array(Type.String()),

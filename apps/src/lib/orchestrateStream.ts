@@ -58,11 +58,14 @@ export async function* requestOrchestrateStream(
   /** 幂等键：同一身份下同一个键只建一条 run，双击不会开两条管线。 */
   clientRequestId?: string,
   /** 追问：传上一轮可见材料。首轮不传，payload 不出现这些字段。 */
-  priorRound?: VisiblePriorRound | null
+  priorRound?: VisiblePriorRound | null,
+  /** 重新核查：服务端不复用同一句话以前的结果，照常现查。 */
+  kind?: "recheck"
 ): AsyncGenerator<OrchestrateStreamEvent> {
   const payload: Record<string, unknown> = { claim: caseIntakePrimaryText(input), intake: input };
   if (memoryRecall) payload.memoryRecall = memoryRecall;
   if (clientRequestId) payload.clientRequestId = clientRequestId;
+  if (kind) payload.kind = kind;
   if (priorRound) {
     payload.followUp = true;
     payload.priorRound = priorRound;

@@ -26,7 +26,7 @@ type InvestigationCanvasProps = {
   saveStatus?: "idle" | "local" | "failed";
   /** 保存失败要真的能点重试，不能只写「重试」两个字。 */
   onRetrySave?: () => void;
-  /** 从历史记录打开的旧结果：结果下面给「重新核查」。 */
+  /** 从历史记录打开的旧结果：结果下面给「重新核查」。复用以前结果的这一轮也给。 */
   restoredAt?: number;
   onReverify: () => void;
   /** 追问回调：就当前结论继续深入查证 */
@@ -157,7 +157,7 @@ export function InvestigationCanvas({
             leftoverNote={leftoverSentence}
             readOnly={readOnly}
             onFollowUp={onFollowUp}
-            onRecheck={restoredAt && !readOnly ? onReverify : undefined}
+            onRecheck={(restoredAt || snapshot.reusedFrom) && !readOnly ? onReverify : undefined}
             onRetrySave={saveStatus === "failed" ? onRetrySave : undefined}
             shareRunId={shareRunId}
             brief={buildConclusionBrief({

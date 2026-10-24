@@ -80,7 +80,7 @@ export default function App() {
       setActive({ localId, roundId: localId, roundKind, claim, intake, thread });
       setCases((prev) => [{ id: localId, claim: thread.originalClaim, threadId: thread.id, roundCount: thread.rounds.length + 1, status: "running" as const }, ...prev.filter((item) => item.id !== localId && item.threadId !== thread.id)]);
       setMode("investigation");
-      run.start(intake, { priorRound: followUp?.priorRound });
+      run.start(intake, { priorRound: followUp?.priorRound, ...(roundKind === "recheck" ? { kind: "recheck" as const } : {}) });
     },
     [run]
   );

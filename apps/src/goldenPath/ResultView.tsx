@@ -30,7 +30,7 @@ type ResultViewProps = {
   leftoverNote: string;
   readOnly: boolean;
   onFollowUp?: (question: string) => void;
-  /** 从历史记录打开的旧结果才有。 */
+  /** 从历史记录打开的旧结果、复用以前结果的这一轮才有。 */
   onRecheck?: () => void;
   /** 保存到本机失败时才有。 */
   onRetrySave?: () => void;
@@ -55,8 +55,19 @@ export function ResultView({
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
   const day = formatDay(snapshot.checkedAt);
+  const reusedDay = snapshot.reusedFrom ? monthDay(snapshot.reusedFrom.checkedAt, lang) : "";
   return (
     <div className="gp-result" data-gp-result>
+      {snapshot.reusedFrom ? (
+        <p className="gp-result-meta" data-gp-reused-result>
+          <span>{copy.sameClaimNotice(reusedDay)}</span>
+          {onRecheck ? (
+            <button type="button" className="gp-link-btn" data-gp-reused-recheck onClick={onRecheck}>
+              {copy.recheck}
+            </button>
+          ) : null}
+        </p>
+      ) : null}
       <section className="gp-result-verdict" aria-label="结论" data-gp-conclusion>
         <div data-gp-direct-answer>
           <span className={`gp-verdict-word gp-tone--${LABEL_TONE[label]}`} data-gp-conclusion-label={label}>
@@ -94,7 +105,7 @@ export function ResultView({
       <ResultActions
         readOnly={readOnly}
         onFollowUp={onFollowUp}
-        onRecheck={onRecheck}
+        onRecheck={snapshot.reusedFrom ? undefined : onRecheck}
         shareRunId={shareRunId}
         brief={brief}
       />
@@ -376,6 +387,14 @@ function ResultActions({
       </div>
     </section>
   );
+}
+
+/** 「10 月 3 日」；英文界面「Oct 3」。 */
+function monthDay(value: string, lang: string): string {
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return "";
+  const d = new Date(time);
+  return lang === "en" ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
 }
 
 /** ①…⑳，再往后用数字。 */

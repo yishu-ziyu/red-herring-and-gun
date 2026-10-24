@@ -177,6 +177,8 @@ export type StartOptions = {
    * 首轮、重试都不带，请求体里也就没有这些字段。
    */
   priorRound?: VisiblePriorRound | null;
+  /** 重新核查：不用同一句话以前的结果，照常现查。 */
+  kind?: "recheck";
 };
 
 function newClientRequestId(): string {
@@ -212,6 +214,7 @@ export function useInvestigationRun() {
         links: intake.links.map((link) => ({ url: link.url, content: link.scrapedContent })),
         images: intake.images.map((image) => image.dataUrl),
         priorRound: options.priorRound,
+        kind: options.kind,
       });
       const previous = lastSubmitRef.current;
       // 同一份材料 + 5 秒内重复提交 → 复用同一个 clientRequestId，服务端只建一条 run。
@@ -229,7 +232,7 @@ export function useInvestigationRun() {
         } catch {
           // 召回降级不阻断调查
         }
-        for await (const event of requestOrchestrateStream(intake, memoryRecall, clientRequestId, options.priorRound)) {
+        for await (const event of requestOrchestrateStream(intake, memoryRecall, clientRequestId, options.priorRound, options.kind)) {
           if (runIdRef.current !== runId) return;
           if (IGNORED_LEGACY_EVENT_TYPES.has(event.type)) continue;
           applyEvent(event, claim);
