@@ -172,7 +172,8 @@ function firstSentence(text: string, label: LabelKey): string {
   if ((first.match(/「/g) ?? []).length !== (first.match(/」/g) ?? []).length) return "";
   const own = LABEL_TEXT[label];
   const rest = first.split(own).join("");
-  if (/部分属实|基本属实|不属实|属实|夸大|还查不清|无法核对|说法不一|是观点/.test(rest)) return "";
+  // 只挡判定说法「夸大了」；「把风险夸大成……」是在说原句错在哪，要留着。
+  if (/部分属实|基本属实|不属实|属实|夸大了|还查不清|无法核对|说法不一|是观点/.test(rest)) return "";
   return /[。！？]$/.test(first) ? first : `${first}。`;
 }
 
