@@ -186,7 +186,7 @@ export async function callStepFunVisionForIntake({
     signal,
     deadlineMs,
   });
-  return { model: result.model.replace(/^stepfun:/, "stepfun-vision:"), output: result.output };
+  return { model: result.model.replace(/^([^:]+):/, "$1-vision:"), output: result.output };
 }
 
 /**

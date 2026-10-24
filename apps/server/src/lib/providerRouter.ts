@@ -45,10 +45,16 @@ function areCloudProvidersHardSkipped(providers: ModelProvider[], env: Record<st
 /**
  * ORCHESTRATE_<AGENT>_PROVIDER_ORDER, then ORCHESTRATE_TEXT_PROVIDER_ORDER, then the registry order.
  * Unknown names and duplicates are dropped; an empty result falls back to the registry order.
- * Reading images is not a matter of preference: only providers with vision are candidates.
+ * Image calls use the same order, keeping only providers with vision (registry order if none is listed).
  */
 function providersFor(env: Record<string, string>, agentId: string | undefined, withImages: boolean): ModelProvider[] {
-  if (withImages) return MODEL_PROVIDERS.filter((provider) => provider.vision);
+  const ordered = configuredOrder(env, agentId);
+  if (!withImages) return ordered;
+  const vision = ordered.filter((provider) => provider.vision);
+  return vision.length > 0 ? vision : MODEL_PROVIDERS.filter((provider) => provider.vision);
+}
+
+function configuredOrder(env: Record<string, string>, agentId: string | undefined): ModelProvider[] {
   const key = agentEnvKey(agentId);
   const raw =
     (key && envValue(env, `ORCHESTRATE_${key}_PROVIDER_ORDER`)) ||
