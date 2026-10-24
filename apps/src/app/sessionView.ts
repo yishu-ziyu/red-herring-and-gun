@@ -5,7 +5,7 @@ import { interruptedInvestigationSnapshot } from "../../shared/interruptedSnapsh
 import type { InvestigationSnapshotV1 } from "../../shared/investigation";
 import type { RunState } from "../goldenPath/useInvestigationRun";
 import type { ActiveCase } from "./caseHistory";
-import { publicTransportError } from "./notices";
+import { publicTransportError } from "../goldenPath/copy";
 
 export type SessionView =
   | { kind: "home" }
@@ -25,7 +25,7 @@ export function sessionView(run: RunState, active: ActiveCase | null, connection
   }
   const { snapshot, connection } = run;
   if (connection === "disconnected") return { kind: "disconnected", snapshot, runId: run.runId };
-  if (run.runId && connection === "connecting") return { kind: "reconnecting", snapshot };
+  if (run.resumed && connection === "connecting") return { kind: "reconnecting", snapshot };
   if (run.timeoutPending && !run.finalReport && (connection === "live" || connection === "connecting")) {
     return { kind: "timeoutPending", snapshot };
   }

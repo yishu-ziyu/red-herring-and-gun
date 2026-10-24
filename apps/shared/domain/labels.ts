@@ -29,6 +29,22 @@ export const LABEL_TEXT: Record<LabelKey, string> = {
   opinion: "是观点，不分对错",
 };
 
+const LABEL_TEXT_EN: Record<LabelKey, string> = {
+  true: "True",
+  "mostly-true": "Mostly true",
+  "partly-true": "Partly true",
+  exaggerated: "Exaggerated",
+  false: "False",
+  unresolved: "Can't tell yet",
+  uncheckable: "Can't be checked",
+  disputed: "Sources disagree",
+  opinion: "Opinion, not true or false",
+};
+
+export function labelText(label: LabelKey, lang: "zh" | "en" = "zh"): string {
+  return (lang === "en" ? LABEL_TEXT_EN : LABEL_TEXT)[label];
+}
+
 /** 颜色只做辅助：绿 / 黄 / 红 / 灰。 */
 export const LABEL_TONE: Record<LabelKey, "positive" | "mixed" | "negative" | "muted"> = {
   true: "positive",

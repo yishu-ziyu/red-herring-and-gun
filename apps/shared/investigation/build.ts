@@ -41,6 +41,7 @@ import { findClaimSourceRelationAudit, investigationSourceId, normalizeInvestiga
 import { dateFromUrl, normalizePublishedDate } from "./sourceDate.js";
 import { SOURCE_CONTENT_MAX_CHARS, plainPartWording, withoutReadStatus } from "./material.js";
 import { verbatimQuote } from "./quote.js";
+import { notCoveredTexts } from "./presentation.js";
 
 export type InvestigationBuildInput = {
   originalClaim: string;
@@ -1094,6 +1095,7 @@ export function buildInvestigationSnapshot(
     ...(input.scopePlan ? { scope: {
       includedClaimIds: claims.filter((c) => c.evidence.length > 0 || input.scopePlan!.includedAtoms.some((a) => claimAtomKey(a) === claimAtomKey(c.text))).map((c) => c.id),
       deferredClaimIds: claims.filter((c) => c.evidence.length === 0 && !input.scopePlan!.includedAtoms.some((a) => claimAtomKey(a) === claimAtomKey(c.text)) && input.scopePlan!.deferredAtoms.some((a) => claimAtomKey(a) === claimAtomKey(c.text))).map((c) => c.id),
+      ...(phase === "complete" || phase === "interrupted" ? { notCoveredTexts: notCoveredTexts(originalClaim, claims) } : {}),
     } } : {}),
   });
 }

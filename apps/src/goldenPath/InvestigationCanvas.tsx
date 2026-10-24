@@ -3,23 +3,19 @@
  */
 import { useEffect, useState } from "react";
 import type { InvestigationSnapshotV1 } from "../../shared/investigation";
-import { judgmentToLabel } from "../../shared/investigation";
-import { LABEL_TEXT } from "../../shared/domain/labels";
-import { scrubFaceText } from "../../shared/scrubFace";
+import { conclusionBrief, notCoveredNote, presentConclusion, shownClaims } from "../../shared/investigation/presentation";
+import { displayFollowUpClaim } from "../../shared/followUp";
 import { useUiLang } from "../lib/useUiLang";
-import { displayFollowUpClaim, conclusionMissesFollowUp, followUpQuestionLead } from "../../shared/followUp";
-import { isUrlOnlyClaim, type CaseImage } from "../lib/caseIntake";
+import type { CaseImage } from "../lib/caseIntake";
 import { gpCopyFor } from "./copy";
-import { leftoverGapSentence, leftoverTextsForCanvas, isCompleteEmptyShell } from "./leftoverClaims";
 import { OriginalSentence, ResultView, UnspannedParts } from "./ResultView";
 import { ProgressView } from "./ProgressView";
-import { buildConclusionBrief } from "./ShareControl";
 import { IntakeImages } from "./IntakeImages";
 
 type InvestigationCanvasProps = {
   snapshot: InvestigationSnapshotV1;
   connectionUnavailable?: boolean;
-  /** 停止：三态由服务端确认驱动，不提前说已停止。 */
+  /** 停止：三态由服务端确认驱动，不提前说已停止；历史回看里用户停过的也是 stopped。 */
   stop?: "idle" | "stopping" | "stopped";
   onStop?: () => void;
   /** 保存状态：独立于结果存在与否，不把失败藏在 console。 */
@@ -45,7 +41,7 @@ type InvestigationCanvasProps = {
 export function InvestigationCanvas({
   snapshot,
   connectionUnavailable = false,
-  stop: liveStop = "idle",
+  stop = "idle",
   onStop,
   saveStatus = "idle",
   onRetrySave,
@@ -60,58 +56,27 @@ export function InvestigationCanvas({
 }: InvestigationCanvasProps) {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
-  // 历史只读也保留用户主动停止的事实，不把它重新解释成网络中断。
-  const stop = snapshot.interruptionReason === "cancelled" ? "stopped" : liveStop;
   const [announce, setAnnounce] = useState("");
 
   // 状态变化用一句轻量播报解释发生了什么（渐进呈现，不是 Agent 日志）。
   useEffect(() => {
     if (connectionUnavailable || snapshot.phase === "interrupted" || stop !== "idle") setAnnounce("");
     else if (snapshot.phase === "decomposed") setAnnounce(copy.canvasClaimsLabel);
-    else if (snapshot.phase === "investigating") setAnnounce("正在逐条追查出处");
-    else if (snapshot.phase === "judging") setAnnounce("正在对照证据形成判断");
+    else if (snapshot.phase === "investigating") setAnnounce(copy.announceInvestigating);
+    else if (snapshot.phase === "judging") setAnnounce(copy.announceJudging);
     else if (snapshot.phase === "complete") setAnnounce("");
-  }, [snapshot.phase, stop, copy.canvasClaimsLabel, connectionUnavailable]);
+  }, [snapshot.phase, stop, copy, connectionUnavailable]);
 
 
-  const conclusion = snapshot.conclusion;
-  const complete = snapshot.phase === "complete" && Boolean(conclusion);
-  const urlOnly = isUrlOnlyClaim(snapshot.originalClaim);
-  const unopenedLink = linkUnreachable || (complete && urlOnly && snapshot.claims.length === 0);
-  const followUpQuestion = displayFollowUpClaim(snapshot.originalClaim);
-  const followUpRewrite =
-    complete &&
-    conclusion &&
-    conclusionMissesFollowUp(conclusion.verdictLead || conclusion.directAnswer, snapshot.originalClaim)
-      ? followUpQuestionLead(followUpQuestion, conclusion.judgment)
-      : "";
-  const unopenedEmpty = Boolean(complete && conclusion && unopenedLink && snapshot.claims.length === 0);
-  const displayDirectAnswer = unopenedEmpty
-    ? copy.linkUnreachableVerdict
-    : followUpRewrite || conclusion?.directAnswer || "";
-  const displayVerdictLead = unopenedEmpty
-    ? copy.linkUnreachableVerdict
-    : followUpRewrite || conclusion?.verdictLead;
-  // 结论第一句：标签后面那一句，和分享页同一份（服务端 publicAnswer）。
-  const rawLead = displayVerdictLead?.trim() ? displayVerdictLead : displayDirectAnswer;
-  const displayLead = scrubFaceText(rawLead) || rawLead;
+  const conclusion = presentConclusion(snapshot, { linkUnreachable, lang });
+  const complete = snapshot.phase === "complete" && conclusion !== null;
   // 用户点过停止就不再把它读成「中断」：同一次事故不该有两种说法。
-  // 分条已齐的总答仍要看见，不能跟着黄卡一起藏掉。
-  // 结论简报的「核查范围」和「关键来源」：追问区的复制按钮与分享区的复制按钮用同一份。
-  const coverageNote = snapshot.scope
-    ? `${lang === "en" ? "Scope: " : "核查范围："}${snapshot.claims.filter((c) => snapshot.scope!.includedClaimIds.includes(c.id)).map((c) => c.text).join("；")}${snapshot.scope.deferredClaimIds.length ? `${lang === "en" ? ". Not covered: " : "。本轮未覆盖："}${snapshot.claims.filter((c) => snapshot.scope!.deferredClaimIds.includes(c.id)).map((c) => c.text).join("；")}` : ""}`
-    : undefined;
-  const briefSourceUrls = (conclusion?.sourceIds.length
-    ? conclusion.sourceIds.map((id) => snapshot.sources.find((source) => source.id === id)?.url)
-    : snapshot.sources.map((source) => source.url)
-  ).filter((url): url is string => Boolean(url));
   const interrupted = snapshot.phase === "interrupted" && stop !== "stopped";
+  // 分条已齐的总答仍要看见，不能跟着黄卡一起藏掉。
   const closedAnswer = snapshot.phase === "interrupted" ? snapshot.conclusion?.directAnswer?.trim() ?? "" : "";
   const interruptedAnswer = interrupted ? closedAnswer : "";
-  const resultClaims = complete ? snapshot.claims.filter((c) => !isCompleteEmptyShell(c)) : snapshot.claims;
-  const leftoverTexts =
-    complete || interrupted ? leftoverTextsForCanvas(snapshot.originalClaim, snapshot.claims) : [];
-  const leftoverSentence = leftoverTexts.length > 0 ? leftoverGapSentence(leftoverTexts) : "";
+  const claims = shownClaims(snapshot);
+  const notCovered = complete || interrupted ? notCoveredNote(snapshot, lang) : "";
   return (
     <div
       className="gp-canvas"
@@ -139,35 +104,24 @@ export function InvestigationCanvas({
         <section className="gp-original" aria-label={copy.canvasOriginalLabel}>
           <blockquote className="gp-original-quote" data-gp-original-sentence>
             <span className="gp-quote-open" aria-hidden="true">“</span>
-            <OriginalSentence text={displayFollowUpClaim(snapshot.originalClaim)} claims={resultClaims} />
+            <OriginalSentence text={displayFollowUpClaim(snapshot.originalClaim)} claims={claims} />
             <span aria-hidden="true">”</span>
           </blockquote>
-          {complete ? <UnspannedParts text={displayFollowUpClaim(snapshot.originalClaim)} claims={resultClaims} /> : null}
+          {complete ? <UnspannedParts text={displayFollowUpClaim(snapshot.originalClaim)} claims={claims} /> : null}
           <IntakeImages images={images} />
         </section>
 
         {complete && conclusion ? (
           <ResultView
             snapshot={snapshot}
-            claims={resultClaims}
-            label={conclusion.label ?? judgmentToLabel(conclusion.judgment)}
-            lead={displayLead}
-            hasReason={Boolean(conclusion.reason) && !followUpRewrite && !unopenedEmpty}
-            leftoverNote={leftoverSentence}
+            claims={claims}
+            conclusion={conclusion}
             readOnly={readOnly}
             onFollowUp={onFollowUp}
             onRecheck={(restoredAt || snapshot.reusedFrom) && !readOnly ? onReverify : undefined}
             onRetrySave={saveStatus === "failed" ? onRetrySave : undefined}
             shareRunId={shareRunId}
-            brief={buildConclusionBrief({
-              originalClaim: snapshot.originalClaim,
-              directAnswer: `${LABEL_TEXT[conclusion.label ?? judgmentToLabel(conclusion.judgment)]}。${displayLead}`,
-              boundaries: conclusion.boundaries,
-              claimBoundaries: resultClaims,
-              checkedAt: snapshot.checkedAt,
-              sourceUrls: briefSourceUrls,
-              coverageNote,
-            })}
+            brief={conclusionBrief(snapshot, conclusion, claims, lang)}
           />
         ) : null}
 
@@ -198,10 +152,10 @@ export function InvestigationCanvas({
         {!complete ? (
           <ProgressView
             snapshot={snapshot}
-            claims={resultClaims}
+            claims={claims}
             interrupted={snapshot.phase === "interrupted" || stop !== "idle"}
             connectionUnavailable={connectionUnavailable}
-            leftoverNote={leftoverSentence}
+            notCovered={notCovered}
             startedAt={startedAt}
             onStop={!interrupted && onStop && stop === "idle" ? onStop : undefined}
           />

@@ -4,7 +4,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
-import { formatDay } from "./snapshotUi";
+import { formatDay } from "../../shared/investigation/presentation";
 import "./golden-path.css";
 
 export type ShellCase = {
@@ -27,13 +27,6 @@ type ProductShellProps = {
   children: ReactNode;
 };
 
-/** 查完是常态，不标；只标还在查和没查完的。 */
-const CASE_STATUS_LABEL: Record<ShellCase["status"], string> = {
-  running: "调查中",
-  done: "",
-  interrupted: "未完成",
-};
-
 export function ProductShell({
   cases,
   activeCaseId,
@@ -46,6 +39,8 @@ export function ProductShell({
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // 查完是常态，不标；只标还在查和没查完的。
+  const caseStatusLabel: Record<ShellCase["status"], string> = { running: copy.caseRunning, done: "", interrupted: copy.caseInterrupted };
 
   useEffect(() => {
     if (!historyOpen) return;
@@ -64,7 +59,7 @@ export function ProductShell({
             <img src="/mark.png" alt="" className="gp-brand-mark" />
             红鲱鱼与枪
           </div>
-          <nav className="gp-topbar-actions" aria-label="产品导航">
+          <nav className="gp-topbar-actions" aria-label={copy.navAria}>
             {viewingInvestigation ? (
               <button type="button" className="gp-icon-btn" onClick={onNewCase}>
                 {copy.newCheck}
@@ -126,10 +121,10 @@ export function ProductShell({
                       }}
                     >
                       <span className="gp-history-claim">{item.claim}</span>
-                      {CASE_STATUS_LABEL[item.status] || item.createdAt ? (
+                      {caseStatusLabel[item.status] || item.createdAt ? (
                         <span className="gp-history-meta">
-                          {CASE_STATUS_LABEL[item.status] ? (
-                            <span data-gp-case-status={item.status}>{CASE_STATUS_LABEL[item.status]}</span>
+                          {caseStatusLabel[item.status] ? (
+                            <span data-gp-case-status={item.status}>{caseStatusLabel[item.status]}</span>
                           ) : null}
                           {item.createdAt ? <span>{formatDay(item.createdAt)}</span> : null}
                         </span>

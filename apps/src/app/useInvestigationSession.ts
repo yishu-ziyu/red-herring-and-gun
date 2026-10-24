@@ -18,7 +18,6 @@ import {
   type ActiveCase,
   type SaveStatus,
 } from "./caseHistory";
-import { HISTORY_OPEN_FAILED_NOTICE } from "./notices";
 import { activeCaseFromPointer, pointerForRun, readRunPointer, writeRunPointer } from "./runPointer";
 import { sessionView, type SessionView } from "./sessionView";
 
@@ -138,13 +137,13 @@ export function useInvestigationSession() {
       const opened = await open(id);
       // 读不到或读不出内容不能点了没反应：提示可见，条目状态不动。
       if (!opened) {
-        setHistoryNotice(HISTORY_OPEN_FAILED_NOTICE[lang]);
+        setHistoryNotice(copy.historyOpenFailed);
         return;
       }
       resetRun();
       setActive(opened);
     },
-    [active?.localId, history.cases, lang, open, resetRun]
+    [active?.localId, copy.historyOpenFailed, history.cases, open, resetRun]
   );
 
   const reconnect = useCallback(() => {
@@ -237,7 +236,8 @@ export function useInvestigationSession() {
         snapshot: canvasSnapshot,
         key: archivedRound?.id ?? active.roundId ?? active.localId,
         readOnly: Boolean(archivedRound),
-        stop: frozen ? "idle" : state.stop,
+        // 历史回看也保留用户主动停止的事实，不把它重新解释成网络中断。
+        stop: canvasSnapshot.interruptionReason === "cancelled" ? "stopped" : frozen ? "idle" : state.stop,
         canStop: !frozen && Boolean(state.runId),
         saveStatus,
         restoredAt: view.kind === "settled" ? view.restoredAt : undefined,

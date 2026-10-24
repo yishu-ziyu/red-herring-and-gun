@@ -352,34 +352,6 @@
   background: var(--sand-5);
 }
 
-.gp-roles {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 64px;
-}
-
-.gp-role-avatar {
-  display: block;
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 8px;
-  object-fit: cover;
-  border-radius: 50%;
-  background: var(--sand-3);
-}
-
-.gp-role strong,
-.gp-role small {
-  display: block;
-  font-size: var(--gp-size-small);
-}
-
-.gp-role small {
-  color: var(--sand-11);
-}
-
 .gp-share-unavailable {
   padding: 64px 0;
 }
@@ -688,12 +660,6 @@
 
   .gp-input-stage {
     padding-top: 48px;
-  }
-
-  .gp-roles {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    row-gap: 24px;
-    margin-top: 48px;
   }
 
   .gp-investigation-thread nav button {

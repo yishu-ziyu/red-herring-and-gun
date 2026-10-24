@@ -8,7 +8,6 @@ import { InvestigationCanvas } from "./goldenPath/InvestigationCanvas";
 import { InvestigationThreadHeader } from "./goldenPath/InvestigationThreadHeader";
 import { gpCopyFor } from "./goldenPath/copy";
 import { useUiLang } from "./lib/useUiLang";
-import { TIMEOUT_PENDING_NOTICE } from "./app/notices";
 import { useInvestigationSession } from "./app/useInvestigationSession";
 
 export default function App() {
@@ -36,7 +35,7 @@ export default function App() {
 
   const timeoutPending = view.kind === "timeoutPending" ? (
     <p className="gp-global-notice gp-column" role="status" data-gp-timeout-pending>
-      {TIMEOUT_PENDING_NOTICE[lang]}
+      {copy.timeoutPending}
     </p>
   ) : null;
 
@@ -51,14 +50,12 @@ export default function App() {
     >
       {view.kind === "disconnected" ? (
         <p className="gp-global-notice gp-column" role="status" data-gp-disconnected>
-          {view.runId
-            ? "连接已断开，调查可能仍在继续。下面保留的是断线前收到的内容。"
-            : "连接已断开，尚未收到调查编号，无法确认请求是否已经开始。"}
+          {view.runId ? copy.disconnectedWithRun : copy.disconnectedNoRun}
           {view.runId ? <button type="button" className="gp-link-btn" onClick={session.reconnect}>
-            重新连接这次调查
+            {copy.reconnect}
           </button> : null}
         </p>
-      ) : view.kind === "reconnecting" ? <p className="gp-global-notice gp-column" role="status">正在重新连接这次调查…</p> : null}
+      ) : view.kind === "reconnecting" ? <p className="gp-global-notice gp-column" role="status">{copy.reconnecting}</p> : null}
       {session.banner ? <p className="gp-global-notice gp-column" role="alert">{session.banner}</p> : null}
       {thread ? <InvestigationThreadHeader
         thread={thread}
@@ -97,10 +94,10 @@ export default function App() {
       ) : timeoutPending ?? (
         <p className="gp-waiting gp-column" role="status">
           {view.kind === "disconnected" || view.kind === "reconnecting"
-            ? "尚未收到新的调查内容。"
+            ? copy.noNewContent
             : view.kind === "waiting" && view.failure !== null && !session.linkUnreachable
               ? view.failure
-              : "正在拆分这句话…"}
+              : copy.splittingWait}
         </p>
       )}
     </ProductShell>

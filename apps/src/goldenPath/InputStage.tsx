@@ -1,5 +1,5 @@
 /**
- * 首页输入、示例和分工说明。
+ * 首页输入和示例。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
