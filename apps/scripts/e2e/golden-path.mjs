@@ -28,6 +28,16 @@ const record = (name, pass, detail = "") => {
 const browser = await chromium.launch();
 const viewport = { width: 1440, height: 900 };
 const context = await browser.newContext({ viewport, recordVideo: { dir: out, size: viewport } });
+// Records every phase the canvas shows, so a reused earlier answer (no progress at all) is caught.
+await context.addInitScript(() => {
+  window.__gpPhases = [];
+  new MutationObserver(() => {
+    for (const node of document.querySelectorAll("[data-gp-phase]")) {
+      const phase = node.getAttribute("data-gp-phase");
+      if (window.__gpPhases.at(-1) !== phase) window.__gpPhases.push(phase);
+    }
+  }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-gp-phase"] });
+});
 const page = await context.newPage();
 let investigationPosts = 0;
 page.on("request", (req) => {
@@ -50,6 +60,12 @@ async function run() {
   await shot("result");
   if (!record("investigation completes", phase === "complete", `phase=${phase}`)) return;
   record("exactly one investigation request", investigationPosts === 1, `posts=${investigationPosts}`);
+  const phases = await page.evaluate(() => window.__gpPhases);
+  record(
+    "the investigation actually ran (not an earlier answer reused)",
+    phases.some((p) => p !== "complete" && p !== "interrupted"),
+    `${phases.join(" → ")}${phases.length <= 1 ? " — this claim was answered before; set E2E_CLAIM to a new one" : ""}`
+  );
 
   const lead = page.locator("[data-gp-direct-answer]").first();
   const label = (await lead.locator("[data-gp-conclusion-label]").first().textContent().catch(() => "")).trim();
