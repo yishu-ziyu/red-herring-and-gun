@@ -1,0 +1,50 @@
+// 交互检查：[n] 悬停卡、为什么算支持、分享按钮、历史抽屉点开、运行页历史回放与回到最新。
+import { chromium } from "/Users/mahaoxuan/Desktop/AI-products/红鲱鱼/apps/node_modules/playwright/index.mjs";
+const BASE = process.env.BASE || "http://127.0.0.1:5203";
+const out = process.argv[2] || ".";
+const b = await chromium.launch();
+const page = await b.newPage({ viewport: { width: 1440, height: 900 } });
+const log = (...a) => console.log(...a);
+
+await page.goto(`${BASE}/?part=result&run=sun`);
+await page.waitForSelector("article[data-gp-claim-id]");
+log("claims", await page.locator("article[data-gp-claim-id]").count(), "labels", await page.locator("[data-gp-claim-label]").evaluateAll((e) => e.map((x) => x.getAttribute("data-gp-claim-label"))));
+log("conclusion", await page.getAttribute("[data-gp-conclusion-label]", "data-gp-conclusion-label"), "|", (await page.textContent("[data-gp-conclusion-reason]")).slice(0, 40));
+log("evidence rows", await page.locator("[data-gp-evidence-row]").evaluateAll((e) => e.map((x) => x.getAttribute("data-gp-role") + ":" + Boolean(x.querySelector("a[href]")))).then((r) => r.join(",")));
+const sup = page.locator("article sup.cite-sup").first();
+await sup.scrollIntoViewIfNeeded();
+await sup.hover();
+await page.waitForSelector(".mantine-HoverCard-dropdown", { timeout: 3000 });
+log("hovercard:", (await page.textContent(".mantine-HoverCard-dropdown")).slice(0, 80));
+await page.screenshot({ path: `${out}/check-hovercard.png` });
+await page.mouse.move(5, 5);
+const why = page.getByRole("button", { name: "为什么算支持" }).first();
+await why.click();
+await page.waitForTimeout(400);
+log("why visible:", await page.locator("[data-gp-evidence-row]").first().innerText().then((t) => t.slice(0, 160).replace(/\n/g, " / ")));
+await page.screenshot({ path: `${out}/check-why.png` });
+await page.click("[data-gp-share-start]");
+await page.waitForSelector("[data-share-error], [data-gp-share-url]", { timeout: 5000 });
+log("share:", await page.locator("[data-gp-share-url]").count() ? await page.getAttribute("[data-gp-share-url]", "data-gp-share-url") : await page.locator("[data-share-error]").innerText());
+
+await page.getByRole("button", { name: "历史记录" }).click();
+await page.waitForSelector("[role=dialog] a");
+await page.locator("[role=dialog] a", { hasText: "柠檬" }).click();
+await page.waitForSelector("[data-gp-direct-answer]");
+await page.waitForTimeout(600);
+log("history → url", page.url(), "dialog open:", await page.locator("[role=dialog]").count());
+
+await page.goto(`${BASE}/?part=running&run=seafood`);
+await page.waitForTimeout(4000);
+const aside = page.getByRole("complementary");
+await aside.getByText("历史回放", { exact: true }).click();
+const slider = aside.getByRole("slider", { name: "回放到第几条事件" });
+await slider.focus();
+for (let i = 0; i < 40; i++) await page.keyboard.press("ArrowLeft");
+await page.waitForTimeout(300);
+log("history mode:", await aside.locator("text=停在第").innerText(), "phase", await page.getAttribute("[data-gp-phase]", "data-gp-phase"));
+await page.screenshot({ path: `${out}/check-history-replay.png` });
+await aside.getByRole("button", { name: "回到最新" }).click();
+await page.waitForSelector('[data-gp-phase="complete"]', { timeout: 60000 });
+log("after 回到最新 → complete; result:", await page.locator("[data-gp-result]").count());
+await b.close();

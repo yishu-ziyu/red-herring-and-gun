@@ -1,0 +1,5 @@
+/* 只放 Mantine 组件之外的极少量排版：引用角标、正文行高。 */
+body { background: #f9f7f4; }
+.cite-sup { font-size: 0.72em; vertical-align: super; line-height: 0; margin: 0 1px; cursor: pointer; }
+.prose { line-height: 1.75; word-break: break-word; }
+.thought-line { white-space: pre-wrap; word-break: break-word; }

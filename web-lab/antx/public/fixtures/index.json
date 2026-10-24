@@ -1,0 +1,38 @@
+[
+ {
+  "fixture": "sun",
+  "runId": "ff018d08-71e2-4d55-94c1-49936005ad56",
+  "claim": "晒太阳能补钙，冬天在家隔着玻璃窗晒晒也一样有用",
+  "status": "completed",
+  "createdAt": 1792835382433,
+  "updatedAt": 1792835527103,
+  "label": "partly-true"
+ },
+ {
+  "fixture": "ham",
+  "runId": "d33aaa6d-a048-4e6c-a55d-179e70ce7b65",
+  "claim": "世卫说了，每天吃50克火腿肠这类加工肉，得结直肠癌的风险直接翻一倍。",
+  "status": "completed",
+  "createdAt": 1792835382395,
+  "updatedAt": 1792835463298,
+  "label": "false"
+ },
+ {
+  "fixture": "meat",
+  "runId": "cd02e5d1-398f-4fe1-871e-c5d87a0bd0e8",
+  "claim": "火腿、香肠、培根这些加工肉制品，早就被世卫的国际癌症研究机构列为一类致癌物了。",
+  "status": "completed",
+  "createdAt": 1792836923145,
+  "updatedAt": 1792837036093,
+  "label": "true"
+ },
+ {
+  "fixture": "dates",
+  "runId": "95baf46b-5e4d-4a53-aff3-f7638df4d771",
+  "claim": "我们小区群里说，宁波一家连锁超市卖的散装红枣表面都涂了一层工业石蜡，用热水一泡水面就浮起白色油膜",
+  "status": "completed",
+  "createdAt": 1792845052676,
+  "updatedAt": 1792845167874,
+  "label": "unresolved"
+ }
+]

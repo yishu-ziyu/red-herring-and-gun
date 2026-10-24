@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "types": ["vite/client"],
+    "paths": {
+      "@shared/*": ["../../apps/shared/*"],
+      "typebox": ["./node_modules/typebox/build/index.d.mts"],
+      "typebox/value": ["./node_modules/typebox/build/value/index.d.mts"]
+    }
+  },
+  "include": ["src"]
+}
