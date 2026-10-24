@@ -14,7 +14,7 @@ import {
 
 /** 每次读图的时限；失败只重试一次。模型路由里视觉模型自己的单次时限更长，以这里为准。 */
 const IMAGE_READ_TIMEOUT_MS = 60_000;
-const VISION_TOOL = { toolName: "StepFun Vision", query: "图片材料解析" } as const;
+const VISION_TOOL = { toolName: "Image Reading", query: "图片材料解析" } as const;
 const IMAGE_UNREADABLE_NOTICE = "图片没能读出来，已按你输入的文字继续";
 export const IMAGE_UNREADABLE_ONLY_MESSAGE = "图片没能读出来，这次没法核查。请换一张更清晰的图，或把图里的文字打出来再试。";
 
@@ -87,7 +87,7 @@ export async function readIntake(input: {
       type: "tool_result",
       ...VISION_TOOL,
       model: vision.model,
-      result: { _source: "stepfun-vision", ...visualExtraction },
+      result: { _source: "vision", ...visualExtraction },
       timestamp: Date.now(),
     });
   } catch (error) {
