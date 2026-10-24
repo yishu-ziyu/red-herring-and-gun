@@ -18,6 +18,7 @@ import {
   buildCaseIntakeMetadata,
 } from "./lib/visionIntake.js";
 import { followUpReuseFromClientBrief } from "./lib/followUpReuse.js";
+import { commitReusedResult, findReusableResult, isTextOnlyIntake } from "./lib/claimReuse.js";
 import { runInvestigation, type InvestigationRunDeps } from "./http/investigationRun.js";
 import { createSseWriter } from "./http/sseChannel.js";
 import { toPublicStreamEvent } from "./http/publicStream.js";
@@ -349,6 +350,26 @@ export function createHandlers(env: Record<string, string>) {
       }
     } finally { unlock(); }
     const createdRun = started.run;
+    // 同一句话（只有文字的首轮）有人查完过：直接给出那次的结果，不跑管线、不扣次数。
+    // 重新核查与追问一律现查。复用途中出错就照常现查，不让用户拿不到结果。
+    if (kind === "initial" && isTextOnlyIntake(intake)) {
+      let reusedResult = false;
+      try {
+        const reusable = findReusableResult(runs, claim);
+        if (reusable) {
+          commitReusedResult(runs, { runId: createdRun.runId, claim }, reusable);
+          reusedResult = true;
+        }
+      } catch (error) {
+        console.error(`[investigations] reusing an earlier result failed, checking afresh runId=${createdRun.runId}`, error);
+      }
+      if (reusedResult) {
+        releaseFreeCheck(ticket);
+        delete req.checkTicket;
+        const finished = runs.get(createdRun.runId) ?? createdRun;
+        return background ? sendJson(res, 202, { ...runMeta(finished), reused: false }) : streamEvents(req, res, finished);
+      }
+    }
     const request = {
       claim, ticket, intake, intakeMetadata, clientMemoryRecall, clientFollowUpReuse,
       run: { runId: createdRun.runId, caseId: createdRun.caseId, createdAt: createdRun.createdAt },
