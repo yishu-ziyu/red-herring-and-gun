@@ -68,7 +68,7 @@ export function makeRunAgentCallbacks(sendEvent: (data: object) => void) {
 export function makePipelineHooks(ctx: {
   sendEvent: (data: object) => void;
   emitInvestigation: (snapshot: InvestigationSnapshotV1) => void;
-  emitter: ReturnType<typeof createInvestigationEmitter>;
+  emitter: Pick<ReturnType<typeof createInvestigationEmitter>, "emitSearchStarted">;
 }): CasePipelineHooks {
   const { sendEvent, emitInvestigation, emitter } = ctx;
   return {

@@ -9,12 +9,11 @@
 import {
   createActivityLog,
   type InvestigationSnapshotV1,
-  type PublicActivity,
 } from "../../../shared/investigation/index.js";
 
 type InvestigationEmitter = {
-  /** 快照先落，活动后发。重复快照不产生新活动。 */
-  emitSnapshot(snapshot: InvestigationSnapshotV1): void;
+  /** 快照帧在前，它引出的活动在后；调用方原样一次提交。重复快照不产生新活动。 */
+  snapshotEvents(snapshot: InvestigationSnapshotV1): Record<string, unknown>[];
   /** 动作类事件：没有可归属对象，只能描述动作。 */
   emitSearchStarted(atom: string): void;
 };
@@ -22,33 +21,24 @@ type InvestigationEmitter = {
 export function createInvestigationEmitter(options: {
   runId: string;
   send: (event: Record<string, unknown>) => void;
-  commitSnapshot?: (snapshot: InvestigationSnapshotV1, events: Record<string, unknown>[]) => void;
 }): InvestigationEmitter {
   const log = createActivityLog(options.runId);
   const timestamp = () => Date.now();
   let previous: InvestigationSnapshotV1 | null = null;
 
-  const sendActivities = (activities: PublicActivity[]) => {
-    if (activities.length === 0) return;
-    for (const activity of activities) {
-      options.send({ type: "investigation_activity", activity, timestamp: timestamp() });
-    }
-
-  };
-
   return {
-    emitSnapshot(snapshot) {
+    snapshotEvents(snapshot) {
       const activities = log.project(previous, snapshot);
-      const events = [
+      previous = snapshot;
+      return [
         { type: "investigation_snapshot", investigation: snapshot, timestamp: timestamp() },
         ...activities.map(activity => ({ type: "investigation_activity", activity, timestamp: timestamp() })),
       ];
-      if (options.commitSnapshot) options.commitSnapshot(snapshot, events);
-      else for (const event of events) options.send(event);
-      previous = snapshot;
     },
     emitSearchStarted(atom) {
-      sendActivities(log.recordSearchStarted(atom));
+      for (const activity of log.recordSearchStarted(atom)) {
+        options.send({ type: "investigation_activity", activity, timestamp: timestamp() });
+      }
     },
   };
 }

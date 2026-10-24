@@ -271,33 +271,6 @@ function createRunStore(db: DatabaseSync) {
         return true;
       });
     },
-    setStatus(runId: string, status: RunStatus, now = Date.now()): boolean {
-      return transaction(() => {
-        const current = read(runId);
-        if (!current || isTerminalStatus(current.status)) return false;
-        const committed = commitInside(runId, { status, events: [{ type: "run_state", status, revision: current.revision }] }, now);
-        return committed.events.length > 0;
-      });
-    },
-    saveSnapshot(runId: string, snapshot: InvestigationSnapshotV1, now = Date.now()): number {
-      return transaction(() => commitInside(runId, { snapshot, events: [] }, now).run.revision);
-    },
-    appendActivities(runId: string, activities: readonly PublicActivity[], now = Date.now()): number {
-      return transaction(() => {
-        const current = read(runId);
-        if (!current) throw new Error(`run not found: ${runId}`);
-        if (isTerminalStatus(current.status)) return 0;
-        let written = 0;
-        let maxSeq = current.lastSeq;
-        const insert = db.prepare("INSERT OR IGNORE INTO run_activities (runId, seq, activityId, payload) VALUES (?, ?, ?, ?)");
-        for (const activity of activities) {
-          if (insert.run(runId, activity.seq, activity.id, json(activity)).changes > 0) written += 1;
-          maxSeq = Math.max(maxSeq, activity.seq);
-        }
-        if (written) db.prepare("UPDATE runs SET lastSeq = ?, updatedAt = ? WHERE runId = ?").run(maxSeq, now, runId);
-        return written;
-      });
-    },
     listActivities(runId: string, afterSeq = 0): PublicActivity[] {
       const rows = db.prepare("SELECT payload FROM run_activities WHERE runId = ? AND seq > ? ORDER BY seq ASC").all(runId, afterSeq) as Array<{ payload: string }>;
       const activities: PublicActivity[] = [];
@@ -306,7 +279,7 @@ function createRunStore(db: DatabaseSync) {
       }
       return activities;
     },
-    markInterruptedOnBoot(now = Date.now()): number {
+    markInterruptedOnBoot(lastSnapshotOf: (run: RunRecord) => InvestigationSnapshotV1 | undefined, now = Date.now()): number {
       return transaction(() => {
         // No attempt from the previous process can still be running. Keep its captured input/output.
         db.prepare(`UPDATE run_attempts SET status = 'failed', finishedAt = ?,
@@ -315,7 +288,7 @@ function createRunStore(db: DatabaseSync) {
         const rows = db.prepare("SELECT * FROM runs WHERE status NOT IN ('completed', 'interrupted', 'cancelled')").all() as RunRow[];
         for (const row of rows) {
           const current = toRecord(row);
-          const snapshot = current.snapshot ? { ...current.snapshot, phase: "interrupted" as const } : undefined;
+          const snapshot = lastSnapshotOf(current);
           commitInside(current.runId, {
             status: "interrupted", ...(snapshot ? { snapshot, publication: "partial" as const } : {}),
             events: [

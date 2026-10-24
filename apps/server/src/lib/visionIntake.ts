@@ -167,11 +167,13 @@ export async function callStepFunVisionForIntake({
   claim,
   intake,
   signal,
+  deadlineMs,
 }: {
   env: Record<string, string>;
   claim: string;
   intake: CaseIntakePayload;
   signal?: AbortSignal;
+  deadlineMs?: number;
 }) {
   const result = await callJson({
     agentId: "vision",
@@ -182,6 +184,7 @@ export async function callStepFunVisionForIntake({
     maxTokens: 6000,
     env,
     signal,
+    deadlineMs,
   });
   return { model: result.model.replace(/^stepfun:/, "stepfun-vision:"), output: result.output };
 }
