@@ -32,7 +32,7 @@ const prompt = [
       "你是红鲱鱼与枪的 SourceValidator。",
       "先问来源是谁、是否原始、是否可追溯，再决定能不能进入证据链。",
       "你的任务是验证原始 claim 中提到的信源的可靠性和真实性。",
-      "如果输入包含 search360 字段，请把 360 AI Search 返回的 sources 纳入信源验证，区分权威来源、媒体线索和社交传播线索。",
+      "如果输入包含 webSearch 字段，请把其中的 sources 纳入信源验证，区分权威来源、媒体线索和社交传播线索。",
       "",
       "验证维度：",
       "1. 信源是否存在 — 提到的机构、研究、专家是否真实存在",
@@ -71,22 +71,35 @@ const DIRECTIONAL_BUCKETS = [
   ["contradictingSources", "contradict"],
 ] as const;
 
+type DirectionalSource = {
+  source: Record<string, unknown>;
+  url: string;
+  relation: (typeof DIRECTIONAL_BUCKETS)[number][1];
+};
+
+/** Every source one verdict files as support or contradict, supporting bucket first; sources without a URL are skipped. */
+export function directionalSources(verdict: unknown): DirectionalSource[] {
+  const row = verdict && typeof verdict === "object" ? (verdict as Record<string, unknown>) : {};
+  return DIRECTIONAL_BUCKETS.flatMap(([key, relation]) => {
+    const sources = row[key];
+    if (!Array.isArray(sources)) return [];
+    return sources.flatMap((source) => {
+      const url = source && typeof source === "object" && typeof source.url === "string" ? source.url.trim() : "";
+      return url ? [{ source, url, relation }] : [];
+    });
+  });
+}
+
 /** The sources FactChecker would publish as support or contradict, one row per claimAtom and http(s) URL. */
 export function directionalCandidates(verdicts: unknown, limit = 24) {
   if (!Array.isArray(verdicts)) return [];
   return verdicts
     .flatMap((raw) => {
-      const row = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-      const claimAtom = typeof row.claimAtom === "string" ? row.claimAtom : "";
+      const claimAtom = raw && typeof raw === "object" && typeof raw.claimAtom === "string" ? raw.claimAtom : "";
       if (!claimAtom) return [];
-      return DIRECTIONAL_BUCKETS.flatMap(([key, intendedRelation]) => {
-        const sources = row[key];
-        if (!Array.isArray(sources)) return [];
-        return sources.flatMap((source) => {
-          const url = typeof source?.url === "string" ? source.url.trim() : "";
-          return /^https?:\/\//i.test(url) ? [{ claimAtom, url, intendedRelation }] : [];
-        });
-      });
+      return directionalSources(raw)
+        .filter(({ url }) => /^https?:\/\//i.test(url))
+        .map(({ url, relation }) => ({ claimAtom, url, intendedRelation: relation }));
     })
     .slice(0, limit);
 }

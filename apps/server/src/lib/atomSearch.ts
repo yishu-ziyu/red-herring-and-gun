@@ -14,6 +14,7 @@ import {
   bindRelatedSourcesOnly,
   stripCitationMarkers,
 } from "./citationBinding.js";
+import { requireCitedSource, type EvidenceGate } from "./evidenceGate.js";
 const MAX_ATOM_SEARCHES = 6;
 const CAUSAL_LOAD_RE = /导致|造成|引起|致使/;
 const DIGIT_LOAD_RE = /\d/;
@@ -33,12 +34,6 @@ export type AtomSearchSource = {
   title: string;
   snippet: string;
   credibility?: string;
-  /**
-   * 复用来源标记：prior-round 是同一案上一轮的证据。
-   * 走联网检索拿到的来源没有这两个字段，两边的下游（快照 / 报告）行为完全一致。
-   */
-  provenance?: "prior-round";
-  originDate?: string;
   /** 来源自身发布日期（检索方给出才填；没有就是缺省，不可用抓取日顶替）。 */
   publishedAt?: string;
   /** 发布者/站点名；检索方实际给出才填。 */
@@ -52,33 +47,6 @@ export type AtomSearchSource = {
   fetchNote?: string;
 };
 
-/**
- * 复用注入材料：同一案上一轮的已核日期 + 当时绑定的真实来源。
- * 类型名沿用旧叫法；现在只有同一案上一轮复用会产生它。
- */
-export type KnowledgeInjection = {
-  /** YYYY-MM-DD（上一轮的核查日期）；进快照 originDate 与活动行。 */
-  originDate: string;
-  evidence: Array<{ url: string; title: string; snippet: string }>;
-  /** 上次沉淀的判词；没有就不写，判定拍当普通核查。 */
-  priorVerdict?: string;
-};
-
-/** 判定拍用的可复核初稿（记忆只加速，不代替本轮核查）。 */
-type KnowledgeDraft = {
-  claimAtom: string;
-  originDate: string;
-  priorVerdict: string;
-  evidence: Array<{ url: string; title: string; snippet: string }>;
-};
-
-/** 一个 atom 复用了上一轮证据并真的注入了。 */
-export type KnowledgeHit = {
-  atom: string;
-  originDate: string;
-  sourceCount: number;
-};
-
 type AtomSearchItem = {
   atom: string;
   result: unknown;
@@ -86,31 +54,50 @@ type AtomSearchItem = {
 
 export type AtomSearchBundle = {
   /**
-   * 本次做过材料收集的原子（截断后）：联网检索到的 + 复用上一轮注入的
-   * （后者不发起联网、也不占 MAX_ATOM_SEARCHES 名额）。
-   * 下游按「已在 atomsSearched 里」判断该原子有材料，所以注入的原子必须在这里，
-   * 否则报告会被按「检索预算未覆盖」压成 unverified，证据循环也看不到它。
+   * 本次检索过的原子（截断后）。下游按「已在 atomsSearched 里」判断该原子有材料，
+   * 不在这里的会被按「检索预算未覆盖」压成 unverified。
    */
   atomsSearched: string[];
-  /** claimAtomKey → 该原子检索到的来源（已筛选） */
+  /** claimAtomKey → 该原子检索到的来源（已筛选）。每条来源只存在这里，其余视图都由它推出。 */
   byAtomKey: Record<string, AtomSearchSource[]>;
-  /** 供 fact_checker / source_validator 兼容的聚合 search360 形 */
-  aggregate: {
-    answer: string;
-    sources: Array<Record<string, unknown>>;
-    relatedQuestions: string[];
-    model: string;
-    traceText: string;
-    _source: string;
-    supportingEvidence: string[];
-    contradictingEvidence: string[];
-    unresolvedEvidenceGaps: string[];
-  };
-  /** 注入 Agent 的按条材料 */
-  forAgent: Array<{ claimAtom: string; sources: AtomSearchSource[] }>;
-  /** 复用上一轮的原子：上次判词与证据，供判定拍当可复核初稿。 */
-  knowledgeDrafts?: KnowledgeDraft[];
+  /** 检索返回时的汇总：各轮答案、模型名、检索漏斗统计。 */
+  summary: { answer: string; model: string; traceText: string };
 };
+
+/** 给核查模型的按条材料，顺序同 atomsSearched。 */
+export function atomSearchesForAgent(bundle: AtomSearchBundle): Array<{ claimAtom: string; sources: AtomSearchSource[] }> {
+  return bundle.atomsSearched.map((atom) => ({ claimAtom: atom, sources: bundle.byAtomKey[claimAtomKey(atom)] ?? [] }));
+}
+
+/** 各原子来源按 URL 去重后的聚合检索结果：核查模型输入里的 webSearch、报告骨架的搜索来源层读它。 */
+export function searchResultOf(bundle: AtomSearchBundle) {
+  const seen = new Set<string>();
+  const sources: Array<Record<string, unknown>> = [];
+  for (const { claimAtom, sources: list } of atomSearchesForAgent(bundle)) {
+    for (const s of list) {
+      if (seen.has(s.url)) continue;
+      seen.add(s.url);
+      sources.push({
+        title: s.title,
+        url: s.url,
+        snippet: s.snippet,
+        credibility: s.credibility || "",
+        ...(s.publishedAt ? { publishedAt: s.publishedAt } : {}),
+        ...(s.publisher ? { publisher: s.publisher } : {}),
+        forClaimAtom: claimAtom,
+      });
+    }
+  }
+  return {
+    ...bundle.summary,
+    sources,
+    relatedQuestions: [] as string[],
+    _source: "per-atom-search",
+    supportingEvidence: [] as string[],
+    contradictingEvidence: [] as string[],
+    unresolvedEvidenceGaps: [] as string[],
+  };
+}
 
 /** The search seam hands over an already filtered and ranked list. */
 function foundSources(result: unknown): SearchSource[] {
@@ -249,8 +236,6 @@ function buildAtomSearchBundle(
   items: AtomSearchItem[],
 ): AtomSearchBundle {
   const byAtomKey: Record<string, AtomSearchSource[]> = {};
-  const forAgent: AtomSearchBundle["forAgent"] = [];
-  const aggregateSources: Array<Record<string, unknown>> = [];
   const seenUrl = new Set<string>();
   const answers: string[] = [];
   const models: string[] = [];
@@ -263,7 +248,6 @@ function buildAtomSearchBundle(
     if (!item || typeof item.atom !== "string") continue;
     const atom = item.atom;
     atomsSearched.push(atom);
-    const key = claimAtomKey(atom);
     const sources: AtomSearchSource[] = foundSources(item.result).map((s) => ({
       url: s.url,
       title: s.title,
@@ -277,45 +261,23 @@ function buildAtomSearchBundle(
       fetchStatus: "snippet-only" as const,
     }));
     keptCount += sources.length;
-    byAtomKey[key] = sources;
-    forAgent.push({ claimAtom: atom, sources });
+    byAtomKey[claimAtomKey(atom)] = sources;
+    for (const s of sources) seenUrl.add(s.url);
 
     const res = item.result as Record<string, unknown> | null;
     if (res && typeof res.answer === "string" && res.answer.trim()) {
       answers.push(`[${atom.slice(0, 40)}] ${res.answer.slice(0, 400)}`);
     }
     if (res && typeof res.model === "string") models.push(res.model);
-
-    for (const s of sources) {
-      if (seenUrl.has(s.url)) continue;
-      seenUrl.add(s.url);
-      aggregateSources.push({
-        title: s.title,
-        url: s.url,
-        snippet: s.snippet,
-        credibility: s.credibility || "",
-        ...(s.publishedAt ? { publishedAt: s.publishedAt } : {}),
-        ...(s.publisher ? { publisher: s.publisher } : {}),
-        forClaimAtom: atom,
-      });
-    }
   }
 
   return {
     atomsSearched,
     byAtomKey,
-    forAgent,
-    knowledgeDrafts: [],
-    aggregate: {
+    summary: {
       answer: answers.join("\n\n").slice(0, 1800),
-      sources: aggregateSources.slice(0, 24),
-      relatedQuestions: [],
       model: models.slice(0, 3).join(" | ") || "atom-search",
-      traceText: `按可核查原子检索 ${atomsSearched.length} 轮；保留 ${keptCount} 条来源，聚合去重来源 ${aggregateSources.length} 条。`,
-      _source: "per-atom-search",
-      supportingEvidence: [],
-      contradictingEvidence: [],
-      unresolvedEvidenceGaps: [],
+      traceText: `按可核查原子检索 ${atomsSearched.length} 轮；保留 ${keptCount} 条来源，聚合去重来源 ${seenUrl.size} 条。`,
     },
   };
 }
@@ -333,28 +295,19 @@ type BindableVerdict = {
 
 /**
  * 报告按条绑证据：
- * - 模型写出的 URL 仅保留「该原子本轮检索」里出现过的；
+ * - 模型写出的 URL 只保留本轮材料里有的（EvidenceGate），标题与摘要换回材料原文；
  *   evidence [n] 按 supportingSources 再 contradictingSources 的合并顺序重写；
- *   始终传入该原子 known 集合，空集合不是 null，以免幻觉 URL 留下；
- * - 若支撑/反证都空且检索有结果 → 填入 supportingSources 作「相关检索」，并剥离 [n]
+ * - 若支撑/反证都空且该原子检索有结果 → 填入 supportingSources 作「相关检索」，并剥离 [n]
  *   （禁止把检索填充误绑成句内引用）；
- * - 若检索也为空 → evidenceGaps 补「该原子定向检索无结果」。
- * - 仅 related-only，或两侧都无 http(s)，且 verdict 为 true/false → unverified，补「待补证」。
+ * - 若检索也为空 → evidenceGaps 补「该原子定向检索无结果」；
+ * - true / false 没有来源撑着 → unverified（规则在 EvidenceGate）。
  */
 export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
   verdicts: T[],
-  byAtomKey: Record<string, AtomSearchSource[]>,
+  gate: EvidenceGate,
 ): T[] {
-  // A source found while searching another part of the same sentence can still decide this part
-  // (the rumor "...塑料瓶会析出致癌物，喝多了会得癌" is refuted by pages found for its first half).
-  // Only URLs nobody retrieved this run are treated as made up.
-  const runSources = Object.values(byAtomKey).flat();
-  const known = new Set(runSources.map((s) => s.url));
-  const canonicalByUrl = new Map<string, AtomSearchSource>();
-  for (const source of runSources) if (!canonicalByUrl.has(source.url)) canonicalByUrl.set(source.url, source);
   return verdicts.map((v) => {
-    const key = claimAtomKey(String(v.claimAtom ?? ""));
-    const retrieved = byAtomKey[key] ?? [];
+    const retrieved = gate.forAtom(String(v.claimAtom ?? ""));
 
     const verdictNorm = typeof v.verdict === "string" ? v.verdict.trim().toLowerCase() : "";
     const supportingRaw = Array.isArray(v.supportingSources) ? v.supportingSources : [];
@@ -365,14 +318,12 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
       supporting: supportingRaw,
       contradicting: contradictingRaw,
     });
-    const bound = bindDualBucketCitations(v.evidence, aligned.supporting, aligned.contradicting, known);
-    // A valid URL proves identity only. The model is not allowed to rewrite the
-    // page title/snippet that later appears in reports or drawers.
+    const bound = bindDualBucketCitations(v.evidence, aligned.supporting, aligned.contradicting, gate.knownUrls);
     // The model's snippet is the sentence it copied from this source; keep it as `quote`.
     // The snapshot stores it only after checking it against the canonical text.
     const canonicalize = (sources: typeof bound.supportingSources) =>
       sources.map((source) => {
-        const canonical = canonicalByUrl.get(source.url);
+        const canonical = gate.material(source.url);
         if (!canonical) return source;
         const quote = source.quote ?? (source.snippet !== canonical.snippet ? source.snippet : "");
         return { ...canonical, url: canonical.url, title: canonical.title, snippet: canonical.snippet, ...(quote ? { quote } : {}) };
@@ -400,121 +351,28 @@ export function bindAtomEvidenceToVerdicts<T extends BindableVerdict>(
       }
     }
 
-    const hasHttpUrl = [...supporting, ...contradicting].some(
-      (s) => typeof s?.url === "string" && /^https?:\/\//i.test(s.url)
-    );
-    const downgradeTrueFalse =
-      (verdictNorm === "true" || verdictNorm === "false") && (sourcesRelatedOnly || !hasHttpUrl);
-    if (downgradeTrueFalse && !gaps.some((g) => g.includes("待补证"))) {
-      gaps = ["待补证", ...gaps].slice(0, 3);
-    }
+    const cited = requireCitedSource({
+      verdict: verdictNorm,
+      supportingSources: supporting,
+      contradictingSources: contradicting,
+      sourcesRelatedOnly,
+      evidenceGaps: gaps,
+      directionAudited: false,
+    });
 
     return {
       ...v,
       evidence,
       supportingSources: supporting,
       contradictingSources: contradicting,
-      evidenceGaps: gaps,
+      evidenceGaps: cited.evidenceGaps,
       sourcesRelatedOnly,
-      ...(downgradeTrueFalse ? { verdict: "unverified", demotedFrom: verdictNorm } : {}),
+      ...(cited.demoted ? { verdict: "unverified", demotedFrom: verdictNorm } : {}),
     };
   });
 }
 
-export function attachKnowledgeDrafts(
-  agentInput: Record<string, unknown>,
-  bundle: Pick<AtomSearchBundle, "knowledgeDrafts"> | null | undefined
-): void {
-  const drafts = bundle?.knowledgeDrafts;
-  if (drafts && drafts.length > 0) agentInput.knowledgeDrafts = drafts;
-}
-
-/** 复用材料至少要有 1 条真实 http(s) 证据才配得上「免于本次检索」（没证据不出结论）。 */
-function usableKnowledgeEvidence(injection: KnowledgeInjection): KnowledgeInjection["evidence"] {
-  return (Array.isArray(injection?.evidence) ? injection.evidence : []).filter((item) =>
-    /^https?:\/\//i.test(String(item?.url ?? "").trim())
-  );
-}
-
-/**
- * 把上一轮证据注入 bundle（线上检索路径之外的唯一入口，纯函数）。
- *
- * 注入纪律：
- * - 只留真实 http(s) URL；没有可用来源返回 0（调用方据此不记 injected）。
- * - 证据位先、检索垫后：注入的是「上次核过这条命题时绑过的证据」，排在本次检索材料之前。
- * - 同时写进 `aggregate.sources`：`mergeSubclaimVerdicts` 用聚合来源当 URL 白名单，
- *   少写一处模型引用就会被当幻觉剥掉，注入等于白做。
- * - 注入的原子追加进 `atomsSearched`：它是「这次该原子有材料」的既有信号（见类型注释）。
- * - 不改 traceText：它统计的是本次联网检索做了多少轮、滤掉多少条，
- *   注入没走那条漏斗，硬算进去反而让数字变假。
- */
-function injectKnowledgeEvidence(
-  bundle: AtomSearchBundle,
-  atom: string,
-  injection: KnowledgeInjection,
-): number {
-  const key = claimAtomKey(atom);
-  const existing = bundle.byAtomKey[key] ?? [];
-  const seen = new Set(existing.map((s) => s.url));
-  const aggregateSeen = new Set(
-    bundle.aggregate.sources.map((s) => String((s as { url?: unknown }).url ?? ""))
-  );
-  const added: AtomSearchSource[] = [];
-  for (const item of usableKnowledgeEvidence(injection)) {
-    const url = String(item?.url ?? "").trim();
-    if (seen.has(url)) continue;
-    seen.add(url);
-    added.push({
-      url,
-      title: String(item?.title ?? "").slice(0, 200),
-      snippet: String(item?.snippet ?? "").slice(0, 900),
-      provenance: "prior-round",
-      originDate: injection.originDate,
-    });
-  }
-  if (added.length === 0) return 0;
-
-  const merged = [...added, ...existing];
-  bundle.byAtomKey[key] = merged;
-  const forAgentItem = bundle.forAgent.find((f) => claimAtomKey(f.claimAtom) === key);
-  if (forAgentItem) forAgentItem.sources = merged;
-  else bundle.forAgent.push({ claimAtom: atom, sources: merged });
-
-  for (const source of added) {
-    if (aggregateSeen.has(source.url)) continue;
-    aggregateSeen.add(source.url);
-    bundle.aggregate.sources.push({
-      title: source.title,
-      url: source.url,
-      snippet: source.snippet,
-      credibility: "",
-      forClaimAtom: atom,
-    });
-  }
-
-  if (!bundle.atomsSearched.some((entry) => claimAtomKey(entry) === key)) {
-    bundle.atomsSearched.push(atom);
-  }
-  if (!bundle.knowledgeDrafts) bundle.knowledgeDrafts = [];
-  const priorVerdict = String(injection.priorVerdict ?? "").trim();
-  if (priorVerdict) {
-    bundle.knowledgeDrafts.push({
-      claimAtom: atom,
-      originDate: injection.originDate,
-      priorVerdict,
-      evidence: added.map((source) => ({ url: source.url, title: source.title, snippet: source.snippet })),
-    });
-  }
-  return added.length;
-}
-
-/**
- * Per-atom retrieval behind one interface.
- * Selects verifiable atoms, calls searchOne per atom, builds bundle with claimAtomKey.
- *
- * 同一案追问：`priorRound` 命中的 atom 用上一轮证据替换这次联网（也不占 MAX_ATOM_SEARCHES 名额），
- * 名额让给后面的原子。其余 atom 一律联网检索。
- */
+/** Per-atom retrieval behind one interface: selects verifiable atoms, calls searchOne per atom, builds the bundle. */
 export async function retrieveForAtoms(options: {
   claimAtoms: unknown;
   claimAtomTypes: unknown;
@@ -523,53 +381,15 @@ export async function retrieveForAtoms(options: {
   onPlan?: (plan: { includedAtoms: string[]; deferredAtoms: string[] }) => void;
   searchOne: SearchOneAtom;
   hooks?: RetrieveForAtomsHooks;
-  /** 同一案上一轮证据。 */
-  priorRound?: {
-    lookup: (atom: string) => KnowledgeInjection | null;
-    onInjected?: (hit: KnowledgeHit) => void;
-  };
-}): Promise<{
-  atomSearchBundle: AtomSearchBundle;
-  search360Result: AtomSearchBundle["aggregate"];
-}> {
+}): Promise<AtomSearchBundle> {
   const listed = listAtomsForSearch(options.claimAtoms, options.claimAtomTypes);
-
-  const collectInjections = (
-    atoms: string[],
-    channel: { lookup: (atom: string) => KnowledgeInjection | null } | undefined
-  ): Array<{ atom: string; injection: KnowledgeInjection }> => {
-    if (!channel) return [];
-    const out: Array<{ atom: string; injection: KnowledgeInjection }> = [];
-    for (const atom of atoms) {
-      let injection: KnowledgeInjection | null = null;
-      try {
-        injection = channel.lookup(atom);
-      } catch (error) {
-        console.warn(`[atomSearch] 复用查库失败，按未命中处理: ${String(error)}`);
-        injection = null;
-      }
-      if (injection && usableKnowledgeEvidence(injection).length > 0) {
-        out.push({ atom, injection });
-      }
-    }
-    return out;
-  };
-
-  // 上一轮命中的原子退出联网候选，名额自然让给新问题。
-  const injections = collectInjections(listed.verifiable, options.priorRound);
-  const injectedKeys = new Set(injections.map(({ atom }) => claimAtomKey(atom)));
-  const candidates =
-    injectedKeys.size === 0
-      ? listed.verifiable
-      : listed.verifiable.filter((atom) => !injectedKeys.has(claimAtomKey(atom)));
   const priorities = Array.isArray(options.priorityClaimAtoms)
     ? options.priorityClaimAtoms.filter((atom): atom is string => typeof atom === "string")
     : [];
-  const atomsToSearch = selectAtomsToSearch(candidates, listed.typeByKey, priorities);
-  const includedAtoms = [...injections.map(({ atom }) => atom), ...atomsToSearch];
-  const includedKeys = new Set(includedAtoms.map((atom) => claimAtomKey(atom)));
+  const atomsToSearch = selectAtomsToSearch(listed.verifiable, listed.typeByKey, priorities);
+  const includedKeys = new Set(atomsToSearch.map((atom) => claimAtomKey(atom)));
   options.onPlan?.({
-    includedAtoms,
+    includedAtoms: [...atomsToSearch],
     deferredAtoms: listed.verifiable.filter((atom) => !includedKeys.has(claimAtomKey(atom))),
   });
   // 逐条顺序检索：每条的开始 / 结果按顺序上屏。
@@ -580,15 +400,5 @@ export async function retrieveForAtoms(options: {
     options.hooks?.onAtomResult?.(atom, result);
     items.push({ atom, result });
   }
-
-  const atomSearchBundle = buildAtomSearchBundle(items);
-  for (const { atom, injection } of injections) {
-    const sourceCount = injectKnowledgeEvidence(atomSearchBundle, atom, injection);
-    if (sourceCount === 0) continue;
-    options.priorRound?.onInjected?.({ atom, originDate: injection.originDate, sourceCount });
-  }
-  return {
-    atomSearchBundle,
-    search360Result: atomSearchBundle.aggregate,
-  };
+  return buildAtomSearchBundle(items);
 }

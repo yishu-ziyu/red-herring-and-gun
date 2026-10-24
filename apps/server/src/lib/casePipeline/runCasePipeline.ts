@@ -38,7 +38,7 @@ export type PipelineStep = {
 export type RunAgentFn = (
   agentId: string,
   steps: PipelineStep[],
-  search360Result?: unknown,
+  searchResult?: unknown,
   atomSearchBundle?: AtomSearchBundle | null,
   execution?: { signal?: AbortSignal; deadlineMs?: number }
 ) => Promise<PipelineStep>;

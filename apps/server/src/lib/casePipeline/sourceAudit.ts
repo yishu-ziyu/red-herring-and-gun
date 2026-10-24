@@ -4,7 +4,8 @@
  * 首次审计没覆盖全部方向性来源时，再审一次；刷新不了（没时间或审计失败）时，
  * 没审过的来源一律只作背景（fail-closed），不会闪一下绿色「支持」再被纠正。
  */
-import { bindAtomEvidenceToVerdicts } from "../atomSearch.js";
+import { bindAtomEvidenceToVerdicts, searchResultOf } from "../atomSearch.js";
+import { evidenceGateFor } from "../evidenceGate.js";
 import { applyClaimSourceRelationAudit, relationAuditCoversDirectionalSources } from "../sourceRelationAudit.js";
 import type { CaseState, PipelineContext } from "./caseState.js";
 
@@ -33,7 +34,7 @@ export function createSourceAudit(ctx: PipelineContext, state: Omit<CaseState, "
   const apply = () => {
     const fromModel = state.factStep.output?.subclaimVerdicts;
     const raw = candidates ?? (Array.isArray(fromModel) ? (fromModel as Verdict[]) : []);
-    const bound = bindAtomEvidenceToVerdicts(raw, state.atomSearchBundle.byAtomKey);
+    const bound = bindAtomEvidenceToVerdicts(raw, evidenceGateFor(state.atomSearchBundle));
     candidates ??= bound;
     state.subclaimVerdicts = applyClaimSourceRelationAudit(bound, state.sourceStep.output?.claimSourceRelations);
   };
@@ -55,7 +56,7 @@ export function createSourceAudit(ctx: PipelineContext, state: Omit<CaseState, "
       // 审计要看的是审计前的候选，不是已经按旧审计降级过的公开判词。
       const factStep = { ...state.factStep, relationAuditCandidates: candidates };
       const inputSteps = steps.map((step) => (step === state.factStep ? factStep : step));
-      const refreshed = await runAgent("source_validator", inputSteps, state.search360Result, state.atomSearchBundle);
+      const refreshed = await runAgent("source_validator", inputSteps, searchResultOf(state.atomSearchBundle), state.atomSearchBundle);
       steps.push(refreshed);
       state.sourceStep = refreshed;
       auditedSignature = nextSignature;

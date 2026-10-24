@@ -33,7 +33,7 @@ const AGENT_SKILLS: AgentSkill[] = [
       "1. 同时考虑支持与反驳；找不到反证 ≠ 命题为真。无检索来源不得判真/假。",
       "2. 单源搜索摘要不能直接升格为结论。模型记忆不是核查。",
       "3. unresolvedEvidenceGaps 必须写清「还缺什么可核材料」。",
-      "4. 引用 URL/标题必须来自输入 search360 / atomSearches，禁止编造。已公开辟谣必须点到来源。",
+      "4. 引用 URL/标题必须来自输入 webSearch / atomSearches，禁止编造。已公开辟谣必须点到来源。",
     ].join("\n"),
   },
   {

@@ -1,46 +1,13 @@
-import type { SubclaimVerdict, VerdictSource } from "./types.js";
+import type { SubclaimVerdict } from "./types.js";
 import { claimAtomKey, compactStrings, compactText, MAX_CLAIM_ATOMS } from "../../../../shared/claimAtomText.js";
-import { bindDualBucketCitations, hasDirectionalBoundHttpUrl } from "../citationBinding.js";
+import { bindDualBucketCitations } from "../citationBinding.js";
+import { requireCitedSource } from "../evidenceGate.js";
 import { FALLBACK_PART_REASON, isLabelKey, labelForVerdict, verdictForLabel } from "../../../../shared/domain/labels.js";
 
 const SUBCLAIM_VERDICTS = ["true", "false", "partial", "unverified", "exaggerated", "disputed"];
 
-function allowedUrlSet(searchSources?: Array<{ url?: unknown }>): Set<string> | null {
-  if (!searchSources) return null;
-  return new Set(searchSources.map((s) => String(s?.url ?? "").trim()).filter(Boolean));
-}
-
 function sanitizeEvidenceGaps(value: unknown): string[] {
   return compactStrings(value, 3, 120);
-}
-
-function demoteUnsourcedTrueFalse(
-  verdict: SubclaimVerdict["verdict"],
-  supporting: VerdictSource[],
-  contradicting: VerdictSource[],
-  gaps: string[],
-  sourcesRelatedOnly = false
-): { verdict: SubclaimVerdict["verdict"]; evidenceGaps: string[] } {
-  if (verdict !== "true" && verdict !== "false") {
-    return { verdict, evidenceGaps: gaps };
-  }
-  // 方向专属契约：true 只认支撑桶、false 只认反证桶
-  // （alignFalseEvidenceBuckets 已先行改桶）；错桶 URL 不算该方向的证据，
-  // 与整句规则表（sentenceVerdict.standingOf）/ Snapshot 判词映射同向。
-  if (
-    hasDirectionalBoundHttpUrl({
-      verdict,
-      sourcesRelatedOnly,
-      supportingSources: supporting,
-      contradictingSources: contradicting,
-    })
-  ) {
-    return { verdict, evidenceGaps: gaps };
-  }
-  const evidenceGaps = gaps.some((g) => g.includes("待补证"))
-    ? gaps
-    : ["待补证", ...gaps].slice(0, 3);
-  return { verdict: "unverified", evidenceGaps };
 }
 
 /**
@@ -68,21 +35,20 @@ export function alignFalseEvidenceBuckets<T>(input: {
 }
 
 /**
- * 锚原子 merge：幻觉拦截 + 未覆盖补 unverified + 可选 URL 交叉校验。
+ * 锚原子 merge：幻觉拦截（knownUrls 来自 EvidenceGate；null 不拦）+ 未覆盖补 unverified。
  * evidence [n] 按 supportingSources 再 contradictingSources 的合并顺序重写。
- * 无 http(s) 的 true/false 收成 unverified（related-only 由 bind/derive/reviewer 处理）。
+ * 方向审核已经做过：true / false 要有方向一致的来源，否则收成 unverified。
  * 调用方应对「可核查原子」调用（排除层之后），不要把立场原子塞进来。
  */
 export function mergeSubclaimVerdicts(
   claimAtoms: unknown,
   verdicts: unknown,
-  searchSources?: Array<{ url?: unknown }>
+  knownUrls: Set<string> | null = null
 ): SubclaimVerdict[] {
   const atoms = compactStrings(claimAtoms, MAX_CLAIM_ATOMS, 180).map((s) => claimAtomKey(s));
   const raw = Array.isArray(verdicts) ? verdicts : [];
   const covered = new Set<string>();
   const result: SubclaimVerdict[] = [];
-  const allowed = allowedUrlSet(searchSources);
   for (const item of raw) {
     if (!item || typeof item !== "object") continue;
     const rec = item as Record<string, unknown>;
@@ -112,20 +78,22 @@ export function mergeSubclaimVerdicts(
       rec.evidence,
       aligned.supporting,
       aligned.contradicting,
-      allowed
+      knownUrls
     );
     const supportingSources = bound.supportingSources;
     const contradictingSources = bound.contradictingSources;
-    const guarded = demoteUnsourcedTrueFalse(
+    const cited = requireCitedSource({
       verdict,
       supportingSources,
       contradictingSources,
-      sanitizeEvidenceGaps(rec.evidenceGaps),
-      rec.sourcesRelatedOnly === true
-    );
+      sourcesRelatedOnly: rec.sourcesRelatedOnly === true,
+      evidenceGaps: sanitizeEvidenceGaps(rec.evidenceGaps),
+      directionAudited: true,
+    });
+    const kept = cited.demoted ? "unverified" : verdict;
     result.push({
       claimAtom: atom,
-      verdict: guarded.verdict,
+      verdict: kept,
       evidence: compactText(bound.text, 240),
       boundary: compactText(rec.boundary, 200),
       ...(typeof rec.contradictedElement === "string" && rec.contradictedElement.trim()
@@ -133,14 +101,14 @@ export function mergeSubclaimVerdicts(
         : {}),
       supportingSources,
       contradictingSources,
-      evidenceGaps: guarded.evidenceGaps,
+      evidenceGaps: cited.evidenceGaps,
       ...(rec.sourcesRelatedOnly === true ? { sourcesRelatedOnly: true } : {}),
       // 判定来历跨合并保留：规则层要分清「模型没判 / 模型判了但被降级 / 模型判了查不清」。
       ...(rec.notJudgedByModel === true ? { notJudgedByModel: true } : {}),
       ...(typeof rec.demotedFrom === "string" ? { demotedFrom: rec.demotedFrom } : {}),
-      label: guarded.verdict === verdict ? label : labelForVerdict(guarded.verdict),
-      ...(guarded.verdict !== verdict
-        ? { reason: FALLBACK_PART_REASON[labelForVerdict(guarded.verdict)], demotedFrom: verdict }
+      label: cited.demoted ? labelForVerdict(kept) : label,
+      ...(cited.demoted
+        ? { reason: FALLBACK_PART_REASON[labelForVerdict(kept)], demotedFrom: verdict }
         : reason ? { reason } : {}),
     });
   }

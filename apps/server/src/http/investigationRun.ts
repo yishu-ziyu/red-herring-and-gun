@@ -19,8 +19,9 @@ import { createOrchestrateAdapter } from "../lib/orchestrate.js";
 import { buildInterruptedReport } from "../lib/deterministicReport.js";
 import type { RunService } from "../lib/runService.js";
 import type { RunStore } from "../lib/runStore.js";
+import { searchResultOf } from "../lib/atomSearch.js";
 import {
-  build360SearchFailure,
+  buildSearchFailure,
   retrieveAtomSources,
   type SearchProgressEvent,
 } from "../lib/searchProviders.js";
@@ -74,7 +75,7 @@ function makeSearchOneAtom(
     } catch (error) {
       execution.signal?.throwIfAborted();
       const message = error instanceof Error ? error.message : "并行搜索服务未返回真实结果";
-      result = build360SearchFailure(atom, message);
+      result = buildSearchFailure(atom, message);
     }
     recorder?.recordMaterial({ kind: "search-response", content: JSON.stringify(result), metadata: { query: atom } });
     return result;
@@ -332,7 +333,7 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
       console.log(`[orchestrate] 调查在连接等待结束后完成，结果可恢复 runId=${runId}`);
     }
     console.log(
-      `[atom_search] sources=${(result.atomSearchBundle.aggregate.sources || []).length}`
+      `[atom_search] sources=${searchResultOf(result.atomSearchBundle).sources.length}`
     );
 
     recorder.assertHealthy();

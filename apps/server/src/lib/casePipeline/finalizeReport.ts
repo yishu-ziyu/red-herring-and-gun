@@ -46,7 +46,6 @@ export async function finalizeReport(input: FinalizeReportInput): Promise<Finali
     finalReport: report,
     rumorStep,
     verdicts: state.subclaimVerdicts,
-    searchSources: (state.search360Result as { sources?: Array<{ url?: unknown }> })?.sources,
     atomSearchBundle: state.atomSearchBundle,
   });
 

@@ -3,7 +3,7 @@
  * how its input is built from the case so far, and how its raw output is read.
  */
 import { formatSkillsForPrompt, selectAgentSkills } from "../agentSkills.js";
-import { attachKnowledgeDrafts, type AtomSearchBundle } from "../atomSearch.js";
+import { atomSearchesForAgent, type AtomSearchBundle } from "../atomSearch.js";
 import { buildAgentStatusBar } from "../contextStatusBar.js";
 import { callJson } from "../providerRouter.js";
 import { compactSearchResultForAgent } from "../searchProviders.js";
@@ -22,7 +22,7 @@ export interface JobInput {
   visualExtraction?: Record<string, unknown>;
   memoryRecall?: { hitCount?: number };
   priorRoundContext?: unknown;
-  search360Result?: unknown;
+  searchResult?: unknown;
   atomSearchBundle?: AtomSearchBundle | null;
 }
 
@@ -68,13 +68,11 @@ export function contextInput(c: JobInput): Record<string, unknown> {
 
 /** Retrieved material, for the jobs that judge evidence. */
 export function searchInput(c: JobInput): Record<string, unknown> {
-  const input: Record<string, unknown> = {};
-  if (c.search360Result) {
-    input.search360 = compactSearchResultForAgent(c.search360Result as any);
-    if (c.atomSearchBundle) input.atomSearches = c.atomSearchBundle.forAgent;
-  }
-  attachKnowledgeDrafts(input, c.atomSearchBundle);
-  return input;
+  if (!c.searchResult) return {};
+  return {
+    webSearch: compactSearchResultForAgent(c.searchResult),
+    ...(c.atomSearchBundle ? { atomSearches: atomSearchesForAgent(c.atomSearchBundle) } : {}),
+  };
 }
 
 /** Prefer rumor_detector stanceClaimType; default mixed for skill routing. */
@@ -95,7 +93,7 @@ export function buildJobCall(job: AgentJob, c: JobInput): JobCall {
     totalStepsHint: 4,
     tools: [],
     memoryHitCount: c.memoryRecall?.hitCount ?? 0,
-    searchReady: Boolean(c.search360Result),
+    searchReady: Boolean(c.searchResult),
   });
   input.agentStatusBar = statusBar.text;
   input.agentStatusFields = statusBar.fields;
