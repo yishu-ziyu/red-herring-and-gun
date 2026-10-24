@@ -1,10 +1,7 @@
 /**
  * Per-atom retrieval queries for Case Pipeline.
  * Raw atom text is not enough for Weibo-scale rumors: also hunt 辟谣 / 规划 traces.
- * Query portfolio + RRF live in retrievalQueries; this file remains the retrieve seam.
  */
-
-import { buildQueryPortfolio, fuseByRrf, type RankedDoc } from "./retrievalQueries.js";
 
 const FILLER = /我说|原来|叫谁|这是|那个|一下|真的吗|是不是/g;
 const STOP = new Set([
@@ -26,6 +23,21 @@ function compactAtomForSearch(atom: string): string {
     .map((w) => w.trim())
     .filter((w) => w.length >= 2 && !STOP.has(w));
   return [...new Set(parts)].slice(0, 6).join(" ");
+}
+
+export function topicTokens(atom: string): string[] {
+  const compact = compactAtomForSearch(atom)
+    .split(/\s+/)
+    .filter((w) => w.length >= 2);
+  const han = atom.replace(/[^一-鿿A-Za-z0-9]/g, "");
+  const grams: string[] = [];
+  for (let n = 2; n <= 3; n++) {
+    for (let i = 0; i + n <= han.length; i++) {
+      const g = han.slice(i, i + n);
+      if (!STOP.has(g)) grams.push(g);
+    }
+  }
+  return [...new Set([...compact, ...grams])].slice(0, 24);
 }
 
 /** Generic insult/affair captions need a public-bulletin query, not the empty “是不是真的”. */
@@ -57,7 +69,6 @@ function looksLikeStatistic(atom: string): boolean {
   return /(?:GDP|gdp|同比|环比|确诊).{0,12}\d/.test(stripped);
 }
 
-/** 权威站点评分提升（检索结果排序里 officialHint 的站点清单，保持同一口径）。 */
 const AUTHORITY_SITES: ReadonlyArray<string> = [
   "site:piyao.org.cn", // 中国互联网联合辟谣平台（综合官方回应）
   "site:nhc.gov.cn", // 国家卫健委（健康类）
@@ -73,10 +84,9 @@ function looksLikeHealthOrSocialRumor(atom: string): boolean {
 function authoritySiteQueries(atom: string): string[] {
   const compact = compactAtomForSearch(atom);
   if (!compact) return [];
-  const isHealth = HEALTH_RE.test(atom);
   const out: string[] = [];
   out.push(`${AUTHORITY_SITES[0]} ${compact}`); // 联合辟谣平台恒带
-  if (isHealth) out.push(`${AUTHORITY_SITES[1]} ${compact}`);
+  if (HEALTH_RE.test(atom)) out.push(`${AUTHORITY_SITES[1]} ${compact}`);
   return out;
 }
 
@@ -84,7 +94,7 @@ function authoritySiteQueries(atom: string): string[] {
  *  而不是套中文「辟谣/官方通报」后缀。 */
 function looksLikeEnglishClaim(atom: string): boolean {
   const letters = (atom.match(/[a-zA-Z]/g) ?? []).length;
-  const cjk = (atom.match(/[\u4e00-\u9fff]/g) ?? []).length;
+  const cjk = (atom.match(/[一-鿿]/g) ?? []).length;
   return letters > 0 && letters > cjk * 2;
 }
 function enRumorQueries(atom: string): string[] {
@@ -92,205 +102,41 @@ function enRumorQueries(atom: string): string[] {
   const words = atom.match(/[a-zA-Z][a-zA-Z0-9'-]{2,}/g) ?? [];
   const head = words.slice(0, 3).join(" ");
   const base = head || atom.slice(0, 40);
-  const out: string[] = [];
-  out.push(`${base} debunked OR rumour OR fact check`);
-  out.push(`${base} official statement OR statement`);
-  return out.slice(0, 2);
+  return [`${base} debunked OR rumour OR fact check`, `${base} official statement OR statement`];
+}
+
+function timeSpan(atom: string): string {
+  const hits = atom.match(/20\d{2}|\d{1,2}\s*月\s*\d{1,2}\s*日|\d{1,2}\s*月|\d{1,2}\s*日/g) ?? [];
+  return hits.slice(0, 3).join(" ");
 }
 
 export function buildAtomSearchQueries(atom: string): string[] {
   const t = atom.replace(/\s+/g, " ").trim();
   if (!t) return [];
+  const plan = looksLikePlanOrPrediction(t);
   const extras = extraRumorQueries(t);
-  const portfolio = buildQueryPortfolio(t);
-  const exact = portfolio.find((p) => p.purpose === "exact")?.query || t;
+  const when = timeSpan(t);
+  const quoted = QUOTE_RE.exec(t)?.[1]?.trim() ?? "";
+  const exact = quoted ? `"${quoted}" ${when}`.trim() : t;
   const screenshotQ = SCREENSHOT_RE.test(t) ? `${t} 原图 出处 首发` : undefined;
   const quoteQ = QUOTE_RE.test(t) ? `${t} 原话 语境` : undefined;
   const statisticQ = looksLikeStatistic(t) ? `${t} 公报 原始数据` : undefined;
-  const second = looksLikePlanOrPrediction(t)
-    ? portfolio.find((p) => p.purpose === "primary")?.query
-    : portfolio.find((p) => p.purpose === "refutation")?.query;
+  const suffix = plan ? "规划 批复 承诺 文件 辟谣" : "辟谣 不实 谣言 官方通报";
+  const second = `${t} ${suffix}`;
   const compact = compactAtomForSearch(t);
-  const suffix = looksLikePlanOrPrediction(t) ? "规划 批复 承诺 文件 辟谣" : "辟谣 不实 谣言 官方通报";
   const typed = Boolean(screenshotQ || quoteQ || statisticQ);
   const allowThird = extras.length > 0 || /\d/.test(t) || /20\d{2}|月|日/.test(t) || typed;
   const third =
     allowThird && compact && compact !== t && extras.length === 0 ? `${compact} ${suffix}` : undefined;
-  const temporal = allowThird ? portfolio.find((p) => p.purpose === "temporal")?.query : undefined;
+  const temporal = allowThird ? (when ? `${t} ${when}` : `${t} 时间 日期`) : undefined;
   // 权威站点直查独立于 3 路配额：健康/社会/截图谣言必带官方站点查询。
   const siteQueries = looksLikeHealthOrSocialRumor(t) || /截图|P图|p图/.test(t)
     ? authoritySiteQueries(t)
     : [];
   // 英文谣言走分语言查询（不套中文后缀）。
   const enQueries = enRumorQueries(t);
-  return uniqueKeep(
-    [...extras, ...siteQueries, ...enQueries, exact, screenshotQ, quoteQ, statisticQ, second, third, temporal].filter(
-      (q): q is string => Boolean(q)
-    ),
-    allowThird ? 3 + siteQueries.length + enQueries.length : 2 + siteQueries.length + enQueries.length
-  );
-}
-
-export function mergeParallelSearchPayloads(
-  atom: string,
-  payloads: Array<Record<string, unknown>>
-): Record<string, unknown> {
-  const sources: Record<string, unknown>[] = [];
-  const rankedLists: RankedDoc[][] = [];
-  const seenUrl = new Map<string, Record<string, unknown>>();
-  const answers: string[] = [];
-  const traces: string[] = [];
-  const gaps: string[] = [];
-  const related: string[] = [];
-  const models: string[] = [];
-
-  for (const p of payloads) {
-    if (!p || typeof p !== "object") continue;
-    if (typeof p.answer === "string" && p.answer.trim()) answers.push(p.answer.trim());
-    if (typeof p.traceText === "string" && p.traceText.trim()) traces.push(p.traceText.trim());
-    if (typeof p.model === "string" && p.model.trim()) models.push(p.model.trim());
-    if (Array.isArray(p.unresolvedEvidenceGaps)) {
-      for (const g of p.unresolvedEvidenceGaps) {
-        if (typeof g === "string" && g.trim()) gaps.push(g.trim());
-      }
-    }
-    if (Array.isArray(p.relatedQuestions)) {
-      for (const q of p.relatedQuestions) {
-        if (typeof q === "string" && q.trim()) related.push(q.trim());
-      }
-    }
-    const list = Array.isArray(p.sources) ? p.sources : [];
-    const ranked: RankedDoc[] = [];
-    for (const raw of list) {
-      if (!raw || typeof raw !== "object") continue;
-      const rec = raw as Record<string, unknown>;
-      const url = String(rec.url || rec.link || "").trim();
-      if (!url) continue;
-      ranked.push({ url, rec });
-    }
-    rankedLists.push(ranked);
-    for (const { url, rec } of ranked) {
-      const first = seenUrl.get(url);
-      if (first) {
-        // 同 URL 再次出现（同 provider 的其它 query 或别的 provider）：UNION 归属，不覆盖。
-        unionProviderOrigins(first, rec.providerOrigins);
-        continue;
-      }
-      seenUrl.set(url, rec);
-      sources.push(rec);
-    }
-  }
-
-  if (rankedLists.length > 1) {
-    const fused = fuseByRrf(rankedLists);
-    const byUrl = new Map(fused.map((d) => [d.url, d.rec]));
-    sources.splice(0, sources.length, ...fused.map((d) => byUrl.get(d.url)!));
-  }
-
-  const onTopic = sources.filter((rec) => !isOffTopicSource(atom, rec));
-  sources.splice(0, sources.length, ...onTopic);
-
-  sources.sort((a, b) => {
-    const rank = (rec: Record<string, unknown>) => {
-      const overlap = topicOverlap(atom, rec);
-      const debunk = overlap > 0 ? debunkHint(rec) : 0;
-      const official = overlap > 0 ? officialHint(rec) : 0;
-      return debunk * 10 + official * 5 + overlap * 3 + patternBoost(atom, rec);
-    };
-    return rank(b) - rank(a);
-  });
-
-  const queries = buildAtomSearchQueries(atom);
-  return {
-    answer: answers.join("\n\n").slice(0, 2400),
-    sources: sources.slice(0, 24),
-    unresolvedEvidenceGaps: uniqueKeep(gaps, 8),
-    relatedQuestions: uniqueKeep(related, 8),
-    model: uniqueKeep(models, 6).join(" + ") || "parallel-search",
-    traceText: `按原子检索「${atom.slice(0, 40)}」共 ${queries.length} 路查询，聚合 ${sources.length} 条可点开来源。${traces.join(" ")}`.slice(
-      0,
-      1400
-    ),
-    _source: "parallel-search",
-    supportQuery: queries[0] || atom,
-    contradictQuery: queries[1] || queries[0] || atom,
-  };
-}
-
-/** 把 incoming 的 provider 归属并入 target 记录（去重、保序）。 */
-function unionProviderOrigins(target: Record<string, unknown>, incoming: unknown): void {
-  if (!Array.isArray(incoming)) return;
-  const list = Array.isArray(target.providerOrigins)
-    ? (target.providerOrigins.filter((o): o is string => typeof o === "string"))
-    : [];
-  for (const origin of incoming) {
-    if (typeof origin === "string" && !list.includes(origin)) list.push(origin);
-  }
-  target.providerOrigins = list;
-}
-
-function uniqueKeep(items: string[], max: number): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const item of items) {
-    if (seen.has(item)) continue;
-    seen.add(item);
-    out.push(item);
-    if (out.length >= max) break;
-  }
-  return out;
-}
-
-function debunkHint(rec: Record<string, unknown>): number {
-  const text = `${rec.title || ""} ${rec.snippet || rec.summary || ""}`;
-  return /(辟谣|不实|假消息|谣言|官方声明|从未发布|系编造|联合辟谣)/.test(text) ? 1 : 0;
-}
-
-function officialHint(rec: Record<string, unknown>): number {
-  const blob = `${rec.url || rec.link || ""} ${rec.title || ""}`;
-  if (/piyao\.org\.cn|news\.cn|xinhuanet|gmw\.cn|people\.com\.cn|\.gov\.cn/.test(blob)) return 1;
-  if (/警方通报|公安|文旅局|联合辟谣平台/.test(blob)) return 1;
-  return 0;
-}
-
-/** Roundup pages often omit the rumor keywords in the title; still prefer 典型案例/警方通报 when the atom is that class of tiny rumor. */
-function patternBoost(atom: string, rec: Record<string, unknown>): number {
-  const text = `${rec.title || ""} ${rec.snippet || rec.summary || ""} ${rec.url || ""}`;
-  if (/P图|p图|侮辱/.test(atom) && /P图|侮辱|典型案例/.test(text)) return 6;
-  if (/出轨/.test(atom) && /出轨|不实言论|典型案例/.test(text)) return 6;
-  if (/电瓶车/.test(atom) && /电瓶车|非洲|境外|典型案例/.test(text)) return 6;
-  return 0;
-}
-
-function topicTokens(atom: string): string[] {
-  const compact = compactAtomForSearch(atom)
-    .split(/\s+/)
-    .filter((w) => w.length >= 2);
-  const han = atom.replace(/[^\u4e00-\u9fffA-Za-z0-9]/g, "");
-  const grams: string[] = [];
-  for (let n = 2; n <= 3; n++) {
-    for (let i = 0; i + n <= han.length; i++) {
-      const g = han.slice(i, i + n);
-      if (!STOP.has(g)) grams.push(g);
-    }
-  }
-  return [...new Set([...compact, ...grams])].slice(0, 24);
-}
-
-function topicOverlap(atom: string, rec: Record<string, unknown>): number {
-  const keys = topicTokens(atom);
-  const text = `${rec.title || ""} ${rec.snippet || rec.summary || ""}`;
-  return keys.reduce((n, k) => n + (text.includes(k) ? 1 : 0), 0);
-}
-
-/** 解放军「钢铁长城」比喻，不是文物/工程长城。按命题文本绑定时拿掉，不当依据。 */
-const WALL_METAPHOR_RE = /钢铁长城|(?:解放军|人民军队).{0,16}保卫祖国.{0,12}长城/;
-
-export function isOffTopicSource(atom: string, rec: Record<string, unknown>): boolean {
-  const blob = `${rec.title || ""} ${rec.snippet || rec.summary || ""}`;
-  if (!atom.trim() || !blob.trim()) return false;
-  if (/长城/.test(atom) && !/钢铁长城|解放军|人民军队/.test(atom) && WALL_METAPHOR_RE.test(blob)) {
-    return true;
-  }
-  return false;
+  const queries = [...extras, ...siteQueries, ...enQueries, exact, screenshotQ, quoteQ, statisticQ, second, third, temporal]
+    .filter((q): q is string => Boolean(q))
+    .map((q) => q.replace(/\s+/g, " ").trim());
+  return [...new Set(queries)].slice(0, (allowThird ? 3 : 2) + siteQueries.length + enQueries.length);
 }

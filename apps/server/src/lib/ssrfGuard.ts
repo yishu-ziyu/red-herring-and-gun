@@ -1,7 +1,9 @@
 /**
  * ssrfGuard.ts — 服务端替别人访问外部网址之前，拦截内网、元数据服务和特殊 IPv6 地址。
- * 只看网址里写的主机名和 IP，不做 DNS 解析：解析到内网 IP 的公网域名拦不住。
+ * isBlockedUrl 只看网址里写的主机名和 IP；公开域名解析到内网 IP 由 guardedLookup 在连接时拦截。
  */
+
+import { lookup } from "node:dns";
 
 function ipv4OctetsFromHostname(hostname: string): number[] | "blocked" | null {
   const host = hostname.replace(/^\[|\]$/g, "");
@@ -78,4 +80,16 @@ export function isBlockedUrl(raw: string): boolean {
   if (ipv4 === "blocked") return true;
   if (ipv4 && isBlockedPrivateIpv4(ipv4)) return true;
   return false;
+}
+
+/** 作为 http(s).get 的 lookup 选项：连接时解析域名，所有解析结果都在内网段则拒绝连接。 */
+export function guardedLookup(hostname: string, options: object, callback: (...args: any[]) => void) {
+  lookup(hostname, { ...options, all: true }, (error, addresses: any) => {
+    if (error) return callback(error);
+    const list = (Array.isArray(addresses) ? addresses : [addresses]) as Array<{ address: string; family: number }>;
+    const allowed = list.filter((a) => !isBlockedUrl(a.family === 6 ? `http://[${a.address}]/` : `http://${a.address}/`));
+    if (!allowed.length) return callback(new Error("blocked-address"));
+    if ((options as { all?: boolean }).all) return callback(null, allowed);
+    callback(null, allowed[0]!.address, allowed[0]!.family);
+  });
 }

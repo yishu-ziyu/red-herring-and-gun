@@ -14,19 +14,15 @@ import {
   remapCitationMarkers,
   type CiteSource,
 } from "./citationBinding.js";
-import { withExecutionBudget, ExecutionTimeoutError, type ExecutionBudget } from "./executionBudget.js";
-import { isBlockedUrl } from "./ssrfGuard.js";
+import { ExecutionTimeoutError, type ExecutionBudget } from "./executionBudget.js";
+import { fetchPage, pageCacheFor, UnreachablePageError } from "./publicWeb.js";
 
 type LivenessStatus = "alive" | "dead";
 
 /** 404/408/410 与 5xx 视为死链；401/403/405/429 等说明页面存在但有门槛，不判死。 */
 const DEAD_HTTP_STATUSES = new Set([404, 408, 410]);
-const TIMEOUT_MS = 6000;
 const MAX_URLS = 16;
 const CONCURRENCY = 5;
-const MAX_REDIRECTS = 5;
-const REQUEST_USER_AGENT =
-  "Mozilla/5.0 (compatible; RedHerringGun/1.0; citation-liveness-check)";
 
 function classifyLivenessStatus(status: number): LivenessStatus {
   if (status < 400) return "alive";
@@ -34,42 +30,20 @@ function classifyLivenessStatus(status: number): LivenessStatus {
   return "alive";
 }
 
-/** 只探 http(s) 公网地址：内网、元数据服务、本机一律不访问，按打不开处理。 */
-function isProbeAllowed(url: string): boolean {
-  return /^https?:\/\//i.test(url) && !isBlockedUrl(url);
-}
-
-/**
- * GET 到响应头即断开：不拉正文，也能覆盖禁用 HEAD 的站点。
- * 跳转自己跟：每一跳访问前都过 ssrfGuard，公网地址跳到内网地址也拦得住。
- */
+/** 内网地址、跳转死循环按打不开处理。 */
 async function checkUrlLiveness(url: string, execution: ExecutionBudget): Promise<LivenessStatus> {
   try {
-    return await withExecutionBudget(async (signal) => {
-      let current = url;
-      for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
-        if (!isProbeAllowed(current)) return "dead";
-        const res = await fetch(current, {
-          method: "GET",
-          redirect: "manual",
-          signal,
-          headers: { "user-agent": REQUEST_USER_AGENT },
-        });
-        void Promise.resolve(res.body?.cancel()).catch(() => {});
-        const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
-        if (!location) return classifyLivenessStatus(res.status);
-        current = new URL(location, current).href;
-      }
-      return "dead";
-    }, { ...execution, timeoutMs: TIMEOUT_MS, label: "来源探活" });
+    const page = await fetchPage(url, { mode: "probe", ...execution, cache: pageCacheFor(execution.signal) });
+    return classifyLivenessStatus(page.status);
   } catch (error) {
     execution.signal?.throwIfAborted();
     // Exhausting the investigation's budget is not evidence that this URL is dead.
     if (execution.deadlineMs !== undefined && Date.now() >= execution.deadlineMs) {
       throw new ExecutionTimeoutError("来源探活总预算", 0);
     }
+    if (error instanceof UnreachablePageError) return "dead";
     // 连接失败不证明来源不存在；此分支仅将 ENOTFOUND 判为死链。
-    const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
+    const code = (error as { code?: unknown } | null)?.code;
     return code === "ENOTFOUND" ? "dead" : "alive";
   }
 }
