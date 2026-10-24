@@ -18,7 +18,7 @@ export interface ModelReply {
 }
 
 export interface ModelProvider {
-  id: "minimax" | "stepfun";
+  id: "minimax" | "stepfun" | "anthropic";
   vision: boolean;
   apiKeyEnv: string;
   configured(env: Record<string, string>): boolean;
