@@ -36,8 +36,34 @@ function scrubProviderDiagnostics(value: unknown, depth = 0): unknown {
   return value;
 }
 
+type ProviderProgress = { id: string; label: string; status: string; resultCount: number };
+type ProgressSource = { title: string; url: string; providerOrigins?: string[] };
+
+// 搜索服务名同样不公开：按本条事件里的顺序改成「检索通道 N」，同一次运行里顺序固定，编号稳定。
+function anonymizeSearchProgress(event: Record<string, unknown>) {
+  const providers = (event.providers as ProviderProgress[] | undefined) ?? [];
+  const channelOf = new Map(providers.map((p, i) => [p.id, `channel-${i + 1}`]));
+  event.providers = providers.map((p, i) => ({ id: `channel-${i + 1}`, label: `检索通道 ${i + 1}`, status: p.status, resultCount: p.resultCount }));
+  if (Array.isArray(event.sources)) {
+    event.sources = (event.sources as ProgressSource[]).map(({ providerOrigins, ...source }) => ({
+      ...source,
+      channels: (providerOrigins ?? []).map((id) => channelOf.get(id)).filter(Boolean),
+    }));
+  }
+}
+
+// 搜索结果的 answer 是搜索服务拼出的原文串（带服务名与请求号），检索缺口里混着运维报错，都不公开。
+function dropSearchDiagnostics(value: unknown) {
+  if (!value || typeof value !== "object") return;
+  for (const item of Object.values(value as Record<string, unknown>)) dropSearchDiagnostics(item);
+  delete (value as Record<string, unknown>).answer;
+  delete (value as Record<string, unknown>).unresolvedEvidenceGaps;
+}
+
 export function toPublicStreamEvent(data: object): Record<string, unknown> {
   const event = scrubProviderDiagnostics(data) as Record<string, unknown>;
+  if (event.type === "search_progress") anonymizeSearchProgress(event);
+  if (event.type === "tool_result" || event.type === "tool_start") dropSearchDiagnostics(event.result);
   delete event.detail;
   delete event.providerErrors;
   if (
