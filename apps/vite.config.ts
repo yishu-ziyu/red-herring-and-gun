@@ -1,5 +1,8 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv, type ProxyOptions } from "vite";
+import { defineConfig, loadEnv, type Plugin, type ProxyOptions } from "vite";
 
 /**
  * Vite is the frontend only. Local /api (and /health, /s/:shareId) go to Express.
@@ -30,8 +33,45 @@ function apiProxy(mode: string): Record<string, ProxyOptions> {
   };
 }
 
+/**
+ * Dev only: serves saved runs from dev-fixtures/ at /__fixtures/<name>.json for replay (`?part=…&run=<name>`).
+ * `apply: "serve"` keeps the plugin, and the fixture files, out of `vite build`.
+ */
+function devFixtures(): Plugin {
+  const dir = path.resolve(import.meta.dirname, "dev-fixtures");
+  return {
+    name: "rhg-dev-fixtures",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use("/__fixtures/", (req, res) => {
+        const name = (req.url ?? "").replace(/^\//, "").split("?")[0] ?? "";
+        if (!/^[\w-]+\.json$/.test(name)) {
+          res.statusCode = 404;
+          res.end();
+          return;
+        }
+        readFile(path.join(dir, name))
+          .then((body) => {
+            res.setHeader("Content-Type", "application/json; charset=utf-8");
+            res.end(body);
+          })
+          .catch(() => {
+            res.statusCode = 404;
+            res.end();
+          });
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
-  plugins: [react()],
+  plugins: [react(), tailwindcss(), devFixtures()],
+  resolve: {
+    alias: {
+      "@": path.resolve(import.meta.dirname, "src"),
+      "@shared": path.resolve(import.meta.dirname, "shared"),
+    },
+  },
   server: {
     proxy: apiProxy(mode),
   },

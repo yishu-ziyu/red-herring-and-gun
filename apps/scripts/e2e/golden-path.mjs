@@ -41,7 +41,7 @@ await context.addInitScript(() => {
 const page = await context.newPage();
 let investigationPosts = 0;
 page.on("request", (req) => {
-  if (req.method() === "POST" && req.url().includes("/api/agent/orchestrate-stream")) investigationPosts += 1;
+  if (req.method() === "POST" && new URL(req.url()).pathname === "/api/investigations") investigationPosts += 1;
 });
 const shot = (name) => page.screenshot({ path: `${out}/${name}.png`, fullPage: true, animations: "disabled" });
 const conclusion = () => page.locator("[data-gp-direct-answer]").first().innerText().then((t) => t.trim()).catch(() => "");
@@ -52,7 +52,7 @@ async function run() {
   if (!record("home shows the input", await editor.isVisible())) return;
   await editor.click();
   await page.keyboard.type(claim);
-  await page.getByRole("button", { name: "开始调查" }).click();
+  await page.locator("[data-gp-start]").first().click();
 
   const finished = page.locator('[data-gp-phase="complete"], [data-gp-phase="interrupted"]').first();
   await finished.waitFor({ timeout: 10 * 60 * 1000 }).catch(() => {});

@@ -1,105 +1,112 @@
-/**
- * 应用入口：按调查会话的当前视图选择显示什么。
- */
-import { useLayoutEffect } from "react";
-import { ProductShell } from "./goldenPath/ProductShell";
-import { InputStage } from "./goldenPath/InputStage";
-import { InvestigationCanvas } from "./goldenPath/InvestigationCanvas";
-import { InvestigationThreadHeader } from "./goldenPath/InvestigationThreadHeader";
-import { gpCopyFor } from "./goldenPath/copy";
-import { useUiLang } from "./lib/useUiLang";
-import { useInvestigationSession } from "./app/useInvestigationSession";
+// 应用外壳：顶栏照抄 shadcn/ui dashboard-01 的 SiteHeader（https://ui.shadcn.com/blocks#dashboard-01）。
+// 地址见 lib/route.ts：/ 首页，/run/<runId> 运行过程，/result/<runId> 结果；开发模式另认 ?part=… 直达各部分。
+import { lazy, Suspense, useEffect, useState } from "react";
+import { SiteHeader } from "@/components/site-header";
+import { HistorySheet } from "@/components/history-sheet";
+import { Home } from "@/components/home";
+import { ResultView } from "@/components/result/result-view";
+import { ShareView } from "@/components/share-view";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { loadFixtureIndex, loadRun } from "@/lib/data";
+import { displayClaim } from "@/lib/derive";
+import { navigate, useRoute } from "@/lib/route";
+import type { RunData } from "@/lib/types";
+
+// 运行过程页单独成块：它带着 Markdown 渲染和动画库，首页、结果页用不上，不该一起下载。
+const RunningView = lazy(() => import("@/components/workbench/running-view").then((m) => ({ default: m.RunningView })));
+
+function useRun(run: string) {
+  const [state, setState] = useState<{ run: string; data: RunData | null; error: string }>({ run: "", data: null, error: "" });
+  useEffect(() => {
+    if (!run) return;
+    let alive = true;
+    setState({ run, data: null, error: "" });
+    loadRun(run)
+      .then((data) => alive && setState({ run, data, error: "" }))
+      .catch((error: unknown) => alive && setState({ run, data: null, error: error instanceof Error ? error.message : "读取失败" }));
+    return () => {
+      alive = false;
+    };
+  }, [run]);
+  return state.run === run ? state : { run, data: null, error: "" };
+}
+
+/** 开发模式 ?part=… 没给 run 时，默认用第一个回放样例。生产里 run 一定来自地址。 */
+function useDefaultRun(run: string, needed: boolean) {
+  const [fallback, setFallback] = useState("");
+  useEffect(() => {
+    if (run || !needed || !import.meta.env.DEV) return;
+    void loadFixtureIndex().then((rows) => setFallback(rows[0]?.fixture ?? ""));
+  }, [run, needed]);
+  return run || fallback;
+}
+
+function Loading() {
+  return (
+    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-6">
+      <Skeleton className="h-24" />
+      <Skeleton className="h-64" />
+    </div>
+  );
+}
+
+function Failed({ message }: { message: string }) {
+  return (
+    <div className="mx-auto max-w-xl p-6">
+      <Alert variant="destructive">
+        <AlertTitle>打不开这次核查</AlertTitle>
+        <AlertDescription>{message}</AlertDescription>
+      </Alert>
+      <Button className="mt-4" variant="outline" onClick={() => navigate({ view: "home" })}>
+        回到首页
+      </Button>
+    </div>
+  );
+}
 
 export default function App() {
-  const { lang } = useUiLang();
-  const copy = gpCopyFor(lang);
-  const session = useInvestigationSession();
-  const { view, canvas, thread } = session;
-  const home = view.kind === "home";
+  const route = useRoute();
+  const [historyOpen, setHistoryOpen] = useState(route.view === "history");
+  useEffect(() => {
+    if (route.view === "history") setHistoryOpen(true);
+  }, [route.view]);
+  const needsRun = route.view === "run" || route.view === "result" || route.view === "share";
+  const runKey = useDefaultRun(needsRun ? route.run : "", needsRun);
+  const { data, error } = useRun(needsRun ? runKey : "");
 
-  // 从首页进入调查时回到页顶：首页滚到案例区再点开，结论不能被沿用的滚动位置挤出视口。
-  // 只看首页/调查切换；追问、保存后换 caseId 都发生在调查态内部，不跳。
-  useLayoutEffect(() => {
-    if (!home) window.scrollTo(0, 0);
-  }, [home]);
-
-  if (window.location.pathname.startsWith("/s/")) {
-    return (
-      <main className="gp-share-unavailable gp-column" data-gp-share-unavailable>
-        <h1>{copy.shareUnavailableTitle}</h1>
-        <p>{copy.shareUnavailableBody}</p>
-        <a href="/">{copy.backHome}</a>
-      </main>
-    );
+  if (route.view === "share") {
+    return <TooltipProvider>{error ? <Failed message={error} /> : data ? <ShareView data={data} /> : <Loading />}</TooltipProvider>;
   }
 
-  const timeoutPending = view.kind === "timeoutPending" ? (
-    <p className="gp-global-notice gp-column" role="status" data-gp-timeout-pending>
-      {copy.timeoutPending}
-    </p>
-  ) : null;
-
+  const title = data?.snapshot && needsRun ? displayClaim(data.snapshot.originalClaim).text : undefined;
   return (
-    <ProductShell
-      cases={session.cases}
-      activeCaseId={session.activeCaseId}
-      historyReady={session.historyReady}
-      onNewCase={session.goHome}
-      onSelectCase={(id) => void session.openCase(id)}
-      viewingInvestigation={!home}
-    >
-      {view.kind === "disconnected" ? (
-        <p className="gp-global-notice gp-column" role="status" data-gp-disconnected>
-          {view.runId ? copy.disconnectedWithRun : copy.disconnectedNoRun}
-          {view.runId ? <button type="button" className="gp-link-btn" onClick={session.reconnect}>
-            {copy.reconnect}
-          </button> : null}
-        </p>
-      ) : view.kind === "reconnecting" ? <p className="gp-global-notice gp-column" role="status">{copy.reconnecting}</p> : null}
-      {session.banner ? <p className="gp-global-notice gp-column" role="alert">{session.banner}</p> : null}
-      {thread ? <InvestigationThreadHeader
-        thread={thread}
-        selectedRoundId={session.selectedRoundId}
-        onSelect={session.selectRound}
-      /> : null}
-      {home ? (
-        <>
-          {!session.historyReady ? <p className="gp-global-notice gp-column" role="status">{copy.loadingHistory}</p> : null}
-          <InputStage
-            onSubmit={session.start}
-            initialClaim={session.draftClaim}
-          />
-        </>
-      ) : canvas ? (
-        <>
-          {timeoutPending}
-          <InvestigationCanvas
-            key={canvas.key}
-            snapshot={canvas.snapshot}
-            connectionUnavailable={view.kind === "disconnected" || view.kind === "reconnecting"}
-            readOnly={canvas.readOnly}
-            stop={canvas.stop}
-            onStop={canvas.canStop ? session.cancel : undefined}
-            saveStatus={canvas.saveStatus}
-            onRetrySave={session.retrySave}
-            restoredAt={canvas.restoredAt}
-            onReverify={session.recheck}
-            onFollowUp={canvas.readOnly ? undefined : session.followUp}
-            linkUnreachable={session.linkUnreachable}
-            images={canvas.images}
-            shareRunId={canvas.shareRunId}
-            startedAt={canvas.startedAt}
-          />
-        </>
-      ) : timeoutPending ?? (
-        <p className="gp-waiting gp-column" role="status">
-          {view.kind === "disconnected" || view.kind === "reconnecting"
-            ? copy.noNewContent
-            : view.kind === "waiting" && view.failure !== null && !session.linkUnreachable
-              ? view.failure
-              : copy.splittingWait}
-        </p>
-      )}
-    </ProductShell>
+    <TooltipProvider>
+      <div className="min-h-svh bg-background">
+        <SiteHeader title={title} onHistory={() => setHistoryOpen(true)} />
+        {route.view === "home" || route.view === "history" ? <Home /> : null}
+        {needsRun && error ? <Failed message={error} /> : null}
+        {needsRun && !error && !data ? <Loading /> : null}
+        {route.view === "run" && data ? (
+          <Suspense fallback={<Loading />}>
+            <RunningView key={data.runId} data={data} />
+          </Suspense>
+        ) : null}
+        {route.view === "result" && data ? (
+          <div className="mx-auto w-full max-w-3xl p-4 lg:p-6" data-gp-phase={data.snapshot?.phase}>
+            <ResultView run={data} />
+          </div>
+        ) : null}
+        <HistorySheet
+          open={historyOpen}
+          onOpenChange={(open) => {
+            setHistoryOpen(open);
+            if (!open && route.view === "history") navigate({ view: "home" });
+          }}
+        />
+      </div>
+    </TooltipProvider>
   );
 }
