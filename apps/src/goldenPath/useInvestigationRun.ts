@@ -8,33 +8,23 @@ import {
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
 } from "../../shared/investigation";
-import { requestOrchestrateStream, type OrchestrateStreamEvent } from "../lib/orchestrateStream";
-import { cancelInvestigation, resumeInvestigationStream } from "../lib/investigationResume";
+import {
+  cancelInvestigation,
+  resumeInvestigation,
+  startInvestigation,
+  type InvestigationStreamEvent,
+} from "../lib/investigationClient";
 import { caseIntakePrimaryText, type CaseIntake } from "../lib/caseIntake";
 import { createKnowledgeBase } from "../lib/knowledgeBase";
 import { buildLocalMemoryRecall } from "../lib/localMemoryRecall";
 import type { VisiblePriorRound } from "../../shared/followUp";
 
-/** legacy 原始事件：Golden Path 不从中推导任何产品语义。 */
-const IGNORED_LEGACY_EVENT_TYPES: ReadonlySet<OrchestrateStreamEvent["type"]> = new Set([
-  "search_progress",
-  "planner_update",
-  "speculative_update",
-  "agent_start",
-  "agent_complete",
-  "agent_error",
-  "agent_thought",
-  "tool_start",
-  "tool_result",
-  "tool_error",
-]);
-
-type ConnectionPhase = "connecting" | "live" | "disconnected" | "ended" | "failed";
+export type ConnectionPhase = "connecting" | "live" | "disconnected" | "ended" | "failed";
 
 /** 停止只分三态：没在停 / 已请求、等后端 / 后端已确认。不提前说「已停止」。 */
-type StopPhase = "idle" | "stopping" | "stopped";
+export type StopPhase = "idle" | "stopping" | "stopped";
 
-type RunState = {
+export type RunState = {
   /** null = 尚未收到任何快照（拆题还没回来）。 */
   snapshot: InvestigationSnapshotV1 | null;
   connection: ConnectionPhase;
@@ -83,15 +73,23 @@ function isTerminalServerStatus(status: string | null): boolean {
 }
 
 /**
- * 纯 reducer：一条 SSE 事件 → 下一份产品 state。legacy 事件原样忽略。
- * claim 供 complete 报告缺快照时的确定性重建使用。
+ * 纯 reducer：一条事件 → 下一份产品 state。不认识的事件原样忽略。
+ * claim 供 complete 报告缺快照时的确定性重建使用；now 是收到这条事件的本机时间。
  */
-function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: string): RunState {
+export function applyRunEvent(
+  prev: RunState,
+  event: InvestigationStreamEvent,
+  { claim, now = Date.now() }: { claim?: string; now?: number } = {}
+): RunState {
   if (event.type === "run_started") {
     return {
       ...prev,
       runId: typeof event.runId === "string" ? event.runId : prev.runId,
-      startedAt: typeof event.startedAt === "number" ? event.startedAt : prev.startedAt,
+      // 服务端的开始时间换成本机时钟：两边时钟可能差几分钟，按这条事件的发出时间对齐。
+      startedAt:
+        typeof event.startedAt === "number"
+          ? event.startedAt + (typeof event.timestamp === "number" ? now - event.timestamp : 0)
+          : prev.startedAt,
     };
   }
   if (event.type === "run_state") {
@@ -168,6 +166,14 @@ function applyRunEvent(prev: RunState, event: OrchestrateStreamEvent, claim?: st
     if (isTerminalServerStatus(prev.serverStatus) || prev.finalReport) return prev;
     return { ...prev, connection: "disconnected", timeoutPending: false, errorMessage: event.message ?? "" };
   }
+  if (event.type === "stream_closed") {
+    // 流结束不证明调查失败；没有定论就保留运行身份，允许接回同一轮。
+    if (prev.connection === "ended" || prev.connection === "failed") return prev;
+    // 服务端已确认终态：补发完就关流，不是「还活着」。超时后晚完成的 run 走的正是这条路——
+    // 刷新回来能拿到 phase=complete 的快照，界面必须按「已结束」渲染，不能挂着进行中。
+    if (isTerminalServerStatus(prev.serverStatus) || prev.finalReport) return { ...prev, connection: "ended" };
+    return { ...prev, connection: "disconnected" };
+  }
   return prev;
 }
 
@@ -195,18 +201,17 @@ export function useInvestigationRun() {
   // 双击保护：同一份材料在短时间内重复提交只算一次（服务端幂等，这里是它的补充）。
   const lastSubmitRef = useRef<{ key: string; clientRequestId: string; at: number } | null>(null);
 
-  const applyEvent = useCallback((event: OrchestrateStreamEvent, claim?: string) => {
-    // 服务端的开始时间换成本机时钟：两边时钟可能差几分钟，按这条事件的发出时间对齐。
-    const localEvent =
-      event.type === "run_started" && typeof event.startedAt === "number" && typeof event.timestamp === "number"
-        ? { ...event, startedAt: event.startedAt + (Date.now() - event.timestamp) }
-        : event;
-    setState((prev) => applyRunEvent(prev, localEvent, claim));
+  const consume = useCallback(async (events: AsyncIterable<InvestigationStreamEvent>, generation: number, claim: string) => {
+    for await (const event of events) {
+      if (runIdRef.current !== generation) return;
+      const now = Date.now();
+      setState((prev) => applyRunEvent(prev, event, { claim, now }));
+    }
   }, []);
 
   const start = useCallback(
     (intake: CaseIntake, options: StartOptions = {}) => {
-      const runId = ++runIdRef.current;
+      const generation = ++runIdRef.current;
       const claim = caseIntakePrimaryText(intake);
       const submitKey = JSON.stringify({
         claim,
@@ -231,20 +236,14 @@ export function useInvestigationRun() {
         } catch {
           // 召回降级不阻断调查
         }
-        for await (const event of requestOrchestrateStream(intake, memoryRecall, clientRequestId, options.priorRound, options.kind)) {
-          if (runIdRef.current !== runId) return;
-          if (IGNORED_LEGACY_EVENT_TYPES.has(event.type)) continue;
-          applyEvent(event, claim);
-        }
-        // 流结束不证明调查失败；保留运行身份，允许接回同一轮。
-        setState((prev) =>
-          runIdRef.current === runId && (prev.connection === "live" || prev.connection === "connecting")
-            ? { ...prev, connection: prev.finalReport ? "ended" : "disconnected" }
-            : prev
+        await consume(
+          startInvestigation(intake, { memoryRecall, clientRequestId, priorRound: options.priorRound, kind: options.kind }),
+          generation,
+          claim
         );
       })();
     },
-    [applyEvent]
+    [consume]
   );
 
   const reset = useCallback(() => {
@@ -272,30 +271,13 @@ export function useInvestigationRun() {
   /** 接回一条已有 run（刷新/返回）。不新建 run、不扣额。 */
   const resume = useCallback(
     (runId: string, after: number, claim: string) => {
-      const local = ++runIdRef.current;
+      const generation = ++runIdRef.current;
       setState((prev) => prev.runId === runId
         ? { ...prev, connection: "connecting", errorMessage: "", timeoutPending: false }
         : { ...INITIAL_STATE, runId, connection: "connecting" });
-      resumeInvestigationStream(
-        runId,
-        after,
-        (event) => {
-          if (runIdRef.current !== local) return;
-          applyEvent(event, claim);
-        },
-        (reason) => {
-          if (runIdRef.current !== local) return;
-          setState((prev) => {
-            if (prev.connection === "ended" || prev.connection === "failed") return prev;
-            // 服务端已确认终态：补发完就关流，不是「还活着」。超时后晚完成的 run 走的正是这条路——
-            // 刷新回来能拿到 phase=complete 的快照，界面必须按「已结束」渲染，不能挂着进行中。
-            if (isTerminalServerStatus(prev.serverStatus)) return { ...prev, connection: "ended" };
-            return { ...prev, connection: prev.finalReport ? "ended" : "disconnected" };
-          });
-        }
-      );
+      void consume(resumeInvestigation(runId, after), generation, claim);
     },
-    [applyEvent]
+    [consume]
   );
 
   return { state, start, reset, cancel, resume };

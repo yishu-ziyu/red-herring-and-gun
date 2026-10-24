@@ -1,163 +1,28 @@
 /**
- * 应用入口：提交调查、切换视图和保存本机历史。
+ * 应用入口：按调查会话的当前视图选择显示什么。
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { interruptedInvestigationSnapshot } from "../shared/interruptedSnapshot";
+import { useLayoutEffect } from "react";
 import { ProductShell } from "./goldenPath/ProductShell";
 import { InputStage } from "./goldenPath/InputStage";
 import { InvestigationCanvas } from "./goldenPath/InvestigationCanvas";
-import { useInvestigationRun, type StartOptions } from "./goldenPath/useInvestigationRun";
+import { InvestigationThreadHeader } from "./goldenPath/InvestigationThreadHeader";
 import { gpCopyFor } from "./goldenPath/copy";
 import { useUiLang } from "./lib/useUiLang";
-import { caseIntakeDisplayText, caseIntakeFailedLinks, caseIntakeIsImageOnly, createCaseIntake, type CaseIntake } from "./lib/caseIntake";
-import { createKnowledgeBase } from "./lib/knowledgeBase";
-import { composeFollowUpClaim, previousAnswerText } from "../shared/followUp";
-import { visiblePriorRoundFromSnapshot } from "../shared/followUp";
-import type { InvestigationThread, InvestigationRound } from "../shared/investigationThread";
-import { InvestigationThreadHeader } from "./goldenPath/InvestigationThreadHeader";
-import {
-  currentRunId,
-  restoredThreadFields,
-  snapshotFromReport,
-  threadForRound,
-  type ActiveCase,
-  type ProductMode,
-} from "./app/caseViews";
-import { HISTORY_OPEN_FAILED_NOTICE, publicTransportError, TIMEOUT_PENDING_NOTICE } from "./app/notices";
-import { useLocalHistory } from "./app/useLocalHistory";
-import { useResultPersistence } from "./app/useResultPersistence";
-import { useRunPointer } from "./app/useRunPointer";
+import { TIMEOUT_PENDING_NOTICE } from "./app/notices";
+import { useInvestigationSession } from "./app/useInvestigationSession";
 
 export default function App() {
   const { lang } = useUiLang();
   const copy = gpCopyFor(lang);
-  const [mode, setMode] = useState<ProductMode>("input");
+  const session = useInvestigationSession();
+  const { view, canvas, thread } = session;
+  const home = view.kind === "home";
+
   // 从首页进入调查时回到页顶：首页滚到案例区再点开，结论不能被沿用的滚动位置挤出视口。
-  // 只看模式切换；追问、保存后换 caseId 都发生在调查态内部，不跳。
+  // 只看首页/调查切换；追问、保存后换 caseId 都发生在调查态内部，不跳。
   useLayoutEffect(() => {
-    if (mode === "investigation") window.scrollTo(0, 0);
-  }, [mode]);
-  const [active, setActive] = useState<ActiveCase | null>(null);
-  const activeIdRef = useRef<string | null>(null);
-  activeIdRef.current = active?.localId ?? null;
-  const [historyNotice, setHistoryNotice] = useState("");
-  const run = useInvestigationRun();
-  const [draftClaim, setDraftClaim] = useState("");
-  const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null);
-
-  // 本机历史（挂载即读一次）。
-  const { cases, setCases, historyReady } = useLocalHistory();
-
-  const { resumedRef } = useRunPointer({ historyReady, mode, active, run, copy, setActive, setMode, setHistoryNotice });
-
-  // 完成：留存到本机。保存失败不挡结果，但必须可见。
-  const { saveStatus, setSaveStatus, retrySave } = useResultPersistence({
-    mode,
-    active,
-    run,
-    activeIdRef,
-    setCases,
-    setHistoryNotice,
-  });
-
-  /** 普通提交与重新核查都启动新一轮；旧结果由历史入口打开。 */
-  const beginRun = useCallback(
-    (
-      intake: CaseIntake,
-      // 追问：带上一轮可见材料。首轮不传。
-      followUp?: Pick<StartOptions, "priorRound">,
-      previousThread?: InvestigationThread,
-      roundKind: InvestigationRound["kind"] = "initial",
-    ) => {
-      resumedRef.current = true;
-      setSelectedRoundId(null);
-      setSaveStatus("idle");
-      setHistoryNotice("");
-      setDraftClaim("");
-      const claim = caseIntakeDisplayText(intake);
-      const localId = `case-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const thread = previousThread ?? { version: 1 as const, id: localId, originalClaim: claim, rounds: [] };
-      setActive({ localId, roundId: localId, roundKind, claim, intake, thread });
-      setCases((prev) => [{ id: localId, claim: thread.originalClaim, threadId: thread.id, roundCount: thread.rounds.length + 1, status: "running" as const }, ...prev.filter((item) => item.id !== localId && item.threadId !== thread.id)]);
-      setMode("investigation");
-      run.start(intake, { priorRound: followUp?.priorRound, ...(roundKind === "recheck" ? { kind: "recheck" as const } : {}) });
-    },
-    [run]
-  );
-
-  const handleBackHome = useCallback(() => {
-    // 从调查/旧报告返回首页时预填原句，方便改完再查。只交了图片时没有可预填的原句。
-    setDraftClaim((prev) => (caseIntakeIsImageOnly(active?.intake) ? "" : active?.thread?.originalClaim ?? active?.claim ?? prev));
-    setSelectedRoundId(null);
-    run.reset();
-    setActive(null);
-    setMode("input");
-  }, [active?.claim, active?.intake, run]);
-
-  // 只交了图片：读出图里的文字之后，历史标题和轮次标题都换成这段文字（快照里的原文），不显示请求句。
-  const imageOnlyText = !active?.restored && caseIntakeIsImageOnly(active?.intake) ? run.state.snapshot?.originalClaim : undefined;
-  useEffect(() => {
-    if (!active || !imageOnlyText || active.claim === imageOnlyText) return;
-    const localId = active.localId;
-    setActive((prev) => prev && prev.localId === localId
-      ? {
-          ...prev,
-          claim: imageOnlyText,
-          thread: prev.thread && prev.thread.rounds.length === 0 ? { ...prev.thread, originalClaim: imageOnlyText } : prev.thread,
-        }
-      : prev);
-    setCases((prev) => prev.map((item) => (item.id === localId ? { ...item, claim: imageOnlyText } : item)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imageOnlyText, active?.localId]);
-
-  const handleRetry = useCallback(() => {
-    if (!active) {
-      handleBackHome();
-      return;
-    }
-    const snapshot = active.restored?.snapshot ?? run.state.snapshot;
-    beginRun(active.intake ?? createCaseIntake(active.claim, []), undefined,
-      snapshot ? threadForRound(active, snapshot, currentRunId(active, run.state.runId)) : active.thread, "recheck");
-  }, [active, beginRun, handleBackHome, run.state.snapshot, run.state.runId]);
-
-  /** 打开一条历史记录；打开成功返回 true。 */
-  const handleSelectCase = useCallback(
-    async (id: string): Promise<boolean> => {
-      const item = cases.find((entry) => entry.id === id);
-      if (!item) return false;
-      setSelectedRoundId(null);
-      // 本地在跑的那条：直接回到当前画布，不重新请求。
-      if (item.status === "running" && active?.localId === id) {
-        setMode("investigation");
-        return true;
-      }
-      try {
-        const entry = await createKnowledgeBase().getCase(id);
-        const snapshot = entry ? snapshotFromReport(entry.finalReport) : undefined;
-        // 读不到或读不出内容不能点了没反应：提示可见，条目状态不动。
-        if (!entry || !snapshot) {
-          setHistoryNotice(HISTORY_OPEN_FAILED_NOTICE[lang]);
-          return false;
-        }
-        run.reset();
-        setActive({
-          localId: id,
-          claim: entry.claim,
-          ...restoredThreadFields(entry.finalReport),
-          intake: null,
-          restored: { snapshot, report: entry.finalReport, at: entry.timestamp },
-        });
-        setMode("investigation");
-        return true;
-      } catch {
-        setHistoryNotice(HISTORY_OPEN_FAILED_NOTICE[lang]);
-        return false;
-      }
-    },
-    [active?.localId, cases, lang, run]
-  );
-
-  const handleStart = useCallback((intake: CaseIntake) => beginRun(intake), [beginRun]);
+    if (!home) window.scrollTo(0, 0);
+  }, [home]);
 
   if (window.location.pathname.startsWith("/s/")) {
     return (
@@ -169,138 +34,73 @@ export default function App() {
     );
   }
 
-  const snapshot = active?.restored
-    ? active.restored.snapshot
-    : (() => {
-        const s = run.state.snapshot;
-        if (!s) return null;
-        // 流失败但已有真实数据：按 interrupted 收口（保留数据、可重试）。
-        // timeout_pending 后流结束且没有 finalReport：同样收口，不得停在 judging +「还在查」。
-        // 连接仍活着时 timeoutPending 提示继续挂着，等晚到的 complete。
-        const streamEndedWithoutReport =
-          (run.state.connection === "failed" || run.state.connection === "ended") &&
-          !run.state.finalReport;
-        if (streamEndedWithoutReport && s.phase !== "complete" && s.phase !== "interrupted") {
-          return interruptedInvestigationSnapshot(s, s.originalClaim);
-        }
-        return s;
-      })();
+  const timeoutPending = view.kind === "timeoutPending" ? (
+    <p className="gp-global-notice gp-column" role="status" data-gp-timeout-pending>
+      {TIMEOUT_PENDING_NOTICE[lang]}
+    </p>
+  ) : null;
 
-  /**
-   * 超时提示：只在连接还活着、这次调查还没拿到结果、也不是历史回看时出现。
-   * 流已结束且没有报告 → 已按中断收口，不再说「还在查」。
-   */
-  const showTimeoutPending =
-    !active?.restored &&
-    run.state.timeoutPending &&
-    !run.state.finalReport &&
-    (run.state.connection === "live" || run.state.connection === "connecting");
-  const showLinkUnreachable =
-    mode === "investigation" && Boolean(active?.intake) && caseIntakeFailedLinks(active!.intake).length > 0;
-
-  function handleFollowUp(question: string) {
-    if (!active) return;
-    const prevAnswer =
-      snapshot?.conclusion?.directAnswer || previousAnswerText(
-        (active.restored?.report ?? run.state.finalReport) as { conclusion?: string; memo?: string } | null
-      ) || "";
-    const composed = composeFollowUpClaim({
-      originalClaim: active.thread?.originalClaim ?? active.claim,
-      previousAnswer: prevAnswer,
-      followUp: question,
-    });
-    beginRun(
-      {
-        text: composed,
-        links: [],
-        images: [],
-        createdAt: Date.now(),
-      },
-      { priorRound: visiblePriorRoundFromSnapshot(snapshot) },
-      snapshot ? threadForRound(active, snapshot, currentRunId(active, run.state.runId)) : active.thread,
-      "follow-up",
-    );
-  }
-
-  const archivedRound = selectedRoundId ? active?.thread?.rounds.find((round) => round.id === selectedRoundId) : undefined;
-  const displaySnapshot = archivedRound?.snapshot ?? snapshot;
-  const disconnected = mode === "investigation" && !active?.restored && !archivedRound && run.state.connection === "disconnected";
-  const reconnecting = !active?.restored && Boolean(run.state.runId) && run.state.connection === "connecting";
   return (
     <ProductShell
-      cases={cases}
-      activeCaseId={active?.localId ?? null}
-      historyReady={historyReady}
-      onNewCase={handleBackHome}
-      onSelectCase={(id) => void handleSelectCase(id)}
-      viewingInvestigation={mode === "investigation"}
+      cases={session.cases}
+      activeCaseId={session.activeCaseId}
+      historyReady={session.historyReady}
+      onNewCase={session.goHome}
+      onSelectCase={(id) => void session.openCase(id)}
+      viewingInvestigation={!home}
     >
-      {disconnected ? (
+      {view.kind === "disconnected" ? (
         <p className="gp-global-notice gp-column" role="status" data-gp-disconnected>
-          {run.state.runId
+          {view.runId
             ? "连接已断开，调查可能仍在继续。下面保留的是断线前收到的内容。"
             : "连接已断开，尚未收到调查编号，无法确认请求是否已经开始。"}
-          {run.state.runId ? <button type="button" className="gp-link-btn" onClick={() => run.resume(run.state.runId!, run.state.lastActivitySeq, active?.claim ?? "")}>
+          {view.runId ? <button type="button" className="gp-link-btn" onClick={session.reconnect}>
             重新连接这次调查
           </button> : null}
         </p>
-      ) : reconnecting ? <p className="gp-global-notice gp-column" role="status">正在重新连接这次调查…</p> : null}
-      {showLinkUnreachable ? (
-        <p className="gp-global-notice gp-column" role="alert">
-          {copy.linkUnreachableNotice}
-        </p>
-      ) : run.state.notice && mode === "investigation" ? (
-        <p className="gp-global-notice gp-column" role="alert">{run.state.notice}</p>
-      ) : historyNotice ? (
-        <p className="gp-global-notice gp-column" role="alert">{historyNotice}</p>
-      ) : null}
-      {mode === "investigation" && active?.thread ? <InvestigationThreadHeader
-        thread={active.thread}
-        selectedRoundId={selectedRoundId}
-        onSelect={setSelectedRoundId}
+      ) : view.kind === "reconnecting" ? <p className="gp-global-notice gp-column" role="status">正在重新连接这次调查…</p> : null}
+      {session.banner ? <p className="gp-global-notice gp-column" role="alert">{session.banner}</p> : null}
+      {thread ? <InvestigationThreadHeader
+        thread={thread}
+        selectedRoundId={session.selectedRoundId}
+        onSelect={session.selectRound}
       /> : null}
-      {mode === "input" ? (
+      {home ? (
         <>
-          {!historyReady ? <p className="gp-global-notice gp-column" role="status">{copy.loadingHistory}</p> : null}
+          {!session.historyReady ? <p className="gp-global-notice gp-column" role="status">{copy.loadingHistory}</p> : null}
           <InputStage
-            onSubmit={handleStart}
-            initialClaim={draftClaim}
+            onSubmit={session.start}
+            initialClaim={session.draftClaim}
           />
         </>
-      ) : active && displaySnapshot ? (
+      ) : canvas ? (
         <>
-          {showTimeoutPending ? (
-            <p className="gp-global-notice gp-column" role="status" data-gp-timeout-pending>
-              {TIMEOUT_PENDING_NOTICE[lang]}
-            </p>
-          ) : null}
+          {timeoutPending}
           <InvestigationCanvas
-            key={archivedRound?.id ?? active.roundId ?? active.localId}
-            snapshot={displaySnapshot}
-            connectionUnavailable={disconnected || reconnecting}
-            readOnly={Boolean(archivedRound)}
-            stop={archivedRound || active.restored ? "idle" : run.state.stop}
-            onStop={archivedRound || active.restored || !run.state.runId ? undefined : () => void run.cancel()}
-            saveStatus={saveStatus}
-            onRetrySave={retrySave}
-            restoredAt={active.restored?.at}
-            onReverify={handleRetry}
-            onFollowUp={archivedRound ? undefined : handleFollowUp}
-            linkUnreachable={caseIntakeFailedLinks(active.intake).length > 0}
-            images={archivedRound || active.restored ? undefined : active.intake?.images}
-            shareRunId={archivedRound ? archivedRound.runId : currentRunId(active, run.state.runId)}
-            startedAt={archivedRound || active.restored ? undefined : run.state.startedAt ?? undefined}
+            key={canvas.key}
+            snapshot={canvas.snapshot}
+            connectionUnavailable={view.kind === "disconnected" || view.kind === "reconnecting"}
+            readOnly={canvas.readOnly}
+            stop={canvas.stop}
+            onStop={canvas.canStop ? session.cancel : undefined}
+            saveStatus={canvas.saveStatus}
+            onRetrySave={session.retrySave}
+            restoredAt={canvas.restoredAt}
+            onReverify={session.recheck}
+            onFollowUp={canvas.readOnly ? undefined : session.followUp}
+            linkUnreachable={session.linkUnreachable}
+            images={canvas.images}
+            shareRunId={canvas.shareRunId}
+            startedAt={canvas.startedAt}
           />
         </>
-      ) : showTimeoutPending ? (
-        <p className="gp-global-notice gp-column" role="status" data-gp-timeout-pending>
-          {TIMEOUT_PENDING_NOTICE[lang]}
-        </p>
-      ) : (
+      ) : timeoutPending ?? (
         <p className="gp-waiting gp-column" role="status">
-          {disconnected || reconnecting ? "尚未收到新的调查内容。" : run.state.connection === "failed" && !snapshot && !showLinkUnreachable
-            ? publicTransportError(run.state.errorMessage, copy.connectionLost)
-            : "正在拆分这句话…"}
+          {view.kind === "disconnected" || view.kind === "reconnecting"
+            ? "尚未收到新的调查内容。"
+            : view.kind === "waiting" && view.failure !== null && !session.linkUnreachable
+              ? view.failure
+              : "正在拆分这句话…"}
         </p>
       )}
     </ProductShell>

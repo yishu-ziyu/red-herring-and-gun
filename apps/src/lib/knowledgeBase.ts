@@ -49,8 +49,9 @@ export interface KnowledgeBaseEntry {
   id: string;
   claim: string;
   claimEmbedding?: number[];
-  rumorType: RumorType | string;
-  diagnosis: ClaimDiagnosis;
+  /** 旧记录才有；新记录不写，也没有任何读取方。 */
+  rumorType?: RumorType | string;
+  diagnosis?: ClaimDiagnosis;
   finalReport: Record<string, unknown>;
   handoffSteps: HandoffStep[];
   verificationResult?: "true" | "false" | "partial" | "unknown";

@@ -17,6 +17,16 @@ export type InvestigationThread = {
   rounds: InvestigationRound[];
 };
 
+export function newInvestigationThread(id: string, originalClaim: string): InvestigationThread {
+  return { version: 1, id, originalClaim, rounds: [] };
+}
+
+/** A saved thread ends with the round it was saved for; reopening treats that round as the current one. */
+export function splitCurrentRound(thread: InvestigationThread): { earlier: InvestigationThread; current: InvestigationRound } | undefined {
+  const current = thread.rounds[thread.rounds.length - 1];
+  return current ? { earlier: { ...thread, rounds: thread.rounds.slice(0, -1) }, current } : undefined;
+}
+
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown> : null;
