@@ -8,8 +8,7 @@
 import { MAX_CLAIM_ATOMS, claimAtomKey, compactStrings } from "../../../shared/claimAtomText.js";
 import { alignFalseEvidenceBuckets } from "./claimAtom/merge.js";
 import type { NonVerifiableAtom, SubclaimVerdict } from "./claimAtom/types.js";
-import { filterAtomSources, type FilterMeta, type FilterableSource } from "./retrievalFilter.js";
-import { isOffTopicSource } from "./atomSearchQuery.js";
+import type { SearchSource } from "./search/searchAtom.js";
 import {
   bindDualBucketCitations,
   bindRelatedSourcesOnly,
@@ -113,30 +112,10 @@ export type AtomSearchBundle = {
   knowledgeDrafts?: KnowledgeDraft[];
 };
 
-function asSourceList(result: unknown): FilterableSource[] {
-  const sources = (result as { sources?: unknown })?.sources;
-  if (!Array.isArray(sources)) return [];
-  const out: FilterableSource[] = [];
-  for (let i = 0; i < sources.length && i < 24; i += 1) {
-    const raw = sources[i];
-    if (!raw || typeof raw !== "object") continue;
-    const rec = raw as Record<string, unknown>;
-    const url = String(rec.url || rec.link || "").trim();
-    if (!url) continue;
-    const publishedAt = String(rec.publishedAt || rec.date || rec.time || rec.publishDate || "").trim();
-    const publisher = String(rec.publisher || rec.siteName || rec.site || "").trim();
-    out.push({
-      url,
-      title: String(rec.title || rec.name || "").slice(0, 200),
-      // 关系核验需要看到转折后的限制条件；320 字很容易只留下「虽然」前半句。
-      snippet: String(rec.snippet || rec.summary || rec.content || "").slice(0, 900),
-      credibility: typeof rec.credibility === "string" ? rec.credibility : undefined,
-      providerRank: i,
-      ...(publishedAt ? { publishedAt } : {}),
-      ...(publisher ? { publisher } : {}),
-    });
-  }
-  return out;
+/** The search seam hands over an already filtered and ranked list. */
+function foundSources(result: unknown): SearchSource[] {
+  const sources = (result as { sources?: unknown } | null)?.sources;
+  return Array.isArray(sources) ? sources : [];
 }
 
 function atomSearchLoad(atom: string, type?: string): number {
@@ -276,7 +255,7 @@ function buildAtomSearchBundle(
   const answers: string[] = [];
   const models: string[] = [];
   const atomsSearched: string[] = [];
-  const totals: FilterMeta = { before: 0, afterFilter: 0, afterDedupe: 0, afterTopK: 0 };
+  let keptCount = 0;
   // 本轮材料实际取得时间：bundle 组装时刻，即这批检索结果到手的时间。
   const retrievedAt = new Date().toISOString();
 
@@ -285,14 +264,7 @@ function buildAtomSearchBundle(
     const atom = item.atom;
     atomsSearched.push(atom);
     const key = claimAtomKey(atom);
-    const rawSources = asSourceList(item.result).filter((s) => !isOffTopicSource(atom, s));
-    const { sources: filtered, meta } = filterAtomSources(rawSources);
-    totals.before += meta.before;
-    totals.afterFilter += meta.afterFilter;
-    totals.afterDedupe += meta.afterDedupe;
-    totals.afterTopK += meta.afterTopK;
-
-    const sources: AtomSearchSource[] = filtered.map((s) => ({
+    const sources: AtomSearchSource[] = foundSources(item.result).map((s) => ({
       url: s.url,
       title: s.title,
       snippet: s.snippet,
@@ -304,6 +276,7 @@ function buildAtomSearchBundle(
       excerptKind: "search-snippet" as const,
       fetchStatus: "snippet-only" as const,
     }));
+    keptCount += sources.length;
     byAtomKey[key] = sources;
     forAgent.push({ claimAtom: atom, sources });
 
@@ -338,7 +311,7 @@ function buildAtomSearchBundle(
       sources: aggregateSources.slice(0, 24),
       relatedQuestions: [],
       model: models.slice(0, 3).join(" | ") || "atom-search",
-      traceText: `按可核查原子检索 ${atomsSearched.length} 轮；筛选 ${totals.before}→${totals.afterTopK} 条（滤/去重/topK），聚合去重来源 ${aggregateSources.length} 条。`,
+      traceText: `按可核查原子检索 ${atomsSearched.length} 轮；保留 ${keptCount} 条来源，聚合去重来源 ${aggregateSources.length} 条。`,
       _source: "per-atom-search",
       supportingEvidence: [],
       contradictingEvidence: [],

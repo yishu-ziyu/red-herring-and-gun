@@ -1,84 +1,18 @@
 import type { RunRecorder } from "./runRecorder.js";
-import { lookup } from "node:dns";
-import http from "node:http";
-import https from "node:https";
-import zlib from "node:zlib";
+import { ARTICLE_TIMEOUT_MS, fetchPage, isPublicHttpUrl, pageCacheFor, UnreachablePageError, type PageCache } from "./publicWeb.js";
 import { isBlockedUrl } from "./ssrfGuard.js";
 import type { AtomSearchBundle, AtomSearchSource } from "./atomSearch.js";
 import { SOURCE_CONTENT_MAX_CHARS } from "../../../shared/investigation/material.js";
 
 const MAX_URLS = 8;
-const DIRECT_TIMEOUT_MS = 8_000;
 const JINA_TIMEOUT_MS = 12_000;
-const DIRECT_MAX_BYTES = 2_000_000;
 const JINA_MAX_BYTES = 64_000;
-const MAX_REDIRECTS = 5;
 const MIN_CONTENT_CHARS = 200;
 const SHORT_PAGE_CHARS = 600;
-const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 const ACCESS_WALL = /sina visitor system|登录后查看|登录可见|登录后可见|请先登录|需要登录|sign in to continue|log in to continue|\bpassport\.[a-z0-9-]+\.(?:com|cn|net)\b|captcha|access denied|verify you are human/i;
 
 type ContentResult = Pick<AtomSearchSource, "excerptKind" | "fetchStatus" | "fetchNote" | "retrievedAt"> & { snippet?: string; readMethod?: "direct" | "reader" | "blocked" };
 type Attempt = { ok: true; text: string } | { ok: false; status?: number; reason: string };
-
-// ssrfGuard only checks the hostname as written; resolving here rejects public names that point at private addresses at connect time.
-function guardedLookup(hostname: string, options: object, callback: (...args: any[]) => void) {
-  lookup(hostname, { ...options, all: true }, (error, addresses: any) => {
-    if (error) return callback(error);
-    const list = (Array.isArray(addresses) ? addresses : [addresses]) as Array<{ address: string; family: number }>;
-    const allowed = list.filter((a) => !isBlockedUrl(a.family === 6 ? `http://[${a.address}]/` : `http://${a.address}/`));
-    if (!allowed.length) return callback(new Error("blocked-address"));
-    if ((options as { all?: boolean }).all) return callback(null, allowed);
-    callback(null, allowed[0]!.address, allowed[0]!.family);
-  });
-}
-
-function get(url: string, signal: AbortSignal, maxBytes: number, headers: Record<string, string>): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Buffer; finalUrl: string }> {
-  return new Promise((resolve, reject) => {
-    let current = url;
-    let hops = 0;
-    const go = () => {
-      if (isBlockedUrl(current)) return reject(new Error("blocked-url"));
-      const mod = current.startsWith("https:") ? https : http;
-      const req = mod.get(current, { headers: { "User-Agent": UA, "Accept-Encoding": "gzip, deflate, br", ...headers }, lookup: guardedLookup as any, signal }, (res) => {
-        const status = res.statusCode ?? 0;
-        if (status >= 300 && status < 400 && res.headers.location) {
-          res.resume();
-          if (++hops > MAX_REDIRECTS) return reject(new Error("too-many-redirects"));
-          current = new URL(res.headers.location, current).href;
-          return go();
-        }
-        const enc = String(res.headers["content-encoding"] || "").toLowerCase();
-        const stream = enc.includes("br") ? res.pipe(zlib.createBrotliDecompress()) : enc.includes("gzip") ? res.pipe(zlib.createGunzip()) : enc.includes("deflate") ? res.pipe(zlib.createInflate()) : res;
-        const chunks: Buffer[] = [];
-        let size = 0;
-        let full = false;
-        stream.on("data", (chunk: Buffer) => {
-          if (full) return;
-          size += chunk.length;
-          if (size > maxBytes) {
-            full = true;
-            chunks.push(chunk.subarray(0, chunk.length - (size - maxBytes)));
-            res.destroy();
-            resolve({ status, headers: res.headers, body: Buffer.concat(chunks), finalUrl: current });
-            return;
-          }
-          chunks.push(chunk);
-        });
-        stream.once("end", () => resolve({ status, headers: res.headers, body: Buffer.concat(chunks), finalUrl: current }));
-        stream.once("error", reject);
-      });
-      req.once("error", reject);
-    };
-    go();
-  });
-}
-
-function decodeHtml(body: Buffer, contentType: string): string {
-  const sniff = body.subarray(0, 4096).toString("latin1");
-  const charset = /charset=["']?([\w-]+)/i.exec(contentType)?.[1] ?? /<meta[^>]+charset=["']?([\w-]+)/i.exec(sniff)?.[1] ?? "utf-8";
-  try { return new TextDecoder(charset.toLowerCase()).decode(body); } catch { return new TextDecoder("utf-8").decode(body); }
-}
 
 const ENTITIES: Record<string, string> = { nbsp: " ", amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", ldquo: "“", rdquo: "”", lsquo: "‘", rsquo: "’", mdash: "—", hellip: "…", middot: "·" };
 function stripTags(html: string): string {
@@ -111,10 +45,6 @@ export function extractArticleText(html: string): string {
   return (title ? `${title}\n\n${text}` : text).trim();
 }
 
-function timeoutSignal(parent: AbortSignal, ms: number): AbortSignal {
-  return AbortSignal.any([parent, AbortSignal.timeout(ms)]);
-}
-
 /**
  * 转读服务返回整页 Markdown，导航、推荐阅读、评论区都在里面，常把一篇几百字的新闻撑过字数上限，
  * 被截断的正文又不能用来支持或反驳。只留正文样子的行。
@@ -136,12 +66,14 @@ export function cleanReaderText(markdown: string): string {
     .join("\n");
 }
 
-function failure(error: unknown, signal: AbortSignal, parent: AbortSignal): Attempt {
+function failure(error: unknown, parent: AbortSignal): Attempt {
   parent.throwIfAborted();
   const msg = error instanceof Error ? error.message : String(error);
-  if (signal.aborted || /timeout|aborted/i.test(msg)) return { ok: false, reason: "超时" };
-  if (/blocked/.test(msg)) return { ok: false, status: 451, reason: "地址被安全规则拦截" };
-  if (/redirects/.test(msg)) return { ok: false, reason: "跳转次数过多" };
+  if (error instanceof UnreachablePageError) {
+    return error.reason === "blocked-url" ? { ok: false, status: 451, reason: "地址被安全规则拦截" } : { ok: false, reason: "跳转次数过多" };
+  }
+  if (/TimeoutError|AbortError/.test((error as Error)?.name ?? "") || /timeout|aborted/i.test(msg)) return { ok: false, reason: "超时" };
+  if (/blocked-address/.test(msg)) return { ok: false, status: 451, reason: "地址被安全规则拦截" };
   const code = (error as { code?: string })?.code ?? "";
   if (/ENOTFOUND|EAI_AGAIN/.test(code + msg)) return { ok: false, reason: "域名解析失败" };
   if (/ECONNRESET|ECONNREFUSED|EPIPE|socket hang up|socket disconnected/i.test(code + msg)) return { ok: false, reason: "连接被断开" };
@@ -155,43 +87,41 @@ function judgeContent(content: string): Attempt {
   return { ok: true, text: content };
 }
 
-async function readDirect(url: string, parent: AbortSignal, retry = true): Promise<Attempt> {
-  const signal = timeoutSignal(parent, DIRECT_TIMEOUT_MS);
+async function readDirect(url: string, parent: AbortSignal, cache: PageCache | undefined, retry = true): Promise<Attempt> {
   try {
-    const res = await get(url, signal, DIRECT_MAX_BYTES, { Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5", "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.6" });
+    const res = await fetchPage(url, { mode: "article", signal: parent, cache });
     if (res.status < 200 || res.status >= 300) return { ok: false, status: res.status, reason: `HTTP ${res.status}` };
     const type = String(res.headers["content-type"] || "");
     if (type && !/html|xml|text\/plain/i.test(type)) return { ok: false, reason: `不是网页（${type.split(";")[0]}）` };
-    return judgeContent(extractArticleText(decodeHtml(res.body, type)));
+    return judgeContent(extractArticleText(res.text));
   } catch (error) {
-    const result = failure(error, signal, parent);
+    const result = failure(error, parent);
     // Resets during the TLS handshake are often transient on cross-border links; one quick retry recovers most of them.
-    if (retry && !result.ok && result.reason === "连接被断开") return readDirect(url, parent, false);
+    if (retry && !result.ok && result.reason === "连接被断开") return readDirect(url, parent, cache, false);
     return result;
   }
 }
 
 async function readViaJina(url: string, parent: AbortSignal): Promise<Attempt> {
-  const signal = timeoutSignal(parent, JINA_TIMEOUT_MS);
   try {
-    const res = await get(`https://r.jina.ai/${encodeURIComponent(url)}`, signal, JINA_MAX_BYTES, { Accept: "text/plain" });
+    const res = await fetchPage(`https://r.jina.ai/${encodeURIComponent(url)}`, { mode: "article", signal: parent, timeoutMs: JINA_TIMEOUT_MS, maxBytes: JINA_MAX_BYTES, headers: { Accept: "text/plain" } });
     if (res.status < 200 || res.status >= 300) return { ok: false, status: res.status, reason: `HTTP ${res.status}` };
-    const text = res.body.toString("utf-8");
+    const text = res.text;
     const returnedUrl = text.match(/^URL Source:\s*(https?:\/\/\S+)/m)?.[1];
     if (returnedUrl && isBlockedUrl(returnedUrl)) return { ok: false, status: 451, reason: "跳转地址被安全规则拦截" };
     if (/^Warning:.*(?:[45]\d\d|error)/im.test(text)) return { ok: false, status: 403, reason: "原网站拒绝访问" };
     const start = text.search(/^Markdown Content:\s*$/m);
     return judgeContent(cleanReaderText(start >= 0 ? text.slice(start).replace(/^Markdown Content:\s*/, "") : text));
   } catch (error) {
-    return failure(error, signal, parent);
+    return failure(error, parent);
   }
 }
 
-async function readSource(url: string, signal: AbortSignal, maxChars: number): Promise<ContentResult> {
-  if (!/^https?:\/\//i.test(url) || isBlockedUrl(url) || new URL(url).username || new URL(url).password) {
+async function readSource(url: string, signal: AbortSignal, maxChars: number, cache: PageCache | undefined): Promise<ContentResult> {
+  if (!isPublicHttpUrl(url)) {
     return { readMethod: "blocked", fetchStatus: "restricted", fetchNote: "网址被安全规则拦截，未读取正文，保留检索摘要" };
   }
-  const direct = await readDirect(url, signal);
+  const direct = await readDirect(url, signal, cache);
   // Short direct text usually means the article body is rendered by script; the reader service often gets more.
   let attempt: Attempt = direct;
   let readMethod: "direct" | "reader" = "direct";
@@ -250,7 +180,8 @@ export async function enrichSearchSources(bundle: AtomSearchBundle, signal?: Abo
     if (all.some((list) => list.some((source) => source.url === url && unread(source)))) urls.add(url);
   }
   if (!urls.size) return;
-  const budget = deadline === undefined ? DIRECT_TIMEOUT_MS + JINA_TIMEOUT_MS : Math.max(0, deadline - Date.now());
+  const budget = deadline === undefined ? ARTICLE_TIMEOUT_MS + JINA_TIMEOUT_MS : Math.max(0, deadline - Date.now());
+  const cache = pageCacheFor(signal);
   const controller = new AbortController();
   const cancel = () => controller.abort(signal?.reason);
   signal?.addEventListener("abort", cancel, { once: true });
@@ -258,7 +189,7 @@ export async function enrichSearchSources(bundle: AtomSearchBundle, signal?: Abo
   try {
     await Promise.all([...urls].map(async (url) => {
       let result: ContentResult;
-      try { result = await readSource(url, controller.signal, maxChars); }
+      try { result = await readSource(url, controller.signal, maxChars, cache); }
       catch {
         signal?.throwIfAborted();
         result = { fetchStatus: "failed", fetchNote: "正文没读到（本次调查剩余时间不够），保留检索摘要" };
