@@ -40,6 +40,8 @@ export type RunState = {
   lastActivitySeq: number;
   /** 服务端运行身份（run_started 事件）。刷新恢复与取消都要它。 */
   runId: string | null;
+  /** 这一轮是接回来的（刷新恢复或断线重连），不是刚提交的。 */
+  resumed: boolean;
   /** 这次调查开始的时间，已换成本机时钟（毫秒）。进行中页面算已用时间。 */
   startedAt: number | null;
   /** 服务端确认的 run 状态（run_state 事件 / 取消响应）。 */
@@ -62,6 +64,7 @@ const INITIAL_STATE: RunState = {
   activityRunId: null,
   lastActivitySeq: 0,
   runId: null,
+  resumed: false,
   startedAt: null,
   serverStatus: null,
   stop: "idle",
@@ -273,8 +276,8 @@ export function useInvestigationRun() {
     (runId: string, after: number, claim: string) => {
       const generation = ++runIdRef.current;
       setState((prev) => prev.runId === runId
-        ? { ...prev, connection: "connecting", errorMessage: "", timeoutPending: false }
-        : { ...INITIAL_STATE, runId, connection: "connecting" });
+        ? { ...prev, resumed: true, connection: "connecting", errorMessage: "", timeoutPending: false }
+        : { ...INITIAL_STATE, runId, resumed: true, connection: "connecting" });
       void consume(resumeInvestigation(runId, after), generation, claim);
     },
     [consume]

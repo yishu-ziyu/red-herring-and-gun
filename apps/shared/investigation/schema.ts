@@ -264,6 +264,8 @@ const InvestigationSnapshotSchema = Type.Object(
     scope: Type.Optional(Type.Object({
       includedClaimIds: Type.Array(Type.String()),
       deferredClaimIds: Type.Array(Type.String()),
+      /** 完成或中断后，原句里本次没核查的部分（空壳命题和没被命题盖住的分句）。老快照没有，显示时现算。 */
+      notCoveredTexts: Type.Optional(Type.Array(Type.String())),
     }, closed)),
   },
   closed,

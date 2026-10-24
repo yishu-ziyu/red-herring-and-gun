@@ -87,14 +87,7 @@ export function caseIntakeFailedLinks(intake: Pick<CaseIntake, "links"> | null |
   return (intake?.links ?? []).filter((link) => link.scrapeFailed === true);
 }
 
-/** 用户输入去掉 URL 之后没有别的字：只贴了链接。 */
-export function isUrlOnlyClaim(text: string): boolean {
-  const raw = String(text ?? "").trim();
-  if (!raw) return false;
-  const t = raw.replace(/^请核查链接内容：/, "").trim();
-  const leftover = t.replace(/https?:\/\/[^\s]+/gi, "").replace(/\s+/g, "");
-  return leftover.length === 0;
-}
+export { isUrlOnlyClaim } from "../../shared/investigation/presentation";
 
 export function caseIntakePrimaryText(intake: CaseIntake) {
   if (intake.text.trim()) return intake.text.trim();

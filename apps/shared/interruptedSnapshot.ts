@@ -5,9 +5,11 @@
  */
 import { VERDICT_OUTCOME, decideSentenceVerdict, standingForJudgment, type SentenceJudgment } from "./domain/verdict.js";
 import {
+  LABEL_TEXT,
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
 } from "./investigation/index.js";
+import { claimLabel } from "./investigation/presentation.js";
 
 export function interruptedInvestigationSnapshot(
   last: InvestigationSnapshotV1 | undefined,
@@ -55,18 +57,7 @@ function synthesizeInterruptedConclusion(
   };
 }
 
-const CLAIM_JUDGMENT_PHRASE: Record<string, string> = {
-  supported: "站得住",
-  refuted: "站不住",
-  mixed: "有对有错",
-  unresolved: "还查不清",
-};
-
-type BoundedInterruptedClaim = {
-  text: string;
-  checkability: string;
-  judgment: string | null;
-};
+type BoundedInterruptedClaim = Pick<InvestigationSnapshotV1["claims"][number], "text" | "checkability" | "judgment" | "label">;
 
 type BoundedInterruptedAnswer = {
   directAnswer: string;
@@ -82,12 +73,9 @@ function boundedInterruptedAnswer(
 ): BoundedInterruptedAnswer | null {
   const checkable = claims.filter((c) => c.checkability === "checkable");
   if (checkable.length === 0) return null;
-  if (checkable.some((c) => c.judgment == null || c.judgment === "")) return null;
+  if (checkable.some((c) => !c.judgment)) return null;
 
-  const phrases = checkable.map((c) => {
-    const word = CLAIM_JUDGMENT_PHRASE[c.judgment!] ?? "还查不清";
-    return `「${c.text}」${word}`;
-  });
+  const phrases = checkable.map((c) => `「${c.text}」${LABEL_TEXT[claimLabel(c) ?? "unresolved"]}`);
   const directAnswer = `${phrases.join("；")}。`;
 
   // 快照里的命题没有角色，规则表按「没标主要主张时每一条都是主要主张」处理。

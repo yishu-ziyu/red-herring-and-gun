@@ -8,39 +8,6 @@ import { useEffect, useState } from "react";
 import { useUiLang } from "../lib/useUiLang";
 import { createShare, revokeShare } from "../lib/investigationClient";
 import { gpCopyFor } from "./copy";
-import { displayFollowUpClaim } from "../../shared/followUp";
-
-function formatBriefDate(value: string): string {
-  const time = Date.parse(value);
-  if (Number.isNaN(time)) return value;
-  return new Date(time).toLocaleDateString("zh-CN");
-}
-
-/** 文字简报只放原句、判断、边界、日期、真实来源 URL。产品署名不是证据。 */
-export function buildConclusionBrief(input: {
-  originalClaim: string;
-  directAnswer: string;
-  boundaries?: string[];
-  checkedAt?: string;
-  sourceUrls?: string[];
-  coverageNote?: string;
-  claimBoundaries?: Array<{ text: string; boundary?: string }>;
-}): string {
-  const claim = displayFollowUpClaim(input.originalClaim);
-  const urls = (input.sourceUrls ?? []).map((url) => url.trim()).filter(Boolean);
-  return [
-    claim ? `原句：${claim}` : "",
-    input.directAnswer ? `判断：${input.directAnswer}` : "",
-    input.boundaries?.length ? `必要边界：${input.boundaries.join("；")}` : "",
-    ...(input.claimBoundaries ?? []).filter((claim) => claim.boundary?.trim()).map((claim) =>
-      `关于「${claim.text}」：不能推出${claim.boundary!.trim().replace(/^不能推出[：:]?/, "")}`),
-    input.coverageNote ?? "",
-    input.checkedAt ? `核查日期：${formatBriefDate(input.checkedAt)}` : "",
-    urls.length ? `关键来源：\n${urls.join("\n")}` : "关键来源：这次没有可用的来源链接",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
-}
 
 type ShareState =
   | { phase: "idle" }

@@ -17,33 +17,40 @@ import { clientIpKey, guestIdFromRequest, guestOwnerHash } from "./checkQuota.js
 import type { RunRecord, PublishedRunResult } from "./runStore.js";
 import { GUEST_DAILY_SHARES, IP_DAILY_SHARES, shanghaiDayKey } from "../../../shared/quota.js";
 import { scrubFaceText } from "../../../shared/scrubFace.js";
-import { conclusionMissesFollowUp, followUpQuestionLead, followUpQuestionOf } from "../../../shared/followUp.js";
-import { LABEL_TEXT, LABEL_TONE, isLabelKey, judgmentToLabel, type LabelKey } from "../../../shared/domain/labels.js";
-import { normalizePublishedDate } from "../../../shared/investigation/sourceDate.js";
-import { quoteLinkUrl } from "../../../shared/investigation/quote.js";
-import { materialPassageLabel, materialReadTag, materialRetrievedLabel } from "../../../shared/investigation/material.js";
+import { followUpQuestionOf } from "../../../shared/followUp.js";
+import { LABEL_TONE, isLabelKey, labelText, type LabelKey } from "../../../shared/domain/labels.js";
+import { isInvestigationSnapshot, type InvestigationEvidenceLink, type InvestigationSnapshotV1, type InvestigationSource } from "../../../shared/investigation/schema.js";
+import { rebuildInvestigationFromReport } from "../../../shared/investigation/build.js";
+import {
+  formatDay,
+  notCoveredNote,
+  notCoveredSentence,
+  presentClaim,
+  presentConclusion,
+  publishedDay,
+  resultWording,
+  shownClaims,
+  type PresentedClaim,
+  type PresentedConclusion,
+  type PresentedEvidence,
+} from "../../../shared/investigation/presentation.js";
 
 const TOKEN_BYTES = 24;
 const SHARE_TTL_DAYS = 30;
 /** 只交图片时发给服务端的请求句开头（见 src/lib/caseIntake.ts）。它是内部提示词，公开页里不能出现。 */
 const IMAGE_REQUEST_PREFIX = "请核查用户上传的";
 
-/** 公开页显示的全部内容。白名单就是这份类型。 */
+/**
+ * 公开页显示的全部内容，就是结果页显示的那份（shared/investigation/presentation）。白名单就是这份类型。
+ * 改版前存下的分享没有整句标签。
+ */
 type PublicShareProjection = {
-  version: 2;
+  version: 3;
   claim: string;
-  /** 结论句：和结果页大字显示的那句一致。 */
-  answer: string;
-  /** 整句标签与一句理由。改版前存下的分享没有这两个字段。 */
-  label?: LabelKey;
-  reason?: string;
-  rationale?: string;
-  boundaries: string[];
-  checkedAt?: string;
+  conclusion: Omit<PresentedConclusion, "label"> & { label?: LabelKey };
   createdAt: number;
-  claims: Array<{ text: string; judgment: string | null; label?: LabelKey; reason?: string; boundary?: string; evidence: Array<{ role: string; sourceId: string; sentence?: string; note?: string; finding?: string; excerptKind?: string; passage?: string; provenance?: string; originDate?: string }> }>;
-  deferredClaims: string[];
-  sources: Array<{ id: string; title: string; url: string; publishedAt?: string; retrievedAt?: string; excerptKind?: string; fetchStatus?: string; fetchNote?: string; provenance?: string; originDate?: string }>;
+  claims: PresentedClaim[];
+  sources: Array<{ title: string; url: string; published: string | null }>;
 };
 
 type ShareRecord = { shareId: string; runId: string | null; projection: PublicShareProjection; createdAt: number; revokedAt: number | null };
@@ -57,6 +64,8 @@ const str = (value: unknown): string => (typeof value === "string" ? value.trim(
 const arr = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 const rec = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+const oneOf = <T extends string>(value: unknown, allowed: readonly T[]): T | undefined =>
+  (allowed as readonly unknown[]).includes(value) ? (value as T) : undefined;
 
 /** 公开页上的说法：追问轮只留用户写的那句；内部请求句换成中性的名字。 */
 function publicClaim(originalClaim: string): string {
@@ -64,93 +73,88 @@ function publicClaim(originalClaim: string): string {
   return claim.startsWith(IMAGE_REQUEST_PREFIX) ? "上传的图片" : claim;
 }
 
-/** 结论句的取法与结果页一致（InvestigationCanvas + ConclusionHero）。 */
-function publicAnswer(snapshot: Record<string, unknown>, conclusion: Record<string, unknown>): string {
-  const originalClaim = str(snapshot.originalClaim);
-  const verdictLead = str(conclusion.verdictLead);
-  const directAnswer = str(conclusion.directAnswer);
-  const judgment = str(conclusion.judgment) as Parameters<typeof followUpQuestionLead>[1];
-  const rewrite = conclusionMissesFollowUp(verdictLead || directAnswer, originalClaim)
-    ? followUpQuestionLead(followUpQuestionOf(originalClaim), judgment)
-    : "";
-  const raw = rewrite || verdictLead || directAnswer;
-  return scrubFaceText(raw) || raw;
-}
-
-const JUDGMENTS = ["supported", "refuted", "mixed", "disputed", "unresolved", "not-applicable"] as const;
-
-/** 快照带了标签就用；改版前的快照只有 judgment，按它推出。 */
-function labelOf(label: unknown, judgment: unknown): LabelKey | undefined {
-  if (isLabelKey(label)) return label;
-  const j = str(judgment);
-  return (JUDGMENTS as readonly string[]).includes(j) ? judgmentToLabel(j as (typeof JUDGMENTS)[number]) : undefined;
-}
+const isHttpUrl = (url: string) => /^https?:\/\//.test(url.trim());
 
 /** 从一轮调查的快照造公开内容。只读快照，不读任何浏览器发来的东西。 */
-function projectionFromSnapshot(snapshotValue: unknown, createdAt: number): PublicShareProjection {
-  const snapshot = rec(snapshotValue);
-  const conclusion = rec(snapshot.conclusion);
-  const claims = arr(snapshot.claims).map(rec);
-  const scope = rec(snapshot.scope);
-  const deferredIds = new Set(arr(scope.deferredClaimIds).map(str));
-  const rationale = str(conclusion.verdictLead) ? scrubFaceText(str(conclusion.rationale)) : "";
-  const checkedAt = str(snapshot.checkedAt);
-  const answer = publicAnswer(snapshot, conclusion);
-  const label = labelOf(conclusion.label, conclusion.judgment);
-  // 追问改写换掉了首句时，结论的理由不再是显示出来的那句，不单独给。
-  const reason = str(conclusion.reason) && answer === (scrubFaceText(str(conclusion.reason)) || str(conclusion.reason)) ? answer : "";
+function projectionFromSnapshot(snapshot: InvestigationSnapshotV1, createdAt: number): PublicShareProjection {
   return {
-    version: 2,
-    claim: publicClaim(str(snapshot.originalClaim)),
-    answer,
-    ...(label ? { label } : {}),
-    ...(reason ? { reason } : {}),
-    ...(rationale ? { rationale } : {}),
-    boundaries: arr(conclusion.boundaries).map(str).filter(Boolean),
-    ...(checkedAt ? { checkedAt } : {}),
+    version: 3,
+    claim: publicClaim(snapshot.originalClaim),
+    conclusion: presentConclusion(snapshot) ?? {
+      lead: "",
+      hasReason: false,
+      rationale: "",
+      boundaries: [],
+      notCovered: notCoveredNote(snapshot),
+      checkedDay: formatDay(snapshot.checkedAt),
+    },
     createdAt,
-    claims: claims
-      .filter((claim) => !deferredIds.has(str(claim.id)) && str(claim.text))
-      .map((claim) => ({
-        text: str(claim.text),
-        judgment: str(claim.judgment) || null,
-        ...(str(claim.boundary) ? { boundary: str(claim.boundary) } : {}),
-        ...(isLabelKey(claim.label) ? { label: claim.label } : {}),
-        ...(isLabelKey(claim.label) && str(claim.reason) ? { reason: scrubFaceText(str(claim.reason)) } : {}),
-        evidence: arr(claim.evidence)
-          .map(rec)
-          .filter((link) => ["support", "contradict", "context-only"].includes(str(link.role)))
-          .map((link) => ({
-            role: str(link.role),
-            sourceId: str(link.sourceId),
-            ...(["prior-round", "knowledge"].includes(str(link.provenance)) ? { provenance: str(link.provenance), originDate: str(link.originDate) } : {}),
-            ...(["search-snippet", "page-excerpt"].includes(str(link.excerptKind)) ? { excerptKind: str(link.excerptKind) } : {}),
-            ...(str(link.passage) ? { passage: str(link.passage) } : {}),
-            // 与结果页同一规则：引号里只放已核对的那一句；没有就给我们的概括。
-            // 老分享存的 quote 是整段 passage，显示时不再读。
-            ...(str(link.quote) ? { sentence: str(link.quote) } : str(link.relationReason) ? { note: scrubFaceText(str(link.relationReason)) } : {}),
-            ...(str(link.finding) ? { finding: scrubFaceText(str(link.finding)) } : {}),
-          })),
-      })),
-    deferredClaims: claims.filter((claim) => deferredIds.has(str(claim.id))).map((claim) => str(claim.text)).filter(Boolean),
-    sources: arr(snapshot.sources)
-      .map(rec)
-      .filter((source) => /^https?:\/\//.test(str(source.url)))
-      .map((source) => ({
-        id: str(source.id),
-        title: str(source.title) || str(source.url),
-        url: str(source.url),
-        ...(["prior-round", "knowledge"].includes(str(source.provenance)) ? { provenance: str(source.provenance), originDate: str(source.originDate) } : {}),
-        ...(str(source.publishedAt) ? { publishedAt: str(source.publishedAt) } : {}),
-        ...(str(source.retrievedAt) ? { retrievedAt: str(source.retrievedAt) } : {}),
-        ...(["search-snippet", "page-excerpt"].includes(str(source.excerptKind)) ? { excerptKind: str(source.excerptKind) } : {}),
-        ...(["snippet-only", "fetched", "truncated", "restricted", "failed"].includes(str(source.fetchStatus)) ? { fetchStatus: str(source.fetchStatus) } : {}),
-        ...(str(source.fetchNote) ? { fetchNote: str(source.fetchNote) } : {}),
-      })),
+    claims: shownClaims(snapshot).map((claim) => presentClaim(claim, snapshot.sources)),
+    sources: snapshot.sources
+      .filter((source) => isHttpUrl(source.url))
+      .map((source) => ({ title: source.title.trim() || source.url.trim(), url: source.url.trim(), published: publishedDay(source) })),
   };
 }
 
-/** 登录时代存下的老分享（{claim, report, createdAt}）按同一套白名单重新取一遍再显示。 */
+/** 第 2 版分享存的是快照里挑出的原始字段：按结果页的规则重新取一遍再显示。 */
+function projectionFromV2(p: Record<string, unknown>): PublicShareProjection {
+  const sources: InvestigationSource[] = arr(p.sources).map(rec).map((source) => ({
+    id: str(source.id),
+    url: str(source.url),
+    title: str(source.title),
+    ...(str(source.publishedAt) ? { publishedAt: str(source.publishedAt) } : {}),
+    ...(str(source.retrievedAt) ? { retrievedAt: str(source.retrievedAt) } : {}),
+    ...(oneOf(source.excerptKind, ["search-snippet", "page-excerpt"] as const) ? { excerptKind: oneOf(source.excerptKind, ["search-snippet", "page-excerpt"] as const) } : {}),
+    ...(oneOf(source.fetchStatus, ["snippet-only", "fetched", "truncated", "restricted", "failed"] as const) ? { fetchStatus: oneOf(source.fetchStatus, ["snippet-only", "fetched", "truncated", "restricted", "failed"] as const) } : {}),
+    ...(str(source.fetchNote) ? { fetchNote: str(source.fetchNote) } : {}),
+    ...(oneOf(source.provenance, ["prior-round", "knowledge"] as const) ? { provenance: oneOf(source.provenance, ["prior-round", "knowledge"] as const), originDate: str(source.originDate) } : {}),
+  }));
+  const claims = arr(p.claims).map(rec).map((claim) => {
+    const label = isLabelKey(claim.label) ? claim.label : undefined;
+    const evidence: InvestigationEvidenceLink[] = arr(claim.evidence).map(rec).map((link) => ({
+      sourceId: str(link.sourceId),
+      role: oneOf(link.role, ["support", "contradict", "context-only", "unassessed"] as const) ?? "context-only",
+      ...(str(link.sentence) ? { quote: str(link.sentence) } : str(link.note) ? { relationReason: str(link.note) } : {}),
+      ...(str(link.finding) ? { finding: str(link.finding) } : {}),
+      ...(str(link.passage) ? { passage: str(link.passage) } : {}),
+      ...(oneOf(link.excerptKind, ["search-snippet", "page-excerpt"] as const) ? { excerptKind: oneOf(link.excerptKind, ["search-snippet", "page-excerpt"] as const) } : {}),
+      ...(oneOf(link.provenance, ["prior-round", "knowledge"] as const) ? { provenance: oneOf(link.provenance, ["prior-round", "knowledge"] as const), originDate: str(link.originDate) } : {}),
+    }));
+    return presentClaim(
+      {
+        text: str(claim.text),
+        label,
+        judgment: oneOf(claim.judgment, ["supported", "refuted", "mixed", "disputed", "unresolved", "not-applicable"] as const) ?? null,
+        ...(label && str(claim.reason) ? { reason: str(claim.reason) } : {}),
+        ...(str(claim.boundary) ? { boundary: str(claim.boundary) } : {}),
+        checkability: "checkable",
+        evidence,
+      },
+      sources
+    );
+  });
+  const label = isLabelKey(p.label) ? p.label : undefined;
+  return {
+    version: 3,
+    claim: str(p.claim),
+    conclusion: {
+      ...(label ? { label } : {}),
+      lead: str(p.answer),
+      hasReason: Boolean(str(p.reason)),
+      rationale: str(p.rationale),
+      boundaries: arr(p.boundaries).map(str).filter(Boolean),
+      notCovered: notCoveredSentence(arr(p.deferredClaims).map(str).filter(Boolean)),
+      checkedDay: formatDay(str(p.checkedAt)),
+    },
+    createdAt: typeof p.createdAt === "number" ? p.createdAt : Date.now(),
+    claims,
+    sources: sources
+      .filter((source) => isHttpUrl(source.url))
+      .map((source) => ({ title: source.title || source.url, url: source.url, published: publishedDay(source) })),
+  };
+}
+
+/** 读库里存的公开内容。第 2 版和登录时代存下的老分享（{claim, report, createdAt}）都按结果页的规则重新取一遍。 */
 function readStoredProjection(raw: string): PublicShareProjection | null {
   let parsed: Record<string, unknown>;
   try {
@@ -158,11 +162,19 @@ function readStoredProjection(raw: string): PublicShareProjection | null {
   } catch {
     return null;
   }
-  if (parsed.version === 2) return parsed as unknown as PublicShareProjection;
+  if (parsed.version === 3) return parsed as unknown as PublicShareProjection;
+  if (parsed.version === 2) return projectionFromV2(parsed);
   const report = rec(parsed.report);
   const createdAt = typeof parsed.createdAt === "number" ? parsed.createdAt : Date.now();
-  const projection = projectionFromSnapshot({ ...rec(report.investigation), originalClaim: str(parsed.claim) }, createdAt);
-  if (!projection.answer) projection.answer = scrubFaceText(str(report.conclusion));
+  const embedded = { ...rec(report.investigation), originalClaim: str(parsed.claim) };
+  let snapshot: InvestigationSnapshotV1;
+  try {
+    snapshot = isInvestigationSnapshot(embedded) ? embedded : rebuildInvestigationFromReport({ report, claim: str(parsed.claim) });
+  } catch {
+    return null;
+  }
+  const projection = projectionFromSnapshot(snapshot, createdAt);
+  if (!projection.conclusion.lead) projection.conclusion.lead = scrubFaceText(str(report.conclusion));
   return projection;
 }
 
@@ -367,8 +379,6 @@ const SHARE_PAGE_STYLE = `
   }
 `;
 
-const ROLE_LABEL: Record<string, string> = { support: "支持", contradict: "反驳", "context-only": "背景" };
-
 function escapeHtml(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -376,19 +386,6 @@ function escapeHtml(value: unknown): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
-}
-
-/** 「2026 年 10 月 22 日 13:05」，按北京时间；读不出就不显示。 */
-function readableTime(value: string | number | undefined): string {
-  if (value === undefined || value === "") return "";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "";
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
-      .formatToParts(date)
-      .map((part) => [part.type, part.value])
-  );
-  return `${parts.year} 年 ${parts.month} 月 ${parts.day} 日 ${parts.hour}:${parts.minute}`;
 }
 
 function shell(title: string, body: string, indexable: boolean): string {
@@ -427,71 +424,54 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
   }
 
   const p = lookup.record.projection;
-  // 发布日期：老分享里存的是原样日期，显示时按同一规则读；读不出就照实说没取到。
-  const publishedTag = (raw: string | undefined) => {
-    const day = normalizePublishedDate(raw);
-    return `<span data-share-published="${day ?? ""}">${day ?? "发布日期不详"}</span>`;
-  };
-  const sourceById = new Map(p.sources.map((source) => [source.id, source]));
-  const evidenceRow = (link: PublicShareProjection["claims"][number]["evidence"][number]): string => {
-    const source = sourceById.get(link.sourceId);
+  const w = resultWording();
+  const publishedTag = (day: string | null) => `<span data-share-published="${day ?? ""}">${day ?? w.publishedUnknown}</span>`;
+  const evidenceRow = (ev: PresentedEvidence): string => {
     // 摘自搜索摘要的句子可能被搜索引擎改写过，不能加引号当作网页原话。
-    const quote = !link.sentence ? ""
-      : link.excerptKind === "page-excerpt" ? `<q data-share-quote>${escapeHtml(link.sentence)}</q>`
-      : `<span class="ev-note" data-share-snippet><i>搜索摘要</i>${escapeHtml(link.sentence)}</span>`;
-    const note = !quote && link.note ? `<span class="ev-note" data-share-note><i>概括</i>${escapeHtml(link.note)}</span>` : "";
-    const finding = link.finding ? `<div class="ev-finding">${escapeHtml(link.finding)}</div>` : "";
-    if (!quote && !note && !finding && !link.passage) return "";
-    const href = source ? quoteLinkUrl(source.url, link.excerptKind === "page-excerpt" ? link.sentence : "") : "";
-    const title = escapeHtml(source?.title || "原网页");
-    const src = `<span class="ev-src"><span class="role role-${escapeHtml(link.role)}">${ROLE_LABEL[link.role] ?? ""}</span>${
-      href ? `<a href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer nofollow">${title} ↗</a>` : `<span>${title}</span>`
-    }${source ? publishedTag(source.publishedAt) : ""}</span>`;
-    const provenance = link.provenance ?? source?.provenance;
-    const originDate = link.originDate || source?.originDate;
-    const origin = provenance ? `<span>${provenance === "prior-round" ? "来自上一轮" : "来自历史材料"}${originDate ? ` · ${escapeHtml(originDate)}` : ""}</span>` : "";
-    const read = materialReadTag(link, source ?? {});
-    const passageNote = [
-      materialPassageLabel(link.excerptKind),
-      source?.fetchNote ? `正文读取情况：${escapeHtml(source.fetchNote)}` : "",
-      materialRetrievedLabel(source?.retrievedAt),
-    ].filter(Boolean).join("；");
-    const material = `<details><summary>查看上下文</summary><div class="context">${
-      link.passage ? `<blockquote>${escapeHtml(link.passage)}</blockquote>` : "<p>这条依据没有保存可检查的上下文。</p>"
-    }<small>${passageNote}</small></div></details>`;
-    return `<li class="ev" data-share-material-kind="${escapeHtml(link.excerptKind ?? "unknown")}" data-share-source-id="${escapeHtml(link.sourceId)}" data-share-role="${escapeHtml(link.role)}">${quote}${note}${finding}${src}${origin}<div class="ev-foot"><span class="read read-${read.level}" data-share-material-status>${read.text}</span>${material}</div></li>`;
+    const quote = !ev.quote ? ""
+      : ev.quote.kind === "page" ? `<q data-share-quote>${escapeHtml(ev.quote.text)}</q>`
+      : ev.quote.kind === "snippet" ? `<span class="ev-note" data-share-snippet><i>${w.snippetTag}</i>${escapeHtml(ev.quote.text)}</span>`
+      : `<span class="ev-note" data-share-note><i>${w.summaryTag}</i>${escapeHtml(ev.quote.text)}</span>`;
+    const finding = ev.finding ? `<div class="ev-finding">${escapeHtml(ev.finding)}</div>` : "";
+    const src = `<span class="ev-src"><span class="role role-${escapeHtml(ev.role)}">${escapeHtml(ev.roleText)}</span>${
+      ev.href ? `<a href="${escapeHtml(ev.href)}" target="_blank" rel="noopener noreferrer nofollow">${escapeHtml(ev.linkText)} ↗</a>` : `<span>${escapeHtml(ev.linkText)}</span>`
+    }${publishedTag(ev.published)}${ev.dead ? `<span>${w.deadLink}</span>` : ""}</span>`;
+    const origin = ev.provenance
+      ? `<span>${escapeHtml(ev.provenance.text)}${ev.provenance.originDate ? ` · ${escapeHtml(ev.provenance.originDate)}` : ""}</span>`
+      : "";
+    const material = `<details><summary>${w.viewContext}</summary><div class="context">${
+      ev.passage ? `<blockquote>${escapeHtml(ev.passage)}</blockquote>` : `<p>${w.noPassage}</p>`
+    }<small>${escapeHtml(ev.passageNote)}</small></div></details>`;
+    return `<li class="ev" data-share-material-kind="${escapeHtml(ev.materialKind)}" data-share-source-id="${escapeHtml(ev.sourceId)}" data-share-role="${escapeHtml(ev.role)}">${quote}${finding}${src}${origin}<div class="ev-foot"><span class="read read-${ev.read.level}" data-share-material-status>${escapeHtml(ev.read.text)}</span>${material}</div></li>`;
   };
   const claimItems = p.claims
     .map((claim, index) => {
-      const decisive = claim.evidence.filter((link) => link.role === "support" || link.role === "contradict").map(evidenceRow).filter(Boolean);
-      const background = claim.evidence.filter((link) => link.role !== "support" && link.role !== "contradict").map(evidenceRow).filter(Boolean);
-      const label = labelOf(claim.label, claim.judgment);
-      const chip = label
-        ? `<span class="label label-${LABEL_TONE[label]}" data-share-claim-label="${label}">${escapeHtml(LABEL_TEXT[label])}</span>`
+      const chip = claim.label
+        ? `<span class="label label-${LABEL_TONE[claim.label]}" data-share-claim-label="${claim.label}">${escapeHtml(labelText(claim.label))}</span>`
         : "";
-      const reason = claim.label && claim.reason ? `<p class="reason" data-share-claim-reason>${escapeHtml(claim.reason)}</p>` : "";
       return `<article class="part" data-share-claim>
   <span class="part-no" aria-hidden="true">${index + 1}</span>
   <div class="part-body">
   <div class="part-head"><span class="part-text">${escapeHtml(claim.text)}</span>${chip}</div>
-  ${reason}
-  ${claim.boundary ? `<p class="reason"><strong>不能推出：</strong>${escapeHtml(claim.boundary.replace(/^不能推出[：:]?/, ""))}</p>` : ""}
-  ${decisive.length ? `<ul class="evidence">${decisive.join("")}</ul>` : `<p class="empty">没有找到直接支持或反驳这一点的依据。</p>`}
-  ${background.length ? `<details><summary>另有 ${background.length} 条相关材料，未用于判断</summary><ul class="evidence">${background.join("")}</ul></details>` : ""}
+  ${claim.reason ? `<p class="reason"${claim.reasonFromModel ? " data-share-claim-reason" : ""}>${escapeHtml(claim.reason)}</p>` : ""}
+  ${claim.boundary ? `<p class="reason"><strong>${w.cannotInfer}：</strong>${escapeHtml(claim.boundary)}</p>` : ""}
+  ${claim.decisive.length ? `<ul class="evidence">${claim.decisive.map(evidenceRow).join("")}</ul>` : `<p class="empty">${w.noDecisive}</p>`}
+  ${claim.related.length ? `<details><summary>${w.related(claim.related.length)}</summary><ul class="evidence">${claim.related.map(evidenceRow).join("")}</ul></details>` : ""}
   </div>
 </article>`;
     })
     .join("");
-  const when = readableTime(p.checkedAt) || readableTime(p.createdAt);
+  const c = p.conclusion;
+  const when = c.checkedDay || formatDay(p.createdAt);
   const body = `<h1 class="claim"><span class="open" aria-hidden="true">“</span>${escapeHtml(p.claim)}<span aria-hidden="true">”</span></h1>
   <div class="verdict-block">
   <div data-share-conclusion>${
-    p.label ? `<span class="verdict tone-${LABEL_TONE[p.label]}" data-share-label="${p.label}">${escapeHtml(LABEL_TEXT[p.label])}</span>` : ""
-  }<p class="headline">${escapeHtml(p.answer)}</p></div>
-  ${p.rationale ? `<p class="rationale">${escapeHtml(p.rationale)}</p>` : ""}
-  ${p.boundaries.length ? `<p class="boundary"><b>必要边界</b>${p.boundaries.map(escapeHtml).join("；")}</p>` : ""}
-  ${p.deferredClaims.length ? `<p class="scope">本次未核查：${p.deferredClaims.map(escapeHtml).join("；")}</p>` : ""}
-  ${when ? `<p class="meta">核查于 ${when}</p>` : ""}
+    c.label ? `<span class="verdict tone-${LABEL_TONE[c.label]}" data-share-label="${c.label}">${escapeHtml(labelText(c.label))}</span>` : ""
+  }<p class="headline">${escapeHtml(c.lead)}</p></div>
+  ${c.rationale ? `<p class="rationale">${escapeHtml(c.rationale)}</p>` : ""}
+  ${c.boundaries.length ? `<p class="boundary"><b>${w.boundaries}</b>${c.boundaries.map(escapeHtml).join("；")}</p>` : ""}
+  ${c.notCovered ? `<p class="scope">${escapeHtml(c.notCovered)}</p>` : ""}
+  ${when ? `<p class="meta">${escapeHtml(w.checkedAt(when))}</p>` : ""}
   </div>
   ${claimItems}
   ${
@@ -499,7 +479,7 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
       ? `<details class="all"><summary>本次共用到 ${p.sources.length} 份材料</summary><ul class="sources">${p.sources
           .map(
             (source) =>
-              `<li><a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer nofollow">${escapeHtml(source.title)}</a> <small>${publishedTag(source.publishedAt)}</small></li>`
+              `<li><a href="${escapeHtml(source.url)}" target="_blank" rel="noopener noreferrer nofollow">${escapeHtml(source.title)}</a> <small>${publishedTag(source.published)}</small></li>`
           )
           .join("")}</ul></details>`
       : ""
