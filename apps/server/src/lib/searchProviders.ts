@@ -62,7 +62,6 @@ export function compactSearchResultForAgent(searchResult: any) {
     sources,
     supportingEvidence: stringItems(searchResult?.supportingEvidence).slice(0, 4).map((item) => item.slice(0, 240)),
     contradictingEvidence: stringItems(searchResult?.contradictingEvidence).slice(0, 4).map((item) => item.slice(0, 240)),
-    unresolvedEvidenceGaps: stringItems(searchResult?.unresolvedEvidenceGaps).slice(0, 4).map((item) => item.slice(0, 240)),
     relatedQuestions: stringItems(searchResult?.relatedQuestions).slice(0, 4),
     model: String(searchResult?.model || ""),
     traceText: String(searchResult?.traceText || "").slice(0, 700),
