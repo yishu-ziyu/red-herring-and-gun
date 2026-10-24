@@ -63,8 +63,9 @@ async function run() {
   const phases = await page.evaluate(() => window.__gpPhases);
   record(
     "the investigation actually ran (not an earlier answer reused)",
-    phases.some((p) => p !== "complete" && p !== "interrupted"),
-    `${phases.join(" → ")}${phases.length <= 1 ? " — this claim was answered before; set E2E_CLAIM to a new one" : ""}`
+    // "received" alone shows even when an earlier answer is reused; real work passes through a working phase.
+    phases.some((p) => !["received", "complete", "interrupted"].includes(p)),
+    `${phases.join(" → ")}${phases.every((p) => ["received", "complete", "interrupted"].includes(p)) ? " — this claim was answered before; set E2E_CLAIM to a new one" : ""}`
   );
 
   const lead = page.locator("[data-gp-direct-answer]").first();
@@ -99,7 +100,9 @@ async function run() {
   await page.reload({ waitUntil: "networkidle" });
   await page.getByRole("button", { name: "历史记录" }).click();
   const entry = page.getByRole("dialog").getByText(claim, { exact: false }).first();
-  if (!record("history lists the investigation", await entry.isVisible({ timeout: 10_000 }).catch(() => false))) return;
+  // isVisible() ignores its timeout and the list loads after the dialog opens, so wait for the entry.
+  const listed = await entry.waitFor({ state: "visible", timeout: 10_000 }).then(() => true, () => false);
+  if (!record("history lists the investigation", listed)) return;
   await entry.click();
   await page.locator("[data-gp-direct-answer]").first().waitFor({ timeout: 30_000 }).catch(() => {});
   record("reopened investigation shows the same conclusion", (await conclusion()) === answer);

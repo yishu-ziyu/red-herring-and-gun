@@ -28,7 +28,7 @@ function Thinking({ step, now }: { step: Step; now: number }) {
   const streaming = step.status === "active" && !step.thinkingEndedAt;
   const duration = ((step.thinkingEndedAt ?? now) - step.startedAt) / 1000;
   return (
-    <Reasoning key={step.id} isStreaming={streaming} duration={streaming ? undefined : duration} defaultOpen={streaming}>
+    <Reasoning key={step.id} isStreaming={streaming} duration={streaming ? undefined : duration} defaultOpen={false}>
       <ReasoningTrigger
         getThinkingMessage={(isStreaming, d) =>
           isStreaming ? <Shimmer duration={1}>思考中</Shimmer> : <p>思考已完成{d !== undefined ? ` · ${d.toFixed(1)}s` : ""}</p>
