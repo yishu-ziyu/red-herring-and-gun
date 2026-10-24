@@ -5,9 +5,11 @@ export type ExecutionBudget = {
 };
 
 export class ExecutionTimeoutError extends Error {
+  timeoutMs: number;
   constructor(label: string, timeoutMs: number) {
     super(`${label} 超时 ${Math.max(0, Math.round(timeoutMs))}ms`);
     this.name = "TimeoutError";
+    this.timeoutMs = Math.max(0, Math.round(timeoutMs));
   }
 }
 

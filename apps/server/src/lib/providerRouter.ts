@@ -1,183 +1,64 @@
-
-// Server-side provider router：per-agent routing、per-agent model、坏 JSON 同 provider 修一次、
-// API key 缺失记进 errors。
-// 超时有两层：per-provider 预算（ORCHESTRATE_PROVIDER_TIMEOUT_MS，按模型可覆写）、
-// 调用方给的阶段硬预算（options.deadlineMs）；单次生效超时取两者最小值。
-
+// Model router: provider order, process-wide skip state, connect retry, JSON repair + schema check,
+// and the stage deadline. Everything a provider needs to know about its own API lives in ./models.
+// Timeouts are layered: the provider's per-attempt budget (ORCHESTRATE_PROVIDER_TIMEOUT_MS unless the
+// provider overrides it for a model) and the caller's stage deadline; the shorter one applies.
 
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { getTimeoutMs, withExecutionBudget } from "./executionBudget.js";
-import { callMiniMaxAgent, callStepFunAgent } from "./agentProviders.js";
+import { ExecutionTimeoutError, getTimeoutMs, withExecutionBudget } from "./executionBudget.js";
 import { extractJsonObject } from "./anthropicParse.js";
-import { isMiniMaxM27, miniMaxCallOptions, MINIMAX_M27_DEFAULT_TIMEOUT_MS, MINIMAX_M3_DEFAULT_TIMEOUT_MS } from "./minimaxM3.js";
-
-/** MiniMax 是主力；阶跃负责图片解析与兜底。 */
-type AgentTextProviderId = "minimax" | "stepfun";
-
-const TEXT_PROVIDER_IDS = new Set<AgentTextProviderId>(["minimax", "stepfun"]);
+import { agentEnvKey, envValue, MODEL_PROVIDERS, ProviderError, type ModelProvider, type ModelReply } from "./models/index.js";
 
 /** Process-local: once a provider returns hard quota/balance, skip it for later agents in this process. */
 const quotaExhaustedUntil = new Map<string, number>();
 const timeoutStrikes = new Map<string, number>();
 const QUOTA_SKIP_MS = 10 * 60 * 1000;
 
-function isHardProviderQuotaError(message: string): boolean {
-  return /quota exceeded|insufficient balance|余额不足|额度不足|insufficient.?quota|exceeded your (?:current )?quota|credit(?:s)? (?:exhausted|exceeded)|billing hard limit|over_quota|无可用额度/i.test(
-    message
-  );
+function isProviderSkipped(provider: ModelProvider): boolean {
+  const until = quotaExhaustedUntil.get(provider.id);
+  return typeof until === "number" && until > Date.now();
 }
 
-function isHardProviderAuthError(message: string): boolean {
-  return /invalid api key|invalid_key|incorrect api key|unauthorized|ENOENT|authentication fails|api key[\s\S]{0,80}is invalid|no active [\w ]{0,30}subscription/i.test(
-    message
-  );
+function skipProvider(provider: ModelProvider): void {
+  quotaExhaustedUntil.set(provider.id, Date.now() + QUOTA_SKIP_MS);
 }
 
 // An empty reply (the stream ended while the model was still thinking) is not a hard failure:
 // skipping MiniMax for it once sent every investigation for the next 10 minutes to the fallback.
-function isHardProviderFailure(message: string): boolean {
-  return isHardProviderQuotaError(message) || isHardProviderAuthError(message);
-}
-
-function canonicalProviderId(provider: string): string {
-  if (provider.startsWith("minimax")) return "minimax";
-  return provider;
-}
-
-function isProviderQuotaSkipped(provider: string): boolean {
-  const until = quotaExhaustedUntil.get(canonicalProviderId(provider));
-  return typeof until === "number" && until > Date.now();
-}
-
-function skipProvider(provider: string): void {
-  quotaExhaustedUntil.set(canonicalProviderId(provider), Date.now() + QUOTA_SKIP_MS);
-}
-
-function noteProviderFailure(provider: string, message: string): void {
-  if (isHardProviderFailure(message)) {
+function noteProviderFailure(provider: ModelProvider, model: string, error: unknown): void {
+  if (error instanceof ProviderError && (error.kind === "quota" || error.kind === "auth")) {
     skipProvider(provider);
     return;
   }
-  if (/超时 \d+ms/.test(message)) {
-    const id = canonicalProviderId(provider);
-    const n = (timeoutStrikes.get(id) || 0) + 1;
-    timeoutStrikes.set(id, n);
-    const timeoutMs = Number(/超时 (\d+)ms/.exec(message)?.[1] ?? 0);
-    // MiniMax-M3 默认等 10 分钟：一次挂死才跳过。M2.7 的 90s/180s 超时是慢，不是额度耗尽。
-    const minimaxM3Hang =
-      /minimax:MiniMax-M3\b/i.test(message) || (id === "minimax" && timeoutMs >= 300_000);
-    if (n >= (minimaxM3Hang ? 1 : 2)) skipProvider(provider);
+  if (error instanceof ExecutionTimeoutError) {
+    const strikes = (timeoutStrikes.get(provider.id) || 0) + 1;
+    timeoutStrikes.set(provider.id, strikes);
+    if (strikes >= provider.skipAfterTimeouts(model, error.timeoutMs)) skipProvider(provider);
   }
 }
 
-function providerHasCredentials(env: Record<string, string>, provider: string): boolean {
-  const id = canonicalProviderId(provider);
-  if (id === "minimax") return Boolean(getMiniMaxApiKey(env));
-  if (id === "stepfun") return Boolean(envValue(env, "STEPFUN_API_KEY"));
-  return false;
+function areCloudProvidersHardSkipped(providers: ModelProvider[], env: Record<string, string>): boolean {
+  const configured = providers.filter((provider) => provider.configured(env));
+  return configured.length > 0 && configured.every(isProviderSkipped);
 }
 
-/** Configured chat providers that are still eligible this process. */
-function pendingCloudProviders(env: Record<string, string>, agentId?: string): AgentTextProviderId[] {
-  return providerOrderForAgent(env, agentId).filter(
-    (provider) => providerHasCredentials(env, provider) && !isProviderQuotaSkipped(provider)
-  );
-}
-
-function areCloudProvidersHardSkipped(env: Record<string, string>, agentId?: string): boolean {
-  const configured = providerOrderForAgent(env, agentId).filter((provider) => providerHasCredentials(env, provider));
-  return configured.length > 0 && pendingCloudProviders(env, agentId).length === 0;
-}
-
-// MiniMax is the default chat provider; StepFun is the fallback.
-const DEFAULT_TEXT_PROVIDER_ORDER: AgentTextProviderId[] = ["minimax", "stepfun"];
-
-
-// Env helpers
-
-
-/** 优先从传入的 env 对象读（覆盖 process.env），缺省返回空串 */
-function envValue(env: Record<string, string>, key: string): string {
-  return env[key] || process.env[key] || "";
-}
-
-/** 把 "rumor_detector" / "report-composer" 规整成 "RUMOR_DETECTOR" / "REPORT_COMPOSER" */
-function agentEnvKey(agentId?: string): string {
-  return agentId ? agentId.replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "").toUpperCase() : "";
-}
-
-/** 解析 ORCHESTRATE_<AGENT>_PROVIDER_ORDER / ORCHESTRATE_TEXT_PROVIDER_ORDER
- *  - 尊重 env/per-agent 顺序
- *  - 未识别的 provider 名静默丢弃
- *  - 去重
- *  - agentId 提供时优先 per-agent env
- *  - 丢完一个都不剩时用默认顺序
+/**
+ * ORCHESTRATE_<AGENT>_PROVIDER_ORDER, then ORCHESTRATE_TEXT_PROVIDER_ORDER, then the registry order.
+ * Unknown names and duplicates are dropped; an empty result falls back to the registry order.
+ * Reading images is not a matter of preference: only providers with vision are candidates.
  */
-function providerOrderForAgent(
-  env: Record<string, string>,
-  agentId?: string
-): AgentTextProviderId[] {
+function providersFor(env: Record<string, string>, agentId: string | undefined, withImages: boolean): ModelProvider[] {
+  if (withImages) return MODEL_PROVIDERS.filter((provider) => provider.vision);
   const key = agentEnvKey(agentId);
   const raw =
     (key && envValue(env, `ORCHESTRATE_${key}_PROVIDER_ORDER`)) ||
-    envValue(env, "ORCHESTRATE_TEXT_PROVIDER_ORDER") ||
-    DEFAULT_TEXT_PROVIDER_ORDER.join(",");
-
-  const order: AgentTextProviderId[] = [];
+    envValue(env, "ORCHESTRATE_TEXT_PROVIDER_ORDER");
+  const order: ModelProvider[] = [];
   for (const item of raw.split(",")) {
-    const provider = item.trim().toLowerCase() as AgentTextProviderId;
-    if (TEXT_PROVIDER_IDS.has(provider) && !order.includes(provider)) order.push(provider);
+    const provider = MODEL_PROVIDERS.find((candidate) => candidate.id === item.trim().toLowerCase());
+    if (provider && !order.includes(provider)) order.push(provider);
   }
-  return order.length > 0 ? order : [...DEFAULT_TEXT_PROVIDER_ORDER];
-}
-
-/** 解析 <PREFIX>_<AGENT>_MODEL / <PREFIX>_MODEL / fallback
- *  例: modelForAgent(env, "MINIMAX", "rumor_detector", "MiniMax-M2.7-highspeed")
- *      → env.MINIMAX_RUMOR_DETECTOR_MODEL ?? env.MINIMAX_MODEL ?? "MiniMax-M2.7-highspeed"
- */
-function modelForAgent(
-  env: Record<string, string>,
-  prefix: string,
-  agentId: string | undefined,
-  fallback: string
-): string {
-  const key = agentEnvKey(agentId);
-  return (key && envValue(env, `${prefix}_${key}_MODEL`)) || envValue(env, `${prefix}_MODEL`) || fallback;
-}
-
-function getMiniMaxApiKey(env: Record<string, string>): string {
-  return envValue(env, "MINIMAX_API_KEY");
-}
-
-function getMiniMaxAuthHeader(env: Record<string, string>): "x-api-key" | "bearer" {
-  return envValue(env, "MINIMAX_AUTH_HEADER").toLowerCase() === "bearer" ? "bearer" : "x-api-key";
-}
-
-function stepFunMaxTokensForModel(env: Record<string, string>, model: string, requested: number): number {
-  if (!/^step-3\.7-flash$/i.test(model)) return requested;
-  const minTokens = Number(envValue(env, "STEPFUN_3_7_MIN_MAX_TOKENS") || 4096);
-  return Number.isFinite(minTokens) && minTokens > requested ? minTokens : requested;
-}
-
-function parseReasoningEffort(value: string): "low" | "medium" | "high" | undefined {
-  const normalized = value.toLowerCase();
-  return normalized === "low" || normalized === "medium" || normalized === "high" ? normalized : undefined;
-}
-
-function stepFunReasoningEffortForModel(
-  env: Record<string, string>,
-  model: string,
-  requested: "low" | "medium" | "high"
-): "low" | "medium" | "high" {
-  if (/^step-3\.7-flash$/i.test(model)) {
-    return (
-      parseReasoningEffort(envValue(env, "STEPFUN_3_7_REASONING_EFFORT")) ||
-      parseReasoningEffort(envValue(env, "STEPFUN_REASONING_EFFORT")) ||
-      "low"
-    );
-  }
-  return parseReasoningEffort(envValue(env, "STEPFUN_REASONING_EFFORT")) || requested;
+  return order.length > 0 ? order : [...MODEL_PROVIDERS];
 }
 
 
@@ -238,7 +119,12 @@ function escapeUnescapedInnerQuotes(json: string): string {
 }
 
 class AgentOutputError extends Error {
-  constructor(message: string) { super(message); this.name = "AgentOutputError"; }
+  kind: "unparsable" | "schema";
+  constructor(kind: "unparsable" | "schema", message: string) {
+    super(message);
+    this.name = "AgentOutputError";
+    this.kind = kind;
+  }
 }
 
 /** Live output must be complete and satisfy the job schema; never guess missing tokens. */
@@ -257,10 +143,10 @@ function parseValidatedAgentJson(text: string, label: string, schema: object = {
     const reason = error instanceof Error ? error.message : "";
     const at = Number(/position (\d+)/.exec(reason)?.[1] ?? NaN);
     const near = Number.isFinite(at) ? ` 附近：${JSON.stringify(candidate.slice(Math.max(0, at - 60), at + 20))}` : "";
-    throw new AgentOutputError(`${label} 返回 JSON 无法解析（输出不完整或语法错误：${reason.slice(0, 120)}${near}）`);
+    throw new AgentOutputError("unparsable", `${label} 返回 JSON 无法解析（输出不完整或语法错误：${reason.slice(0, 120)}${near}）`);
   }
   if (!output || typeof output !== "object" || Array.isArray(output) || !Value.Check(schema as TSchema, output)) {
-    throw new AgentOutputError(`${label} 输出字段不符合 responseSchema`);
+    throw new AgentOutputError("schema", `${label} 输出字段不符合 responseSchema`);
   }
   return output;
 }
@@ -288,7 +174,15 @@ function buildJsonRepairUserContent(brokenText: string, originalUserContent: str
 // 按阶段选择提供方，并处理失败和重试
 
 
-interface ProviderRouterOptions {
+interface CallJsonParams {
+  agentId?: string;
+  system: string;
+  user: string;
+  schema: object;
+  /** Image data URLs; the call then goes only to providers that can read them. */
+  images?: string[];
+  maxTokens: number;
+  env: Record<string, string>;
   signal?: AbortSignal;
   /**
    * 阶段级硬预算：绝对时间戳，本次调用含全部 provider 尝试合计不得超过它。
@@ -297,18 +191,7 @@ interface ProviderRouterOptions {
   deadlineMs?: number;
 }
 
-interface CallAgentParams {
-  agentId?: string;
-  systemPrompt: string;
-  userContent: string;
-  responseSchema: object;
-  maxTokens: number;
-  env: Record<string, string>;
-  reasoningEffort?: "low" | "medium" | "high";
-  options?: ProviderRouterOptions;
-}
-
-interface CallAgentResult {
+interface CallJsonResult {
   output: any;
   model: string;
   latencyMs: number;
@@ -335,58 +218,26 @@ function positiveMs(value: number | undefined): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
-function timeoutForProviderModel(
-  env: Record<string, string>,
-  provider: AgentTextProviderId | string,
-  model: string,
-  fallbackMs: number
-): number {
-  if (provider === "stepfun" && /^step-3\.7-flash$/i.test(model)) {
-    return getTimeoutMs(env, "STEPFUN_3_7_PROVIDER_TIMEOUT_MS", 135000);
-  }
-  // MiniMax-M3 adaptive thinking is unbounded in practice; don't clip it with the 45s cloud default.
-  if (provider === "minimax" && /^MiniMax-M3$/i.test(model)) {
-    return getTimeoutMs(env, "MINIMAX_M3_PROVIDER_TIMEOUT_MS", MINIMAX_M3_DEFAULT_TIMEOUT_MS);
-  }
-  if (provider === "minimax" && isMiniMaxM27(model)) {
-    return getTimeoutMs(env, "MINIMAX_M27_PROVIDER_TIMEOUT_MS", MINIMAX_M27_DEFAULT_TIMEOUT_MS);
-  }
-  return fallbackMs;
-}
-
 /** 对可重试的连接失败，在同一提供方内最多尝试 3 次。 */
 const CONNECT_ATTEMPTS = 3;
 
-/** 没连上服务器才算：服务器回了错误（额度、鉴权、内容）或超时都不重试。 */
-function isConnectFailure(error: unknown): boolean {
-  return error instanceof TypeError && error.message === "fetch failed";
-}
-
-export async function callAgentWithFallback(params: CallAgentParams): Promise<CallAgentResult> {
-  const {
-    agentId,
-    systemPrompt,
-    userContent,
-    responseSchema,
-    maxTokens,
-    env,
-    reasoningEffort = "high",
-    options = {},
-  } = params;
+export async function callJson(params: CallJsonParams): Promise<CallJsonResult> {
+  const { agentId, system, user, schema, images, maxTokens, env, signal } = params;
   const logger = console;
-  options.signal?.throwIfAborted();
+  signal?.throwIfAborted();
   const traceLabel = `Agent${agentId ? `:${agentId}` : ""}`;
   const providerTimeoutMs = getTimeoutMs(env, "ORCHESTRATE_PROVIDER_TIMEOUT_MS", 45000);
+  const withImages = Boolean(images?.length);
 
   const startTime = Date.now();
   const errors: string[] = [];
-  const providerOrder = providerOrderForAgent(env, agentId);
+  const providers = providersFor(env, agentId, withImages);
 
 
   // 阶段级硬预算
   // deadlineMs 限制所有提供方和重试的总耗时，避免逐次调用各自耗尽预算。
 
-  const stageDeadlineMs = positiveMs(options.deadlineMs);
+  const stageDeadlineMs = positiveMs(params.deadlineMs);
   const stageRemainingMs = () =>
     stageDeadlineMs === undefined ? undefined : stageDeadlineMs - Date.now();
   const stageBudgetExpired = () => {
@@ -408,7 +259,7 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
     });
   };
 
-  if (areCloudProvidersHardSkipped(env, agentId)) {
+  if (areCloudProvidersHardSkipped(providers, env)) {
     throw new ProviderFallbackError("所有备用模型均已调用失败，请检查模型配置或稍后重试", [
       "configured cloud providers already skipped this process",
     ]);
@@ -419,30 +270,30 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
    * 避免 360/小模型把整步打成 agent_error。
    */
   const invokeAndParse = async (
-    provider: AgentTextProviderId | string,
-    modelName: string,
-    call: (sys: string, user: string, signal: AbortSignal) => Promise<{ text: string; model: string; reasoning?: string }>,
-    timeoutMs: number,
-    logTag: string
-  ): Promise<CallAgentResult> => {
-    return withExecutionBudget(async (signal) => {
-      const prompt = `${systemPrompt}\n\n# RESPONSE SCHEMA\n${JSON.stringify(responseSchema)}`;
-      const raw = await call(prompt, userContent, signal);
-      signal.throwIfAborted();
+    provider: ModelProvider,
+    model: string,
+    timeoutMs: number
+  ): Promise<CallJsonResult> => {
+    const call = (callSystem: string, callUser: string, callSignal: AbortSignal): Promise<ModelReply> =>
+      provider.call({ env, agentId, model, system: callSystem, user: callUser, images, maxTokens, signal: callSignal });
+    return withExecutionBudget(async (budgetSignal) => {
+      const prompt = `${system}\n\n# RESPONSE SCHEMA\n${JSON.stringify(schema)}`;
+      const raw = await call(prompt, user, budgetSignal);
+      budgetSignal.throwIfAborted();
       try {
-        const output = parseValidatedAgentJson(raw.text, raw.model, responseSchema);
+        const output = parseValidatedAgentJson(raw.text, raw.model, schema);
         return { output, model: raw.model, latencyMs: Date.now() - startTime, reasoning: raw.reasoning };
       } catch (parseError) {
         if (!(parseError instanceof AgentOutputError)) throw parseError;
-        signal.throwIfAborted();
+        budgetSignal.throwIfAborted();
         logger.error("[orchestrate-provider] json_parse_error", {
-          agent: traceLabel, provider, model: modelName,
+          agent: traceLabel, provider: provider.id, model,
           message: parseError.message, textChars: raw.text?.length ?? 0,
         });
 
         // One schema-constrained rewrite, within the same deadline; no guessed JSON completion.
         logger.info("[orchestrate-provider] json_repair_retry", {
-          agent: traceLabel, provider, model: modelName, tag: logTag,
+          agent: traceLabel, provider: provider.id, model, tag: "fallback",
         });
         const repairPrompt = [
           prompt,
@@ -451,12 +302,12 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
           "Return ONLY one valid JSON object. No markdown fences. No commentary.",
           "Escape all quotes inside strings. No trailing commas. Complete all braces.",
         ].join("\n");
-        const repairedRaw = await call(repairPrompt, buildJsonRepairUserContent(raw.text, userContent), signal);
-        signal.throwIfAborted();
-        const output = parseValidatedAgentJson(repairedRaw.text, repairedRaw.model, responseSchema);
+        const repairedRaw = await call(repairPrompt, buildJsonRepairUserContent(raw.text, user), budgetSignal);
+        budgetSignal.throwIfAborted();
+        const output = parseValidatedAgentJson(repairedRaw.text, repairedRaw.model, schema);
         return { output, model: repairedRaw.model, latencyMs: Date.now() - startTime, reasoning: repairedRaw.reasoning };
       }
-    }, { signal: options.signal, deadlineMs: stageDeadlineMs, timeoutMs, label: `${traceLabel} ${provider}:${modelName}` });
+    }, { signal, deadlineMs: stageDeadlineMs, timeoutMs, label: `${traceLabel} ${provider.id}:${model}` });
   };
 
   /**
@@ -464,46 +315,36 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
    * 返回的 Promise<{ ok: true; result } | { ok: false; error }> 便于外层累积 errors 数组。
    */
   const runOne = async (
-    provider: string,
-    modelName: string,
-    call: (sys: string, user: string, signal: AbortSignal) => Promise<{ text: string; model: string }>
-  ): Promise<{ ok: true; result: CallAgentResult } | { ok: false; msg: string }> => {
+    provider: ModelProvider,
+    model: string
+  ): Promise<{ ok: true; result: CallJsonResult } | { ok: false; msg: string }> => {
     for (let attempt = 1; ; attempt += 1) {
       const providerStart = Date.now();
-      const attemptTimeout = attemptTimeoutMs(
-        timeoutForProviderModel(env, provider, modelName, providerTimeoutMs)
-      );
+      const attemptTimeout = attemptTimeoutMs(provider.timeoutMs(env, model) ?? providerTimeoutMs);
       logger.info("[orchestrate-provider] start", {
         agent: traceLabel,
-        provider,
-        model: modelName,
+        provider: provider.id,
+        model,
         timeoutMs: attemptTimeout,
         ...(attempt > 1 ? { attempt } : {}),
       });
       try {
-        const result = await invokeAndParse(
-          provider,
-          modelName,
-          call,
-          attemptTimeout,
-          "fallback"
-        );
+        const result = await invokeAndParse(provider, model, attemptTimeout);
         logger.info("[orchestrate-provider] complete", {
           agent: traceLabel,
-          provider,
-          model: modelName,
+          provider: provider.id,
+          model,
           latencyMs: Date.now() - providerStart,
         });
-        timeoutStrikes.delete(canonicalProviderId(provider));
+        timeoutStrikes.delete(provider.id);
         return { ok: true, result };
       } catch (error) {
-        options.signal?.throwIfAborted();
-        const message = error instanceof Error ? error.message : `${provider} 调用失败`;
-        const connectFailure = isConnectFailure(error);
+        signal?.throwIfAborted();
+        const message = error instanceof Error ? error.message : `${provider.id} 调用失败`;
         logger.error("[orchestrate-provider] error", {
           agent: traceLabel,
-          provider,
-          model: modelName,
+          provider: provider.id,
+          model,
           latencyMs: Date.now() - providerStart,
           timeoutMs: attemptTimeout,
           message,
@@ -512,19 +353,23 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
             ?? (error as { cause?: { message?: string } })?.cause?.message,
           attempt,
         });
+        // 没连上服务器才算连接失败：服务器回了错误（额度、鉴权、内容）或超时都不重试。
+        const connectFailure = error instanceof ProviderError && error.kind === "connect";
         // A reply cut off mid-stream or JSON still broken after the repair pass is usually a one-off;
         // with the fallback provider unavailable, one more try is what keeps the run from failing.
-        const brokenReply = /没有返回可解析文本|JSON 无法解析/.test(message);
+        const brokenReply =
+          (error instanceof ProviderError && error.kind === "empty") ||
+          (error instanceof AgentOutputError && error.kind === "unparsable");
         if (connectFailure && attempt < CONNECT_ATTEMPTS && !stageBudgetExpired()) continue;
         if (brokenReply && attempt < 2 && !stageBudgetExpired()) continue;
-        if (!stageBudgetExpired()) noteProviderFailure(provider, message);
+        if (!stageBudgetExpired()) noteProviderFailure(provider, model, error);
         return { ok: false, msg: message };
       }
     }
   };
 
-  for (const provider of providerOrder) {
-    options.signal?.throwIfAborted();
+  for (const provider of providers) {
+    signal?.throwIfAborted();
     if (stageBudgetExpired()) {
       noteStageBudgetExhausted();
       errors.push(
@@ -532,65 +377,18 @@ export async function callAgentWithFallback(params: CallAgentParams): Promise<Ca
       );
       break;
     }
-    if (isProviderQuotaSkipped(provider)) {
-      errors.push(`[${canonicalProviderId(provider)}] 本进程已因额度耗尽跳过`);
+    if (isProviderSkipped(provider)) {
+      errors.push(`[${provider.id}] 本进程已因额度耗尽跳过`);
       continue;
     }
-    if (provider === "minimax") {
-      const apiKey = getMiniMaxApiKey(env);
-      const model = modelForAgent(env, "MINIMAX", agentId, "MiniMax-M2.7-highspeed");
-      const baseUrl = (envValue(env, "MINIMAX_BASE_URL") || "https://api.minimaxi.com/anthropic").replace(/\/$/, "");
-      if (!apiKey) {
-        errors.push(`[minimax:${model}] 未配置 MINIMAX_API_KEY`);
-        continue;
-      }
-      const out = await runOne("minimax", model, (sys, user, signal) =>
-        callMiniMaxAgent({
-          baseUrl,
-          apiKey,
-          authHeader: getMiniMaxAuthHeader(env),
-          model,
-          systemPrompt: sys,
-          userContent: user,
-          ...miniMaxCallOptions(env, model, maxTokens),
-          // 填表类调用降温到 0，要稳定的输出。
-          temperature: 0,
-          signal,
-        })
-      );
-      if (out.ok) {
-        return out.result;
-      }
-      errors.push(`[minimax:${model}] ${(out as { ok: false; msg: string }).msg}`);
+    const model = provider.modelFor(env, agentId, withImages);
+    if (!provider.configured(env)) {
+      errors.push(`[${provider.id}:${model}] 未配置 ${provider.apiKeyEnv}`);
       continue;
     }
-
-    if (provider === "stepfun") {
-      const apiKey = envValue(env, "STEPFUN_API_KEY");
-      const model = modelForAgent(env, "STEPFUN", agentId, "step-2-mini");
-      const baseUrl = (envValue(env, "STEPFUN_BASE_URL") || "https://api.stepfun.com/v1").replace(/\/$/, "");
-      if (!apiKey) {
-        errors.push(`[stepfun:${model}] 未配置 STEPFUN_API_KEY`);
-        continue;
-      }
-      const out = await runOne("stepfun", model, (sys, user, signal) =>
-        callStepFunAgent({
-          baseUrl,
-          apiKey,
-          model,
-          systemPrompt: sys,
-          userContent: user,
-          maxTokens: stepFunMaxTokensForModel(env, model, maxTokens),
-          reasoningEffort: stepFunReasoningEffortForModel(env, model, reasoningEffort),
-          signal,
-        })
-      );
-      if (out.ok) {
-        return out.result;
-      }
-      errors.push(`[stepfun:${model}] ${(out as { ok: false; msg: string }).msg}`);
-      continue;
-    }
+    const out = await runOne(provider, model);
+    if (out.ok) return out.result;
+    errors.push(`[${provider.id}:${model}] ${out.msg}`);
   }
 
   const friendlyMessage =

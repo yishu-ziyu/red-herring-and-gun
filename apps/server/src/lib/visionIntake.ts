@@ -3,9 +3,7 @@
  * 只做 OCR 与线索提取，不判断真假。
  */
 
-import { buildStepFunRequestBody, extractChatCompletionText, stepFunChatCompletionsUrl } from "./agentProviders.js";
-
-import { extractJsonObject } from "./anthropicParse.js";
+import { callJson } from "./providerRouter.js";
 
 export interface CaseIntakeLinkPayload {
   url: string;
@@ -152,6 +150,18 @@ function buildVisionPrompt(claim: string, intake: CaseIntakePayload) {
   ].join("\n");
 }
 
+const visualExtractionSchema = {
+  type: "object",
+  properties: {
+    visualSummary: { type: "string" },
+    ocrTexts: { type: "array", items: { type: "string" } },
+    extractedClaims: { type: "array", items: { type: "string" } },
+    sourceHints: { type: "array", items: { type: "string" } },
+    uncertaintyNotes: { type: "array", items: { type: "string" } },
+    nextEvidenceNeeds: { type: "array", items: { type: "string" } },
+  },
+};
+
 export async function callStepFunVisionForIntake({
   env,
   claim,
@@ -163,57 +173,17 @@ export async function callStepFunVisionForIntake({
   intake: CaseIntakePayload;
   signal?: AbortSignal;
 }) {
-  const apiKey = env.STEPFUN_API_KEY || process.env.STEPFUN_API_KEY;
-  if (!apiKey) throw new Error("缺少 STEPFUN_API_KEY，无法解析图片材料。");
-
-  const baseUrl = (env.STEPFUN_BASE_URL || process.env.STEPFUN_BASE_URL || "https://api.stepfun.com/v1").replace(/\/$/, "");
-  const model = env.STEPFUN_VISION_MODEL || process.env.STEPFUN_VISION_MODEL || env.STEPFUN_MODEL || process.env.STEPFUN_MODEL || "step-3.7-flash";
-  const content: any[] = [{ type: "text", text: buildVisionPrompt(claim, intake) }];
-  for (const image of intake.images) {
-    if (!image.dataUrl) continue;
-    content.push({
-      type: "image_url",
-      image_url: {
-        url: image.dataUrl,
-        detail: "high",
-      },
-    });
-  }
-
-  const response = await fetch(stepFunChatCompletionsUrl(baseUrl), {
-    method: "POST",
+  const result = await callJson({
+    agentId: "vision",
+    system: "你是红鲱鱼与枪的视觉材料预处理 Agent。只做 OCR、图像描述和可核查声明提取；只返回 JSON。",
+    user: buildVisionPrompt(claim, intake),
+    images: intake.images.flatMap((image) => (image.dataUrl ? [image.dataUrl] : [])),
+    schema: visualExtractionSchema,
+    maxTokens: 6000,
+    env,
     signal,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(
-      buildStepFunRequestBody({
-        model,
-        messages: [
-          { role: "system", content: "你是红鲱鱼与枪的视觉材料预处理 Agent。只做 OCR、图像描述和可核查声明提取；只返回 JSON。" },
-          { role: "user", content },
-        ],
-        maxTokens: 6000,
-        responseFormat: { type: "json_object" },
-        temperature: 0.1,
-      })
-    ),
   });
-
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    const detail = data?.error?.message || data?.message || response.statusText;
-    throw new Error(`StepFun 视觉模型调用失败：${detail}`);
-  }
-
-  const text = extractChatCompletionText(data);
-  if (!text) throw new Error("StepFun 视觉模型没有返回可解析文本。");
-
-  return {
-    model: `stepfun-vision:${model}`,
-    output: JSON.parse(extractJsonObject(text)),
-  };
+  return { model: result.model.replace(/^stepfun:/, "stepfun-vision:"), output: result.output };
 }
 
 /**
