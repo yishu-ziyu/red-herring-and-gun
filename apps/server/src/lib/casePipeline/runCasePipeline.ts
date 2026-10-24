@@ -5,7 +5,7 @@
  * HTTP / SSE are thin adapters; inject runAgent + searchOne.
  */
 
-import type { AtomSearchBundle, KnowledgeHit, SearchOneAtom } from "../atomSearch.js";
+import type { AtomSearchBundle, SearchOneAtom } from "../atomSearch.js";
 import { pruneDeadCitations } from "../citationLiveness.js";
 import { readSourcePageDates } from "../sourcePageDates.js";
 import type { ReportReviewIssue } from "../reportReviewer.js";
@@ -47,8 +47,6 @@ export type CasePipelineHooks = {
   /** atom search lifecycle (SSE) */
   onAtomSearchStart?: (atom: string) => void;
   onAtomSearchResult?: (atom: string, result: unknown) => void;
-  /** 同一案上一轮证据够用、不再检索已核命题（活动流 prior_round_reuse 行） */
-  onPriorRoundReuse?: (hit: KnowledgeHit) => void;
   /** deterministic report reviewer — tool_start style (SSE) */
   onReportReviewStart?: (info: { toolName: string; query: string }) => void;
   /** deterministic report reviewer — tool_result style (SSE) */
@@ -139,27 +137,13 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
 
   // 首次审计没覆盖全部方向性来源时再审一次；审不成的来源只作背景，不带方向上屏。
   await state.sourceAudit.refreshIfNeeded();
+  snapshots.judged(state);
 
-  snapshots.judging({
-    claimAtoms: rumorStep.output.claimAtoms,
-    claimAtomTypes: rumorStep.output.claimAtomTypes,
-    atomSearchBundle: state.atomSearchBundle,
-    subclaimVerdicts: state.factStep?.output?.subclaimVerdicts,
-    sourceRelationAudits: state.sourceStep?.output?.claimSourceRelations,
-  });
-
-  const reportStep = compose(ctx, state);
-  const { atomSearchBundle, search360Result, factStep, sourceStep } = state;
-
+  const { atomSearchBundle, sourceStep } = state;
   const { finalReport, deadUrls: deadCitationUrls, review } = await finalizeReport({
     claim,
-    reportStep,
-    rumorStep,
-    factStep,
-    sourceStep,
-    steps,
-    search360Result,
-    atomSearchBundle,
+    state,
+    report: compose(ctx, state),
     finalizeHook: input.finalizeReport,
     onReviewStart: () => hooks?.onReportReviewStart?.({ toolName: REPORT_REVIEWER_TOOL, query: claim }),
     pruneCitations: (report) => pruneDeadCitations(report, { signal: input.signal, deadlineMs: input.deadline }),
@@ -198,7 +182,6 @@ export async function runCasePipeline(input: CasePipelineInput): Promise<CasePip
   if (finalInvestigation) {
     finalReport.investigation = finalInvestigation;
   }
-  reportStep.output = finalReport;
   hooks?.onReportReviewResult?.({
     toolName: REPORT_REVIEWER_TOOL,
     query: claim,

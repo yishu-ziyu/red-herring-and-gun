@@ -3,7 +3,7 @@
  *
  * 拆题模型给每条命题标：role（main 主要主张 / premise 必要前提 / background 背景细节）、
  * issuer（这一条是不是在说发文机关或出处）、span（原句里对应的那一截，逐字）。
- * 整句判定读这些标记（sentenceVerdict.listAssessedClaims）；这里只做三件确定性的事：
+ * 整句判定读这些标记（sentenceVerdict.decideAndWriteVerdict）；这里只做三件确定性的事：
  *   1 短单句不拆；2 编造的命题（span 对不上原句）丢掉；3 价值判断句标为立场型。
  */
 import { claimAtomKey } from "../../../../shared/claimAtomText.js";

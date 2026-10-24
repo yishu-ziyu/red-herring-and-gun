@@ -1,46 +1,45 @@
 /**
- * 用例：给一份核查报告下整句结论。
+ * 整句判定：一份核查报告的 verdictType、徽章、结论首句与正文、判定记录都在这里决定、这里写入。
  *
- * 读取报告里各部分的证据 → 交给 domain/verdict 的规则表 → 把结论、首句、正文写回报告。
- * 这是整句判定的唯一决定点：模型只判每一部分，整句的 verdictType、结论首句、徽章类型、
- * 正文说明都由这一个结果推出（快照读 verdictType，见 investigation/build.ts）。
+ * decideAndWriteVerdict 读取报告里各部分的判词 → 交给 domain/verdict 的规则表 → 写回报告。
+ * 模型只判每一部分；整句不读模型写的整句字段。其它模块不得再改这些字段
+ * （快照读判定记录，见 domain/decision.ts 与 investigation/build.ts）。
  */
-import { decideSentenceVerdict, type PartRole, type PartStanding, type SentencePart, type SentenceVerdict } from "../../../shared/domain/verdict.js";
+import { decideSentenceVerdict, VERDICT_OUTCOME, type PartRole, type PartStanding, type SentencePart } from "../../../shared/domain/verdict.js";
+import { attachVerdictRecord, type VerdictRecord } from "../../../shared/domain/decision.js";
 import { listAtomsForSearch } from "./atomSearch.js";
 import { claimAtomKey } from "../../../shared/claimAtomText.js";
-import { hasDirectionalBoundHttpUrl } from "./citationBinding.js";
+import { hasDirectionalBoundHttpUrl, normalizeReportCitations } from "./citationBinding.js";
 import {
   FALLBACK_PART_REASON,
   LABEL_TEXT,
   isLabelKey,
+  labelBackedByEvidence,
   nonCheckableLabel,
   partLabelFor,
   wholeLabelFor,
   type LabelKey,
 } from "../../../shared/domain/labels.js";
+import { scrubReportText } from "./publicCopy.js";
 import { buildScopedEvidence } from "./scopedEvidence.js";
 
 type Report = Record<string, unknown>;
 
 /** 一截的显示标签与理由：标签由证据状态定、模型标签细分（domain/labels.partLabelFor）。 */
-type AssessedPart = SentencePart & { label?: LabelKey; reason?: string };
+type AssessedPart = SentencePart & { label: LabelKey; reason: string };
 
-type SentenceVerdictInput = {
+type VerdictInput = {
+  /** 用户提交的原话（含追问、链接）。 */
+  claim: string;
   claimAtoms: unknown;
-  /** 每条含 verifiable / type，拆题标了的还含 role（main / premise / background）与 issuer（原句在说发文机关或出处）。 */
+  /** 每条含 verifiable / type，拆题标了的还含 role（main / premise / background）。 */
   claimAtomTypes: unknown;
   /** 拆题给出的主次顺序；没标角色时，第一条可核查的是主要主张。 */
   priorityClaimAtoms?: unknown;
-};
-
-/** verdictType 是报告与快照共用的字段名；这里是规则表结论到它的唯一映射。 */
-export const VERDICT_TYPE: Record<SentenceVerdict, string> = {
-  "cannot-believe": "false",
-  "can-believe": "true",
-  "part-true-part-false": "mixed_misleading",
-  "partly-holds": "partial",
-  "not-enough-evidence": "unverified",
-  disputed: "disputed",
+  /** 核查模型写的整句理由。 */
+  factCheckReason?: unknown;
+  /** 核查没有跑完：出错的步骤名（超时为空）。不传表示正常跑完。 */
+  incomplete?: string[];
 };
 
 function records(value: unknown): Report[] {
@@ -102,8 +101,17 @@ function standingOf(verdict: Report | undefined): PartStanding {
 
 const ROLES: Record<string, PartRole> = { main: "main", premise: "premise", background: "background" };
 
+/** 判词里能点开的支持 / 反驳出处各有几条（同一出处不同时算两边）。 */
+function sourceCounts(verdict: Report | undefined): { support: number; contradict: number } {
+  const urls = (list: unknown) =>
+    new Set(records(list).map((s) => String(s.url ?? "").trim()).filter((url) => /^https?:\/\//i.test(url)));
+  const support = urls(verdict?.supportingSources);
+  const contradict = [...urls(verdict?.contradictingSources)].filter((url) => !support.has(url));
+  return { support: support.size, contradict: contradict.length };
+}
+
 /** 可核查的部分及其角色。拆题标了角色就用；没标时排序第一条可核查的是主要主张，其余算必要前提。 */
-export function listAssessedClaims(report: Report, input: SentenceVerdictInput): AssessedPart[] {
+function listAssessedClaims(report: Report, input: VerdictInput): AssessedPart[] {
   const { verifiable } = listAtomsForSearch(input.claimAtoms, input.claimAtomTypes);
   if (verifiable.length === 0) return [];
   const verifiableKeys = new Map(verifiable.map((atom) => [claimAtomKey(atom), atom]));
@@ -117,21 +125,23 @@ export function listAssessedClaims(report: Report, input: SentenceVerdictInput):
   const anyMain = declared.includes("main");
   const standings = verifiable.map((atom) => standingOf(findVerdict(report, atom)));
   return verifiable.map((atom, index) => {
-    const standing = standings[index]!;
     const role: PartRole = anyMain ? (declared[index] ?? "premise") : atom === fallbackMain ? "main" : (declared[index] ?? "premise");
     const verdict = findVerdict(report, atom);
     const modelLabel = isLabelKey(verdict?.label) ? verdict.label : undefined;
-    const label = partLabelFor(standing, modelLabel);
+    let standing = standings[index]!;
+    let label = partLabelFor(standing, modelLabel);
     const modelReason = typeof verdict?.reason === "string" ? verdict.reason.trim() : "";
     // 代码改了模型的标签时，模型那句理由说的是另一个标签，不能留。
-    const reason = label === modelLabel && modelReason ? modelReason : FALLBACK_PART_REASON[label];
-    return {
-      text: atom,
-      role,
-      standing,
-      label,
-      reason,
-    };
+    let reason = label === modelLabel && modelReason ? modelReason : FALLBACK_PART_REASON[label];
+    // 标签要有出处撑着；撑不住的退回还查不清，整句规则表按退回之后的状态算。
+    const { support, contradict } = sourceCounts(verdict);
+    const backed = labelBackedByEvidence(label, support, contradict);
+    if (backed !== label) {
+      label = backed;
+      standing = "unresolved";
+      reason = FALLBACK_PART_REASON[label];
+    }
+    return { text: atom, role, standing, label, reason };
   });
 }
 
@@ -141,14 +151,8 @@ function clip(text: string, max: number): string {
 }
 
 function partLine(part: AssessedPart): string {
-  const quoted = `「${clip(part.text, 40)}」`;
   // 用和这一截标签相同的词，结论和标签不会说成两样。
-  return `${quoted}${LABEL_TEXT[part.label ?? partLabelFor(part.standing, undefined)]}`;
-}
-
-/** 立场 / 预测条目（不可查）的标签，供「没有可核查部分」时定整句标签。 */
-function nonCheckableLabels(report: Report, nonVerifiableAtoms: unknown): LabelKey[] {
-  return records(nonVerifiableAtoms ?? report.nonVerifiableAtoms).map((atom) => nonCheckableLabel(String(atom.type ?? "")));
+  return `「${clip(part.text, 40)}」${LABEL_TEXT[part.label]}`;
 }
 
 /** 模型有时写成好几句、带内部用语：只留一句（第一句只复述判定时用第二句）；这一句仍带内部用语就不用，改用各截标签拼的句子。 */
@@ -183,7 +187,7 @@ function wholeReasonOf(parts: readonly AssessedPart[], label: LabelKey, factChec
   if (model) return model;
   // 只有一截时，「「X」部分属实」只是把说法和标签重复一遍；用这一截自己的理由。
   const only = parts.length === 1 ? parts[0]! : undefined;
-  if (only?.reason && only.reason !== FALLBACK_PART_REASON[only.label ?? label]) {
+  if (only && only.reason !== FALLBACK_PART_REASON[only.label]) {
     const own = firstSentence(only.reason, label);
     if (own) return own;
   }
@@ -222,14 +226,13 @@ const DECISIVE_FIRST: Record<PartStanding, number> = { refuted: 0, conflicting: 
  */
 function renderConclusion(
   report: Report,
-  verdictType: string,
   parts: readonly AssessedPart[],
-  context: { nonVerifiableAtoms?: unknown },
-  whole: { label: LabelKey; reason: string }
+  whole: { label: LabelKey; reason: string },
+  unresolved: boolean
 ) {
   // 结论第一句 = 整句标签 + 一句理由。
   const lead = `${LABEL_TEXT[whole.label]}。${whole.reason}`;
-  const stance = records(context.nonVerifiableAtoms ?? report.nonVerifiableAtoms)
+  const stance = records(report.nonVerifiableAtoms)
     .map((atom) => String(atom.text ?? "").trim())
     .filter(Boolean)
     .slice(0, 2);
@@ -237,57 +240,86 @@ function renderConclusion(
   const partsLine = parts.length > 1 ? `${parts.map(partLine).join("；")}。` : "";
   // 理由已经逐截列过时不再列第二遍。
   const enumerated = whole.reason.startsWith(partsLine) ? "" : partsLine;
-  // 出处说错的那一处一定要写出来：答案得说清实际是谁。
-  const ordered = [...parts].sort(
-    (a, b) => Number(Boolean(b.issuerMisattributed)) - Number(Boolean(a.issuerMisattributed)) || DECISIVE_FIRST[a.standing] - DECISIVE_FIRST[b.standing]
-  );
-  const evidence = ordered.map((part) => evidenceText(report, part)).filter(Boolean);
-  const shown = evidence.slice(0, parts.some((p) => p.issuerMisattributed) ? 3 : 2);
+  const ordered = [...parts].sort((a, b) => DECISIVE_FIRST[a.standing] - DECISIVE_FIRST[b.standing]);
+  const shown = ordered.map((part) => evidenceText(report, part)).filter(Boolean).slice(0, 2);
 
   const body = [lead, enumerated, ...shown];
   for (const text of stance) body.push(`「${clip(text, 40)}」不适用真假判断，未计入真假结论。`);
-  if (verdictType === "unverified") {
+  if (unresolved) {
     for (const note of missingNotes(report, parts)) body.push(`还缺：${clip(note, 100)}。`);
   }
-  report.conclusion = body.join("").slice(0, 480);
 
   const summary = [lead, enumerated];
   if (stance.length > 0) summary.push(`${stance.length}条表述不适用真假判断，未计入结论。`);
-  report.summaryForPublic = summary.join("").slice(0, 200);
-  report.recommendation = lead;
+  return {
+    conclusion: body.join("").slice(0, 480),
+    summaryForPublic: summary.join("").slice(0, 200),
+    recommendation: lead,
+  };
 }
 
-/** 下整句结论并写回报告。返回规则表的决定，供调用方记录。 */
-export function applySentenceVerdict(
-  report: Report,
-  parts: AssessedPart[],
-  context: { nonVerifiableAtoms?: unknown; factCheckReason?: unknown } = {}
-) {
+/** 只贴了链接、没有其它要查的文字。 */
+function looksLikeUrlOnlyClaim(claim: string): boolean {
+  const raw = String(claim ?? "").trim();
+  if (!raw) return false;
+  const t = raw.replace(/^请核查链接内容：/, "").trim();
+  return t.replace(/https?:\/\/[^\s]+/gi, "").replace(/\s+/g, "").length === 0;
+}
+
+const UNOPENED_LINK_NOTICE = "链接打不开（可能需要登录），已按你输入的文字继续";
+const UNOPENED_LINK_ANSWER = "链接打不开（可能需要登录），没法从链接里读到要查的说法。";
+
+/**
+ * 核查没有跑完是运行事件，不是「查过了但材料不够」：标记沿用 error-boundary
+ * （重建 / 列表 / 复核都把这份报告按中断处理），结论换成未完成的真实说明。
+ */
+function writeIncomplete(report: Report, failedSteps: string[]): void {
+  report._source = "error-boundary";
+  if (failedSteps.length > 0) report.incompleteSteps = failedSteps;
+  report.conclusion = "本次核查没能完成，判断还没写成。已找到的公开材料保留在来源里，可以重新调查。";
+  report.summaryForPublic = "本次核查没能完成，判断还没写成。";
+  report.recommendation = "本次核查没能完成，请重新调查后再看判断。";
+}
+
+/**
+ * 下整句结论并写回报告：verdictType、徽章、结论 / 摘要 / 建议、判定记录。
+ * 在此之前报告里不该有这些字段；在此之后任何模块都只读不改。
+ *
+ * 拆题没拆出命题且原话只是打不开的链接时，结论说明链接打不开；核查没跑完时（incomplete）说明没完成。
+ * 两种都只换文字，规则表的结论与记录照旧。
+ */
+export function decideAndWriteVerdict(report: Report, input: VerdictInput): VerdictRecord {
+  scrubReportText(report);
+  const parts = listAssessedClaims(report, input);
   const decision = decideSentenceVerdict(parts);
-  const before = String(report.verdictType ?? "");
-  const verdictType = VERDICT_TYPE[decision.verdict];
-  report.verdictType = verdictType;
+  const outcome = VERDICT_OUTCOME[decision.verdict];
   const label = wholeLabelFor(
     decision.rule,
-    parts.map((p) => ({ role: p.role, standing: p.standing, label: p.label ?? partLabelFor(p.standing, undefined) })),
-    nonCheckableLabels(report, context.nonVerifiableAtoms)
+    parts,
+    records(report.nonVerifiableAtoms).map((atom) => nonCheckableLabel(String(atom.type ?? "")))
   );
-  const reason = wholeReasonOf(parts, label, context.factCheckReason);
-  report._verdictDecision = {
+  const reason = wholeReasonOf(parts, label, input.factCheckReason);
+
+  report.verdictType = outcome.verdictType;
+  report.faceVerdict = outcome.badge;
+  Object.assign(report, renderConclusion(report, parts, { label, reason }, decision.verdict === "not-enough-evidence"));
+  normalizeReportCitations(report);
+  const noAtoms = !Array.isArray(input.claimAtoms) || input.claimAtoms.length === 0;
+  if (noAtoms && looksLikeUrlOnlyClaim(input.claim)) {
+    report.conclusion = UNOPENED_LINK_ANSWER;
+    report.summaryForPublic = UNOPENED_LINK_ANSWER;
+    report.recommendation = UNOPENED_LINK_ANSWER;
+    report.causalBoundary = UNOPENED_LINK_NOTICE;
+  }
+  if (input.incomplete) writeIncomplete(report, input.incomplete);
+
+  const record: VerdictRecord = {
     verdict: decision.verdict,
     rule: decision.rule,
-    from: before,
     label,
     reason,
-    parts: parts.map((p) => ({
-      text: p.text,
-      role: p.role,
-      standing: p.standing,
-      ...(p.label ? { label: p.label } : {}),
-      ...(p.reason ? { reason: p.reason } : {}),
-      ...(p.issuerMisattributed ? { issuerMisattributed: true } : {}),
-    })),
+    parts: parts.map((p) => ({ ...p })),
   };
-  renderConclusion(report, verdictType, parts, context, { label, reason });
-  return decision;
+  attachVerdictRecord(report, record);
+  return record;
 }

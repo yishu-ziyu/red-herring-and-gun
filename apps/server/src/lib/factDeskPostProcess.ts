@@ -1,18 +1,12 @@
 /**
- * factDeskPostProcess.ts — Prompt A+F post-process for live handoff JSON
+ * factDeskPostProcess.ts — 报告骨架里「可说 / 不可说 / 难查原因」的卫生处理。
  *
- * Runs after the deterministic report is built.
- * Goals:
- * 1. Strip drama / AI self-talk / infrastructure leaks from public prose
- * 2. Keep canSay / cannotSay honest and non-empty
- * 3. Ensure conclusion keeps uncertainty when evidence is thin without prepending the raw claim
- * 4. Never invent sources or facts not already in the report
+ * 1. 基础设施报错（额度、超时、HTTP 错误）不进公开文案
+ * 2. 去掉夸张口吻和元标签
+ * 3. canSay / cannotSay / whyHardToVerify 保持诚实且不空，不凭空补来源或事实
  *
- * Keep public copy plain and sourced.
+ * 结论、摘要、建议和徽章不在这里写，由 sentenceVerdict 决定。
  */
-
-import { faceVerdictFor } from "./assembleFinalReport.js";
-import { stripFaceStamp } from "./publicCopy.js";
 
 const INFRASTRUCTURE_ERROR_PATTERNS = [
   /providers? failed/i,
@@ -46,10 +40,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
-}
-
-function asString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
 }
 
 function asStringArray(value: unknown): string[] {
@@ -88,72 +78,12 @@ function stripDrama(text: string, notes: string[], label: string): string {
     .trim();
 }
 
-function hasFaceVerdict(text: string): boolean {
-  return /能信|不能信|只能信一部分|有真有假|部分成立|还查不清/.test(text);
-}
-
-function hasUncertainty(text: string): boolean {
-  return /不足|无法|未见|不能支持|尚未|缺口|不能|有限|待核|未证实|不宜|不能信|还查不清/.test(text);
-}
-
-function ensureFaceLead(text: string, notes: string[], label: string): string {
-  const stripped = stripFaceStamp(text);
-  if (stripped !== text.trim()) notes.push(`${label}: stripped face stamp`);
-  return stripped || text;
-}
-
-function ensureUncertainty(conclusion: string, notes: string[], verdictType: unknown): string {
-  let out = conclusion.trim();
-  if (!out) {
-    notes.push("conclusion: empty → conservative default");
-    return "公开材料还撑不住判断。现有证据仍不足以确认该说法。";
-  }
-
-  const decisive = verdictType === "true" || verdictType === "false";
-  if (!decisive && !hasFaceVerdict(out) && !hasUncertainty(out)) {
-    notes.push("conclusion: injected uncertainty boundary");
-    out = `${out.replace(/[。．.]+$/g, "")}。现有证据仍不足以按原强度确认。`;
-  }
-
-  return out;
-}
-
-function softCausalWithoutEvidence(text: string, notes: string[], label: string): string {
-  // Only soften hard drama-causals when text has no hedging at all
-  if (hasUncertainty(text)) return text;
-  if (!/导致|已经证明|等于毒药|必定/.test(text)) return text;
-  notes.push(`${label}: softened causal leap without uncertainty`);
-  return text
-    .replace(/导致/g, "关联到")
-    .replace(/已经证明/g, "尚不足以证明")
-    .replace(/等于毒药/g, "被类比为「毒药」（修辞过强）");
-}
-
-/**
- * 原地清洗终稿报告（Prompt A structure + Prompt F critique）。
- * Idempotent-ish: safe to run twice; second pass usually no-ops.
- */
+/** 原地清洗报告骨架里的 canSay / cannotSay / whyHardToVerify。 */
 export function applyFactDeskPostProcessToReport(finalReport: unknown): void {
   const report = asRecord(finalReport);
   if (!report) return;
 
   const notes: string[] = [];
-
-  // 1) Infrastructure sanitizer on public prose fields
-  const textFields = [
-    "conclusion",
-    "summaryForPublic",
-    "recommendation",
-    "causalBoundary",
-  ] as const;
-
-  for (const key of textFields) {
-    const raw = asString(report[key]);
-    if (!raw) continue;
-    const sanitized = sanitizePublicReportText(raw);
-    if (sanitized !== raw) notes.push(`${key}: infra sanitized`);
-    report[key] = sanitized;
-  }
 
   for (const key of ["whyHardToVerify", "canSay", "cannotSay"] as const) {
     const arr = asStringArray(report[key]);
@@ -163,46 +93,6 @@ export function applyFactDeskPostProcessToReport(finalReport: unknown): void {
     report[key] = sanitized;
   }
 
-  // Internal-ish but still may leak to clients in handoff payload
-  if (typeof report._fallbackReason === "string") {
-    const raw = report._fallbackReason;
-    const cleaned = sanitizePublicReportText(raw);
-    if (cleaned !== raw) notes.push("_fallbackReason: infra sanitized");
-    report._fallbackReason = cleaned;
-  }
-
-  // 2) Prompt F: strip drama / meta labels
-  let conclusion = stripDrama(asString(report.conclusion), notes, "conclusion");
-  let summaryForPublic = stripDrama(asString(report.summaryForPublic), notes, "summaryForPublic");
-  let recommendation = stripDrama(asString(report.recommendation), notes, "recommendation");
-
-  conclusion = softCausalWithoutEvidence(conclusion, notes, "conclusion");
-  summaryForPublic = softCausalWithoutEvidence(summaryForPublic, notes, "summaryForPublic");
-
-  // 3) Prompt A structure: uncertainty when missing
-  const verdictType = report.verdictType;
-  conclusion = ensureUncertainty(conclusion, notes, verdictType);
-  conclusion = ensureFaceLead(conclusion, notes, "conclusion");
-
-  if (!summaryForPublic) {
-    summaryForPublic = conclusion.length > 120 ? `${conclusion.slice(0, 100)}…` : conclusion;
-    notes.push("summaryForPublic: filled from conclusion");
-  } else if (verdictType !== "true" && verdictType !== "false" && !hasUncertainty(summaryForPublic) && !hasFaceVerdict(summaryForPublic)) {
-    summaryForPublic = `${summaryForPublic.replace(/[。．.]+$/g, "")}。现有证据仍不足以按原强度确认。`;
-    notes.push("summaryForPublic: injected uncertainty");
-  }
-  summaryForPublic = ensureFaceLead(summaryForPublic, notes, "summaryForPublic");
-  report.faceVerdict = faceVerdictFor(verdictType);
-
-  if (!recommendation) {
-    recommendation = "先看来源再判断能不能信，并保留证据边界。";
-    notes.push("recommendation: default action without lecture");
-  } else if (/广大网友|当帮凶|速来/.test(recommendation)) {
-    recommendation = "先看来源再判断能不能信，并保留证据边界。";
-    notes.push("recommendation: replaced lecture tone");
-  }
-
-  // 4) Boundaries: keep honest, non-empty cannotSay
   let canSay = unique(asStringArray(report.canSay), 8).map((s) =>
     stripDrama(s, notes, "canSay"),
   );
@@ -224,7 +114,7 @@ export function applyFactDeskPostProcessToReport(finalReport: unknown): void {
     notes.push("canSay: filled default cautious allow");
   }
 
-  // 5) whyHardToVerify: strip drama, keep 2–4
+  // whyHardToVerify: strip drama, keep 2–4
   let whyHard = unique(asStringArray(report.whyHardToVerify), 4).map((s) =>
     stripDrama(s, notes, "whyHardToVerify"),
   );
@@ -233,9 +123,6 @@ export function applyFactDeskPostProcessToReport(finalReport: unknown): void {
     notes.push("whyHardToVerify: filled defaults");
   }
 
-  report.conclusion = conclusion;
-  report.summaryForPublic = summaryForPublic;
-  report.recommendation = recommendation;
   report.canSay = canSay;
   report.cannotSay = cannotSay;
   report.whyHardToVerify = whyHard;

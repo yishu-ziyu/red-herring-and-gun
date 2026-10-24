@@ -1,18 +1,19 @@
 /**
- * deterministicReport.ts — 由分条判断确定性地写出整份报告（不调用写作模型）。
- * 结构完整、不撒谎、不空白。
+ * deterministicReport.ts — 由核查进行态确定性地写出报告骨架（不调用写作模型）：证据链、置信维度、
+ * 补证动作、难查原因。整句的 verdictType、结论、徽章不在这里写，由 sentenceVerdict 决定。
  */
 
-import { applyExclusionLayerToReport } from "./assembleFinalReport.js";
+import { assembleFinalReport } from "./assembleFinalReport.js";
+import type { CaseState } from "./casePipeline/caseState.js";
 import { applyFactDeskPostProcessToReport } from "./factDeskPostProcess.js";
-import { applyPublicCopy } from "./publicCopy.js";
+import { decideAndWriteVerdict } from "./sentenceVerdict.js";
 import { stringItems } from "./valueCoerce.js";
 
-export function buildDeterministicFinalReport(claim: string, steps: any[], searchResult: any) {
-  const rumorStep = steps.find((step) => step.agent === "rumor_detector");
-  const factStep = [...steps].reverse().find((step) => step.agent === "fact_checker");
-  const sourceStep = steps.find((step) => step.agent === "source_validator");
-  const factResult = String(factStep?.output?.factCheckResult || "unverified");
+type SkeletonInput = Partial<Pick<CaseState, "rumorStep" | "factStep" | "sourceStep" | "search360Result">>;
+
+export function buildReportSkeleton(claim: string, state: SkeletonInput): Record<string, unknown> {
+  const { rumorStep, factStep, sourceStep } = state;
+  const searchResult = state.search360Result as any;
   const sourceReliability = String(sourceStep?.output?.sourceReliability || "unverified");
   const keyFindings = stringItems(factStep?.output?.keyFindings);
   const counterEvidence = stringItems(factStep?.output?.counterEvidence);
@@ -23,32 +24,10 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
   const searchGaps = stringItems(searchResult?.unresolvedEvidenceGaps);
   const hasCounterEvidence = counterEvidence.length > 0 || stringItems(searchResult?.contradictingEvidence).length > 0;
   const hasMissingSources = missingSources.length > 0 || searchGaps.length > 0;
-  const verdictType =
-    factResult === "true" && !hasCounterEvidence && sourceReliability !== "low"
-      ? "true"
-      : factResult === "false"
-        ? "false"
-        : factResult === "partial" || hasCounterEvidence
-          ? "mixed_misleading"
-          : "unverified";
   const firstFinding = keyFindings[0] || String(searchResult?.answer || "").slice(0, 160) || "当前证据不足以直接确认原始说法。";
   const missingText = [...missingSources, ...searchGaps].slice(0, 2).join("；") || "仍需要更权威或原始来源复核。";
-  const conclusion =
-    verdictType === "true"
-      ? `当前证据较支持该说法，但仍需保留来源边界：${firstFinding}`
-      : verdictType === "false"
-        ? `当前证据不支持该说法。`
-        : verdictType === "mixed_misleading"
-          ? `这条说法要拆开看：有真实片段，也有夸大或偷换。`
-          : `公开材料还撑不住这条说法。`;
 
   const report: Record<string, unknown> = {
-    verdictType,
-    conclusion,
-    recommendation: hasMissingSources
-      ? "先把出处补上，再判断这句话站不站得住。"
-      : "按现有证据判断原句站不站得住，并标出查不清的部分。",
-    summaryForPublic: conclusion,
     whyHardToVerify: [
       missingText,
       "搜索结果和 Agent 输出只能作为核查线索，不能替代原始材料或权威发布。",
@@ -84,7 +63,7 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
       },
       {
         layer: "结论边界",
-        finding: conclusion,
+        finding: missingText,
         evidence: [...counterEvidence, ...searchGaps].slice(0, 3).join("；") || missingText,
         boundary: "结论只写到分条判断撑得住的程度。",
         sourceRefs: [],
@@ -121,13 +100,16 @@ export function buildDeterministicFinalReport(claim: string, steps: any[], searc
     ],
   };
 
-  // 排除层落库闸门：subclaimVerdicts 只覆盖可核查原子，不可核查原子单独进 nonVerifiableAtoms
-  applyExclusionLayerToReport(report, rumorStep, factStep?.output?.subclaimVerdicts, searchResult?.sources);
-
-  // Same A+F path as live LLM reports
+  // 可说 / 不可说 / 难查原因要诚实且不空。
   applyFactDeskPostProcessToReport(report);
-  // 兜底报告同样不能泄露内部 Agent 名/检索商标（证据链 sourceRefs 里的 RumorDetector 等）
-  applyPublicCopy(report);
+  return report;
+}
+
+/** 整体核查超时兜底：没有任何判词，按未完成收尾。只在宽限期也过了、管线确定回不来时用。 */
+export function buildInterruptedReport(claim: string): Record<string, unknown> {
+  const report = buildReportSkeleton(claim, {});
+  assembleFinalReport({ finalReport: report, rumorStep: undefined, verdicts: [] });
+  decideAndWriteVerdict(report, { claim, claimAtoms: [], claimAtomTypes: [], incomplete: [] });
   return report;
 }
 

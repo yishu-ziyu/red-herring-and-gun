@@ -12,6 +12,7 @@ import {
   type InvestigationBuildInput,
   type InvestigationSnapshotV1,
 } from "../../../../shared/investigation/index.js";
+import type { CaseState } from "./caseState.js";
 import type { CasePipelineHooks } from "./runCasePipeline.js";
 import { interruptedInvestigationSnapshot } from "../../../../shared/interruptedSnapshot.js";
 
@@ -25,7 +26,8 @@ export type SnapshotTimeline = {
   receivedChecking: () => void;
   decomposed: (fields: Fields) => void;
   investigating: (fields: Fields) => void;
-  judging: (fields: Fields) => void;
+  /** 核查绑定 / 来源审计刷新之后：把当前生效的公开判词与审计发出去。 */
+  judged: (state: CaseState) => void;
   /** 完成快照：作为 finalReport.investigation 存下来；没有订阅者或构建失败时为 null。
    *  opts.interrupted=true 时在 emit 之前把完成帧改包成中断帧——stream / 存库 / run 状态同一终态。 */
   complete: (
@@ -76,8 +78,15 @@ export function createSnapshotTimeline(args: {
     investigating: (fields) => {
       emit({ phase: "investigating", ...fields });
     },
-    judging: (fields) => {
-      emit({ phase: "judging", ...fields });
+    judged: (state) => {
+      emit({
+        phase: "judging",
+        claimAtoms: state.rumorStep.output.claimAtoms,
+        claimAtomTypes: state.rumorStep.output.claimAtomTypes,
+        atomSearchBundle: state.atomSearchBundle,
+        subclaimVerdicts: state.subclaimVerdicts,
+        sourceRelationAudits: state.sourceStep.output?.claimSourceRelations,
+      });
     },
     complete: (fields, opts) => emit({ phase: "complete", ...fields }, opts),
     setScopePlan: (plan) => {

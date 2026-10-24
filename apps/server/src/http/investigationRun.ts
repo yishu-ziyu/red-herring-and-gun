@@ -11,13 +11,12 @@ import { runCasePipeline } from "../lib/casePipeline/runCasePipeline.js";
 import { commitFreeCheck, releaseFreeCheck, type CheckTicket } from "../lib/checkQuota.js";
 import { applyContextCrossCheckToReport } from "../lib/contextCrossCheck.js";
 import { withExecutionBudget, withTimeout, type ExecutionBudget } from "../lib/executionBudget.js";
-import { applyFactDeskPostProcessToReport } from "../lib/factDeskPostProcess.js";
 import { followUpReuseFromClientBrief } from "../lib/followUpReuse.js";
 import { interruptedInvestigationSnapshot } from "../../../shared/interruptedSnapshot.js";
 import type { InvestigationSnapshotV1 } from "../../../shared/investigation/index.js";
 import { createInvestigationEmitter } from "../lib/investigationEmitter.js";
 import { createOrchestrateAdapter } from "../lib/orchestrate.js";
-import { buildDeterministicFinalReport } from "../lib/deterministicReport.js";
+import { buildInterruptedReport } from "../lib/deterministicReport.js";
 import type { RunService } from "../lib/runService.js";
 import type { RunStore } from "../lib/runStore.js";
 import {
@@ -86,18 +85,7 @@ function pipelineFinalize(
   ctx: { finalReport: Record<string, unknown>; claim: string },
   visualExtraction?: Record<string, unknown>
 ) {
-  applyFactDeskPostProcessToReport(ctx.finalReport);
   applyContextCrossCheckToReport(ctx.finalReport, { claim: ctx.claim, visualExtraction });
-}
-
-/**
- * 整体核查超时兜底：不憋用户，先给「还没查完」的中间结论（unverified + error-boundary）。
- * 只在宽限期也过了、管线确定回不来时用（第一次总超时不走这条路）。
- */
-function buildTimedOutReport(c: string): Record<string, unknown> {
-  const report = buildDeterministicFinalReport(c, [], undefined);
-  report._source = "error-boundary";
-  return report;
 }
 
 const IMAGE_UNREADABLE_NOTICE = "图片没能读出来，已按你输入的文字继续";
@@ -374,7 +362,7 @@ async function runInvestigationToEnd(deps: InvestigationRunDeps, request: Invest
     if (outcome === "timed-out") {
       const interrupted = interruptedInvestigationSnapshot(lastInvestigation, displayClaim);
       emitInvestigation(interrupted);
-      const timedOut = buildTimedOutReport(displayClaim);
+      const timedOut = buildInterruptedReport(displayClaim);
       timedOut.investigation = interrupted;
       applyContextCrossCheckToReport(timedOut, { claim, visualExtraction });
       // 先计费再收尾：release 在前会把 settled 置真，commit 变空操作，超时就等于白嫖。

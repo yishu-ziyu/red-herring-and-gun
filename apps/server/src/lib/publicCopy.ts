@@ -11,18 +11,6 @@ import {
   TRUNCATED_LATIN_BEFORE_QUOTE_RE,
 } from "../../../shared/scrubFace.js";
 
-const FACE_WORDS = ["能信", "不能信", "有真有假", "部分成立", "有争议", "还查不清"] as const;
-
-const FACE_BY_TYPE: Record<string, (typeof FACE_WORDS)[number]> = {
-  true: "能信",
-  false: "不能信",
-  mixed_misleading: "有真有假",
-  mixed: "有真有假",
-  partial: "部分成立",
-  disputed: "有争议",
-  unverified: "还查不清",
-};
-
 /** Internal roles, vendors, schemas — never on the result page. */
 const JARGON_RE =
   /wholeClaimAudit|whole_claim_auditor|WholeClaimAudit|wholeClaimAuditPlan|ReportComposer|FactChecker|RumorDetector|SourceValidator|CrossExaminer|AlternativeExplanationSearcher|AgentRuntime|search360|atomSearches|MiniMax-M3|MiniMax|Mimic|StepFun|Tavily|AnySearch|Metaso|function calling|Function Calling|工具调用|智能体|LangChain|CrewAI|\bADK\b|\bAgent\b|360 AI Search|canSay|cannotSay|web_search|web_fetch|todo_write|submit_verdict|investigator/gi;
@@ -34,107 +22,13 @@ function dropInternalSentences(text: string): string {
     .join("");
 }
 
-const FORWARD_RE = /先别转发|建议转发|转不转|二次传播|再传播|勿传播/;
 /** 模糊量词 — 来源里的具体数字不得被改写成这些词。 */
 const FUZZY_QUANTIFIER_RE = /很多|大量|许多|不少|众多/;
-const ESSAY_OPEN_RE = /^(截至目前|总的来说|值得注意的是|众所周知|在当今|综上所述)/;
-const ADVICE_RE = /建议你|请你务必|你应该|应当转发/;
 
 /** 检测模糊量词，返回命中的词（确定性闸上报用）。 */
 export function findFuzzyQuantifiers(text: string): string[] {
   const matches = (text ?? "").match(new RegExp(FUZZY_QUANTIFIER_RE.source, "g"));
   return matches ? Array.from(new Set(matches)) : [];
-}
-
-function faceWord(verdictType: unknown): (typeof FACE_WORDS)[number] {
-  const key = typeof verdictType === "string" ? verdictType.trim() : "";
-  return FACE_BY_TYPE[key] || "还查不清";
-}
-
-function looksLikeResearchMemo(text: string): boolean {
-  const t = (text ?? "").trim();
-  if (!t) return false;
-  if (/^#{1,3}\s/m.test(t)) return true;
-  if (/^\|.+\|/m.test(t)) return true;
-  if (/^REFERENCES\b/im.test(t)) return true;
-  const paras = t.split(/\n\s*\n/).filter((p) => p.trim()).length;
-  return paras >= 3 && t.length > 280;
-}
-
-const FACE_ALT = "只能信一部分|有真有假|部分成立|有争议|还查不清|不能信|这次没查完|能信";
-const FACE_TOKEN = `(?:\\*\\*)?(?:${FACE_ALT})[。．.]?(?:\\*\\*)?[。．.]?[ \\t]*`;
-const FACE_LEAD_RE = new RegExp(`^${FACE_TOKEN}`);
-const FACE_AFTER_CORE_RE = new RegExp(`(##\\s*核心结论\\s*\\n+)${FACE_TOKEN}`);
-
-const STAMP_WORDS = ["只能信一部分", "有真有假", "部分成立", "有争议", "还查不清", "不能信", "能信"] as const;
-
-function leadingFaceWord(text: string): (typeof STAMP_WORDS)[number] | undefined {
-  let t = (text ?? "").trim();
-  const core = t.match(/##\s*核心结论\s*\n+([\s\S]*)/);
-  if (core) t = core[1].trim();
-  t = t.replace(/^\*\*/, "");
-  for (const word of STAMP_WORDS) {
-    if (t.startsWith(word)) return word;
-  }
-  return undefined;
-}
-
-export function stripFaceStamp(text: string): string {
-  if (!text) return "";
-  let t = text.trim();
-  t = t.replace(FACE_AFTER_CORE_RE, "$1");
-  t = t.replace(FACE_LEAD_RE, "");
-  return t.trim();
-}
-
-function isFaceOnly(text: string): boolean {
-  const t = text.trim().replace(/^\*\*/, "").replace(/\*\*$/, "").replace(/[。．.]$/, "");
-  return (FACE_WORDS as readonly string[]).includes(t) || t === "这次没查完" || t === "只能信一部分";
-}
-
-/** User-facing fallback when the model left no real answer. Not the four-word stamp. */
-export function directAnswer(verdictType: unknown): string {
-  switch (faceWord(verdictType)) {
-    case "能信":
-      return "公开材料撑得住这条说法。";
-    case "不能信":
-      return "公开材料不支持这条说法。";
-    case "有真有假":
-      return "这句话里有站住的部分，也有没站住的部分。";
-    case "部分成立":
-      return "这句话只在有限范围内成立。";
-    case "有争议":
-      return "权威来源之间说法不一致，这句话有争议。";
-    default:
-      return "公开材料还撑不住判断。";
-  }
-}
-
-/** 只贴了链接、没有其它要查的文字。 */
-function looksLikeUrlOnlyClaim(claim: string): boolean {
-  const raw = String(claim ?? "").trim();
-  if (!raw) return false;
-  const t = raw.replace(/^请核查链接内容：/, "").trim();
-  const leftover = t.replace(/https?:\/\/[^\s]+/gi, "").replace(/\s+/g, "");
-  return leftover.length === 0;
-}
-
-const UNOPENED_LINK_NOTICE = "链接打不开（可能需要登录），已按你输入的文字继续";
-const UNOPENED_LINK_ANSWER = "链接打不开（可能需要登录），没法从链接里读到要查的说法。";
-
-/** 0 命题且原句只是打不开的链接：结论不能假装已经查完。 */
-export function applyUnopenedLinkConclusion(
-  report: Record<string, unknown>,
-  claim: string,
-  atomCount: number
-): void {
-  if (!report || typeof report !== "object") return;
-  if (atomCount > 0 || !looksLikeUrlOnlyClaim(claim)) return;
-  report.verdictType = "unverified";
-  report.conclusion = UNOPENED_LINK_ANSWER;
-  report.summaryForPublic = UNOPENED_LINK_ANSWER;
-  report.recommendation = UNOPENED_LINK_ANSWER;
-  report.causalBoundary = UNOPENED_LINK_NOTICE;
 }
 
 function stripSourceAliases(text: string): string {
@@ -164,89 +58,6 @@ function scrubPublicText(value: unknown): string {
   return text.trim();
 }
 
-/** Keep newlines so a research memo does not collapse into a slogan card. */
-function scrubMemoText(value: unknown): string {
-  if (typeof value !== "string") return "";
-  return dropInternalSentences(value)
-    .split("\n")
-    .map((line) =>
-      stripSourceAliases(line.replace(JARGON_RE, ""))
-        .replace(/[ \t]{2,}/g, " ")
-        .replace(/\s+$/g, "")
-    )
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function coreSectionBody(memo: string): string {
-  const m = memo.match(/##\s*核心结论\s*\n+([\s\S]*?)(?=\n## |\nREFERENCES\b|$)/i);
-  return (m?.[1] ?? "").trim();
-}
-
-function insertCoreLede(memo: string, lede: string): string {
-  const bold = lede.startsWith("**") ? lede : `**${lede}**`;
-  if (/##\s*核心结论/.test(memo)) {
-    return memo.replace(/(##\s*核心结论\s*\n+)/, `$1${bold} `);
-  }
-  return `${bold}\n\n${memo}`;
-}
-
-function ensureMemoFace(text: string, verdictType: unknown): string {
-  const originalFace = leadingFaceWord(text);
-  const body = stripFaceStamp(scrubMemoText(text));
-  const answer = directAnswer(verdictType);
-  if (!body) return `**${answer}**`;
-  const expected = faceWord(verdictType);
-  const core = /##\s*核心结论/.test(body) ? coreSectionBody(body) : body;
-  if (!core || isFaceOnly(core)) {
-    return /##\s*核心结论/.test(body) ? insertCoreLede(body, answer) : `**${answer}**`;
-  }
-  if (originalFace && originalFace !== expected) {
-    return insertCoreLede(body, answer);
-  }
-  return body;
-}
-
-function splitSentences(text: string): string[] {
-  return text
-    .split(/(?<=[。！？])/)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
-}
-
-/** 2–5 short sentences. First answers the claim. No essay openers, no advice, no four-word stamp. */
-function shapeConclusion(text: string, verdictType: unknown): string {
-  const led = leadWithFace(text, verdictType);
-  const kept: string[] = [];
-  for (const sentence of splitSentences(led)) {
-    if (ESSAY_OPEN_RE.test(sentence) || ADVICE_RE.test(sentence)) continue;
-    if (isFaceOnly(sentence)) continue;
-    kept.push(sentence);
-    if (kept.length >= 5) break;
-  }
-  if (kept.length === 0) return directAnswer(verdictType);
-  return kept.slice(0, 5).join("");
-}
-
-function leadWithFace(text: string, verdictType: unknown): string {
-  const body = scrubPublicText(text);
-  const originalFace = leadingFaceWord(body);
-  const stripped = stripFaceStamp(body);
-  const expected = faceWord(verdictType);
-  if (!stripped || isFaceOnly(stripped)) return directAnswer(verdictType);
-  if (originalFace && originalFace !== expected) return `${directAnswer(verdictType)}${stripped}`;
-  return stripped;
-}
-
-function constrainRecommendation(text: unknown, verdictType: unknown): string {
-  const body = scrubPublicText(text);
-  if (!body || FORWARD_RE.test(body)) return directAnswer(verdictType);
-  const stripped = stripFaceStamp(body);
-  if (!stripped || isFaceOnly(stripped)) return directAnswer(verdictType);
-  return stripped;
-}
-
 function scrubStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return value
@@ -254,6 +65,17 @@ function scrubStringArray(value: unknown): string[] | undefined {
     .filter((item) => item.length > 0)
     .slice(0, 8);
 }
+
+const INTERNAL_SOURCE_REF_WORDS: string[] = [
+  "RumorDetector",
+  "FactChecker",
+  "SourceValidator",
+  "ReportComposer",
+  "CrossExaminer",
+  "AlternativeExplanationSearcher",
+  "AgentRuntime",
+  "FallbackReport",
+];
 
 function scrubChain(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
@@ -277,17 +99,6 @@ function scrubChain(value: unknown): unknown {
   });
 }
 
-const INTERNAL_SOURCE_REF_WORDS: string[] = [
-  "RumorDetector",
-  "FactChecker",
-  "SourceValidator",
-  "ReportComposer",
-  "CrossExaminer",
-  "AlternativeExplanationSearcher",
-  "AgentRuntime",
-  "FallbackReport",
-];
-
 function scrubVerdicts(value: unknown): unknown {
   if (!Array.isArray(value)) return value;
   return value.map((item) => {
@@ -302,27 +113,10 @@ function scrubVerdicts(value: unknown): unknown {
 }
 
 /**
- * Constrain user-visible report fields. Mutates the report.
- * Does not change verdictType, URLs, or scores.
+ * 清洗报告里模型和检索写出来的文字（判词说明、证据链、可说 / 不可说、难查原因），内部角色名、供应商名、
+ * 字段名一律去掉。原地改。结论首句和正文由 sentenceVerdict 用这些清洗过的文字拼成，不再过第二遍。
  */
-export function applyPublicCopy(report: Record<string, unknown>): void {
-  if (!report || typeof report !== "object") return;
-  const verdictType = report.verdictType;
-  const rawConclusion = String(report.conclusion ?? "");
-  if (looksLikeResearchMemo(rawConclusion)) {
-    report.conclusion = ensureMemoFace(rawConclusion, verdictType);
-  } else {
-    report.conclusion = shapeConclusion(rawConclusion, verdictType);
-  }
-  const rawSummary = String(report.summaryForPublic ?? "");
-  if (looksLikeResearchMemo(rawSummary)) {
-    report.summaryForPublic = ensureMemoFace(rawSummary, verdictType);
-  } else {
-    report.summaryForPublic = shapeConclusion(rawSummary, verdictType);
-  }
-  report.recommendation = constrainRecommendation(report.recommendation, verdictType);
-  report.faceVerdict = faceWord(verdictType);
-
+export function scrubReportText(report: Record<string, unknown>): void {
   const canSay = scrubStringArray(report.canSay);
   if (canSay) report.canSay = canSay;
   const cannotSay = scrubStringArray(report.cannotSay);

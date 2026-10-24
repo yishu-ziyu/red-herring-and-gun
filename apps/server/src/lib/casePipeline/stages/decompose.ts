@@ -6,7 +6,7 @@ import { collapseShortSingleClaim, dropUntraceableAtoms, keepOriginalWording, en
 import { forceCheckableAtomTypes } from "../../claimAtom/forceCheckable.js";
 import { prefilterClaimAtoms } from "../../claimAtom/prefilter.js";
 import { looksLikePlanOrPrediction } from "../../atomSearchQuery.js";
-import { collapseFollowUpAtoms } from "../../followUpReuse.js";
+import { collapseFollowUpAtoms } from "../../claimAtom/followUpAtoms.js";
 import type { PipelineContext } from "../caseState.js";
 import type { PipelineStep } from "../runCasePipeline.js";
 

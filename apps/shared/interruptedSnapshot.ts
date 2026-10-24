@@ -3,6 +3,7 @@
  * 已有 conclusion 必须留下。没有 conclusion、但每条可核查命题都有判断时，
  * 用分条判断拼一句有界总答，不装成报告写完。
  */
+import { VERDICT_OUTCOME, decideSentenceVerdict, standingForJudgment, type SentenceJudgment } from "./domain/verdict.js";
 import {
   validateInvestigationSnapshot,
   type InvestigationSnapshotV1,
@@ -69,7 +70,7 @@ type BoundedInterruptedClaim = {
 
 type BoundedInterruptedAnswer = {
   directAnswer: string;
-  judgment: "supported" | "refuted" | "mixed" | "unresolved";
+  judgment: SentenceJudgment;
 };
 
 /**
@@ -89,17 +90,9 @@ function boundedInterruptedAnswer(
   });
   const directAnswer = `${phrases.join("；")}。`;
 
-  const judgments = new Set(checkable.map((c) => c.judgment));
-  const hasSupported = judgments.has("supported");
-  const hasRefuted = judgments.has("refuted");
-  const hasMixed = judgments.has("mixed");
-  const judgment: BoundedInterruptedAnswer["judgment"] =
-    hasMixed || (hasSupported && hasRefuted)
-      ? "mixed"
-      : hasRefuted
-        ? "refuted"
-        : hasSupported
-          ? "supported"
-          : "unresolved";
-  return { directAnswer, judgment };
+  // 快照里的命题没有角色，规则表按「没标主要主张时每一条都是主要主张」处理。
+  const decision = decideSentenceVerdict(
+    checkable.map((c) => ({ text: c.text, role: "main" as const, standing: standingForJudgment(c.judgment) })),
+  );
+  return { directAnswer, judgment: VERDICT_OUTCOME[decision.verdict].judgment };
 }

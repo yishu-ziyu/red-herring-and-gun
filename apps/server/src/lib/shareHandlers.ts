@@ -13,12 +13,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { openDatabase } from "./sqliteStore.js";
-import { followUpQuestionOf } from "./followUpReuse.js";
 import { clientIpKey, guestIdFromRequest, guestOwnerHash } from "./checkQuota.js";
 import type { RunRecord, PublishedRunResult } from "./runStore.js";
 import { GUEST_DAILY_SHARES, IP_DAILY_SHARES, shanghaiDayKey } from "../../../shared/quota.js";
 import { scrubFaceText } from "../../../shared/scrubFace.js";
-import { conclusionMissesFollowUp, followUpQuestionLead } from "../../../shared/followUp.js";
+import { conclusionMissesFollowUp, followUpQuestionLead, followUpQuestionOf } from "../../../shared/followUp.js";
 import { LABEL_TEXT, LABEL_TONE, isLabelKey, judgmentToLabel, type LabelKey } from "../../../shared/domain/labels.js";
 import { normalizePublishedDate } from "../../../shared/investigation/sourceDate.js";
 import { quoteLinkUrl } from "../../../shared/investigation/quote.js";
