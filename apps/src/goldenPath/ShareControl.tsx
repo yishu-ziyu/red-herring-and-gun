@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import { useUiLang } from "../lib/useUiLang";
+import { createShare, revokeShare } from "../lib/investigationClient";
 import { gpCopyFor } from "./copy";
 import { displayFollowUpClaim } from "../../shared/followUp";
 
@@ -63,33 +64,18 @@ export function ShareControl({ runId, brief }: { runId: string; brief: string })
 
   const create = async () => {
     setState({ phase: "creating" });
-    try {
-      const response = await fetch(`/api/investigations/${encodeURIComponent(runId)}/shares`, {
-        method: "POST",
-        credentials: "include",
-      });
-      const data = (await response.json().catch(() => ({}))) as { shareId?: string; url?: string; message?: string };
-      if (!response.ok || !data.shareId || !data.url) {
-        setState({ phase: "error", message: data.message || copy.shareCreateFailed });
-        return;
-      }
-      setState({ phase: "created", url: `${window.location.origin}${data.url}`, shareId: data.shareId });
-    } catch {
-      setState({ phase: "error", message: copy.shareCreateFailed });
+    const result = await createShare(runId);
+    if (!result.ok) {
+      setState({ phase: "error", message: result.message || copy.shareCreateFailed });
+      return;
     }
+    setState({ phase: "created", url: `${window.location.origin}${result.url}`, shareId: result.shareId });
   };
 
   const revoke = async () => {
     if (state.phase !== "created") return;
-    try {
-      const response = await fetch(
-        `/api/investigations/${encodeURIComponent(runId)}/shares/${encodeURIComponent(state.shareId)}`,
-        { method: "DELETE", credentials: "include" }
-      );
-      setState(response.ok ? { phase: "revoked" } : { phase: "error", message: copy.shareRevokeFailed });
-    } catch {
-      setState({ phase: "error", message: copy.shareRevokeFailed });
-    }
+    const revoked = await revokeShare(runId, state.shareId);
+    setState(revoked ? { phase: "revoked" } : { phase: "error", message: copy.shareRevokeFailed });
   };
 
   const copyText = async (text: string, which: "link" | "brief") => {

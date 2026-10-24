@@ -11,12 +11,12 @@ import {
   type CaseIntake,
 } from "../lib/caseIntake";
 import { scrapeLinks } from "../lib/linkScraper";
+import { fetchCheckQuota } from "../lib/investigationClient";
 import { PromptInput, type PromptAttachment } from "../components/v3/promptInput/PromptInput";
 import { useUiLang } from "../lib/useUiLang";
 import { gpCopyFor } from "./copy";
 import {
   checksRemainingMessage,
-  parseCheckQuota,
   quotaIsExhausted,
   type CheckQuotaView,
 } from "../../shared/quota";
@@ -105,14 +105,9 @@ export function InputStage({
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/checks/quota", { credentials: "include" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!cancelled) setCheckQuota(parseCheckQuota(data));
-      })
-      .catch(() => {
-        if (!cancelled) setCheckQuota(null);
-      });
+    void fetchCheckQuota().then((quota) => {
+      if (!cancelled) setCheckQuota(quota);
+    });
     return () => {
       cancelled = true;
     };
