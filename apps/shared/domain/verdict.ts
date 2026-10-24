@@ -74,7 +74,12 @@ export function decideSentenceVerdict(input: readonly SentencePart[]): VerdictDe
       : decided("cannot-believe", "main-refuted");
   }
   // 行5 先于主要主张没查清 / 部分成立：必要前提被反驳时，主要主张越弱不能让整句判得越轻（用户裁决 2026-10-24）。
-  if (has(premises, "refuted")) return decided("part-true-part-false", "premise-refuted");
+  // 有真有假要求确有一截被证实；一截都没证实时，前提被反驳就是不能信。
+  if (has(premises, "refuted")) {
+    return has(parts, "supported")
+      ? decided("part-true-part-false", "premise-refuted")
+      : decided("cannot-believe", "premise-refuted");
+  }
   // 行7 先于行8：表里查不清排在证据冲突前面，两者并存按证据不足。
   if (has(mains, "unresolved")) return decided("not-enough-evidence", "main-unresolved");
   if (has(mains, "conflicting")) return decided("disputed", "main-conflicting");
