@@ -194,6 +194,7 @@ export function wholeLabelFor(rule: VerdictRule, parts: readonly LabeledPart[], 
     case "premise-refuted":
       return "partly-true";
     case "main-refuted":
+    case "premise-refuted-nothing-true":
       return "false";
     case "main-unresolved":
     case "premise-unresolved": {

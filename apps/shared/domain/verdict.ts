@@ -35,6 +35,7 @@ export type VerdictRule =
   | "main-conflicting"
   | "main-partial"
   | "premise-refuted"
+  | "premise-refuted-nothing-true"
   | "premise-unresolved"
   | "premise-partial"
   | "background-refuted"
@@ -78,7 +79,7 @@ export function decideSentenceVerdict(input: readonly SentencePart[]): VerdictDe
   if (has(premises, "refuted")) {
     return has(parts, "supported")
       ? decided("part-true-part-false", "premise-refuted")
-      : decided("cannot-believe", "premise-refuted");
+      : decided("cannot-believe", "premise-refuted-nothing-true");
   }
   // 行7 先于行8：表里查不清排在证据冲突前面，两者并存按证据不足。
   if (has(mains, "unresolved")) return decided("not-enough-evidence", "main-unresolved");
