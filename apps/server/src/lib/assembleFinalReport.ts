@@ -13,39 +13,15 @@ import {
   type AtomSearchBundle,
 } from "./atomSearch.js";
 import { normalizeReportCitations } from "./citationBinding.js";
-import { applyPublicCopy } from "./publicCopy.js";
-
-const FACE_VERDICT: Record<string, string> = {
-  true: "能信",
-  false: "不能信",
-  mixed_misleading: "有真有假",
-  mixed: "有真有假",
-  partial: "部分成立",
-  disputed: "有争议",
-  unverified: "还查不清",
-};
-
-export function faceVerdictFor(verdictType: unknown): string {
-  const key = typeof verdictType === "string" ? verdictType.trim() : "";
-  return FACE_VERDICT[key] || "还查不清";
-}
 
 type AssembleFinalReportInput = {
   finalReport: Record<string, unknown>;
   /** rumor_detector step (or { output }) */
   rumorStep: { output?: Record<string, unknown> } | null | undefined;
-  /** fact_checker verdicts (the report's own only when fact_checker gave none) */
+  /** 当前生效的公开判词（CaseState.subclaimVerdicts） */
   verdicts: unknown;
   searchSources?: Array<{ url?: unknown }>;
   atomSearchBundle?: AtomSearchBundle | null;
-};
-
-type AssembleFinalReportResult = {
-  subclaimVerdicts: SubclaimVerdict[];
-  nonVerifiableAtoms: Array<{ text: string; type: string }>;
-  claimItems: ClaimReportItem[];
-  stanceClaimType?: unknown;
-  atomSearchMeta?: { atomsSearched: string[]; source: string };
 };
 
 /**
@@ -84,17 +60,11 @@ function buildClaimItems(
 
 /**
  * 权威落库闸门：subclaimVerdicts 只含可核查；立场原子进 nonVerifiableAtoms；claimItems 预交错。
- * 写入 finalReport 并返回结构化结果。
+ * 写入 finalReport。
  */
-export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFinalReportResult {
+export function assembleFinalReport(input: AssembleFinalReportInput): void {
   const { finalReport, rumorStep, verdicts, searchSources, atomSearchBundle } = input;
-  if (!finalReport || typeof finalReport !== "object") {
-    return {
-      subclaimVerdicts: [],
-      nonVerifiableAtoms: [],
-      claimItems: [],
-    };
-  }
+  if (!finalReport || typeof finalReport !== "object") return;
 
   const rumorOutput = rumorStep?.output ?? {};
   const listed = listAtomsForSearch(rumorOutput.claimAtoms, rumorOutput.claimAtomTypes);
@@ -114,13 +84,11 @@ export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFi
   finalReport.subclaimVerdicts = merged;
   finalReport.nonVerifiableAtoms = listed.nonVerifiable;
 
-  let atomSearchMeta: AssembleFinalReportResult["atomSearchMeta"];
   if (atomSearchBundle) {
-    atomSearchMeta = {
+    finalReport.atomSearchMeta = {
       atomsSearched: atomSearchBundle.atomsSearched,
       source: "per-atom-search",
     };
-    finalReport.atomSearchMeta = atomSearchMeta;
   }
 
   const stanceClaimType = rumorOutput.stanceClaimType;
@@ -128,46 +96,8 @@ export function assembleFinalReport(input: AssembleFinalReportInput): AssembleFi
     finalReport.stanceClaimType = stanceClaimType;
   }
 
-  const claimItems = buildClaimItems(
-    rumorOutput.claimAtoms,
-    merged,
-    listed.nonVerifiable
-  );
-  finalReport.claimItems = claimItems;
-  finalReport.faceVerdict = faceVerdictFor(finalReport.verdictType);
+  finalReport.claimItems = buildClaimItems(rumorOutput.claimAtoms, merged, listed.nonVerifiable);
 
-  // Align [n] with final source arrays (conclusion + evidenceChain + claimItems).
+  // Align [n] with final source arrays (evidenceChain + claimItems); 探活按整理过的来源数组剔死链。
   normalizeReportCitations(finalReport);
-  applyPublicCopy(finalReport);
-  merged = Array.isArray(finalReport.subclaimVerdicts)
-    ? (finalReport.subclaimVerdicts as SubclaimVerdict[])
-    : merged;
-  const claimItemsSynced = Array.isArray(finalReport.claimItems)
-    ? (finalReport.claimItems as ClaimReportItem[])
-    : claimItems;
-
-  return {
-    subclaimVerdicts: merged,
-    nonVerifiableAtoms: listed.nonVerifiable,
-    claimItems: claimItemsSynced,
-    stanceClaimType,
-    atomSearchMeta,
-  };
-}
-
-/** @deprecated alias — prefer assembleFinalReport */
-export function applyExclusionLayerToReport(
-  finalReport: Record<string, unknown>,
-  rumorStep: any,
-  verdicts: unknown,
-  searchSources?: Array<{ url?: unknown }>,
-  atomSearchBundle?: AtomSearchBundle | null
-): void {
-  assembleFinalReport({
-    finalReport,
-    rumorStep,
-    verdicts,
-    searchSources,
-    atomSearchBundle,
-  });
 }

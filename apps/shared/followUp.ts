@@ -1,4 +1,5 @@
 import type { InvestigationSnapshotV1 } from "./investigation/index.js";
+import { semanticClaimSimilarity } from "./semanticRecall.js";
 
 /**
  * Same-case follow-up payload. The user bubble shows `followUp`;
@@ -59,6 +60,55 @@ export function distinctiveFollowUpTerms(question: string): string[] {
   return terms;
 }
 
+/** 用户追问原文：裁到「同一条核查的追问」标记之前；没有标记则整段当追问。 */
+export function followUpQuestionOf(claim: string): string {
+  return displayFollowUpClaim(claim).trim();
+}
+
+/** 只做形状规范化（NFKC、小写、压缩空白、去句末标点），不做同义替换——同义与转述由相似度负责。 */
+function normalizeAtomText(text: string): string {
+  return String(text ?? "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[。．.！!？?；;，,、：:…~～"'“”‘’）)】\]》>]+$/u, "")
+    .trim();
+}
+
+/**
+ * 人物/日期/链接变化 → 匹配不上：两边都出现数字/拉丁词或链接、且各自都有对方没有的
+ * （2 月 5 日 vs 2 月 6 日、0.5mg vs 0.3mg、两条不同链接）才判冲突。
+ * 只有一侧带数字/链接不算冲突——正常改写常常补一个时间或出处。
+ */
+function hasTokenConflict(a: string, b: string): boolean {
+  const tokens = (text: string, pattern: RegExp) => new Set(text.match(pattern) ?? []);
+  const wordsA = tokens(a, /[a-z0-9]+/g);
+  const wordsB = tokens(b, /[a-z0-9]+/g);
+  if (wordsA.size > 0 && wordsB.size > 0) {
+    const onlyA = [...wordsA].some((token) => !wordsB.has(token));
+    const onlyB = [...wordsB].some((token) => !wordsA.has(token));
+    if (onlyA && onlyB) return true;
+  }
+  const linksA = tokens(a, /https?:\/\/\S+/g);
+  const linksB = tokens(b, /https?:\/\/\S+/g);
+  return linksA.size > 0 && linksB.size > 0 && ![...linksA].some((link) => linksB.has(link));
+}
+
+/** 相似度门槛（0–100）取高：宁可多搜一句新问题，也不把「隔夜海鲜」当成「隔夜菜」。 */
+const COVER_THRESHOLD = 50;
+
+/** 追问是否已被这一条命题覆盖。人物/日期/链接冲突一律不算覆盖。 */
+export function followUpCoveredByAtom(followUp: string, atom: string): boolean {
+  const question = normalizeAtomText(followUpQuestionOf(followUp) || followUp);
+  const target = normalizeAtomText(atom);
+  if (!question || !target) return false;
+  if (hasTokenConflict(question, target)) return false;
+  if (question === target) return true;
+  if (question.length >= 6 && target.length >= 6 && (question.includes(target) || target.includes(question))) return true;
+  return semanticClaimSimilarity(question, target) >= COVER_THRESHOLD;
+}
+
 export function conclusionMissesFollowUp(lead: string, claim: string): boolean {
   if (!claim.includes(FOLLOW_UP_MARKER)) return false;
   const question = displayFollowUpClaim(claim);
@@ -68,7 +118,8 @@ export function conclusionMissesFollowUp(lead: string, claim: string): boolean {
   const terms = distinctiveFollowUpTerms(question);
   if (terms.some((term) => lead.includes(term))) return false;
   // 已经直接答了这句追问不算跑题；第一句在引另一条拆题才算顶替。
-  return /^「[^」]{8,}」/.test(lead);
+  const quoted = lead.match(/^「([^」]{8,})」/)?.[1];
+  return quoted !== undefined && !followUpCoveredByAtom(question, quoted);
 }
 
 export function followUpQuestionLead(

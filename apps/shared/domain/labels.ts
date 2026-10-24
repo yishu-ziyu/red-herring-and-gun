@@ -142,24 +142,6 @@ export function partLabelFor(standing: PartStanding, modelLabel: LabelKey | unde
   }
 }
 
-/** 标签 → 规则表的证据状态；用于证据不够、标签被降级之后重新求整句。 */
-export function standingForLabel(label: LabelKey): PartStanding {
-  switch (label) {
-    case "true":
-    case "mostly-true":
-      return "supported";
-    case "false":
-      return "refuted";
-    case "partly-true":
-    case "exaggerated":
-      return "partial";
-    case "disputed":
-      return "conflicting";
-    default:
-      return "unresolved";
-  }
-}
-
 /**
  * 标签要有证据撑着：属实 / 基本属实至少一条支持，不属实至少一条反驳，
  * 部分属实需要支持和反驳两侧材料；夸大了需要对应来源。撑不住就降为还查不清，不能靠来源数量推断夸张。

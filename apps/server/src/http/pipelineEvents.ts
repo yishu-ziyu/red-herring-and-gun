@@ -80,9 +80,6 @@ export function makePipelineHooks(ctx: {
       sendEvent({ type: "tool_start", toolName: "Atom Search", query: atom, timestamp: Date.now() });
       emitter.emitSearchStarted(atom);
     },
-    onPriorRoundReuse: (hit) => {
-      emitter.emitPriorRoundReuse(hit.originDate);
-    },
     onAtomSearchResult: (atom, result) => {
       const searchToolName = getSearchToolName(result as any);
       if ((result as any)?._source === "tool-error") {

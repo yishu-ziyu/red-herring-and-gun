@@ -87,3 +87,42 @@ export function decideSentenceVerdict(input: readonly SentencePart[]): VerdictDe
   if (has(background, "refuted")) return decided("partly-holds", "background-refuted"); // 行4
   return decided("can-believe", "all-supported"); // 行3
 }
+
+/** 快照里整句 / 每一截的判断。 */
+export type SentenceJudgment = "supported" | "refuted" | "mixed" | "disputed" | "unresolved";
+
+/**
+ * 一个整句结论在三处的写法：报告字段 verdictType、快照 judgment、徽章文字。
+ * 结论到这三个词只在这里对应一次。
+ */
+export const VERDICT_OUTCOME: Record<SentenceVerdict, { verdictType: string; judgment: SentenceJudgment; badge: string }> = {
+  "can-believe": { verdictType: "true", judgment: "supported", badge: "能信" },
+  "cannot-believe": { verdictType: "false", judgment: "refuted", badge: "不能信" },
+  "part-true-part-false": { verdictType: "mixed_misleading", judgment: "mixed", badge: "有真有假" },
+  "partly-holds": { verdictType: "partial", judgment: "mixed", badge: "部分成立" },
+  "not-enough-evidence": { verdictType: "unverified", judgment: "unresolved", badge: "还查不清" },
+  disputed: { verdictType: "disputed", judgment: "disputed", badge: "有争议" },
+};
+
+/** 报告上的 verdictType → 快照 judgment（读历史报告用）。认不得的写法按没查清。 */
+export function judgmentForVerdictType(verdictType: unknown): SentenceJudgment {
+  const type = typeof verdictType === "string" ? verdictType.trim().toLowerCase() : "";
+  const outcome = Object.values(VERDICT_OUTCOME).find((o) => o.verdictType === type);
+  return outcome?.judgment ?? "unresolved";
+}
+
+/** 快照里一截的 judgment → 规则表的证据状态。 */
+export function standingForJudgment(judgment: string | null | undefined): PartStanding {
+  switch (judgment) {
+    case "supported":
+      return "supported";
+    case "refuted":
+      return "refuted";
+    case "mixed":
+      return "partial";
+    case "disputed":
+      return "conflicting";
+    default:
+      return "unresolved";
+  }
+}

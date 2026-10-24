@@ -17,8 +17,6 @@ type InvestigationEmitter = {
   emitSnapshot(snapshot: InvestigationSnapshotV1): void;
   /** 动作类事件：没有可归属对象，只能描述动作。 */
   emitSearchStarted(atom: string): void;
-  /** 同一案上一轮证据够用、不再检索已核命题。 */
-  emitPriorRoundReuse(originDate: string): void;
 };
 
 export function createInvestigationEmitter(options: {
@@ -51,9 +49,6 @@ export function createInvestigationEmitter(options: {
     },
     emitSearchStarted(atom) {
       sendActivities(log.recordSearchStarted(atom));
-    },
-    emitPriorRoundReuse(originDate) {
-      sendActivities(log.recordPriorRoundReuse(originDate));
     },
   };
 }

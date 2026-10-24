@@ -88,19 +88,13 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   }
   steps.push(sourceStep);
 
-  const partial: Omit<CaseState, "sourceAudit"> = { rumorStep, ...retrieval, factStep, sourceStep };
+  const partial: Omit<CaseState, "sourceAudit"> = { rumorStep, ...retrieval, factStep, sourceStep, subclaimVerdicts: [] };
   const state = partial as CaseState;
   state.sourceAudit = createSourceAudit(ctx, state);
   state.sourceAudit.apply();
 
   throwIfAborted();
   // 里程碑：核查绑定开始（判词与证据关系出现；来源不再是 unassessed）。
-  snapshots.judging({
-    claimAtoms: rumorStep.output.claimAtoms,
-    claimAtomTypes: rumorStep.output.claimAtomTypes,
-    atomSearchBundle,
-    subclaimVerdicts: state.factStep?.output?.subclaimVerdicts,
-    sourceRelationAudits: state.sourceStep?.output?.claimSourceRelations,
-  });
+  snapshots.judged(state);
   return state;
 }
