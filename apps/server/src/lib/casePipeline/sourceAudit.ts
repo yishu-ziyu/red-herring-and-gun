@@ -41,8 +41,9 @@ export function createSourceAudit(ctx: PipelineContext, state: Omit<CaseState, "
 
   const refreshIfNeeded = async () => {
     const nextSignature = bundleSignature();
+    // 和审计前的候选比：公开判词里没审过的来源已被去掉方向，拿它比永远算覆盖全。
     const covered = relationAuditCoversDirectionalSources(
-      state.subclaimVerdicts,
+      candidates ?? state.subclaimVerdicts,
       state.sourceStep.output?.claimSourceRelations,
     );
     if (nextSignature === auditedSignature && covered) return;
