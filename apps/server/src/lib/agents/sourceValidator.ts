@@ -17,7 +17,7 @@ const schema = {
         properties: {
           claimAtom: { type: "string" },
           url: { type: "string" },
-          relation: { type: "string", enum: ["support", "contradict", "context-only", "unverified"] },
+          relation: { type: "string", enum: ["support", "contradict", "conditional", "context-only", "unverified"] },
           reason: { type: "string" },
           quote: { type: "string", description: "从实际取得的材料逐字摘出、表达这个方向的一句；没有合适的原句就留空。" },
         },
@@ -53,11 +53,15 @@ const prompt = [
       "3. 禁止把可疑来源（营销号、匿名信源、AI 生成内容未署名）记入 verifiedSources；必须放进 questionableSources。",
       "4. missingSources 应主动列出关键缺口（原始数据、官方公告、原始论文 DOI 等），不要默认 placeholder。",
       "5. 禁止编造来源 URL、发布日期、机构署名；不在输入中出现的证据不得计入 verifiedSources。",
-      "6. 输入 directionalCandidates 是 FactChecker 准备公开为支持/反驳的候选。claimSourceRelations 必须给 directionalCandidates 的每一行都输出一条 relation，不能跳过。claimAtom 取自 atomSearches 或 directionalCandidates，URL 只能是本轮任一 atomSearches 检索结果里真实出现的；同一句话另一部分搜到的 URL 也可以和这条 claimAtom 配对核验，不要求 URL 出现在这条 claimAtom 自己的检索结果里。必须阅读 snippet 的完整转折与限制，不能只看标题或前半句。",
+      "6. 输入 directionalCandidates 是 FactChecker 准备公开为支持/反驳的候选。claimSourceRelations 必须给 directionalCandidates 的每一行都输出一条 relation，不能跳过。同一 claimAtom 和 URL 只输出一条，一个来源对一条命题只有一种 relation。claimAtom 取自 atomSearches 或 directionalCandidates，URL 只能是本轮任一 atomSearches 检索结果里真实出现的；同一句话另一部分搜到的 URL 也可以和这条 claimAtom 配对核验，不要求 URL 出现在这条 claimAtom 自己的检索结果里。必须阅读 snippet 的完整转折与限制，不能只看标题或前半句。",
       "6a. 来源 snippet 可能已升级为本次取得的正文（excerptKind=page-excerpt），优先按它核对方向；search-snippet 仍只是搜索摘要，不得说已读原网页、摘要完整或前后文完整。读取失败或截断时照实保留限制。",
-      "6b. 对 support/contradict，在 claimSourceRelations.quote 逐字摘出 snippet 中表达该方向的一句，不超过80字，保留否定、条件与范围；不能只抄标题里的谣言或被否定的那句话。没有合适原句就 quote 留空，不改写。所有文字字段里，原文的英文双引号 \" 一律写成「」，否则 JSON 会失效。",
-      "7. support = 来源作者的完整意思直接支持该命题；contradict = 完整意思直接否定该命题；context-only = 主题相关、支持局部机制但不足以支持/反驳整条命题，或对象/指标不同；unverified = 摘要太短、上下文不足。",
-      "7a. 两个方向都要判断，不能只问「支持不支持」。原句是绝对化或普遍性说法（会致癌、能治愈、等于毒药、一定、所有人）时，来源说明「正常条件下不会发生」「只有特定条件（室温久放、变质、大剂量）才有风险」「冷藏保存是安全的」，就是 contradict：它否定了原句的普遍说法。只讲机制、没有对原句下结论时，才是 context-only。",
+      "6b. 对 support/contradict/conditional，在 claimSourceRelations.quote 逐字摘出 snippet 中表达该方向的一句，不超过80字，保留否定、条件与范围；不能只抄标题里的谣言或被否定的那句话。没有合适原句就 quote 留空，不改写。所有文字字段里，原文的英文双引号 \" 一律写成「」，否则 JSON 会失效。",
+      "7. relation 判的是来源对这件事怎么说，只看来源作者的完整意思：",
+      "   support = 直接说这件事成立，不需要原句没提的额外条件。",
+      "   contradict = 对一般人这件事不会发生或说法是错的；只有少数特殊人群例外（如高脂血症患者、孕妇）也算 contradict。",
+      "   conditional = 是否成立取决于一般人也会遇到的条件（全天总热量、吃法、用量、保存方式等）：一般人在某些条件下会这样，在另一些条件下不会。",
+      "   context-only = 没有直接谈这件事，只讲相关机制，或对象、指标不同。unverified = 摘要太短、上下文不足。",
+      "7a. 区分 contradict 和 conditional 只问一句：一般人也可能遇到原句说的结果吗？可能就是 conditional；只有少数特殊人群才会就是 contradict。例：「隔夜菜会致癌」，来源说冷藏安全、室温久放有风险 → conditional；「每天吃一个鸡蛋会胆固醇超标」，来源说健康人不会、高脂血症者要限量 → contradict。来源否定了原句说的因果（比如说时间、这种食物本身不是原因），是 contradict；来源承认这个因果在某些条件下成立，才是 conditional。不要因为来源没有否定绝对说法之外的内容就选 context-only。",
       "8. 「辟谣/流言/但是/杯水车薪」本身不能决定方向。同一 URL 对不同 claimAtom 可以有不同 relation。理论机制成立不等于实际疗效成立。",
       "",
       "输出要求（严格 JSON 格式，不要 Markdown，不要代码块）：",
@@ -97,9 +101,14 @@ export function directionalCandidates(verdicts: unknown, limit = 24) {
     .flatMap((raw) => {
       const claimAtom = raw && typeof raw === "object" && typeof raw.claimAtom === "string" ? raw.claimAtom : "";
       if (!claimAtom) return [];
-      return directionalSources(raw)
-        .filter(({ url }) => /^https?:\/\//i.test(url))
-        .map(({ url, relation }) => ({ claimAtom, url, intendedRelation: relation }));
+      // The model may list a source in both buckets; the auditor still judges it once, without being told a direction.
+      const rows = new Map<string, { claimAtom: string; url: string; intendedRelation: string }>();
+      for (const { url, relation } of directionalSources(raw)) {
+        if (!/^https?:\/\//i.test(url)) continue;
+        const held = rows.get(url);
+        rows.set(url, { claimAtom, url, intendedRelation: held && held.intendedRelation !== relation ? "undecided" : relation });
+      }
+      return [...rows.values()];
     })
     .slice(0, limit);
 }

@@ -37,7 +37,7 @@ import {
   nonCheckableLabel,
   type LabelKey,
 } from "../domain/labels.js";
-import { findClaimSourceRelationAudit, investigationSourceId, normalizeInvestigationSourceUrl } from "./sourceIdentity.js";
+import { findClaimSourceRelationAudit, investigationSourceId, normalizeInvestigationSourceUrl, oneRelationPerPart } from "./sourceIdentity.js";
 import { dateFromUrl, normalizePublishedDate } from "./sourceDate.js";
 import { SOURCE_CONTENT_MAX_CHARS, plainPartWording, withoutReadStatus } from "./material.js";
 import { verbatimQuote } from "./quote.js";
@@ -322,7 +322,7 @@ type VerdictLike = {
 };
 
 type RelationAuditView = {
-  relation: "support" | "contradict" | "context-only" | "unverified";
+  relation: "support" | "contradict" | "conditional" | "context-only" | "unverified";
   reason: string;
   quote?: string;
 };
@@ -404,10 +404,10 @@ function readRelationAudits(
     const url = normalizeInvestigationSourceUrl(asString(rec.url).trim());
     const relation = asString(rec.relation).trim();
     if (!claimAtom || !url) continue;
-    if (relation !== "support" && relation !== "contradict" && relation !== "context-only" && relation !== "unverified") continue;
+    if (relation !== "support" && relation !== "contradict" && relation !== "conditional" && relation !== "context-only" && relation !== "unverified") continue;
     out.push({ claimAtom, url, relation, reason: clip(asString(rec.reason), 320), ...(typeof rec.quote === "string" ? { quote: rec.quote } : {}) });
   }
-  return out;
+  return oneRelationPerPart(out);
 }
 
 function readAtomTypes(
@@ -843,7 +843,7 @@ export function buildInvestigationSnapshot(
       const audit = findClaimSourceRelationAudit(relationAudits, a.text, url);
       const auditMatchesRole =
         audit &&
-        ((role === "support" && audit.relation === "support") ||
+        ((role === "support" && (audit.relation === "support" || audit.relation === "conditional")) ||
           (role === "contradict" && audit.relation === "contradict") ||
           (role === "context-only" && (audit.relation === "context-only" || audit.relation === "unverified")));
       // 只有支持/反驳行引用原文；这一句必须逐字出自本轮拿到的来源文字。
@@ -858,6 +858,7 @@ export function buildInvestigationSnapshot(
         ...(source.materialId && quote && quoteStart >= 0 ? { quoteRange: { start: quoteStart, end: quoteStart + quote.length } } : {}),
         ...(source.excerptKind ? { excerptKind: source.excerptKind } : {}),
         ...(quote ? { quote } : {}),
+        ...(role === "support" && audit?.relation === "conditional" ? { conditional: true } : {}),
         ...(source.fetchStatus === "truncated"
           ? { relationReason: "只取得部分正文，未读部分可能包含限定条件；这份材料未用来支持或反驳" }
           : auditMatchesRole && audit.reason ? { relationReason: plainPartWording(audit.reason) } : {}),

@@ -214,7 +214,7 @@ export function createActivityLog(runId: string) {
                 kind: "source_checked",
                 claimIds: [claim.id],
                 sourceIds: [link.sourceId],
-                payload: { ...payload, role: link.role },
+                payload: { ...payload, role: link.conditional ? "conditional" : link.role },
               }),
             );
           } else if (!priorRole) {

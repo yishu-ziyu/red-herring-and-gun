@@ -8,6 +8,7 @@ import type { PipelineStep } from "../runCasePipeline.js";
 import { createSourceAudit } from "../sourceAudit.js";
 import type { Retrieval } from "./retrieve.js";
 import { directionalSources } from "../../agents/sourceValidator.js";
+import { withClaimAtomsFromDecomposition } from "../../../../../shared/investigation/sourceIdentity.js";
 import { searchResultOf, type AtomSearchBundle } from "../../atomSearch.js";
 import { enrichSearchSources, pickUrlsToRead } from "../../sourceContent.js";
 
@@ -64,6 +65,7 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   } catch (error) {
     factStep = fallbackAgentStep("fact_checker", error, atomSearchBundle);
   }
+  factStep.output.subclaimVerdicts = withClaimAtomsFromDecomposition(factStep.output.subclaimVerdicts, rumorStep.output.claimAtoms);
   steps.push(factStep);
   throwIfAborted();
   // FactChecker 采用了判定前没读到的来源时，补读一次，供 SourceValidator 核对方向。
@@ -80,6 +82,7 @@ export async function judge(ctx: PipelineContext, rumorStep: PipelineStep, retri
   } catch (error) {
     sourceStep = fallbackAgentStep("source_validator", error, atomSearchBundle);
   }
+  sourceStep.output.claimSourceRelations = withClaimAtomsFromDecomposition(sourceStep.output.claimSourceRelations, rumorStep.output.claimAtoms);
   steps.push(sourceStep);
 
   const partial: Omit<CaseState, "sourceAudit"> = { rumorStep, ...retrieval, factStep, sourceStep, subclaimVerdicts: [] };

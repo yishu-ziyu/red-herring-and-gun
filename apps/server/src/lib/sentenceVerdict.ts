@@ -306,7 +306,7 @@ export function decideAndWriteVerdict(report: Report, input: VerdictInput): Verd
     records(report.nonVerifiableAtoms).map((atom) => nonCheckableLabel(String(atom.type ?? "")))
   );
   // 模型的整句理由写在来源审核之前；有哪一点的判断被代码撤销，这句就可能说着已经没有依据的话。
-  const overruled = parts.some((p) => p.reason === FALLBACK_PART_REASON[p.label] || findVerdict(report, p.text)?.demotedFrom);
+  const overruled = parts.some((p) => p.reason === FALLBACK_PART_REASON[p.label] || findVerdict(report, p.text)?.demotedFrom || findVerdict(report, p.text)?.reversedFrom);
   const reason = wholeReasonOf(parts, label, overruled ? undefined : input.factCheckReason);
 
   report.verdictType = outcome.verdictType;

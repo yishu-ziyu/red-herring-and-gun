@@ -77,7 +77,7 @@ export type WorkbenchState = {
   error: string;
 };
 
-const ROLE_TEXT: Record<string, string> = { support: "支持", contradict: "反驳", "context-only": "只作背景" };
+const ROLE_TEXT: Record<string, string> = { conditional: "有条件成立", support: "支持", contradict: "反驳", "context-only": "只作背景" };
 
 function domainOf(url: string): string {
   try {

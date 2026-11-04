@@ -13,6 +13,7 @@ import { scrubFaceText } from "../scrubFace.js";
 export type PresentLang = "zh" | "en";
 
 const ZH = {
+  conditionalRole: "有条件成立",
   role: { support: "支持", contradict: "反驳", unassessed: "尚未核对", "context-only": "相关材料" } as Record<InvestigationEvidenceLink["role"], string>,
   checkability: {
     checkable: "",
@@ -49,6 +50,7 @@ const ZH = {
 };
 
 const EN: typeof ZH = {
+  conditionalRole: "Holds under conditions",
   role: { support: "Supports", contradict: "Contradicts", unassessed: "Not yet assessed", "context-only": "Related" },
   checkability: {
     checkable: "",
@@ -187,6 +189,7 @@ export function shownClaims(snapshot: InvestigationSnapshotV1): InvestigationCla
 export type PresentedEvidence = {
   role: InvestigationEvidenceLink["role"];
   roleText: string;
+  conditional: boolean;
   sourceId: string;
   materialKind: string;
   /** page = 网页原话，加引号；snippet = 搜索摘要，可能被搜索引擎改写过；summary = 我们的概括。 */
@@ -212,7 +215,8 @@ export function presentEvidence(link: InvestigationEvidenceLink, source: Investi
   const provenance = link.provenance ?? source.provenance;
   return {
     role: link.role,
-    roleText: w.role[link.role],
+    roleText: link.conditional ? w.conditionalRole : w.role[link.role],
+    conditional: Boolean(link.conditional),
     sourceId: source.id,
     materialKind: link.excerptKind ?? "unknown",
     quote: quote

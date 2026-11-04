@@ -61,7 +61,7 @@ export function EvidenceRow({
   return (
     <li data-gp-evidence-row data-gp-role={ev.role} className="flex flex-col gap-2 rounded-lg border bg-card p-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <Badge variant="outline" className={ROLE_CLASS[ev.role] ?? ""}>
+        <Badge variant="outline" className={ev.conditional ? "border-amber-200 bg-amber-50 text-amber-700" : ROLE_CLASS[ev.role] ?? ""}>
           {ev.roleText}
         </Badge>
         {index !== undefined ? <span className="font-mono text-muted-foreground">[{index}]</span> : null}
@@ -90,7 +90,7 @@ export function EvidenceRow({
       <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger asChild>
           <Button variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs text-muted-foreground">
-            {WHY_TEXT[ev.role] ?? "为什么"}
+            {ev.conditional ? "为什么算有条件成立" : WHY_TEXT[ev.role] ?? "为什么"}
             <ChevronDownIcon className={cn("transition-transform", open && "rotate-180")} />
           </Button>
         </CollapsibleTrigger>

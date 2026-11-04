@@ -130,6 +130,7 @@ const prompt = [
       "4. 每条必须写 reason：一句中文理由，说明为什么是这个标签，只能用本轮材料，不写 [n]，不写标签词本身。每条还必须写 evidence（证据）与 boundary（边界/不能推出的部分）。",
       "5. verdict 为 true / mostly-true / partly-true / exaggerated 时，supportingSources 必须给出真实 URL（来自该原子检索结果）；",
       "   给不出 URL 的不得判肯定值，改判 unresolved 并在 evidenceGaps 写明待补证。",
+      "5a. 同一 URL 对同一条命题只能放进 supportingSources 或 contradictingSources 其中一个，选它完整意思表达的方向。",
       "6. supportingSources 只放支持该原子命题本身的来源；contradictingSources 只放反驳该原子命题本身的来源。",
       "   verdict=false 时，引用的来源必须写入 contradictingSources，不得为了句内 [n] 把反驳材料写入 supportingSources；",
       "   给不出反证 URL 的不得判 false，改判 unresolved 并在 evidenceGaps 写明待补证。",

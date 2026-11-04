@@ -7,6 +7,7 @@
 import { bindAtomEvidenceToVerdicts, searchResultOf } from "../atomSearch.js";
 import { evidenceGateFor } from "../evidenceGate.js";
 import { applyClaimSourceRelationAudit, relationAuditCoversDirectionalSources } from "../sourceRelationAudit.js";
+import { withClaimAtomsFromDecomposition } from "../../../../shared/investigation/sourceIdentity.js";
 import type { CaseState, PipelineContext } from "./caseState.js";
 
 type Verdict = { claimAtom: string; [key: string]: unknown };
@@ -58,6 +59,7 @@ export function createSourceAudit(ctx: PipelineContext, state: Omit<CaseState, "
       const factStep = { ...state.factStep, relationAuditCandidates: candidates };
       const inputSteps = steps.map((step) => (step === state.factStep ? factStep : step));
       const refreshed = await runAgent("source_validator", inputSteps, searchResultOf(state.atomSearchBundle), state.atomSearchBundle);
+      refreshed.output.claimSourceRelations = withClaimAtomsFromDecomposition(refreshed.output.claimSourceRelations, state.rumorStep.output.claimAtoms);
       steps.push(refreshed);
       state.sourceStep = refreshed;
       auditedSignature = nextSignature;

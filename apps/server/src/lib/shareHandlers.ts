@@ -115,6 +115,7 @@ function projectionFromV2(p: Record<string, unknown>): PublicShareProjection {
     const evidence: InvestigationEvidenceLink[] = arr(claim.evidence).map(rec).map((link) => ({
       sourceId: str(link.sourceId),
       role: oneOf(link.role, ["support", "contradict", "context-only", "unassessed"] as const) ?? "context-only",
+      ...(link.conditional === true ? { conditional: true } : {}),
       ...(str(link.sentence) ? { quote: str(link.sentence) } : str(link.note) ? { relationReason: str(link.note) } : {}),
       ...(str(link.finding) ? { finding: str(link.finding) } : {}),
       ...(str(link.passage) ? { passage: str(link.passage) } : {}),

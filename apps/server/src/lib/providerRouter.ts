@@ -3,6 +3,7 @@
 // Timeouts are layered: the provider's per-attempt budget (ORCHESTRATE_PROVIDER_TIMEOUT_MS unless the
 // provider overrides it for a model) and the caller's stage deadline; the shorter one applies.
 
+import { setTimeout as sleep } from "node:timers/promises";
 import type { TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { ExecutionTimeoutError, getTimeoutMs, withExecutionBudget } from "./executionBudget.js";
@@ -85,6 +86,7 @@ function stripJsonNoise(text: string): string {
  * JSON.parse 报 Expected ',' or '}' after property value）。
  * 启发式：字符串内遇到 `"` 时，向后看第一个非空白字符——
  * 是 `,` `}` `]` `:` 或 EOF 才算真正的闭合引号，否则当内容转义。
+ * 逗号还要再看一步：后面接得上 JSON 才算闭合，标题里的 `"饿肚子睡觉",哪个危害更大` 不算。
  */
 function escapeUnescapedInnerQuotes(json: string): string {
   let out = "";
@@ -111,7 +113,10 @@ function escapeUnescapedInnerQuotes(json: string): string {
       let j = i + 1;
       while (j < json.length && /\s/.test(json[j])) j += 1;
       const next = j < json.length ? json[j] : "";
-      if (next === "," || next === "}" || next === "]" || next === ":" || next === "") {
+      let afterComma = j + 1;
+      while (afterComma < json.length && /\s/.test(json[afterComma])) afterComma += 1;
+      const commaCloses = next === "," && /^["{\[\]}\d\-tfn]/.test(json[afterComma] ?? "");
+      if (commaCloses || next === "}" || next === "]" || next === ":" || next === "") {
         inString = false;
         out += ch;
       } else {
@@ -226,6 +231,11 @@ function positiveMs(value: number | undefined): number | undefined {
 
 /** 对可重试的连接失败，在同一提供方内最多尝试 3 次。 */
 const CONNECT_ATTEMPTS = 3;
+/**
+ * 所有提供方都连不上说明是本机网络断了，换提供方没有用，而调查还有时间：等一下再整轮试。
+ * 次数有上限；有任何一家连上了（哪怕回了错误）就不算断网。
+ */
+const CONNECT_OUTAGE_WAITS_MS = [15_000, 30_000];
 
 export async function callJson(params: CallJsonParams): Promise<CallJsonResult> {
   const { agentId, system, user, schema, images, maxTokens, env, signal } = params;
@@ -323,7 +333,7 @@ export async function callJson(params: CallJsonParams): Promise<CallJsonResult> 
   const runOne = async (
     provider: ModelProvider,
     model: string
-  ): Promise<{ ok: true; result: CallJsonResult } | { ok: false; msg: string }> => {
+  ): Promise<{ ok: true; result: CallJsonResult } | { ok: false; msg: string; connectFailure: boolean }> => {
     for (let attempt = 1; ; attempt += 1) {
       const providerStart = Date.now();
       const attemptTimeout = attemptTimeoutMs(provider.timeoutMs(env, model) ?? providerTimeoutMs);
@@ -369,32 +379,44 @@ export async function callJson(params: CallJsonParams): Promise<CallJsonResult> 
         if (connectFailure && attempt < CONNECT_ATTEMPTS && !stageBudgetExpired()) continue;
         if (brokenReply && attempt < 2 && !stageBudgetExpired()) continue;
         if (!stageBudgetExpired()) noteProviderFailure(provider, model, error);
-        return { ok: false, msg: message };
+        return { ok: false, msg: message, connectFailure };
       }
     }
   };
 
-  for (const provider of providers) {
-    signal?.throwIfAborted();
-    if (stageBudgetExpired()) {
-      noteStageBudgetExhausted();
-      errors.push(
-        `[stage] 阶段硬预算 ${stageDeadlineMs === undefined ? 0 : stageDeadlineMs - startTime}ms 已用尽，不再尝试后续 provider`
-      );
-      break;
+  for (let outageRound = 0; ; outageRound += 1) {
+    let attempted = 0;
+    let onlyConnectFailures = true;
+    for (const provider of providers) {
+      signal?.throwIfAborted();
+      if (stageBudgetExpired()) {
+        noteStageBudgetExhausted();
+        errors.push(
+          `[stage] 阶段硬预算 ${stageDeadlineMs === undefined ? 0 : stageDeadlineMs - startTime}ms 已用尽，不再尝试后续 provider`
+        );
+        break;
+      }
+      if (isProviderSkipped(provider)) {
+        errors.push(`[${provider.id}] 本进程已因额度耗尽跳过`);
+        continue;
+      }
+      const model = provider.modelFor(env, agentId, withImages);
+      if (!provider.configured(env)) {
+        errors.push(`[${provider.id}:${model}] 未配置 ${provider.apiKeyEnv}`);
+        continue;
+      }
+      const out = await runOne(provider, model);
+      if (out.ok) return out.result;
+      errors.push(`[${provider.id}:${model}] ${out.msg}`);
+      attempted += 1;
+      if (!out.connectFailure) onlyConnectFailures = false;
     }
-    if (isProviderSkipped(provider)) {
-      errors.push(`[${provider.id}] 本进程已因额度耗尽跳过`);
-      continue;
-    }
-    const model = provider.modelFor(env, agentId, withImages);
-    if (!provider.configured(env)) {
-      errors.push(`[${provider.id}:${model}] 未配置 ${provider.apiKeyEnv}`);
-      continue;
-    }
-    const out = await runOne(provider, model);
-    if (out.ok) return out.result;
-    errors.push(`[${provider.id}:${model}] ${out.msg}`);
+    const waitMs = CONNECT_OUTAGE_WAITS_MS[outageRound];
+    if (waitMs === undefined || attempted === 0 || !onlyConnectFailures) break;
+    const left = stageRemainingMs();
+    if (left !== undefined && left <= waitMs) break;
+    logger.warn("[orchestrate-provider] connect_outage_retry", { agent: traceLabel, round: outageRound + 1, waitMs, providers: attempted });
+    await sleep(waitMs, undefined, { signal });
   }
 
   const friendlyMessage =

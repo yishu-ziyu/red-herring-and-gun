@@ -1,8 +1,8 @@
 import { directionalSources } from "./agents/sourceValidator.js";
 import { stripCitationMarkers } from "./citationBinding.js";
-import { findClaimSourceRelationAudit } from "../../../shared/investigation/sourceIdentity.js";
+import { findClaimSourceRelationAudit, oneRelationPerPart } from "../../../shared/investigation/sourceIdentity.js";
 
-type ClaimSourceRelation = "support" | "contradict" | "context-only" | "unverified";
+type ClaimSourceRelation = "support" | "contradict" | "conditional" | "context-only" | "unverified";
 
 type ClaimSourceRelationAudit = {
   claimAtom: string;
@@ -38,7 +38,7 @@ function parseClaimSourceRelationAudits(value: unknown): ClaimSourceRelationAudi
     const url = normalizedUrl(rec.url);
     const relation = rec.relation;
     if (!claimAtom || !/^https?:\/\//i.test(url)) continue;
-    if (relation !== "support" && relation !== "contradict" && relation !== "context-only" && relation !== "unverified") continue;
+    if (relation !== "support" && relation !== "contradict" && relation !== "conditional" && relation !== "context-only" && relation !== "unverified") continue;
     out.push({
       claimAtom,
       url,
@@ -47,7 +47,7 @@ function parseClaimSourceRelationAudits(value: unknown): ClaimSourceRelationAudi
       ...(typeof rec.quote === "string" && rec.quote.trim() ? { quote: rec.quote.trim() } : {}),
     });
   }
-  return out;
+  return oneRelationPerPart(out);
 }
 
 export function relationAuditCoversDirectionalSources(
@@ -65,6 +65,43 @@ export function relationAuditCoversDirectionalSources(
     }
   }
   return true;
+}
+
+type AuditLabel = "true" | "false" | "exaggerated";
+
+function currentLabel(verdict: VerdictLike): unknown {
+  return verdict.label ?? verdict.verdict;
+}
+
+/**
+ * 规则表：这一点的标签由审核后的来源决定，不由核查模型和审核模型各判一次。
+ * - 多数来源说「取决于条件」→ 夸大了
+ * - 来源只有反驳（对一般人不会发生）→ 不属实
+ * - 来源只有支持 → 属实；模型已经判得更轻的不抬高
+ * - 没有来源直接谈到，或支持和反驳并存而模型没判成部分属实 / 说法不一 → null（还查不清）
+ * 模型判「还查不清」或「说法不一」不改：这两种的判断在于来源之间，不在单个来源。
+ */
+function labelFromAudit(verdict: VerdictLike, counts: { support: number; contradict: number; conditional: number }): unknown {
+  const { support, contradict, conditional } = counts;
+  const model = String(verdict.verdict ?? "").trim().toLowerCase();
+  if (model === "unverified" || model === "disputed") return currentLabel(verdict);
+  if (conditional > 0 && conditional >= contradict && conditional >= support) return "exaggerated";
+  if (contradict > 0 && support === 0) return "false";
+  if (model === "partial" || model === "exaggerated") return support > 0 ? currentLabel(verdict) : null;
+  if (support > 0 && contradict === 0) return model === "true" ? currentLabel(verdict) : null;
+  return null;
+}
+
+/** 标签被规则表改了：模型那句理由说的是别的标签，换成审核写的理由；真假反转时模型的边界也不再成立。 */
+function relabelled(verdict: VerdictLike, label: AuditLabel, firstReason: { support?: string; contradict?: string; conditional?: string }) {
+  const model = String(verdict.verdict ?? "").trim().toLowerCase();
+  const reason = label === "exaggerated" ? firstReason.conditional : label === "false" ? firstReason.contradict : firstReason.support;
+  return {
+    label,
+    verdict: label,
+    ...(reason ? { reason } : {}),
+    ...(model === "true" && label === "false" ? { reversedFrom: "true", boundary: "" } : {}),
+  };
 }
 
 /**
@@ -85,8 +122,21 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
     let changed = false;
     let hadDirectional = false;
     let hadTruncated = false;
+    const counts = { support: 0, contradict: 0, conditional: 0 };
+    const firstReason: Partial<Record<keyof typeof counts, string>> = {};
 
-    for (const { source, url, relation: original } of directionalSources(verdict)) {
+    const candidates = directionalSources(verdict);
+    const seenUrls = new Set<string>();
+    for (const candidate of candidates) {
+      const { url } = candidate;
+      // 同一来源被放进两个桶时只算一次，用方向和审核一致的那一行（它的摘句才对得上）。
+      if (seenUrls.has(url)) {
+        changed = true;
+        continue;
+      }
+      seenUrls.add(url);
+      const audit = findClaimSourceRelationAudit(audits, claimAtom, url);
+      const { source, relation: original } = candidates.find((c) => c.url === url && c.relation === audit?.relation) ?? candidate;
       hadDirectional = true;
       if (source.fetchStatus === "truncated") {
         // 未读部分可能含否定或适用条件，局部正文不能作为这条命题的方向性依据。
@@ -94,7 +144,6 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
         changed = true;
         continue;
       }
-      const audit = findClaimSourceRelationAudit(audits, claimAtom, url);
       // 只记方向性候选（支持 / 反驳）没有核验结果的情况：这些来源会被降为只作背景。
       if (!audit && audits.length > 0) console.warn(`[relation-audit] directional source has no audit claimAtom=${JSON.stringify(claimAtom)} url=${url}`);
       if (!audit || audit.relation === "context-only" || audit.relation === "unverified") {
@@ -103,21 +152,16 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
       }
       // The quoted sentence was picked for the other direction; it does not belong to the moved row.
       const placed = audit.relation === original ? source : { ...source, quote: "" };
-      if (audit.relation === "support") support.push(placed);
+      // 有条件成立的来源证实了内核，和支持放在一起；显示时按审核结果标成「有条件成立」。
+      if (audit.relation === "support" || audit.relation === "conditional") support.push(placed);
       else contradict.push(placed);
+      counts[audit.relation] += 1;
+      firstReason[audit.relation] ??= audit.reason;
       if (audit.relation !== original) changed = true;
     }
 
-    const verdictNorm = typeof verdict.verdict === "string" ? verdict.verdict.trim().toLowerCase() : "";
-    const directionConsistent =
-      verdictNorm === "true"
-        ? support.length > 0 && contradict.length === 0
-        : verdictNorm === "false"
-          ? contradict.length > 0 && support.length === 0
-          : verdictNorm === "partial" || verdictNorm === "exaggerated"
-            ? support.length + contradict.length > 0
-            : true;
-    const shouldDemote = hadDirectional && !directionConsistent;
+    const decided = hadDirectional ? labelFromAudit(verdict, counts) : verdict.label ?? null;
+    const shouldDemote = hadDirectional && decided === null;
     const oldGaps = Array.isArray(verdict.evidenceGaps)
       ? verdict.evidenceGaps.filter((gap): gap is string => typeof gap === "string")
       : [];
@@ -133,6 +177,7 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
       evidence: changed ? stripCitationMarkers(typeof verdict.evidence === "string" ? verdict.evidence : "") : verdict.evidence,
       evidenceGaps: gaps,
       sourcesRelatedOnly: support.length + contradict.length === 0 && hadDirectional ? true : verdict.sourcesRelatedOnly === true,
+      ...(!shouldDemote && hadDirectional && decided !== currentLabel(verdict) ? relabelled(verdict, decided as AuditLabel, firstReason) : {}),
       ...(shouldDemote ? {
         verdict: "unverified",
         label: "unresolved",

@@ -142,6 +142,8 @@ const InvestigationEvidenceLinkSchema = Type.Object(
     excerptKind: Type.Optional(Type.Union([Type.Literal("search-snippet"), Type.Literal("page-excerpt")])),
     /** SourceValidator 对 claimAtom + URL 的方向核验理由。 */
     relationReason: Type.Optional(Type.String()),
+    /** 来源审核认为这份材料是「有条件成立」；role 仍是 support，它证实了内核。 */
+    conditional: Type.Optional(Type.Boolean()),
     /** 同上：复用的证据条目。字段与来源条目同名。 */
     provenance: Type.Optional(Type.Union([Type.Literal("knowledge"), Type.Literal("prior-round")])),
     originDate: Type.Optional(Type.String()),
