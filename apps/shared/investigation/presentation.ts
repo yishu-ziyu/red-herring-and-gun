@@ -251,6 +251,11 @@ export type PresentedClaim = {
   related: PresentedEvidence[];
 };
 
+/** 无法核对和观点不靠依据下判断，也可能根本没搜索，不提「没有找到依据」。 */
+export function saysNoEvidenceFound(label: LabelKey | null | undefined): boolean {
+  return label !== "uncheckable" && label !== "opinion";
+}
+
 export function presentClaim(
   claim: Pick<InvestigationClaim, "text" | "label" | "judgment" | "reason" | "boundary" | "checkability" | "evidence">,
   sources: readonly InvestigationSource[],

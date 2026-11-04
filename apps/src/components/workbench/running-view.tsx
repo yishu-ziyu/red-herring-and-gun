@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Separator } from "@/components/ui/separator";
+import { InterruptedNotice } from "@/components/result/interrupted-notice";
 import { ResultView } from "@/components/result/result-view";
 import { StepOutput } from "./step-output";
 import { cn } from "@/lib/utils";
@@ -455,6 +456,8 @@ export function RunningView({ data }: { data: RunData }) {
             ) : null}
             {live.error || wb.error || stopError ? <p className="px-4 text-sm text-destructive">{wb.error || live.error || stopError}</p> : null}
           </Card>
+
+          {wb.terminal && wb.phase === "interrupted" ? <InterruptedNotice snapshot={final?.snapshot ?? wb.snapshot ?? data.snapshot} /> : null}
 
           <StepChips steps={wb.steps} pending={pending} currentId={current?.id} onSelect={selectStep} />
 

@@ -10,6 +10,8 @@ import { resolve } from "node:path";
 
 const baseUrl = process.env.E2E_BASE_URL || "http://127.0.0.1:5173/";
 const claim = process.env.E2E_CLAIM || "隔夜菜会致癌，等于吃毒药";
+// Set to check the page of a run that did not finish: stops the run after this many ms.
+const stopAfterMs = Number(process.env.E2E_STOP_AFTER_MS || 0);
 const out = resolve(`../out/e2e/${new Date().toISOString().replace(/[:.]/g, "-")}`);
 mkdirSync(out, { recursive: true });
 
@@ -53,12 +55,23 @@ async function run() {
   await editor.click();
   await page.keyboard.type(claim);
   await page.locator("[data-gp-start]").first().click();
+  if (stopAfterMs) {
+    await page.waitForTimeout(stopAfterMs);
+    await page.getByRole("button", { name: "停止核查" }).click();
+  }
 
   const finished = page.locator('[data-gp-phase="complete"], [data-gp-phase="interrupted"]').first();
   await finished.waitFor({ timeout: 10 * 60 * 1000 }).catch(() => {});
   const phase = await finished.getAttribute("data-gp-phase").catch(() => null);
   await shot("result");
-  if (!record("investigation completes", phase === "complete", `phase=${phase}`)) return;
+  if (stopAfterMs) {
+    if (record("stopped run ends as not finished", phase === "interrupted", `phase=${phase}`)) await checkInterrupted();
+    return;
+  }
+  if (!record("investigation completes", phase === "complete", `phase=${phase}`)) {
+    if (phase === "interrupted") await checkInterruptedPage();
+    return;
+  }
   record("exactly one investigation request", investigationPosts === 1, `posts=${investigationPosts}`);
   const phases = await page.evaluate(() => window.__gpPhases);
   record(
@@ -73,7 +86,7 @@ async function run() {
   const reason = (await lead.locator("[data-gp-conclusion-reason]").first().textContent().catch(() => "")).trim();
   // Copy the user retired: 「截」 for parts (they are 「点」), agent job titles, read-status jargon, internal review notes.
   const pageText = await page.locator("body").innerText().catch(() => "");
-  const retired = pageText.match(/.{0,8}(截(?![图断取屏])|拆题员|检索员|核查员|审核员|成稿员|搜索摘要|已读正文|复核通过|逐一核对|条事件).{0,8}/);
+  const retired = pageText.match(/.{0,8}(截(?![图断取屏])|拆题员|检索员|核查员|审核员|成稿员|搜索摘要|已读正文|复核通过|逐一核对|条事件|方向关系|独立核验|命题).{0,8}/);
   record("page shows none of the retired copy", !retired, retired ? retired[0] : "");
   record("conclusion shows one of the 9 labels and a reason", LABELS.includes(label) && reason.length > 0, `${label}｜${reason.slice(0, 80)}`);
 
@@ -98,6 +111,24 @@ async function run() {
     parts.map((p) => `${p.labels[0]}:${p.rows.length}`).join(" ")
   );
 
+  // The activity timeline must end on the same label each part shows.
+  const timeline = [];
+  for (const [, first, from, to] of pageText.matchAll(/这一点有了判断：(.+)|判断改了：(.+) → (.+)/g)) {
+    if (first) timeline.push(first.trim());
+    else timeline.splice(timeline.indexOf(from.trim()), 1, to.trim());
+  }
+  const unmatched = parts.map((p) => p.labels[0]).filter((label) => {
+    const at = timeline.indexOf(label);
+    if (at >= 0) timeline.splice(at, 1);
+    return at < 0;
+  });
+  record("timeline and result show the same label for every part", unmatched.length === 0, unmatched.join(" "));
+
+  // Without a search the page cannot know whether material exists, so it must not say either way.
+  const searched = pageText.includes("找到材料：");
+  const claimedAbsence = searched ? null : pageText.match(/.{0,8}(还缺：|目前没有|没有找到|未找到|找不到).{0,8}/);
+  record("a claim that was never searched says nothing about what exists", !claimedAbsence, claimedAbsence?.[0] ?? (searched ? "searched" : ""));
+
   const answer = await conclusion();
   await checkShare(answer);
 
@@ -111,6 +142,35 @@ async function run() {
   await page.locator("[data-gp-direct-answer]").first().waitFor({ timeout: 30_000 }).catch(() => {});
   record("reopened investigation shows the same conclusion", (await conclusion()) === answer);
   record("reopening does not start a new investigation", investigationPosts === 1, `posts=${investigationPosts}`);
+}
+
+// What a run that did not finish must show on the page.
+async function checkInterruptedPage() {
+  const notice = page.locator("[data-gp-interrupted]").first();
+  const shown = await notice.waitFor({ timeout: 10_000 }).then(() => true, () => false);
+  record("not-finished page says there is no conclusion", shown);
+  const pageText = await page.locator("body").innerText().catch(() => "");
+  const stale = pageText.match(/复核后改写|开始写结论并复核|结论已写好/);
+  record("not-finished page does not talk about writing a conclusion", !stale, stale?.[0] ?? "");
+  const links = await notice.locator("a[href^='http']").count();
+  record("not-finished page lists the material found so far", !pageText.includes("找到材料：") || links > 0, `links=${links}`);
+  record("not-finished page offers to check again", await page.locator("[data-gp-retry]").first().isVisible());
+}
+
+// The page, reopening it from history, and starting over. The new run is stopped so it costs little.
+async function checkInterrupted() {
+  await checkInterruptedPage();
+  const runUrl = page.url();
+  await page.goto(runUrl.replace("/run/", "/result/"), { waitUntil: "networkidle" });
+  const reopened = await page.locator("[data-gp-interrupted]").first().waitFor({ timeout: 10_000 }).then(() => true, () => false);
+  record("reopened not-finished run still says there is no conclusion", reopened);
+  await page.goto(runUrl, { waitUntil: "networkidle" });
+  const retry = page.locator("[data-gp-retry]").first();
+  if (!(await retry.waitFor({ timeout: 10_000 }).then(() => true, () => false))) return;
+  await retry.click();
+  const moved = await page.waitForURL((url) => url.href !== runUrl, { timeout: 15_000 }).then(() => true, () => false);
+  record("check again starts a new investigation", moved && investigationPosts === 2, `posts=${investigationPosts}`);
+  await page.getByRole("button", { name: "停止核查" }).click({ timeout: 15_000 }).catch(() => {});
 }
 
 // Share the result and open the link as a stranger (new context, no cookies).

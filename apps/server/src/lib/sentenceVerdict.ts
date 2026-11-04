@@ -182,12 +182,14 @@ function firstSentence(text: string, label: LabelKey): string {
 
 /** 核查模型写的整句理由；模型没给或不合格时用各截标签拼一句。 */
 function wholeReasonOf(parts: readonly AssessedPart[], label: LabelKey, factCheckReason?: unknown): string {
+  // 没有可查的部分就没有搜索，模型那句「目前没有资料」没有根据。
+  if (parts.length === 0) return FALLBACK_PART_REASON[label];
   const pick = (value: unknown) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "");
   const model = firstSentence(pick(factCheckReason), label);
   if (model) return model;
   // 只有一截时，「「X」部分属实」只是把说法和标签重复一遍；用这一截自己的理由。
   const only = parts.length === 1 ? parts[0]! : undefined;
-  if (only && only.reason !== FALLBACK_PART_REASON[only.label]) {
+  if (only) {
     const own = firstSentence(only.reason, label);
     if (own) return own;
   }
@@ -202,7 +204,7 @@ function evidenceText(report: Report, part: AssessedPart): string {
 }
 
 /** 系统流程自己写进缺口的话（不是用户该去核实的东西）。 */
-const SYSTEM_GAP = /待补证|独立核验|定向检索|模型未覆盖/;
+const SYSTEM_GAP = /待补证|独立核验|暂不用来下判断|定向检索|模型未覆盖/;
 
 /** 没查清的部分还缺什么：判词里写的缺口，去掉「待补证」这类占位词。 */
 function missingNotes(report: Report, parts: readonly AssessedPart[]): string[] {
@@ -241,7 +243,12 @@ function renderConclusion(
   // 理由已经逐截列过时不再列第二遍。
   const enumerated = whole.reason.startsWith(partsLine) ? "" : partsLine;
   const ordered = [...parts].sort((a, b) => DECISIVE_FIRST[a.standing] - DECISIVE_FIRST[b.standing]);
-  const shown = ordered.map((part) => evidenceText(report, part)).filter(Boolean).slice(0, 2);
+  // 判断被代码撤销的部分，模型的判词说明也不再成立。
+  const shown = ordered
+    .filter((part) => part.reason !== FALLBACK_PART_REASON[part.label])
+    .map((part) => evidenceText(report, part))
+    .filter(Boolean)
+    .slice(0, 2);
 
   const body = [lead, enumerated, ...shown];
   for (const text of stance) body.push(`「${clip(text, 40)}」不适用真假判断，未计入真假结论。`);
@@ -298,7 +305,9 @@ export function decideAndWriteVerdict(report: Report, input: VerdictInput): Verd
     parts,
     records(report.nonVerifiableAtoms).map((atom) => nonCheckableLabel(String(atom.type ?? "")))
   );
-  const reason = wholeReasonOf(parts, label, input.factCheckReason);
+  // 模型的整句理由写在来源审核之前；有哪一点的判断被代码撤销，这句就可能说着已经没有依据的话。
+  const overruled = parts.some((p) => p.reason === FALLBACK_PART_REASON[p.label] || findVerdict(report, p.text)?.demotedFrom);
+  const reason = wholeReasonOf(parts, label, overruled ? undefined : input.factCheckReason);
 
   report.verdictType = outcome.verdictType;
   report.faceVerdict = outcome.badge;

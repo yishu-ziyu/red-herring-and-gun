@@ -18,6 +18,7 @@ import { clean } from "@/lib/scrub";
 import { derivationSentence, displayClaim, imageReading, ROLE_TEXT, roleOf, verdictParts } from "@/lib/derive";
 import type { RunData } from "@/lib/types";
 import { LABEL_TONE, labelText } from "@shared/domain/labels";
+import { InterruptedNotice } from "./interrupted-notice";
 import {
   presentClaim,
   presentConclusion,
@@ -25,6 +26,7 @@ import {
   resultWording,
   shownClaims,
   type PresentedEvidence,
+  saysNoEvidenceFound,
 } from "@shared/investigation/presentation";
 import type { InvestigationClaim, InvestigationSnapshotV1 } from "@shared/investigation/schema";
 
@@ -105,9 +107,9 @@ function PointCard({
                 <EvidenceRow key={`${ev.sourceId}-${ev.role}`} ev={ev} url={urlOf(ev.sourceId)} reason={rawReason(claim, ev)} index={numbers.get(ev.sourceId)} />
               ))}
             </ul>
-          ) : (
+          ) : saysNoEvidenceFound(p.label) ? (
             <p className="text-sm text-muted-foreground">{w.noDecisive}</p>
-          )}
+          ) : null}
           {p.related.length ? (
             <Collapsible open={relatedOpen} onOpenChange={setRelatedOpen}>
               <CollapsibleTrigger asChild>
@@ -147,6 +149,7 @@ export function ResultView({ run, mode = "owner" }: { run: RunData; mode?: "owne
 
   return (
     <div data-gp-result className="flex flex-col gap-6">
+      {snapshot.phase === "interrupted" && mode === "owner" ? <InterruptedNotice snapshot={snapshot} /> : null}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg leading-relaxed font-medium">

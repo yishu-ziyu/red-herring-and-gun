@@ -26,6 +26,7 @@ import {
   notCoveredNote,
   notCoveredSentence,
   presentClaim,
+  saysNoEvidenceFound,
   presentConclusion,
   publishedDay,
   resultWording,
@@ -445,7 +446,7 @@ function buildSharedPageHtml(lookup: ShareLookup): string {
   <div class="part-head"><span class="part-text">${escapeHtml(claim.text)}</span>${chip}</div>
   ${claim.reason ? `<p class="reason"${claim.reasonFromModel ? " data-share-claim-reason" : ""}>${escapeHtml(claim.reason)}</p>` : ""}
   ${claim.boundary ? `<p class="reason"><strong>${w.cannotInfer}：</strong>${escapeHtml(claim.boundary)}</p>` : ""}
-  ${claim.decisive.length ? `<ul class="evidence">${claim.decisive.map(evidenceRow).join("")}</ul>` : `<p class="empty">${w.noDecisive}</p>`}
+  ${claim.decisive.length ? `<ul class="evidence">${claim.decisive.map(evidenceRow).join("")}</ul>` : saysNoEvidenceFound(claim.label) ? `<p class="empty">${w.noDecisive}</p>` : ""}
   ${claim.related.length ? `<details><summary>${w.related(claim.related.length)}</summary><ul class="evidence">${claim.related.map(evidenceRow).join("")}</ul></details>` : ""}
   </div>
 </article>`;

@@ -7,8 +7,13 @@
  */
 import type { InvestigationSnapshotV1 } from "@shared/investigation/schema";
 import type { PublicActivity } from "@shared/investigation/activity";
-import { judgmentToLabel, labelText } from "@shared/domain/labels";
+import { isLabelKey, judgmentToLabel, labelText } from "@shared/domain/labels";
 import type { StreamEvent } from "./types";
+
+/** 事件带了标签就照标签显示；旧记录只有判断类别，才用类别推。 */
+function shownLabel(label: unknown, judgment: unknown): string {
+  return labelText(isLabelKey(label) ? label : judgmentToLabel(judgment as never));
+}
 import { clean } from "./scrub";
 
 export type StepKind = "vision" | "split" | "search" | "check" | "audit" | "write";
@@ -97,9 +102,9 @@ function activityLine(activity: PublicActivity): { text: string; tone: TimelineL
         tone: p.role === "support" ? "support" : p.role === "contradict" ? "contradict" : "neutral",
       };
     case "evidence_assessed":
-      return { text: `这一点有了判断：${labelText(judgmentToLabel(p.judgment as never))}`, tone: "done" };
+      return { text: `这一点有了判断：${shownLabel(p.label, p.judgment)}`, tone: "done" };
     case "judgment_revised":
-      return { text: `判断改了：${labelText(judgmentToLabel(p.from as never))} → ${labelText(judgmentToLabel(p.to as never))}`, tone: "done" };
+      return { text: `判断改了：${shownLabel(p.fromLabel, p.from)} → ${shownLabel(p.toLabel, p.to)}`, tone: "done" };
     case "gap_identified":
       return { text: `还缺：${clean(p.description)}`, tone: "neutral" };
     case "conflict_detected":
@@ -301,6 +306,12 @@ export function buildWorkbench(events: StreamEvent[], count = events.length): Wo
   }
   if (!hasAgentEvents && terminal) for (const step of steps) close(step, lastAt);
   const phase = terminal ? PHASE_OF_STATUS[status] ?? "interrupted" : snapshot?.phase ?? PHASE_OF_STATUS[status] ?? "received";
+  // 没查完就没有写结论这一步：服务端收尾时也会走它，但那只是把「没有完成」记下来。
+  if (terminal && phase === "interrupted") {
+    const shown = steps.filter((step) => step.kind !== "write");
+    const shownIds = new Set(shown.map((step) => step.id));
+    return { steps: shown, lines: lines.filter((line) => !line.stepId || shownIds.has(line.stepId)), snapshot, phase, terminal, startedAt, lastAt, error };
+  }
   return { steps, lines, snapshot, phase, terminal, startedAt, lastAt, error };
 }
 

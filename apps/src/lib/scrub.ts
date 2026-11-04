@@ -1,3 +1,5 @@
+import { plainPartWording } from "@shared/investigation/material";
+
 /**
  * 公开流里仍可能夹着搜索服务名、模型名（agent 自己写的自由文本、思考片段）。
  * 界面只显示去掉这些句子之后的文字；结构化字段（providers、providerOrigins、model、toolName）一律不读。
@@ -29,8 +31,7 @@ export function scrubList(items: unknown): string[] {
 
 /** 代码和模型文字里管原句的一部分叫「一截」，界面只说「点」；其他带「截」的词换成同义说法。 */
 export function plainPoint(text: string): string {
-  return text
-    .replace(/(两|三|四|五|几|各|每|这一|那一|另一|某一|一)截/g, "$1点")
+  return plainPartWording(text)
     .replace(/截图/g, "图片")
     .replace(/截断/g, "不完整")
     .replace(/截取/g, "摘取")

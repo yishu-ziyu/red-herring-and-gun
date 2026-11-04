@@ -860,7 +860,7 @@ export function buildInvestigationSnapshot(
         ...(quote ? { quote } : {}),
         ...(source.fetchStatus === "truncated"
           ? { relationReason: "只取得部分正文，未读部分可能包含限定条件；这份材料未用来支持或反驳" }
-          : auditMatchesRole && audit.reason ? { relationReason: audit.reason } : {}),
+          : auditMatchesRole && audit.reason ? { relationReason: plainPartWording(audit.reason) } : {}),
       };
     };
     if (verdict) {
@@ -940,8 +940,8 @@ export function buildInvestigationSnapshot(
     // 调查进行中和没有判定记录的旧报告，按判词推出。judgment 跟着标签走，两者不矛盾。
     let label: LabelKey | undefined;
     let reason: string | undefined;
-    if (!labeled) {
-      // 旧报告：保持原样。
+    if (!labeled && (a.checkability !== "not-applicable" || phase === "complete")) {
+      // 旧报告：保持原样。调查进行中的不可查部分也要有标签，时间线才不会先显示成观点。
     } else if (a.checkability === "not-applicable") {
       label = nonCheckableLabel(types.get(a.key)?.type ?? "");
       reason = FALLBACK_PART_REASON[label];
@@ -975,7 +975,8 @@ export function buildInvestigationSnapshot(
 
     const gaps: InvestigationGap[] = [];
     const seenGap = new Set<string>();
-    for (const g of verdict?.evidenceGaps ?? []) {
+    // 不可查的部分没有搜索，「还缺什么资料」无从说起。
+    for (const g of a.checkability === "not-applicable" ? [] : (verdict?.evidenceGaps ?? [])) {
       const description = withoutReadStatus(plainPartWording(g));
       if (!description || seenGap.has(description)) continue;
       seenGap.add(description);
@@ -990,7 +991,9 @@ export function buildInvestigationSnapshot(
     // 画线位置：先找这一截原文；模型补了字（「吃隔夜菜等于吃毒药」）找不到时，用拆题给的逐字片段（「等于吃毒药」）。
     const spanText = originalClaim.includes(a.text) ? a.text : (types.get(a.key)?.span ?? "");
     const span = spanText ? originalClaim.indexOf(spanText) : -1;
-    const boundary = verdict?.boundary ? withoutReadStatus(plainPartWording(verdict.boundary)) : "";
+    // 理由被代码换掉时，模型的「仍不能推出」是按原来的判断写的，不再成立。
+    const reasonReplaced = Boolean(label) && reason === FALLBACK_PART_REASON[label!];
+    const boundary = verdict?.boundary && !reasonReplaced ? withoutReadStatus(plainPartWording(verdict.boundary)) : "";
     return {
       id: `claim-${a.order + 1}`,
       text: a.text,
@@ -1016,7 +1019,7 @@ export function buildInvestigationSnapshot(
     conflicts.push({
       id: `conflict-${claim.order + 1}`,
       claimId: claim.id,
-      summary: `同一命题同时存在支持与反驳证据：支持 ${supportIds.length} 条、反驳 ${contradictIds.length} 条`,
+      summary: `这一点同时有支持和反驳的材料：支持 ${supportIds.length} 条、反驳 ${contradictIds.length} 条`,
       sides: [
         { position: "support", sourceIds: supportIds },
         { position: "contradict", sourceIds: contradictIds },

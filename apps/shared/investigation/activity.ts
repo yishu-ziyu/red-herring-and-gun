@@ -15,6 +15,7 @@
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import type { InvestigationSnapshotV1 } from "./schema.js";
+import { judgmentToLabel } from "../domain/labels.js";
 
 const closed = { additionalProperties: false } as const;
 
@@ -49,10 +50,10 @@ const ACTIVITY_PAYLOAD_KEYS: Record<ActivityKind, readonly string[]> = {
   prior_round_reuse: ["originDate"],
   source_found: ["title", "domain"],
   source_checked: ["title", "domain", "role"],
-  evidence_assessed: ["judgment"],
+  evidence_assessed: ["judgment", "label"],
   conflict_detected: ["summary"],
   gap_identified: ["description"],
-  judgment_revised: ["from", "to"],
+  judgment_revised: ["from", "to", "fromLabel", "toLabel"],
   run_completed: ["phase"],
 };
 
@@ -229,22 +230,25 @@ export function createActivityLog(runId: string) {
         }
 
         const priorJudgment = priorClaim?.judgment ?? null;
+        // 判断类别比标签粗（「夸大了」和「部分属实」同属 mixed），是否改判、显示什么都按标签。
+        const shownLabel = claim.label ?? (claim.judgment ? judgmentToLabel(claim.judgment) : null);
+        const priorLabel = priorClaim?.label ?? (priorJudgment ? judgmentToLabel(priorJudgment) : null);
         if (claim.judgment && !priorJudgment) {
           out.push(
             ...once([claim.id], `evidence_assessed:${claim.id}`, {
               kind: "evidence_assessed",
               claimIds: [claim.id],
               sourceIds: [],
-              payload: { judgment: claim.judgment },
+              payload: { judgment: claim.judgment, label: shownLabel },
             }),
           );
-        } else if (claim.judgment && priorJudgment && priorJudgment !== claim.judgment) {
+        } else if (claim.judgment && priorJudgment && priorLabel !== shownLabel) {
           out.push(
-            ...once([claim.id], `judgment_revised:${claim.id}:${claim.judgment}`, {
+            ...once([claim.id], `judgment_revised:${claim.id}:${shownLabel}`, {
               kind: "judgment_revised",
               claimIds: [claim.id],
               sourceIds: [],
-              payload: { from: priorJudgment, to: claim.judgment },
+              payload: { from: priorJudgment, to: claim.judgment, fromLabel: priorLabel, toLabel: shownLabel },
             }),
           );
         }

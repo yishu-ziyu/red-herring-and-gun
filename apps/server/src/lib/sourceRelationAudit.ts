@@ -122,8 +122,8 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
       ? verdict.evidenceGaps.filter((gap): gap is string => typeof gap === "string")
       : [];
     const relationGap = hadTruncated
-      ? "部分来源只取得局部正文，未读部分可能包含限定条件，暂不作为支持或反驳"
-      : "来源与这条命题的方向关系尚未通过独立核验，暂不作为支持或反驳";
+      ? "部分材料只读到了开头，后面可能还有限定条件，暂不用来下判断"
+      : "找到的材料还没确认能说明这一点，暂不用来下判断";
     const gaps = (shouldDemote || hadTruncated) && !oldGaps.includes(relationGap) ? [relationGap, ...oldGaps].slice(0, 3) : oldGaps;
 
     return {
@@ -136,7 +136,10 @@ export function applyClaimSourceRelationAudit<T extends VerdictLike>(
       ...(shouldDemote ? {
         verdict: "unverified",
         label: "unresolved",
-        reason: relationGap,
+        reason: `${relationGap}。`,
+        // 这两句是按被撤销的判断写的，没有依据撑着，不能留在页面上。
+        evidence: "",
+        boundary: "",
         demotedFrom: String(verdict.verdict ?? ""),
       } : {}),
     } as T;

@@ -61,7 +61,11 @@ export function withoutReadStatus(text: string): string {
   return kept && !/[。！？]$/.test(kept) ? `${kept.replace(/[，,；;]+$/, "")}。` : kept;
 }
 
-/** 代码里管原句的一部分叫「一截」，用户看不懂；模型照着提示词也会写出来。 */
+/** 代码里管原句的一部分叫「一截」「命题」，用户看不懂；模型照着提示词也会写出来。 */
 export function plainPartWording(text: string): string {
-  return text.replace(/(两|三|四|五|几|各|每|这一|那一|另一|某一|一)截/g, "$1点");
+  return text
+    .replace(/(两|三|四|五|几|各|每|这一|那一|另一|某一|一)截/g, "$1点")
+    .replace(/原命题/g, "原话")
+    .replace(/(?:该|此|这条|这个|这一)命题/g, "这一点")
+    .replace(/命题/g, "说法");
 }
