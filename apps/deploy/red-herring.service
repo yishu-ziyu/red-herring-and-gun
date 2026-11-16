@@ -1,0 +1,29 @@
+# 红鲱鱼与枪后端。放到 /etc/systemd/system/red-herring.service。
+# 只听本机 3000，外部一律经 nginx（nginx-gun.conf）；X-Real-IP 由 nginx 写入，客户端伪造不了。
+# 密钥在 /opt/red-herring/.env.local（后端从工作目录的上一级读取），数据库在 /opt/red-herring/data。
+[Unit]
+Description=Red Herring and Gun API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=rhg
+Group=rhg
+WorkingDirectory=/opt/red-herring/server
+ExecStart=/opt/red-herring/node/bin/node dist/server/src/index.js
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3000
+Environment=DATA_DIR=/opt/red-herring/data
+Restart=always
+RestartSec=3
+# 和 yishuziyu.cn 共用一台 2 GB 小机器：限住内存，出事只杀自己。
+MemoryMax=600M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/red-herring/data
+
+[Install]
+WantedBy=multi-user.target

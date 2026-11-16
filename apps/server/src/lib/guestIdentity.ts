@@ -45,7 +45,7 @@ export function headerValue(raw: unknown): string {
 }
 
 function clientIp(req: { headers?: { [key: string]: unknown }; socket?: { remoteAddress?: string } }) {
-  // nginx 用 $remote_addr 覆盖 X-Real-IP，客户端无法伪造（前提：3000 不对外，见 docker-compose）。
+  // nginx 用 $remote_addr 覆盖 X-Real-IP，客户端无法伪造（前提：3000 只听本机，见 deploy/red-herring.service）。
   const realIp = headerValue(req.headers?.["x-real-ip"]);
   if (realIp) return realIp.split(",")[0]?.trim() || realIp;
   // XFF 只取最后一跳：由我们自己的反代追加，客户端伪造的段排在前面。

@@ -3,7 +3,7 @@
  *
  * 设计：单实例部署够用。启动时 loadSnapshot 恢复；每次变更 saveSnapshotDebounced
  * 打脏标记，2 秒后原子写（tmp + rename）。进程退出前必须 flushSnapshots()，
- * 否则窗口内的变更丢失。DATA_DIR 默认 cwd/.data，docker-compose 挂卷到该路径。
+ * 否则窗口内的变更丢失。DATA_DIR 默认 cwd/.data；线上指向 /opt/red-herring/data（见 deploy/red-herring.service）。
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
